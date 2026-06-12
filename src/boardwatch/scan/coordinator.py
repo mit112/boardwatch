@@ -13,6 +13,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass, field
 from typing import Any
 
+from filelock import FileLock, Timeout
 from sqlalchemy import Engine, func, select
 
 from boardwatch.core.models import BoardRequest, BoardSnapshot
@@ -22,6 +23,7 @@ from boardwatch.providers.base import Provider
 from boardwatch.providers.greenhouse import GreenhouseProvider
 from boardwatch.scan.apply import apply_board
 from boardwatch.scan.workers import fetch_board_job
+from boardwatch.store.db import ensure_schema
 from boardwatch.store.queries import (
     finalize_run,
     get_validators,
@@ -66,8 +68,34 @@ def run_scan(
     company: str | None = None,
     provider: str | None = None,
 ) -> ScanSummary:
-    providers = providers or default_providers()
-    fetcher = fetcher or Fetcher(settings)
+    settings.data_dir.mkdir(parents=True, exist_ok=True)
+    lock = FileLock(str(settings.data_dir / "scan.lock"))
+    try:
+        lock.acquire(blocking=False)  # before schema setup, the runs insert, any fetch (D20)
+    except Timeout as exc:
+        raise ScanLockHeldError(SCAN_LOCK_MESSAGE) from exc
+    try:
+        return _run_scan_locked(
+            engine,
+            settings,
+            fetcher or Fetcher(settings),
+            providers or default_providers(),
+            company,
+            provider,
+        )
+    finally:
+        lock.release()
+
+
+def _run_scan_locked(
+    engine: Engine,
+    settings: Settings,
+    fetcher: Fetcher,
+    providers: dict[str, Provider],
+    company: str | None,
+    provider: str | None,
+) -> ScanSummary:
+    ensure_schema(engine)  # deferred to inside the lock: a REJECTED scan writes nothing
     summary = ScanSummary()
 
     with engine.connect() as conn:
@@ -104,7 +132,7 @@ def run_scan(
             row, request = future_map[future]
             try:
                 snapshot = future.result()
-            except Exception as exc:  # providers map failures themselves; this is belt-and-braces
+            except Exception as exc:  # providers map failures themselves; belt-and-braces
                 snapshot = BoardSnapshot(
                     status="failed", postings=[], url=request.url,
                     observed_validators=None, error=f"unexpected worker error: {exc}",
