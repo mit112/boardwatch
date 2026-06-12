@@ -6,6 +6,8 @@ from pathlib import Path
 import typer
 from rich.console import Console
 
+from boardwatch.cli.scan_cmd import scan as _scan
+
 app = typer.Typer(no_args_is_help=True, add_completion=False)
 console = Console()
 
@@ -27,3 +29,6 @@ def version() -> None:
     from boardwatch.store.db import schema_revision
 
     console.print(f"boardwatch {package_version('boardwatch')} · schema {schema_revision()}")
+
+
+app.command("scan")(_scan)
