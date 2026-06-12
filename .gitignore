@@ -1,0 +1,10 @@
+.venv/
+__pycache__/
+*.pyc
+.coverage
+coverage.xml
+dist/
+_alembic_dev.db
+.agent/
+reasonix.toml
+.reasonix-runs/
