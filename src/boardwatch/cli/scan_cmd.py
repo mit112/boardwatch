@@ -24,8 +24,14 @@ def scan(
     except ScanLockHeldError:
         console.print(SCAN_LOCK_MESSAGE)
         raise typer.Exit(code=2) from None
-    console.print(
+    from boardwatch.cli.top_cmd import count_filter_matches
+
+    line = (
         f"Scanned {summary.companies} companies · {summary.providers} provider(s) · "
         f"complete {summary.complete} · partial {summary.partial} · failed {summary.failed} · "
         f"unchanged {summary.unchanged} · {summary.open_postings} open postings"
     )
+    matches = count_filter_matches(app_ctx.engine, app_ctx.settings)
+    if matches is not None:
+        line += f" · {matches} match your filters"
+    console.print(line)
