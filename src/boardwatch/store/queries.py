@@ -10,10 +10,11 @@ from __future__ import annotations
 from typing import Any
 
 from sqlalchemy import Connection, Engine, Row, insert, select, update
+from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 
 from boardwatch.core.clock import utcnow
 from boardwatch.core.models import ResponseValidators
-from boardwatch.store.tables import companies, http_cache, runs
+from boardwatch.store.tables import companies, http_cache, profile, runs
 
 
 def insert_run(engine: Engine) -> int:
@@ -69,3 +70,58 @@ def get_watched_companies(
     if provider is not None:
         stmt = stmt.where(companies.c.provider == provider)
     return list(conn.execute(stmt).all())
+
+
+def upsert_watched_company(conn: Connection, *, provider: str, slug: str, name: str) -> None:
+    stmt = sqlite_insert(companies).values(
+        name=name, provider=provider, slug=slug, source="user", watched=True
+    )
+    conn.execute(
+        stmt.on_conflict_do_update(
+            index_elements=[companies.c.provider, companies.c.slug],
+            set_={"watched": True},
+        )
+    )
+
+
+def get_profile(conn: Connection) -> Row[Any] | None:
+    return conn.execute(select(profile).where(profile.c.id == 1)).one_or_none()
+
+
+def save_profile(
+    conn: Connection,
+    *,
+    text: str,
+    target_titles: list[str],
+    exclude_titles: list[str],
+    locations: list[str],
+    remote_only: bool,
+    skills: list[str],
+    taxonomy_version: str,
+) -> None:
+    stmt = sqlite_insert(profile).values(
+        id=1,
+        text=text,
+        skills_json=skills,
+        taxonomy_version=taxonomy_version,
+        target_titles_json=target_titles,
+        exclude_titles_json=exclude_titles,
+        locations_json=locations,
+        remote_only=remote_only,
+        updated_at=utcnow(),
+    )
+    conn.execute(
+        stmt.on_conflict_do_update(
+            index_elements=[profile.c.id],
+            set_={
+                "text": stmt.excluded.text,
+                "skills_json": stmt.excluded.skills_json,
+                "taxonomy_version": stmt.excluded.taxonomy_version,
+                "target_titles_json": stmt.excluded.target_titles_json,
+                "exclude_titles_json": stmt.excluded.exclude_titles_json,
+                "locations_json": stmt.excluded.locations_json,
+                "remote_only": stmt.excluded.remote_only,
+                "updated_at": stmt.excluded.updated_at,
+            },
+        )
+    )
