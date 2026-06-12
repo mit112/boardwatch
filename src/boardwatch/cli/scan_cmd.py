@@ -7,7 +7,7 @@ import typer
 from rich.console import Console
 
 from boardwatch.cli.context import build_context
-from boardwatch.scan.coordinator import run_scan
+from boardwatch.scan.coordinator import SCAN_LOCK_MESSAGE, ScanLockHeldError, run_scan
 
 console = Console()
 
@@ -18,8 +18,12 @@ def scan(
     provider: str | None = typer.Option(None, "--provider", help="Scan only this provider."),
 ) -> None:
     """Fetch watched boards (workers) and apply per board in one transaction (coordinator)."""
-    app_ctx = build_context(ctx.obj)
-    summary = run_scan(app_ctx.engine, app_ctx.settings, company=company, provider=provider)
+    app_ctx = build_context(ctx.obj, ensure=False)  # run_scan migrates inside the lock
+    try:
+        summary = run_scan(app_ctx.engine, app_ctx.settings, company=company, provider=provider)
+    except ScanLockHeldError:
+        console.print(SCAN_LOCK_MESSAGE)
+        raise typer.Exit(code=2) from None
     console.print(
         f"Scanned {summary.companies} companies · {summary.providers} provider(s) · "
         f"complete {summary.complete} · partial {summary.partial} · failed {summary.failed} · "

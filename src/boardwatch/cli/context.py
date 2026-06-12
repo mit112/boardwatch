@@ -17,8 +17,9 @@ class AppContext:
     engine: Engine
 
 
-def build_context(data_dir: Path | None) -> AppContext:
+def build_context(data_dir: Path | None, *, ensure: bool = True) -> AppContext:
     settings = load_settings(data_dir=data_dir)
     engine = get_engine(settings.data_dir, busy_timeout_ms=settings.busy_timeout_ms)
-    ensure_schema(engine)
+    if ensure:
+        ensure_schema(engine)
     return AppContext(settings=settings, engine=engine)
