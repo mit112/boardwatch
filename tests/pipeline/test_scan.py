@@ -131,6 +131,10 @@ def test_failure_isolation_one_failed_board_never_blocks_others(
 
 
 def test_scan_cli_smoke(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    # Rich force-enables terminal rendering when it detects GitHub Actions,
+    # injecting ANSI styling that splits the literal option tokens this test
+    # asserts on. Neutralize the detection so help renders plainly everywhere.
+    monkeypatch.delenv("GITHUB_ACTIONS", raising=False)
     monkeypatch.setenv("BOARDWATCH_CONFIG_DIR", str(tmp_path / "cfg"))
     data_dir = tmp_path / "data"
     help_result = runner.invoke(app, ["scan", "--help"])
