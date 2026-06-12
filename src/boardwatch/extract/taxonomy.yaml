@@ -1,0 +1,138 @@
+# Curated tech taxonomy (119 patterns), ported from the private pipeline (D9/§6.6).
+# case_sensitive: true marks tokens that collide with English words when
+# lowercased (Go, React, REST, Spring, ML, RAG, MCP, AI); their mixed-case
+# phrase alternates are wrapped in (?i:...) groups. To customize, copy this
+# file to {config_dir}/taxonomy.yaml — an override always wins (D24).
+version: 1
+patterns:
+  # languages
+  - {name: 'Python', category: language, pattern: '\bpython\b', case_sensitive: false}
+  - {name: 'Java', category: language, pattern: '\bjava\b', case_sensitive: false}
+  - {name: 'JavaScript', category: language, pattern: '\bjava\s?script\b', case_sensitive: false}
+  - {name: 'TypeScript', category: language, pattern: '\btype\s?script\b', case_sensitive: false}
+  - {name: 'Go', category: language, pattern: '(?i:\bgolang\b)|\bGo\b(?!\s+(?:to|above|beyond|the|live|out|deep|further|get|getter|from|over|into|through))', case_sensitive: true}
+  - {name: 'C++', category: language, pattern: 'c\+\+', case_sensitive: false}
+  - {name: 'C#', category: language, pattern: '\bc#', case_sensitive: false}
+  - {name: 'Rust', category: language, pattern: '\brust\b', case_sensitive: false}
+  - {name: 'Ruby', category: language, pattern: '\bruby\b', case_sensitive: false}
+  - {name: 'Kotlin', category: language, pattern: '\bkotlin\b', case_sensitive: false}
+  - {name: 'Swift', category: language, pattern: '\bswift\b', case_sensitive: false}
+  - {name: 'Scala', category: language, pattern: '\bscala\b', case_sensitive: false}
+  - {name: 'PHP', category: language, pattern: '\bphp\b', case_sensitive: false}
+  - {name: 'SQL (language)', category: language, pattern: '\bsql\b', case_sensitive: false}
+  - {name: 'Bash/Shell', category: language, pattern: '\bbash\b|\bshell script', case_sensitive: false}
+  # backend frameworks / API tech
+  - {name: 'Node.js', category: backend, pattern: '\bnode\.?js\b', case_sensitive: false}
+  - {name: 'Express.js', category: backend, pattern: '\bexpress\.?js\b', case_sensitive: false}
+  - {name: 'Django', category: backend, pattern: '\bdjango\b', case_sensitive: false}
+  - {name: 'Flask', category: backend, pattern: '\bflask\b', case_sensitive: false}
+  - {name: 'FastAPI', category: backend, pattern: '\bfast\s?api\b', case_sensitive: false}
+  - {name: 'Spring', category: backend, pattern: '(?i:\bspring\s?boot\b)|\bSpring\b(?!\s+\d{4})', case_sensitive: true}
+  - {name: '.NET/ASP.NET', category: backend, pattern: '\basp\.net\b|(?<![a-z0-9])\.net\b', case_sensitive: false}
+  - {name: 'Ruby on Rails', category: backend, pattern: '\bruby on rails\b|\brails\b', case_sensitive: false}
+  - {name: 'NestJS', category: backend, pattern: '\bnest\.?js\b', case_sensitive: false}
+  - {name: 'Next.js', category: backend, pattern: '\bnext\.?js\b', case_sensitive: false}
+  - {name: 'GraphQL', category: backend, pattern: '\bgraphql\b', case_sensitive: false}
+  - {name: 'gRPC', category: backend, pattern: '\bgrpc\b', case_sensitive: false}
+  - {name: 'REST APIs', category: backend, pattern: '\bREST\b|(?i:\brestful\b)', case_sensitive: true}
+  # frontend
+  - {name: 'React', category: frontend, pattern: '\bReact\b|(?i:\breact\.?js\b)', case_sensitive: true}
+  - {name: 'Angular', category: frontend, pattern: '\bangular\b', case_sensitive: false}
+  - {name: 'Vue', category: frontend, pattern: '\bvue\.?j?s?\b', case_sensitive: false}
+  - {name: 'Svelte', category: frontend, pattern: '\bsvelte\b', case_sensitive: false}
+  - {name: 'HTML/CSS', category: frontend, pattern: '\bhtml\b|\bcss\b', case_sensitive: false}
+  - {name: 'Tailwind', category: frontend, pattern: '\btailwind\b', case_sensitive: false}
+  - {name: 'Redux', category: frontend, pattern: '\bredux\b', case_sensitive: false}
+  # cloud
+  - {name: 'AWS', category: cloud, pattern: '\baws\b|\bamazon web services\b', case_sensitive: false}
+  - {name: 'GCP', category: cloud, pattern: '\bgcp\b|\bgoogle cloud\b', case_sensitive: false}
+  - {name: 'Azure', category: cloud, pattern: '\bazure\b', case_sensitive: false}
+  - {name: 'AWS Lambda', category: cloud, pattern: '\blambda\b', case_sensitive: false}
+  - {name: 'S3', category: cloud, pattern: '\bs3\b', case_sensitive: false}
+  - {name: 'EC2', category: cloud, pattern: '\bec2\b', case_sensitive: false}
+  - {name: 'Serverless', category: cloud, pattern: '\bserverless\b', case_sensitive: false}
+  # infra / devops
+  - {name: 'Docker', category: infra, pattern: '\bdocker\b', case_sensitive: false}
+  - {name: 'Kubernetes', category: infra, pattern: '\bkubernetes\b|\bk8s\b', case_sensitive: false}
+  - {name: 'Terraform', category: infra, pattern: '\bterraform\b', case_sensitive: false}
+  - {name: 'Ansible', category: infra, pattern: '\bansible\b', case_sensitive: false}
+  - {name: 'Helm', category: infra, pattern: '\bhelm\b', case_sensitive: false}
+  - {name: 'Jenkins', category: infra, pattern: '\bjenkins\b', case_sensitive: false}
+  - {name: 'CI/CD', category: infra, pattern: '\bci/cd\b|\bcicd\b|\bcontinuous integration\b|\bcontinuous deliver|\bcontinuous deploy', case_sensitive: false}
+  - {name: 'GitHub Actions', category: infra, pattern: '\bgithub actions\b', case_sensitive: false}
+  - {name: 'Linux/Unix', category: infra, pattern: '\blinux\b|\bunix\b', case_sensitive: false}
+  - {name: 'Datadog', category: infra, pattern: '\bdatadog\b', case_sensitive: false}
+  - {name: 'Grafana', category: infra, pattern: '\bgrafana\b', case_sensitive: false}
+  - {name: 'Prometheus', category: infra, pattern: '\bprometheus\b', case_sensitive: false}
+  - {name: 'OpenTelemetry', category: infra, pattern: '\bopentelemetry\b|\botel\b', case_sensitive: false}
+  - {name: 'Observability (word)', category: infra, pattern: '\bobservability\b', case_sensitive: false}
+  # databases / storage
+  - {name: 'PostgreSQL', category: database, pattern: '\bpostgres(ql)?\b', case_sensitive: false}
+  - {name: 'MySQL', category: database, pattern: '\bmysql\b', case_sensitive: false}
+  - {name: 'MongoDB', category: database, pattern: '\bmongo\s?db\b|\bmongo\b', case_sensitive: false}
+  - {name: 'Redis', category: database, pattern: '\bredis\b', case_sensitive: false}
+  - {name: 'DynamoDB', category: database, pattern: '\bdynamo\s?db\b', case_sensitive: false}
+  - {name: 'Cassandra', category: database, pattern: '\bcassandra\b', case_sensitive: false}
+  - {name: 'Elasticsearch', category: database, pattern: '\belastic\s?search\b|\bopensearch\b', case_sensitive: false}
+  - {name: 'SQLite', category: database, pattern: '\bsqlite\b', case_sensitive: false}
+  - {name: 'Snowflake', category: database, pattern: '\bsnowflake\b', case_sensitive: false}
+  - {name: 'BigQuery', category: database, pattern: '\bbigquery\b', case_sensitive: false}
+  - {name: 'Redshift', category: database, pattern: '\bredshift\b', case_sensitive: false}
+  - {name: 'NoSQL (word)', category: database, pattern: '\bno[- ]?sql\b', case_sensitive: false}
+  # messaging / streaming
+  - {name: 'Kafka', category: messaging, pattern: '\bkafka\b', case_sensitive: false}
+  - {name: 'RabbitMQ', category: messaging, pattern: '\brabbitmq\b', case_sensitive: false}
+  - {name: 'Kinesis', category: messaging, pattern: '\bkinesis\b', case_sensitive: false}
+  - {name: 'SQS/SNS', category: messaging, pattern: '\bsqs\b|\bsns\b', case_sensitive: false}
+  - {name: 'Pub/Sub', category: messaging, pattern: '\bpub/?sub\b', case_sensitive: false}
+  - {name: 'Event-driven', category: messaging, pattern: '\bevent[- ]driven\b', case_sensitive: false}
+  - {name: 'Message queues', category: messaging, pattern: '\bmessage (queue|broker)', case_sensitive: false}
+  # data / ML
+  - {name: 'Spark', category: data_ml, pattern: '\bspark\b', case_sensitive: false}
+  - {name: 'Airflow', category: data_ml, pattern: '\bairflow\b', case_sensitive: false}
+  - {name: 'dbt', category: data_ml, pattern: '\bdbt\b', case_sensitive: false}
+  - {name: 'Hadoop', category: data_ml, pattern: '\bhadoop\b', case_sensitive: false}
+  - {name: 'Flink', category: data_ml, pattern: '\bflink\b', case_sensitive: false}
+  - {name: 'Pandas/NumPy', category: data_ml, pattern: '\bpandas\b|\bnumpy\b', case_sensitive: false}
+  - {name: 'ETL/ELT', category: data_ml, pattern: '\betl\b|\belt\b', case_sensitive: false}
+  - {name: 'Data pipelines', category: data_ml, pattern: '\bdata pipeline', case_sensitive: false}
+  - {name: 'PyTorch', category: data_ml, pattern: '\bpytorch\b|\btorch\b', case_sensitive: false}
+  - {name: 'TensorFlow', category: data_ml, pattern: '\btensorflow\b', case_sensitive: false}
+  - {name: 'scikit-learn', category: data_ml, pattern: '\bscikit[- ]learn\b|\bsklearn\b', case_sensitive: false}
+  - {name: 'Machine learning', category: data_ml, pattern: '(?i:\bmachine learning\b)|\bML\b', case_sensitive: true}
+  # AI / LLM wave
+  - {name: 'LLMs', category: ai_llm, pattern: '\bllms?\b|\blarge language model', case_sensitive: false}
+  - {name: 'Generative AI', category: ai_llm, pattern: '\bgenerative\s?ai\b|\bgen\s?ai\b', case_sensitive: false}
+  - {name: 'RAG', category: ai_llm, pattern: '\bRAG\b|(?i:\bretrieval[- ]augmented)', case_sensitive: true}
+  - {name: 'Vector DBs', category: ai_llm, pattern: '\bvector (database|db|store|search)|\bpinecone\b|\bweaviate\b|\bpgvector\b|\bfaiss\b|\bmilvus\b|\bqdrant\b|\bchroma', case_sensitive: false}
+  - {name: 'Embeddings', category: ai_llm, pattern: '\bembeddings?\b', case_sensitive: false}
+  - {name: 'LangChain/LlamaIndex', category: ai_llm, pattern: '\blangchain\b|\blanggraph\b|\bllama\s?index\b', case_sensitive: false}
+  - {name: 'Model APIs (OpenAI etc.)', category: ai_llm, pattern: '\bopenai\b|\bgpt-?[45o]\b|\banthropic\b|\bclaude\b|\bgemini\b|\bbedrock\b', case_sensitive: false}
+  - {name: 'AI agents', category: ai_llm, pattern: '\bai agents?\b|\bagentic\b|\bmulti[- ]agent\b', case_sensitive: false}
+  - {name: 'MCP', category: ai_llm, pattern: '(?i:\bmodel context protocol\b)|\bMCP\b', case_sensitive: true}
+  - {name: 'Prompt engineering', category: ai_llm, pattern: '\bprompt(ing| engineering)\b', case_sensitive: false}
+  - {name: 'Fine-tuning', category: ai_llm, pattern: '\bfine[- ]tun', case_sensitive: false}
+  - {name: 'AI (umbrella)', category: ai_llm, pattern: '\bAI\b|(?i:\bartificial intelligence\b)', case_sensitive: true}
+  # systems concepts
+  - {name: 'Distributed systems', category: systems, pattern: '\bdistributed (systems?|computing|services|architecture)', case_sensitive: false}
+  - {name: 'Microservices', category: systems, pattern: '\bmicro[- ]?services?\b', case_sensitive: false}
+  - {name: 'Scalability', category: systems, pattern: '\bscalab(le|ility)\b', case_sensitive: false}
+  - {name: 'Low latency / high throughput', category: systems, pattern: '\blow[- ]latency\b|\bhigh[- ]throughput\b', case_sensitive: false}
+  - {name: 'High availability', category: systems, pattern: '\bhigh(ly)?[- ]availab|\bfault[- ]toleran', case_sensitive: false}
+  - {name: 'Concurrency', category: systems, pattern: '\bconcurren(cy|t)\b|\bmulti[- ]?thread', case_sensitive: false}
+  - {name: 'Real-time', category: systems, pattern: '\breal[- ]time\b', case_sensitive: false}
+  - {name: 'System design', category: systems, pattern: '\bsystem design\b', case_sensitive: false}
+  - {name: 'WebSockets', category: systems, pattern: '\bweb\s?sockets?\b', case_sensitive: false}
+  - {name: 'Caching', category: systems, pattern: '\bcach(e|ing)\b', case_sensitive: false}
+  # practices / security
+  - {name: 'Testing (unit/integration/TDD)', category: practices, pattern: '\bunit[- ]test|integration test|test[- ]driven|\btdd\b|automated test', case_sensitive: false}
+  - {name: 'Code review', category: practices, pattern: '\bcode reviews?\b', case_sensitive: false}
+  - {name: 'Agile/Scrum', category: practices, pattern: '\bagile\b|\bscrum\b', case_sensitive: false}
+  - {name: 'Git', category: practices, pattern: '\bgit\b', case_sensitive: false}
+  - {name: 'OAuth/Auth', category: practices, pattern: '\boauth\b|\bopenid\b|\bjwt\b|\bsso\b', case_sensitive: false}
+  - {name: 'Security (word)', category: practices, pattern: '\bsecurity\b', case_sensitive: false}
+  # mobile (for classification / contrast)
+  - {name: 'iOS/Swift (mobile)', category: mobile, pattern: '\bios\b|\bswiftui\b', case_sensitive: false}
+  - {name: 'Android (mobile)', category: mobile, pattern: '\bandroid\b', case_sensitive: false}
+  - {name: 'React Native', category: mobile, pattern: '\breact[- ]native\b', case_sensitive: false}
+  - {name: 'Flutter', category: mobile, pattern: '\bflutter\b', case_sensitive: false}
