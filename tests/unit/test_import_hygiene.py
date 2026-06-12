@@ -6,7 +6,7 @@ from pathlib import Path
 SRC = Path(__file__).resolve().parents[2] / "src" / "boardwatch"
 
 # Task 8 appends "scan/workers.py" to this list.
-FETCH_ONLY_MODULES = ["core/politeness.py"]
+FETCH_ONLY_MODULES = ["core/politeness.py", "scan/workers.py"]
 
 
 def test_fetch_modules_never_import_store() -> None:
