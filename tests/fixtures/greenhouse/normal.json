@@ -1,0 +1,284 @@
+{
+  "jobs": [
+    {
+      "id": 6000001,
+      "internal_job_id": 9000001,
+      "title": "Senior Software Engineer, Platform",
+      "updated_at": "2026-06-10T17:48:08-04:00",
+      "first_published": "2026-01-21T19:08:45-05:00",
+      "requisition_id": "1701",
+      "location": {
+        "name": "Remote - United States"
+      },
+      "absolute_url": "https://boards.greenhouse.io/acme/jobs/6000001",
+      "company_name": "Acme Corp",
+      "data_compliance": [
+        {
+          "type": "gdpr",
+          "requires_consent": false,
+          "requires_processing_consent": false,
+          "requires_retention_consent": false,
+          "retention_period": null,
+          "demographic_data_consent_applies": false
+        }
+      ],
+      "metadata": [],
+      "departments": [
+        {
+          "id": 80001,
+          "name": "Engineering",
+          "child_ids": [],
+          "parent_id": null
+        }
+      ],
+      "offices": [
+        {
+          "id": 17000,
+          "name": "Remote - US",
+          "location": null,
+          "child_ids": [],
+          "parent_id": null
+        }
+      ],
+      "content": "&lt;div class=&quot;content-intro&quot;&gt;&lt;h2&gt;About the role&lt;/h2&gt;&lt;p&gt;Help build the platform that powers our product.&lt;/p&gt;&lt;/div&gt;&lt;p&gt;What you will do:&lt;/p&gt;&lt;ul&gt;&lt;li&gt;Design and ship backend services&lt;/li&gt;&lt;li&gt;Collaborate across teams&lt;/li&gt;&lt;li&gt;Improve reliability&lt;/li&gt;&lt;/ul&gt;&lt;p&gt;Tools &amp;amp; Infrastructure are part of daily work.&lt;/p&gt;",
+      "pay_input_ranges": [
+        {
+          "min_cents": 16600000,
+          "max_cents": 19500000,
+          "currency_type": "USD",
+          "title": "Zone 1 (Higher cost-of-living metros)",
+          "blurb": "<p><strong>In addition to the base pay range below, this role is eligible for equity and benefits.</strong></p><p>Base pay depends on job-related factors and the work location's compensation zone.</p>"
+        },
+        {
+          "min_cents": 14700000,
+          "max_cents": 17200000,
+          "currency_type": "USD",
+          "title": "Zone 2 (Mid-tier metros)",
+          "blurb": ""
+        },
+        {
+          "min_cents": 13000000,
+          "max_cents": 15200000,
+          "currency_type": "USD",
+          "title": "Zone 3 (All other US locations)",
+          "blurb": ""
+        }
+      ],
+      "application_deadline": null,
+      "language": "en"
+    },
+    {
+      "id": 6000002,
+      "internal_job_id": 9000002,
+      "title": "Android Engineer",
+      "updated_at": "2026-06-10T17:48:08-04:00",
+      "first_published": "2026-01-21T19:08:45-05:00",
+      "requisition_id": "1702",
+      "location": {
+        "name": "New York, NY"
+      },
+      "absolute_url": "https://boards.greenhouse.io/acme/jobs/6000002",
+      "company_name": "Acme Corp",
+      "data_compliance": [
+        {
+          "type": "gdpr",
+          "requires_consent": false,
+          "requires_processing_consent": false,
+          "requires_retention_consent": false,
+          "retention_period": null,
+          "demographic_data_consent_applies": false
+        }
+      ],
+      "metadata": [],
+      "departments": [
+        {
+          "id": 80002,
+          "name": "Mobile",
+          "child_ids": [],
+          "parent_id": null
+        }
+      ],
+      "offices": [
+        {
+          "id": 17000,
+          "name": "New York, NY",
+          "location": null,
+          "child_ids": [],
+          "parent_id": null
+        }
+      ],
+      "content": "&lt;div class=&quot;content-intro&quot;&gt;&lt;h2&gt;About the role&lt;/h2&gt;&lt;p&gt;Build delightful mobile experiences for millions of users.&lt;/p&gt;&lt;/div&gt;&lt;p&gt;What you will do:&lt;/p&gt;&lt;ul&gt;&lt;li&gt;Own Android features end to end&lt;/li&gt;&lt;li&gt;Write tests first&lt;/li&gt;&lt;li&gt;Profile and optimize&lt;/li&gt;&lt;/ul&gt;&lt;p&gt;Tools &amp;amp; Infrastructure are part of daily work.&lt;/p&gt;",
+      "pay_input_ranges": [
+        {
+          "min_cents": 15000000,
+          "max_cents": 18000000,
+          "currency_type": "USD",
+          "title": "Zone 1 (New York, NY)",
+          "blurb": "<p><strong>In addition to the base pay range below, this role is eligible for equity and benefits.</strong></p><p>Base pay depends on job-related factors and the work location's compensation zone.</p>"
+        }
+      ],
+      "application_deadline": null,
+      "language": "en"
+    },
+    {
+      "id": 6000003,
+      "internal_job_id": 9000003,
+      "title": "Product Designer",
+      "updated_at": "2026-06-10T17:48:08-04:00",
+      "first_published": "2026-01-21T19:08:45-05:00",
+      "requisition_id": "1703",
+      "location": {
+        "name": "Remote - US"
+      },
+      "absolute_url": "https://boards.greenhouse.io/acme/jobs/6000003",
+      "company_name": "Acme Corp",
+      "data_compliance": [
+        {
+          "type": "gdpr",
+          "requires_consent": false,
+          "requires_processing_consent": false,
+          "requires_retention_consent": false,
+          "retention_period": null,
+          "demographic_data_consent_applies": false
+        }
+      ],
+      "metadata": [],
+      "departments": [
+        {
+          "id": 80003,
+          "name": "Design",
+          "child_ids": [],
+          "parent_id": null
+        }
+      ],
+      "offices": [
+        {
+          "id": 17000,
+          "name": "Remote - US",
+          "location": null,
+          "child_ids": [],
+          "parent_id": null
+        }
+      ],
+      "content": "&lt;div class=&quot;content-intro&quot;&gt;&lt;h2&gt;About the role&lt;/h2&gt;&lt;p&gt;Shape the look and feel of the product.&lt;/p&gt;&lt;/div&gt;&lt;p&gt;What you will do:&lt;/p&gt;&lt;ul&gt;&lt;li&gt;Run discovery&lt;/li&gt;&lt;li&gt;Prototype quickly&lt;/li&gt;&lt;li&gt;Partner with engineering&lt;/li&gt;&lt;/ul&gt;&lt;p&gt;Tools &amp;amp; Infrastructure are part of daily work.&lt;/p&gt;",
+      "pay_input_ranges": [],
+      "application_deadline": null,
+      "language": "en"
+    },
+    {
+      "id": 6000004,
+      "internal_job_id": 9000004,
+      "title": "Staff Data Scientist",
+      "updated_at": "2026-06-10T17:48:08-04:00",
+      "first_published": "2026-01-21T19:08:45-05:00",
+      "requisition_id": "1704",
+      "location": {
+        "name": "Austin, TX"
+      },
+      "absolute_url": "https://boards.greenhouse.io/acme/jobs/6000004",
+      "company_name": "Acme Corp",
+      "data_compliance": [
+        {
+          "type": "gdpr",
+          "requires_consent": false,
+          "requires_processing_consent": false,
+          "requires_retention_consent": false,
+          "retention_period": null,
+          "demographic_data_consent_applies": false
+        }
+      ],
+      "metadata": [],
+      "departments": [
+        {
+          "id": 80004,
+          "name": "Data Science",
+          "child_ids": [],
+          "parent_id": null
+        }
+      ],
+      "offices": [
+        {
+          "id": 17000,
+          "name": "Austin, TX",
+          "location": null,
+          "child_ids": [],
+          "parent_id": null
+        },
+        {
+          "id": 17001,
+          "name": "Toronto, Canada",
+          "location": null,
+          "child_ids": [],
+          "parent_id": null
+        }
+      ],
+      "content": "&lt;div class=&quot;content-intro&quot;&gt;&lt;h2&gt;About the role&lt;/h2&gt;&lt;p&gt;Turn data into decisions across the company.&lt;/p&gt;&lt;/div&gt;&lt;p&gt;What you will do:&lt;/p&gt;&lt;ul&gt;&lt;li&gt;Build models&lt;/li&gt;&lt;li&gt;Run experiments&lt;/li&gt;&lt;li&gt;Mentor the team&lt;/li&gt;&lt;/ul&gt;&lt;p&gt;Tools &amp;amp; Infrastructure are part of daily work.&lt;/p&gt;",
+      "pay_input_ranges": [
+        {
+          "min_cents": 18000000,
+          "max_cents": 22000000,
+          "currency_type": "USD",
+          "title": "Zone 1 (Austin, TX)",
+          "blurb": "<p><strong>In addition to the base pay range below, this role is eligible for equity and benefits.</strong></p><p>Base pay depends on job-related factors and the work location's compensation zone.</p>"
+        },
+        {
+          "min_cents": 16000000,
+          "max_cents": 19500000,
+          "currency_type": "USD",
+          "title": "Zone 2 (Remote US)",
+          "blurb": ""
+        }
+      ],
+      "application_deadline": null,
+      "language": "en"
+    },
+    {
+      "id": 6000005,
+      "internal_job_id": 9000005,
+      "title": "Engineering Manager, Payments",
+      "updated_at": "2026-06-10T17:48:08-04:00",
+      "first_published": "2026-01-21T19:08:45-05:00",
+      "requisition_id": "1705",
+      "location": {
+        "name": "San Francisco, CA"
+      },
+      "absolute_url": "https://boards.greenhouse.io/acme/jobs/6000005",
+      "company_name": "Acme Corp",
+      "data_compliance": [
+        {
+          "type": "gdpr",
+          "requires_consent": false,
+          "requires_processing_consent": false,
+          "requires_retention_consent": false,
+          "retention_period": null,
+          "demographic_data_consent_applies": false
+        }
+      ],
+      "metadata": [],
+      "departments": [
+        {
+          "id": 80005,
+          "name": "Engineering",
+          "child_ids": [],
+          "parent_id": null
+        }
+      ],
+      "offices": [
+        {
+          "id": 17000,
+          "name": "San Francisco, CA",
+          "location": null,
+          "child_ids": [],
+          "parent_id": null
+        }
+      ],
+      "content": "&lt;div class=&quot;content-intro&quot;&gt;&lt;h2&gt;About the role&lt;/h2&gt;&lt;p&gt;Lead a team building our payments stack.&lt;/p&gt;&lt;/div&gt;&lt;p&gt;What you will do:&lt;/p&gt;&lt;ul&gt;&lt;li&gt;Grow engineers&lt;/li&gt;&lt;li&gt;Set technical direction&lt;/li&gt;&lt;li&gt;Ship reliably&lt;/li&gt;&lt;/ul&gt;&lt;p&gt;Tools &amp;amp; Infrastructure are part of daily work.&lt;/p&gt;",
+      "pay_input_ranges": [],
+      "application_deadline": null,
+      "language": "en"
+    }
+  ],
+  "meta": {
+    "total": 5
+  }
+}
