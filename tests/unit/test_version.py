@@ -11,7 +11,8 @@ def test_help_exits_zero() -> None:
     assert "boardwatch" in result.stdout
 
 
-def test_version_prints_package_version() -> None:
+def test_version_prints_package_version_and_schema_revision() -> None:
     result = runner.invoke(app, ["version"])
     assert result.exit_code == 0
     assert "boardwatch 0.1.0.dev0" in result.stdout
+    assert "schema" in result.stdout
