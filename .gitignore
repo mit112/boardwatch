@@ -5,6 +5,7 @@ __pycache__/
 coverage.xml
 dist/
 _alembic_dev.db
-.agent/
+.agent/*
+!.agent/ralph.sh
 reasonix.toml
 .reasonix-runs/
