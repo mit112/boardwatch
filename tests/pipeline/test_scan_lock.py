@@ -10,6 +10,7 @@ import time
 from pathlib import Path
 
 import pytest
+from provider_cases import ProviderCase
 from sqlalchemy import Engine, func, select
 from typer.testing import CliRunner
 
@@ -52,7 +53,7 @@ def held_lock(tmp_path: Path) -> object:
 
 
 def test_j_second_scan_rejected_fast_with_zero_db_writes(
-    held_lock: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    held_lock: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, case: ProviderCase
 ) -> None:
     monkeypatch.setenv("BOARDWATCH_CONFIG_DIR", str(tmp_path / "cfg"))
     data_dir = held_lock  # NO database exists yet — rejection must not create one
