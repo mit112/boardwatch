@@ -81,14 +81,16 @@ class GreenhouseProvider:
         )
 
     def healthcheck(self, fetcher: Fetcher, slug: str) -> BoardHealth:
+        from boardwatch.providers.base import health_from_failure
+
         try:
             result = fetcher.get(self._health_url(slug))
         except FetchFailure as exc:
-            return BoardHealth.DEAD if exc.status_code == 404 else BoardHealth.ERROR
+            return health_from_failure(exc)  # D27: transport → UNREACHABLE, 404 → DEAD, else ERROR
         try:
             jobs = json.loads(result.content)["jobs"]
         except (ValueError, KeyError, TypeError):
-            return BoardHealth.ERROR
+            return BoardHealth.ERROR  # 200 body that won't parse is unhealthy, not unreachable
         return BoardHealth.OK if jobs else BoardHealth.EMPTY
 
 
