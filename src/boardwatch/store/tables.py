@@ -49,7 +49,9 @@ companies = Table(
     Column("last_ok_at", DateTime, nullable=True),
     UniqueConstraint("provider", "slug"),
     CheckConstraint("source IN ('registry', 'user')", name="source_enum"),
-    CheckConstraint("last_health IN ('ok', 'empty', 'dead', 'error')", name="last_health_enum"),
+    CheckConstraint(
+        "last_health IN ('ok', 'empty', 'dead', 'error', 'unreachable')", name="last_health_enum"
+    ),
 )
 
 postings = Table(
