@@ -8,4 +8,8 @@ profile with an explainable score, and hands you a shortlist.
 **Status: pre-release, under active development.** No auto-apply, ever.
 No telemetry. Local-first: your data stays in a local SQLite file.
 
+See [docs/configuration.md](docs/configuration.md) for the supported settings keys and ranges.
+
+License: MIT
+
 License: MIT

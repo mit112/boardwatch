@@ -21,10 +21,10 @@ APP_NAME = "boardwatch"
 class RankWeights(BaseModel):
     model_config = ConfigDict(frozen=True)
 
-    skill_coverage: float = 0.50
-    title_match: float = 0.25
-    recency: float = 0.15
-    location_fit: float = 0.10
+    skill_coverage: float = Field(default=0.50, ge=0.0, le=1.0)
+    title_match: float = Field(default=0.25, ge=0.0, le=1.0)
+    recency: float = Field(default=0.15, ge=0.0, le=1.0)
+    location_fit: float = Field(default=0.10, ge=0.0, le=1.0)
 
 
 class Settings(BaseModel):
@@ -32,10 +32,10 @@ class Settings(BaseModel):
 
     data_dir: Path
     config_dir: Path
-    per_host_delay_seconds: float = 1.0  # floor 0.25 enforced by the Fetcher (§3.4)
-    retry_attempts: int = 3
+    per_host_delay_seconds: float = Field(default=1.0, ge=0.25)  # §3.4 floor
+    retry_attempts: int = Field(default=3, ge=1, le=10)          # total attempts; 1 = no retry
     busy_timeout_ms: int = 5000
-    scan_workers: int = 4
+    scan_workers: int = Field(default=4, ge=1, le=8)
     recency_half_life_days: float = 14.0
     location_filter_mode: Literal["soft", "hard"] = "soft"
     weights: RankWeights = Field(default_factory=RankWeights)
