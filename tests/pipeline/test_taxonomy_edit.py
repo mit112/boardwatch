@@ -5,7 +5,7 @@ extractions refresh together; superseded extractions become unreachable."""
 from pathlib import Path
 
 import pytest
-from gh_fixtures import clone_with_id, gh_jobs, set_body, snapshot_for
+from provider_cases import ProviderCase
 from sqlalchemy import Engine, select
 from typer.testing import CliRunner
 
@@ -24,16 +24,16 @@ OVERRIDE_EXTRA = (
 
 def test_k_taxonomy_edit_triggers_preflight_on_next_top(
     tmp_path: Path, engine: Engine, company_id: int, run_id: int,
-    monkeypatch: pytest.MonkeyPatch,
+    monkeypatch: pytest.MonkeyPatch, case: ProviderCase,
 ) -> None:
     cfg = tmp_path / "cfg"
     cfg.mkdir()
     monkeypatch.setenv("BOARDWATCH_CONFIG_DIR", str(cfg))
 
-    jobs = gh_jobs()[:2]
-    zig = set_body(clone_with_id(jobs[0], 111), "<p>We use Zig and Python for tooling.</p>")
-    other = set_body(clone_with_id(jobs[1], 222), "<p>Go services on Kubernetes.</p>")
-    apply_board(engine, snapshot_for([zig, other]), company_id, run_id)
+    jobs = case.jobs()[:2]
+    zig = case.set_body(case.clone_with_id(jobs[0], 111), "We use Zig and Python for tooling.")
+    other = case.set_body(case.clone_with_id(jobs[1], 222), "Go services on Kubernetes.")
+    apply_board(engine, case.snapshot_for([zig, other]), company_id, run_id)
     bundled_version = load_taxonomy(cfg).version
     with engine.begin() as conn:
         save_profile(
