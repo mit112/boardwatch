@@ -19,8 +19,10 @@ from sqlalchemy import Engine, func, select
 from boardwatch.core.models import BoardRequest, BoardSnapshot
 from boardwatch.core.politeness import Fetcher
 from boardwatch.core.settings import Settings
+from boardwatch.providers.ashby import AshbyProvider
 from boardwatch.providers.base import Provider
 from boardwatch.providers.greenhouse import GreenhouseProvider
+from boardwatch.providers.lever import LeverProvider
 from boardwatch.scan.apply import apply_board
 from boardwatch.scan.workers import fetch_board_job
 from boardwatch.store.db import ensure_schema
@@ -56,8 +58,11 @@ class ScanSummary:
 
 
 def default_providers() -> dict[str, Provider]:
-    from boardwatch.providers.lever import LeverProvider
-    return {"greenhouse": GreenhouseProvider(), "lever": LeverProvider()}
+    return {
+        "greenhouse": GreenhouseProvider(),
+        "lever": LeverProvider(),
+        "ashby": AshbyProvider(),
+    }
 
 
 def run_scan(
