@@ -165,3 +165,17 @@ def test_healthcheck_mapping(
     content = _fixture_bytes(fixture) if fixture else b""
     respx.get(HEALTH_URL).mock(return_value=httpx.Response(status_code, content=content))
     assert provider.healthcheck(_fetcher(tmp_path), "acme") == expected
+
+
+@respx.mock
+def test_healthcheck_http_500_maps_to_error(tmp_path: Path) -> None:
+    # an HTTP response WAS received but unhealthy → ERROR (not UNREACHABLE) — D27
+    respx.get(HEALTH_URL).mock(return_value=httpx.Response(500, content=b""))
+    assert provider.healthcheck(_fetcher(tmp_path), "acme") == BoardHealth.ERROR
+
+
+@respx.mock
+def test_healthcheck_transport_failure_maps_to_unreachable(tmp_path: Path) -> None:
+    # no HTTP response (transport-level after retries) → UNREACHABLE — D27
+    respx.get(HEALTH_URL).mock(side_effect=httpx.ConnectError("boom"))
+    assert provider.healthcheck(_fetcher(tmp_path), "acme") == BoardHealth.UNREACHABLE

@@ -56,7 +56,8 @@ class ScanSummary:
 
 
 def default_providers() -> dict[str, Provider]:
-    return {"greenhouse": GreenhouseProvider()}
+    from boardwatch.providers.lever import LeverProvider
+    return {"greenhouse": GreenhouseProvider(), "lever": LeverProvider()}
 
 
 def run_scan(
