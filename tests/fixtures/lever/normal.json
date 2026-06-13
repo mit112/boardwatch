@@ -1,0 +1,113 @@
+[
+  {
+    "id": "a1000000-0000-4000-8000-000000000001",
+    "text": "Senior Software Engineer, Platform",
+    "categories": {
+      "team": "Engineering",
+      "commitment": "Full-time",
+      "location": "San Francisco, CA"
+    },
+    "country": "US",
+    "workplaceType": "unspecified",
+    "createdAt": 1768467600000,
+    "updatedAt": 1780315200000,
+    "hostedUrl": "https://jobs.lever.co/acme/a1000000-0000-4000-8000-000000000001",
+    "applyUrl": "https://jobs.lever.co/acme/a1000000-0000-4000-8000-000000000001/apply",
+    "descriptionPlain": "Build and operate the services that power the Acme platform. You will design backend systems, improve reliability, and collaborate across teams.",
+    "additionalPlain": "Compensation: $185,000 - $225,000 base, plus equity and benefits. Acme Corp is an equal opportunity employer."
+  },
+  {
+    "id": "a1000000-0000-4000-8000-000000000002",
+    "text": "Product Designer",
+    "categories": {
+      "team": "Design",
+      "commitment": "Full-time",
+      "location": "Paris",
+      "allLocations": [
+        "Paris",
+        "London"
+      ]
+    },
+    "country": "US",
+    "workplaceType": "unspecified",
+    "createdAt": 1771583400000,
+    "updatedAt": 1779956100000,
+    "hostedUrl": "https://jobs.lever.co/acme/a1000000-0000-4000-8000-000000000002",
+    "applyUrl": "https://jobs.lever.co/acme/a1000000-0000-4000-8000-000000000002/apply",
+    "descriptionPlain": "Shape the end-to-end experience of Acme products. Partner with engineering and research to ship polished, accessible interfaces.",
+    "additionalPlain": "Acme Corp offers a hybrid working model across our European hubs."
+  },
+  {
+    "id": "a1000000-0000-4000-8000-000000000003",
+    "text": "Staff Backend Engineer",
+    "categories": {
+      "team": "Engineering",
+      "commitment": "Full-time",
+      "location": "Remote - United States"
+    },
+    "country": "US",
+    "workplaceType": "unspecified",
+    "createdAt": 1772719200000,
+    "updatedAt": 1780418700000,
+    "hostedUrl": "https://jobs.lever.co/acme/a1000000-0000-4000-8000-000000000003",
+    "applyUrl": "https://jobs.lever.co/acme/a1000000-0000-4000-8000-000000000003/apply",
+    "descriptionPlain": "Lead the architecture of Acme's data ingestion pipeline. This is a fully remote role open to candidates across the United States.",
+    "additionalPlain": ""
+  },
+  {
+    "id": "a1000000-0000-4000-8000-000000000004",
+    "text": "Account Executive, Mid-Market",
+    "categories": {
+      "team": "Sales",
+      "commitment": "Full-time",
+      "location": "New York, NY"
+    },
+    "country": "US",
+    "workplaceType": "unspecified",
+    "createdAt": 1775041200000,
+    "updatedAt": 1780479000000,
+    "hostedUrl": "https://jobs.lever.co/acme/a1000000-0000-4000-8000-000000000004",
+    "applyUrl": "https://jobs.lever.co/acme/a1000000-0000-4000-8000-000000000004/apply",
+    "descriptionPlain": "Own the full sales cycle for Acme's mid-market segment. Build relationships with prospects and close new business.",
+    "additionalPlain": "On-target earnings: $140,000 - $170,000 (base plus commission). Acme Corp provides full health coverage."
+  },
+  {
+    "id": "a1000000-0000-4000-8000-000000000005",
+    "text": "Data Scientist",
+    "categories": {
+      "team": "Data",
+      "commitment": "Full-time",
+      "location": "Berlin",
+      "allLocations": [
+        "Berlin",
+        "Amsterdam",
+        "Remote - EU"
+      ]
+    },
+    "country": "US",
+    "workplaceType": "unspecified",
+    "createdAt": 1776499200000,
+    "updatedAt": 1780579200000,
+    "hostedUrl": "https://jobs.lever.co/acme/a1000000-0000-4000-8000-000000000005",
+    "applyUrl": "https://jobs.lever.co/acme/a1000000-0000-4000-8000-000000000005/apply",
+    "descriptionPlain": "Apply statistical modeling to product questions at Acme. Work across teams to turn data into decisions.",
+    "additionalPlain": "Acme Corp supports relocation for this role."
+  },
+  {
+    "id": "a1000000-0000-4000-8000-000000000006",
+    "text": "Engineering Manager",
+    "categories": {
+      "team": "Engineering",
+      "commitment": "Full-time",
+      "location": "London"
+    },
+    "country": "US",
+    "workplaceType": "unspecified",
+    "createdAt": 1777735800000,
+    "updatedAt": 1780654200000,
+    "hostedUrl": "https://jobs.lever.co/acme/a1000000-0000-4000-8000-000000000006",
+    "applyUrl": "https://jobs.lever.co/acme/a1000000-0000-4000-8000-000000000006/apply",
+    "descriptionPlain": "Lead a team of engineers building Acme's core product surfaces. Coach, hire, and set technical direction.",
+    "additionalPlain": "This role is based in our London office."
+  }
+]
