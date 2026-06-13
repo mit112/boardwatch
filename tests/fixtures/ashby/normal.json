@@ -1,0 +1,309 @@
+{
+  "apiVersion": 1,
+  "jobs": [
+    {
+      "id": "ashby-0001",
+      "title": "Senior Software Engineer",
+      "department": "Engineering",
+      "team": "Engineering",
+      "location": "San Francisco, CA",
+      "secondaryLocations": [],
+      "publishedAt": "2026-01-15T09:00:00.000+00:00",
+      "isRemote": false,
+      "employmentType": "FullTime",
+      "isListed": true,
+      "jobUrl": "https://jobs.ashbyhq.com/acme/ashby-0001",
+      "applyUrl": "https://jobs.ashbyhq.com/acme/ashby-0001/application",
+      "descriptionHtml": "<div><h2>About the role</h2><p>Help build the Acme platform. You will design systems, improve reliability, and collaborate across teams.</p><ul><li>Ship features</li><li>Own quality</li></ul></div>",
+      "descriptionPlain": "",
+      "compensation": {
+        "compensationTierSummary": "Compensation",
+        "scrapeableCompensationSalarySummary": null,
+        "compensationTiers": [
+          {
+            "id": "t-1",
+            "tierSummary": "Compensation",
+            "title": null,
+            "additionalInformation": null,
+            "components": [
+              {
+                "id": "c-sal",
+                "summary": "Salary range",
+                "compensationType": "Salary",
+                "interval": "1 YEAR",
+                "currencyCode": "USD",
+                "minValue": 180000,
+                "maxValue": 220000
+              }
+            ]
+          }
+        ],
+        "summaryComponents": [
+          {
+            "compensationType": "Salary",
+            "interval": "1 YEAR",
+            "currencyCode": "USD",
+            "minValue": 180000,
+            "maxValue": 220000
+          }
+        ]
+      }
+    },
+    {
+      "id": "ashby-0002",
+      "title": "Staff Product Manager",
+      "department": "Product",
+      "team": "Product",
+      "location": "New York, NY",
+      "secondaryLocations": [
+        {
+          "location": "Boston, MA"
+        }
+      ],
+      "publishedAt": "2026-02-10T10:00:00.000+00:00",
+      "isRemote": false,
+      "employmentType": "FullTime",
+      "isListed": true,
+      "jobUrl": "https://jobs.ashbyhq.com/acme/ashby-0002",
+      "applyUrl": "https://jobs.ashbyhq.com/acme/ashby-0002/application",
+      "descriptionHtml": "<div><h2>About the role</h2><p>Help build the Acme platform. You will design systems, improve reliability, and collaborate across teams.</p><ul><li>Ship features</li><li>Own quality</li></ul></div>",
+      "descriptionPlain": "",
+      "compensation": {
+        "compensationTierSummary": "From $200K",
+        "scrapeableCompensationSalarySummary": null,
+        "compensationTiers": [
+          {
+            "id": "t-2",
+            "tierSummary": "From $200K",
+            "title": null,
+            "additionalInformation": null,
+            "components": [
+              {
+                "id": "c-sal",
+                "summary": "Salary range",
+                "compensationType": "Salary",
+                "interval": "1 YEAR",
+                "currencyCode": "USD",
+                "minValue": 200000,
+                "maxValue": null
+              }
+            ]
+          }
+        ],
+        "summaryComponents": [
+          {
+            "compensationType": "Salary",
+            "interval": "1 YEAR",
+            "currencyCode": "USD",
+            "minValue": 200000,
+            "maxValue": null
+          }
+        ]
+      }
+    },
+    {
+      "id": "ashby-0003",
+      "title": "Engineering Manager",
+      "department": "Engineering",
+      "team": "Engineering",
+      "location": "Remote - United States",
+      "secondaryLocations": [],
+      "publishedAt": "2026-03-01T11:30:00.000+00:00",
+      "isRemote": true,
+      "employmentType": "FullTime",
+      "isListed": true,
+      "jobUrl": "https://jobs.ashbyhq.com/acme/ashby-0003",
+      "applyUrl": "https://jobs.ashbyhq.com/acme/ashby-0003/application",
+      "descriptionHtml": "<div><h2>About the role</h2><p>Help build the Acme platform. You will design systems, improve reliability, and collaborate across teams.</p><ul><li>Ship features</li><li>Own quality</li></ul></div>",
+      "descriptionPlain": "",
+      "compensation": {
+        "compensationTierSummary": "US tier",
+        "scrapeableCompensationSalarySummary": null,
+        "compensationTiers": [
+          {
+            "id": "t-3a",
+            "tierSummary": "US tier",
+            "title": null,
+            "additionalInformation": null,
+            "components": [
+              {
+                "id": "c-sal",
+                "summary": "Salary range",
+                "compensationType": "Salary",
+                "interval": "1 YEAR",
+                "currencyCode": "USD",
+                "minValue": 210000,
+                "maxValue": 260000
+              }
+            ]
+          },
+          {
+            "id": "t-3b",
+            "tierSummary": "EU tier",
+            "title": null,
+            "additionalInformation": null,
+            "components": [
+              {
+                "id": "c-sal",
+                "summary": "Salary range",
+                "compensationType": "Salary",
+                "interval": "1 YEAR",
+                "currencyCode": "USD",
+                "minValue": 180000,
+                "maxValue": 230000
+              }
+            ]
+          }
+        ],
+        "summaryComponents": [
+          {
+            "compensationType": "Salary",
+            "interval": "1 YEAR",
+            "currencyCode": "USD",
+            "minValue": 210000,
+            "maxValue": 260000
+          },
+          {
+            "compensationType": "Salary",
+            "interval": "1 YEAR",
+            "currencyCode": "USD",
+            "minValue": 180000,
+            "maxValue": 230000
+          }
+        ]
+      }
+    },
+    {
+      "id": "ashby-0004",
+      "title": "Product Designer",
+      "department": "Design",
+      "team": "Design",
+      "location": "London, United Kingdom",
+      "secondaryLocations": [],
+      "publishedAt": "2026-04-05T08:45:00.000+00:00",
+      "isRemote": false,
+      "employmentType": "FullTime",
+      "isListed": true,
+      "jobUrl": "https://jobs.ashbyhq.com/acme/ashby-0004",
+      "applyUrl": "https://jobs.ashbyhq.com/acme/ashby-0004/application",
+      "descriptionHtml": "<div><h2>About the role</h2><p>Help build the Acme platform. You will design systems, improve reliability, and collaborate across teams.</p><ul><li>Ship features</li><li>Own quality</li></ul></div>",
+      "descriptionPlain": ""
+    },
+    {
+      "id": "ashby-0005",
+      "title": "Data Scientist",
+      "department": "Data",
+      "team": "Data",
+      "location": "Berlin, Germany",
+      "secondaryLocations": [
+        {
+          "location": "Amsterdam, Netherlands"
+        }
+      ],
+      "publishedAt": "2026-04-20T14:00:00.000+00:00",
+      "isRemote": false,
+      "employmentType": "FullTime",
+      "isListed": true,
+      "jobUrl": "https://jobs.ashbyhq.com/acme/ashby-0005",
+      "applyUrl": "https://jobs.ashbyhq.com/acme/ashby-0005/application",
+      "descriptionHtml": "<div><h2>About the role</h2><p>Help build the Acme platform. You will design systems, improve reliability, and collaborate across teams.</p><ul><li>Ship features</li><li>Own quality</li></ul></div>",
+      "descriptionPlain": "",
+      "compensation": {
+        "compensationTierSummary": "Salary + Equity",
+        "scrapeableCompensationSalarySummary": null,
+        "compensationTiers": [
+          {
+            "id": "t-5",
+            "tierSummary": "Salary + Equity",
+            "title": null,
+            "additionalInformation": null,
+            "components": [
+              {
+                "id": "c-sal",
+                "summary": "Salary range",
+                "compensationType": "Salary",
+                "interval": "1 YEAR",
+                "currencyCode": "USD",
+                "minValue": 150000,
+                "maxValue": 190000
+              },
+              {
+                "id": "c-eq",
+                "summary": "Offers Equity",
+                "compensationType": "EquityPercentage",
+                "interval": "NONE",
+                "currencyCode": null,
+                "minValue": null,
+                "maxValue": null
+              }
+            ]
+          }
+        ],
+        "summaryComponents": [
+          {
+            "compensationType": "Salary",
+            "interval": "1 YEAR",
+            "currencyCode": "USD",
+            "minValue": 150000,
+            "maxValue": 190000
+          },
+          {
+            "compensationType": "EquityPercentage",
+            "interval": "NONE",
+            "currencyCode": null,
+            "minValue": null,
+            "maxValue": null
+          }
+        ]
+      }
+    },
+    {
+      "id": "ashby-0006",
+      "title": "Account Executive",
+      "department": "Sales",
+      "team": "Sales",
+      "location": "Austin, TX",
+      "secondaryLocations": [],
+      "publishedAt": "2026-05-02T15:30:00.000+00:00",
+      "isRemote": false,
+      "employmentType": "FullTime",
+      "isListed": true,
+      "jobUrl": "https://jobs.ashbyhq.com/acme/ashby-0006",
+      "applyUrl": "https://jobs.ashbyhq.com/acme/ashby-0006/application",
+      "descriptionHtml": "<div><h2>About the role</h2><p>Help build the Acme platform. You will design systems, improve reliability, and collaborate across teams.</p><ul><li>Ship features</li><li>Own quality</li></ul></div>",
+      "descriptionPlain": "",
+      "compensation": {
+        "compensationTierSummary": "Monthly",
+        "scrapeableCompensationSalarySummary": null,
+        "compensationTiers": [
+          {
+            "id": "t-6",
+            "tierSummary": "Monthly",
+            "title": null,
+            "additionalInformation": null,
+            "components": [
+              {
+                "id": "c-sal",
+                "summary": "Salary range",
+                "compensationType": "Salary",
+                "interval": "1 MONTH",
+                "currencyCode": "USD",
+                "minValue": 12000,
+                "maxValue": 15000
+              }
+            ]
+          }
+        ],
+        "summaryComponents": [
+          {
+            "compensationType": "Salary",
+            "interval": "1 MONTH",
+            "currencyCode": "USD",
+            "minValue": 12000,
+            "maxValue": 15000
+          }
+        ]
+      }
+    }
+  ]
+}
