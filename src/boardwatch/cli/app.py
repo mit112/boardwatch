@@ -6,6 +6,7 @@ from pathlib import Path
 import typer
 from rich.console import Console
 
+from boardwatch.cli.config_cmd import config_app
 from boardwatch.cli.init_cmd import init as _init
 from boardwatch.cli.profile_cmd import profile_app
 from boardwatch.cli.scan_cmd import scan as _scan
@@ -40,3 +41,4 @@ app.command("init")(_init)
 app.add_typer(profile_app, name="profile")
 app.command("top")(_top)
 app.command("show")(_show)
+app.add_typer(config_app, name="config")

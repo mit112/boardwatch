@@ -70,6 +70,10 @@ class Fetcher:
     def effective_delay(self) -> float:
         return self._delay
 
+    @property
+    def retry_attempts(self) -> int:
+        return self._retry_attempts
+
     def get(self, url: str, validators: ResponseValidators | None = None) -> FetchResult:
         host = httpx.URL(url).host or ""
         with self._host_lock(host):  # same-host requests serialize for their full duration

@@ -1,8 +1,9 @@
 from pathlib import Path
 
 import pytest
+from pydantic import ValidationError
 
-from boardwatch.core.settings import load_settings
+from boardwatch.core.settings import Settings, load_settings
 
 
 def test_defaults_load_without_config_file(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -53,3 +54,51 @@ def test_settings_are_frozen(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) ->
     settings = load_settings()
     with pytest.raises(ValidationError):
         settings.retry_attempts = 99  # type: ignore[misc]
+
+
+@pytest.mark.parametrize(
+    ("field", "bad"),
+    [
+        ("per_host_delay_seconds", 0.1),   # below 0.25 floor
+        ("retry_attempts", 0), ("retry_attempts", 11),
+        ("scan_workers", 0), ("scan_workers", 9),
+    ],
+)
+def test_out_of_range_settings_are_rejected(tmp_path, field, bad) -> None:
+    with pytest.raises(ValidationError) as exc:
+        Settings(data_dir=tmp_path, config_dir=tmp_path, **{field: bad})
+    assert field in str(exc.value)
+
+
+@pytest.mark.parametrize(
+    "key", ["skill_coverage", "title_match", "recency", "location_fit"]
+)
+@pytest.mark.parametrize("weight", [-0.1, 1.1])
+def test_every_weight_key_constrained_to_unit_interval(tmp_path, key, weight) -> None:
+    from boardwatch.core.settings import RankWeights
+    with pytest.raises(ValidationError):
+        Settings(
+            data_dir=tmp_path, config_dir=tmp_path, weights=RankWeights(**{key: weight})
+        )
+
+
+@pytest.mark.parametrize(
+    ("toml_line", "key"),
+    [
+        ("per_host_delay_seconds = 0.1", "per_host_delay_seconds"),  # below floor
+        ("retry_attempts = 0", "retry_attempts"),
+        ("retry_attempts = 11", "retry_attempts"),
+        ("scan_workers = 0", "scan_workers"),
+        ("scan_workers = 9", "scan_workers"),
+        ("[weights]\nskill_coverage = -0.1", "skill_coverage"),
+        ("[weights]\nskill_coverage = 1.1", "skill_coverage"),
+    ],
+)
+def test_hand_edited_out_of_range_toml_fails_at_load(tmp_path, monkeypatch, toml_line, key) -> None:
+    # every bounded key, at both bounds, loaded from a hand-edited config.toml (round 3 finding 3)
+    monkeypatch.setenv("BOARDWATCH_CONFIG_DIR", str(tmp_path))
+    (tmp_path / "config.toml").write_text(toml_line + "\n", encoding="utf-8")
+    from boardwatch.core.settings import load_settings
+    with pytest.raises(ValidationError) as exc:
+        load_settings(data_dir=tmp_path)
+    assert key in str(exc.value)  # the error names the offending key
