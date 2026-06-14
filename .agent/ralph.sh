@@ -9,7 +9,7 @@ MAX_ITERS="${MAX_ITERS:-6}"
 MAX_STEPS="${MAX_STEPS:-40}"
 BUDGET="${BUDGET:-10}"              # configured-cost units from --metrics JSON.
                                     # Reasonix DeepSeek presets report CNY (confirmed
-                                    # on hookrail) — re-verify after iteration 1.
+                                    # on a prior run) — re-verify after iteration 1.
 ITER_TIMEOUT="${ITER_TIMEOUT:-45m}" # wall-clock cap per iteration
 RUN_DIR=".reasonix-runs/$(date +%Y%m%d-%H%M%S)"
 mkdir -p "$RUN_DIR"
