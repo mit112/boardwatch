@@ -11,6 +11,7 @@ from boardwatch.store.db import get_engine
 runner = CliRunner()
 
 INIT_INPUT = (
+    "3\n"  # path choice → paste
     "acme, globex\n"  # slugs
     "Backend engineer: Python, Go, PostgreSQL, Kubernetes.\n"  # profile text
     "Backend Engineer, Software Engineer\n"  # target titles
