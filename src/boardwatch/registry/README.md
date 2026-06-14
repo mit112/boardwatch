@@ -57,3 +57,15 @@ correction:
 
 See [CONTRIBUTING.md](../../../CONTRIBUTING.md) for the general contribution
 workflow.
+
+## Maintenance loop
+
+A scheduled GitHub Actions workflow (`registry-health.yml`) runs every Monday
+at 07:00 UTC and probes every catalog entry with politeness defaults.  The
+run produces a per-entry Markdown summary table.  Any entry that returns
+**dead**, **error**, or **unreachable** fails the workflow — drift is visible
+in the Actions log.
+
+DEAD entries trigger a removal PR per the §6.5 triage rule (a single board
+that has been dead across two consecutive weekly runs is removed from the
+catalog).
