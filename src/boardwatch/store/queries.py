@@ -7,14 +7,15 @@ Run counts are derived conveniences; posting_events is the source of truth (§4)
 
 from __future__ import annotations
 
+from datetime import datetime
 from typing import Any
 
-from sqlalchemy import Connection, Engine, Row, insert, select, update
+from sqlalchemy import Connection, Engine, Row, func, insert, select, update
 from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 
 from boardwatch.core.clock import utcnow
 from boardwatch.core.models import ResponseValidators
-from boardwatch.store.tables import companies, http_cache, profile, runs
+from boardwatch.store.tables import board_scans, companies, http_cache, profile, runs
 
 
 def insert_run(engine: Engine) -> int:
@@ -149,3 +150,13 @@ def save_profile(
             },
         )
     )
+
+
+def last_complete_scan_ages(conn: Connection) -> dict[int, datetime]:
+    """company_id → finished_at of its most recent complete-or-unchanged board_scan."""
+    stmt = (
+        select(board_scans.c.company_id, func.max(board_scans.c.finished_at))
+        .where(board_scans.c.status.in_(("complete", "unchanged")))
+        .group_by(board_scans.c.company_id)
+    )
+    return {row[0]: row[1] for row in conn.execute(stmt).all()}
