@@ -72,15 +72,39 @@ def get_watched_companies(
     return list(conn.execute(stmt).all())
 
 
-def upsert_watched_company(conn: Connection, *, provider: str, slug: str, name: str) -> None:
+def upsert_watch(conn: Connection, *, provider: str, slug: str, name: str, source: str) -> None:
     stmt = sqlite_insert(companies).values(
-        name=name, provider=provider, slug=slug, source="user", watched=True
+        name=name, provider=provider, slug=slug, source=source, watched=True
     )
     conn.execute(
         stmt.on_conflict_do_update(
-            index_elements=[companies.c.provider, companies.c.slug],
-            set_={"watched": True},
+            index_elements=[companies.c.provider, companies.c.slug], set_={"watched": True}
         )
+    )
+
+
+# keep the P0 signature working — it is now a thin wrapper (no caller churn)
+def upsert_watched_company(conn: Connection, *, provider: str, slug: str, name: str) -> None:
+    upsert_watch(conn, provider=provider, slug=slug, name=name, source="user")
+
+
+def unwatch(conn: Connection, *, provider: str, slug: str) -> int:
+    result = conn.execute(
+        update(companies)
+        .where(companies.c.provider == provider, companies.c.slug == slug)
+        .values(watched=False)
+    )
+    return int(result.rowcount)
+
+
+def list_watches(conn: Connection) -> list[Row[Any]]:
+    return list(
+        conn.execute(
+            select(
+                companies.c.provider, companies.c.slug, companies.c.source,
+                companies.c.watched, companies.c.last_health, companies.c.last_ok_at,
+            ).where(companies.c.watched.is_(True)).order_by(companies.c.provider, companies.c.slug)
+        ).all()
     )
 
 
