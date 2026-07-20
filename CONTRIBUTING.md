@@ -6,3 +6,6 @@ be green before every PR; CI runs the same commands on 3.11–3.13 ×
 ubuntu/macos/windows plus gitleaks.
 
 All changes land via PR — `main` is branch-protected. One issue per PR.
+
+The bundled registry catalog (company boards) has its own bar — see
+[`src/boardwatch/registry/README.md`](src/boardwatch/registry/README.md).

@@ -20,6 +20,7 @@ from boardwatch.store.db import get_engine
 runner = CliRunner()
 
 INIT_INPUT = (
+    "3\n"  # path choice → paste
     "acme\n"
     "Backend engineer: Python, Go, PostgreSQL, Kubernetes, AWS.\n"
     "Backend Engineer\n"

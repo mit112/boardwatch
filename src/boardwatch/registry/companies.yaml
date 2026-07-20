@@ -1,0 +1,153 @@
+# Boardwatch seed registry — names/providers/slugs only (no health, no PII; see §6.6).
+#
+# PROVISIONAL (2026-06-13): all 35 boards live-verified OK in M4 check 1
+# (docs/registry/seed-verification.md, HTTP 200 + >=1 posting). The `starter`
+# tags below are PROVISIONAL — the ~15 most-recognizable names across all three
+# providers. M4 CHECK 2 (>=2026-06-20) finalizes them: re-verify each board is
+# still OK (the second dated check >=7 days apart), confirm the starter set's cold
+# scan->extract->rank workload <=480 s on the slowest CI OS, and Mit's
+# recognizability sign-off. Boards that fail re-verification get dropped then.
+companies:
+  # --- greenhouse (18) ---
+  - name: Stripe
+    provider: greenhouse
+    slug: stripe
+    tags: [starter]
+  - name: Airbnb
+    provider: greenhouse
+    slug: airbnb
+    tags: [starter]
+  - name: Databricks
+    provider: greenhouse
+    slug: databricks
+    tags: []
+  - name: Coinbase
+    provider: greenhouse
+    slug: coinbase
+    tags: [starter]
+  - name: Robinhood
+    provider: greenhouse
+    slug: robinhood
+    tags: []
+  - name: Dropbox
+    provider: greenhouse
+    slug: dropbox
+    tags: [starter]
+  - name: GitLab
+    provider: greenhouse
+    slug: gitlab
+    tags: []
+  - name: Reddit
+    provider: greenhouse
+    slug: reddit
+    tags: []
+  - name: Discord
+    provider: greenhouse
+    slug: discord
+    tags: []
+  - name: Instacart
+    provider: greenhouse
+    slug: instacart
+    tags: []
+  - name: Twitch
+    provider: greenhouse
+    slug: twitch
+    tags: []
+  - name: Lyft
+    provider: greenhouse
+    slug: lyft
+    tags: []
+  - name: Pinterest
+    provider: greenhouse
+    slug: pinterest
+    tags: []
+  - name: Brex
+    provider: greenhouse
+    slug: brex
+    tags: []
+  - name: Cloudflare
+    provider: greenhouse
+    slug: cloudflare
+    tags: [starter]
+  - name: Figma
+    provider: greenhouse
+    slug: figma
+    tags: [starter]
+  - name: Asana
+    provider: greenhouse
+    slug: asana
+    tags: []
+  - name: Datadog
+    provider: greenhouse
+    slug: datadog
+    tags: []
+  # --- lever (5) ---
+  - name: Mistral AI
+    provider: lever
+    slug: mistral
+    tags: [starter]
+  - name: Palantir
+    provider: lever
+    slug: palantir
+    tags: [starter]
+  - name: Spotify
+    provider: lever
+    slug: spotify
+    tags: [starter]
+  - name: Shield AI
+    provider: lever
+    slug: shieldai
+    tags: []
+  - name: Ro
+    provider: lever
+    slug: ro
+    tags: []
+  # --- ashby (12) ---
+  - name: Ramp
+    provider: ashby
+    slug: ramp
+    tags: [starter]
+  - name: Linear
+    provider: ashby
+    slug: linear
+    tags: [starter]
+  - name: Vanta
+    provider: ashby
+    slug: vanta
+    tags: [starter]
+  - name: PostHog
+    provider: ashby
+    slug: posthog
+    tags: [starter]
+  - name: Mintlify
+    provider: ashby
+    slug: mintlify
+    tags: []
+  - name: Baseten
+    provider: ashby
+    slug: baseten
+    tags: []
+  - name: Modal
+    provider: ashby
+    slug: modal
+    tags: []
+  - name: Supabase
+    provider: ashby
+    slug: supabase
+    tags: [starter]
+  - name: Neon
+    provider: ashby
+    slug: neon
+    tags: []
+  - name: Browserbase
+    provider: ashby
+    slug: browserbase
+    tags: []
+  - name: Render
+    provider: ashby
+    slug: render
+    tags: []
+  - name: OpenAI
+    provider: ashby
+    slug: openai
+    tags: [starter]

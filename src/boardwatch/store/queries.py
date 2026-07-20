@@ -7,14 +7,15 @@ Run counts are derived conveniences; posting_events is the source of truth (§4)
 
 from __future__ import annotations
 
+from datetime import datetime
 from typing import Any
 
-from sqlalchemy import Connection, Engine, Row, insert, select, update
+from sqlalchemy import Connection, Engine, Row, func, insert, select, update
 from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 
 from boardwatch.core.clock import utcnow
 from boardwatch.core.models import ResponseValidators
-from boardwatch.store.tables import companies, http_cache, profile, runs
+from boardwatch.store.tables import board_scans, companies, http_cache, profile, runs
 
 
 def insert_run(engine: Engine) -> int:
@@ -72,15 +73,39 @@ def get_watched_companies(
     return list(conn.execute(stmt).all())
 
 
-def upsert_watched_company(conn: Connection, *, provider: str, slug: str, name: str) -> None:
+def upsert_watch(conn: Connection, *, provider: str, slug: str, name: str, source: str) -> None:
     stmt = sqlite_insert(companies).values(
-        name=name, provider=provider, slug=slug, source="user", watched=True
+        name=name, provider=provider, slug=slug, source=source, watched=True
     )
     conn.execute(
         stmt.on_conflict_do_update(
-            index_elements=[companies.c.provider, companies.c.slug],
-            set_={"watched": True},
+            index_elements=[companies.c.provider, companies.c.slug], set_={"watched": True}
         )
+    )
+
+
+# keep the P0 signature working — it is now a thin wrapper (no caller churn)
+def upsert_watched_company(conn: Connection, *, provider: str, slug: str, name: str) -> None:
+    upsert_watch(conn, provider=provider, slug=slug, name=name, source="user")
+
+
+def unwatch(conn: Connection, *, provider: str, slug: str) -> int:
+    result = conn.execute(
+        update(companies)
+        .where(companies.c.provider == provider, companies.c.slug == slug)
+        .values(watched=False)
+    )
+    return int(result.rowcount)
+
+
+def list_watches(conn: Connection) -> list[Row[Any]]:
+    return list(
+        conn.execute(
+            select(
+                companies.c.provider, companies.c.slug, companies.c.source,
+                companies.c.watched, companies.c.last_health, companies.c.last_ok_at,
+            ).where(companies.c.watched.is_(True)).order_by(companies.c.provider, companies.c.slug)
+        ).all()
     )
 
 
@@ -125,3 +150,13 @@ def save_profile(
             },
         )
     )
+
+
+def last_complete_scan_ages(conn: Connection) -> dict[int, datetime]:
+    """company_id → finished_at of its most recent complete-or-unchanged board_scan."""
+    stmt = (
+        select(board_scans.c.company_id, func.max(board_scans.c.finished_at))
+        .where(board_scans.c.status.in_(("complete", "unchanged")))
+        .group_by(board_scans.c.company_id)
+    )
+    return {row[0]: row[1] for row in conn.execute(stmt).all()}
