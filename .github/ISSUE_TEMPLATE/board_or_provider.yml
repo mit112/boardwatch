@@ -1,0 +1,33 @@
+name: Board / provider request
+description: Ask for a company in the registry, or support for a new ATS
+labels: ["registry"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        You can already watch **any** Greenhouse / Lever / Ashby board today with
+        `boardwatch companies add <url>` — no issue needed. Use this for adding a
+        company to the **bundled registry** or requesting a **new ATS provider**.
+  - type: dropdown
+    id: kind
+    attributes:
+      label: Request type
+      options:
+        - Add a company to the bundled registry
+        - Support a new ATS provider
+    validations:
+      required: true
+  - type: input
+    id: board-url
+    attributes:
+      label: Public board URL (if adding a company)
+      placeholder: https://boards.greenhouse.io/acme
+  - type: input
+    id: provider
+    attributes:
+      label: ATS provider (if requesting new support)
+      placeholder: e.g. Workday, SmartRecruiters
+  - type: textarea
+    id: notes
+    attributes:
+      label: Anything else?
