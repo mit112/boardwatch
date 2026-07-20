@@ -9,3 +9,4 @@ _alembic_dev.db
 !.agent/ralph.sh
 reasonix.toml
 .reasonix-runs/
+.DS_Store
