@@ -1,0 +1,95 @@
+name: release
+
+# Cut a release by pushing a tag: `git tag v0.1.0 && git push origin v0.1.0`.
+# One-time setup on PyPI: add a Trusted Publisher for this repo + the `release`
+# workflow + the `pypi` environment (https://docs.pypi.org/trusted-publishers/).
+# No API token is stored anywhere.
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: build + smoke test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          python-version: "3.12"
+      - run: uv sync --frozen
+      - run: uv run pytest -q            # never publish a red build
+      - run: uv build                    # sdist + wheel into dist/
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dist
+          path: dist/
+
+  pypi:
+    name: publish to PyPI
+    needs: build
+    runs-on: ubuntu-latest
+    environment: pypi
+    permissions:
+      id-token: write                    # Trusted Publishing (OIDC) — tokenless
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: dist
+          path: dist/
+      - uses: pypa/gh-action-pypi-publish@release/v1
+
+  github-release:
+    name: github release
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: dist
+          path: dist/
+      # Notes are intentionally NOT auto-generated: GitHub credits commit
+      # co-authors, and release notes must stay attribution-free. Write them
+      # by hand on the release, or via a curated CHANGELOG.
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: dist/*
+          generate_release_notes: false
+          body: |
+            Install: `pipx install boardwatch` · `docker run ghcr.io/mit112/boardwatch:latest`
+            See the README for the quickstart.
+
+  docker:
+    name: build + push image (GHCR)
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - uses: docker/metadata-action@v5
+        id: meta
+        with:
+          images: ghcr.io/${{ github.repository }}
+          tags: |
+            type=semver,pattern={{version}}
+            type=raw,value=latest
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
