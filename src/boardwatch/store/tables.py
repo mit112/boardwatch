@@ -80,13 +80,24 @@ postings = Table(
     Column("salary_max", Numeric, nullable=True),
     Column("salary_currency", Text, nullable=True),
     Column("salary_period", Text, nullable=True),
+    # Canonical-job annotation link (D28). Real FK; NOT-NULL enforced by trigger
+    # (SQLite ALTER cannot add a NOT NULL column without a rebuild).
+    Column("job_id", Integer, ForeignKey("jobs.id"), nullable=True),
     UniqueConstraint("company_id", "provider_posting_id"),
     Index("ix_postings_status_posted_at", "status", "posted_at"),
     Index("ix_postings_content_hash", "content_hash"),
+    Index("ix_postings_job_id", "job_id"),
     CheckConstraint(
         "remote_policy IN ('remote', 'hybrid', 'onsite', 'unknown')", name="remote_policy_enum"
     ),
     CheckConstraint("status IN ('open', 'closed')", name="status_enum"),
+)
+
+jobs = Table(
+    "jobs",
+    metadata,
+    Column("id", Integer, primary_key=True),
+    Column("created_at", DateTime, nullable=False),
 )
 
 board_scans = Table(

@@ -28,9 +28,15 @@ def _seed_company(engine: Engine) -> int:
 
 def _seed_posting(engine: Engine, company_id: int) -> int:
     with engine.begin() as conn:
+        job_id = int(
+            conn.execute(
+                insert(tables.jobs).values(created_at=datetime(2026, 1, 1))
+            ).inserted_primary_key[0]
+        )
         result = conn.execute(
             insert(tables.postings).values(
                 company_id=company_id,
+                job_id=job_id,
                 provider_posting_id="1",
                 title="Engineer",
                 normalized_title="engineer",
@@ -172,9 +178,15 @@ def test_posting_events_id_is_monotonic_autoincrement(engine: Engine) -> None:
 
     def _make(pid: str) -> int:
         with engine.begin() as conn:
+            job_id = int(
+                conn.execute(
+                    insert(tables.jobs).values(created_at=datetime(2026, 1, 1))
+                ).inserted_primary_key[0]
+            )
             r = conn.execute(
                 insert(tables.postings).values(
                     company_id=cid,
+                    job_id=job_id,
                     provider_posting_id=pid,
                     title="t",
                     normalized_title="t",

@@ -117,10 +117,15 @@ def test_write_extraction_is_idempotent(tmp_path: Path) -> None:
         )
         from datetime import datetime
 
+        job_id = int(
+            conn.execute(
+                insert(tables.jobs).values(created_at=datetime(2026, 1, 1))
+            ).inserted_primary_key[0]
+        )
         posting_id = int(
             conn.execute(
                 insert(tables.postings).values(
-                    company_id=company_id, provider_posting_id="1", title="SWE",
+                    company_id=company_id, job_id=job_id, provider_posting_id="1", title="SWE",
                     normalized_title="swe", first_seen_at=datetime(2026, 1, 1),
                     last_seen_at=datetime(2026, 1, 1), status="open",
                     consecutive_missing=0, content_hash="h1",

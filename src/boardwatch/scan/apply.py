@@ -31,7 +31,7 @@ from boardwatch.core.clock import utcnow
 from boardwatch.core.models import BoardSnapshot, RawPosting
 from boardwatch.core.normalize import content_hash, normalize_title
 from boardwatch.store.events import append_event
-from boardwatch.store.tables import board_scans, http_cache, postings
+from boardwatch.store.tables import board_scans, http_cache, jobs, postings
 
 CLOSE_AFTER_MISSES = 2  # not configurable (plan Conventions)
 
@@ -84,9 +84,11 @@ def _apply_listed(
         new_hash = content_hash(raw.body_text)
         row = existing.get(raw.provider_posting_id)
         if row is None:
+            job_id = int(conn.execute(insert(jobs).values(created_at=now)).inserted_primary_key[0])  # type: ignore[index]
             inserted = conn.execute(
                 insert(postings).values(
                     company_id=company_id,
+                    job_id=job_id,
                     provider_posting_id=raw.provider_posting_id,
                     first_seen_at=now,
                     status="open",

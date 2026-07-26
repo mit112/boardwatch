@@ -46,10 +46,16 @@ def _seed_company(engine: Engine) -> int:
 
 def _seed_posting(engine: Engine, company_id: int, pid: str, body: str, status: str = "open") -> int:
     with engine.begin() as conn:
+        job_id = int(
+            conn.execute(
+                insert(tables.jobs).values(created_at=datetime(2026, 1, 1))
+            ).inserted_primary_key[0]
+        )
         return int(
             conn.execute(
                 insert(tables.postings).values(
-                    company_id=company_id, provider_posting_id=pid, title=f"SWE {pid}",
+                    company_id=company_id, job_id=job_id, provider_posting_id=pid,
+                    title=f"SWE {pid}",
                     normalized_title=f"swe {pid}", first_seen_at=datetime(2026, 1, 1),
                     last_seen_at=datetime(2026, 1, 1), status=status,
                     closed_at=datetime(2026, 2, 1) if status == "closed" else None,

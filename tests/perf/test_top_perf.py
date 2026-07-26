@@ -46,14 +46,17 @@ def test_top_path_median_under_one_second(tmp_path: Path) -> None:
                 )
             ).inserted_primary_key[0]
         )
+        job_rows = []
         posting_rows = []
         extraction_rows = []
         for i in range(10_000):
             body = f"{BODY_TEMPLATES[i % 4]} Posting {i}."
             body_hash = content_hash(body)
+            job_rows.append({"id": i + 1, "created_at": now})
             posting_rows.append(
                 {
-                    "id": i + 1, "company_id": company_id, "provider_posting_id": str(i),
+                    "id": i + 1, "company_id": company_id, "job_id": i + 1,
+                    "provider_posting_id": str(i),
                     "title": "Backend Engineer" if i % 3 else "Platform Engineer",
                     "normalized_title": "backend engineer", "url": f"https://x.example/{i}",
                     "locations_json": ["Remote — US"], "remote_policy": "remote",
@@ -70,6 +73,7 @@ def test_top_path_median_under_one_second(tmp_path: Path) -> None:
                     "json": {"skills": hits, "categories": {}}, "created_at": now,
                 }
             )
+        conn.execute(insert(tables.jobs), job_rows)
         conn.execute(insert(tables.postings), posting_rows)
         conn.execute(insert(tables.extractions), extraction_rows)
         conn.execute(
