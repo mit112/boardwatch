@@ -57,4 +57,5 @@ def test_job_grouping_round_trip(tmp_path: Path) -> None:
     assert "job_grouping_events" not in names
     assert "job_grouping_events_no_update" not in names
     assert "job_grouping_events_no_delete" not in names
+    assert "ix_job_grouping_events_posting_id" not in names
     assert fk == []
