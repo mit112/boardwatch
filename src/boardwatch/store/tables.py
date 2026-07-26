@@ -100,6 +100,21 @@ jobs = Table(
     Column("created_at", DateTime, nullable=False),
 )
 
+job_grouping_events = Table(
+    "job_grouping_events",
+    metadata,
+    Column("id", Integer, primary_key=True, autoincrement=True),
+    Column("posting_id", Integer, ForeignKey("postings.id"), nullable=False),
+    Column("from_job_id", Integer, ForeignKey("jobs.id"), nullable=True),
+    Column("to_job_id", Integer, ForeignKey("jobs.id"), nullable=False),
+    Column("method", Text, nullable=False),
+    Column("algorithm_version", Text, nullable=True),
+    Column("evidence_json", JSON, nullable=True),
+    Column("created_at", DateTime, nullable=False),
+    Index("ix_job_grouping_events_posting_id", "posting_id", "id"),
+    sqlite_autoincrement=True,
+)
+
 board_scans = Table(
     "board_scans",
     metadata,
