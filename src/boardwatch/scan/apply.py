@@ -31,6 +31,7 @@ from boardwatch.core.clock import utcnow
 from boardwatch.core.models import BoardSnapshot, RawPosting
 from boardwatch.core.normalize import content_hash, normalize_title
 from boardwatch.store.events import append_event
+from boardwatch.store.sources import record_version_source
 from boardwatch.store.tables import board_scans, http_cache, jobs, posting_versions, postings
 
 CLOSE_AFTER_MISSES = 2  # not configurable (plan Conventions)
@@ -57,7 +58,7 @@ def apply_board(
         if snapshot.status == "unchanged":
             _scan_row(conn, run_id, company_id, started_at, "unchanged", 0, None)
             return ApplyResult(status="unchanged")
-        result = _apply_listed(conn, snapshot.postings, company_id, run_id)
+        result = _apply_listed(conn, snapshot.postings, company_id, run_id, snapshot.url)
         result.status = snapshot.status
         if snapshot.status == "complete":
             result.closed = _process_missing(conn, snapshot.postings, company_id, run_id)
@@ -70,7 +71,7 @@ def apply_board(
 
 
 def _apply_listed(
-    conn: Connection, raw_postings: list[RawPosting], company_id: int, run_id: int
+    conn: Connection, raw_postings: list[RawPosting], company_id: int, run_id: int, source_url: str
 ) -> ApplyResult:
     now = utcnow()
     result = ApplyResult(status="", listed=len(raw_postings))
@@ -99,7 +100,11 @@ def _apply_listed(
                 )
             )
             posting_id = int(inserted.inserted_primary_key[0])  # type: ignore[index]
-            _insert_version(conn, posting_id, new_hash, raw.body_text, now, run_id, "new")
+            vid = _insert_version(conn, posting_id, new_hash, raw.body_text, now, run_id, "new")
+            record_version_source(
+                conn, posting_version_id=vid, run_id=run_id, source_url=source_url,
+                source_record_id=raw.provider_posting_id, observed_at=now, payload_hash=new_hash,
+            )
             append_event(conn, posting_id, "new", run_id)
             result.new += 1
             continue
@@ -113,7 +118,11 @@ def _apply_listed(
         if row.content_hash != new_hash:
             values["content_hash"] = new_hash
             values["body_text"] = raw.body_text
-            _insert_version(conn, row.id, new_hash, raw.body_text, now, run_id, "revised")
+            vid = _insert_version(conn, row.id, new_hash, raw.body_text, now, run_id, "revised")
+            record_version_source(
+                conn, posting_version_id=vid, run_id=run_id, source_url=source_url,
+                source_record_id=raw.provider_posting_id, observed_at=now, payload_hash=new_hash,
+            )
             append_event(conn, row.id, "revised", run_id)
             result.revised += 1
         conn.execute(update(postings).where(postings.c.id == row.id).values(**values))

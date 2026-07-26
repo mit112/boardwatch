@@ -132,6 +132,17 @@ posting_versions = Table(
     ),
 )
 
+posting_version_sources = Table(
+    "posting_version_sources",
+    metadata,
+    Column("posting_version_id", Integer, ForeignKey("posting_versions.id"), primary_key=True),
+    Column("run_id", Integer, ForeignKey("runs.id"), nullable=True),
+    Column("source_url", Text, nullable=False),
+    Column("source_record_id", Text, nullable=False),
+    Column("observed_at", DateTime, nullable=False),
+    Column("payload_hash", Text, nullable=True),
+)
+
 board_scans = Table(
     "board_scans",
     metadata,
