@@ -31,7 +31,7 @@ from boardwatch.core.clock import utcnow
 from boardwatch.core.models import BoardSnapshot, RawPosting
 from boardwatch.core.normalize import content_hash, normalize_title
 from boardwatch.store.events import append_event
-from boardwatch.store.tables import board_scans, http_cache, jobs, postings
+from boardwatch.store.tables import board_scans, http_cache, jobs, posting_versions, postings
 
 CLOSE_AFTER_MISSES = 2  # not configurable (plan Conventions)
 
@@ -98,7 +98,9 @@ def _apply_listed(
                     **_mutable_fields(raw, now),
                 )
             )
-            append_event(conn, int(inserted.inserted_primary_key[0]), "new", run_id)  # type: ignore[index]
+            posting_id = int(inserted.inserted_primary_key[0])  # type: ignore[index]
+            _insert_version(conn, posting_id, new_hash, raw.body_text, now, run_id, "new")
+            append_event(conn, posting_id, "new", run_id)
             result.new += 1
             continue
         values: dict[str, Any] = _mutable_fields(raw, now)  # D25: regardless of content_hash
@@ -111,10 +113,26 @@ def _apply_listed(
         if row.content_hash != new_hash:
             values["content_hash"] = new_hash
             values["body_text"] = raw.body_text
+            _insert_version(conn, row.id, new_hash, raw.body_text, now, run_id, "revised")
             append_event(conn, row.id, "revised", run_id)
             result.revised += 1
         conn.execute(update(postings).where(postings.c.id == row.id).values(**values))
     return result
+
+
+def _insert_version(
+    conn: Connection, posting_id: int, content_hash: str, body_text: str,
+    captured_at: datetime, run_id: int, capture_reason: str,
+) -> int:
+    """Append an immutable content version (D29). Called on new and body-revision only."""
+    return int(
+        conn.execute(
+            insert(posting_versions).values(
+                posting_id=posting_id, content_hash=content_hash, body_text=body_text,
+                captured_at=captured_at, run_id=run_id, capture_reason=capture_reason,
+            )
+        ).inserted_primary_key[0]  # type: ignore[index]
+    )
 
 
 def _mutable_fields(raw: RawPosting, now: datetime) -> dict[str, Any]:

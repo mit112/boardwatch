@@ -115,6 +115,23 @@ job_grouping_events = Table(
     sqlite_autoincrement=True,
 )
 
+posting_versions = Table(
+    "posting_versions",
+    metadata,
+    Column("id", Integer, primary_key=True),
+    Column("posting_id", Integer, ForeignKey("postings.id"), nullable=False),
+    Column("content_hash", Text, nullable=False),
+    Column("body_text", Text, nullable=False),
+    Column("captured_at", DateTime, nullable=False),
+    Column("run_id", Integer, ForeignKey("runs.id"), nullable=True),
+    Column("capture_reason", Text, nullable=False),
+    Index("ix_posting_versions_posting_captured", "posting_id", "captured_at", "id"),
+    CheckConstraint(
+        "capture_reason IN ('new', 'revised', 'backfill_original', 'backfill_from_revised_event')",
+        name="capture_reason_enum",
+    ),
+)
+
 board_scans = Table(
     "board_scans",
     metadata,
