@@ -1,3 +1,4 @@
+import json
 from datetime import timedelta
 from pathlib import Path
 from typing import Any
@@ -69,6 +70,50 @@ def test_top_ranks_strong_match_first(
     assert "Backend Engineer" in out and "Gardener" in out
     assert out.index("Backend Engineer") < out.index("Gardener")
     assert "covers" in out  # the why column
+
+
+def test_top_json_outputs_ranked_postings(
+    env: Path, engine: Engine, company_id: int, run_id: int, tmp_path: Path
+) -> None:
+    _seed_postings(engine, company_id, run_id)
+    _seed_profile(engine, env / "cfg")
+
+    result = _invoke(tmp_path, ["top", "--json"])
+
+    assert result.exit_code == 0
+    postings = json.loads(result.stdout)
+    assert postings[0]["title"] == "Backend Engineer"
+    assert {"posting_id", "company", "score", "why"} <= postings[0].keys()
+
+
+def test_top_json_outputs_empty_array_for_no_matching_postings(
+    env: Path, engine: Engine, tmp_path: Path
+) -> None:
+    _seed_profile(engine, env / "cfg")
+
+    result = _invoke(tmp_path, ["top", "--json"])
+
+    assert result.exit_code == 0
+    assert json.loads(result.stdout) == []
+
+
+def test_top_json_outputs_empty_array_for_no_new_matching_postings(
+    env: Path, engine: Engine, tmp_path: Path
+) -> None:
+    _seed_profile(engine, env / "cfg")
+
+    result = _invoke(tmp_path, ["top", "--json", "--new"])
+
+    assert result.exit_code == 0
+    assert json.loads(result.stdout) == []
+
+
+def test_top_json_keeps_missing_profile_message_off_stdout(env: Path, tmp_path: Path) -> None:
+    result = _invoke(tmp_path, ["top", "--json"])
+
+    assert result.exit_code == 1
+    assert result.stdout == ""
+    assert "no profile yet" in result.stderr
 
 
 def test_top_excludes_closed_postings(
