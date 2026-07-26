@@ -21,6 +21,7 @@ from sqlalchemy import (
     Table,
     Text,
     UniqueConstraint,
+    text,
 )
 
 # Convention: naming convention is set at the MetaData level so Alembic
@@ -213,6 +214,79 @@ runs = Table(
     Column("closed_count", Integer, nullable=True),
     Column("reopened_count", Integer, nullable=True),
     Column("errors_json", JSON, nullable=True),
+)
+
+eligibility_inputs = Table(
+    "eligibility_inputs",
+    metadata,
+    Column("id", Integer, primary_key=True),
+    Column("posting_version_id", Integer, ForeignKey("posting_versions.id"), nullable=False),
+    Column("profile_hash", Text, nullable=False),
+    Column("profile_snapshot_json", JSON, nullable=False),
+    Column("rules_hash", Text, nullable=False),
+    Column("rules_snapshot_json", JSON, nullable=False),
+    Column("input_fingerprint", Text, nullable=False),
+    Column("created_at", DateTime, nullable=False),
+    UniqueConstraint("input_fingerprint"),
+)
+
+eligibility_evaluations = Table(
+    "eligibility_evaluations",
+    metadata,
+    Column("id", Integer, primary_key=True),
+    Column("input_id", Integer, ForeignKey("eligibility_inputs.id"), nullable=False),
+    Column("engine_kind", Text, nullable=False),
+    Column("engine_version", Text, nullable=False),
+    Column("provider", Text, nullable=True),
+    Column("model", Text, nullable=True),
+    Column("prompt_version", Text, nullable=True),
+    Column("idempotency_key", Text, nullable=True),
+    Column("verdict", Text, nullable=False),
+    Column("score", Numeric, nullable=True),
+    Column("raw_output_json", JSON, nullable=True),
+    Column("created_at", DateTime, nullable=False),
+    UniqueConstraint("idempotency_key"),
+    Index("ix_eligibility_evaluations_input_created", "input_id", "created_at", "id"),
+    # Deterministic idempotency (D30): partial unique index, declared here ONLY so the
+    # schema-drift check (test_migrations_match_metadata) sees parity with the migration,
+    # which is the sole DDL-executing source (op.execute, not Alembic autogenerate/create_all
+    # — see p0_eligibility.py). UniqueConstraint cannot express a partial predicate; Index can.
+    Index("uq_eligibility_deterministic", "input_id", "engine_version", unique=True,
+          sqlite_where=text("engine_kind = 'deterministic'")),
+    CheckConstraint("engine_kind IN ('deterministic', 'llm')", name="engine_kind_enum"),
+    CheckConstraint("verdict IN ('eligible', 'ineligible', 'uncertain')", name="verdict_enum"),
+    CheckConstraint("score IS NULL OR (score >= 0 AND score <= 1)", name="score_range"),
+)
+
+eligibility_requirements = Table(
+    "eligibility_requirements",
+    metadata,
+    Column("id", Integer, primary_key=True),
+    Column("evaluation_id", Integer, ForeignKey("eligibility_evaluations.id"), nullable=False),
+    Column("ordinal", Integer, nullable=False),
+    Column("rule_id", Text, nullable=True),
+    Column("requiredness", Text, nullable=False),
+    Column("requirement_text", Text, nullable=False),
+    Column("jd_locator_json", JSON, nullable=False),
+    Column("disposition", Text, nullable=False),
+    Column("rationale", Text, nullable=True),
+    UniqueConstraint("evaluation_id", "ordinal"),
+    CheckConstraint("ordinal >= 0", name="ordinal_nonneg"),
+    CheckConstraint("requiredness IN ('required', 'preferred', 'bonus')", name="requiredness_enum"),
+    CheckConstraint("disposition IN ('met', 'unmet', 'unknown')", name="disposition_enum"),
+)
+
+eligibility_support = Table(
+    "eligibility_support",
+    metadata,
+    Column("id", Integer, primary_key=True),
+    Column("requirement_id", Integer, ForeignKey("eligibility_requirements.id"), nullable=False),
+    Column("ordinal", Integer, nullable=False),
+    Column("profile_locator_json", JSON, nullable=False),
+    Column("evidence_quote", Text, nullable=False),
+    Column("support_kind", Text, nullable=False),
+    UniqueConstraint("requirement_id", "ordinal"),
+    CheckConstraint("ordinal >= 0", name="ordinal_nonneg"),
 )
 
 app_state = Table(
