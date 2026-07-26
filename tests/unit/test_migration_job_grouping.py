@@ -7,7 +7,7 @@ import pytest
 from alembic import command
 from alembic.config import Config
 from sqlalchemy import create_engine, text
-from sqlalchemy.exc import IntegrityError, OperationalError
+from sqlalchemy.exc import IntegrityError
 
 BASE = "p0_jobs_anchor"
 HEAD = "p0_job_grouping"
@@ -50,5 +50,11 @@ def test_job_grouping_round_trip(tmp_path: Path) -> None:
             conn.execute(text("DELETE FROM job_grouping_events WHERE id=1"))
 
     command.downgrade(cfg, BASE)
-    with engine.connect() as conn, pytest.raises(OperationalError):
-        conn.execute(text("SELECT 1 FROM job_grouping_events"))
+    with engine.connect() as conn:
+        names = {r[0] for r in conn.execute(text(
+            "SELECT name FROM sqlite_master WHERE type IN ('table','trigger','index')")).all()}
+        fk = conn.execute(text("PRAGMA foreign_key_check")).all()
+    assert "job_grouping_events" not in names
+    assert "job_grouping_events_no_update" not in names
+    assert "job_grouping_events_no_delete" not in names
+    assert fk == []
