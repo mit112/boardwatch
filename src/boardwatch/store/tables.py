@@ -305,3 +305,38 @@ http_cache = Table(
     Column("fetched_at", DateTime, nullable=False),
     Column("status", Integer, nullable=False),
 )
+
+applications = Table(
+    "applications",
+    metadata,
+    Column("id", Integer, primary_key=True),
+    Column("job_id", Integer, ForeignKey("jobs.id"), nullable=False),
+    Column("posting_version_id", Integer, ForeignKey("posting_versions.id"), nullable=True),
+    Column("attempt_no", Integer, nullable=False),
+    Column("status", Text, nullable=False),
+    Column("created_at", DateTime, nullable=False),
+    Column("updated_at", DateTime, nullable=False),
+    Column("submitted_at", DateTime, nullable=True),
+    UniqueConstraint("job_id", "attempt_no"),
+    CheckConstraint(
+        "status IN ('interested', 'applied', 'interviewing', 'offer', 'rejected', 'withdrawn')",
+        name="status_enum",
+    ),
+)
+
+application_events = Table(
+    "application_events",
+    metadata,
+    Column("id", Integer, primary_key=True, autoincrement=True),
+    Column("application_id", Integer, ForeignKey("applications.id"), nullable=False),
+    Column("event_type", Text, nullable=False),
+    Column("from_status", Text, nullable=True),
+    Column("to_status", Text, nullable=True),
+    Column("occurred_at", DateTime, nullable=False),
+    Column("recorded_at", DateTime, nullable=False),
+    Column("source", Text, nullable=False),
+    Column("note", Text, nullable=True),
+    Column("detail_json", JSON, nullable=True),
+    Index("ix_application_events_application_id", "application_id", "id"),
+    sqlite_autoincrement=True,
+)
