@@ -340,3 +340,31 @@ application_events = Table(
     Index("ix_application_events_application_id", "application_id", "id"),
     sqlite_autoincrement=True,
 )
+
+artifacts = Table(
+    "artifacts",
+    metadata,
+    Column("id", Integer, primary_key=True),
+    Column("job_id", Integer, ForeignKey("jobs.id"), nullable=True),
+    Column("posting_version_id", Integer, ForeignKey("posting_versions.id"), nullable=True),
+    Column("application_id", Integer, ForeignKey("applications.id"), nullable=True),
+    Column("kind", Text, nullable=False),
+    Column("uri", Text, nullable=False),
+    Column("content_hash", Text, nullable=True),
+    Column("generator", Text, nullable=True),
+    Column("generator_version", Text, nullable=True),
+    Column("media_type", Text, nullable=True),
+    Column("byte_size", Integer, nullable=True),
+    Column("meta_json", JSON, nullable=True),
+    Column("created_at", DateTime, nullable=False),
+    Index("ix_artifacts_job_id", "job_id"),
+)
+
+artifact_derivations = Table(
+    "artifact_derivations",
+    metadata,
+    Column("artifact_id", Integer, ForeignKey("artifacts.id"), primary_key=True),
+    Column("parent_artifact_id", Integer, ForeignKey("artifacts.id"), primary_key=True),
+    Column("relation", Text, primary_key=True),
+    Column("created_at", DateTime, nullable=False),
+)
