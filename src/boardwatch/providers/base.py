@@ -30,6 +30,8 @@ def health_from_failure(exc: FetchFailure, *, dead_status: int = 404) -> BoardHe
 
 class Provider(Protocol):
     name: str
+    # public paste hostnames a user would enter; distinct from board_url()'s API host
+    board_hosts: tuple[str, ...]
 
     def board_url(self, slug: str) -> str:
         """Canonical fetch URL == the http_cache key; stable parameter order."""

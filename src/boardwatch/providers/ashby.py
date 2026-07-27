@@ -36,6 +36,7 @@ _INTERVALS = {
 
 class AshbyProvider:
     name = "ashby"
+    board_hosts: tuple[str, ...] = ("jobs.ashbyhq.com",)
 
     def board_url(self, slug: str) -> str:
         return f"https://api.ashbyhq.com/posting-api/job-board/{slug}?includeCompensation=true"

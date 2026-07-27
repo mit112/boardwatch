@@ -22,6 +22,7 @@ from boardwatch.providers.base import BoardHealth, health_from_failure
 
 class LeverProvider:
     name = "lever"
+    board_hosts: tuple[str, ...] = ("jobs.lever.co", "jobs.eu.lever.co")
 
     def board_url(self, slug: str) -> str:
         return f"https://api.lever.co/v0/postings/{slug}?mode=json"

@@ -23,6 +23,7 @@ from boardwatch.providers.base import BoardHealth
 
 class GreenhouseProvider:
     name = "greenhouse"
+    board_hosts: tuple[str, ...] = ("job-boards.greenhouse.io", "boards.greenhouse.io")
 
     def board_url(self, slug: str) -> str:
         return (
