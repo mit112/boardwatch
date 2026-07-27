@@ -1,8 +1,16 @@
 """Settings: config/data locations (§2.4) and documented defaults (D17, §3.4).
 
-Precedence: CLI --data-dir > BOARDWATCH_DATA_DIR > platformdirs default.
-Config file: {config_dir}/config.toml; weights and politeness knobs are read
-at call time per D17 — there is no caching layer to invalidate.
+Path precedence:
+  data_dir:   CLI --data-dir > config.toml data_dir > BOARDWATCH_DATA_DIR > platformdirs
+  config_dir: BOARDWATCH_CONFIG_DIR > platformdirs
+Config file: {config_dir}/config.toml; weights and politeness knobs are read at call
+time per D17, so there is no caching layer to invalidate.
+
+Secrets contract (P0-3): config.toml is the shareable config and never holds secrets.
+Credentials come only from the environment (the opt-in LLM tier, v1.1, reads
+BOARDWATCH_LLM_API_KEY); see core.secrets.resolve_secret. A persistent-secret file is
+reserved at {config_dir}/secrets.toml but is not read yet. The LLM tier is off by
+default and inert until v1.1.
 """
 
 from __future__ import annotations
@@ -27,6 +35,20 @@ class RankWeights(BaseModel):
     location_fit: float = Field(default=0.10, ge=0.0, le=1.0)
 
 
+class LLMTier(BaseModel):
+    """Opt-in LLM tier config (D11, §5.1). Off by default and inert until v1.1.
+
+    Carries only non-secret knobs; the credential is never a field here (it comes from
+    the environment via core.secrets), which keeps secrets out of every serialize path.
+    """
+
+    model_config = ConfigDict(frozen=True)
+
+    enabled: bool = False
+    provider: str | None = None  # e.g. "anthropic" | "openai"; provider-neutral
+    model: str | None = None
+
+
 class Settings(BaseModel):
     model_config = ConfigDict(frozen=True)
 
@@ -39,6 +61,7 @@ class Settings(BaseModel):
     recency_half_life_days: float = 14.0
     location_filter_mode: Literal["soft", "hard"] = "soft"
     weights: RankWeights = Field(default_factory=RankWeights)
+    llm: LLMTier = Field(default_factory=LLMTier)
 
 
 def default_config_dir() -> Path:

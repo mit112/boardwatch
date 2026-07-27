@@ -102,3 +102,48 @@ def test_hand_edited_out_of_range_toml_fails_at_load(tmp_path, monkeypatch, toml
     with pytest.raises(ValidationError) as exc:
         load_settings(data_dir=tmp_path)
     assert key in str(exc.value)  # the error names the offending key
+
+
+def test_llm_tier_defaults_off_and_unconfigured(tmp_path, monkeypatch) -> None:
+    monkeypatch.setenv("BOARDWATCH_CONFIG_DIR", str(tmp_path))
+    monkeypatch.setenv("BOARDWATCH_DATA_DIR", str(tmp_path))
+    settings = load_settings()
+    assert settings.llm.enabled is False
+    assert settings.llm.provider is None
+    assert settings.llm.model is None
+
+
+def test_llm_section_loads_from_config(tmp_path, monkeypatch) -> None:
+    (tmp_path / "config.toml").write_text(
+        '[llm]\nenabled = true\nprovider = "anthropic"\nmodel = "claude-opus-4-8"\n',
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("BOARDWATCH_CONFIG_DIR", str(tmp_path))
+    settings = load_settings(data_dir=tmp_path)
+    assert settings.llm.enabled is True
+    assert settings.llm.provider == "anthropic"
+    assert settings.llm.model == "claude-opus-4-8"
+
+
+def test_llm_tier_is_frozen(tmp_path, monkeypatch) -> None:
+    monkeypatch.setenv("BOARDWATCH_CONFIG_DIR", str(tmp_path))
+    monkeypatch.setenv("BOARDWATCH_DATA_DIR", str(tmp_path))
+    settings = load_settings()
+    with pytest.raises(ValidationError):
+        settings.llm.enabled = True  # type: ignore[misc]
+
+
+def test_bad_llm_enabled_value_rejected_at_load(tmp_path, monkeypatch) -> None:
+    # "maybe" is not a pydantic-recognized bool string, so load must fail (not coerce)
+    (tmp_path / "config.toml").write_text('[llm]\nenabled = "maybe"\n', encoding="utf-8")
+    monkeypatch.setenv("BOARDWATCH_CONFIG_DIR", str(tmp_path))
+    with pytest.raises(ValidationError) as exc:
+        load_settings(data_dir=tmp_path)
+    assert "llm" in str(exc.value) or "enabled" in str(exc.value)
+
+
+def test_no_secret_field_exists_on_settings(tmp_path, monkeypatch) -> None:
+    monkeypatch.setenv("BOARDWATCH_CONFIG_DIR", str(tmp_path))
+    monkeypatch.setenv("BOARDWATCH_DATA_DIR", str(tmp_path))
+    dumped = repr(load_settings().model_dump())
+    assert "api_key" not in dumped and "password" not in dumped
