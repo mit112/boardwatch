@@ -35,14 +35,26 @@ def _is_secret_key(name: str) -> bool:
 
 
 def _find_secret_key(raw: dict[str, Any], prefix: str = "") -> str | None:
-    """Dotted path of the first reserved secret key in raw, or None. Returns a PATH only,
-    never a value (secrets contract, P0-3 D-P0-3-5)."""
+    """Dotted path of the first reserved secret key at any depth in raw, or None.
+    Recurses through nested tables (dict) and arrays-of-tables (list). Returns a PATH
+    only, never a value (secrets contract, P0-3 D-P0-3-5)."""
     for key, value in raw.items():
         path = f"{prefix}{key}"
         if _is_secret_key(key):
             return path
-        if isinstance(value, dict):
-            found = _find_secret_key(value, f"{path}.")
+        found = _find_secret_in_value(value, path)
+        if found is not None:
+            return found
+    return None
+
+
+def _find_secret_in_value(value: Any, path: str) -> str | None:
+    """Walk a config value for a reserved secret key; returns a PATH or None, never a value."""
+    if isinstance(value, dict):
+        return _find_secret_key(value, f"{path}.")
+    if isinstance(value, list):
+        for index, item in enumerate(value):
+            found = _find_secret_in_value(item, f"{path}[{index}]")
             if found is not None:
                 return found
     return None

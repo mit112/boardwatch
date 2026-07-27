@@ -159,3 +159,13 @@ def test_set_refuses_when_config_contains_secret_and_never_leaks_value(cfg) -> N
     assert "llm.api_key" in result.output      # the offending path is named
     assert canary not in result.output         # value-free error
     assert result.exception is None or canary not in repr(result.exception)
+
+
+def test_set_refuses_secret_in_array_of_tables_and_never_leaks(cfg) -> None:
+    canary = "CANARY-AOT-SECRET"
+    (cfg / "config.toml").write_text(f'[[watches]]\napi_key = "{canary}"\n', encoding="utf-8")
+    result = runner.invoke(app, [*_base(cfg), "config", "set", "retry_attempts", "5"])
+    assert result.exit_code == 1
+    assert "watches[0].api_key" in result.output   # nested path is named
+    assert canary not in result.output             # value never leaks
+    assert result.exception is None or canary not in repr(result.exception)
