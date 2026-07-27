@@ -16,3 +16,9 @@ HOME_PATH_EXCEPTIONS: dict[str, str] = {}
 
 # R2: exact email address -> reason. Reserved example domains never need an entry.
 EMAIL_EXCEPTIONS: dict[str, str] = {}
+
+# R3: exact matched text -> reason. Empty today; the tree uses no real phone numbers.
+PHONE_EXCEPTIONS: dict[str, str] = {}
+
+# R4: exact matched text -> reason. Empty today; the tree uses no personal profile URLs.
+PROFILE_URL_EXCEPTIONS: dict[str, str] = {}

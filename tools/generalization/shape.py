@@ -19,10 +19,23 @@ SELF_EXCLUDED_PREFIXES: tuple[str, ...] = (
     "tests/generalization/",
 )
 
-HOME_PATH_RE = re.compile(r"(?:/Users/|/home/|[A-Za-z]:[\\/]Users[\\/])[A-Za-z0-9._-]+")
+HOME_PATH_RE = re.compile(
+    r"(?:/Users/|/home/|[A-Za-z]:[\\/]Users[\\/])[A-Za-z0-9._-]+", re.IGNORECASE
+)
 EMAIL_RE = re.compile(r"[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}")
-RESERVED_EMAIL_RE = re.compile(r"@(?:example\.(?:com|org|net)|localhost)$", re.IGNORECASE)
-PHONE_RE = re.compile(r"(?<![\d-])(?:\+?1[ .-])?\(?\d{3}\)?[ .-]\d{3}[ .-]\d{4}(?![\d-])")
+RESERVED_EMAIL_RE = re.compile(r"@example\.(?:com|org|net)$", re.IGNORECASE)
+# R3 matches NANP (3-3-4, hyphen/dot separated, optional +1 country code), international
+# numbers (a "+" country code followed by digit groups), and bare two-group numbers such
+# as UK mobiles or 5-5 splits. The leading/trailing lookaround stops a match from being a
+# fragment of a larger dotted or hyphenated run, which is what a version string or a
+# chained date range looks like.
+PHONE_RE = re.compile(
+    r"(?<![\d.-])(?:"
+    r"(?:\+1[ .-])?(?:\(\d{3}\)[ .-]|\d{3}[.-])\d{3}[.-]\d{4}"
+    r"|\+\d{1,3}[ .-]?\d{2,6}(?:[ .-]?\d{2,6}){0,3}"
+    r"|\d{5}[ .-]\d{5,6}"
+    r")(?![\d.-])"
+)
 PROFILE_URL_RE = re.compile(r"linkedin\.com/in/|mailto:", re.IGNORECASE)
 
 ALLOWLIST_PATH = "tools/generalization/allowlists.py"
@@ -37,7 +50,13 @@ def scannable(repo: Repo) -> Iterator[RepoFile]:
 
 
 def stale(table: dict[str, str], used: set[str], rule: str) -> list[Violation]:
-    """An exception that never matched is dead weight and hides drift."""
+    """An exception that never matched is dead weight and hides drift.
+
+    A match found only inside a self-excluded file (allowlists.py itself, or this
+    module) never marks its entry used, on purpose: without that, every exception
+    would mark itself used against its own literal in allowlists.py, and staleness
+    detection would never fire.
+    """
     return [
         Violation(
             rule,
@@ -54,6 +73,8 @@ def check_shapes(repo: Repo) -> list[Violation]:
     violations: list[Violation] = []
     used_paths: set[str] = set()
     used_emails: set[str] = set()
+    used_phones: set[str] = set()
+    used_profile_urls: set[str] = set()
     for entry in scannable(repo):
         if not entry.is_text:
             continue
@@ -89,17 +110,35 @@ def check_shapes(repo: Repo) -> list[Violation]:
                     )
                 )
             for match in PHONE_RE.finditer(line):
+                hit = match.group(0)
+                if hit in al.PHONE_EXCEPTIONS:
+                    used_phones.add(hit)
+                    continue
                 violations.append(
                     Violation(
-                        "R3", entry.path, lineno, f"phone-number-shaped text {match.group(0)!r}"
+                        "R3",
+                        entry.path,
+                        lineno,
+                        f"phone-number-shaped text {hit!r}. "
+                        "Use a fictional number, or add a reviewed entry to PHONE_EXCEPTIONS",
                     )
                 )
             for match in PROFILE_URL_RE.finditer(line):
+                hit = match.group(0)
+                if hit in al.PROFILE_URL_EXCEPTIONS:
+                    used_profile_urls.add(hit)
+                    continue
                 violations.append(
                     Violation(
-                        "R4", entry.path, lineno, f"personal profile URL {match.group(0)!r}"
+                        "R4",
+                        entry.path,
+                        lineno,
+                        f"personal profile URL {hit!r}. "
+                        "Add a reviewed entry to PROFILE_URL_EXCEPTIONS",
                     )
                 )
     violations.extend(stale(al.HOME_PATH_EXCEPTIONS, used_paths, "R1"))
     violations.extend(stale(al.EMAIL_EXCEPTIONS, used_emails, "R2"))
+    violations.extend(stale(al.PHONE_EXCEPTIONS, used_phones, "R3"))
+    violations.extend(stale(al.PROFILE_URL_EXCEPTIONS, used_profile_urls, "R4"))
     return violations
