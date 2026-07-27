@@ -15,3 +15,16 @@ every `top` run (no restart needed).
 | `weights.title_match` | float, [0, 1] | 0.25 | next top |
 | `weights.recency` | float, [0, 1] | 0.15 | next top |
 | `weights.location_fit` | float, [0, 1] | 0.10 | next top |
+
+## Secrets (reserved for the v1.1 LLM tier)
+
+boardwatch v1 uses no credentials, so `config.toml` never contains secrets and there is
+nothing to leak. The opt-in LLM tier (planned for v1.1) will read its API key only from
+the environment:
+
+    export BOARDWATCH_LLM_API_KEY=...
+
+Secrets are never stored in `config.toml`, and `boardwatch config show` never prints a key
+value (it shows only whether one is set). `boardwatch config set` refuses to write a
+reserved secret key into `config.toml`. A persistent-secret file at
+`{config_dir}/secrets.toml` is reserved for a future release and is not read yet.
