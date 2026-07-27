@@ -3,8 +3,10 @@
 Enumerates the provider classes (which import only core/, never store/) and derives
 every provider-set view the rest of the codebase needs: the runtime name->instance
 map (scan coordinator, health report), the allowed-name set (catalog validation),
-and the public paste-host map (board-URL parsing). Adding a provider = write its
-class + append it to PROVIDER_CLASSES.
+and the public paste-host map (board-URL parsing). Adding a provider's IDENTITY =
+write its class (with name + board_hosts) + append it to PROVIDER_CLASSES; providers
+with a novel fetch shape (e.g. multi-endpoint summary+detail) may additionally need
+request/snapshot/coordinator changes.
 
 This module must never import boardwatch.store.* — it feeds store-free entry points
 (registry.health_report, core.board_urls); a subprocess guard in the tests enforces it.

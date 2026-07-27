@@ -13,7 +13,7 @@ exclusively by `doctor` to the user's local DB (§2.2, D27).
 ```yaml
 companies:
   - name: Example Corp
-    provider: greenhouse       # one of: greenhouse, lever, ashby
+    provider: greenhouse       # any provider registered in providers/registry.py
     slug: example              # the board's identifier on the provider's API
     tags: [starter]            # reserved: "starter" marks the starter set
 ```

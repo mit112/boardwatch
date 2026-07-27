@@ -23,6 +23,9 @@ class CompanyEntry(BaseModel):
     slug: str
     tags: list[str] = []
 
+    # Deliberate tradeoff: provider is validated at runtime against the registry
+    # (single source of truth) instead of a static Literal enum, so this field's
+    # JSON schema is plain `str` and loses static type-narrowing at call sites.
     @field_validator("provider")
     @classmethod
     def _known_provider(cls, value: str) -> str:

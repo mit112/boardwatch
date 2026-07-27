@@ -20,8 +20,7 @@ console = Console()
 
 
 def _catalog_index() -> dict[tuple[str, str], CompanyEntry]:
-    # widen the Provider Literal to str in the key so str-keyed lookups type-check
-    return {(str(e.provider), e.slug): e for e in load_catalog()}
+    return {(e.provider, e.slug): e for e in load_catalog()}
 
 
 @companies_app.command("add")
