@@ -1,6 +1,8 @@
 import subprocess
 import sys
 
+import pytest
+
 from boardwatch.providers import registry
 from boardwatch.providers.ashby import AshbyProvider
 from boardwatch.providers.greenhouse import GreenhouseProvider
@@ -49,3 +51,31 @@ def test_default_providers_delegates_to_registry() -> None:
     from boardwatch.scan.coordinator import default_providers
 
     assert set(default_providers()) == set(registry.build_providers())
+
+
+def test_build_providers_raises_on_duplicate_name(monkeypatch) -> None:
+    class FakeA:
+        name = "dup"
+        board_hosts = ("a.example.com",)
+
+    class FakeB:
+        name = "dup"
+        board_hosts = ("b.example.com",)
+
+    monkeypatch.setattr(registry, "PROVIDER_CLASSES", (FakeA, FakeB))
+    with pytest.raises(ValueError, match="duplicate provider name"):
+        registry.build_providers()
+
+
+def test_host_provider_map_raises_on_duplicate_host(monkeypatch) -> None:
+    class FakeA:
+        name = "a"
+        board_hosts = ("shared.example.com",)
+
+    class FakeB:
+        name = "b"
+        board_hosts = ("shared.example.com",)
+
+    monkeypatch.setattr(registry, "PROVIDER_CLASSES", (FakeA, FakeB))
+    with pytest.raises(ValueError, match="shared.example.com"):
+        registry.host_provider_map()

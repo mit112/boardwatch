@@ -32,3 +32,17 @@ def test_help_text_enumerates_all_registry_providers() -> None:
     msg = str(exc.value)
     for name in PROVIDER_NAMES:
         assert name in msg
+
+
+def test_board_urls_never_imports_store_transitively() -> None:
+    # a SOURCE-STRING check misses transitive imports; assert the real import graph in a
+    # clean subprocess: importing board_urls must not pull in any boardwatch.store.* module
+    import subprocess
+    import sys
+
+    code = (
+        "import boardwatch.core.board_urls; import sys; "
+        "bad=[m for m in sys.modules if m.startswith('boardwatch.store')]; "
+        "assert not bad, bad"
+    )
+    subprocess.run([sys.executable, "-c", code], check=True)

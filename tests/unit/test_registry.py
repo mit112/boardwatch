@@ -67,3 +67,17 @@ def test_bundled_catalog_loads_clean() -> None:
     # the shipped attended catalog must always load + validate
     entries = load_catalog()
     assert len(entries) >= 30
+
+
+def test_validate_never_imports_store_transitively() -> None:
+    # a SOURCE-STRING check misses transitive imports; assert the real import graph in a
+    # clean subprocess: importing validate must not pull in any boardwatch.store.* module
+    import subprocess
+    import sys
+
+    code = (
+        "import boardwatch.registry.validate; import sys; "
+        "bad=[m for m in sys.modules if m.startswith('boardwatch.store')]; "
+        "assert not bad, bad"
+    )
+    subprocess.run([sys.executable, "-c", code], check=True)

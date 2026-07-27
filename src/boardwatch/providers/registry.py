@@ -25,7 +25,14 @@ PROVIDER_CLASSES = (GreenhouseProvider, LeverProvider, AshbyProvider)
 
 def build_providers() -> dict[str, Provider]:
     """Fresh provider instances keyed by name (one per registered class)."""
-    return {(inst := cls()).name: inst for cls in PROVIDER_CLASSES}
+    providers: dict[str, Provider] = {}
+    for cls in PROVIDER_CLASSES:
+        inst = cls()
+        name = inst.name
+        if name in providers:
+            raise ValueError(f"duplicate provider name {name!r} in PROVIDER_CLASSES")
+        providers[name] = inst
+    return providers
 
 
 PROVIDER_NAMES: frozenset[str] = frozenset(build_providers())
@@ -33,9 +40,14 @@ PROVIDER_NAMES: frozenset[str] = frozenset(build_providers())
 
 def host_provider_map() -> dict[str, str]:
     """Public paste-hostname -> provider name, from each provider's board_hosts."""
-    return {
-        host: inst.name
-        for cls in PROVIDER_CLASSES
-        for inst in (cls(),)
-        for host in inst.board_hosts
-    }
+    hosts: dict[str, str] = {}
+    for cls in PROVIDER_CLASSES:
+        inst = cls()
+        for host in inst.board_hosts:
+            if host in hosts:
+                raise ValueError(
+                    f"duplicate board host {host!r}: claimed by both "
+                    f"{hosts[host]!r} and {inst.name!r}"
+                )
+            hosts[host] = inst.name
+    return hosts
