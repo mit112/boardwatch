@@ -3,7 +3,7 @@ from pathlib import Path
 import pytest
 
 from boardwatch.registry.loader import load_catalog, starter_entries
-from boardwatch.registry.validate import CatalogError
+from boardwatch.registry.validate import CatalogError, CompanyEntry
 
 VALID = """\
 companies:
@@ -40,6 +40,18 @@ def test_unknown_provider_is_rejected_naming_the_entry(tmp_path: Path) -> None:
     with pytest.raises(CatalogError) as exc:
         load_catalog(_write(tmp_path, bad))
     assert "globex" in str(exc.value)
+
+
+def test_unknown_provider_message_is_registry_sourced() -> None:
+    from pydantic import ValidationError
+
+    with pytest.raises(ValidationError) as exc:
+        CompanyEntry(name="X", provider="workday", slug="x")
+    msg = str(exc.value)
+    assert "unknown provider" in msg          # our field_validator, not the old Literal error
+    assert "workday" in msg
+    for name in ("ashby", "greenhouse", "lever"):
+        assert name in msg
 
 
 def test_duplicate_provider_slug_is_rejected(tmp_path: Path) -> None:
