@@ -31,6 +31,7 @@ EXCLUDED_DIRS: frozenset[str] = frozenset(
         "build",
         ".agent",
         ".superpowers",
+        ".reasonix-runs",
         ".pytest_cache",
         ".ruff_cache",
         ".mypy_cache",
@@ -41,6 +42,10 @@ EXCLUDED_DIRS: frozenset[str] = frozenset(
 )
 
 _NULL_SNIFF_BYTES = 8192
+
+# The real tree holds 165+ tracked files. This is a truncation floor for the CLI to
+# pass to `discover`, not a value used by anything in this module.
+PRODUCTION_MINIMUM_FILES = 40
 
 
 class DiscoveryError(RuntimeError):
@@ -65,6 +70,7 @@ class RepoFile:
 class Repo:
     root: Path
     files: tuple[RepoFile, ...]
+    mode: str = "walk"
 
     def by_path(self, path: str) -> RepoFile | None:
         for entry in self.files:
@@ -83,6 +89,11 @@ def find_repo_root(start: Path) -> Path:
     )
 
 
+def _is_excluded(rel: str) -> bool:
+    """Whether a discovered relative path falls under a directory we never scan."""
+    return any(part in EXCLUDED_DIRS for part in PurePosixPath(rel).parts)
+
+
 def _git_paths(root: Path) -> list[str] | None:
     """Tracked paths, or None when this is not a usable git work tree."""
     try:
@@ -90,7 +101,6 @@ def _git_paths(root: Path) -> list[str] | None:
             ["git", "ls-files", "-z"],
             cwd=root,
             capture_output=True,
-            text=True,
             timeout=60,
             check=False,
         )
@@ -98,7 +108,8 @@ def _git_paths(root: Path) -> list[str] | None:
         return None
     if proc.returncode != 0:
         return None
-    paths = [p for p in proc.stdout.split("\0") if p]
+    decoded = proc.stdout.decode("utf-8", errors="surrogateescape")
+    paths = [p for p in decoded.split("\0") if p and not _is_excluded(p)]
     return paths or None
 
 
@@ -107,33 +118,47 @@ def _walk_paths(root: Path) -> list[str]:
     for path in root.rglob("*"):
         if not path.is_file():
             continue
-        rel = path.relative_to(root)
-        if any(part in EXCLUDED_DIRS for part in rel.parts):
+        rel = path.relative_to(root).as_posix()
+        if _is_excluded(rel):
             continue
-        out.append(rel.as_posix())
+        out.append(rel)
     return out
 
 
-def _load(root: Path, rel: str) -> RepoFile | None:
+def _load(root: Path, rel: str) -> RepoFile:
+    """Load one discovered file. Raises OSError; callers must not swallow it."""
     abspath = root / rel
-    try:
-        raw = abspath.read_bytes()
-    except OSError:
-        return None
+    raw = abspath.read_bytes()
     is_text = b"\x00" not in raw[:_NULL_SNIFF_BYTES]
     text = raw.decode("utf-8", errors="replace") if is_text else ""
     return RepoFile(path=rel, abspath=abspath, is_text=is_text, text=text)
 
 
-def discover(root: Path) -> Repo:
+def discover(root: Path, *, minimum_files: int = 1) -> Repo:
     """Enumerate the published file set. Raises rather than returning a partial scan."""
     paths = _git_paths(root)
+    mode = "git" if paths is not None else "walk"
     if paths is None:
         paths = _walk_paths(root)
-    loaded = (_load(root, rel) for rel in sorted(set(paths)))
-    files = tuple(entry for entry in loaded if entry is not None)
+    files: list[RepoFile] = []
+    unreadable: list[str] = []
+    for rel in sorted(set(paths)):
+        try:
+            files.append(_load(root, rel))
+        except OSError:
+            unreadable.append(rel)
+    if unreadable:
+        raise DiscoveryError(
+            f"cannot read {len(unreadable)} discovered file(s), refusing to report a "
+            f"clean scan: {unreadable}"
+        )
     if not files:
         raise DiscoveryError(f"discovery found no files under {root}")
+    if len(files) < minimum_files:
+        raise DiscoveryError(
+            f"discovery found {len(files)} file(s) under {root}, fewer than the "
+            f"required minimum of {minimum_files}. Refusing to report a clean scan."
+        )
     found = {entry.path for entry in files}
     missing = [name for name in SENTINELS if name not in found]
     if missing:
@@ -141,4 +166,4 @@ def discover(root: Path) -> Repo:
             f"scan is untrustworthy, sentinel files missing: {missing}. "
             "Refusing to report a clean result."
         )
-    return Repo(root=root, files=files)
+    return Repo(root=root, files=tuple(files), mode=mode)

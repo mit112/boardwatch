@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import subprocess
 from pathlib import Path
 
 import pytest
@@ -24,6 +25,25 @@ def _fake_repo(root: Path) -> None:
     settings = root / "src" / "boardwatch" / "core"
     settings.mkdir(parents=True)
     (settings / "settings.py").write_text("X = 1\n", encoding="utf-8")
+
+
+def _init_git_repo(root: Path) -> None:
+    """Build the minimum trusted tree and commit it to a fresh git repo at root."""
+    _fake_repo(root)
+    subprocess.run(["git", "init"], cwd=root, check=True, capture_output=True)
+    subprocess.run(
+        ["git", "config", "user.email", "test@example.com"],
+        cwd=root,
+        check=True,
+        capture_output=True,
+    )
+    subprocess.run(
+        ["git", "config", "user.name", "Test"], cwd=root, check=True, capture_output=True
+    )
+    subprocess.run(["git", "add", "-A"], cwd=root, check=True, capture_output=True)
+    subprocess.run(
+        ["git", "commit", "-m", "initial"], cwd=root, check=True, capture_output=True
+    )
 
 
 def test_find_repo_root_locates_the_real_repo() -> None:
@@ -104,3 +124,47 @@ def test_repo_is_a_frozen_value_type(tmp_path: Path) -> None:
     assert isinstance(repo, Repo)
     with pytest.raises(AttributeError):
         repo.root = tmp_path  # type: ignore[misc]
+
+
+def test_discover_prefers_git_mode_inside_a_work_tree(tmp_path: Path) -> None:
+    _init_git_repo(tmp_path)
+    repo = discover(tmp_path)
+    assert repo.mode == "git"
+
+
+def test_discover_excludes_untracked_debris_in_a_git_work_tree(tmp_path: Path) -> None:
+    _init_git_repo(tmp_path)
+    (tmp_path / "scratch.txt").write_text("untracked", encoding="utf-8")
+    repo = discover(tmp_path)
+    assert repo.by_path("scratch.txt") is None
+
+
+def test_discover_excludes_excluded_dirs_in_git_mode_too(tmp_path: Path) -> None:
+    _init_git_repo(tmp_path)
+    junk_dir = tmp_path / "dist"
+    junk_dir.mkdir()
+    (junk_dir / "artifact.txt").write_text("junk", encoding="utf-8")
+    subprocess.run(["git", "add", "-A"], cwd=tmp_path, check=True, capture_output=True)
+    subprocess.run(
+        ["git", "commit", "-m", "track dist"],
+        cwd=tmp_path,
+        check=True,
+        capture_output=True,
+    )
+    repo = discover(tmp_path)
+    assert repo.by_path("dist/artifact.txt") is None
+
+
+def test_discover_raises_when_a_tracked_file_is_missing_from_disk(
+    tmp_path: Path,
+) -> None:
+    _init_git_repo(tmp_path)
+    (tmp_path / "Makefile").unlink()
+    with pytest.raises(DiscoveryError, match="cannot read"):
+        discover(tmp_path)
+
+
+def test_discover_raises_when_minimum_files_is_not_met(tmp_path: Path) -> None:
+    _fake_repo(tmp_path)
+    with pytest.raises(DiscoveryError, match="minimum"):
+        discover(tmp_path, minimum_files=10)
