@@ -5,6 +5,7 @@ user's unknown-but-harmless keys survive a set."""
 from __future__ import annotations
 
 import tomllib
+from typing import Any
 
 import tomli_w
 import typer
@@ -12,6 +13,7 @@ from pydantic import ValidationError
 from rich.console import Console
 
 from boardwatch.cli.context import build_context
+from boardwatch.core.secrets import LLM_API_KEY_ENV, resolve_secret
 from boardwatch.core.settings import Settings, load_settings
 
 config_app = typer.Typer(no_args_is_help=True, help="Show or change settings.")
@@ -25,6 +27,26 @@ _SCALAR_KEYS = {
 }
 _WEIGHT_KEYS = {"skill_coverage", "title_match", "recency", "location_fit"}
 
+_SECRET_LEAF_NAMES = frozenset({"api_key", "token", "secret", "password"})
+
+
+def _is_secret_key(name: str) -> bool:
+    return name in _SECRET_LEAF_NAMES or name.endswith("_api_key")
+
+
+def _find_secret_key(raw: dict[str, Any], prefix: str = "") -> str | None:
+    """Dotted path of the first reserved secret key in raw, or None. Returns a PATH only,
+    never a value (secrets contract, P0-3 D-P0-3-5)."""
+    for key, value in raw.items():
+        path = f"{prefix}{key}"
+        if _is_secret_key(key):
+            return path
+        if isinstance(value, dict):
+            found = _find_secret_key(value, f"{path}.")
+            if found is not None:
+                return found
+    return None
+
 
 @config_app.command("show")
 def show(ctx: typer.Context) -> None:
@@ -36,6 +58,13 @@ def show(ctx: typer.Context) -> None:
     for key in sorted(_WEIGHT_KEYS):
         cur, dflt = getattr(settings.weights, key), getattr(defaults.weights, key)
         console.print(f"weights.{key} = {cur} (default {dflt}; [0,1]; next top)")
+    llm = settings.llm
+    console.print(
+        f"llm: reserved (opt-in; ships v1.1); "
+        f"enabled={llm.enabled}, provider={llm.provider}, model={llm.model}"
+    )
+    present = "set" if resolve_secret(LLM_API_KEY_ENV) is not None else "unset"
+    console.print(f"llm.api_key: {present} (via {LLM_API_KEY_ENV})")
 
 
 @config_app.command("set")
@@ -43,6 +72,26 @@ def set_(ctx: typer.Context, key: str, value: str) -> None:
     settings = load_settings(data_dir=ctx.obj)
     config_file = settings.config_dir / "config.toml"
     raw = tomllib.loads(config_file.read_text(encoding="utf-8")) if config_file.is_file() else {}
+
+    existing_secret = _find_secret_key(raw)
+    if existing_secret is not None:
+        console.print(
+            f"[red]refusing to write: config.toml must not contain secrets; found "
+            f"reserved key {existing_secret!r}. Remove it and put credentials in the "
+            f"environment ({LLM_API_KEY_ENV}).[/red]"
+        )
+        raise typer.Exit(code=1)
+    if _is_secret_key(key.rsplit(".", 1)[-1]):
+        console.print(
+            f"[red]secrets do not belong in config.toml; set {LLM_API_KEY_ENV} in the "
+            f"environment instead of {key!r}.[/red]"
+        )
+        raise typer.Exit(code=1)
+    if key == "llm" or key.startswith("llm."):
+        console.print(
+            f"[red]{key!r} is reserved for the v1.1 LLM tier and is not settable yet.[/red]"
+        )
+        raise typer.Exit(code=1)
 
     if key in _SCALAR_KEYS:
         caster, _e, _u = _SCALAR_KEYS[key]

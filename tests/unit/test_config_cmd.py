@@ -8,6 +8,7 @@ from typer.testing import CliRunner
 
 from boardwatch.cli.app import app
 from boardwatch.core.politeness import Fetcher
+from boardwatch.core.secrets import LLM_API_KEY_ENV
 from boardwatch.core.settings import load_settings
 from boardwatch.extract.taxonomy import load_taxonomy
 from boardwatch.providers.greenhouse import parse_job
@@ -122,3 +123,39 @@ def test_weight_change_alters_next_top(cfg) -> None:
     runner.invoke(app, [*base, "config", "set", "weights.skill_coverage", "0.9"])
     after = runner.invoke(app, [*base, "top"]).stdout
     assert before != after  # the live-read weight changed the ranking output
+
+
+def test_show_lists_llm_reserved_and_secret_presence(cfg, monkeypatch) -> None:
+    canary = "CANARY-SHOW-SECRET"
+    monkeypatch.setenv(LLM_API_KEY_ENV, canary)
+    result = runner.invoke(app, [*_base(cfg), "config", "show"])
+    assert result.exit_code == 0
+    assert "reserved" in result.output.lower()
+    assert "llm.api_key" in result.output
+    assert "set" in result.output              # presence indicator
+    assert canary not in result.output         # never the value
+
+
+def test_set_llm_key_rejected_as_reserved(cfg) -> None:
+    result = runner.invoke(app, [*_base(cfg), "config", "set", "llm.enabled", "true"])
+    assert result.exit_code == 1
+    assert "reserved" in result.output.lower()
+    assert not (cfg / "config.toml").exists()  # nothing written
+
+
+def test_set_secret_key_rejected_pointing_to_env(cfg) -> None:
+    result = runner.invoke(app, [*_base(cfg), "config", "set", "llm.api_key", "whatever"])
+    assert result.exit_code == 1
+    assert LLM_API_KEY_ENV in result.output    # points to the env var
+    assert "whatever" not in result.output     # the value is never echoed
+    assert not (cfg / "config.toml").exists()
+
+
+def test_set_refuses_when_config_contains_secret_and_never_leaks_value(cfg) -> None:
+    canary = "CANARY-SECRET-DO-NOT-LEAK"
+    (cfg / "config.toml").write_text(f'[llm]\napi_key = "{canary}"\n', encoding="utf-8")
+    result = runner.invoke(app, [*_base(cfg), "config", "set", "retry_attempts", "5"])
+    assert result.exit_code == 1
+    assert "llm.api_key" in result.output      # the offending path is named
+    assert canary not in result.output         # value-free error
+    assert result.exception is None or canary not in repr(result.exception)
