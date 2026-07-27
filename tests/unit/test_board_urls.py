@@ -23,3 +23,12 @@ def test_unknown_url_is_rejected_with_supported_forms() -> None:
     with pytest.raises(UnknownBoardURL) as exc:
         parse_board_target("https://workday.com/acme")
     assert "greenhouse" in str(exc.value) and "provider:slug" in str(exc.value)
+
+def test_help_text_enumerates_all_registry_providers() -> None:
+    from boardwatch.providers.registry import PROVIDER_NAMES
+
+    with pytest.raises(UnknownBoardURL) as exc:
+        parse_board_target("workday:acme")
+    msg = str(exc.value)
+    for name in PROVIDER_NAMES:
+        assert name in msg
