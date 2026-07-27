@@ -43,3 +43,9 @@ def test_registry_import_is_store_free() -> None:
     )
     result = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True)
     assert result.returncode == 0, f"registry pulled in store modules: {result.stdout.strip()}"
+
+
+def test_default_providers_delegates_to_registry() -> None:
+    from boardwatch.scan.coordinator import default_providers
+
+    assert set(default_providers()) == set(registry.build_providers())

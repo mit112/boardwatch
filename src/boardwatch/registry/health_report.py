@@ -10,21 +10,11 @@ from dataclasses import dataclass
 
 from boardwatch.core.politeness import Fetcher
 from boardwatch.core.settings import load_settings
-from boardwatch.providers.ashby import AshbyProvider
-from boardwatch.providers.base import BoardHealth, Provider
-from boardwatch.providers.greenhouse import GreenhouseProvider
-from boardwatch.providers.lever import LeverProvider
+from boardwatch.providers.base import BoardHealth
+from boardwatch.providers.registry import build_providers
 from boardwatch.registry.loader import load_catalog
 
-# Provider map built HERE from the store-free provider classes (providers/* import only
-# core/, never store/). We deliberately do NOT reuse scan.coordinator.default_providers:
-# coordinator imports scan.apply → store.*, which would drag the DB into this repo-side,
-# no-user-DB workflow entry point (Codex round-1 plan finding, verified transitive import).
 _FAILURES = {BoardHealth.DEAD, BoardHealth.ERROR, BoardHealth.UNREACHABLE}
-
-
-def _providers() -> dict[str, Provider]:
-    return {"greenhouse": GreenhouseProvider(), "lever": LeverProvider(), "ashby": AshbyProvider()}
 
 
 @dataclass(frozen=True)
@@ -39,7 +29,7 @@ def check_catalog(probe: Callable[[str, str], BoardHealth] | None = None) -> lis
     entries = load_catalog()
     if probe is None:
         fetcher = Fetcher(load_settings())  # one shared politeness-paced Fetcher across the run
-        providers = _providers()
+        providers = build_providers()  # store-free: the registry imports providers/* -> core/ only
 
         def probe(provider: str, slug: str) -> BoardHealth:
             return providers[provider].healthcheck(fetcher, slug)
