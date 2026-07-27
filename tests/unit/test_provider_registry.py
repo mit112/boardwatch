@@ -79,3 +79,30 @@ def test_host_provider_map_raises_on_duplicate_host(monkeypatch) -> None:
     monkeypatch.setattr(registry, "PROVIDER_CLASSES", (FakeA, FakeB))
     with pytest.raises(ValueError, match="shared.example.com"):
         registry.host_provider_map()
+
+
+def test_identity_derivation_does_not_instantiate_providers(monkeypatch) -> None:
+    class Exploding:
+        name = "boom"
+        board_hosts = ("boom.example.com",)
+
+        def __init__(self) -> None:  # pragma: no cover - must never run
+            raise AssertionError("identity derivation must not instantiate providers")
+
+    monkeypatch.setattr(registry, "PROVIDER_CLASSES", (Exploding,))
+    # host_provider_map reads both name and board_hosts off the class, with no cls()
+    assert registry.host_provider_map() == {"boom.example.com": "boom"}
+
+
+def test_identity_derivation_raises_on_duplicate_name(monkeypatch) -> None:
+    class A:
+        name = "dup"
+        board_hosts = ("a.example.com",)
+
+    class B:
+        name = "dup"
+        board_hosts = ("b.example.com",)
+
+    monkeypatch.setattr(registry, "PROVIDER_CLASSES", (A, B))
+    with pytest.raises(ValueError, match="duplicate provider name"):
+        registry.host_provider_map()
