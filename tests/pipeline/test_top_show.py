@@ -106,8 +106,6 @@ def test_top_json_outputs_empty_array_for_no_new_matching_postings(
 
     assert result.exit_code == 0
     assert json.loads(result.stdout) == []
-
-
 def test_top_json_keeps_missing_profile_message_off_stdout(env: Path, tmp_path: Path) -> None:
     result = _invoke(tmp_path, ["top", "--json"])
 
