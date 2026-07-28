@@ -13,12 +13,19 @@ _HOME = "/Us" + "ers/someone/Desktop/notes.txt"
 # HOME_PATH_RE stops at the first path separator after the leading component, so the
 # text an exception entry must key on is this truncated prefix, not the full path above.
 _HOME_HIT = "/Us" + "ers/someone"
+_HOME_LOWER = "/us" + "ers/someone/x"
+_HOME_UPPER = "/HOME" + "/someone/x"
+_HOME_WINDOWS_UPPER = "C:" + "\\USERS\\someone"
 _MAIL = "person" + "@" + "realdomain.dev"
 _LINKEDIN = "https://www.linked" + "in.com/in/someone"
+_MAILTO = "mail" + "to:"
 _PHONE_NANP = "415-555" + "-0134"
-_PHONE_INTL_SPACED = "+91 98765" + " 43210"
+# Neither fragment below is itself a complete PHONE_RE match: "+91 " and "+91-" carry no
+# digit groups on their own, and the remaining digit runs carry neither a "+" nor a
+# separator, so they do not qualify under any alternative either.
+_PHONE_INTL_SPACED = "+91 " + "98765 43210"
 _PHONE_INTL_HYPHEN = "98765" + "-43210"
-_PHONE_INTL_CC_HYPHEN = "+91-9876" + "543210"
+_PHONE_INTL_CC_HYPHEN = "+91-" + "9876543210"
 _PHONE_UK = "07700" + " 900123"
 
 
@@ -39,11 +46,11 @@ def test_windows_home_path_is_rejected() -> None:
 
 
 def test_home_path_is_rejected_case_insensitively() -> None:
-    found = check_shapes(_repo("/users/someone/x"))
+    found = check_shapes(_repo(_HOME_LOWER))
     assert [v.rule for v in found] == ["R1"]
-    found = check_shapes(_repo("/HOME/someone/x"))
+    found = check_shapes(_repo(_HOME_UPPER))
     assert [v.rule for v in found] == ["R1"]
-    found = check_shapes(_repo("C:" + "\\USERS\\someone"))
+    found = check_shapes(_repo(_HOME_WINDOWS_UPPER))
     assert [v.rule for v in found] == ["R1"]
 
 
@@ -126,6 +133,27 @@ def test_versions_and_grouped_digit_runs_are_not_phone_numbers() -> None:
     assert check_shapes(_repo(text)) == []
 
 
+def test_plus_prefixed_prose_deltas_are_not_phone_numbers() -> None:
+    for text in (
+        "Coverage improved: +150 statements",
+        "latency +250 ms",
+        "increase of +100%",
+        "3 files changed, +153 -11",
+        "Price delta +1.50 USD",
+    ):
+        assert check_shapes(_repo(text)) == [], text
+
+
+def test_decimals_and_digit_pairs_are_not_phone_numbers() -> None:
+    for text in (
+        "float 12345.678901",
+        "throughput 65536 131072 bytes",
+        "Elapsed 12345 678901 ns",
+        "port range 30000-32767",
+    ):
+        assert check_shapes(_repo(text)) == [], text
+
+
 def test_allowlisted_phone_is_accepted_and_marks_the_entry_used() -> None:
     original = dict(al.PHONE_EXCEPTIONS)
     al.PHONE_EXCEPTIONS[_PHONE_NANP] = "fixture number documented as a known exception"
@@ -154,15 +182,15 @@ def test_profile_url_is_rejected() -> None:
 
 
 def test_bare_mailto_is_rejected() -> None:
-    found = check_shapes(_repo("contact us at mailto:security@example.com"))
+    found = check_shapes(_repo(f"contact us at {_MAILTO}security@example.com"))
     assert [v.rule for v in found] == ["R4"]
 
 
 def test_allowlisted_profile_url_is_accepted_and_marks_the_entry_used() -> None:
     original = dict(al.PROFILE_URL_EXCEPTIONS)
-    al.PROFILE_URL_EXCEPTIONS["mailto:"] = "security contact published in SECURITY.md"
+    al.PROFILE_URL_EXCEPTIONS[_MAILTO] = "security contact published in SECURITY.md"
     try:
-        assert check_shapes(_repo("contact us at mailto:security@example.com")) == []
+        assert check_shapes(_repo(f"contact us at {_MAILTO}security@example.com")) == []
     finally:
         al.PROFILE_URL_EXCEPTIONS.clear()
         al.PROFILE_URL_EXCEPTIONS.update(original)
@@ -170,7 +198,7 @@ def test_allowlisted_profile_url_is_accepted_and_marks_the_entry_used() -> None:
 
 def test_stale_profile_url_exception_is_reported() -> None:
     original = dict(al.PROFILE_URL_EXCEPTIONS)
-    al.PROFILE_URL_EXCEPTIONS["mailto:"] = "no longer present"
+    al.PROFILE_URL_EXCEPTIONS[_MAILTO] = "no longer present"
     try:
         found = check_shapes(_repo("nothing here"))
         assert [v.rule for v in found] == ["R4"]
