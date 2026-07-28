@@ -8,7 +8,11 @@ from pathlib import Path
 from tools.generalization import allowlists as al
 from tools.generalization.allowlists import DataEntry
 from tools.generalization.discovery import Repo, RepoFile, discover
-from tools.generalization.inventory import check_inventory, inventory_scope
+from tools.generalization.inventory import (
+    check_inventory,
+    check_registry_invariants,
+    inventory_scope,
+)
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 
@@ -233,3 +237,76 @@ def test_an_unrecognised_provenance_is_rejected() -> None:
         assert [v.rule for v in found] == ["R7"]
     finally:
         al.SHIPPED_DATA[path] = original
+
+
+def test_real_tree_registry_invariants_hold() -> None:
+    assert check_registry_invariants(discover(REPO_ROOT)) == []
+
+
+def test_exactly_one_canonical_company_enumeration() -> None:
+    designated = [p for p, e in al.SHIPPED_DATA.items() if e.kind == "company_enumeration"]
+    assert designated == [al.CANONICAL_REGISTRY_PATH]
+
+
+def test_a_second_company_enumeration_is_rejected() -> None:
+    repo = discover(REPO_ROOT)
+    al.SHIPPED_DATA["docs/other_companies.yaml"] = DataEntry(
+        kind="company_enumeration", reason="sneaked in"
+    )
+    try:
+        found = [v for v in check_registry_invariants(repo) if "exactly one" in v.detail]
+        assert [v.rule for v in found] == ["R8"]
+    finally:
+        del al.SHIPPED_DATA["docs/other_companies.yaml"]
+
+
+def test_loader_references_only_the_canonical_registry() -> None:
+    repo = discover(REPO_ROOT)
+    loader = repo.by_path(al.REGISTRY_LOADER_PATH)
+    assert loader is not None
+    assert "companies.yaml" in loader.text
+
+
+def test_loader_reading_a_second_data_file_is_rejected(tmp_path: Path) -> None:
+    source = 'X = "companies.yaml"\nY = "extra_companies.yaml"\n'
+    files = tuple(
+        f for f in discover(REPO_ROOT).files if f.path != al.REGISTRY_LOADER_PATH
+    ) + (
+        RepoFile(
+            path=al.REGISTRY_LOADER_PATH,
+            abspath=tmp_path / "loader.py",
+            is_text=True,
+            text=source,
+        ),
+    )
+    found = [
+        v
+        for v in check_registry_invariants(Repo(root=REPO_ROOT, files=files))
+        if "loader must reference only" in v.detail
+    ]
+    assert [v.rule for v in found] == ["R8"]
+
+
+def test_registry_tag_vocabulary_is_closed() -> None:
+    assert al.ALLOWED_REGISTRY_TAGS == frozenset({"starter"})
+
+
+def test_personal_registry_tag_is_rejected(tmp_path: Path) -> None:
+    body = 'companies:\n  - {name: A, provider: greenhouse, slug: a, tags: [dream-job]}\n'
+    files = tuple(
+        f for f in discover(REPO_ROOT).files if f.path != al.CANONICAL_REGISTRY_PATH
+    ) + (
+        RepoFile(
+            path=al.CANONICAL_REGISTRY_PATH,
+            abspath=tmp_path / "companies.yaml",
+            is_text=True,
+            text=body,
+        ),
+    )
+    found = [
+        v
+        for v in check_registry_invariants(Repo(root=REPO_ROOT, files=files))
+        if "outside the public vocabulary" in v.detail
+    ]
+    assert [v.rule for v in found] == ["R8"]
+    assert "dream-job" in found[0].detail

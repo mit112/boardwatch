@@ -134,3 +134,13 @@ SHIPPED_DATA: dict[str, DataEntry] = {
         pin="sha256:0b71201005de8f1d3ca97c40ef9227e225338b36c56d82df8e476d088f0f3a42",
     ),
 }
+
+# The designation "the company registry" is bound to a literal path, not to a label
+# a contributor picks. A second bulk list cannot inherit it by relabelling.
+CANONICAL_REGISTRY_PATH = "src/boardwatch/registry/companies.yaml"
+REGISTRY_LOADER_PATH = "src/boardwatch/registry/loader.py"
+
+# Public, product-meaningful tags only. CompanyEntry(extra="forbid") blocks unknown
+# KEYS but not unknown VALUES, so a personal annotation like tags: [dream-job] would
+# otherwise validate cleanly.
+ALLOWED_REGISTRY_TAGS: frozenset[str] = frozenset({"starter"})

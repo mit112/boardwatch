@@ -8,7 +8,11 @@ stating what it is and where it came from.
 
 from __future__ import annotations
 
+import ast
 import hashlib
+from pathlib import PurePosixPath
+
+import yaml
 
 from tools.generalization import allowlists as al
 from tools.generalization.discovery import DiscoveryError, Repo
@@ -207,4 +211,87 @@ def check_inventory(repo: Repo) -> list[Violation]:
                     "Re-review the change, then update the pin",
                 )
             )
+    return violations
+
+
+def _data_literals(source: str) -> set[str]:
+    """Every string constant in `source` that names a data file."""
+    found: set[str] = set()
+    for node in ast.walk(ast.parse(source)):
+        if isinstance(node, ast.Constant) and isinstance(node.value, str):
+            if PurePosixPath(node.value).suffix.lower() in DATA_SUFFIXES:
+                found.add(node.value)
+    return found
+
+
+def _registry_tags(source: str) -> list[tuple[str, str]]:
+    """(tag, slug) for every tag used in the registry."""
+    raw = yaml.safe_load(source) or {}
+    rows = raw.get("companies") or []
+    out: list[tuple[str, str]] = []
+    for row in rows:
+        if not isinstance(row, dict):
+            continue
+        slug = str(row.get("slug", "?"))
+        for tag in row.get("tags") or []:
+            out.append((str(tag), slug))
+    return out
+
+
+def check_registry_invariants(repo: Repo) -> list[Violation]:
+    """R8: one registry, at one path, read from one place, with a closed tag vocabulary."""
+    violations: list[Violation] = []
+
+    designated = sorted(
+        path for path, entry in al.SHIPPED_DATA.items() if entry.kind == "company_enumeration"
+    )
+    if designated != [al.CANONICAL_REGISTRY_PATH]:
+        violations.append(
+            Violation(
+                "R8",
+                ALLOWLIST_PATH,
+                None,
+                "exactly one company_enumeration is allowed and it must be "
+                f"{al.CANONICAL_REGISTRY_PATH!r}, found {designated!r}. A personal target "
+                "list does not become acceptable by being inventoried",
+            )
+        )
+
+    loader = repo.by_path(al.REGISTRY_LOADER_PATH)
+    if loader is None:
+        violations.append(
+            Violation("R8", al.REGISTRY_LOADER_PATH, None, "the registry loader is missing")
+        )
+    else:
+        literals = _data_literals(loader.text)
+        expected = {PurePosixPath(al.CANONICAL_REGISTRY_PATH).name}
+        if literals != expected:
+            violations.append(
+                Violation(
+                    "R8",
+                    al.REGISTRY_LOADER_PATH,
+                    None,
+                    f"loader must reference only {sorted(expected)!r}, "
+                    f"found {sorted(literals)!r}",
+                )
+            )
+
+    registry = repo.by_path(al.CANONICAL_REGISTRY_PATH)
+    if registry is None:
+        violations.append(
+            Violation("R8", al.CANONICAL_REGISTRY_PATH, None, "the registry file is missing")
+        )
+    else:
+        for tag, slug in _registry_tags(registry.text):
+            if tag not in al.ALLOWED_REGISTRY_TAGS:
+                violations.append(
+                    Violation(
+                        "R8",
+                        al.CANONICAL_REGISTRY_PATH,
+                        None,
+                        f"entry {slug!r} uses tag {tag!r}, outside the public vocabulary "
+                        f"{sorted(al.ALLOWED_REGISTRY_TAGS)!r}. Tags describe the product, "
+                        "not one user's interest in a company",
+                    )
+                )
     return violations
