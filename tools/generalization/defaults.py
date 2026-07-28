@@ -246,18 +246,32 @@ def _diff(
 
 
 def _param_defaults(source: str) -> dict[str, object]:
+    """Preference-bearing parameter defaults, keyed by scope-qualified name.
+
+    Keys are qualified because a bare function name collides: a decoy method with the same
+    name in the same module could otherwise shadow a changed real default and the snapshot
+    would compare equal. Functions nested inside functions are not collected, because a local
+    helper's default is not a shipped API default.
+    """
     out: dict[str, object] = {}
-    for node in ast.walk(ast.parse(source)):
-        if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
-            continue
-        args = node.args
+
+    def collect(function: ast.FunctionDef | ast.AsyncFunctionDef, prefix: str) -> None:
+        args = function.args
         positional = args.posonlyargs + args.args
         offset = len(positional) - len(args.defaults)
         for arg, default in zip(positional[offset:], args.defaults, strict=True):
-            out[f"{node.name}.{arg.arg}"] = ast.unparse(default)
+            out[f"{prefix}.{arg.arg}"] = ast.unparse(default)
         for arg, kwdefault in zip(args.kwonlyargs, args.kw_defaults, strict=True):
             if kwdefault is not None:
-                out[f"{node.name}.{arg.arg}"] = ast.unparse(kwdefault)
+                out[f"{prefix}.{arg.arg}"] = ast.unparse(kwdefault)
+
+    for node in ast.parse(source).body:
+        if isinstance(node, ast.FunctionDef | ast.AsyncFunctionDef):
+            collect(node, node.name)
+        elif isinstance(node, ast.ClassDef):
+            for member in node.body:
+                if isinstance(member, ast.FunctionDef | ast.AsyncFunctionDef):
+                    collect(member, f"{node.name}.{member.name}")
     return out
 
 
@@ -312,21 +326,33 @@ def check_defaults_snapshot(repo: Repo) -> list[Violation]:
 
 
 def _prompt_defaults(source: str) -> list[tuple[str, str, str | None]]:
+    """Extract typer.prompt and typer.confirm calls with their defaults.
+
+    Matches any object calling prompt or confirm, not just the literal typer. prefix,
+    because the snapshot is an exact match. A broader matcher can only ADD rows, and an
+    added row fails loudly. Requiring the literal prefix would let an alias like
+    'import typer as _t' or 'from typer import prompt' silently remove a row, which is
+    the failure mode this system exists to prevent.
+    """
     rows: list[tuple[int, tuple[str, str, str | None]]] = []
     for node in ast.walk(ast.parse(source)):
         if not isinstance(node, ast.Call):
             continue
         func = node.func
-        if not (isinstance(func, ast.Attribute) and func.attr in ("prompt", "confirm")):
+        if isinstance(func, ast.Attribute):
+            called = func.attr
+        elif isinstance(func, ast.Name):
+            called = func.id
+        else:
             continue
-        if not (isinstance(func.value, ast.Name) and func.value.id == "typer"):
+        if called not in ("prompt", "confirm"):
             continue
         prompt = ast.unparse(node.args[0]) if node.args else "<no-argument>"
-        default: str | None = None
+        default: str | None = ast.unparse(node.args[1]) if len(node.args) > 1 else None
         for keyword in node.keywords:
             if keyword.arg == "default":
                 default = ast.unparse(keyword.value)
-        rows.append((node.lineno, (func.attr, prompt, default)))
+        rows.append((node.lineno, (called, prompt, default)))
     return [row for _, row in sorted(rows, key=lambda item: item[0])]
 
 

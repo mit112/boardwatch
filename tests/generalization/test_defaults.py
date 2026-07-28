@@ -229,20 +229,14 @@ def test_a_changed_init_prompt_default_is_rejected(tmp_path: Path) -> None:
 
 
 def test_an_unparseable_heuristic_module_is_reported() -> None:
-    others = tuple(
-        RepoFile(path=other, abspath=Path(other), is_text=True, text="")
-        for other in SCOPED_MODULES
-        if other != HEURISTIC_MODULE
-    )
     target = RepoFile(
         path=HEURISTIC_MODULE,
         abspath=Path(HEURISTIC_MODULE),
         is_text=True,
         text="def broken(\n",
     )
-    files = tuple(f for f in discover(REPO_ROOT).files if f.path not in SCOPED_MODULES) + (
+    files = tuple(f for f in discover(REPO_ROOT).files if f.path != HEURISTIC_MODULE) + (
         target,
-        *others,
     )
     found = [
         v for v in check_defaults_snapshot(Repo(root=REPO_ROOT, files=files))
@@ -252,23 +246,77 @@ def test_an_unparseable_heuristic_module_is_reported() -> None:
 
 
 def test_an_unparseable_init_module_is_reported() -> None:
-    others = tuple(
-        RepoFile(path=other, abspath=Path(other), is_text=True, text="")
-        for other in SCOPED_MODULES
-        if other != INIT_MODULE
-    )
     target = RepoFile(
         path=INIT_MODULE,
         abspath=Path(INIT_MODULE),
         is_text=True,
         text="def broken(\n",
     )
-    files = tuple(f for f in discover(REPO_ROOT).files if f.path not in SCOPED_MODULES) + (
+    files = tuple(f for f in discover(REPO_ROOT).files if f.path != INIT_MODULE) + (
         target,
-        *others,
     )
     found = [
         v for v in check_init_prompts(Repo(root=REPO_ROOT, files=files))
         if "could not be parsed" in v.detail
     ]
     assert [v.rule for v in found] == ["R11"]
+
+
+def test_a_positional_prompt_default_is_rejected(tmp_path: Path) -> None:
+    """typer.prompt is (text, default=None, ...), so a positional second argument is a real
+    default. Reading only the keyword form let a personal default through on every prompt
+    pinned as None, which is the registry-search, paste and profile prompts."""
+    source = 'import typer\nx = typer.prompt("Locations", "Atlantis")\n'
+    files = tuple(f for f in discover(REPO_ROOT).files if f.path != INIT_MODULE) + (
+        RepoFile(path=INIT_MODULE, abspath=tmp_path / "init.py", is_text=True, text=source),
+    )
+    found = check_init_prompts(Repo(root=REPO_ROOT, files=files))
+    assert [v.rule for v in found] == ["R11"]
+    assert "Atlantis" in found[0].detail
+
+
+def test_an_aliased_prompt_call_is_still_seen(tmp_path: Path) -> None:
+    source = 'import typer as t\nx = t.prompt("Locations", default="Atlantis")\n'
+    files = tuple(f for f in discover(REPO_ROOT).files if f.path != INIT_MODULE) + (
+        RepoFile(path=INIT_MODULE, abspath=tmp_path / "init.py", is_text=True, text=source),
+    )
+    found = check_init_prompts(Repo(root=REPO_ROOT, files=files))
+    assert [v.rule for v in found] == ["R11"]
+    assert "Atlantis" in found[0].detail
+
+
+def test_a_changed_parameter_default_is_rejected() -> None:
+    original = snap.EXPECTED_PARAM_DEFAULTS["score_posting.half_life_days"]
+    snap.EXPECTED_PARAM_DEFAULTS["score_posting.half_life_days"] = "3.0"
+    try:
+        found = [
+            v
+            for v in check_defaults_snapshot(discover(REPO_ROOT))
+            if "parameter default" in v.detail
+        ]
+        assert [v.rule for v in found] == ["R10"]
+    finally:
+        snap.EXPECTED_PARAM_DEFAULTS["score_posting.half_life_days"] = original
+
+
+def test_a_missing_heuristic_module_is_reported() -> None:
+    files = tuple(f for f in discover(REPO_ROOT).files if f.path != HEURISTIC_MODULE)
+    found = [
+        v
+        for v in check_defaults_snapshot(Repo(root=REPO_ROOT, files=files))
+        if "module is missing" in v.detail
+    ]
+    assert [v.rule for v in found] == ["R10"]
+
+
+def test_a_missing_init_module_is_reported() -> None:
+    files = tuple(f for f in discover(REPO_ROOT).files if f.path != INIT_MODULE)
+    found = check_init_prompts(Repo(root=REPO_ROOT, files=files))
+    assert [v.rule for v in found] == ["R11"]
+    assert "module is missing" in found[0].detail
+
+
+def test_the_init_prompt_snapshot_is_not_empty() -> None:
+    """Second lock, matching test_the_heuristic_parameter_default_is_pinned: if the extractor
+    were narrowed AND the snapshot emptied to match, both R11 tests would pass on nothing."""
+    assert len(snap.EXPECTED_INIT_PROMPTS) == 9
