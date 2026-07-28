@@ -1,0 +1,4 @@
+# Pin line endings repo-wide so the content hashes in the generalization inventory (R7)
+# are stable on every platform. Without this, Git for Windows checks out CRLF by default
+# and every sha256 pin mismatches at once. text=auto still leaves detected binaries alone.
+* text=auto eol=lf

@@ -6,6 +6,7 @@ import hashlib
 from pathlib import Path
 
 from tools.generalization import allowlists as al
+from tools.generalization.allowlists import DataEntry
 from tools.generalization.discovery import Repo, RepoFile, discover
 from tools.generalization.inventory import check_inventory, inventory_scope
 
@@ -38,9 +39,9 @@ def test_real_tree_inventory_is_complete_and_current() -> None:
 
 def test_unknown_data_file_is_rejected(tmp_path: Path) -> None:
     repo = Repo(root=tmp_path, files=(_entry("docs/harvested.yaml", tmp_path),))
-    found = check_inventory(repo)
+    found = [v for v in check_inventory(repo) if "not in SHIPPED_DATA" in v.detail]
     assert [v.rule for v in found] == ["R7"]
-    assert "not in SHIPPED_DATA" in found[0].detail
+    assert found[0].path == "docs/harvested.yaml"
 
 
 def test_stale_inventory_entry_is_rejected(tmp_path: Path) -> None:
@@ -92,12 +93,111 @@ def test_every_fixture_pin_matches_the_file_on_disk() -> None:
         assert digest == entry.pin.removeprefix("sha256:"), path
 
 
+def test_stale_entries_are_reported_even_when_an_unknown_file_exists(tmp_path: Path) -> None:
+    """Bidirectional comparison is not conditional: a rename is a delete plus an add, and
+    the orphaned entry must not be masked by the new file."""
+    repo = Repo(root=tmp_path, files=(_entry("docs/harvested.yaml", tmp_path),))
+    details = [v.detail for v in check_inventory(repo)]
+    assert any("not in SHIPPED_DATA" in d for d in details)
+    assert any("stale SHIPPED_DATA entry" in d for d in details)
+
+
+def test_line_endings_are_pinned_so_content_pins_are_platform_stable() -> None:
+    """R7 hashes raw bytes, so a CRLF checkout would break every pin at once."""
+    attributes = (REPO_ROOT / ".gitattributes").read_text(encoding="utf-8")
+    assert "eol=lf" in attributes
+
+
+def test_living_product_data_carrying_a_pin_is_rejected() -> None:
+    path = "src/boardwatch/registry/companies.yaml"
+    original = al.SHIPPED_DATA[path]
+    al.SHIPPED_DATA[path] = DataEntry(
+        kind=original.kind, reason=original.reason, pin="sha256:" + "0" * 64
+    )
+    try:
+        found = [v for v in check_inventory(discover(REPO_ROOT)) if "pin='none'" in v.detail]
+        assert [v.rule for v in found] == ["R7"]
+    finally:
+        al.SHIPPED_DATA[path] = original
+
+
+def test_pinned_kind_without_a_sha256_pin_is_rejected() -> None:
+    path = "tests/fixtures/lever/normal.json"
+    original = al.SHIPPED_DATA[path]
+    al.SHIPPED_DATA[path] = DataEntry(kind=original.kind, reason=original.reason, pin="none")
+    try:
+        found = [
+            v for v in check_inventory(discover(REPO_ROOT)) if "requires a sha256 pin" in v.detail
+        ]
+        assert [v.rule for v in found] == ["R7"]
+    finally:
+        al.SHIPPED_DATA[path] = original
+
+
+def test_a_mislabelled_kind_cannot_dodge_the_pin_requirement() -> None:
+    """The pin exemption is bound to the path, so relabelling a fixture 'taxonomy' does
+    not buy the churn exemption that taxonomy.yaml has."""
+    path = "tests/fixtures/lever/normal.json"
+    original = al.SHIPPED_DATA[path]
+    al.SHIPPED_DATA[path] = DataEntry(kind="taxonomy", reason="pretending to be living data")
+    try:
+        found = [
+            v for v in check_inventory(discover(REPO_ROOT)) if "requires a sha256 pin" in v.detail
+        ]
+        assert [v.rule for v in found] == ["R7"]
+    finally:
+        al.SHIPPED_DATA[path] = original
+
+
+def test_an_unrecognised_kind_is_rejected() -> None:
+    path = "tests/fixtures/lever/normal.json"
+    original = al.SHIPPED_DATA[path]
+    al.SHIPPED_DATA[path] = DataEntry(
+        kind="fixtures", reason=original.reason, pin=original.pin
+    )
+    try:
+        found = [v for v in check_inventory(discover(REPO_ROOT)) if "is not one of" in v.detail]
+        assert [v.rule for v in found] == ["R7"]
+    finally:
+        al.SHIPPED_DATA[path] = original
+
+
+def test_an_empty_reason_is_rejected() -> None:
+    path = "tests/fixtures/lever/normal.json"
+    original = al.SHIPPED_DATA[path]
+    al.SHIPPED_DATA[path] = DataEntry(kind=original.kind, reason="   ", pin=original.pin)
+    try:
+        found = [v for v in check_inventory(discover(REPO_ROOT)) if "'reason' is empty" in v.detail]
+        assert [v.rule for v in found] == ["R7"]
+    finally:
+        al.SHIPPED_DATA[path] = original
+
+
+def test_licensed_provenance_requires_a_license(tmp_path: Path) -> None:
+    path = "docs/borrowed.yaml"
+    body = "a: 1\n"
+    digest = hashlib.sha256(body.encode()).hexdigest()
+    al.SHIPPED_DATA[path] = DataEntry(
+        kind="corpus",
+        reason="borrowed sample",
+        provenance="public",
+        source="https://example.com/corpus",
+        license_=None,
+        pin=f"sha256:{digest}",
+    )
+    try:
+        repo = Repo(root=tmp_path, files=(_entry(path, tmp_path, body),))
+        found = [v for v in check_inventory(repo) if "requires a 'license'" in v.detail]
+        assert [v.rule for v in found] == ["R7"]
+    finally:
+        del al.SHIPPED_DATA[path]
+
+
 def test_non_first_party_provenance_requires_a_source(tmp_path: Path) -> None:
     path = "docs/borrowed.yaml"
     body = "a: 1\n"
     digest = hashlib.sha256(body.encode()).hexdigest()
-    entry_type = type(al.SHIPPED_DATA["tests/fixtures/lever/normal.json"])
-    al.SHIPPED_DATA[path] = entry_type(
+    al.SHIPPED_DATA[path] = DataEntry(
         kind="corpus",
         reason="borrowed sample",
         provenance="public",
