@@ -90,7 +90,11 @@ def find_repo_root(start: Path) -> Path:
 
 
 def _is_excluded(rel: str) -> bool:
-    """Whether a discovered relative path falls under a directory we never scan."""
+    """Whether a path falls under a directory excluded from the filesystem-walk fallback.
+
+    Applies only there, where untracked local debris (a virtualenv, a build directory, tool
+    caches) is real. Never applied to git output: everything git tracks is published.
+    """
     return any(part in EXCLUDED_DIRS for part in PurePosixPath(rel).parts)
 
 

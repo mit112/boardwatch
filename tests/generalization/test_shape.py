@@ -7,7 +7,7 @@ from pathlib import Path
 
 from tools.generalization import allowlists as al
 from tools.generalization.discovery import Repo, RepoFile
-from tools.generalization.shape import check_artifact_files, check_shapes
+from tools.generalization.shape import PROFILE_URL_RE, check_artifact_files, check_shapes
 
 _HOME = "/Us" + "ers/someone/Desktop/notes.txt"
 # HOME_PATH_RE stops at the first path separator after the leading component, so the
@@ -29,7 +29,7 @@ _PHONE_NANP = "415-555" + "-0134"
 _PHONE_INTL_SPACED = "+91 " + "98765 43210"
 _PHONE_INTL_CC_HYPHEN = "+91-" + "9876543210"
 _PHONE_UK = "07700" + " 900123"
-# Compact E.164 forms (country code directly followed by 8-15 digits with no separators)
+# Compact E.164 forms (country code directly followed by 10-15 digits with no separators)
 # are the machine-readable canonical form found in vCard, tel: URI, and harvest vectors.
 _PHONE_E164_IN = "+91" + "9876543210"
 _PHONE_E164_US = "+1" + "4155550134"
@@ -245,6 +245,15 @@ def test_bare_mailto_with_no_tail_is_an_accepted_bypass() -> None:
     """A "mailto:" with nothing after it identifies nobody, so it is not a match: the
     identifying tail is part of the match, on purpose."""
     assert check_shapes(_repo(f"see {_MAILTO} for the format")) == []
+
+
+def test_a_trailing_period_is_not_part_of_a_profile_url() -> None:
+    """A SECURITY.md contact line ending a sentence with a period must not fold that period
+    into the match: an exception keyed on the clean address has to actually match."""
+    punctuated = _MAILTO_HIT + "."
+    match = PROFILE_URL_RE.search(f"contact us at {punctuated} for reports")
+    assert match is not None
+    assert match.group(0) == _MAILTO_HIT
 
 
 def test_allowlisted_profile_url_is_accepted_and_marks_the_entry_used() -> None:

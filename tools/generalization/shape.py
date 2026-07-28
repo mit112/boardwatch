@@ -55,9 +55,13 @@ PHONE_RE = re.compile(
 MIN_INTL_PHONE_DIGITS = 10
 # The identifying tail is part of the match on purpose: the exception table keys on matched
 # text, so a bare "mailto:" pattern would mean the only possible entry is "mailto:" itself,
-# which disables half of R4 repo-wide. Same match-level discipline R2 uses.
+# which disables half of R4 repo-wide. Same match-level discipline R2 uses. The last character
+# of the tail may not be trailing punctuation, so a SECURITY.md contact line ending a sentence
+# with a period does not fold that period into the match: an exception keyed on the clean
+# address then actually matches, instead of producing two confusing violations (the punctuated
+# hit unexcused, the clean entry unused).
 PROFILE_URL_RE = re.compile(
-    r"linkedin\.com/in/[A-Za-z0-9_%-]+|mailto:[^\s\"'>)\]]+", re.IGNORECASE
+    r"linkedin\.com/in/[A-Za-z0-9_%-]+|mailto:[^\s\"'>)\]]*[^\s\"'>)\].,;:!?]", re.IGNORECASE
 )
 
 ALLOWLIST_PATH = "tools/generalization/allowlists.py"
