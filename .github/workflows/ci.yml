@@ -27,7 +27,7 @@ jobs:
           python-version: ${{ matrix.python }}
       - run: uv sync --frozen
       - run: uv run ruff check .
-      - run: uv run mypy --strict src
+      - run: uv run mypy --strict src tools
       - run: uv run pytest
 
   gitleaks:
@@ -51,3 +51,14 @@ jobs:
           python-version: "3.12"
       - run: uv sync --frozen
       - run: uv run pytest tests/perf -m perf --no-cov -s
+
+  generalization:
+    name: generalization
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          python-version: "3.12"
+      - run: uv sync --frozen
+      - run: uv run python -m tools.generalization
