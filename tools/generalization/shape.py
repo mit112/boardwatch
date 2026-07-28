@@ -25,25 +25,27 @@ HOME_PATH_RE = re.compile(
 EMAIL_RE = re.compile(r"[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}")
 RESERVED_EMAIL_RE = re.compile(r"@example\.(?:com|org|net)$", re.IGNORECASE)
 # R3 matches NANP (3-3-4, hyphen/dot separated, optional +1 country code), international
-# numbers (a "+" country code followed by at least two separated digit groups), a UK-style
-# leading-zero number (5 digits, a space, 6 digits), and a hyphenated 5-5 split whose two
-# halves do not start with the same digit. The leading/trailing lookaround stops a match
-# from being a fragment of a larger dotted or hyphenated run, which is what a version
-# string or a chained date range looks like. The mandatory separator and second group in
-# the international alternative stop a bare "+N" prose delta (a changelog count, a percent
-# change, a currency delta) from qualifying; MIN_INTL_PHONE_DIGITS below covers the rest.
-# The leading-digit check on the hyphenated 5-5 split is what tells a phone number's two
-# unrelated halves apart from a numeric range (a port range's bounds share a magnitude and
-# so, in practice, a leading digit) without knowing anything about either domain by name.
+# numbers written with an explicit "+" country code (either separated groups or the
+# compact E.164 run), and the trunk-zero form (a leading zero, 5 digits, a space, 6
+# digits). The leading/trailing lookaround stops a match from being a fragment of a larger
+# dotted or hyphenated run, which is what a version string or a chained date range looks
+# like. There is deliberately NO bare local-format alternative: a digit pair with no
+# country code has the same shape as a numeric range (a salary band, a port range) or a
+# space-grouped identifier, so no shape-only rule can tell them apart. Local-format
+# numbers are an accepted bypass, recorded in spec section 8.
 PHONE_RE = re.compile(
     r"(?<![\d.-])(?:"
     r"(?:\+1[ .-])?(?:\(\d{3}\)[ .-]|\d{3}[.-])\d{3}[.-]\d{4}"
     r"|\+\d{1,3}[ .-]\d{2,6}(?:[ .-]?\d{2,6}){1,3}"
+    r"|\+\d{8,15}"
     r"|0\d{4} \d{6}"
-    r"|(?P<_r3_lead>\d)\d{4}-(?!(?P=_r3_lead))\d{5}"
     r")(?![\d.-])"
 )
-MIN_INTL_PHONE_DIGITS = 7
+# Every country-coded number in real use carries at least 10 digits (the shortest national
+# numbering plans reach 10 once the country code is included). Below that threshold a
+# "+" followed by separated groups is indistinguishable from space-grouped or dot-grouped
+# thousands notation, which is how a changelog delta ("+12 345 678 bytes") is written.
+MIN_INTL_PHONE_DIGITS = 10
 PROFILE_URL_RE = re.compile(r"linkedin\.com/in/|mailto:", re.IGNORECASE)
 
 ALLOWLIST_PATH = "tools/generalization/allowlists.py"
@@ -119,10 +121,10 @@ def check_shapes(repo: Repo) -> list[Violation]:
                 )
             for match in PHONE_RE.finditer(line):
                 hit = match.group(0)
-                if hit.startswith("+") and sum(c.isdigit() for c in hit) < MIN_INTL_PHONE_DIGITS:
-                    continue
                 if hit in al.PHONE_EXCEPTIONS:
                     used_phones.add(hit)
+                    continue
+                if hit.startswith("+") and sum(c.isdigit() for c in hit) < MIN_INTL_PHONE_DIGITS:
                     continue
                 violations.append(
                     Violation(

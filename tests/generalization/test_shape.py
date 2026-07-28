@@ -24,9 +24,14 @@ _PHONE_NANP = "415-555" + "-0134"
 # digit groups on their own, and the remaining digit runs carry neither a "+" nor a
 # separator, so they do not qualify under any alternative either.
 _PHONE_INTL_SPACED = "+91 " + "98765 43210"
-_PHONE_INTL_HYPHEN = "98765" + "-43210"
 _PHONE_INTL_CC_HYPHEN = "+91-" + "9876543210"
 _PHONE_UK = "07700" + " 900123"
+# Compact E.164 forms (country code directly followed by 8-15 digits with no separators)
+# are the machine-readable canonical form found in vCard, tel: URI, and harvest vectors.
+_PHONE_E164_IN = "+91" + "9876543210"
+_PHONE_E164_US = "+1" + "4155550134"
+_PHONE_E164_UK = "+44" + "2079460958"
+_PHONE_TEL_URI = "tel:" + "+91" + "9876543210"
 
 
 def _repo(text: str, path: str = "docs/thing.md") -> Repo:
@@ -118,7 +123,7 @@ def test_phone_number_is_rejected() -> None:
 
 
 def test_international_phone_formats_are_rejected() -> None:
-    for phone in (_PHONE_INTL_SPACED, _PHONE_INTL_HYPHEN, _PHONE_INTL_CC_HYPHEN, _PHONE_UK):
+    for phone in (_PHONE_INTL_SPACED, _PHONE_INTL_CC_HYPHEN, _PHONE_UK, _PHONE_E164_IN, _PHONE_E164_US, _PHONE_E164_UK, _PHONE_TEL_URI):
         found = check_shapes(_repo(f"call {phone} now"))
         assert [v.rule for v in found] == ["R3"], phone
 
@@ -140,6 +145,10 @@ def test_plus_prefixed_prose_deltas_are_not_phone_numbers() -> None:
         "increase of +100%",
         "3 files changed, +153 -11",
         "Price delta +1.50 USD",
+        "delta +12 345 678 bytes",
+        "+1 000 000 rows",
+        "+123 456 789 events",
+        "budget +12.345.678 EUR",
     ):
         assert check_shapes(_repo(text)) == [], text
 
@@ -150,8 +159,30 @@ def test_decimals_and_digit_pairs_are_not_phone_numbers() -> None:
         "throughput 65536 131072 bytes",
         "Elapsed 12345 678901 ns",
         "port range 30000-32767",
+        "salary band 85000-95000 USD",
+        "ephemeral ports 49152-65535",
+        "linux ports 32768-60999",
     ):
         assert check_shapes(_repo(text)) == [], text
+
+
+def test_local_format_numbers_with_no_country_code_are_an_accepted_bypass() -> None:
+    """Bare digit pairs without country code are an accepted bypass (spec section 8)."""
+    local_number = "98765" + "-43210"
+    assert check_shapes(_repo(f"call {local_number} now")) == []
+
+
+def test_short_intl_exception_is_used_and_not_reported_stale() -> None:
+    """An exception below the digit threshold is consulted before filtering."""
+    original = dict(al.PHONE_EXCEPTIONS)
+    short_hit = "+1 " + "234 567"
+    al.PHONE_EXCEPTIONS[short_hit] = "fixture exception below digit threshold"
+    try:
+        found = check_shapes(_repo(f"dial {short_hit} now"))
+        assert found == []
+    finally:
+        al.PHONE_EXCEPTIONS.clear()
+        al.PHONE_EXCEPTIONS.update(original)
 
 
 def test_allowlisted_phone_is_accepted_and_marks_the_entry_used() -> None:
