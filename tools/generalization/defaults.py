@@ -8,8 +8,10 @@ non-empty collection literal in these modules is the shape that takes.
 from __future__ import annotations
 
 import ast
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
+from typing import Any, cast
 
+from tools.generalization import snapshots as snap
 from tools.generalization.discovery import Repo
 from tools.generalization.model import Violation
 
@@ -204,3 +206,157 @@ def check_collection_defaults(repo: Repo) -> list[Violation]:
                         )
                     )
     return violations
+
+
+SNAPSHOT_PATH = "tools/generalization/snapshots.py"
+
+
+def _diff(
+    actual: dict[str, object], expected: dict[str, object], label: str
+) -> list[Violation]:
+    violations: list[Violation] = []
+    for key in sorted(set(actual) - set(expected)):
+        violations.append(
+            Violation(
+                "R10",
+                SNAPSHOT_PATH,
+                None,
+                f"new {label} {key!r} = {actual[key]!r} is not in the snapshot. Check "
+                "whether it encodes one user's preference, then pin it",
+            )
+        )
+    for key in sorted(set(expected) - set(actual)):
+        violations.append(
+            Violation(
+                "R10", SNAPSHOT_PATH, None, f"snapshotted {label} {key!r} no longer exists"
+            )
+        )
+    for key in sorted(set(actual) & set(expected)):
+        if actual[key] != expected[key]:
+            violations.append(
+                Violation(
+                    "R10",
+                    SNAPSHOT_PATH,
+                    None,
+                    f"{label} {key!r} changed from {expected[key]!r} to {actual[key]!r}. "
+                    "Confirm this is a neutral default, then update the snapshot",
+                )
+            )
+    return violations
+
+
+def _param_defaults(source: str) -> dict[str, object]:
+    out: dict[str, object] = {}
+    for node in ast.walk(ast.parse(source)):
+        if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            continue
+        args = node.args
+        positional = args.posonlyargs + args.args
+        offset = len(positional) - len(args.defaults)
+        for arg, default in zip(positional[offset:], args.defaults, strict=True):
+            out[f"{node.name}.{arg.arg}"] = ast.unparse(default)
+        for arg, kwdefault in zip(args.kwonlyargs, args.kw_defaults, strict=True):
+            if kwdefault is not None:
+                out[f"{node.name}.{arg.arg}"] = ast.unparse(kwdefault)
+    return out
+
+
+def check_defaults_snapshot(repo: Repo) -> list[Violation]:
+    """R10: every settings default and preference-bearing parameter default is pinned."""
+    from boardwatch.core.settings import LLMTier, RankWeights, Settings
+
+    violations: list[Violation] = []
+    if set(snap.SETTINGS_FIELD_CLASS) != set(snap.EXPECTED_SETTINGS_DEFAULTS):
+        violations.append(
+            Violation(
+                "R10",
+                SNAPSHOT_PATH,
+                None,
+                "SETTINGS_FIELD_CLASS and EXPECTED_SETTINGS_DEFAULTS cover different keys; "
+                "every pinned default needs a reviewer-guidance class",
+            )
+        )
+
+    actual: dict[str, object] = {}
+    for model in (Settings, RankWeights, LLMTier):
+        for name, field in model.model_fields.items():
+            key = f"{model.__name__}.{name}"
+            factory = field.default_factory
+            if field.is_required():
+                actual[key] = "REQUIRED"
+            elif factory is not None:
+                made = cast(Callable[[], Any], factory)()
+                actual[key] = made.model_dump() if hasattr(made, "model_dump") else made
+            else:
+                actual[key] = field.default
+    violations.extend(_diff(actual, snap.EXPECTED_SETTINGS_DEFAULTS, "settings default"))
+
+    found = repo.by_path(HEURISTIC_MODULE)
+    if found is None:
+        violations.append(Violation("R10", HEURISTIC_MODULE, None, "module is missing"))
+        return violations
+    expected_params: dict[str, object] = dict(snap.EXPECTED_PARAM_DEFAULTS)
+    try:
+        violations.extend(_diff(_param_defaults(found.text), expected_params, "parameter default"))
+    except SyntaxError as exc:
+        violations.append(
+            Violation(
+                "R10",
+                HEURISTIC_MODULE,
+                exc.lineno,
+                f"could not be parsed as Python ({exc.msg}), so the parameter default check "
+                "is disabled",
+            )
+        )
+    return violations
+
+
+def _prompt_defaults(source: str) -> list[tuple[str, str, str | None]]:
+    rows: list[tuple[int, tuple[str, str, str | None]]] = []
+    for node in ast.walk(ast.parse(source)):
+        if not isinstance(node, ast.Call):
+            continue
+        func = node.func
+        if not (isinstance(func, ast.Attribute) and func.attr in ("prompt", "confirm")):
+            continue
+        if not (isinstance(func.value, ast.Name) and func.value.id == "typer"):
+            continue
+        prompt = ast.unparse(node.args[0]) if node.args else "<no-argument>"
+        default: str | None = None
+        for keyword in node.keywords:
+            if keyword.arg == "default":
+                default = ast.unparse(keyword.value)
+        rows.append((node.lineno, (func.attr, prompt, default)))
+    return [row for _, row in sorted(rows, key=lambda item: item[0])]
+
+
+def check_init_prompts(repo: Repo) -> list[Violation]:
+    """R11: the first-run wizard never defaults to one user's titles or locations."""
+    found = repo.by_path(INIT_MODULE)
+    if found is None:
+        return [Violation("R11", INIT_MODULE, None, "module is missing")]
+    try:
+        actual = tuple(_prompt_defaults(found.text))
+    except SyntaxError as exc:
+        return [
+            Violation(
+                "R11",
+                INIT_MODULE,
+                exc.lineno,
+                f"could not be parsed as Python ({exc.msg}), so the init prompt check "
+                "is disabled",
+            )
+        ]
+    if actual == snap.EXPECTED_INIT_PROMPTS:
+        return []
+    return [
+        Violation(
+            "R11",
+            INIT_MODULE,
+            None,
+            "init prompt defaults changed. Confirm no prompt now defaults to one user's "
+            "titles, locations or filters, then update EXPECTED_INIT_PROMPTS.\n"
+            f"    expected: {snap.EXPECTED_INIT_PROMPTS!r}\n"
+            f"    actual:   {actual!r}",
+        )
+    ]
