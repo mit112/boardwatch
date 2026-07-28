@@ -152,6 +152,31 @@ def save_profile(
     )
 
 
+def save_eligibility(
+    conn: Connection, *, facts_json: dict[str, object], policy_json: dict[str, object]
+) -> None:
+    """Write the eligibility facts and severity policy onto the existing profile row.
+
+    Takes JSON-ready dicts rather than the typed models, so this layer never imports from
+    boardwatch.eligibility. The eligibility layer reads and writes the store; the reverse
+    dependency would invert the layering.
+
+    A separate UPDATE, never part of save_profile's upsert. Two reasons, both verified:
+    profile.text is NOT NULL with no default, so an insert carrying only facts raises
+    IntegrityError; and save_profile's set_ map must never list these columns or
+    `profile edit` silently wipes declared facts (spec §4.6).
+    """
+    conn.execute(
+        update(profile)
+        .where(profile.c.id == 1)
+        .values(
+            eligibility_facts_json=facts_json,
+            eligibility_policy_json=policy_json,
+            updated_at=utcnow(),
+        )
+    )
+
+
 def last_complete_scan_ages(conn: Connection) -> dict[int, datetime]:
     """company_id → finished_at of its most recent complete-or-unchanged board_scan."""
     stmt = (
