@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import re
 from collections.abc import Iterator
+from pathlib import PurePosixPath
 
 from tools.generalization import allowlists as al
 from tools.generalization.discovery import Repo, RepoFile
@@ -153,4 +154,92 @@ def check_shapes(repo: Repo) -> list[Violation]:
     violations.extend(stale(al.EMAIL_EXCEPTIONS, used_emails, "R2"))
     violations.extend(stale(al.PHONE_EXCEPTIONS, used_phones, "R3"))
     violations.extend(stale(al.PROFILE_URL_EXCEPTIONS, used_profile_urls, "R4"))
+    return violations
+
+
+ARTIFACT_STEMS: frozenset[str] = frozenset(
+    {
+        "resume",
+        "résumé",
+        "cv",
+        "cover_letter",
+        "cover-letter",
+        "coverletter",
+        "eeo",
+        "work_auth",
+        "work-authorization",
+        "transcript",
+    }
+)
+
+# Stems are matched on data and artifact files only, never on .py modules. A
+# legitimate resume.py, work_auth.py, eeo.py or cv.py (computer vision) must pass:
+# this phase bans personal VALUES, not work-authorization CONCEPTS. The eligibility
+# feature will reason about work authorization as a requirement, by design.
+STEM_CHECKED_SUFFIXES: frozenset[str] = frozenset(
+    {
+        "",
+        ".yaml",
+        ".yml",
+        ".json",
+        ".jsonl",
+        ".csv",
+        ".tsv",
+        ".toml",
+        ".tex",
+        ".typ",
+        ".txt",
+        ".md",
+        ".mako",
+    }
+)
+
+BINARY_DOC_SUFFIXES: frozenset[str] = frozenset({".pdf", ".docx", ".doc", ".rtf", ".pages"})
+
+
+def _artifact_stem(path: str) -> str | None:
+    for segment in PurePosixPath(path).parts:
+        stem = PurePosixPath(segment).stem.casefold()
+        if stem in ARTIFACT_STEMS:
+            return stem
+    return None
+
+
+def check_artifact_files(repo: Repo) -> list[Violation]:
+    """R5 personal-artifact filenames, R6 binary documents."""
+    violations: list[Violation] = []
+    used_names: set[str] = set()
+    used_binaries: set[str] = set()
+    for entry in scannable(repo):
+        if entry.suffix in BINARY_DOC_SUFFIXES:
+            if entry.path in al.BINARY_DOC_EXCEPTIONS:
+                used_binaries.add(entry.path)
+            else:
+                violations.append(
+                    Violation(
+                        "R6",
+                        entry.path,
+                        None,
+                        f"binary document ({entry.suffix}). This repo ships no documents, "
+                        "and a document is a common carrier for personal data",
+                    )
+                )
+        if entry.suffix in STEM_CHECKED_SUFFIXES:
+            hit = _artifact_stem(entry.path)
+            if hit is None:
+                continue
+            if entry.path in al.ARTIFACT_NAME_EXCEPTIONS:
+                used_names.add(entry.path)
+            else:
+                violations.append(
+                    Violation(
+                        "R5",
+                        entry.path,
+                        None,
+                        f"personal-artifact name segment {hit!r}. Personal career data "
+                        "belongs in the user's own data directory, never in this repo",
+                    )
+                )
+    violations.extend(stale(al.ARTIFACT_NAME_EXCEPTIONS, used_names, "R5"))
+    violations.extend(stale(al.BINARY_DOC_EXCEPTIONS, used_binaries, "R6"))
     return violations

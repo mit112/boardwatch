@@ -7,7 +7,7 @@ from pathlib import Path
 
 from tools.generalization import allowlists as al
 from tools.generalization.discovery import Repo, RepoFile
-from tools.generalization.shape import check_shapes
+from tools.generalization.shape import check_artifact_files, check_shapes
 
 _HOME = "/Us" + "ers/someone/Desktop/notes.txt"
 # HOME_PATH_RE stops at the first path separator after the leading component, so the
@@ -36,6 +36,11 @@ _PHONE_TEL_URI = "tel:" + "+91" + "9876543210"
 
 def _repo(text: str, path: str = "docs/thing.md") -> Repo:
     entry = RepoFile(path=path, abspath=Path(path), is_text=True, text=text)
+    return Repo(root=Path("/tmp/fake"), files=(entry,))
+
+
+def _named(path: str, *, text: str = "x", is_text: bool = True) -> Repo:
+    entry = RepoFile(path=path, abspath=Path(path), is_text=is_text, text=text)
     return Repo(root=Path("/tmp/fake"), files=(entry,))
 
 
@@ -254,3 +259,40 @@ def test_the_checker_does_not_scan_itself() -> None:
 def test_line_numbers_are_reported() -> None:
     found = check_shapes(_repo(f"line one\nline two\n{_HOME}\n"))
     assert found[0].line == 3
+
+
+def test_resume_data_file_is_rejected() -> None:
+    found = check_artifact_files(_named("docs/" + "resume" + ".yaml"))
+    assert [v.rule for v in found] == ["R5"]
+
+
+def test_resume_directory_segment_is_rejected() -> None:
+    found = check_artifact_files(_named("data/" + "cover_letter" + "/one.json"))
+    assert [v.rule for v in found] == ["R5"]
+
+
+def test_python_modules_are_never_stem_checked() -> None:
+    """Banning personal VALUES must not ban work-authorization CONCEPTS."""
+    for name in ("resume", "work_auth", "eeo", "cv"):
+        assert check_artifact_files(_named(f"src/boardwatch/{name}.py")) == []
+
+
+def test_neutral_data_file_is_allowed() -> None:
+    assert check_artifact_files(_named("tests/fixtures/lever/normal.json")) == []
+
+
+def test_binary_document_is_rejected() -> None:
+    found = check_artifact_files(_named("docs/guide.pdf", is_text=False, text=""))
+    assert [v.rule for v in found] == ["R6"]
+
+
+def test_stale_artifact_exception_is_reported() -> None:
+    original = dict(al.ARTIFACT_NAME_EXCEPTIONS)
+    al.ARTIFACT_NAME_EXCEPTIONS["docs/gone.yaml"] = "removed last release"
+    try:
+        found = check_artifact_files(_named("tests/fixtures/lever/normal.json"))
+        assert [v.rule for v in found] == ["R5"]
+        assert "stale exception" in found[0].detail
+    finally:
+        al.ARTIFACT_NAME_EXCEPTIONS.clear()
+        al.ARTIFACT_NAME_EXCEPTIONS.update(original)

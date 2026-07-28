@@ -22,3 +22,9 @@ PHONE_EXCEPTIONS: dict[str, str] = {}
 
 # R4: exact matched text -> reason. Empty today; the tree uses no personal profile URLs.
 PROFILE_URL_EXCEPTIONS: dict[str, str] = {}
+
+# R5: exact repo-relative path -> reason. Empty today.
+ARTIFACT_NAME_EXCEPTIONS: dict[str, str] = {}
+
+# R6: exact repo-relative path -> reason. Empty today; this repo ships no documents.
+BINARY_DOC_EXCEPTIONS: dict[str, str] = {}
