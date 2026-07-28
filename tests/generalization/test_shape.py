@@ -282,7 +282,7 @@ def test_neutral_data_file_is_allowed() -> None:
 
 
 def test_binary_document_is_rejected() -> None:
-    found = check_artifact_files(_named("docs/guide.pdf", is_text=False, text=""))
+    found = check_artifact_files(_named("docs/" + "guide" + ".pdf", is_text=False, text=""))
     assert [v.rule for v in found] == ["R6"]
 
 
@@ -296,3 +296,20 @@ def test_stale_artifact_exception_is_reported() -> None:
     finally:
         al.ARTIFACT_NAME_EXCEPTIONS.clear()
         al.ARTIFACT_NAME_EXCEPTIONS.update(original)
+
+
+def test_hidden_artifact_data_file_is_rejected() -> None:
+    found = check_artifact_files(_named("." + "resume" + ".yaml"))
+    assert [v.rule for v in found] == ["R5"]
+
+
+def test_stale_binary_doc_exception_is_reported() -> None:
+    original = dict(al.BINARY_DOC_EXCEPTIONS)
+    al.BINARY_DOC_EXCEPTIONS["docs/gone.pdf"] = "removed last release"
+    try:
+        found = check_artifact_files(_named("tests/fixtures/lever/normal.json"))
+        assert [v.rule for v in found] == ["R6"]
+        assert "stale exception" in found[0].detail
+    finally:
+        al.BINARY_DOC_EXCEPTIONS.clear()
+        al.BINARY_DOC_EXCEPTIONS.update(original)

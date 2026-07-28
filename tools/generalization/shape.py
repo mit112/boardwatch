@@ -198,8 +198,10 @@ BINARY_DOC_SUFFIXES: frozenset[str] = frozenset({".pdf", ".docx", ".doc", ".rtf"
 
 
 def _artifact_stem(path: str) -> str | None:
+    # Leading dots are stripped so a hidden file like .resume.yaml cannot bypass
+    # the stem check.
     for segment in PurePosixPath(path).parts:
-        stem = PurePosixPath(segment).stem.casefold()
+        stem = PurePosixPath(segment).stem.lstrip(".").casefold()
         if stem in ARTIFACT_STEMS:
             return stem
     return None
