@@ -152,3 +152,18 @@ def test_a_dict_with_string_keys_is_flagged() -> None:
     source = "SCALES = {'a': 1.0}\n"
     found = check_collection_defaults(_module(source))
     assert [v.rule for v in found] == ["R9"]
+
+
+def test_a_nested_collection_of_strings_is_rejected() -> None:
+    for source in (
+        "DEFAULT_TITLES = [['Chief Widget Officer']]\n",
+        "GROUPS = (('Chief Widget Officer',),)\n",
+        "DEFAULT = [{'title': 'Chief Widget Officer'}]\n",
+        "BY_ID = {1: ['Widget Wrangler']}\n",
+    ):
+        found = check_collection_defaults(_module(source))
+        assert [v.rule for v in found] == ["R9"], source
+
+
+def test_a_nested_collection_without_strings_is_allowed() -> None:
+    assert check_collection_defaults(_module("BACKOFFS = [[1, 2], [4, 8]]\n")) == []

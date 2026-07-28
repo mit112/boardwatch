@@ -29,21 +29,31 @@ EXEMPT_TARGETS: frozenset[str] = frozenset({"__all__"})
 
 
 def _holds_a_string(node: ast.expr) -> bool:
-    """Whether a collection literal carries string content.
+    """Whether a collection literal carries string content at any depth.
 
-    Spec section 6 defines R9 over collections OF STRINGS. A tuple of retry backoffs or a
-    dict of floats is not a preference list, and telling its author that their personal
-    values belong in a config file would be the rule firing on legitimate content.
+    Spec section 6 scopes R9 to collections OF STRINGS, so a tuple of retry backoffs is not a
+    candidate. The search recurses, because grouping preference values one level down
+    (`[['Chief Widget Officer']]`, `[{'title': ...}]`) is an ordinary shape rather than an
+    evasion, and R9 has no backstop rule.
+
+    A dict counts on its KEYS as well as its values, because a title-to-weight map carries the
+    preference in the keys. The cost is that a string-keyed numeric dict is also a candidate.
+    That is deliberate: R9 guards the only leak class with no second rule behind it, so it fails
+    closed and a reviewer resolves the rare false positive. Recorded in spec section 8.
+
+    Only literal collections are traversed. A constructor call (`frozenset({...})`), string
+    concatenation, a name reference and an f-string all evade it, which spec section 8 records
+    as accepted bypasses alongside the same limitation on R1 and R2.
     """
+    if isinstance(node, ast.Constant):
+        return isinstance(node.value, str)
     if isinstance(node, ast.Dict):
         parts = [key for key in node.keys if key is not None] + list(node.values)
     elif isinstance(node, ast.List | ast.Tuple | ast.Set):
         parts = list(node.elts)
     else:
         return False
-    return any(
-        isinstance(part, ast.Constant) and isinstance(part.value, str) for part in parts
-    )
+    return any(_holds_a_string(part) for part in parts)
 
 
 def _is_non_empty_collection(node: ast.expr) -> bool:
