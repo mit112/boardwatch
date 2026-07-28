@@ -36,8 +36,10 @@ BINARY_DOC_EXCEPTIONS: dict[str, str] = {}
 class DataEntry:
     """One shipped data file and the justification for shipping it.
 
-    `pin` is 'sha256:<digest>' for content that should not drift, or 'none' for
-    living product data that has its own validators (see PIN_REQUIRED_KINDS).
+    `pin` is 'sha256:<digest>' for content that should not drift. The only exceptions are
+    named by path in `inventory.UNPINNED_PATHS`: living product data that churns and has its
+    own validators. The exemption is bound to the path, not to `kind`, so a mislabelled entry
+    cannot inherit it.
     """
 
     kind: str

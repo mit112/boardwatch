@@ -56,7 +56,7 @@ def test_changed_pinned_content_is_rejected() -> None:
     repo = discover(REPO_ROOT)
     pinned = "tests/fixtures/lever/normal.json"
     original = al.SHIPPED_DATA[pinned]
-    al.SHIPPED_DATA[pinned] = type(original)(
+    al.SHIPPED_DATA[pinned] = DataEntry(
         kind=original.kind,
         reason=original.reason,
         provenance=original.provenance,
@@ -105,7 +105,8 @@ def test_stale_entries_are_reported_even_when_an_unknown_file_exists(tmp_path: P
 def test_line_endings_are_pinned_so_content_pins_are_platform_stable() -> None:
     """R7 hashes raw bytes, so a CRLF checkout would break every pin at once."""
     attributes = (REPO_ROOT / ".gitattributes").read_text(encoding="utf-8")
-    assert "eol=lf" in attributes
+    lines = [line.strip() for line in attributes.splitlines()]
+    assert "* text=auto eol=lf" in lines
 
 
 def test_living_product_data_carrying_a_pin_is_rejected() -> None:
@@ -211,3 +212,24 @@ def test_non_first_party_provenance_requires_a_source(tmp_path: Path) -> None:
         assert [v.rule for v in found] == ["R7"]
     finally:
         del al.SHIPPED_DATA[path]
+
+
+def test_an_unrecognised_provenance_is_rejected() -> None:
+    path = "tests/fixtures/lever/normal.json"
+    original = al.SHIPPED_DATA[path]
+    al.SHIPPED_DATA[path] = DataEntry(
+        kind=original.kind,
+        reason=original.reason,
+        provenance="third-party",
+        source="https://example.com/x",
+        pin=original.pin,
+    )
+    try:
+        found = [
+            v
+            for v in check_inventory(discover(REPO_ROOT))
+            if "is not one of" in v.detail and "provenance=" in v.detail
+        ]
+        assert [v.rule for v in found] == ["R7"]
+    finally:
+        al.SHIPPED_DATA[path] = original

@@ -44,6 +44,13 @@ ALLOWED_DATA_KINDS: frozenset[str] = frozenset(
     {"taxonomy", "company_enumeration", "fixture", "corpus", "template"}
 )
 
+# Closed for the same reason as ALLOWED_DATA_KINDS. The license check keys on membership of
+# LICENSED_PROVENANCE, so a free-form label ("third-party", "harvested", "Public") would
+# slip past it. The source check keys on "not first-party" and is fail-closed already.
+ALLOWED_PROVENANCE: frozenset[str] = frozenset(
+    {"first-party", "synthetic", "public", "licensed"}
+)
+
 # Living product data that churns and carries its own validators. Pinning it would put a
 # hash bump in the path of every community registry PR, which is how checks get weakened
 # or deleted. The exemption is bound to LITERAL PATHS rather than to a kind label, for the
@@ -115,6 +122,17 @@ def check_inventory(repo: Repo) -> list[Violation]:
                     None,
                     f"kind={entry.kind!r} is not one of {sorted(ALLOWED_DATA_KINDS)!r}. "
                     "An unrecognised kind changes how the entry is treated without saying so",
+                )
+            )
+        if entry.provenance not in ALLOWED_PROVENANCE:
+            violations.append(
+                Violation(
+                    "R7",
+                    path,
+                    None,
+                    f"provenance={entry.provenance!r} is not one of "
+                    f"{sorted(ALLOWED_PROVENANCE)!r}. An unrecognised provenance skips the "
+                    "license requirement without saying so",
                 )
             )
         if not entry.reason.strip():
