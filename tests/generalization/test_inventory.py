@@ -9,6 +9,9 @@ from tools.generalization import allowlists as al
 from tools.generalization.allowlists import DataEntry
 from tools.generalization.discovery import Repo, RepoFile, discover
 from tools.generalization.inventory import (
+    _data_literals,
+    _registry_rows,
+    _registry_tags,
     check_inventory,
     check_registry_invariants,
     inventory_scope,
@@ -21,6 +24,22 @@ def _entry(path: str, tmp_path: Path, body: str = "a: 1\n") -> RepoFile:
     target = tmp_path / "blob"
     target.write_text(body, encoding="utf-8")
     return RepoFile(path=path, abspath=target, is_text=True, text=body)
+
+
+def _repo_with(path: str, text: str, tmp_path: Path) -> Repo:
+    """The real tree with one file's content replaced by a fixture."""
+    files = tuple(f for f in discover(REPO_ROOT).files if f.path != path) + (
+        RepoFile(path=path, abspath=tmp_path / "substitute", is_text=True, text=text),
+    )
+    return Repo(root=REPO_ROOT, files=files)
+
+
+def _repo_without(path: str) -> Repo:
+    """The real tree with one file absent."""
+    return Repo(
+        root=REPO_ROOT,
+        files=tuple(f for f in discover(REPO_ROOT).files if f.path != path),
+    )
 
 
 def test_scope_covers_data_files_repo_wide() -> None:
@@ -260,53 +279,139 @@ def test_a_second_company_enumeration_is_rejected() -> None:
         del al.SHIPPED_DATA["docs/other_companies.yaml"]
 
 
-def test_loader_references_only_the_canonical_registry() -> None:
-    repo = discover(REPO_ROOT)
-    loader = repo.by_path(al.REGISTRY_LOADER_PATH)
+def test_the_real_loader_references_exactly_the_canonical_filename() -> None:
+    loader = discover(REPO_ROOT).by_path(al.REGISTRY_LOADER_PATH)
     assert loader is not None
-    assert "companies.yaml" in loader.text
+    assert _data_literals(loader.text) == {"companies.yaml"}
 
 
 def test_loader_reading_a_second_data_file_is_rejected(tmp_path: Path) -> None:
     source = 'X = "companies.yaml"\nY = "extra_companies.yaml"\n'
-    files = tuple(
-        f for f in discover(REPO_ROOT).files if f.path != al.REGISTRY_LOADER_PATH
-    ) + (
-        RepoFile(
-            path=al.REGISTRY_LOADER_PATH,
-            abspath=tmp_path / "loader.py",
-            is_text=True,
-            text=source,
-        ),
-    )
     found = [
         v
-        for v in check_registry_invariants(Repo(root=REPO_ROOT, files=files))
+        for v in check_registry_invariants(_repo_with(al.REGISTRY_LOADER_PATH, source, tmp_path))
         if "loader must reference only" in v.detail
     ]
     assert [v.rule for v in found] == ["R8"]
 
 
-def test_registry_tag_vocabulary_is_closed() -> None:
-    assert al.ALLOWED_REGISTRY_TAGS == frozenset({"starter"})
+def test_no_permitted_registry_tag_is_unused() -> None:
+    """A permitted tag nobody uses is a rubber stamp waiting to be used. Same bidirectional
+    discipline the shape-rule exception tables get."""
+    registry = discover(REPO_ROOT).by_path(al.CANONICAL_REGISTRY_PATH)
+    assert registry is not None
+    rows, problem = _registry_rows(registry.text)
+    assert problem is None
+    used = {tag for tag, _ in _registry_tags(rows)[0]}
+    assert al.ALLOWED_REGISTRY_TAGS - used == frozenset()
 
 
 def test_personal_registry_tag_is_rejected(tmp_path: Path) -> None:
     body = 'companies:\n  - {name: A, provider: greenhouse, slug: a, tags: [dream-job]}\n'
-    files = tuple(
-        f for f in discover(REPO_ROOT).files if f.path != al.CANONICAL_REGISTRY_PATH
-    ) + (
-        RepoFile(
-            path=al.CANONICAL_REGISTRY_PATH,
-            abspath=tmp_path / "companies.yaml",
-            is_text=True,
-            text=body,
-        ),
-    )
     found = [
         v
-        for v in check_registry_invariants(Repo(root=REPO_ROOT, files=files))
+        for v in check_registry_invariants(_repo_with(al.CANONICAL_REGISTRY_PATH, body, tmp_path))
         if "outside the public vocabulary" in v.detail
     ]
     assert [v.rule for v in found] == ["R8"]
     assert "dream-job" in found[0].detail
+
+
+def test_a_restructured_registry_is_reported_not_skipped(tmp_path: Path) -> None:
+    """The Critical this round fixes: an unrecognised shape used to read as 'no bad tags',
+    so restructuring the YAML disabled the tag check while the gate stayed green."""
+    body = "version: 2\nentries:\n  - {name: A, provider: greenhouse, slug: a, tags: [x]}\n"
+    found = [
+        v
+        for v in check_registry_invariants(
+            _repo_with(al.CANONICAL_REGISTRY_PATH, body, tmp_path)
+        )
+        if "no top-level 'companies' key" in v.detail
+    ]
+    assert [v.rule for v in found] == ["R8"]
+
+
+def test_an_unparseable_registry_is_reported(tmp_path: Path) -> None:
+    body = "companies:\n  - {slug: a\n  bad: [\n"
+    found = [
+        v
+        for v in check_registry_invariants(
+            _repo_with(al.CANONICAL_REGISTRY_PATH, body, tmp_path)
+        )
+        if "could not be parsed as YAML" in v.detail
+    ]
+    assert [v.rule for v in found] == ["R8"]
+
+
+def test_a_top_level_list_registry_is_reported(tmp_path: Path) -> None:
+    body = "- {name: A, provider: greenhouse, slug: a, tags: [x]}\n"
+    found = [
+        v
+        for v in check_registry_invariants(
+            _repo_with(al.CANONICAL_REGISTRY_PATH, body, tmp_path)
+        )
+        if "top-level list" in v.detail
+    ]
+    assert [v.rule for v in found] == ["R8"]
+
+
+def test_an_empty_registry_is_reported(tmp_path: Path) -> None:
+    found = [
+        v
+        for v in check_registry_invariants(_repo_with(al.CANONICAL_REGISTRY_PATH, "", tmp_path))
+        if "is empty" in v.detail
+    ]
+    assert [v.rule for v in found] == ["R8"]
+
+
+def test_malformed_tags_are_reported_once_not_per_character(tmp_path: Path) -> None:
+    body = "companies:\n  - {name: A, provider: greenhouse, slug: a, tags: notalist}\n"
+    found = [
+        v
+        for v in check_registry_invariants(
+            _repo_with(al.CANONICAL_REGISTRY_PATH, body, tmp_path)
+        )
+        if "expected a list" in v.detail
+    ]
+    assert [v.rule for v in found] == ["R8"]
+
+
+def test_loader_prose_naming_the_registry_is_not_a_reference(tmp_path: Path) -> None:
+    """A docstring or error message ending in the filename is prose, not a path reference.
+    Firing on it would be the 'rule fires on legitimate content' failure this phase corrects."""
+    source = (
+        '"""Loads companies.yaml"""\n'
+        "from pathlib import Path\n"
+        'PATH = Path(__file__).parent / "companies.yaml"\n'
+        'def read() -> None:\n    raise OSError("cannot read companies.yaml")\n'
+    )
+    assert check_registry_invariants(_repo_with(al.REGISTRY_LOADER_PATH, source, tmp_path)) == []
+
+
+def test_an_unparseable_loader_is_reported(tmp_path: Path) -> None:
+    found = [
+        v
+        for v in check_registry_invariants(
+            _repo_with(al.REGISTRY_LOADER_PATH, "def broken(\n", tmp_path)
+        )
+        if "could not be parsed as Python" in v.detail
+    ]
+    assert [v.rule for v in found] == ["R8"]
+
+
+def test_a_missing_loader_is_reported() -> None:
+    found = [
+        v
+        for v in check_registry_invariants(_repo_without(al.REGISTRY_LOADER_PATH))
+        if "loader is missing" in v.detail
+    ]
+    assert [v.rule for v in found] == ["R8"]
+
+
+def test_a_missing_registry_file_is_reported() -> None:
+    found = [
+        v
+        for v in check_registry_invariants(_repo_without(al.CANONICAL_REGISTRY_PATH))
+        if "registry file is missing" in v.detail
+    ]
+    assert [v.rule for v in found] == ["R8"]

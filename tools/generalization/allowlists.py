@@ -135,8 +135,12 @@ SHIPPED_DATA: dict[str, DataEntry] = {
     ),
 }
 
-# The designation "the company registry" is bound to a literal path, not to a label
-# a contributor picks. A second bulk list cannot inherit it by relabelling.
+# The designation "the company registry" is bound to a literal path, not to a label a
+# contributor picks, so a second bulk list cannot inherit the designation by relabelling.
+# A second list CAN still be admitted under a different kind (a pinned first-party "corpus",
+# say), and if it is read from any module other than the loader, the single-loader invariant
+# never sees it either. The residual gate there is R7's diff-visible entry plus review, which
+# is the honest limit rather than a hole nobody wrote down.
 CANONICAL_REGISTRY_PATH = "src/boardwatch/registry/companies.yaml"
 REGISTRY_LOADER_PATH = "src/boardwatch/registry/loader.py"
 

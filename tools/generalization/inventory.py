@@ -215,27 +215,77 @@ def check_inventory(repo: Repo) -> list[Violation]:
 
 
 def _data_literals(source: str) -> set[str]:
-    """Every string constant in `source` that names a data file."""
+    """Every string constant in `source` that names a data file.
+
+    Prose is excluded by requiring the literal to contain no whitespace. A docstring or an
+    error message that happens to end in "companies.yaml" is not a path reference, and
+    treating it as one fires the rule on legitimate content, which is the exact failure this
+    phase exists to correct. A real reference is a bare relative filename.
+
+    Raises SyntaxError, which the caller converts into a violation.
+    """
     found: set[str] = set()
     for node in ast.walk(ast.parse(source)):
-        if isinstance(node, ast.Constant) and isinstance(node.value, str):
-            if PurePosixPath(node.value).suffix.lower() in DATA_SUFFIXES:
-                found.add(node.value)
+        if not (isinstance(node, ast.Constant) and isinstance(node.value, str)):
+            continue
+        value = node.value
+        if any(character.isspace() for character in value):
+            continue
+        if PurePosixPath(value).suffix.lower() in DATA_SUFFIXES:
+            found.add(value)
     return found
 
 
-def _registry_tags(source: str) -> list[tuple[str, str]]:
-    """(tag, slug) for every tag used in the registry."""
-    raw = yaml.safe_load(source) or {}
-    rows = raw.get("companies") or []
-    out: list[tuple[str, str]] = []
-    for row in rows:
+def _registry_rows(source: str) -> tuple[list[dict[str, object]], str | None]:
+    """The registry's rows, or a reason the document could not be read as the registry.
+
+    Every unrecognised shape returns a reason rather than an empty row list. An empty row
+    list reads as "no bad tags", which is how this check goes silently dead: restructure the
+    YAML, update the loader in the same commit, and the gate stays green while a personal
+    annotation ships.
+    """
+    try:
+        raw = yaml.safe_load(source)
+    except yaml.YAMLError as exc:
+        return [], f"could not be parsed as YAML ({type(exc).__name__})"
+    if raw is None:
+        return [], "is empty"
+    if not isinstance(raw, dict):
+        return [], f"has a top-level {type(raw).__name__}, expected a mapping"
+    if "companies" not in raw:
+        return [], "has no top-level 'companies' key"
+    rows = raw["companies"]
+    if rows is None:
+        return [], "has an empty 'companies' key"
+    if not isinstance(rows, list):
+        return [], f"has 'companies' as a {type(rows).__name__}, expected a list"
+    typed: list[dict[str, object]] = []
+    for index, row in enumerate(rows):
         if not isinstance(row, dict):
-            continue
+            return [], f"has 'companies' item {index} as a {type(row).__name__}, expected a mapping"
+        typed.append(row)
+    return typed, None
+
+
+def _registry_tags(
+    rows: list[dict[str, object]],
+) -> tuple[list[tuple[str, str]], list[str]]:
+    """(tag, slug) for every tag in use, plus one problem per row whose tags are malformed."""
+    used: list[tuple[str, str]] = []
+    problems: list[str] = []
+    for row in rows:
         slug = str(row.get("slug", "?"))
-        for tag in row.get("tags") or []:
-            out.append((str(tag), slug))
-    return out
+        tags = row.get("tags")
+        if tags is None:
+            continue
+        if not isinstance(tags, list):
+            problems.append(
+                f"entry {slug!r} has 'tags' as a {type(tags).__name__}, expected a list"
+            )
+            continue
+        for tag in tags:
+            used.append((str(tag), slug))
+    return used, problems
 
 
 def check_registry_invariants(repo: Repo) -> list[Violation]:
@@ -263,35 +313,66 @@ def check_registry_invariants(repo: Repo) -> list[Violation]:
             Violation("R8", al.REGISTRY_LOADER_PATH, None, "the registry loader is missing")
         )
     else:
-        literals = _data_literals(loader.text)
-        expected = {PurePosixPath(al.CANONICAL_REGISTRY_PATH).name}
-        if literals != expected:
+        try:
+            literals = _data_literals(loader.text)
+        except SyntaxError as exc:
             violations.append(
                 Violation(
                     "R8",
                     al.REGISTRY_LOADER_PATH,
                     None,
-                    f"loader must reference only {sorted(expected)!r}, "
-                    f"found {sorted(literals)!r}",
+                    f"could not be parsed as Python ({exc.msg}), so the single-loader "
+                    "invariant could not be checked. An unreadable loader means this check "
+                    "is disabled, not that it passed",
                 )
             )
+        else:
+            expected = {PurePosixPath(al.CANONICAL_REGISTRY_PATH).name}
+            if literals != expected:
+                violations.append(
+                    Violation(
+                        "R8",
+                        al.REGISTRY_LOADER_PATH,
+                        None,
+                        f"loader must reference only {sorted(expected)!r}, "
+                        f"found {sorted(literals)!r}. Write the registry filename as a plain "
+                        "string literal in this module: this rule cannot follow a name "
+                        "imported from elsewhere, interpolated or built by concatenation, and "
+                        "a second data literal here means a second bulk list is being read",
+                    )
+                )
 
     registry = repo.by_path(al.CANONICAL_REGISTRY_PATH)
     if registry is None:
         violations.append(
             Violation("R8", al.CANONICAL_REGISTRY_PATH, None, "the registry file is missing")
         )
-    else:
-        for tag, slug in _registry_tags(registry.text):
-            if tag not in al.ALLOWED_REGISTRY_TAGS:
-                violations.append(
-                    Violation(
-                        "R8",
-                        al.CANONICAL_REGISTRY_PATH,
-                        None,
-                        f"entry {slug!r} uses tag {tag!r}, outside the public vocabulary "
-                        f"{sorted(al.ALLOWED_REGISTRY_TAGS)!r}. Tags describe the product, "
-                        "not one user's interest in a company",
-                    )
+        return violations
+    rows, problem = _registry_rows(registry.text)
+    if problem is not None:
+        violations.append(
+            Violation(
+                "R8",
+                al.CANONICAL_REGISTRY_PATH,
+                None,
+                f"the registry {problem}, so the tag vocabulary could not be checked. An "
+                "unrecognised shape is reported, never skipped: it means this check is "
+                "disabled, not that it passed",
+            )
+        )
+    used, problems = _registry_tags(rows)
+    for detail in problems:
+        violations.append(Violation("R8", al.CANONICAL_REGISTRY_PATH, None, detail))
+    for tag, slug in used:
+        if tag not in al.ALLOWED_REGISTRY_TAGS:
+            violations.append(
+                Violation(
+                    "R8",
+                    al.CANONICAL_REGISTRY_PATH,
+                    None,
+                    f"entry {slug!r} uses tag {tag!r}, outside the public vocabulary "
+                    f"{sorted(al.ALLOWED_REGISTRY_TAGS)!r}. Tags describe the product, "
+                    "not one user's interest in a company",
                 )
+            )
     return violations
