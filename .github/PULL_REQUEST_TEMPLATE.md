@@ -4,7 +4,7 @@
 
 ## Checklist
 
-- [ ] `make check` passes locally (ruff + mypy --strict + pytest)
+- [ ] `make check` passes locally (generalization + ruff + mypy --strict + pytest)
 - [ ] Tests added/updated for the change
 - [ ] README/docs updated if behavior or config changed
 - [ ] One logical change per PR
