@@ -2,8 +2,9 @@
 
 Dev setup: install [uv](https://docs.astral.sh/uv/), then `uv sync` and
 `uv run pre-commit install`. `make check` (generalization + ruff + mypy --strict + pytest) must
-be green before every PR; CI runs the same on 3.11–3.13 ×
-ubuntu/macos/windows plus gitleaks and a dedicated generalization job.
+be green before every PR; CI runs the same commands, but pull requests run on ubuntu only while
+pushes to `main` run the full 3.11-3.13 × ubuntu/macos/windows matrix, plus gitleaks and a
+dedicated generalization job.
 
 ## What must never enter this repo
 
@@ -28,11 +29,13 @@ both good examples. The question that separates them:
 A list of public company job boards describes the world. A list of the companies you
 personally want to work at describes you.
 
-These rules are enforced by `make generalization` and by the `generalization` CI job. If a
-check blocks something legitimate, add a reviewed entry to
-`tools/generalization/allowlists.py` with a reason, rather than loosening the rule.
-Weakening or removing a generalization check is a security-sensitive change and will be
-reviewed as one.
+These checks catch identifier shapes, new data files and changed defaults, so those cannot
+land unnoticed. They do not and cannot catch personal values written into Python source or
+prose; code review is the control there. For a legitimate block, add a reviewed entry to
+`tools/generalization/allowlists.py` for the shape and inventory rules, or a reviewed update
+to `tools/generalization/snapshots.py` for the pinned defaults. The collection-defaults rule
+has no opt-out by design, so the remedy there is to restructure the value. Weakening or
+removing a check is a security-sensitive change and will be reviewed as one.
 
 All changes land via PR — `main` is branch-protected. One issue per PR.
 

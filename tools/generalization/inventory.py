@@ -1,4 +1,4 @@
-"""Group 2: data-file admission (R7) and registry invariants (R8, added in Task 5).
+"""Group 2: data-file admission (R7) and registry invariants (R8).
 
 Semantic detection of "is this list personal?" is not decidable, and trying it is
 what made the first attempt at these checks fire on legitimate product content.
@@ -57,9 +57,8 @@ ALLOWED_PROVENANCE: frozenset[str] = frozenset(
 
 # Living product data that churns and carries its own validators. Pinning it would put a
 # hash bump in the path of every community registry PR, which is how checks get weakened
-# or deleted. The exemption is bound to LITERAL PATHS rather than to a kind label, for the
-# same reason section 5.2 binds the registry designation to a path: a corpus mislabelled
-# "taxonomy" must not inherit the exemption and become append-anything-forever.
+# or deleted. The exemption is bound to LITERAL PATHS rather than to a kind label: a corpus
+# mislabelled "taxonomy" must not inherit the exemption and become append-anything-forever.
 UNPINNED_PATHS: frozenset[str] = frozenset(
     {
         "src/boardwatch/extract/taxonomy.yaml",

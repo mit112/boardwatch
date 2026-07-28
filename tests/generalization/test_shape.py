@@ -1,5 +1,5 @@
 """Group 1 shape rules. Violating fixtures are assembled at runtime so the
-literals never exist on disk (spec section 9.1)."""
+literals never exist on disk."""
 
 from __future__ import annotations
 
@@ -19,6 +19,9 @@ _HOME_WINDOWS_UPPER = "C:" + "\\USERS\\someone"
 _MAIL = "person" + "@" + "realdomain.dev"
 _LINKEDIN = "https://www.linked" + "in.com/in/someone"
 _MAILTO = "mail" + "to:"
+# The identifying tail is part of the match, so the exception table keys on the full address,
+# never on the bare "mailto:" prefix.
+_MAILTO_HIT = _MAILTO + "security@example.com"
 _PHONE_NANP = "415-555" + "-0134"
 # Neither fragment below is itself a complete PHONE_RE match: "+91 " and "+91-" carry no
 # digit groups on their own, and the remaining digit runs carry neither a "+" nor a
@@ -55,13 +58,29 @@ def test_windows_home_path_is_rejected() -> None:
     assert [v.rule for v in found] == ["R1"]
 
 
-def test_home_path_is_rejected_case_insensitively() -> None:
-    found = check_shapes(_repo(_HOME_LOWER))
-    assert [v.rule for v in found] == ["R1"]
-    found = check_shapes(_repo(_HOME_UPPER))
-    assert [v.rule for v in found] == ["R1"]
+def test_windows_home_path_is_rejected_case_insensitively() -> None:
     found = check_shapes(_repo(_HOME_WINDOWS_UPPER))
     assert [v.rule for v in found] == ["R1"]
+
+
+def test_case_variant_unix_home_prefixes_are_an_accepted_bypass() -> None:
+    """Real macOS output is always "/Users/" and real Linux output always "/home/", so a
+    case-varied prefix is not real OS output. The false-positive class this buys back is
+    ordinary REST routes and URL paths, which a blanket IGNORECASE also matched."""
+    assert check_shapes(_repo(_HOME_LOWER)) == []
+    assert check_shapes(_repo(_HOME_UPPER)) == []
+
+
+def test_rest_and_url_paths_are_not_home_paths() -> None:
+    """The v1 bar died by firing on legitimate content. /v1/users/{id} is a documented API
+    route on a provider this project integrates."""
+    for text in (
+        "GET /users/me returns the caller",
+        "POST /api/v1/users/123",
+        "https://example.com/Home/Index",
+        "run /usr/bin/env python",
+    ):
+        assert check_shapes(_repo(text)) == [], text
 
 
 def test_tilde_path_is_allowed() -> None:
@@ -172,7 +191,7 @@ def test_decimals_and_digit_pairs_are_not_phone_numbers() -> None:
 
 
 def test_local_format_numbers_with_no_country_code_are_an_accepted_bypass() -> None:
-    """Bare digit pairs without country code are an accepted bypass (spec section 8)."""
+    """Bare digit pairs without country code are an accepted bypass."""
     local_number = "98765" + "-43210"
     assert check_shapes(_repo(f"call {local_number} now")) == []
 
@@ -217,16 +236,39 @@ def test_profile_url_is_rejected() -> None:
     assert [v.rule for v in found] == ["R4"]
 
 
-def test_bare_mailto_is_rejected() -> None:
-    found = check_shapes(_repo(f"contact us at {_MAILTO}security@example.com"))
+def test_mailto_with_an_address_is_rejected() -> None:
+    found = check_shapes(_repo(f"contact us at {_MAILTO_HIT}"))
     assert [v.rule for v in found] == ["R4"]
+
+
+def test_bare_mailto_with_no_tail_is_an_accepted_bypass() -> None:
+    """A "mailto:" with nothing after it identifies nobody, so it is not a match: the
+    identifying tail is part of the match, on purpose."""
+    assert check_shapes(_repo(f"see {_MAILTO} for the format")) == []
 
 
 def test_allowlisted_profile_url_is_accepted_and_marks_the_entry_used() -> None:
     original = dict(al.PROFILE_URL_EXCEPTIONS)
-    al.PROFILE_URL_EXCEPTIONS[_MAILTO] = "security contact published in SECURITY.md"
+    al.PROFILE_URL_EXCEPTIONS[_MAILTO_HIT] = "security contact published in SECURITY.md"
     try:
-        assert check_shapes(_repo(f"contact us at {_MAILTO}security@example.com")) == []
+        assert check_shapes(_repo(f"contact us at {_MAILTO_HIT}")) == []
+    finally:
+        al.PROFILE_URL_EXCEPTIONS.clear()
+        al.PROFILE_URL_EXCEPTIONS.update(original)
+
+
+def test_an_allowlisted_profile_url_does_not_exempt_a_different_address() -> None:
+    """The key is match-level, so allowlisting one address must not blanket-exempt R4: the
+    old bare "mailto:" pattern meant the only possible entry disabled half the rule repo-wide."""
+    original = dict(al.PROFILE_URL_EXCEPTIONS)
+    al.PROFILE_URL_EXCEPTIONS[_MAILTO_HIT] = "security contact published in SECURITY.md"
+    other = _MAILTO + "someone-else@example.com"
+    try:
+        found = check_shapes(_repo(f"contact us at {other}"))
+        # The allowlisted address is unused by this scan, so it is also reported stale;
+        # the property under test is that the unexempted address is rejected at all.
+        offender = [v for v in found if other in v.detail]
+        assert [v.rule for v in offender] == ["R4"]
     finally:
         al.PROFILE_URL_EXCEPTIONS.clear()
         al.PROFILE_URL_EXCEPTIONS.update(original)
@@ -234,7 +276,7 @@ def test_allowlisted_profile_url_is_accepted_and_marks_the_entry_used() -> None:
 
 def test_stale_profile_url_exception_is_reported() -> None:
     original = dict(al.PROFILE_URL_EXCEPTIONS)
-    al.PROFILE_URL_EXCEPTIONS[_MAILTO] = "no longer present"
+    al.PROFILE_URL_EXCEPTIONS[_MAILTO_HIT] = "no longer present"
     try:
         found = check_shapes(_repo("nothing here"))
         assert [v.rule for v in found] == ["R4"]
@@ -242,6 +284,60 @@ def test_stale_profile_url_exception_is_reported() -> None:
     finally:
         al.PROFILE_URL_EXCEPTIONS.clear()
         al.PROFILE_URL_EXCEPTIONS.update(original)
+
+
+def test_a_blank_exception_reason_is_rejected_across_all_six_tables() -> None:
+    """The entry IS the justification, so membership alone would be a rubber stamp. Same
+    rule check_inventory already applies to a blank SHIPPED_DATA reason (R7)."""
+    shape_cases: list[tuple[dict[str, str], str, Repo, str]] = [
+        (al.HOME_PATH_EXCEPTIONS, _HOME_HIT, _repo(f"see {_HOME} for details"), "R1"),
+        (al.EMAIL_EXCEPTIONS, _MAIL, _repo(f"contact {_MAIL} please"), "R2"),
+        (al.PHONE_EXCEPTIONS, _PHONE_NANP, _repo(f"call {_PHONE_NANP} now"), "R3"),
+        (al.PROFILE_URL_EXCEPTIONS, _MAILTO_HIT, _repo(f"contact us at {_MAILTO_HIT}"), "R4"),
+    ]
+    for table, key, repo, rule in shape_cases:
+        original = dict(table)
+        table[key] = ""
+        try:
+            found = [v for v in check_shapes(repo) if v.rule == rule]
+            assert len(found) == 1, found
+            assert "blank reason" in found[0].detail
+        finally:
+            table.clear()
+            table.update(original)
+
+    artifact_path = "docs/" + "resume" + ".yaml"
+    binary_path = "docs/" + "guide" + ".pdf"
+    artifact_cases: list[tuple[dict[str, str], str, Repo, str]] = [
+        (al.ARTIFACT_NAME_EXCEPTIONS, artifact_path, _named(artifact_path), "R5"),
+        (
+            al.BINARY_DOC_EXCEPTIONS,
+            binary_path,
+            _named(binary_path, is_text=False, text=""),
+            "R6",
+        ),
+    ]
+    for table, key, repo, rule in artifact_cases:
+        original = dict(table)
+        table[key] = ""
+        try:
+            found = [v for v in check_artifact_files(repo) if v.rule == rule]
+            assert len(found) == 1, found
+            assert "blank reason" in found[0].detail
+        finally:
+            table.clear()
+            table.update(original)
+
+
+def test_allowlisted_artifact_name_is_accepted_and_marks_the_entry_used() -> None:
+    original = dict(al.ARTIFACT_NAME_EXCEPTIONS)
+    path = "docs/" + "resume" + ".yaml"
+    al.ARTIFACT_NAME_EXCEPTIONS[path] = "fixture path documented as a known exception"
+    try:
+        assert check_artifact_files(_named(path)) == []
+    finally:
+        al.ARTIFACT_NAME_EXCEPTIONS.clear()
+        al.ARTIFACT_NAME_EXCEPTIONS.update(original)
 
 
 def test_binary_files_are_not_scanned() -> None:

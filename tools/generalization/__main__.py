@@ -59,8 +59,7 @@ def main() -> int:
     except Exception:
         traceback.print_exc()
         print(
-            "generalization: FAILED, a rule raised, so the scan did not finish. "
-            "This is not a clean tree.",
+            "generalization: FAILED, the scan did not finish, so this is not a clean tree.",
             file=sys.stderr,
         )
         return 2

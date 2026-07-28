@@ -139,20 +139,27 @@ def test_discover_excludes_untracked_debris_in_a_git_work_tree(tmp_path: Path) -
     assert repo.by_path("scratch.txt") is None
 
 
-def test_discover_excludes_excluded_dirs_in_git_mode_too(tmp_path: Path) -> None:
+def test_git_mode_does_not_filter_tracked_paths(tmp_path: Path) -> None:
+    """Everything git tracks is published, so filtering git output would skip the tree.
+
+    A tracked file under a name that looks like local debris still has to be scanned: the
+    carriers most likely to hold a real home path are exactly IDE config directories.
+    """
     _init_git_repo(tmp_path)
-    junk_dir = tmp_path / "dist"
+    junk_dir = tmp_path / ".vscode"
     junk_dir.mkdir()
-    (junk_dir / "artifact.txt").write_text("junk", encoding="utf-8")
+    (junk_dir / "settings.json").write_text(
+        '{"python.pythonPath": "/Users/someone/.venv/bin/python"}\n', encoding="utf-8"
+    )
     subprocess.run(["git", "add", "-A"], cwd=tmp_path, check=True, capture_output=True)
     subprocess.run(
-        ["git", "commit", "-m", "track dist"],
+        ["git", "commit", "-m", "track vscode settings"],
         cwd=tmp_path,
         check=True,
         capture_output=True,
     )
     repo = discover(tmp_path)
-    assert repo.by_path("dist/artifact.txt") is None
+    assert repo.by_path(".vscode/settings.json") is not None
 
 
 def test_discover_raises_when_a_tracked_file_is_missing_from_disk(

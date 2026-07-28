@@ -1,12 +1,12 @@
 """File discovery for the generalization checks.
 
-`git ls-files` is preferred because it enumerates exactly what gets published and
-ignores untracked local debris, which would otherwise produce failures that exist on
-one machine only. A filesystem walk is the fallback outside a git work tree.
+`git ls-files` is preferred because it enumerates exactly what gets published. Its output is
+NOT filtered: everything tracked is published, so filtering would skip the tree. A filesystem
+walk is the fallback outside a git work tree, and EXCLUDED_DIRS applies only there, where
+untracked local debris (a virtualenv, a build directory, tool caches) really is noise.
 
-Discovery NEVER skips. A scan that cannot run must fail, because a zero-file scan
-reporting success is the dangerous failure mode: the gate would look green while
-being entirely disabled.
+Discovery NEVER skips. A scan that cannot run must fail, because a zero-file scan reporting
+success is the dangerous failure mode: the gate would look green while being entirely disabled.
 """
 
 from __future__ import annotations
@@ -108,8 +108,13 @@ def _git_paths(root: Path) -> list[str] | None:
         return None
     if proc.returncode != 0:
         return None
+    # No exclude filter here, deliberately. Everything git tracks is published content, so
+    # filtering it would skip the tree rather than skip debris: a tracked .vscode/settings.json
+    # holding a home path, or a tracked build/resume.yaml, would vanish from every rule while
+    # the gate reported OK. EXCLUDED_DIRS applies only to the filesystem-walk fallback, where
+    # untracked local debris is real.
     decoded = proc.stdout.decode("utf-8", errors="surrogateescape")
-    paths = [p for p in decoded.split("\0") if p and not _is_excluded(p)]
+    paths = [p for p in decoded.split("\0") if p]
     return paths or None
 
 

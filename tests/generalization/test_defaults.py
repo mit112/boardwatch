@@ -9,6 +9,7 @@ from tools.generalization.defaults import (
     HEURISTIC_MODULE,
     INIT_MODULE,
     SCOPED_MODULES,
+    _param_defaults,
     check_collection_defaults,
     check_defaults_snapshot,
     check_init_prompts,
@@ -119,13 +120,20 @@ def test_a_named_default_factory_returning_empty_is_allowed() -> None:
 
 def test_an_unresolvable_default_factory_is_an_accepted_bypass() -> None:
     """A factory naming something imported cannot be resolved from this module's AST, so it
-    passes. Rejecting it would reject the legitimate nested-model pattern. Spec section 8."""
+    passes. Rejecting it would reject the legitimate nested-model pattern."""
     source = "class P:\n    weights: RankWeights = Field(default_factory=RankWeights)\n"
     assert check_collection_defaults(_module(source)) == []
 
 
 def test_dunder_all_is_not_a_preference_collection() -> None:
     assert check_collection_defaults(_module('__all__ = ["a", "b"]\n')) == []
+
+
+def test_a_chained_assignment_cannot_ride_along_with_dunder_all() -> None:
+    """One statement, two targets: exempting on any match let a real constant through."""
+    source = '__all__ = DEFAULT_TITLES = ["Chief Widget Officer"]\n'
+    found = check_collection_defaults(_module(source))
+    assert [v.rule for v in found] == ["R9"]
 
 
 def test_a_nested_class_body_is_checked() -> None:
@@ -149,8 +157,8 @@ def test_tuple_unpacking_of_empty_collections_is_allowed() -> None:
 
 
 def test_non_string_collections_are_allowed() -> None:
-    """Spec section 6 scopes R9 to collections OF STRINGS. A tuple of backoff seconds is not
-    a preference list, and flagging it would fire the rule on legitimate content."""
+    """R9 is scoped to collections OF STRINGS. A tuple of backoff seconds is not a preference
+    list, and flagging it would fire the rule on legitimate content."""
     source = "BACKOFFS = (1, 2, 4)\n"
     assert check_collection_defaults(_module(source)) == []
 
@@ -216,6 +224,22 @@ def test_a_removed_snapshot_key_is_reported_as_new() -> None:
 
 def test_the_heuristic_parameter_default_is_pinned() -> None:
     assert snap.EXPECTED_PARAM_DEFAULTS == {"score_posting.half_life_days": "14.0"}
+
+
+def test_a_same_named_method_cannot_shadow_a_changed_parameter_default() -> None:
+    """Bare function-name keys collided, so a decoy method with the same name could overwrite a
+    changed real default and make the snapshot compare equal."""
+    source = (
+        "def score_posting(half_life_days: float = 3.0) -> None:\n    return None\n"
+        "class Helper:\n"
+        "    def score_posting(self, half_life_days: float = 14.0) -> None:\n"
+        "        return None\n"
+    )
+    extracted = _param_defaults(source)
+    assert extracted == {
+        "score_posting.half_life_days": "3.0",
+        "Helper.score_posting.half_life_days": "14.0",
+    }
 
 
 def test_a_changed_init_prompt_default_is_rejected(tmp_path: Path) -> None:

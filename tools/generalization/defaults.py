@@ -33,19 +33,19 @@ EXEMPT_TARGETS: frozenset[str] = frozenset({"__all__"})
 def _holds_a_string(node: ast.expr) -> bool:
     """Whether a collection literal carries string content at any depth.
 
-    Spec section 6 scopes R9 to collections OF STRINGS, so a tuple of retry backoffs is not a
-    candidate. The search recurses, because grouping preference values one level down
+    R9 is scoped to collections OF STRINGS, so a tuple of retry backoffs is not a candidate.
+    The search recurses, because grouping preference values one level down
     (`[['Chief Widget Officer']]`, `[{'title': ...}]`) is an ordinary shape rather than an
     evasion, and R9 has no backstop rule.
 
     A dict counts on its KEYS as well as its values, because a title-to-weight map carries the
     preference in the keys. The cost is that a string-keyed numeric dict is also a candidate.
     That is deliberate: R9 guards the only leak class with no second rule behind it, so it fails
-    closed and a reviewer resolves the rare false positive. Recorded in spec section 8.
+    closed and a reviewer resolves the rare false positive.
 
     Only literal collections are traversed. A constructor call (`frozenset({...})`), string
-    concatenation, a name reference and an f-string all evade it, which spec section 8 records
-    as accepted bypasses alongside the same limitation on R1 and R2.
+    concatenation, a name reference and an f-string all evade it. These are accepted bypasses,
+    the same limitation R1 and R2 have.
     """
     if isinstance(node, ast.Constant):
         return isinstance(node.value, str)
@@ -89,8 +89,8 @@ def _local_factories(tree: ast.Module) -> set[str]:
 
     A `default_factory` naming one of these is the same leak as an inline lambda. A factory
     naming something imported cannot be resolved from this module's AST and therefore passes:
-    that is a recorded bypass (spec section 8), not an oversight, and narrowing it further
-    would reject the legitimate `Field(default_factory=RankWeights)` nested-model pattern.
+    that is an accepted bypass, not an oversight, and narrowing it further would reject the
+    legitimate `Field(default_factory=RankWeights)` nested-model pattern.
     """
     return {
         node.name
@@ -162,9 +162,15 @@ def _assigned_values(stmt: ast.Assign | ast.AnnAssign) -> list[ast.expr]:
 
 
 def _is_exempt(stmt: ast.Assign | ast.AnnAssign) -> bool:
-    return any(
-        isinstance(target, ast.Name) and target.id in EXEMPT_TARGETS
-        for target in _target_names(stmt)
+    """Whether EVERY target of this statement is exempt.
+
+    `any` here was a bypass: `__all__ = DEFAULT_TITLES = [...]` is one statement with two
+    targets, so exempting on a single match let a real preference constant ride along with the
+    dunder.
+    """
+    targets = _target_names(stmt)
+    return bool(targets) and all(
+        isinstance(target, ast.Name) and target.id in EXEMPT_TARGETS for target in targets
     )
 
 
@@ -201,8 +207,11 @@ def check_collection_defaults(repo: Repo) -> list[Violation]:
                             "R9",
                             rel,
                             stmt.lineno,
-                            f"{why}: {ast.unparse(offender)!r}. Preference collections ship "
-                            "empty; a user's own values belong in their config or database",
+                            f"{why}: {ast.unparse(offender)!r}. If this is a preference, ship "
+                            "it empty: a user's own values belong in their config or database. "
+                            "If it is not a preference, this rule has no allowlist by design, "
+                            "so express it as a model, build it with a constructor call, or "
+                            "move it out of the scoped modules",
                         )
                     )
     return violations
@@ -246,7 +255,13 @@ def _diff(
 
 
 def _param_defaults(source: str) -> dict[str, object]:
-    """Preference-bearing parameter defaults, keyed by scope-qualified name.
+    """Every parameter default in the module, keyed by scope-qualified name.
+
+    This collects every positional-or-keyword and keyword-only default in the module, not a
+    filtered set of ones that look like preferences: a heuristic for "looks like a preference"
+    is exactly how this check would go silently blind to a new one. It is the snapshot
+    comparison in check_defaults_snapshot that fails loudly on an addition; this function's
+    job is only to see everything so that comparison has something complete to work with.
 
     Keys are qualified because a bare function name collides: a decoy method with the same
     name in the same module could otherwise shadow a changed real default and the snapshot
@@ -332,7 +347,10 @@ def _prompt_defaults(source: str) -> list[tuple[str, str, str | None]]:
     because the snapshot is an exact match. A broader matcher can only ADD rows, and an
     added row fails loudly. Requiring the literal prefix would let an alias like
     'import typer as _t' or 'from typer import prompt' silently remove a row, which is
-    the failure mode this system exists to prevent.
+    the failure mode this system exists to prevent. That is not fully closed: 'from typer
+    import prompt as p' followed by a bare 'p(...)' call still removes a row silently,
+    because the call site keeps only the renamed bare name, with neither an attribute nor
+    a literal 'prompt'/'confirm' spelling left for this matcher to see.
     """
     rows: list[tuple[int, tuple[str, str, str | None]]] = []
     for node in ast.walk(ast.parse(source)):

@@ -7,7 +7,7 @@ import subprocess
 import sys
 from pathlib import Path
 
-from pytest import MonkeyPatch
+from pytest import CaptureFixture, MonkeyPatch
 
 from tools.generalization import __main__ as entry
 from tools.generalization import defaults, inventory, shape
@@ -95,6 +95,22 @@ def test_main_returns_two_when_discovery_fails(
 ) -> None:
     monkeypatch.chdir(tmp_path)
     assert main() == 2
+
+
+def test_the_report_sorts_r2_before_r10(monkeypatch: MonkeyPatch, capsys: CaptureFixture[str]) -> None:
+    """Plain string order puts 'R10' before 'R2', which is unreadable in an 11-rule report."""
+
+    def noisy(repo: Repo) -> list[Violation]:
+        return [
+            Violation("R10", "a.py", 5, "synthetic"),
+            Violation("R2", "b.py", None, "synthetic"),
+        ]
+
+    monkeypatch.setattr(entry, "ALL_RULES", (noisy,))
+    monkeypatch.chdir(REPO_ROOT)
+    assert main() == 1
+    reported = capsys.readouterr().err
+    assert reported.index("[R2]") < reported.index("[R10]")
 
 
 def test_module_entry_point_exits_zero() -> None:
