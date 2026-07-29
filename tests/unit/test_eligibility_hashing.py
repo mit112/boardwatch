@@ -2,7 +2,19 @@
 extract/taxonomy.py:95-103. Formatting and key order must never change a hash;
 content always must."""
 
-from boardwatch.eligibility.hashing import canonical, digest
+from pathlib import Path
+
+import pytest
+
+from boardwatch.eligibility.catalog import load_rules
+from boardwatch.eligibility.facts import ClearanceFact, Facts, Policy, WorkAuthFact
+from boardwatch.eligibility.hashing import (
+    IdentityMismatchError,
+    build_identity,
+    canonical,
+    digest,
+    verify_identity,
+)
 
 
 def test_key_order_never_changes_the_canonical_form() -> None:
@@ -51,3 +63,159 @@ def test_digest_distinguishes_string_from_number() -> None:
     """`1` and `"1"` are different facts. json.dumps keeps them apart, and this pins it so
     a future switch to a stringifying serialiser cannot collapse them unnoticed."""
     assert digest({"a": 1}) != digest({"a": "1"})
+
+
+# Every family's resolver declares its inputs STATICALLY. The degree resolver declares
+# total_years_experience as well as highest_degree, because a measurable OR-alternative
+# reads it (D-P2-23).
+DECLARED = {
+    "work_auth": ("work_authorization",),
+    "experience_years": ("total_years_experience",),
+    "clearance": ("security_clearance",),
+    "degree": ("highest_degree", "total_years_experience"),
+}
+
+FACTS = Facts(
+    work_authorization=WorkAuthFact(status="citizen", jurisdiction="us"),
+    total_years_experience=8,
+    security_clearance=ClearanceFact(scheme="us_dod", level="secret", state="active"),
+    highest_degree="bachelor",
+)
+
+
+def _identity(tmp_path: Path, **kwargs: object):
+    args: dict[str, object] = {
+        "posting_version_id": 1, "facts": FACTS, "policy": Policy(),
+        "catalog": load_rules(tmp_path), "declared_fields": DECLARED,
+    }
+    args.update(kwargs)
+    return build_identity(**args)  # type: ignore[arg-type]
+
+
+def test_the_snapshot_is_byte_identical_to_the_hashed_payload(tmp_path: Path) -> None:
+    """D-P2-14. _get_or_create_input keeps the FIRST snapshot for a fingerprint and
+    validates nothing, so a snapshot broader than its hashed payload records an audit row
+    that cannot reproduce its own hash."""
+    identity = _identity(tmp_path)
+    assert digest(identity.profile_snapshot) == identity.profile_hash
+    assert digest(identity.rules_snapshot) == identity.rules_hash
+    verify_identity(identity, posting_version_id=1)
+
+
+def test_verify_rejects_a_tampered_profile_snapshot(tmp_path: Path) -> None:
+    identity = _identity(tmp_path)
+    broken = type(identity)(
+        profile_hash=identity.profile_hash,
+        profile_snapshot={"fields": {"highest_degree": "doctorate"}},
+        rules_hash=identity.rules_hash,
+        rules_snapshot=identity.rules_snapshot,
+        input_fingerprint=identity.input_fingerprint,
+    )
+    with pytest.raises(IdentityMismatchError, match="profile"):
+        verify_identity(broken, posting_version_id=1)
+
+
+def test_verify_rejects_a_fingerprint_for_a_different_posting_version(tmp_path: Path) -> None:
+    identity = _identity(tmp_path)
+    with pytest.raises(IdentityMismatchError, match="fingerprint"):
+        verify_identity(identity, posting_version_id=2)
+
+
+def test_the_fingerprint_is_sensitive_to_the_posting_version(tmp_path: Path) -> None:
+    a = _identity(tmp_path, posting_version_id=1)
+    b = _identity(tmp_path, posting_version_id=2)
+    assert a.input_fingerprint != b.input_fingerprint
+    assert a.profile_hash == b.profile_hash  # only the version differs
+
+
+def test_the_fingerprint_is_sensitive_to_a_fact_change(tmp_path: Path) -> None:
+    a = _identity(tmp_path)
+    b = _identity(tmp_path, facts=FACTS.model_copy(update={"highest_degree": "master"}))
+    assert a.profile_hash != b.profile_hash
+    assert a.input_fingerprint != b.input_fingerprint
+
+
+def test_the_fingerprint_is_sensitive_to_a_policy_change(tmp_path: Path) -> None:
+    a = _identity(tmp_path)
+    b = _identity(tmp_path, policy=Policy(families={"degree": "blocker"}))
+    assert a.rules_hash != b.rules_hash
+    assert a.input_fingerprint != b.input_fingerprint
+
+
+def test_a_policy_that_restates_the_catalog_default_does_not_re_key(tmp_path: Path) -> None:
+    """The map is MATERIALISED before hashing, so an empty map and a map that spells out
+    the defaults are one fingerprint for identical behaviour (D-P2-2)."""
+    catalog = load_rules(tmp_path)
+    spelled_out = Policy(
+        families={f.id: f.default_policy for f in catalog.families}  # type: ignore[misc]
+    )
+    assert _identity(tmp_path).rules_hash == _identity(tmp_path, policy=spelled_out).rules_hash
+
+
+def test_the_fingerprint_is_sensitive_to_catalog_content(tmp_path: Path) -> None:
+    override = tmp_path / "cfg"
+    override.mkdir()
+    (override / "rules.yaml").write_text(
+        (Path("src/boardwatch/eligibility/rules.yaml").read_text(encoding="utf-8")).replace(
+            "version: 1", "version: 2", 1
+        ),
+        encoding="utf-8",
+    )
+    assert _identity(tmp_path).rules_hash != _identity(
+        tmp_path, catalog=load_rules(override)
+    ).rules_hash
+
+
+def test_catalog_source_is_part_of_the_rules_hash(tmp_path: Path) -> None:
+    """An override with IDENTICAL content is a different trust position and must not
+    collide with the bundled catalog (spec §4.5)."""
+    override = tmp_path / "cfg"
+    override.mkdir()
+    (override / "rules.yaml").write_text(
+        Path("src/boardwatch/eligibility/rules.yaml").read_text(encoding="utf-8"),
+        encoding="utf-8",
+    )
+    bundled, overridden = load_rules(tmp_path), load_rules(override)
+    assert bundled.version == overridden.version  # identical content
+    assert bundled.source != overridden.source
+    assert _identity(tmp_path, catalog=bundled).rules_hash != _identity(
+        tmp_path, catalog=overridden
+    ).rules_hash
+
+
+def test_a_statically_declared_but_unconsumed_field_still_re_keys(tmp_path: Path) -> None:
+    """D-P2-23. The degree resolver DECLARES total_years_experience, so editing it
+    re-keys even when no degree detection consumed it. The alternative, hashing only
+    what a prior run happened to read, meant a user adding equivalent experience never
+    triggered the re-evaluation that would have used it."""
+    a = _identity(tmp_path, policy=Policy(families={"experience_years": "ignore"}))
+    b = _identity(
+        tmp_path,
+        facts=FACTS.model_copy(update={"total_years_experience": 12}),
+        policy=Policy(families={"experience_years": "ignore"}),
+    )
+    assert a.profile_hash != b.profile_hash
+
+
+def test_an_ignored_family_drops_its_declared_fields_from_the_hash(tmp_path: Path) -> None:
+    a = _identity(tmp_path)
+    b = _identity(tmp_path, policy=Policy(families={"clearance": "ignore"}))
+    assert a.profile_hash != b.profile_hash
+    assert "security_clearance" not in b.profile_snapshot["fields"]  # type: ignore[operator]
+
+
+def test_ranking_only_profile_fields_are_never_hashed(tmp_path: Path) -> None:
+    """Rev 1 hashed six ranking-only fields no resolver reads, so editing exclude_titles,
+    or any pattern in taxonomy.yaml, re-keyed and re-evaluated the entire corpus."""
+    fields = _identity(tmp_path).profile_snapshot["fields"]
+    assert set(fields) == {  # type: ignore[arg-type]
+        "work_authorization", "total_years_experience", "security_clearance", "highest_degree",
+    }
+
+
+def test_the_snapshot_does_not_embed_the_catalog(tmp_path: Path) -> None:
+    """D-P2-21. catalog_version is a sha256 over the whole document, so it pins the
+    catalog exactly; copying it into every input row would be 10,000 copies at corpus
+    scale to recover what the hash already carries."""
+    snapshot = _identity(tmp_path).rules_snapshot
+    assert set(snapshot) == {"catalog_version", "catalog_source", "policy"}
