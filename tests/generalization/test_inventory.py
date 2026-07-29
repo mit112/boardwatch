@@ -45,8 +45,9 @@ def _repo_without(path: str) -> Repo:
 def test_scope_covers_data_files_repo_wide() -> None:
     scope = inventory_scope(discover(REPO_ROOT))
     assert "src/boardwatch/registry/companies.yaml" in scope
+    assert "src/boardwatch/eligibility/rules.yaml" in scope
     assert "tests/fixtures/lever/normal.json" in scope
-    assert len(scope) == 16
+    assert len(scope) == 17
 
 
 def test_scope_excludes_tooling_config_and_workflows() -> None:

@@ -58,6 +58,14 @@ SHIPPED_DATA: dict[str, DataEntry] = {
         reason="Curated generic tech taxonomy. Describes the world, not one user. "
         "Overridable per user via {config_dir}/taxonomy.yaml (D24)",
     ),
+    "src/boardwatch/eligibility/rules.yaml": DataEntry(
+        kind="taxonomy",
+        reason="The eligibility rule catalog: requirement phrasings, answer types, "
+        "vocabularies and ranks. Describes how postings word requirements, not one "
+        "user's situation. A wrong pattern is a wrong verdict, so it is pinned rather "
+        "than exempted (D-P2-7). Overridable per user via {config_dir}/rules.yaml",
+        pin="sha256:d36063e08c0077e306b6b090ba43c68afead3c3477fdc72a59856921d002aa09",
+    ),
     "src/boardwatch/registry/companies.yaml": DataEntry(
         kind="company_enumeration",
         reason="The one public starter registry of company job boards. Schema-validated, "
