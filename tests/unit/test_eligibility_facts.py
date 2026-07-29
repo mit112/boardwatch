@@ -70,6 +70,10 @@ def test_absent_facts_render_as_null_not_missing_keys() -> None:
         "not a mapping",
         [],
         {"total_years_experience": "five"},
+        # A boolean is not a year count. pydantic coerces True->1 / False->0 by default,
+        # which is a GUESS (D-P2-15) that resolves `unmet` where the fact should be absent.
+        {"total_years_experience": True},
+        {"total_years_experience": False},
         {"work_authorization": "citizen"},
         {"work_authorization": {"status": "citizen", "unknown_key": 1}},
         {"security_clearance": {"accesses": "sci"}},

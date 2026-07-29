@@ -14,7 +14,7 @@ from __future__ import annotations
 
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field, ValidationError
+from pydantic import BaseModel, ConfigDict, Field, StrictInt, ValidationError
 
 PolicyChoice = Literal["blocker", "preference", "ignore"]
 
@@ -47,7 +47,10 @@ class Facts(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
 
     work_authorization: WorkAuthFact | None = None
-    total_years_experience: int | None = None
+    # StrictInt, not int: pydantic coerces a stored boolean True->1 / False->0, which is a
+    # GUESS that resolves `unmet` where the fact should be absent (D-P2-15). Strict rejects
+    # a bool (and a numeric string), so parse_facts fails it closed to absent.
+    total_years_experience: StrictInt | None = None
     security_clearance: ClearanceFact | None = None
     highest_degree: str | None = None
 
