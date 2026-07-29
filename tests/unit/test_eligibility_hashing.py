@@ -65,6 +65,25 @@ def test_digest_distinguishes_string_from_number() -> None:
     assert digest({"a": 1}) != digest({"a": "1"})
 
 
+def test_canonical_rejects_a_non_string_mapping_key() -> None:
+    """The same collision one level up from the value test above: JSON stringifies keys,
+    so {1: x} and {"1": x} canonicalise identically and two distinct snapshots could share
+    a hash. This boundary refuses the ambiguous input rather than trusting it; every real
+    snapshot key is already a string."""
+    with pytest.raises(TypeError):
+        canonical({1: "x"})
+    with pytest.raises(TypeError):
+        canonical({"outer": {2: "x"}})  # the collision must be refused when nested too
+    with pytest.raises(TypeError):
+        digest({1: "x"})
+
+
+def test_canonical_allows_string_keyed_nesting_inside_lists() -> None:
+    """Positive control: the guard must not over-reject legitimate string-keyed structures
+    nested inside lists, which the facts payload produces."""
+    assert canonical({"a": [{"b": 1}], "c": {"d": 2}}) == '{"a":[{"b":1}],"c":{"d":2}}'
+
+
 # Every family's resolver declares its inputs STATICALLY. The degree resolver declares
 # total_years_experience as well as highest_degree, because a measurable OR-alternative
 # reads it (D-P2-23).

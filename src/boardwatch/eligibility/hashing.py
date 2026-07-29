@@ -23,8 +23,27 @@ from boardwatch.eligibility.catalog import RulesCatalog
 from boardwatch.eligibility.facts import Facts, Policy, facts_payload
 
 
+def _require_string_keys(payload: object) -> None:
+    """Refuse a non-string mapping key anywhere in the payload.
+
+    JSON stringifies keys, so `{1: x}` and `{"1": x}` canonicalise identically and two
+    distinct snapshots could share a hash. Every real snapshot key is already a string;
+    this fails the ambiguous input closed at the boundary rather than trusting it, the
+    same concern the string-vs-number value test pins one level down.
+    """
+    if isinstance(payload, Mapping):
+        for key, value in payload.items():
+            if not isinstance(key, str):
+                raise TypeError(f"canonical form requires string mapping keys, got {key!r}")
+            _require_string_keys(value)
+    elif isinstance(payload, (list, tuple)):
+        for item in payload:
+            _require_string_keys(item)
+
+
 def canonical(payload: object) -> str:
     """Sorted-key compact JSON. The single serialisation used for every hash."""
+    _require_string_keys(payload)
     return json.dumps(payload, sort_keys=True, separators=(",", ":"))
 
 
