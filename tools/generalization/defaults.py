@@ -24,6 +24,7 @@ SCOPED_MODULES: tuple[str, ...] = (
     "src/boardwatch/eligibility/hashing.py",
     "src/boardwatch/eligibility/catalog.py",
     "src/boardwatch/eligibility/detect.py",
+    "src/boardwatch/eligibility/resolve.py",
 )
 INIT_MODULE = "src/boardwatch/cli/init_cmd.py"
 HEURISTIC_MODULE = "src/boardwatch/rank/heuristic.py"
