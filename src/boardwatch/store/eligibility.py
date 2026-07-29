@@ -14,7 +14,8 @@ from collections.abc import Sequence
 from dataclasses import dataclass, field
 from typing import Any, Literal
 
-from sqlalchemy import Connection, Row, insert, select
+from sqlalchemy import Connection, Row, insert, select, text
+from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 
 from boardwatch.core.clock import utcnow
 from boardwatch.store.tables import (
@@ -53,22 +54,29 @@ def _get_or_create_input(
     profile_snapshot: dict[str, Any], rules_hash: str, rules_snapshot: dict[str, Any],
     input_fingerprint: str,
 ) -> int:
-    existing = conn.execute(
-        select(eligibility_inputs.c.id).where(
-            eligibility_inputs.c.input_fingerprint == input_fingerprint
+    """Insert-then-reselect, never pre-select-then-insert.
+
+    The pre-SELECT raced its own insert, so two concurrent `top` runs turned a unique index
+    into an IntegrityError rather than an idempotent success. The FIRST snapshot still wins
+    on conflict, which is safe now only because P2 DERIVES input_fingerprint from the
+    snapshots: two different snapshots can no longer share a fingerprint.
+    """
+    conn.execute(
+        sqlite_insert(eligibility_inputs)
+        .values(
+            posting_version_id=posting_version_id, profile_hash=profile_hash,
+            profile_snapshot_json=profile_snapshot, rules_hash=rules_hash,
+            rules_snapshot_json=rules_snapshot, input_fingerprint=input_fingerprint,
+            created_at=utcnow(),
         )
-    ).scalar_one_or_none()
-    if existing is not None:
-        return int(existing)
+        .on_conflict_do_nothing(index_elements=[eligibility_inputs.c.input_fingerprint])
+    )
     return int(
         conn.execute(
-            insert(eligibility_inputs).values(
-                posting_version_id=posting_version_id, profile_hash=profile_hash,
-                profile_snapshot_json=profile_snapshot, rules_hash=rules_hash,
-                rules_snapshot_json=rules_snapshot, input_fingerprint=input_fingerprint,
-                created_at=utcnow(),
+            select(eligibility_inputs.c.id).where(
+                eligibility_inputs.c.input_fingerprint == input_fingerprint
             )
-        ).inserted_primary_key[0]  # type: ignore[index]
+        ).scalar_one()
     )
 
 
@@ -98,33 +106,58 @@ def record_evaluation(
         rules_snapshot=rules_snapshot, input_fingerprint=input_fingerprint,
     )
     if engine_kind == "deterministic":
-        existing = conn.execute(
-            select(eligibility_evaluations.c.id).where(
-                eligibility_evaluations.c.input_id == input_id,
-                eligibility_evaluations.c.engine_kind == "deterministic",
-                eligibility_evaluations.c.engine_version == engine_version,
-            )
-        ).scalar_one_or_none()
-        if existing is not None:
-            return int(existing)
-    elif idempotency_key is not None:
-        existing = conn.execute(
-            select(eligibility_evaluations.c.id).where(
-                eligibility_evaluations.c.idempotency_key == idempotency_key
-            )
-        ).scalar_one_or_none()
-        if existing is not None:
-            return int(existing)
-    eval_id = int(
-        conn.execute(
-            insert(eligibility_evaluations).values(
+        # Insert-then-reselect against the partial unique index uq_eligibility_deterministic,
+        # (input_id, engine_version) where engine_kind = 'deterministic'. The pre-SELECT raced
+        # its own insert; two concurrent runs turned the index into an IntegrityError instead
+        # of an idempotent no-op. Do NOT read inserted_primary_key on the conflict path: it
+        # never raises and returns a stale last_insert_rowid, so the rowcount guard decides.
+        inserted = conn.execute(
+            sqlite_insert(eligibility_evaluations)
+            .values(
                 input_id=input_id, engine_kind=engine_kind, engine_version=engine_version,
                 provider=provider, model=model, prompt_version=prompt_version,
                 idempotency_key=idempotency_key, verdict=verdict, score=score,
                 raw_output_json=raw_output, created_at=utcnow(),
             )
-        ).inserted_primary_key[0]  # type: ignore[index]
-    )
+            .on_conflict_do_nothing(
+                index_elements=[
+                    eligibility_evaluations.c.input_id,
+                    eligibility_evaluations.c.engine_version,
+                ],
+                index_where=text("engine_kind = 'deterministic'"),
+            )
+        )
+        if inserted.rowcount == 0:
+            # an equal row already exists, so this call is a no-op and its children exist
+            return int(
+                conn.execute(
+                    select(eligibility_evaluations.c.id).where(
+                        eligibility_evaluations.c.input_id == input_id,
+                        eligibility_evaluations.c.engine_kind == "deterministic",
+                        eligibility_evaluations.c.engine_version == engine_version,
+                    )
+                ).scalar_one()
+            )
+        eval_id = int(inserted.inserted_primary_key[0])  # type: ignore[index]
+    else:
+        if idempotency_key is not None:
+            existing = conn.execute(
+                select(eligibility_evaluations.c.id).where(
+                    eligibility_evaluations.c.idempotency_key == idempotency_key
+                )
+            ).scalar_one_or_none()
+            if existing is not None:
+                return int(existing)
+        eval_id = int(
+            conn.execute(
+                insert(eligibility_evaluations).values(
+                    input_id=input_id, engine_kind=engine_kind, engine_version=engine_version,
+                    provider=provider, model=model, prompt_version=prompt_version,
+                    idempotency_key=idempotency_key, verdict=verdict, score=score,
+                    raw_output_json=raw_output, created_at=utcnow(),
+                )
+            ).inserted_primary_key[0]  # type: ignore[index]
+        )
     for r_ordinal, req in enumerate(requirements):
         req_id = int(
             conn.execute(
