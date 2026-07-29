@@ -269,6 +269,10 @@ def test_the_policy_map_is_materialised_from_catalog_defaults(tmp_path: Path) ->
         (MINIMAL.replace('negation_cues: ["not"]',
                          'negation_cues: ["not"]\nnegation_cue_idioms: "boom"'),
          "must be a list"),
+        # A root negation_cue that is a YAML 1.1 boolean is finding 59's silent class one
+        # level up: unquoted `no` arrives as False, str(False) is "False", the `no` cue is
+        # never matched, and a negated requirement survives as a false `ineligible`.
+        (MINIMAL.replace('negation_cues: ["not"]', 'negation_cues: [no]'), "QUOTE it"),
     ],
 )
 def test_each_malformed_shape_has_its_own_raise_site(

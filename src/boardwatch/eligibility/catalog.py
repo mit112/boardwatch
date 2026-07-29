@@ -195,7 +195,16 @@ def load_rules(config_dir: Path) -> RulesCatalog:
     raw_cues = document.get("negation_cues")
     if not isinstance(raw_cues, list) or not raw_cues:
         raise CatalogError(f"{origin}: 'negation_cues' must be a non-empty list")
-    cues = tuple(str(cue) for cue in raw_cues)
+    for cue in raw_cues:
+        # Same silent class as _consumed_cues (finding 59): an unquoted `no` is a YAML 1.1
+        # boolean, so str(False) becomes the non-matching cue "False" and a negation is
+        # never detected. Reject at load rather than let a negated requirement survive.
+        if not isinstance(cue, str):
+            raise CatalogError(
+                f"{origin}: negation_cues entry {cue!r} loaded as {type(cue).__name__}, "
+                "not a string. QUOTE it: unquoted no/yes/on/off/true/false are YAML booleans"
+            )
+    cues = tuple(raw_cues)
     idioms = _regex_list(document.get("negation_cue_idioms"), origin, "negation_cue_idioms")
 
     families: list[FamilySpec] = []
