@@ -1,9 +1,12 @@
 # boardwatch
 
-**A self-hosted job radar for technical job seekers.** Point it at the companies you
-care about; it watches their **official ATS job boards**, catches new postings early,
-ranks them against your profile with an explainable score, and hands you a shortlist —
-all on your own machine.
+**A self-hosted job radar that reads the fine print.** Point it at the companies you
+care about. boardwatch watches their **official ATS job boards**, catches new postings
+early, and ranks them against your profile with an explainable score. It also reads each
+posting for the hard eligibility requirements that quietly rule people out (visa
+sponsorship, security clearance, a required degree, years of experience, a location) and
+flags the ones you could not actually apply to, each backed by the exact sentence it read
+as evidence. Nothing is guessed, nothing phones home, and it all runs on your own machine.
 
 [![CI](https://github.com/mit112/boardwatch/actions/workflows/ci.yml/badge.svg)](https://github.com/mit112/boardwatch/actions/workflows/ci.yml)
 [![PyPI](https://img.shields.io/pypi/v/boardwatch.svg)](https://pypi.org/project/boardwatch/)
@@ -15,16 +18,20 @@ all on your own machine.
 
 ```console
 $ boardwatch top
- #   Title                            Company     Score   Why
- 12  Senior Backend Engineer          Stripe      0.86    covers 9/11 skills · title · 1d
- 7   Software Engineer, Platform      Linear      0.81    covers 7/10 skills · title · 3d
- 33  Backend Engineer (Payments)      Ramp        0.74    covers 6/9 skills · 2d
- 5   Full-Stack Engineer              Supabase    0.68    covers 5/8 skills · title · 6d
- 18  Infrastructure Engineer          OpenAI      0.61    covers 4/9 skills · 4d
+ #   Title                            Company     Score   Eligible   Why
+ 12  Senior Backend Engineer          Stripe      0.86    no flags   covers 9/11 skills · title · 1d
+ 7   Software Engineer, Platform      Linear      0.81    check      covers 7/10 skills · title · 3d
+ 33  Backend Engineer (Payments)      Ramp        0.74    no flags   covers 6/9 skills · 2d
+ 5   Full-Stack Engineer              Supabase    0.68    no flags   covers 5/8 skills · title · 6d
+ 18  Infrastructure Engineer          OpenAI      0.61    check      covers 4/9 skills · 4d
+
+2 postings hidden as ineligible (run with --include-ineligible to see them).
 ```
 
-*(Illustrative output. `#` is the posting id — pass it to `boardwatch show <id>` for the
-full posting and a per-component score breakdown.)*
+*(Illustrative output. `#` is the posting id; pass it to `boardwatch show <id>` for the
+full posting, a per-component score breakdown, and the eligibility audit with quotes.
+"no flags" means no catalogued disqualifier was found, not that you are cleared to
+apply; "check" means the posting was ambiguous.)*
 
 ---
 
@@ -35,7 +42,7 @@ under sponsored noise and stale reposts; paid trackers put a subscription (and t
 servers, and your search history) between you and postings that are **already public**.
 
 boardwatch takes the direct route. Greenhouse, Lever, and Ashby each expose a **public,
-keyless JSON endpoint** for every board they host — the same data the company's own
+keyless JSON endpoint** for every board they host, the same data the company's own
 careers page renders. boardwatch polls those endpoints politely, on your schedule, and
 tells you what's *new* since last time.
 
@@ -43,12 +50,13 @@ tells you what's *new* since last time.
 |--------------------------|-----------------------|------------------------|------------------------|
 | Source of truth          | company's own ATS     | aggregated + sponsored | aggregated             |
 | Freshness                | as fast as you poll   | ranking-dependent      | vendor-dependent       |
+| Reads eligibility        | audit + quoted proof  | no                     | no                     |
 | Your data                | local SQLite, yours   | the product            | on their servers       |
 | Cost                     | free (self-hosted)    | free-ish (ad-driven)   | subscription           |
-| Auto-apply / spam        | never                 | —                      | sometimes              |
+| Auto-apply / spam        | never                 | no comment             | sometimes              |
 
 **Honest limits.** boardwatch only covers companies hosted on **Greenhouse, Lever, or
-Ashby** (a large slice of tech, but not everyone — no Workday/Taleo/etc. yet). It reads
+Ashby** (a large slice of tech, but not everyone, no Workday/Taleo/etc. yet). It reads
 exactly what those APIs expose. It is pre-release: expect rough edges, and read
 [Responsible use](#responsible-use--legality) before pointing it at boards you don't own.
 
@@ -101,26 +109,72 @@ uv run boardwatch init
    + profile boards   demand    score breakdown
 ```
 
-- **`init`** — one-time setup: choose companies (starter set / registry search / paste),
+- **`init`**: one-time setup. Choose companies (starter set / registry search / paste),
   then your profile (résumé text, target titles, excludes, locations, remote-only).
-- **`scan`** — fetches every watched board through a polite fetcher (per-host pacing,
+- **`scan`**: fetches every watched board through a polite fetcher (per-host pacing,
   retries with backoff, conditional `If-None-Match`/`If-Modified-Since` so unchanged
   boards cost a `304`), then applies each board transactionally. Prints a one-line summary.
-- **`top [N]`** — ranks open postings against your profile *right now* (weights are read
+- **`top [N]`**: ranks open postings against your profile *right now* (weights are read
   live), newest-and-most-relevant first, with a one-line "why".
-- **`show <id>`** — the full posting plus a per-component score table (skill coverage,
-  title match, recency, location fit).
-- **`companies`** — `add` / `remove` / `search` / `list` / `import` / `export` your watched
+- **`show <id>`**: the full posting plus a per-component score table (skill coverage,
+  title match, recency, location fit) and the eligibility audit with quoted evidence.
+- **`eligibility`**: `facts` / `policy` to tell boardwatch your situation, `run` to
+  evaluate open postings, `summary` for a funnel of what the catalog matched. See
+  [Eligibility audit](#eligibility-audit).
+- **`companies`**: `add` / `remove` / `search` / `list` / `import` / `export` your watched
   boards. `boardwatch companies add https://boards.greenhouse.io/acme` just works.
-- **`doctor`** — per-board connectivity and freshness, plus a local DB integrity check.
-- **`config show` / `config set`** — tune politeness and ranking weights (see below).
+- **`doctor`**: per-board connectivity and freshness, plus a local DB integrity check.
+- **`config show` / `config set`**: tune politeness and ranking weights (see below).
 
 ### Ranking, briefly
 
 Each posting gets a 0–1 score: a weighted blend of **skill coverage**, **title match**
 (fuzzy), **recency** (exponential decay), and **location fit**. Undefined components
-renormalize away, so a sparse profile still ranks sensibly. Nothing is precomputed —
+renormalize away, so a sparse profile still ranks sensibly. Nothing is precomputed:
 change a weight and the next `top` reflects it. `show <id>` prints the exact arithmetic.
+
+---
+
+## Eligibility audit
+
+Ranking tells you how well a posting fits. The eligibility audit tells you whether you
+could apply at all, and shows its work.
+
+You describe your situation once, in the catalog's own vocabulary:
+
+```bash
+boardwatch eligibility facts set work_authorization.status citizen
+boardwatch eligibility facts set highest_degree bachelor
+boardwatch eligibility policy set visa_sponsorship blocker   # treat this family as disqualifying
+```
+
+Then `boardwatch eligibility run` reads each open posting for catalogued requirements
+(visa sponsorship, security clearance, degree, years of experience, location, and more),
+resolves them against your facts, and stores a verdict. `boardwatch show <id>` prints it
+with the receipts:
+
+```console
+Eligibility: ineligible
+  unmet · required: work authorization / sponsorship
+      quote: "This role is not able to sponsor employment visas now or in the future."
+```
+
+Three properties are deliberate:
+
+- **Evidence-linked.** Every requirement carries the exact sentence it was read from,
+  sliced from the posting version that was evaluated. Nothing is paraphrased or invented.
+- **Deterministic.** The same posting and the same facts always produce the same verdict.
+  There is no language model in the loop and nothing to hallucinate: the vocabulary and
+  rules are a versioned catalog, and a verdict is invalidated and recomputed only when
+  your profile or the catalog changes.
+- **Honest.** A clean posting reads as "no flags", never as a guarantee. "no flags" means
+  only that no catalogued disqualifier was found, not that you are cleared to apply, and
+  ambiguous wording reads as "check" rather than a false all-clear.
+
+`boardwatch eligibility summary` shows the funnel (how many postings were evaluated, the
+verdict split, and what fired per family) so you can watch the catalog working before you
+trust a hidden count. By default `top` hides postings that are ruled out and reports the
+count; `top --include-ineligible` shows them.
 
 ---
 
@@ -252,7 +306,7 @@ $ journalctl --user -u boardwatch-scan.service --since today
 
 boardwatch ships a bundled **registry** of verified public boards (35+ companies, with a
 curated **starter set**), so `init` works offline out of the box. You can watch any board
-these providers host — not just the registry — with `companies add`. The registry is
+these providers host, not just the registry, with `companies add`. The registry is
 community-maintainable by PR; see
 [`src/boardwatch/registry/README.md`](src/boardwatch/registry/README.md).
 
@@ -261,7 +315,7 @@ community-maintainable by PR; see
 ## Responsible use & legality
 
 boardwatch reads the **same public, keyless endpoints that power each company's own
-careers page** — it does not scrape rendered HTML, log in, or bypass any access control.
+careers page**: it does not scrape rendered HTML, log in, or bypass any access control.
 That is deliberately the least-invasive way to get this data. Still, these are
 third-party services, and using them responsibly is on you:
 
@@ -305,7 +359,7 @@ Have a company on a board boardwatch doesn't reach yet, or an ATS you want suppo
 
 ## Contributing
 
-Contributions welcome — code, registry entries, or bug reports. See
+Contributions welcome: code, registry entries, or bug reports. See
 [CONTRIBUTING.md](CONTRIBUTING.md) for dev setup (`uv sync`, `make check`) and
 [the registry guide](src/boardwatch/registry/README.md) for adding a company board.
 All changes land via PR against a branch-protected `main`.
