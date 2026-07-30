@@ -1,0 +1,828 @@
+version: 1
+
+# Cues that flip a clause's polarity. A detection is DROPPED when a cue occurs in its
+# unit OUTSIDE the matched span; a pattern that consumes its own negation survives.
+# Contractions are spelled out one by one on purpose. A single "n't" cue is UNREACHABLE:
+# the boundary test is (?<!\w)cue(?!\w), and the character before the "n" of a contraction
+# is always a word character, so "n't" never matched and "An active Secret clearance isn't
+# required." resolved to a wrong `unmet`. Polarity vocabulary belongs in the catalog, so the
+# fix is a longer list here rather than a special case in the matcher.
+negation_cues:
+  - "not"
+  - "cannot"
+  - "can't"
+  - "don't"
+  - "doesn't"
+  - "didn't"
+  - "won't"
+  - "isn't"
+  - "aren't"
+  - "wasn't"
+  - "weren't"
+  - "shouldn't"
+  - "wouldn't"
+  - "couldn't"
+  - "haven't"
+  - "hasn't"
+  - "needn't"
+  - "no"
+  - "never"
+  - "without"
+  - "neither"
+  - "nor"
+  - "except"
+  - "unless"
+  - "rather than"
+  - "instead of"
+
+# Fixed idioms in which one of the cues above is NOT polarity. A cue occurrence lying wholly
+# inside one of these is invisible to BOTH cue searches, so detection proceeds exactly as if
+# the words were absent. This is not a suppressor and not a hedge: it cancels nothing, it
+# declares that the surface form was never a negation in the first place.
+# "unless otherwise noted" is boilerplate meaning "except where this posting states a different
+# value". It qualifies the DOCUMENT, not the requirement it trails. Read as polarity,
+# "6 years of experience is required unless otherwise noted." dropped the floor and returned
+# `eligible` to a 3-year candidate, in all three of the experience, degree and clearance
+# families. That is residual 49a.
+# Why an IDIOM and not a clause bound: the LEADING form "Unless otherwise noted, 6 years of
+# experience is required." was already correct, because the comma is a clause boundary. Only
+# the TRAILING form has no delimiter for _clause_bounds to find. An idiom is what covers both.
+# Deliberately NARROW. `unless otherwise agreed` is a REAL escape, not boilerplate, and an
+# earlier draft that included it swallowed "...unless otherwise agreed with the hiring
+# manager." That was measured, not reasoned about, and it is why this list names participles
+# of "state" and nothing else.
+negation_cue_idioms:
+  - "unless\\s+otherwise\\s+(?:noted|specified|stated|indicated|mentioned)"
+  # FINDING 64. "...authorized to work in the US WITHOUT sponsorship." is the commonest
+  # sponsorship-blocking sentence on US postings, and `without` STRENGTHENS the gate. Read
+  # as polarity it deleted the gate it belongs to and returned `eligible` with ZERO rows.
+  # Narrow on purpose, the same way the boilerplate idiom above is: the cue only loses its
+  # polarity when its object is SPONSORSHIP. "We will consider candidates without 5 years
+  # of experience." keeps its cue because `experience` is not in this list, and that case
+  # is a permanent control. The `with no need for` twin is the same idiom with the `no`
+  # cue instead of `without`, and it was measured failing the same way.
+  - "without\\s+(?:(?:the|a|any)\\s+need\\s+(?:for|of)\\s+|requiring\\s+|needing\\s+|current\\s+or\\s+future\\s+)?(?:employer\\s+|company\\s+|visa\\s+|work\\s+visa\\s+|immigration\\s+)?sponsorship"
+  - "with\\s+no\\s+(?:need\\s+(?:for|of)\\s+)?(?:employer\\s+|company\\s+|visa\\s+)?sponsorship"
+
+families:
+  - id: work_auth
+    label: Work authorization
+    fact: work_authorization
+    answer_type: structured
+    default_policy: preference
+    question: "Which best describes your work authorization for the roles you are targeting?"
+    fields:
+      - name: status
+        type: choice
+        choices: [citizen, permanent_resident, ead_or_similar, needs_sponsorship, prefer_not_to_say]
+      - name: jurisdiction
+        type: choice
+        choices: [us, ca, uk, eu, other, unspecified]
+    implies_vocabulary:
+      - authorization_required
+      - citizenship_required
+      - citizen_or_lpr_required
+      - sponsorship_unavailable
+      - sponsorship_available
+    exclusive_groups:
+      - [sponsorship_unavailable, sponsorship_available]
+      - [citizenship_required, citizen_or_lpr_required, authorization_required]
+    # ONE CANONICAL MARKER VOCABULARY PER POSITION, findings 125-139. All six requirement
+    # patterns below carry these two groups BYTE-IDENTICALLY, so a marker token can no longer
+    # be present on one sibling and absent on another. That asymmetry is the shape behind
+    # findings 66, 68, 69, 84, 88, 89, 102 and 103, every one of which was found by hand one
+    # token at a time; the parity table collapsed sixteen work_auth rows into these two edits.
+    #
+    #   marker FIRST  (?:must\s+(?:be|have|hold|possess)|require[sd]?|
+    #                    (?:will\s+)?needs?(?:\s+to\s+(?:be|have|hold|possess))?|
+    #                    proof\s+of|able\s+to\s+(?:provide|show))
+    #   marker LAST   \s*(?:STOP-GUARDED WORD GAP){0,3}?(?:required|mandatory|necessary|
+    #                    essential|compulsory|needed|non-?negotiable|a\s+must|a\s+requirement)
+    #
+    # NOT a YAML anchor, and that is a limitation rather than a style choice: an alias
+    # substitutes a whole NODE, while these groups are SUBSTRINGS of a longer scalar that
+    # proto.load compiles verbatim. Byte-identical text is the only sharing the loader allows,
+    # so the parity of the six is asserted behaviourally instead of structurally.
+    #
+    # WHY marker-LAST IS A GAP AND NOT A FIXED (?:is\s+)? COPULA. The gap is what makes a
+    # NEGATION a measurable drop. `Authorization to work in the US is not required.` used to
+    # produce zero rows with an EMPTY drop list, so the pattern never matched and the cue guard
+    # never ran; the absence proved nothing, which is finding 91's vacuity class. Now the arm
+    # matches across the cue and detect() drops it as cue-inside:not, which a case can assert.
+    # The gap crosses \x27 as well as \w for the same reason one level down: `isn\x27t required`
+    # is undetectable to a \w-only gap, and negation_cues spells out every contraction
+    # precisely because that surface returned a wrong verdict once already.
+    #
+    # THE STOP GUARD IS LOAD-BEARING. `preferred`, `desirable`, `a plus`, `nice` and `but` are
+    # unreachable through the gap, so `Authorization to work in the US is preferred.` and
+    # `... is helpful but not required.` stay at zero rows. Measured, both directions.
+    #
+    # EVERY ABBREVIATION ATOM CARRIES (?<!\w). Without it `CAMPUS work authorization is
+    # required.` and `SPUK work authorization is required.` returned a wrong `ineligible`,
+    # measured against the pre-wave catalog. The family's single lint3 probe passed only
+    # because its phrasing needed a marker gap the narrow vocabulary did not have, so the
+    # probe was defending the missing guard rather than proving it existed.
+    patterns:
+      - id: us_authorization_required
+        requiredness: required
+        implies: authorization_required
+        jurisdiction: us
+        scope: sentence
+        requirement_text: "Must be authorized to work in the United States"
+        pattern: '(?:must\s+(?:be|have|hold|possess)|require[sd]?|(?:will\s+)?needs?(?:\s+to\s+(?:be|have|hold|possess))?|proof\s+of|able\s+to\s+(?:provide|show))\s+(?:(?:an?\s+)?(?:(?<!\w)U\.?S\.?A?\.?|United\s+States|American)\s+citizens?\s*,?\s*or\s+(?:otherwise\s+)?)?(?:(?!\b(?:and|but|while|whereas|preferred|desirable|ideally|bonus|plus|desired|nice|for|in|of|at|on|from|by|with|as|within|under|across)\b)\w+\s+){0,3}?(?:(?:legally\s+)?(?:authori[sz]ed|eligible)\s+to\s+work\s+in\s+(?:the\s+)?(?:(?<!\w)U\.?S\.?A?\.?|United\s+States)|(?:the\s+)?(?:right|authori[sz]ation)\s+to\s+work\s+in\s+(?:the\s+)?(?:(?<!\w)U\.?S\.?A?\.?|United\s+States)|(?:(?<!\w)U\.?S\.?A?\.?|United\s+States)\s+work\s+authori[sz]ation)|(?:(?:legally\s+)?(?:authori[sz]ed|eligible)\s+to\s+work\s+in\s+(?:the\s+)?(?:(?<!\w)U\.?S\.?A?\.?|United\s+States)|(?:the\s+)?(?:right|authori[sz]ation)\s+to\s+work\s+in\s+(?:the\s+)?(?:(?<!\w)U\.?S\.?A?\.?|United\s+States)|(?:(?<!\w)U\.?S\.?A?\.?|United\s+States)\s+work\s+authori[sz]ation)\s*(?:(?!\b(?:and|but|while|whereas|preferred|desirable|ideally|bonus|plus|desired|nice|for|in|of|at|on|from|by|with|as|within|under|across)\b)[\w\x27]+\s+){0,3}?(?:required|mandatory|necessary|essential|compulsory|needed|non-?negotiable|a\s+must|a\s+requirement)'
+      - id: uk_authorization_required
+        requiredness: required
+        implies: authorization_required
+        jurisdiction: uk
+        scope: sentence
+        requirement_text: "Must have the right to work in the United Kingdom"
+        pattern: '(?:must\s+(?:be|have|hold|possess)|require[sd]?|(?:will\s+)?needs?(?:\s+to\s+(?:be|have|hold|possess))?|proof\s+of|able\s+to\s+(?:provide|show))\s+(?:(?!\b(?:and|but|while|whereas|preferred|desirable|ideally|bonus|plus|desired|nice|for|in|of|at|on|from|by|with|as|within|under|across)\b)\w+\s+){0,3}?(?:(?:legally\s+)?(?:authori[sz]ed|eligible)\s+to\s+work\s+in\s+(?:the\s+)?(?:(?<!\w)U\.?K\.?|United\s+Kingdom)|(?:the\s+)?(?:right|authori[sz]ation)\s+to\s+work\s+in\s+(?:the\s+)?(?:(?<!\w)U\.?K\.?|United\s+Kingdom)|(?:(?<!\w)U\.?K\.?|United\s+Kingdom)\s+work\s+authori[sz]ation)|(?:(?:legally\s+)?(?:authori[sz]ed|eligible)\s+to\s+work\s+in\s+(?:the\s+)?(?:(?<!\w)U\.?K\.?|United\s+Kingdom)|(?:the\s+)?(?:right|authori[sz]ation)\s+to\s+work\s+in\s+(?:the\s+)?(?:(?<!\w)U\.?K\.?|United\s+Kingdom)|(?:(?<!\w)U\.?K\.?|United\s+Kingdom)\s+work\s+authori[sz]ation)\s*(?:(?!\b(?:and|but|while|whereas|preferred|desirable|ideally|bonus|plus|desired|nice|for|in|of|at|on|from|by|with|as|within|under|across)\b)[\w\x27]+\s+){0,3}?(?:required|mandatory|necessary|essential|compulsory|needed|non-?negotiable|a\s+must|a\s+requirement)'
+      - id: eu_authorization_required
+        requiredness: required
+        implies: authorization_required
+        jurisdiction: eu
+        scope: sentence
+        requirement_text: "Must have the right to work in the EU"
+        pattern: '(?:must\s+(?:be|have|hold|possess)|require[sd]?|(?:will\s+)?needs?(?:\s+to\s+(?:be|have|hold|possess))?|proof\s+of|able\s+to\s+(?:provide|show))\s+(?:(?!\b(?:and|but|while|whereas|preferred|desirable|ideally|bonus|plus|desired|nice|for|in|of|at|on|from|by|with|as|within|under|across)\b)\w+\s+){0,3}?(?:(?:legally\s+)?(?:authori[sz]ed|eligible)\s+to\s+work\s+in\s+(?:the\s+)?(?:(?<!\w)E\.?U\.?|European\s+Union)|(?:the\s+)?(?:right|authori[sz]ation)\s+to\s+work\s+in\s+(?:the\s+)?(?:(?<!\w)E\.?U\.?|European\s+Union)|(?:(?<!\w)E\.?U\.?|European\s+Union)\s+work\s+authori[sz]ation)|(?:(?:legally\s+)?(?:authori[sz]ed|eligible)\s+to\s+work\s+in\s+(?:the\s+)?(?:(?<!\w)E\.?U\.?|European\s+Union)|(?:the\s+)?(?:right|authori[sz]ation)\s+to\s+work\s+in\s+(?:the\s+)?(?:(?<!\w)E\.?U\.?|European\s+Union)|(?:(?<!\w)E\.?U\.?|European\s+Union)\s+work\s+authori[sz]ation)\s*(?:(?!\b(?:and|but|while|whereas|preferred|desirable|ideally|bonus|plus|desired|nice|for|in|of|at|on|from|by|with|as|within|under|across)\b)[\w\x27]+\s+){0,3}?(?:required|mandatory|necessary|essential|compulsory|needed|non-?negotiable|a\s+must|a\s+requirement)'
+      - id: ca_authorization_required
+        requiredness: required
+        implies: authorization_required
+        jurisdiction: ca
+        scope: sentence
+        requirement_text: "Must be authorized to work in Canada"
+        pattern: '(?:must\s+(?:be|have|hold|possess)|require[sd]?|(?:will\s+)?needs?(?:\s+to\s+(?:be|have|hold|possess))?|proof\s+of|able\s+to\s+(?:provide|show))\s+(?:(?!\b(?:and|but|while|whereas|preferred|desirable|ideally|bonus|plus|desired|nice|for|in|of|at|on|from|by|with|as|within|under|across)\b)\w+\s+){0,3}?(?:(?:legally\s+)?(?:authori[sz]ed|eligible)\s+to\s+work\s+in\s+Canada|(?:the\s+)?(?:right|authori[sz]ation)\s+to\s+work\s+in\s+Canada|Canadian\s+work\s+authori[sz]ation)|(?:(?:legally\s+)?(?:authori[sz]ed|eligible)\s+to\s+work\s+in\s+Canada|(?:the\s+)?(?:right|authori[sz]ation)\s+to\s+work\s+in\s+Canada|Canadian\s+work\s+authori[sz]ation)\s*(?:(?!\b(?:and|but|while|whereas|preferred|desirable|ideally|bonus|plus|desired|nice|for|in|of|at|on|from|by|with|as|within|under|across)\b)[\w\x27]+\s+){0,3}?(?:required|mandatory|necessary|essential|compulsory|needed|non-?negotiable|a\s+must|a\s+requirement)'
+      - id: us_citizen_or_lpr_required
+        requiredness: required
+        implies: citizen_or_lpr_required
+        jurisdiction: us
+        scope: sentence
+        requirement_text: "Must be a US citizen or lawful permanent resident"
+        # A bare COMMA is a connector too: "Open to US citizens, permanent residents, and
+        # green card holders." is an enumeration with no conjunction after `citizens`.
+        # Requirement MARKER, mandatory. Without one the bare-comma connector added for the
+        # enumeration form matched descriptive prose: "Our workforce includes US citizens,
+        # permanent residents, and visa holders from 30 countries." resolved `ineligible`.
+        pattern: '(?:(?:must\s+(?:be|have|hold|possess)|require[sd]?|(?:will\s+)?needs?(?:\s+to\s+(?:be|have|hold|possess))?|proof\s+of|able\s+to\s+(?:provide|show))|open\s+to|limited\s+to|restricted\s+to|only|eligible\s+applicants\s+are)\s+(?:(?!\b(?:and|but|while|whereas|preferred|desirable|ideally|bonus|plus|desired|nice|for|in|of|at|on|from|by|with|as|within|under|across)\b)\w+\s+){0,3}?(?:an?\s+)?(?:(?<!\w)U\.?S\.?|United\s+States|American)\s+citizens?(?:hip)?(?:\s*,\s*(?:(?:and\s*/\s*or|or|and|/)\s*)?|\s*(?:and\s*/\s*or|or|and|/)\s*)(?:(?!\b(?:and|but|while|whereas|preferred|desirable|ideally|bonus|plus|desired|nice|for|in|of|at|on|from|by|with|as|within|under|across)\b)\w+\s+){0,3}?(?:lawful\s+)?(?:permanent\s+residen(?:ts?|ce|cy)|green\s*cards?(?:\s+holders?)?|(?<!\w)L\.?P\.?R\.?s?)|(?:(?<!\w)U\.?S\.?|United\s+States|American)\s+citizens?(?:hip)?\s*(?:(?!\b(?:and|but|while|whereas|preferred|desirable|ideally|bonus|plus|desired|nice|for|in|of|at|on|from|by|with|as|within|under|across)\b)[\w\x27]+\s+){0,3}?(?:required|mandatory|necessary|essential|compulsory|needed|non-?negotiable|a\s+must|a\s+requirement)\s*,?\s*(?:and\s*/\s*or|or|and|/)\s*(?:(?!\b(?:and|but|while|whereas|preferred|desirable|ideally|bonus|plus|desired|nice|for|in|of|at|on|from|by|with|as|within|under|across)\b)\w+\s+){0,3}?(?:lawful\s+)?(?:permanent\s+residen(?:ts?|ce|cy)|green\s*cards?(?:\s+holders?)?|(?<!\w)L\.?P\.?R\.?s?)|(?:(?<!\w)U\.?S\.?|United\s+States|American)\s+citizens?(?:hip)?(?:\s*,\s*(?:(?:and\s*/\s*or|or|and|/)\s*)?|\s*(?:and\s*/\s*or|or|and|/)\s*)(?:(?!\b(?:and|but|while|whereas|preferred|desirable|ideally|bonus|plus|desired|nice|for|in|of|at|on|from|by|with|as|within|under|across)\b)\w+\s+){0,3}?(?:lawful\s+)?(?:permanent\s+residen(?:ts?|ce|cy)|green\s*cards?(?:\s+holders?)?|(?<!\w)L\.?P\.?R\.?s?)\s*(?:(?!\b(?:and|but|while|whereas|preferred|desirable|ideally|bonus|plus|desired|nice|for|in|of|at|on|from|by|with|as|within|under|across)\b)[\w\x27]+\s+){0,3}?(?:required|mandatory|necessary|essential|compulsory|needed|non-?negotiable|a\s+must|a\s+requirement)'
+      - id: us_citizen_required
+        requiredness: required
+        implies: citizenship_required
+        jurisdiction: us
+        # Sentence scope: the clause splitter cuts the comma in "Must be a US citizen, or a
+        # lawful permanent resident.", which is why the LPR alternative was unreachable.
+        scope: sentence
+        requirement_text: "Must be a US citizen"
+        # FINDING 39. This escape is SENTENCE-scoped: not document-scoped, and not clause-scoped.
+        # Document-scoped, "Applicants must be US citizens. We also employ contractors or
+        # permanent residents in other roles." dropped the gate and returned `eligible` with
+        # ZERO rows to a non-citizen. Clause-scoped it is inert, because in "Must be a US
+        # citizen, or a lawful permanent resident." the escape sits after the comma, in a
+        # different clause from the span it must stand down.
+        # The cost is named rather than hidden: narrowing a suppressor turns drops back into
+        # rows, so a genuine cross-sentence waiver ("Green card holders will also be
+        # considered.") now reads as a wrong `ineligible` for an LPR. Two wrong `eligible` on a
+        # citizenship gate removed for one wrong `ineligible` introduced, which is the right
+        # trade in this project's severity order. The document-scoped form never covered
+        # cross-sentence waivers reliably anyway: it needs a literal adjacent `or`.
+        suppressed_by_sentence:
+          - "(?:\\s*,\\s*(?:(?:and\\s*/\\s*or|or|and|/)\\s*)?|\\s*(?:and\\s*/\\s*or|or|and|/)\\s*)(?:\\w+\\s+){0,3}?(?:permanent\\s+residen|green\\s*card|lawful|L\\.?P\\.?R\\.?)"
+          - "or\\s+(?:otherwise\\s+)?(?:legally\\s+)?(?:authori[sz]ed|eligible|permitted)\\s+to\\s+work"
+        pattern: '(?:(?:must\s+(?:be|have|hold|possess)|require[sd]?|(?:will\s+)?needs?(?:\s+to\s+(?:be|have|hold|possess))?|proof\s+of|able\s+to\s+(?:provide|show))|open\s+to|limited\s+to|restricted\s+to|only|eligible\s+applicants\s+are)\s+(?:(?!\b(?:and|but|while|whereas|preferred|desirable|ideally|bonus|plus|desired|nice|for|in|of|at|on|from|by|with|as|within|under|across)\b)\w+\s+){0,3}?(?:an?\s+){0,1}(?:(?<!\w)U\.?S\.?|United\s+States|American)\s+citizens?(?:hip)?|(?:(?<!\w)U\.?S\.?|United\s+States|American)\s+citizens?(?:hip)?\s*(?:(?!\b(?:and|but|while|whereas|preferred|desirable|ideally|bonus|plus|desired|nice|for|in|of|at|on|from|by|with|as|within|under|across)\b)[\w\x27]+\s+){0,3}?(?:required|mandatory|necessary|essential|compulsory|needed|non-?negotiable|a\s+must|a\s+requirement)'
+      # Both sponsorship patterns CAPTURE the jurisdiction their sentence scopes itself to.
+      # Untethered, "For roles based in Canada, visa sponsorship is available." answered `met`
+      # to a US applicant needing US sponsorship, and "For the London position, we cannot
+      # offer visa sponsorship." answered `unmet`. A statement about another country decides
+      # nothing, in either direction. One capture beats eight near-duplicate declared-
+      # jurisdiction patterns, and a surface form absent from the map resolves to `other`,
+      # which never equals a declared fact jurisdiction, so an unlisted country abstains.
+      # SENTENCE scope, not clause: the scoping phrase is separated from the restriction by a
+      # comma, which the clause splitter cuts.
+      - id: no_sponsorship_offered
+        requiredness: required
+        implies: sponsorship_unavailable
+        scope: sentence
+        # The only pattern that legitimately consumes its own negation: here the cue IS the
+        # restriction ("we do NOT offer sponsorship"). Every other pattern must be dropped when
+        # a cue lands inside its span, which is what the slice A guard enforces.
+        # FINDING 59, found by a positive CONTROL and reported by neither review family: every
+        # entry here must be QUOTED. Unquoted `no` is a YAML 1.1 BOOLEAN, so it loaded as False,
+        # became the string "False", and the `no` cue was therefore never consumed. Every
+        # "No visa sponsorship is available." form was dropped as cue-inside:no and returned a
+        # wrong `eligible` with ZERO rows. Nothing raised, and 342 green cases never saw it.
+        # `negation_cues` above was always safe because its entries are quoted. The loader now
+        # rejects a non-string entry AND an entry that is not a declared negation cue, because a
+        # cue that is not a cue can never do anything and fails in silence.
+        consumes_cues: ["not", "cannot", "can't", "won't", "doesn't", "don't", "no",
+                        "never", "neither", "nor"]
+        requirement_text: "Visa sponsorship is not offered for this role"
+        # An ADJECTIVAL surface is the commonest way a posting scopes a statement to a country
+        # ("For Canadian jobs, ..."), and only `canadian` was here. The rest of the adjectives
+        # were absent from BOTH the surface alternation and this map, so "For German jobs, visa
+        # sponsorship is available." abandoned the prefix and matched jurisdiction-FREE, telling
+        # a US candidate `met` on an offer scoped to Germany. Same defect as finding 54's noun
+        # list, one layer down. A surface deliberately LEFT OUT of this map (indian, australian,
+        # japanese and the rest) is not an oversight: it has no declared fact jurisdiction, and
+        # an unrecognised country must ABSTAIN rather than silently read as `us`.
+        jurisdiction_map: &jurisdiction_surfaces
+          canada: ca
+          canadian: ca
+          unitedkingdom: uk
+          uk: uk
+          london: uk
+          england: uk
+          britain: uk
+          british: uk
+          europe: eu
+          european: eu
+          europeanunion: eu
+          eu: eu
+          germany: eu
+          german: eu
+          france: eu
+          french: eu
+          ireland: eu
+          irish: eu
+          netherlands: eu
+          dutch: eu
+          spain: eu
+          spanish: eu
+          poland: eu
+          polish: eu
+          unitedstates: us
+          us: us
+          usa: us
+          america: us
+          american: us
+        pattern: '(?:(?:for|in)\s+(?:the\s+|our\s+)?(?:roles?|positions?|candidates?|applicants?|hires?|employees?|openings?|jobs?|vacancies|vacancy|listings?|reqs?)?\s*(?:based\s+)?(?:in\s+)?(?:the\s+)?(?<!\w)(?P<juris_pre>Canadian|Canada|United\s+Kingdom|(?<!\w)U\.?K\.?|London|England|British|Britain|European\s+Union|European|Europe|(?<!\w)E\.?U\.?|United\s+States|(?<!\w)U\.?S\.?A?\.?|American|America|Germany|German|France|French|Ireland|Irish|Netherlands|Dutch|Spain|Spanish|Poland|Polish|Indian|India|Australian|Australia|Singaporean|Singapore|Japanese|Japan|Brazilian|Brazil|Mexican|Mexico|Israeli|Israel)(?!\w)(?:-based)?\s*(?:roles?|positions?|office|jobs?|vacancies|vacancy|listings?|reqs?)?\s*[,:]?\s+(?:(?!\b(?:and|but|while|whereas|preferred|desirable|ideally|bonus|plus|desired|nice)\b)\w+\s+){0,3}?)?(?:(?:un(?:able|willing)\s+to\s+(?:provide|offer|sponsor)|(?:do(?:es)?\s+not|cannot|can\x27t|will\s+not|won\x27t|(?:will\s+)?never)\s+(?:currently\s+)?(?:provide|offer|sponsor)|not\s+(?:(?:able|willing)\s+to\s+)?(?:provide|offer|sponsor)|not\s+eligible\s+for)\s*(?:\w+\s+){0,4}?(?:visa\s+)?sponsorship|(?:un(?:able|willing)\s+to|not\s+(?:able|willing)\s+to|do(?:es)?\s+not|cannot|can\x27t|will\s+not|won\x27t|(?:will\s+)?never)\s+(?:currently\s+)?sponsor\s+(?:\w+\s+){0,2}?(?:visas?|work\s+visas?|employment\s+visas?|H-?1B|H1-?B|TN|O-?1|E-?3|green\s*cards?|immigration|work\s+permits?)|no\s+(?:visa\s+|work\s+visa\s+|employment\s+)?sponsorship(?:\s*(?:is\s+|are\s+|will\s+be\s+)?(?:available|offered|provided))?|sponsorship\s+(?:is\s+|are\s+|will\s+be\s+)?(?:(?:not|no\s+longer|never)\s+(?:currently\s+)?(?:available|offered|provided)|unavailable))(?:\s+(?:for|in)\s+(?:the\s+|our\s+)?(?:roles?|positions?|candidates?|applicants?|hires?|employees?|openings?|jobs?|vacancies|vacancy|listings?|reqs?)?\s*(?:based\s+)?(?:in\s+)?(?:the\s+)?(?<!\w)(?P<juris_post>Canadian|Canada|United\s+Kingdom|(?<!\w)U\.?K\.?|London|England|British|Britain|European\s+Union|European|Europe|(?<!\w)E\.?U\.?|United\s+States|(?<!\w)U\.?S\.?A?\.?|American|America|Germany|German|France|French|Ireland|Irish|Netherlands|Dutch|Spain|Spanish|Poland|Polish|Indian|India|Australian|Australia|Singaporean|Singapore|Japanese|Japan|Brazilian|Brazil|Mexican|Mexico|Israeli|Israel)(?!\w)(?:-based)?\s*(?:roles?|positions?|office|jobs?|vacancies|vacancy|listings?|reqs?)?)?'
+      # A SECOND determiner was missing before the captured country, on all four jurisdiction
+      # sites. "We do not sponsor visas for roles in the United States." captured NOTHING and
+      # read as a jurisdiction-FREE restriction, which told a Canada-targeting candidate
+      # `ineligible` on a US-scoped refusal, and the availability twin told them `met` on a
+      # US-scoped offer. A wrong verdict in BOTH directions. The juris_pre sites looked immune
+      # only by accident: the pattern is unanchored, so the engine restarts at the later
+      # `in the United States` and captures there. The juris_post tail is anchored to the
+      # restriction text and cannot restart, which is why only it showed the defect. Every
+      # jurisdiction case in the harness used the pre form, so nothing failed -- a dropped
+      # capture has no row to assert on.
+      # FINDING 54, on BOTH sponsorship patterns: the jurisdiction wrapper's noun lists could
+      # not consume `jobs`, so "For Canadian jobs, visa sponsorship is available." failed the
+      # optional prefix, ABANDONED it, and started a jurisdiction-FREE match at `visa
+      # sponsorship` -- a wrong `met` for a US candidate on an offer scoped to Canada. Fixed by
+      # completing the noun lists (jobs, vacancies, listings, reqs) rather than by GPT's
+      # sentence-scan alternative, which was REJECTED: scanning the sentence for a country can
+      # attach a jurisdiction to a sentence that merely MENTIONS one, and "We have engineers in
+      # Canada, Germany and India, and visa sponsorship is available." is a genuinely unscoped
+      # offer. That case is a permanent control.
+      - id: sponsorship_available
+        requiredness: bonus
+        implies: sponsorship_available
+        scope: sentence
+        jurisdiction_map: *jurisdiction_surfaces
+        requirement_text: "Visa sponsorship is available"
+        # The willing-to-sponsor form now requires an IMMIGRATION object. Bare, it fired on
+        # "We are willing to sponsor the regional robotics championship each spring." and
+        # told a candidate needing a visa that the posting had offered them one.
+        pattern: '(?:(?:for|in)\s+(?:the\s+|our\s+)?(?:roles?|positions?|candidates?|applicants?|hires?|employees?|openings?|jobs?|vacancies|vacancy|listings?|reqs?)?\s*(?:based\s+)?(?:in\s+)?(?:the\s+)?(?<!\w)(?P<juris_pre>Canadian|Canada|United\s+Kingdom|(?<!\w)U\.?K\.?|London|England|British|Britain|European\s+Union|European|Europe|(?<!\w)E\.?U\.?|United\s+States|(?<!\w)U\.?S\.?A?\.?|American|America|Germany|German|France|French|Ireland|Irish|Netherlands|Dutch|Spain|Spanish|Poland|Polish|Indian|India|Australian|Australia|Singaporean|Singapore|Japanese|Japan|Brazilian|Brazil|Mexican|Mexico|Israeli|Israel)(?!\w)(?:-based)?\s*(?:roles?|positions?|office|jobs?|vacancies|vacancy|listings?|reqs?)?\s*[,:]?\s+(?:(?!\b(?:and|but|while|whereas|preferred|desirable|ideally|bonus|plus|desired|nice)\b)\w+\s+){0,3}?)?(?:(?<!\w)(?:happy|able|willing|glad|prepared)\s+to\s+(?:provide\s+|offer\s+)?sponsor(?:ship\s+for)?\s+(?:\w+\s+){0,2}?(?:visas?|work\s+visas?|employment\s+visas?|employment|immigration|green\s*cards?|H-?1B|H1-?B|TN|O-?1|E-?3|work\s+permits?)|(?:visa\s+)?sponsorship\s+(?:is\s+|are\s+|will\s+be\s+)?(?:available|offered|provided)|(?:do(?:es)?|we|will)\s+(?:provide|offer)\s+(?:visa\s+)?sponsorship|we\s+sponsor\s+(?:visas|work\s+visas))(?:\s+(?:for|in)\s+(?:the\s+|our\s+)?(?:roles?|positions?|candidates?|applicants?|hires?|employees?|openings?|jobs?|vacancies|vacancy|listings?|reqs?)?\s*(?:based\s+)?(?:in\s+)?(?:the\s+)?(?<!\w)(?P<juris_post>Canadian|Canada|United\s+Kingdom|(?<!\w)U\.?K\.?|London|England|British|Britain|European\s+Union|European|Europe|(?<!\w)E\.?U\.?|United\s+States|(?<!\w)U\.?S\.?A?\.?|American|America|Germany|German|France|French|Ireland|Irish|Netherlands|Dutch|Spain|Spanish|Poland|Polish|Indian|India|Australian|Australia|Singaporean|Singapore|Japanese|Japan|Brazilian|Brazil|Mexican|Mexico|Israeli|Israel)(?!\w)(?:-based)?\s*(?:roles?|positions?|office|jobs?|vacancies|vacancy|listings?|reqs?)?)?'
+
+  - id: experience_years
+    label: Years of experience
+    fact: total_years_experience
+    answer_type: int
+    default_policy: preference
+    question: "How many total years of professional experience do you have?"
+    fields:
+      - name: total_years_experience
+        type: int
+    implies_vocabulary:
+      - total_years_minimum
+      - range_years_minimum
+      - scoped_years_minimum
+      - total_years_preferred
+      - range_years_preferred
+    # All three in ONE group: if the total, range and scoped patterns ever overlap on the
+    # same text, the group conflicts and the family abstains instead of guessing. The
+    # regexes are tuned so the common forms fire exactly once; the group is the safety net.
+    exclusive_groups:
+      - [total_years_minimum, range_years_minimum, scoped_years_minimum]
+    patterns:
+      # All three required patterns are SENTENCE-scoped, not clause-scoped, and their
+      # suppressors are UNIT-scoped. Both halves are load-bearing:
+      #   sentence scope, because the hedge and the grammatical subject that cancel a
+      #   requirement routinely sit in another clause of the same sentence
+      #   ("Nice to have: 10 years of experience.", "The team has 25 years of experience");
+      #   unit scope, because a subject belongs to its own clause and nothing else. Document
+      #   scoped, "Our founding team has deep expertise." cancelled the genuine
+      #   "We require 8 years of experience." in the NEXT sentence and returned `eligible`.
+      # Deliberate deviation from lint rule 2: these patterns carry NO requirement marker.
+      # "8 years of relevant professional experience." under a Requirements heading is the
+      # single most common form there is, and its marker is the heading, not the sentence.
+      # The subject suppressor, not a marker, is what keeps company-side prose out.
+      - id: total_years_minimum
+        requiredness: required
+        implies: total_years_minimum
+        scope: sentence
+        capture: years
+        requirement_text: "At least {years} years of total experience"
+        pattern: '(?<![-–—\d])(?<!to\s)\b(?P<years>\d{1,2})\s*\+?\s*(?:or\s+more\s+)?years?\b(?>\s+of)?(?>(?:\s+(?:professional|relevant|industry|work|hands-on|total|overall|full-time))*)\s+experience\b(?!\s+(?:with|in|using|of|on|building|developing|designing|as|leading|managing|supporting)\b)'
+        # The company-side SUBJECT is a subject suppressor, not a unit suppressor: it must both
+        # PRECEDE the span and sit in the same clause. As a unit suppressor it deleted the
+        # candidate-side requirement in "Our team has 25 years of experience, and candidates
+        # require 5 years of experience." The HEDGE stays a clause suppressor.
+        subject_suppressors:
+          - &company_side_years "(?:our|the)\\s+(?:\\w+\\s+){0,2}(?:team|teams|engineers|founders|leadership|staff|architect|architects|folks|mentors)\\s+(?:has|have|brings?|is|are|was|were|average[sd]?|each)|founded\\s+by|average\\s+of|each\\s+(?:bring|brings|have|has)|you\\s+will\\s+(?:work\\s+with|receive|gain|get)|combined\\s+experience|collectively|between\\s+us"
+        # A stated PREFERENCE read as a hard floor is the worst wrong verdict this family can
+        # produce, so the hedge vocabulary carries the VERB and the PARTICIPLE, not only the
+        # adjective: "We prefer 5 years of experience." and "5 years of experience is desired."
+        # both fell through to this pattern and told a 3-year candidate INELIGIBLE.
+        # Bare `desired` needs the noun lookahead. Attributively it is not a hedge at all:
+        # "The desired candidate has 5 years of experience." states a floor, and without the
+        # guard the participle deleted it. The verb is anchored to `we`/`preference for` rather
+        # than bare `prefer` so that "candidates who prefer remote work" is not a hedge either.
+        suppressed_by_unit:
+          - &years_hedges "preferred|desirable|a\\s+plus|nice\\s+to\\s+have|ideally|bonus|advantageous|strongly\\s+desired|desired\\b(?!\\s+(?:candidate|applicant|profile|skill|qualification|attribute|trait|background|characteristic|competenc|experience|expertise)\\w*)|we\\s+(?:would\\s+)?prefer|preference\\s+for"
+      - id: range_years_minimum
+        requiredness: required
+        implies: range_years_minimum
+        scope: sentence
+        capture: years
+        requirement_text: "At least {years} years of total experience"
+        pattern: '\b(?P<years>\d{1,2})\s*(?:[-–—]|\s+to\s+)\s*\d{1,2}\s*\+?\s*years?\b(?>\s+of)?(?>(?:\s+(?:professional|relevant|industry|work|hands-on|total|overall|full-time))*)\s+experience\b(?!\s+(?:with|in|using|of|on|building|developing|designing|as|leading|managing|supporting)\b)'
+        subject_suppressors: [*company_side_years]
+        suppressed_by_unit: [*years_hedges]
+      # The subject suppressor goes on ALL THREE, not just total_years_minimum. Left off
+      # here, scoped_years_minimum fires on the company-side sentence on its own and the
+      # exclusive group these three share rewrites the genuine row to unknown anyway.
+      - id: scoped_years_minimum
+        requiredness: required
+        implies: scoped_years_minimum
+        scope: sentence
+        subject_suppressors: [*company_side_years]
+        suppressed_by_unit: [*years_hedges]
+        requirement_text: "Years of experience scoped to a specific skill or domain"
+        pattern: '(?<![-–—\d])\b(?P<years>\d{1,2})\s*\+?\s*(?:or\s+more\s+)?years?\b(?>\s+of)?(?>(?:\s+(?:professional|relevant|industry|work|hands-on|total|overall|full-time))*)\s+(?:experience\s+(?:with|in|using|on|building|developing|designing|as|leading|managing|supporting)\b|(?!(?:professional|relevant|industry|work|hands-on|total|overall|full-time|experience|equivalent|of|in|with|the|a|an|and|or|to|for|as|on|at)\b)[A-Za-z][\w.+#/-]*(?:\s+[\w.+#/-]+){0,2}\s+experience\b)'
+
+      # Hedged variants. Without them every hedge was a hard blocker: "5+ years of experience
+      # preferred." told a 2-year candidate they were INELIGIBLE. Two alternatives per
+      # pattern because the hedge sits on either side of the number, and one regex cannot
+      # name a group twice, so the second layout captures `years_alt`.
+      - id: total_years_preferred
+        requiredness: preferred
+        implies: total_years_preferred
+        scope: sentence
+        capture: years
+        requirement_text: "{years} years of total experience is preferred"
+        pattern: '(?:(?<![-–—\d])(?<!to\s)\b(?P<years>\d{1,2})\s*\+?\s*(?:or\s+more\s+)?years?\b(?>\s+of)?(?>(?:\s+(?:professional|relevant|industry|work|hands-on|total|overall|full-time))*)\s+experience\b(?!\s+(?:with|in|using|of|on|building|developing|designing|as|leading|managing|supporting)\b)[^.]{0,25}?(?:preferred|desirable|a\s+plus|nice\s+to\s+have|bonus|advantageous|desired\b(?!\s+(?:candidate|applicant|profile|skill|qualification|attribute|trait|background|characteristic|competenc|experience|expertise)\w*))|(?:nice\s+to\s+have|ideally|preferred|desirable|bonus|advantageous|desired\b(?!\s+(?:candidate|applicant|profile|skill|qualification|attribute|trait|background|characteristic|competenc|experience|expertise)\w*)|we\s+(?:would\s+)?prefer|preference\s+for)\s*[:,]?\s*(?:(?:at\s+least|a\s+minimum\s+of|minimum\s+of)\s+)?(?<![-–—\d])\b(?P<years_alt>\d{1,2})\s*\+?\s*(?:or\s+more\s+)?years?\b(?>\s+of)?(?>(?:\s+(?:professional|relevant|industry|work|hands-on|total|overall|full-time))*)\s+experience\b(?!\s+(?:with|in|using|of|on|building|developing|designing|as|leading|managing|supporting)\b))'
+        subject_suppressors: [*company_side_years]
+      - id: range_years_preferred
+        requiredness: preferred
+        implies: range_years_preferred
+        scope: sentence
+        capture: years
+        requirement_text: "{years} years of total experience is preferred"
+        pattern: '(?:\b(?P<years>\d{1,2})\s*(?:[-–—]|\s+to\s+)\s*\d{1,2}\s*\+?\s*years?\b(?>\s+of)?(?>(?:\s+(?:professional|relevant|industry|work|hands-on|total|overall|full-time))*)\s+experience\b(?!\s+(?:with|in|using|of|on|building|developing|designing|as|leading|managing|supporting)\b)[^.]{0,25}?(?:preferred|desirable|a\s+plus|nice\s+to\s+have|bonus|advantageous|desired\b(?!\s+(?:candidate|applicant|profile|skill|qualification|attribute|trait|background|characteristic|competenc|experience|expertise)\w*))|(?:nice\s+to\s+have|ideally|preferred|desirable|bonus|advantageous|desired\b(?!\s+(?:candidate|applicant|profile|skill|qualification|attribute|trait|background|characteristic|competenc|experience|expertise)\w*)|we\s+(?:would\s+)?prefer|preference\s+for)\s*[:,]?\s*(?:(?:at\s+least|a\s+minimum\s+of|minimum\s+of)\s+)?\b(?P<years_alt>\d{1,2})\s*(?:[-–—]|\s+to\s+)\s*\d{1,2}\s*\+?\s*years?\b(?>\s+of)?(?>(?:\s+(?:professional|relevant|industry|work|hands-on|total|overall|full-time))*)\s+experience\b(?!\s+(?:with|in|using|of|on|building|developing|designing|as|leading|managing|supporting)\b))'
+        subject_suppressors: [*company_side_years]
+
+  - id: clearance
+    label: Security clearance
+    fact: security_clearance
+    answer_type: structured
+    default_policy: preference
+    question: "What security clearance do you currently hold, if any?"
+    fields:
+      - name: scheme
+        type: choice
+        choices: [us_dod, us_doe, us_public_trust, other, unspecified]
+      - name: level
+        type: choice
+        choices: [none, public_trust, confidential, secret, top_secret, q, l, unspecified]
+      - name: state
+        type: choice
+        choices: [none, active, current, expired, interim, unspecified]
+      - name: accesses
+        type: choice_set
+        choices: [sci, poly, sap, nato]
+    implies_vocabulary:
+      - active_clearance_required
+      - clearable_required
+      - clearance_preferred
+    exclusive_groups:
+      - [active_clearance_required, clearable_required]
+    # Reviewed superset relations. NOT a general order: each row is an explicit,
+    # scheme-local statement that holding the left satisfies the right.
+    superset_relations:
+      - {holds_level: top_secret, satisfies_level: secret, scheme: us_dod}
+      - {holds_level: top_secret, satisfies_level: confidential, scheme: us_dod}
+      - {holds_level: secret, satisfies_level: confidential, scheme: us_dod}
+    patterns:
+      # CANONICAL MARKER VOCABULARY, converged across the family (parity table, the
+      # finding-74 class). Findings 66/68/69/83/84/86/87/88/89/102/103 were all one marker
+      # token in one position in one family, found and patched one at a time. The two groups
+      # below are the whole vocabulary, and every pattern in this family carries BOTH,
+      # character for character, so a token can never again be present on one level and
+      # absent on its sibling. Grep for either group before editing: they move in lockstep.
+      #
+      #   marker-LAST  (after a copula, or bare with no copula)
+      #     required | mandatory | needed | compulsory | non-negotiable | a must
+      #     | a requirement | necessary | essential
+      #   marker-FIRST (verb phrase before the subject, direct-object arm)
+      #     must hold/possess/have/maintain | must be in possession of | will need
+      #     | need(s) | are/is/be required to have/hold/possess/maintain
+      #     ... plus require(s|d) on the separate `requires <subject>` arm.
+      #
+      # `must be` has no nominal frame here -- it takes a predicate adjective ("must be
+      # cleared"), not a clearance noun -- so the only surface it contributes is
+      # `must be in possession of`. `need` is safe on the direct-object arm because that arm
+      # has NO gap; it is deliberately absent from the `with|w/` arm, whose 40-character gap
+      # would read "Experience with polygraph tooling" as a polygraph gate.
+      # Every leveled pattern below carries a requirement MARKER, reached through a bounded
+      # clause-internal gap. Without a marker they fired on company-side and environmental
+      # prose: "Work is performed at our facility, which holds an active Secret clearance."
+      # and "You will work in an active TS/SCI environment alongside cleared teammates." both
+      # returned `ineligible` to an uncleared candidate. The gap is what lint rule 1 warns
+      # about, and it is safe here only because the cue-inside guard now DROPS any detection
+      # with an undeclared negation cue in its span: "An active TS/SCI clearance is not
+      # required." reaches the marker through the gap and is dropped for containing `not`.
+      # The subject suppressor is UNIT-scoped, never document-scoped: a facility sentence
+      # says nothing about the requirement two sentences later.
+      # A polygraph requirement is its own row rather than a variant of every level
+      # pattern. Coupling it by adjacency failed on "TS/SCI clearance with a current
+      # polygraph", where the word "clearance" sits between the two, and a TS/SCI holder
+      # without a polygraph was told `met` on a poly-gated role.
+      - id: polygraph_required
+        requiredness: required
+        implies: active_clearance_required
+        scope: clause
+        required_scheme: unspecified
+        required_level: unspecified
+        required_accesses: [poly]
+        requirement_text: "A current polygraph is required"
+        # The bare "with a polygraph" form now needs a marker BEFORE it. Unanchored it fired
+        # on "Experience with polygraph examination tooling is a plus." and told a candidate
+        # with no clearance they were ineligible for a role that asked for nothing.
+        pattern: '(?:current|active|recent)?\s*(?:CI|FS|full[\s-]?scope)?\s*poly(?:graph)?(?:\s+examination)?\s*(?:is\s+|will\s+be\s+)?(?:required|mandatory|needed|compulsory|non[\s-]?negotiable|a\s+must(?:\s*-?\s*have)?|a\s+requirement|(?<!\bas\s)(?<!\bif\s)(?<!when\s)(?<!ever\s)(?<!where\s)(?<!unless\s)(?<!deemed\s)(?<!\bonly\s)(?:necessary|essential))|(?<!which\s)(?<!that\s)(?:require[sd]?|must\s+(?:hold|possess|have))(?:(?!\b(?:and|but|while|whereas|preferred|desirable|ideally|bonus|plus|desired|nice|for|in|of|at|on|from|by|with|as|within|under|across)\b)[^.;:]){0,40}?(?:with|w/)\s+(?:an?\s+)?(?:current\s+|active\s+|recent\s+)?(?:CI\s+|FS\s+|full[\s-]?scope\s+)?poly(?:graph)?(?!\w)|(?:must\s+(?:currently\s+)?(?:hold|possess|have|maintain)(?:\s+and\s+maintain)?|must\s+be\s+in\s+possession\s+of|will\s+need|needs?|(?:are|is|be)\s+required\s+to\s+(?:have|hold|possess|maintain))\s+(?:an?\s+)?(?:current\s+|active\s+|recent\s+)?(?:CI\s+|FS\s+|full[\s-]?scope\s+)?poly(?:graph)?(?!\w)|(?<!which\s)(?<!that\s)requires?\s+(?:(?:an?|the)\s+|(?=(?:active|current)\s))(?:current\s+|active\s+|recent\s+)?(?:CI\s+|FS\s+|full[\s-]?scope\s+)?poly(?:graph)?(?!\w)(?=\s*[.;:,)]|\s*$|\s+(?:is|are|was|were|and|or|at|for|in|on|by|with|from|prior|before|upon|within|to|through)\b)'
+        subject_suppressors: &company_side_clearance
+          - "we\\s+(?:will\\s+)?sponsor|you\\s+will\\s+work\\s+(?:in|at)|(?:our|the)\\s+(?:\\w+\\s+){0,2}(?:facility|site|office|contract\\s+vehicle)"
+      # Special Access Program and NATO were declared FACT values that no pattern could ever
+      # require, so "Active TS/SCI clearance with SAP access is required." told a TS/SCI
+      # holder WITHOUT SAP that they were eligible. The bare token is deliberately not
+      # enough: SAP is also an ERP vendor, so the span must pair it with a clearance context
+      # and a marker.
+      - id: sap_access_required
+        requiredness: required
+        implies: active_clearance_required
+        scope: clause
+        required_scheme: unspecified
+        required_level: unspecified
+        required_accesses: [sap]
+        requirement_text: "Special Access Program access is required"
+        pattern: '(?:clearance|S\.?C\.?I\.?(?!\w)|Special\s+Access\s+Program)(?:(?!\b(?:and|but|while|whereas|preferred|desirable|ideally|bonus|plus|desired|nice)\b)[^.;:]){0,30}?(?:with\s+)?(?<!\w)S\.?A\.?P\.?(?!\w)\s+(?:program\s+)?access(?:(?!\b(?:and|but|while|whereas|preferred|desirable|ideally|bonus|plus|desired|nice)\b)[^.;:]){0,40}?(?:is\s+|will\s+be\s+)?(?:required|mandatory|needed|compulsory|non[\s-]?negotiable|a\s+must(?:\s*-?\s*have)?|a\s+requirement|(?<!\bas\s)(?<!\bif\s)(?<!when\s)(?<!ever\s)(?<!where\s)(?<!unless\s)(?<!deemed\s)(?<!\bonly\s)(?:necessary|essential))'
+        subject_suppressors: *company_side_clearance
+      - id: nato_access_required
+        requiredness: required
+        implies: active_clearance_required
+        scope: clause
+        required_scheme: unspecified
+        required_level: unspecified
+        required_accesses: [nato]
+        requirement_text: "A NATO clearance is required"
+        pattern: '(?:(?:active|current)\s+)?NATO\s+(?:Secret\s+|Confidential\s+)?(?:security\s+)?(?:clearance|access)(?!\s+(?:program|programs|processing|process|investigation|investigations|renewal|renewals|briefing|briefings|upgrade|upgrades|experience|work|holders?|tooling|systems?|team|teams|support|documentation|paperwork|sponsorship|reimbursement|facility|facilities|site|sites|environment|environments|office|offices|location|locations|campus|campuses)\b)(?:(?!\b(?:and|but|while|whereas|preferred|desirable|ideally|bonus|plus|desired|nice)\b)[^.;:]){0,40}?(?:is\s+|will\s+be\s+)?(?:required|mandatory|needed|compulsory|non[\s-]?negotiable|a\s+must(?:\s*-?\s*have)?|a\s+requirement|(?<!\bas\s)(?<!\bif\s)(?<!when\s)(?<!ever\s)(?<!where\s)(?<!unless\s)(?<!deemed\s)(?<!\bonly\s)(?:necessary|essential))|(?:must\s+(?:currently\s+)?(?:hold|possess|have|maintain)(?:\s+and\s+maintain)?|must\s+be\s+in\s+possession\s+of|will\s+need|needs?|(?:are|is|be)\s+required\s+to\s+(?:have|hold|possess|maintain))\s+(?:an?\s+)?(?:(?:active|current)\s+)?NATO\s+(?:Secret\s+|Confidential\s+)?(?:security\s+)?(?:clearance|access)|(?<!which\s)(?<!that\s)requires?\s+(?:(?:an?|the)\s+|(?=(?:active|current)\s))(?:(?:active|current)\s+)?NATO\s+(?:Secret\s+|Confidential\s+)?(?:security\s+)?(?:clearance|access)(?=\s*[.;:,)]|\s*$|\s+(?:is|are|was|were|and|or|at|for|in|on|by|with|from|prior|before|upon|within|to|through)\b)|(?<!which\s)(?<!that\s)(?:require[sd]?|must\s+(?:hold|possess|have))(?:(?!\b(?:and|but|while|whereas|preferred|desirable|ideally|bonus|plus|desired|nice|for|in|of|at|on|from|by|with|as|within|under|across)\b)[^.;:]){0,40}?(?:with|w/)\s+(?:(?:an?|the)\s+|(?=(?:active|current)\s))(?:(?:active|current)\s+)?NATO\s+(?:Secret\s+|Confidential\s+)?(?:security\s+)?(?:clearance|access)(?=\s*[.;:,)]|\s*$|\s+(?:is|are|was|were|and|or|at|for|in|on|by|with|from|prior|before|upon|within|to|through)\b)'
+        subject_suppressors: *company_side_clearance
+      - id: active_ts_sci_required
+        requiredness: required
+        implies: active_clearance_required
+        scope: clause
+        required_scheme: us_dod
+        required_level: top_secret
+        required_accesses: [sci]
+        requirement_text: "Active TS/SCI clearance required"
+        pattern: '(?:active|current)\s+(?:(?:U\.?S\.?\s+)?(?<!\w)(?:DoD|D\.?o\.?D\.?|Department\s+of\s+Defense|government|federal)\s+)?(?:(?<!\w)T\.?S\.?|Top\s+Secret)\s*/\s*S\.?C\.?I\.?(?!\w)(?!\s+(?:facility|facilities|site|environment|program|space|area|room|network|enclave|contract|project|work|sauce)\b)(?:\s+(?:security\s+)?clearance)?(?:(?!\b(?:and|but|while|whereas|preferred|desirable|ideally|bonus|plus|desired|nice)\b)[^.;:]){0,40}?(?:is\s+|will\s+be\s+)?(?:required|mandatory|needed|compulsory|non[\s-]?negotiable|a\s+must(?:\s*-?\s*have)?|a\s+requirement|(?<!\bas\s)(?<!\bif\s)(?<!when\s)(?<!ever\s)(?<!where\s)(?<!unless\s)(?<!deemed\s)(?<!\bonly\s)(?:necessary|essential))|(?<!obtain\s)(?<!obtain\sa\s)(?<!obtain\san\s)(?<!maintain\s)(?<!maintain\sa\s)(?<!maintain\san\s)(?:(?:U\.?S\.?\s+)?(?<!\w)(?:DoD|D\.?o\.?D\.?|Department\s+of\s+Defense|government|federal)\s+)?(?:(?<!\w)T\.?S\.?|Top\s+Secret)\s*/\s*S\.?C\.?I\.?(?!\w)\s+(?:security\s+)?clearance(?!\s+(?:program|programs|processing|process|investigation|investigations|renewal|renewals|briefing|briefings|upgrade|upgrades|experience|work|holders?|tooling|systems?|team|teams|support|documentation|paperwork|sponsorship|reimbursement|facility|facilities|site|sites|environment|environments|office|offices|location|locations|campus|campuses)\b)(?:(?!\b(?:and|but|while|whereas|preferred|desirable|ideally|bonus|plus|desired|nice)\b)[^.;:]){0,40}?(?:is\s+|will\s+be\s+)?(?:required|mandatory|needed|compulsory|non[\s-]?negotiable|a\s+must(?:\s*-?\s*have)?|a\s+requirement|(?<!\bas\s)(?<!\bif\s)(?<!when\s)(?<!ever\s)(?<!where\s)(?<!unless\s)(?<!deemed\s)(?<!\bonly\s)(?:necessary|essential))|(?:must\s+(?:currently\s+)?(?:hold|possess|have|maintain)(?:\s+and\s+maintain)?|must\s+be\s+in\s+possession\s+of|will\s+need|needs?|(?:are|is|be)\s+required\s+to\s+(?:have|hold|possess|maintain))\s+(?:an?\s+)?(?:(?:active|current)\s+)?(?:(?:U\.?S\.?\s+)?(?<!\w)(?:DoD|D\.?o\.?D\.?|Department\s+of\s+Defense|government|federal)\s+)?(?:(?<!\w)T\.?S\.?|Top\s+Secret)\s*/\s*S\.?C\.?I\.?(?!\w)(?!\s+(?:facility|facilities|site|environment|program|space|area|room|network|enclave|contract|project|work|sauce)\b)|(?<!which\s)(?<!that\s)requires?\s+(?:(?:an?|the)\s+|(?=(?:active|current)\s))(?:(?:active|current)\s+)?(?:(?:U\.?S\.?\s+)?(?<!\w)(?:DoD|D\.?o\.?D\.?|Department\s+of\s+Defense|government|federal)\s+)?(?:(?<!\w)T\.?S\.?|Top\s+Secret)\s*/\s*S\.?C\.?I\.?(?!\w)\s+(?:security\s+)?clearance(?=\s*[.;:,)]|\s*$|\s+(?:is|are|was|were|and|or|at|for|in|on|by|with|from|prior|before|upon|within|to|through)\b)|(?<!which\s)(?<!that\s)(?:require[sd]?|must\s+(?:hold|possess|have))(?:(?!\b(?:and|but|while|whereas|preferred|desirable|ideally|bonus|plus|desired|nice|for|in|of|at|on|from|by|with|as|within|under|across)\b)[^.;:]){0,40}?(?:with|w/)\s+(?:(?:an?|the)\s+|(?=(?:active|current)\s))(?:(?:active|current)\s+)?(?:(?:U\.?S\.?\s+)?(?<!\w)(?:DoD|D\.?o\.?D\.?|Department\s+of\s+Defense|government|federal)\s+)?(?:(?<!\w)T\.?S\.?|Top\s+Secret)\s*/\s*S\.?C\.?I\.?(?!\w)\s+(?:security\s+)?clearance(?=\s*[.;:,)]|\s*$|\s+(?:is|are|was|were|and|or|at|for|in|on|by|with|from|prior|before|upon|within|to|through)\b)'
+        subject_suppressors: *company_side_clearance
+      - id: active_top_secret_required
+        requiredness: required
+        implies: active_clearance_required
+        scope: clause
+        required_scheme: us_dod
+        required_level: top_secret
+        required_accesses: []
+        requirement_text: "Active Top Secret clearance required"
+        pattern: '(?:active|current)\s+(?:(?:U\.?S\.?\s+)?(?<!\w)(?:DoD|D\.?o\.?D\.?|Department\s+of\s+Defense|government|federal)\s+)?Top\s+Secret(?!\s*/\s*S\.?C\.?I)(?!\s+(?:facility|facilities|site|environment|program|space|area|room|network|enclave|contract|project|work|sauce)\b)(?:\s+(?:security\s+)?clearance)?(?:(?!\b(?:and|but|while|whereas|preferred|desirable|ideally|bonus|plus|desired|nice)\b)[^.;:]){0,40}?(?:is\s+|will\s+be\s+)?(?:required|mandatory|needed|compulsory|non[\s-]?negotiable|a\s+must(?:\s*-?\s*have)?|a\s+requirement|(?<!\bas\s)(?<!\bif\s)(?<!when\s)(?<!ever\s)(?<!where\s)(?<!unless\s)(?<!deemed\s)(?<!\bonly\s)(?:necessary|essential))|(?<!obtain\s)(?<!obtain\sa\s)(?<!obtain\san\s)(?<!maintain\s)(?<!maintain\sa\s)(?<!maintain\san\s)(?:(?:U\.?S\.?\s+)?(?<!\w)(?:DoD|D\.?o\.?D\.?|Department\s+of\s+Defense|government|federal)\s+)?Top\s+Secret(?!\s*/\s*S\.?C\.?I)\s+(?:security\s+)?clearance(?!\s+(?:program|programs|processing|process|investigation|investigations|renewal|renewals|briefing|briefings|upgrade|upgrades|experience|work|holders?|tooling|systems?|team|teams|support|documentation|paperwork|sponsorship|reimbursement|facility|facilities|site|sites|environment|environments|office|offices|location|locations|campus|campuses)\b)(?:(?!\b(?:and|but|while|whereas|preferred|desirable|ideally|bonus|plus|desired|nice)\b)[^.;:]){0,40}?(?:is\s+|will\s+be\s+)?(?:required|mandatory|needed|compulsory|non[\s-]?negotiable|a\s+must(?:\s*-?\s*have)?|a\s+requirement|(?<!\bas\s)(?<!\bif\s)(?<!when\s)(?<!ever\s)(?<!where\s)(?<!unless\s)(?<!deemed\s)(?<!\bonly\s)(?:necessary|essential))|(?:must\s+(?:currently\s+)?(?:hold|possess|have|maintain)(?:\s+and\s+maintain)?|must\s+be\s+in\s+possession\s+of|will\s+need|needs?|(?:are|is|be)\s+required\s+to\s+(?:have|hold|possess|maintain))\s+(?:an?\s+)?(?:(?:active|current)\s+)?(?:(?:U\.?S\.?\s+)?(?<!\w)(?:DoD|D\.?o\.?D\.?|Department\s+of\s+Defense|government|federal)\s+)?Top\s+Secret(?!\s*/\s*S\.?C\.?I)(?!\s+(?:facility|facilities|site|environment|program|space|area|room|network|enclave|contract|project|work|sauce)\b)|(?<!which\s)(?<!that\s)requires?\s+(?:(?:an?|the)\s+|(?=(?:active|current)\s))(?:(?:active|current)\s+)?(?:(?:U\.?S\.?\s+)?(?<!\w)(?:DoD|D\.?o\.?D\.?|Department\s+of\s+Defense|government|federal)\s+)?Top\s+Secret(?!\s*/\s*S\.?C\.?I)\s+(?:security\s+)?clearance(?=\s*[.;:,)]|\s*$|\s+(?:is|are|was|were|and|or|at|for|in|on|by|with|from|prior|before|upon|within|to|through)\b)|(?<!which\s)(?<!that\s)(?:require[sd]?|must\s+(?:hold|possess|have))(?:(?!\b(?:and|but|while|whereas|preferred|desirable|ideally|bonus|plus|desired|nice|for|in|of|at|on|from|by|with|as|within|under|across)\b)[^.;:]){0,40}?(?:with|w/)\s+(?:(?:an?|the)\s+|(?=(?:active|current)\s))(?:(?:active|current)\s+)?(?:(?:U\.?S\.?\s+)?(?<!\w)(?:DoD|D\.?o\.?D\.?|Department\s+of\s+Defense|government|federal)\s+)?Top\s+Secret(?!\s*/\s*S\.?C\.?I)\s+(?:security\s+)?clearance(?=\s*[.;:,)]|\s*$|\s+(?:is|are|was|were|and|or|at|for|in|on|by|with|from|prior|before|upon|within|to|through)\b)'
+        subject_suppressors: *company_side_clearance
+      - id: active_secret_required
+        requiredness: required
+        implies: active_clearance_required
+        scope: clause
+        required_scheme: us_dod
+        required_level: secret
+        required_accesses: []
+        requirement_text: "Active Secret clearance required"
+        pattern: '(?<!obtain\s)(?<!obtain\sa\s)(?<!obtain\san\s)(?<!maintain\s)(?<!maintain\sa\s)(?<!maintain\san\s)(?:(?:active|current)\s+)?(?:(?:U\.?S\.?\s+)?(?<!\w)(?:DoD|D\.?o\.?D\.?|Department\s+of\s+Defense|government|federal)\s+)?(?<!Top\s)(?<!Top-)(?<!NATO\s)Secret\s+(?:security\s+)?clearance(?!\s+(?:program|programs|processing|process|investigation|investigations|renewal|renewals|briefing|briefings|upgrade|upgrades|experience|work|holders?|tooling|systems?|team|teams|support|documentation|paperwork|sponsorship|reimbursement|facility|facilities|site|sites|environment|environments|office|offices|location|locations|campus|campuses)\b)(?:(?!\b(?:and|but|while|whereas|preferred|desirable|ideally|bonus|plus|desired|nice)\b)[^.;:]){0,40}?(?:is\s+|will\s+be\s+)?(?:required|mandatory|needed|compulsory|non[\s-]?negotiable|a\s+must(?:\s*-?\s*have)?|a\s+requirement|(?<!\bas\s)(?<!\bif\s)(?<!when\s)(?<!ever\s)(?<!where\s)(?<!unless\s)(?<!deemed\s)(?<!\bonly\s)(?:necessary|essential))|(?:must\s+(?:currently\s+)?(?:hold|possess|have|maintain)(?:\s+and\s+maintain)?|must\s+be\s+in\s+possession\s+of|will\s+need|needs?|(?:are|is|be)\s+required\s+to\s+(?:have|hold|possess|maintain))\s+(?:an?\s+)?(?:(?:active|current)\s+)?(?:(?:U\.?S\.?\s+)?(?<!\w)(?:DoD|D\.?o\.?D\.?|Department\s+of\s+Defense|government|federal)\s+)?(?<!Top\s)(?<!Top-)(?<!NATO\s)Secret\s+(?:security\s+)?clearance|(?<!which\s)(?<!that\s)requires?\s+(?:(?:an?|the)\s+|(?=(?:active|current)\s))(?:(?:active|current)\s+)?(?:(?:U\.?S\.?\s+)?(?<!\w)(?:DoD|D\.?o\.?D\.?|Department\s+of\s+Defense|government|federal)\s+)?(?<!Top\s)(?<!Top-)(?<!NATO\s)Secret\s+(?:security\s+)?clearance(?=\s*[.;:,)]|\s*$|\s+(?:is|are|was|were|and|or|at|for|in|on|by|with|from|prior|before|upon|within|to|through)\b)|(?<!which\s)(?<!that\s)(?:require[sd]?|must\s+(?:hold|possess|have))(?:(?!\b(?:and|but|while|whereas|preferred|desirable|ideally|bonus|plus|desired|nice|for|in|of|at|on|from|by|with|as|within|under|across)\b)[^.;:]){0,40}?(?:with|w/)\s+(?:(?:an?|the)\s+|(?=(?:active|current)\s))(?:(?:active|current)\s+)?(?:(?:U\.?S\.?\s+)?(?<!\w)(?:DoD|D\.?o\.?D\.?|Department\s+of\s+Defense|government|federal)\s+)?(?<!Top\s)(?<!Top-)(?<!NATO\s)Secret\s+(?:security\s+)?clearance(?=\s*[.;:,)]|\s*$|\s+(?:is|are|was|were|and|or|at|for|in|on|by|with|from|prior|before|upon|within|to|through)\b)'
+        subject_suppressors: *company_side_clearance
+      # Confidential is a real DoD level, already in level.choices, and two reviewed superset
+      # rows pointed at it that no pattern could ever consult. "An active Confidential
+      # clearance is required." produced ZERO rows, so an uncleared candidate was told they
+      # were eligible for a gated role.
+      - id: active_confidential_required
+        requiredness: required
+        implies: active_clearance_required
+        scope: clause
+        required_scheme: us_dod
+        required_level: confidential
+        required_accesses: []
+        requirement_text: "Active Confidential clearance required"
+        pattern: '(?<!obtain\s)(?<!obtain\sa\s)(?<!obtain\san\s)(?<!maintain\s)(?<!maintain\sa\s)(?<!maintain\san\s)(?:(?:active|current)\s+)?(?:(?:U\.?S\.?\s+)?(?<!\w)(?:DoD|D\.?o\.?D\.?|Department\s+of\s+Defense|government|federal)\s+)?(?<!NATO\s)Confidential\s+(?:security\s+)?clearance(?!\s+(?:program|programs|processing|process|investigation|investigations|renewal|renewals|briefing|briefings|upgrade|upgrades|experience|work|holders?|tooling|systems?|team|teams|support|documentation|paperwork|sponsorship|reimbursement|facility|facilities|site|sites|environment|environments|office|offices|location|locations|campus|campuses)\b)(?:(?!\b(?:and|but|while|whereas|preferred|desirable|ideally|bonus|plus|desired|nice)\b)[^.;:]){0,40}?(?:is\s+|will\s+be\s+)?(?:required|mandatory|needed|compulsory|non[\s-]?negotiable|a\s+must(?:\s*-?\s*have)?|a\s+requirement|(?<!\bas\s)(?<!\bif\s)(?<!when\s)(?<!ever\s)(?<!where\s)(?<!unless\s)(?<!deemed\s)(?<!\bonly\s)(?:necessary|essential))|(?:must\s+(?:currently\s+)?(?:hold|possess|have|maintain)(?:\s+and\s+maintain)?|must\s+be\s+in\s+possession\s+of|will\s+need|needs?|(?:are|is|be)\s+required\s+to\s+(?:have|hold|possess|maintain))\s+(?:an?\s+)?(?:(?:active|current)\s+)?(?:(?:U\.?S\.?\s+)?(?<!\w)(?:DoD|D\.?o\.?D\.?|Department\s+of\s+Defense|government|federal)\s+)?(?<!NATO\s)Confidential\s+(?:security\s+)?clearance|(?<!which\s)(?<!that\s)requires?\s+(?:(?:an?|the)\s+|(?=(?:active|current)\s))(?:(?:active|current)\s+)?(?:(?:U\.?S\.?\s+)?(?<!\w)(?:DoD|D\.?o\.?D\.?|Department\s+of\s+Defense|government|federal)\s+)?(?<!NATO\s)Confidential\s+(?:security\s+)?clearance(?=\s*[.;:,)]|\s*$|\s+(?:is|are|was|were|and|or|at|for|in|on|by|with|from|prior|before|upon|within|to|through)\b)|(?<!which\s)(?<!that\s)(?:require[sd]?|must\s+(?:hold|possess|have))(?:(?!\b(?:and|but|while|whereas|preferred|desirable|ideally|bonus|plus|desired|nice|for|in|of|at|on|from|by|with|as|within|under|across)\b)[^.;:]){0,40}?(?:with|w/)\s+(?:(?:an?|the)\s+|(?=(?:active|current)\s))(?:(?:active|current)\s+)?(?:(?:U\.?S\.?\s+)?(?<!\w)(?:DoD|D\.?o\.?D\.?|Department\s+of\s+Defense|government|federal)\s+)?(?<!NATO\s)Confidential\s+(?:security\s+)?clearance(?=\s*[.;:,)]|\s*$|\s+(?:is|are|was|were|and|or|at|for|in|on|by|with|from|prior|before|upon|within|to|through)\b)'
+        subject_suppressors: *company_side_clearance
+      - id: doe_q_required
+        requiredness: required
+        implies: active_clearance_required
+        scope: clause
+        required_scheme: us_doe
+        required_level: q
+        required_accesses: []
+        requirement_text: "Active DOE Q clearance required"
+        pattern: '(?<!obtain\s)(?<!obtain\sa\s)(?<!obtain\san\s)(?<!maintain\s)(?<!maintain\sa\s)(?<!maintain\san\s)(?:(?:active|current)\s+)?(?:D\.?O\.?E\.?\s+|Department\s+of\s+Energy\s+)?(?<!\w)Q(?!\w)\s+(?:security\s+)?clearance(?!\s+(?:program|programs|processing|process|investigation|investigations|renewal|renewals|briefing|briefings|upgrade|upgrades|experience|work|holders?|tooling|systems?|team|teams|support|documentation|paperwork|sponsorship|reimbursement|facility|facilities|site|sites|environment|environments|office|offices|location|locations|campus|campuses)\b)(?:(?!\b(?:and|but|while|whereas|preferred|desirable|ideally|bonus|plus|desired|nice)\b)[^.;:]){0,40}?(?:is\s+|will\s+be\s+)?(?:required|mandatory|needed|compulsory|non[\s-]?negotiable|a\s+must(?:\s*-?\s*have)?|a\s+requirement|(?<!\bas\s)(?<!\bif\s)(?<!when\s)(?<!ever\s)(?<!where\s)(?<!unless\s)(?<!deemed\s)(?<!\bonly\s)(?:necessary|essential))|(?:must\s+(?:currently\s+)?(?:hold|possess|have|maintain)(?:\s+and\s+maintain)?|must\s+be\s+in\s+possession\s+of|will\s+need|needs?|(?:are|is|be)\s+required\s+to\s+(?:have|hold|possess|maintain))\s+(?:an?\s+)?(?:(?:active|current)\s+)?(?:D\.?O\.?E\.?\s+|Department\s+of\s+Energy\s+)?(?<!\w)Q(?!\w)\s+(?:security\s+)?clearance|(?<!which\s)(?<!that\s)requires?\s+(?:(?:an?|the)\s+|(?=(?:active|current)\s))(?:(?:active|current)\s+)?(?:D\.?O\.?E\.?\s+|Department\s+of\s+Energy\s+)?(?<!\w)Q(?!\w)\s+(?:security\s+)?clearance(?=\s*[.;:,)]|\s*$|\s+(?:is|are|was|were|and|or|at|for|in|on|by|with|from|prior|before|upon|within|to|through)\b)|(?<!which\s)(?<!that\s)(?:require[sd]?|must\s+(?:hold|possess|have))(?:(?!\b(?:and|but|while|whereas|preferred|desirable|ideally|bonus|plus|desired|nice|for|in|of|at|on|from|by|with|as|within|under|across)\b)[^.;:]){0,40}?(?:with|w/)\s+(?:(?:an?|the)\s+|(?=(?:active|current)\s))(?:(?:active|current)\s+)?(?:D\.?O\.?E\.?\s+|Department\s+of\s+Energy\s+)?(?<!\w)Q(?!\w)\s+(?:security\s+)?clearance(?=\s*[.;:,)]|\s*$|\s+(?:is|are|was|were|and|or|at|for|in|on|by|with|from|prior|before|upon|within|to|through)\b)'
+        subject_suppressors: *company_side_clearance
+      # DOE L is the other half of the DOE scheme. `l` was in level.choices with no pattern
+      # able to require it, which is the same unreachable-vocabulary defect as sap and nato.
+      - id: doe_l_required
+        requiredness: required
+        implies: active_clearance_required
+        scope: clause
+        required_scheme: us_doe
+        required_level: l
+        required_accesses: []
+        requirement_text: "Active DOE L clearance required"
+        pattern: '(?<!obtain\s)(?<!obtain\sa\s)(?<!obtain\san\s)(?<!maintain\s)(?<!maintain\sa\s)(?<!maintain\san\s)(?:(?:active|current)\s+)?(?:D\.?O\.?E\.?\s+|Department\s+of\s+Energy\s+)?(?<!\w)L(?!\w)\s+(?:security\s+)?clearance(?!\s+(?:program|programs|processing|process|investigation|investigations|renewal|renewals|briefing|briefings|upgrade|upgrades|experience|work|holders?|tooling|systems?|team|teams|support|documentation|paperwork|sponsorship|reimbursement|facility|facilities|site|sites|environment|environments|office|offices|location|locations|campus|campuses)\b)(?:(?!\b(?:and|but|while|whereas|preferred|desirable|ideally|bonus|plus|desired|nice)\b)[^.;:]){0,40}?(?:is\s+|will\s+be\s+)?(?:required|mandatory|needed|compulsory|non[\s-]?negotiable|a\s+must(?:\s*-?\s*have)?|a\s+requirement|(?<!\bas\s)(?<!\bif\s)(?<!when\s)(?<!ever\s)(?<!where\s)(?<!unless\s)(?<!deemed\s)(?<!\bonly\s)(?:necessary|essential))|(?:must\s+(?:currently\s+)?(?:hold|possess|have|maintain)(?:\s+and\s+maintain)?|must\s+be\s+in\s+possession\s+of|will\s+need|needs?|(?:are|is|be)\s+required\s+to\s+(?:have|hold|possess|maintain))\s+(?:an?\s+)?(?:(?:active|current)\s+)?(?:D\.?O\.?E\.?\s+|Department\s+of\s+Energy\s+)?(?<!\w)L(?!\w)\s+(?:security\s+)?clearance|(?<!which\s)(?<!that\s)requires?\s+(?:(?:an?|the)\s+|(?=(?:active|current)\s))(?:(?:active|current)\s+)?(?:D\.?O\.?E\.?\s+|Department\s+of\s+Energy\s+)?(?<!\w)L(?!\w)\s+(?:security\s+)?clearance(?=\s*[.;:,)]|\s*$|\s+(?:is|are|was|were|and|or|at|for|in|on|by|with|from|prior|before|upon|within|to|through)\b)|(?<!which\s)(?<!that\s)(?:require[sd]?|must\s+(?:hold|possess|have))(?:(?!\b(?:and|but|while|whereas|preferred|desirable|ideally|bonus|plus|desired|nice|for|in|of|at|on|from|by|with|as|within|under|across)\b)[^.;:]){0,40}?(?:with|w/)\s+(?:(?:an?|the)\s+|(?=(?:active|current)\s))(?:(?:active|current)\s+)?(?:D\.?O\.?E\.?\s+|Department\s+of\s+Energy\s+)?(?<!\w)L(?!\w)\s+(?:security\s+)?clearance(?=\s*[.;:,)]|\s*$|\s+(?:is|are|was|were|and|or|at|for|in|on|by|with|from|prior|before|upon|within|to|through)\b)'
+        subject_suppressors: *company_side_clearance
+      - id: public_trust_required
+        requiredness: required
+        implies: active_clearance_required
+        scope: clause
+        required_scheme: us_public_trust
+        required_level: public_trust
+        required_accesses: []
+        requirement_text: "Public Trust determination required"
+        pattern: '(?:(?:active|current)\s+)?Public\s+Trust\s*(?:determination\s+|clearance\s+|investigation\s+)?(?:is\s+|will\s+be\s+)?(?:required|mandatory|needed|compulsory|non[\s-]?negotiable|a\s+must(?:\s*-?\s*have)?|a\s+requirement|(?<!\bas\s)(?<!\bif\s)(?<!when\s)(?<!ever\s)(?<!where\s)(?<!unless\s)(?<!deemed\s)(?<!\bonly\s)(?:necessary|essential))|(?:must\s+(?:currently\s+)?(?:hold|possess|have|maintain)(?:\s+and\s+maintain)?|must\s+be\s+in\s+possession\s+of|will\s+need|needs?|(?:are|is|be)\s+required\s+to\s+(?:have|hold|possess|maintain))\s+(?:an?\s+)?(?:(?:active|current)\s+)?Public\s+Trust|(?<!which\s)(?<!that\s)requires?\s+(?:(?:an?|the)\s+|(?=(?:active|current)\s))(?:(?:active|current)\s+)?Public\s+Trust(?:\s+(?:determination|clearance|investigation))?(?=\s*[.;:,)]|\s*$|\s+(?:is|are|was|were|and|or|at|for|in|on|by|with|from|prior|before|upon|within|to|through)\b)|(?<!which\s)(?<!that\s)(?:require[sd]?|must\s+(?:hold|possess|have))(?:(?!\b(?:and|but|while|whereas|preferred|desirable|ideally|bonus|plus|desired|nice|for|in|of|at|on|from|by|with|as|within|under|across)\b)[^.;:]){0,40}?(?:with|w/)\s+(?:(?:an?|the)\s+|(?=(?:active|current)\s))(?:(?:active|current)\s+)?Public\s+Trust(?=\s*[.;:,)]|\s*$|\s+(?:is|are|was|were|and|or|at|for|in|on|by|with|from|prior|before|upon|within|to|through)\b)'
+        subject_suppressors: *company_side_clearance
+      - id: generic_clearance_required
+        requiredness: required
+        implies: active_clearance_required
+        scope: clause
+        required_scheme: unspecified
+        required_level: unspecified
+        required_accesses: []
+        requirement_text: "An active security clearance is required"
+        pattern: '(?:active|current)\s+(?:(?:U\.?S\.?\s+)?(?<!\w)(?:DoD|D\.?o\.?D\.?|DOE|Department\s+of\s+(?:Defense|Energy)|government|federal)\s+)?(?:security\s+)?clearance(?!\s+(?:program|programs|processing|process|investigation|investigations|renewal|renewals|briefing|briefings|upgrade|upgrades|experience|work|holders?|tooling|systems?|team|teams|support|documentation|paperwork|sponsorship|reimbursement|facility|facilities|site|sites|environment|environments|office|offices|location|locations|campus|campuses)\b)(?:(?!\b(?:and|but|while|whereas|preferred|desirable|ideally|bonus|plus|desired|nice)\b)[^.;:]){0,40}?(?:is\s+|will\s+be\s+)?(?:required|mandatory|needed|compulsory|non[\s-]?negotiable|a\s+must(?:\s*-?\s*have)?|a\s+requirement|(?<!\bas\s)(?<!\bif\s)(?<!when\s)(?<!ever\s)(?<!where\s)(?<!unless\s)(?<!deemed\s)(?<!\bonly\s)(?:necessary|essential))|(?:(?:U\.?S\.?\s+)?(?<!\w)(?:DoD|D\.?o\.?D\.?|DOE|Department\s+of\s+(?:Defense|Energy)|government|federal)\s+)?security\s+clearance(?!\s+(?:program|programs|processing|process|investigation|investigations|renewal|renewals|briefing|briefings|upgrade|upgrades|experience|work|holders?|tooling|systems?|team|teams|support|documentation|paperwork|sponsorship|reimbursement|facility|facilities|site|sites|environment|environments|office|offices|location|locations|campus|campuses)\b)(?:(?!\b(?:and|but|while|whereas|preferred|desirable|ideally|bonus|plus|desired|nice)\b)[^.;:]){0,40}?(?:is\s+|will\s+be\s+)?(?:required|mandatory|needed|compulsory|non[\s-]?negotiable|a\s+must(?:\s*-?\s*have)?|a\s+requirement|(?<!\bas\s)(?<!\bif\s)(?<!when\s)(?<!ever\s)(?<!where\s)(?<!unless\s)(?<!deemed\s)(?<!\bonly\s)(?:necessary|essential))|(?:must\s+(?:currently\s+)?(?:hold|possess|have|maintain)(?:\s+and\s+maintain)?|must\s+be\s+in\s+possession\s+of|will\s+need|needs?|(?:are|is|be)\s+required\s+to\s+(?:have|hold|possess|maintain))\s+(?:an?\s+)?(?:active|current)\s+(?:(?:U\.?S\.?\s+)?(?<!\w)(?:DoD|D\.?o\.?D\.?|DOE|Department\s+of\s+(?:Defense|Energy)|government|federal)\s+)?(?:security\s+)?clearance|(?:must\s+(?:currently\s+)?(?:hold|possess|have|maintain)(?:\s+and\s+maintain)?|must\s+be\s+in\s+possession\s+of|will\s+need|needs?|(?:are|is|be)\s+required\s+to\s+(?:have|hold|possess|maintain))\s+(?:an?\s+)?(?:(?:active|current)\s+)?(?:(?:U\.?S\.?\s+)?(?<!\w)(?:DoD|D\.?o\.?D\.?|DOE|Department\s+of\s+(?:Defense|Energy)|government|federal)\s+)?security\s+clearance|(?<!which\s)(?<!that\s)requires?\s+(?:(?:an?|the)\s+|(?=(?:active|current)\s))(?:active|current)\s+(?:(?:U\.?S\.?\s+)?(?<!\w)(?:DoD|D\.?o\.?D\.?|DOE|Department\s+of\s+(?:Defense|Energy)|government|federal)\s+)?(?:security\s+)?clearance(?=\s*[.;:,)]|\s*$|\s+(?:is|are|was|were|and|or|at|for|in|on|by|with|from|prior|before|upon|within|to|through)\b)|(?<!which\s)(?<!that\s)requires?\s+(?:(?:an?|the)\s+|(?=(?:active|current)\s))(?:(?:active|current)\s+)?(?:(?:U\.?S\.?\s+)?(?<!\w)(?:DoD|D\.?o\.?D\.?|DOE|Department\s+of\s+(?:Defense|Energy)|government|federal)\s+)?security\s+clearance(?=\s*[.;:,)]|\s*$|\s+(?:is|are|was|were|and|or|at|for|in|on|by|with|from|prior|before|upon|within|to|through)\b)|(?<!which\s)(?<!that\s)(?:require[sd]?|must\s+(?:hold|possess|have))(?:(?!\b(?:and|but|while|whereas|preferred|desirable|ideally|bonus|plus|desired|nice|for|in|of|at|on|from|by|with|as|within|under|across)\b)[^.;:]){0,40}?(?:with|w/)\s+(?:(?:an?|the)\s+|(?=(?:active|current)\s))(?:active|current)\s+(?:(?:U\.?S\.?\s+)?(?<!\w)(?:DoD|D\.?o\.?D\.?|DOE|Department\s+of\s+(?:Defense|Energy)|government|federal)\s+)?(?:security\s+)?clearance(?=\s*[.;:,)]|\s*$|\s+(?:is|are|was|were|and|or|at|for|in|on|by|with|from|prior|before|upon|within|to|through)\b)|(?<!which\s)(?<!that\s)(?:require[sd]?|must\s+(?:hold|possess|have))(?:(?!\b(?:and|but|while|whereas|preferred|desirable|ideally|bonus|plus|desired|nice|for|in|of|at|on|from|by|with|as|within|under|across)\b)[^.;:]){0,40}?(?:with|w/)\s+(?:(?:an?|the)\s+|(?=(?:active|current)\s))(?:(?:active|current)\s+)?(?:(?:U\.?S\.?\s+)?(?<!\w)(?:DoD|D\.?o\.?D\.?|DOE|Department\s+of\s+(?:Defense|Energy)|government|federal)\s+)?security\s+clearance(?=\s*[.;:,)]|\s*$|\s+(?:is|are|was|were|and|or|at|for|in|on|by|with|from|prior|before|upon|within|to|through)\b)|(?:^\s*|\b(?:an?|the|no)\s+)clearance(?!\s+(?:program|programs|processing|process|investigation|investigations|renewal|renewals|briefing|briefings|upgrade|upgrades|experience|work|holders?|tooling|systems?|team|teams|support|documentation|paperwork|sponsorship|reimbursement|facility|facilities|site|sites|environment|environments|office|offices|location|locations|campus|campuses)\b)(?:(?!\b(?:and|but|while|whereas|preferred|desirable|ideally|bonus|plus|desired|nice)\b)[^.;:]){0,40}?(?:is\s+|will\s+be\s+)?(?:required|mandatory|needed|compulsory|non[\s-]?negotiable|a\s+must(?:\s*-?\s*have)?|a\s+requirement|(?<!\bas\s)(?<!\bif\s)(?<!when\s)(?<!ever\s)(?<!where\s)(?<!unless\s)(?<!deemed\s)(?<!\bonly\s)(?:necessary|essential))|(?:must\s+(?:currently\s+)?(?:hold|possess|have|maintain)(?:\s+and\s+maintain)?|must\s+be\s+in\s+possession\s+of|will\s+need|needs?|(?:are|is|be)\s+required\s+to\s+(?:have|hold|possess|maintain))\s+(?:an?|the)\s+clearance(?!\s+(?:program|programs|processing|process|investigation|investigations|renewal|renewals|briefing|briefings|upgrade|upgrades|experience|work|holders?|tooling|systems?|team|teams|support|documentation|paperwork|sponsorship|reimbursement|facility|facilities|site|sites|environment|environments|office|offices|location|locations|campus|campuses)\b)|(?<!which\s)(?<!that\s)requires?\s+(?:an?|the)\s+clearance(?!\s+(?:program|programs|processing|process|investigation|investigations|renewal|renewals|briefing|briefings|upgrade|upgrades|experience|work|holders?|tooling|systems?|team|teams|support|documentation|paperwork|sponsorship|reimbursement|facility|facilities|site|sites|environment|environments|office|offices|location|locations|campus|campuses)\b)(?=\s*[.;:,)]|\s*$|\s+(?:is|are|was|were|and|or|at|for|in|on|by|with|from|prior|before|upon|within|to|through)\b)'
+        subject_suppressors: *company_side_clearance
+      - id: clearable_required
+        requiredness: required
+        implies: clearable_required
+        scope: clause
+        requirement_text: "Must be able to obtain a security clearance"
+        # The OBJECT list is what makes the [active_clearance_required, clearable_required]
+        # exclusive group fire, so every object a LEVELED pattern can require has to be
+        # reachable here too. It was not, and the asymmetry read an OBTAINABLE clearance as a
+        # HELD one (finding 44), in both directions:
+        #   "Ability to obtain NATO clearance is required." -> nato_access_required alone ->
+        #     a wrong `ineligible` for a candidate holding nothing yet, which is precisely what
+        #     "ability to obtain" says they need not hold.
+        #   "Ability to obtain a TS/SCI clearance is required." -> ZERO rows -> a wrong
+        #     `eligible`, because `T\.?S\.?` could not reach `clearance` across `/SCI `.
+        # Both now land on the same outcome as the wrapper that always worked ("...obtain a
+        # security clearance..."): the group conflicts and the requirement resolves `uncertain`.
+        # That is the honest answer, because obtain-after-hire eligibility is not a stored fact.
+        # Polygraph and Public Trust are here for the same reason: "Ability to obtain a
+        # polygraph is required." made a poly a HELD gate through polygraph_required.
+        pattern: '(?:able|ability|eligible|eligibility|willing|willingness)\s+to\s+obtain(?:\s+and\s+maintain)?\s+(?:a\s+|an\s+)?(?:one|(?:U\.?S\.?\s+)?(?:government\s+|security\s+|T\.?S\.?\s*/\s*S\.?C\.?I\.?\s+|T\.?S\.?|Top\s+Secret\s+|Secret\s+|Confidential\s+|NATO\s+(?:Secret\s+|Confidential\s+)?|(?:D\.?O\.?E\.?\s+)?(?<!\w)Q(?!\w)\s+|(?:D\.?O\.?E\.?\s+)?(?<!\w)L(?!\w)\s+)?clearance|(?:current\s+|CI\s+|FS\s+)?poly(?:graph)?|Public\s+Trust(?:\s+determination)?|(?<!\w)S\.?A\.?P\.?(?!\w)\s+(?:program\s+)?access|S\.?C\.?I\.?(?!\w)(?:\s+access)?)|clearance[\s-]?eligible|clearable'
+      - id: clearance_preferred
+        requiredness: preferred
+        implies: clearance_preferred
+        scope: clause
+        requirement_text: "A security clearance is preferred"
+        pattern: '(?:security\s+)?clearance\s+(?:is\s+)?(?:strongly\s+|highly\s+)?(?:preferred|a\s+plus|a\s+bonus|desirable|desired|nice\s+to\s+have)|(?:preferred|desirable|ideally|bonus|desired):\s*(?:security\s+)?clearance'
+
+  - id: degree
+    label: Degree
+    fact: highest_degree
+    answer_type: choice
+    default_policy: preference
+    question: "What is the highest degree you have completed?"
+    fields:
+      - name: highest_degree
+        type: choice
+        choices: [none, associate, bachelor, master, doctorate, prefer_not_to_say]
+        ranks: {none: 0, associate: 2, bachelor: 3, master: 4, doctorate: 5}
+    implies_vocabulary:
+      - degree_required
+      - degree_required_with_field
+      - degree_required_or_equivalent
+      - degree_preferred
+      - degree_preferred_or_equivalent
+    exclusive_groups:
+      - [degree_required, degree_required_with_field, degree_required_or_equivalent]
+    # THE CANONICAL REQUIREMENT-MARKER VOCABULARY, declared once here and written out verbatim
+    # on each of the SEVEN marker-carrying patterns below. Findings 115-124 closed this as a
+    # class after finding 102 closed one token of it by hand; parity.py measured ELEVEN missing
+    # markers on the degree rows against the sibling families that carried them.
+    #   marker-LAST, which the optional copula makes one arm for both the bare and copular
+    #     forms ("Degree necessary." / "A degree is necessary."):
+    #       (?:is\s+)?(?:required|mandatory|necessary|essential|compulsory|needed
+    #                   |a\s+must|a\s+requirement|non-negotiable)(?!\w)
+    #   marker-FIRST, the verb phrase before the subject:
+    #       (?:require[sd]?(?:\s+to\s+(?:have|hold|possess))?
+    #          |must\s+(?:have|hold|possess|be)|(?:will\s+)?needs?)
+    # The `(?!\w)` tail is load-bearing, not decoration: without it `essential` matches inside
+    # `essentially` and `necessary` inside `necessarily`, so "A degree is essentially a filter."
+    # read as a hard requirement. The `\s+to\s+(?:have|hold|possess)` bridge exists because
+    # `require[sd]?` alone reached the LEVELED patterns through their bounded `{0,20}` gap while
+    # any_degree_required and the three in-field patterns have no gap and were stranded on
+    # "You are required to have a degree."
+    # WHY IT IS REPEATED rather than aliased: a YAML anchor substitutes a whole NODE and
+    # `pattern:` is one scalar, so an alias cannot reach inside a regex, and the loader does no
+    # interpolation (`re.compile(p["pattern"])`, verbatim). Same situation as the jurisdiction
+    # list, which is likewise written out twice in the sponsorship patterns. Drift is caught
+    # behaviourally, not by this comment: every token is pinned at every level in matrix.py, so
+    # dropping one from a single pattern fails a case.
+    # The other six patterns carry NO marker by design. The three *_or_equivalent patterns key
+    # on the equivalence escape and the three preferred patterns key on the hedge, so there is
+    # nothing here for them to lack.
+    patterns:
+      - id: doctorate_required
+        requiredness: required
+        implies: degree_required
+        scope: sentence
+        required_rank: 5
+        requirement_text: "A doctorate is required"
+        pattern: '(?:(?P<coord_rank4_a>Master[''’‘]?s?|(?<![\w.])M\.?S\.?(?!\w)|(?<![\w.])M\.?Sc\.?(?!\w)|(?<![\w.])M\.?Eng\.?(?!\w)|(?<![\w.])M\.?B\.?A\.?(?!\w))\s*(?:degree)?\s*(?:,\s*)?(?:or|/)\s*)?(?:Ph\.?D\.?|Doctorate|Doctoral\s+degree|Doctor\s+of\s+(?:Philosophy|Science|Engineering))(?:\s*(?:,\s*)?(?:or|/)\s*(?P<coord_rank4_b>Master[''’‘]?s?|(?<![\w.])M\.?S\.?(?!\w)|(?<![\w.])M\.?Sc\.?(?!\w)|(?<![\w.])M\.?Eng\.?(?!\w)|(?<![\w.])M\.?B\.?A\.?(?!\w))\s*(?:degree)?)?\s*(?:degree\s*)?(?:is\s+)?(?:required|mandatory|necessary|essential|compulsory|needed|a\s+must|a\s+requirement|non-negotiable)(?!\w)|(?:require[sd]?(?:\s+to\s+(?:have|hold|possess))?|must\s+(?:have|hold|possess|be)|(?:will\s+)?needs?|(?<!\w)mandator(?:y|ily)(?!\w))\s*:?\s*(?:at\s+least\s+|a\s+minimum\s+of\s+)?(?:(?:an?\s+)?(?P<coord_rank4_c>Master[''’‘]?s?|(?<![\w.])M\.?S\.?(?!\w)|(?<![\w.])M\.?Sc\.?(?!\w)|(?<![\w.])M\.?Eng\.?(?!\w)|(?<![\w.])M\.?B\.?A\.?(?!\w))\s*(?:degree)?\s*(?:,\s*)?(?:or|/)\s*)?(?:(?!\b(?:and|but|while|whereas|preferred|desirable|ideally|bonus|plus|desired|nice|for|in|of|at|on|from|by|with|as|within|under|across)\b)[^.]){0,20}(?:Ph\.?D\.?|Doctorate|Doctoral\s+degree|Doctor\s+of\s+(?:Philosophy|Science|Engineering))(?:\s*(?:,\s*)?(?:or|/)\s*(?P<coord_rank4_d>Master[''’‘]?s?|(?<![\w.])M\.?S\.?(?!\w)|(?<![\w.])M\.?Sc\.?(?!\w)|(?<![\w.])M\.?Eng\.?(?!\w)|(?<![\w.])M\.?B\.?A\.?(?!\w)))?(?![\w-])'
+        # THREE ROLES were conflated in one document-scoped suppressed_by list here and on every
+        # other plain degree pattern, which is findings 38 and 52. They are separated by role:
+        #   an EQUIVALENCE ESCAPE is inherently cross-sentence ("A Master's degree is required.
+        #     Equivalent experience may be substituted.") so it stays DOCUMENT-scoped, but it
+        #     moves to abstain_by: a suppressor DROPS, and dropping a requirement the posting
+        #     merely MIGHT waive returns `eligible` by silence, the worst direction. Abstaining
+        #     keeps the row and answers "this may be waived and I cannot tell".
+        #   a SPECIFICITY stand-down ("a more specific statement exists") is a claim about THIS
+        #     SENTENCE, so it becomes UNIT-scoped. Document-scoped it deleted requirements in
+        #     other sentences: "A Bachelor's degree is required. We value a degree in Physics."
+        #     dropped BOTH degree rows and told a candidate with no degree they were eligible.
+        # `us_citizen_required`'s `or ... permanent resident` escape is deliberately NOT touched:
+        # it is correctly document-scoped and correctly a DROP, and both review families audited
+        # it and agreed.
+        # ITEM anchors, not list anchors: any_degree_required composes the specificity entry with
+        # its own level list, and a list anchor cannot be extended.
+        abstain_by:
+          - &degree_equivalence "or\\s+equivalent|equivalent\\s+(?:experience|work)|in\\s+lieu\\s+of|may\\s+be\\s+substituted"
+        suppressed_by_unit:
+          - &degree_in_field "degree\\s+in\\s+\\S"
+      # The three *_or_equivalent patterns CAPTURE the scope of the escape rather than
+      # suppressing on it. A `suppressed_by` here is structurally inert: _suppressed() only
+      # drops when the suppressor match lies wholly OUTSIDE the detection span, and the word
+      # `equivalent` is the LAST token inside it, so the match always starts inside and can
+      # never drop. Worse, document-scoped it would fire on a LATER sentence's equivalence
+      # and cancel a genuine requirement. The capture hands the decision to the resolver,
+      # which abstains: detection still fires, so the requirement is never lost to silence.
+      - id: doctorate_or_equivalent_required
+        requiredness: required
+        implies: degree_required_or_equivalent
+        scope: sentence
+        required_rank: 5
+        capture: equivalent_years
+        requirement_text: "A doctorate or equivalent experience is required"
+        # An ITEM anchor, not a list anchor: bachelor_or_equivalent_required needs the hedge PLUS
+        # its own level stand-down in one list, and a list anchor cannot be extended.
+        suppressed_by_unit:
+          - &degree_hedges "preferred|desirable|a\\s+plus|nice\\s+to\\s+have|strongly\\s+desired|ideally|bonus"
+        pattern: "(?:(?P<coord_rank4_a>Master['’‘]?s?|(?<![\\w.])M\\.?S\\.?(?!\\w)|(?<![\\w.])M\\.?Sc\\.?(?!\\w)|(?<![\\w.])M\\.?Eng\\.?(?!\\w)|(?<![\\w.])M\\.?B\\.?A\\.?(?!\\w))\\s*(?:degree)?\\s*(?:,\\s*)?(?:or|/)\\s*)?(?:Ph\\.?D\\.?|Doctorate|Doctoral\\s+degree|Doctor\\s+of\\s+(?:Philosophy|Science|Engineering))(?:\\s*(?:,\\s*)?(?:or|/)\\s*(?P<coord_rank4_b>Master['’‘]?s?|(?<![\\w.])M\\.?S\\.?(?!\\w)|(?<![\\w.])M\\.?Sc\\.?(?!\\w)|(?<![\\w.])M\\.?Eng\\.?(?!\\w)|(?<![\\w.])M\\.?B\\.?A\\.?(?!\\w))\\s*(?:degree)?)?\\s*(?:degree)?\\s*(?:,\\s*)?(?:or|/)\\s*(?:(?P<equivalent_years>\\d{1,2})\\s*\\+?\\s*years?\\s+of\\s+)?equivalent(?P<equivalent_scope>\\s+(?:professional\\s+|relevant\\s+|industry\\s+|hands-on\\s+|work\\s+|research\\s+)?experience\\s+(?:working\\s+in|related\\s+to|focused\\s+on|specific\\s+to|within|in|with|using|on|building|developing|designing|as|leading|managing|supporting)\\b)?"
+      - id: master_or_equivalent_required
+        requiredness: required
+        implies: degree_required_or_equivalent
+        scope: sentence
+        required_rank: 4
+        capture: equivalent_years
+        requirement_text: "A master's degree or equivalent experience is required"
+        suppressed_by_unit: [*degree_hedges]
+        # The trailing "[^.]{0,30}?(?:required|experience)" this replaces made
+        # "Master's degree or equivalent." match NOTHING, losing the whole family on the
+        # barest form of the phrase. `Graduate`/`Advanced` now require the word `degree`,
+        # because bare "Advanced or equivalent" is a sentence about certifications.
+        pattern: "(?:(?P<coord_rank3_a>Bachelor['’‘]?s?|(?<![\\w.])B\\.?S\\.?(?!\\w)|(?<![\\w.])B\\.?A\\.?(?!\\w)|(?<![\\w.])B\\.?Sc\\.?(?!\\w)|(?<![\\w.])B\\.?Eng\\.?(?!\\w)|Undergraduate)\\s*(?:degree)?\\s*(?:,\\s*)?(?:or|/)\\s*)?(?:(?:Master['’‘]?s?(?:\\s+of\\s+(?:Science|Arts|Engineering|Applied\\s+Science|Business\\s+Administration))?|(?<![\\w.])M\\.?S\\.?(?!\\w)(?!\\s*(?:Office|Excel|Word|PowerPoint|Outlook|Project|Teams|SQL|Access|Visio|Dynamics|Azure|365|Exchange|SharePoint|Windows|Server)\\b)|(?<![\\w.])M\\.?Sc\\.?(?!\\w)|(?<![\\w.])M\\.?Eng\\.?(?!\\w)|(?<![\\w.])M\\.?B\\.?A\\.?(?!\\w))\\s*(?:degree)?|(?<!\\w)(?:Graduate|Advanced)\\s+degree)(?:\\s*(?:,\\s*)?(?:or|/)\\s*(?P<coord_rank3_b>Bachelor['’‘]?s?|(?<![\\w.])B\\.?S\\.?(?!\\w)|(?<![\\w.])B\\.?A\\.?(?!\\w)|(?<![\\w.])B\\.?Sc\\.?(?!\\w)|(?<![\\w.])B\\.?Eng\\.?(?!\\w)|Undergraduate)\\s*(?:degree)?)?\\s*(?:,\\s*)?(?:or|/)\\s*(?:(?P<equivalent_years>\\d{1,2})\\s*\\+?\\s*years?\\s+of\\s+)?equivalent(?P<equivalent_scope>\\s+(?:professional\\s+|relevant\\s+|industry\\s+|hands-on\\s+|work\\s+|research\\s+)?experience\\s+(?:working\\s+in|related\\s+to|focused\\s+on|specific\\s+to|within|in|with|using|on|building|developing|designing|as|leading|managing|supporting)\\b)?"
+      - id: master_required
+        requiredness: required
+        implies: degree_required
+        scope: sentence
+        required_rank: 4
+        requirement_text: "A master's degree is required"
+        pattern: "(?:(?P<coord_rank3_a>Bachelor['’‘]?s?|(?<![\\w.])B\\.?S\\.?(?!\\w)|(?<![\\w.])B\\.?A\\.?(?!\\w)|(?<![\\w.])B\\.?Sc\\.?(?!\\w)|(?<![\\w.])B\\.?Eng\\.?(?!\\w)|Undergraduate)\\s*(?:degree)?\\s*(?:,\\s*)?(?:or|/)\\s*)?(?:(?:Master['’‘]?s?(?:\\s+of\\s+(?:Science|Arts|Engineering|Business\\s+Administration|Applied\\s+Science))?|(?<![\\w.])M\\.?S\\.?(?!\\w)(?!\\s*(?:Office|Excel|Word|PowerPoint|Outlook|Project|Teams|SQL|Access|Visio|Dynamics|Azure|365|Exchange|SharePoint|Windows|Server)\\b)|(?<![\\w.])M\\.?Sc\\.?(?!\\w)|(?<![\\w.])M\\.?Eng\\.?(?!\\w)|(?<![\\w.])M\\.?B\\.?A\\.?(?!\\w))\\s*(?:degree)?|(?<!\\w)(?:Graduate|Advanced)\\s+degree)(?:\\s*(?:,\\s*)?(?:or|/)\\s*(?P<coord_rank3_b>Bachelor['’‘]?s?|(?<![\\w.])B\\.?S\\.?(?!\\w)|(?<![\\w.])B\\.?A\\.?(?!\\w)|(?<![\\w.])B\\.?Sc\\.?(?!\\w)|(?<![\\w.])B\\.?Eng\\.?(?!\\w)|Undergraduate)\\s*(?:degree)?)?\\s*(?:is\\s+)?(?:required|mandatory|necessary|essential|compulsory|needed|a\\s+must|a\\s+requirement|non-negotiable)(?!\\w)|(?:require[sd]?(?:\\s+to\\s+(?:have|hold|possess))?|must\\s+(?:have|hold|possess|be)|(?:will\\s+)?needs?|(?<!\\w)mandator(?:y|ily)(?!\\w))\\s*:?\\s*(?:at\\s+least\\s+|a\\s+minimum\\s+of\\s+)?(?:(?:an?\\s+)?(?P<coord_rank3_c>Bachelor['’‘]?s?|(?<![\\w.])B\\.?S\\.?(?!\\w)|(?<![\\w.])B\\.?A\\.?(?!\\w)|(?<![\\w.])B\\.?Sc\\.?(?!\\w)|(?<![\\w.])B\\.?Eng\\.?(?!\\w)|Undergraduate)\\s*(?:degree)?\\s*(?:,\\s*)?(?:or|/)\\s*)?(?:(?!\\b(?:and|but|while|whereas|preferred|desirable|ideally|bonus|plus|desired|nice|for|in|of|at|on|from|by|with|as|within|under|across)\\b)[^.]){0,20}(?:Master['’‘]?s?|(?<![\\w.])M\\.?S\\.?(?!\\w)(?!\\s*(?:Office|Excel|Word|PowerPoint|Outlook|Project|Teams|SQL|Access|Visio|Dynamics|Azure|365|Exchange|SharePoint|Windows|Server)\\b)|(?<![\\w.])M\\.?Sc\\.?(?!\\w)|(?<![\\w.])M\\.?Eng\\.?(?!\\w)|(?<![\\w.])M\\.?B\\.?A\\.?(?!\\w)|(?<!\\w)(?:Graduate|Advanced)\\s+degree)(?:\\s*(?:,\\s*)?(?:or|/)\\s*(?P<coord_rank3_d>Bachelor['’‘]?s?|(?<![\\w.])B\\.?S\\.?(?!\\w)|(?<![\\w.])B\\.?A\\.?(?!\\w)|(?<![\\w.])B\\.?Sc\\.?(?!\\w)|(?<![\\w.])B\\.?Eng\\.?(?!\\w)|Undergraduate))?(?![\\w-])"
+        abstain_by: [*degree_equivalence]
+        suppressed_by_unit: [*degree_in_field]
+      - id: bachelor_or_equivalent_required
+        requiredness: required
+        implies: degree_required_or_equivalent
+        scope: sentence
+        required_rank: 3
+        capture: equivalent_years
+        requirement_text: "A bachelor's degree or equivalent experience is required"
+        suppressed_by_unit:
+          - *degree_hedges
+          - &degree_levels "master|doctora|ph\\.?d\\.?|(?<![\\w.])M\\.?B\\.?A\\.?(?!\\w)|advanced|graduate"
+        pattern: "(?:Bachelor['’‘]?s?(?:\\s+of\\s+(?:Science|Arts|Engineering|Applied\\s+Science|Business\\s+Administration))?|(?<![\\w.])B\\.?S\\.?(?!\\w)|(?<![\\w.])B\\.?A\\.?(?!\\w)|(?<![\\w.])B\\.?Sc\\.?(?!\\w)|(?<![\\w.])B\\.?Eng\\.?(?!\\w)|Undergraduate)\\s*(?:degree)?\\s*(?:,\\s*)?(?:or|/)\\s*(?:(?P<equivalent_years>\\d{1,2})\\s*\\+?\\s*years?\\s+of\\s+)?equivalent(?P<equivalent_scope>\\s+(?:professional\\s+|relevant\\s+|industry\\s+|hands-on\\s+|work\\s+|research\\s+)?experience\\s+(?:working\\s+in|related\\s+to|focused\\s+on|specific\\s+to|within|in|with|using|on|building|developing|designing|as|leading|managing|supporting)\\b)?"
+      - id: bachelor_required
+        requiredness: required
+        implies: degree_required
+        scope: sentence
+        required_rank: 3
+        requirement_text: "A bachelor's degree is required"
+        pattern: "(?:Bachelor['’‘]?s?(?:\\s+of\\s+(?:Science|Arts|Engineering|Applied\\s+Science|Business\\s+Administration))?|(?<![\\w.])B\\.?S\\.?(?!\\w)|(?<![\\w.])B\\.?A\\.?(?!\\w)|(?<![\\w.])B\\.?Sc\\.?(?!\\w)|(?<![\\w.])B\\.?Eng\\.?(?!\\w)|Undergraduate)\\s*(?:degree)?\\s*(?:is\\s+)?(?:required|mandatory|necessary|essential|compulsory|needed|a\\s+must|a\\s+requirement|non-negotiable)(?!\\w)|(?:require[sd]?(?:\\s+to\\s+(?:have|hold|possess))?|must\\s+(?:have|hold|possess|be)|(?:will\\s+)?needs?|(?<!\\w)mandator(?:y|ily)(?!\\w))\\s*:?\\s*(?:at\\s+least\\s+|a\\s+minimum\\s+of\\s+)?(?:(?!\\b(?:and|but|while|whereas|preferred|desirable|ideally|bonus|plus|desired|nice|for|in|of|at|on|from|by|with|as|within|under|across)\\b)[^.]){0,20}(?:Bachelor['’‘]?s?|(?<![\\w.])B\\.?S\\.?(?!\\w)|(?<![\\w.])B\\.?A\\.?(?!\\w)|(?<![\\w.])B\\.?Sc\\.?(?!\\w)|(?<![\\w.])B\\.?Eng\\.?(?!\\w)|Undergraduate)(?![\\w-])"
+        abstain_by: [*degree_equivalence]
+        suppressed_by_unit: [*degree_in_field]
+      # "Bachelor's degree in X is required" is the single most common degree phrasing and
+      # was previously missed entirely. A field-of-study constraint is UNMEASURABLE (the
+      # profile stores no field), so this resolves `unmet` when the rank is below and
+      # ABSTAINS when the rank is met: the field could still disqualify.
+      - id: bachelor_in_field_required
+        requiredness: required
+        implies: degree_required_with_field
+        scope: sentence
+        required_rank: 3
+        requirement_text: "A bachelor's degree in a named field is required"
+        # Marker-FIRST alternative: "Must have a Bachelor's degree in Computer Science." has
+        # its requirement marker before the level, so the marker-last form matched nothing
+        # while the plain bachelor_required correctly stood down on "degree in X" -> the most
+        # common degree sentence in existence produced ZERO rows.
+        pattern: "(?:Bachelor['’‘]?s?(?:\\s+of\\s+(?:Science|Arts|Engineering|Applied\\s+Science|Business\\s+Administration))?|(?<![\\w.])B\\.?S\\.?(?!\\w)|(?<![\\w.])B\\.?A\\.?(?!\\w)|(?<![\\w.])B\\.?Sc\\.?(?!\\w)|(?<![\\w.])B\\.?Eng\\.?(?!\\w)|Undergraduate)\\s*(?:degree)?\\s+in\\s+(?:(?!\\b(?:preferred|desirable|desired|advantageous|nice\\s+to\\s+have|bonus|ideally|a\\s+plus|plus)\\b)[^.;:]){2,60}?(?:is\\s+)?(?:required|mandatory|necessary|essential|compulsory|needed|a\\s+must|a\\s+requirement|non-negotiable)(?!\\w)|(?:require[sd]?(?:\\s+to\\s+(?:have|hold|possess))?|must\\s+(?:have|hold|possess|be)|(?:will\\s+)?needs?|(?<!\\w)mandator(?:y|ily)(?!\\w))\\s*:?\\s*(?:at\\s+least\\s+|a\\s+minimum\\s+of\\s+)?(?:an?\\s+)?(?:Bachelor['’‘]?s?(?:\\s+of\\s+(?:Science|Arts|Engineering|Applied\\s+Science|Business\\s+Administration))?|(?<![\\w.])B\\.?S\\.?(?!\\w)|(?<![\\w.])B\\.?A\\.?(?!\\w)|(?<![\\w.])B\\.?Sc\\.?(?!\\w)|(?<![\\w.])B\\.?Eng\\.?(?!\\w)|Undergraduate)\\s*(?:degree)?\\s+in\\s+\\S"
+        # No "degree\s+in\s+\S" suppressor here: on THIS pattern it is self-defeating. It
+        # matches outside its own span in any posting that names a field twice, so
+        # "A Bachelor's degree in CS is required. A Master's degree in Physics is preferred."
+        # dropped BOTH rows and returned `eligible` to a candidate with no degree at all.
+        abstain_by: [*degree_equivalence]
+      - id: master_in_field_required
+        requiredness: required
+        implies: degree_required_with_field
+        scope: sentence
+        required_rank: 4
+        requirement_text: "A master's degree in a named field is required"
+        pattern: "(?:(?P<coord_rank3_a>Bachelor['’‘]?s?|(?<![\\w.])B\\.?S\\.?(?!\\w)|(?<![\\w.])B\\.?A\\.?(?!\\w)|(?<![\\w.])B\\.?Sc\\.?(?!\\w)|(?<![\\w.])B\\.?Eng\\.?(?!\\w)|Undergraduate)\\s*(?:degree)?\\s*(?:,\\s*)?(?:or|/)\\s*)?(?:(?:Master['’‘]?s?(?:\\s+of\\s+(?:Science|Arts|Engineering|Business\\s+Administration|Applied\\s+Science))?|(?<![\\w.])M\\.?S\\.?(?!\\w)(?!\\s*(?:Office|Excel|Word|PowerPoint|Outlook|Project|Teams|SQL|Access|Visio|Dynamics|Azure|365|Exchange|SharePoint|Windows|Server)\\b)|(?<![\\w.])M\\.?Sc\\.?(?!\\w)|(?<![\\w.])M\\.?Eng\\.?(?!\\w)|(?<![\\w.])M\\.?B\\.?A\\.?(?!\\w))\\s*(?:degree)?|(?<!\\w)(?:Graduate|Advanced)\\s+degree)(?:\\s*(?:,\\s*)?(?:or|/)\\s*(?P<coord_rank3_b>Bachelor['’‘]?s?|(?<![\\w.])B\\.?S\\.?(?!\\w)|(?<![\\w.])B\\.?A\\.?(?!\\w)|(?<![\\w.])B\\.?Sc\\.?(?!\\w)|(?<![\\w.])B\\.?Eng\\.?(?!\\w)|Undergraduate)\\s*(?:degree)?)?\\s+in\\s+(?:(?!\\b(?:preferred|desirable|desired|advantageous|nice\\s+to\\s+have|bonus|ideally|a\\s+plus|plus)\\b)[^.;:]){2,60}?(?:is\\s+)?(?:required|mandatory|necessary|essential|compulsory|needed|a\\s+must|a\\s+requirement|non-negotiable)(?!\\w)|(?:require[sd]?(?:\\s+to\\s+(?:have|hold|possess))?|must\\s+(?:have|hold|possess|be)|(?:will\\s+)?needs?|(?<!\\w)mandator(?:y|ily)(?!\\w))\\s*:?\\s*(?:at\\s+least\\s+|a\\s+minimum\\s+of\\s+)?(?:an?\\s+)?(?:(?P<coord_rank3_c>Bachelor['’‘]?s?|(?<![\\w.])B\\.?S\\.?(?!\\w)|(?<![\\w.])B\\.?A\\.?(?!\\w)|(?<![\\w.])B\\.?Sc\\.?(?!\\w)|(?<![\\w.])B\\.?Eng\\.?(?!\\w)|Undergraduate)\\s*(?:degree)?\\s*(?:,\\s*)?(?:or|/)\\s*)?(?:(?:Master['’‘]?s?(?:\\s+of\\s+(?:Science|Arts|Engineering|Business\\s+Administration|Applied\\s+Science))?|(?<![\\w.])M\\.?S\\.?(?!\\w)(?!\\s*(?:Office|Excel|Word|PowerPoint|Outlook|Project|Teams|SQL|Access|Visio|Dynamics|Azure|365|Exchange|SharePoint|Windows|Server)\\b)|(?<![\\w.])M\\.?Sc\\.?(?!\\w)|(?<![\\w.])M\\.?Eng\\.?(?!\\w)|(?<![\\w.])M\\.?B\\.?A\\.?(?!\\w))\\s*(?:degree)?|(?<!\\w)(?:Graduate|Advanced)\\s+degree)(?:\\s*(?:,\\s*)?(?:or|/)\\s*(?P<coord_rank3_d>Bachelor['’‘]?s?|(?<![\\w.])B\\.?S\\.?(?!\\w)|(?<![\\w.])B\\.?A\\.?(?!\\w)|(?<![\\w.])B\\.?Sc\\.?(?!\\w)|(?<![\\w.])B\\.?Eng\\.?(?!\\w)|Undergraduate)\\s*(?:degree)?)?\\s+in\\s+\\S"
+        # See bachelor_in_field_required: the "degree in" suppressor is self-defeating here.
+        abstain_by: [*degree_equivalence]
+      # FINDING 56: the bachelor and master levels each had an in-field pattern and the
+      # doctorate had none, so "A Ph.D. in Physics is required." produced ZERO rows and told a
+      # candidate with a bachelor's they were eligible. Modelled exactly on
+      # master_in_field_required, one rank up. `doctorate_required`'s "degree in" stand-down
+      # could never cover this: "Ph.D. in Physics" contains no token `degree`, which is also
+      # why "Must have a Ph.D. in Physics." resolved a wrong `met` for any doctorate holder
+      # regardless of field. Now both doctorate patterns fire on that sentence and the
+      # exclusive group resolves it `uncertain`, which is the honest answer while the profile
+      # records no field of study.
+      - id: doctorate_in_field_required
+        requiredness: required
+        implies: degree_required_with_field
+        scope: sentence
+        required_rank: 5
+        requirement_text: "A doctorate in a named field is required"
+        pattern: "(?:(?P<coord_rank4_a>Master['’‘]?s?|(?<![\\w.])M\\.?S\\.?(?!\\w)|(?<![\\w.])M\\.?Sc\\.?(?!\\w)|(?<![\\w.])M\\.?Eng\\.?(?!\\w)|(?<![\\w.])M\\.?B\\.?A\\.?(?!\\w))\\s*(?:degree)?\\s*(?:,\\s*)?(?:or|/)\\s*)?(?:Ph\\.?D\\.?|Doctorate|Doctoral\\s+degree|Doctor\\s+of\\s+(?:Philosophy|Science|Engineering))(?:\\s*(?:,\\s*)?(?:or|/)\\s*(?P<coord_rank4_b>Master['’‘]?s?|(?<![\\w.])M\\.?S\\.?(?!\\w)|(?<![\\w.])M\\.?Sc\\.?(?!\\w)|(?<![\\w.])M\\.?Eng\\.?(?!\\w)|(?<![\\w.])M\\.?B\\.?A\\.?(?!\\w))\\s*(?:degree)?)?\\s*(?:degree)?\\s+in\\s+(?:(?!\\b(?:preferred|desirable|desired|advantageous|nice\\s+to\\s+have|bonus|ideally|a\\s+plus|plus)\\b)[^.;:]){2,60}?(?:is\\s+)?(?:required|mandatory|necessary|essential|compulsory|needed|a\\s+must|a\\s+requirement|non-negotiable)(?!\\w)|(?:require[sd]?(?:\\s+to\\s+(?:have|hold|possess))?|must\\s+(?:have|hold|possess|be)|(?:will\\s+)?needs?|(?<!\\w)mandator(?:y|ily)(?!\\w))\\s*:?\\s*(?:at\\s+least\\s+|a\\s+minimum\\s+of\\s+)?(?:an?\\s+)?(?:(?P<coord_rank4_c>Master['’‘]?s?|(?<![\\w.])M\\.?S\\.?(?!\\w)|(?<![\\w.])M\\.?Sc\\.?(?!\\w)|(?<![\\w.])M\\.?Eng\\.?(?!\\w)|(?<![\\w.])M\\.?B\\.?A\\.?(?!\\w))\\s*(?:degree)?\\s*(?:,\\s*)?(?:or|/)\\s*)?(?:Ph\\.?D\\.?|Doctorate|Doctoral\\s+degree|Doctor\\s+of\\s+(?:Philosophy|Science|Engineering))(?:\\s*(?:,\\s*)?(?:or|/)\\s*(?P<coord_rank4_d>Master['’‘]?s?|(?<![\\w.])M\\.?S\\.?(?!\\w)|(?<![\\w.])M\\.?Sc\\.?(?!\\w)|(?<![\\w.])M\\.?Eng\\.?(?!\\w)|(?<![\\w.])M\\.?B\\.?A\\.?(?!\\w))\\s*(?:degree)?)?\\s*(?:degree)?\\s+in\\s+\\S"
+        # See bachelor_in_field_required: the "degree in" suppressor is self-defeating here.
+        abstain_by: [*degree_equivalence]
+      - id: any_degree_required
+        requiredness: required
+        implies: degree_required
+        scope: sentence
+        required_rank: null
+        requirement_text: "A completed degree is required"
+        # The marker-FIRST arm needs a guard the marker-last arm never needed: "a degree OF
+        # confidentiality / autonomy / comfort with ambiguity" is a QUANTITY, not a credential,
+        # and only the marker-first arm can reach it (the marker-last arm requires the literal
+        # "degree is required"). `degree(?!\s+of\b)` is that guard.
+        pattern: "(?:a\\s+|an\\s+)?(?:college\\s+|university\\s+)?degree\\s+(?:is\\s+)?(?:required|mandatory|necessary|essential|compulsory|needed|a\\s+must|a\\s+requirement|non-negotiable)(?!\\w)|(?:require[sd]?(?:\\s+to\\s+(?:have|hold|possess))?|must\\s+(?:have|hold|possess|be)|(?:will\\s+)?needs?|(?<!\\w)mandator(?:y|ily)(?!\\w))\\s*:?\\s*(?:at\\s+least\\s+|a\\s+minimum\\s+of\\s+)?(?:an?\\s+)?(?:completed\\s+)?(?:college\\s+|university\\s+)?degree(?!\\s+of\\b)"
+        # Deliberately unleveled, so it must stand down whenever the document names a level.
+        abstain_by: [*degree_equivalence]
+        suppressed_by_unit:
+          - "bachelor|master|doctora|ph\\.?d\\.?|associate|advanced|undergraduate|graduate|(?<![\\w.])B\\.?S\\.?(?!\\w)|(?<![\\w.])B\\.?A\\.?(?!\\w)|(?<![\\w.])B\\.?Sc\\.?(?!\\w)|(?<![\\w.])B\\.?Eng\\.?(?!\\w)|(?<![\\w.])M\\.?S\\.?(?!\\w)(?!\\s*(?:Office|Excel|Word|PowerPoint|Outlook|Project|Teams|SQL|Access|Visio|Dynamics|Azure|365|Exchange|SharePoint|Windows|Server)\\b)|(?<![\\w.])M\\.?Sc\\.?(?!\\w)|(?<![\\w.])M\\.?Eng\\.?(?!\\w)|(?<![\\w.])M\\.?B\\.?A\\.?(?!\\w)"
+          - *degree_in_field
+      # Hedged counterparts of the two common *_or_equivalent patterns. Without them
+      # "A Bachelor's degree or 6 years of equivalent experience is preferred." fired the
+      # REQUIRED pattern and told a candidate with neither that they were ineligible for a
+      # role that only stated a preference. The hedge suppressor on the required patterns is
+      # what fixes the verdict; these two exist so the preference still shows up as a row.
+      # There is deliberately no doctorate counterpart: a `preferred` row can never change a
+      # verdict, so the gap costs an informational row and nothing else.
+      - id: bachelor_or_equivalent_preferred
+        requiredness: preferred
+        implies: degree_preferred_or_equivalent
+        scope: sentence
+        required_rank: 3
+        capture: equivalent_years
+        requirement_text: "A bachelor's degree or equivalent experience is preferred"
+        pattern: "(?:Bachelor['’‘]?s?(?:\\s+of\\s+(?:Science|Arts|Engineering|Applied\\s+Science|Business\\s+Administration))?|(?<![\\w.])B\\.?S\\.?(?!\\w)|(?<![\\w.])B\\.?A\\.?(?!\\w)|(?<![\\w.])B\\.?Sc\\.?(?!\\w)|(?<![\\w.])B\\.?Eng\\.?(?!\\w)|Undergraduate)\\s*(?:degree)?\\s*(?:,\\s*)?(?:or|/)\\s*(?:(?P<equivalent_years>\\d{1,2})\\s*\\+?\\s*years?\\s+of\\s+)?equivalent(?P<equivalent_scope>\\s+(?:professional\\s+|relevant\\s+|industry\\s+|hands-on\\s+|work\\s+|research\\s+)?experience\\s+(?:working\\s+in|related\\s+to|focused\\s+on|specific\\s+to|within|in|with|using|on|building|developing|designing|as|leading|managing|supporting)\\b)?[^.]{0,40}?(?:preferred|desirable|a\\s+plus|nice\\s+to\\s+have|ideally|bonus)"
+      - id: master_or_equivalent_preferred
+        requiredness: preferred
+        implies: degree_preferred_or_equivalent
+        scope: sentence
+        required_rank: 4
+        capture: equivalent_years
+        requirement_text: "A master's degree or equivalent experience is preferred"
+        pattern: "(?:(?:Master['’‘]?s?(?:\\s+of\\s+(?:Science|Arts|Engineering|Applied\\s+Science|Business\\s+Administration))?|(?<![\\w.])M\\.?S\\.?(?!\\w)(?!\\s*(?:Office|Excel|Word|PowerPoint|Outlook|Project|Teams|SQL|Access|Visio|Dynamics|Azure|365|Exchange|SharePoint|Windows|Server)\\b)|(?<![\\w.])M\\.?Sc\\.?(?!\\w)|(?<![\\w.])M\\.?Eng\\.?(?!\\w)|(?<![\\w.])M\\.?B\\.?A\\.?(?!\\w))\\s*(?:degree)?|(?<!\\w)(?:Graduate|Advanced)\\s+degree)\\s*(?:,\\s*)?(?:or|/)\\s*(?:(?P<equivalent_years>\\d{1,2})\\s*\\+?\\s*years?\\s+of\\s+)?equivalent(?P<equivalent_scope>\\s+(?:professional\\s+|relevant\\s+|industry\\s+|hands-on\\s+|work\\s+|research\\s+)?experience\\s+(?:working\\s+in|related\\s+to|focused\\s+on|specific\\s+to|within|in|with|using|on|building|developing|designing|as|leading|managing|supporting)\\b)?[^.]{0,40}?(?:preferred|desirable|a\\s+plus|nice\\s+to\\s+have|ideally|bonus)"
+      - id: degree_preferred
+        requiredness: preferred
+        implies: degree_preferred
+        scope: sentence
+        required_rank: 3
+        requirement_text: "A degree is preferred"
+        pattern: "(?:Bachelor['’‘]?s?|Master['’‘]?s?|Advanced|college|university)?\\s*degree\\s+(?:is\\s+)?(?:preferred|a\\s+plus|desirable|nice\\s+to\\s+have)|(?:Bachelor['’‘]?s?|Master['’‘]?s?|Advanced)\\s+degree\\s+preferred"

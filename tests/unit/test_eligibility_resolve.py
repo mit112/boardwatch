@@ -1,0 +1,384 @@
+"""Claim-typed resolution (D-P2-11). A wrong `met` tells a job seeker they qualify when
+they do not, which is the worst failure this design can produce, so every ambiguity
+resolves to `unknown`."""
+
+from pathlib import Path
+
+import pytest
+
+from boardwatch.eligibility.catalog import load_rules
+from boardwatch.eligibility.detect import detect
+from boardwatch.eligibility.facts import ClearanceFact, Facts, WorkAuthFact
+from boardwatch.eligibility.resolve import (
+    RegistryError,
+    ResolverEntry,
+    declared_fields,
+    registry,
+    resolve,
+    verify_registry,
+)
+
+ALL = frozenset({"work_auth", "experience_years", "clearance", "degree"})
+
+
+@pytest.fixture()
+def catalog(tmp_path: Path):
+    return load_rules(tmp_path / "no-override")
+
+
+def _one(catalog, body: str, facts: Facts, pattern_id: str) -> str:
+    dets = [d for d in detect(body, catalog, enabled_families=ALL) if d.pattern.id == pattern_id]
+    assert len(dets) == 1, f"expected exactly one {pattern_id}, got {len(dets)}"
+    return resolve(dets[0], facts, catalog.family(dets[0].family)).disposition
+
+
+# ---- registry, both directions (a one-directional check is how P0-4 nearly shipped a
+# ---- gate with an unregistered rule and passing unit tests)
+
+def test_verify_registry_accepts_the_real_pair(catalog) -> None:
+    verify_registry(catalog, registry(), Facts)
+
+
+def test_a_catalog_family_with_no_resolver_is_rejected(catalog) -> None:
+    trimmed = {k: v for k, v in registry().items() if k != "degree"}
+    with pytest.raises(RegistryError, match="degree"):
+        verify_registry(catalog, trimmed, Facts)
+
+
+def test_a_resolver_naming_an_absent_family_is_rejected(catalog) -> None:
+    extra = dict(registry())
+    extra["salary"] = extra["degree"]
+    with pytest.raises(RegistryError, match="salary"):
+        verify_registry(catalog, extra, Facts)
+
+
+def test_every_catalog_fact_must_be_a_field_on_the_facts_model(catalog) -> None:
+    """Closes the third side of the loop: the catalog declares `fact` per family and the
+    models declare TYPES, so a family whose fact has no field would abstain forever with
+    no error anywhere."""
+    for family in catalog.families:
+        assert family.fact in Facts.model_fields
+
+
+def test_a_catalog_fact_with_no_field_on_the_model_is_rejected(catalog) -> None:
+    """The same third side of the loop, at the RAISE rather than as a property assertion.
+    The test above asserts the property of the REAL pair, so it can never reach
+    verify_registry's `family.fact not in model_fields` branch and that branch shipped
+    unexecuted; an override adding a family with a typo'd `fact` would then abstain forever
+    with no error anywhere. The model is derived from the real one minus exactly that field,
+    so the test does not hard-code a fact name."""
+    from typing import Any
+
+    from pydantic import create_model
+
+    degree = catalog.family("degree")
+    narrowed = create_model(
+        "FactsWithoutTheDegreeFact",
+        **{
+            name: (Any, None)
+            for name in Facts.model_fields
+            if name != degree.fact
+        },
+    )
+    with pytest.raises(RegistryError, match=degree.fact):
+        verify_registry(catalog, registry(), narrowed)  # type: ignore[arg-type]
+
+
+def test_a_resolver_input_with_no_field_on_the_model_is_rejected(catalog) -> None:
+    """The fourth side, and the one with teeth: `declared_fields` feeds build_identity's
+    profile hash, so a misspelled input silently drops a field out of the fingerprint and a
+    user who later edits that field never triggers the re-evaluation that would have read
+    it. Also unexecuted until now."""
+    entries = dict(registry())
+    entries["degree"] = ResolverEntry(
+        function=entries["degree"].function,
+        inputs=(*entries["degree"].inputs, "no_such_fact"),
+    )
+    with pytest.raises(RegistryError, match="no_such_fact"):
+        verify_registry(catalog, entries, Facts)
+
+
+def test_declared_fields_covers_every_family(catalog) -> None:
+    fields = declared_fields()
+    assert set(fields) == {f.id for f in catalog.families}
+    # the degree resolver reads the years fact for a measurable OR-alternative (D-P2-23)
+    assert "total_years_experience" in fields["degree"]
+    for names in fields.values():
+        for name in names:
+            assert name in Facts.model_fields
+
+
+# ---- work_auth: jurisdiction equality is required for `met` (D-P2-19)
+
+@pytest.mark.parametrize(
+    ("status", "expected"),
+    [("citizen", "met"), ("permanent_resident", "met"), ("ead_or_similar", "met"),
+     ("needs_sponsorship", "unmet"), ("prefer_not_to_say", "unknown")],
+)
+def test_us_authorization_against_every_status(catalog, status: str, expected: str) -> None:
+    facts = Facts(work_authorization=WorkAuthFact(status=status, jurisdiction="us"))
+    body = "Must be authorized to work in the United States."
+    assert _one(catalog, body, facts, "us_authorization_required") == expected
+
+
+@pytest.mark.parametrize(
+    ("status", "expected"),
+    [("citizen", "met"), ("permanent_resident", "met"),
+     # THE backwards-met case: an EAD holder needs no sponsorship yet is neither a citizen
+     # nor an LPR, so a boolean needs_sponsorship=False wrongly satisfied this.
+     ("ead_or_similar", "unknown"),
+     ("needs_sponsorship", "unmet"), ("prefer_not_to_say", "unknown")],
+)
+def test_citizen_or_lpr_against_every_status(catalog, status: str, expected: str) -> None:
+    facts = Facts(work_authorization=WorkAuthFact(status=status, jurisdiction="us"))
+    body = "This role is open to US citizens or green card holders only."
+    assert _one(catalog, body, facts, "us_citizen_or_lpr_required") == expected
+
+
+@pytest.mark.parametrize("jurisdiction", ["ca", "uk", "eu", "unspecified", "other", None])
+def test_a_non_matching_jurisdiction_always_abstains(catalog, jurisdiction) -> None:
+    """A Canadian citizen storing `citizen` satisfied "must be a US citizen" while §4.1
+    declared a scalar choice. `other` is a catch-all, not an identity, so other == other
+    must NOT count as equality either."""
+    facts = Facts(work_authorization=WorkAuthFact(status="citizen", jurisdiction=jurisdiction))
+    assert _one(catalog, "Applicants must be US citizens.", facts,
+                "us_citizen_required") == "unknown"
+
+
+def test_a_matching_jurisdiction_resolves(catalog) -> None:
+    facts = Facts(work_authorization=WorkAuthFact(status="citizen", jurisdiction="us"))
+    assert _one(catalog, "Applicants must be US citizens.", facts,
+                "us_citizen_required") == "met"
+
+
+def test_an_unset_work_auth_fact_abstains(catalog) -> None:
+    assert _one(catalog, "Applicants must be US citizens.", Facts(),
+                "us_citizen_required") == "unknown"
+
+
+def test_unavailable_sponsorship_is_unmet_only_for_a_sponsorship_need(catalog) -> None:
+    body = "We do not offer visa sponsorship."
+    needs = Facts(work_authorization=WorkAuthFact(status="needs_sponsorship", jurisdiction="us"))
+    citizen = Facts(work_authorization=WorkAuthFact(status="citizen", jurisdiction="us"))
+    assert _one(catalog, body, needs, "no_sponsorship_offered") == "unmet"
+    # A jurisdiction-free "no sponsorship" clause that decides UNMET against a needs-
+    # sponsorship applicant clears a citizen who needs none: a presumption strong enough to
+    # declare someone BLOCKED is exactly strong enough to declare them UNBLOCKED (the
+    # prototype's finding 50, which removed the old `no jurisdiction -> unknown` bias). Left
+    # unknown, this rendered `uncertain` for a citizen the clause cannot possibly block.
+    assert _one(catalog, body, citizen, "no_sponsorship_offered") == "met"
+
+
+# ---- experience_years
+
+@pytest.mark.parametrize(("total", "expected"), [(8, "met"), (5, "met"), (4, "unmet")])
+def test_total_years_comparison_is_inclusive(catalog, total: int, expected: str) -> None:
+    facts = Facts(total_years_experience=total)
+    assert _one(catalog, "5+ years of experience required.", facts,
+                "total_years_minimum") == expected
+
+
+def test_a_range_resolves_on_its_lower_bound(catalog) -> None:
+    assert _one(catalog, "3-5 years of experience.", Facts(total_years_experience=4),
+                "range_years_minimum") == "met"
+
+
+def test_a_scoped_requirement_always_abstains(catalog) -> None:
+    """The profile has a skill SET and no durations, so no value of the years fact can
+    decide this."""
+    for total in (0, 4, 40):
+        assert _one(catalog, "5+ years of experience with Kubernetes.",
+                    Facts(total_years_experience=total), "scoped_years_minimum") == "unknown"
+
+
+def test_an_unset_years_fact_abstains(catalog) -> None:
+    assert _one(catalog, "5+ years of experience required.", Facts(),
+                "total_years_minimum") == "unknown"
+
+
+# ---- clearance: NO total order (D-P2-20)
+
+def _clearance(**kwargs) -> Facts:
+    return Facts(security_clearance=ClearanceFact(**kwargs))
+
+
+def test_an_exact_match_is_met(catalog) -> None:
+    facts = _clearance(scheme="us_dod", level="secret", state="active")
+    assert _one(catalog, "Active Secret clearance required.", facts,
+                "active_secret_required") == "met"
+
+
+def test_a_ts_without_sci_never_satisfies_a_ts_sci_requirement(catalog) -> None:
+    """Rev 2's ranked scale let an active TS outrank a TS/SCI requirement. TS does not
+    imply SCI."""
+    facts = _clearance(scheme="us_dod", level="top_secret", state="active", accesses=())
+    assert _one(catalog, "An active TS/SCI clearance is required.", facts,
+                "active_ts_sci_required") == "unknown"
+
+
+def test_a_ts_sci_holder_satisfies_a_ts_sci_requirement(catalog) -> None:
+    facts = _clearance(scheme="us_dod", level="top_secret", state="active", accesses=("sci",))
+    assert _one(catalog, "An active TS/SCI clearance is required.", facts,
+                "active_ts_sci_required") == "met"
+
+
+def test_holding_nothing_is_decidably_unmet(catalog) -> None:
+    """The decidable case carrying most of the real yield."""
+    facts = _clearance(scheme="unspecified", level="none", state="none")
+    assert _one(catalog, "An active TS/SCI clearance is required.", facts,
+                "active_ts_sci_required") == "unmet"
+
+
+def test_a_reviewed_superset_relation_resolves_met(catalog) -> None:
+    facts = _clearance(scheme="us_dod", level="top_secret", state="active")
+    assert _one(catalog, "Active Secret clearance required.", facts,
+                "active_secret_required") == "met"
+
+
+def test_a_different_scheme_abstains_in_both_directions(catalog) -> None:
+    doe = _clearance(scheme="us_doe", level="q", state="active")
+    assert _one(catalog, "Active Secret clearance required.", doe,
+                "active_secret_required") == "unknown"
+    dod = _clearance(scheme="us_dod", level="top_secret", state="active")
+    assert _one(catalog, "An active Q clearance is required.", dod, "doe_q_required") == "unknown"
+
+
+@pytest.mark.parametrize(("state", "level", "expected"),
+                         [("active", "secret", "met"), ("current", "secret", "met"),
+                          ("expired", "secret", "unknown"), ("interim", "secret", "unknown"),
+                          ("unspecified", "secret", "unknown"),
+                          # Holds-nothing is state none AND level none. Pairing state none with
+                          # a named level is a half-filled form the incoherence guard abstains
+                          # on (covered below); this row keeps the decidable-unmet yield.
+                          ("none", "none", "unmet")])
+def test_every_clearance_state(catalog, state: str, level: str, expected: str) -> None:
+    facts = _clearance(scheme="us_dod", level=level, state=state)
+    assert _one(catalog, "Active Secret clearance required.", facts,
+                "active_secret_required") == expected
+
+
+@pytest.mark.parametrize(("level", "state"), [("secret", "none"), ("none", "active")])
+def test_an_incoherent_clearance_fact_abstains(catalog, level: str, state: str) -> None:
+    """Cross-field coherence, checked BEFORE any comparison. A named level with state `none`
+    is a half-filled form, and an `active` clearance at level `none` is not a clearance;
+    comparing either produced a wrong `met` on a real gate, so a malformed fact abstains."""
+    facts = _clearance(scheme="us_dod", level=level, state=state)
+    assert _one(catalog, "Active Secret clearance required.", facts,
+                "active_secret_required") == "unknown"
+
+
+def test_an_unnamed_level_is_satisfied_by_any_active_clearance(catalog) -> None:
+    """Requiring an exact level here would abstain on a decidable case; defaulting the
+    level would fabricate a requirement."""
+    facts = _clearance(scheme="us_dod", level="secret", state="active")
+    assert _one(catalog, "A security clearance is required.", facts,
+                "generic_clearance_required") == "met"
+
+
+def test_an_access_only_requirement_is_decidable(catalog) -> None:
+    body = "A current polygraph is required for this role."
+    with_poly = _clearance(scheme="us_dod", level="top_secret", state="active",
+                           accesses=("sci", "poly"))
+    without = _clearance(scheme="us_dod", level="top_secret", state="active", accesses=("sci",))
+    assert _one(catalog, body, with_poly, "polygraph_required") == "met"
+    assert _one(catalog, body, without, "polygraph_required") == "unknown"
+
+
+def test_obtain_after_hire_never_resolves_unmet(catalog) -> None:
+    for facts in (_clearance(scheme="unspecified", level="none", state="none"),
+                  _clearance(scheme="us_dod", level="secret", state="active")):
+        assert _one(catalog, "Must be able to obtain a security clearance.", facts,
+                    "clearable_required") == "unknown"
+
+
+# ---- degree
+
+@pytest.mark.parametrize(("attained", "expected"),
+                         [("doctorate", "met"), ("master", "met"), ("bachelor", "met"),
+                          ("associate", "unmet"), ("none", "unmet"),
+                          ("prefer_not_to_say", "unknown")])
+def test_degree_rank_comparison(catalog, attained: str, expected: str) -> None:
+    assert _one(catalog, "Bachelor's degree required.", Facts(highest_degree=attained),
+                "bachelor_required") == expected
+
+
+def test_an_unmeasurable_or_escape_abstains_and_stays_required(catalog) -> None:
+    """Rev 1 downgraded this to `preferred`, which made a real requirement a silent pass:
+    a blocker-policy user with neither degree nor measurable equivalent got `eligible`."""
+    dets = [d for d in detect("Bachelor's degree or equivalent experience required.",
+                              catalog, enabled_families=ALL)
+            if d.pattern.id == "bachelor_or_equivalent_required"]
+    assert len(dets) == 1
+    assert dets[0].pattern.requiredness == "required"
+    assert resolve(dets[0], Facts(highest_degree="none"),
+                   catalog.family("degree")).disposition == "unknown"
+
+
+def test_a_measurable_or_escape_resolves(catalog) -> None:
+    body = "Bachelor's degree or 4 years of equivalent experience."
+    enough = Facts(highest_degree="none", total_years_experience=8)
+    short = Facts(highest_degree="none", total_years_experience=2)
+    assert _one(catalog, body, enough, "bachelor_or_equivalent_required") == "met"
+    assert _one(catalog, body, short, "bachelor_or_equivalent_required") == "unmet"
+
+
+def test_the_degree_itself_satisfies_an_or_escape(catalog) -> None:
+    assert _one(catalog, "Bachelor's degree or equivalent experience required.",
+                Facts(highest_degree="master"), "bachelor_or_equivalent_required") == "met"
+
+
+def test_a_field_of_study_constraint_blocks_met_but_keeps_unmet(catalog) -> None:
+    """A rank-only comparison returns `met` for any bachelor's holder including one with
+    an unrelated degree. The field is unmeasurable, so a satisfied rank abstains, while a
+    rank below the bar stays decidable: no field can rescue a missing degree."""
+    body = "Bachelor's degree in Computer Science or a related field is required."
+    assert _one(catalog, body, Facts(highest_degree="bachelor"),
+                "bachelor_in_field_required") == "unknown"
+    assert _one(catalog, body, Facts(highest_degree="none"),
+                "bachelor_in_field_required") == "unmet"
+
+
+def test_an_unleveled_requirement_is_unmet_only_with_no_degree(catalog) -> None:
+    assert _one(catalog, "A degree is required.", Facts(highest_degree="none"),
+                "any_degree_required") == "unmet"
+    assert _one(catalog, "A degree is required.", Facts(highest_degree="bachelor"),
+                "any_degree_required") == "unknown"
+
+
+# ---- support and rationale
+
+def test_a_declared_fact_carries_its_canonical_rendering_as_the_quote(catalog) -> None:
+    """eligibility_support's own comment describes support as "the profile text that
+    produced it", so for a declared fact the quote is stated to be the canonical rendering
+    of the VALUE, not a quotation (spec §4.3)."""
+    dets = detect("Bachelor's degree required.", catalog, enabled_families=ALL)
+    resolution = resolve(dets[0], Facts(highest_degree="bachelor"), catalog.family("degree"))
+    assert len(resolution.support) == 1
+    support = resolution.support[0]
+    assert support.support_kind == "declared_fact"
+    assert support.profile_locator == {"field": "facts.highest_degree"}
+    assert support.evidence_quote == "bachelor"
+
+
+def test_an_abstention_from_an_unset_fact_carries_no_support(catalog) -> None:
+    dets = detect("Bachelor's degree required.", catalog, enabled_families=ALL)
+    resolution = resolve(dets[0], Facts(), catalog.family("degree"))
+    assert resolution.support == ()
+    assert resolution.rationale
+
+
+def test_every_resolution_carries_a_rationale(catalog) -> None:
+    body = (
+        "Applicants must be US citizens. 5+ years of experience required. "
+        "Active Secret clearance required. Bachelor's degree required."
+    )
+    facts = Facts(
+        work_authorization=WorkAuthFact(status="citizen", jurisdiction="us"),
+        total_years_experience=8,
+        security_clearance=ClearanceFact(scheme="us_dod", level="secret", state="active"),
+        highest_degree="bachelor",
+    )
+    for det in detect(body, catalog, enabled_families=ALL):
+        resolution = resolve(det, facts, catalog.family(det.family))
+        assert resolution.rationale.strip()
+        assert resolution.disposition in {"met", "unmet", "unknown"}

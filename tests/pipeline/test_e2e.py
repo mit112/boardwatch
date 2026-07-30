@@ -26,7 +26,8 @@ INIT_INPUT = (
     "Backend Engineer\n"
     "\n"
     "\n"
-    "n\n"
+    "n\n"  # remote only? no
+    "n\n"  # set up eligibility now? no
 )
 
 

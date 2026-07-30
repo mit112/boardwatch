@@ -15,6 +15,9 @@ from sqlalchemy import select
 from boardwatch.cli.context import build_context
 from boardwatch.cli.top_cmd import profile_view_from_row
 from boardwatch.core.clock import utcnow
+from boardwatch.eligibility.audit import AuditView, load_audit
+from boardwatch.eligibility.catalog import load_rules
+from boardwatch.eligibility.preflight import current_identity
 from boardwatch.extract.preflight import run_preflight
 from boardwatch.extract.taxonomy import load_taxonomy
 from boardwatch.rank.explain import explain
@@ -23,6 +26,23 @@ from boardwatch.store.queries import get_profile
 from boardwatch.store.tables import companies, extractions, postings
 
 console = Console()
+
+
+def _render_audit(audit: AuditView) -> None:
+    """The persisted eligibility audit, evidence linked. Plain lines, no Rich markup, so a
+    disposition or a sliced quote can never be read as a style tag."""
+    header = f"Eligibility: {audit.verdict}"
+    if audit.is_historical:
+        header += f" (historical, captured {audit.captured_at})"
+    console.print(header, markup=False)
+    if not audit.catalog_version_matches:
+        console.print("catalog version no longer present — showing raw rule ids", markup=False)
+    for req in audit.requirements:
+        console.print(f"  {req.disposition} · {req.requiredness}: {req.label}", markup=False)
+        if req.quote:
+            console.print(f"      quote: {req.quote}", markup=False)
+        for sup in req.support:
+            console.print(f"      support: {sup.evidence_quote}", markup=False)
 
 
 def show(
@@ -92,5 +112,18 @@ def show(
                 entry.detail,
             )
         console.print(table)
+
+    with engine.connect() as conn:
+        identity = current_identity(conn, settings)
+        profile_hash, rules_hash = identity if identity is not None else (None, None)
+        audit = load_audit(
+            conn,
+            posting_id,
+            load_rules(settings.config_dir),
+            profile_hash=profile_hash,
+            rules_hash=rules_hash,
+        )
+    if audit is not None:
+        _render_audit(audit)
 
     console.print(row.body_text)

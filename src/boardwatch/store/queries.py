@@ -7,15 +7,30 @@ Run counts are derived conveniences; posting_events is the source of truth (§4)
 
 from __future__ import annotations
 
+from collections.abc import Sequence
+from dataclasses import dataclass
 from datetime import datetime
 from typing import Any
 
-from sqlalchemy import Connection, Engine, Row, func, insert, select, update
+from sqlalchemy import Connection, Engine, Row, func, insert, select, tuple_, update
 from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 
 from boardwatch.core.clock import utcnow
 from boardwatch.core.models import ResponseValidators
-from boardwatch.store.tables import board_scans, companies, http_cache, profile, runs
+from boardwatch.store.tables import (
+    board_scans,
+    companies,
+    http_cache,
+    posting_versions,
+    postings,
+    profile,
+    runs,
+)
+
+# An alias so the "no newer version exists" correlated EXISTS can compare a row against
+# its own table. The pattern mirrors extract/preflight.py:63-81, which finds every
+# missing row with ONE set-oriented correlated EXISTS rather than a per-row lookup.
+_pv = posting_versions.alias("pv_current")
 
 
 def insert_run(engine: Engine) -> int:
@@ -152,6 +167,31 @@ def save_profile(
     )
 
 
+def save_eligibility(
+    conn: Connection, *, facts_json: dict[str, object], policy_json: dict[str, object]
+) -> None:
+    """Write the eligibility facts and severity policy onto the existing profile row.
+
+    Takes JSON-ready dicts rather than the typed models, so this layer never imports from
+    boardwatch.eligibility. The eligibility layer reads and writes the store; the reverse
+    dependency would invert the layering.
+
+    A separate UPDATE, never part of save_profile's upsert. Two reasons, both verified:
+    profile.text is NOT NULL with no default, so an insert carrying only facts raises
+    IntegrityError; and save_profile's set_ map must never list these columns or
+    `profile edit` silently wipes declared facts (spec §4.6).
+    """
+    conn.execute(
+        update(profile)
+        .where(profile.c.id == 1)
+        .values(
+            eligibility_facts_json=facts_json,
+            eligibility_policy_json=policy_json,
+            updated_at=utcnow(),
+        )
+    )
+
+
 def last_complete_scan_ages(conn: Connection) -> dict[int, datetime]:
     """company_id → finished_at of its most recent complete-or-unchanged board_scan."""
     stmt = (
@@ -160,3 +200,67 @@ def last_complete_scan_ages(conn: Connection) -> dict[int, datetime]:
         .group_by(board_scans.c.company_id)
     )
     return {row[0]: row[1] for row in conn.execute(stmt).all()}
+
+
+@dataclass(frozen=True)
+class CurrentVersion:
+    """The newest immutable content version of one posting.
+
+    body_text comes from posting_versions, NEVER from postings.body_text, which
+    scan/apply.py:119-120 rewrites in place on every revision. Spans stored against a
+    version stay valid forever; spans against the posting garble on the next revision.
+    """
+
+    posting_version_id: int
+    posting_id: int
+    body_text: str
+    captured_at: datetime
+
+
+def current_posting_versions(
+    conn: Connection, posting_ids: Sequence[int] | None = None
+) -> dict[int, CurrentVersion]:
+    """posting_id -> its newest posting_versions row, in ONE statement.
+
+    With posting_ids=None this sweeps every OPEN posting, which is the preflight path.
+    With an explicit list it ignores status, which is how `show` renders a closed
+    posting's historical verdict (D-P2-9). No per-posting SQL on either path (D-P2-16).
+
+    The tie-break on (captured_at, id) is load-bearing: two versions captured in the same
+    transaction share captured_at, and ordering by captured_at alone would make "the
+    current version" nondeterministic.
+    """
+    if posting_ids is not None and not posting_ids:
+        return {}
+    newer = (
+        select(posting_versions.c.id)
+        .where(
+            posting_versions.c.posting_id == _pv.c.posting_id,
+            tuple_(posting_versions.c.captured_at, posting_versions.c.id)
+            > tuple_(_pv.c.captured_at, _pv.c.id),
+        )
+        .exists()
+    )
+    stmt = (
+        select(
+            _pv.c.id.label("posting_version_id"),
+            _pv.c.posting_id,
+            _pv.c.body_text,
+            _pv.c.captured_at,
+        )
+        .join(postings, _pv.c.posting_id == postings.c.id)
+        .where(~newer)
+    )
+    if posting_ids is None:
+        stmt = stmt.where(postings.c.status == "open")
+    else:
+        stmt = stmt.where(postings.c.id.in_(posting_ids))
+    return {
+        int(row.posting_id): CurrentVersion(
+            posting_version_id=int(row.posting_version_id),
+            posting_id=int(row.posting_id),
+            body_text=str(row.body_text),
+            captured_at=row.captured_at,
+        )
+        for row in conn.execute(stmt).all()
+    }

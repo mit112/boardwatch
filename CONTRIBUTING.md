@@ -2,9 +2,9 @@
 
 Dev setup: install [uv](https://docs.astral.sh/uv/), then `uv sync` and
 `uv run pre-commit install`. `make check` (generalization + ruff + mypy --strict + pytest) must
-be green before every PR; CI runs the same commands, but pull requests run on ubuntu only while
-pushes to `main` run the full 3.11-3.13 × ubuntu/macos/windows matrix, plus gitleaks and a
-dedicated generalization job.
+be green before every PR; CI runs the same commands: pull requests run the test suite on ubuntu with
+Python 3.11-3.13, plus gitleaks and a dedicated generalization job; pushes to `main` additionally
+run that test matrix on macOS and Windows.
 
 ## What must never enter this repo
 

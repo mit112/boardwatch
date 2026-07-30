@@ -19,7 +19,16 @@ SCOPED_MODULES: tuple[str, ...] = (
     "src/boardwatch/core/settings.py",
     "src/boardwatch/cli/profile_cmd.py",
     "src/boardwatch/cli/init_cmd.py",
+    "src/boardwatch/cli/eligibility_cmd.py",
     "src/boardwatch/rank/heuristic.py",
+    "src/boardwatch/eligibility/facts.py",
+    "src/boardwatch/eligibility/hashing.py",
+    "src/boardwatch/eligibility/catalog.py",
+    "src/boardwatch/eligibility/detect.py",
+    "src/boardwatch/eligibility/resolve.py",
+    "src/boardwatch/eligibility/engine.py",
+    "src/boardwatch/eligibility/preflight.py",
+    "src/boardwatch/eligibility/audit.py",
 )
 INIT_MODULE = "src/boardwatch/cli/init_cmd.py"
 HEURISTIC_MODULE = "src/boardwatch/rank/heuristic.py"

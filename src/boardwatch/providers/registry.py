@@ -1,4 +1,4 @@
-"""Provider registry — the single source of truth for provider identity.
+"""Provider registry: the single source of truth for provider identity.
 
 Enumerates the provider classes (which import only core/, never store/) and derives
 every provider-set view the rest of the codebase needs. The allowed-name set (catalog
@@ -9,7 +9,7 @@ Adding a provider's IDENTITY = write its class (with name + board_hosts) + appen
 PROVIDER_CLASSES; providers with a novel fetch shape (e.g. multi-endpoint summary+detail)
 may additionally need request/snapshot/coordinator changes.
 
-This module must never import boardwatch.store.* — it feeds store-free entry points
+This module must never import boardwatch.store.*; it feeds store-free entry points
 (registry.health_report, core.board_urls); a subprocess guard in the tests enforces it.
 """
 

@@ -33,5 +33,7 @@ def scan(
     )
     matches = count_filter_matches(app_ctx.engine, app_ctx.settings)
     if matches is not None:
-        line += f" · {matches} match your filters"
+        # "ranking filters", not "your filters": this count comes from the ranker and would
+        # contradict `top` once `top` hides postings persisted as ineligible.
+        line += f" · {matches} match ranking filters"
     console.print(line)

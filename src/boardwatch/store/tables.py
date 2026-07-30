@@ -197,6 +197,8 @@ profile = Table(
     Column("exclude_titles_json", JSON, nullable=True),
     Column("locations_json", JSON, nullable=True),
     Column("remote_only", Boolean, nullable=False, default=False),
+    Column("eligibility_facts_json", JSON, nullable=True),
+    Column("eligibility_policy_json", JSON, nullable=True),
     Column("updated_at", DateTime, nullable=False),
     CheckConstraint("id = 1", name="singleton"),
 )
