@@ -139,15 +139,35 @@ def record_evaluation(
                 ).scalar_one()
             )
         eval_id = int(inserted.inserted_primary_key[0])  # type: ignore[index]
+    elif idempotency_key is not None:
+        # Insert-then-reselect against the unique idempotency_key, the same fix the
+        # deterministic branch and _get_or_create_input use: a pre-SELECT races its own insert,
+        # so two concurrent writers with the same key turned the unique index into an
+        # IntegrityError instead of an idempotent no-op. Do NOT read inserted_primary_key on
+        # the conflict path; the rowcount guard decides.
+        inserted = conn.execute(
+            sqlite_insert(eligibility_evaluations)
+            .values(
+                input_id=input_id, engine_kind=engine_kind, engine_version=engine_version,
+                provider=provider, model=model, prompt_version=prompt_version,
+                idempotency_key=idempotency_key, verdict=verdict, score=score,
+                raw_output_json=raw_output, created_at=utcnow(),
+            )
+            .on_conflict_do_nothing(
+                index_elements=[eligibility_evaluations.c.idempotency_key]
+            )
+        )
+        if inserted.rowcount == 0:
+            return int(
+                conn.execute(
+                    select(eligibility_evaluations.c.id).where(
+                        eligibility_evaluations.c.idempotency_key == idempotency_key
+                    )
+                ).scalar_one()
+            )
+        eval_id = int(inserted.inserted_primary_key[0])  # type: ignore[index]
     else:
-        if idempotency_key is not None:
-            existing = conn.execute(
-                select(eligibility_evaluations.c.id).where(
-                    eligibility_evaluations.c.idempotency_key == idempotency_key
-                )
-            ).scalar_one_or_none()
-            if existing is not None:
-                return int(existing)
+        # No idempotency key: nothing to dedupe on (a UNIQUE index allows many NULLs).
         eval_id = int(
             conn.execute(
                 insert(eligibility_evaluations).values(

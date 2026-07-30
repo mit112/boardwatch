@@ -110,6 +110,19 @@ def test_llm_reruns_are_recorded_not_suppressed(engine, version_id):
         assert len(get_evaluations(conn, version_id)) == 2
 
 
+def test_llm_reruns_with_the_same_idempotency_key_dedupe(engine, version_id):
+    # A shared idempotency_key must resolve to one row idempotently, via insert-then-reselect,
+    # so two concurrent writers meet the unique index as a no-op rather than an IntegrityError.
+    shared = dict(engine_kind="llm", provider="ollama", model="llama3", idempotency_key="k-1")
+    with engine.begin() as conn:
+        first = record_evaluation(conn, **_kw(version_id, verdict="eligible", **shared))
+    with engine.begin() as conn:
+        second = record_evaluation(conn, **_kw(version_id, verdict="ineligible", **shared))
+    assert first == second                                   # the key deduped to one row
+    with engine.connect() as conn:
+        assert len(get_evaluations(conn, version_id)) == 1   # no duplicate audit row
+
+
 def test_evaluation_is_immutable(engine, version_id):
     from sqlalchemy import text
     from sqlalchemy.exc import IntegrityError
