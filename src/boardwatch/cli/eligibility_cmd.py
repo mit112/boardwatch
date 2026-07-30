@@ -12,13 +12,16 @@ is read from the Policy type and any small word lists stay inside function bodie
 
 from __future__ import annotations
 
+from collections import Counter
 from typing import NoReturn, get_args
 
 import typer
 from rich.console import Console
+from sqlalchemy import select
 
 from boardwatch.cli.context import build_context
 from boardwatch.eligibility.catalog import FamilySpec, FieldSpec, RulesCatalog, load_rules
+from boardwatch.eligibility.engine import current_evaluations
 from boardwatch.eligibility.facts import (
     Facts,
     Policy,
@@ -28,7 +31,8 @@ from boardwatch.eligibility.facts import (
     parse_policy,
 )
 from boardwatch.eligibility.preflight import run_eligibility
-from boardwatch.store.queries import get_profile, save_eligibility
+from boardwatch.store.queries import current_posting_versions, get_profile, save_eligibility
+from boardwatch.store.tables import eligibility_requirements
 
 console = Console()
 
@@ -190,6 +194,44 @@ def run_cmd(ctx: typer.Context) -> None:
         console.print("no profile yet, run `boardwatch init` first")
         raise typer.Exit(code=1)
     console.print(f"evaluated {stats.evaluated} postings")
+
+
+@eligibility_app.command("summary")
+def summary_cmd(ctx: typer.Context) -> None:
+    """Counts per family and disposition across the funnel, plus how many open postings have
+    no current-engine evaluation. This is how a user learns whether the catalog fires at all
+    before trusting a hidden count."""
+    app_ctx = build_context(ctx.obj)
+    with app_ctx.engine.connect() as conn:
+        versions = current_posting_versions(conn, None)
+        version_ids = [cv.posting_version_id for cv in versions.values()]
+        evals = current_evaluations(conn, version_ids)
+        eval_ids = [eval_id for eval_id, _ in evals.values()]
+        requirement_rows = (
+            conn.execute(
+                select(
+                    eligibility_requirements.c.rule_id,
+                    eligibility_requirements.c.disposition,
+                ).where(eligibility_requirements.c.evaluation_id.in_(eval_ids))
+            ).all()
+            if eval_ids
+            else []
+        )
+    evaluated = len(evals)
+    unevaluated = len(version_ids) - evaluated
+    verdicts: Counter[str] = Counter(verdict for _, verdict in evals.values())
+    by_family: Counter[tuple[str, str]] = Counter()
+    for row in requirement_rows:
+        family = row.rule_id.split(":")[0] if row.rule_id else "(unknown)"
+        by_family[(family, row.disposition)] += 1
+
+    console.print(f"evaluated: {evaluated} · no current-engine evaluation: {unevaluated}")
+    if verdicts:
+        console.print(
+            "verdicts: " + ", ".join(f"{name} {count}" for name, count in sorted(verdicts.items()))
+        )
+    for (family, disposition), count in sorted(by_family.items()):
+        console.print(f"  {family} · {disposition}: {count}")
 
 
 @policy_app.callback(invoke_without_command=True)

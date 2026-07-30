@@ -92,15 +92,19 @@ def run_eligibility(
     if profile_row is None:
         return EligibilityStats(evaluated=0, skipped_no_profile=True)
 
+    # The pending scan comes first so the common no-op path (nothing to evaluate) never pays
+    # the catalog parse and regex compile. This keeps run_eligibility cheap on the top path,
+    # where it runs on every invocation.
+    pending = _pending(engine)
+    stats = EligibilityStats()
+    if not pending:
+        return stats
+
     facts = parse_facts(profile_row.eligibility_facts_json)
     policy = parse_policy(profile_row.eligibility_policy_json)
     catalog = load_rules(settings.config_dir)
     fields = declared_fields()
-
-    pending = _pending(engine)
-    stats = EligibilityStats()
-    if pending:
-        console.print(f"evaluating eligibility for {len(pending)} postings…")
+    console.print(f"evaluating eligibility for {len(pending)} postings…")
     for chunk_start in range(0, len(pending), BATCH_SIZE):
         chunk = pending[chunk_start : chunk_start + BATCH_SIZE]
         with engine.begin() as conn:  # one commit per batch: resumable

@@ -19,11 +19,13 @@ from sqlalchemy import Engine, select
 from boardwatch.cli.context import build_context
 from boardwatch.core.clock import utcnow
 from boardwatch.core.settings import Settings
+from boardwatch.eligibility.engine import current_evaluations
+from boardwatch.eligibility.preflight import run_eligibility
 from boardwatch.extract.preflight import run_preflight
 from boardwatch.extract.taxonomy import load_taxonomy
 from boardwatch.rank.explain import why_summary
 from boardwatch.rank.heuristic import ProfileView, Score, passes_hard_filters, score_posting
-from boardwatch.store.queries import get_profile
+from boardwatch.store.queries import current_posting_versions, get_profile
 from boardwatch.store.tables import companies, extractions, postings
 
 console = Console()
@@ -56,6 +58,7 @@ def rank_open_postings(
     engine: Engine, settings: Settings, *, now: datetime | None = None, limit: int = 10
 ) -> list[RankedPosting]:
     run_preflight(engine, settings, console)
+    run_eligibility(engine, settings, console)  # no-op on a null profile; before the check below
     version = load_taxonomy(settings.config_dir).version
     now = now or utcnow()
     with engine.connect() as conn:
@@ -147,9 +150,37 @@ def count_filter_matches(engine: Engine, settings: Settings) -> int | None:
     return count
 
 
+def _verdict_token(verdict: str | None) -> str:
+    """A one-token eligibility flag, chosen so no value reads as a clean bill of health
+    (D-P2-18): `eligible` means only that no catalogued disqualifier was detected."""
+    return {
+        "ineligible": "blocked",
+        "uncertain": "check",
+        "eligible": "no flags",
+    }.get(verdict or "", "-")
+
+
+def _posting_verdicts(engine: Engine, posting_ids: list[int]) -> dict[int, str | None]:
+    """posting_id -> its current-version, current-engine verdict, or None if unevaluated."""
+    if not posting_ids:
+        return {}
+    with engine.connect() as conn:
+        versions = current_posting_versions(conn, posting_ids)
+        evals = current_evaluations(
+            conn, [cv.posting_version_id for cv in versions.values()]
+        )
+    return {
+        posting_id: (evals.get(cv.posting_version_id) or (None, None))[1]
+        for posting_id, cv in versions.items()
+    }
+
+
 def top(
     ctx: typer.Context,
     n: int = typer.Argument(10, help="Number of postings to show."),
+    include_ineligible: bool = typer.Option(
+        False, "--include-ineligible", help="Show postings persisted as ineligible."
+    ),
 ) -> None:
     """Rank open postings against your profile (on-demand, §3.6)."""
     app_ctx = build_context(ctx.obj)
@@ -161,15 +192,33 @@ def top(
     if not ranked:
         console.print("no open postings match your filters")
         return
+    verdicts = _posting_verdicts(app_ctx.engine, [p.posting_id for p in ranked])
+    hidden = 0
+    visible: list[tuple[RankedPosting, str | None]] = []
+    for p in ranked:
+        verdict = verdicts.get(p.posting_id)
+        # Only a PERSISTED ineligible is hidden; an unevaluated posting is never hidden
+        # (D-P2-10), because absence of evidence must not narrow the funnel.
+        if verdict == "ineligible" and not include_ineligible:
+            hidden += 1
+            continue
+        visible.append((p, verdict))
     table = Table(show_header=True, header_style="bold")
     table.add_column("#", style="dim")
     table.add_column("Title")
     table.add_column("Company")
     table.add_column("Score")
+    table.add_column("Eligibility", no_wrap=True)
     table.add_column("Why")
-    for p in ranked:
+    for p, verdict in visible:
         table.add_row(
             str(p.posting_id), p.title, p.company,
-            f"{p.score.total:.2f}", p.why,
+            f"{p.score.total:.2f}", _verdict_token(verdict), p.why,
         )
     console.print(table)
+    if hidden and not include_ineligible:
+        console.print(
+            f'{hidden} hidden as ineligible. "no flags" means no catalogued disqualifier '
+            "was detected, not that you qualify.",
+            markup=False,
+        )

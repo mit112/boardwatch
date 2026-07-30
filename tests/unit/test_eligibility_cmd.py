@@ -152,7 +152,17 @@ def test_the_commands_fail_cleanly_with_no_profile(env: Path) -> None:
     assert "boardwatch init" in result.output
 
 
+def test_summary_with_no_evaluations_reports_zero(env: Path) -> None:
+    assert _run(env, ["init"], INIT_INPUT).exit_code == 0
+    result = _run(env, ["eligibility", "summary"])
+    assert result.exit_code == 0
+    assert "evaluated: 0" in result.output
+    assert "no current-engine evaluation: 0" in result.output
+
+
 def test_help_smoke(env: Path) -> None:
     assert runner.invoke(app, ["eligibility", "--help"]).exit_code == 0
     assert runner.invoke(app, ["eligibility", "facts", "--help"]).exit_code == 0
     assert runner.invoke(app, ["eligibility", "policy", "--help"]).exit_code == 0
+    assert runner.invoke(app, ["eligibility", "run", "--help"]).exit_code == 0
+    assert runner.invoke(app, ["eligibility", "summary", "--help"]).exit_code == 0
