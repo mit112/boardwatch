@@ -82,12 +82,15 @@ def init(ctx: typer.Context) -> None:
         facts, policy = Facts(), Policy()
         for family in rules_catalog.families:
             for field_spec in family.fields:
+                # Compose the choice hint outside the f-string: a nested-quote f-string
+                # unparses differently across CPython 3.12 patch releases, which would make
+                # the R11 EXPECTED_INIT_PROMPTS snapshot pass on one patch and fail on another.
+                choice_hint = ", ".join(field_spec.choices) or field_spec.type
                 # Re-prompt on a bad answer instead of aborting the whole wizard and losing
                 # every eligibility answer entered so far (the profile row is already saved).
                 while True:
                     answer = typer.prompt(
-                        f"{family.question} [{field_spec.name}: "
-                        f"{', '.join(field_spec.choices) or field_spec.type}]",
+                        f"{family.question} [{field_spec.name}: {choice_hint}]",
                         default="",
                     )
                     if not answer.strip():
