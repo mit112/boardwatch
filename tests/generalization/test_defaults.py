@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import ast
 from pathlib import Path
 
 from tools.generalization import snapshots as snap
@@ -10,6 +11,7 @@ from tools.generalization.defaults import (
     INIT_MODULE,
     SCOPED_MODULES,
     _param_defaults,
+    _prompt_defaults,
     check_collection_defaults,
     check_defaults_snapshot,
     check_init_prompts,
@@ -344,3 +346,34 @@ def test_the_init_prompt_snapshot_is_not_empty() -> None:
     """Second lock, matching test_the_heuristic_parameter_default_is_pinned: if the extractor
     were narrowed AND the snapshot emptied to match, both R11 tests would pass on nothing."""
     assert len(snap.EXPECTED_INIT_PROMPTS) == 12
+
+
+def test_prompt_reprs_are_the_source_segment_not_unparse() -> None:
+    """R11 pins prompt reprs by their literal source, not ast.unparse output.
+
+    ast.unparse re-renders a nested-quote f-string differently across CPython patch
+    releases (3.12.3 emits a single-quoted outer, 3.12.12/3.11/3.13 emit a double-quoted
+    outer), so an unparse-based snapshot flaked on ubuntu CI. The source segment is
+    byte-identical across every interpreter by construction, so this locks the extractor
+    to it.
+    """
+    source = 'import typer\ntyper.prompt(f\'{q} [{", ".join(opts)}]\', default="")\n'
+    (row,) = _prompt_defaults(source)
+    called, prompt, default = row
+    assert called == "prompt"
+    # The literal source spelling: single-quoted outer f-string, double-quoted inner join.
+    assert prompt == 'f\'{q} [{", ".join(opts)}]\''
+    assert default == '""'
+    # Guard against a regression to the patch-unstable path.
+    unparsed = ast.unparse(ast.parse(source).body[1].value.args[0])
+    assert prompt != unparsed
+
+
+def test_param_default_reprs_are_the_source_segment_not_unparse() -> None:
+    """R10's parameter-default extractor shares R11's fragility: a nested-quote f-string
+    default would flake the same way under ast.unparse. Pin it to the source segment too."""
+    source = 'def f(x: str = f\'{a} {", ".join(b)}\') -> None:\n    return None\n'
+    extracted = _param_defaults(source)
+    assert extracted == {"f.x": 'f\'{a} {", ".join(b)}\''}
+    unparsed = ast.unparse(ast.parse(source).body[0].args.defaults[0])
+    assert extracted["f.x"] != unparsed
