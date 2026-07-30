@@ -1,0 +1,158 @@
+"""Facts and policy are user-owned, so the CLI is the only writer. Values are validated
+against the CATALOG's declared choices, never against a source literal."""
+
+from pathlib import Path
+
+import pytest
+from typer.testing import CliRunner
+
+from boardwatch.cli.app import app
+from boardwatch.eligibility.facts import parse_facts, parse_policy
+from boardwatch.store.db import get_engine
+from boardwatch.store.queries import get_profile
+
+runner = CliRunner()
+
+INIT_INPUT = (
+    "3\nacme\nBackend engineer: Python, Go, PostgreSQL.\n\n\n\nn\n"
+)
+
+
+@pytest.fixture()
+def env(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
+    monkeypatch.setenv("BOARDWATCH_CONFIG_DIR", str(tmp_path / "cfg"))
+    monkeypatch.delenv("GITHUB_ACTIONS", raising=False)
+    return tmp_path / "data"
+
+
+def _run(data_dir: Path, args: list[str], stdin: str | None = None):
+    return runner.invoke(app, ["--data-dir", str(data_dir), *args], input=stdin)
+
+
+def _facts(data_dir: Path):
+    with get_engine(data_dir).connect() as conn:
+        row = get_profile(conn)
+    assert row is not None
+    return parse_facts(row.eligibility_facts_json), parse_policy(row.eligibility_policy_json)
+
+
+def test_setting_a_scalar_fact(env: Path) -> None:
+    assert _run(env, ["init"], INIT_INPUT).exit_code == 0
+    assert _run(env, ["eligibility", "facts", "set", "highest_degree", "bachelor"]).exit_code == 0
+    facts, _ = _facts(env)
+    assert facts.highest_degree == "bachelor"
+
+
+def test_setting_an_int_fact(env: Path) -> None:
+    assert _run(env, ["init"], INIT_INPUT).exit_code == 0
+    assert _run(env, ["eligibility", "facts", "set", "total_years_experience", "8"]).exit_code == 0
+    facts, _ = _facts(env)
+    assert facts.total_years_experience == 8
+
+
+def test_setting_a_structured_field(env: Path) -> None:
+    assert _run(env, ["init"], INIT_INPUT).exit_code == 0
+    for dotted, value in (
+        ("work_authorization.status", "citizen"),
+        ("work_authorization.jurisdiction", "us"),
+    ):
+        assert _run(env, ["eligibility", "facts", "set", dotted, value]).exit_code == 0
+    facts, _ = _facts(env)
+    assert facts.work_authorization is not None
+    assert facts.work_authorization.status == "citizen"
+    assert facts.work_authorization.jurisdiction == "us"
+
+
+def test_setting_one_structured_field_preserves_the_other(env: Path) -> None:
+    assert _run(env, ["init"], INIT_INPUT).exit_code == 0
+    _run(env, ["eligibility", "facts", "set", "work_authorization.status", "citizen"])
+    _run(env, ["eligibility", "facts", "set", "work_authorization.jurisdiction", "us"])
+    _run(env, ["eligibility", "facts", "set", "work_authorization.status", "permanent_resident"])
+    facts, _ = _facts(env)
+    assert facts.work_authorization is not None
+    assert facts.work_authorization.jurisdiction == "us"
+
+
+def test_setting_a_choice_set_field(env: Path) -> None:
+    assert _run(env, ["init"], INIT_INPUT).exit_code == 0
+    assert _run(env, ["eligibility", "facts", "set", "security_clearance.accesses",
+                      "sci,poly"]).exit_code == 0
+    facts, _ = _facts(env)
+    assert facts.security_clearance is not None
+    assert set(facts.security_clearance.accesses) == {"sci", "poly"}
+
+
+def test_an_unknown_fact_is_rejected_and_lists_the_valid_ones(env: Path) -> None:
+    assert _run(env, ["init"], INIT_INPUT).exit_code == 0
+    result = _run(env, ["eligibility", "facts", "set", "favourite_colour", "blue"])
+    assert result.exit_code == 1
+    assert "highest_degree" in result.output
+
+
+def test_a_value_outside_the_catalog_choices_is_rejected(env: Path) -> None:
+    assert _run(env, ["init"], INIT_INPUT).exit_code == 0
+    result = _run(env, ["eligibility", "facts", "set", "highest_degree", "phd"])
+    assert result.exit_code == 1
+    assert "doctorate" in result.output  # the message lists the declared choices
+
+
+def test_a_non_integer_years_value_is_rejected(env: Path) -> None:
+    assert _run(env, ["init"], INIT_INPUT).exit_code == 0
+    result = _run(env, ["eligibility", "facts", "set", "total_years_experience", "loads"])
+    assert result.exit_code == 1
+
+
+def test_a_structured_fact_needs_a_field(env: Path) -> None:
+    assert _run(env, ["init"], INIT_INPUT).exit_code == 0
+    result = _run(env, ["eligibility", "facts", "set", "work_authorization", "citizen"])
+    assert result.exit_code == 1
+    assert "status" in result.output
+
+
+def test_setting_a_policy(env: Path) -> None:
+    assert _run(env, ["init"], INIT_INPUT).exit_code == 0
+    assert _run(env, ["eligibility", "policy", "set", "degree", "blocker"]).exit_code == 0
+    _, policy = _facts(env)
+    assert policy.families["degree"] == "blocker"
+
+
+def test_an_unknown_policy_family_is_rejected(env: Path) -> None:
+    assert _run(env, ["init"], INIT_INPUT).exit_code == 0
+    result = _run(env, ["eligibility", "policy", "set", "salary", "blocker"])
+    assert result.exit_code == 1
+    assert "work_auth" in result.output
+
+
+def test_an_unknown_severity_is_rejected(env: Path) -> None:
+    assert _run(env, ["init"], INIT_INPUT).exit_code == 0
+    assert _run(env, ["eligibility", "policy", "set", "degree", "maybe"]).exit_code == 1
+
+
+def test_facts_renders_declared_and_undeclared_values(env: Path) -> None:
+    assert _run(env, ["init"], INIT_INPUT).exit_code == 0
+    _run(env, ["eligibility", "facts", "set", "highest_degree", "bachelor"])
+    result = _run(env, ["eligibility", "facts"])
+    assert result.exit_code == 0
+    assert "bachelor" in result.output
+    assert "not set" in result.output  # the other three are visibly absent
+
+
+def test_policy_renders_the_materialised_map(env: Path) -> None:
+    assert _run(env, ["init"], INIT_INPUT).exit_code == 0
+    result = _run(env, ["eligibility", "policy"])
+    assert result.exit_code == 0
+    for family in ("work_auth", "experience_years", "clearance", "degree"):
+        assert family in result.output
+    assert "preference" in result.output  # the catalog default
+
+
+def test_the_commands_fail_cleanly_with_no_profile(env: Path) -> None:
+    result = _run(env, ["eligibility", "facts"])
+    assert result.exit_code == 1
+    assert "boardwatch init" in result.output
+
+
+def test_help_smoke(env: Path) -> None:
+    assert runner.invoke(app, ["eligibility", "--help"]).exit_code == 0
+    assert runner.invoke(app, ["eligibility", "facts", "--help"]).exit_code == 0
+    assert runner.invoke(app, ["eligibility", "policy", "--help"]).exit_code == 0

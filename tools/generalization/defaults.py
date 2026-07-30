@@ -19,6 +19,7 @@ SCOPED_MODULES: tuple[str, ...] = (
     "src/boardwatch/core/settings.py",
     "src/boardwatch/cli/profile_cmd.py",
     "src/boardwatch/cli/init_cmd.py",
+    "src/boardwatch/cli/eligibility_cmd.py",
     "src/boardwatch/rank/heuristic.py",
     "src/boardwatch/eligibility/facts.py",
     "src/boardwatch/eligibility/hashing.py",
