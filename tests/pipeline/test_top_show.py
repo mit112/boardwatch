@@ -1,3 +1,4 @@
+from datetime import timedelta
 from pathlib import Path
 from typing import Any
 
@@ -5,7 +6,7 @@ import httpx
 import pytest
 import respx
 from gh_fixtures import BOARD_URL, clone_with_id, gh_jobs, set_body, snapshot_for
-from sqlalchemy import Engine, insert, select
+from sqlalchemy import Engine, insert, select, update
 from typer.testing import CliRunner
 
 from boardwatch.cli.app import app
@@ -237,6 +238,39 @@ def test_top_include_ineligible_shows_the_blocked_row(env: Path, tmp_path: Path)
     assert "Blocked Role" in out
     assert "blocked" in out  # the one-token flag for a persisted ineligible
     assert "hidden as ineligible" not in out
+
+
+def test_top_hides_ineligible_before_applying_the_limit(env: Path, tmp_path: Path) -> None:
+    engine = get_engine(tmp_path)
+    ensure_schema(engine)
+    with engine.begin() as conn:
+        save_profile(
+            conn, text="Backend engineer.", target_titles=[], exclude_titles=[],
+            locations=[], remote_only=False, skills=[], taxonomy_version="t",
+        )
+    blocked = _seed_one(tmp_path, title="Blocked Role", body=DEGREE_BODY, slug="blocked")
+    eligible = _seed_one(tmp_path, title="Eligible Role", body=PLAIN_BODY, slug="eligible")
+    # make the ineligible posting rank #1 by recency so the limit would cut the eligible one
+    with engine.begin() as conn:
+        conn.execute(
+            update(tables.postings).where(tables.postings.c.id == blocked).values(posted_at=utcnow())
+        )
+        conn.execute(
+            update(tables.postings)
+            .where(tables.postings.c.id == eligible)
+            .values(posted_at=utcnow() - timedelta(days=30))
+        )
+    assert _invoke(tmp_path, ["eligibility", "facts", "set", "highest_degree", "none"]).exit_code == 0
+    assert _invoke(tmp_path, ["eligibility", "policy", "set", "degree", "blocker"]).exit_code == 0
+    assert _invoke(tmp_path, ["eligibility", "run"]).exit_code == 0
+    result = _invoke(tmp_path, ["top", "1"])
+    assert result.exit_code == 0
+    out = result.stdout
+    # the #1-ranked posting is ineligible; hide-before-limit must still surface the eligible
+    # one below it rather than returning an empty shortlist.
+    assert "Eligible Role" in out
+    assert "Blocked Role" not in out
+    assert "hidden as ineligible" in out
 
 
 def test_top_never_hides_an_unevaluated_posting(env: Path, tmp_path: Path) -> None:

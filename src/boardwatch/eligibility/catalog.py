@@ -217,12 +217,41 @@ def load_rules(config_dir: Path) -> RulesCatalog:
             raise CatalogError(f"{origin}: duplicate family id {family.id!r}")
         seen_families.add(family.id)
         families.append(family)
-    return RulesCatalog(
+    catalog = RulesCatalog(
         families=tuple(families),
         negation_cues=cues,
         version=_version_of(document),
         source=source,
     )
+    _verify_families_are_wired(catalog, origin)
+    return catalog
+
+
+def _verify_families_are_wired(catalog: RulesCatalog, origin: str) -> None:
+    """Every DECLARED family needs a resolver and a Facts field it can read.
+
+    A custom override can declare a family whose fact is absent from Facts or that has no
+    resolver; without this, the first command to touch it dies with a raw AttributeError,
+    ValidationError or RegistryError depending on which ran first. This is the FORWARD
+    direction only, deliberately not verify_registry's bidirectional check: a partial
+    override that declares fewer families than the registry is legitimate (the dropped
+    families simply are not evaluated), so requiring every REGISTERED resolver to be declared
+    would reject it. The bundled catalog's completeness is the two-directional invariant that
+    test_eligibility_resolve pins. Deferred imports avoid the resolve -> catalog cycle.
+    """
+    from boardwatch.eligibility.facts import Facts
+    from boardwatch.eligibility.resolve import registry
+
+    entries = registry()
+    fields = Facts.model_fields
+    for family in catalog.families:
+        if family.id not in entries:
+            raise CatalogError(f"{origin}: family {family.id!r} has no resolver")
+        if family.fact not in fields:
+            raise CatalogError(
+                f"{origin}: family {family.id!r} declares fact {family.fact!r}, which is not "
+                "a field on Facts"
+            )
 
 
 def _family(

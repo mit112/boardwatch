@@ -26,7 +26,7 @@ from sqlalchemy import Connection, Select, select
 
 from boardwatch.eligibility.catalog import RulesCatalog
 from boardwatch.eligibility.engine import ENGINE_KIND, engine_version
-from boardwatch.store.eligibility import get_requirements, get_support
+from boardwatch.store.eligibility import get_requirements, get_support_bulk
 from boardwatch.store.queries import current_posting_versions
 from boardwatch.store.tables import (
     eligibility_evaluations,
@@ -148,9 +148,18 @@ def load_audit(
     catalog_version_matches = rules_snapshot.get("catalog_version") == catalog.version
 
     requirements: list[AuditRequirement] = []
-    for req in get_requirements(conn, int(newest.id)):
-        span = (req.jd_locator_json or {}).get("span") or [0, 0]
-        quote = body_text[int(span[0]) : int(span[1])]
+    req_rows = get_requirements(conn, int(newest.id))
+    support_by_req = get_support_bulk(conn, [int(req.id) for req in req_rows])
+    for req in req_rows:
+        raw_span = (req.jd_locator_json or {}).get("span")
+        quote = ""
+        # A malformed locator must not crash this read: the eval tables are append-only and
+        # trigger-guarded, so a poison row could never be corrected, only superseded.
+        if isinstance(raw_span, list) and len(raw_span) == 2:
+            try:
+                quote = body_text[int(raw_span[0]) : int(raw_span[1])]
+            except (TypeError, ValueError):
+                quote = ""
         if catalog_version_matches:
             label = req.requirement_text
         else:
@@ -161,7 +170,7 @@ def load_audit(
                 evidence_quote=str(sup.evidence_quote),
                 support_kind=str(sup.support_kind),
             )
-            for sup in get_support(conn, int(req.id))
+            for sup in support_by_req.get(int(req.id), ())
         )
         requirements.append(
             AuditRequirement(

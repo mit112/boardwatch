@@ -209,3 +209,25 @@ def get_support(conn: Connection, requirement_id: int) -> list[Row[Any]]:
             .order_by(eligibility_support.c.ordinal)
         ).all()
     )
+
+
+def get_support_bulk(
+    conn: Connection, requirement_ids: Sequence[int]
+) -> dict[int, list[Row[Any]]]:
+    """All support rows for many requirements in ONE query, grouped by requirement_id.
+
+    The audit render has a requirement per detected rule; fetching support per requirement is
+    an N+1 over a single posting's requirements. This keeps it to one round trip, ordered so
+    each requirement's support stays in ordinal order.
+    """
+    if not requirement_ids:
+        return {}
+    rows = conn.execute(
+        select(eligibility_support)
+        .where(eligibility_support.c.requirement_id.in_(requirement_ids))
+        .order_by(eligibility_support.c.requirement_id, eligibility_support.c.ordinal)
+    ).all()
+    grouped: dict[int, list[Row[Any]]] = {}
+    for row in rows:
+        grouped.setdefault(int(row.requirement_id), []).append(row)
+    return grouped

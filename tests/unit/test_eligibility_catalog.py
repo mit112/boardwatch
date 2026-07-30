@@ -273,6 +273,11 @@ def test_the_policy_map_is_materialised_from_catalog_defaults(tmp_path: Path) ->
         # level up: unquoted `no` arrives as False, str(False) is "False", the `no` cue is
         # never matched, and a negated requirement survives as a false `ineligible`.
         (MINIMAL.replace('negation_cues: ["not"]', 'negation_cues: [no]'), "QUOTE it"),
+        # A custom override can declare a family that no resolver serves, or whose fact is
+        # absent from Facts; without the forward check the first command to touch it dies with
+        # a raw AttributeError/RegistryError. Both must fail cleanly at load instead.
+        (MINIMAL.replace("id: degree", "id: made_up"), "no resolver"),
+        (MINIMAL.replace("fact: highest_degree", "fact: not_a_field"), "not a field on Facts"),
     ],
 )
 def test_each_malformed_shape_has_its_own_raise_site(

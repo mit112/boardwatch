@@ -41,6 +41,10 @@ BATCH_SIZE = 200
 class EligibilityStats:
     evaluated: int = 0
     skipped_no_profile: bool = False
+    # The identity this run computed, so a caller (top) can read verdicts for the same profile
+    # without loading the catalog a second time. None when there is no profile.
+    profile_hash: str | None = None
+    rules_hash: str | None = None
 
 
 def _pending(engine: Engine, profile_hash: str, rules_hash: str) -> list[tuple[int, str]]:
@@ -146,7 +150,7 @@ def run_eligibility(
     profile_hash, rules_hash = _identity_hashes(facts, policy, catalog, fields)
 
     pending = _pending(engine, profile_hash, rules_hash)
-    stats = EligibilityStats()
+    stats = EligibilityStats(profile_hash=profile_hash, rules_hash=rules_hash)
     if not pending:
         return stats
 

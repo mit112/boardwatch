@@ -93,6 +93,6 @@ def test_top_path_median_under_one_second(tmp_path: Path) -> None:
         start = time.perf_counter()
         result = rank_open_postings(engine, settings, now=now, limit=10)
         timings.append(time.perf_counter() - start)
-        assert len(result) == 10
+        assert len(result.visible) == 10
     print(f"top-path timings (s): {[round(t, 3) for t in timings]}")
     assert statistics.median(timings) < 1.0, timings

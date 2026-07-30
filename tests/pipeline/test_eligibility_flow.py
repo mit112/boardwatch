@@ -350,6 +350,42 @@ def test_show_agrees_with_top_after_toggling_a_fact_back(env: Path) -> None:
     assert "Eligibility: ineligible" in show.output
 
 
+def test_load_audit_tolerates_a_malformed_span(env: Path) -> None:
+    # The eval tables are append-only and trigger-guarded, so a poison locator row (e.g. from a
+    # future or hand write) could never be corrected. load_audit must render an empty quote for
+    # it rather than raise IndexError and take down `show`.
+    from boardwatch.store.eligibility import RequirementItem, record_evaluation
+
+    posting_id = _seed_posting(env, DEGREE_BODY)
+    engine = get_engine(env)
+    catalog = load_rules(env.parent / "cfg")
+    with engine.begin() as conn:
+        pv_id = conn.execute(
+            select(tables.posting_versions.c.id).where(
+                tables.posting_versions.c.posting_id == posting_id
+            )
+        ).scalar_one()
+        record_evaluation(
+            conn,
+            posting_version_id=int(pv_id),
+            profile_hash="ph", profile_snapshot={},
+            rules_hash="rh", rules_snapshot={"catalog_version": catalog.version},
+            input_fingerprint="fp", engine_kind="deterministic",
+            engine_version="1+deadbeefcafe", verdict="uncertain", score=None,
+            requirements=[
+                RequirementItem(
+                    requiredness="required", requirement_text="x",
+                    jd_locator={"span": [1]},  # malformed: a one-element span
+                    disposition="unknown", rule_id="degree:x",
+                )
+            ],
+        )
+    with engine.connect() as conn:
+        view = load_audit(conn, posting_id, catalog)
+    assert view is not None
+    assert view.requirements[0].quote == ""
+
+
 def test_facts_set_rejects_a_non_ascii_digit_cleanly(env: Path) -> None:
     _seed_posting(env, DEGREE_BODY)
     assert _run(env, ["init"], INIT_INPUT).exit_code == 0
