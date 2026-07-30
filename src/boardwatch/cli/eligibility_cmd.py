@@ -27,6 +27,7 @@ from boardwatch.eligibility.facts import (
     parse_facts,
     parse_policy,
 )
+from boardwatch.eligibility.preflight import run_eligibility
 from boardwatch.store.queries import get_profile, save_eligibility
 
 console = Console()
@@ -178,6 +179,17 @@ def facts_set(ctx: typer.Context, fact: str, value: str) -> None:
             policy_json=policy.model_dump(mode="json"),
         )
     console.print(f"set {fact} = {value}")
+
+
+@eligibility_app.command("run")
+def run_cmd(ctx: typer.Context) -> None:
+    """Evaluate every open posting that has no current-version verdict yet."""
+    app_ctx = build_context(ctx.obj)
+    stats = run_eligibility(app_ctx.engine, app_ctx.settings, console)
+    if stats.skipped_no_profile:
+        console.print("no profile yet, run `boardwatch init` first")
+        raise typer.Exit(code=1)
+    console.print(f"evaluated {stats.evaluated} postings")
 
 
 @policy_app.callback(invoke_without_command=True)
