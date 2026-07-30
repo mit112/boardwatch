@@ -61,20 +61,23 @@ EXPECTED_PARAM_DEFAULTS: dict[str, str] = {
 
 # The init wizard's prompt defaults, in source order. Every profile and filter
 # prompt must stay empty: a default here would be one user's answer shipped to all.
+# Each entry is the LITERAL source spelling of the prompt/default (via
+# ast.get_source_segment), not an ast.unparse rendering: unparse re-quotes nested-quote
+# f-strings differently across CPython patch releases and made this snapshot flake on CI.
 EXPECTED_INIT_PROMPTS: tuple[tuple[str, str, str | None], ...] = (
-    ("prompt", "'Companies: [1] Starter set  [2] Search registry  [3] Paste slugs/URLs'", "'1'"),
-    ("prompt", "'Search registry'", None),
-    ("confirm", "f'Watch {e.name} ({e.provider}:{e.slug})?'", "True"),
-    ("prompt", "'Paste slugs or board URLs (comma/newline separated)'", None),
-    ("prompt", "'Profile text (paste resume text or a short profile)'", None),
-    ("prompt", "'Target titles (comma separated, blank for none)'", "''"),
-    ("prompt", "'Exclude titles (comma separated, blank for none)'", "''"),
-    ("prompt", "'Locations (comma separated, blank for none)'", "''"),
-    ("confirm", "'Remote only?'", "False"),
+    ("prompt", '"Companies: [1] Starter set  [2] Search registry  [3] Paste slugs/URLs"', '"1"'),
+    ("prompt", '"Search registry"', None),
+    ("confirm", 'f"Watch {e.name} ({e.provider}:{e.slug})?"', "True"),
+    ("prompt", '"Paste slugs or board URLs (comma/newline separated)"', None),
+    ("prompt", '"Profile text (paste resume text or a short profile)"', None),
+    ("prompt", '"Target titles (comma separated, blank for none)"', '""'),
+    ("prompt", '"Exclude titles (comma separated, blank for none)"', '""'),
+    ("prompt", '"Locations (comma separated, blank for none)"', '""'),
+    ("confirm", '"Remote only?"', "False"),
     # Task 11: the three catalog-driven eligibility prompts. Two prompt call sites plus one
     # confirm cover every family, so this count stays constant as the catalog grows (D-P2-8).
     # The policy default is the NAME family.default_policy, so no user value is pinned here.
-    ("confirm", "'Set up eligibility checks now?'", "False"),
-    ("prompt", "f'{family.question} [{field_spec.name}: {choice_hint}]'", "''"),
-    ("prompt", "f'How should {family.label} affect your results?'", "family.default_policy"),
+    ("confirm", '"Set up eligibility checks now?"', "False"),
+    ("prompt", 'f"{family.question} [{field_spec.name}: {choice_hint}]"', '""'),
+    ("prompt", 'f"How should {family.label} affect your results?"', "family.default_policy"),
 )

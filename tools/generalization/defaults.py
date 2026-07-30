@@ -263,6 +263,20 @@ def _diff(
     return violations
 
 
+def _source_repr(source: str, node: ast.expr) -> str:
+    """The literal source text of an expression, pinned for a snapshot comparison.
+
+    ast.unparse re-renders the AST, and its rendering of a nested-quote f-string is not
+    stable across CPython patch releases (3.12.3 emits a single-quoted outer f-string,
+    3.11/3.12.12/3.13 emit a double-quoted one), which made a pinned snapshot flake on
+    ubuntu CI. The source segment is byte-identical on every interpreter because it is the
+    author's own text, so it is what gets compared. get_source_segment returns None only
+    for a node without position info, which parsing from source never produces; the unparse
+    fallback keeps the check live rather than silently dropping a row if that ever changes.
+    """
+    return ast.get_source_segment(source, node) or ast.unparse(node)
+
+
 def _param_defaults(source: str) -> dict[str, object]:
     """Every parameter default in the module, keyed by scope-qualified name.
 
@@ -284,10 +298,10 @@ def _param_defaults(source: str) -> dict[str, object]:
         positional = args.posonlyargs + args.args
         offset = len(positional) - len(args.defaults)
         for arg, default in zip(positional[offset:], args.defaults, strict=True):
-            out[f"{prefix}.{arg.arg}"] = ast.unparse(default)
+            out[f"{prefix}.{arg.arg}"] = _source_repr(source, default)
         for arg, kwdefault in zip(args.kwonlyargs, args.kw_defaults, strict=True):
             if kwdefault is not None:
-                out[f"{prefix}.{arg.arg}"] = ast.unparse(kwdefault)
+                out[f"{prefix}.{arg.arg}"] = _source_repr(source, kwdefault)
 
     for node in ast.parse(source).body:
         if isinstance(node, ast.FunctionDef | ast.AsyncFunctionDef):
@@ -374,11 +388,13 @@ def _prompt_defaults(source: str) -> list[tuple[str, str, str | None]]:
             continue
         if called not in ("prompt", "confirm"):
             continue
-        prompt = ast.unparse(node.args[0]) if node.args else "<no-argument>"
-        default: str | None = ast.unparse(node.args[1]) if len(node.args) > 1 else None
+        prompt = _source_repr(source, node.args[0]) if node.args else "<no-argument>"
+        default: str | None = (
+            _source_repr(source, node.args[1]) if len(node.args) > 1 else None
+        )
         for keyword in node.keywords:
             if keyword.arg == "default":
-                default = ast.unparse(keyword.value)
+                default = _source_repr(source, keyword.value)
         rows.append((node.lineno, (called, prompt, default)))
     return [row for _, row in sorted(rows, key=lambda item: item[0])]
 
