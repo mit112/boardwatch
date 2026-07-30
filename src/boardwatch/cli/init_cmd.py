@@ -82,24 +82,37 @@ def init(ctx: typer.Context) -> None:
         facts, policy = Facts(), Policy()
         for family in rules_catalog.families:
             for field_spec in family.fields:
-                answer = typer.prompt(
-                    f"{family.question} [{field_spec.name}: "
-                    f"{', '.join(field_spec.choices) or field_spec.type}]",
-                    default="",
-                )
-                if answer.strip():
-                    facts = set_fact(
-                        facts, rules_catalog,
-                        f"{family.fact}.{field_spec.name}"
-                        if len(family.fields) > 1
-                        else family.fact,
-                        answer.strip(),
+                # Re-prompt on a bad answer instead of aborting the whole wizard and losing
+                # every eligibility answer entered so far (the profile row is already saved).
+                while True:
+                    answer = typer.prompt(
+                        f"{family.question} [{field_spec.name}: "
+                        f"{', '.join(field_spec.choices) or field_spec.type}]",
+                        default="",
                     )
-            choice = typer.prompt(
-                f"How should {family.label} affect your results?",
-                default=family.default_policy,
-            )
-            policy = set_policy(policy, rules_catalog, family.id, choice)
+                    if not answer.strip():
+                        break
+                    try:
+                        facts = set_fact(
+                            facts, rules_catalog,
+                            f"{family.fact}.{field_spec.name}"
+                            if len(family.fields) > 1
+                            else family.fact,
+                            answer.strip(),
+                        )
+                        break
+                    except typer.BadParameter as exc:
+                        console.print(exc.message)
+            while True:
+                choice = typer.prompt(
+                    f"How should {family.label} affect your results?",
+                    default=family.default_policy,
+                )
+                try:
+                    policy = set_policy(policy, rules_catalog, family.id, choice)
+                    break
+                except typer.BadParameter as exc:
+                    console.print(exc.message)
         with app_ctx.engine.begin() as conn:
             save_eligibility(
                 conn,

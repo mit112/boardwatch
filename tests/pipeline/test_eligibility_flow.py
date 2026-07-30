@@ -298,3 +298,84 @@ def test_selection_is_one_query_and_does_not_scale_with_corpus(
     # check that discriminates, because an N+1 also "runs eligibility".
     assert small_scans == 1
     assert large_scans == 1
+
+
+def test_a_fact_change_re_evaluates_and_updates_the_verdict(env: Path) -> None:
+    # The reported F-STALE bug: the anti-join keyed only on engine_version, so a corrected
+    # fact was never re-evaluated and top/show served the old verdict forever.
+    posting_id = _evaluate_open(env, DEGREE_BODY, degree="none")
+    assert "hidden as ineligible" in _run(env, ["top"]).output  # ineligible, hidden
+    assert _run(env, ["eligibility", "facts", "set", "highest_degree", "bachelor"]).exit_code == 0
+    result = _run(env, ["eligibility", "run"])
+    assert result.exit_code == 0
+    assert "evaluated 1" in result.output  # re-evaluated against the new profile, not skipped
+    top = _run(env, ["top"])
+    assert "hidden as ineligible" not in top.output  # no longer ineligible
+    assert str(posting_id) in top.output  # and now visible
+
+
+def test_toggling_a_fact_back_restores_the_prior_verdict(env: Path) -> None:
+    # A run after a change writes a NEW input+evaluation; toggling back reaches an input the
+    # ledger already holds, so the read must match the current identity, not the newest row.
+    posting_id = _evaluate_open(env, DEGREE_BODY, degree="none")  # ineligible, identity A
+    assert _run(env, ["eligibility", "facts", "set", "highest_degree", "bachelor"]).exit_code == 0
+    assert _run(env, ["eligibility", "run"]).exit_code == 0  # eligible, identity B (newer row)
+    assert "hidden as ineligible" not in _run(env, ["top"]).output
+    assert _run(env, ["eligibility", "facts", "set", "highest_degree", "none"]).exit_code == 0
+    result = _run(env, ["eligibility", "run"])
+    assert "evaluated 0" in result.output  # identity A already has a row: nothing to write
+    top = _run(env, ["top"])
+    assert "hidden as ineligible" in top.output  # identity A's ineligible, not identity B's
+    assert str(posting_id) not in _postings_shown(top.output)
+
+
+def _postings_shown(top_output: str) -> str:
+    # the rendered table rows, excluding the trailing hidden-count sentence (which itself
+    # contains a bare count that must not be mistaken for a posting id)
+    return "\n".join(
+        line for line in top_output.splitlines() if "hidden as ineligible" not in line
+    )
+
+
+def test_show_agrees_with_top_after_toggling_a_fact_back(env: Path) -> None:
+    posting_id = _evaluate_open(env, DEGREE_BODY, degree="none")
+    assert _run(env, ["eligibility", "facts", "set", "highest_degree", "bachelor"]).exit_code == 0
+    assert _run(env, ["eligibility", "run"]).exit_code == 0
+    assert _run(env, ["eligibility", "facts", "set", "highest_degree", "none"]).exit_code == 0
+    assert _run(env, ["eligibility", "run"]).exit_code == 0
+    show = _run(env, ["show", str(posting_id)])
+    assert show.exit_code == 0
+    # show reads the audit for the CURRENT profile (identity A), matching what top hides,
+    # not the newer identity-B evaluation that also exists on this version.
+    assert "Eligibility: ineligible" in show.output
+
+
+def test_facts_set_rejects_a_non_ascii_digit_cleanly(env: Path) -> None:
+    _seed_posting(env, DEGREE_BODY)
+    assert _run(env, ["init"], INIT_INPUT).exit_code == 0
+    # "²".isdigit() is True but int("²") raises; the coercion must reject it as a clean
+    # BadParameter (exit 1), never let a raw ValueError escape the command.
+    result = _run(env, ["eligibility", "facts", "set", "total_years_experience", "²"])
+    assert result.exit_code == 1
+    assert not isinstance(result.exception, ValueError)
+    assert "whole number" in result.output
+
+
+def test_init_reprompts_on_a_bad_eligibility_answer_instead_of_aborting(env: Path) -> None:
+    # A single typo used to abort the whole wizard (exit 2) after the profile was already
+    # saved, discarding every eligibility answer. It must re-prompt and accept the correction.
+    catalog = load_rules(env.parent / "cfg")
+    elig: list[str] = []
+    for family_index, family in enumerate(catalog.families):
+        for field_index, _field in enumerate(family.fields):
+            if family_index == 0 and field_index == 0:
+                elig += ["notachoice", "citizen"]  # first field: rejected, then corrected
+            else:
+                elig.append("")  # skip
+        elig.append("")  # policy: accept the neutral default
+    preamble = ["3", "acme", "Backend engineer.", "", "", "", "n", "y"]
+    result = _run(env, ["init"], "\n".join(preamble + elig) + "\n")
+    assert result.exit_code == 0, result.output
+    facts, _ = _profile(env)
+    assert facts.work_authorization is not None
+    assert facts.work_authorization.status == "citizen"  # the correction landed

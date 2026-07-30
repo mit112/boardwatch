@@ -17,6 +17,7 @@ from boardwatch.cli.top_cmd import profile_view_from_row
 from boardwatch.core.clock import utcnow
 from boardwatch.eligibility.audit import AuditView, load_audit
 from boardwatch.eligibility.catalog import load_rules
+from boardwatch.eligibility.preflight import current_identity
 from boardwatch.extract.preflight import run_preflight
 from boardwatch.extract.taxonomy import load_taxonomy
 from boardwatch.rank.explain import explain
@@ -113,7 +114,15 @@ def show(
         console.print(table)
 
     with engine.connect() as conn:
-        audit = load_audit(conn, posting_id, load_rules(settings.config_dir))
+        identity = current_identity(conn, settings)
+        profile_hash, rules_hash = identity if identity is not None else (None, None)
+        audit = load_audit(
+            conn,
+            posting_id,
+            load_rules(settings.config_dir),
+            profile_hash=profile_hash,
+            rules_hash=rules_hash,
+        )
     if audit is not None:
         _render_audit(audit)
 

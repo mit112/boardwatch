@@ -525,15 +525,27 @@ def test_current_evaluations_answers_only_for_the_running_engine_version(
     body = "Bachelor's degree required."
     facts = Facts(highest_degree="none")
     eval_id = _write(db, catalog, version_id, facts, BLOCK_ALL, body)
+    identity = build_identity(
+        posting_version_id=version_id,
+        facts=facts,
+        policy=BLOCK_ALL,
+        catalog=catalog,
+        declared_fields=declared_fields(),
+    )
+    ph, rh = identity.profile_hash, identity.rules_hash
     with db.connect() as conn:
-        assert engine_module.current_evaluations(conn, [version_id]) == {
+        assert engine_module.current_evaluations(conn, [version_id], ph, rh) == {
             version_id: (eval_id, "ineligible")
         }
-        assert engine_module.current_evaluations(conn, []) == {}
-        assert engine_module.current_evaluations(conn, [version_id + 1000]) == {}
+        assert engine_module.current_evaluations(conn, [], ph, rh) == {}
+        assert engine_module.current_evaluations(conn, [version_id + 1000], ph, rh) == {}
+        # a different profile's identity must not be handed THIS profile's verdict: the
+        # anti-join keys on (profile_hash, rules_hash), not on the engine version alone.
+        assert engine_module.current_evaluations(conn, [version_id], "other", rh) == {}
+        assert engine_module.current_evaluations(conn, [version_id], ph, "other") == {}
         # the row was written by the CURRENT version, so a bumped engine must not see it
         monkeypatch.setattr(engine_module, "engine_version", lambda: "999+deadbeefcafe")
-        assert engine_module.current_evaluations(conn, [version_id]) == {}
+        assert engine_module.current_evaluations(conn, [version_id], ph, rh) == {}
 
 
 def test_the_derived_version_is_cached_and_the_cache_is_clearable() -> None:

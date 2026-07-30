@@ -30,7 +30,7 @@ from boardwatch.eligibility.facts import (
     parse_facts,
     parse_policy,
 )
-from boardwatch.eligibility.preflight import run_eligibility
+from boardwatch.eligibility.preflight import current_identity, run_eligibility
 from boardwatch.store.queries import current_posting_versions, get_profile, save_eligibility
 from boardwatch.store.tables import eligibility_requirements
 
@@ -70,7 +70,9 @@ def _coerce(field: FieldSpec, value: str) -> object:
                 )
         return tuple(sorted(set(items)))
     if field.type == "int":
-        if not value.isdigit():
+        # str.isdigit() is True for Unicode digits like "²" that int() cannot parse, so guard
+        # with isascii() too: the point is a clean BadParameter, never a raw ValueError.
+        if not (value.isascii() and value.isdigit()):
             raise typer.BadParameter(f"{field.name} must be a whole number, got {value!r}")
         return int(value)
     if field.type == "bool":
@@ -220,9 +222,12 @@ def summary_cmd(ctx: typer.Context) -> None:
     before trusting a hidden count."""
     app_ctx = build_context(ctx.obj)
     with app_ctx.engine.connect() as conn:
+        identity = current_identity(conn, app_ctx.settings)
         versions = current_posting_versions(conn, None)
         version_ids = [cv.posting_version_id for cv in versions.values()]
-        evals = current_evaluations(conn, version_ids)
+        evals = (
+            current_evaluations(conn, version_ids, *identity) if identity is not None else {}
+        )
         eval_ids = [eval_id for eval_id, _ in evals.values()]
         requirement_rows = (
             conn.execute(

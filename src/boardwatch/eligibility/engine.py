@@ -269,12 +269,21 @@ def write_evaluation(
 
 
 def current_evaluations(
-    conn: Connection, posting_version_ids: list[int]
+    conn: Connection,
+    posting_version_ids: list[int],
+    profile_hash: str,
+    rules_hash: str,
 ) -> dict[int, tuple[int, str]]:
-    """posting_version_id -> (evaluation id, verdict) for the CURRENT engine version only.
+    """posting_version_id -> (evaluation id, verdict) for the CURRENT input identity.
 
-    get_evaluations returns EVERY evaluation ordered by id with no version selector, so P2
-    adds its own rather than reusing it blindly (spec §4.7).
+    Scoped to the current engine version AND the caller's (profile_hash, rules_hash), so a
+    corrected fact or policy selects the evaluation it produced rather than any leftover row
+    at the same engine version. The (posting_version, profile_hash, rules_hash) triple is the
+    unique input fingerprint, and (input, engine_version) is unique per deterministic run, so
+    at most one row survives per posting version and the read needs no tie-break.
+
+    get_evaluations returns EVERY evaluation ordered by id with no selector, so P2 adds its
+    own rather than reusing it blindly (spec §4.7).
     """
     if not posting_version_ids:
         return {}
@@ -290,6 +299,8 @@ def current_evaluations(
         )
         .where(
             eligibility_inputs.c.posting_version_id.in_(posting_version_ids),
+            eligibility_inputs.c.profile_hash == profile_hash,
+            eligibility_inputs.c.rules_hash == rules_hash,
             eligibility_evaluations.c.engine_kind == ENGINE_KIND,
             eligibility_evaluations.c.engine_version == engine_version(),
         )

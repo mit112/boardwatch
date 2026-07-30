@@ -14,15 +14,16 @@ engine helper, not a constant.
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass
 
 from rich.console import Console
-from sqlalchemy import Engine, select, tuple_
+from sqlalchemy import Connection, Engine, select, tuple_
 
 from boardwatch.core.settings import Settings
-from boardwatch.eligibility.catalog import load_rules
+from boardwatch.eligibility.catalog import RulesCatalog, load_rules
 from boardwatch.eligibility.engine import ENGINE_KIND, engine_version, evaluate, write_evaluation
-from boardwatch.eligibility.facts import parse_facts, parse_policy
+from boardwatch.eligibility.facts import Facts, Policy, parse_facts, parse_policy
 from boardwatch.eligibility.hashing import build_identity
 from boardwatch.eligibility.resolve import declared_fields
 from boardwatch.store.queries import get_profile
@@ -42,13 +43,15 @@ class EligibilityStats:
     skipped_no_profile: bool = False
 
 
-def _pending(engine: Engine) -> list[tuple[int, str]]:
-    """Current versions of OPEN postings with no current-engine deterministic evaluation.
+def _pending(engine: Engine, profile_hash: str, rules_hash: str) -> list[tuple[int, str]]:
+    """Current versions of OPEN postings with no evaluation for the CURRENT input identity.
 
     ONE query, an anti-join, mirroring extract/preflight.py:63-81. The `newer` correlated
     EXISTS restricts to each posting's newest version exactly as current_posting_versions
     does; the `evaluated` correlated EXISTS excludes anything already done at this engine
-    version, so a rerun after a crash resumes rather than repeats.
+    version FOR THIS profile+rules identity, so a rerun after a crash resumes rather than
+    repeats, while a corrected fact or policy (a new profile_hash/rules_hash) makes every
+    posting pending again and re-keys the ledger, which is the whole point of D-P2-14.
     """
     newest = posting_versions.alias("pv_newer")
     newer = (
@@ -68,6 +71,8 @@ def _pending(engine: Engine) -> list[tuple[int, str]]:
         )
         .where(
             eligibility_inputs.c.posting_version_id == posting_versions.c.id,
+            eligibility_inputs.c.profile_hash == profile_hash,
+            eligibility_inputs.c.rules_hash == rules_hash,
             eligibility_evaluations.c.engine_kind == ENGINE_KIND,
             eligibility_evaluations.c.engine_version == engine_version(),
         )
@@ -83,6 +88,44 @@ def _pending(engine: Engine) -> list[tuple[int, str]]:
         return [(int(row.id), str(row.body_text)) for row in conn.execute(stmt).all()]
 
 
+def _identity_hashes(
+    facts: Facts,
+    policy: Policy,
+    catalog: RulesCatalog,
+    fields: Mapping[str, tuple[str, ...]],
+) -> tuple[str, str]:
+    """(profile_hash, rules_hash) for a profile, policy and catalog, without a posting.
+
+    Both hashes are posting-independent, so this one pair selects the current-input
+    evaluations across every posting. The sentinel posting id feeds build_identity only to
+    reuse its snapshot logic; the fingerprint it also produces is discarded here.
+    """
+    identity = build_identity(
+        posting_version_id=0,
+        facts=facts,
+        policy=policy,
+        catalog=catalog,
+        declared_fields=fields,
+    )
+    return identity.profile_hash, identity.rules_hash
+
+
+def current_identity(conn: Connection, settings: Settings) -> tuple[str, str] | None:
+    """The live profile's (profile_hash, rules_hash), or None when there is no profile.
+
+    The read paths (top's verdict flags, `eligibility summary`, the `show` audit) call this
+    so they select the evaluation the CURRENT profile produced, not merely any evaluation at
+    the current engine version. Without it a corrected fact leaves a stale verdict on screen.
+    """
+    profile_row = get_profile(conn)
+    if profile_row is None:
+        return None
+    facts = parse_facts(profile_row.eligibility_facts_json)
+    policy = parse_policy(profile_row.eligibility_policy_json)
+    catalog = load_rules(settings.config_dir)
+    return _identity_hashes(facts, policy, catalog, declared_fields())
+
+
 def run_eligibility(
     engine: Engine, settings: Settings, console: Console | None = None
 ) -> EligibilityStats:
@@ -92,18 +135,21 @@ def run_eligibility(
     if profile_row is None:
         return EligibilityStats(evaluated=0, skipped_no_profile=True)
 
-    # The pending scan comes first so the common no-op path (nothing to evaluate) never pays
-    # the catalog parse and regex compile. This keeps run_eligibility cheap on the top path,
-    # where it runs on every invocation.
-    pending = _pending(engine)
-    stats = EligibilityStats()
-    if not pending:
-        return stats
-
+    # The identity of the current profile+rules is needed before the pending scan, because a
+    # posting is pending unless it already has an evaluation FOR THIS identity (not merely at
+    # this engine version). That is what makes a corrected fact re-evaluate. The catalog parse
+    # this costs runs on every top invocation, but the pending scan itself stays one query.
     facts = parse_facts(profile_row.eligibility_facts_json)
     policy = parse_policy(profile_row.eligibility_policy_json)
     catalog = load_rules(settings.config_dir)
     fields = declared_fields()
+    profile_hash, rules_hash = _identity_hashes(facts, policy, catalog, fields)
+
+    pending = _pending(engine, profile_hash, rules_hash)
+    stats = EligibilityStats()
+    if not pending:
+        return stats
+
     console.print(f"evaluating eligibility for {len(pending)} postings…")
     for chunk_start in range(0, len(pending), BATCH_SIZE):
         chunk = pending[chunk_start : chunk_start + BATCH_SIZE]

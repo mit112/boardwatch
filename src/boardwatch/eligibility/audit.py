@@ -22,10 +22,10 @@ from dataclasses import dataclass
 from datetime import datetime
 from typing import Any
 
-from sqlalchemy import Connection, select
+from sqlalchemy import Connection, Select, select
 
 from boardwatch.eligibility.catalog import RulesCatalog
-from boardwatch.eligibility.engine import engine_version
+from boardwatch.eligibility.engine import ENGINE_KIND, engine_version
 from boardwatch.store.eligibility import get_requirements, get_support
 from boardwatch.store.queries import current_posting_versions
 from boardwatch.store.tables import (
@@ -64,11 +64,20 @@ class AuditView:
 
 
 def load_audit(
-    conn: Connection, posting_id: int, catalog: RulesCatalog
+    conn: Connection,
+    posting_id: int,
+    catalog: RulesCatalog,
+    *,
+    profile_hash: str | None = None,
+    rules_hash: str | None = None,
 ) -> AuditView | None:
-    """The newest stored evaluation for `posting_id`, rebuilt for rendering, or None.
+    """The stored evaluation for `posting_id`, rebuilt for rendering, or None.
 
-    Closed postings render their newest historical evaluation and are never re-evaluated
+    When the caller passes the current profile's (profile_hash, rules_hash), an OPEN posting
+    renders the evaluation THAT identity produced for its current version, so `show` agrees
+    with `top` after a fact or policy change. Otherwise, and for closed postings, it falls
+    back to the newest stored evaluation, flagged historical whenever it is not the current
+    profile's current-version, current-engine row. Closed postings are never re-evaluated
     (D-P2-9); this reader is read-only, so that exception is honoured by construction.
     """
     status = conn.execute(
@@ -77,30 +86,57 @@ def load_audit(
     if status is None:
         return None
 
-    newest = conn.execute(
-        select(
-            eligibility_evaluations.c.id,
-            eligibility_evaluations.c.verdict,
-            eligibility_evaluations.c.engine_version,
-            eligibility_inputs.c.posting_version_id,
-            eligibility_inputs.c.rules_snapshot_json,
-        )
-        .join(eligibility_inputs, eligibility_evaluations.c.input_id == eligibility_inputs.c.id)
-        .join(posting_versions, eligibility_inputs.c.posting_version_id == posting_versions.c.id)
-        .where(posting_versions.c.posting_id == posting_id)
-        .order_by(eligibility_evaluations.c.id.desc())
-        .limit(1)
-    ).one_or_none()
-    if newest is None:
-        return None
-
     current = current_posting_versions(conn, [posting_id]).get(posting_id)
-    is_historical = not (
-        status == "open"
-        and current is not None
-        and newest.posting_version_id == current.posting_version_id
-        and newest.engine_version == engine_version()
-    )
+    identity_given = profile_hash is not None and rules_hash is not None
+
+    def _eval_base() -> Select[Any]:  # a local query builder, not a public interface
+        return (
+            select(
+                eligibility_evaluations.c.id,
+                eligibility_evaluations.c.verdict,
+                eligibility_evaluations.c.engine_version,
+                eligibility_inputs.c.posting_version_id,
+                eligibility_inputs.c.rules_snapshot_json,
+            )
+            .join(
+                eligibility_inputs,
+                eligibility_evaluations.c.input_id == eligibility_inputs.c.id,
+            )
+            .join(
+                posting_versions,
+                eligibility_inputs.c.posting_version_id == posting_versions.c.id,
+            )
+        )
+
+    newest = None
+    is_historical = True
+    if identity_given and status == "open" and current is not None:
+        newest = conn.execute(
+            _eval_base().where(
+                posting_versions.c.id == current.posting_version_id,
+                eligibility_inputs.c.profile_hash == profile_hash,
+                eligibility_inputs.c.rules_hash == rules_hash,
+                eligibility_evaluations.c.engine_kind == ENGINE_KIND,
+                eligibility_evaluations.c.engine_version == engine_version(),
+            )
+        ).one_or_none()
+        if newest is not None:
+            is_historical = False
+    if newest is None:
+        newest = conn.execute(
+            _eval_base()
+            .where(posting_versions.c.posting_id == posting_id)
+            .order_by(eligibility_evaluations.c.id.desc())
+            .limit(1)
+        ).one_or_none()
+        if newest is None:
+            return None
+        is_historical = identity_given or not (
+            status == "open"
+            and current is not None
+            and newest.posting_version_id == current.posting_version_id
+            and newest.engine_version == engine_version()
+        )
 
     version = conn.execute(
         select(posting_versions.c.body_text, posting_versions.c.captured_at).where(

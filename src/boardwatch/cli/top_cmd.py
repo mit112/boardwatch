@@ -20,7 +20,7 @@ from boardwatch.cli.context import build_context
 from boardwatch.core.clock import utcnow
 from boardwatch.core.settings import Settings
 from boardwatch.eligibility.engine import current_evaluations
-from boardwatch.eligibility.preflight import run_eligibility
+from boardwatch.eligibility.preflight import current_identity, run_eligibility
 from boardwatch.extract.preflight import run_preflight
 from boardwatch.extract.taxonomy import load_taxonomy
 from boardwatch.rank.explain import why_summary
@@ -160,14 +160,23 @@ def _verdict_token(verdict: str | None) -> str:
     }.get(verdict or "", "-")
 
 
-def _posting_verdicts(engine: Engine, posting_ids: list[int]) -> dict[int, str | None]:
-    """posting_id -> its current-version, current-engine verdict, or None if unevaluated."""
+def _posting_verdicts(
+    engine: Engine, settings: Settings, posting_ids: list[int]
+) -> dict[int, str | None]:
+    """posting_id -> the CURRENT profile's verdict for it, or None if unevaluated.
+
+    Verdicts are read for the live profile's identity, so a corrected fact or policy is
+    reflected the moment its re-evaluation lands, never a leftover verdict from an old one.
+    """
     if not posting_ids:
         return {}
     with engine.connect() as conn:
+        identity = current_identity(conn, settings)
+        if identity is None:
+            return {posting_id: None for posting_id in posting_ids}
         versions = current_posting_versions(conn, posting_ids)
         evals = current_evaluations(
-            conn, [cv.posting_version_id for cv in versions.values()]
+            conn, [cv.posting_version_id for cv in versions.values()], *identity
         )
     return {
         posting_id: (evals.get(cv.posting_version_id) or (None, None))[1]
@@ -192,7 +201,9 @@ def top(
     if not ranked:
         console.print("no open postings match your filters")
         return
-    verdicts = _posting_verdicts(app_ctx.engine, [p.posting_id for p in ranked])
+    verdicts = _posting_verdicts(
+        app_ctx.engine, app_ctx.settings, [p.posting_id for p in ranked]
+    )
     hidden = 0
     visible: list[tuple[RankedPosting, str | None]] = []
     for p in ranked:
