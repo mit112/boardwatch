@@ -186,9 +186,9 @@ Save this as `~/Library/LaunchAgents/com.boardwatch.scan.plist`, replacing the b
       <key>Minute</key><integer>0</integer>
     </dict>
     <key>StandardOutPath</key>
-    <string>/Users/YOU/Library/Logs/boardwatch-scan.log</string>
+    <string><home>/Library/Logs/boardwatch-scan.log</string>
     <key>StandardErrorPath</key>
-    <string>/Users/YOU/Library/Logs/boardwatch-scan.log</string>
+    <string><home>/Library/Logs/boardwatch-scan.log</string>
   </dict>
 </plist>
 ```
