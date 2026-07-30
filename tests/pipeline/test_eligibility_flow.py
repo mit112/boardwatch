@@ -23,7 +23,7 @@ from boardwatch.store.queries import get_profile, save_profile
 
 runner = CliRunner()
 
-INIT_INPUT = "3\nacme\nBackend engineer: Python, Go, PostgreSQL.\n\n\n\nn\n"
+INIT_INPUT = "3\nacme\nBackend engineer: Python, Go, PostgreSQL.\n\n\n\nn\nn\n"
 DEGREE_BODY = "We are hiring a backend engineer. A Bachelor's degree is required."
 DEGREE_QUOTE = "Bachelor's degree is required"  # DEGREE_BODY[36:65], the stored span
 PLAIN_BODY = "A backend engineering position on our team."

@@ -130,6 +130,23 @@ def set_fact(facts: Facts, catalog: RulesCatalog, dotted: str, value: str) -> Fa
     return Facts.model_validate(data)
 
 
+def set_policy(policy: Policy, catalog: RulesCatalog, family_id: str, choice: str) -> Policy:
+    """Apply one family severity to the policy, returning a new Policy. Pure and CLI-free.
+
+    The family must be a catalog family id and the choice a declared severity; both rejections
+    raise typer.BadParameter carrying the valid vocabulary, which comes from the catalog and the
+    Policy type, never a literal spelled at a call site."""
+    valid_families = [spec.id for spec in catalog.families]
+    if family_id not in valid_families:
+        raise typer.BadParameter(
+            f"unknown policy family {family_id!r}. Valid families: {', '.join(valid_families)}"
+        )
+    severities = get_args(PolicyChoice)
+    if choice not in severities:
+        raise typer.BadParameter(f"unknown severity {choice!r}. Valid: {', '.join(severities)}")
+    return Policy(families={**policy.families, family_id: choice})
+
+
 def _render_value(value: object) -> str:
     if value is None:
         return "not set"
@@ -256,23 +273,17 @@ def policy_set(ctx: typer.Context, family: str, choice: str) -> None:
     """Set one family's severity to blocker, preference or ignore."""
     app_ctx = build_context(ctx.obj)
     catalog = load_rules(app_ctx.settings.config_dir)
-    valid_families = [spec.id for spec in catalog.families]
-    severities = get_args(PolicyChoice)
     with app_ctx.engine.begin() as conn:
         row = get_profile(conn)
         if row is None:
             _no_profile()
         facts = parse_facts(row.eligibility_facts_json)
         policy = parse_policy(row.eligibility_policy_json)
-        if family not in valid_families:
-            typer.echo(
-                f"unknown policy family {family!r}. Valid families: {', '.join(valid_families)}"
-            )
-            raise typer.Exit(code=1)
-        if choice not in severities:
-            typer.echo(f"unknown severity {choice!r}. Valid: {', '.join(severities)}")
-            raise typer.Exit(code=1)
-        new_policy = Policy(families={**policy.families, family: choice})
+        try:
+            new_policy = set_policy(policy, catalog, family, choice)
+        except typer.BadParameter as exc:
+            typer.echo(exc.message)
+            raise typer.Exit(code=1) from exc
         save_eligibility(
             conn,
             facts_json=facts_payload(facts),

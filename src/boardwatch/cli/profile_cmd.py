@@ -12,9 +12,12 @@ from rich.console import Console
 from sqlalchemy import Engine
 
 from boardwatch.cli.context import build_context
+from boardwatch.cli.eligibility_cmd import set_fact, set_policy
 from boardwatch.core.settings import Settings
+from boardwatch.eligibility.catalog import load_rules
+from boardwatch.eligibility.facts import facts_payload, parse_facts, parse_policy
 from boardwatch.extract.taxonomy import load_taxonomy
-from boardwatch.store.queries import get_profile, save_profile
+from boardwatch.store.queries import get_profile, save_eligibility, save_profile
 
 console = Console()
 profile_app = typer.Typer(no_args_is_help=True, help="Profile management.")
@@ -133,3 +136,37 @@ def edit(ctx: typer.Context) -> None:
         locations=split_csv(locations),
         remote_only=remote_only,
     )
+
+    # The same three eligibility prompts as init, so the feature is reachable on an existing
+    # install. Seeded from the stored facts and policy, so a skipped answer keeps the current
+    # value rather than clearing it. persist_profile never touches the eligibility columns.
+    catalog = load_rules(app_ctx.settings.config_dir)
+    facts = parse_facts(row.eligibility_facts_json)
+    policy = parse_policy(row.eligibility_policy_json)
+    if typer.confirm("Update eligibility checks?", default=False):
+        for family in catalog.families:
+            for field_spec in family.fields:
+                answer = typer.prompt(
+                    f"{family.question} [{field_spec.name}: "
+                    f"{', '.join(field_spec.choices) or field_spec.type}]",
+                    default="",
+                )
+                if answer.strip():
+                    facts = set_fact(
+                        facts, catalog,
+                        f"{family.fact}.{field_spec.name}"
+                        if len(family.fields) > 1
+                        else family.fact,
+                        answer.strip(),
+                    )
+            choice = typer.prompt(
+                f"How should {family.label} affect your results?",
+                default=policy.families.get(family.id, family.default_policy),
+            )
+            policy = set_policy(policy, catalog, family.id, choice)
+        with app_ctx.engine.begin() as conn:
+            save_eligibility(
+                conn,
+                facts_json=facts_payload(facts),
+                policy_json=policy.model_dump(mode="json"),
+            )

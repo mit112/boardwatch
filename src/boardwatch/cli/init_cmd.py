@@ -7,11 +7,14 @@ import typer
 from rich.console import Console
 
 from boardwatch.cli.context import build_context
+from boardwatch.cli.eligibility_cmd import set_fact, set_policy
 from boardwatch.cli.profile_cmd import persist_profile, split_csv
 from boardwatch.core.board_urls import UnknownBoardURL, parse_board_target
+from boardwatch.eligibility.catalog import load_rules
+from boardwatch.eligibility.facts import Facts, Policy, facts_payload
 from boardwatch.registry.loader import load_catalog, starter_entries
 from boardwatch.registry.validate import CompanyEntry
-from boardwatch.store.queries import upsert_watch
+from boardwatch.store.queries import save_eligibility, upsert_watch
 
 console = Console()
 
@@ -70,4 +73,38 @@ def init(ctx: typer.Context) -> None:
         target_titles=split_csv(targets_t), exclude_titles=split_csv(excludes),
         locations=split_csv(locations), remote_only=remote_only,
     )
+
+    # Eligibility is optional and comes AFTER persist_profile: profile.text is NOT NULL, so
+    # facts cannot be written before the row exists (§4.6). Exactly TWO prompt call sites plus
+    # one confirm drive every family, so R11's pin stays constant as the catalog grows (D-P2-8).
+    if typer.confirm("Set up eligibility checks now?", default=False):
+        rules_catalog = load_rules(app_ctx.settings.config_dir)
+        facts, policy = Facts(), Policy()
+        for family in rules_catalog.families:
+            for field_spec in family.fields:
+                answer = typer.prompt(
+                    f"{family.question} [{field_spec.name}: "
+                    f"{', '.join(field_spec.choices) or field_spec.type}]",
+                    default="",
+                )
+                if answer.strip():
+                    facts = set_fact(
+                        facts, rules_catalog,
+                        f"{family.fact}.{field_spec.name}"
+                        if len(family.fields) > 1
+                        else family.fact,
+                        answer.strip(),
+                    )
+            choice = typer.prompt(
+                f"How should {family.label} affect your results?",
+                default=family.default_policy,
+            )
+            policy = set_policy(policy, rules_catalog, family.id, choice)
+        with app_ctx.engine.begin() as conn:
+            save_eligibility(
+                conn,
+                facts_json=facts_payload(facts),
+                policy_json=policy.model_dump(mode="json"),
+            )
+
     console.print(f"Watching {len(targets)} companies. Run `boardwatch scan` next.")
