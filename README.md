@@ -178,6 +178,50 @@ count; `top --include-ineligible` shows them.
 
 ---
 
+## What changed since you last looked
+
+`boardwatch scan` records every appearance, disappearance and body revision in an
+append-only ledger. `digest` reads the ledger from wherever you left off:
+
+```bash
+boardwatch digest          # new, reopened, updated, and a closed count
+boardwatch digest --peek   # the same view without consuming it
+boardwatch top --new       # rank only the postings first seen since your last digest
+```
+
+The cursor is an event id, not a timestamp, so a clock change or a missed day cannot skip
+or repeat a window.
+
+---
+
+## Your funnel
+
+boardwatch never applies for you. It records what you did, so the state stays yours:
+
+```bash
+boardwatch track add 42                    # start tracking a posting
+boardwatch track status 1 applied          # move it, with an immutable ledger entry
+boardwatch track status 1 interviewing --note "phone screen booked"
+boardwatch track list --status applied
+boardwatch track log 1                     # the full history for one application
+```
+
+---
+
+## Take your data with you
+
+```bash
+boardwatch export --format jsonl --out postings.jsonl
+boardwatch export --format csv
+```
+
+Every row carries the posting, your funnel state, and the eligibility verdict together
+with the profile and rules hashes that identify the evaluation it was computed under.
+This is a flat snapshot, not a full audit trail; it does not support independent
+recomputation of verdicts.
+
+---
+
 ## Configuration
 
 `boardwatch config show` prints every key, its value, and its default;
@@ -348,9 +392,9 @@ often. A job seeker checking a dozen companies once a day is the intended shape.
 
 - [ ] PyPI + GHCR published releases (`pipx install boardwatch`, `docker run …`)
 - [ ] Notifications on new matches (desktop / webhook)
-- [ ] `scan --new` event cursor (only what changed since last run)
+- [x] `digest` and `top --new` change detection (only what changed since last run)
 - [ ] More ATS providers (community-driven)
-- [ ] Data-portability export (`--format jsonl|csv`)
+- [x] Data-portability export (`--format jsonl|csv`)
 
 Have a company on a board boardwatch doesn't reach yet, or an ATS you want supported?
 [Open an issue.](https://github.com/mit112/boardwatch/issues)

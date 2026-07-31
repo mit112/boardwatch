@@ -87,10 +87,10 @@ def test_top_excludes_closed_postings(
     assert ids  # silence unused warning
 
 
-def test_top_help_does_not_promise_new_flag(env: Path) -> None:
+def test_top_help_lists_the_new_flag(env: Path) -> None:
     result = runner.invoke(app, ["top", "--help"])
     assert result.exit_code == 0
-    assert "--new" not in result.stdout  # P2 owns the event cursor
+    assert "--new" in result.stdout  # P5 task 2 ships the digest-window filter
 
 
 def test_show_open_posting_renders_breakdown(

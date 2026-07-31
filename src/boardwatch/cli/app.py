@@ -8,13 +8,16 @@ from rich.console import Console
 
 from boardwatch.cli.companies_cmd import companies_app
 from boardwatch.cli.config_cmd import config_app
+from boardwatch.cli.digest_cmd import digest as _digest
 from boardwatch.cli.doctor_cmd import doctor as _doctor
 from boardwatch.cli.eligibility_cmd import eligibility_app
+from boardwatch.cli.export_cmd import export as _export
 from boardwatch.cli.init_cmd import init as _init
 from boardwatch.cli.profile_cmd import profile_app
 from boardwatch.cli.scan_cmd import scan as _scan
 from boardwatch.cli.show_cmd import show as _show
 from boardwatch.cli.top_cmd import top as _top
+from boardwatch.cli.track_cmd import track_app
 
 app = typer.Typer(no_args_is_help=True, add_completion=False)
 console = Console()
@@ -47,4 +50,7 @@ app.command("top")(_top)
 app.command("show")(_show)
 app.add_typer(config_app, name="config")
 app.command("doctor")(_doctor)
+app.command("digest")(_digest)
 app.add_typer(eligibility_app, name="eligibility")
+app.add_typer(track_app, name="track")
+app.command("export")(_export)
