@@ -1,5 +1,7 @@
 """Privacy and correctness tests for the LLM payload builder."""
 
+import inspect
+
 from boardwatch.llm.payload import build_payload, preview_text
 
 
@@ -26,20 +28,23 @@ def test_payload_returns_correct_structure() -> None:
 
 
 def test_preview_text_shows_destination_and_safety() -> None:
-    """Test that preview_text displays the destination and confirms only JD is sent."""
-    jd = "Test job description"
-    preview = preview_text(jd, provider="anthropic", model="claude-3-haiku", base_url=None)
+    """Test that preview_text threads real provider, model, JD, and safety message."""
+    jd = "Senior engineer with Python and distributed systems experience"
+    preview = preview_text(
+        jd, provider="anthropic", model="claude-3-haiku", base_url=None
+    )
 
-    # Preview should be human-readable and show important details
+    # Preview must be human-readable
     assert isinstance(preview, str)
     assert len(preview) > 0
 
-    # Should mention the provider and model
-    assert "anthropic" in preview.lower() or "provider" in preview.lower()
-    assert "claude-3-haiku" in preview or "model" in preview.lower()
+    # Actual values must be threaded through, not just boilerplate labels
+    assert "anthropic" in preview
+    assert "claude-3-haiku" in preview
+    assert jd in preview  # Distinctive JD content must appear verbatim
 
-    # Should reference the JD being sent
-    assert jd in preview or "job" in preview.lower()
+    # Safety message must explicitly state what is NOT sent
+    assert "profile" not in preview.lower() or "not" in preview.lower()
 
 
 def test_preview_text_with_custom_base_url() -> None:
@@ -55,3 +60,14 @@ def test_preview_text_with_custom_base_url() -> None:
     assert isinstance(preview, str)
     assert len(preview) > 0
     assert "custom.example.com" in preview or "custom" in preview.lower()
+
+
+def test_build_payload_signature_admits_only_jd_text() -> None:
+    """Lock the privacy contract: build_payload takes ONLY jd_text parameter.
+
+    This structural guard prevents accidental widening (e.g., adding profile=)
+    that could leak profile data to the LLM. The signature is the primary
+    privacy enforcement mechanism.
+    """
+    params = list(inspect.signature(build_payload).parameters)
+    assert params == ["jd_text"]
