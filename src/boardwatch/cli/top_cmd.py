@@ -1,9 +1,9 @@
 """boardwatch top (§2.3): ranked shortlist computed on demand (D17).
 
 The # column is the posting's DB id — `show <id>` takes exactly what top
-displays (plan deviation 11). There is NO --new flag in P0; the event cursor
-is P2's. rank_open_postings() is the in-process top path the perf smoke
-benchmarks (§6.3-7).
+displays (plan deviation 11). --new narrows the shortlist to postings with a
+`new` event past the digest cursor (D18). rank_open_postings() is the
+in-process top path the perf smoke benchmarks (§6.3-7).
 """
 
 from __future__ import annotations
@@ -25,8 +25,9 @@ from boardwatch.extract.preflight import run_preflight
 from boardwatch.extract.taxonomy import load_taxonomy
 from boardwatch.rank.explain import why_summary
 from boardwatch.rank.heuristic import ProfileView, Score, passes_hard_filters, score_posting
+from boardwatch.store.app_state import get_digest_cursor
 from boardwatch.store.queries import current_posting_versions, get_profile
-from boardwatch.store.tables import companies, extractions, postings
+from boardwatch.store.tables import companies, extractions, posting_events, postings
 
 console = Console()
 
@@ -70,6 +71,7 @@ def rank_open_postings(
     now: datetime | None = None,
     limit: int = 10,
     include_ineligible: bool = False,
+    only_new: bool = False,
 ) -> RankedResults:
     run_preflight(engine, settings, console)
     stats = run_eligibility(engine, settings, console)  # no-op on a null profile; before the check
@@ -104,8 +106,11 @@ def rank_open_postings(
         ).all()
         # The run computed the identity; reuse it rather than reload the catalog.
         verdicts = _current_verdicts(conn, stats.profile_hash, stats.rules_hash)
+        new_ids = _new_posting_ids(conn) if only_new else None
     scored: list[RankedPosting] = []
     for row in rows:
+        if new_ids is not None and int(row.id) not in new_ids:
+            continue
         skills = set((row.extraction_json or {}).get("skills", []))
         score = score_posting(
             profile, skills, row.title, row.posted_at,
@@ -189,6 +194,22 @@ def _verdict_token(verdict: str | None) -> str:
     }.get(verdict or "", "-")
 
 
+def _new_posting_ids(conn: Connection) -> set[int]:
+    """Posting ids with a `new` event past the digest cursor (D18).
+
+    `new` only: a reopened or revised posting is in the digest but is not a new
+    opportunity, and --new is documented as "postings with a `new` event after the
+    digest cursor".
+    """
+    cursor = get_digest_cursor(conn)
+    rows = conn.execute(
+        select(posting_events.c.posting_id)
+        .where(posting_events.c.id > cursor)
+        .where(posting_events.c.kind == "new")
+    ).all()
+    return {int(row.posting_id) for row in rows}
+
+
 def _current_verdicts(
     conn: Connection, profile_hash: str | None, rules_hash: str | None
 ) -> dict[int, str | None]:
@@ -216,18 +237,25 @@ def top(
     include_ineligible: bool = typer.Option(
         False, "--include-ineligible", help="Show postings persisted as ineligible."
     ),
+    new: bool = typer.Option(
+        False, "--new", help="Only postings first seen since your last digest."
+    ),
 ) -> None:
     """Rank open postings against your profile (on-demand, §3.6)."""
     app_ctx = build_context(ctx.obj)
     try:
         results = rank_open_postings(
-            app_ctx.engine, app_ctx.settings, limit=n, include_ineligible=include_ineligible
+            app_ctx.engine, app_ctx.settings, limit=n,
+            include_ineligible=include_ineligible, only_new=new,
         )
     except NoProfileError:
         console.print("no profile yet — run `boardwatch init` first")
         raise typer.Exit(code=1) from None
     if not results.visible and not results.hidden_ineligible:
-        console.print("no open postings match your filters")
+        if new:
+            console.print("nothing new since your last digest")
+        else:
+            console.print("no open postings match your filters")
         return
     table = Table(show_header=True, header_style="bold")
     table.add_column("#", style="dim")
