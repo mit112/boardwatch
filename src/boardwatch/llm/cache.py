@@ -1,4 +1,5 @@
 import hashlib
+import os
 import tempfile
 from pathlib import Path
 
@@ -47,20 +48,28 @@ class ResponseCache:
     def put(self, key: str, raw: str) -> None:
         """Store response atomically to avoid partial writes.
 
-        Writes to a temporary file in the cache directory and renames it
-        to the final key to ensure atomic storage.
+        Writes to a temporary file in the cache directory and replaces
+        the final key to ensure atomic storage. Uses os.replace for
+        cross-platform compatibility with existing keys.
 
         Args:
             key: Cache key returned by key() method.
             raw: Raw response text to cache.
         """
         cache_path = self.dir / key
-        with tempfile.NamedTemporaryFile(
-            mode="w",
-            dir=self.dir,
-            encoding="utf-8",
-            delete=False,
-        ) as tmp:
-            tmp.write(raw)
-            tmp_path = Path(tmp.name)
-        tmp_path.rename(cache_path)
+        try:
+            with tempfile.NamedTemporaryFile(
+                mode="w",
+                dir=self.dir,
+                encoding="utf-8",
+                delete=False,
+            ) as tmp:
+                tmp.write(raw)
+                tmp_path = Path(tmp.name)
+            os.replace(str(tmp_path), str(cache_path))
+        except Exception:
+            try:
+                os.unlink(str(tmp_path))
+            except (FileNotFoundError, NameError):
+                pass
+            raise

@@ -36,3 +36,16 @@ def test_get_never_written_key_returns_none(tmp_path: Path) -> None:
     cache = ResponseCache(tmp_path)
     result = cache.get("nonexistent_key")
     assert result is None
+
+
+def test_put_twice_same_key_overwrites(tmp_path: Path) -> None:
+    cache = ResponseCache(tmp_path)
+    key = "test_key"
+
+    # Put first value
+    cache.put(key, "v1")
+    assert cache.get(key) == "v1"
+
+    # Put second value with same key - must not raise
+    cache.put(key, "v2")
+    assert cache.get(key) == "v2"
