@@ -19,8 +19,8 @@ from sqlalchemy import Connection, Engine, select
 from boardwatch.cli.context import build_context
 from boardwatch.core.clock import utcnow
 from boardwatch.core.settings import Settings
-from boardwatch.eligibility.engine import current_evaluations
 from boardwatch.eligibility.preflight import run_eligibility
+from boardwatch.eligibility.read import current_verdicts
 from boardwatch.extract.preflight import run_preflight
 from boardwatch.extract.taxonomy import load_taxonomy
 from boardwatch.rank.explain import why_summary
@@ -105,7 +105,13 @@ def rank_open_postings(
             )
         ).all()
         # The run computed the identity; reuse it rather than reload the catalog.
-        verdicts = _current_verdicts(conn, stats.profile_hash, stats.rules_hash)
+        versions = current_posting_versions(conn, None)
+        verdicts = current_verdicts(
+            conn,
+            [cv.posting_version_id for cv in versions.values()],
+            stats.profile_hash,
+            stats.rules_hash,
+        )
         new_ids = _new_posting_ids(conn) if only_new else None
     scored: list[RankedPosting] = []
     for row in rows:
@@ -208,27 +214,6 @@ def _new_posting_ids(conn: Connection) -> set[int]:
         .where(posting_events.c.kind == "new")
     ).all()
     return {int(row.posting_id) for row in rows}
-
-
-def _current_verdicts(
-    conn: Connection, profile_hash: str | None, rules_hash: str | None
-) -> dict[int, str | None]:
-    """posting_id -> the CURRENT profile's verdict for it, or None if unevaluated.
-
-    Set-oriented over every open posting (no per-posting query) and keyed on the identity the
-    run already computed, so a corrected fact or policy is reflected the moment its
-    re-evaluation lands, never a leftover verdict from an old profile.
-    """
-    if profile_hash is None or rules_hash is None:
-        return {}
-    versions = current_posting_versions(conn, None)
-    evals = current_evaluations(
-        conn, [cv.posting_version_id for cv in versions.values()], profile_hash, rules_hash
-    )
-    return {
-        posting_id: (evals.get(cv.posting_version_id) or (None, None))[1]
-        for posting_id, cv in versions.items()
-    }
 
 
 def top(
