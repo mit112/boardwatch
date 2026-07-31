@@ -43,8 +43,8 @@ def test_preview_text_shows_destination_and_safety() -> None:
     assert "claude-3-haiku" in preview
     assert jd in preview  # Distinctive JD content must appear verbatim
 
-    # Safety message must explicitly state what is NOT sent
-    assert "profile" not in preview.lower() or "not" in preview.lower()
+    # Safety message must be the exact sentence from preview_text
+    assert "No profile, resume, or eligibility data is included." in preview
 
 
 def test_preview_text_with_custom_base_url() -> None:
