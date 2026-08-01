@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import dataclasses
 import json
 from pathlib import Path
 
@@ -13,6 +14,7 @@ from boardwatch.cli.app import app
 from boardwatch.core.clock import utcnow
 from boardwatch.core.secrets import LLM_API_KEY_ENV
 from boardwatch.core.settings import LLMTier, Settings
+from boardwatch.eligibility.audit import load_llm_audit
 from boardwatch.eligibility.catalog import load_rules
 from boardwatch.eligibility.extract_llm import LANE_VERSION, extract_and_record
 from boardwatch.eligibility.facts import Facts, Policy
@@ -268,6 +270,20 @@ def _invoke(data_dir: Path, args: list[str], stdin: str | None = None):
     return runner.invoke(app, ["--data-dir", str(data_dir), *args], input=stdin)
 
 
+def _write_llm_config(cfg_dir: Path, **fields: bool | str) -> None:
+    """Write a minimal config.toml [llm] table for a CLI-invoked test.
+
+    load_settings only reads llm.* from config.toml (never the environment), so a test
+    that drives `eligibility extract` through the CLI must write this file rather than
+    construct a Settings object directly.
+    """
+    lines = ["[llm]"]
+    for key, value in fields.items():
+        rendered = ("true" if value else "false") if isinstance(value, bool) else f'"{value}"'
+        lines.append(f"{key} = {rendered}")
+    (cfg_dir / "config.toml").write_text("\n".join(lines) + "\n", encoding="utf-8")
+
+
 def _posting_id_for_version(engine: Engine, pv_id: int) -> int:
     with engine.connect() as conn:
         return int(
@@ -279,17 +295,44 @@ def _posting_id_for_version(engine: Engine, pv_id: int) -> int:
         )
 
 
-def test_extract_skips_cleanly_when_llm_disabled(cli_env: Path) -> None:
-    """The tier is off by default: extract must degrade to a one-line message, exit 0,
-    and never touch a posting (no profile is even seeded here)."""
+def test_extract_skips_cleanly_when_extraction_disabled(cli_env: Path) -> None:
+    """Both the extraction feature and the tier are off by default: extract must
+    degrade to a one-line message, exit 0, and never touch a posting (no profile is
+    even seeded here). The extraction gate is checked first, so its message is the
+    one that surfaces here."""
     result = _invoke(cli_env, ["eligibility", "extract"])
     assert result.exit_code == 0
-    assert "llm tier is off" in result.output.lower()
+    assert "llm eligibility extraction is off" in result.output.lower()
+
+
+def test_extract_skips_cleanly_when_extraction_off_but_tier_on(
+    cli_env: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Extraction is the feature gate, checked BEFORE the client is ever built: a tier
+    that is enabled with a real credential still must not proceed, and must never
+    reach build_client (so it can never make a model call), when
+    llm.eligibility_extraction is False."""
+    cfg_dir = cli_env.parent / "cfg"
+    _write_llm_config(
+        cfg_dir, enabled=True, provider="anthropic", model="claude-3-haiku",
+        eligibility_extraction=False,
+    )
+    monkeypatch.setenv(LLM_API_KEY_ENV, "a-real-key")
+
+    def _poison(settings: Settings) -> None:
+        raise AssertionError("build_client must not be called when extraction is off")
+
+    monkeypatch.setattr("boardwatch.cli.eligibility_cmd.build_client", _poison)
+
+    result = _invoke(cli_env, ["eligibility", "extract"])
+    assert result.exit_code == 0
+    assert "llm eligibility extraction is off" in result.output.lower()
 
 
 def test_extract_dry_run_previews_without_calling_client(
     cli_env: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    _write_llm_config(cli_env.parent / "cfg", eligibility_extraction=True)
     engine = get_engine(cli_env)
     body = "We need a backend engineer. Distinctive posting body marker."
     _seed_posting_version(engine, body, slug="acme-dry-run")
@@ -306,6 +349,7 @@ def test_extract_dry_run_previews_without_calling_client(
 def test_extract_runs_and_writes_an_advisory_llm_row(
     cli_env: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    _write_llm_config(cli_env.parent / "cfg", eligibility_extraction=True)
     assert _invoke(cli_env, ["init"], CLI_INIT_INPUT).exit_code == 0
     engine = get_engine(cli_env)
     body = JD_5YR
@@ -351,3 +395,35 @@ def test_show_labels_llm_rows_as_advisory(cli_env: Path) -> None:
     out = result.stdout
     assert "Eligibility:" in out  # the deterministic verdict, still primary
     assert "advisory (LLM):" in out  # the opt-in lane's row, labeled distinct
+
+
+def test_llm_audit_label_uses_requirement_text_on_catalog_mismatch(
+    engine: Engine, catalog_and_policy, cache: ResponseCache
+) -> None:
+    """load_llm_audit must never fall back to load_audit's rule_id label on a
+    catalog-version mismatch: an LLM requirement always carries rule_id=None
+    (extract_llm._requirement_for_span never sets one), so that fallback would render
+    the literal 'None (catalog version no longer present)' instead of the grounded
+    quote."""
+    catalog, policy = catalog_and_policy
+    pv_id = _seed_posting_version(engine, JD_5YR, slug="acme-llm-audit-label")
+    posting_id = _posting_id_for_version(engine, pv_id)
+    body = json.dumps([{"family": "experience_years", "span_quote": EXPERIENCE_QUOTE}])
+
+    with engine.begin() as conn:
+        eval_id = extract_and_record(
+            conn, posting_version_id=pv_id, jd_text=JD_5YR, facts=Facts(), policy=policy,
+            catalog=catalog, client=FakeClient(body), cache=cache,
+        )
+    assert eval_id is not None
+
+    # eligibility_inputs is append-only (trigger-guarded), so the mismatch is produced
+    # by reading with a DIFFERENT catalog version rather than mutating the stored row.
+    stale_catalog = dataclasses.replace(catalog, version="stale-version-that-cannot-match")
+
+    with engine.connect() as conn:
+        view = load_llm_audit(conn, posting_id, stale_catalog)
+    assert view is not None
+    assert view.catalog_version_matches is False
+    assert view.requirements[0].label == EXPERIENCE_QUOTE  # requirement_text, never rule_id
+    assert "None (catalog version" not in view.requirements[0].label

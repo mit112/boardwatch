@@ -237,6 +237,12 @@ def extract_cmd(
     """
     app_ctx = build_context(ctx.obj)
     settings = app_ctx.settings
+    if not settings.llm.eligibility_extraction:
+        console.print(
+            "LLM eligibility extraction is off; set llm.eligibility_extraction = true "
+            "in config to enable"
+        )
+        return
     client = build_client(settings)
     if client is None:
         console.print(

@@ -250,10 +250,13 @@ def load_llm_audit(conn: Connection, posting_id: int, catalog: RulesCatalog) -> 
                 quote = body_text[int(raw_span[0]) : int(raw_span[1])]
             except (TypeError, ValueError):
                 quote = ""
-        if catalog_version_matches:
-            label = req.requirement_text
-        else:
-            label = f"{req.rule_id} (catalog version no longer present)"
+        # Unlike load_audit's deterministic rows, an LLM requirement always carries
+        # rule_id=None (extract_llm._requirement_for_span never sets one): there is no
+        # catalog-backed identity to lose on a version mismatch, so the label is always
+        # the stored requirement_text (the grounded JD quote), never the rule_id
+        # fallback, which would render the literal "None (catalog version no longer
+        # present)".
+        label = req.requirement_text
         support = tuple(
             AuditSupport(
                 profile_locator=sup.profile_locator_json or {},
