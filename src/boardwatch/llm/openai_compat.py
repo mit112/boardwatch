@@ -5,6 +5,7 @@ Implements the ModelClient protocol for any provider supporting the OpenAI chat 
 
 from __future__ import annotations
 
+import json
 from typing import Any
 
 import httpx
@@ -81,7 +82,10 @@ class OpenAICompatClient:
                 raise LLMError(f"HTTP {response.status_code}: {response.text}")
 
             # Parse and validate the response
-            body: Any = response.json()
+            try:
+                body: Any = response.json()
+            except (ValueError, json.JSONDecodeError) as e:
+                raise LLMError(f"Invalid response body: not JSON: {e}") from e
 
             # Extract the message content from the expected path
             try:

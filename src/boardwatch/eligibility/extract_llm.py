@@ -128,7 +128,9 @@ def extract_and_record(
     items = [_requirement_for_span(span, facts) for span in spans]
 
     verdict: EligibilityVerdict = (
-        "eligible" if all(item.disposition == "met" for item in items) else "uncertain"
+        "eligible"
+        if items and all(item.disposition == "met" for item in items)
+        else "uncertain"
     )
 
     identity = build_identity(

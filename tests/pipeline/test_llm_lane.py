@@ -184,6 +184,31 @@ def test_structurally_non_blocking_even_when_unmet(
     assert rows[0].verdict == "uncertain"  # capped: never 'ineligible', even when unmet
 
 
+def test_empty_extraction_is_uncertain_not_eligible(
+    engine: Engine, catalog_and_policy, cache: ResponseCache
+) -> None:
+    """A client returning no grounded spans (empty, malformed, or fully-fabricated
+    output) must not read as vacuously 'eligible': zero requirements adjudicated
+    means nothing was verified met, so the verdict must be 'uncertain'."""
+    catalog, policy = catalog_and_policy
+    pv_id = _seed_posting_version(engine, JD_5YR, slug="acme-llm-empty")
+    facts = Facts(total_years_experience=10)
+
+    with engine.begin() as conn:
+        eval_id = extract_and_record(
+            conn, posting_version_id=pv_id, jd_text=JD_5YR, facts=facts, policy=policy,
+            catalog=catalog, client=FakeClient("[]"), cache=cache,
+        )
+    assert eval_id is not None
+
+    with engine.connect() as conn:
+        reqs = get_requirements(conn, eval_id)
+        rows = get_evaluations(conn, pv_id)
+    assert reqs == []
+    assert rows[0].verdict == "uncertain"
+    assert rows[0].verdict != "ineligible"
+
+
 def test_disabled_lane_skips_via_build_client(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:

@@ -6,6 +6,7 @@ compatibility layers.
 
 from __future__ import annotations
 
+import json
 from typing import Any
 
 import httpx
@@ -84,7 +85,10 @@ class AnthropicClient:
                 raise LLMError(f"HTTP {response.status_code}: {response.text}")
 
             # Parse and validate the response
-            body: Any = response.json()
+            try:
+                body: Any = response.json()
+            except (ValueError, json.JSONDecodeError) as e:
+                raise LLMError(f"Invalid response body: not JSON: {e}") from e
 
             # Extract the text content from the expected path
             try:
