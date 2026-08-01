@@ -40,6 +40,8 @@ class LLMTier(BaseModel):
 
     Carries only non-secret knobs; the credential is never a field here (it comes from
     the environment via core.secrets), which keeps secrets out of every serialize path.
+    Includes extraction knobs (eligibility_extraction, base_url) and call budgets
+    (max_calls_per_run) for LLM-assisted eligibility assessment.
     """
 
     model_config = ConfigDict(frozen=True)
@@ -47,6 +49,9 @@ class LLMTier(BaseModel):
     enabled: bool = False
     provider: str | None = None  # e.g. "anthropic" | "openai"; provider-neutral
     model: str | None = None
+    base_url: str | None = None
+    eligibility_extraction: bool = False
+    max_calls_per_run: int = 50
 
 
 class Settings(BaseModel):

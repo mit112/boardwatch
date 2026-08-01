@@ -160,9 +160,20 @@ def test_summary_with_no_evaluations_reports_zero(env: Path) -> None:
     assert "no current-engine evaluation: 0" in result.output
 
 
+def test_extract_skips_cleanly_when_extraction_disabled(env: Path) -> None:
+    """Both the extraction feature and the LLM tier are off by default: `extract` must
+    degrade to a one-line message and exit 0, never an error, with no profile or
+    postings needed. The extraction gate is checked first, so its message is the one
+    that surfaces here."""
+    result = _run(env, ["eligibility", "extract"])
+    assert result.exit_code == 0
+    assert "llm eligibility extraction is off" in result.output.lower()
+
+
 def test_help_smoke(env: Path) -> None:
     assert runner.invoke(app, ["eligibility", "--help"]).exit_code == 0
     assert runner.invoke(app, ["eligibility", "facts", "--help"]).exit_code == 0
     assert runner.invoke(app, ["eligibility", "policy", "--help"]).exit_code == 0
     assert runner.invoke(app, ["eligibility", "run", "--help"]).exit_code == 0
     assert runner.invoke(app, ["eligibility", "summary", "--help"]).exit_code == 0
+    assert runner.invoke(app, ["eligibility", "extract", "--help"]).exit_code == 0
