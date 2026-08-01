@@ -1,0 +1,36 @@
+# Changelog
+
+All notable changes to this project are documented here. The format follows
+[Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to
+[Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+
+## [0.1.0] - 2026-08-01
+
+First public release.
+
+### Added
+
+- **Job radar over official ATS APIs.** Watch company boards on Greenhouse, Lever, and
+  Ashby. No scraping, no credentials, no accounts.
+- **Change detection.** `digest` reports what is new, reopened, updated, or closed since
+  your last run, and `top --new` limits ranking to postings you have not seen.
+- **Deterministic eligibility engine.** Work authorization, experience, clearance, and
+  degree requirements are extracted with auditable rules, and every requirement it surfaces
+  cites the exact job description span it came from. No model is involved in the default path.
+- **Persisted eligibility audit trail.** `show` renders a per-posting verdict with its
+  supporting evidence, so a decision can be re-checked later rather than taken on trust.
+- **Ranking against your profile.** `top` scores open postings, with a live component
+  breakdown available in `show`.
+- **Application tracking.** `track` records your own funnel state per job.
+- **Data portability.** `export` writes every open or tracked posting with its verdict and
+  funnel state as JSONL or CSV. `top --json` emits machine-readable rankings.
+- **Opt-in LLM eligibility extraction.** Disabled by default. When enabled, the model acts
+  only as a span locator: it returns verbatim job description quotes, every one of which is
+  validated as a literal substring of the source before use. Fabricated citations are
+  dropped. LLM findings are advisory and can never produce an "ineligible" verdict.
+- **Local-first storage.** Its primary store is one SQLite database in your platform
+  data directory; the opt-in LLM tier also caches raw responses there as plain files on
+  disk. Overridable with `--data-dir`. No server, no cloud, no telemetry.
+- **`doctor`** for connectivity, per-board health and freshness, and database integrity.
+
+[0.1.0]: https://github.com/mit112/boardwatch/releases/tag/v0.1.0

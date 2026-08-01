@@ -23,6 +23,7 @@ from tools.generalization.discovery import (
 )
 from tools.generalization.inventory import check_inventory, check_registry_invariants
 from tools.generalization.model import Rule, Violation
+from tools.generalization.packaging import check_wheel_completeness
 from tools.generalization.shape import check_artifact_files, check_shapes
 
 ALL_RULES: tuple[Rule, ...] = (
@@ -33,6 +34,7 @@ ALL_RULES: tuple[Rule, ...] = (
     check_collection_defaults,  # R9
     check_defaults_snapshot,    # R10
     check_init_prompts,         # R11
+    check_wheel_completeness,   # R12
 )
 
 

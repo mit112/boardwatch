@@ -381,10 +381,13 @@ often. A job seeker checking a dozen companies once a day is the intended shape.
 
 ## Privacy & data
 
-- **Local-first.** Everything lives in one SQLite file in your platform data directory
-  (override with `--data-dir`). No server, no account, no cloud.
+- **Local-first.** Its primary store is one SQLite database in your platform data directory;
+  the opt-in LLM tier also caches raw responses there as plain files on disk (override with
+  `--data-dir`). No server, no account, no cloud.
 - **No telemetry.** boardwatch phones home to nobody.
-- **No secrets.** v1 has nothing to authenticate, so there's nothing to leak.
+- **One optional secret.** The default path authenticates to nothing. The opt-in LLM tier
+  reads `BOARDWATCH_LLM_API_KEY` from the environment only, and sends only public job
+  description text, never your profile. See [SECURITY.md](SECURITY.md).
 
 ---
 

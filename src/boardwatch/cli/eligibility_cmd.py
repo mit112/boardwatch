@@ -255,6 +255,10 @@ def extract_cmd(
     ordered = sorted(versions.values(), key=lambda cv: cv.posting_version_id)
     provider = settings.llm.provider or "unknown"
     model = settings.llm.model or "unknown"
+    # build_client() (llm/factory.py) never passes base_url to AnthropicClient, so the
+    # anthropic provider always talks to its hardcoded default regardless of config. Mirror
+    # that here so the preview names the destination a request will actually reach.
+    preview_base_url = settings.llm.base_url if provider != "anthropic" else None
 
     if dry_run:
         if not ordered:
@@ -264,7 +268,7 @@ def extract_cmd(
             console.print(
                 preview_text(
                     current.body_text, provider=provider, model=model,
-                    base_url=settings.llm.base_url,
+                    base_url=preview_base_url,
                 )
             )
         return
@@ -285,7 +289,7 @@ def extract_cmd(
     console.print(
         preview_text(
             ordered[0].body_text, provider=provider, model=model,
-            base_url=settings.llm.base_url,
+            base_url=preview_base_url,
         )
     )
     evaluated = 0

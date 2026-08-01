@@ -22,7 +22,10 @@ jobs:
         with:
           python-version: "3.12"
       - run: uv sync --frozen
-      - run: uv run pytest -q            # never publish a red build
+      # The strongest gate belongs on the most irreversible action. `make check` is the same
+      # generalization + ruff + mypy --strict + pytest gate main runs; `pytest -q` alone let a
+      # tag publish code that main CI would have rejected.
+      - run: make check
       - run: uv build                    # sdist + wheel into dist/
       - uses: actions/upload-artifact@v4
         with:

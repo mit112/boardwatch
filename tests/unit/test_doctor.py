@@ -261,3 +261,11 @@ def test_cli_offline_renders_not_checked_and_stored(tmp_path, monkeypatch) -> No
     result = runner.invoke(app, ["--data-dir", str(data), "doctor", "--offline"])
     assert result.exit_code == 0
     assert "not checked" in result.stdout and "stored" in result.stdout
+
+
+def test_doctor_shows_a_description_in_the_command_list() -> None:
+    """Typer renders a command's docstring as its --help description. `doctor` had a
+    bare comment where the docstring belongs, so its row rendered blank."""
+    result = runner.invoke(app, ["--help"])
+    assert result.exit_code == 0
+    assert "Connectivity" in result.stdout

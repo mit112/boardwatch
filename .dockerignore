@@ -2,7 +2,10 @@
 .github
 .venv
 .agent
+.superpowers
 .reasonix-runs
+reasonix.toml
+tools
 .mypy_cache
 .pytest_cache
 .ruff_cache
@@ -11,7 +14,6 @@ coverage.xml
 dist
 tests
 docs
-uv.lock
 *.db
 _alembic_dev.db
 __pycache__

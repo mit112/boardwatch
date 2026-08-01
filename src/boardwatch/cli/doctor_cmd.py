@@ -40,6 +40,7 @@ def _integrity_check(conn: Connection) -> str:
 
 
 def doctor(ctx: typer.Context, offline: bool = typer.Option(False, "--offline")) -> None:
+    """Connectivity, board health and freshness, and database integrity checks."""
     # ensure=False (context.py supports it): doctor must INSPECT the schema, never migrate it —
     # otherwise a corrupted/absent revision would be silently upgraded before we could report it
     app_ctx = build_context(ctx.obj, ensure=False)
