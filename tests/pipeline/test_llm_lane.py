@@ -30,12 +30,15 @@ SALARY_QUOTE = "Salary range: $100k-$150k"
 
 
 class FakeClient:
-    """A ModelClient that returns canned JSON without any network call."""
+    """A ModelClient that returns canned JSON without any network call.
 
-    def __init__(self, body: str, *, model: str = "fake-model", provider: str = "fake-provider"):
+    Carries no `.model`/`.provider` attribute on purpose: extract_and_record must not
+    duck-type provenance off the client (the real adapters don't carry `.provider`
+    either), so provenance is passed explicitly by the caller instead.
+    """
+
+    def __init__(self, body: str):
         self.body = body
-        self.model = model
-        self.provider = provider
 
     def complete(self, prompt: str, *, system: str | None = None) -> str:
         return self.body
@@ -43,8 +46,6 @@ class FakeClient:
 
 class RaisingClient:
     """A ModelClient whose complete() always fails, simulating a provider error."""
-
-    model = "fake-model"
 
     def complete(self, prompt: str, *, system: str | None = None) -> str:
         raise RuntimeError("provider unreachable")
@@ -114,6 +115,7 @@ def test_llm_row_written_with_provenance_and_never_ineligible(
         eval_id = extract_and_record(
             conn, posting_version_id=pv_id, jd_text=JD_5YR, facts=facts, policy=policy,
             catalog=catalog, client=FakeClient(body), cache=cache,
+            provider="anthropic", model="claude-opus-4",
         )
     assert eval_id is not None
 
@@ -124,8 +126,10 @@ def test_llm_row_written_with_provenance_and_never_ineligible(
     assert row.engine_kind == "llm"
     assert row.engine_version == LANE_VERSION
     assert row.prompt_version == PROMPT_VERSION
-    assert row.provider == "fake-provider"
-    assert row.model == "fake-model"
+    # Provenance is recorded from the EXPLICIT provider/model params, never duck-typed
+    # off the client (the real adapters carry no `.provider` attribute at all).
+    assert row.provider == "anthropic"
+    assert row.model == "claude-opus-4"
     assert row.verdict in ("eligible", "uncertain")
     assert row.verdict != "ineligible"
 

@@ -90,6 +90,8 @@ def extract_and_record(
     catalog: RulesCatalog,
     client: ModelClient | None,
     cache: ResponseCache,
+    provider: str | None = None,
+    model: str | None = None,
 ) -> int | None:
     """Run the LLM lane once and record an advisory `engine_kind='llm'` audit row.
 
@@ -98,15 +100,19 @@ def extract_and_record(
     reuses the prior raw response instead of re-calling the provider; a miss calls
     `client.complete` and populates the cache. The verdict is capped to `"eligible"`
     or `"uncertain"` and can never be `"ineligible"`.
+
+    `provider`/`model` are the caller's OWN record of which adapter it built (e.g. from
+    `settings.llm`), recorded verbatim in the audit row. They are not read off `client`:
+    the `ModelClient` protocol only guarantees `.complete`, and the real adapters
+    (`AnthropicClient`, `OpenAICompatClient`) never carry a `.provider` attribute, so
+    duck-typing that off the client silently lost the vendor on every real run.
     """
     if client is None:
         return None
 
     payload = build_payload(jd_text)
     content_hash = hashlib.sha256(jd_text.encode("utf-8")).hexdigest()
-    model_name: str | None = getattr(client, "model", None)
-    provider: str | None = getattr(client, "provider", None)
-    cache_key = cache.key(content_hash, PROMPT_VERSION, model_name or "")
+    cache_key = cache.key(content_hash, PROMPT_VERSION, model or "unknown")
 
     raw = cache.get(cache_key)
     if raw is None:
@@ -147,7 +153,7 @@ def extract_and_record(
         score=None,
         requirements=items,
         provider=provider,
-        model=model_name,
+        model=model,
         prompt_version=PROMPT_VERSION,
         idempotency_key=None,
         raw_output={"raw": raw},
