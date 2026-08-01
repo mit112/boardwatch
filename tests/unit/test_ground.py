@@ -8,6 +8,8 @@ that test. That locks the strict behaviour without any throwaway stub.
 
 import json
 
+import pytest
+
 from boardwatch.eligibility.ground import ground
 
 JD = "We require a minimum of 5 years of experience. Security clearance is a plus."
@@ -75,8 +77,15 @@ def test_first_occurrence_offsets_used_for_duplicate_substring() -> None:
 def test_fail_closed_on_deeply_nested_json() -> None:
     # Syntactically valid but pathologically deep JSON must not raise RecursionError
     # out of ground(); the fail-closed contract covers this the same as malformed JSON.
-    deeply_nested = "[" * 5000 + "]" * 5000
-    assert ground(JD, deeply_nested) == []
+    deep = "[" * 20000 + "]" * 20000
+    # Precondition: this input genuinely makes json.loads raise, so the assertion below
+    # actually exercises the RecursionError branch of ground()'s guard. Without this
+    # check, the test would pass even if RecursionError were dropped from the except
+    # tuple, because a shallower depth just parses into a (non-dict) list element that
+    # takes the ordinary per-element-drop path instead.
+    with pytest.raises(RecursionError):
+        json.loads(deep)
+    assert ground(JD, deep) == []
 
 
 def test_broken_element_drops_only_itself() -> None:
