@@ -23,7 +23,14 @@ EXPECTED_SETTINGS_DEFAULTS: dict[str, object] = {
         "recency": 0.15,
         "location_fit": 0.1,
     },
-    "Settings.llm": {"enabled": False, "provider": None, "model": None},
+    "Settings.llm": {
+        "enabled": False,
+        "provider": None,
+        "model": None,
+        "base_url": None,
+        "eligibility_extraction": False,
+        "max_calls_per_run": 50,
+    },
     "RankWeights.skill_coverage": 0.5,
     "RankWeights.title_match": 0.25,
     "RankWeights.recency": 0.15,
@@ -31,6 +38,9 @@ EXPECTED_SETTINGS_DEFAULTS: dict[str, object] = {
     "LLMTier.enabled": False,
     "LLMTier.provider": None,
     "LLMTier.model": None,
+    "LLMTier.base_url": None,
+    "LLMTier.eligibility_extraction": False,
+    "LLMTier.max_calls_per_run": 50,
 }
 
 SETTINGS_FIELD_CLASS: dict[str, str] = {
@@ -51,6 +61,9 @@ SETTINGS_FIELD_CLASS: dict[str, str] = {
     "LLMTier.enabled": "capability",
     "LLMTier.provider": "capability",
     "LLMTier.model": "capability",
+    "LLMTier.base_url": "capability",
+    "LLMTier.eligibility_extraction": "capability",
+    "LLMTier.max_calls_per_run": "operational",
 }
 
 # Preference-bearing parameter defaults, which live outside the settings models.
