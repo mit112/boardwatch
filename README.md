@@ -393,7 +393,7 @@ often. A job seeker checking a dozen companies once a day is the intended shape.
 
 ## Roadmap
 
-- [ ] PyPI + GHCR published releases (`pipx install boardwatch`, `docker run …`)
+- [x] PyPI + GHCR published releases (`pipx install boardwatch`, `docker run …`)
 - [ ] Notifications on new matches (desktop / webhook)
 - [x] `digest` and `top --new` change detection (only what changed since last run)
 - [ ] More ATS providers (community-driven)
