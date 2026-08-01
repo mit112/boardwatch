@@ -8,6 +8,7 @@ in-process top path the perf smoke benchmarks (§6.3-7).
 
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass
 from datetime import datetime
 
@@ -72,9 +73,12 @@ def rank_open_postings(
     limit: int = 10,
     include_ineligible: bool = False,
     only_new: bool = False,
+    output_console: Console = console,
 ) -> RankedResults:
-    run_preflight(engine, settings, console)
-    stats = run_eligibility(engine, settings, console)  # no-op on a null profile; before the check
+    run_preflight(engine, settings, output_console)
+    stats = run_eligibility(
+        engine, settings, output_console
+    )  # no-op on a null profile; before the check
     version = load_taxonomy(settings.config_dir).version
     now = now or utcnow()
     with engine.connect() as conn:
@@ -225,22 +229,44 @@ def top(
     new: bool = typer.Option(
         False, "--new", help="Only postings first seen since your last digest."
     ),
+    json_output: bool = typer.Option(False, "--json", help="Output ranked postings as JSON."),
 ) -> None:
     """Rank open postings against your profile (on-demand, §3.6)."""
     app_ctx = build_context(ctx.obj)
+    output_console = Console(stderr=json_output)
     try:
         results = rank_open_postings(
-            app_ctx.engine, app_ctx.settings, limit=n,
-            include_ineligible=include_ineligible, only_new=new,
+            app_ctx.engine,
+            app_ctx.settings,
+            limit=n,
+            include_ineligible=include_ineligible,
+            only_new=new,
+            output_console=output_console,
         )
     except NoProfileError:
-        console.print("no profile yet — run `boardwatch init` first")
+        output_console.print("no profile yet — run `boardwatch init` first")
         raise typer.Exit(code=1) from None
+    if json_output:
+        console.print_json(
+            json.dumps(
+                [
+                    {
+                        "posting_id": p.posting_id,
+                        "title": p.title,
+                        "company": p.company,
+                        "score": p.score.total,
+                        "why": p.why,
+                    }
+                    for p in results.visible
+                ]
+            )
+        )
+        return
     if not results.visible and not results.hidden_ineligible:
         if new:
-            console.print("nothing new since your last digest")
+            output_console.print("nothing new since your last digest")
         else:
-            console.print("no open postings match your filters")
+            output_console.print("no open postings match your filters")
         return
     table = Table(show_header=True, header_style="bold")
     table.add_column("#", style="dim")
