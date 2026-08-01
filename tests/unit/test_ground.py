@@ -54,11 +54,13 @@ def test_fail_closed_when_top_level_is_not_a_list() -> None:
     assert ground(JD, json.dumps({"family": "degree", "span_quote": "minimum of 5 years"})) == []
 
 
-def test_fail_closed_when_element_is_not_a_dict() -> None:
+def test_element_not_a_dict_is_dropped_not_global() -> None:
+    # element-level problem: drops just that element, not the whole call.
     assert ground(JD, json.dumps(["minimum of 5 years"])) == []
 
 
-def test_fail_closed_on_non_string_family_or_span_quote() -> None:
+def test_non_string_family_or_span_quote_is_dropped_not_global() -> None:
+    # element-level problem: drops just that element, not the whole call.
     assert ground(JD, json.dumps([{"family": 1, "span_quote": "minimum of 5 years"}])) == []
     assert ground(JD, json.dumps([{"family": "degree", "span_quote": 5}])) == []
 
@@ -68,3 +70,30 @@ def test_first_occurrence_offsets_used_for_duplicate_substring() -> None:
     out = ground(jd, json.dumps([{"family": "experience_years", "span_quote": "5 years"}]))
     assert len(out) == 1
     assert out[0].span == (0, 7)
+
+
+def test_fail_closed_on_deeply_nested_json() -> None:
+    # Syntactically valid but pathologically deep JSON must not raise RecursionError
+    # out of ground(); the fail-closed contract covers this the same as malformed JSON.
+    deeply_nested = "[" * 5000 + "]" * 5000
+    assert ground(JD, deeply_nested) == []
+
+
+def test_broken_element_drops_only_itself() -> None:
+    valid = {"family": "experience_years", "span_quote": "minimum of 5 years"}
+    missing_span_quote = {"family": "degree"}
+    not_a_dict = "oops"
+
+    out_valid_then_broken = ground(JD, json.dumps([valid, missing_span_quote, not_a_dict]))
+    assert [g.family for g in out_valid_then_broken] == ["experience_years"]
+
+    out_broken_then_valid = ground(JD, json.dumps([not_a_dict, missing_span_quote, valid]))
+    assert [g.family for g in out_broken_then_valid] == ["experience_years"]
+
+
+def test_span_quote_at_end_of_jd() -> None:
+    quote = "Security clearance is a plus."
+    out = ground(JD, json.dumps([{"family": "clearance", "span_quote": quote}]))
+    assert len(out) == 1
+    start, end = out[0].span
+    assert JD[start:end] == quote
