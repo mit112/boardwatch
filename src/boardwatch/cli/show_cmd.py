@@ -15,7 +15,7 @@ from sqlalchemy import select
 from boardwatch.cli.context import build_context
 from boardwatch.cli.top_cmd import profile_view_from_row
 from boardwatch.core.clock import utcnow
-from boardwatch.eligibility.audit import AuditView, load_audit
+from boardwatch.eligibility.audit import AuditView, load_audit, load_llm_audit
 from boardwatch.eligibility.catalog import load_rules
 from boardwatch.eligibility.preflight import current_identity
 from boardwatch.extract.preflight import run_preflight
@@ -43,6 +43,21 @@ def _render_audit(audit: AuditView) -> None:
             console.print(f"      quote: {req.quote}", markup=False)
         for sup in req.support:
             console.print(f"      support: {sup.evidence_quote}", markup=False)
+
+
+def _render_llm_audit(audit: AuditView) -> None:
+    """The opt-in LLM lane's read, dimmed and labeled advisory so it never reads as the
+    authoritative verdict above it (D-P3-13). Plain lines with markup off, same as
+    _render_audit, since the quote is arbitrary JD text that could contain '['."""
+    console.print(f"advisory (LLM): {audit.verdict}", style="dim", markup=False)
+    for req in audit.requirements:
+        console.print(
+            f"  {req.disposition} · {req.requiredness}: {req.label}",
+            style="dim",
+            markup=False,
+        )
+        if req.quote:
+            console.print(f"      quote: {req.quote}", style="dim", markup=False)
 
 
 def show(
@@ -113,17 +128,21 @@ def show(
             )
         console.print(table)
 
+    catalog = load_rules(settings.config_dir)
     with engine.connect() as conn:
         identity = current_identity(conn, settings)
         profile_hash, rules_hash = identity if identity is not None else (None, None)
         audit = load_audit(
             conn,
             posting_id,
-            load_rules(settings.config_dir),
+            catalog,
             profile_hash=profile_hash,
             rules_hash=rules_hash,
         )
+        llm_audit = load_llm_audit(conn, posting_id, catalog)
     if audit is not None:
         _render_audit(audit)
+    if llm_audit is not None:
+        _render_llm_audit(llm_audit)
 
     console.print(row.body_text)

@@ -14,6 +14,11 @@ render-ready view from it. Two rules make the view honest rather than merely pre
 A closed posting is the one deliberate exception: it renders its newest historical evaluation
 and is never freshly evaluated (D-P2-9), so this reader falls back to the newest stored row
 rather than expecting a current-version, current-engine one.
+
+`load_llm_audit` is a separate, additive read for the opt-in LLM lane (D-P3-13): it looks up
+the newest `engine_kind='llm'` row for the posting's current version and reuses the same
+`AuditView` shape so the `show` render can label it advisory next to the deterministic
+verdict. It never touches the deterministic query path above.
 """
 
 from __future__ import annotations
@@ -188,6 +193,91 @@ def load_audit(
         verdict=str(newest.verdict),
         captured_at=version.captured_at,
         is_historical=is_historical,
+        catalog_version_matches=catalog_version_matches,
+        requirements=tuple(requirements),
+    )
+
+
+def load_llm_audit(conn: Connection, posting_id: int, catalog: RulesCatalog) -> AuditView | None:
+    """The newest opt-in `engine_kind='llm'` evaluation for posting_id's current version.
+
+    Additive and read-only: absent whenever the opt-in lane has never run for this
+    posting, or the posting has no current version. The result reuses `AuditView` so the
+    `show` render can label it advisory (D-P3-13) beside the deterministic verdict, but
+    this function never feeds into, or is fed by, `load_audit`'s deterministic query.
+    """
+    current = current_posting_versions(conn, [posting_id]).get(posting_id)
+    if current is None:
+        return None
+
+    newest = conn.execute(
+        select(
+            eligibility_evaluations.c.id,
+            eligibility_evaluations.c.verdict,
+            eligibility_inputs.c.rules_snapshot_json,
+        )
+        .join(
+            eligibility_inputs,
+            eligibility_evaluations.c.input_id == eligibility_inputs.c.id,
+        )
+        .where(
+            eligibility_inputs.c.posting_version_id == current.posting_version_id,
+            eligibility_evaluations.c.engine_kind == "llm",
+        )
+        .order_by(eligibility_evaluations.c.id.desc())
+        .limit(1)
+    ).one_or_none()
+    if newest is None:
+        return None
+
+    version = conn.execute(
+        select(posting_versions.c.body_text, posting_versions.c.captured_at).where(
+            posting_versions.c.id == current.posting_version_id
+        )
+    ).one()
+    body_text = str(version.body_text)
+    rules_snapshot = newest.rules_snapshot_json or {}
+    catalog_version_matches = rules_snapshot.get("catalog_version") == catalog.version
+
+    requirements: list[AuditRequirement] = []
+    req_rows = get_requirements(conn, int(newest.id))
+    support_by_req = get_support_bulk(conn, [int(req.id) for req in req_rows])
+    for req in req_rows:
+        raw_span = (req.jd_locator_json or {}).get("span")
+        quote = ""
+        if isinstance(raw_span, list) and len(raw_span) == 2:
+            try:
+                quote = body_text[int(raw_span[0]) : int(raw_span[1])]
+            except (TypeError, ValueError):
+                quote = ""
+        if catalog_version_matches:
+            label = req.requirement_text
+        else:
+            label = f"{req.rule_id} (catalog version no longer present)"
+        support = tuple(
+            AuditSupport(
+                profile_locator=sup.profile_locator_json or {},
+                evidence_quote=str(sup.evidence_quote),
+                support_kind=str(sup.support_kind),
+            )
+            for sup in support_by_req.get(int(req.id), ())
+        )
+        requirements.append(
+            AuditRequirement(
+                rule_id=req.rule_id,
+                label=label,
+                requiredness=req.requiredness,
+                disposition=req.disposition,
+                rationale=req.rationale,
+                quote=quote,
+                support=support,
+            )
+        )
+
+    return AuditView(
+        verdict=str(newest.verdict),
+        captured_at=version.captured_at,
+        is_historical=False,
         catalog_version_matches=catalog_version_matches,
         requirements=tuple(requirements),
     )

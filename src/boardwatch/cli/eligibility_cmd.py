@@ -22,6 +22,7 @@ from sqlalchemy import select
 from boardwatch.cli.context import build_context
 from boardwatch.eligibility.catalog import FamilySpec, FieldSpec, RulesCatalog, load_rules
 from boardwatch.eligibility.engine import current_evaluations
+from boardwatch.eligibility.extract_llm import extract_and_record
 from boardwatch.eligibility.facts import (
     Facts,
     Policy,
@@ -31,6 +32,9 @@ from boardwatch.eligibility.facts import (
     parse_policy,
 )
 from boardwatch.eligibility.preflight import current_identity, run_eligibility
+from boardwatch.llm.cache import ResponseCache
+from boardwatch.llm.factory import build_client
+from boardwatch.llm.payload import preview_text
 from boardwatch.store.queries import current_posting_versions, get_profile, save_eligibility
 from boardwatch.store.tables import eligibility_requirements
 
@@ -213,6 +217,90 @@ def run_cmd(ctx: typer.Context) -> None:
         console.print("no profile yet, run `boardwatch init` first")
         raise typer.Exit(code=1)
     console.print(f"evaluated {stats.evaluated} postings")
+
+
+@eligibility_app.command("extract")
+def extract_cmd(
+    ctx: typer.Context,
+    dry_run: bool = typer.Option(  # noqa: B008
+        False,
+        "--dry-run",
+        help="Preview the LLM payload and destination for open postings; call no model.",
+    ),
+) -> None:
+    """Opt-in LLM-assisted eligibility extraction (advisory, D-P3-13). Off by default.
+
+    The deterministic `eligibility run` stays authoritative; this command only ever adds
+    additional `engine_kind='llm'` rows that `show` renders as advisory. When the LLM
+    tier is off or uncredentialed this degrades to a one-line message instead of an
+    error, and never calls a model.
+    """
+    app_ctx = build_context(ctx.obj)
+    settings = app_ctx.settings
+    client = build_client(settings)
+    if client is None:
+        console.print(
+            "LLM tier is off; enable it in config and set BOARDWATCH_LLM_API_KEY"
+        )
+        return
+
+    with app_ctx.engine.connect() as conn:
+        versions = current_posting_versions(conn, None)
+    ordered = sorted(versions.values(), key=lambda cv: cv.posting_version_id)
+    provider = settings.llm.provider or "unknown"
+    model = settings.llm.model or "unknown"
+
+    if dry_run:
+        if not ordered:
+            console.print("no open postings to preview")
+            return
+        for current in ordered:
+            console.print(
+                preview_text(
+                    current.body_text, provider=provider, model=model,
+                    base_url=settings.llm.base_url,
+                )
+            )
+        return
+
+    with app_ctx.engine.connect() as conn:
+        profile_row = get_profile(conn)
+    if profile_row is None:
+        _no_profile()
+    if not ordered:
+        console.print("no open postings to extract")
+        return
+
+    facts = parse_facts(profile_row.eligibility_facts_json)
+    policy = parse_policy(profile_row.eligibility_policy_json)
+    catalog = load_rules(settings.config_dir)
+    cache = ResponseCache(settings.data_dir / "llm-cache")
+
+    console.print(
+        preview_text(
+            ordered[0].body_text, provider=provider, model=model,
+            base_url=settings.llm.base_url,
+        )
+    )
+    evaluated = 0
+    for current in ordered:
+        if evaluated >= settings.llm.max_calls_per_run:
+            break
+        with app_ctx.engine.begin() as conn:
+            extract_and_record(
+                conn,
+                posting_version_id=current.posting_version_id,
+                jd_text=current.body_text,
+                facts=facts,
+                policy=policy,
+                catalog=catalog,
+                client=client,
+                cache=cache,
+                provider=settings.llm.provider,
+                model=settings.llm.model,
+            )
+        evaluated += 1
+    console.print(f"extracted {evaluated} postings")
 
 
 @eligibility_app.command("summary")
