@@ -175,11 +175,13 @@ class SmartRecruitersProvider:
         )
 
     def healthcheck(self, fetcher: Fetcher, slug: str) -> BoardHealth:
-        """NOTE: DEAD is unreachable here — an unknown org returns 200/totalFound:0."""
+        """NOTE: DEAD is unreachable here — an unknown org returns 200/totalFound:0. A real
+        404 (CDN/WAF blip, malformed slug, future API change) must classify as ERROR, not
+        DEAD, so dead_status is set to a sentinel no real HTTP status can equal."""
         try:
             result = fetcher.get(self.board_url(slug))
         except FetchFailure as exc:
-            return health_from_failure(exc)
+            return health_from_failure(exc, dead_status=-1)
         payload = _json_object(result.content)
         if payload is None or not isinstance(payload.get("content"), list):
             return BoardHealth.ERROR

@@ -242,3 +242,13 @@ def test_healthcheck_empty_board_is_empty_not_dead(tmp_path: Path) -> None:
 def test_healthcheck_ok(tmp_path: Path) -> None:
     respx.get(LIST_URL).mock(return_value=httpx.Response(200, content=_fx("list_normal.json")))
     assert provider.healthcheck(_fetcher(tmp_path), "acme") == BoardHealth.OK
+
+
+@respx.mock
+def test_healthcheck_404_is_error_not_dead(tmp_path: Path) -> None:
+    """DEAD is unreachable for this provider (an unknown org 200s with totalFound:0), so a
+    genuine 404 must never be misclassified as DEAD."""
+    respx.get(LIST_URL).mock(return_value=httpx.Response(404))
+    result = provider.healthcheck(_fetcher(tmp_path), "acme")
+    assert result != BoardHealth.DEAD
+    assert result == BoardHealth.ERROR
