@@ -13,6 +13,7 @@ from boardwatch.cli.doctor_cmd import doctor as _doctor
 from boardwatch.cli.eligibility_cmd import eligibility_app
 from boardwatch.cli.export_cmd import export as _export
 from boardwatch.cli.init_cmd import init as _init
+from boardwatch.cli.notify_cmd import notify as _notify
 from boardwatch.cli.profile_cmd import profile_app
 from boardwatch.cli.scan_cmd import scan as _scan
 from boardwatch.cli.show_cmd import show as _show
@@ -51,6 +52,7 @@ app.command("show")(_show)
 app.add_typer(config_app, name="config")
 app.command("doctor")(_doctor)
 app.command("digest")(_digest)
+app.command("notify")(_notify)
 app.add_typer(eligibility_app, name="eligibility")
 app.add_typer(track_app, name="track")
 app.command("export")(_export)
