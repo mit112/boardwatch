@@ -16,7 +16,7 @@ class Bullet(BaseModel):
     tech_tags: list[str] = Field(default_factory=list)
 
     @model_validator(mode="after")
-    def _single_line(self) -> "Bullet":
+    def _single_line(self) -> Bullet:
         norm = " ".join(self.text.split())
         if norm != self.text:
             object.__setattr__(self, "text", norm)
@@ -38,7 +38,7 @@ class Resume(BaseModel):
     entries: list[Entry]
 
     @model_validator(mode="after")
-    def _unique_ids(self) -> "Resume":
+    def _unique_ids(self) -> Resume:
         eids = [e.entry_id for e in self.entries]
         if len(eids) != len(set(eids)):
             raise ValueError("duplicate entry_id")

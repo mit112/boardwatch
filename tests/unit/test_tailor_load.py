@@ -18,6 +18,7 @@ def test_missing_file_raises(tmp_path):
 
 
 def test_invalid_yaml_raises(tmp_path):
-    p = tmp_path / "r.yaml"; p.write_text("::: not yaml :::", encoding="utf-8")
+    p = tmp_path / "r.yaml"
+    p.write_text("::: not yaml :::", encoding="utf-8")
     with pytest.raises(ResumeLoadError):
         load_resume(p)
