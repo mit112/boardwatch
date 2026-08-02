@@ -11,6 +11,7 @@ every `top` run (no restart needed).
 | `per_host_delay_seconds` | float, ≥ 0.25 | 1.0 | next scan |
 | `retry_attempts` | int, 1–10 | 3 | next scan |
 | `scan_workers` | int, 1–8 | 4 | next scan |
+| `detail_fetch_budget` | int, 1–1000 | 50 | next scan |
 | `weights.skill_coverage` | float, [0, 1] | 0.50 | next top |
 | `weights.title_match` | float, [0, 1] | 0.25 | next top |
 | `weights.recency` | float, [0, 1] | 0.15 | next top |

@@ -63,6 +63,10 @@ class Settings(BaseModel):
     retry_attempts: int = Field(default=3, ge=1, le=10)          # total attempts; 1 = no retry
     busy_timeout_ms: int = 5000
     scan_workers: int = Field(default=4, ge=1, le=8)
+    # Multi-endpoint providers (SmartRecruiters) need one detail request per UNSEEN
+    # posting because their list carries no bodies. Bounds a first scan of a large
+    # board; exceeding it yields a partial snapshot, never a silent truncation.
+    detail_fetch_budget: int = Field(default=50, ge=1, le=1000)
     recency_half_life_days: float = 14.0
     location_filter_mode: Literal["soft", "hard"] = "soft"
     weights: RankWeights = Field(default_factory=RankWeights)

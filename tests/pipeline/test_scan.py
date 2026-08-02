@@ -6,12 +6,14 @@ from typing import Any
 import httpx
 import pytest
 import respx
+from gh_fixtures import gh_jobs, snapshot_for
 from provider_cases import ProviderCase
 from sqlalchemy import Engine, insert, select
 from typer.testing import CliRunner
 
 from boardwatch.cli.app import app
 from boardwatch.core.settings import Settings
+from boardwatch.providers.base import BoardHealth
 from boardwatch.scan.coordinator import run_scan
 from boardwatch.store import tables
 
@@ -150,3 +152,43 @@ def test_scan_cli_smoke(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, case: P
     assert result.exit_code == 0
     assert "Scanned 1 companies" in result.stdout
     assert "open postings" in result.stdout
+
+
+def test_coordinator_passes_known_posting_ids_after_first_scan(
+    engine: Engine, tmp_path: Path
+) -> None:
+    """Second scan of the same board must carry the ids stored by the first, and the
+    configured (non-default) detail_fetch_budget must reach the provider both scans (H6)."""
+    seen: list[frozenset[str]] = []
+    budgets: list[int] = []
+
+    class _Recorder:
+        name = "greenhouse"
+        board_hosts = ("boards.greenhouse.io",)
+
+        def board_url(self, slug: str) -> str:
+            return (
+                f"https://boards-api.greenhouse.io/v1/boards/{slug}/jobs"
+                "?content=true&pay_transparency=true"
+            )
+
+        def fetch_board(self, fetcher: Any, request: Any) -> Any:
+            seen.append(request.known_posting_ids)
+            budgets.append(request.detail_budget)
+            return snapshot_for(gh_jobs()[:1])
+
+        def healthcheck(self, fetcher: Any, slug: str) -> BoardHealth:
+            return BoardHealth.OK
+
+    _add_company(engine, "acme", "greenhouse")
+    settings = Settings(
+        data_dir=tmp_path, config_dir=tmp_path, retry_attempts=1, detail_fetch_budget=7
+    )
+    providers = {"greenhouse": _Recorder()}
+
+    run_scan(engine, settings, providers=providers)
+    run_scan(engine, settings, providers=providers)
+
+    assert seen[0] == frozenset()
+    assert seen[1], "second scan must know the posting stored by the first"
+    assert budgets == [7, 7]

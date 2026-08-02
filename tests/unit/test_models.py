@@ -68,3 +68,20 @@ def test_raw_posting_salary_defaults_none() -> None:
     posting = _raw_posting()
     assert posting.salary_min is None and posting.salary_max is None
     assert posting.salary_currency is None and posting.salary_period is None
+
+
+def test_known_posting_ids_defaults_to_empty_frozenset() -> None:
+    req = BoardRequest(provider="p", slug="s", url="https://x/y")
+    assert req.known_posting_ids == frozenset()
+
+
+def test_detail_budget_defaults_to_fifty() -> None:
+    req = BoardRequest(provider="p", slug="s", url="https://x/y")
+    assert req.detail_budget == 50
+
+
+def test_known_posting_ids_round_trips_and_is_frozen() -> None:
+    req = BoardRequest(
+        provider="p", slug="s", url="https://x/y", known_posting_ids=frozenset({"a", "b"})
+    )
+    assert req.known_posting_ids == frozenset({"a", "b"})

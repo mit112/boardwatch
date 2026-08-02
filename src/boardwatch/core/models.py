@@ -30,6 +30,13 @@ class BoardRequest(BaseModel):
     slug: str
     url: str  # canonical fetch URL == the http_cache key (D22)
     validators: ResponseValidators | None = None
+    # provider_posting_ids already stored for this company. Multi-endpoint providers
+    # (SmartRecruiters) use this to skip detail fetches for postings already seen.
+    # NOT part of the cache key — it never affects `url`.
+    known_posting_ids: frozenset[str] = frozenset()
+    # Max secondary (per-posting) requests a multi-endpoint provider may make for this
+    # board in this scan. Single-request providers ignore it. Also not part of the key.
+    detail_budget: int = 50
 
 
 class RawPosting(BaseModel):

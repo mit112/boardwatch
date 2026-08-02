@@ -24,6 +24,9 @@ _SCALAR_KEYS = {
     "per_host_delay_seconds": (float, "next scan", "seconds, floor 0.25"),
     "retry_attempts": (int, "next scan", "total attempts 1–10 (1 = no retry)"),
     "scan_workers": (int, "next scan", "1–8"),
+    "detail_fetch_budget": (
+        int, "next scan", "per-posting detail fetches per board per scan, 1–1000"
+    ),
 }
 _WEIGHT_KEYS = {"skill_coverage", "title_match", "recency", "location_fit"}
 

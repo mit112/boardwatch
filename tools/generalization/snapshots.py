@@ -15,6 +15,7 @@ EXPECTED_SETTINGS_DEFAULTS: dict[str, object] = {
     "Settings.retry_attempts": 3,
     "Settings.busy_timeout_ms": 5000,
     "Settings.scan_workers": 4,
+    "Settings.detail_fetch_budget": 50,
     "Settings.recency_half_life_days": 14.0,
     "Settings.location_filter_mode": "soft",
     "Settings.weights": {
@@ -50,6 +51,7 @@ SETTINGS_FIELD_CLASS: dict[str, str] = {
     "Settings.retry_attempts": "operational",
     "Settings.busy_timeout_ms": "operational",
     "Settings.scan_workers": "operational",
+    "Settings.detail_fetch_budget": "operational",
     "Settings.recency_half_life_days": "preference",
     "Settings.location_filter_mode": "preference",
     "Settings.weights": "preference",
