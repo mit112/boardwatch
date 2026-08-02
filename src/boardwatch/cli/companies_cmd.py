@@ -38,6 +38,12 @@ def add(ctx: typer.Context, target: str) -> None:
     with app_ctx.engine.begin() as conn:
         upsert_watch(conn, provider=provider, slug=slug, name=name, source=source)
     console.print(f"Watching {provider}:{slug} (source={source}).")
+    if provider == "smartrecruiters":
+        console.print(
+            "[yellow]note:[/yellow] SmartRecruiters cannot confirm a board exists — "
+            "an unknown company returns an empty board, not an error. If scans stay "
+            "empty, re-check the slug."
+        )
 
 
 @companies_app.command("remove")

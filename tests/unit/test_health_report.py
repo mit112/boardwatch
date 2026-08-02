@@ -5,7 +5,9 @@ from boardwatch.registry.health_report import check_catalog, has_failures
 def test_check_catalog_reports_every_entry(monkeypatch) -> None:
     rows = check_catalog(probe=lambda provider, slug: BoardHealth.OK)
     assert rows and all(r.status is BoardHealth.OK for r in rows)
-    assert {r.provider for r in rows} == {"greenhouse", "lever", "ashby"}
+    assert {r.provider for r in rows} == {
+        "greenhouse", "lever", "ashby", "workable", "smartrecruiters",
+    }
 
 
 def test_failures_count_dead_error_unreachable_but_not_empty() -> None:

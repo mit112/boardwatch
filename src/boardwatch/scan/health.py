@@ -86,12 +86,16 @@ def _write_board_health(engine: Engine, company_id: int, status: BoardHealth) ->
 def _fallback(
     fetcher: Fetcher, providers: dict[str, Provider], name: str, report: DoctorReport
 ) -> ProviderConnectivity:
-    # zero-watch provider: probe the first starter catalog entry — connectivity-only,
-    # ZERO DB writes (no watched row exists). UNREACHABLE ⇒ unreachable + actionable;
-    # DEAD/ERROR ⇒ reachable, informational (registry maintenance is #20's domain).
+    # zero-watch provider: probe a catalog entry — connectivity-only, ZERO DB writes
+    # (no watched row exists). UNREACHABLE ⇒ unreachable + actionable; DEAD/ERROR ⇒
+    # reachable, informational (registry maintenance is #20's domain).
+    # M3: decoupled from the `starter` tag — prefer a starter entry (existing
+    # providers' behavior is unchanged), else fall back to any catalog entry (so a
+    # provider whose only entries are non-starter still gets probed).
+    catalog = load_catalog()
     entry = next(
-        (e for e in starter_entries(load_catalog()) if e.provider == name), None
-    )
+        (e for e in starter_entries(catalog) if e.provider == name), None
+    ) or next((e for e in catalog if e.provider == name), None)
     if entry is None:
         return ProviderConnectivity(name, reachable=False, from_fallback=True)
     status = providers[name].healthcheck(fetcher, entry.slug)

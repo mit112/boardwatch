@@ -90,6 +90,11 @@ def doctor(ctx: typer.Context, offline: bool = typer.Option(False, "--offline"))
             str(w.last_ok_at or "—"), age,
         )
     console.print(health_table)
+    if any(w.provider == "smartrecruiters" and w.last_health == "empty" for w in watches):
+        console.print(
+            "\n[dim]* SmartRecruiters returns an empty board for unknown companies, so "
+            "'empty' here is unverifiable — it may be a typo'd slug.[/dim]"
+        )
     if running:
         console.print(f"[yellow]a scan is in progress (run {running.id})[/yellow]")
 
