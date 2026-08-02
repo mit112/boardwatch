@@ -46,14 +46,25 @@ def test_argv_escapes_quotes() -> None:
 
 
 def test_argv_escapes_backslash_before_quote() -> None:
-    # Escaping order matters: backslash must be escaped BEFORE quotes, otherwise a body like
-    # `\"` would produce `\\"` incorrectly (an escaped backslash followed by an unescaped
-    # quote that breaks out of the string) instead of the correct `\\\"`.
+    # Escaping order matters: backslash must be escaped BEFORE quotes. For a body of one
+    # literal backslash followed by one quote (`\"`, 2 chars): the correct backslash-first
+    # order escapes the backslash to `\\` then the quote to `\"`, yielding 3 backslashes
+    # followed by a quote. The WRONG (quote-first) order escapes the quote to `\"` first,
+    # then doubles BOTH backslashes (the original one and the one just added), yielding 4
+    # backslashes followed by a quote instead. These two reference strings are computed
+    # independently here (not by calling production `_escape`) so this test would actually
+    # fail if the two `.replace()` calls in `_escape` were ever swapped. A loose substring
+    # check doesn't discriminate the two cases (the correct 4-char sequence is itself a
+    # trailing substring of the wrong 5-char sequence), so assert exact equality instead.
     body = '\\"'
+    correct_order = body.replace("\\", "\\\\").replace('"', '\\"')
+    reversed_order = body.replace('"', '\\"').replace("\\", "\\\\")
+    assert correct_order != reversed_order  # sanity: the two orders must diverge here
     argv = build_argv("darwin", body)
     assert argv is not None
     script = argv[-1]
-    assert '\\\\\\"' in script
+    assert script == f'display notification "{correct_order}" with title "boardwatch"'
+    assert reversed_order not in script
 
 
 def test_deliver_calls_runner_on_supported() -> None:
