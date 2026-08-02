@@ -42,8 +42,10 @@ def apply_plan(resume: Resume, plan: TailorPlan, table: EquivalenceTable) -> Res
         if e.entry_id in reorders:
             order = [bid for bid in reorders[e.entry_id] if bid not in removed]
             by_id = {b.bullet_id: b for b in kept}
-            if set(order) != set(by_id):
-                raise ApplyError(f"reorder of {e.entry_id} must cover exactly the kept bullets")
+            if len(order) != len(by_id) or set(order) != set(by_id):
+                raise ApplyError(
+                    f"reorder of {e.entry_id} must be a permutation of the kept bullets"
+                )
             kept = [by_id[bid] for bid in order]
         out_bullets: list[Bullet] = []
         for b in kept:

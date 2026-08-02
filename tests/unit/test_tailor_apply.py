@@ -114,6 +114,17 @@ def test_reorder_must_cover_exactly_kept_bullets() -> None:
         )
 
 
+def test_reorder_rejects_duplicate_ids() -> None:
+    # A duplicate-id order tuple passes set-equality but is not a bijection over the
+    # kept bullets; must be rejected rather than silently duplicating a bullet.
+    with pytest.raises(ApplyError):
+        apply_plan(
+            R(),
+            TailorPlan(ops=(Reorder(entry_id="e1", order=("b1", "b2", "b3", "b1")),)),
+            TBL,
+        )
+
+
 def test_whole_token_sub_none_when_absent() -> None:
     assert whole_token_sub("Parsed JSON", "JS", "JavaScript") is None
     assert whole_token_sub("Shipped JS", "JS", "JavaScript") == "Shipped JavaScript"
