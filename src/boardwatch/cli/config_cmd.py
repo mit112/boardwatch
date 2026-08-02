@@ -30,6 +30,22 @@ _SCALAR_KEYS = {
 }
 _WEIGHT_KEYS = {"skill_coverage", "title_match", "recency", "location_fit"}
 
+
+def _str_to_bool(raw: str) -> bool:
+    v = raw.strip().lower()
+    if v in {"true", "1", "yes", "on"}:
+        return True
+    if v in {"false", "0", "no", "off"}:
+        return False
+    raise ValueError(f"expected a boolean (true/false), got {raw!r}")
+
+
+# notify.* live under [notify]; both are booleans, take effect on next notify.
+_NOTIFY_KEYS = {
+    "notify.desktop_enabled": "next notify",
+    "notify.webhook_enabled": "next notify",
+}
+
 _SECRET_LEAF_NAMES = frozenset({"api_key", "token", "secret", "password"})
 
 
@@ -80,6 +96,13 @@ def show(ctx: typer.Context) -> None:
     )
     present = "set" if resolve_secret(LLM_API_KEY_ENV) is not None else "unset"
     console.print(f"llm.api_key: {present} (via {LLM_API_KEY_ENV})")
+    for key, effect in _NOTIFY_KEYS.items():
+        leaf = key.split(".", 1)[1]
+        cur = getattr(settings.notify, leaf)
+        dflt = getattr(defaults.notify, leaf)
+        console.print(f"{key} = {cur} (default {dflt}; true/false; {effect})")
+    present = "set" if resolve_secret("BOARDWATCH_NOTIFY_WEBHOOK_URL") is not None else "unset"
+    console.print(f"notify.webhook_url: {present} (via BOARDWATCH_NOTIFY_WEBHOOK_URL)")
 
 
 @config_app.command("set")
@@ -131,6 +154,18 @@ def set_(ctx: typer.Context, key: str, value: str) -> None:
             console.print(f"[red]invalid value for {key}: {exc}[/red]")
             raise typer.Exit(code=1) from exc
         raw.setdefault("weights", {})[leaf] = new
+    elif key in _NOTIFY_KEYS:
+        leaf = key.split(".", 1)[1]
+        old = getattr(settings.notify, leaf)
+        try:
+            new = _str_to_bool(value)
+            from boardwatch.core.settings import NotifyTier
+
+            NotifyTier(**{**settings.notify.model_dump(), leaf: new})
+        except (ValueError, ValidationError) as exc:
+            console.print(f"[red]invalid value for {key}: {exc}[/red]")
+            raise typer.Exit(code=1) from exc
+        raw.setdefault("notify", {})[leaf] = new
     else:
         console.print(f"[red]unknown key {key!r}[/red]")
         raise typer.Exit(code=1)

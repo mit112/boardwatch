@@ -54,6 +54,18 @@ class LLMTier(BaseModel):
     max_calls_per_run: int = 50
 
 
+class NotifyTier(BaseModel):
+    """Delivery channels for `boardwatch notify` (P5). Off by default; enabling a
+    channel is the user's explicit opt-in to outbound delivery. The webhook URL is
+    NOT a field here — it is a secret and comes only from the environment
+    (BOARDWATCH_NOTIFY_WEBHOOK_URL) via core.secrets."""
+
+    model_config = ConfigDict(frozen=True)
+
+    desktop_enabled: bool = False
+    webhook_enabled: bool = False
+
+
 class Settings(BaseModel):
     model_config = ConfigDict(frozen=True)
 
@@ -71,6 +83,7 @@ class Settings(BaseModel):
     location_filter_mode: Literal["soft", "hard"] = "soft"
     weights: RankWeights = Field(default_factory=RankWeights)
     llm: LLMTier = Field(default_factory=LLMTier)
+    notify: NotifyTier = Field(default_factory=NotifyTier)
 
 
 def default_config_dir() -> Path:

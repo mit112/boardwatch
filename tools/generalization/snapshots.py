@@ -42,6 +42,12 @@ EXPECTED_SETTINGS_DEFAULTS: dict[str, object] = {
     "LLMTier.base_url": None,
     "LLMTier.eligibility_extraction": False,
     "LLMTier.max_calls_per_run": 50,
+    "Settings.notify": {
+        "desktop_enabled": False,
+        "webhook_enabled": False,
+    },
+    "NotifyTier.desktop_enabled": False,
+    "NotifyTier.webhook_enabled": False,
 }
 
 SETTINGS_FIELD_CLASS: dict[str, str] = {
@@ -66,6 +72,9 @@ SETTINGS_FIELD_CLASS: dict[str, str] = {
     "LLMTier.base_url": "capability",
     "LLMTier.eligibility_extraction": "capability",
     "LLMTier.max_calls_per_run": "operational",
+    "Settings.notify": "capability",
+    "NotifyTier.desktop_enabled": "capability",
+    "NotifyTier.webhook_enabled": "capability",
 }
 
 # Preference-bearing parameter defaults, which live outside the settings models.

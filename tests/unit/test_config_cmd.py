@@ -161,6 +161,18 @@ def test_set_refuses_when_config_contains_secret_and_never_leaks_value(cfg) -> N
     assert result.exception is None or canary not in repr(result.exception)
 
 
+def test_config_set_notify_webhook_enabled_roundtrips(cfg) -> None:
+    result = runner.invoke(app, [*_base(cfg), "config", "set", "notify.webhook_enabled", "true"])
+    assert result.exit_code == 0
+    assert load_settings(data_dir=cfg / "data").notify.webhook_enabled is True
+
+
+def test_config_set_notify_bad_bool_rejected(cfg) -> None:
+    result = runner.invoke(app, [*_base(cfg), "config", "set", "notify.desktop_enabled", "maybe"])
+    assert result.exit_code == 1
+    assert not (cfg / "config.toml").exists()  # nothing written on the failure path
+
+
 def test_set_refuses_secret_in_array_of_tables_and_never_leaks(cfg) -> None:
     canary = "CANARY-AOT-SECRET"
     (cfg / "config.toml").write_text(f'[[watches]]\napi_key = "{canary}"\n', encoding="utf-8")
