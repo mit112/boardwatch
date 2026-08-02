@@ -143,7 +143,9 @@ def test_pagination_follows_offsets(tmp_path: Path) -> None:
     respx.get(_page_url(100)).mock(return_value=httpx.Response(200, json=page1))
     detail = _fx_json("detail_normal.json")
     for i in range(103):
-        body = dict(detail); body["id"] = str(900000 + i); body["name"] = f"Job {i}"
+        body = dict(detail)
+        body["id"] = str(900000 + i)
+        body["name"] = f"Job {i}"
         body["location"] = {"remote": False, "hybrid": False}
         respx.get(_detail_url(str(900000 + i))).mock(return_value=httpx.Response(200, json=body))
     snap = provider.fetch_board(_fetcher(tmp_path), _request(budget=200))
