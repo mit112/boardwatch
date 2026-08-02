@@ -53,6 +53,17 @@ def test_complete_snapshot_parses_all_jobs(tmp_path: Path) -> None:
 
 
 @respx.mock
+def test_per_job_parse_errors_produce_partial(tmp_path: Path) -> None:
+    payload = _fixture_json("normal.json")
+    del payload["jobs"][0]["title"]  # corrupt exactly one job
+    respx.get(BOARD_URL).mock(return_value=httpx.Response(200, json=payload))
+    snap = provider.fetch_board(_fetcher(tmp_path), _request())
+    assert snap.status == "partial"
+    assert len(snap.postings) == len(payload["jobs"]) - 1
+    assert snap.error is not None and "1 of" in snap.error
+
+
+@respx.mock
 def test_telecommuting_maps_to_remote(tmp_path: Path) -> None:
     respx.get(BOARD_URL).mock(return_value=httpx.Response(200, content=_fixture_bytes("normal.json")))
     snap = provider.fetch_board(_fetcher(tmp_path), _request())
