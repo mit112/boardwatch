@@ -339,6 +339,35 @@ $ journalctl --user -u boardwatch-scan.service --since today
 
 `Persistent=true` runs a missed daily scan after the next login. To keep user timers running after logout, enable lingering for the account with `loginctl enable-linger "$USER"`.
 
+### Notifications
+
+`notify` is a standalone command, a sibling of `scan`: chain them in your scheduled job so
+each run scans, then pushes anything new:
+
+```bash
+/absolute/path/to/boardwatch scan && /absolute/path/to/boardwatch notify
+```
+
+Notifications are **off by default**. Turn on one or both channels:
+
+```bash
+boardwatch config set notify.webhook_enabled true
+boardwatch config set notify.desktop_enabled true
+```
+
+The webhook channel needs a URL from the environment, never from `config.toml`:
+
+```bash
+export BOARDWATCH_NOTIFY_WEBHOOK_URL=https://hooks.slack.com/services/...
+```
+
+One payload works for Slack incoming webhooks, Discord webhooks, and generic/structured
+consumers, so the same URL drops into any of them. Desktop notifications are best-effort
+(macOS via `osascript`, Linux via `notify-send`); on any other platform, or if the notifier
+binary is missing, desktop delivery degrades non-fatally and webhook remains the
+cross-platform, headless-friendly channel. Run `boardwatch notify --dry-run` to preview what
+would be sent without delivering anything or advancing the notify cursor.
+
 ---
 
 ## Supported boards
@@ -396,16 +425,17 @@ often. A job seeker checking a dozen companies once a day is the intended shape.
   the opt-in LLM tier also caches raw responses there as plain files on disk (override with
   `--data-dir`). No server, no account, no cloud.
 - **No telemetry.** boardwatch phones home to nobody.
-- **One optional secret.** The default path authenticates to nothing. The opt-in LLM tier
-  reads `BOARDWATCH_LLM_API_KEY` from the environment only, and sends only public job
-  description text, never your profile. See [SECURITY.md](SECURITY.md).
+- **Two optional secrets, env-only.** The default path authenticates to nothing. The
+  opt-in LLM tier reads `BOARDWATCH_LLM_API_KEY` and the opt-in webhook notifier reads
+  `BOARDWATCH_NOTIFY_WEBHOOK_URL`, both from the environment only and never written to
+  disk. See [SECURITY.md](SECURITY.md).
 
 ---
 
 ## Roadmap
 
 - [x] PyPI + GHCR published releases (`pipx install boardwatch`, `docker run …`)
-- [ ] Notifications on new matches (desktop / webhook)
+- [x] Notifications on new matches (desktop / webhook)
 - [x] `digest` and `top --new` change detection (only what changed since last run)
 - [x] More ATS providers (community-driven)
 - [x] Data-portability export (`--format jsonl|csv`)

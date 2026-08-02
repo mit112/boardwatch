@@ -31,6 +31,16 @@ class ProfileView:
     remote_only: bool
 
 
+def profile_view_from_row(row: object) -> ProfileView:
+    return ProfileView(
+        skills=frozenset(getattr(row, "skills_json", None) or []),
+        target_titles=tuple(getattr(row, "target_titles_json", None) or []),
+        exclude_titles=tuple(getattr(row, "exclude_titles_json", None) or []),
+        locations=tuple(getattr(row, "locations_json", None) or []),
+        remote_only=bool(getattr(row, "remote_only", False)),
+    )
+
+
 @dataclass(frozen=True)
 class Component:
     value: float | None  # None == undefined -> renormalized away

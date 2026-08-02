@@ -17,6 +17,24 @@ every `top` run (no restart needed).
 | `weights.recency` | float, [0, 1] | 0.15 | next top |
 | `weights.location_fit` | float, [0, 1] | 0.10 | next top |
 
+## `[notify]`
+
+Delivery channels for `boardwatch notify`. Both flags are off by default; enabling one is
+an explicit opt-in to outbound delivery.
+
+| Key | Type / Range | Default | Takes effect |
+|---|---|---|---|
+| `notify.desktop_enabled` | bool | `false` | next notify |
+| `notify.webhook_enabled` | bool | `false` | next notify |
+
+The webhook URL is not a config key — it is a secret and is read only from the
+environment:
+
+    export BOARDWATCH_NOTIFY_WEBHOOK_URL=...
+
+One payload works for Slack incoming webhooks, Discord webhooks, and generic/structured
+consumers. Like the LLM API key below, this URL is never stored in `config.toml`.
+
 ## Secrets (reserved for the v1.1 LLM tier)
 
 boardwatch v1 uses no credentials, so `config.toml` never contains secrets and there is

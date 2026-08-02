@@ -154,3 +154,9 @@ def test_detail_fetch_budget_default_and_bounds(tmp_path: Path) -> None:
     assert s.detail_fetch_budget == 50
     with pytest.raises(ValidationError):
         Settings(data_dir=tmp_path, config_dir=tmp_path, detail_fetch_budget=0)
+
+
+def test_notify_tier_defaults_off(tmp_path: Path) -> None:
+    s = Settings(data_dir=tmp_path, config_dir=tmp_path)
+    assert s.notify.desktop_enabled is False
+    assert s.notify.webhook_enabled is False

@@ -8,6 +8,14 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- **`notify` command.** Pushes NEW matching postings to enabled channels since the last
+  `notify` run; a standalone sibling of `digest`, chain it after `scan` (`boardwatch scan
+  && boardwatch notify`). Two zero-new-dependency channels, both off by default: a webhook
+  (one dual-key payload that renders on Slack, Discord, or a generic consumer, enabled with
+  `config set notify.webhook_enabled true` and a URL from `BOARDWATCH_NOTIFY_WEBHOOK_URL`
+  in the environment only, never in `config.toml`) and a best-effort desktop notification
+  (macOS/Linux, enabled with `config set notify.desktop_enabled true`, degrading non-fatally
+  elsewhere). `--dry-run` previews without delivering or advancing the notify cursor.
 - **Workable and SmartRecruiters providers.** boardwatch now covers five keyless ATS
   providers: Greenhouse, Lever, Ashby, Workable, and SmartRecruiters.
 - **`detail_fetch_budget` setting.** Caps how many unseen postings SmartRecruiters'

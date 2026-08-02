@@ -4,7 +4,12 @@ from pathlib import Path
 
 from sqlalchemy import Engine
 
-from boardwatch.store.app_state import get_digest_cursor, set_digest_cursor
+from boardwatch.store.app_state import (
+    get_digest_cursor,
+    get_notify_cursor,
+    set_digest_cursor,
+    set_notify_cursor,
+)
 from boardwatch.store.db import ensure_schema, get_engine
 
 
@@ -45,3 +50,14 @@ def test_cursor_is_monotonic_never_lowers(tmp_path: Path) -> None:
         set_digest_cursor(conn, 42)
     with engine.connect() as conn:
         assert get_digest_cursor(conn) == 99
+
+
+def test_notify_cursor_default_and_monotonic(tmp_path: Path) -> None:
+    """The notify cursor is independent of the digest cursor and shares its monotonic guard."""
+    engine = _engine(tmp_path)
+    with engine.begin() as conn:
+        assert get_notify_cursor(conn) == 0
+        set_notify_cursor(conn, 5)
+        assert get_notify_cursor(conn) == 5
+        set_notify_cursor(conn, 3)  # lower ignored
+        assert get_notify_cursor(conn) == 5

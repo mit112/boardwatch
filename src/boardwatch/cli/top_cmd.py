@@ -25,7 +25,12 @@ from boardwatch.eligibility.read import current_verdicts
 from boardwatch.extract.preflight import run_preflight
 from boardwatch.extract.taxonomy import load_taxonomy
 from boardwatch.rank.explain import why_summary
-from boardwatch.rank.heuristic import ProfileView, Score, passes_hard_filters, score_posting
+from boardwatch.rank.heuristic import (
+    Score,
+    passes_hard_filters,
+    profile_view_from_row,
+    score_posting,
+)
 from boardwatch.store.app_state import get_digest_cursor
 from boardwatch.store.queries import current_posting_versions, get_profile
 from boardwatch.store.tables import companies, extractions, posting_events, postings
@@ -53,16 +58,6 @@ class RankedResults:
 
     visible: list[RankedPosting]
     hidden_ineligible: int
-
-
-def profile_view_from_row(row: object) -> ProfileView:
-    return ProfileView(
-        skills=frozenset(getattr(row, "skills_json", None) or []),
-        target_titles=tuple(getattr(row, "target_titles_json", None) or []),
-        exclude_titles=tuple(getattr(row, "exclude_titles_json", None) or []),
-        locations=tuple(getattr(row, "locations_json", None) or []),
-        remote_only=bool(getattr(row, "remote_only", False)),
-    )
 
 
 def rank_open_postings(
