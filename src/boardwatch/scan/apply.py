@@ -60,8 +60,14 @@ def apply_board(
             return ApplyResult(status="unchanged")
         result = _apply_listed(conn, snapshot.postings, company_id, run_id, snapshot.url)
         result.status = snapshot.status
+        if snapshot.status in ("complete", "partial"):
+            _reset_listed_but_unrefreshed(
+                conn, snapshot.postings, snapshot.listed_ids, company_id
+            )
         if snapshot.status == "complete":
-            result.closed = _process_missing(conn, snapshot.postings, company_id, run_id)
+            result.closed = _process_missing(
+                conn, snapshot.postings, snapshot.listed_ids, company_id, run_id
+            )
             _persist_validators(conn, snapshot)
         _scan_row(
             conn, run_id, company_id, started_at, snapshot.status,
@@ -164,10 +170,48 @@ def _mutable_fields(raw: RawPosting, now: datetime) -> dict[str, Any]:
     }
 
 
+def _reset_listed_but_unrefreshed(
+    conn: Connection,
+    raw_postings: list[RawPosting],
+    listed_ids: frozenset[str],
+    company_id: int,
+) -> None:
+    """D23 for subset-detail providers, on BOTH complete and partial snapshots: a posting
+    positively LISTED but not among the refreshed postings (SmartRecruiters known/skipped)
+    is untouched by _apply_listed, so reset its miss counter here. No-op when listed_ids is
+    empty — single-request providers already reset every listed posting via _apply_listed."""
+    if not listed_ids:
+        return
+    applied = {raw.provider_posting_id for raw in raw_postings}
+    to_reset = tuple(listed_ids - applied)
+    if not to_reset:
+        return
+    conn.execute(
+        update(postings)
+        .where(
+            postings.c.company_id == company_id,
+            postings.c.status == "open",
+            postings.c.provider_posting_id.in_(to_reset),
+            postings.c.consecutive_missing != 0,
+        )
+        .values(consecutive_missing=0)
+    )
+
+
 def _process_missing(
-    conn: Connection, raw_postings: list[RawPosting], company_id: int, run_id: int
+    conn: Connection,
+    raw_postings: list[RawPosting],
+    listed_ids: frozenset[str],
+    company_id: int,
+    run_id: int,
 ) -> int:
-    listed_ids = {raw.provider_posting_id for raw in raw_postings}
+    """Close postings absent from the board (complete snapshots only). `listed_ids` is the
+    full live inventory when the provider fetched only a subset of details (SmartRecruiters
+    skips known postings); it falls back to the applied postings for single-request providers
+    that return the whole board. Listed-but-skipped rows already had their miss counter reset
+    by _reset_listed_but_unrefreshed, so this loop only skips or closes."""
+    applied = {raw.provider_posting_id for raw in raw_postings}
+    effective = listed_ids or frozenset(applied)
     open_rows = conn.execute(
         select(
             postings.c.id, postings.c.provider_posting_id, postings.c.consecutive_missing
@@ -176,7 +220,7 @@ def _process_missing(
     closed = 0
     now = utcnow()
     for row in open_rows:
-        if row.provider_posting_id in listed_ids:
+        if row.provider_posting_id in effective:
             continue
         misses = row.consecutive_missing + 1
         if misses >= CLOSE_AFTER_MISSES:

@@ -66,6 +66,10 @@ class BoardSnapshot(BaseModel):
     url: str  # echoed from the request (cache key)
     observed_validators: ResponseValidators | None = None
     error: str | None = None
+    # The FULL live board inventory when a provider fetched only a subset of details
+    # (SmartRecruiters skips known postings). _process_missing prefers this; single-
+    # request providers leave it empty and it falls back to the applied postings.
+    listed_ids: frozenset[str] = frozenset()
 
     @model_validator(mode="after")
     def _postings_empty_for_unchanged_and_failed(self) -> BoardSnapshot:
