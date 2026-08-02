@@ -141,6 +141,36 @@ SHIPPED_DATA: dict[str, DataEntry] = {
         reason=_FIXTURE,
         pin="sha256:0b71201005de8f1d3ca97c40ef9227e225338b36c56d82df8e476d088f0f3a42",
     ),
+    "tests/fixtures/smartrecruiters/detail_empty_sections.json": DataEntry(
+        kind="fixture",
+        reason=_FIXTURE,
+        pin="sha256:303c85bdb2bc3c7d88e4d6ab469e95df74b7113493b06afa11fe90e128bb425e",
+    ),
+    "tests/fixtures/smartrecruiters/detail_inactive.json": DataEntry(
+        kind="fixture",
+        reason=_FIXTURE,
+        pin="sha256:3c8c5bd504015bd0c95a2f9ac23003b7bdf7353bb41f771aa8e18b09483ddcfd",
+    ),
+    "tests/fixtures/smartrecruiters/detail_normal.json": DataEntry(
+        kind="fixture",
+        reason=_FIXTURE,
+        pin="sha256:13fb1a44e6785df1f93b50885d12063d30522e1685fbed6dc8faa5e7784360af",
+    ),
+    "tests/fixtures/smartrecruiters/list_empty.json": DataEntry(
+        kind="fixture",
+        reason=_FIXTURE,
+        pin="sha256:162a4602127b019eb5309242f077effbaf733b9f69341bc02f484c90a88ea858",
+    ),
+    "tests/fixtures/smartrecruiters/list_normal.json": DataEntry(
+        kind="fixture",
+        reason=_FIXTURE,
+        pin="sha256:ceb9f742f1080765aa6b5c7e96aff2851eff72487c8e02da1fd133fc9fe0a82f",
+    ),
+    "tests/fixtures/smartrecruiters/normal_response_headers.json": DataEntry(
+        kind="fixture",
+        reason=_FIXTURE,
+        pin="sha256:938f995faa5ae49c46c7966028dd432f7ffa68fd047ff5caf3b5d9ea2f9ed426",
+    ),
     "tests/fixtures/workable/dead_404.json": DataEntry(
         kind="fixture",
         reason=_FIXTURE,
