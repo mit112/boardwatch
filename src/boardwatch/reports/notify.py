@@ -46,10 +46,15 @@ class NotifyResult:
 
 
 def _new_ids_and_max(conn: Connection, since_event_id: int) -> tuple[set[int], int]:
+    # max_event_id advances over ALL events (any kind) past the cursor, not just
+    # `new` ones: a window with only reopened/revised/closed events must still move
+    # the floor forward, or those events get re-scanned every run indefinitely. This
+    # is safe because event ids are monotonic and selection stays gated on
+    # `kind == "new"`, so a later `new` event always has a higher id and can never
+    # be skipped by advancing past an earlier non-`new` event.
     rows = conn.execute(
-        select(posting_events.c.id, posting_events.c.posting_id)
+        select(posting_events.c.id, posting_events.c.posting_id, posting_events.c.kind)
         .where(posting_events.c.id > since_event_id)
-        .where(posting_events.c.kind == "new")
         .order_by(posting_events.c.id)
     ).all()
     # The cursor is the floor: an empty window must not move it backwards.
@@ -57,7 +62,8 @@ def _new_ids_and_max(conn: Connection, since_event_id: int) -> tuple[set[int], i
     ids: set[int] = set()
     for row in rows:
         max_event_id = max(max_event_id, int(row.id))
-        ids.add(int(row.posting_id))
+        if row.kind == "new":
+            ids.add(int(row.posting_id))
     return ids, max_event_id
 
 
@@ -96,7 +102,7 @@ def select_new_matches(
         .where(postings.c.status == "open")
         .where(postings.c.id.in_(new_ids))
     ).all()
-    versions = current_posting_versions(conn, None)
+    versions = current_posting_versions(conn, list(new_ids))
     # Read-only: the live profile's (profile_hash, rules_hash) without running the lane.
     identity = current_identity(conn, settings)
     profile_hash, rules_hash = identity if identity is not None else (None, None)
