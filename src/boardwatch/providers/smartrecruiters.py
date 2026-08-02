@@ -100,7 +100,7 @@ class SmartRecruitersProvider:
         if payload is None or not isinstance(payload.get("content"), list):
             return _failed(request.url, "invalid board payload: missing 'content' list")
         try:
-            total = int(payload["totalFound"])
+            total = max(0, int(payload["totalFound"]))
         except (KeyError, TypeError, ValueError):
             return _failed(request.url, "invalid board payload: missing 'totalFound'")
         listed: list[dict[str, Any]] = [e for e in payload["content"] if isinstance(e, dict)]
@@ -121,6 +121,11 @@ class SmartRecruitersProvider:
             offset += _PAGE_LIMIT
 
         listed_ids = {str(e["id"]) for e in listed if e.get("id") is not None}
+        if len(listed_ids) < total:
+            errors.append(
+                f"incomplete listing: collected {len(listed_ids)} of {total} postings; "
+                "treating as partial so unseen postings are not closed"
+            )
 
         budget = request.detail_budget
         unseen = [e for e in listed if str(e.get("id")) not in request.known_posting_ids]

@@ -155,6 +155,35 @@ def test_pagination_follows_offsets(tmp_path: Path) -> None:
 
 
 @respx.mock
+def test_incomplete_listing_is_partial_not_complete(tmp_path: Path) -> None:
+    """Inventory-safety: if totalFound overcounts (or a page is short/filtered), the
+    collected id count can fall short of totalFound. That must downgrade to `partial` —
+    never `complete` — so _process_missing (complete-only) never closes a live posting
+    that was simply never returned by the list."""
+    def _entry(i: int) -> dict[str, Any]:
+        return {
+            "id": str(800000 + i), "name": f"Job {i}",
+            "location": {"city": "Austin", "region": "TX", "country": "us",
+                         "remote": False, "hybrid": False},
+            "company": {"identifier": "acme"},
+        }
+    page0 = {"offset": 0, "limit": 100, "totalFound": 5,
+             "content": [_entry(i) for i in range(3)]}
+    respx.get(LIST_URL).mock(return_value=httpx.Response(200, json=page0))
+    detail = _fx_json("detail_normal.json")
+    for i in range(3):
+        body = dict(detail)
+        body["id"] = str(800000 + i)
+        body["name"] = f"Job {i}"
+        body["location"] = {"remote": False, "hybrid": False}
+        respx.get(_detail_url(str(800000 + i))).mock(return_value=httpx.Response(200, json=body))
+    snap = provider.fetch_board(_fetcher(tmp_path), _request())
+    assert snap.status == "partial"
+    assert "incomplete listing" in (snap.error or "")
+    assert len(snap.listed_ids) == 3
+
+
+@respx.mock
 def test_inactive_postings_are_skipped_and_not_listed(tmp_path: Path) -> None:
     respx.get(LIST_URL).mock(return_value=httpx.Response(200, content=_fx("list_normal.json")))
     _mock_all_details("detail_inactive.json")
