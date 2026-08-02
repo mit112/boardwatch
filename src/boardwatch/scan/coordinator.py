@@ -9,6 +9,7 @@ while the scan runs (§0.3).
 
 from __future__ import annotations
 
+from collections import defaultdict
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass, field
 from typing import Any
@@ -104,6 +105,16 @@ def _run_scan_locked(
 
     work: list[tuple[Any, Provider, BoardRequest]] = []
     with engine.connect() as conn:
+        company_ids = [row.id for row in company_rows]
+        grouped: dict[int, set[str]] = defaultdict(set)
+        if company_ids:
+            for r in conn.execute(
+                select(postings.c.company_id, postings.c.provider_posting_id).where(
+                    postings.c.company_id.in_(company_ids),
+                    postings.c.status == "open",
+                )
+            ).all():
+                grouped[r.company_id].add(str(r.provider_posting_id))
         for row in company_rows:
             prov = providers.get(row.provider)
             if prov is None:
@@ -117,6 +128,8 @@ def _run_scan_locked(
                     BoardRequest(
                         provider=row.provider, slug=row.slug, url=url,
                         validators=get_validators(conn, url),
+                        known_posting_ids=frozenset(grouped.get(row.id, ())),
+                        detail_budget=settings.detail_fetch_budget,
                     ),
                 )
             )

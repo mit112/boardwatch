@@ -209,20 +209,46 @@ def test_cli_integrity_failure_exits_nonzero(tmp_path, monkeypatch) -> None:
 
 
 # ---- CLI: exit code, mid-scan render, schema mismatch ----
-def _cli(tmp_path, monkeypatch, mapping, *, extra=None):
+def _cli(tmp_path, monkeypatch, mapping, *, extra=None, provider="greenhouse"):
     monkeypatch.delenv("GITHUB_ACTIONS", raising=False)
     monkeypatch.setenv("BOARDWATCH_CONFIG_DIR", str(tmp_path / "cfg"))
     data = tmp_path / "data"
     eng = _engine(data)
-    _watch(eng, "greenhouse", "acme")
+    _watch(eng, provider, "acme")
     if extra:
         extra(eng)
     monkeypatch.setattr(
         "boardwatch.scan.health.default_providers",
-        lambda: {"greenhouse": FakeProvider(mapping)},
+        lambda: {provider: FakeProvider(mapping)},
     )
     monkeypatch.setattr("boardwatch.scan.health.Fetcher", lambda settings: object())
     return runner.invoke(app, ["--data-dir", str(data), "doctor"])
+
+
+def test_doctor_footnotes_smartrecruiters_empty_boards(tmp_path, monkeypatch) -> None:
+    result = _cli(tmp_path, monkeypatch, {"acme": BoardHealth.EMPTY}, provider="smartrecruiters")
+    out = result.stdout.lower()
+    assert "unverifiable" in out or "cannot distinguish" in out
+
+
+def test_doctor_does_not_footnote_greenhouse_empty_boards(tmp_path, monkeypatch) -> None:
+    result = _cli(tmp_path, monkeypatch, {"acme": BoardHealth.EMPTY}, provider="greenhouse")
+    assert "unverifiable" not in result.stdout.lower()
+
+
+def test_fallback_probes_a_nonstarter_entry_for_new_provider(tmp_path) -> None:
+    """A zero-watch provider whose only catalog entry is non-starter is still reachable
+    (M3 decouple): doctor must not print a permanent NO."""
+    eng = _engine(tmp_path)
+    _watch(eng, "greenhouse", "acme")  # a different provider has a watch; workable has none
+    providers = {
+        "greenhouse": FakeProvider({"acme": BoardHealth.OK}),
+        "workable": FakeProvider({"rokt": BoardHealth.OK}),
+    }
+    report = probe_health(eng, _settings(tmp_path), fetcher=object(), providers=providers)
+    workable_line = next(c for c in report.connectivity if c.provider == "workable")
+    assert workable_line.reachable is True
+    assert workable_line.from_fallback is True
 
 
 @pytest.mark.parametrize(("status", "exit_code"), [(BoardHealth.OK, 0), (BoardHealth.DEAD, 1)])

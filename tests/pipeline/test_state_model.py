@@ -100,19 +100,19 @@ def test_b_partial_upserts_resets_and_never_closes(
     jobs = case.jobs()[:2]
     apply_board(engine, case.snapshot_for(jobs, validators=_validators(V1)), company_id, run_id)
     apply_board(engine, case.snapshot_for([], status="complete"), company_id, run_id)  # both miss 1
-    assert _posting_by_pid(engine, str(jobs[0]["id"])).consecutive_missing == 1
+    assert _posting_by_pid(engine, str(jobs[0][case.id_key])).consecutive_missing == 1
     before_cache = _dump(engine, tables.http_cache)
 
-    listed = case.clone_with_id(jobs[0], jobs[0]["id"])
+    listed = case.clone_with_id(jobs[0], jobs[0][case.id_key])
     listed[case.title_key] = "Renamed Title via Partial"
     partial = case.snapshot_for([listed], status="partial", validators=_validators(V2), error="1 of 2 failed")
     result = apply_board(engine, partial, company_id, run_id)
 
     assert result.status == "partial"
-    refreshed = _posting_by_pid(engine, str(jobs[0]["id"]))
+    refreshed = _posting_by_pid(engine, str(jobs[0][case.id_key]))
     assert refreshed.consecutive_missing == 0  # D23: positive observation resets
     assert refreshed.title == "Renamed Title via Partial"  # D25: metadata refreshed
-    unlisted = _posting_by_pid(engine, str(jobs[1]["id"]))
+    unlisted = _posting_by_pid(engine, str(jobs[1][case.id_key]))
     assert unlisted.consecutive_missing == 1  # partial never increments
     assert unlisted.status == "open"  # and never closes
     assert _dump(engine, tables.http_cache) == before_cache  # partial never persists validators
@@ -149,7 +149,7 @@ def test_e_two_complete_misses_close_reappearance_reopens(
     engine: Engine, company_id: int, run_id: int, case: ProviderCase
 ) -> None:
     jobs = case.jobs()[:2]
-    pid = str(jobs[1]["id"])
+    pid = str(jobs[1][case.id_key])
     apply_board(engine, case.snapshot_for(jobs), company_id, run_id)
     apply_board(engine, case.snapshot_for(jobs[:1]), company_id, run_id)
     assert _posting_by_pid(engine, pid).status == "open"
@@ -184,7 +184,7 @@ def test_g_revision_makes_old_extraction_unreachable(
     engine: Engine, company_id: int, run_id: int, case: ProviderCase
 ) -> None:
     jobs = case.jobs()[:1]
-    pid = str(jobs[0]["id"])
+    pid = str(jobs[0][case.id_key])
     case.set_body(jobs[0], "Original body.")
     apply_board(engine, case.snapshot_for(jobs), company_id, run_id)
     row = _posting_by_pid(engine, pid)
@@ -272,7 +272,7 @@ def test_l_nonconsecutive_misses_never_close(
     engine: Engine, company_id: int, run_id: int, case: ProviderCase
 ) -> None:
     jobs = case.jobs()[:2]
-    pid = str(jobs[0]["id"])
+    pid = str(jobs[0][case.id_key])
     apply_board(engine, case.snapshot_for(jobs), company_id, run_id)      # present
     apply_board(engine, case.snapshot_for(jobs[1:]), company_id, run_id)  # miss 1
     assert _posting_by_pid(engine, pid).consecutive_missing == 1
@@ -292,7 +292,7 @@ def test_m_metadata_only_change_refreshes_without_revised(
     case: ProviderCase,
 ) -> None:
     jobs = case.jobs()[:1]
-    pid = str(jobs[0]["id"])
+    pid = str(jobs[0][case.id_key])
     case.set_body(jobs[0], "Stable body text.")
     case.set_metadata(jobs[0], variant=1)
     apply_board(engine, case.snapshot_for(jobs, validators=_validators(V1)), company_id, run_id)

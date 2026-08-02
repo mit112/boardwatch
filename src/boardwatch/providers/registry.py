@@ -15,15 +15,22 @@ This module must never import boardwatch.store.*; it feeds store-free entry poin
 
 from __future__ import annotations
 
+from collections.abc import Callable
+from typing import cast
+
 from boardwatch.providers.ashby import AshbyProvider
 from boardwatch.providers.base import Provider
 from boardwatch.providers.greenhouse import GreenhouseProvider
 from boardwatch.providers.lever import LeverProvider
+from boardwatch.providers.smartrecruiters import SmartRecruitersProvider
+from boardwatch.providers.workable import WorkableProvider
 
 # Type intentionally left inferred (concrete class types). Annotating this as
 # tuple[type[Provider], ...] would make `cls()` below a mypy error under --strict
 # ("cannot instantiate protocol class"). Consumers only iterate and instantiate these.
-PROVIDER_CLASSES = (GreenhouseProvider, LeverProvider, AshbyProvider)
+PROVIDER_CLASSES = (
+    GreenhouseProvider, LeverProvider, AshbyProvider, WorkableProvider, SmartRecruitersProvider,
+)
 
 
 def _provider_identity() -> tuple[frozenset[str], dict[str, str]]:
@@ -68,3 +75,46 @@ def build_providers() -> dict[str, Provider]:
             raise ValueError(f"duplicate provider name {name!r} in PROVIDER_CLASSES")
         providers[name] = inst
     return providers
+
+
+SlugExtractor = Callable[[str, list[str]], str | None]
+SlugNormalizer = Callable[[str], str]
+
+
+def slug_extractor_map() -> dict[str, SlugExtractor]:
+    """Host -> optional slug extractor, for providers whose paste host serves more
+    than one URL shape. Providers opt in with a `slug_from_path` staticmethod; hosts
+    with no extractor keep board_urls' default (first path segment)."""
+    extractors: dict[str, SlugExtractor] = {}
+    for cls in PROVIDER_CLASSES:
+        fn = getattr(cls, "slug_from_path", None)
+        if fn is None:
+            continue
+        for host in cls.board_hosts:
+            extractors[host] = cast(SlugExtractor, fn)
+    return extractors
+
+
+def slug_normalizer_map() -> dict[str, SlugNormalizer]:
+    """Provider name -> optional slug normalizer, applied to BOTH the provider:slug
+    and pasted-URL forms so a case-insensitive provider canonicalizes identically
+    regardless of how the board was named."""
+    normalizers: dict[str, SlugNormalizer] = {}
+    for cls in PROVIDER_CLASSES:
+        fn = getattr(cls, "normalize_slug", None)
+        if fn is not None:
+            normalizers[cls.name] = cast(SlugNormalizer, fn)
+    return normalizers
+
+
+def slug_help_map() -> dict[str, str]:
+    """Host -> actionable guidance shown when the host matches but no slug is
+    extractable (e.g. a Workable shortlink). Plain class-attribute string, so no
+    provider needs to import board_urls (which would create an import cycle)."""
+    help_by_host: dict[str, str] = {}
+    for cls in PROVIDER_CLASSES:
+        message = getattr(cls, "slug_help", None)
+        if isinstance(message, str):
+            for host in cls.board_hosts:
+                help_by_host[host] = message
+    return help_by_host

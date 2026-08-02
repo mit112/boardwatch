@@ -3,10 +3,15 @@
 # PROVISIONAL (2026-06-13): all 35 boards live-verified OK in M4 check 1
 # (docs/registry/seed-verification.md, HTTP 200 + >=1 posting). The `starter`
 # tags below are PROVISIONAL — the ~15 most-recognizable names across all three
-# providers. M4 CHECK 2 (>=2026-06-20) finalizes them: re-verify each board is
+# original providers. M4 CHECK 2 (>=2026-06-20) finalizes them: re-verify each board is
 # still OK (the second dated check >=7 days apart), confirm the starter set's cold
 # scan->extract->rank workload <=480 s on the slowest CI OS, and Mit's
 # recognizability sign-off. Boards that fail re-verification get dropped then.
+#
+# 37 entries across five providers (M3): two non-starter (`tags: []`) entries were
+# added for workable and smartrecruiters so `doctor` can probe real connectivity for
+# those providers (scan/health.py's `_fallback`) without inflating the curated
+# starter set — they are catalog, not yet starter-grade.
 companies:
   # --- greenhouse (18) ---
   - name: Stripe
@@ -151,3 +156,13 @@ companies:
     provider: ashby
     slug: openai
     tags: [starter]
+  # --- workable ---
+  - name: Rokt
+    provider: workable
+    slug: rokt
+    tags: []
+  # --- smartrecruiters ---
+  - name: Visa
+    provider: smartrecruiters
+    slug: visa
+    tags: []

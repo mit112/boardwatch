@@ -74,3 +74,24 @@ def test_export_import_round_trip_is_noop_beyond_watching(tmp_path) -> None:
     result = runner.invoke(app, [*base, "companies", "import", str(tmp_path / "out.yaml")])
     assert result.exit_code == 0
     assert len(_watch_count(tmp_path, "lever", "globex")) == 1
+
+
+def test_adding_a_smartrecruiters_board_warns_it_cannot_be_verified(tmp_path) -> None:
+    base = _base(tmp_path)
+    result = runner.invoke(app, [*base, "companies", "add", "smartrecruiters:acme"])
+    assert result.exit_code == 0
+    assert "cannot confirm" in result.stdout.lower()
+
+
+def test_adding_a_smartrecruiters_board_lowercases_the_slug(tmp_path) -> None:
+    """H3 end-to-end: smartrecruiters:Visa stores slug 'visa'."""
+    base = _base(tmp_path)
+    result = runner.invoke(app, [*base, "companies", "add", "smartrecruiters:Visa"])
+    assert result.exit_code == 0
+    assert len(_watch_count(tmp_path, "smartrecruiters", "visa")) == 1
+
+
+def test_adding_a_greenhouse_board_emits_no_such_warning(tmp_path) -> None:
+    base = _base(tmp_path)
+    result = runner.invoke(app, [*base, "companies", "add", "greenhouse:stripe"])
+    assert "cannot confirm" not in result.stdout.lower()

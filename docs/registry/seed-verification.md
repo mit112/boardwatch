@@ -79,3 +79,11 @@ loop never fetches live boards; it reads the finalized `companies.yaml`.
 - Measuring the set-level cold scan→extract→rank workload (≤ 480 s budget; Task 25).
 - Mit's explicit recognizability sign-off.
 
+## M3 addendum: two non-starter catalog entries (Rokt/workable, Visa/smartrecruiters)
+
+Outside this check's scope (and outside the starter-set stability rule above): two
+plain (`tags: []`) catalog entries were added so `doctor`'s fallback probe has a
+board to check for the newly-registered `workable` and `smartrecruiters` providers.
+The catalog is now **37 entries across five providers** — the starter set itself is
+unchanged (still the original 35-board / three-provider evidence above).
+

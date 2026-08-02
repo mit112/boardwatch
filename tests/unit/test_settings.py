@@ -147,3 +147,10 @@ def test_no_secret_field_exists_on_settings(tmp_path, monkeypatch) -> None:
     monkeypatch.setenv("BOARDWATCH_DATA_DIR", str(tmp_path))
     dumped = repr(load_settings().model_dump())
     assert "api_key" not in dumped and "password" not in dumped
+
+
+def test_detail_fetch_budget_default_and_bounds(tmp_path: Path) -> None:
+    s = Settings(data_dir=tmp_path, config_dir=tmp_path)
+    assert s.detail_fetch_budget == 50
+    with pytest.raises(ValidationError):
+        Settings(data_dir=tmp_path, config_dir=tmp_path, detail_fetch_budget=0)

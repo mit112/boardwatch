@@ -41,10 +41,10 @@ Job boards optimize for their advertisers, not for you. LinkedIn/Indeed bury fre
 under sponsored noise and stale reposts; paid trackers put a subscription (and their
 servers, and your search history) between you and postings that are **already public**.
 
-boardwatch takes the direct route. Greenhouse, Lever, and Ashby each expose a **public,
-keyless JSON endpoint** for every board they host, the same data the company's own
-careers page renders. boardwatch polls those endpoints politely, on your schedule, and
-tells you what's *new* since last time.
+boardwatch takes the direct route. Greenhouse, Lever, Ashby, Workable, and SmartRecruiters
+each expose a **public, keyless JSON endpoint** for every board they host, the same data
+the company's own careers page renders. boardwatch polls those endpoints politely, on
+your schedule, and tells you what's *new* since last time.
 
 |                          | boardwatch            | LinkedIn/Indeed        | Paid trackers          |
 |--------------------------|-----------------------|------------------------|------------------------|
@@ -55,10 +55,11 @@ tells you what's *new* since last time.
 | Cost                     | free (self-hosted)    | free-ish (ad-driven)   | subscription           |
 | Auto-apply / spam        | never                 | no comment             | sometimes              |
 
-**Honest limits.** boardwatch only covers companies hosted on **Greenhouse, Lever, or
-Ashby** (a large slice of tech, but not everyone, no Workday/Taleo/etc. yet). It reads
-exactly what those APIs expose. It is pre-release: expect rough edges, and read
-[Responsible use](#responsible-use--legality) before pointing it at boards you don't own.
+**Honest limits.** boardwatch only covers companies hosted on **Greenhouse, Lever, Ashby,
+Workable, or SmartRecruiters** (a large slice of tech, but not everyone, no
+Workday/Taleo/etc. yet). It reads exactly what those APIs expose. It is pre-release:
+expect rough edges, and read [Responsible use](#responsible-use--legality) before
+pointing it at boards you don't own.
 
 ---
 
@@ -342,17 +343,27 @@ $ journalctl --user -u boardwatch-scan.service --since today
 
 ## Supported boards
 
-| Provider  | Public endpoint boardwatch reads                     | Auth |
-|-----------|------------------------------------------------------|------|
-| Greenhouse| `boards-api.greenhouse.io/v1/boards/<slug>/jobs`     | none |
-| Lever     | `api.lever.co/v0/postings/<slug>`                    | none |
-| Ashby     | Ashby public job-board posting API                   | none |
+| Provider        | Public endpoint boardwatch reads                                          | Auth |
+|-----------------|----------------------------------------------------------------------------|------|
+| Greenhouse      | `boards-api.greenhouse.io/v1/boards/<slug>/jobs`                          | none |
+| Lever           | `api.lever.co/v0/postings/<slug>`                                         | none |
+| Ashby           | Ashby public job-board posting API                                        | none |
+| Workable        | `apply.workable.com/api/v1/widget/accounts/<slug>?details=true` (single request, whole board) | none |
+| SmartRecruiters | `api.smartrecruiters.com/v1/companies/<slug>/postings?limit=100&offset=0` (paginated list, plus one detail fetch per unseen posting) | none |
 
 boardwatch ships a bundled **registry** of verified public boards (35+ companies, with a
 curated **starter set**), so `init` works offline out of the box. You can watch any board
 these providers host, not just the registry, with `companies add`. The registry is
 community-maintainable by PR; see
 [`src/boardwatch/registry/README.md`](src/boardwatch/registry/README.md).
+
+**SmartRecruiters honest limits.** Its API cannot distinguish a typo'd company slug from
+a real, empty board — an unknown company returns an empty board, not an error, so
+`companies add` and `doctor` flag it as unverifiable rather than confirmed. Job bodies are
+fetched once per posting (bounded by `detail_fetch_budget`, default 50) and never
+refreshed, since the list endpoint carries no revision signal for description-only edits.
+A posting that goes inactive while still listed is not re-detected as closed until it
+drops off the list — it self-heals on a later scan.
 
 ---
 
@@ -396,7 +407,7 @@ often. A job seeker checking a dozen companies once a day is the intended shape.
 - [x] PyPI + GHCR published releases (`pipx install boardwatch`, `docker run …`)
 - [ ] Notifications on new matches (desktop / webhook)
 - [x] `digest` and `top --new` change detection (only what changed since last run)
-- [ ] More ATS providers (community-driven)
+- [x] More ATS providers (community-driven)
 - [x] Data-portability export (`--format jsonl|csv`)
 
 Have a company on a board boardwatch doesn't reach yet, or an ATS you want supported?

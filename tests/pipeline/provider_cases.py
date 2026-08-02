@@ -23,8 +23,17 @@ from boardwatch.providers.greenhouse import GreenhouseProvider
 from boardwatch.providers.greenhouse import parse_job as gh_parse
 from boardwatch.providers.lever import LeverProvider
 from boardwatch.providers.lever import parse_posting as lever_parse
+from boardwatch.providers.workable import WorkableProvider
+from boardwatch.providers.workable import parse_job as workable_parse
 
 FIXTURES = Path(__file__).resolve().parents[1] / "fixtures"
+
+# SmartRecruiters is DELIBERATELY excluded from ALL_CASES. This harness models a
+# single-payload board (one mocked URL, a one-argument parser). SmartRecruiters is
+# multi-endpoint (paginated list + one detail fetch per unseen posting, a two-argument
+# parse_posting(listed, detail)) and its apply-layer behavior depends on
+# BoardSnapshot.listed_ids. It is fully covered by tests/contract/test_smartrecruiters.py
+# (every fetch branch) and tests/pipeline/test_apply_listed_ids.py (the inventory path).
 
 
 @dataclass
@@ -32,9 +41,10 @@ class ProviderCase:
     name: str
     provider: Provider
     parse: Callable[[dict[str, Any]], RawPosting]
-    envelope: str  # "array" (Lever) | "jobs" (Greenhouse, Ashby)
+    envelope: str  # "array" (Lever) | "jobs" (Greenhouse, Ashby, Workable)
     title_key: str
     slug: str = "acme"
+    id_key: str = "id"
 
     # ---- response shaping ----
     def board_url(self) -> str:
@@ -59,6 +69,8 @@ class ProviderCase:
         elif self.name == "lever":
             job["descriptionPlain"] = text  # plain text, no HTML path
             job["additionalPlain"] = ""
+        elif self.name == "workable":
+            job["description"] = f"<p>{text}</p>"  # HTML — html_to_text yields text
         else:  # ashby
             job["descriptionHtml"] = f"<p>{text}</p>"
         return job
@@ -75,6 +87,8 @@ class ProviderCase:
             job["pay_input_ranges"] = [{"min_cents": 100 * variant, "max_cents": 200 * variant}]
         elif self.name == "lever":
             job.setdefault("categories", {})["team"] = f"Platform Engineering {variant}"
+        elif self.name == "workable":
+            job["department"] = f"Engineering {variant}"
         else:  # ashby — structured comp is metadata (empty components -> salary_* NULL,
             # no body-hash change); a marker field makes the variant observable in raw_json
             job["compensation"] = {"compensationTiers": [{"components": []}], "marker": variant}
@@ -86,11 +100,13 @@ class ProviderCase:
             return raw_json["pay_input_ranges"]
         if self.name == "lever":
             return raw_json["categories"]["team"]
+        if self.name == "workable":
+            return raw_json["department"]
         return raw_json["compensation"]["marker"]
 
     def clone_with_id(self, job: dict[str, Any], new_id: int) -> dict[str, Any]:
         clone = copy.deepcopy(job)
-        clone["id"] = new_id
+        clone[self.id_key] = new_id
         return clone
 
     # ---- apply-level snapshot (used by a/b/c/e/f/l) ----
@@ -125,4 +141,7 @@ class ProviderCase:
 GREENHOUSE_CASE = ProviderCase("greenhouse", GreenhouseProvider(), gh_parse, "jobs", "title")
 LEVER_CASE = ProviderCase("lever", LeverProvider(), lever_parse, "array", "text")
 ASHBY_CASE = ProviderCase("ashby", AshbyProvider(), ashby_parse, "jobs", "title")
-ALL_CASES = [GREENHOUSE_CASE, LEVER_CASE, ASHBY_CASE]
+WORKABLE_CASE = ProviderCase(
+    "workable", WorkableProvider(), workable_parse, "jobs", "title", id_key="shortcode"
+)
+ALL_CASES = [GREENHOUSE_CASE, LEVER_CASE, ASHBY_CASE, WORKABLE_CASE]

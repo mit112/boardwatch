@@ -1,0 +1,18 @@
+{
+  "id": "744000000000001",
+  "name": "Staff Platform Engineer",
+  "active": false,
+  "postingUrl": "https://jobs.smartrecruiters.com/acme/744000000000001",
+  "applyUrl": "https://jobs.smartrecruiters.com/acme/744000000000001/apply",
+  "company": {"identifier": "acme", "name": "Acme Corp"},
+  "releasedDate": "2026-06-24T10:00:11.853Z",
+  "location": {"city": "Austin", "region": "TX", "country": "us",
+               "remote": false, "hybrid": true, "fullLocation": "Austin, TX, United States"},
+  "department": {"id": "1", "label": "Engineering"},
+  "jobAd": {"sections": {
+    "companyDescription": {"title": "Company Description", "text": "Boilerplate that must be EXCLUDED."},
+    "jobDescription": {"title": "Job Description", "text": "Build synthetic platforms."},
+    "qualifications": {"title": "Qualifications", "text": "Synthetic requirements."},
+    "additionalInformation": {"title": "Additional Information", "text": "Synthetic extras."}
+  }}
+}

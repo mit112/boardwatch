@@ -14,7 +14,7 @@ description = "Self-hosted job radar over official ATS APIs"
 readme = "README.md"
 license = "MIT"
 authors = [{ name = "Mit Sheth" }]
-keywords = ["jobs", "job-search", "ats", "greenhouse", "lever", "ashby", "cli", "self-hosted", "job-board"]
+keywords = ["jobs", "job-search", "ats", "greenhouse", "lever", "ashby", "smartrecruiters", "workable", "cli", "self-hosted", "job-board"]
 classifiers = [
     "Development Status :: 3 - Alpha",
     "Environment :: Console",
