@@ -13,7 +13,6 @@ from rich.table import Table
 from sqlalchemy import select
 
 from boardwatch.cli.context import build_context
-from boardwatch.cli.top_cmd import profile_view_from_row
 from boardwatch.core.clock import utcnow
 from boardwatch.eligibility.audit import AuditView, load_audit, load_llm_audit
 from boardwatch.eligibility.catalog import load_rules
@@ -21,7 +20,7 @@ from boardwatch.eligibility.preflight import current_identity
 from boardwatch.extract.preflight import run_preflight
 from boardwatch.extract.taxonomy import load_taxonomy
 from boardwatch.rank.explain import explain
-from boardwatch.rank.heuristic import score_posting
+from boardwatch.rank.heuristic import profile_view_from_row, score_posting
 from boardwatch.store.queries import get_profile
 from boardwatch.store.tables import companies, extractions, postings
 
