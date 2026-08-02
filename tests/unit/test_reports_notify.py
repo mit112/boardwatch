@@ -169,6 +169,44 @@ def test_reopened_revised_excluded(tmp_path: Path) -> None:
     assert "Revised Role" not in titles
 
 
+def test_nonnew_only_window_advances_max_floor(tmp_path: Path) -> None:
+    """A window containing ONLY non-`new` events (no `new` at all) must still advance
+    max_event_id past since_event_id, otherwise the cursor never moves and these
+    events get re-scanned forever (indefinitely stale high-water mark)."""
+    settings = _settings(tmp_path)
+    engine = _engine(settings)
+    _seed_profile(engine)
+    # Seed one `new` event first to establish the cursor floor, then seed ONLY
+    # non-`new` events (reopened, revised) past that floor.
+    _, seed_event_id = _seed_posting(engine, title="Seed Role", slug="seed", kind="new")
+    _, reopened_event_id = _seed_posting(engine, title="Reopened Role", slug="reopened-only", kind="reopened")
+    _, revised_event_id = _seed_posting(engine, title="Revised Role", slug="revised-only", kind="revised")
+    with engine.connect() as conn:
+        profile = profile_view_from_row(get_profile(conn))
+        result = select_new_matches(conn, seed_event_id, profile, settings)
+    assert result.is_empty
+    assert result.max_event_id == max(reopened_event_id, revised_event_id)
+    assert result.max_event_id > seed_event_id
+
+
+def test_items_sorted_by_score_descending(tmp_path: Path) -> None:
+    settings = _settings(tmp_path)
+    engine = _engine(settings)
+    # target_titles favors an exact match; a very different title scores much lower
+    # on title_match, giving a robust (non-tied) score separation.
+    _seed_profile(engine, target_titles=("Backend Engineer",))
+    _seed_posting(engine, title="Backend Engineer", slug="high-score")
+    _seed_posting(engine, title="Marketing Intern", slug="low-score")
+    with engine.connect() as conn:
+        profile = profile_view_from_row(get_profile(conn))
+        result = select_new_matches(conn, 0, profile, settings)
+    assert len(result.items) == 2
+    scores = [i.score for i in result.items]
+    assert scores == sorted(scores, reverse=True)
+    assert scores[0] > scores[1]
+    assert result.items[0].title == "Backend Engineer"
+
+
 def test_selection_agrees_with_top_on_ineligible_hiding(tmp_path: Path) -> None:
     """select_new_matches and rank_open_postings (which backs `top`) must agree on
     which posting is hidden as ineligible for the same DB state (Step 4 note)."""
