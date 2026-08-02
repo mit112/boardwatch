@@ -47,7 +47,7 @@ _NOTIFY_KEYS = {
     "notify.webhook_enabled": "next notify",
 }
 
-_SECRET_LEAF_NAMES = frozenset({"api_key", "token", "secret", "password"})
+_SECRET_LEAF_NAMES = frozenset({"api_key", "token", "secret", "password", "webhook_url"})
 
 
 def _is_secret_key(name: str) -> bool:
@@ -117,13 +117,13 @@ def set_(ctx: typer.Context, key: str, value: str) -> None:
         console.print(
             f"[red]refusing to write: config.toml must not contain secrets; found "
             f"reserved key {existing_secret!r}. Remove it and put credentials in the "
-            f"environment ({LLM_API_KEY_ENV}).[/red]"
+            f"environment instead (e.g. {LLM_API_KEY_ENV} or {WEBHOOK_URL_ENV}).[/red]"
         )
         raise typer.Exit(code=1)
     if _is_secret_key(key.rsplit(".", 1)[-1]):
         console.print(
-            f"[red]secrets do not belong in config.toml; set {LLM_API_KEY_ENV} in the "
-            f"environment instead of {key!r}.[/red]"
+            f"[red]secrets do not belong in config.toml; set the matching environment "
+            f"variable instead of {key!r} (e.g. {LLM_API_KEY_ENV} or {WEBHOOK_URL_ENV}).[/red]"
         )
         raise typer.Exit(code=1)
     if key == "llm" or key.startswith("llm."):

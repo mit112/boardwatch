@@ -425,9 +425,10 @@ often. A job seeker checking a dozen companies once a day is the intended shape.
   the opt-in LLM tier also caches raw responses there as plain files on disk (override with
   `--data-dir`). No server, no account, no cloud.
 - **No telemetry.** boardwatch phones home to nobody.
-- **One optional secret.** The default path authenticates to nothing. The opt-in LLM tier
-  reads `BOARDWATCH_LLM_API_KEY` from the environment only, and sends only public job
-  description text, never your profile. See [SECURITY.md](SECURITY.md).
+- **Two optional secrets, env-only.** The default path authenticates to nothing. The
+  opt-in LLM tier reads `BOARDWATCH_LLM_API_KEY` and the opt-in webhook notifier reads
+  `BOARDWATCH_NOTIFY_WEBHOOK_URL`, both from the environment only and never written to
+  disk. See [SECURITY.md](SECURITY.md).
 
 ---
 

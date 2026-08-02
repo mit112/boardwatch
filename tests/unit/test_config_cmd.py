@@ -183,6 +183,20 @@ def test_config_set_notify_webhook_url_rejected_and_never_written(cfg) -> None:
     assert not (cfg / "config.toml").exists()  # nothing written on the failure path
 
 
+def test_set_refuses_when_config_contains_webhook_url_secret_and_preserves_it(cfg) -> None:
+    """A pre-existing notify.webhook_url is a secret (P0-3): a later VALID `config set`
+    must refuse rather than silently reserializing (and thus persisting) it."""
+    canary = "https://hook.example/secret-token"
+    (cfg / "config.toml").write_text(f'[notify]\nwebhook_url = "{canary}"\n', encoding="utf-8")
+    result = runner.invoke(app, [*_base(cfg), "config", "set", "notify.desktop_enabled", "true"])
+    assert result.exit_code != 0
+    assert "notify.webhook_url" in result.output   # the offending path is named
+    assert canary not in result.output             # value-free error
+    data = tomllib.loads((cfg / "config.toml").read_text())
+    assert "desktop_enabled" not in data.get("notify", {})   # valid set was NOT applied
+    assert data["notify"]["webhook_url"] == canary            # secret preserved untouched
+
+
 def test_set_refuses_secret_in_array_of_tables_and_never_leaks(cfg) -> None:
     canary = "CANARY-AOT-SECRET"
     (cfg / "config.toml").write_text(f'[[watches]]\napi_key = "{canary}"\n', encoding="utf-8")

@@ -14,7 +14,9 @@ of any kind.
 
 ## Secrets
 
-boardwatch has exactly one secret, and only if you opt in to it.
+boardwatch has two secrets, both opt-in and both read from the environment only: the LLM
+eligibility-extraction API key and the notification webhook URL. Neither is ever written
+to the database, written to your config file, or printed.
 
 The LLM eligibility-extraction tier is **disabled by default**. The deterministic
 eligibility engine is the default path and never contacts a model. When you enable the
