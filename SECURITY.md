@@ -28,3 +28,14 @@ watching. Your profile, your eligibility facts, and your application history are
 sent to the model provider. Once the tier is enabled and `BOARDWATCH_LLM_API_KEY` is set,
 `boardwatch eligibility extract --dry-run` previews the job description text and
 destination for every open posting before any request is made.
+
+## What leaves your machine when notifications are on
+
+Notifications are disabled by default (`notify.desktop_enabled` and
+`notify.webhook_enabled` are both `false`). When `notify.webhook_enabled` is turned on and
+`BOARDWATCH_NOTIFY_WEBHOOK_URL` is set, `boardwatch notify` POSTs to that URL only the
+public job facts already shown by `top`: title, company, the public posting URL, score,
+and a one-token eligibility verdict. It never sends your profile text, résumé, or
+eligibility evidence. The webhook URL is read only from the environment; it is never
+stored in `config.toml`. Desktop notifications send only a short local summary (best-effort
+via the OS's own notifier) and make no network request at all.
