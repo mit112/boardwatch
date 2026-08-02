@@ -15,6 +15,7 @@ from rich.console import Console
 from boardwatch.cli.context import build_context
 from boardwatch.core.secrets import LLM_API_KEY_ENV, resolve_secret
 from boardwatch.core.settings import Settings, load_settings
+from boardwatch.notify.webhook import WEBHOOK_URL_ENV
 
 config_app = typer.Typer(no_args_is_help=True, help="Show or change settings.")
 console = Console()
@@ -101,8 +102,8 @@ def show(ctx: typer.Context) -> None:
         cur = getattr(settings.notify, leaf)
         dflt = getattr(defaults.notify, leaf)
         console.print(f"{key} = {cur} (default {dflt}; true/false; {effect})")
-    present = "set" if resolve_secret("BOARDWATCH_NOTIFY_WEBHOOK_URL") is not None else "unset"
-    console.print(f"notify.webhook_url: {present} (via BOARDWATCH_NOTIFY_WEBHOOK_URL)")
+    present = "set" if resolve_secret(WEBHOOK_URL_ENV) is not None else "unset"
+    console.print(f"notify.webhook_url: {present} (via {WEBHOOK_URL_ENV})")
 
 
 @config_app.command("set")

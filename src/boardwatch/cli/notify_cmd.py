@@ -99,7 +99,7 @@ def notify(
         return  # matches undelivered → do NOT advance
     outcome = dispatch(result.items, channels)  # network POST / osascript here, no lock held
     for r in outcome.results:
-        console.print(f"  {r.channel}: {'ok' if r.ok else 'skipped'} — {r.detail}")
+        console.print(f"  {r.channel}: {'ok' if r.ok else 'failed'} — {r.detail}")
 
     # Phase 3: ADVANCE (short own tx) only if something actually reached a channel.
     if outcome.any_delivered:
