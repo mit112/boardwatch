@@ -1,0 +1,9 @@
+pairs:
+  - from: "JS"
+    to: "JavaScript"
+  - from: "TS"
+    to: "TypeScript"
+  - from: "Postgres"
+    to: "PostgreSQL"
+  - from: "GCP"
+    to: "GoogleCloud"
