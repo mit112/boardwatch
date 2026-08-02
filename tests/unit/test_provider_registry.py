@@ -7,23 +7,25 @@ from boardwatch.providers import registry
 from boardwatch.providers.ashby import AshbyProvider
 from boardwatch.providers.greenhouse import GreenhouseProvider
 from boardwatch.providers.lever import LeverProvider
+from boardwatch.providers.workable import WorkableProvider
 
 
 def test_each_provider_declares_public_board_hosts() -> None:
     assert GreenhouseProvider().board_hosts == ("job-boards.greenhouse.io", "boards.greenhouse.io")
     assert LeverProvider().board_hosts == ("jobs.lever.co", "jobs.eu.lever.co")
     assert AshbyProvider().board_hosts == ("jobs.ashbyhq.com",)
+    assert WorkableProvider().board_hosts == ("apply.workable.com",)
 
 
 def test_build_providers_one_instance_per_class_keyed_by_name() -> None:
     built = registry.build_providers()
-    assert set(built) == {"greenhouse", "lever", "ashby"}
+    assert set(built) == {"greenhouse", "lever", "ashby", "workable"}
     for name, inst in built.items():
         assert inst.name == name
 
 
 def test_provider_names_matches_registered_set() -> None:
-    assert registry.PROVIDER_NAMES == frozenset({"greenhouse", "lever", "ashby"})
+    assert registry.PROVIDER_NAMES == frozenset({"greenhouse", "lever", "ashby", "workable"})
 
 
 def test_host_provider_map_covers_all_hosts_without_collision() -> None:
@@ -33,6 +35,7 @@ def test_host_provider_map_covers_all_hosts_without_collision() -> None:
     assert hosts["jobs.lever.co"] == "lever"
     assert hosts["jobs.eu.lever.co"] == "lever"
     assert hosts["jobs.ashbyhq.com"] == "ashby"
+    assert hosts["apply.workable.com"] == "workable"
     total = sum(len(cls().board_hosts) for cls in registry.PROVIDER_CLASSES)
     assert len(hosts) == total  # no host maps to two providers
 

@@ -141,6 +141,26 @@ SHIPPED_DATA: dict[str, DataEntry] = {
         reason=_FIXTURE,
         pin="sha256:0b71201005de8f1d3ca97c40ef9227e225338b36c56d82df8e476d088f0f3a42",
     ),
+    "tests/fixtures/workable/dead_404.json": DataEntry(
+        kind="fixture",
+        reason=_FIXTURE,
+        pin="sha256:915fab36326382fe808614aa7e51c19f748224912b213e645605bbf603a253a8",
+    ),
+    "tests/fixtures/workable/empty.json": DataEntry(
+        kind="fixture",
+        reason=_FIXTURE,
+        pin="sha256:17e77b255f65248cdf364acd2c3f8b486bd6c2a24890fc065298a8a01c929639",
+    ),
+    "tests/fixtures/workable/normal.json": DataEntry(
+        kind="fixture",
+        reason=_FIXTURE,
+        pin="sha256:fe2d1a390190f00fe28aa0f76b3e24ad4ea74545bed22eeccfa7c4ee4967b56f",
+    ),
+    "tests/fixtures/workable/normal_response_headers.json": DataEntry(
+        kind="fixture",
+        reason=_FIXTURE,
+        pin="sha256:3ea639fa92918e10fda9999671338499a58e00a38b0dc3500ddb10c5214f1c3a",
+    ),
 }
 
 # The designation "the company registry" is bound to a literal path, not to a label a
