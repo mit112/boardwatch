@@ -66,6 +66,13 @@ SHIPPED_DATA: dict[str, DataEntry] = {
         "than exempted (D-P2-7). Overridable per user via {config_dir}/rules.yaml",
         pin="sha256:d36063e08c0077e306b6b090ba43c68afead3c3477fdc72a59856921d002aa09",
     ),
+    "src/boardwatch/tailor/equivalences.yaml": DataEntry(
+        kind="taxonomy",
+        reason="Curated, entailment-neutral synonym trust root for Tier A résumé "
+        "tailoring. Describes the world, not one user. Bundled-only, NOT user-overridable "
+        "(safety-critical); frozen by sha256 pin.",
+        pin="sha256:e0eb98d678e181d6022e265a68381581dc15012bdcfe0eebae337a2db3766627",
+    ),
     "src/boardwatch/registry/companies.yaml": DataEntry(
         kind="company_enumeration",
         reason="The one public starter registry of company job boards. Schema-validated, "

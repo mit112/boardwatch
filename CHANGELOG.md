@@ -8,6 +8,15 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- **`boardwatch tailor` command (`init`/`validate`/`run`).** Tailors an authored,
+  structured YAML résumé (`{config_dir}/resume.yaml`, scaffolded by `tailor init`)
+  against one posting's extracted JD skills: deterministic bullet selection plus
+  whole-token synonym substitution from a small, bundled, frozen equivalence table —
+  never free-text generation. A no-fabrication guarantee re-verifies the output against
+  the master résumé before anything is written, rejecting rather than degrading on
+  failure. Renders Typst source and a best-effort PDF (local `typst` binary, if present)
+  to `{data_dir}/tailored/`. Tier A: local-only, no network, no LLM. `profile.text` from
+  `boardwatch init` is never imported into a tailored résumé.
 - **`notify` command.** Pushes NEW matching postings to enabled channels since the last
   `notify` run; a standalone sibling of `digest`, chain it after `scan` (`boardwatch scan
   && boardwatch notify`). Two zero-new-dependency channels, both off by default: a webhook
