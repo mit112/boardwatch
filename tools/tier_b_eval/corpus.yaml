@@ -1,0 +1,111 @@
+# Labeled corpus for the Tier B entailment-gate eval harness (tools/tier_b_eval).
+#
+# Each case is a (a_bullet, candidate) pair with a label:
+#   entailed   - candidate makes no claim the source doesn't already support; the
+#                gate SHOULD pass it.
+#   fabricated - candidate adds a claim (skill, number, scope, outcome, ...) the
+#                source doesn't support; the gate MUST reject it.
+#
+# `held_out` names cases reserved from prompt tuning: use them only to score the
+# judge, never to iterate REWRITE_SYSTEM/JUDGE_SYSTEM wording. Both are the
+# empirically-confirmed deterministic-filter blind spots (see tools/tier_b_eval/README.md)
+# that only the LLM judge can catch, which makes them the most informative
+# fixed test points for judging judge quality.
+held_out: [c5, c11]
+
+cases:
+  # -- invented_skill: filter MUST catch these alone (added_number/invented_entity/
+  # invented_skill rules run with no live LLM) --
+  - id: c1
+    family: invented_skill
+    label: fabricated
+    a_bullet: "Built the billing service in Python"
+    candidate: "Built the billing service in Python and Docker"
+  - id: c2
+    family: invented_skill
+    label: entailed
+    a_bullet: "Built the billing service in Python"
+    candidate: "Implemented the billing service in Python"
+
+  # -- inflated_number: filter MUST catch these alone --
+  - id: c3
+    family: inflated_number
+    label: fabricated
+    a_bullet: "Reduced deployment time"
+    candidate: "Reduced deployment time by 40%"
+  - id: c4
+    family: inflated_number
+    label: entailed
+    a_bullet: "Reduced deployment time"
+    candidate: "Cut deployment time"
+
+  # -- scope_creep: judge-only family. c5 is a confirmed deterministic-filter blind
+  # spot: React is a case_sensitive taxonomy pattern (matches literal "React" or
+  # "react.?js"), so a bare lowercase "react" mid-sentence matches neither the
+  # taxonomy skill rule nor the invented_entity heuristic (plain lowercase tokens
+  # never look like an entity). The filter alone PASSES this fabrication; only
+  # the judge is positioned to catch it. --
+  - id: c5
+    family: scope_creep
+    label: fabricated
+    a_bullet: "Built the frontend UI system"
+    candidate: "Built the frontend react system"
+  - id: c6
+    family: scope_creep
+    label: entailed
+    a_bullet: "Owned the checkout redesign from planning to launch"
+    candidate: "Owned the checkout redesign end-to-end"
+
+  # -- seniority_inflation: judge-only family (no new number/entity/skill to trip
+  # the deterministic filter; the claim is entirely about role/authority) --
+  - id: c7
+    family: seniority_inflation
+    label: fabricated
+    a_bullet: "Contributed to the checkout redesign"
+    candidate: "Led the checkout redesign"
+  - id: c8
+    family: seniority_inflation
+    label: entailed
+    a_bullet: "Contributed to the checkout redesign"
+    candidate: "Helped redesign the checkout flow"
+
+  # -- negation_flip: judge-only family (flips meaning without adding any token
+  # the deterministic filter tracks) --
+  - id: c9
+    family: negation_flip
+    label: fabricated
+    a_bullet: "Did not have production access during the migration"
+    candidate: "Had production access during the migration"
+  - id: c10
+    family: negation_flip
+    label: entailed
+    a_bullet: "Did not have production access during the migration"
+    candidate: "Lacked production access during the migration"
+
+  # -- unsupported_outcome: judge-only family. c11 is a confirmed deterministic-filter
+  # blind spot: the added_number rule compares set(re.findall(r"\d+", ...)), which is
+  # order- and association-blind, so swapping which number attaches to which claim
+  # passes untouched (the digit set is unchanged). The filter alone PASSES this
+  # fabrication; only the judge is positioned to catch it. --
+  - id: c11
+    family: unsupported_outcome
+    label: fabricated
+    a_bullet: "Cut latency by 12% and errors by 34%"
+    candidate: "Cut latency by 34% and errors by 12%"
+  - id: c12
+    family: unsupported_outcome
+    label: entailed
+    a_bullet: "Refactored the auth module"
+    candidate: "Refactored the authentication module"
+
+  # -- faithful: no fabrication at all, both sides entailed --
+  - id: c13
+    family: faithful
+    label: entailed
+    a_bullet: "Wrote unit tests to improve reliability"
+    candidate: "Wrote unit tests for reliability"
+  - id: c14
+    family: faithful
+    label: entailed
+    a_bullet: "Managed a small engineering team"
+    candidate: "Managed a small eng team"
