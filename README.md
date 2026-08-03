@@ -452,7 +452,11 @@ your master résumé, so either output can be traced back.
 
 **Honest bounds (Tier B).** Tier B is **not** the no-fabrication guarantee above: passing
 the filter and judge is evidence, not proof, and every reworded bullet is meant to be
-**read by you before you send it**, not trusted blind. The Tier A path never calls out
+**read by you before you send it**, not trusted blind. The guarantee is layered: the
+deterministic filter rejects invented skills, added/inflated numbers, and invented
+brand/company names outright, provider-independently; the entailment judge is a
+best-effort, model-dependent second layer for the fabrications a text-diff can't see
+(flipped negations, inflated seniority, swapped outcomes); and you are the backstop. The Tier A path never calls out
 to a model, regardless of Tier B's settings; only `--tier-b` sends bullet text and the
 posting's extracted JD skill names to the configured provider, and only when explicitly
 enabled and requested. See [SECURITY.md](SECURITY.md) for exactly what leaves your

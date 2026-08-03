@@ -36,6 +36,36 @@ def test_invented_acronym_rejected(tmp_path):
     assert not r.passed and r.reason == "invented_entity"
 
 
+def test_invented_brand_rejected(tmp_path):
+    # A mid-sentence Title-case brand name absent from the source is an invented entity,
+    # even though it is neither an acronym nor a taxonomy skill (this is the c15 gap).
+    r = passes_overmatch_filter(
+        "Built and maintained the billing service for customers worldwide",
+        "Built and maintained the billing service for Google customers worldwide",
+        _tax(tmp_path),
+    )
+    assert not r.passed and r.reason == "invented_entity"
+
+
+def test_sentence_initial_verb_not_flagged(tmp_path):
+    # Swapping the leading action verb (both Title-case, sentence-initial) must NOT be
+    # read as an invented entity -- that exemption is exactly why the brand rule skips
+    # token 0.
+    r = passes_overmatch_filter("Improved the checkout flow", "Built the checkout flow", _tax(tmp_path))
+    assert r.passed
+
+
+def test_title_case_skill_keeps_invented_skill_reason(tmp_path):
+    # Kubernetes is Title-case AND a taxonomy skill; the added-brand rule must not steal
+    # it from the more specific invented_skill reason.
+    r = passes_overmatch_filter(
+        "Built the billing service in Python",
+        "Built the billing service in Python and Kubernetes",
+        _tax(tmp_path),
+    )
+    assert not r.passed and r.reason == "invented_skill"
+
+
 def test_multiline_rejected(tmp_path):
     r = passes_overmatch_filter("Built the service", "Built\nthe service", _tax(tmp_path))
     assert not r.passed and r.reason == "not_single_line"
