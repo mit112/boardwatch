@@ -6,6 +6,7 @@ shape for a minimal open posting with a taxonomy extraction.
 
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
@@ -26,7 +27,14 @@ from boardwatch.store.tables import (
     posting_versions,
     postings,
 )
-from boardwatch.tailor.rewrite.agent_io import RewriteRequest, load_json
+from boardwatch.tailor.rewrite.agent_io import (
+    Candidate,
+    CandidatesFile,
+    JudgeRequest,
+    RewriteRequest,
+    dump_json,
+    load_json,
+)
 
 runner = CliRunner()
 NOW = datetime(2026, 8, 2, 12, 0, 0)
@@ -61,7 +69,11 @@ def _seed_open_posting(env: Env, *, skills: tuple[str, ...] = ("Python", "JavaSc
         company_id = int(
             conn.execute(
                 insert(companies).values(
-                    name="acme", provider="greenhouse", slug="acme", source="user", watched=True,
+                    name="acme",
+                    provider="greenhouse",
+                    slug="acme",
+                    source="user",
+                    watched=True,
                 )
             ).inserted_primary_key[0]
         )
@@ -69,27 +81,41 @@ def _seed_open_posting(env: Env, *, skills: tuple[str, ...] = ("Python", "JavaSc
         posting_id = int(
             conn.execute(
                 insert(postings).values(
-                    company_id=company_id, job_id=job_id, provider_posting_id="pp-acme",
-                    title="Backend Engineer", normalized_title="backend engineer",
-                    url="https://example.test/acme", locations_json=["Remote"],
-                    remote_policy="remote", posted_at=NOW, first_seen_at=NOW, last_seen_at=NOW,
-                    status="open", consecutive_missing=0, content_hash="h1",
+                    company_id=company_id,
+                    job_id=job_id,
+                    provider_posting_id="pp-acme",
+                    title="Backend Engineer",
+                    normalized_title="backend engineer",
+                    url="https://example.test/acme",
+                    locations_json=["Remote"],
+                    remote_policy="remote",
+                    posted_at=NOW,
+                    first_seen_at=NOW,
+                    last_seen_at=NOW,
+                    status="open",
+                    consecutive_missing=0,
+                    content_hash="h1",
                     body_text="Python JavaScript backend services",
                 )
             ).inserted_primary_key[0]
         )
         conn.execute(
             insert(posting_versions).values(
-                posting_id=posting_id, content_hash="h1",
+                posting_id=posting_id,
+                content_hash="h1",
                 body_text="Python JavaScript backend services",
-                captured_at=NOW, capture_reason="new",
+                captured_at=NOW,
+                capture_reason="new",
             )
         )
         conn.execute(
             insert(extractions).values(
-                posting_id=posting_id, content_hash="h1", kind="taxonomy",
+                posting_id=posting_id,
+                content_hash="h1",
+                kind="taxonomy",
                 engine_version=load_taxonomy(settings.config_dir).version,
-                json={"skills": list(skills)}, created_at=NOW,
+                json={"skills": list(skills)},
+                created_at=NOW,
             )
         )
     return posting_id
@@ -166,3 +192,102 @@ def test_rewrite_request_no_current_version_exits_1(env: Env) -> None:
     result = _run(env, ["tailor", "rewrite", "request", "999"])
     assert result.exit_code == 1
     assert "no current version" in result.stdout
+
+
+# --- rewrite screen (P7b task 5, agent lane step 2) -------------------------------------
+
+
+def test_rewrite_screen_gate_off_exits_1(env: Env, tmp_path: Path) -> None:
+    _run(env, ["tailor", "init"])
+    posting_id = _seed_open_posting(env)
+    candidates_path = tmp_path / "candidates.json"
+    dump_json(CandidatesFile(request_id="r1", candidates=[]), candidates_path)
+    out = tmp_path / "judge_request.json"
+    result = _run(
+        env,
+        [
+            "tailor",
+            "rewrite",
+            "screen",
+            str(posting_id),
+            "--candidates",
+            str(candidates_path),
+            "--out",
+            str(out),
+        ],
+    )
+    assert result.exit_code == 1
+    assert "resume_tailoring_via_agent" in result.stdout
+    assert not out.exists()
+
+
+def test_rewrite_screen_writes_jd_free_judge_request(env: Env, tmp_path: Path) -> None:
+    _write_config(env, "[llm]\nresume_tailoring_via_agent = true\n")
+    _run(env, ["tailor", "init"])
+    posting_id = _seed_open_posting(env, skills=("python", "javascript"))
+
+    # Produce the real tailored resume context via `request`, then hand-author
+    # candidates.json referencing those bullet ids.
+    request_out = tmp_path / "rewrite_request.json"
+    req_result = _run(
+        env, ["tailor", "rewrite", "request", str(posting_id), "--out", str(request_out)]
+    )
+    assert req_result.exit_code == 0, req_result.stdout
+    rewrite_request = load_json(RewriteRequest, request_out)
+    assert {b.bullet_id for b in rewrite_request.bullets} == {"acme-1", "acme-2"}
+
+    candidates_path = tmp_path / "candidates.json"
+    dump_json(
+        CandidatesFile(
+            request_id="req-1",
+            candidates=[
+                # passes the filter -> should survive to the judge
+                Candidate(
+                    bullet_id="acme-1",
+                    candidate="Shipped a Python service handling 2M requests/day on Kubernetes",
+                ),
+                # byte-equal to a_text -> dropped "unchanged"
+                Candidate(
+                    bullet_id="acme-2",
+                    candidate="Cut p99 latency 40% by rewriting the hot path in Rust",
+                ),
+            ],
+        ),
+        candidates_path,
+    )
+
+    out = tmp_path / "judge_request.json"
+    result = _run(
+        env,
+        [
+            "tailor",
+            "rewrite",
+            "screen",
+            str(posting_id),
+            "--candidates",
+            str(candidates_path),
+            "--out",
+            str(out),
+        ],
+    )
+    assert result.exit_code == 0, result.stdout
+    assert out.exists()
+
+    judge_req = load_json(JudgeRequest, out)
+    assert judge_req.request_id == "req-1"
+    assert len(judge_req.items) == 1
+    item = judge_req.items[0]
+    assert item.bullet_id == "acme-1"
+    assert item.a_text == "Built a Python service handling 2M requests/day on Kubernetes"
+    assert item.candidate == "Shipped a Python service handling 2M requests/day on Kubernetes"
+
+    # CRITICAL: judge_request.json must be structurally JD-free -- no jd/jd_skills key
+    # anywhere in the raw JSON, not just absent from the parsed model.
+    raw = json.loads(out.read_text(encoding="utf-8"))
+    assert "jd" not in raw
+    assert "jd_skills" not in raw
+    for raw_item in raw["items"]:
+        assert "jd" not in raw_item
+        assert "jd_skills" not in raw_item
+
+    assert "dropped [acme-2]: unchanged" in result.stdout

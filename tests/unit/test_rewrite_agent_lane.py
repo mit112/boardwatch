@@ -7,7 +7,12 @@ Pure logic only — no CLI, no DB. The CLI pipeline test lives alongside the oth
 from __future__ import annotations
 
 from boardwatch.tailor.model import Bullet, Entry, Resume, SkillGroup
-from boardwatch.tailor.rewrite.agent_lane import build_rewrite_request
+from boardwatch.tailor.rewrite.agent_io import Candidate, CandidatesFile, JudgeItem
+from boardwatch.tailor.rewrite.agent_lane import (
+    ScreenDrop,
+    build_rewrite_request,
+    screen_candidates,
+)
 
 
 def _sample_tailored_resume() -> Resume:
@@ -56,3 +61,63 @@ def test_build_rewrite_request_empty_entries_yields_no_bullets() -> None:
     req = build_rewrite_request(empty, set(), request_id="r3")
     assert req.bullets == []
     assert req.jd_skills == []
+
+
+# --- screen_candidates (P7b task 5, agent lane step 2) ---------------------------------
+
+
+def _tax(tmp_path):
+    from boardwatch.extract.taxonomy import load_taxonomy
+
+    return load_taxonomy(tmp_path)
+
+
+def test_screen_drops_filter_rejects_invented_brand(tmp_path) -> None:
+    tailored = _sample_tailored_resume()
+    candidates = CandidatesFile(
+        request_id="r1",
+        candidates=[
+            Candidate(bullet_id="b1", candidate="Built a Python service for Google"),
+        ],
+    )
+    judge_req, drops = screen_candidates(tailored, candidates, _tax(tmp_path), request_id="r1")
+    assert judge_req.items == []
+    assert ScreenDrop(bullet_id="b1", reason="filter:invented_entity") in drops
+
+
+def test_screen_drops_unchanged_candidate(tmp_path) -> None:
+    tailored = _sample_tailored_resume()
+    candidates = CandidatesFile(
+        request_id="r1",
+        candidates=[Candidate(bullet_id="b1", candidate="Built a Python service")],
+    )
+    judge_req, drops = screen_candidates(tailored, candidates, _tax(tmp_path), request_id="r1")
+    assert judge_req.items == []
+    assert ScreenDrop(bullet_id="b1", reason="unchanged") in drops
+
+
+def test_screen_keeps_passing_candidate_with_cli_a_text(tmp_path) -> None:
+    tailored = _sample_tailored_resume()
+    candidates = CandidatesFile(
+        request_id="r1",
+        candidates=[Candidate(bullet_id="b1", candidate="Shipped a Python service")],
+    )
+    judge_req, drops = screen_candidates(tailored, candidates, _tax(tmp_path), request_id="r1")
+    assert drops == []
+    assert judge_req.request_id == "r1"
+    assert judge_req.items == [
+        JudgeItem(
+            bullet_id="b1", a_text="Built a Python service", candidate="Shipped a Python service"
+        )
+    ]
+
+
+def test_screen_drops_unknown_bullet_id(tmp_path) -> None:
+    tailored = _sample_tailored_resume()
+    candidates = CandidatesFile(
+        request_id="r1",
+        candidates=[Candidate(bullet_id="nope", candidate="Anything")],
+    )
+    judge_req, drops = screen_candidates(tailored, candidates, _tax(tmp_path), request_id="r1")
+    assert judge_req.items == []
+    assert ScreenDrop(bullet_id="nope", reason="unknown_bullet") in drops

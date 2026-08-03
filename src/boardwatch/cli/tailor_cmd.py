@@ -26,8 +26,8 @@ from boardwatch.reports.tailor import (
     run_tailor,
 )
 from boardwatch.tailor.load import ResumeLoadError, load_resume, scaffold_template
-from boardwatch.tailor.rewrite.agent_io import dump_json
-from boardwatch.tailor.rewrite.agent_lane import build_rewrite_request
+from boardwatch.tailor.rewrite.agent_io import CandidatesFile, dump_json, load_json
+from boardwatch.tailor.rewrite.agent_lane import build_rewrite_request, screen_candidates
 from boardwatch.tailor.safety import TierASafetyError
 
 console = Console()
@@ -240,9 +240,7 @@ def rewrite_request_cmd(
     # database behind (mirrors run_cmd's --tier-b gate above).
     gate_settings = load_settings(data_dir=ctx.obj)
     if not gate_settings.llm.resume_tailoring_via_agent:
-        console.print(
-            "Tier B agent lane requires llm.resume_tailoring_via_agent = true in config"
-        )
+        console.print("Tier B agent lane requires llm.resume_tailoring_via_agent = true in config")
         raise typer.Exit(code=1)
 
     app_ctx = build_context(ctx.obj)
@@ -269,3 +267,56 @@ def rewrite_request_cmd(
         f"request_id: {request_id} · jd skills: {len(request.jd_skills)} "
         f"· bullets: {len(request.bullets)}"
     )
+
+
+@rewrite_app.command("screen")
+def rewrite_screen_cmd(
+    ctx: typer.Context,
+    posting_id: int = typer.Argument(..., help="Posting id (the # column of top)."),  # noqa: B008
+    candidates_path: Path = typer.Option(  # noqa: B008
+        ..., "--candidates", help="Path to the rewriter agent's candidates.json."
+    ),
+    resume_path: Path | None = RESUME_OPTION,
+    out: Path | None = typer.Option(  # noqa: B008
+        None,
+        "--out",
+        help="Output path (default {data_dir}/tailored/judge_request-{posting_id}.json).",
+    ),
+) -> None:
+    """Re-derive each bullet's a_text from a fresh Tier A run, filter the agent's
+    candidates through the deterministic overmatch filter, and write a JD-free
+    judge_request.json containing only filter-survivors (subscription Tier B agent
+    lane, step 2)."""
+    # Evaluate the gate against settings ALONE, before build_context below creates and
+    # migrates boardwatch.db — mirrors rewrite_request_cmd's gate above.
+    gate_settings = load_settings(data_dir=ctx.obj)
+    if not gate_settings.llm.resume_tailoring_via_agent:
+        console.print("Tier B agent lane requires llm.resume_tailoring_via_agent = true in config")
+        raise typer.Exit(code=1)
+
+    app_ctx = build_context(ctx.obj)
+    settings = app_ctx.settings
+    try:
+        tailored, _jd_skills, taxonomy = plan_tier_a(
+            app_ctx.engine,
+            settings,
+            posting_id,
+            resume_path=_resume_path(settings, resume_path),
+        )
+    except (ResumeLoadError, NoCurrentVersionError, TierASafetyError) as exc:
+        console.print(str(exc))
+        raise typer.Exit(code=1) from exc
+
+    candidates = load_json(CandidatesFile, candidates_path)
+    judge_req, drops = screen_candidates(
+        tailored, candidates, taxonomy, request_id=candidates.request_id
+    )
+    default_out = settings.data_dir / "tailored" / f"judge_request-{posting_id}.json"
+    out_path = out if out is not None else default_out
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    dump_json(judge_req, out_path)
+
+    console.print(f"wrote {out_path}")
+    console.print(f"survived to judge: {len(judge_req.items)} · dropped: {len(drops)}")
+    for drop in drops:
+        console.print(f"  dropped [{drop.bullet_id}]: {drop.reason}", markup=False)
