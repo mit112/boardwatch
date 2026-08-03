@@ -397,7 +397,7 @@ or a substitution the equivalence table names, and no bullet, entry, or section 
 that wasn't in the original. A résumé that fails this check is rejected before any file or
 database row is written, never delivered as a "best effort".
 
-**Honest bounds.** This is Tier A: a local, deterministic bullet-selection and safe-synonym
+**Honest bounds (Tier A).** This is Tier A: a local, deterministic bullet-selection and safe-synonym
 pass — it does not rewrite your prose, invent new claims, or call any model. **Your
 `profile` text (the free-form blurb from `boardwatch init`) is never imported into the
 résumé** — `tailor` reads only what you author in `resume.yaml`. PDF output is
@@ -409,6 +409,47 @@ file** even though each run is recorded as its own artifact in the database; the
 disk always reflects your most recent run, not necessarily the one you're currently
 reading about. If a later Typst compile fails, the stale PDF from the previous run is
 removed rather than left behind next to the new source.
+
+### Tier B (opt-in LLM)
+
+Tier A never rewrites your prose. If you want bullets reworded toward a posting's
+language, Tier B is an **opt-in**, off-by-default LLM lane on top of it:
+
+```bash
+boardwatch tailor run <posting-id> --tier-b     # alias: --llm
+```
+
+`--tier-b` requires all of the following, and does nothing (writes nothing, exits 1)
+if any is missing:
+
+- `llm.resume_tailoring = true` **and** `llm.enabled = true` in `{config_dir}/config.toml`
+  — `resume_tailoring` is the only key Tier B adds, and it lives on the same `[llm]`
+  block as the opt-in LLM eligibility-extraction tier (see
+  [docs/configuration.md](docs/configuration.md)); no new section, no new secret.
+  `config set llm.*` is reserved and refuses to write these, so set them by editing
+  `config.toml` directly.
+- `BOARDWATCH_LLM_API_KEY` in the environment (never in `config.toml`).
+
+Per bullet, Tier B proposes a reworded version, then runs it through a deterministic
+overmatch filter and a fail-closed entailment judge (the judge sees only the two bullet
+texts — original and reworded — and never the job description). A bullet is only kept
+reworded if it passes both; otherwise Tier B silently falls back to the Tier A text for
+that bullet, so a `--tier-b` run degrades to Tier A on any single bullet without failing
+the whole command. The CLI reports how many bullets were reworded vs. fell back, and why.
+
+**Dual output, not a replacement.** `--tier-b` always writes the ordinary Tier A file
+first — Tier B never runs in place of it — plus a second file/artifact
+(`resume_tailored_llm`) with reworded bullets marked `// reworded (Tier B)` in the
+rendered source. The lineage is recorded as B —`rewritten_from`→ A —`tailored_from`→
+your master résumé, so either output can be traced back.
+
+**Honest bounds (Tier B).** Tier B is **not** the no-fabrication guarantee above: passing
+the filter and judge is evidence, not proof, and every reworded bullet is meant to be
+**read by you before you send it**, not trusted blind. The Tier A path never calls out
+to a model, regardless of Tier B's settings; only `--tier-b` sends bullet text and the
+posting's extracted JD skill names to the configured provider, and only when explicitly
+enabled and requested. See [SECURITY.md](SECURITY.md) for exactly what leaves your
+machine and when.
 
 ---
 

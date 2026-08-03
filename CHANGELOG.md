@@ -17,6 +17,17 @@ All notable changes to this project are documented here. The format follows
   failure. Renders Typst source and a best-effort PDF (local `typst` binary, if present)
   to `{data_dir}/tailored/`. Tier A: local-only, no network, no LLM. `profile.text` from
   `boardwatch init` is never imported into a tailored résumé.
+- **`tailor run --tier-b` (alias `--llm`), opt-in LLM résumé rewording.** Off by default;
+  requires `llm.enabled` and `llm.resume_tailoring` (a new key reusing the existing
+  `[llm]` block — no new config keys or secrets) plus `BOARDWATCH_LLM_API_KEY`. Per
+  bullet, a proposed rewrite is kept only if it passes a deterministic overmatch filter
+  and a fail-closed entailment judge (blind to the job description); anything else falls
+  back to the Tier A text for that bullet. This is evidence, not proof — unlike Tier A's
+  no-fabrication guarantee, Tier B output is not structurally verified. Writes the plain
+  Tier A file alongside a second, clearly marked `resume_tailored_llm` artifact/file with
+  a `rewritten_from` lineage edge back to the Tier A artifact; reworded bullets are
+  annotated `// reworded (Tier B)` in the rendered source. Tier A itself never calls a
+  model, regardless of Tier B's settings.
 - **`notify` command.** Pushes NEW matching postings to enabled channels since the last
   `notify` run; a standalone sibling of `digest`, chain it after `scan` (`boardwatch scan
   && boardwatch notify`). Two zero-new-dependency channels, both off by default: a webhook
