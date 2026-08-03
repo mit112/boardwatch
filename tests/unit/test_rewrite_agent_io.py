@@ -6,7 +6,7 @@ is JD-blind by construction (no jd_skills field in the judge).
 
 from pathlib import Path
 
-from src.boardwatch.tailor.rewrite.agent_io import (
+from boardwatch.tailor.rewrite.agent_io import (
     BulletRef,
     Candidate,
     CandidatesFile,
