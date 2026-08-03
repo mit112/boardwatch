@@ -366,6 +366,10 @@ def rewrite_apply_cmd(
     candidates = load_json(CandidatesFile, candidates_path)
     verdicts = load_json(VerdictsFile, verdicts_path)
     tb = apply_agent_rewrites(tailored, candidates, verdicts, taxonomy, jd_skills)
+    # Recomputed identically to the budget apply_agent_rewrites enforced internally (2x
+    # bullet count) so the artifact's recorded `budget` matches the cap that was actually
+    # applied — these two computations must stay in sync.
+    llm_budget = 2 * sum(len(e.bullets) for e in tailored.entries)
 
     out_dir = out if out is not None else settings.data_dir / "tailored"
     result = run_tailor(
@@ -377,6 +381,7 @@ def rewrite_apply_cmd(
         tb_override=tb,
         llm_provider_override="claude-code-agent",
         llm_model_override="subscription",
+        llm_budget_override=llm_budget,
     )
 
     jd_skills_str = ", ".join(result.jd_skills) or "none"

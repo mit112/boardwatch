@@ -394,6 +394,11 @@ def test_rewrite_apply_emits_llm_artifact_with_lineage(env: Env, tmp_path: Path)
 
     assert llm_row.meta_json["provider"] == "claude-code-agent"
     assert llm_row.meta_json["model"] == "subscription"
+    # The agent lane enforces its own budget (2x the résumé's bullet count -- scaffold's
+    # two bullets, acme-1 + acme-2, so 4), NOT the API lane's llm.max_calls_per_run
+    # (default 50). If run_tailor's meta ever fell back to the settings default here,
+    # this would catch it (4 != 50).
+    assert llm_row.meta_json["budget"] == 4
     assert any(
         e.relation == "rewritten_from" and e.parent_artifact_id == tier_a_row.id for e in edges
     )

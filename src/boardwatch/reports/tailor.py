@@ -292,6 +292,7 @@ def run_tailor(
     tb_override: TierBResult | None = None,
     llm_provider_override: str | None = None,
     llm_model_override: str | None = None,
+    llm_budget_override: int | None = None,
 ) -> TailorResult:
     if fmt not in SUPPORTED_FORMATS:
         supported = ", ".join(SUPPORTED_FORMATS)
@@ -446,7 +447,15 @@ def run_tailor(
                     "posting_id": cv.posting_id,
                     "posting_version_id": cv.posting_version_id,
                     "calls_made": tb.calls_made,
-                    "budget": settings.llm.max_calls_per_run,
+                    # The agent lane enforces its own budget (2x bullet count, not the
+                    # API lane's llm.max_calls_per_run — see apply_agent_rewrites), so
+                    # the override must be recorded here or the audit trail would show
+                    # calls_made exceeding a budget that was never actually the cap.
+                    "budget": (
+                        llm_budget_override
+                        if llm_budget_override is not None
+                        else settings.llm.max_calls_per_run
+                    ),
                     "rewrites": llm_rows,
                 }
                 llm_art_id = record_artifact(
