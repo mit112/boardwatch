@@ -113,6 +113,27 @@ def run_tier_b(
                 )
                 continue
 
+            if candidate == a_text:
+                # The provider echoed the bullet back unchanged. It would trivially pass
+                # the filter and could still be sent to the judge, but that spends a call
+                # to adjudicate a rewrite that changed nothing — and if kept, it would
+                # render a `// reworded (Tier B)` marker on a bullet byte-identical to
+                # Tier A's, telling the reader to review a non-change. Drop it here,
+                # before the judge call, so no budget is spent on it.
+                rows.append(
+                    RewriteRow(
+                        bullet_id=b.bullet_id,
+                        entry_id=entry.entry_id,
+                        a_text=a_text,
+                        b_text=candidate,
+                        filter_pass=True,
+                        judge_verdict=None,
+                        kept=False,
+                        drop_reason="unchanged",
+                    )
+                )
+                continue
+
             fr = passes_overmatch_filter(a_text, candidate, taxonomy)
             if not fr.passed:
                 rows.append(
@@ -124,7 +145,12 @@ def run_tier_b(
                         filter_pass=False,
                         judge_verdict=None,
                         kept=False,
-                        drop_reason="filter",
+                        # Carry the filter's specific reason (e.g. "invented_skill",
+                        # "too_long") rather than the flat "filter", so the audit trail and
+                        # CLI can distinguish a prompt problem from a safety catch. The
+                        # "filter:" prefix is kept so existing consumers keying on that
+                        # prefix (CLI, tests) still recognize a filter drop.
+                        drop_reason=f"filter:{fr.reason}",
                     )
                 )
                 continue

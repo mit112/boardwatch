@@ -55,14 +55,31 @@ def test_good_rewrite_kept(tmp_path):
 
 
 def test_filter_catch_drops_before_judge(tmp_path):
-    client = ScriptedClient(["Built the service in Python and Kubernetes"])  # invented skill
+    client = ScriptedClient(["Built the service in Python, Kubernetes"])  # invented skill
     res = run_tier_b(
         _resume(), client, ResponseCache(tmp_path / "c"),
         jd_skills=set(), taxonomy=load_taxonomy(tmp_path), model="m", budget=50,
     )
     assert res.accepted == []
-    assert res.rows[0].kept is False and res.rows[0].drop_reason == "filter"
+    # The specific filter reason is carried, not the flat "filter", so the audit trail and
+    # CLI can tell a prompt problem (e.g. "too_long") apart from a safety catch.
+    assert res.rows[0].kept is False and res.rows[0].drop_reason == "filter:invented_skill"
     assert client.calls == 1  # judge never called
+
+
+def test_unchanged_candidate_short_circuits_before_judge(tmp_path):
+    """An echoed-back bullet (candidate == source) is not kept, is not sent to the judge,
+    and is tagged distinctly from a real filter/judge drop so it can't be confused with a
+    fallback failure in the CLI report."""
+    client = ScriptedClient(["Built the service in Python"])  # byte-identical to the source
+    res = run_tier_b(
+        _resume(), client, ResponseCache(tmp_path / "c"),
+        jd_skills=set(), taxonomy=load_taxonomy(tmp_path), model="m", budget=50,
+    )
+    assert res.accepted == []
+    assert res.rows[0].kept is False
+    assert res.rows[0].drop_reason == "unchanged"
+    assert client.calls == 1  # only the propose call — judge never spent on a no-op
 
 
 def test_judge_not_entailed_drops(tmp_path):

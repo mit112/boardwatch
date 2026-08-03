@@ -180,15 +180,33 @@ def run_cmd(
 
     if result.rewrites is not None:
         reworded = sum(1 for r in result.rewrites if r["kept"])
-        fell_back = len(result.rewrites) - reworded
-        console.print(f"Tier B (LLM): reworded {reworded} · fell back {fell_back}")
+        # "unchanged" (the provider echoed the bullet back verbatim) is not a fallback
+        # failure — it is a no-op — so it is counted and tagged separately from a real
+        # drop rather than folded into "fell back".
+        unchanged = sum(1 for r in result.rewrites if r["drop_reason"] == "unchanged")
+        fell_back = len(result.rewrites) - reworded - unchanged
+        console.print(
+            f"Tier B (LLM): reworded {reworded} · unchanged {unchanged} · fell back {fell_back}"
+        )
         for r in result.rewrites:
-            tag = "reworded" if r["kept"] else f"fallback:{r['drop_reason']}"
+            if r["kept"]:
+                tag = "reworded"
+            elif r["drop_reason"] == "unchanged":
+                tag = "unchanged"
+            else:
+                tag = f"fallback:{r['drop_reason']}"
             console.print(f"  {tag:<16} [{r['entry_id']}] {r['bullet_id']}", markup=False)
         console.print(
             "Tier B is LLM-assisted: each reworded bullet passed a deterministic overmatch "
             "filter and a fail-closed entailment judge, but is NOT structurally proven — "
             "review the flagged variant before sending; the Tier A file above is the safe copy."
         )
+        if any(r["drop_reason"] == "budget" for r in result.rewrites):
+            console.print(
+                "Tier B call budget exhausted before every bullet was reworded — raise "
+                "llm.max_calls_per_run (Tier B spends 2 calls per bullet, shared with the "
+                "eligibility LLM lane; a cache hit still spends budget, so re-running with "
+                "no config change will not help)."
+            )
         if not result.dry_run and result.llm_pdf_path is not None:
             console.print(f"tier B pdf: {result.llm_pdf_path}")

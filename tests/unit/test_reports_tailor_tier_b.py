@@ -255,7 +255,9 @@ def test_tier_b_zero_accepted_rewrites_still_emits_second_artifact(tmp_path: Pat
     assert res.rewrites is not None
     assert len(res.rewrites) == 2
     assert all(r["kept"] is False for r in res.rewrites)
-    assert all(r["drop_reason"] == "filter" for r in res.rewrites)
+    # Both candidates invent a number the source bullet doesn't have -> the filter's
+    # specific reason ("added_number") is carried, not the flat "filter".
+    assert all(r["drop_reason"] == "filter:added_number" for r in res.rewrites)
     assert (out / f"tailored-{pid}-llm.typ").exists()
     # zero accepted rewrites -> Tier B render is byte-identical to Tier A's
     assert res.llm_source == res.source

@@ -437,6 +437,13 @@ reworded if it passes both; otherwise Tier B silently falls back to the Tier A t
 that bullet, so a `--tier-b` run degrades to Tier A on any single bullet without failing
 the whole command. The CLI reports how many bullets were reworded vs. fell back, and why.
 
+Tier B costs **2 LLM calls per bullet** (propose, then judge), drawn from the same
+`llm.max_calls_per_run` budget (default 50, shared with the eligibility LLM lane) — so
+roughly 25 bullets per run before the tail starts falling back with `drop_reason:
+"budget"`. That budget is consumed even on a cache hit, by design, so re-running the same
+posting does not extend it; raise `llm.max_calls_per_run` in `config.toml` instead. See
+[docs/configuration.md](docs/configuration.md).
+
 **Dual output, not a replacement.** `--tier-b` always writes the ordinary Tier A file
 first — Tier B never runs in place of it — plus a second file/artifact
 (`resume_tailored_llm`) with reworded bullets marked `// reworded (Tier B)` in the

@@ -74,6 +74,14 @@ resolvable `BOARDWATCH_LLM_API_KEY`; missing any of them exits 1 before writing 
 rather than silently falling back to Tier A for the whole run. (A per-bullet fallback to
 Tier A text is a different, expected thing — see the README's Tier B section.)
 
+**`max_calls_per_run` in a Tier B context.** Tier B spends 2 calls per surviving bullet
+(one to propose a rewrite, one for the entailment judge) out of the *same*
+`llm.max_calls_per_run` budget the eligibility LLM lane shares — default 50, so about 25
+bullets per run before the rest fall back with `drop_reason: "budget"`. The budget is
+consumed even on a cache hit (a deliberate choice, so behaviour stays deterministic across
+runs), which means re-running the same posting does **not** extend it; raise
+`llm.max_calls_per_run` in `config.toml` if a résumé's bullet count routinely exceeds it.
+
 ## Secrets (reserved for the v1.1 LLM tier)
 
 boardwatch v1 uses no credentials, so `config.toml` never contains secrets and there is
