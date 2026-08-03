@@ -50,15 +50,25 @@ def run_tier_b(
     taxonomy: Taxonomy,
     model: str,
     budget: int,
+    provider: str | None = None,
+    base_url: str | None = None,
 ) -> TierBResult:
     accepted: list[Rewrite] = []
     rows: list[RewriteRow] = []
     state: dict[str, int] = {"calls": 0}
+    # ResponseCache.key() only takes a model STRING, but the same model name can point
+    # at a different provider or endpoint (self-hosted vs. hosted, a base_url swap).
+    # Fold provider + base_url into the identity so switching either is a cache MISS,
+    # not a silent replay of a different provider's proposals/verdicts under a
+    # provenance that no longer matches (reports/tailor.py records the NEW provider).
+    model_identity = f"{provider or '-'}|{base_url or '-'}|{model}"
 
     def call(payload: dict[str, str], version: str) -> str:
         if state["calls"] >= budget:
             raise _BudgetExceeded
-        key = cache.key(hashlib.sha256(payload["user"].encode()).hexdigest(), version, model)
+        key = cache.key(
+            hashlib.sha256(payload["user"].encode()).hexdigest(), version, model_identity
+        )
         state["calls"] += 1
         cached = cache.get(key)
         if cached is not None:

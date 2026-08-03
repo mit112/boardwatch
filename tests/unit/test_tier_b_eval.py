@@ -39,3 +39,13 @@ def test_filter_catches_overmatch_families(tmp_path: Path) -> None:
     # The filter alone must reject every invented_skill / inflated_number fabrication.
     for fam in ("invented_skill", "inflated_number"):
         assert report[fam]["false_accept"] == 0
+
+
+def test_zero_false_accept_families_still_contain_fabrications() -> None:
+    """Guard the guard: `false_accept == 0` above is only meaningful if these two
+    families still actually contain a `fabricated` case. A corpus edit that
+    relabelled or removed the last fabricated case in either family would make
+    the zero-false-accept assertion pass vacuously instead of failing loudly."""
+    cases = load_corpus(CORPUS)
+    for fam in ("invented_skill", "inflated_number"):
+        assert sum(1 for c in cases if c.family == fam and c.label == "fabricated") >= 1

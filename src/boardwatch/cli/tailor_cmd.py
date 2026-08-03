@@ -14,7 +14,7 @@ import typer
 from rich.console import Console
 
 from boardwatch.cli.context import build_context
-from boardwatch.core.settings import Settings
+from boardwatch.core.settings import Settings, load_settings
 from boardwatch.extract.taxonomy import load_taxonomy
 from boardwatch.llm.cache import ResponseCache
 from boardwatch.llm.factory import build_client
@@ -97,20 +97,23 @@ def run_cmd(
     ),
 ) -> None:
     """Tailor the authored résumé against one posting's JD skills."""
-    app_ctx = build_context(ctx.obj)
-    settings = app_ctx.settings
-
     client = None
     cache = None
     if tier_b:
-        if not settings.llm.resume_tailoring:
+        # Evaluate the gate against settings ALONE, before build_context below creates
+        # and migrates boardwatch.db — a gate failure against a pristine data dir must
+        # leave no database behind. load_settings only reads config.toml, so loading it
+        # again inside build_context is a cheap duplication, preferred here over
+        # threading a pre-built AppContext through build_context's signature.
+        gate_settings = load_settings(data_dir=ctx.obj)
+        if not gate_settings.llm.resume_tailoring:
             console.print(
                 "Tier B requires llm.resume_tailoring = true in config "
                 "(opt-in for résumé rewording)"
             )
             raise typer.Exit(code=1)
         try:
-            client = build_client(settings)
+            client = build_client(gate_settings)
         except ValueError as exc:
             console.print(str(exc))
             raise typer.Exit(code=1) from exc
@@ -119,6 +122,10 @@ def run_cmd(
                 "LLM tier is not enabled; set llm.enabled = true and BOARDWATCH_LLM_API_KEY"
             )
             raise typer.Exit(code=1)
+
+    app_ctx = build_context(ctx.obj)
+    settings = app_ctx.settings
+    if tier_b:
         cache = ResponseCache(settings.data_dir / "llm-cache")
 
     try:
@@ -156,7 +163,16 @@ def run_cmd(
         console.print(line, markup=False)  # see validate_cmd: [entry_id] is not rich markup
     console.print("guarantee: PASS (Tier A no-fabrication check enforced before write)")
     if result.dry_run:
-        console.print("dry run — source only, nothing written")
+        if result.rewrites is not None:
+            # Tier B ran even in a dry run (a preview must reflect what a real run
+            # would produce) and its lane caches provider replies to disk as it goes,
+            # so "nothing written" would be false here — only the résumé artifacts
+            # were skipped, not the LLM response cache.
+            console.print(
+                "dry run — no résumé artifacts written (the LLM response cache was updated)"
+            )
+        else:
+            console.print("dry run — source only, nothing written")
     elif result.pdf_path is not None:
         console.print(f"pdf: {result.pdf_path}")
     else:

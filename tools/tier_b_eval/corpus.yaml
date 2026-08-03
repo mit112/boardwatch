@@ -7,11 +7,11 @@
 #                source doesn't support; the gate MUST reject it.
 #
 # `held_out` names cases reserved from prompt tuning: use them only to score the
-# judge, never to iterate REWRITE_SYSTEM/JUDGE_SYSTEM wording. Both are the
+# judge, never to iterate REWRITE_SYSTEM/JUDGE_SYSTEM wording. All three are
 # empirically-confirmed deterministic-filter blind spots (see tools/tier_b_eval/README.md)
 # that only the LLM judge can catch, which makes them the most informative
 # fixed test points for judging judge quality.
-held_out: [c5, c11]
+held_out: [c5, c11, c15]
 
 cases:
   # -- invented_skill: filter MUST catch these alone (added_number/invented_entity/
@@ -55,6 +55,19 @@ cases:
     label: entailed
     a_bullet: "Owned the checkout redesign from planning to launch"
     candidate: "Owned the checkout redesign end-to-end"
+
+  # c15 is a second, distinct confirmed deterministic-filter blind spot in this same
+  # family: an invented Title-case brand/company name. `_entities()` in filter.py
+  # deliberately excludes plain Title-case tokens (`t == t.capitalize()`) so that a
+  # sentence-initial verb like "Developed" doesn't trip the invented-entity check --
+  # but a brand name inherits that same exemption, so "Google" or "Stripe" slipped
+  # into a candidate passes the filter untouched. Only the judge is positioned to
+  # catch it.
+  - id: c15
+    family: scope_creep
+    label: fabricated
+    a_bullet: "Built and maintained the billing service for customers worldwide"
+    candidate: "Built and maintained the billing service for Google customers worldwide"
 
   # -- seniority_inflation: judge-only family (no new number/entity/skill to trip
   # the deterministic filter; the claim is entirely about role/authority) --

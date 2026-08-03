@@ -107,3 +107,43 @@ def test_cache_hit_avoids_recall(tmp_path):
     )
     assert r2.accepted[0].text == "Shipped the service in Python"
     assert client2.calls == 0  # both propose and judge served from cache
+
+
+def test_cache_identity_includes_provider_and_base_url(tmp_path):
+    cache = ResponseCache(tmp_path / "c")
+    run_tier_b(
+        _resume(), ScriptedClient(["Shipped the service in Python", "ENTAILED"]),
+        cache, jd_skills=set(), taxonomy=load_taxonomy(tmp_path), model="m", budget=50,
+        provider="anthropic", base_url="https://api.anthropic.com",
+    )
+
+    # Same model string, different provider -> a real cache MISS: the second client
+    # must be called, not silently served the first provider's cached replies.
+    client_diff_provider = ScriptedClient(["Shipped the service in Python", "ENTAILED"])
+    r_diff_provider = run_tier_b(
+        _resume(), client_diff_provider, cache,
+        jd_skills=set(), taxonomy=load_taxonomy(tmp_path), model="m", budget=50,
+        provider="openai", base_url="https://api.anthropic.com",
+    )
+    assert client_diff_provider.calls == 2
+    assert r_diff_provider.accepted[0].text == "Shipped the service in Python"
+
+    # Same model string, different base_url -> also a cache MISS.
+    client_diff_url = ScriptedClient(["Shipped the service in Python", "ENTAILED"])
+    r_diff_url = run_tier_b(
+        _resume(), client_diff_url, cache,
+        jd_skills=set(), taxonomy=load_taxonomy(tmp_path), model="m", budget=50,
+        provider="anthropic", base_url="https://self-hosted.example.test",
+    )
+    assert client_diff_url.calls == 2
+    assert r_diff_url.accepted[0].text == "Shipped the service in Python"
+
+    # Same identity (provider + base_url + model) -> still a cache HIT.
+    client_same_identity = ScriptedClient([])
+    r_same_identity = run_tier_b(
+        _resume(), client_same_identity, cache,
+        jd_skills=set(), taxonomy=load_taxonomy(tmp_path), model="m", budget=50,
+        provider="anthropic", base_url="https://api.anthropic.com",
+    )
+    assert client_same_identity.calls == 0
+    assert r_same_identity.accepted[0].text == "Shipped the service in Python"

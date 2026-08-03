@@ -25,6 +25,13 @@ from boardwatch.tailor.rewrite.judge import parse_verdict
     ("No, that is entailed only loosely", "NOT_ENTAILED"),
     ("cannot be entailed", "NOT_ENTAILED"),
     ("Fully ENTAILED by the source bullet", "ENTAILED"),
+    ("UNSURE - possibly ENTAILED", "UNSURE"),
+    ("UNSURE, leaning ENTAILED", "UNSURE"),
+    ("I am unsure but it may be ENTAILED", "UNSURE"),
+    ("Probably ENTAILED, but unsure", "UNSURE"),
+    ("UNCERTAIN", "UNSURE"),
+    ("maybe ENTAILED", "UNSURE"),
+    ("ENTAILED (probably)", "UNSURE"),
 ])
 def test_parse_verdict(reply, expected):
     assert parse_verdict(reply) == expected

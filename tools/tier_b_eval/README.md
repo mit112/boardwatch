@@ -30,9 +30,11 @@ families are judge-only: the deterministic filter cannot see a lowercase
 mid-sentence skill mention, a flipped negation, an inflated seniority claim, or
 a swapped-but-still-present number, so those fabrications are caught (if at
 all) by the LLM judge. The corpus's `scope_creep` and `unsupported_outcome`
-families each include one confirmed deterministic-filter blind spot (see the
-comments in `corpus.yaml`), so the `--live` report is an honest record of where
-each layer of the defense actually earns its keep.
+families each include at least one confirmed deterministic-filter blind spot
+(see the comments in `corpus.yaml`) — `scope_creep` has two (a lowercase skill
+mention, and an invented Title-case brand/company name) — so the `--live`
+report is an honest record of where each layer of the defense actually earns
+its keep.
 
 ## Usage
 

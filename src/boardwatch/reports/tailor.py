@@ -282,6 +282,8 @@ def run_tailor(
             taxonomy=taxonomy,
             model=settings.llm.model or "unknown",
             budget=settings.llm.max_calls_per_run,
+            provider=settings.llm.provider,
+            base_url=settings.llm.base_url,
         )
         tailored_b = apply_plan(tailored, TailorPlan(ops=tuple(tb.accepted)), table)
         reworded = frozenset(r.bullet_id for r in tb.accepted)

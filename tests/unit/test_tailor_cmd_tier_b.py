@@ -19,7 +19,7 @@ from typer.testing import CliRunner
 from boardwatch.cli.app import app
 from boardwatch.core.settings import Settings
 from boardwatch.extract.taxonomy import load_taxonomy
-from boardwatch.store.db import ensure_schema, get_engine
+from boardwatch.store.db import DB_FILENAME, ensure_schema, get_engine
 from boardwatch.store.tables import (
     artifacts,
     companies,
@@ -123,6 +123,20 @@ def test_tier_b_flag_errors_when_resume_tailoring_disabled(env: Env, tmp_path: P
     assert _artifact_count(env) == 0
 
 
+def test_tier_b_gate_failure_creates_no_database(env: Env) -> None:
+    """The gate must run before build_context, which creates/migrates boardwatch.db.
+
+    Deliberately skips `_seed_open_posting` and `_artifact_count` above: both call
+    `ensure_schema`/`get_engine` directly and would create the very database file this
+    test proves does not exist. The gate fails on `resume_tailoring` alone, before any
+    posting lookup, so a nonexistent posting id is fine here.
+    """
+    result = _run(env, ["tailor", "run", "1", "--tier-b"])
+    assert result.exit_code == 1
+    assert "resume_tailoring" in result.stdout
+    assert not (env.data_dir / DB_FILENAME).exists()
+
+
 def test_llm_alias_errors_when_resume_tailoring_disabled(env: Env, tmp_path: Path) -> None:
     _run(env, ["tailor", "init"])
     posting_id = _seed_open_posting(env)
@@ -183,3 +197,47 @@ def test_tier_b_flag_errors_when_llm_enabled_but_misconfigured(
     assert not out.exists()
     assert not (env.data_dir / "tailored").exists()
     assert _artifact_count(env) == 0
+
+
+# --- dry-run: the LLM cache is written even though no artifacts/résumé files are -----------
+
+
+class _FakeClient:
+    """Scripted client for CLI-level tests: build_client is monkeypatched to return
+    this instead of a real provider adapter, so no network is required."""
+
+    def __init__(self, bodies: list[str]) -> None:
+        self.bodies = list(bodies)
+
+    def complete(self, prompt: str, *, system: str | None = None) -> str:
+        return self.bodies.pop(0) if self.bodies else ""
+
+
+def test_tier_b_dry_run_does_not_claim_nothing_written(
+    env: Env, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Tier B's ResponseCache writes to {data_dir}/llm-cache during a dry run (the
+    preview must reflect what a real run would produce), so the CLI must not print the
+    Tier-A-only "nothing written" line when Tier B actually ran."""
+    _write_config(env, "[llm]\nresume_tailoring = true\n")
+    monkeypatch.setattr(
+        "boardwatch.cli.tailor_cmd.build_client",
+        lambda settings: _FakeClient(["Shipped it", "ENTAILED", "Led it", "ENTAILED"]),
+    )
+    _run(env, ["tailor", "init"])
+    posting_id = _seed_open_posting(env)
+    result = _run(env, ["tailor", "run", str(posting_id), "--tier-b", "--dry-run"])
+    assert result.exit_code == 0, result.stdout
+    assert "nothing written" not in result.stdout.lower()
+    cache_dir = env.data_dir / "llm-cache"
+    assert cache_dir.exists()
+    assert any(cache_dir.iterdir())  # provider replies really were cached
+
+
+def test_run_dry_run_without_tier_b_message_unchanged(env: Env, tmp_path: Path) -> None:
+    """Regression: the plain Tier A dry-run message must stay byte-identical."""
+    _run(env, ["tailor", "init"])
+    posting_id = _seed_open_posting(env)
+    result = _run(env, ["tailor", "run", str(posting_id), "--dry-run"])
+    assert result.exit_code == 0, result.stdout
+    assert "dry run — source only, nothing written" in result.stdout
