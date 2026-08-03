@@ -16,7 +16,11 @@ def load_resume(path: Path) -> Resume:
     if not path.is_file():
         raise ResumeLoadError(f"no résumé at {path}; run `boardwatch tailor init` to scaffold one")
     try:
-        data = yaml.safe_load(path.read_text(encoding="utf-8"))
+        text = path.read_text(encoding="utf-8")
+    except UnicodeDecodeError as exc:
+        raise ResumeLoadError(f"{path}: not valid UTF-8: {exc}") from exc
+    try:
+        data = yaml.safe_load(text)
     except yaml.YAMLError as exc:
         raise ResumeLoadError(f"{path}: invalid YAML: {exc}") from exc
     try:

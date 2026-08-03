@@ -17,6 +17,10 @@ class Bullet(BaseModel):
 
     @model_validator(mode="after")
     def _single_line(self) -> Bullet:
+        # Spec L3 requires newline->space; this normalizes every whitespace run to one
+        # space, which is strictly stronger. Deliberate: it makes the single-line invariant
+        # hold for tabs and wrapped YAML too, and both master and tailored bullets pass
+        # through it, so the entailment check compares like with like.
         norm = " ".join(self.text.split())
         if norm != self.text:
             object.__setattr__(self, "text", norm)

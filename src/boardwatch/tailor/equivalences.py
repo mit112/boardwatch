@@ -43,8 +43,12 @@ def _parse_pairs(data: dict[str, Any]) -> tuple[EquivalencePair, ...]:
     for entry in entries:
         if not isinstance(entry, dict) or "from" not in entry or "to" not in entry:
             raise EquivalenceError(f"bad pair: {entry!r}")
-        frm = str(entry["from"])
-        to = str(entry["to"])
+        frm = entry["from"]
+        to = entry["to"]
+        # No str() coercion: YAML `false`/`123` would become plausible tokens in a
+        # safety-critical table (AM-2). Non-strings are a malformed table, not a value.
+        if not isinstance(frm, str) or not isinstance(to, str):
+            raise EquivalenceError(f"pair {entry!r}: 'from' and 'to' must be strings")
         if not (_TOKEN.match(frm) and _TOKEN.match(to)):
             raise EquivalenceError(f"pair {frm!r}->{to!r} must be single \\w tokens")
         if (frm, to) in seen:

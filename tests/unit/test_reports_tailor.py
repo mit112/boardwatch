@@ -19,7 +19,11 @@ from sqlalchemy import Engine, insert
 
 from boardwatch.core.settings import Settings
 from boardwatch.extract.taxonomy import load_taxonomy
-from boardwatch.reports.tailor import NoCurrentVersionError, run_tailor
+from boardwatch.reports.tailor import (
+    NoCurrentVersionError,
+    UnsupportedFormatError,
+    run_tailor,
+)
 from boardwatch.store.db import ensure_schema, get_engine
 from boardwatch.store.queries import insert_run
 from boardwatch.store.tables import (
@@ -32,6 +36,7 @@ from boardwatch.store.tables import (
     postings,
 )
 from boardwatch.tailor.load import scaffold_template
+from boardwatch.tailor.plan import MAX_BULLETS_PER_ENTRY
 
 NOW = datetime(2026, 8, 2, 12, 0, 0)
 
@@ -50,6 +55,93 @@ def _resume_yaml(tmp_path: Path) -> Path:
     path = tmp_path / "resume.yaml"
     path.write_text(scaffold_template(), encoding="utf-8")
     return path
+
+
+def _resume_same_render_different_ids(tmp_path: Path, name: str, *, prefix: str) -> Path:
+    """Two of these render byte-identically but are different authored documents.
+
+    TypstRenderer.emit drops entry_id/bullet_id/tech_tags, so hashing the *render* made
+    these collide onto one resume_master; only hashing the model tells them apart.
+    """
+    path = tmp_path / name
+    path.write_text(
+        "header:\n"
+        '  - "Ada Lovelace"\n'
+        "education:\n"
+        '  - "BSc Mathematics — Example University — 2018"\n'
+        "skill_groups:\n"
+        '  - label: "Languages"\n'
+        '    items: ["Python", "Rust"]\n'
+        "entries:\n"
+        f'  - entry_id: "{prefix}-entry"\n'
+        '    heading: "Senior Engineer — Acme — 2021–2024 — Remote"\n'
+        "    bullets:\n"
+        f'      - bullet_id: "{prefix}-1"\n'
+        '        text: "Built a Python service handling 2M requests/day on Kubernetes"\n'
+        f'      - bullet_id: "{prefix}-2"\n'
+        '        text: "Cut p99 latency 40% by rewriting the hot path in Rust"\n',
+        encoding="utf-8",
+    )
+    return path
+
+
+# 8 bullets in one entry, > MAX_BULLETS_PER_ENTRY, engineered against build_plan's
+# `sorted(..., key=(-coverage, author_index))` so that with jd_skills={Python, JavaScript}:
+#   coverage 1: b2 (Python), b3 (JS -> JavaScript swap), b5 (Python)
+#   coverage 0: b1, b4, b6, b7, b8
+# kept order  -> b2 b3 b5 b1 b4 b6 ; dropped -> b7 b8
+# vs author order among survivors (b1..b6) only b6 lands on its own index, so b6 is the
+# lone "kept" row, b3 is "swapped" (and reordered), b1/b2/b4/b5 are "reordered".
+_AUDIT_RESUME = """\
+header:
+  - "Grace Hopper"
+education:
+  - "BSc Mathematics — Example University — 2016"
+skill_groups:
+  - label: "Languages"
+    items: ["Python", "JavaScript"]
+entries:
+  - entry_id: "e1"
+    heading: "Engineer — Example — 2020–2024 — Remote"
+    bullets:
+      - bullet_id: "b1"
+        text: "Wrote the onboarding guide for new hires"
+      - bullet_id: "b2"
+        text: "Built a Python service handling millions of requests"
+      - bullet_id: "b3"
+        text: "Shipped JS tooling for the release process"
+      - bullet_id: "b4"
+        text: "Mentored two interns through their first quarter"
+      - bullet_id: "b5"
+        text: "Migrated the Python worker fleet off legacy hosts"
+      - bullet_id: "b6"
+        text: "Ran the weekly incident meeting"
+      - bullet_id: "b7"
+        text: "Drafted the on-call rotation policy"
+      - bullet_id: "b8"
+        text: "Organised the internal tooling summit"
+"""
+
+
+def _audit_resume_yaml(tmp_path: Path) -> Path:
+    path = tmp_path / "audit-resume.yaml"
+    path.write_text(_AUDIT_RESUME, encoding="utf-8")
+    return path
+
+
+def _audit_rows(tmp_path: Path) -> tuple[list[dict[str, object]], list[str]]:
+    """Run the audit-trace résumé end to end; return meta_json's bullets + dropped."""
+    settings = _settings(tmp_path)
+    engine = _engine(settings)
+    pid = _seed(engine, settings)
+    run_tailor(
+        engine, settings, pid, resume_path=_audit_resume_yaml(tmp_path),
+        out_dir=tmp_path / "out", typst_runner=_runner_ok,
+    )
+    with engine.connect() as conn:
+        rows = conn.execute(artifacts.select()).fetchall()
+    meta = next(r for r in rows if r.kind == "resume_tailored").meta_json
+    return meta["bullets"], meta["dropped"]
 
 
 def _seed(
@@ -153,7 +245,7 @@ def test_real_run_records_artifacts_and_edge(tmp_path: Path) -> None:
         master = next(r for r in rows if r.kind == "resume_master")
         assert edge.parent_artifact_id == master.id
         assert edge.artifact_id == tailored.id
-    assert res.bullets and all("action" in b for b in res.bullets)
+    assert res.bullets and all("op" in b for b in res.bullets)
 
 
 def test_master_is_reselected_not_duplicated(tmp_path: Path) -> None:
@@ -171,6 +263,126 @@ def test_master_is_reselected_not_duplicated(tmp_path: Path) -> None:
     tailored = [r for r in rows if r.kind == "resume_tailored"]
     assert len(masters) == 1
     assert len(tailored) == 2
+
+
+def test_distinct_masters_with_identical_render_are_not_collapsed(tmp_path: Path) -> None:
+    """Two different authored résumés that *render* the same must stay two masters.
+
+    The render drops bullet_id/entry_id/tech_tags, so hashing it content-addressed both
+    documents to one resume_master and silently handed the second run the first one's
+    file as its lineage parent. master_hash is over master.model_dump_json() instead.
+    """
+    settings = _settings(tmp_path)
+    engine = _engine(settings)
+    pid = _seed(engine, settings)
+    r_a = _resume_same_render_different_ids(tmp_path, "resume-a.yaml", prefix="alpha")
+    r_b = _resume_same_render_different_ids(tmp_path, "resume-b.yaml", prefix="beta")
+    assert r_a.read_text(encoding="utf-8") != r_b.read_text(encoding="utf-8")
+
+    res_a = run_tailor(engine, settings, pid, resume_path=r_a, out_dir=tmp_path / "oa",
+                       typst_runner=_runner_ok)
+    res_b = run_tailor(engine, settings, pid, resume_path=r_b, out_dir=tmp_path / "ob",
+                       typst_runner=_runner_ok)
+    assert res_a.source == res_b.source  # identical visible text — the pre-fix collision
+
+    with engine.connect() as conn:
+        rows = conn.execute(artifacts.select()).fetchall()
+        edges = conn.execute(artifact_derivations.select()).fetchall()
+    masters = [r for r in rows if r.kind == "resume_master"]
+    assert len(masters) == 2
+    assert {m.uri for m in masters} == {str(r_a), str(r_b)}  # each master points at its own file
+    assert len({m.content_hash for m in masters}) == 2
+
+    by_uri = {m.uri: m for m in masters}
+    parent_of = {e.artifact_id: e.parent_artifact_id for e in edges if e.relation == "tailored_from"}
+    assert parent_of[res_a.tailored_artifact_id] == by_uri[str(r_a)].id
+    assert parent_of[res_b.tailored_artifact_id] == by_uri[str(r_b)].id
+
+    tailored = {r.id: r for r in rows if r.kind == "resume_tailored"}
+    assert len(tailored) == 2
+    meta_a = tailored[res_a.tailored_artifact_id].meta_json
+    meta_b = tailored[res_b.tailored_artifact_id].meta_json
+    assert meta_a["master_content_hash"] != meta_b["master_content_hash"]
+    assert meta_a["master_artifact_id"] == by_uri[str(r_a)].id
+    assert meta_b["master_artifact_id"] == by_uri[str(r_b)].id
+
+
+def test_audit_rows_follow_spec_schema(tmp_path: Path) -> None:
+    rows, dropped = _audit_rows(tmp_path)
+    assert rows
+    base = {"bullet_id", "entry_id", "op", "jd_skills_covered", "source_text_sha256",
+            "output_text_sha256"}
+    for row in rows:
+        assert base <= set(row), row
+        assert isinstance(row["jd_skills_covered"], list)
+        assert row["op"] in {"kept", "reordered", "swapped", "dropped"}
+        assert isinstance(row["source_text_sha256"], str) and len(row["source_text_sha256"]) == 64
+        if row["op"] == "dropped":
+            assert row["output_text_sha256"] is None
+        else:
+            assert "reordered" in row and isinstance(row["reordered"], bool)
+            assert isinstance(row["output_text_sha256"], str)
+            assert len(row["output_text_sha256"]) == 64
+    # every authored bullet is accounted for exactly once
+    ids = [r["bullet_id"] for r in rows]
+    assert sorted(ids) == [f"b{i}" for i in range(1, 9)]
+    assert len(ids) == len(set(ids))
+    assert {r["entry_id"] for r in rows} == {"e1"}
+    assert len(rows) - len(dropped) == MAX_BULLETS_PER_ENTRY
+
+
+def test_audit_rows_classify_swap_reorder_and_keep(tmp_path: Path) -> None:
+    rows, _ = _audit_rows(tmp_path)
+    by_id = {r["bullet_id"]: r for r in rows}
+
+    swapped = by_id["b3"]  # "Shipped JS tooling ..." with JavaScript in the JD skills
+    assert swapped["op"] == "swapped"
+    assert swapped["from"] == "JS"
+    assert swapped["to"] == "JavaScript"
+    assert swapped["swaps"] == [{"from": "JS", "to": "JavaScript"}]
+    assert swapped["source_text_sha256"] != swapped["output_text_sha256"]
+    assert swapped["jd_skills_covered"] == ["JavaScript"]  # covered only after the swap
+    assert swapped["reordered"] is True  # b3 also moved; the swap is just the headline op
+
+    for bid in ("b1", "b2", "b4", "b5"):  # moved relative to author order among survivors
+        row = by_id[bid]
+        assert row["op"] == "reordered", (bid, row)
+        assert row["reordered"] is True
+        assert row["source_text_sha256"] == row["output_text_sha256"]  # text untouched
+        assert "from" not in row and "swaps" not in row
+
+    untouched = by_id["b6"]  # same index in the author's surviving order as in the output
+    assert untouched["op"] == "kept"
+    assert untouched["reordered"] is False
+    assert untouched["source_text_sha256"] == untouched["output_text_sha256"]
+    assert untouched["jd_skills_covered"] == []
+
+
+def test_dropped_bullets_have_matching_audit_rows(tmp_path: Path) -> None:
+    rows, dropped = _audit_rows(tmp_path)
+    assert sorted(dropped) == ["b7", "b8"]  # overflow past MAX_BULLETS_PER_ENTRY
+    by_id = {r["bullet_id"]: r for r in rows}
+    for bid in dropped:
+        row = by_id[bid]
+        assert row["op"] == "dropped"
+        assert row["output_text_sha256"] is None
+        assert row["source_text_sha256"]
+        assert row["entry_id"] == "e1"
+    assert {r["bullet_id"] for r in rows if r["op"] == "dropped"} == set(dropped)
+
+
+def test_unsupported_format_raises_before_any_write(tmp_path: Path) -> None:
+    settings = _settings(tmp_path)
+    engine = _engine(settings)
+    pid = _seed(engine, settings)
+    out = tmp_path / "out"
+    with pytest.raises(UnsupportedFormatError):
+        run_tailor(engine, settings, pid, resume_path=_resume_yaml(tmp_path), out_dir=out,
+                   fmt="latex", typst_runner=_runner_ok)
+    assert not out.exists()
+    with engine.connect() as conn:
+        assert conn.execute(artifacts.select()).first() is None
+        assert conn.execute(artifact_derivations.select()).first() is None
 
 
 def test_missing_current_version_fails_closed(tmp_path: Path) -> None:

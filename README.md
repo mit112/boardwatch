@@ -382,6 +382,12 @@ boardwatch tailor validate             # confirm it loads; see entry/bullet coun
 boardwatch tailor run <posting-id>     # tailor it against one posting's extracted JD skills
 ```
 
+`validate` and `run` read `{config_dir}/resume.yaml` unless you pass `--resume PATH`. `run`
+also takes `--out DIR` (default `{data_dir}/tailored`), `--format typst` (the only 1.0
+adapter), and `--dry-run` (report only; writes no file and records no artifact). It prints
+one line per bullet — kept, reordered, swapped, or dropped, with the JD skills that bullet
+covers — and the same per-bullet audit is stored on the artifact row.
+
 `tailor run` selects which of your authored bullets to keep (favoring ones that cover the
 posting's extracted skills), reorders skill mentions, and applies whole-token synonym
 swaps from a small, bundled, frozen equivalence table (e.g. "JS" ↔ "JavaScript") — never
@@ -401,7 +407,8 @@ it elsewhere. Output lands at `{data_dir}/tailored/tailored-<posting-id>.{typ,pd
 deterministic path, so **re-running `tailor run` for the same posting overwrites that
 file** even though each run is recorded as its own artifact in the database; the file on
 disk always reflects your most recent run, not necessarily the one you're currently
-reading about.
+reading about. If a later Typst compile fails, the stale PDF from the previous run is
+removed rather than left behind next to the new source.
 
 ---
 

@@ -61,6 +61,19 @@ def test_parse_pairs_rejects_duplicate():
         )
 
 
+@pytest.mark.parametrize("bad", [False, 123])
+def test_parse_pairs_rejects_non_string_from(bad: object) -> None:
+    # No str() coercion: YAML `false`/`123` would otherwise become plausible \w tokens.
+    with pytest.raises(EquivalenceError):
+        _parse_pairs({"pairs": [{"from": bad, "to": "JavaScript"}]})
+
+
+@pytest.mark.parametrize("bad", [False, 123])
+def test_parse_pairs_rejects_non_string_to(bad: object) -> None:
+    with pytest.raises(EquivalenceError):
+        _parse_pairs({"pairs": [{"from": "JS", "to": bad}]})
+
+
 def test_parse_pairs_accepts_well_formed():
     pairs = _parse_pairs({"pairs": [{"from": "JS", "to": "JavaScript"}]})
     assert pairs == (EquivalencePair("JS", "JavaScript"),)

@@ -1,3 +1,5 @@
+from pathlib import Path
+
 import pytest
 
 from boardwatch.tailor.load import ResumeLoadError, load_resume, scaffold_template
@@ -20,5 +22,13 @@ def test_missing_file_raises(tmp_path):
 def test_invalid_yaml_raises(tmp_path):
     p = tmp_path / "r.yaml"
     p.write_text("::: not yaml :::", encoding="utf-8")
+    with pytest.raises(ResumeLoadError):
+        load_resume(p)
+
+
+def test_invalid_utf8_raises_load_error(tmp_path: Path) -> None:
+    # A mis-encoded file is a load failure, not a raw UnicodeDecodeError escaping the loader.
+    p = tmp_path / "r.yaml"
+    p.write_bytes(b"header: \xff\xfe\n")
     with pytest.raises(ResumeLoadError):
         load_resume(p)

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import re
+from pathlib import Path
 
 from boardwatch.tailor.model import Bullet, Entry, Resume, SkillGroup
 from boardwatch.tailor.render import parse_bullets
@@ -46,13 +47,28 @@ def test_non_bullet_firewall() -> None:
     assert strip(base) == strip(adv)  # non-bullet regions identical
 
 
-def test_to_pdf_uses_injected_runner(tmp_path):  # type: ignore[no-untyped-def]
+def test_to_pdf_uses_injected_runner(tmp_path: Path) -> None:
     rnd = TypstRenderer()
     src = rnd.emit(R())
     ok = rnd.to_pdf(src, tmp_path, "out", runner=lambda typ, pdf: pdf.write_bytes(b"%PDF") or True)
     assert ok and ok.suffix == ".pdf" and ok.exists()
     missing = rnd.to_pdf(src, tmp_path, "out2", runner=lambda typ, pdf: False)
     assert missing is None
+
+
+def test_to_pdf_failed_recompile_removes_stale_pdf(tmp_path: Path) -> None:
+    # Paths are deterministic per posting: a failing compile over an earlier success must
+    # not leave last run's PDF sitting next to this run's freshly written .typ.
+    rnd = TypstRenderer()
+    first = rnd.emit(R(b1="Shipped JS"))
+    ok = rnd.to_pdf(first, tmp_path, "out", runner=lambda typ, pdf: pdf.write_bytes(b"%PDF") or True)
+    assert ok and ok.exists()
+
+    second = rnd.emit(R(b1="Rewritten bullet"))
+    missing = rnd.to_pdf(second, tmp_path, "out", runner=lambda typ, pdf: False)
+    assert missing is None
+    assert not (tmp_path / "out.pdf").exists()
+    assert (tmp_path / "out.typ").read_text(encoding="utf-8") == second
 
 
 def test_parse_bullets_count_excludes_preamble_definition() -> None:

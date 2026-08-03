@@ -41,4 +41,7 @@ class TypstRenderer:
         typ = out_dir / f"{name}.typ"
         typ.write_text(source, encoding="utf-8")
         pdf = out_dir / f"{name}.pdf"
+        # Both paths are deterministic per posting, so a failed compile after an earlier
+        # success would otherwise leave last run's PDF next to this run's .typ.
+        pdf.unlink(missing_ok=True)
         return pdf if runner(typ, pdf) and pdf.exists() else None
