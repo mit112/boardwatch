@@ -16,6 +16,8 @@ from rich.console import Console
 from boardwatch.cli.context import build_context
 from boardwatch.core.settings import Settings
 from boardwatch.extract.taxonomy import load_taxonomy
+from boardwatch.llm.cache import ResponseCache
+from boardwatch.llm.factory import build_client
 from boardwatch.reports.tailor import (
     NoCurrentVersionError,
     UnsupportedFormatError,
@@ -89,10 +91,35 @@ def run_cmd(
     dry_run: bool = typer.Option(  # noqa: B008
         False, "--dry-run", help="Render and report without writing artifacts."
     ),
+    tier_b: bool = typer.Option(  # noqa: B008
+        False, "--tier-b", "--llm", help="Also emit an opt-in LLM-reworded variant (Tier B)."
+    ),
 ) -> None:
     """Tailor the authored résumé against one posting's JD skills."""
     app_ctx = build_context(ctx.obj)
     settings = app_ctx.settings
+
+    client = None
+    cache = None
+    if tier_b:
+        if not settings.llm.resume_tailoring:
+            console.print(
+                "Tier B requires llm.resume_tailoring = true in config "
+                "(opt-in for résumé rewording)"
+            )
+            raise typer.Exit(code=1)
+        try:
+            client = build_client(settings)
+        except ValueError as exc:
+            console.print(str(exc))
+            raise typer.Exit(code=1) from exc
+        if client is None:
+            console.print(
+                "LLM tier is not enabled; set llm.enabled = true and BOARDWATCH_LLM_API_KEY"
+            )
+            raise typer.Exit(code=1)
+        cache = ResponseCache(settings.data_dir / "llm-cache")
+
     try:
         result = run_tailor(
             app_ctx.engine,
@@ -102,6 +129,8 @@ def run_cmd(
             out_dir=out_dir if out_dir is not None else settings.data_dir / "tailored",
             fmt=fmt,
             dry_run=dry_run,
+            client=client,
+            cache=cache,
         )
     except (
         ResumeLoadError,
@@ -131,3 +160,18 @@ def run_cmd(
         console.print(f"pdf: {result.pdf_path}")
     else:
         console.print("source only (no PDF; typst not available or compile failed)")
+
+    if result.rewrites is not None:
+        reworded = sum(1 for r in result.rewrites if r["kept"])
+        fell_back = len(result.rewrites) - reworded
+        console.print(f"Tier B (LLM): reworded {reworded} · fell back {fell_back}")
+        for r in result.rewrites:
+            tag = "reworded" if r["kept"] else f"fallback:{r['drop_reason']}"
+            console.print(f"  {tag:<16} [{r['entry_id']}] {r['bullet_id']}", markup=False)
+        console.print(
+            "Tier B is LLM-assisted: each reworded bullet passed a deterministic overmatch "
+            "filter and a fail-closed entailment judge, but is NOT structurally proven — "
+            "review the flagged variant before sending; the Tier A file above is the safe copy."
+        )
+        if not result.dry_run and result.llm_pdf_path is not None:
+            console.print(f"tier B pdf: {result.llm_pdf_path}")
