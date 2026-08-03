@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from boardwatch.tailor.equivalences import EquivalenceTable
 from boardwatch.tailor.model import Bullet, Entry, Resume
-from boardwatch.tailor.plan import Delete, EquivalenceSwap, Reorder, Select, TailorPlan
+from boardwatch.tailor.plan import Delete, EquivalenceSwap, Reorder, Rewrite, Select, TailorPlan
 from boardwatch.tailor.tokens import whole_token_sub
 
 
@@ -16,6 +16,7 @@ def apply_plan(resume: Resume, plan: TailorPlan, table: EquivalenceTable) -> Res
     all_eids = {e.entry_id for e in resume.entries}
     removed: set[str] = set()
     reorders: dict[str, tuple[str, ...]] = {}
+    rewrites: dict[str, str] = {}
     swaps: dict[str, list[tuple[str, str]]] = {}
     for op in plan.ops:
         if isinstance(op, Delete) or (isinstance(op, Select) and not op.keep):
@@ -35,6 +36,10 @@ def apply_plan(resume: Resume, plan: TailorPlan, table: EquivalenceTable) -> Res
             if (op.from_phrase, op.to_phrase) not in pairs:
                 raise ApplyError(f"swap {op.from_phrase}->{op.to_phrase} not in frozen table")
             swaps.setdefault(op.bullet_id, []).append((op.from_phrase, op.to_phrase))
+        elif isinstance(op, Rewrite):
+            if op.bullet_id not in all_bids:
+                raise ApplyError(f"unknown bullet_id {op.bullet_id!r}")
+            rewrites[op.bullet_id] = op.text
 
     new_entries: list[Entry] = []
     for e in resume.entries:
@@ -49,7 +54,7 @@ def apply_plan(resume: Resume, plan: TailorPlan, table: EquivalenceTable) -> Res
             kept = [by_id[bid] for bid in order]
         out_bullets: list[Bullet] = []
         for b in kept:
-            text = b.text
+            text = rewrites.get(b.bullet_id, b.text)
             for frm, to in swaps.get(b.bullet_id, []):
                 res = whole_token_sub(text, frm, to)
                 if res is None:

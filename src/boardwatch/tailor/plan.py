@@ -32,7 +32,12 @@ class EquivalenceSwap(_Op):
     to_phrase: str
 
 
-Op = Select | Reorder | Delete | EquivalenceSwap
+class Rewrite(_Op):
+    bullet_id: str
+    text: str
+
+
+Op = Select | Reorder | Delete | EquivalenceSwap | Rewrite
 
 
 class TailorPlan(BaseModel):
