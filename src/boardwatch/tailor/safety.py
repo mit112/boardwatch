@@ -14,14 +14,21 @@ def plan_is_structurally_safe(
     resume: Resume, plan: TailorPlan, table: EquivalenceTable
 ) -> bool:
     bullets = {b.bullet_id: b for e in resume.entries for b in e.bullets}
-    eids = {e.entry_id for e in resume.entries}
+    entry_bids = {e.entry_id: {b.bullet_id for b in e.bullets} for e in resume.entries}
     pairs = {(p.from_phrase, p.to_phrase) for p in table.as_pairs()}
     for op in plan.ops:
         if isinstance(op, (Select, Delete)):
             if op.bullet_id not in bullets:
                 return False
         elif isinstance(op, Reorder):
-            if op.entry_id not in eids:
+            if op.entry_id not in entry_bids:
+                return False
+            # "Every referenced id exists" (L6a) covers the order list too: an order naming
+            # ids from another entry — or none at all — is not a reordering of this entry.
+            # apply_plan also rejects it, but this limb must stand on its own.
+            if len(set(op.order)) != len(op.order):
+                return False
+            if not set(op.order).issubset(entry_bids[op.entry_id]):
                 return False
         elif isinstance(op, EquivalenceSwap):
             if op.bullet_id not in bullets:
