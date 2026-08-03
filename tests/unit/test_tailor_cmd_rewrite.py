@@ -406,3 +406,62 @@ def test_rewrite_apply_emits_llm_artifact_with_lineage(env: Env, tmp_path: Path)
     llm_typ = out_dir / f"tailored-{posting_id}-llm.typ"
     assert llm_typ.exists()
     assert "reworded (Tier B)" in llm_typ.read_text(encoding="utf-8")
+
+
+def test_rewrite_apply_rejects_mismatched_request_ids(env: Env, tmp_path: Path) -> None:
+    """candidates.json and verdicts.json from two different runs must be rejected --
+    bullet_ids alone can't tell them apart since they're stable across postings (same
+    authored resume.yaml), so a mismatched ENTAILED verdict from the wrong run could
+    keep a bullet its own run's judge would have dropped."""
+    _write_config(env, "[llm]\nresume_tailoring_via_agent = true\n")
+    _run(env, ["tailor", "init"])
+    posting_id = _seed_open_posting(env, skills=("python", "javascript"))
+
+    request_out = tmp_path / "rewrite_request.json"
+    req_result = _run(
+        env, ["tailor", "rewrite", "request", str(posting_id), "--out", str(request_out)]
+    )
+    assert req_result.exit_code == 0, req_result.stdout
+
+    candidates_path = tmp_path / "candidates.json"
+    dump_json(
+        CandidatesFile(
+            request_id="req-1",
+            candidates=[
+                Candidate(
+                    bullet_id="acme-1",
+                    candidate="Shipped a Python service handling 2M requests/day on Kubernetes",
+                ),
+            ],
+        ),
+        candidates_path,
+    )
+    verdicts_path = tmp_path / "verdicts.json"
+    dump_json(
+        VerdictsFile(
+            request_id="req-2-DIFFERENT-RUN",
+            verdicts=[Verdict(bullet_id="acme-1", raw_reply="ENTAILED")],
+        ),
+        verdicts_path,
+    )
+
+    out_dir = tmp_path / "out"
+    result = _run(
+        env,
+        [
+            "tailor",
+            "rewrite",
+            "apply",
+            str(posting_id),
+            "--candidates",
+            str(candidates_path),
+            "--verdicts",
+            str(verdicts_path),
+            "--out",
+            str(out_dir),
+        ],
+    )
+    assert result.exit_code == 1
+    assert "req-1" in result.stdout
+    assert "req-2-DIFFERENT-RUN" in result.stdout
+    assert _artifact_count(env) == 0

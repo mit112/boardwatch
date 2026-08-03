@@ -365,6 +365,13 @@ def rewrite_apply_cmd(
 
     candidates = load_json(CandidatesFile, candidates_path)
     verdicts = load_json(VerdictsFile, verdicts_path)
+    if candidates.request_id != verdicts.request_id:
+        console.print(
+            "candidates and verdicts are from different runs "
+            f"(request_id {candidates.request_id} != {verdicts.request_id}); "
+            "re-run screen + judge for this request, or pass the matching files"
+        )
+        raise typer.Exit(code=1)
     tb = apply_agent_rewrites(tailored, candidates, verdicts, taxonomy, jd_skills)
     # Recomputed identically to the budget apply_agent_rewrites enforced internally (2x
     # bullet count) so the artifact's recorded `budget` matches the cap that was actually
