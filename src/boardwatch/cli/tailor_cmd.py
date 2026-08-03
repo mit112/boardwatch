@@ -14,8 +14,10 @@ import typer
 from rich.console import Console
 
 from boardwatch.cli.context import build_context
-from boardwatch.core.settings import Settings
+from boardwatch.core.settings import Settings, load_settings
 from boardwatch.extract.taxonomy import load_taxonomy
+from boardwatch.llm.cache import ResponseCache
+from boardwatch.llm.factory import build_client
 from boardwatch.reports.tailor import (
     NoCurrentVersionError,
     UnsupportedFormatError,
@@ -27,7 +29,8 @@ from boardwatch.tailor.safety import TierASafetyError
 console = Console()
 
 tailor_app = typer.Typer(
-    no_args_is_help=True, help="Tailor an authored résumé against a posting (local, no LLM)."
+    no_args_is_help=True,
+    help="Tailor an authored résumé against a posting (local by default; opt-in LLM via --tier-b).",
 )
 
 RESUME_OPTION = typer.Option(None, "--resume", help="Path to the authored résumé YAML.")
@@ -89,10 +92,42 @@ def run_cmd(
     dry_run: bool = typer.Option(  # noqa: B008
         False, "--dry-run", help="Render and report without writing artifacts."
     ),
+    tier_b: bool = typer.Option(  # noqa: B008
+        False, "--tier-b", "--llm", help="Also emit an opt-in LLM-reworded variant (Tier B)."
+    ),
 ) -> None:
     """Tailor the authored résumé against one posting's JD skills."""
+    client = None
+    cache = None
+    if tier_b:
+        # Evaluate the gate against settings ALONE, before build_context below creates
+        # and migrates boardwatch.db — a gate failure against a pristine data dir must
+        # leave no database behind. load_settings only reads config.toml, so loading it
+        # again inside build_context is a cheap duplication, preferred here over
+        # threading a pre-built AppContext through build_context's signature.
+        gate_settings = load_settings(data_dir=ctx.obj)
+        if not gate_settings.llm.resume_tailoring:
+            console.print(
+                "Tier B requires llm.resume_tailoring = true in config "
+                "(opt-in for résumé rewording)"
+            )
+            raise typer.Exit(code=1)
+        try:
+            client = build_client(gate_settings)
+        except ValueError as exc:
+            console.print(str(exc))
+            raise typer.Exit(code=1) from exc
+        if client is None:
+            console.print(
+                "LLM tier is not enabled; set llm.enabled = true and BOARDWATCH_LLM_API_KEY"
+            )
+            raise typer.Exit(code=1)
+
     app_ctx = build_context(ctx.obj)
     settings = app_ctx.settings
+    if tier_b:
+        cache = ResponseCache(settings.data_dir / "llm-cache")
+
     try:
         result = run_tailor(
             app_ctx.engine,
@@ -102,6 +137,8 @@ def run_cmd(
             out_dir=out_dir if out_dir is not None else settings.data_dir / "tailored",
             fmt=fmt,
             dry_run=dry_run,
+            client=client,
+            cache=cache,
         )
     except (
         ResumeLoadError,
@@ -126,8 +163,50 @@ def run_cmd(
         console.print(line, markup=False)  # see validate_cmd: [entry_id] is not rich markup
     console.print("guarantee: PASS (Tier A no-fabrication check enforced before write)")
     if result.dry_run:
-        console.print("dry run — source only, nothing written")
+        if result.rewrites is not None:
+            # Tier B ran even in a dry run (a preview must reflect what a real run
+            # would produce) and its lane caches provider replies to disk as it goes,
+            # so "nothing written" would be false here — only the résumé artifacts
+            # were skipped, not the LLM response cache.
+            console.print(
+                "dry run — no résumé artifacts written (the LLM response cache was updated)"
+            )
+        else:
+            console.print("dry run — source only, nothing written")
     elif result.pdf_path is not None:
         console.print(f"pdf: {result.pdf_path}")
     else:
         console.print("source only (no PDF; typst not available or compile failed)")
+
+    if result.rewrites is not None:
+        reworded = sum(1 for r in result.rewrites if r["kept"])
+        # "unchanged" (the provider echoed the bullet back verbatim) is not a fallback
+        # failure — it is a no-op — so it is counted and tagged separately from a real
+        # drop rather than folded into "fell back".
+        unchanged = sum(1 for r in result.rewrites if r["drop_reason"] == "unchanged")
+        fell_back = len(result.rewrites) - reworded - unchanged
+        console.print(
+            f"Tier B (LLM): reworded {reworded} · unchanged {unchanged} · fell back {fell_back}"
+        )
+        for r in result.rewrites:
+            if r["kept"]:
+                tag = "reworded"
+            elif r["drop_reason"] == "unchanged":
+                tag = "unchanged"
+            else:
+                tag = f"fallback:{r['drop_reason']}"
+            console.print(f"  {tag:<16} [{r['entry_id']}] {r['bullet_id']}", markup=False)
+        console.print(
+            "Tier B is LLM-assisted: each reworded bullet passed a deterministic overmatch "
+            "filter and a fail-closed entailment judge, but is NOT structurally proven — "
+            "review the flagged variant before sending; the Tier A file above is the safe copy."
+        )
+        if any(r["drop_reason"] == "budget" for r in result.rewrites):
+            console.print(
+                "Tier B call budget exhausted before every bullet was reworded — raise "
+                "llm.max_calls_per_run (Tier B spends 2 calls per bullet, shared with the "
+                "eligibility LLM lane; a cache hit still spends budget, so re-running with "
+                "no config change will not help)."
+            )
+        if not result.dry_run and result.llm_pdf_path is not None:
+            console.print(f"tier B pdf: {result.llm_pdf_path}")

@@ -51,6 +51,7 @@ class LLMTier(BaseModel):
     model: str | None = None
     base_url: str | None = None
     eligibility_extraction: bool = False
+    resume_tailoring: bool = False
     max_calls_per_run: int = 50
 
 

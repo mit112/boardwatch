@@ -40,6 +40,22 @@ whole-token synonym substitution entirely in-process, and writes rendered Typst 
 (and a best-effort PDF, via a local `typst` binary if present — never a network call) to
 `{data_dir}/tailored/`. Nothing is sent anywhere.
 
+## What leaves your machine when Tier B résumé rewording is on
+
+Tier B is a separate, **opt-in** lane on top of `tailor`, off by default. The Tier A path
+above never calls out to a model, regardless of Tier B's settings — it is only reached
+when `llm.enabled` and `llm.resume_tailoring` are both `true` in `config.toml`,
+`BOARDWATCH_LLM_API_KEY` is set, and `boardwatch tailor run` is invoked with `--tier-b`.
+When all of that is true, boardwatch sends each candidate bullet's text plus the JD skill
+names already extracted from the posting to the configured provider, asking it to reword
+the bullet and, separately, to judge whether the reworded bullet is entailed by the
+original — that judge call receives only the two bullet texts, never the job description.
+Your `profile` text, eligibility facts, and application history are never sent. A reworded
+bullet is kept only if it passes a local, deterministic overmatch filter and that
+entailment judge; it is not structurally proven the way Tier A's output is, and the plain
+Tier A file is always written alongside it for comparison. Responses are cached as plain
+files under `{data_dir}/llm-cache/`, same as the eligibility-extraction tier.
+
 ## What leaves your machine when notifications are on
 
 Notifications are disabled by default (`notify.desktop_enabled` and

@@ -45,6 +45,43 @@ consumers. Like the LLM API key below, this URL is never stored in `config.toml`
 | `{config_dir}/resume.yaml` | Your authored, structured résumé (written by `tailor init`, read by `tailor validate`/`tailor run`). |
 | `{data_dir}/tailored/` | Output directory for rendered Typst source and best-effort PDFs, one `tailored-<posting-id>.{typ,pdf}` pair per posting. |
 
+### Tier B (opt-in LLM rewording)
+
+`tailor run --tier-b` adds exactly one new key, `llm.resume_tailoring`, as a second gate
+alongside `llm.enabled` on the existing `[llm]` block below — it does not introduce a new
+config section, a new secret, or a separate credential/endpoint. Everything else it needs
+(`enabled`, `provider`, `model`, `base_url`, `max_calls_per_run`, `BOARDWATCH_LLM_API_KEY`)
+is the same `[llm]` block already used by the opt-in LLM eligibility-extraction tier.
+
+| Key | Type / Range | Default | Takes effect |
+|---|---|---|---|
+| `llm.resume_tailoring` | bool | `false` | next `tailor run --tier-b` |
+
+`boardwatch config set llm.*` is reserved (see below) and refuses to write any `llm.*`
+key, `resume_tailoring` included. Enable it by editing `{config_dir}/config.toml`
+directly:
+
+```toml
+[llm]
+enabled = true
+resume_tailoring = true
+provider = "anthropic"
+model = "claude-..."
+```
+
+`--tier-b` requires both `llm.enabled` and `llm.resume_tailoring` to be `true`, plus a
+resolvable `BOARDWATCH_LLM_API_KEY`; missing any of them exits 1 before writing anything
+rather than silently falling back to Tier A for the whole run. (A per-bullet fallback to
+Tier A text is a different, expected thing — see the README's Tier B section.)
+
+**`max_calls_per_run` in a Tier B context.** Tier B spends 2 calls per surviving bullet
+(one to propose a rewrite, one for the entailment judge) out of the *same*
+`llm.max_calls_per_run` budget the eligibility LLM lane shares — default 50, so about 25
+bullets per run before the rest fall back with `drop_reason: "budget"`. The budget is
+consumed even on a cache hit (a deliberate choice, so behaviour stays deterministic across
+runs), which means re-running the same posting does **not** extend it; raise
+`llm.max_calls_per_run` in `config.toml` if a résumé's bullet count routinely exceeds it.
+
 ## Secrets (reserved for the v1.1 LLM tier)
 
 boardwatch v1 uses no credentials, so `config.toml` never contains secrets and there is

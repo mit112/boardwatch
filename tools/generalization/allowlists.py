@@ -198,6 +198,15 @@ SHIPPED_DATA: dict[str, DataEntry] = {
         reason=_FIXTURE,
         pin="sha256:3ea639fa92918e10fda9999671338499a58e00a38b0dc3500ddb10c5214f1c3a",
     ),
+    "tools/tier_b_eval/corpus.yaml": DataEntry(
+        kind="corpus",
+        reason="Hand-authored labeled evaluation corpus for the Tier B entailment gate. "
+        "Describes fabrication patterns (invented skills, inflated numbers, scope creep, "
+        "...), not any user's résumé or posting. Used only by the offline eval harness "
+        "(tools/tier_b_eval) and one hermetic test; pinned because a silent edit would "
+        "weaken the gate's measured false-accept bar.",
+        pin="sha256:f60e6149ab915fb719f0d6266a16c1a34eb9b4e58de5308ed31d0ef58295f208",
+    ),
 }
 
 # The designation "the company registry" is bound to a literal path, not to a label a

@@ -1,4 +1,5 @@
-"""Orchestration for `boardwatch tailor` — the P7 Tier A pipeline (spec §5).
+"""Orchestration for `boardwatch tailor` — the P7 Tier A pipeline (spec §5), plus the
+opt-in Tier B LLM rewording lane (P7b).
 
 Mirrors reports/notify.py's transaction discipline: never hold a DB write lock across
 render/PDF I/O. Read JD skills + resolve the current OPEN posting version under a short
@@ -8,6 +9,13 @@ master + tailored artifacts and the lineage edge in one closing engine.begin().
 Fail closed: a posting with no current version, or one that is not open, raises before any
 render or write. Tier A safety (enforce_tier_a) raises before ANY artifact is recorded, so
 a rejected résumé leaves no trace on disk or in the DB.
+
+Tier B runs only when the caller supplies a `ModelClient`; passing none leaves Tier A's
+output, hashes, and artifacts exactly as if Tier B did not exist. When a client is given,
+`run_tier_b`'s filter + judge are its own gate — `enforce_tier_a` never runs against the
+reworded model, since `Rewrite` is not a Tier A op. Tier B emits a second
+`resume_tailored_llm` artifact with a `rewritten_from` edge back to the Tier A artifact,
+recorded in the same closing transaction as Tier A's write.
 """
 
 from __future__ import annotations
@@ -23,6 +31,8 @@ from sqlalchemy import Engine, select
 from boardwatch.core.settings import Settings
 from boardwatch.extract.preflight import run_preflight
 from boardwatch.extract.taxonomy import Taxonomy, load_taxonomy
+from boardwatch.llm.cache import ResponseCache
+from boardwatch.llm.client import ModelClient
 from boardwatch.store.artifacts import (
     add_derivation,
     get_or_create_master_artifact,
@@ -37,9 +47,12 @@ from boardwatch.tailor.model import Resume
 from boardwatch.tailor.plan import Delete, EquivalenceSwap, TailorPlan, build_plan
 from boardwatch.tailor.render import TypstRunner
 from boardwatch.tailor.render.typst import TypstRenderer
+from boardwatch.tailor.rewrite.lane import TierBResult, run_tier_b
+from boardwatch.tailor.rewrite.prompt import JUDGE_PROMPT_VERSION, REWRITE_PROMPT_VERSION
 from boardwatch.tailor.safety import enforce_tier_a
 
 VALIDATOR_VERSION = "tier-a-1"
+LLM_LANE_VERSION = "tier-b-1"
 SUPPORTED_FORMATS = ("typst",)
 
 
@@ -63,6 +76,10 @@ class TailorResult:
     bullets: list[dict[str, Any]]
     tailored_artifact_id: int | None
     dry_run: bool
+    llm_source: str | None = None
+    llm_pdf_path: Path | None = None
+    rewrites: list[dict[str, Any]] | None = None
+    llm_artifact_id: int | None = None
 
 
 def _default_runner(typ: Path, pdf: Path) -> bool:
@@ -187,6 +204,8 @@ def run_tailor(
     fmt: str = "typst",
     dry_run: bool = False,
     typst_runner: TypstRunner | None = None,
+    client: ModelClient | None = None,
+    cache: ResponseCache | None = None,
 ) -> TailorResult:
     if fmt not in SUPPORTED_FORMATS:
         supported = ", ".join(SUPPORTED_FORMATS)
@@ -242,13 +261,73 @@ def run_tailor(
     ]
     rows = _audit_rows(master, tailored, plan, jd_skills, taxonomy)
 
+    # Tier B: opt-in LLM rewording, gated on an explicit client. Runs whether or not this
+    # is a dry run — the preview must reflect what a real run would produce — but it never
+    # touches Tier A's own `tailored`/`source`/`tailored_hash` above it.
+    llm_source: str | None = None
+    llm_rows: list[dict[str, Any]] | None = None
+    llm_hash: str | None = None
+    # Non-Optional sentinel (rather than `TierBResult | None`) so `tb.calls_made` below
+    # needs no null-check: it is only ever read from the `client is not None` write path,
+    # where `tb` has always been replaced by a real `run_tier_b` result.
+    tb = TierBResult(accepted=[], rows=[], calls_made=0)
+    if client is not None:
+        if cache is None:
+            raise ValueError("cache is required when client is provided")
+        tb = run_tier_b(
+            tailored,
+            client,
+            cache,
+            jd_skills=jd_skills,
+            taxonomy=taxonomy,
+            model=settings.llm.model or "unknown",
+            budget=settings.llm.max_calls_per_run,
+            provider=settings.llm.provider,
+            base_url=settings.llm.base_url,
+        )
+        tailored_b = apply_plan(tailored, TailorPlan(ops=tuple(tb.accepted)), table)
+        reworded = frozenset(r.bullet_id for r in tb.accepted)
+        llm_source = renderer.emit(tailored_b, reworded=reworded)
+        # Content-address Tier B by the model, not the render (unlike Tier A's
+        # `tailored_hash` above, which hashes the render for historical reasons predating
+        # this lane). This asymmetry is deliberate and documented — not something to
+        # "fix" by changing Tier A's addressing.
+        llm_hash = _sha(tailored_b.model_dump_json())
+        llm_rows = [
+            {
+                "bullet_id": r.bullet_id,
+                "entry_id": r.entry_id,
+                "a_text_sha256": _sha(r.a_text),
+                "b_text_sha256": _sha(r.b_text),
+                "filter_pass": r.filter_pass,
+                "judge_verdict": r.judge_verdict,
+                "kept": r.kept,
+                "drop_reason": r.drop_reason,
+                "op": (
+                    "reworded"
+                    if r.kept
+                    else "unchanged" if r.drop_reason == "unchanged" else "fallback"
+                ),
+            }
+            for r in tb.rows
+        ]
+
     pdf_path: Path | None = None
     art_id: int | None = None
+    llm_pdf_path: Path | None = None
+    llm_art_id: int | None = None
     if not dry_run:
         name = f"tailored-{posting_id}"
         typ_uri = str(Path(out_dir) / f"{name}.typ")  # deterministic reference (§5)
         # No lock held here: to_pdf shells out / touches the filesystem freely.
         pdf_path = renderer.to_pdf(source, Path(out_dir), name, typst_runner or _default_runner)
+        llm_uri: str | None = None
+        if client is not None and llm_source is not None:
+            llm_name = f"tailored-{posting_id}-llm"
+            llm_uri = str(Path(out_dir) / f"{llm_name}.typ")
+            llm_pdf_path = renderer.to_pdf(
+                llm_source, Path(out_dir), llm_name, typst_runner or _default_runner
+            )
         meta = _trace(
             plan,
             jd_skills,
@@ -283,6 +362,37 @@ def run_tailor(
             add_derivation(
                 conn, artifact_id=art_id, parent_artifact_id=master_id, relation="tailored_from"
             )
+            if client is not None and llm_source is not None and llm_uri is not None:
+                llm_meta = {
+                    "tier": "B",
+                    "llm_lane_version": LLM_LANE_VERSION,
+                    "rewrite_prompt_version": REWRITE_PROMPT_VERSION,
+                    "judge_prompt_version": JUDGE_PROMPT_VERSION,
+                    "provider": settings.llm.provider,
+                    "model": settings.llm.model,
+                    "tier_a_artifact_id": art_id,
+                    "tier_a_content_hash": tailored_hash,
+                    "posting_id": cv.posting_id,
+                    "posting_version_id": cv.posting_version_id,
+                    "calls_made": tb.calls_made,
+                    "budget": settings.llm.max_calls_per_run,
+                    "rewrites": llm_rows,
+                }
+                llm_art_id = record_artifact(
+                    conn,
+                    kind="resume_tailored_llm",
+                    uri=llm_uri,
+                    posting_version_id=cv.posting_version_id,
+                    content_hash=llm_hash,
+                    generator="boardwatch.tailor",
+                    generator_version=LLM_LANE_VERSION,
+                    media_type="text/x-typst",
+                    meta=llm_meta,
+                )
+                add_derivation(
+                    conn, artifact_id=llm_art_id, parent_artifact_id=art_id,
+                    relation="rewritten_from",
+                )
 
     return TailorResult(
         posting_id=posting_id,
@@ -295,4 +405,8 @@ def run_tailor(
         bullets=rows,
         tailored_artifact_id=art_id,
         dry_run=dry_run,
+        llm_source=llm_source,
+        llm_pdf_path=llm_pdf_path,
+        rewrites=llm_rows,
+        llm_artifact_id=llm_art_id,
     )
