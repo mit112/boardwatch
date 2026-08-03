@@ -1,4 +1,5 @@
-"""Orchestration for `boardwatch tailor` — the P7 Tier A pipeline (spec §5).
+"""Orchestration for `boardwatch tailor` — the P7 Tier A pipeline (spec §5), plus the
+opt-in Tier B LLM rewording lane (P7b).
 
 Mirrors reports/notify.py's transaction discipline: never hold a DB write lock across
 render/PDF I/O. Read JD skills + resolve the current OPEN posting version under a short
@@ -8,6 +9,13 @@ master + tailored artifacts and the lineage edge in one closing engine.begin().
 Fail closed: a posting with no current version, or one that is not open, raises before any
 render or write. Tier A safety (enforce_tier_a) raises before ANY artifact is recorded, so
 a rejected résumé leaves no trace on disk or in the DB.
+
+Tier B runs only when the caller supplies a `ModelClient`; passing none leaves Tier A's
+output, hashes, and artifacts exactly as if Tier B did not exist. When a client is given,
+`run_tier_b`'s filter + judge are its own gate — `enforce_tier_a` never runs against the
+reworded model, since `Rewrite` is not a Tier A op. Tier B emits a second
+`resume_tailored_llm` artifact with a `rewritten_from` edge back to the Tier A artifact,
+recorded in the same closing transaction as Tier A's write.
 """
 
 from __future__ import annotations
@@ -259,7 +267,10 @@ def run_tailor(
     llm_source: str | None = None
     llm_rows: list[dict[str, Any]] | None = None
     llm_hash: str | None = None
-    tb: TierBResult | None = None
+    # Non-Optional sentinel (rather than `TierBResult | None`) so `tb.calls_made` below
+    # needs no null-check: it is only ever read from the `client is not None` write path,
+    # where `tb` has always been replaced by a real `run_tier_b` result.
+    tb = TierBResult(accepted=[], rows=[], calls_made=0)
     if client is not None:
         if cache is None:
             raise ValueError("cache is required when client is provided")
@@ -357,7 +368,7 @@ def run_tailor(
                     "tier_a_content_hash": tailored_hash,
                     "posting_id": cv.posting_id,
                     "posting_version_id": cv.posting_version_id,
-                    "calls_made": tb.calls_made if tb else 0,
+                    "calls_made": tb.calls_made,
                     "budget": settings.llm.max_calls_per_run,
                     "rewrites": llm_rows,
                 }

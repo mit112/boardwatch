@@ -14,7 +14,7 @@ from __future__ import annotations
 from datetime import datetime
 from pathlib import Path
 
-from sqlalchemy import Engine, insert
+from sqlalchemy import Engine, insert, select
 
 from boardwatch.core.settings import Settings
 from boardwatch.extract.taxonomy import load_taxonomy
@@ -148,22 +148,75 @@ def test_tier_b_emits_second_artifact_and_edge(tmp_path: Path) -> None:
     assert llm_artifact.meta_json["tier_a_artifact_id"] == res.tailored_artifact_id
 
 
-def test_tier_b_off_is_tier_a_identical(tmp_path: Path) -> None:
-    """No client -> Tier A output, artifacts, and files are exactly what Task 5 found them."""
-    settings = _settings(tmp_path)
-    engine = _engine(settings)
-    pid = _seed(engine, settings)
-    out = tmp_path / "out"
-    resume = _resume_yaml(tmp_path)
-    res = run_tailor(engine, settings, pid, resume_path=resume, out_dir=out, typst_runner=_runner_ok)
-    assert res.llm_artifact_id is None
-    assert res.rewrites is None
-    assert res.llm_source is None
-    assert res.llm_pdf_path is None
-    assert not (out / f"tailored-{pid}-llm.typ").exists()
+def _tier_a_row(engine: Engine, art_id: int) -> object:
     with engine.connect() as conn:
+        return conn.execute(
+            select(artifacts.c.kind, artifacts.c.content_hash, artifacts.c.meta_json).where(
+                artifacts.c.id == art_id
+            )
+        ).one()
+
+
+def test_tier_b_off_is_tier_a_identical(tmp_path: Path) -> None:
+    """Tier A's source, content hash, and meta_json must not shift when Tier B runs.
+
+    Differential, not hardcoded: run the SAME authored résumé twice, once with no client
+    (Tier B off) and once with a client whose rewrites are genuinely accepted (Tier B on),
+    and prove the Tier A halves — source, kept/dropped/bullets, recorded content_hash and
+    meta_json — are byte-for-byte identical either way. A hardcoded expected value would
+    rot silently as Tier A's own fixtures/logic evolve; this proves the invariant directly.
+    """
+    resume = _resume_yaml(tmp_path)
+    # Same out_dir for both runs: each engine is an independent, freshly seeded database,
+    # so pid_a == pid_b == 1 and both write tailored-1.typ with byte-identical content —
+    # sharing the directory means pdf_uri/typ_uri are identical too, not just the content,
+    # so meta_json can be compared with zero exclusions below.
+    out = tmp_path / "out"
+
+    # Run 1: Tier A only.
+    s_a = _settings(tmp_path / "a")
+    e_a = _engine(s_a)
+    pid_a = _seed(e_a, s_a)
+    res_a = run_tailor(e_a, s_a, pid_a, resume_path=resume, out_dir=out, typst_runner=_runner_ok)
+
+    # Tier B left no trace in this no-client run — checked now, before run 2 writes into
+    # the same shared directory below.
+    assert res_a.llm_artifact_id is None
+    assert res_a.rewrites is None
+    assert res_a.llm_source is None
+    assert res_a.llm_pdf_path is None
+    assert not (out / f"tailored-{pid_a}-llm.typ").exists()
+    with e_a.connect() as conn:
         rows = conn.execute(artifacts.select()).fetchall()
     assert {r.kind for r in rows} == {"resume_master", "resume_tailored"}
+
+    # Run 2: same input, Tier B enabled with rewrites that are actually accepted (filter
+    # passes, judge says ENTAILED) — the case most likely to perturb Tier A if anything did.
+    s_b = _settings(tmp_path / "b")
+    e_b = _engine(s_b)
+    pid_b = _seed(e_b, s_b)
+    client = ScriptedClient(["Shipped it", "ENTAILED", "Led it", "ENTAILED"])
+    res_b = run_tailor(
+        e_b, s_b, pid_b, resume_path=resume, out_dir=out, typst_runner=_runner_ok,
+        client=client, cache=ResponseCache(tmp_path / "cache"),
+    )
+    assert res_b.llm_artifact_id is not None  # Tier B really did run, not a no-op
+
+    # Tier A halves are byte-identical regardless of whether Tier B ran alongside them.
+    assert res_b.source == res_a.source
+    assert res_b.kept == res_a.kept
+    assert res_b.dropped == res_a.dropped
+    assert res_b.bullets == res_a.bullets
+
+    # ...and so is the recorded Tier A artifact: same content_hash and same meta_json.
+    # Both engines are independent, freshly seeded databases with identical insert order,
+    # so ids (posting/master/etc.) coincide too — the two dicts compare equal with zero
+    # exclusions, which is stricter proof than filtering keys out would have been.
+    row_a = _tier_a_row(e_a, res_a.tailored_artifact_id)
+    row_b = _tier_a_row(e_b, res_b.tailored_artifact_id)
+    assert row_b.kind == row_a.kind == "resume_tailored"
+    assert row_b.content_hash == row_a.content_hash
+    assert row_b.meta_json == row_a.meta_json
 
 
 def test_tier_b_dry_run_writes_nothing(tmp_path: Path) -> None:
