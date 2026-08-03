@@ -29,7 +29,8 @@ from boardwatch.tailor.safety import TierASafetyError
 console = Console()
 
 tailor_app = typer.Typer(
-    no_args_is_help=True, help="Tailor an authored résumé against a posting (local, no LLM)."
+    no_args_is_help=True,
+    help="Tailor an authored résumé against a posting (local by default; opt-in LLM via --tier-b).",
 )
 
 RESUME_OPTION = typer.Option(None, "--resume", help="Path to the authored résumé YAML.")

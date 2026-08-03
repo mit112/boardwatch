@@ -164,3 +164,22 @@ def test_tier_b_flag_errors_when_llm_tier_not_configured(env: Env, tmp_path: Pat
     assert not out.exists()
     assert not (env.data_dir / "tailored").exists()
     assert _artifact_count(env) == 0
+
+
+def test_tier_b_flag_errors_when_llm_enabled_but_misconfigured(
+    env: Env, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # resume_tailoring + llm.enabled = true, but missing llm.model / llm.base_url.
+    # Set the API key so build_client reaches the misconfiguration ValueError.
+    _write_config(env, "[llm]\nresume_tailoring = true\nenabled = true\n")
+    monkeypatch.setenv("BOARDWATCH_LLM_API_KEY", "fake-key")
+    _run(env, ["tailor", "init"])
+    posting_id = _seed_open_posting(env)
+    out = tmp_path / "artifacts"
+    result = _run(env, ["tailor", "run", str(posting_id), "--tier-b", "--out", str(out)])
+    assert result.exit_code == 1
+    assert "llm.model" in result.stdout
+    # Gate failed before run_tailor: nothing written.
+    assert not out.exists()
+    assert not (env.data_dir / "tailored").exists()
+    assert _artifact_count(env) == 0
