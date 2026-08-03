@@ -7,18 +7,24 @@ Verdict = Literal["ENTAILED", "NOT_ENTAILED", "UNSURE"]
 
 _NON_ALPHA = re.compile(r"[^A-Z]")
 _NEGATED = ("NOTENTAILED", "NONENTAILED", "UNENTAILED")
+_NEGATION_WORD = re.compile(r"\b(?:NOT|NON|NEVER|NO|CANNOT|FALSE|UNSUPPORTED)\b")
 
 
 def parse_verdict(reply: str) -> Verdict:
     """Map a judge reply to a verdict, erring toward rejection.
 
-    Separators and surrounding prose are ignored so that a reply which drifts
-    from the prompted token format (``not-entailed``, ``NOT  ENTAILED``) is
-    still read as a rejection rather than an acceptance.
+    Fail-closed on three levels: separators and surrounding prose are ignored so a
+    drifted rejection (``not-entailed``, ``NOT  ENTAILED``) still reads as one; a
+    negation word anywhere alongside ``ENTAILED`` is read as a rejection even when
+    words intervene (``NOT really entailed``); and anything unrecognized is ``UNSURE``.
+    Only a clean, unnegated ``ENTAILED`` accepts the rewrite.
     """
-    squashed = _NON_ALPHA.sub("", reply.upper())
+    upper = reply.upper()
+    squashed = _NON_ALPHA.sub("", upper)
     if any(neg in squashed for neg in _NEGATED):
         return "NOT_ENTAILED"
-    if "ENTAILED" in squashed:
-        return "ENTAILED"
-    return "UNSURE"
+    if "ENTAILED" not in squashed:
+        return "UNSURE"
+    if _NEGATION_WORD.search(upper):
+        return "NOT_ENTAILED"
+    return "ENTAILED"
