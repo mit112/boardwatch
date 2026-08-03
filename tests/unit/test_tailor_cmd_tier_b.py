@@ -241,3 +241,88 @@ def test_run_dry_run_without_tier_b_message_unchanged(env: Env, tmp_path: Path) 
     result = _run(env, ["tailor", "run", str(posting_id), "--dry-run"])
     assert result.exit_code == 0, result.stdout
     assert "dry run — source only, nothing written" in result.stdout
+
+
+# --- report block: Tier B counts line, budget hint, and no-op tagging (real CLI run) ----
+#
+# These drive a real Tier B run through the CLI: the gate (resume_tailoring, llm.enabled,
+# BOARDWATCH_LLM_API_KEY) runs unmodified, and only the seam past the gate — build_client —
+# is monkeypatched to hand back a scripted client instead of a real provider adapter. The
+# scaffolded résumé (see scaffold_template) has exactly two bullets: acme-1 "Built a Python
+# service handling 2M requests/day on Kubernetes" and acme-2 "Cut p99 latency 40% by
+# rewriting the hot path in Rust", processed entry-then-bullet in that order, so a scripted
+# client's bodies list is consumed as [b1-propose, b1-judge, b2-propose, b2-judge].
+
+
+def _write_tier_b_config(env: Env, *, max_calls_per_run: int | None = None) -> None:
+    body = "[llm]\nresume_tailoring = true\nenabled = true\n"
+    if max_calls_per_run is not None:
+        body += f"max_calls_per_run = {max_calls_per_run}\n"
+    _write_config(env, body)
+
+
+def test_tier_b_report_shows_reworded_count_and_disclaimer(
+    env: Env, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _write_tier_b_config(env)
+    monkeypatch.setenv("BOARDWATCH_LLM_API_KEY", "fake-key")
+    monkeypatch.setattr(
+        "boardwatch.cli.tailor_cmd.build_client",
+        lambda settings: _FakeClient(["Shipped it", "ENTAILED", "Led it", "ENTAILED"]),
+    )
+    _run(env, ["tailor", "init"])
+    posting_id = _seed_open_posting(env)
+    out = tmp_path / "artifacts"
+    result = _run(env, ["tailor", "run", str(posting_id), "--tier-b", "--out", str(out)])
+    assert result.exit_code == 0, result.stdout
+    flat = result.stdout.replace("\n", "")
+    assert "Tier B (LLM): reworded 2 · unchanged 0 · fell back 0" in flat
+    assert (out / f"tailored-{posting_id}-llm.typ").exists()
+    assert "NOT structurally proven" in flat
+
+
+def test_tier_b_report_shows_budget_hint_when_exhausted(
+    env: Env, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Tier B spends 2 calls per bullet (propose + judge); a budget of 2 lets the first
+    # bullet complete but leaves nothing for the second, which drops with drop_reason="budget".
+    _write_tier_b_config(env, max_calls_per_run=2)
+    monkeypatch.setenv("BOARDWATCH_LLM_API_KEY", "fake-key")
+    monkeypatch.setattr(
+        "boardwatch.cli.tailor_cmd.build_client",
+        lambda settings: _FakeClient(["Shipped it", "ENTAILED"]),
+    )
+    _run(env, ["tailor", "init"])
+    posting_id = _seed_open_posting(env)
+    out = tmp_path / "artifacts"
+    result = _run(env, ["tailor", "run", str(posting_id), "--tier-b", "--out", str(out)])
+    assert result.exit_code == 0, result.stdout
+    flat = result.stdout.replace("\n", "")
+    assert "Tier B (LLM): reworded 1 · unchanged 0 · fell back 1" in flat
+    assert "max_calls_per_run" in flat
+
+
+def test_tier_b_report_tags_unchanged_and_excludes_it_from_fell_back(
+    env: Env, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # A client that echoes each bullet back verbatim: candidate == source short-circuits
+    # before the judge, so only two calls (one propose per bullet) are ever made.
+    _write_tier_b_config(env)
+    monkeypatch.setenv("BOARDWATCH_LLM_API_KEY", "fake-key")
+    monkeypatch.setattr(
+        "boardwatch.cli.tailor_cmd.build_client",
+        lambda settings: _FakeClient(
+            [
+                "Built a Python service handling 2M requests/day on Kubernetes",
+                "Cut p99 latency 40% by rewriting the hot path in Rust",
+            ]
+        ),
+    )
+    _run(env, ["tailor", "init"])
+    posting_id = _seed_open_posting(env)
+    out = tmp_path / "artifacts"
+    result = _run(env, ["tailor", "run", str(posting_id), "--tier-b", "--out", str(out)])
+    assert result.exit_code == 0, result.stdout
+    flat = result.stdout.replace("\n", "")
+    assert "Tier B (LLM): reworded 0 · unchanged 2 · fell back 0" in flat
+    assert "fallback:unchanged" not in flat

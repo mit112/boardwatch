@@ -303,7 +303,11 @@ def run_tailor(
                 "judge_verdict": r.judge_verdict,
                 "kept": r.kept,
                 "drop_reason": r.drop_reason,
-                "op": "reworded" if r.kept else "fallback",
+                "op": (
+                    "reworded"
+                    if r.kept
+                    else "unchanged" if r.drop_reason == "unchanged" else "fallback"
+                ),
             }
             for r in tb.rows
         ]

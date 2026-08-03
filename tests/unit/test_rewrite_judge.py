@@ -53,6 +53,12 @@ from boardwatch.tailor.rewrite.judge import parse_verdict
     ("Arguably entailed", "UNSURE"),
     ("borderline entailed", "UNSURE"),
     ("ENTAILED*", "UNSURE"),
+    # Canonical UNSURE: the judge's own system prompt offers this exact token, so it
+    # deserves a pinned row hitting the `squashed == "UNSURE"` return directly, not just
+    # falling through to the same result via the final `return "UNSURE"`.
+    ("UNSURE", "UNSURE"),
+    ("unsure", "UNSURE"),
+    ("Verdict: UNSURE", "UNSURE"),
 ])
 def test_parse_verdict(reply, expected):
     assert parse_verdict(reply) == expected
