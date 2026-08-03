@@ -65,6 +65,22 @@ class UnsupportedFormatError(ValueError):
 
 
 @dataclass(frozen=True)
+class _TierAPlan:
+    """Full Tier A planning result — the private, complete sibling of `plan_tier_a`'s
+    public 3-tuple. `run_tailor` needs `master`/`table`/`plan`/`cv` below this point for
+    hashing, the audit trail, and the artifact write; `plan_tier_a` exposes only what the
+    subscription Tier B agent-lane CLI needs (P7b task 4)."""
+
+    master: Resume
+    tailored: Resume
+    jd_skills: set[str]
+    taxonomy: Taxonomy
+    table: EquivalenceTable
+    plan: TailorPlan
+    cv: CurrentVersion
+
+
+@dataclass(frozen=True)
 class TailorResult:
     posting_id: int
     source: str
@@ -194,22 +210,14 @@ def _trace(
     }
 
 
-def run_tailor(
-    engine: Engine,
-    settings: Settings,
-    posting_id: int,
-    *,
-    resume_path: Path,
-    out_dir: Path,
-    fmt: str = "typst",
-    dry_run: bool = False,
-    typst_runner: TypstRunner | None = None,
-    client: ModelClient | None = None,
-    cache: ResponseCache | None = None,
-) -> TailorResult:
-    if fmt not in SUPPORTED_FORMATS:
-        supported = ", ".join(SUPPORTED_FORMATS)
-        raise UnsupportedFormatError(f"unsupported format {fmt!r}; supported: {supported}")
+def _plan_tier_a(
+    engine: Engine, settings: Settings, posting_id: int, *, resume_path: Path
+) -> _TierAPlan:
+    """Tier A planning prefix shared by `run_tailor` and `plan_tier_a`: preflight,
+    taxonomy, the posting's current OPEN version + jd_skills extraction lookup, the
+    authored résumé, equivalences, plan build/apply, and the no-fabrication check —
+    raises before any render or write.
+    """
     run_preflight(engine, settings)
     taxonomy = load_taxonomy(settings.config_dir)
 
@@ -243,6 +251,48 @@ def run_tailor(
     plan = build_plan(master, jd_skills, table, taxonomy)
     tailored = apply_plan(master, plan, table)
     enforce_tier_a(master, tailored, plan, table)  # raises before any render or write
+
+    return _TierAPlan(
+        master=master,
+        tailored=tailored,
+        jd_skills=jd_skills,
+        taxonomy=taxonomy,
+        table=table,
+        plan=plan,
+        cv=cv,
+    )
+
+
+def plan_tier_a(
+    engine: Engine, settings: Settings, posting_id: int, *, resume_path: Path
+) -> tuple[Resume, set[str], Taxonomy]:
+    """Tier A prefix for callers that only need the tailored résumé + JD skills +
+    taxonomy — the subscription Tier B agent lane (P7b task 4). Reuses `run_tailor`'s
+    exact Tier A selection logic rather than re-deriving it.
+    """
+    r = _plan_tier_a(engine, settings, posting_id, resume_path=resume_path)
+    return r.tailored, r.jd_skills, r.taxonomy
+
+
+def run_tailor(
+    engine: Engine,
+    settings: Settings,
+    posting_id: int,
+    *,
+    resume_path: Path,
+    out_dir: Path,
+    fmt: str = "typst",
+    dry_run: bool = False,
+    typst_runner: TypstRunner | None = None,
+    client: ModelClient | None = None,
+    cache: ResponseCache | None = None,
+) -> TailorResult:
+    if fmt not in SUPPORTED_FORMATS:
+        supported = ", ".join(SUPPORTED_FORMATS)
+        raise UnsupportedFormatError(f"unsupported format {fmt!r}; supported: {supported}")
+    r = _plan_tier_a(engine, settings, posting_id, resume_path=resume_path)
+    master, tailored, jd_skills, taxonomy = r.master, r.tailored, r.jd_skills, r.taxonomy
+    table, plan, cv = r.table, r.plan, r.cv
 
     renderer = TypstRenderer()
     source = renderer.emit(tailored)

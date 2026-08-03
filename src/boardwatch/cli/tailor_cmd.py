@@ -8,6 +8,7 @@ no-fabrication tailoring pipeline (`reports.tailor.run_tailor`) against one post
 
 from __future__ import annotations
 
+import uuid
 from pathlib import Path
 
 import typer
@@ -21,9 +22,12 @@ from boardwatch.llm.factory import build_client
 from boardwatch.reports.tailor import (
     NoCurrentVersionError,
     UnsupportedFormatError,
+    plan_tier_a,
     run_tailor,
 )
 from boardwatch.tailor.load import ResumeLoadError, load_resume, scaffold_template
+from boardwatch.tailor.rewrite.agent_io import dump_json
+from boardwatch.tailor.rewrite.agent_lane import build_rewrite_request
 from boardwatch.tailor.safety import TierASafetyError
 
 console = Console()
@@ -32,6 +36,12 @@ tailor_app = typer.Typer(
     no_args_is_help=True,
     help="Tailor an authored résumé against a posting (local by default; opt-in LLM via --tier-b).",
 )
+
+rewrite_app = typer.Typer(
+    no_args_is_help=True,
+    help="Subscription Tier B agent lane: request/screen/apply skill-driven rewrites.",
+)
+tailor_app.add_typer(rewrite_app, name="rewrite")
 
 RESUME_OPTION = typer.Option(None, "--resume", help="Path to the authored résumé YAML.")
 
@@ -210,3 +220,52 @@ def run_cmd(
             )
         if not result.dry_run and result.llm_pdf_path is not None:
             console.print(f"tier B pdf: {result.llm_pdf_path}")
+
+
+@rewrite_app.command("request")
+def rewrite_request_cmd(
+    ctx: typer.Context,
+    posting_id: int = typer.Argument(..., help="Posting id (the # column of top)."),  # noqa: B008
+    resume_path: Path | None = RESUME_OPTION,
+    out: Path | None = typer.Option(  # noqa: B008
+        None,
+        "--out",
+        help="Output path (default {data_dir}/tailored/rewrite_request-{posting_id}.json).",
+    ),
+) -> None:
+    """Run Tier A internally, then write a JD-aware rewrite_request.json for the
+    rewriter agent (subscription Tier B agent lane, step 1)."""
+    # Evaluate the gate against settings ALONE, before build_context below creates and
+    # migrates boardwatch.db — a gate failure against a pristine data dir must leave no
+    # database behind (mirrors run_cmd's --tier-b gate above).
+    gate_settings = load_settings(data_dir=ctx.obj)
+    if not gate_settings.llm.resume_tailoring_via_agent:
+        console.print(
+            "Tier B agent lane requires llm.resume_tailoring_via_agent = true in config"
+        )
+        raise typer.Exit(code=1)
+
+    app_ctx = build_context(ctx.obj)
+    settings = app_ctx.settings
+    try:
+        tailored, jd_skills, _taxonomy = plan_tier_a(
+            app_ctx.engine,
+            settings,
+            posting_id,
+            resume_path=_resume_path(settings, resume_path),
+        )
+    except (ResumeLoadError, NoCurrentVersionError, TierASafetyError) as exc:
+        console.print(str(exc))
+        raise typer.Exit(code=1) from exc
+
+    request_id = uuid.uuid4().hex
+    request = build_rewrite_request(tailored, jd_skills, request_id=request_id)
+    default_out = settings.data_dir / "tailored" / f"rewrite_request-{posting_id}.json"
+    out_path = out if out is not None else default_out
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    dump_json(request, out_path)
+    console.print(f"wrote {out_path}")
+    console.print(
+        f"request_id: {request_id} · jd skills: {len(request.jd_skills)} "
+        f"· bullets: {len(request.bullets)}"
+    )
