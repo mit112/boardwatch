@@ -1,4 +1,5 @@
 import pytest
+
 from boardwatch.tailor.rewrite.judge import parse_verdict
 
 
@@ -11,6 +12,14 @@ from boardwatch.tailor.rewrite.judge import parse_verdict
     ("Yes, ENTAILED.", "ENTAILED"),
     ("maybe?", "UNSURE"),
     ("", "UNSURE"),
+    ("NOTENTAILED", "NOT_ENTAILED"),
+    ("not-entailed", "NOT_ENTAILED"),
+    ("NOT  ENTAILED", "NOT_ENTAILED"),
+    ("UNENTAILED", "NOT_ENTAILED"),
+    ("NON-ENTAILED", "NOT_ENTAILED"),
+    ('{"verdict": "not_entailed"}', "NOT_ENTAILED"),
+    ("NOT ENTAILED because it is ENTAILED in spirit", "NOT_ENTAILED"),
+    ("Verdict: ENTAILED", "ENTAILED"),
 ])
 def test_parse_verdict(reply, expected):
     assert parse_verdict(reply) == expected
