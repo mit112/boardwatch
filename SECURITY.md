@@ -31,6 +31,15 @@ sent to the model provider. Once the tier is enabled and `BOARDWATCH_LLM_API_KEY
 `boardwatch eligibility extract --dry-run` previews the job description text and
 destination for every open posting before any request is made.
 
+## What leaves your machine when tailoring a résumé
+
+`boardwatch tailor` is Tier A: local-only, deterministic, and involves no network access
+and no LLM of any kind. It reads your authored `{config_dir}/resume.yaml` and the JD
+skills already extracted from a posting you're watching, does bullet selection and
+whole-token synonym substitution entirely in-process, and writes rendered Typst source
+(and a best-effort PDF, via a local `typst` binary if present — never a network call) to
+`{data_dir}/tailored/`. Nothing is sent anywhere.
+
 ## What leaves your machine when notifications are on
 
 Notifications are disabled by default (`notify.desktop_enabled` and

@@ -41,6 +41,27 @@ def record_artifact(
     )
 
 
+def get_or_create_master_artifact(
+    conn: Connection, *, content_hash: str, uri: str, generator_version: str, meta: dict[str, Any]
+) -> int:
+    """Content-address the authored master résumé under (kind='resume_master', content_hash).
+
+    Re-tailoring from the same master reuses the one master artifact instead of accreting
+    duplicates, so lineage stays a clean fan-out from a single node (P7).
+    """
+    existing = conn.execute(
+        select(artifacts.c.id).where(
+            artifacts.c.kind == "resume_master", artifacts.c.content_hash == content_hash
+        )
+    ).first()
+    if existing is not None:
+        return int(existing.id)
+    return record_artifact(
+        conn, kind="resume_master", uri=uri, content_hash=content_hash,
+        generator="boardwatch.tailor", generator_version=generator_version, meta=meta,
+    )
+
+
 def list_artifacts(conn: Connection, *, job_id: int | None = None) -> list[Row[Any]]:
     stmt = select(artifacts).order_by(artifacts.c.id)
     if job_id is not None:

@@ -17,6 +17,7 @@ from boardwatch.cli.notify_cmd import notify as _notify
 from boardwatch.cli.profile_cmd import profile_app
 from boardwatch.cli.scan_cmd import scan as _scan
 from boardwatch.cli.show_cmd import show as _show
+from boardwatch.cli.tailor_cmd import tailor_app
 from boardwatch.cli.top_cmd import top as _top
 from boardwatch.cli.track_cmd import track_app
 
@@ -56,3 +57,4 @@ app.command("notify")(_notify)
 app.add_typer(eligibility_app, name="eligibility")
 app.add_typer(track_app, name="track")
 app.command("export")(_export)
+app.add_typer(tailor_app, name="tailor")

@@ -35,6 +35,16 @@ environment:
 One payload works for Slack incoming webhooks, Discord webhooks, and generic/structured
 consumers. Like the LLM API key below, this URL is never stored in `config.toml`.
 
+## Résumé tailoring
+
+`boardwatch tailor` introduces no new config keys. It follows the same `config_dir` /
+`data_dir` conventions as everything else:
+
+| Path | Purpose |
+|---|---|
+| `{config_dir}/resume.yaml` | Your authored, structured résumé (written by `tailor init`, read by `tailor validate`/`tailor run`). |
+| `{data_dir}/tailored/` | Output directory for rendered Typst source and best-effort PDFs, one `tailored-<posting-id>.{typ,pdf}` pair per posting. |
+
 ## Secrets (reserved for the v1.1 LLM tier)
 
 boardwatch v1 uses no credentials, so `config.toml` never contains secrets and there is

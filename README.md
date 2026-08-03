@@ -370,6 +370,48 @@ would be sent without delivering anything or advancing the notify cursor.
 
 ---
 
+## Tailor a résumé
+
+boardwatch never parses a résumé — parsing free-form PDFs/Word docs to *understand* a
+person's history is exactly the kind of guessing this project avoids. Instead you author
+your résumé once as structured YAML, and `tailor` only ever *renders* it:
+
+```bash
+boardwatch tailor init                 # scaffold {config_dir}/resume.yaml, edit it in your editor
+boardwatch tailor validate             # confirm it loads; see entry/bullet counts + detected skills
+boardwatch tailor run <posting-id>     # tailor it against one posting's extracted JD skills
+```
+
+`validate` and `run` read `{config_dir}/resume.yaml` unless you pass `--resume PATH`. `run`
+also takes `--out DIR` (default `{data_dir}/tailored`), `--format typst` (the only 1.0
+adapter), and `--dry-run` (report only; writes no file and records no artifact). It prints
+one line per bullet — kept, reordered, swapped, or dropped, with the JD skills that bullet
+covers — and the same per-bullet audit is stored on the artifact row.
+
+`tailor run` selects which of your authored bullets to keep (favoring ones that cover the
+posting's extracted skills), reorders skill mentions, and applies whole-token synonym
+swaps from a small, bundled, frozen equivalence table (e.g. "JS" ↔ "JavaScript") — never
+free text generation. Before anything is written, a **no-fabrication guarantee** re-checks
+the output against your master résumé: every kept bullet's tokens must be either unchanged
+or a substitution the equivalence table names, and no bullet, entry, or section can appear
+that wasn't in the original. A résumé that fails this check is rejected before any file or
+database row is written, never delivered as a "best effort".
+
+**Honest bounds.** This is Tier A: a local, deterministic bullet-selection and safe-synonym
+pass — it does not rewrite your prose, invent new claims, or call any model. **Your
+`profile` text (the free-form blurb from `boardwatch init`) is never imported into the
+résumé** — `tailor` reads only what you author in `resume.yaml`. PDF output is
+**best-effort**: it shells out to a local [Typst](https://typst.app/) install if present;
+without one you still get the rendered Typst source and can compile it yourself, or paste
+it elsewhere. Output lands at `{data_dir}/tailored/tailored-<posting-id>.{typ,pdf}` — a
+deterministic path, so **re-running `tailor run` for the same posting overwrites that
+file** even though each run is recorded as its own artifact in the database; the file on
+disk always reflects your most recent run, not necessarily the one you're currently
+reading about. If a later Typst compile fails, the stale PDF from the previous run is
+removed rather than left behind next to the new source.
+
+---
+
 ## Supported boards
 
 | Provider        | Public endpoint boardwatch reads                                          | Auth |
@@ -439,6 +481,7 @@ often. A job seeker checking a dozen companies once a day is the intended shape.
 - [x] `digest` and `top --new` change detection (only what changed since last run)
 - [x] More ATS providers (community-driven)
 - [x] Data-portability export (`--format jsonl|csv`)
+- [x] Résumé tailoring (`tailor init/validate/run`, local, no-fabrication guarantee)
 
 Have a company on a board boardwatch doesn't reach yet, or an ATS you want supported?
 [Open an issue.](https://github.com/mit112/boardwatch/issues)
