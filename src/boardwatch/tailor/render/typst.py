@@ -19,7 +19,7 @@ def escape(s: str) -> str:
 
 
 class TypstRenderer:
-    def emit(self, resume: Resume) -> str:
+    def emit(self, resume: Resume, *, reworded: frozenset[str] = frozenset()) -> str:
         lines: list[str] = [_PREAMBLE, '#set document(title: "resume")', ""]
         for h in resume.header:
             lines.append(f'#resume-header("{escape(h)}")')
@@ -31,6 +31,10 @@ class TypstRenderer:
         for e in resume.entries:
             lines.append(f'#resume-entry("{escape(e.heading)}")')
             for b in e.bullets:
+                # A marker comment, not a payload change — parse_bullets only matches
+                # #resume-bullet(...) lines, so this cannot leak into the firewall payload.
+                if b.bullet_id in reworded:
+                    lines.append("// reworded (Tier B)")
                 lines.append(f'#resume-bullet("{escape(b.text)}")')
         return "\n".join(lines) + "\n"
 

@@ -13,7 +13,7 @@ _BULLET = re.compile(r'#resume-bullet\("((?:[^"\\]|\\.)*)"\)')
 
 
 class Renderer(Protocol):
-    def emit(self, resume: Resume) -> str: ...
+    def emit(self, resume: Resume, *, reworded: frozenset[str] = frozenset()) -> str: ...
 
     def to_pdf(
         self, source: str, out_dir: Path, name: str, runner: TypstRunner
