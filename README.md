@@ -462,6 +462,51 @@ posting's extracted JD skill names to the configured provider, and only when exp
 enabled and requested. See [SECURITY.md](SECURITY.md) for exactly what leaves your
 machine and when.
 
+#### Tier B without an API key (agent lane)
+
+`--tier-b` needs `BOARDWATCH_LLM_API_KEY` and a metered provider. If you only have a
+Claude Code subscription and no API key, there's a second, subscription-driven Tier B
+lane that gets the same reworded-bullet output by having Claude Code itself do the
+rewrite, with boardwatch validating it through the identical filter + judge + Tier A
+stack described above.
+
+It's a three-command handshake, driven by the `tailor-rewrite` boardwatch skill
+(`.claude/skills/tailor-rewrite`):
+
+```bash
+boardwatch tailor rewrite request <posting-id>                                     # 1. writes rewrite_request.json
+# the skill's rewriter agent reads it and writes candidates.json
+boardwatch tailor rewrite screen <posting-id> --candidates candidates.json         # 2. writes judge_request.json
+# a SEPARATE, freshly scoped judge subagent reads it and writes verdicts.json
+boardwatch tailor rewrite apply <posting-id> --candidates candidates.json --verdicts verdicts.json  # 3.
+```
+
+`request` runs Tier A internally and hands the rewriter agent each bullet plus the
+posting's JD skills. `screen` re-derives the authoritative bullet text from a fresh
+Tier A run and puts the rewriter's candidates through the same deterministic overmatch
+filter as the API lane — but the `judge_request.json` it writes is **JD-blind by
+construction**: it's built from only `(original, candidate)` pairs, with no job
+description or skills field anywhere in it, and boardwatch's skill instructs the judge
+to run as a separate subagent so it never inherits the rewriter's JD-aware context.
+`apply` parses the judge's verdicts with the same exact-token allowlist as the API
+lane and emits both artifacts.
+
+Gate: `llm.resume_tailoring_via_agent = true` in `{config_dir}/config.toml`. Unlike
+`--tier-b`, this lane needs **no** `llm.enabled` and **no** API key — boardwatch makes
+no LLM call itself in this lane; the rewriting and judging happen in Claude Code
+subagents outside the CLI. (`config set llm.*` is reserved, same as above — hand-edit
+`config.toml`.)
+
+The per-bullet call budget is **advisory** here, not a hard spend limit: subscription
+calls aren't API-metered, so it's set wide enough to never truncate a legitimate run
+and functions only as a soft cap on how many bullets get attempted in one pass. Every
+other safety backstop is unchanged: the Tier A file is always emitted alongside, every
+reworded bullet is marked `// reworded (Tier B)`, and the artifact is meant to be
+reviewed by you before it's sent — this lane is LLM-assisted and filter+judge gated,
+not structurally proven, same as `--tier-b`. Provenance on the artifact records
+provider `claude-code-agent`, model `subscription`, so it's distinguishable from an
+API-lane run.
+
 ---
 
 ## Supported boards

@@ -56,10 +56,11 @@ is the same `[llm]` block already used by the opt-in LLM eligibility-extraction 
 | Key | Type / Range | Default | Takes effect |
 |---|---|---|---|
 | `llm.resume_tailoring` | bool | `false` | next `tailor run --tier-b` |
+| `llm.resume_tailoring_via_agent` | bool | `false` | next `tailor rewrite request`/`screen`/`apply` |
 
 `boardwatch config set llm.*` is reserved (see below) and refuses to write any `llm.*`
-key, `resume_tailoring` included. Enable it by editing `{config_dir}/config.toml`
-directly:
+key, `resume_tailoring` and `resume_tailoring_via_agent` included. Enable it by editing
+`{config_dir}/config.toml` directly:
 
 ```toml
 [llm]
@@ -73,6 +74,26 @@ model = "claude-..."
 resolvable `BOARDWATCH_LLM_API_KEY`; missing any of them exits 1 before writing anything
 rather than silently falling back to Tier A for the whole run. (A per-bullet fallback to
 Tier A text is a different, expected thing — see the README's Tier B section.)
+
+**Tier B agent lane (no API key).** `llm.resume_tailoring_via_agent` gates a separate,
+subscription-driven Tier B lane — the three-command `tailor rewrite request` /
+`screen` / `apply` handshake driven by the `tailor-rewrite` boardwatch skill, where
+Claude Code itself proposes and judges rewrites instead of a metered API provider (see
+the README's "Tier B without an API key (agent lane)" section for the full flow).
+Unlike `--tier-b`, this gate is checked **alone** — it needs neither `llm.enabled` nor
+`BOARDWATCH_LLM_API_KEY`, because boardwatch never makes an LLM call itself in this
+lane:
+
+```toml
+[llm]
+resume_tailoring_via_agent = true
+```
+
+Each of the three `tailor rewrite` commands checks this flag before touching the data
+directory and exits 1 if it's unset. The `llm.max_calls_per_run` budget still applies
+internally, but it's **advisory** in this lane, not a hard spend limit: subscription
+calls aren't API-metered, so it's sized wide enough to never truncate a legitimate run
+and acts only as a soft cap on how many bullets get proposed and judged in one pass.
 
 **`max_calls_per_run` in a Tier B context.** Tier B spends 2 calls per surviving bullet
 (one to propose a rewrite, one for the entailment judge) out of the *same*
