@@ -205,7 +205,7 @@ SHIPPED_DATA: dict[str, DataEntry] = {
         "...), not any user's résumé or posting. Used only by the offline eval harness "
         "(tools/tier_b_eval) and one hermetic test; pinned because a silent edit would "
         "weaken the gate's measured false-accept bar.",
-        pin="sha256:f60e6149ab915fb719f0d6266a16c1a34eb9b4e58de5308ed31d0ef58295f208",
+        pin="sha256:be1c9f5c61f8570c8f0a438ccd5d43eea3e861c42fcd955213eb5bcb7dfa5f14",
     ),
 }
 

@@ -8,6 +8,7 @@ no-fabrication tailoring pipeline (`reports.tailor.run_tailor`) against one post
 
 from __future__ import annotations
 
+import uuid
 from pathlib import Path
 
 import typer
@@ -21,9 +22,16 @@ from boardwatch.llm.factory import build_client
 from boardwatch.reports.tailor import (
     NoCurrentVersionError,
     UnsupportedFormatError,
+    plan_tier_a,
     run_tailor,
 )
 from boardwatch.tailor.load import ResumeLoadError, load_resume, scaffold_template
+from boardwatch.tailor.rewrite.agent_io import CandidatesFile, VerdictsFile, dump_json, load_json
+from boardwatch.tailor.rewrite.agent_lane import (
+    apply_agent_rewrites,
+    build_rewrite_request,
+    screen_candidates,
+)
 from boardwatch.tailor.safety import TierASafetyError
 
 console = Console()
@@ -32,6 +40,12 @@ tailor_app = typer.Typer(
     no_args_is_help=True,
     help="Tailor an authored résumé against a posting (local by default; opt-in LLM via --tier-b).",
 )
+
+rewrite_app = typer.Typer(
+    no_args_is_help=True,
+    help="Subscription Tier B agent lane: request/screen/apply skill-driven rewrites.",
+)
+tailor_app.add_typer(rewrite_app, name="rewrite")
 
 RESUME_OPTION = typer.Option(None, "--resume", help="Path to the authored résumé YAML.")
 
@@ -210,3 +224,207 @@ def run_cmd(
             )
         if not result.dry_run and result.llm_pdf_path is not None:
             console.print(f"tier B pdf: {result.llm_pdf_path}")
+
+
+@rewrite_app.command("request")
+def rewrite_request_cmd(
+    ctx: typer.Context,
+    posting_id: int = typer.Argument(..., help="Posting id (the # column of top)."),  # noqa: B008
+    resume_path: Path | None = RESUME_OPTION,
+    out: Path | None = typer.Option(  # noqa: B008
+        None,
+        "--out",
+        help="Output path (default {data_dir}/tailored/rewrite_request-{posting_id}.json).",
+    ),
+) -> None:
+    """Run Tier A internally, then write a JD-aware rewrite_request.json for the
+    rewriter agent (subscription Tier B agent lane, step 1)."""
+    # Evaluate the gate against settings ALONE, before build_context below creates and
+    # migrates boardwatch.db — a gate failure against a pristine data dir must leave no
+    # database behind (mirrors run_cmd's --tier-b gate above).
+    gate_settings = load_settings(data_dir=ctx.obj)
+    if not gate_settings.llm.resume_tailoring_via_agent:
+        console.print("Tier B agent lane requires llm.resume_tailoring_via_agent = true in config")
+        raise typer.Exit(code=1)
+
+    app_ctx = build_context(ctx.obj)
+    settings = app_ctx.settings
+    try:
+        tailored, jd_skills, _taxonomy = plan_tier_a(
+            app_ctx.engine,
+            settings,
+            posting_id,
+            resume_path=_resume_path(settings, resume_path),
+        )
+    except (ResumeLoadError, NoCurrentVersionError, TierASafetyError) as exc:
+        console.print(str(exc))
+        raise typer.Exit(code=1) from exc
+
+    request_id = uuid.uuid4().hex
+    request = build_rewrite_request(tailored, jd_skills, request_id=request_id)
+    default_out = settings.data_dir / "tailored" / f"rewrite_request-{posting_id}.json"
+    out_path = out if out is not None else default_out
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    dump_json(request, out_path)
+    console.print(f"wrote {out_path}")
+    console.print(
+        f"request_id: {request_id} · jd skills: {len(request.jd_skills)} "
+        f"· bullets: {len(request.bullets)}"
+    )
+
+
+@rewrite_app.command("screen")
+def rewrite_screen_cmd(
+    ctx: typer.Context,
+    posting_id: int = typer.Argument(..., help="Posting id (the # column of top)."),  # noqa: B008
+    candidates_path: Path = typer.Option(  # noqa: B008
+        ..., "--candidates", help="Path to the rewriter agent's candidates.json."
+    ),
+    resume_path: Path | None = RESUME_OPTION,
+    out: Path | None = typer.Option(  # noqa: B008
+        None,
+        "--out",
+        help="Output path (default {data_dir}/tailored/judge_request-{posting_id}.json).",
+    ),
+) -> None:
+    """Re-derive each bullet's a_text from a fresh Tier A run, filter the agent's
+    candidates through the deterministic overmatch filter, and write a JD-free
+    judge_request.json containing only filter-survivors (subscription Tier B agent
+    lane, step 2)."""
+    # Evaluate the gate against settings ALONE, before build_context below creates and
+    # migrates boardwatch.db — mirrors rewrite_request_cmd's gate above.
+    gate_settings = load_settings(data_dir=ctx.obj)
+    if not gate_settings.llm.resume_tailoring_via_agent:
+        console.print("Tier B agent lane requires llm.resume_tailoring_via_agent = true in config")
+        raise typer.Exit(code=1)
+
+    app_ctx = build_context(ctx.obj)
+    settings = app_ctx.settings
+    try:
+        tailored, _jd_skills, taxonomy = plan_tier_a(
+            app_ctx.engine,
+            settings,
+            posting_id,
+            resume_path=_resume_path(settings, resume_path),
+        )
+    except (ResumeLoadError, NoCurrentVersionError, TierASafetyError) as exc:
+        console.print(str(exc))
+        raise typer.Exit(code=1) from exc
+
+    candidates = load_json(CandidatesFile, candidates_path)
+    judge_req, drops = screen_candidates(
+        tailored, candidates, taxonomy, request_id=candidates.request_id
+    )
+    default_out = settings.data_dir / "tailored" / f"judge_request-{posting_id}.json"
+    out_path = out if out is not None else default_out
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    dump_json(judge_req, out_path)
+
+    console.print(f"wrote {out_path}")
+    console.print(f"survived to judge: {len(judge_req.items)} · dropped: {len(drops)}")
+    for drop in drops:
+        console.print(f"  dropped [{drop.bullet_id}]: {drop.reason}", markup=False)
+
+
+@rewrite_app.command("apply")
+def rewrite_apply_cmd(
+    ctx: typer.Context,
+    posting_id: int = typer.Argument(..., help="Posting id (the # column of top)."),  # noqa: B008
+    candidates_path: Path = typer.Option(  # noqa: B008
+        ..., "--candidates", help="Path to the rewriter agent's candidates.json."
+    ),
+    verdicts_path: Path = typer.Option(  # noqa: B008
+        ..., "--verdicts", help="Path to the judge agent's verdicts.json."
+    ),
+    resume_path: Path | None = RESUME_OPTION,
+    out: Path | None = typer.Option(  # noqa: B008
+        None, "--out", help="Output directory for artifacts (default {data_dir}/tailored)."
+    ),
+) -> None:
+    """Parse each agent verdict via `parse_verdict`, keep filter-pass ∧ ENTAILED, and
+    emit both the Tier A artifact and a `resume_tailored_llm` artifact — reusing
+    `run_tailor`'s existing artifact writer with no live LLM client (subscription Tier B
+    agent lane, step 3)."""
+    # Evaluate the gate against settings ALONE, before build_context below creates and
+    # migrates boardwatch.db — mirrors rewrite_request_cmd's / rewrite_screen_cmd's gate.
+    gate_settings = load_settings(data_dir=ctx.obj)
+    if not gate_settings.llm.resume_tailoring_via_agent:
+        console.print("Tier B agent lane requires llm.resume_tailoring_via_agent = true in config")
+        raise typer.Exit(code=1)
+
+    app_ctx = build_context(ctx.obj)
+    settings = app_ctx.settings
+    resolved_resume_path = _resume_path(settings, resume_path)
+    try:
+        tailored, jd_skills, taxonomy = plan_tier_a(
+            app_ctx.engine, settings, posting_id, resume_path=resolved_resume_path
+        )
+    except (ResumeLoadError, NoCurrentVersionError, TierASafetyError) as exc:
+        console.print(str(exc))
+        raise typer.Exit(code=1) from exc
+
+    candidates = load_json(CandidatesFile, candidates_path)
+    verdicts = load_json(VerdictsFile, verdicts_path)
+    if candidates.request_id != verdicts.request_id:
+        console.print(
+            "candidates and verdicts are from different runs "
+            f"(request_id {candidates.request_id} != {verdicts.request_id}); "
+            "re-run screen + judge for this request, or pass the matching files"
+        )
+        raise typer.Exit(code=1)
+    tb = apply_agent_rewrites(tailored, candidates, verdicts, taxonomy, jd_skills)
+    # Recomputed identically to the budget apply_agent_rewrites enforced internally (2x
+    # bullet count) so the artifact's recorded `budget` matches the cap that was actually
+    # applied — these two computations must stay in sync.
+    llm_budget = 2 * sum(len(e.bullets) for e in tailored.entries)
+
+    out_dir = out if out is not None else settings.data_dir / "tailored"
+    result = run_tailor(
+        app_ctx.engine,
+        settings,
+        posting_id,
+        resume_path=resolved_resume_path,
+        out_dir=out_dir,
+        tb_override=tb,
+        llm_provider_override="claude-code-agent",
+        llm_model_override="subscription",
+        llm_budget_override=llm_budget,
+    )
+
+    jd_skills_str = ", ".join(result.jd_skills) or "none"
+    console.print(f"posting {result.posting_id} · jd skills: {jd_skills_str}")
+    console.print(
+        f"kept {len(result.kept)} · dropped {len(result.dropped)} · swaps {len(result.swaps)}"
+    )
+    if result.pdf_path is not None:
+        console.print(f"pdf: {result.pdf_path}")
+    else:
+        console.print("source only (no PDF; typst not available or compile failed)")
+
+    # tb_override always populates result.rewrites (run_tailor's Tier B guard fires
+    # whenever client-or-tb_override is given); see reports/tailor.py.
+    assert result.rewrites is not None
+    reworded = sum(1 for r in result.rewrites if r["kept"])
+    # "unchanged" (the agent echoed the bullet back verbatim) is not a fallback failure —
+    # it is a no-op — so it is counted and tagged separately from a real drop, mirroring
+    # run_cmd's Tier B summary.
+    unchanged = sum(1 for r in result.rewrites if r["drop_reason"] == "unchanged")
+    fell_back = len(result.rewrites) - reworded - unchanged
+    console.print(
+        f"Tier B (LLM): reworded {reworded} · unchanged {unchanged} · fell back {fell_back}"
+    )
+    for r in result.rewrites:
+        if r["kept"]:
+            tag = "reworded"
+        elif r["drop_reason"] == "unchanged":
+            tag = "unchanged"
+        else:
+            tag = f"fallback:{r['drop_reason']}"
+        console.print(f"  {tag:<16} [{r['entry_id']}] {r['bullet_id']}", markup=False)
+    console.print(
+        "Tier B is LLM-assisted: each reworded bullet passed a deterministic overmatch "
+        "filter and a fail-closed entailment judge, but is NOT structurally proven — "
+        "review the flagged variant before sending; the Tier A file above is the safe copy."
+    )
+    if result.llm_pdf_path is not None:
+        console.print(f"tier B pdf: {result.llm_pdf_path}")

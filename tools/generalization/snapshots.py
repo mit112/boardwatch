@@ -31,6 +31,7 @@ EXPECTED_SETTINGS_DEFAULTS: dict[str, object] = {
         "base_url": None,
         "eligibility_extraction": False,
         "resume_tailoring": False,
+        "resume_tailoring_via_agent": False,
         "max_calls_per_run": 50,
     },
     "RankWeights.skill_coverage": 0.5,
@@ -43,6 +44,7 @@ EXPECTED_SETTINGS_DEFAULTS: dict[str, object] = {
     "LLMTier.base_url": None,
     "LLMTier.eligibility_extraction": False,
     "LLMTier.resume_tailoring": False,
+    "LLMTier.resume_tailoring_via_agent": False,
     "LLMTier.max_calls_per_run": 50,
     "Settings.notify": {
         "desktop_enabled": False,
@@ -74,6 +76,7 @@ SETTINGS_FIELD_CLASS: dict[str, str] = {
     "LLMTier.base_url": "capability",
     "LLMTier.eligibility_extraction": "capability",
     "LLMTier.resume_tailoring": "capability",
+    "LLMTier.resume_tailoring_via_agent": "capability",
     "LLMTier.max_calls_per_run": "operational",
     "Settings.notify": "capability",
     "NotifyTier.desktop_enabled": "capability",
