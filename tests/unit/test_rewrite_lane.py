@@ -42,6 +42,51 @@ def _resume() -> Resume:
     )
 
 
+def _two_bullet_resume() -> Resume:
+    return Resume(
+        header=["h"],
+        education=[],
+        skill_groups=[],
+        entries=[
+            Entry(
+                entry_id="e1",
+                heading="Work",
+                bullets=[
+                    Bullet(bullet_id="b1", text="Built the service in Python"),
+                    Bullet(bullet_id="b2", text="Wrote unit tests for the API"),
+                ],
+            )
+        ],
+    )
+
+
+def test_run_tier_b_scripted_client_is_stable(tmp_path):
+    """Characterization test pinning current API-lane behavior before the
+    run_tier_b_core/Proposer/Judge refactor: a two-bullet résumé where the
+    first bullet's rewrite is ENTAILED (kept) and the second's is
+    NOT_ENTAILED (dropped), with the exact accepted list, per-row drop
+    reasons, and total call count."""
+    client = ScriptedClient(
+        [
+            "Shipped the service in Python",
+            "ENTAILED",
+            "Authored unit tests for the API",
+            "NOT_ENTAILED",
+        ]
+    )
+    res = run_tier_b(
+        _two_bullet_resume(), client, ResponseCache(tmp_path / "c"),
+        jd_skills=set(), taxonomy=load_taxonomy(tmp_path), model="m", budget=50,
+    )
+    assert [r.bullet_id for r in res.accepted] == ["b1"]
+    assert res.accepted[0].text == "Shipped the service in Python"
+    assert [r.kept for r in res.rows] == [True, False]
+    assert [r.drop_reason for r in res.rows] == [None, "judge"]
+    assert res.rows[0].judge_verdict == "ENTAILED"
+    assert res.rows[1].judge_verdict == "NOT_ENTAILED"
+    assert res.calls_made == 4
+
+
 def test_good_rewrite_kept(tmp_path):
     client = ScriptedClient(["Shipped the service in Python", "ENTAILED"])
     res = run_tier_b(
