@@ -10,12 +10,15 @@ Fail closed: a posting with no current version, or one that is not open, raises 
 render or write. Tier A safety (enforce_tier_a) raises before ANY artifact is recorded, so
 a rejected résumé leaves no trace on disk or in the DB.
 
-Tier B runs only when the caller supplies a `ModelClient`; passing none leaves Tier A's
-output, hashes, and artifacts exactly as if Tier B did not exist. When a client is given,
-`run_tier_b`'s filter + judge are its own gate — `enforce_tier_a` never runs against the
-reworded model, since `Rewrite` is not a Tier A op. Tier B emits a second
-`resume_tailored_llm` artifact with a `rewritten_from` edge back to the Tier A artifact,
-recorded in the same closing transaction as Tier A's write.
+Tier B runs only when the caller supplies a `ModelClient` OR a precomputed `tb_override`
+(the subscription agent lane, P7b task 6); passing neither leaves Tier A's output,
+hashes, and artifacts exactly as if Tier B did not exist. When a client is given,
+`run_tier_b`'s filter + judge are its own gate; `tb_override` carries a `TierBResult`
+already produced by `apply_agent_rewrites` replaying `run_tier_b_core` over agent JSON
+files — either way `enforce_tier_a` never runs against the reworded model, since
+`Rewrite` is not a Tier A op. Tier B emits a second `resume_tailored_llm` artifact with a
+`rewritten_from` edge back to the Tier A artifact, recorded in the same closing
+transaction as Tier A's write.
 """
 
 from __future__ import annotations
@@ -286,10 +289,15 @@ def run_tailor(
     typst_runner: TypstRunner | None = None,
     client: ModelClient | None = None,
     cache: ResponseCache | None = None,
+    tb_override: TierBResult | None = None,
+    llm_provider_override: str | None = None,
+    llm_model_override: str | None = None,
 ) -> TailorResult:
     if fmt not in SUPPORTED_FORMATS:
         supported = ", ".join(SUPPORTED_FORMATS)
         raise UnsupportedFormatError(f"unsupported format {fmt!r}; supported: {supported}")
+    if client is not None and tb_override is not None:
+        raise ValueError("pass either client or tb_override, not both")
     r = _plan_tier_a(engine, settings, posting_id, resume_path=resume_path)
     master, tailored, jd_skills, taxonomy = r.master, r.tailored, r.jd_skills, r.taxonomy
     table, plan, cv = r.table, r.plan, r.cv
@@ -318,23 +326,32 @@ def run_tailor(
     llm_rows: list[dict[str, Any]] | None = None
     llm_hash: str | None = None
     # Non-Optional sentinel (rather than `TierBResult | None`) so `tb.calls_made` below
-    # needs no null-check: it is only ever read from the `client is not None` write path,
-    # where `tb` has always been replaced by a real `run_tier_b` result.
+    # needs no null-check: it is only ever read from the `client is not None` or
+    # `tb_override is not None` write path, where `tb` has always been replaced by a
+    # real (or precomputed, agent-lane) `TierBResult`.
     tb = TierBResult(accepted=[], rows=[], calls_made=0)
-    if client is not None:
-        if cache is None:
-            raise ValueError("cache is required when client is provided")
-        tb = run_tier_b(
-            tailored,
-            client,
-            cache,
-            jd_skills=jd_skills,
-            taxonomy=taxonomy,
-            model=settings.llm.model or "unknown",
-            budget=settings.llm.max_calls_per_run,
-            provider=settings.llm.provider,
-            base_url=settings.llm.base_url,
-        )
+    if client is not None or tb_override is not None:
+        if client is not None:
+            if cache is None:
+                raise ValueError("cache is required when client is provided")
+            tb = run_tier_b(
+                tailored,
+                client,
+                cache,
+                jd_skills=jd_skills,
+                taxonomy=taxonomy,
+                model=settings.llm.model or "unknown",
+                budget=settings.llm.max_calls_per_run,
+                provider=settings.llm.provider,
+                base_url=settings.llm.base_url,
+            )
+        else:
+            # Subscription agent lane (P7b task 6): the filter/verdict/row path already
+            # ran in `apply_agent_rewrites`, no live client to call here. `tb_override`
+            # is guaranteed non-None here — the enclosing `if` requires client or
+            # tb_override, and this `else` is only reached when client is None.
+            assert tb_override is not None
+            tb = tb_override
         tailored_b = apply_plan(tailored, TailorPlan(ops=tuple(tb.accepted)), table)
         reworded = frozenset(r.bullet_id for r in tb.accepted)
         llm_source = renderer.emit(tailored_b, reworded=reworded)
@@ -372,7 +389,7 @@ def run_tailor(
         # No lock held here: to_pdf shells out / touches the filesystem freely.
         pdf_path = renderer.to_pdf(source, Path(out_dir), name, typst_runner or _default_runner)
         llm_uri: str | None = None
-        if client is not None and llm_source is not None:
+        if (client is not None or tb_override is not None) and llm_source is not None:
             llm_name = f"tailored-{posting_id}-llm"
             llm_uri = str(Path(out_dir) / f"{llm_name}.typ")
             llm_pdf_path = renderer.to_pdf(
@@ -412,14 +429,18 @@ def run_tailor(
             add_derivation(
                 conn, artifact_id=art_id, parent_artifact_id=master_id, relation="tailored_from"
             )
-            if client is not None and llm_source is not None and llm_uri is not None:
+            if (
+                (client is not None or tb_override is not None)
+                and llm_source is not None
+                and llm_uri is not None
+            ):
                 llm_meta = {
                     "tier": "B",
                     "llm_lane_version": LLM_LANE_VERSION,
                     "rewrite_prompt_version": REWRITE_PROMPT_VERSION,
                     "judge_prompt_version": JUDGE_PROMPT_VERSION,
-                    "provider": settings.llm.provider,
-                    "model": settings.llm.model,
+                    "provider": llm_provider_override or settings.llm.provider,
+                    "model": llm_model_override or settings.llm.model,
                     "tier_a_artifact_id": art_id,
                     "tier_a_content_hash": tailored_hash,
                     "posting_id": cv.posting_id,

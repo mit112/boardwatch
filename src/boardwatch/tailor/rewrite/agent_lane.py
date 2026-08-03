@@ -17,8 +17,10 @@ from boardwatch.tailor.rewrite.agent_io import (
     JudgeItem,
     JudgeRequest,
     RewriteRequest,
+    VerdictsFile,
 )
 from boardwatch.tailor.rewrite.filter import passes_overmatch_filter
+from boardwatch.tailor.rewrite.lane import TierBResult, run_tier_b_core
 
 
 def build_rewrite_request(
@@ -75,3 +77,66 @@ def screen_candidates(
             continue
         items.append(JudgeItem(bullet_id=bullet_id, a_text=a_text, candidate=candidate.candidate))
     return JudgeRequest(request_id=request_id, items=items), drops
+
+
+def apply_agent_rewrites(
+    tailored: Resume,
+    candidates: CandidatesFile,
+    verdicts: VerdictsFile,
+    taxonomy: Taxonomy,
+    jd_skills: set[str],
+) -> TierBResult:
+    """Step 3 of the subscription Tier B agent lane: replay the agent's candidates +
+    the judge's verdicts through `run_tier_b_core` — the SAME filter/verdict/row path
+    the live-client API lane uses — without ever calling a live LLM.
+
+    `run_tier_b_core`'s `propose`/`judge` closures only ever see `(a_text, ...)`, never
+    `bullet_id` (that is the API lane's shape, driven by a real provider call keyed on
+    the bullet text it was given). To bridge the JSON files — which are keyed by
+    `bullet_id` — into that shape, re-derive a_text-keyed maps from the AUTHORITATIVE
+    freshly Tier-A-tailored résumé (never trusting a_text implied by the candidates/
+    verdicts files themselves).
+    """
+    cand_by_id = {c.bullet_id: c.candidate for c in candidates.candidates}
+    verdict_by_id = {v.bullet_id: v.raw_reply for v in verdicts.verdicts}
+
+    # Keyed by a_text rather than bullet_id because propose/judge below only receive
+    # a_text. This assumes bullet a_texts are unique within a résumé (true for authored
+    # résumés — bullet_ids map to distinct authored lines); on the pathological
+    # duplicate-text case, last-write-wins.
+    candidate_by_atext: dict[str, str | None] = {}
+    verdict_by_atext: dict[str, str | None] = {}
+    for entry in tailored.entries:
+        for b in entry.bullets:
+            bid, at = b.bullet_id, b.text
+            candidate_by_atext[at] = cand_by_id.get(bid)
+            verdict_by_atext[at] = verdict_by_id.get(bid)
+
+    def propose(a_text: str, _jd_skills: set[str]) -> str | None:
+        # None (no candidate supplied for this bullet) -> run_tier_b_core drops it
+        # "no_candidate", spending no judge call on it.
+        return candidate_by_atext.get(a_text)
+
+    def judge(a_text: str, _candidate: str) -> str:
+        # A missing or empty verdict must fail closed, not pass through: return a
+        # non-canonical sentinel so `parse_verdict` (the exact-token allowlist) rejects
+        # it and `run_tier_b_core` drops the rewrite with reason "judge", exactly as it
+        # would a live judge's off-contract reply.
+        return verdict_by_atext.get(a_text) or "MISSING"
+
+    # run_tier_b_core counts BOTH a propose call and a judge call against `budget` (2 per
+    # bullet reaching the judge). Unlike the API lane, "calls" here are free dict lookups
+    # — there is no live provider to rate-limit — so the budget must never truncate a
+    # legitimate replay. Set it to 2x the total bullet count so every bullet can be both
+    # proposed and judged; see design §5 for why this budget is advisory-only in the
+    # agent lane (subscription calls aren't API-metered).
+    budget = 2 * sum(len(e.bullets) for e in tailored.entries)
+
+    return run_tier_b_core(
+        tailored,
+        propose=propose,
+        judge=judge,
+        taxonomy=taxonomy,
+        jd_skills=jd_skills,
+        budget=budget,
+    )

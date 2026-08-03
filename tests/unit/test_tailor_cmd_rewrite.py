@@ -18,6 +18,7 @@ from typer.testing import CliRunner
 from boardwatch.cli.app import app
 from boardwatch.core.settings import Settings
 from boardwatch.extract.taxonomy import load_taxonomy
+from boardwatch.store.artifacts import get_derivations
 from boardwatch.store.db import DB_FILENAME, ensure_schema, get_engine
 from boardwatch.store.tables import (
     artifacts,
@@ -32,6 +33,8 @@ from boardwatch.tailor.rewrite.agent_io import (
     CandidatesFile,
     JudgeRequest,
     RewriteRequest,
+    Verdict,
+    VerdictsFile,
     dump_json,
     load_json,
 )
@@ -291,3 +294,110 @@ def test_rewrite_screen_writes_jd_free_judge_request(env: Env, tmp_path: Path) -
         assert "jd_skills" not in raw_item
 
     assert "dropped [acme-2]: unchanged" in result.stdout
+
+
+# --- rewrite apply (P7b task 6, agent lane step 3) --------------------------------------
+
+
+def test_rewrite_apply_gate_off_exits_1(env: Env, tmp_path: Path) -> None:
+    _run(env, ["tailor", "init"])
+    posting_id = _seed_open_posting(env)
+    candidates_path = tmp_path / "candidates.json"
+    dump_json(CandidatesFile(request_id="r1", candidates=[]), candidates_path)
+    verdicts_path = tmp_path / "verdicts.json"
+    dump_json(VerdictsFile(request_id="r1", verdicts=[]), verdicts_path)
+    result = _run(
+        env,
+        [
+            "tailor",
+            "rewrite",
+            "apply",
+            str(posting_id),
+            "--candidates",
+            str(candidates_path),
+            "--verdicts",
+            str(verdicts_path),
+        ],
+    )
+    assert result.exit_code == 1
+    assert "resume_tailoring_via_agent" in result.stdout
+    assert _artifact_count(env) == 0
+
+
+def test_rewrite_apply_emits_llm_artifact_with_lineage(env: Env, tmp_path: Path) -> None:
+    """End-to-end: request -> hand-authored candidates.json + verdicts.json -> apply.
+
+    Asserts exit 0, a `resume_tailored_llm` artifact row exists with a `rewritten_from`
+    derivation to the Tier A artifact, meta provider/model carry the agent-lane
+    provenance override, and the rendered llm source marks the kept bullet.
+    """
+    _write_config(env, "[llm]\nresume_tailoring_via_agent = true\n")
+    _run(env, ["tailor", "init"])
+    posting_id = _seed_open_posting(env, skills=("python", "javascript"))
+
+    request_out = tmp_path / "rewrite_request.json"
+    req_result = _run(
+        env, ["tailor", "rewrite", "request", str(posting_id), "--out", str(request_out)]
+    )
+    assert req_result.exit_code == 0, req_result.stdout
+
+    candidates_path = tmp_path / "candidates.json"
+    dump_json(
+        CandidatesFile(
+            request_id="req-1",
+            candidates=[
+                # passes the overmatch filter -> proceeds to the (agent) judge
+                Candidate(
+                    bullet_id="acme-1",
+                    candidate="Shipped a Python service handling 2M requests/day on Kubernetes",
+                ),
+            ],
+        ),
+        candidates_path,
+    )
+    verdicts_path = tmp_path / "verdicts.json"
+    dump_json(
+        VerdictsFile(
+            request_id="req-1",
+            verdicts=[Verdict(bullet_id="acme-1", raw_reply="ENTAILED")],
+        ),
+        verdicts_path,
+    )
+
+    out_dir = tmp_path / "out"
+    result = _run(
+        env,
+        [
+            "tailor",
+            "rewrite",
+            "apply",
+            str(posting_id),
+            "--candidates",
+            str(candidates_path),
+            "--verdicts",
+            str(verdicts_path),
+            "--out",
+            str(out_dir),
+        ],
+    )
+    assert result.exit_code == 0, result.stdout
+    assert "reworded 1" in result.stdout
+    assert "[acme-sre] acme-1" in result.stdout
+
+    engine = get_engine(env.data_dir)
+    ensure_schema(engine)
+    with engine.connect() as conn:
+        rows = conn.execute(artifacts.select()).fetchall()
+        tier_a_row = next(r for r in rows if r.kind == "resume_tailored")
+        llm_row = next(r for r in rows if r.kind == "resume_tailored_llm")
+        edges = get_derivations(conn, llm_row.id)
+
+    assert llm_row.meta_json["provider"] == "claude-code-agent"
+    assert llm_row.meta_json["model"] == "subscription"
+    assert any(
+        e.relation == "rewritten_from" and e.parent_artifact_id == tier_a_row.id for e in edges
+    )
+
+    llm_typ = out_dir / f"tailored-{posting_id}-llm.typ"
+    assert llm_typ.exists()
+    assert "reworded (Tier B)" in llm_typ.read_text(encoding="utf-8")

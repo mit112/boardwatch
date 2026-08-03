@@ -7,9 +7,16 @@ Pure logic only — no CLI, no DB. The CLI pipeline test lives alongside the oth
 from __future__ import annotations
 
 from boardwatch.tailor.model import Bullet, Entry, Resume, SkillGroup
-from boardwatch.tailor.rewrite.agent_io import Candidate, CandidatesFile, JudgeItem
+from boardwatch.tailor.rewrite.agent_io import (
+    Candidate,
+    CandidatesFile,
+    JudgeItem,
+    Verdict,
+    VerdictsFile,
+)
 from boardwatch.tailor.rewrite.agent_lane import (
     ScreenDrop,
+    apply_agent_rewrites,
     build_rewrite_request,
     screen_candidates,
 )
@@ -121,3 +128,64 @@ def test_screen_drops_unknown_bullet_id(tmp_path) -> None:
     judge_req, drops = screen_candidates(tailored, candidates, _tax(tmp_path), request_id="r1")
     assert judge_req.items == []
     assert ScreenDrop(bullet_id="nope", reason="unknown_bullet") in drops
+
+
+# --- apply_agent_rewrites (P7b task 6, agent lane step 3) -------------------------------
+
+
+def test_apply_agent_rewrites_keeps_exact_entailed_verdict(tmp_path) -> None:
+    tailored = _sample_tailored_resume()
+    candidates = CandidatesFile(
+        request_id="r1",
+        candidates=[Candidate(bullet_id="b1", candidate="Shipped a Python service")],
+    )
+    verdicts = VerdictsFile(
+        request_id="r1", verdicts=[Verdict(bullet_id="b1", raw_reply="ENTAILED")]
+    )
+    result = apply_agent_rewrites(tailored, candidates, verdicts, _tax(tmp_path), {"python"})
+    assert any(rw.bullet_id == "b1" for rw in result.accepted)
+    row = next(r for r in result.rows if r.bullet_id == "b1")
+    assert row.kept is True
+    assert row.drop_reason is None
+
+
+def test_apply_agent_rewrites_drops_non_canonical_verdict(tmp_path) -> None:
+    """`ENTAILED (low confidence)` is not the exact token ENTAILED -- parse_verdict's
+    exact-token contract must hold through the agent lane, same as the API lane."""
+    tailored = _sample_tailored_resume()
+    candidates = CandidatesFile(
+        request_id="r1",
+        candidates=[Candidate(bullet_id="b1", candidate="Shipped a Python service")],
+    )
+    verdicts = VerdictsFile(
+        request_id="r1",
+        verdicts=[Verdict(bullet_id="b1", raw_reply="ENTAILED (low confidence)")],
+    )
+    result = apply_agent_rewrites(tailored, candidates, verdicts, _tax(tmp_path), {"python"})
+    assert not any(rw.bullet_id == "b1" for rw in result.accepted)
+    row = next(r for r in result.rows if r.bullet_id == "b1")
+    assert row.kept is False
+    assert row.drop_reason == "judge"
+
+
+def test_apply_agent_rewrites_missing_verdict_and_missing_candidate_drop_closed(
+    tmp_path,
+) -> None:
+    """b1 has a candidate but no verdict entry (judge never answered) -> dropped "judge"
+    via the MISSING sentinel (fail-closed). b2 has no candidate at all -> dropped
+    "no_candidate"."""
+    tailored = _sample_tailored_resume()
+    candidates = CandidatesFile(
+        request_id="r1",
+        candidates=[Candidate(bullet_id="b1", candidate="Shipped a Python service")],
+    )
+    verdicts = VerdictsFile(request_id="r1", verdicts=[])
+    result = apply_agent_rewrites(tailored, candidates, verdicts, _tax(tmp_path), {"python"})
+
+    row_b1 = next(r for r in result.rows if r.bullet_id == "b1")
+    assert row_b1.kept is False
+    assert row_b1.drop_reason == "judge"
+
+    row_b2 = next(r for r in result.rows if r.bullet_id == "b2")
+    assert row_b2.kept is False
+    assert row_b2.drop_reason == "no_candidate"
