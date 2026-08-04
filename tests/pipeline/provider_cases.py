@@ -28,11 +28,13 @@ from boardwatch.providers.workable import parse_job as workable_parse
 
 FIXTURES = Path(__file__).resolve().parents[1] / "fixtures"
 
-# SmartRecruiters is DELIBERATELY excluded from ALL_CASES. This harness models a
+# SmartRecruiters and Workday are DELIBERATELY excluded from ALL_CASES. This harness models a
 # single-payload board (one mocked URL, a one-argument parser). SmartRecruiters is
 # multi-endpoint (paginated list + one detail fetch per unseen posting, a two-argument
 # parse_posting(listed, detail)) and its apply-layer behavior depends on
-# BoardSnapshot.listed_ids. It is fully covered by tests/contract/test_smartrecruiters.py
+# BoardSnapshot.listed_ids. Workday is all of that AND a POST whose pages share one URL and
+# differ only in the request body, so `respx` cannot key its pages by URL at all. They are
+# covered by tests/contract/test_smartrecruiters.py and tests/contract/test_workday.py
 # (every fetch branch) and tests/pipeline/test_apply_listed_ids.py (the inventory path).
 
 

@@ -9,6 +9,7 @@ from boardwatch.providers.greenhouse import GreenhouseProvider
 from boardwatch.providers.lever import LeverProvider
 from boardwatch.providers.smartrecruiters import SmartRecruitersProvider
 from boardwatch.providers.workable import WorkableProvider
+from boardwatch.providers.workday import WorkdayProvider
 
 
 def test_each_provider_declares_public_board_hosts() -> None:
@@ -21,15 +22,24 @@ def test_each_provider_declares_public_board_hosts() -> None:
 
 def test_build_providers_one_instance_per_class_keyed_by_name() -> None:
     built = registry.build_providers()
-    assert set(built) == {"greenhouse", "lever", "ashby", "workable", "smartrecruiters"}
+    assert set(built) == {"greenhouse", "lever", "ashby", "workable", "smartrecruiters", "workday"}
     for name, inst in built.items():
         assert inst.name == name
 
 
 def test_provider_names_matches_registered_set() -> None:
     assert registry.PROVIDER_NAMES == frozenset(
-        {"greenhouse", "lever", "ashby", "workable", "smartrecruiters"}
+        {"greenhouse", "lever", "ashby", "workable", "smartrecruiters", "workday"}
     )
+
+
+def test_workday_declares_a_suffix_and_no_exact_hosts() -> None:
+    assert WorkdayProvider().board_hosts == ()
+    assert WorkdayProvider().board_host_suffixes == (".myworkdayjobs.com",)
+    assert registry.host_suffix_provider_map()[".myworkdayjobs.com"] == "workday"
+    # the suffix must be the extractor/help MAP KEY, not absent
+    assert ".myworkdayjobs.com" in registry.slug_extractor_map()
+    assert ".myworkdayjobs.com" in registry.slug_help_map()
 
 
 def test_host_provider_map_covers_all_hosts_without_collision() -> None:

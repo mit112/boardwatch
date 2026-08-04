@@ -25,12 +25,14 @@ from boardwatch.providers.greenhouse import GreenhouseProvider
 from boardwatch.providers.lever import LeverProvider
 from boardwatch.providers.smartrecruiters import SmartRecruitersProvider
 from boardwatch.providers.workable import WorkableProvider
+from boardwatch.providers.workday import WorkdayProvider
 
 # Type intentionally left inferred (concrete class types). Annotating this as
 # tuple[type[Provider], ...] would make `cls()` below a mypy error under --strict
 # ("cannot instantiate protocol class"). Consumers only iterate and instantiate these.
 PROVIDER_CLASSES = (
-    GreenhouseProvider, LeverProvider, AshbyProvider, WorkableProvider, SmartRecruitersProvider,
+    GreenhouseProvider, LeverProvider, AshbyProvider, WorkableProvider,
+    SmartRecruitersProvider, WorkdayProvider,
 )
 
 
