@@ -44,11 +44,10 @@ inventory — otherwise apply_board would close every known-but-unrefreshed post
 consequence is that body_text and the captured employment-type fields fill in incrementally
 across scans. Salary is never mined (D19).
 
-Task 5 note: this module lands the slug contract, board_url, healthcheck, and a
-SINGLE-PAGE fetch_board (the request always uses offset 0). Pagination past one page
-(trap 2 above), bounded detail fetches (trap 4) and facet capture are Tasks 6-8; this
-module's docstring describes the eventual design but the code below does not yet
-implement those parts.
+Task 6 note: fetch_board now pages the full board (trap 2 above), terminating on a short
+page with _MAX_PAGES as a backstop. Bounded detail fetches (trap 4) and facet capture are
+Tasks 7-8; this module's docstring describes the eventual design but the code below does
+not yet implement those parts.
 """
 
 from __future__ import annotations
@@ -189,22 +188,63 @@ class WorkdayProvider:
         errors: list[str] = []
         listed: list[dict[str, Any]] = []
         seen_paths: set[str] = set()
+        total: int | None = None
+        observed = None
+        capped = True
 
-        try:
-            first = fetcher.post_json(
-                request.url, _search_body(0), validators=request.validators
+        for page_index in range(_MAX_PAGES):
+            offset = page_index * _PAGE_LIMIT
+            # every page POSTs to the SAME url (the cache key); only the body's offset moves
+            try:
+                page = fetcher.post_json(
+                    request.url,
+                    _search_body(offset),
+                    validators=request.validators if page_index == 0 else None,
+                )
+            except FetchFailure as exc:
+                if page_index == 0:
+                    return _failed(request.url, str(exc))
+                errors.append(f"page at offset {offset}: {exc}")
+                capped = False
+                break
+            if page_index == 0:
+                if page.not_modified:
+                    return BoardSnapshot(
+                        status="unchanged", postings=[], url=request.url,
+                        observed_validators=None, error=None,
+                    )
+                observed = page.observed_validators
+            rows = _postings_list(page.content)
+            if rows is None:
+                if page_index == 0:
+                    return _failed(
+                        request.url, "invalid board payload: missing 'jobPostings' list"
+                    )
+                errors.append(f"page at offset {offset}: invalid payload")
+                capped = False
+                break
+            if page_index == 0:
+                # total and facets are populated ONLY here; offset>0 answers total=0/facets=[]
+                payload = _payload(page.content) or {}
+                try:
+                    total = max(0, int(payload["total"]))
+                except (KeyError, TypeError, ValueError):
+                    total = None
+            _collect(rows, listed, seen_paths)
+            if len(rows) < _PAGE_LIMIT:
+                # THE termination condition. NOT `offset < total`: total is capped at 2000
+                # and offset >= 2000 wraps to page 1, so that loop never terminates.
+                capped = False
+                break
+
+        if capped:
+            errors.append(
+                f"page cap of {_MAX_PAGES} pages reached; listing may be incomplete, "
+                "treating as partial so unseen postings are not closed"
             )
-        except FetchFailure as exc:
-            return _failed(request.url, str(exc))
-        if first.not_modified:
-            return BoardSnapshot(
-                status="unchanged", postings=[], url=request.url,
-                observed_validators=None, error=None,
-            )
-        rows = _postings_list(first.content)
-        if rows is None:
-            return _failed(request.url, "invalid board payload: missing 'jobPostings' list")
-        _collect(rows, listed, seen_paths)
+        elif total is not None and len(listed) < total and total < 2000:
+            # 2000 is the server's own reported cap, so a shortfall against it is expected
+            errors.append(f"incomplete listing: collected {len(listed)} of {total} postings")
 
         # PER-ROW ISOLATION, as every sibling provider does (greenhouse.py, ashby.py,
         # smartrecruiters.py): parse_posting raises on a row with no title, and one bad row
@@ -214,6 +254,8 @@ class WorkdayProvider:
         for row in listed:
             path = str(row.get("externalPath") or "")
             if not path:
+                # _collect already excludes empty externalPath; kept as a guard in case
+                # that invariant changes under refactor.
                 continue
             try:
                 postings.append(parse_posting(host, site, row, None, None))
@@ -224,7 +266,7 @@ class WorkdayProvider:
             status="complete" if not errors else "partial",
             postings=postings,
             url=request.url,
-            observed_validators=first.observed_validators,
+            observed_validators=observed,
             error=None if not errors else "; ".join(errors[:3]),
             listed_ids=listed_ids,
         )

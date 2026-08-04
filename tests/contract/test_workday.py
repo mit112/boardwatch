@@ -366,3 +366,124 @@ def test_posted_at_handles_a_timezone_aware_timestamp() -> None:
     detail = {"jobPostingInfo": {"startDate": "2026-08-04T10:00:00+05:00"}}
     posting = parse_posting("acme.wd5.myworkdayjobs.com", "AcmeCareers", listed, detail, None)
     assert posting.posted_at is not None
+
+
+# ---------------------------------------------------------------- pagination
+
+@respx.mock
+def test_pages_until_a_short_page(tmp_path: Path) -> None:
+    respx.post(LIST_URL).mock(
+        side_effect=[
+            httpx.Response(200, json=_fx("list_page_full.json")),   # 20 rows -> keep going
+            httpx.Response(200, json=_fx("list_page_short.json")),  # 5 rows  -> stop
+        ]
+    )
+    snapshot = provider.fetch_board(_fetcher(tmp_path), _request(budget=0))
+    assert snapshot.status == "complete"
+    assert len(snapshot.listed_ids) == 25
+
+
+@respx.mock
+def test_offsets_advance_by_the_page_limit(tmp_path: Path) -> None:
+    route = respx.post(LIST_URL).mock(
+        side_effect=[
+            httpx.Response(200, json=_fx("list_page_full.json")),
+            httpx.Response(200, json=_fx("list_page_short.json")),
+        ]
+    )
+    provider.fetch_board(_fetcher(tmp_path), _request(budget=0))
+    assert [json.loads(c.request.content)["offset"] for c in route.calls] == [0, 20]
+
+
+@respx.mock
+def test_total_over_the_page_supply_does_not_loop(tmp_path: Path) -> None:
+    # THE 2000-CAP / OFFSET-WRAP TRAP. list_page_full.json reports total=2000 while
+    # supplying 20 rows; live, offset >= 2000 wraps to page 1 byte-identically, so
+    # `while offset < total` never terminates. Termination MUST be on a short page.
+    route = respx.post(LIST_URL).mock(
+        side_effect=[
+            httpx.Response(200, json=_fx("list_page_full.json")),
+            httpx.Response(200, json=_fx("list_page_short.json")),
+        ]
+    )
+    snapshot = provider.fetch_board(_fetcher(tmp_path), _request(budget=0))
+    assert route.call_count == 2
+    assert snapshot.status == "complete"
+
+
+@respx.mock
+def test_page_cap_bounds_a_server_that_never_returns_a_short_page(tmp_path: Path) -> None:
+    full = _fx("list_page_full.json")
+    respx.post(LIST_URL).mock(return_value=httpx.Response(200, json=full))
+    snapshot = provider.fetch_board(_fetcher(tmp_path), _request(budget=0))
+    assert snapshot.status == "partial"
+    assert "page cap" in (snapshot.error or "")
+
+
+@respx.mock
+def test_total_and_facets_are_read_from_offset_zero_only(tmp_path: Path) -> None:
+    # live, offset=20 answers total=0 and facets=[]; re-reading them per page would make the
+    # board look empty after page 1
+    page_two = _fx("list_page_short.json") | {"total": 0, "facets": []}
+    respx.post(LIST_URL).mock(
+        side_effect=[
+            httpx.Response(200, json=_fx("list_page_full.json")),
+            httpx.Response(200, json=page_two),
+        ]
+    )
+    snapshot = provider.fetch_board(_fetcher(tmp_path), _request(budget=0))
+    assert len(snapshot.listed_ids) == 25  # page 2's total=0 did not truncate the listing
+
+
+@respx.mock
+def test_a_failed_later_page_is_partial_not_failed(tmp_path: Path) -> None:
+    respx.post(LIST_URL).mock(
+        side_effect=[
+            httpx.Response(200, json=_fx("list_page_full.json")),
+            httpx.Response(500),
+        ]
+    )
+    snapshot = provider.fetch_board(_fetcher(tmp_path), _request(budget=0))
+    assert snapshot.status == "partial"
+    assert len(snapshot.listed_ids) == 20
+
+
+@respx.mock
+def test_duplicate_external_paths_are_deduped(tmp_path: Path) -> None:
+    full = _fx("list_page_full.json")
+    repeat = {"total": 2000, "jobPostings": full["jobPostings"][:5], "facets": []}
+    respx.post(LIST_URL).mock(
+        side_effect=[
+            httpx.Response(200, json=full),
+            httpx.Response(200, json=repeat),
+        ]
+    )
+    snapshot = provider.fetch_board(_fetcher(tmp_path), _request(budget=0))
+    assert len(snapshot.listed_ids) == 20  # the 5 repeats collapsed
+
+
+@respx.mock
+def test_a_malformed_later_page_is_partial_not_failed(tmp_path: Path) -> None:
+    # page 2 is valid JSON but not a usable page (jobPostings is not a list); only the
+    # FIRST page's malformed-payload case is a hard failure
+    respx.post(LIST_URL).mock(
+        side_effect=[
+            httpx.Response(200, json=_fx("list_page_full.json")),
+            httpx.Response(200, json={"jobPostings": "oops"}),
+        ]
+    )
+    snapshot = provider.fetch_board(_fetcher(tmp_path), _request(budget=0))
+    assert snapshot.status == "partial"
+    assert len(snapshot.listed_ids) == 20
+
+
+@respx.mock
+def test_a_missing_total_on_the_first_page_does_not_fail(tmp_path: Path) -> None:
+    # total is informational only; if the first page omits it entirely, fetch_board must
+    # still succeed rather than raising on the int(...) conversion
+    payload = dict(_fx("list_normal.json"))
+    del payload["total"]
+    respx.post(LIST_URL).mock(return_value=httpx.Response(200, json=payload))
+    snapshot = provider.fetch_board(_fetcher(tmp_path), _request(budget=0))
+    assert snapshot.status == "complete"
+    assert len(snapshot.listed_ids) == 3
