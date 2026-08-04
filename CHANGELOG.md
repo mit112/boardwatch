@@ -6,6 +6,22 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- **`--verify` on `companies add` and `companies import`.** Opt-in live board probe before
+  the watch is written, reusing each provider's existing `healthcheck`. Reachable boards are
+  watched (reachable-but-empty is watched with a note); boards that return 404, error, or
+  cannot be reached are skipped instead of written, since an unreachable board is absence of
+  evidence rather than evidence the slug is wrong. `import --verify` exits non-zero when it
+  skipped any entry, so a partial import cannot be mistaken for a complete one. Both
+  commands remain offline by default.
+
+### Fixed
+
+- **`companies import` now rejects duplicate `provider:slug` rows.** It built validated
+  entries but never ran the catalog's `validate_entries` integrity check, so a file listing
+  the same board twice imported silently.
+
 ## [0.2.0] - 2026-08-04
 
 ### Added
