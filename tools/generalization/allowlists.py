@@ -198,6 +198,46 @@ SHIPPED_DATA: dict[str, DataEntry] = {
         reason=_FIXTURE,
         pin="sha256:3ea639fa92918e10fda9999671338499a58e00a38b0dc3500ddb10c5214f1c3a",
     ),
+    "tests/fixtures/workday/dead_s21.json": DataEntry(
+        kind="fixture",
+        reason=_FIXTURE,
+        pin="sha256:42ba73a4e1b8c8e5f9fca0bdf32fedc0aeeca15d89ef706d705ae48a61d1236b",
+    ),
+    "tests/fixtures/workday/detail_normal.json": DataEntry(
+        kind="fixture",
+        reason=_FIXTURE,
+        pin="sha256:21dc9825034c1dc0e50f61f0cc7ced7a5ce55f84cb6a7c7b759d86cd9e532d33",
+    ),
+    "tests/fixtures/workday/list_empty.json": DataEntry(
+        kind="fixture",
+        reason=_FIXTURE,
+        pin="sha256:3ab3f62d720d6cb3b5979758289474ece9c15c38c5c0c326b4216c1f6497287b",
+    ),
+    "tests/fixtures/workday/list_facet_intern.json": DataEntry(
+        kind="fixture",
+        reason=_FIXTURE,
+        pin="sha256:ad53799260b03d8898aa1709c65a08a891fd0de7c5a3cec9f670574af29f0eb0",
+    ),
+    "tests/fixtures/workday/list_normal.json": DataEntry(
+        kind="fixture",
+        reason=_FIXTURE,
+        pin="sha256:71405c47d4cb5cdaa3a94d5d5b27b686460234dc1b3ba93dd1c31990c76c3814",
+    ),
+    "tests/fixtures/workday/list_page_full.json": DataEntry(
+        kind="fixture",
+        reason=_FIXTURE,
+        pin="sha256:352e377722d0c6c9319ea7909af68acc2c955d5e74786eebd6dcfe5735fdcb83",
+    ),
+    "tests/fixtures/workday/list_page_short.json": DataEntry(
+        kind="fixture",
+        reason=_FIXTURE,
+        pin="sha256:c4faf2d3125483286b95f80aabd381369ffdaac71c3bb9b2afe9789e74d91c60",
+    ),
+    "tests/fixtures/workday/normal_response_headers.json": DataEntry(
+        kind="fixture",
+        reason=_FIXTURE,
+        pin="sha256:f2a2052ca48f2144011ca0f180672fddac961efdc4d080fb47f30d45457a60e2",
+    ),
     "tools/tier_b_eval/corpus.yaml": DataEntry(
         kind="corpus",
         reason="Hand-authored labeled evaluation corpus for the Tier B entailment gate. "

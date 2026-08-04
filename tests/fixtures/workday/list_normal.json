@@ -1,0 +1,45 @@
+{
+  "total": 3,
+  "jobPostings": [
+    {
+      "title": "Senior Platform Engineer",
+      "externalPath": "/job/Remote-USA/Senior-Platform-Engineer_JR1000001-2",
+      "locationsText": "Remote, USA",
+      "postedOn": "Posted Today",
+      "bulletFields": ["JR1000001", "United States"],
+      "remoteType": "Remote"
+    },
+    {
+      "title": "Compiler Intern, Summer 2027",
+      "externalPath": "/job/Santa-Clara-CA/Compiler-Intern-Summer-2027_JR1000002",
+      "locationsText": "Santa Clara, CA",
+      "postedOn": "Posted 3 Days Ago",
+      "bulletFields": ["JR1000002", "United States", "Acme Corp"],
+      "remoteType": "On-Site"
+    },
+    {
+      "title": "Staff Data Engineer",
+      "externalPath": "/job/Austin-TX/Staff-Data-Engineer_JR1000003",
+      "locationsText": "6 Locations",
+      "postedOn": "Posted 10 Days Ago",
+      "bulletFields": ["JR1000003"]
+    }
+  ],
+  "facets": [
+    {
+      "facetParameter": "workerSubType",
+      "descriptor": "Job Type",
+      "values": [
+        {"descriptor": "Regular Employee", "id": "3de1f2a0aaaa01aaaaaaaaaaaa000001", "count": 2},
+        {"descriptor": "Intern (Fixed Term)", "id": "3de1f2a0aaaa01aaaaaaaaaaaa000002", "count": 1}
+      ]
+    },
+    {
+      "facetParameter": "locations",
+      "descriptor": "Location",
+      "values": [
+        {"descriptor": "Remote, USA", "id": "3de1f2a0aaaa01aaaaaaaaaaaa000010", "count": 1}
+      ]
+    }
+  ]
+}
