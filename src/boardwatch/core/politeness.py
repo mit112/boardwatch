@@ -1,6 +1,6 @@
 """Politeness Fetcher (§3.4, D22): identifying UA, per-host serial pacing
 (default 1.0 s, floor 0.25 s), tenacity backoff + jitter honoring Retry-After,
-conditional GETs.
+conditional GETs, and a JSON POST for providers with no GET form (Workday).
 
 Persistence-free and DB-free in BOTH directions: it sends the validators it is
 handed (BoardRequest.validators) and returns the validators it observes; the
@@ -14,6 +14,7 @@ import threading
 import time
 from dataclasses import dataclass
 from importlib.metadata import version as package_version
+from typing import Any
 
 import httpx
 from tenacity import (
@@ -75,11 +76,29 @@ class Fetcher:
         return self._retry_attempts
 
     def get(self, url: str, validators: ResponseValidators | None = None) -> FetchResult:
+        return self._dispatch("GET", url, validators, None)
+
+    def post_json(
+        self, url: str, body: dict[str, Any], validators: ResponseValidators | None = None
+    ) -> FetchResult:
+        """A JSON POST through the SAME per-host lock, pacing, backoff and status
+        classification as get(). Workday's CXS search endpoint has no GET form (a GET
+        returns 400), and a 2000-posting board is 100+ requests to one host, so routing
+        POST through the existing per-host serialization is the point, not a formality."""
+        return self._dispatch("POST", url, validators, body)
+
+    def _dispatch(
+        self,
+        method: str,
+        url: str,
+        validators: ResponseValidators | None,
+        json_body: dict[str, Any] | None,
+    ) -> FetchResult:
         host = httpx.URL(url).host or ""
         with self._host_lock(host):  # same-host requests serialize for their full duration
             self._pace(host)
             try:
-                return self._get_with_retries(url, validators)
+                return self._send_with_retries(method, url, validators, json_body)
             finally:
                 self._last_request_at[host] = time.monotonic()
 
@@ -94,7 +113,13 @@ class Fetcher:
             if remaining > 0:
                 time.sleep(remaining)
 
-    def _get_with_retries(self, url: str, validators: ResponseValidators | None) -> FetchResult:
+    def _send_with_retries(
+        self,
+        method: str,
+        url: str,
+        validators: ResponseValidators | None,
+        json_body: dict[str, Any] | None,
+    ) -> FetchResult:
         def _wait(retry_state: RetryCallState) -> float:
             base = wait_exponential_jitter(initial=0.5, max=8.0)(retry_state)
             exc = retry_state.outcome.exception() if retry_state.outcome else None
@@ -104,13 +129,15 @@ class Fetcher:
 
         try:
             for attempt in Retrying(
+                # deliberately NOT widened to RequestError: a redirect loop or a corrupt
+                # body will not fix itself, so it must fail fast rather than be retried.
                 retry=retry_if_exception_type((httpx.TransportError, _RetryableStatus)),
                 stop=stop_after_attempt(self._retry_attempts),
                 wait=_wait,
                 reraise=True,
             ):
                 with attempt:
-                    return self._get_once(url, validators)
+                    return self._send_once(method, url, validators, json_body)
         except _RetryableStatus as exc:
             raise FetchFailure(
                 f"HTTP {exc.status_code} after {self._retry_attempts} attempts for {url}",
@@ -120,16 +147,28 @@ class Fetcher:
             raise FetchFailure(
                 f"transport error after {self._retry_attempts} attempts for {url}: {exc}"
             ) from exc
+        except httpx.RequestError as exc:
+            # TransportError is a RequestError, so it MUST be caught above this clause.
+            # What lands here is TooManyRedirects / DecodingError etc. — not retried, but
+            # still converted, so providers' `except FetchFailure` and scan/health.py's
+            # probe_health cover them instead of tracebacking.
+            raise FetchFailure(f"request error for {url}: {exc}") from exc
         raise AssertionError("unreachable: Retrying either returns or raises")
 
-    def _get_once(self, url: str, validators: ResponseValidators | None) -> FetchResult:
+    def _send_once(
+        self,
+        method: str,
+        url: str,
+        validators: ResponseValidators | None,
+        json_body: dict[str, Any] | None,
+    ) -> FetchResult:
         headers: dict[str, str] = {}
         if validators is not None:
             if validators.etag:
                 headers["If-None-Match"] = validators.etag
             if validators.last_modified:
                 headers["If-Modified-Since"] = validators.last_modified
-        response = self._client.get(url, headers=headers)
+        response = self._client.request(method, url, headers=headers, json=json_body)
         if response.status_code == 304:
             return FetchResult(304, b"", True, None)
         if response.status_code in _RETRYABLE_STATUSES:

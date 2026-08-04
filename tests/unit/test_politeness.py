@@ -1,3 +1,4 @@
+import json
 import threading
 import time
 from pathlib import Path
@@ -16,6 +17,10 @@ def _settings(tmp_path: Path, delay: float = 0.25, retries: int = 3) -> Settings
         data_dir=tmp_path, config_dir=tmp_path,
         per_host_delay_seconds=delay, retry_attempts=retries,
     )
+
+
+def _fetcher(tmp_path: Path, delay: float = 0.25, retries: int = 3) -> Fetcher:
+    return Fetcher(_settings(tmp_path, delay=delay, retries=retries))
 
 
 def test_pacing_floor_enforced(tmp_path: Path) -> None:
@@ -176,3 +181,93 @@ def test_no_db_side_effects_from_any_fetch_path(tmp_path: Path) -> None:
         with pytest.raises(FetchFailure):
             fetcher.get("https://bad.example/x")
     assert row_counts() == before
+
+
+def test_post_json_sends_the_body_and_returns_content(tmp_path: Path) -> None:
+    fetcher = _fetcher(tmp_path)
+    with respx.mock:
+        route = respx.post("https://api.example.com/jobs").mock(
+            return_value=httpx.Response(200, json={"ok": True})
+        )
+        result = fetcher.post_json("https://api.example.com/jobs", {"limit": 20, "offset": 0})
+    assert result.status_code == 200
+    assert json.loads(route.calls[0].request.content) == {"limit": 20, "offset": 0}
+
+
+def test_post_json_paces_the_same_host(tmp_path: Path) -> None:
+    fetcher = _fetcher(tmp_path)
+    with respx.mock:
+        respx.post("https://api.example.com/jobs").mock(
+            return_value=httpx.Response(200, json={})
+        )
+        started = time.monotonic()
+        fetcher.post_json("https://api.example.com/jobs", {})
+        fetcher.post_json("https://api.example.com/jobs", {})
+    assert time.monotonic() - started >= 0.25  # PER_HOST_DELAY_FLOOR
+
+
+def test_post_json_retries_retryable_status(tmp_path: Path) -> None:
+    with respx.mock:
+        route = respx.post("https://api.example.com/jobs").mock(
+            side_effect=[httpx.Response(503), httpx.Response(200, json={})]
+        )
+        # retry_attempts=1 in _fetcher would not retry; build one that does
+        fetcher = Fetcher(
+            Settings(
+                data_dir=tmp_path, config_dir=tmp_path, retry_attempts=2,
+                per_host_delay_seconds=0.25,
+            )
+        )
+        assert fetcher.post_json("https://api.example.com/jobs", {}).status_code == 200
+    assert route.call_count == 2
+
+
+def test_post_json_non_retryable_4xx_carries_status(tmp_path: Path) -> None:
+    fetcher = _fetcher(tmp_path)
+    with respx.mock:
+        respx.post("https://api.example.com/jobs").mock(return_value=httpx.Response(400))
+        with pytest.raises(FetchFailure) as exc:
+            fetcher.post_json("https://api.example.com/jobs", {})
+    assert exc.value.status_code == 400
+
+
+def test_too_many_redirects_becomes_fetch_failure(tmp_path: Path) -> None:
+    # follow_redirects=True makes this live-reachable. TooManyRedirects is a RequestError but
+    # NOT a TransportError, so before this change it escaped Fetcher.get's conversion AND
+    # every provider's `except FetchFailure`, and tracebacked doctor's probe_health.
+    fetcher = _fetcher(tmp_path)
+    with respx.mock:
+        respx.get("https://loop.example.com/").mock(
+            side_effect=httpx.TooManyRedirects("too many redirects")
+        )
+        with pytest.raises(FetchFailure) as exc:
+            fetcher.get("https://loop.example.com/")
+    assert exc.value.status_code is None  # -> health_from_failure gives UNREACHABLE
+
+
+def test_decoding_error_becomes_fetch_failure(tmp_path: Path) -> None:
+    fetcher = _fetcher(tmp_path)
+    with respx.mock:
+        respx.get("https://bad.example.com/").mock(
+            side_effect=httpx.DecodingError("bad gzip")
+        )
+        with pytest.raises(FetchFailure):
+            fetcher.get("https://bad.example.com/")
+
+
+def test_request_error_is_not_retried(tmp_path: Path) -> None:
+    # only the CONVERSION widens to RequestError; the retry predicate stays
+    # (TransportError, _RetryableStatus), so a redirect loop fails fast
+    fetcher = Fetcher(
+        Settings(
+            data_dir=tmp_path, config_dir=tmp_path, retry_attempts=3,
+            per_host_delay_seconds=0.25,
+        )
+    )
+    with respx.mock:
+        route = respx.get("https://loop.example.com/").mock(
+            side_effect=httpx.TooManyRedirects("too many redirects")
+        )
+        with pytest.raises(FetchFailure):
+            fetcher.get("https://loop.example.com/")
+    assert route.call_count == 1
