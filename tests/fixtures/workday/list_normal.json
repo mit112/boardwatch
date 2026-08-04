@@ -3,19 +3,19 @@
   "jobPostings": [
     {
       "title": "Senior Platform Engineer",
-      "externalPath": "/job/Remote-USA/Senior-Platform-Engineer_JR1000001-2",
+      "externalPath": "/job/Remote-USA/Senior-Platform-Engineer_JR1000001-1",
       "locationsText": "Remote, USA",
       "postedOn": "Posted Today",
-      "bulletFields": ["JR1000001", "United States"],
-      "remoteType": "Remote"
+      "remoteType": "Fully Remote",
+      "bulletFields": ["JR1000001", "United States"]
     },
     {
       "title": "Compiler Intern, Summer 2027",
       "externalPath": "/job/Santa-Clara-CA/Compiler-Intern-Summer-2027_JR1000002",
       "locationsText": "Santa Clara, CA",
       "postedOn": "Posted 3 Days Ago",
-      "bulletFields": ["JR1000002", "United States", "Acme Corp"],
-      "remoteType": "On-Site"
+      "remoteType": "Partially Remote",
+      "bulletFields": ["JR1000002", "United States", "Acme Corp"]
     },
     {
       "title": "Staff Data Engineer",
