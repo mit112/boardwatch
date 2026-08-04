@@ -294,6 +294,47 @@ def _resolve_clearance(detection: Detection, facts: Facts, family: FamilySpec) -
     return Resolution(UNKNOWN, "no reviewed relation between held and required level")
 
 
+@resolver("contract_not_fte", inputs=("employment_type_preference",))
+def _resolve_contract_not_fte(
+    detection: Detection, facts: Facts, family: FamilySpec
+) -> Resolution:
+    """The posting DECLARES an employment type; the fact states which types are acceptable.
+
+    Unlike every other family this one is symmetric: `fte_role` is not the absence of a
+    contract declaration but its own detectable claim, so a `contract_only` candidate is
+    decidably `unmet` on a permanent FTE posting. Without that arm the family would be a
+    one-way filter and `contract_only` would be an unreachable choice.
+    """
+    stated = facts.employment_type_preference
+    if stated in (None, "prefer_not_to_say"):
+        return Resolution(UNKNOWN, "no employment-type preference declared")
+    support = _fact_support("employment_type_preference", stated)
+    if detection.pattern.implies == "fte_role":
+        if stated == "contract_only":
+            return Resolution(UNMET, "posting is permanent employment, contract only", support)
+        return Resolution(MET, "posting is permanent employment", support)
+    if stated == "fte_only":
+        return Resolution(UNMET, "posting is not permanent employment", support)
+    return Resolution(MET, "non-permanent employment is acceptable", support)
+
+
+@resolver("internship", inputs=("internship_preference",))
+def _resolve_internship(detection: Detection, facts: Facts, family: FamilySpec) -> Resolution:
+    """Whether the user wants internships, against a posting that declares itself one.
+
+    There is deliberately no inverse arm here, unlike contract_not_fte: "this posting is not
+    an internship" is the unmarked case and needs no pattern, so a user who WANTS an
+    internship is simply `met` on the ones detected and silent elsewhere.
+    """
+    stated = facts.internship_preference
+    if stated in (None, "prefer_not_to_say"):
+        return Resolution(UNKNOWN, "no internship preference declared")
+    support = _fact_support("internship_preference", stated)
+    if stated == "exclude":
+        return Resolution(UNMET, "posting is an internship, which is excluded", support)
+    return Resolution(MET, "internships are acceptable", support)
+
+
 @resolver("degree", inputs=("highest_degree", "total_years_experience"))
 def _resolve_degree(detection: Detection, facts: Facts, family: FamilySpec) -> Resolution:
     pattern = detection.pattern

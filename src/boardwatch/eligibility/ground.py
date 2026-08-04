@@ -43,7 +43,10 @@ def ground(jd_text: str, raw_output: str) -> list[GroundedSpan]:
     `span_quote`, empty `span_quote`, or a quote absent from `jd_text`) drops just that
     element; the rest of the payload is still evaluated. Pure: no network, no I/O.
     """
-    coded_families = {"work_auth", "experience_years", "clearance", "degree"}
+    coded_families = {
+        "work_auth", "experience_years", "clearance", "degree",
+        "contract_not_fte", "internship",
+    }
 
     try:
         parsed = json.loads(raw_output)

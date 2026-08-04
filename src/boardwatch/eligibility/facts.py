@@ -53,6 +53,13 @@ class Facts(BaseModel):
     total_years_experience: StrictInt | None = None
     security_clearance: ClearanceFact | None = None
     highest_degree: str | None = None
+    # P9. Both are PREFERENCES over the posting's employment type, not credentials, so a
+    # missing value means "not stated" and abstains rather than defaulting to a stance. Kept
+    # as `str | None` and validated against the catalog's declared choices at the CLI
+    # boundary (eligibility_cmd._coerce), the same way `highest_degree` is: the choice
+    # vocabulary belongs to the catalog, never to this module (D-P2-4).
+    employment_type_preference: str | None = None
+    internship_preference: str | None = None
 
 
 class Policy(BaseModel):

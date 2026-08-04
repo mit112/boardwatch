@@ -130,7 +130,11 @@ def test_help_smoke(env: Path) -> None:
 
 # Eligibility prompts, in catalog family order: work_auth(status,jurisdiction,policy),
 # experience_years(total,policy), clearance(scheme,level,state,accesses,policy),
-# degree(highest_degree,policy). A blank field is skipped; a blank policy takes the default.
+# degree(highest_degree,policy), contract_not_fte(preference,policy),
+# internship(preference,policy). A blank field is skipped; a blank policy takes the default.
+# This script is POSITIONAL, so a new family shifts every later answer. That is why P9 had to
+# edit it, and why test_init_reprompts_on_a_bad_eligibility_answer_instead_of_aborting in
+# tests/pipeline/test_eligibility_flow.py builds its stdin from catalog.families instead.
 _ELIG_INIT = (
     "3\nacme\nBackend engineer: Python, Go.\n\n\n\nn\n"  # companies, profile, filters, remote
     "y\n"                       # set up eligibility now?
@@ -138,6 +142,8 @@ _ELIG_INIT = (
     "\n\n"                      # experience_years: skip field, default policy
     "\n\n\n\n\n"                # clearance: skip four fields, default policy
     "none\nblocker\n"           # degree
+    "fte_only\nblocker\n"       # contract_not_fte
+    "exclude\n\n"               # internship: default policy
 )
 
 
@@ -155,6 +161,12 @@ def test_init_eligibility_path_persists_facts_and_policy(env: Path) -> None:
     assert facts.total_years_experience is None  # blank field stayed absent
     assert policy.families["work_auth"] == "blocker"
     assert policy.families["degree"] == "blocker"
+    # P9's two families are prompted by the same catalog-driven loop, with no new call site.
+    assert facts.employment_type_preference == "fte_only"
+    assert facts.internship_preference == "exclude"
+    assert policy.families["contract_not_fte"] == "blocker"
+    # A blank policy answer takes the catalog default, which is `preference` for both.
+    assert policy.families["internship"] == "preference"
 
 
 def test_init_skipping_eligibility_leaves_columns_null(env: Path) -> None:
@@ -176,6 +188,8 @@ def test_profile_edit_updates_eligibility(env: Path) -> None:
         "\n\n"                             # experience_years
         "\n\n\n\n\n"                       # clearance
         "master\n\n"                       # degree: change to master, default policy
+        "open_to_contract\n\n"             # contract_not_fte: change, default policy
+        "\n\n"                             # internship: keep `exclude` from init
     )
     assert _invoke(env, ["profile", "edit"], edit).exit_code == 0
     with get_engine(env).connect() as conn:
@@ -185,3 +199,5 @@ def test_profile_edit_updates_eligibility(env: Path) -> None:
     assert facts.work_authorization.status == "permanent_resident"
     assert facts.work_authorization.jurisdiction == "us"  # preserved from init
     assert facts.highest_degree == "master"
+    assert facts.employment_type_preference == "open_to_contract"  # changed
+    assert facts.internship_preference == "exclude"  # blank kept the init value

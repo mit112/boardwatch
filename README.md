@@ -147,11 +147,13 @@ You describe your situation once, in the catalog's own vocabulary:
 ```bash
 boardwatch eligibility facts set work_authorization.status citizen
 boardwatch eligibility facts set highest_degree bachelor
-boardwatch eligibility policy set visa_sponsorship blocker   # treat this family as disqualifying
+boardwatch eligibility facts set employment_type_preference fte_only
+boardwatch eligibility policy set work_auth blocker   # treat this family as disqualifying
 ```
 
 Then `boardwatch eligibility run` reads each open posting for catalogued requirements
-(visa sponsorship, security clearance, degree, years of experience, location, and more),
+(visa sponsorship, security clearance, degree, years of experience, employment type,
+internships, location, and more),
 resolves them against your facts, and stores a verdict. `boardwatch show <id>` prints it
 with the receipts:
 
@@ -592,7 +594,7 @@ often. A job seeker checking a dozen companies once a day is the intended shape.
 Next:
 
 - [ ] Workday provider (host/tenant/site boards, the largest ATS still out of reach)
-- [ ] More eligibility rule families (contract vs. full-time, internships)
+- [x] More eligibility rule families (contract vs. full-time, internships)
 - [ ] A readable settings surface, so every opt-in feature is discoverable and reversible
       without hand-editing `config.toml`
 
