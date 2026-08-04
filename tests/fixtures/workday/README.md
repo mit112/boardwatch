@@ -69,7 +69,7 @@ A retired or mistyped site slug answers **HTTP 404** with body `{"errorCode": "S
 | File | Purpose |
 |---|---|
 | `list_normal.json` | A healthy single-page board: 3 postings, `total: 3`, and a `facets` block. The fixture contract below. |
-| `list_page_full.json` | An `offset=0` page with exactly 20 postings (the pager's page limit) and `total: 2000`, `facets: []`, forcing the pager to fetch another page. |
+| `list_page_full.json` | A full page of exactly 20 postings (the pager's page limit) with `total: 2000`, forcing the pager to fetch another page. `facets: []` here — facet shape is pinned separately by `list_normal.json`, so this fixture stays focused on pagination mechanics. |
 | `list_page_short.json` | A subsequent page with 5 postings, `total: 2000`, `facets: []` — a short page that ends the pager. |
 | `list_empty.json` | A live but vacant board: `{"total": 0, "jobPostings": [], "facets": []}` — a *complete, empty* inventory (a 200, not a 304). |
 | `list_facet_intern.json` | The `appliedFacets: {"workerSubType": [<intern id>]}` response: `total: 1` with the Compiler Intern row from `list_normal.json`, verbatim, and `facets: []`. |
