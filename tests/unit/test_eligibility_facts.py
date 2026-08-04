@@ -59,6 +59,7 @@ def test_absent_facts_render_as_null_not_missing_keys() -> None:
     payload = facts_payload(Facts())
     assert set(payload) == {
         "work_authorization", "total_years_experience", "security_clearance", "highest_degree",
+        "employment_type_preference", "internship_preference",
     }
     assert all(value is None for value in payload.values())
 

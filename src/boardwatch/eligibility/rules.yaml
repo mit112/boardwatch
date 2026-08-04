@@ -826,3 +826,274 @@ families:
         required_rank: 3
         requirement_text: "A degree is preferred"
         pattern: "(?:Bachelor['’‘]?s?|Master['’‘]?s?|Advanced|college|university)?\\s*degree\\s+(?:is\\s+)?(?:preferred|a\\s+plus|desirable|nice\\s+to\\s+have)|(?:Bachelor['’‘]?s?|Master['’‘]?s?|Advanced)\\s+degree\\s+preferred"
+
+  # ---------------------------------------------------------------------------------------
+  # P9. Two families whose subject is the posting's EMPLOYMENT TYPE rather than a credential
+  # the candidate holds. Both were tuned against the 13,590 real postings P8 imported, not
+  # against invented fixtures, and then re-measured after review; the numbers and the four
+  # false-positive classes they closed are in
+  # .agent/plans/2026-08-04-p9-eligibility-families-design.md §0.
+  #
+  # WHY BOTH DEFAULT TO `preference`, NOT `blocker`. Only `blocker` can yield `ineligible`
+  # (engine.py:227-238). Measured precision against the providers' OWN structured
+  # employment-type field is 86% for contract and 100% for internship, so a `blocker` default
+  # would hide roughly one real posting in seven that the contract family fires on. At
+  # `preference` a false positive costs one visible informational row and hides nothing.
+  # Severity stays user-owned (D-P2-1), so `eligibility policy set` can still make either a
+  # blocker deliberately.
+  #
+  # THE DECLARATION FRAME IS THE WHOLE MECHANISM, and it is what a suppressor cannot be.
+  # `_suppressed` (detect.py:224) only drops when the suppressor match lies WHOLLY OUTSIDE the
+  # detection span, so a benign-context regex whose match ends ON the trigger word can never
+  # fire. An earlier draft leaned on exactly such suppressors and review measured all five of
+  # them removing ZERO detections across 13,590 postings while two actively killed true
+  # positives. Precision here therefore comes from requiring the posting to DECLARE ITS OWN
+  # employment type -- a role-noun subject plus a copula -- and the surviving suppressors are
+  # either lookahead-terminated (so their match provably ends before the span) or narrow.
+  #
+  # WHY THE PATTERNS CARRY NO REQUIREMENT MARKER. An employment type is not a requirement the
+  # candidate meets by holding something; the posting DECLARES it. Lint 2 accepts "an explicit
+  # restriction verb" in place of a marker, and the declarative copula in "This is a contract
+  # position." is exactly that. Same shape as total_years_minimum's recorded deviation, where
+  # the marker is the heading rather than the sentence.
+  #
+  # THE ENGINE NEVER SEES THE TITLE. preflight.py selects posting_versions.body_text and
+  # passes only that to evaluate(); posting_versions has no title column. job-apps detects
+  # intern/co-op BY TITLE for exactly this reason and demotes body mentions to evidence. That
+  # design is unavailable here, so these patterns buy precision with recall: measured 100%
+  # precision for internship, against 27% recall on a title denominator and 20% on the
+  # provider's own employment type. Raising recall means giving the engine the title,
+  # which is a separate design pass (design doc §5.2).
+  - id: contract_not_fte
+    label: Employment type
+    fact: employment_type_preference
+    answer_type: choice
+    default_policy: preference
+    question: "Which employment types are you willing to consider?"
+    fields:
+      - name: employment_type_preference
+        type: choice
+        choices: [fte_only, open_to_contract, contract_only, prefer_not_to_say]
+    # TWO values, not four, and that is a correctness fix rather than a simplification.
+    # An earlier draft gave contract, temp and independent-contractor engagements a distinct
+    # `implies` each, and put all four in one exclusive group so they would conflict with
+    # `fte_role`. Review measured the consequence: engine.py:154-161 conflicts a group when
+    # any TWO distinct values of it are present, so "This is a 6-month contract position. You
+    # will be engaged as an independent contractor." conflicted with ITSELF and returned
+    # `uncertain`. The more explicit a contract posting was, the less decidable it became.
+    # The three non-FTE patterns already resolve IDENTICALLY (resolve.py), so the distinction
+    # bought nothing and cost the verdict; they now share one value and corroborate instead of
+    # conflicting, which engine.py:144 handles by design. The three patterns keep separate ids
+    # and separate requirement_text, so the evidence a user reads still names which surface
+    # fired.
+    implies_vocabulary:
+      - non_permanent_role
+      - fte_role
+    exclusive_groups:
+      - [non_permanent_role, fte_role]
+    patterns:
+      # THE SUBJECT MUST BE A ROLE, not any noun. `(?:this|the)\s+(?:\w+\s+){0,2}?(?:is|will
+      # be)` was the draft frame and review demonstrated it matching "The output is a temporary
+      # file stored on disk.", "The team is permanent and distributed." and "The first
+      # deliverable is a contract review checklist." -- each an `unmet` row, and `ineligible`
+      # under a blocker policy. Bare `this` is still allowed because "This is a contract
+      # position." is the commonest true form and `this` has no other referent at the start of
+      # a posting's employment note; `the` now requires an explicit role noun.
+      - id: contract_engagement_declared
+        requiredness: required
+        implies: non_permanent_role
+        scope: sentence
+        requirement_text: "This is a contract engagement rather than permanent employment"
+        pattern: '(?:this(?:\s+(?:role|position|job|posting|opening|opportunity|engagement|assignment|vacancy))?|the\s+(?:role|position|job|posting|opening|opportunity|engagement|assignment|vacancy))\s+(?:is|will\s+be)\s+(?:(?:an?|on\s+an?)\s+)?(?:\w+\s+){0,2}?(?:\d+[-\s]?(?:month|week|year)\s+)?(?:contract|contract-to-hire|fixed[-\s]term)(?:\s+(?:position|role|engagement|assignment|opportunity|basis))?(?!\w)|\bcontract\s+(?:position|role|assignment|engagement)\b|\b\d+[-\s]?month\s+contract\b|\bfixed[-\s]term\s+(?:contract|position|role|appointment)\b'
+        # Benign nouns that make `contract` a DOCUMENT rather than an engagement. Both arms are
+        # LOOKAHEAD-TERMINATED so the match ends immediately before `contract` and therefore
+        # lies outside the detection span, which is the only way _suppressed can ever drop it.
+        # The draft wrote these as plain `...contract` and `contract...` regexes; review
+        # verified both were inert, matching inside the span and dropping nothing.
+        # CLAUSE-scoped: the benign noun sits immediately before `contract` by construction,
+        # so the tighter scope is both sufficient and safer.
+        suppressed_by_unit:
+          - &contract_document '(?:customer|government|client|api|service|test|smart|social|defen[cs]e|federal|vendor|supplier|commercial|employment|labor|labour|union|lease|insurance|construction)\s+(?=contract)'
+        # BEFORE-ONLY, because the direction is the whole point. The frame-free arms below
+        # (`contract position`, `12 month contract`, `contract-to-hire`) carry most of this
+        # family's recall -- 73 of its 105 corpus matches against the framed arm's 32 -- so
+        # they cannot simply be deleted, but they do fire on recruiting and vendor prose:
+        # "manage full-cycle recruiting for direct hire and contract-to-hire placements",
+        # "Negotiate a 12 month contract with each vendor". Those are all cases where the
+        # staffing word PRECEDES the trigger and describes whose contract it is.
+        # A unit-scoped list would be wrong here: `candidates` and `clients` appear AFTER a
+        # genuine declaration all the time ("This is a contract position; candidates must
+        # have five years"), and suppressing on those would delete true positives.
+        # A subject suppressor is CLAUSE-scoped, and `and` is a clause boundary
+        # (detect.py:51), so it deliberately cannot reach across a conjunction. That is why
+        # the standalone `contract-to-hire` and `c2h` arms are GONE rather than guarded:
+        # "manage full-cycle recruiting for direct hire and contract-to-hire placements" puts
+        # the staffing word in a different clause from the trigger, so no subject suppressor
+        # could ever see it. Both arms matched 0 of 13,590 postings, so deleting them costs no
+        # measured recall and removes the whole false-positive class; a genuine
+        # "This is a contract-to-hire role." still fires through the framed arm, which lists
+        # contract-to-hire itself.
+        subject_suppressors:
+          - &contract_staffing_subject '\b(?:recruit\w*|staffing|placements?|talent\s+acquisition|full[-\s]?cycle|requisitions?|hiring\s+managers?|negotiat\w*|administer\w*|polic(?:y|ies))\b'
+        # SENTENCE-scoped, and that distinction is load-bearing rather than a preference.
+        # suppressed_by_unit is CLAUSE-bounded (detect.py:19,259), and a refusal to engage
+        # contractors routinely sits in a different clause of the same sentence: the real
+        # corpus case is "Unfortunately, we are not able to sponsor visas, including CPT/OPT or
+        # employ corp-to-corp." -- the comma before `including` puts `not` in another clause,
+        # so a clause-scoped suppressor could never see it and the posting resolved to a wrong
+        # `unmet`. This is the same scope gap finding 39 added suppressed_by_sentence for.
+        suppressed_by_sentence:
+          # The window is 80 rather than 50 because the real corpus sentence needed 51:
+          # "we are not able to sponsor visas, including CPT/OPT or employ corp-to-corp."
+          #
+          # THE LOOKAHEAD NAMES ONLY c2c/1099/corp-to-corp, NOT `contract`. An earlier version
+          # included `contract(?:ors?)?` and review measured the cost: `_suppressed` accepts a
+          # match on EITHER side of the span, so any negation plus any later `contract` token
+          # in the same sentence killed a genuine declaration -- "This is a contract position
+          # with no benefits, and contractors invoice monthly." produced zero rows. Restricting
+          # the object to the three unambiguous engagement terms keeps every refusal case this
+          # guard exists for while removing that false-negative class, because a sentence
+          # refusing C2C or 1099 work is never also declaring itself one.
+          - &contract_refusal '\b(?:no|not|cannot|can\x27t|unable|unwilling|won\x27t|do\s+not|does\s+not)\b[^.]{0,80}?(?=\b(?:c2c|1099|corp[-\s]?to[-\s]?corp)\b)'
+      - id: temporary_engagement_declared
+        requiredness: required
+        implies: non_permanent_role
+        scope: sentence
+        requirement_text: "This is a temporary engagement rather than permanent employment"
+        # A ROLE NOUN IS MANDATORY after `temporary`, on both arms. Bare `temporary` is an
+        # ordinary English adjective and the draft's optional noun let "Data in the staging
+        # area is a temporary copy." and "The output is a temporary file stored on disk."
+        # produce `unmet` rows. Requiring the noun is also what let the draft's
+        # `temporary (table|file|...)` suppressor be deleted: review showed that suppressor
+        # never fired on the sentence it targeted (its match overlapped the span) while it DID
+        # kill the true positive "This is a temporary position that writes to a temporary
+        # table." Tightening the trigger does the job a suppressor structurally could not.
+        # `temp` is deliberately absent: job-apps shipped \btemp\b and it is one of the
+        # patterns its own successor was built to replace.
+        #
+        # THE FRAME-FREE ARM ACCEPTS ONLY `position` AND `role`, not `assignment`. "Temporary
+        # assignment" is HR vocabulary for relocating an existing employee, and review measured
+        # it firing on "Support employees on a temporary assignment abroad." and "You will
+        # administer our temporary assignment policy for relocating employees." -- both `unmet`,
+        # both wrong. "Temporary position" and "temporary role" are what a POSTING calls itself.
+        # The framed arm above still accepts `assignment`, because there the subject has already
+        # established that the sentence is about this job.
+        pattern: '(?:this(?:\s+(?:role|position|job|posting|opening|opportunity|engagement|assignment|vacancy))?|the\s+(?:role|position|job|posting|opening|opportunity|engagement|assignment|vacancy))\s+(?:is|will\s+be)\s+(?:(?:an?|on\s+an?)\s+)?(?:\d+[-\s]?(?:month|week|year)\s+)?temporary\s+(?:position|role|engagement|assignment|opportunity|contract|employee|worker|hire)(?!\w)|\btemporary\s+(?:position|role)\b'
+        subject_suppressors: [*contract_staffing_subject]
+      - id: independent_contractor_declared
+        requiredness: required
+        implies: non_permanent_role
+        scope: sentence
+        requirement_text: "This role is engaged on a 1099 or corp-to-corp basis, not as an employee"
+        # 1099 and C2C need no declaration frame: neither has a benign reading in a posting.
+        # `independent contractor` DOES, measured rather than reasoned about -- the bare form
+        # fired 249 times across 13,590 postings and ~240 were one privacy notice, "We will use
+        # this information to evaluate your application for employment or an independent
+        # contractor role, as applicable." That sentence describes how an ATS handles data, not
+        # this role's employment type. The frame requirement alone took the pattern from 249
+        # rows to 16, which is why the draft's privacy-notice suppressor terms
+        # (`personal information`, `as applicable`, `evaluate your application`) are NOT here:
+        # review verified they were redundant against the shipped pattern AND that they dropped
+        # genuine declarations such as "We will review your application for the contract
+        # position."
+        #
+        # `w-2 contract` is on contract_engagement_declared instead of here, because a
+        # staffing-agency W-2 contract is emphatically NOT 1099 work and this pattern's
+        # requirement_text is persisted immutably.
+        suppressed_by_sentence: [*contract_refusal]
+        pattern: '(?<!\w)(?:c2c|corp[-\s]?to[-\s]?corp(?:oration)?)(?!\w)|(?<!\w)1099\s+(?:contractor|basis|position|role|worker|employee|independent\s+contractor)|(?:this(?:\s+(?:role|position|job|posting|opening|opportunity|engagement|assignment)?)?|the\s+(?:role|position|job|posting|opening|opportunity|engagement|assignment))\s+(?:is|will\s+be)\s+(?:(?:an?|on\s+an?)\s+)?(?:\w+\s+){0,3}?independent\s+contractor|(?:engaged|retained|classified|hired|paid|compensated)\s+as\s+(?:an?\s+)?independent\s+contractor|\bas\s+an?\s+independent\s+contractor\s+you\b|\bon\s+a\s+1099\s+basis\b'
+      - id: permanent_fte_declared
+        requiredness: required
+        implies: fte_role
+        scope: sentence
+        requirement_text: "This is permanent full-time employment"
+        # Exists to make `contract_only` a decidable choice: without an FTE-declaring pattern
+        # that preference could never be decided by anything, and lint 4 would call the value
+        # unreachable. It also gives the exclusive group a second value, so a posting that
+        # declares BOTH abstains instead of resolving on whichever pattern fired.
+        #
+        # It does NOT rescue "This is a full-time contract position." -- review checked, and
+        # that sentence fires only contract_engagement_declared, because `permanent` is absent
+        # and this pattern requires it. An earlier version of this comment claimed otherwise
+        # and was simply wrong; the group only engages when the posting separately says it is
+        # permanent. Corrected rather than deleted because the false claim would have misled
+        # the next person to touch the group.
+        #
+        # It fires ONCE in 13,590 real postings, which is expected rather than a defect:
+        # postings seldom announce that they are permanent. The role noun is mandatory for the
+        # same reason as on the temporary pattern -- the draft's optional form matched "The team
+        # is permanent and distributed."
+        pattern: '(?:this(?:\s+(?:role|position|job|posting|opening|opportunity))?|the\s+(?:role|position|job|posting|opening|opportunity))\s+(?:is|will\s+be)\s+(?:an?\s+)?(?:full[-\s]?time\s+)?(?:permanent|regular\s+full[-\s]?time)\s*(?:position|role|employee|hire|employment|opportunity)(?!\w)|\bpermanent\s+full[-\s]?time\s+(?:position|role|employee|employment)\b|\bfull[-\s]?time\s+permanent\s+(?:position|role|employee|employment)\b'
+
+  - id: internship
+    label: Internships
+    fact: internship_preference
+    answer_type: choice
+    default_policy: preference
+    question: "Do you want internship and co-op postings?"
+    fields:
+      - name: internship_preference
+        type: choice
+        choices: [exclude, open, prefer_not_to_say]
+    implies_vocabulary:
+      - internship_role
+    # No exclusive_groups: the family has ONE requirable value, and a group needs two members.
+    # There is no `not_an_internship` pattern because that is the unmarked case -- the absence
+    # of a declaration, which no regex should have to assert.
+    patterns:
+      - id: internship_role_declared
+        requiredness: required
+        implies: internship_role
+        scope: sentence
+        requirement_text: "This posting is an internship or co-op rather than a permanent role"
+        # THE TRIGGER IS A SELF-DECLARATION, never a mention. `internship program` was in an
+        # earlier draft and measured wrong: it fired on "Head of Early Career Recruiting",
+        # "Recruiting Coordinator" and "Early Talent Program Coordinator", whose JDs are ABOUT
+        # internships because the job runs them. Requiring the posting to say that IT is one
+        # took internship precision from 40.1% to 100.0% over 13,590 real postings.
+        #
+        # THERE IS DELIBERATELY NO ENROLMENT PATTERN. "Must be currently enrolled in a degree
+        # program" looks like the strongest possible internship signal and is measured to be a
+        # NEW-GRAD signal: it fired on "Software Engineer - New Grad 2026" and "DevOps Engineer
+        # - New Grad 2026", which are permanent roles and exactly what this search is for.
+        # Flagging them would hide the target. Enrolment is not internship; job-apps files
+        # stale graduation windows under a separate `employment_ineligible` bucket for the same
+        # reason.
+        # The credit-for-internships and supervises-interns stand-downs stay CLAUSE-scoped and
+        # keep their lookahead termination, so their match ends before the span and can fire.
+        suppressed_by_unit:
+          # Credit-for-internships: "internships count toward this requirement" is a
+          # CONCESSION on an experience floor, and reading it as an internship role inverted
+          # the meaning of the most candidate-friendly sentence a posting can contain.
+          - '\b(?:internships?|co-?op)\b[^.]{0,80}\b(?:count|counts|counted|accepted|acceptable|equivalent|included|welcome)\b|\b(?:accept|accepted|count|counts|equivalent|including|through)\b[^.]{0,40}(?=\b(?:internships?|co-?op)\b)'
+          # Senior JDs that supervise interns, and JDs describing a past intern.
+          - '\bmentor(?:s|ing|ed)?\b[^.]{0,40}(?=\bintern)|\bintern(?:s|ship)?s?\b[^.]{0,30}\b(?:mentor|manage|supervis)|\b(?:former|previous|prior|past)\s+(?=intern)'
+        # PROGRAMME-OWNER context, as a BEFORE-ONLY subject suppressor. Two rewrites got here.
+        # The first draft listed bare `talent`, `early career`, `coordinator` and `university
+        # relations` as clause-wide keywords, which silenced ordinary internship JDs. The second
+        # required an ownership verb but was still unit-scoped, so it matched on EITHER side of
+        # the span and review found it deleting "This internship is run by the team that owns
+        # our early career program." -- a genuine internship, dropped because `owns ... early
+        # career program` trailed it.
+        # Direction is the discriminator, and only a subject suppressor expresses it: when the
+        # ownership verb PRECEDES the mention ("You will own and scale our internship program")
+        # the JD runs the programme; when it FOLLOWS, the sentence is still about this role.
+        subject_suppressors:
+          - '\b(?:own|owns|owning|manage|manages|managing|run|runs|running|lead|leads|leading|build|builds|building|scale|scales|scaling|design|designs|designing|coordinate|coordinates|coordinating|support|supports|supporting|execute|executes|executing|define|defines|defining|administer|administers)\b[^.]{0,60}(?=\b(?:internship|co-?op|early\s+career|university\s+recruiting|campus\s+recruiting|early\s+talent)\b)'
+        # THE SUBJECT MUST BE A ROLE, exactly as on the contract family. Review caught that the
+        # role-noun fix had been applied to contract_not_fte and NOT here, leaving the draft
+        # frame live: "The first deliverable is a co-op hiring plan." and "The result will be an
+        # internship program with 40 students." both produced `unmet` rows, which is the
+        # recruiter-JD class this family's whole design is meant to exclude. Costs almost no
+        # recall -- the framed arm matches 2 postings in 13,590 while `this internship` matches
+        # 25.
+        #
+        # THE `interns will VERB` ARM IS GONE. It matched 0 of 13,590 postings, so it never had
+        # precision evidence, and review demonstrated it firing on intern-MANAGER JDs
+        # ("Interns will receive feedback from you every two weeks."). An arm with no measured
+        # recall and a demonstrated false-positive class is not worth keeping.
+        #
+        # `as an intern ... you will` now refuses a JOB TITLE. "As an Intern Program Manager,
+        # you will own the summer cohort end to end." matched it, and the mentor stand-down
+        # could not help because its match starts INSIDE the span.
+        pattern: '(?:this(?:\s+(?:role|position|job|posting|opening|opportunity|internship|programme|program))?|the\s+(?:role|position|job|posting|opening|opportunity|internship))\s+(?:is|will\s+be)\s+(?:an?\s+)?(?:paid\s+|unpaid\s+|full[-\s]?time\s+|part[-\s]?time\s+|\d{1,2}[-\s]?(?:week|month)\s+|\d{4}\s+|summer\s+|fall\s+|autumn\s+|spring\s+|winter\s+){0,3}(?:internship|co-?op)(?!\w)|\bas\s+an?\s+intern(?![\s-]*(?:program|programme|manager|coordinator|lead|supervisor|director|recruiter|mentor))\b[^.]{0,40}\byou\s+will\b|(?:apply|applying|application)\s+(?:for|to)\s+(?:our\s+|the\s+)?(?:(?:\d{4}|summer|fall|autumn|spring|winter)\s+){0,3}(?:internship|co-?op)(?!\w)|\bthis\s+internship\b'

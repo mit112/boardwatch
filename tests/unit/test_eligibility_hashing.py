@@ -15,6 +15,7 @@ from boardwatch.eligibility.hashing import (
     digest,
     verify_identity,
 )
+from boardwatch.eligibility.resolve import declared_fields
 
 
 def test_key_order_never_changes_the_canonical_form() -> None:
@@ -92,6 +93,8 @@ DECLARED = {
     "experience_years": ("total_years_experience",),
     "clearance": ("security_clearance",),
     "degree": ("highest_degree", "total_years_experience"),
+    "contract_not_fte": ("employment_type_preference",),
+    "internship": ("internship_preference",),
 }
 
 FACTS = Facts(
@@ -229,7 +232,18 @@ def test_ranking_only_profile_fields_are_never_hashed(tmp_path: Path) -> None:
     fields = _identity(tmp_path).profile_snapshot["fields"]
     assert set(fields) == {  # type: ignore[arg-type]
         "work_authorization", "total_years_experience", "security_clearance", "highest_degree",
+        "employment_type_preference", "internship_preference",
     }
+
+
+def test_the_declared_map_in_this_module_matches_the_real_registry() -> None:
+    """DECLARED above is a hand-written copy, and every test here feeds it to
+    build_identity instead of the registry. P9 proved that is a SILENT drift class: two
+    families were added with resolvers and Facts fields, and every hashing test kept passing
+    while hashing four families' inputs out of six. A stale copy under-tests the profile hash
+    rather than failing, so the copy is pinned to the registry here.
+    """
+    assert DECLARED == declared_fields()
 
 
 def test_the_snapshot_does_not_embed_the_catalog(tmp_path: Path) -> None:

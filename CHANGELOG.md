@@ -8,6 +8,35 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- **Two eligibility rule families: `contract_not_fte` and `internship`.** The catalog now
+  carries six families. `contract_not_fte` reads whether a posting declares a contract,
+  contract-to-hire, temporary, fixed-term, 1099 or corp-to-corp engagement — or, symmetrically,
+  permanent full-time employment — and resolves it against a stated employment-type
+  preference (`fte_only`, `open_to_contract`, `contract_only`). `internship` reads whether a
+  posting declares itself an internship or co-op and resolves it against whether you want
+  them. Both are prompted by `init` and `profile edit` through the existing catalog-driven
+  loop, so neither adds a question to maintain.
+
+  Both default to `preference` rather than `blocker`, which is a measurement and not a
+  guess: the patterns were tuned against 13,590 real postings and score 100% precision
+  (internship) and 86% precision (contract) against the providers' own structured
+  employment-type field. Only `blocker` can produce `ineligible`, so at the shipped default a
+  false positive costs one visible informational row and hides nothing. Opt either into
+  `blocker` with `eligibility policy set <family> blocker`.
+
+  Known limit, stated plainly: the engine reads a posting's body and never its title, so
+  internship recall is 27% of postings whose title names an internship, and 20% of those whose
+  provider states an internship employment type. A posting titled "Software Engineering Intern"
+  whose body never says so is not detected. Raising that needs the title in the engine's input,
+  which is a separate change.
+
+### Changed
+
+- **Editing the rule catalog re-evaluates every stored verdict.** Adding the two families
+  moves `rules_hash`, so the first `eligibility run` after upgrading re-evaluates the whole
+  corpus and writes fresh rows. Prior verdicts are superseded, never rewritten — the
+  eligibility tables remain append-only.
+
 - **`--verify` on `companies add` and `companies import`.** Opt-in live board probe before
   the watch is written, reusing each provider's existing `healthcheck`. Reachable boards are
   watched (reachable-but-empty is watched with a note); boards that return 404, error, or

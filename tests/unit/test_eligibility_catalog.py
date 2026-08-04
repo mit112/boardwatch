@@ -105,9 +105,10 @@ def test_the_bundled_catalog_loads(tmp_path: Path) -> None:
     assert catalog.source == "bundled"
     assert [f.id for f in catalog.families] == [
         "work_auth", "experience_years", "clearance", "degree",
+        "contract_not_fte", "internship",
     ]
     assert len(catalog.negation_cues) == 26
-    assert sum(len(f.patterns) for f in catalog.families) == 39
+    assert sum(len(f.patterns) for f in catalog.families) == 44
 
 
 def test_the_bundled_catalog_carries_every_suppressor_kind(tmp_path: Path) -> None:
@@ -126,9 +127,18 @@ def test_the_bundled_catalog_carries_every_suppressor_kind(tmp_path: Path) -> No
         "consumes_cues": sum(bool(p.consumes_cues) for p in patterns),
     }
     assert census == {
-        "suppressed_by_unit": 10,
-        "suppressed_by_sentence": 1,
-        "subject_suppressors": 16,
+        # P9 added two CLAUSE-scoped stand-downs (the benign `customer/government/... contract`
+        # noun, and the internship family's three-entry list) and two SENTENCE-scoped ones.
+        # The scope split is deliberate: a refusal to engage contractors sits in a different
+        # clause of the same sentence ("we are not able to ... or employ corp-to-corp"), which
+        # a clause-scoped suppressor cannot see, so it lives on suppressed_by_sentence.
+        "suppressed_by_unit": 12,
+        "suppressed_by_sentence": 3,
+        # P9 added three BEFORE-ONLY subject suppressors. Direction is the discriminator for
+        # all three: a staffing word before a contract trigger says whose contract it is, and
+        # an ownership verb before an internship mention says the JD runs the programme. The
+        # same words AFTER the trigger are ordinary prose in a genuine posting.
+        "subject_suppressors": 19,
         "abstain_by": 7,
         "jurisdiction_map": 2,
         "consumes_cues": 1,
