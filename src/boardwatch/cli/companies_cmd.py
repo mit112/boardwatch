@@ -13,7 +13,7 @@ from boardwatch.cli.context import build_context
 from boardwatch.core.board_urls import UnknownBoardURL, parse_board_target
 from boardwatch.core.politeness import Fetcher
 from boardwatch.core.settings import Settings
-from boardwatch.providers.base import BoardHealth
+from boardwatch.providers.base import BoardHealth, Provider
 from boardwatch.registry.loader import load_catalog
 from boardwatch.registry.validate import CatalogError, CompanyEntry, validate_entries
 from boardwatch.scan.coordinator import default_providers
@@ -37,11 +37,30 @@ def _probe(
     per-host pacing applies across the batch instead of per board."""
     providers = default_providers()
     fetcher = Fetcher(settings)
-    return {(p, s): providers[p].healthcheck(fetcher, s) for p, s in targets}
+    return {(p, s): _healthcheck(providers[p], fetcher, s) for p, s in targets}
+
+
+def _healthcheck(provider: Provider, fetcher: Fetcher, slug: str) -> BoardHealth:
+    """Providers map FetchFailure to a BoardHealth, but Fetcher.get only converts
+    TransportError and retryable statuses — httpx.TooManyRedirects and DecodingError are
+    RequestError, not TransportError, so they escape both. A CLI flag whose whole job is
+    to report unreachable boards must not traceback on one; bucket it as UNREACHABLE
+    (same skip decision either way) the way the scan coordinator already does."""
+    try:
+        return provider.healthcheck(fetcher, slug)
+    except Exception:
+        return BoardHealth.UNREACHABLE
 
 
 def _catalog_index() -> dict[tuple[str, str], CompanyEntry]:
     return {(e.provider, e.slug): e for e in load_catalog()}
+
+
+def _normalized(entry: CompanyEntry) -> CompanyEntry:
+    """Apply the provider's slug normalization, which `add` gets from parse_board_target
+    and the import path otherwise skips entirely."""
+    _, slug = parse_board_target(f"{entry.provider}:{entry.slug}")
+    return entry if slug == entry.slug else entry.model_copy(update={"slug": slug})
 
 
 @companies_app.command("add")
@@ -67,8 +86,8 @@ def add(
             raise typer.Exit(code=1)  # unproven board: no DB write
         if health is BoardHealth.EMPTY:
             console.print(
-                f"[yellow]note:[/yellow] {provider}:{slug} is reachable but currently empty "
-                "(no open postings). Watching it anyway."
+                f"[yellow]note:[/yellow] {provider}:{slug} is reachable but returned no "
+                "postings. Watching it anyway."
             )
     with app_ctx.engine.begin() as conn:
         upsert_watch(conn, provider=provider, slug=slug, name=name, source=source)
@@ -136,10 +155,14 @@ def import_(
     """Validate registry-format YAML, then watch each entry."""
     try:
         raw = yaml.safe_load(path.read()) or {}
+        # Normalize through the same path `add` uses before the duplicate check, so
+        # case-variant slugs on a case-insensitive provider (smartrecruiters) collapse
+        # instead of writing two rows for one board — one of which `remove` could never
+        # match, because it normalizes the slug the caller types.
         entries = validate_entries(
-            [CompanyEntry.model_validate(row) for row in (raw.get("companies") or [])]
+            [_normalized(CompanyEntry.model_validate(row)) for row in (raw.get("companies") or [])]
         )
-    except (CatalogError, ValueError) as exc:
+    except (CatalogError, UnknownBoardURL, ValueError) as exc:
         console.print(f"[red]invalid import file: {exc}[/red]")
         raise typer.Exit(code=1) from exc
     app_ctx = build_context(ctx.obj)
@@ -168,6 +191,13 @@ def import_(
             f"[yellow]note:[/yellow] reachable but currently empty (watched anyway): "
             f"{', '.join(empty)}"
         )
+        if any(name.startswith("smartrecruiters:") for name in empty):
+            # SmartRecruiters returns an empty board for an unknown company rather than a
+            # 404, so 'empty' there is NOT evidence the board exists (see doctor's caveat).
+            console.print(
+                "[yellow]note:[/yellow] for smartrecruiters, 'empty' is unverifiable — it may "
+                "be a typo'd slug rather than a real board with no open roles."
+            )
     if skipped:
         for provider, slug, status in skipped:
             console.print(f"[red]skipped {provider}:{slug} — probe returned {status}.[/red]")

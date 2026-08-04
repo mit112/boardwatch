@@ -1,3 +1,4 @@
+import httpx
 import pytest
 import yaml
 from sqlalchemy import select
@@ -156,7 +157,7 @@ def test_add_verify_empty_writes_the_watch_but_warns(tmp_path, monkeypatch) -> N
     )
     assert result.exit_code == 0
     assert len(_watch_count(tmp_path, "greenhouse", "acme")) == 1
-    assert "empty" in result.stdout.lower()
+    assert "returned no postings" in result.stdout.lower()
 
 
 @pytest.mark.parametrize(
@@ -200,6 +201,133 @@ def test_import_verify_notes_empty_boards_but_still_watches_them(tmp_path, monke
     assert result.exit_code == 0
     assert len(_watch_count(tmp_path, "greenhouse", "quiet")) == 1
     assert "empty" in result.stdout.lower()
+
+
+def test_import_verify_keys_probes_by_provider_and_slug_not_slug_alone(
+    tmp_path, monkeypatch
+) -> None:
+    """Same slug on two providers must get each provider's own verdict, not a collision."""
+    monkeypatch.setattr(
+        "boardwatch.cli.companies_cmd.default_providers",
+        lambda: {
+            "greenhouse": FakeProvider({"acme": BoardHealth.OK}),
+            "lever": FakeProvider({"acme": BoardHealth.DEAD}),
+        },
+    )
+    monkeypatch.setattr("boardwatch.cli.companies_cmd.Fetcher", lambda settings: object())
+    path = _import_file(
+        tmp_path,
+        [
+            {"name": "Acme GH", "provider": "greenhouse", "slug": "acme", "tags": []},
+            {"name": "Acme LV", "provider": "lever", "slug": "acme", "tags": []},
+        ],
+    )
+    result = runner.invoke(app, [*_base(tmp_path), "companies", "import", path, "--verify"])
+    assert result.exit_code == 1
+    assert len(_watch_count(tmp_path, "greenhouse", "acme")) == 1
+    assert _watch_count(tmp_path, "lever", "acme") == []
+
+
+def test_import_uses_one_fetcher_for_the_whole_batch(tmp_path, monkeypatch) -> None:
+    """The per-host politeness pacing only applies across the batch if the Fetcher is shared."""
+    built = []
+
+    def _count(settings):
+        built.append(settings)
+        return object()
+
+    monkeypatch.setattr(
+        "boardwatch.cli.companies_cmd.default_providers",
+        lambda: {"greenhouse": FakeProvider({"a": BoardHealth.OK, "b": BoardHealth.OK})},
+    )
+    monkeypatch.setattr("boardwatch.cli.companies_cmd.Fetcher", _count)
+    path = _import_file(
+        tmp_path,
+        [
+            {"name": "A", "provider": "greenhouse", "slug": "a", "tags": []},
+            {"name": "B", "provider": "greenhouse", "slug": "b", "tags": []},
+        ],
+    )
+    assert runner.invoke(
+        app, [*_base(tmp_path), "companies", "import", path, "--verify"]
+    ).exit_code == 0
+    assert len(built) == 1
+
+
+def test_import_verify_all_skipped_reports_zero_imported_and_exits_nonzero(
+    tmp_path, monkeypatch
+) -> None:
+    """The shape an operator hits when the network is down with --verify."""
+    _fake_probe(monkeypatch, {"a": BoardHealth.UNREACHABLE, "b": BoardHealth.UNREACHABLE})
+    path = _import_file(
+        tmp_path,
+        [
+            {"name": "A", "provider": "greenhouse", "slug": "a", "tags": []},
+            {"name": "B", "provider": "greenhouse", "slug": "b", "tags": []},
+        ],
+    )
+    result = runner.invoke(app, [*_base(tmp_path), "companies", "import", path, "--verify"])
+    assert result.exit_code == 1
+    assert "imported 0 watches" in result.stdout.lower()
+    assert _watch_count(tmp_path, "greenhouse", "a") == []
+
+
+def test_import_verify_flags_smartrecruiters_empty_as_unverifiable(tmp_path, monkeypatch) -> None:
+    """EMPTY is not positive evidence on smartrecruiters: it cannot distinguish a typo."""
+    _fake_probe(monkeypatch, {"acme": BoardHealth.EMPTY}, provider="smartrecruiters")
+    path = _import_file(
+        tmp_path, [{"name": "Acme", "provider": "smartrecruiters", "slug": "acme", "tags": []}]
+    )
+    result = runner.invoke(app, [*_base(tmp_path), "companies", "import", path, "--verify"])
+    assert result.exit_code == 0
+    assert "unverifiable" in result.stdout.lower()
+
+
+def test_import_normalizes_case_variant_slugs_into_one_watch(tmp_path) -> None:
+    """smartrecruiters slugs are case-insensitive; two spellings are one board, and a
+    non-normalized row could never be removed (remove normalizes what the caller types)."""
+    path = _import_file(
+        tmp_path,
+        [
+            {"name": "Visa", "provider": "smartrecruiters", "slug": "Visa", "tags": []},
+            {"name": "Visa again", "provider": "smartrecruiters", "slug": "visa", "tags": []},
+        ],
+    )
+    result = runner.invoke(app, [*_base(tmp_path), "companies", "import", path])
+    assert result.exit_code == 1  # they collapse to a duplicate, which is now rejected
+    assert "duplicate" in result.stdout.lower()
+
+
+def test_imported_uppercase_slug_is_removable(tmp_path) -> None:
+    path = _import_file(
+        tmp_path, [{"name": "Visa", "provider": "smartrecruiters", "slug": "Visa", "tags": []}]
+    )
+    assert runner.invoke(app, [*_base(tmp_path), "companies", "import", path]).exit_code == 0
+    assert len(_watch_count(tmp_path, "smartrecruiters", "visa")) == 1  # stored normalized
+    removed = runner.invoke(
+        app, [*_base(tmp_path), "companies", "remove", "smartrecruiters:Visa"]
+    )
+    assert "no such watch" not in removed.stdout.lower()
+
+
+def test_verify_reports_unreachable_instead_of_tracebacking(tmp_path, monkeypatch) -> None:
+    """httpx.TooManyRedirects/DecodingError are RequestError but not TransportError, so they
+    escape Fetcher.get and every provider's `except FetchFailure`."""
+
+    class Exploding:
+        def healthcheck(self, fetcher, slug):
+            raise httpx.TooManyRedirects("redirect loop")
+
+    monkeypatch.setattr(
+        "boardwatch.cli.companies_cmd.default_providers", lambda: {"greenhouse": Exploding()}
+    )
+    monkeypatch.setattr("boardwatch.cli.companies_cmd.Fetcher", lambda settings: object())
+    result = runner.invoke(
+        app, [*_base(tmp_path), "companies", "add", "greenhouse:acme", "--verify"]
+    )
+    assert result.exit_code == 1
+    assert "unreachable" in result.stdout.lower()
+    assert _watch_count(tmp_path, "greenhouse", "acme") == []
 
 
 def test_import_verify_all_ok_exits_zero(tmp_path, monkeypatch) -> None:

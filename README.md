@@ -535,7 +535,8 @@ exits non-zero if it skipped anything, so a partial import does not read as a cl
 
 **SmartRecruiters honest limits.** Its API cannot distinguish a typo'd company slug from
 a real, empty board — an unknown company returns an empty board, not an error, so
-`companies add` and `doctor` flag it as unverifiable rather than confirmed. Job bodies are
+`companies add`, `--verify` and `doctor` flag it as unverifiable rather than confirmed.
+`--verify` therefore cannot catch a typo'd SmartRecruiters slug; it says so when it sees one. Job bodies are
 fetched once per posting (bounded by `detail_fetch_budget`, default 50) and never
 refreshed, since the list endpoint carries no revision signal for description-only edits.
 A posting that goes inactive while still listed is not re-detected as closed until it
