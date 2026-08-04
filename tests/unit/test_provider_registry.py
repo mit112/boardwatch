@@ -114,3 +114,41 @@ def test_identity_derivation_raises_on_duplicate_name(monkeypatch) -> None:
     monkeypatch.setattr(registry, "PROVIDER_CLASSES", (A, B))
     with pytest.raises(ValueError, match="duplicate provider name"):
         registry.host_provider_map()
+
+
+class _SuffixProvider:
+    name = "suffixy"
+    board_hosts: tuple[str, ...] = ()
+    board_host_suffixes: tuple[str, ...] = (".suffixy.example.com",)
+    slug_help = "include the site path, e.g. tenant.suffixy.example.com/Careers"
+
+    @staticmethod
+    def slug_from_path(host: str, parts: list[str]) -> str | None:
+        return parts[0]
+
+
+def test_suffix_map_is_keyed_by_suffix(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(registry, "PROVIDER_CLASSES", (_SuffixProvider,), raising=True)
+    assert registry.host_suffix_provider_map() == {".suffixy.example.com": "suffixy"}
+    assert registry.host_provider_map() == {}
+
+
+def test_extractor_and_help_maps_register_suffix_keys(monkeypatch: pytest.MonkeyPatch) -> None:
+    # A suffix-only provider declares board_hosts = (), so a map that iterates board_hosts
+    # alone silently registers NOTHING for it and every pasted URL fails to parse.
+    monkeypatch.setattr(registry, "PROVIDER_CLASSES", (_SuffixProvider,), raising=True)
+    assert set(registry.slug_extractor_map()) == {".suffixy.example.com"}
+    assert set(registry.slug_help_map()) == {".suffixy.example.com"}
+
+
+def test_duplicate_host_suffix_is_rejected(monkeypatch: pytest.MonkeyPatch) -> None:
+    class _Other:
+        name = "other"
+        board_hosts: tuple[str, ...] = ()
+        board_host_suffixes: tuple[str, ...] = (".suffixy.example.com",)
+
+    monkeypatch.setattr(
+        registry, "PROVIDER_CLASSES", (_SuffixProvider, _Other), raising=True
+    )
+    with pytest.raises(ValueError, match="duplicate board host suffix"):
+        registry.host_suffix_provider_map()

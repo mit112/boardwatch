@@ -30,7 +30,7 @@ def test_help_text_enumerates_all_registry_providers() -> None:
     from boardwatch.providers.registry import PROVIDER_NAMES
 
     with pytest.raises(UnknownBoardURL) as exc:
-        parse_board_target("workday:acme")
+        parse_board_target("notaprovider:acme")
     msg = str(exc.value)
     for name in PROVIDER_NAMES:
         assert name in msg
@@ -75,6 +75,7 @@ def _install(monkeypatch: pytest.MonkeyPatch, *classes: type) -> None:
     # qualified-form (`name:slug`) branch rejects the stub provider before normalization (H4).
     monkeypatch.setattr(board_urls, "PROVIDER_NAMES", frozenset(c.name for c in classes))
     monkeypatch.setattr(board_urls, "_HOST_PROVIDER", registry.host_provider_map())
+    monkeypatch.setattr(board_urls, "_HOST_SUFFIX_PROVIDER", registry.host_suffix_provider_map())
     monkeypatch.setattr(board_urls, "_SLUG_EXTRACTORS", registry.slug_extractor_map())
     monkeypatch.setattr(board_urls, "_SLUG_NORMALIZERS", registry.slug_normalizer_map())
     monkeypatch.setattr(board_urls, "_SLUG_HELP", registry.slug_help_map())
@@ -111,3 +112,71 @@ def test_default_extraction_and_no_normalizer_is_verbatim(monkeypatch: pytest.Mo
 
 def test_shipped_greenhouse_url_still_parses() -> None:
     assert parse_board_target("boards.greenhouse.io/stripe") == ("greenhouse", "stripe")
+
+
+class _SuffixHostProvider:
+    name = "suffixy"
+    board_hosts: tuple[str, ...] = ()
+    board_host_suffixes: tuple[str, ...] = (".suffixy.example.com",)
+    slug_help = "include the career-site path, e.g. tenant.suffixy.example.com/Careers"
+
+    @staticmethod
+    def slug_from_path(host: str, parts: list[str]) -> str | None:
+        tenant = host.split(".", 1)[0]
+        return f"{host}/{tenant}/{parts[0]}"
+
+    @staticmethod
+    def normalize_slug(slug: str) -> str:
+        parts = slug.split("/")
+        if len(parts) != 3 or not all(parts):
+            raise ValueError("expected host/tenant/site")
+        return f"{parts[0].lower()}/{parts[1].lower()}/{parts[2]}"
+
+
+def test_composite_slug_survives_the_qualified_form(monkeypatch: pytest.MonkeyPatch) -> None:
+    _install(monkeypatch, _SuffixHostProvider)
+    assert parse_board_target("suffixy:Acme.suffixy.example.com/Acme/Careers") == (
+        "suffixy",
+        "acme.suffixy.example.com/acme/Careers",
+    )
+
+
+def test_suffix_host_paste_form_resolves(monkeypatch: pytest.MonkeyPatch) -> None:
+    _install(monkeypatch, _SuffixHostProvider)
+    assert parse_board_target("https://acme.suffixy.example.com/Careers") == (
+        "suffixy",
+        "acme.suffixy.example.com/acme/Careers",
+    )
+
+
+def test_lookalike_domain_does_not_match_the_suffix(monkeypatch: pytest.MonkeyPatch) -> None:
+    # the leading dot is the label boundary: notsuffixy.example.com must NOT match
+    _install(monkeypatch, _SuffixHostProvider)
+    with pytest.raises(UnknownBoardURL, match="unrecognized board target"):
+        parse_board_target("https://notsuffixy.example.com/Careers")
+
+
+def test_bare_suffix_host_surfaces_slug_help(monkeypatch: pytest.MonkeyPatch) -> None:
+    _install(monkeypatch, _SuffixHostProvider)
+    with pytest.raises(UnknownBoardURL, match="career-site path"):
+        parse_board_target("https://acme.suffixy.example.com")
+
+
+def test_normalizer_value_error_becomes_unknown_board_url(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # without the wrap a bare ValueError escapes `companies add`'s except UnknownBoardURL
+    # (companies_cmd.py:74) and tracebacks the CLI
+    _install(monkeypatch, _SuffixHostProvider)
+    with pytest.raises(UnknownBoardURL, match="invalid suffixy board target"):
+        parse_board_target("suffixy:not-a-triple")
+
+
+def test_host_port_form_still_reaches_the_url_branch() -> None:
+    # relaxing the qualified-form guard must not make host:port look like provider:slug
+    with pytest.raises(UnknownBoardURL, match="unrecognized board target"):
+        parse_board_target("example.com:8080/careers")
+
+
+def test_colon_in_slug_still_splits_on_the_first_colon() -> None:
+    assert parse_board_target("greenhouse:a:b") == ("greenhouse", "a:b")
