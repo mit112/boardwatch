@@ -120,7 +120,12 @@ def _run_scan_locked(
             if prov is None:
                 summary.errors.append(f"{row.slug}: unknown provider {row.provider!r}")
                 continue
-            url = prov.board_url(row.slug)
+            try:
+                url = prov.board_url(row.slug)
+            except Exception as exc:  # a malformed stored slug is one board, not the run
+                summary.errors.append(f"{row.slug}: invalid board target: {exc}")
+                summary.failed += 1
+                continue
             work.append(
                 (
                     row,
