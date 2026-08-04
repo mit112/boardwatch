@@ -82,7 +82,8 @@ def test_normalize_is_idempotent() -> None:
         "acme.wd5.myworkdayjobs.com//AcmeCareers",     # empty tenant
         "notmyworkdayjobs.com/acme/AcmeCareers",       # lookalike domain
         ".myworkdayjobs.com/acme/AcmeCareers",         # no tenant label before the suffix
-        "evil@acme.wd5.myworkdayjobs.com/acme/Careers",  # userinfo injection
+        "@acme.wd5.myworkdayjobs.com/acme/Careers",        # userinfo injection, empty userinfo
+        "acme.wd5.myworkdayjobs.com@/acme/Careers",        # userinfo injection, trailing @
         "acme.wd5.myworkdayjobs.com:8080/acme/Careers",   # port / scheme injection
         "acme.wd5.myworkdayjobs.com?x=1/acme/Careers",    # query injection
         "acme.wd5.myworkdayjobs.com#f/acme/Careers",      # fragment injection
@@ -93,6 +94,12 @@ def test_normalize_is_idempotent() -> None:
 def test_malformed_slug_is_rejected(bad: str) -> None:
     with pytest.raises(ValueError):
         split_slug(bad)
+
+
+def test_userinfo_in_the_host_is_rejected_for_the_at_sign_not_the_suffix() -> None:
+    # a lookalike host would also raise, but for a DIFFERENT reason; pin the real one
+    with pytest.raises(ValueError, match="forbidden character"):
+        split_slug("@acme.wd5.myworkdayjobs.com/acme/Careers")
 
 
 def test_malformed_slug_surfaces_unknown_board_url_not_value_error() -> None:
@@ -135,6 +142,20 @@ def test_single_page_board_parses_every_posting(tmp_path: Path) -> None:
     assert snapshot.status == "complete"
     assert len(snapshot.listed_ids) == 3
     assert snapshot.listed_ids == {"JR1000001-1", "JR1000002", "JR1000003"}
+
+
+@respx.mock
+def test_a_row_with_no_title_is_partial_not_an_exception(tmp_path: Path) -> None:
+    payload = _fx("list_normal.json")
+    payload["jobPostings"].append(
+        {"externalPath": "/job/Nowhere/Untitled_JR1000009", "locationsText": "Remote"}
+    )
+    respx.post(LIST_URL).mock(return_value=httpx.Response(200, json=payload))
+    snapshot = provider.fetch_board(_fetcher(tmp_path), _request(budget=0))
+    assert snapshot.status == "partial"
+    assert "empty title" in (snapshot.error or "")
+    assert len(snapshot.postings) == 3          # the three good rows still applied
+    assert len(snapshot.listed_ids) == 3
 
 
 @respx.mock

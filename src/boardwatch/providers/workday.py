@@ -206,11 +206,19 @@ class WorkdayProvider:
             return _failed(request.url, "invalid board payload: missing 'jobPostings' list")
         _collect(rows, listed, seen_paths)
 
-        postings = [
-            parse_posting(host, site, row, None, None)
-            for row in listed
-            if str(row.get("externalPath") or "")
-        ]
+        # PER-ROW ISOLATION, as every sibling provider does (greenhouse.py, ashby.py,
+        # smartrecruiters.py): parse_posting raises on a row with no title, and one bad row
+        # must not fail the whole board. This is what `errors` is for — a bare list
+        # comprehension here lets a ValueError escape fetch_board.
+        postings: list[RawPosting] = []
+        for row in listed:
+            path = str(row.get("externalPath") or "")
+            if not path:
+                continue
+            try:
+                postings.append(parse_posting(host, site, row, None, None))
+            except Exception as exc:  # per-posting isolation
+                errors.append(f"posting {path}: {exc}")
         listed_ids = frozenset(p.provider_posting_id for p in postings)
         return BoardSnapshot(
             status="complete" if not errors else "partial",
