@@ -37,6 +37,7 @@ from boardwatch.store.tables import (
 )
 from boardwatch.tailor.load import scaffold_template
 from boardwatch.tailor.plan import MAX_BULLETS_PER_ENTRY
+from boardwatch.tailor.rewrite.lane import TierBResult
 
 NOW = datetime(2026, 8, 2, 12, 0, 0)
 
@@ -379,6 +380,35 @@ def test_unsupported_format_raises_before_any_write(tmp_path: Path) -> None:
     with pytest.raises(UnsupportedFormatError):
         run_tailor(engine, settings, pid, resume_path=_resume_yaml(tmp_path), out_dir=out,
                    fmt="latex", typst_runner=_runner_ok)
+    assert not out.exists()
+    with engine.connect() as conn:
+        assert conn.execute(artifacts.select()).first() is None
+        assert conn.execute(artifact_derivations.select()).first() is None
+
+
+class _NeverCalledClient:
+    """A ModelClient whose complete() must never fire — the mutual-exclusion guard
+    rejects the call before any Tier B work, so touching the provider is a bug."""
+
+    def complete(self, prompt: str, *, system: str | None = None) -> str:
+        raise AssertionError("client.complete must not be called")
+
+
+def test_client_and_tb_override_are_mutually_exclusive(tmp_path: Path) -> None:
+    # The API lane (live client) and the subscription agent lane (precomputed
+    # tb_override) are two disjoint ways to populate Tier B; passing both is a caller
+    # bug and must fail closed before any planning, render, or write happens.
+    settings = _settings(tmp_path)
+    engine = _engine(settings)
+    pid = _seed(engine, settings)
+    out = tmp_path / "out"
+    with pytest.raises(ValueError, match="either client or tb_override"):
+        run_tailor(
+            engine, settings, pid, resume_path=_resume_yaml(tmp_path), out_dir=out,
+            typst_runner=_runner_ok,
+            client=_NeverCalledClient(),
+            tb_override=TierBResult(accepted=[], rows=[], calls_made=0),
+        )
     assert not out.exists()
     with engine.connect() as conn:
         assert conn.execute(artifacts.select()).first() is None
