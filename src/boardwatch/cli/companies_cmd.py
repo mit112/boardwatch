@@ -11,12 +11,33 @@ from rich.table import Table
 
 from boardwatch.cli.context import build_context
 from boardwatch.core.board_urls import UnknownBoardURL, parse_board_target
+from boardwatch.core.politeness import Fetcher
+from boardwatch.core.settings import Settings
+from boardwatch.providers.base import BoardHealth
 from boardwatch.registry.loader import load_catalog
-from boardwatch.registry.validate import CatalogError, CompanyEntry
+from boardwatch.registry.validate import CatalogError, CompanyEntry, validate_entries
+from boardwatch.scan.coordinator import default_providers
 from boardwatch.store.queries import list_watches, unwatch, upsert_watch
 
 companies_app = typer.Typer(no_args_is_help=True, help="Manage watched company boards.")
 console = Console()
+
+# D27 vocabulary: OK/EMPTY are positive evidence the board exists; DEAD means the slug is
+# wrong; ERROR/UNREACHABLE are absence of evidence, which is not evidence of absence — so
+# --verify skips them rather than writing a watch it could not substantiate.
+_UNPROVEN = frozenset({BoardHealth.DEAD, BoardHealth.ERROR, BoardHealth.UNREACHABLE})
+
+_VERIFY_HELP = "Probe each board before watching it; skip any that cannot be confirmed."
+
+
+def _probe(
+    targets: list[tuple[str, str]], settings: Settings
+) -> dict[tuple[str, str], BoardHealth]:
+    """Live-healthcheck (provider, slug) pairs. One Fetcher for the whole set, so its
+    per-host pacing applies across the batch instead of per board."""
+    providers = default_providers()
+    fetcher = Fetcher(settings)
+    return {(p, s): providers[p].healthcheck(fetcher, s) for p, s in targets}
 
 
 def _catalog_index() -> dict[tuple[str, str], CompanyEntry]:
@@ -24,7 +45,11 @@ def _catalog_index() -> dict[tuple[str, str], CompanyEntry]:
 
 
 @companies_app.command("add")
-def add(ctx: typer.Context, target: str) -> None:
+def add(
+    ctx: typer.Context,
+    target: str,
+    verify: bool = typer.Option(False, "--verify", help=_VERIFY_HELP),
+) -> None:
     """Watch a board by provider:slug or board URL."""
     try:
         provider, slug = parse_board_target(target)
@@ -35,6 +60,16 @@ def add(ctx: typer.Context, target: str) -> None:
     source = "registry" if entry else "user"
     name = entry.name if entry else slug
     app_ctx = build_context(ctx.obj)
+    if verify:
+        health = _probe([(provider, slug)], app_ctx.settings)[(provider, slug)]
+        if health in _UNPROVEN:
+            console.print(f"[red]not watching {provider}:{slug} — probe returned {health}.[/red]")
+            raise typer.Exit(code=1)  # unproven board: no DB write
+        if health is BoardHealth.EMPTY:
+            console.print(
+                f"[yellow]note:[/yellow] {provider}:{slug} is reachable but currently empty "
+                "(no open postings). Watching it anyway."
+            )
     with app_ctx.engine.begin() as conn:
         upsert_watch(conn, provider=provider, slug=slug, name=name, source=source)
     console.print(f"Watching {provider}:{slug} (source={source}).")
@@ -93,18 +128,48 @@ def export(ctx: typer.Context) -> None:
 
 
 @companies_app.command("import")
-def import_(ctx: typer.Context, path: typer.FileText) -> None:
+def import_(
+    ctx: typer.Context,
+    path: typer.FileText,
+    verify: bool = typer.Option(False, "--verify", help=_VERIFY_HELP),
+) -> None:
     """Validate registry-format YAML, then watch each entry."""
     try:
         raw = yaml.safe_load(path.read()) or {}
-        entries = [CompanyEntry.model_validate(row) for row in (raw.get("companies") or [])]
+        entries = validate_entries(
+            [CompanyEntry.model_validate(row) for row in (raw.get("companies") or [])]
+        )
     except (CatalogError, ValueError) as exc:
         console.print(f"[red]invalid import file: {exc}[/red]")
         raise typer.Exit(code=1) from exc
     app_ctx = build_context(ctx.obj)
+    skipped: list[tuple[str, str, BoardHealth]] = []
+    empty: list[str] = []
+    if verify:
+        health = _probe([(e.provider, e.slug) for e in entries], app_ctx.settings)
+        kept: list[CompanyEntry] = []
+        for e in entries:
+            status = health[(e.provider, e.slug)]
+            if status in _UNPROVEN:
+                skipped.append((e.provider, e.slug, status))
+                continue
+            if status is BoardHealth.EMPTY:
+                empty.append(f"{e.provider}:{e.slug}")
+            kept.append(e)
+        entries = kept
     with app_ctx.engine.begin() as conn:
         for e in entries:
             in_catalog = (e.provider, e.slug) in _catalog_index()
             upsert_watch(conn, provider=e.provider, slug=e.slug, name=e.name,
                          source="registry" if in_catalog else "user")
     console.print(f"Imported {len(entries)} watches.")
+    if empty:
+        console.print(
+            f"[yellow]note:[/yellow] reachable but currently empty (watched anyway): "
+            f"{', '.join(empty)}"
+        )
+    if skipped:
+        for provider, slug, status in skipped:
+            console.print(f"[red]skipped {provider}:{slug} — probe returned {status}.[/red]")
+        # a partial import must not report success: the operator has to see the shortfall
+        raise typer.Exit(code=1)

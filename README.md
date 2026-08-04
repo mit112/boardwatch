@@ -526,6 +526,13 @@ these providers host, not just the registry, with `companies add`. The registry 
 community-maintainable by PR; see
 [`src/boardwatch/registry/README.md`](src/boardwatch/registry/README.md).
 
+**Verifying a slug before you watch it.** `companies add` and `companies import` are
+offline by default — they accept any well-formed `provider:slug` and let the next `scan`
+or `doctor` discover a typo. Pass `--verify` to probe each board first: boards that come
+back reachable are watched (a reachable-but-empty board is watched with a note), and boards
+that return 404 or cannot be reached are skipped rather than written. `import --verify`
+exits non-zero if it skipped anything, so a partial import does not read as a clean one.
+
 **SmartRecruiters honest limits.** Its API cannot distinguish a typo'd company slug from
 a real, empty board — an unknown company returns an empty board, not an error, so
 `companies add` and `doctor` flag it as unverifiable rather than confirmed. Job bodies are
