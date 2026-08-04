@@ -6,6 +6,8 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-08-04
+
 ### Added
 
 - **`boardwatch tailor` command (`init`/`validate`/`run`).** Tailors an authored,
@@ -71,4 +73,5 @@ First public release.
   disk. Overridable with `--data-dir`. No server, no cloud, no telemetry.
 - **`doctor`** for connectivity, per-board health and freshness, and database integrity.
 
+[0.2.0]: https://github.com/mit112/boardwatch/releases/tag/v0.2.0
 [0.1.0]: https://github.com/mit112/boardwatch/releases/tag/v0.1.0
