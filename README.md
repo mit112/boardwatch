@@ -13,8 +13,9 @@ as evidence. Nothing is guessed, nothing phones home, and it all runs on your ow
 [![Python](https://img.shields.io/badge/python-3.11%20%7C%203.12%20%7C%203.13-blue.svg)](https://www.python.org/)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 
-> **Status: pre-release, under active development.** No auto-apply, ever. No telemetry.
-> No accounts, no API keys. Your data stays in a local SQLite file.
+> **Status: pre-release, under active development.** boardwatch does not submit
+> applications: it finds and evaluates postings, and you decide what to do with them.
+> No telemetry. No accounts, no API keys. Your data stays in a local SQLite file.
 
 ```console
 $ boardwatch top
@@ -579,6 +580,18 @@ often. A job seeker checking a dozen companies once a day is the intended shape.
 - [x] More ATS providers (community-driven)
 - [x] Data-portability export (`--format jsonl|csv`)
 - [x] Résumé tailoring (`tailor init/validate/run`, local, no-fabrication guarantee)
+
+Next:
+
+- [ ] Workday provider (host/tenant/site boards, the largest ATS still out of reach)
+- [ ] More eligibility rule families (contract vs. full-time, internships)
+- [ ] A readable settings surface, so every opt-in feature is discoverable and reversible
+      without hand-editing `config.toml`
+
+> **These boxes track `main`, which can run ahead of the latest published release.**
+> [CHANGELOG.md](CHANGELOG.md) is the authoritative record of what shipped in the version
+> `pipx install boardwatch` gives you; anything under *Unreleased* needs an install from
+> source.
 
 Have a company on a board boardwatch doesn't reach yet, or an ATS you want supported?
 [Open an issue.](https://github.com/mit112/boardwatch/issues)
