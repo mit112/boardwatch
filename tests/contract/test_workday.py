@@ -18,7 +18,12 @@ from boardwatch.core.models import BoardRequest, ResponseValidators
 from boardwatch.core.politeness import Fetcher
 from boardwatch.core.settings import Settings
 from boardwatch.providers.base import BoardHealth
-from boardwatch.providers.workday import WorkdayProvider, parse_posting, split_slug
+from boardwatch.providers.workday import (
+    WorkdayProvider,
+    _posting_id,
+    parse_posting,
+    split_slug,
+)
 
 FIXTURES = Path(__file__).resolve().parents[1] / "fixtures" / "workday"
 SLUG = "acme.wd5.myworkdayjobs.com/acme/AcmeCareers"
@@ -52,6 +57,17 @@ def _request(
 
 def _detail_url(external_path: str) -> str:
     return f"https://acme.wd5.myworkdayjobs.com/wday/cxs/acme/AcmeCareers{external_path}"
+
+
+def _all_listed_ids(*fixtures: str) -> frozenset[str]:
+    """Every posting id across these list fixtures. Passed as `known`, it isolates the
+    LISTING phase: nothing is unseen, so no detail is fetched and no detail-budget error is
+    raised, and `status == "complete"` still means "the pager reported no problem"."""
+    return frozenset(
+        _posting_id(str(row["externalPath"]))
+        for name in fixtures
+        for row in _fx(name)["jobPostings"]
+    )
 
 
 # ---------------------------------------------------------------- slug contract
@@ -138,8 +154,10 @@ def test_bare_host_paste_surfaces_slug_help() -> None:
 @respx.mock
 def test_single_page_board_parses_every_posting(tmp_path: Path) -> None:
     respx.post(LIST_URL).mock(return_value=httpx.Response(200, json=_fx("list_normal.json")))
-    snapshot = provider.fetch_board(_fetcher(tmp_path), _request(budget=0))
+    _mock_all_details()
+    snapshot = provider.fetch_board(_fetcher(tmp_path), _request())
     assert snapshot.status == "complete"
+    assert len(snapshot.postings) == 3
     assert len(snapshot.listed_ids) == 3
     assert snapshot.listed_ids == {"JR1000001-1", "JR1000002", "JR1000003"}
 
@@ -147,15 +165,22 @@ def test_single_page_board_parses_every_posting(tmp_path: Path) -> None:
 @respx.mock
 def test_a_row_with_no_title_is_partial_not_an_exception(tmp_path: Path) -> None:
     payload = _fx("list_normal.json")
-    payload["jobPostings"].append(
-        {"externalPath": "/job/Nowhere/Untitled_JR1000009", "locationsText": "Remote"}
-    )
+    untitled = {"externalPath": "/job/Nowhere/Untitled_JR1000009", "locationsText": "Remote"}
+    payload["jobPostings"].append(untitled)
     respx.post(LIST_URL).mock(return_value=httpx.Response(200, json=payload))
-    snapshot = provider.fetch_board(_fetcher(tmp_path), _request(budget=0))
+    _mock_all_details()
+    # its detail carries no title either, so parse_posting still raises — inside the detail
+    # loop, which is where the per-row try/except now lives
+    respx.get(_detail_url(untitled["externalPath"])).mock(
+        return_value=httpx.Response(200, json={"jobPostingInfo": {}})
+    )
+    snapshot = provider.fetch_board(_fetcher(tmp_path), _request())
     assert snapshot.status == "partial"
     assert "empty title" in (snapshot.error or "")
     assert len(snapshot.postings) == 3          # the three good rows still applied
-    assert len(snapshot.listed_ids) == 3
+    # a row that FAILS TO PARSE still belongs to the live inventory, or _process_missing
+    # closes a posting that is demonstrably still listed
+    assert len(snapshot.listed_ids) == 4
 
 
 @respx.mock
@@ -378,7 +403,8 @@ def test_pages_until_a_short_page(tmp_path: Path) -> None:
             httpx.Response(200, json=_fx("list_page_short.json")),  # 5 rows  -> stop
         ]
     )
-    snapshot = provider.fetch_board(_fetcher(tmp_path), _request(budget=0))
+    known = _all_listed_ids("list_page_full.json", "list_page_short.json")
+    snapshot = provider.fetch_board(_fetcher(tmp_path), _request(known=known))
     assert snapshot.status == "complete"
     assert len(snapshot.listed_ids) == 25
 
@@ -406,7 +432,8 @@ def test_total_over_the_page_supply_does_not_loop(tmp_path: Path) -> None:
             httpx.Response(200, json=_fx("list_page_short.json")),
         ]
     )
-    snapshot = provider.fetch_board(_fetcher(tmp_path), _request(budget=0))
+    known = _all_listed_ids("list_page_full.json", "list_page_short.json")
+    snapshot = provider.fetch_board(_fetcher(tmp_path), _request(known=known))
     assert route.call_count == 2
     assert snapshot.status == "complete"
 
@@ -484,6 +511,151 @@ def test_a_missing_total_on_the_first_page_does_not_fail(tmp_path: Path) -> None
     payload = dict(_fx("list_normal.json"))
     del payload["total"]
     respx.post(LIST_URL).mock(return_value=httpx.Response(200, json=payload))
-    snapshot = provider.fetch_board(_fetcher(tmp_path), _request(budget=0))
+    snapshot = provider.fetch_board(
+        _fetcher(tmp_path), _request(known=_all_listed_ids("list_normal.json"))
+    )
     assert snapshot.status == "complete"
     assert len(snapshot.listed_ids) == 3
+
+
+# ---------------------------------------------------------------- detail fetches
+
+def _mock_all_details() -> None:
+    base = _fx("detail_normal.json")
+    for row in _fx("list_normal.json")["jobPostings"]:
+        info = dict(base["jobPostingInfo"])
+        info["title"] = row["title"]
+        info["location"] = row["locationsText"]
+        respx.get(_detail_url(row["externalPath"])).mock(
+            return_value=httpx.Response(200, json={"jobPostingInfo": info})
+        )
+
+
+@respx.mock
+def test_detail_fetch_fills_body_text_and_captures_time_type(tmp_path: Path) -> None:
+    respx.post(LIST_URL).mock(return_value=httpx.Response(200, json=_fx("list_normal.json")))
+    _mock_all_details()
+    snapshot = provider.fetch_board(_fetcher(tmp_path), _request())
+    assert len(snapshot.postings) == 3
+    assert all(p.body_text for p in snapshot.postings)
+    assert all("Own a service end to end" in p.body_text for p in snapshot.postings)
+    # timeType is captured because backfilling it means re-scanning every Workday board.
+    # It is NOT an intern signal: it reads "Full time" on a real PhD-intern requisition.
+    assert all(p.raw_json["timeType"] == "Full time" for p in snapshot.postings)
+
+
+@respx.mock
+def test_known_postings_are_not_refetched_but_stay_in_the_inventory(tmp_path: Path) -> None:
+    respx.post(LIST_URL).mock(return_value=httpx.Response(200, json=_fx("list_normal.json")))
+    _mock_all_details()
+    snapshot = provider.fetch_board(
+        _fetcher(tmp_path), _request(known=frozenset({"JR1000001-1", "JR1000002"}))
+    )
+    assert {p.provider_posting_id for p in snapshot.postings} == {"JR1000003"}
+    # the full live inventory, or apply_board would close the two known postings
+    assert snapshot.listed_ids == {"JR1000001-1", "JR1000002", "JR1000003"}
+
+
+@respx.mock
+def test_detail_budget_is_respected_and_reported(tmp_path: Path) -> None:
+    respx.post(LIST_URL).mock(return_value=httpx.Response(200, json=_fx("list_normal.json")))
+    _mock_all_details()
+    snapshot = provider.fetch_board(_fetcher(tmp_path), _request(budget=1))
+    assert len(snapshot.postings) == 1
+    assert snapshot.status == "partial"
+    assert "detail budget" in (snapshot.error or "")
+    assert len(snapshot.listed_ids) == 3
+
+
+@respx.mock
+def test_one_failed_detail_is_partial(tmp_path: Path) -> None:
+    respx.post(LIST_URL).mock(return_value=httpx.Response(200, json=_fx("list_normal.json")))
+    _mock_all_details()
+    first = _fx("list_normal.json")["jobPostings"][0]["externalPath"]
+    respx.get(_detail_url(first)).mock(return_value=httpx.Response(500))
+    snapshot = provider.fetch_board(_fetcher(tmp_path), _request())
+    assert snapshot.status == "partial"
+    assert len(snapshot.postings) == 2
+    assert len(snapshot.listed_ids) == 3  # a failed DETAIL must not shrink the inventory
+
+
+@respx.mock
+def test_a_malformed_detail_payload_is_partial(tmp_path: Path) -> None:
+    # the detail endpoint can answer 200 with an HTML maintenance page just as the list POST
+    # can (observed on Walmart); that is one bad posting, not a bad board
+    respx.post(LIST_URL).mock(return_value=httpx.Response(200, json=_fx("list_normal.json")))
+    _mock_all_details()
+    first = _fx("list_normal.json")["jobPostings"][0]["externalPath"]
+    respx.get(_detail_url(first)).mock(
+        return_value=httpx.Response(200, content=b"<html>maintenance</html>")
+    )
+    snapshot = provider.fetch_board(_fetcher(tmp_path), _request())
+    assert snapshot.status == "partial"
+    assert "malformed payload" in (snapshot.error or "")
+    assert len(snapshot.postings) == 2
+    assert len(snapshot.listed_ids) == 3
+
+
+@respx.mock
+def test_all_details_failing_fails_the_board(tmp_path: Path) -> None:
+    respx.post(LIST_URL).mock(return_value=httpx.Response(200, json=_fx("list_normal.json")))
+    for row in _fx("list_normal.json")["jobPostings"]:
+        respx.get(_detail_url(row["externalPath"])).mock(return_value=httpx.Response(500))
+    snapshot = provider.fetch_board(_fetcher(tmp_path), _request())
+    assert snapshot.status == "failed"
+
+
+@respx.mock
+def test_posted_at_comes_from_start_date_not_posted_on(tmp_path: Path) -> None:
+    # postedOn is a human string ("Posted Today") and is never parsed. startDate is the
+    # posting date: on a requisition reporting postedOn "Posted Today", startDate equalled
+    # the probe date exactly.
+    respx.post(LIST_URL).mock(return_value=httpx.Response(200, json=_fx("list_normal.json")))
+    _mock_all_details()
+    snapshot = provider.fetch_board(_fetcher(tmp_path), _request())
+    assert all(p.posted_at is not None for p in snapshot.postings)
+    assert snapshot.postings[0].posted_at.isoformat().startswith("2026-08-04")
+
+
+@respx.mock
+def test_missing_start_date_is_none_not_a_guess(tmp_path: Path) -> None:
+    respx.post(LIST_URL).mock(return_value=httpx.Response(200, json=_fx("list_normal.json")))
+    info = {k: v for k, v in _fx("detail_normal.json")["jobPostingInfo"].items()
+            if k != "startDate"}
+    for row in _fx("list_normal.json")["jobPostings"]:
+        respx.get(_detail_url(row["externalPath"])).mock(
+            return_value=httpx.Response(200, json={"jobPostingInfo": info})
+        )
+    snapshot = provider.fetch_board(_fetcher(tmp_path), _request())
+    assert all(p.posted_at is None for p in snapshot.postings)
+
+
+def test_posting_id_prefers_the_requisition_token() -> None:
+    from boardwatch.providers.workday import _posting_id
+
+    # the real live shape carries a -N posting-instance suffix on the requisition token
+    assert _posting_id("/job/Remote-USA/Senior-Platform-Engineer_JR1000001-1") == "JR1000001-1"
+    assert _posting_id("/job/Austin-TX/Staff-Data-Engineer_JR1000003") == "JR1000003"
+    # no digit in the final token -> the whole externalPath, which is unique within a board
+    assert _posting_id("/job/Remote-USA/Engineer") == "/job/Remote-USA/Engineer"
+
+
+def test_remote_policy_prefers_the_structured_remote_type() -> None:
+    # Workday exposes remoteType on the list row itself; preferring it over substring-matching
+    # the location text is the same choice Ashby makes with its isRemote boolean
+    from boardwatch.providers.workday import parse_posting
+
+    rows = _fx("list_normal.json")["jobPostings"]
+    assert parse_posting("h", "S", rows[0], None, None).remote_policy == "remote"
+    # "Partially Remote" is HYBRID, not remote — the location text says "Santa Clara, CA",
+    # so a text-only heuristic would have returned "unknown" here
+    assert parse_posting("h", "S", rows[1], None, None).remote_policy == "hybrid"
+
+
+def test_remote_policy_falls_back_to_location_text_without_remote_type() -> None:
+    # not every tenant sets remoteType (Etsy does, NVIDIA does not)
+    from boardwatch.providers.workday import parse_posting
+
+    rows = _fx("list_normal.json")["jobPostings"]
+    assert "remoteType" not in rows[2]
+    assert parse_posting("h", "S", rows[2], None, None).remote_policy == "unknown"

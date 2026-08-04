@@ -44,10 +44,9 @@ inventory — otherwise apply_board would close every known-but-unrefreshed post
 consequence is that body_text and the captured employment-type fields fill in incrementally
 across scans. Salary is never mined (D19).
 
-Task 6 note: fetch_board now pages the full board (trap 2 above), terminating on a short
-page with _MAX_PAGES as a backstop. Bounded detail fetches (trap 4) and facet capture are
-Tasks 7-8; this module's docstring describes the eventual design but the code below does
-not yet implement those parts.
+Task 7 note: fetch_board pages the full board (trap 2 above) and then fetches details for
+the unseen postings only, within the budget. Facet capture (the workerSubType of trap 4) is
+Task 8; parse_posting already takes the subtype but fetch_board still passes None.
 """
 
 from __future__ import annotations
@@ -246,22 +245,53 @@ class WorkdayProvider:
             # 2000 is the server's own reported cap, so a shortfall against it is expected
             errors.append(f"incomplete listing: collected {len(listed)} of {total} postings")
 
+        # The FULL live inventory, computed BEFORE the detail phase: known and
+        # budget-skipped postings must stay in it or apply_board's _process_missing closes
+        # them (C1, the SmartRecruiters pattern).
+        by_id: dict[str, dict[str, Any]] = {}
+        for row in listed:
+            path = str(row.get("externalPath") or "")
+            if path:
+                by_id[_posting_id(path)] = row
+        listed_ids = frozenset(by_id)
+
+        unseen = [
+            (pid, row) for pid, row in by_id.items() if pid not in request.known_posting_ids
+        ]
+        if len(unseen) > request.detail_budget:
+            errors.append(
+                f"detail budget of {request.detail_budget} exceeded "
+                f"({len(unseen)} unseen postings); raise detail_fetch_budget or rescan"
+            )
+            unseen = unseen[: request.detail_budget]
+
         # PER-ROW ISOLATION, as every sibling provider does (greenhouse.py, ashby.py,
         # smartrecruiters.py): parse_posting raises on a row with no title, and one bad row
         # must not fail the whole board. This is what `errors` is for — a bare list
         # comprehension here lets a ValueError escape fetch_board.
         postings: list[RawPosting] = []
-        for row in listed:
-            path = str(row.get("externalPath") or "")
-            if not path:
-                # _collect already excludes empty externalPath; kept as a guard in case
-                # that invariant changes under refactor.
+        detail_failures = 0
+        for pid, row in unseen:
+            path = str(row["externalPath"])
+            try:
+                detail_res = fetcher.get(self._detail_url(host, tenant, site, path))
+            except FetchFailure as exc:
+                detail_failures += 1
+                errors.append(f"posting {pid} detail: {exc}")
+                continue
+            detail = _payload(detail_res.content)
+            if detail is None:
+                detail_failures += 1
+                errors.append(f"posting {pid} detail: malformed payload")
                 continue
             try:
-                postings.append(parse_posting(host, site, row, None, None))
+                postings.append(parse_posting(host, site, row, detail, None))
             except Exception as exc:  # per-posting isolation
-                errors.append(f"posting {path}: {exc}")
-        listed_ids = frozenset(p.provider_posting_id for p in postings)
+                errors.append(f"posting {pid}: {exc}")
+
+        if unseen and detail_failures == len(unseen):
+            return _failed(request.url, f"all {len(unseen)} detail fetches failed")
+
         return BoardSnapshot(
             status="complete" if not errors else "partial",
             postings=postings,
