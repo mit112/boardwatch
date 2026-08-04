@@ -25,9 +25,10 @@ All notable changes to this project are documented here. The format follows
   `blocker` with `eligibility policy set <family> blocker`.
 
   Known limit, stated plainly: the engine reads a posting's body and never its title, so
-  internship recall is about 28%. A posting titled "Software Engineering Intern" whose body
-  never says so is not detected. Raising that needs the title in the engine's input, which is
-  a separate change.
+  internship recall is 27% of postings whose title names an internship, and 20% of those whose
+  provider states an internship employment type. A posting titled "Software Engineering Intern"
+  whose body never says so is not detected. Raising that needs the title in the engine's input,
+  which is a separate change.
 
 ### Changed
 

@@ -134,7 +134,11 @@ def test_the_bundled_catalog_carries_every_suppressor_kind(tmp_path: Path) -> No
         # a clause-scoped suppressor cannot see, so it lives on suppressed_by_sentence.
         "suppressed_by_unit": 12,
         "suppressed_by_sentence": 3,
-        "subject_suppressors": 16,
+        # P9 added three BEFORE-ONLY subject suppressors. Direction is the discriminator for
+        # all three: a staffing word before a contract trigger says whose contract it is, and
+        # an ownership verb before an internship mention says the JD runs the programme. The
+        # same words AFTER the trigger are ordinary prose in a genuine posting.
+        "subject_suppressors": 19,
         "abstain_by": 7,
         "jurisdiction_map": 2,
         "consumes_cues": 1,

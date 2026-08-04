@@ -145,8 +145,10 @@ class TestContractNotFte:
     @pytest.mark.parametrize(
         "body",
         [
-            # The measured false-positive class: a bare \bcontract\b scored 4.8% precision
-            # over 13,590 real postings, 841 false positives against 42 true ones.
+            # The measured false-positive class. A bare \bcontract\b matches 849 of the
+            # 13,590 real postings, against 96 whose TITLE names a contract role and 30 whose
+            # provider states a non-permanent employment type: under 10% precision on either
+            # denominator. Precision here comes from the declaration frame instead.
             "You will own customer contract renewals end to end.",
             "Experience with government contract vehicles is required.",
             "You will lead contract negotiation with our vendors.",
@@ -210,7 +212,7 @@ class TestInternship:
             "This is a co-op position running from January to June.",
             "Apply for our summer 2026 internship today.",
             "As an intern you will be paired with a mentor and you will ship real code.",
-            "Interns will work alongside senior engineers for the duration of the programme.",
+            "This internship runs from June to August and pays hourly.",
         ],
     )
     def test_a_self_declared_internship_blocks_a_candidate_excluding_them(
@@ -396,7 +398,6 @@ class TestReviewRegressions:
             "This internship is part of our Early Career Program.",
             "This is a paid summer internship in our university relations program.",
             "This internship is run by our talent team.",
-            "Interns will receive mentorship from our early career program manager.",
         ],
     )
     def test_a_real_internship_survives_programme_vocabulary(
@@ -421,10 +422,131 @@ class TestReviewRegressions:
         assert rows(catalog, body, NO_INTERNS) == []
 
 
+class TestSecondReviewRegressions:
+    """A second review pass on the corrected families found five more, four of them a
+    direction problem: a guard that must only look BACKWARD from the trigger was scoped to
+    look both ways, so it deleted true positives. `subject_suppressors` is the only
+    before-only kind (detect.py:267), and it is what these now use.
+    """
+
+    @pytest.mark.parametrize(
+        "body",
+        [
+            # The role-noun subject fix had been applied to contract_not_fte and MISSED here,
+            # leaving the original permissive frame live in the internship family.
+            "The first deliverable is a co-op hiring plan.",
+            "Your top priority this quarter is an internship pipeline for EMEA.",
+            "The result will be an internship program with 40 students.",
+        ],
+    )
+    def test_the_internship_frame_also_requires_a_role_noun_subject(
+        self, catalog: RulesCatalog, body: str
+    ) -> None:
+        assert rows(catalog, body, NO_INTERNS) == []
+        assert verdict(catalog, body, NO_INTERNS) == "eligible"
+
+    def test_trailing_programme_ownership_prose_does_not_delete_a_real_internship(
+        self, catalog: RulesCatalog
+    ) -> None:
+        """The ownership guard is before-only, so `owns ... early career program` AFTER the
+        declaration no longer cancels it. Unit-scoped it did, and this posting is a genuine
+        internship the excluding user asked to be told about."""
+        body = "This internship is run by the team that owns our early career program."
+        assert rows(catalog, body, NO_INTERNS) == [
+            ("internship:internship_role_declared", "unmet")
+        ]
+
+    @pytest.mark.parametrize(
+        "body",
+        [
+            "You will own and scale our internship program and new grad hiring pipeline.",
+            "You will administer the campus recruiting program end to end.",
+        ],
+    )
+    def test_ownership_before_the_mention_still_excludes_a_programme_owner_jd(
+        self, catalog: RulesCatalog, body: str
+    ) -> None:
+        assert rows(catalog, body, NO_INTERNS) == []
+
+    @pytest.mark.parametrize(
+        "body",
+        [
+            # The refusal guard's lookahead named `contract(?:ors?)?`, and because a suppressor
+            # may match on EITHER side of the span, any negation plus any later `contract`
+            # token killed a genuine declaration. The lookahead now names only c2c/1099/
+            # corp-to-corp, which a declaring sentence never also contains.
+            "This is a contract position with limited benefits, and contractors invoice"
+            " monthly.",
+            "This is a 12-month contract role; benefits are not offered to contract staff.",
+            "This is a contract position and we do not offer benefits to contractors.",
+        ],
+    )
+    def test_a_negation_elsewhere_in_the_sentence_does_not_delete_the_declaration(
+        self, catalog: RulesCatalog, body: str
+    ) -> None:
+        assert [d for _, d in rows(catalog, body, FTE_ONLY)] == ["unmet"]
+
+    @pytest.mark.parametrize(
+        "body",
+        [
+            # `as an intern` matched the start of a JOB TITLE, and the mentor stand-down could
+            # not help because its match starts INSIDE the span. Now guarded by lookahead.
+            "As an Intern Program Manager, you will own the summer cohort end to end.",
+            # The `interns will VERB` arm is deleted outright: 0 matches in 13,590 postings, so
+            # it had no measured recall, and it fired on intern-manager JDs.
+            "Interns will receive feedback from you every two weeks.",
+            "You will design a curriculum; interns will learn from your team.",
+        ],
+    )
+    def test_an_intern_manager_jd_is_not_an_internship(
+        self, catalog: RulesCatalog, body: str
+    ) -> None:
+        assert rows(catalog, body, NO_INTERNS) == []
+        assert verdict(catalog, body, NO_INTERNS) == "eligible"
+
+    @pytest.mark.parametrize(
+        "body",
+        [
+            # Frame-free arms firing on staffing, vendor and HR prose. The first is why the
+            # standalone `contract-to-hire` and `c2h` arms were deleted (0 corpus matches, and
+            # `and` is a clause boundary so no subject suppressor could reach across it); the
+            # rest are caught by the staffing subject suppressor or by dropping `assignment`
+            # from the frame-free temporary arm.
+            "You will manage full-cycle recruiting for direct hire and contract-to-hire"
+            " placements.",
+            "Negotiate a 12 month contract with each vendor.",
+            "Support employees on a temporary assignment abroad.",
+            "You will administer our temporary assignment policy for relocating employees.",
+        ],
+    )
+    def test_staffing_and_hr_prose_is_not_an_employment_declaration(
+        self, catalog: RulesCatalog, body: str
+    ) -> None:
+        assert rows(catalog, body, FTE_ONLY) == []
+        assert verdict(catalog, body, FTE_ONLY) == "eligible"
+
+    def test_a_genuine_contract_to_hire_posting_still_fires_through_the_framed_arm(
+        self, catalog: RulesCatalog
+    ) -> None:
+        """Deleting the standalone arm must not cost the real form."""
+        assert rows(catalog, "This is a contract-to-hire role.", FTE_ONLY) == [
+            ("contract_not_fte:contract_engagement_declared", "unmet")
+        ]
+
+    def test_the_benign_document_suppressor_is_the_thing_doing_the_work(
+        self, catalog: RulesCatalog
+    ) -> None:
+        """Review noted the earlier benign-noun cases all passed via the declaration frame, so
+        nothing actually pinned the suppressor. This body reaches the frame-free
+        `contract role` arm, so only the lookahead-terminated suppressor can stop it."""
+        assert rows(catalog, "The customer contract role includes quarterly reviews.", FTE_ONLY) == []
+
+
 class TestDefaultSeverityCannotHide:
-    """Both families ship `default_policy: preference`, measured at 83% precision for
-    contract and 100% for internship. Only `blocker` can yield `ineligible`, so at the
-    shipped default a false positive costs one informational row and hides nothing."""
+    """Both families ship `default_policy: preference`, measured against the providers' own
+    structured employment-type field at 86% precision for contract and 100% for internship.
+    Only `blocker` can yield `ineligible`, so at the shipped default a false positive costs
+    one informational row and hides nothing."""
 
     @pytest.mark.parametrize(
         "body,facts",
