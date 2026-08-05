@@ -58,14 +58,19 @@ is the same `[llm]` block already used by the opt-in LLM eligibility-extraction 
 | `llm.resume_tailoring` | bool | `false` | next `tailor run --tier-b` |
 | `llm.resume_tailoring_via_agent` | bool | `false` | next `tailor rewrite request`/`screen`/`apply` |
 
-`boardwatch config set llm.*` is reserved (see below) and refuses to write any `llm.*`
-key, `resume_tailoring` and `resume_tailoring_via_agent` included. Enable it by editing
-`{config_dir}/config.toml` directly:
+Both flags are settable via `boardwatch config set` or interactively via `boardwatch
+settings toggle` (see [Settings menu](#settings-menu) below) — `config set llm.*` is no
+longer reserved for these four booleans. `provider`, `model`, and `base_url` are a
+different matter: they still require a hand-edit to `{config_dir}/config.toml`:
+
+```bash
+boardwatch config set llm.enabled true
+boardwatch config set llm.resume_tailoring true
+```
 
 ```toml
+# config.toml — provider/model/base_url are hand-edit only
 [llm]
-enabled = true
-resume_tailoring = true
 provider = "anthropic"
 model = "claude-..."
 ```
@@ -103,11 +108,52 @@ consumed even on a cache hit (a deliberate choice, so behaviour stays determinis
 runs), which means re-running the same posting does **not** extend it; raise
 `llm.max_calls_per_run` in `config.toml` if a résumé's bullet count routinely exceeds it.
 
-## Secrets (reserved for the v1.1 LLM tier)
+## Settings menu
 
-boardwatch v1 uses no credentials, so `config.toml` never contains secrets and there is
-nothing to leak. The opt-in LLM tier (planned for v1.1) will read its API key only from
-the environment:
+`boardwatch settings` is a read-only view of every opt-in feature (the `[llm]` and
+`[notify]` booleans): its current state (ON/OFF), what it does, and what it sends
+anywhere it leaves your machine. It also prints an always-on block — `scan` connects
+over HTTPS to each ATS host you watch; that's core function, not a toggle — and secret
+status as `set`/`unset` for `BOARDWATCH_LLM_API_KEY` and `BOARDWATCH_NOTIFY_WEBHOOK_URL`,
+never the value itself. For numeric tuning (politeness, ranking weights,
+`llm.max_calls_per_run`), it points you to `boardwatch config`.
+
+`boardwatch settings toggle` is the same view, made interactive: pick a listed number to
+flip that feature on/off (blank to quit), and the menu re-renders after each flip so you
+can see the new state before quitting. It shares the exact same writer as `boardwatch
+config set` — same validation, same refusal if `config.toml` already contains a secret —
+so there is no separate code path between the two surfaces.
+
+The four `llm.*` booleans are settable through either surface:
+
+| Key | Type / Range | Default | Takes effect |
+|---|---|---|---|
+| `llm.enabled` | bool | `false` | next relevant run |
+| `llm.eligibility_extraction` | bool | `false` | next relevant run |
+| `llm.resume_tailoring` | bool | `false` | next `tailor run --tier-b` |
+| `llm.resume_tailoring_via_agent` | bool | `false` | next `tailor rewrite` |
+
+`notify.desktop_enabled`/`notify.webhook_enabled` (see [`[notify]`](#notify) above) are
+also settable through both surfaces. `llm.max_calls_per_run` is settable via
+`boardwatch config set` **only** — `settings toggle` is a numbered on/off flipper over
+the six boolean features above and does not handle scalar keys. `llm.provider`,
+`llm.model`, and `llm.base_url` remain **hand-edit only** in `config.toml` — `config
+set` and `settings toggle` both refuse them by design, since they aren't booleans with
+an on/off state.
+
+**Prerequisites, correctly stated.** Turning on `llm.resume_tailoring_via_agent` does
+**not** require `llm.enabled` or an API key — it's a separate, subscription-driven lane
+where Claude Code itself proposes and judges the rewrite (see the README's "Tier B
+without an API key (agent lane)" section). The two API lanes,
+`llm.eligibility_extraction` and `llm.resume_tailoring`, do require `llm.enabled` **and**
+a resolvable `BOARDWATCH_LLM_API_KEY` **and** `llm.model`. `boardwatch settings` shows
+any unmet prerequisite next to a feature that's ON but can't actually run yet.
+
+## Secrets
+
+By default boardwatch uses no credentials, so `config.toml` never contains secrets and
+there is nothing to leak. The opt-in LLM tier reads its API key only from the
+environment:
 
     export BOARDWATCH_LLM_API_KEY=...
 

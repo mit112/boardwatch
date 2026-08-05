@@ -1,8 +1,9 @@
 """Secret resolution (secrets contract, P0-3 D-P0-3-2/3).
 
 Credentials come only from the environment. config.toml is the shareable config and
-never holds secrets. resolve_secret is the single documented read point so future
-tiers (the opt-in LLM tier, v1.1) never scatter os.environ access.
+never holds secrets. resolve_secret is the single documented read point so the
+opt-in LLM tier and other credential-consuming features never scatter os.environ
+access.
 
 A persistent-secret file is reserved at {config_dir}/secrets.toml but is not read yet;
 when it lands, a nonblank env value overrides the file and a blank/unset env value
@@ -14,7 +15,7 @@ from __future__ import annotations
 import os
 from collections.abc import Mapping
 
-# Provider-neutral env var for the (deferred) LLM tier's credential.
+# Provider-neutral env var for the opt-in LLM tier's credential.
 LLM_API_KEY_ENV = "BOARDWATCH_LLM_API_KEY"
 
 
