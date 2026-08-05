@@ -470,8 +470,13 @@ def test_a_failed_later_page_is_partial_not_failed(tmp_path: Path) -> None:
             httpx.Response(500),
         ]
     )
-    snapshot = provider.fetch_board(_fetcher(tmp_path), _request(budget=0))
+    # `known` (not budget=0) isolates the page-2 failure: with nothing unseen, the
+    # detail-budget branch cannot also force `partial` and mask a deleted error append.
+    snapshot = provider.fetch_board(
+        _fetcher(tmp_path), _request(known=_all_listed_ids("list_page_full.json"))
+    )
     assert snapshot.status == "partial"
+    assert "page at offset 20" in (snapshot.error or "")
     assert len(snapshot.listed_ids) == 20
 
 
@@ -499,8 +504,12 @@ def test_a_malformed_later_page_is_partial_not_failed(tmp_path: Path) -> None:
             httpx.Response(200, json={"jobPostings": "oops"}),
         ]
     )
-    snapshot = provider.fetch_board(_fetcher(tmp_path), _request(budget=0))
+    # `known` (not budget=0) isolates the malformed page: see the sibling test above.
+    snapshot = provider.fetch_board(
+        _fetcher(tmp_path), _request(known=_all_listed_ids("list_page_full.json"))
+    )
     assert snapshot.status == "partial"
+    assert "page at offset 20: invalid payload" in (snapshot.error or "")
     assert len(snapshot.listed_ids) == 20
 
 
