@@ -8,6 +8,15 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- **`boardwatch stats` — one read-only readout of where you stand.** Two views over your
+  local database: qualified opportunities in a trailing window (`--days`, default 7),
+  partitioned into `qualified` / `uncertain` / `ineligible` / `unevaluated`; and the
+  discovery pipeline (seen → passes filters → not ineligible → tracked). The partition is
+  deliberately honest — a posting with no current eligibility verdict is counted as
+  `unevaluated`, never silently folded into `qualified`, so an empty eligibility ledger reads
+  as "N unevaluated" rather than "0 qualified". Keyless and read-only; needs a profile
+  (`boardwatch init`).
+
 - **Workday support — a sixth provider, and the first with a composite board identity.**
   A Workday board is a host + tenant + career-site triple, so its target form is
   `workday:<host>/<tenant>/<CareerSite>` (pasting the career-site URL works too and derives

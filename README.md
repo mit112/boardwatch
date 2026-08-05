@@ -212,6 +212,23 @@ boardwatch track log 1                     # the full history for one applicatio
 
 ---
 
+## Where you stand
+
+`boardwatch stats` is a one-screen, read-only readout over your local database — no network,
+no writes of its own:
+
+```bash
+boardwatch stats             # qualified opportunities (last 7 days) + the discovery pipeline
+boardwatch stats --days 30   # widen the trailing window
+```
+
+The first view partitions recent postings into `qualified` / `uncertain` / `ineligible` /
+`unevaluated`; a posting you have not evaluated yet is `unevaluated`, never counted as
+qualified. The second view is the pipeline: seen → passes filters → not ineligible → tracked.
+It needs a profile, so run `boardwatch init` first.
+
+---
+
 ## Take your data with you
 
 ```bash
