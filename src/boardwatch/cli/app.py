@@ -16,6 +16,7 @@ from boardwatch.cli.init_cmd import init as _init
 from boardwatch.cli.notify_cmd import notify as _notify
 from boardwatch.cli.profile_cmd import profile_app
 from boardwatch.cli.scan_cmd import scan as _scan
+from boardwatch.cli.settings_cmd import settings_app
 from boardwatch.cli.show_cmd import show as _show
 from boardwatch.cli.tailor_cmd import tailor_app
 from boardwatch.cli.top_cmd import top as _top
@@ -51,6 +52,7 @@ app.add_typer(profile_app, name="profile")
 app.command("top")(_top)
 app.command("show")(_show)
 app.add_typer(config_app, name="config")
+app.add_typer(settings_app, name="settings")
 app.command("doctor")(_doctor)
 app.command("digest")(_digest)
 app.command("notify")(_notify)
