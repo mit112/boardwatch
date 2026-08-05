@@ -243,6 +243,11 @@ recomputation of verdicts.
 
 See [docs/configuration.md](docs/configuration.md) for details.
 
+`boardwatch settings` gives a read-only view of every opt-in feature (LLM tiers,
+notifications) — state, what it does, what it sends anywhere — and `boardwatch settings
+toggle` flips them interactively; both share the same validation as `config set`. See
+[docs/configuration.md](docs/configuration.md#settings-menu).
+
 ---
 
 ## Schedule scans
@@ -425,12 +430,13 @@ boardwatch tailor run <posting-id> --tier-b     # alias: --llm
 `--tier-b` requires all of the following, and does nothing (writes nothing, exits 1)
 if any is missing:
 
-- `llm.resume_tailoring = true` **and** `llm.enabled = true` in `{config_dir}/config.toml`
-  — `resume_tailoring` is the only key Tier B adds, and it lives on the same `[llm]`
-  block as the opt-in LLM eligibility-extraction tier (see
-  [docs/configuration.md](docs/configuration.md)); no new section, no new secret.
-  `config set llm.*` is reserved and refuses to write these, so set them by editing
-  `config.toml` directly.
+- `llm.resume_tailoring = true` **and** `llm.enabled = true` — `resume_tailoring` is the
+  only key Tier B adds, and it lives on the same `[llm]` block as the opt-in LLM
+  eligibility-extraction tier (see [docs/configuration.md](docs/configuration.md)); no
+  new section, no new secret. Both are settable via `boardwatch config set llm.enabled
+  true` / `boardwatch config set llm.resume_tailoring true`, or interactively via
+  `boardwatch settings toggle`. `provider`/`model`/`base_url` still require a hand-edit to
+  `config.toml`.
 - `BOARDWATCH_LLM_API_KEY` in the environment (never in `config.toml`).
 
 Per bullet, Tier B proposes a reworded version, then runs it through a deterministic
@@ -494,11 +500,11 @@ to run as a separate subagent so it never inherits the rewriter's JD-aware conte
 `apply` parses the judge's verdicts with the same exact-token allowlist as the API
 lane and emits both artifacts.
 
-Gate: `llm.resume_tailoring_via_agent = true` in `{config_dir}/config.toml`. Unlike
-`--tier-b`, this lane needs **no** `llm.enabled` and **no** API key — boardwatch makes
-no LLM call itself in this lane; the rewriting and judging happen in Claude Code
-subagents outside the CLI. (`config set llm.*` is reserved, same as above — hand-edit
-`config.toml`.)
+Gate: `llm.resume_tailoring_via_agent = true`, settable via `boardwatch config set
+llm.resume_tailoring_via_agent true` or `boardwatch settings toggle`. Unlike `--tier-b`,
+this lane needs **no** `llm.enabled` and **no** API key — boardwatch makes no LLM call
+itself in this lane; the rewriting and judging happen in Claude Code subagents outside
+the CLI. Do not enable `llm.enabled` for this lane; it isn't required and isn't checked.
 
 The per-bullet call budget is **advisory** here, not a hard spend limit: subscription
 calls aren't API-metered, so it's set wide enough to never truncate a legitimate run
@@ -617,7 +623,7 @@ Next:
 
 - [x] Workday provider (host/tenant/site composite board identity)
 - [x] More eligibility rule families (contract vs. full-time, internships)
-- [ ] A readable settings surface, so every opt-in feature is discoverable and reversible
+- [x] A readable settings surface, so every opt-in feature is discoverable and reversible
       without hand-editing `config.toml`
 
 > **These boxes track `main`, which can run ahead of the latest published release.**
