@@ -120,7 +120,17 @@ def _run_scan_locked(
             if prov is None:
                 summary.errors.append(f"{row.slug}: unknown provider {row.provider!r}")
                 continue
-            url = prov.board_url(row.slug)
+            try:
+                url = prov.board_url(row.slug)
+            except Exception as exc:  # a malformed stored slug is one board, not the run
+                summary.errors.append(f"{row.slug}: invalid board target: {exc}")
+                summary.failed += 1
+                # ATTEMPTED, because it produced a `failed` outcome: leaving it out of
+                # `companies` made the report self-contradictory (outcomes > scanned) and
+                # under-counted runs.boards_attempted. The unknown-provider branch above
+                # deliberately records neither — a config error was never attempted.
+                summary.companies += 1
+                continue
             work.append(
                 (
                     row,
@@ -133,7 +143,7 @@ def _run_scan_locked(
                     ),
                 )
             )
-    summary.companies = len(work)
+    summary.companies += len(work)
     summary.providers = len({row.provider for row, _, _ in work})
 
     with ThreadPoolExecutor(max_workers=settings.scan_workers) as pool:

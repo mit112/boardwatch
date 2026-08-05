@@ -56,7 +56,10 @@ def probe_health(
         watched = get_watched_companies(conn)
     by_provider: dict[str, list[BoardHealth]] = {name: [] for name in providers}
     for row in watched:
-        status = providers[row.provider].healthcheck(fetcher, row.slug)
+        try:
+            status = providers[row.provider].healthcheck(fetcher, row.slug)
+        except Exception:  # a raising provider is one bad board, not a failed doctor run
+            status = BoardHealth.ERROR
         report.board_health[f"{row.provider}:{row.slug}"] = status
         by_provider.setdefault(row.provider, []).append(status)
         _write_board_health(engine, row.id, status)
@@ -98,7 +101,10 @@ def _fallback(
     ) or next((e for e in catalog if e.provider == name), None)
     if entry is None:
         return ProviderConnectivity(name, reachable=False, from_fallback=True)
-    status = providers[name].healthcheck(fetcher, entry.slug)
+    try:
+        status = providers[name].healthcheck(fetcher, entry.slug)
+    except Exception:  # a raising provider is one bad board, not a failed doctor run
+        status = BoardHealth.ERROR
     reachable = status in _HTTP_BACKED
     if not reachable:
         report.actionable = True

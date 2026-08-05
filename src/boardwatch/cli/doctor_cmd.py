@@ -73,6 +73,11 @@ def doctor(ctx: typer.Context, offline: bool = typer.Option(False, "--offline"))
             conn_table.add_row(provider, "not checked")
     else:
         for c in report.connectivity:
+            if c.from_fallback and c.fallback_status is None:
+                # no watched board AND no catalog entry to probe (Workday ships none by
+                # design, rule R8): nothing was checked, so "NO" would be a false negative
+                conn_table.add_row(c.provider, "not checked (no registry entry)")
+                continue
             label = "yes" if c.reachable else "NO"
             conn_table.add_row(c.provider, label + (" (fallback)" if c.from_fallback else ""))
     console.print(conn_table)

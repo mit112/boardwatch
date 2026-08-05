@@ -30,7 +30,7 @@ def test_help_text_enumerates_all_registry_providers() -> None:
     from boardwatch.providers.registry import PROVIDER_NAMES
 
     with pytest.raises(UnknownBoardURL) as exc:
-        parse_board_target("workday:acme")
+        parse_board_target("notaprovider:acme")
     msg = str(exc.value)
     for name in PROVIDER_NAMES:
         assert name in msg
@@ -75,9 +75,11 @@ def _install(monkeypatch: pytest.MonkeyPatch, *classes: type) -> None:
     # qualified-form (`name:slug`) branch rejects the stub provider before normalization (H4).
     monkeypatch.setattr(board_urls, "PROVIDER_NAMES", frozenset(c.name for c in classes))
     monkeypatch.setattr(board_urls, "_HOST_PROVIDER", registry.host_provider_map())
+    monkeypatch.setattr(board_urls, "_HOST_SUFFIX_PROVIDER", registry.host_suffix_provider_map())
     monkeypatch.setattr(board_urls, "_SLUG_EXTRACTORS", registry.slug_extractor_map())
     monkeypatch.setattr(board_urls, "_SLUG_NORMALIZERS", registry.slug_normalizer_map())
     monkeypatch.setattr(board_urls, "_SLUG_HELP", registry.slug_help_map())
+    monkeypatch.setattr(board_urls, "_COMPOSITE_SLUG", registry.composite_slug_providers())
     monkeypatch.setattr(board_urls, "_SUPPORTED", board_urls._build_supported())
 
 
@@ -111,3 +113,116 @@ def test_default_extraction_and_no_normalizer_is_verbatim(monkeypatch: pytest.Mo
 
 def test_shipped_greenhouse_url_still_parses() -> None:
     assert parse_board_target("boards.greenhouse.io/stripe") == ("greenhouse", "stripe")
+
+
+class _SuffixHostProvider:
+    name = "suffixy"
+    board_hosts: tuple[str, ...] = ()
+    board_host_suffixes: tuple[str, ...] = (".suffixy.example.com",)
+    composite_slug = True
+    slug_help = "include the career-site path, e.g. tenant.suffixy.example.com/Careers"
+
+    @staticmethod
+    def slug_from_path(host: str, parts: list[str]) -> str | None:
+        tenant = host.split(".", 1)[0]
+        return f"{host}/{tenant}/{parts[0]}"
+
+    @staticmethod
+    def normalize_slug(slug: str) -> str:
+        parts = slug.split("/")
+        if len(parts) != 3 or not all(parts):
+            raise ValueError("expected host/tenant/site")
+        return f"{parts[0].lower()}/{parts[1].lower()}/{parts[2]}"
+
+
+def test_composite_slug_survives_the_qualified_form(monkeypatch: pytest.MonkeyPatch) -> None:
+    _install(monkeypatch, _SuffixHostProvider)
+    assert parse_board_target("suffixy:Acme.suffixy.example.com/Acme/Careers") == (
+        "suffixy",
+        "acme.suffixy.example.com/acme/Careers",
+    )
+
+
+def test_suffix_host_paste_form_resolves(monkeypatch: pytest.MonkeyPatch) -> None:
+    _install(monkeypatch, _SuffixHostProvider)
+    assert parse_board_target("https://acme.suffixy.example.com/Careers") == (
+        "suffixy",
+        "acme.suffixy.example.com/acme/Careers",
+    )
+
+
+def test_lookalike_domain_does_not_match_the_suffix(monkeypatch: pytest.MonkeyPatch) -> None:
+    # the leading dot is the label boundary: notsuffixy.example.com must NOT match
+    _install(monkeypatch, _SuffixHostProvider)
+    with pytest.raises(UnknownBoardURL, match="unrecognized board target"):
+        parse_board_target("https://notsuffixy.example.com/Careers")
+
+
+def test_bare_suffix_host_surfaces_slug_help(monkeypatch: pytest.MonkeyPatch) -> None:
+    _install(monkeypatch, _SuffixHostProvider)
+    with pytest.raises(UnknownBoardURL, match="career-site path"):
+        parse_board_target("https://acme.suffixy.example.com")
+
+
+def test_normalizer_value_error_becomes_unknown_board_url(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # without the wrap a bare ValueError escapes `companies add`'s except UnknownBoardURL
+    # (companies_cmd.py:74) and tracebacks the CLI
+    _install(monkeypatch, _SuffixHostProvider)
+    with pytest.raises(UnknownBoardURL, match="invalid suffixy board target"):
+        parse_board_target("suffixy:not-a-triple")
+
+
+class _ExactUnderSuffixProvider:
+    """An EXACT host that sits under _SuffixHostProvider's suffix. Its slug is a plain
+    single token, so exact-vs-suffix precedence is observable in the returned slug."""
+
+    name = "exacty"
+    board_hosts: tuple[str, ...] = ("acme.suffixy.example.com",)
+
+
+def test_exact_host_wins_over_a_suffix_match(monkeypatch: pytest.MonkeyPatch) -> None:
+    # _match_host tries the exact map FIRST. If it did not, a provider that registers a
+    # specific host living under another provider's suffix would be unreachable — and its
+    # slug would be built by the wrong provider's extractor.
+    _install(monkeypatch, _SuffixHostProvider, _ExactUnderSuffixProvider)
+    assert parse_board_target("https://acme.suffixy.example.com/Careers") == (
+        "exacty",
+        "Careers",  # the suffix provider would have returned acme.suffixy.example.com/acme/Careers
+    )
+    # a DIFFERENT host under the same suffix still falls to the suffix provider
+    assert parse_board_target("https://other.suffixy.example.com/Careers") == (
+        "suffixy",
+        "other.suffixy.example.com/other/Careers",
+    )
+
+
+@pytest.mark.parametrize("provider", ["greenhouse", "lever", "ashby", "workable", "smartrecruiters"])
+def test_a_slash_in_the_qualified_slug_is_rejected_for_non_composite_providers(
+    provider: str,
+) -> None:
+    # `greenhouse:acme/jobs` must NOT parse: it would be watched as a board whose every scan
+    # 404s on .../boards/acme/jobs/jobs. Only a composite-slug provider (workday) may carry a
+    # "/" in the qualified form. smartrecruiters is in this list on purpose — it HAS a
+    # normalize_slug, so "provider has a normalizer" is not a usable stand-in for "composite".
+    with pytest.raises(UnknownBoardURL):
+        parse_board_target(f"{provider}:acme/extra")
+
+
+def test_the_workday_composite_slug_still_parses_in_the_qualified_form() -> None:
+    # the other half of the guard above, against the REAL registry
+    assert parse_board_target("workday:Acme.wd5.myworkdayjobs.com/Acme/AcmeCareers") == (
+        "workday",
+        "acme.wd5.myworkdayjobs.com/acme/AcmeCareers",
+    )
+
+
+def test_host_port_form_still_reaches_the_url_branch() -> None:
+    # relaxing the qualified-form guard must not make host:port look like provider:slug
+    with pytest.raises(UnknownBoardURL, match="unrecognized board target"):
+        parse_board_target("example.com:8080/careers")
+
+
+def test_colon_in_slug_still_splits_on_the_first_colon() -> None:
+    assert parse_board_target("greenhouse:a:b") == ("greenhouse", "a:b")

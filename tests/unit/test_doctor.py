@@ -289,6 +289,26 @@ def test_cli_offline_renders_not_checked_and_stored(tmp_path, monkeypatch) -> No
     assert "not checked" in result.stdout and "stored" in result.stdout
 
 
+def test_provider_with_no_watch_and_no_registry_entry_renders_not_checked(tmp_path, monkeypatch) -> None:
+    # Workday ships no registry entry by design (rule R8), so its fallback probes nothing.
+    # "NO" would be a false negative: nothing was checked.
+    monkeypatch.delenv("GITHUB_ACTIONS", raising=False)
+    monkeypatch.setenv("BOARDWATCH_CONFIG_DIR", str(tmp_path / "cfg"))
+    data = tmp_path / "data"
+    eng = _engine(data)
+    _watch(eng, "greenhouse", "acme")
+    monkeypatch.setattr(
+        "boardwatch.scan.health.default_providers",
+        lambda: {
+            "greenhouse": FakeProvider({"acme": BoardHealth.OK}),
+            "noregistry": FakeProvider({}),
+        },
+    )
+    monkeypatch.setattr("boardwatch.scan.health.Fetcher", lambda settings: object())
+    result = runner.invoke(app, ["--data-dir", str(data), "doctor"])
+    assert "not checked (no registry entry)" in result.output
+
+
 def test_doctor_shows_a_description_in_the_command_list() -> None:
     """Typer renders a command's docstring as its --help description. `doctor` had a
     bare comment where the docstring belongs, so its row rendered blank."""

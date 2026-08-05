@@ -1,0 +1,51 @@
+{
+  "total": 2000,
+  "jobPostings": [
+    {
+      "title": "Engineer 1",
+      "externalPath": "/job/Remote-USA/Engineer-1_JR1020001",
+      "locationsText": "Remote, USA",
+      "postedOn": "Posted Today",
+      "bulletFields": [
+        "JR1020001"
+      ]
+    },
+    {
+      "title": "Engineer 2",
+      "externalPath": "/job/Remote-USA/Engineer-2_JR1020002",
+      "locationsText": "Remote, USA",
+      "postedOn": "Posted Today",
+      "bulletFields": [
+        "JR1020002"
+      ]
+    },
+    {
+      "title": "Engineer 3",
+      "externalPath": "/job/Remote-USA/Engineer-3_JR1020003",
+      "locationsText": "Remote, USA",
+      "postedOn": "Posted Today",
+      "bulletFields": [
+        "JR1020003"
+      ]
+    },
+    {
+      "title": "Engineer 4",
+      "externalPath": "/job/Remote-USA/Engineer-4_JR1020004",
+      "locationsText": "Remote, USA",
+      "postedOn": "Posted Today",
+      "bulletFields": [
+        "JR1020004"
+      ]
+    },
+    {
+      "title": "Engineer 5",
+      "externalPath": "/job/Remote-USA/Engineer-5_JR1020005",
+      "locationsText": "Remote, USA",
+      "postedOn": "Posted Today",
+      "bulletFields": [
+        "JR1020005"
+      ]
+    }
+  ],
+  "facets": []
+}

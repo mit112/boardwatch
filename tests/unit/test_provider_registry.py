@@ -9,6 +9,7 @@ from boardwatch.providers.greenhouse import GreenhouseProvider
 from boardwatch.providers.lever import LeverProvider
 from boardwatch.providers.smartrecruiters import SmartRecruitersProvider
 from boardwatch.providers.workable import WorkableProvider
+from boardwatch.providers.workday import WorkdayProvider
 
 
 def test_each_provider_declares_public_board_hosts() -> None:
@@ -21,15 +22,24 @@ def test_each_provider_declares_public_board_hosts() -> None:
 
 def test_build_providers_one_instance_per_class_keyed_by_name() -> None:
     built = registry.build_providers()
-    assert set(built) == {"greenhouse", "lever", "ashby", "workable", "smartrecruiters"}
+    assert set(built) == {"greenhouse", "lever", "ashby", "workable", "smartrecruiters", "workday"}
     for name, inst in built.items():
         assert inst.name == name
 
 
 def test_provider_names_matches_registered_set() -> None:
     assert registry.PROVIDER_NAMES == frozenset(
-        {"greenhouse", "lever", "ashby", "workable", "smartrecruiters"}
+        {"greenhouse", "lever", "ashby", "workable", "smartrecruiters", "workday"}
     )
+
+
+def test_workday_declares_a_suffix_and_no_exact_hosts() -> None:
+    assert WorkdayProvider().board_hosts == ()
+    assert WorkdayProvider().board_host_suffixes == (".myworkdayjobs.com",)
+    assert registry.host_suffix_provider_map()[".myworkdayjobs.com"] == "workday"
+    # the suffix must be the extractor/help MAP KEY, not absent
+    assert ".myworkdayjobs.com" in registry.slug_extractor_map()
+    assert ".myworkdayjobs.com" in registry.slug_help_map()
 
 
 def test_host_provider_map_covers_all_hosts_without_collision() -> None:
@@ -114,3 +124,41 @@ def test_identity_derivation_raises_on_duplicate_name(monkeypatch) -> None:
     monkeypatch.setattr(registry, "PROVIDER_CLASSES", (A, B))
     with pytest.raises(ValueError, match="duplicate provider name"):
         registry.host_provider_map()
+
+
+class _SuffixProvider:
+    name = "suffixy"
+    board_hosts: tuple[str, ...] = ()
+    board_host_suffixes: tuple[str, ...] = (".suffixy.example.com",)
+    slug_help = "include the site path, e.g. tenant.suffixy.example.com/Careers"
+
+    @staticmethod
+    def slug_from_path(host: str, parts: list[str]) -> str | None:
+        return parts[0]
+
+
+def test_suffix_map_is_keyed_by_suffix(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(registry, "PROVIDER_CLASSES", (_SuffixProvider,), raising=True)
+    assert registry.host_suffix_provider_map() == {".suffixy.example.com": "suffixy"}
+    assert registry.host_provider_map() == {}
+
+
+def test_extractor_and_help_maps_register_suffix_keys(monkeypatch: pytest.MonkeyPatch) -> None:
+    # A suffix-only provider declares board_hosts = (), so a map that iterates board_hosts
+    # alone silently registers NOTHING for it and every pasted URL fails to parse.
+    monkeypatch.setattr(registry, "PROVIDER_CLASSES", (_SuffixProvider,), raising=True)
+    assert set(registry.slug_extractor_map()) == {".suffixy.example.com"}
+    assert set(registry.slug_help_map()) == {".suffixy.example.com"}
+
+
+def test_duplicate_host_suffix_is_rejected(monkeypatch: pytest.MonkeyPatch) -> None:
+    class _Other:
+        name = "other"
+        board_hosts: tuple[str, ...] = ()
+        board_host_suffixes: tuple[str, ...] = (".suffixy.example.com",)
+
+    monkeypatch.setattr(
+        registry, "PROVIDER_CLASSES", (_SuffixProvider, _Other), raising=True
+    )
+    with pytest.raises(ValueError, match="duplicate board host suffix"):
+        registry.host_suffix_provider_map()
