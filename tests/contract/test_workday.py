@@ -6,6 +6,7 @@ tests/fixtures/workday/README.md."""
 from __future__ import annotations
 
 import json
+from datetime import datetime
 from pathlib import Path
 from typing import Any
 
@@ -334,9 +335,11 @@ def test_parse_posting_raises_on_empty_title() -> None:
 
 
 def test_parse_posting_captures_detail_and_worker_subtype() -> None:
-    # the detail fetch and the facet-derived subtype are both Task 6/7 wiring, but the
-    # capture itself (raw_json["detail"], ["timeType"], ["workerSubType"]) is part of this
-    # function's Task 5 contract and has no other test coverage until that wiring lands
+    # the CAPTURE contract at the parse_posting seam, in isolation: raw_json["detail"],
+    # ["timeType"] and ["workerSubType"] are populated from arguments handed straight in.
+    # The fetch_board wiring that produces those arguments is covered end-to-end by
+    # test_detail_fetch_fills_body_text_and_captures_time_type and
+    # test_intern_bucket_is_queried_and_stamped_on_raw_json.
     listed = _fx("list_normal.json")["jobPostings"][0]
     detail = _fx("detail_normal.json")
     posting = parse_posting(
@@ -387,10 +390,13 @@ def test_remote_policy_falls_back_to_location_text_for_an_unrecognized_remote_ty
 
 
 def test_posted_at_handles_a_timezone_aware_timestamp() -> None:
+    # the ARITHMETIC is the point: 10:00+05:00 is 05:00Z, and posted_at is naive UTC. An
+    # inverted conversion (15:00) or a dropped tzinfo (10:00) both survive `is not None`.
     listed = {"externalPath": "/job/x/Role_JR1", "title": "Role"}
     detail = {"jobPostingInfo": {"startDate": "2026-08-04T10:00:00+05:00"}}
     posting = parse_posting("acme.wd5.myworkdayjobs.com", "AcmeCareers", listed, detail, None)
-    assert posting.posted_at is not None
+    assert posting.posted_at == datetime(2026, 8, 4, 5, 0)
+    assert posting.posted_at is not None and posting.posted_at.tzinfo is None
 
 
 # ---------------------------------------------------------------- pagination
@@ -492,6 +498,26 @@ def test_duplicate_external_paths_are_deduped(tmp_path: Path) -> None:
     )
     snapshot = provider.fetch_board(_fetcher(tmp_path), _request(budget=0))
     assert len(snapshot.listed_ids) == 20  # the 5 repeats collapsed
+
+
+@respx.mock
+def test_rows_with_no_external_path_force_partial_instead_of_shrinking_silently(
+    tmp_path: Path,
+) -> None:
+    # THE SILENT-SHRINK GUARD. `complete` is the status that authorizes apply_board to close
+    # everything missing from listed_ids, so a schema change that renames externalPath must
+    # not yield `complete` with an empty inventory — at CLOSE_AFTER_MISSES the whole board's
+    # open inventory would close. Dropped rows must be observable in `errors`.
+    rows = [dict(row) for row in _fx("list_normal.json")["jobPostings"]]
+    for row in rows:
+        row.pop("externalPath")
+    respx.post(LIST_URL).mock(
+        return_value=httpx.Response(200, json={"total": 3, "jobPostings": rows, "facets": []})
+    )
+    snapshot = provider.fetch_board(_fetcher(tmp_path), _request(budget=0))
+    assert snapshot.listed_ids == frozenset()
+    assert snapshot.status == "partial"
+    assert "no externalPath" in (snapshot.error or "")
 
 
 @respx.mock
@@ -812,6 +838,42 @@ def test_a_malformed_facet_page_is_partial_not_failed(tmp_path: Path) -> None:
     assert "invalid payload" in (snapshot.error or "")
     assert len(snapshot.postings) == 3
     assert all("workerSubType" not in p.raw_json for p in snapshot.postings)
+
+
+@pytest.mark.parametrize(
+    "descriptor",
+    [
+        "Intern", "Intern (Fixed Term)", "Internship", "Interns", "Summer Intern",
+        "Co-op", "Coop", "Co-Op Student", "Apprentice", "Apprenticeship", "Trainee",
+        "New College Graduate", "New Grad",
+    ],
+)
+def test_a_real_early_career_descriptor_is_matched(descriptor: str) -> None:
+    from boardwatch.providers.workday import _worker_subtype_buckets
+
+    facets = [{
+        "facetParameter": "workerSubType",
+        "values": [{"descriptor": descriptor, "id": "x"}],
+    }]
+    assert _worker_subtype_buckets(facets) == [(descriptor, "x")]
+
+
+@pytest.mark.parametrize(
+    "descriptor", ["Internal Employee", "International Assignee", "Cooperative Education"]
+)
+def test_a_lookalike_descriptor_is_not_matched(descriptor: str) -> None:
+    # SUBSTRING matching accepted all three: "intern" is inside Internal/International and
+    # "coop" is inside Cooperative. Each false positive costs up to _FACET_MAX_PAGES extra
+    # POSTs and stamps a bogus workerSubType on up to 400 unrelated postings — which a future
+    # intern-detection consumer would read as an intern signal. Note that \bintern\b alone
+    # would fix these while REGRESSING on "Internship" (pinned by the sibling test above).
+    from boardwatch.providers.workday import _worker_subtype_buckets
+
+    facets = [{
+        "facetParameter": "workerSubType",
+        "values": [{"descriptor": descriptor, "id": "x"}],
+    }]
+    assert _worker_subtype_buckets(facets) == []
 
 
 def test_worker_subtype_buckets_tolerates_a_ragged_facets_block() -> None:

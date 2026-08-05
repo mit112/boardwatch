@@ -136,6 +136,17 @@ def slug_normalizer_map() -> dict[str, SlugNormalizer]:
     return normalizers
 
 
+def composite_slug_providers() -> frozenset[str]:
+    """Names of providers whose slug is a MULTI-SEGMENT composite, opted in with a truthy
+    `composite_slug` class attribute. board_urls' qualified form (`provider:slug`) rejects a
+    "/" in the slug for everyone else, so `greenhouse:acme/jobs` keeps getting the
+    "supported forms" diagnostic instead of being silently watched at a 404 URL. A normalizer
+    is NOT a usable proxy for this: smartrecruiters has one that only lowercases."""
+    return frozenset(
+        cls.name for cls in PROVIDER_CLASSES if getattr(cls, "composite_slug", False)
+    )
+
+
 def slug_help_map() -> dict[str, str]:
     """Host -> actionable guidance shown when the host matches but no slug is
     extractable (e.g. a Workable shortlink). Plain class-attribute string, so no

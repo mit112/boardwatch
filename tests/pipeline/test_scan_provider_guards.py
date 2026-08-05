@@ -6,7 +6,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from sqlalchemy import Engine, insert
+from sqlalchemy import Engine, insert, select
 
 from boardwatch.core.models import BoardRequest, BoardSnapshot
 from boardwatch.core.politeness import Fetcher
@@ -72,6 +72,15 @@ def test_board_url_failure_is_one_board_not_the_run(engine: Engine, tmp_path: Pa
     assert summary.failed == 1
     assert any("expected host/tenant/site" in e for e in summary.errors)
     assert summary.complete == 1  # the healthy board still scanned
+    # a board skipped for a malformed stored slug is ATTEMPTED as well as failed: the
+    # outcome counters must never exceed the scanned count, or `scan` prints "Scanned 1
+    # companies · failed 1" for a 2-board run and persists boards_attempted=1
+    outcomes = summary.complete + summary.partial + summary.unchanged + summary.failed
+    assert summary.companies == 2
+    assert outcomes == summary.companies
+    with engine.connect() as conn:
+        row = conn.execute(select(tables.runs.c.boards_attempted)).all()[-1]
+    assert row.boards_attempted == 2
 
 
 def test_healthcheck_failure_maps_to_error_not_a_traceback(engine: Engine, tmp_path: Path) -> None:

@@ -9,6 +9,7 @@ from urllib.parse import urlparse
 
 from boardwatch.providers.registry import (
     PROVIDER_NAMES,
+    composite_slug_providers,
     host_provider_map,
     host_suffix_provider_map,
     slug_extractor_map,
@@ -28,6 +29,7 @@ _HOST_SUFFIX_PROVIDER = host_suffix_provider_map()
 _SLUG_EXTRACTORS = slug_extractor_map()
 _SLUG_NORMALIZERS = slug_normalizer_map()
 _SLUG_HELP = slug_help_map()
+_COMPOSITE_SLUG = composite_slug_providers()
 
 
 def _build_supported() -> str:
@@ -60,7 +62,10 @@ def _match_host(host: str) -> tuple[str, str] | None:
 def parse_board_target(value: str) -> Target:
     if "://" not in (value := value.strip()) and ":" in value:
         provider, _, slug = value.partition(":")
-        if provider in PROVIDER_NAMES and slug:
+        # "/" is allowed in the slug ONLY for a composite-slug provider (workday's
+        # host/tenant/site). Without that restriction `greenhouse:acme/jobs` parses as a
+        # board whose every scan 404s, instead of getting the "supported forms" diagnostic.
+        if provider in PROVIDER_NAMES and slug and ("/" not in slug or provider in _COMPOSITE_SLUG):
             return provider, _normalize_slug(provider, slug)
         # The "/" re-guard is load-bearing: a pasted host:port form (example.com:8080/careers)
         # must keep falling through to the URL branch rather than raising "unknown provider".

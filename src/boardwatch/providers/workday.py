@@ -55,6 +55,7 @@ within the budget. A failed facet query is an `errors` note, never a failed boar
 from __future__ import annotations
 
 import json
+import re
 from datetime import UTC, datetime
 from typing import Any
 
@@ -77,10 +78,16 @@ _CHROME_SEGMENTS = frozenset({"wday", "cxs", "job", "jobs", "login", "details"})
 _SLUG_FORM = "expected host/tenant/site, e.g. acme.wd5.myworkdayjobs.com/acme/AcmeCareers"
 # workerSubType descriptors worth one extra paged query each. Facet ids are tenant-specific
 # Workday WIDs, so buckets are matched on the human-readable DESCRIPTOR — hardcoding a WID
-# would silently break every other tenant. Deliberately conservative: an unmatched
-# vocabulary costs zero extra requests.
-_SUBTYPE_KEYWORDS = (
-    "intern", "co-op", "coop", "new college graduate", "new grad", "apprentice", "trainee",
+# would silently break every other tenant. Matched on WORD BOUNDARIES, not substrings: a bare
+# "intern" substring also matches "Internal Employee" and "International Assignee", and a bare
+# "coop" matches "Cooperative Education" — every such false positive costs up to
+# _FACET_MAX_PAGES extra POSTs to one host and stamps a bogus workerSubType on up to 400
+# unrelated postings. The suffix alternatives are what keep "Internship" matching, which a
+# plain \bintern\b would reject. Still deliberately conservative: an unmatched vocabulary
+# costs zero extra requests.
+_SUBTYPE_PATTERN = re.compile(
+    r"\b(intern(s|ship|ships)?|co-?ops?|apprentice(ship)?s?|trainees?"
+    r"|new (college )?grad(uate)?s?)\b"
 )
 _FACET_MAX_PAGES = 20  # 400 postings per bucket; intern/new-grad buckets are small
 
@@ -156,8 +163,7 @@ def _worker_subtype_buckets(facets: list[Any]) -> list[tuple[str, str]]:
                 continue
             descriptor = str(value.get("descriptor") or "")
             facet_id = str(value.get("id") or "")
-            lowered = descriptor.casefold()
-            if descriptor and facet_id and any(k in lowered for k in _SUBTYPE_KEYWORDS):
+            if descriptor and facet_id and _SUBTYPE_PATTERN.search(descriptor.casefold()):
                 out.append((descriptor, facet_id))
     return out
 
@@ -201,6 +207,9 @@ class WorkdayProvider:
     # so identity is a SUFFIX and there are no exact paste hosts.
     board_hosts: tuple[str, ...] = ()
     board_host_suffixes: tuple[str, ...] = (_HOST_SUFFIX,)
+    # the slug is a host/tenant/site TRIPLE, so board_urls must let "/" through the
+    # qualified form for this provider (and only for providers that opt in here)
+    composite_slug = True
     slug_help = (
         "a Workday board needs the career-site path: paste "
         "tenant.wdN.myworkdayjobs.com/<CareerSite> or use "
@@ -291,7 +300,10 @@ class WorkdayProvider:
                     total = None
                 raw_facets = payload.get("facets")
                 facets = raw_facets if isinstance(raw_facets, list) else []
-            _collect(rows, listed, seen_paths)
+            if dropped := _collect(rows, listed, seen_paths):
+                errors.append(
+                    f"page at offset {offset}: dropped {dropped} rows with no externalPath"
+                )
             if len(rows) < _PAGE_LIMIT:
                 # THE termination condition. NOT `offset < total`: total is capped at 2000
                 # and offset >= 2000 wraps to page 1, so that loop never terminates.
@@ -389,15 +401,25 @@ class WorkdayProvider:
 
 def _collect(
     rows: list[dict[str, Any]], listed: list[dict[str, Any]], seen_paths: set[str]
-) -> None:
+) -> int:
     """Append rows, deduping on externalPath. Dedupe is NOT on the city path segment:
-    job-apps learned that distinct roles share it."""
+    job-apps learned that distinct roles share it.
+
+    Returns the number of rows dropped for a MISSING externalPath, which the caller turns
+    into an `errors` note. A dedupe drop is expected and is not counted; an id-less row is
+    not, and dropping it silently would shrink listed_ids while status stayed "complete" —
+    the one status that authorizes apply_board to close everything it no longer sees."""
+    dropped = 0
     for row in rows:
         path = str(row.get("externalPath") or "")
-        if not path or path in seen_paths:
+        if not path:
+            dropped += 1
+            continue
+        if path in seen_paths:
             continue
         seen_paths.add(path)
         listed.append(row)
+    return dropped
 
 
 def parse_posting(

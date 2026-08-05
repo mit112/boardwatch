@@ -79,6 +79,7 @@ def _install(monkeypatch: pytest.MonkeyPatch, *classes: type) -> None:
     monkeypatch.setattr(board_urls, "_SLUG_EXTRACTORS", registry.slug_extractor_map())
     monkeypatch.setattr(board_urls, "_SLUG_NORMALIZERS", registry.slug_normalizer_map())
     monkeypatch.setattr(board_urls, "_SLUG_HELP", registry.slug_help_map())
+    monkeypatch.setattr(board_urls, "_COMPOSITE_SLUG", registry.composite_slug_providers())
     monkeypatch.setattr(board_urls, "_SUPPORTED", board_urls._build_supported())
 
 
@@ -118,6 +119,7 @@ class _SuffixHostProvider:
     name = "suffixy"
     board_hosts: tuple[str, ...] = ()
     board_host_suffixes: tuple[str, ...] = (".suffixy.example.com",)
+    composite_slug = True
     slug_help = "include the career-site path, e.g. tenant.suffixy.example.com/Careers"
 
     @staticmethod
@@ -170,6 +172,50 @@ def test_normalizer_value_error_becomes_unknown_board_url(
     _install(monkeypatch, _SuffixHostProvider)
     with pytest.raises(UnknownBoardURL, match="invalid suffixy board target"):
         parse_board_target("suffixy:not-a-triple")
+
+
+class _ExactUnderSuffixProvider:
+    """An EXACT host that sits under _SuffixHostProvider's suffix. Its slug is a plain
+    single token, so exact-vs-suffix precedence is observable in the returned slug."""
+
+    name = "exacty"
+    board_hosts: tuple[str, ...] = ("acme.suffixy.example.com",)
+
+
+def test_exact_host_wins_over_a_suffix_match(monkeypatch: pytest.MonkeyPatch) -> None:
+    # _match_host tries the exact map FIRST. If it did not, a provider that registers a
+    # specific host living under another provider's suffix would be unreachable — and its
+    # slug would be built by the wrong provider's extractor.
+    _install(monkeypatch, _SuffixHostProvider, _ExactUnderSuffixProvider)
+    assert parse_board_target("https://acme.suffixy.example.com/Careers") == (
+        "exacty",
+        "Careers",  # the suffix provider would have returned acme.suffixy.example.com/acme/Careers
+    )
+    # a DIFFERENT host under the same suffix still falls to the suffix provider
+    assert parse_board_target("https://other.suffixy.example.com/Careers") == (
+        "suffixy",
+        "other.suffixy.example.com/other/Careers",
+    )
+
+
+@pytest.mark.parametrize("provider", ["greenhouse", "lever", "ashby", "workable", "smartrecruiters"])
+def test_a_slash_in_the_qualified_slug_is_rejected_for_non_composite_providers(
+    provider: str,
+) -> None:
+    # `greenhouse:acme/jobs` must NOT parse: it would be watched as a board whose every scan
+    # 404s on .../boards/acme/jobs/jobs. Only a composite-slug provider (workday) may carry a
+    # "/" in the qualified form. smartrecruiters is in this list on purpose — it HAS a
+    # normalize_slug, so "provider has a normalizer" is not a usable stand-in for "composite".
+    with pytest.raises(UnknownBoardURL):
+        parse_board_target(f"{provider}:acme/extra")
+
+
+def test_the_workday_composite_slug_still_parses_in_the_qualified_form() -> None:
+    # the other half of the guard above, against the REAL registry
+    assert parse_board_target("workday:Acme.wd5.myworkdayjobs.com/Acme/AcmeCareers") == (
+        "workday",
+        "acme.wd5.myworkdayjobs.com/acme/AcmeCareers",
+    )
 
 
 def test_host_port_form_still_reaches_the_url_branch() -> None:
