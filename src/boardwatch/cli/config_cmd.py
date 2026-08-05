@@ -9,12 +9,13 @@ from typing import Any
 
 import tomli_w
 import typer
-from pydantic import ValidationError
+from pydantic import BaseModel, ValidationError
 from rich.console import Console
 
 from boardwatch.cli.context import build_context
+from boardwatch.core.features import FEATURE_BY_KEY, SETTABLE_FEATURE_KEYS
 from boardwatch.core.secrets import LLM_API_KEY_ENV, resolve_secret
-from boardwatch.core.settings import Settings, load_settings
+from boardwatch.core.settings import LLMTier, NotifyTier, Settings, load_settings
 from boardwatch.notify.webhook import WEBHOOK_URL_ENV
 
 config_app = typer.Typer(no_args_is_help=True, help="Show or change settings.")
@@ -80,6 +81,36 @@ def _find_secret_in_value(value: Any, path: str) -> str | None:
     return None
 
 
+_TIER_MODELS: dict[str, type[BaseModel]] = {"llm": LLMTier, "notify": NotifyTier}
+
+
+class SecretInConfig(Exception):
+    """config.toml already contains a reserved secret key; refuse to reserialize it."""
+
+    def __init__(self, path: str) -> None:
+        super().__init__(path)
+        self.path = path
+
+
+def toggle_feature(settings: Settings, key: str, on: bool) -> tuple[bool, bool]:
+    """Persist a boolean feature toggle to config.toml. Shared by `config set` and
+    `settings toggle` so the secret guard, validation, and build_context side effect never
+    diverge. Returns (old, new). Raises SecretInConfig if config.toml already holds a secret."""
+    config_file = settings.config_dir / "config.toml"
+    raw = tomllib.loads(config_file.read_text(encoding="utf-8")) if config_file.is_file() else {}
+    existing = _find_secret_key(raw)
+    if existing is not None:
+        raise SecretInConfig(existing)
+    table, leaf = key.split(".", 1)
+    old = FEATURE_BY_KEY[key].read(settings)
+    _TIER_MODELS[table](**{**getattr(settings, table).model_dump(), leaf: on})  # validation
+    raw.setdefault(table, {})[leaf] = on
+    config_file.parent.mkdir(parents=True, exist_ok=True)
+    config_file.write_bytes(tomli_w.dumps(raw).encode("utf-8"))  # round-trips unknown keys
+    build_context(settings.data_dir)  # parity with other commands
+    return old, on
+
+
 @config_app.command("show")
 def show(ctx: typer.Context) -> None:
     settings = load_settings(data_dir=ctx.obj)
@@ -126,13 +157,41 @@ def set_(ctx: typer.Context, key: str, value: str) -> None:
             f"variable instead of {key!r} (e.g. {LLM_API_KEY_ENV} or {WEBHOOK_URL_ENV}).[/red]"
         )
         raise typer.Exit(code=1)
-    if key == "llm" or key.startswith("llm."):
+    # Settable boolean features (the four live llm.* booleans + notify.*): one shared writer.
+    if key in SETTABLE_FEATURE_KEYS:
+        try:
+            new_bool = _str_to_bool(value)
+        except ValueError as exc:
+            console.print(f"[red]invalid value for {key}: {exc}[/red]")
+            raise typer.Exit(code=1) from exc
+        try:
+            old_bool, new_bool = toggle_feature(settings, key, new_bool)
+        except SecretInConfig as exc:
+            console.print(
+                f"[red]refusing to write: config.toml must not contain secrets; found "
+                f"reserved key {exc.path!r}. Put credentials in the environment instead "
+                f"(e.g. {LLM_API_KEY_ENV} or {WEBHOOK_URL_ENV}).[/red]"
+            )
+            raise typer.Exit(code=1) from exc
+        console.print(f"{key}: {old_bool} → {new_bool}")
+        return
+
+    if key == "llm.max_calls_per_run":
+        old = settings.llm.max_calls_per_run
+        try:
+            new: int | float = int(value)
+            LLMTier(**{**settings.llm.model_dump(), "max_calls_per_run": new})  # ge=1 check
+        except (ValueError, ValidationError) as exc:
+            console.print(f"[red]invalid value for {key}: {exc}[/red]")
+            raise typer.Exit(code=1) from exc
+        raw.setdefault("llm", {})["max_calls_per_run"] = new
+    elif key == "llm" or key.startswith("llm."):
         console.print(
-            f"[red]{key!r} is reserved for the v1.1 LLM tier and is not settable yet.[/red]"
+            f"[red]{key!r} is not a toggle; edit config.toml directly "
+            f"(provider/model/base_url).[/red]"
         )
         raise typer.Exit(code=1)
-
-    if key in _SCALAR_KEYS:
+    elif key in _SCALAR_KEYS:
         caster, _e, _u = _SCALAR_KEYS[key]
         old = getattr(settings, key)
         try:
@@ -155,18 +214,6 @@ def set_(ctx: typer.Context, key: str, value: str) -> None:
             console.print(f"[red]invalid value for {key}: {exc}[/red]")
             raise typer.Exit(code=1) from exc
         raw.setdefault("weights", {})[leaf] = new
-    elif key in _NOTIFY_KEYS:
-        leaf = key.split(".", 1)[1]
-        old = getattr(settings.notify, leaf)
-        try:
-            new = _str_to_bool(value)
-            from boardwatch.core.settings import NotifyTier
-
-            NotifyTier(**{**settings.notify.model_dump(), leaf: new})
-        except (ValueError, ValidationError) as exc:
-            console.print(f"[red]invalid value for {key}: {exc}[/red]")
-            raise typer.Exit(code=1) from exc
-        raw.setdefault("notify", {})[leaf] = new
     else:
         console.print(f"[red]unknown key {key!r}[/red]")
         raise typer.Exit(code=1)

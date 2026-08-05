@@ -53,7 +53,7 @@ class LLMTier(BaseModel):
     eligibility_extraction: bool = False
     resume_tailoring: bool = False
     resume_tailoring_via_agent: bool = False  # gates subscription Tier B; no API key needed
-    max_calls_per_run: int = 50
+    max_calls_per_run: int = Field(default=50, ge=1)
 
 
 class NotifyTier(BaseModel):
