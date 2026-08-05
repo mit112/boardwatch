@@ -388,7 +388,7 @@ class WorkdayProvider:
             postings=postings,
             url=request.url,
             observed_validators=observed,
-            error=None if not errors else "; ".join(errors[:3]),
+            error=None if not errors else "; ".join(errors),
             listed_ids=listed_ids,
         )
 

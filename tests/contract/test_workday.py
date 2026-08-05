@@ -630,6 +630,32 @@ def test_detail_budget_is_respected_and_reported(tmp_path: Path) -> None:
 
 
 @respx.mock
+def test_every_diagnostic_survives_never_truncated(tmp_path: Path) -> None:
+    # REGRESSION: `error` used to truncate at errors[:3], so a board with several page-level
+    # notes silently dropped its LATE detail-budget note — the only record of a board's
+    # inventory size (measured on Citi). Every note must survive, however many precede it.
+    def _page(i: int, valid: int) -> dict[str, Any]:
+        rows: list[dict[str, Any]] = [
+            {"externalPath": f"/job/P{i}-{j}"} for j in range(valid)
+        ]
+        rows.append({"title": "no externalPath"})  # one "dropped 1 rows" note per page
+        return {"total": 2000, "jobPostings": rows, "facets": []}
+
+    respx.post(LIST_URL).mock(
+        side_effect=[
+            httpx.Response(200, json=_page(0, 20)),
+            httpx.Response(200, json=_page(1, 20)),
+            httpx.Response(200, json=_page(2, 20)),
+            httpx.Response(200, json={"total": 2000, "jobPostings": [], "facets": []}),
+        ]
+    )
+    snapshot = provider.fetch_board(_fetcher(tmp_path), _request(budget=0))
+    err = snapshot.error or ""
+    assert err.count("dropped 1 rows") == 3  # three page-level notes lead
+    assert "detail budget" in err  # the fourth, late note is NOT truncated away
+
+
+@respx.mock
 def test_one_failed_detail_is_partial(tmp_path: Path) -> None:
     respx.post(LIST_URL).mock(return_value=httpx.Response(200, json=_fx("list_normal.json")))
     _mock_all_details()
