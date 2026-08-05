@@ -42,8 +42,8 @@ Job boards optimize for their advertisers, not for you. LinkedIn/Indeed bury fre
 under sponsored noise and stale reposts; paid trackers put a subscription (and their
 servers, and your search history) between you and postings that are **already public**.
 
-boardwatch takes the direct route. Greenhouse, Lever, Ashby, Workable, and SmartRecruiters
-each expose a **public, keyless JSON endpoint** for every board they host, the same data
+boardwatch takes the direct route. Greenhouse, Lever, Ashby, Workable, SmartRecruiters and
+Workday each expose a **public, keyless JSON endpoint** for every board they host, the same data
 the company's own careers page renders. boardwatch polls those endpoints politely, on
 your schedule, and tells you what's *new* since last time.
 
@@ -57,8 +57,8 @@ your schedule, and tells you what's *new* since last time.
 | Auto-apply / spam        | never                 | no comment             | sometimes              |
 
 **Honest limits.** boardwatch only covers companies hosted on **Greenhouse, Lever, Ashby,
-Workable, or SmartRecruiters** (a large slice of tech, but not everyone, no
-Workday/Taleo/etc. yet). It reads exactly what those APIs expose. It is pre-release:
+Workable, SmartRecruiters or Workday** (a large slice of tech, but not everyone, no
+Taleo/etc. yet). It reads exactly what those APIs expose. It is pre-release:
 expect rough edges, and read [Responsible use](#responsible-use--legality) before
 pointing it at boards you don't own.
 
@@ -521,6 +521,15 @@ API-lane run.
 | Ashby           | Ashby public job-board posting API                                        | none |
 | Workable        | `apply.workable.com/api/v1/widget/accounts/<slug>?details=true` (single request, whole board) | none |
 | SmartRecruiters | `api.smartrecruiters.com/v1/companies/<slug>/postings?limit=100&offset=0` (paginated list, plus one detail fetch per unseen posting) | none |
+| Workday         | `<tenant>.wd<N>.myworkdayjobs.com/wday/cxs/<tenant>/<site>/jobs` (**POST**-only, paginated at the server's hard maximum of 20/page, plus one detail fetch per unseen posting) | none |
+
+**Workday boards need three parts, not one.** A Workday board is identified by a host, a
+tenant and a career-site slug, so its target form is
+`workday:<host>/<tenant>/<CareerSite>` — for example
+`workday:acme.wd5.myworkdayjobs.com/acme/AcmeCareers`. Pasting the career-site URL
+(`acme.wd5.myworkdayjobs.com/AcmeCareers`) works too and derives the tenant for you. Site
+slugs are **case-sensitive**; hosts and tenants are not. One tenant can serve several
+disjoint career sites, so each site is watched as its own board.
 
 boardwatch ships a bundled **registry** of verified public boards (35+ companies, with a
 curated **starter set**), so `init` works offline out of the box. You can watch any board
@@ -543,6 +552,14 @@ fetched once per posting (bounded by `detail_fetch_budget`, default 50) and neve
 refreshed, since the list endpoint carries no revision signal for description-only edits.
 A posting that goes inactive while still listed is not re-detected as closed until it
 drops off the list — it self-heals on a later scan.
+
+**Workday honest limits.** Its list endpoint serves no `ETag` and no `Last-Modified`, so
+conditional fetches are inert and every scan re-reads the whole board — a 2,000-posting
+board is 100+ requests to one host, paced by the usual per-host delay. Job bodies are
+fetched once per posting (bounded by `detail_fetch_budget`, default 50) and never
+refreshed, so bodies fill in across scans exactly as they do for SmartRecruiters. The
+registry ships **no** Workday boards, so `doctor` reports Workday connectivity as *not
+checked* until you watch one with `companies add`.
 
 ---
 
@@ -593,7 +610,7 @@ often. A job seeker checking a dozen companies once a day is the intended shape.
 
 Next:
 
-- [ ] Workday provider (host/tenant/site boards, the largest ATS still out of reach)
+- [x] Workday provider (host/tenant/site composite board identity)
 - [x] More eligibility rule families (contract vs. full-time, internships)
 - [ ] A readable settings surface, so every opt-in feature is discoverable and reversible
       without hand-editing `config.toml`

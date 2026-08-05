@@ -8,6 +8,38 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- **Workday support — a sixth provider, and the first with a composite board identity.**
+  A Workday board is a host + tenant + career-site triple, so its target form is
+  `workday:<host>/<tenant>/<CareerSite>` (pasting the career-site URL works too and derives
+  the tenant). It is carried as a single composite slug, so `UNIQUE(provider, slug)` is
+  unchanged and there is no migration — that constraint is in fact load-bearing here,
+  because one tenant can serve several disjoint career sites. Site slugs are case-sensitive;
+  hosts and tenants are normalized to lowercase.
+
+  Workday's public API had to be measured rather than assumed, and every finding below has a
+  regression test. It is POST-only (a GET returns 400), which is why `Fetcher` gained
+  `post_json` — routed through the same per-host pacing and backoff, which matters because a
+  2000-posting board is 100+ requests to one host. Its page size is a hard 20 (`limit=21`
+  returns 400, it is not clamped). Its reported `total` is capped at 2000 while
+  `offset >= 2000` wraps back to page 1, so pagination terminates on a short page rather
+  than on `offset < total`, which would never terminate on a large board. And `timeType` is
+  *not* an intern signal — it reads "Full time" on a real PhD-intern requisition — so the
+  intern/new-grad signal is read from the `workerSubType` facet instead, via one bounded
+  facet-filtered query per matched bucket, matched on the human-readable descriptor because
+  the facet ids are tenant-specific. `timeType` and the matched descriptor are captured into
+  `raw_json` because backfilling them would mean re-scanning every Workday board; nothing
+  reads them yet.
+
+  Two consequences worth stating plainly. Workday serves no `ETag` and no `Last-Modified`,
+  so conditional fetches are inert for it and every scan re-reads the board. And no Workday
+  boards are added to the bundled registry, so you watch them with `companies add` — until
+  you do, `doctor` reports Workday connectivity as *not checked* rather than guessing.
+
+  One deliberate deviation from the other five providers: `remote_policy` prefers Workday's
+  structured `remoteType` field ("Fully Remote" / "Partially Remote") over the location-text
+  heuristic, the same way the Ashby adapter already prefers its structured `isRemote`
+  boolean. Tenants that do not set the field fall back to the heuristic.
+
 - **Two eligibility rule families: `contract_not_fte` and `internship`.** The catalog now
   carries six families. `contract_not_fte` reads whether a posting declares a contract,
   contract-to-hire, temporary, fixed-term, 1099 or corp-to-corp engagement — or, symmetrically,
@@ -50,6 +82,17 @@ All notable changes to this project are documented here. The format follows
 - **`companies import` now rejects duplicate `provider:slug` rows.** It built validated
   entries but never ran the catalog's `validate_entries` integrity check, so a file listing
   the same board twice imported silently.
+
+- **`httpx.TooManyRedirects` and `httpx.DecodingError` now surface as `FetchFailure`.** Both
+  are `RequestError` but not `TransportError`, so they escaped `Fetcher`'s conversion and
+  every provider's `except FetchFailure`, which let a redirect loop traceback `doctor`
+  instead of reporting an unreachable board. Only the conversion widened — the retry
+  predicate is unchanged, so these fail fast rather than being retried.
+
+- **A provider that raises is contained to one board.** `scan` and `doctor` guard the
+  per-board `board_url()` / `healthcheck()` calls, so a single malformed stored target no
+  longer aborts the whole run. `doctor` also stops reporting a provider it never probed
+  (no watched board and no registry entry) as unreachable.
 
 ## [0.2.0] - 2026-08-04
 
