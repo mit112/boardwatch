@@ -123,9 +123,12 @@ def show(ctx: typer.Context) -> None:
         console.print(f"weights.{key} = {cur} (default {dflt}; [0,1]; next top)")
     llm = settings.llm
     console.print(
-        f"llm: reserved (opt-in; ships v1.1); "
-        f"enabled={llm.enabled}, provider={llm.provider}, model={llm.model}"
+        f"llm.enabled = {llm.enabled} (opt-in LLM tier; provider={llm.provider}, model={llm.model})"
     )
+    console.print(f"llm.eligibility_extraction = {llm.eligibility_extraction}")
+    console.print(f"llm.resume_tailoring = {llm.resume_tailoring}")
+    console.print(f"llm.resume_tailoring_via_agent = {llm.resume_tailoring_via_agent}")
+    console.print(f"llm.max_calls_per_run = {llm.max_calls_per_run} (default 50; ≥1)")
     present = "set" if resolve_secret(LLM_API_KEY_ENV) is not None else "unset"
     console.print(f"llm.api_key: {present} (via {LLM_API_KEY_ENV})")
     for key, effect in _NOTIFY_KEYS.items():

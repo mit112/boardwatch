@@ -7,10 +7,10 @@ Config file: {config_dir}/config.toml; weights and politeness knobs are read at 
 time per D17, so there is no caching layer to invalidate.
 
 Secrets contract (P0-3): config.toml is the shareable config and never holds secrets.
-Credentials come only from the environment (the opt-in LLM tier, v1.1, reads
+Credentials come only from the environment (the opt-in LLM tier reads
 BOARDWATCH_LLM_API_KEY); see core.secrets.resolve_secret. A persistent-secret file is
-reserved at {config_dir}/secrets.toml but is not read yet. The LLM tier is off by
-default and inert until v1.1.
+reserved at {config_dir}/secrets.toml but is not read yet. The opt-in LLM tier is off
+by default; see core.features for the user-facing surface.
 """
 
 from __future__ import annotations
@@ -36,7 +36,7 @@ class RankWeights(BaseModel):
 
 
 class LLMTier(BaseModel):
-    """Opt-in LLM tier config (D11, §5.1). Off by default and inert until v1.1.
+    """Opt-in LLM tier config (D11, §5.1). Off by default; opt-in.
 
     Carries only non-secret knobs; the credential is never a field here (it comes from
     the environment via core.secrets), which keeps secrets out of every serialize path.

@@ -125,15 +125,17 @@ def test_weight_change_alters_next_top(cfg) -> None:
     assert before != after  # the live-read weight changed the ranking output
 
 
-def test_show_lists_llm_reserved_and_secret_presence(cfg, monkeypatch) -> None:
+def test_show_lists_llm_state_not_reserved(cfg, monkeypatch) -> None:
     canary = "CANARY-SHOW-SECRET"
     monkeypatch.setenv(LLM_API_KEY_ENV, canary)
     result = runner.invoke(app, [*_base(cfg), "config", "show"])
     assert result.exit_code == 0
-    assert "reserved" in result.output.lower()
-    assert "llm.api_key" in result.output
-    assert "set" in result.output              # presence indicator
-    assert canary not in result.output         # never the value
+    assert "reserved" not in result.output.lower()
+    assert "llm.enabled" in result.output
+    assert "llm.resume_tailoring" in result.output
+    assert "llm.resume_tailoring_via_agent" in result.output
+    assert "llm.api_key" in result.output and "set" in result.output
+    assert canary not in result.output  # value never printed
 
 
 def test_set_llm_enabled_now_succeeds(cfg) -> None:
