@@ -1,7 +1,7 @@
 from datetime import timedelta
 
 from boardwatch.core.clock import utcnow
-from boardwatch.reports.stats import PostingStat, StatsReport, summarize
+from boardwatch.reports.stats import PostingStat, summarize
 
 NOW = utcnow()
 OLD = NOW - timedelta(days=30)
