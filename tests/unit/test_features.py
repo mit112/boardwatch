@@ -71,3 +71,9 @@ def test_webhook_prereq_tracks_env(tmp_path: Path, monkeypatch: pytest.MonkeyPat
     monkeypatch.delenv(WEBHOOK_URL_ENV, raising=False)
     feat = FEATURE_BY_KEY["notify.webhook_enabled"]
     assert unmet_prerequisites(feat, _settings(tmp_path)) == [f"{WEBHOOK_URL_ENV} set"]
+
+
+def test_agent_lane_sends_discloses_anthropic() -> None:
+    # B3: the agent-lane copy must disclose that bullets + posting go to Claude Code -> Anthropic.
+    sends = FEATURE_BY_KEY["llm.resume_tailoring_via_agent"].sends
+    assert "Anthropic" in sends

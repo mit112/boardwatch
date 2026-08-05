@@ -124,21 +124,22 @@ can see the new state before quitting. It shares the exact same writer as `board
 config set` — same validation, same refusal if `config.toml` already contains a secret —
 so there is no separate code path between the two surfaces.
 
-The four `llm.*` booleans plus `llm.max_calls_per_run` are settable through either
-surface:
+The four `llm.*` booleans are settable through either surface:
 
 | Key | Type / Range | Default | Takes effect |
 |---|---|---|---|
 | `llm.enabled` | bool | `false` | next relevant run |
 | `llm.eligibility_extraction` | bool | `false` | next relevant run |
-| `llm.resume_tailoring` | bool | `false` | next relevant run |
-| `llm.resume_tailoring_via_agent` | bool | `false` | next relevant run |
-| `llm.max_calls_per_run` | int, ≥ 1 | 50 | next relevant run |
+| `llm.resume_tailoring` | bool | `false` | next `tailor run --tier-b` |
+| `llm.resume_tailoring_via_agent` | bool | `false` | next `tailor rewrite` |
 
 `notify.desktop_enabled`/`notify.webhook_enabled` (see [`[notify]`](#notify) above) are
-also settable through both surfaces. `llm.provider`, `llm.model`, and `llm.base_url`
-remain **hand-edit only** in `config.toml` — `config set` and `settings toggle` both
-refuse them by design, since they aren't booleans with an on/off state.
+also settable through both surfaces. `llm.max_calls_per_run` is settable via
+`boardwatch config set` **only** — `settings toggle` is a numbered on/off flipper over
+the six boolean features above and does not handle scalar keys. `llm.provider`,
+`llm.model`, and `llm.base_url` remain **hand-edit only** in `config.toml` — `config
+set` and `settings toggle` both refuse them by design, since they aren't booleans with
+an on/off state.
 
 **Prerequisites, correctly stated.** Turning on `llm.resume_tailoring_via_agent` does
 **not** require `llm.enabled` or an API key — it's a separate, subscription-driven lane

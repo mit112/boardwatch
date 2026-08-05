@@ -15,7 +15,7 @@ from __future__ import annotations
 import os
 from collections.abc import Mapping
 
-# Provider-neutral env var for the (deferred) LLM tier's credential.
+# Provider-neutral env var for the opt-in LLM tier's credential.
 LLM_API_KEY_ENV = "BOARDWATCH_LLM_API_KEY"
 
 

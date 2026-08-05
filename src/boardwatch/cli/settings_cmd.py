@@ -25,7 +25,7 @@ def _load_or_exit(data_dir: Path | None) -> Settings:
     """Load settings, or print a named error (not a traceback) for a hand-broken config."""
     try:
         return load_settings(data_dir=data_dir)
-    except (ValidationError, tomllib.TOMLDecodeError) as exc:
+    except (ValidationError, tomllib.TOMLDecodeError, UnicodeDecodeError) as exc:
         console.print(f"[red]config.toml is invalid: {exc}[/red]")
         raise typer.Exit(code=1) from exc
 

@@ -60,6 +60,13 @@ def test_settings_graceful_on_malformed_config(cfg: Path) -> None:
     assert "Traceback" not in result.output
 
 
+def test_settings_graceful_on_non_utf8_config(cfg: Path) -> None:
+    (cfg / "config.toml").write_bytes(b"\xff\xfe bad")
+    result = runner.invoke(app, [*_base(cfg), "settings"])
+    assert result.exit_code == 1
+    assert "Traceback" not in result.output
+
+
 def test_settings_creates_no_db(cfg: Path) -> None:
     runner.invoke(app, [*_base(cfg), "settings"])
     assert not (cfg / "data" / "boardwatch.db").exists()
