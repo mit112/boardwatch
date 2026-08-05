@@ -300,6 +300,7 @@ class WorkdayProvider:
                     total = None
                 raw_facets = payload.get("facets")
                 facets = raw_facets if isinstance(raw_facets, list) else []
+            before = len(listed)
             if dropped := _collect(rows, listed, seen_paths):
                 errors.append(
                     f"page at offset {offset}: dropped {dropped} rows with no externalPath"
@@ -307,6 +308,18 @@ class WorkdayProvider:
             if len(rows) < _PAGE_LIMIT:
                 # THE termination condition. NOT `offset < total`: total is capped at 2000
                 # and offset >= 2000 wraps to page 1, so that loop never terminates.
+                capped = False
+                break
+            if len(listed) == before:
+                # A FULL page that added no new externalPath is the offset-wrap tail: Workday
+                # serves byte-identical full pages past a board's real count (Intel; and every
+                # board once offset >= 2000 wraps to page 1) instead of a short page, which
+                # would otherwise burn every remaining page up to _MAX_PAGES. Stop, and keep it
+                # partial so apply_board does not close the postings we stopped re-listing.
+                errors.append(
+                    f"page at offset {offset} added no new postings; stopping "
+                    f"({len(listed)} collected, listing may be incomplete)"
+                )
                 capped = False
                 break
 

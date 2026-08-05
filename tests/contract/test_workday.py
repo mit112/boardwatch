@@ -445,9 +445,36 @@ def test_total_over_the_page_supply_does_not_loop(tmp_path: Path) -> None:
 
 
 @respx.mock
-def test_page_cap_bounds_a_server_that_never_returns_a_short_page(tmp_path: Path) -> None:
+def test_a_repeated_full_page_stops_at_the_offset_wrap_not_the_page_cap(tmp_path: Path) -> None:
+    # Workday serves byte-identical FULL pages past a board's real count (Intel; every board
+    # once offset >= 2000 wraps to page 1) instead of a short page. Without a no-forward-
+    # progress break this burns every page up to _MAX_PAGES. Termination is on the first full
+    # page that adds nothing new, kept `partial`.
     full = _fx("list_page_full.json")
-    respx.post(LIST_URL).mock(return_value=httpx.Response(200, json=full))
+    route = respx.post(LIST_URL).mock(return_value=httpx.Response(200, json=full))
+    snapshot = provider.fetch_board(_fetcher(tmp_path), _request(budget=0))
+    assert route.call_count == 2  # page 0 collects; page 1 repeats it and adds nothing -> stop
+    assert snapshot.status == "partial"
+    assert "added no new postings" in (snapshot.error or "")
+
+
+@respx.mock
+def test_page_cap_bounds_a_board_that_keeps_yielding_new_full_pages(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # The _MAX_PAGES cap is the last-ditch bound for a genuinely huge board that keeps
+    # returning FULL pages of NEW postings (so neither a short page nor the no-new-progress
+    # break ever fires). Shrink the cap so the fixture stays small.
+    monkeypatch.setattr("boardwatch.providers.workday._MAX_PAGES", 3)
+    base = _fx("list_page_full.json")["jobPostings"]
+
+    def _distinct_page(i: int) -> dict[str, Any]:
+        rows = [dict(r) | {"externalPath": f"/job/P{i}-{j}"} for j, r in enumerate(base)]
+        return {"total": 2000, "jobPostings": rows, "facets": []}
+
+    respx.post(LIST_URL).mock(
+        side_effect=[httpx.Response(200, json=_distinct_page(i)) for i in range(3)]
+    )
     snapshot = provider.fetch_board(_fetcher(tmp_path), _request(budget=0))
     assert snapshot.status == "partial"
     assert "page cap" in (snapshot.error or "")
