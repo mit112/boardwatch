@@ -1,6 +1,7 @@
 from pathlib import Path
 
 import pytest
+from rich.console import Console
 from sqlalchemy import insert
 from typer.testing import CliRunner
 
@@ -8,6 +9,7 @@ from boardwatch.cli.app import app
 from boardwatch.cli.profile_cmd import persist_profile
 from boardwatch.core.clock import utcnow
 from boardwatch.core.settings import load_settings
+from boardwatch.reports.stats import compute_stats
 from boardwatch.store.db import ensure_schema, get_engine
 from boardwatch.store.tables import companies, jobs, postings
 
@@ -53,3 +55,10 @@ def test_stats_with_profile_but_no_evals_reports_unevaluated(data_dir: Path) -> 
     out = result.stdout.lower()
     assert "unevaluated" in out
     assert "seen" in out
+
+    report = compute_stats(
+        eng, settings, window_days=7, now=NOW, output_console=Console()
+    )
+    assert report is not None
+    assert report.unevaluated == 1
+    assert report.qualified == 0

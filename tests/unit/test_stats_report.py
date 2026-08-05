@@ -39,3 +39,9 @@ def test_posted_at_none_is_excluded_from_window_but_counts_in_pipeline():
     r = summarize(stats, now=NOW, window_days=7, seen=1, tracked=0)
     assert r.qualified == 0
     assert r.passes_filters == 1
+
+
+def test_window_boundary_is_inclusive():
+    stats = [_p(1, True, "eligible", NOW - timedelta(days=7))]
+    r = summarize(stats, now=NOW, window_days=7, seen=1, tracked=0)
+    assert r.qualified == 1

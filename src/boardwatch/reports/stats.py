@@ -19,11 +19,10 @@ from boardwatch.core.settings import Settings
 from boardwatch.eligibility.preflight import run_eligibility
 from boardwatch.eligibility.read import current_verdicts
 from boardwatch.extract.preflight import run_preflight
-from boardwatch.extract.taxonomy import load_taxonomy
 from boardwatch.rank.heuristic import passes_hard_filters, profile_view_from_row
 from boardwatch.store.queries import current_posting_versions, get_profile
 from boardwatch.store.stats_queries import count_open_postings, count_tracked_submitted
-from boardwatch.store.tables import extractions, postings
+from boardwatch.store.tables import postings
 
 
 @dataclass(frozen=True)
@@ -80,7 +79,6 @@ def compute_stats(
     """
     run_preflight(engine, settings, output_console)
     elig = run_eligibility(engine, settings, output_console)
-    version = load_taxonomy(settings.config_dir).version
     now = now or utcnow()
     with engine.connect() as conn:
         profile_row = get_profile(conn)
@@ -91,13 +89,6 @@ def compute_stats(
             select(
                 postings.c.id, postings.c.title, postings.c.posted_at,
                 postings.c.locations_json, postings.c.remote_policy,
-                extractions.c.json.label("extraction_json"),
-            ).outerjoin(
-                extractions,
-                (extractions.c.posting_id == postings.c.id)
-                & (extractions.c.content_hash == postings.c.content_hash)
-                & (extractions.c.kind == "taxonomy")
-                & (extractions.c.engine_version == version),
             ).where(postings.c.status == "open")
         ).all()
         versions = current_posting_versions(conn, None)
