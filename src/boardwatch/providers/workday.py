@@ -34,6 +34,9 @@ Five measured properties drive this design. Each has a regression test; none sho
    tenant-specific Workday WIDs, so buckets are matched on `descriptor` — hardcoding a WID
    would silently break every other tenant. Both fields are captured into raw_json because
    backfilling them means re-scanning every Workday board; nothing reads them yet.
+   Because detail fetches skip known postings, a posting already in the DB does not gain
+   these fields until it is re-detailed. That is the same incremental fill as body_text, not
+   a Workday-specific gap.
 
 5. bulletFields IS VARIABLE-LENGTH (Sony returns 3: req id, country, legal entity), so
    bulletFields[0] is NOT universally the requisition id. The id comes from externalPath.
@@ -44,9 +47,9 @@ inventory — otherwise apply_board would close every known-but-unrefreshed post
 consequence is that body_text and the captured employment-type fields fill in incrementally
 across scans. Salary is never mined (D19).
 
-Task 7 note: fetch_board pages the full board (trap 2 above) and then fetches details for
-the unseen postings only, within the budget. Facet capture (the workerSubType of trap 4) is
-Task 8; parse_posting already takes the subtype but fetch_board still passes None.
+fetch_board pages the full board (trap 2 above), then issues one bounded facet-filtered query
+per matched workerSubType bucket (trap 4), then fetches details for the unseen postings only,
+within the budget. A failed facet query is an `errors` note, never a failed board.
 """
 
 from __future__ import annotations
@@ -72,6 +75,14 @@ _HOST_FORBIDDEN = frozenset(":@?#\\%[]")
 # Path segments Workday puts around the site slug in a public career-site URL.
 _CHROME_SEGMENTS = frozenset({"wday", "cxs", "job", "jobs", "login", "details"})
 _SLUG_FORM = "expected host/tenant/site, e.g. acme.wd5.myworkdayjobs.com/acme/AcmeCareers"
+# workerSubType descriptors worth one extra paged query each. Facet ids are tenant-specific
+# Workday WIDs, so buckets are matched on the human-readable DESCRIPTOR — hardcoding a WID
+# would silently break every other tenant. Deliberately conservative: an unmatched
+# vocabulary costs zero extra requests.
+_SUBTYPE_KEYWORDS = (
+    "intern", "co-op", "coop", "new college graduate", "new grad", "apprentice", "trainee",
+)
+_FACET_MAX_PAGES = 20  # 400 postings per bucket; intern/new-grad buckets are small
 
 
 def split_slug(slug: str) -> tuple[str, str, str]:
@@ -133,6 +144,51 @@ def _postings_list(content: bytes) -> list[dict[str, Any]] | None:
     return [row for row in payload["jobPostings"] if isinstance(row, dict)]
 
 
+def _worker_subtype_buckets(facets: list[Any]) -> list[tuple[str, str]]:
+    """(descriptor, facet id) for the intern/new-grad-shaped workerSubType buckets."""
+    out: list[tuple[str, str]] = []
+    for group in facets:
+        if not isinstance(group, dict) or group.get("facetParameter") != "workerSubType":
+            continue
+        values = group.get("values")
+        for value in values if isinstance(values, list) else ():
+            if not isinstance(value, dict):
+                continue
+            descriptor = str(value.get("descriptor") or "")
+            facet_id = str(value.get("id") or "")
+            lowered = descriptor.casefold()
+            if descriptor and facet_id and any(k in lowered for k in _SUBTYPE_KEYWORDS):
+                out.append((descriptor, facet_id))
+    return out
+
+
+def _subtypes_by_path(
+    fetcher: Fetcher, url: str, facets: list[Any], errors: list[str]
+) -> dict[str, str]:
+    """externalPath -> workerSubType descriptor, from one paged facet-filtered query per
+    matched bucket. Bounded and cheap: NVIDIA's 11 interns + 80 new grads is ~6 requests."""
+    out: dict[str, str] = {}
+    for descriptor, facet_id in _worker_subtype_buckets(facets):
+        for page_index in range(_FACET_MAX_PAGES):
+            body = _search_body(page_index * _PAGE_LIMIT, {"workerSubType": [facet_id]})
+            try:
+                page = fetcher.post_json(url, body)
+            except FetchFailure as exc:
+                errors.append(f"workerSubType {descriptor!r}: {exc}")
+                break
+            rows = _postings_list(page.content)
+            if rows is None:
+                errors.append(f"workerSubType {descriptor!r}: invalid payload")
+                break
+            for row in rows:
+                path = str(row.get("externalPath") or "")
+                if path:
+                    out[path] = descriptor
+            if len(rows) < _PAGE_LIMIT:
+                break
+    return out
+
+
 def _failed(url: str, error: str) -> BoardSnapshot:
     return BoardSnapshot(
         status="failed", postings=[], url=url, observed_validators=None, error=error,
@@ -188,6 +244,10 @@ class WorkdayProvider:
         listed: list[dict[str, Any]] = []
         seen_paths: set[str] = set()
         total: int | None = None
+        # Declared BEFORE the loop on purpose: the loop body's `payload` local is only bound
+        # if the loop ran AND took the page_index == 0 branch, and the empty-list default is
+        # exactly the "tenant serves no facets block" case.
+        facets: list[Any] = []
         observed = None
         capped = True
 
@@ -229,6 +289,8 @@ class WorkdayProvider:
                     total = max(0, int(payload["total"]))
                 except (KeyError, TypeError, ValueError):
                     total = None
+                raw_facets = payload.get("facets")
+                facets = raw_facets if isinstance(raw_facets, list) else []
             _collect(rows, listed, seen_paths)
             if len(rows) < _PAGE_LIMIT:
                 # THE termination condition. NOT `offset < total`: total is capped at 2000
@@ -244,6 +306,8 @@ class WorkdayProvider:
         elif total is not None and len(listed) < total and total < 2000:
             # 2000 is the server's own reported cap, so a shortfall against it is expected
             errors.append(f"incomplete listing: collected {len(listed)} of {total} postings")
+
+        subtypes = _subtypes_by_path(fetcher, request.url, facets, errors)
 
         # The FULL live inventory, computed BEFORE the detail phase: known and
         # budget-skipped postings must stay in it or apply_board's _process_missing closes
@@ -285,7 +349,9 @@ class WorkdayProvider:
                 errors.append(f"posting {pid} detail: malformed payload")
                 continue
             try:
-                postings.append(parse_posting(host, site, row, detail, None))
+                postings.append(
+                    parse_posting(host, site, row, detail, subtypes.get(path))
+                )
             except Exception as exc:  # per-posting isolation
                 errors.append(f"posting {pid}: {exc}")
 
