@@ -1,3 +1,4 @@
+import tomllib as _tomllib
 from pathlib import Path
 
 import pytest
@@ -62,3 +63,39 @@ def test_settings_graceful_on_malformed_config(cfg: Path) -> None:
 def test_settings_creates_no_db(cfg: Path) -> None:
     runner.invoke(app, [*_base(cfg), "settings"])
     assert not (cfg / "data" / "boardwatch.db").exists()
+
+
+def test_toggle_flips_a_feature_and_persists(cfg: Path) -> None:
+    # choose feature 1 (llm.enabled), then blank to quit
+    result = runner.invoke(app, [*_base(cfg), "settings", "toggle"], input="1\n\n")
+    assert result.exit_code == 0
+    data = _tomllib.loads((cfg / "config.toml").read_text())
+    assert data["llm"]["enabled"] is True
+
+
+def test_toggle_reprompts_on_bad_number(cfg: Path) -> None:
+    result = runner.invoke(app, [*_base(cfg), "settings", "toggle"], input="99\nabc\n\n")
+    assert result.exit_code == 0
+    assert "not a listed number" in result.output
+    assert not (cfg / "config.toml").exists()  # nothing flipped
+
+
+def test_toggle_pre_flight_refuses_when_config_has_secret(cfg: Path) -> None:
+    canary = "CANARY-TOGGLE-SECRET"
+    (cfg / "config.toml").write_text(f'[llm]\napi_key = "{canary}"\n', encoding="utf-8")
+    result = runner.invoke(app, [*_base(cfg), "settings", "toggle"], input="1\n\n")
+    assert result.exit_code == 1
+    assert "llm.api_key" in result.output
+    assert canary not in result.output
+    data = _tomllib.loads((cfg / "config.toml").read_text())
+    assert data["llm"]["api_key"] == canary  # untouched
+
+
+def test_toggle_rerender_never_prints_secret_value(
+    cfg: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    canary = "CANARY-RERENDER-SECRET"
+    monkeypatch.setenv(LLM_API_KEY_ENV, canary)
+    result = runner.invoke(app, [*_base(cfg), "settings", "toggle"], input="1\n\n")
+    assert result.exit_code == 0
+    assert canary not in result.output  # neither initial render nor re-render leaks it
