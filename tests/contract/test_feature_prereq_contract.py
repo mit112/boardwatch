@@ -35,3 +35,9 @@ def test_agent_lane_registry_has_no_prereqs_and_gate_ignores_enabled() -> None:
     # The agent lane gates on its own flag (>=3 gate sites) and must not read llm.enabled
     # in those gates — the source binding that makes the empty-prereq claim honest.
     assert src.count("resume_tailoring_via_agent") >= 3
+    # Positive presence alone would not catch an llm.enabled gate added ALONGSIDE the
+    # existing check (count stays >= 3, requires stays empty, test still passes). Assert
+    # directly, per command, that none of the three agent-lane gate sites reads llm.enabled.
+    for name in ("rewrite_request_cmd", "rewrite_screen_cmd", "rewrite_apply_cmd"):
+        fn_src = inspect.getsource(getattr(tailor_cmd, name))
+        assert "llm.enabled" not in fn_src, f"{name} must not gate on llm.enabled"
