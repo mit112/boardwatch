@@ -10,3 +10,4 @@ _alembic_dev.db
 reasonix.toml
 .reasonix-runs/
 .DS_Store
+scratchpad/
