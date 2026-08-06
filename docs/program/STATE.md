@@ -2,9 +2,11 @@
 
 **Last updated:** 2026-08-06 (session 3, P0 in progress)
 **Updated by:** boardwatch (Claude)
-**Repo state at write time:** branch `p0-instrumentation`, clean, 5 commits ahead of `main`, tip is the
-docs commit that carries this header. **This header must be re-checked against `git log` every time this
-file is edited** — it went stale within one session because three later docs commits did not update it.
+**Repo state at write time:** P0's instrumentation work is merged to `main`; the tree is clean.
+**This header carries no commit count or sha on purpose** — the previous one named both, went stale inside
+a single session when three later docs commits did not update it, and a cold session following the
+session-start ritual hit the disagreement on its very first check. State what is durably true; verify the
+rest against `git log`. (D-017.)
 **Gate:** `make check` exits **0** (2633 passed, coverage 94.98%), measured on this branch tip.
 
 > This is the single file a fresh session with zero memory reads to know where the program stands.
