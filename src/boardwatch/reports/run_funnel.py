@@ -123,10 +123,18 @@ class SourceTotal:
     """A funnel total re-swept per board, and the funnel's own figure for it.
 
     Distinct from `CrossCheck`, whose two numbers are pipeline-memory vs store. Both numbers
-    here come from the store — the point is the JOIN PATH, not the source. The per-source sweep
-    reaches its counts through `companies`, which the funnel's own stages never touch, so the
-    two agreeing means every posting and every artifact this run counted is attributable to a
-    real board. A `GROUP BY` summing to its own total would prove nothing; this can fail.
+    here come from the store; what has to differ for the comparison to be worth anything is the
+    SHAPE of the two counts.
+
+    Only one total qualifies, and a second one was deleted for failing this test (D-028). A
+    per-board `eligible` total grouped the very same subquery the verdict stage counts, by a
+    NOT NULL foreign key, joined on a primary key — so it agreed for every possible database
+    state. Grouping the same query differently is not "counting through a different path".
+
+    `leads` qualifies because its two sides are shaped differently: a row count of artifacts
+    against a distinct-posting count resolved through `posting_versions`. Neither way it can
+    disagree is reachable through today's tailor path, so it is a guard against a future
+    writer, not live evidence — and it says so rather than claiming more.
     """
 
     name: str
@@ -818,12 +826,15 @@ def funnel_to_markdown(funnel: RunFunnel) -> str:
         )
     lines += [
         "",
-        "*Both numbers are read from the store; what differs is the JOIN PATH. The per-source "
-        "sweep reaches its counts through `companies`, which the funnel's stages never touch, "
-        "so agreement means every posting and artifact counted belongs to a real board. "
-        "`applied` is deliberately NOT reconciled here: it counts distinct jobs per board, and "
-        "summing per-board distinct counts is not the global distinct count if a job ever spans "
-        "two boards.*",
+        "*Both numbers are read from the store; what differs is the SHAPE of the count — a row "
+        "count of this run's artifacts against a distinct-posting count resolved through "
+        "`posting_versions`. Neither way it can disagree is reachable through today's tailor "
+        "path, so read this as a guard against a future writer rather than as live evidence. "
+        "Two quantities are deliberately NOT reconciled here. `eligible` cannot be: the "
+        "per-board sweep groups the same subquery the verdict stage counts, by a NOT NULL "
+        "foreign key, so it would agree for every possible database state (D-028). `applied` "
+        "cannot be either: it counts distinct jobs per board, and summing per-board distinct "
+        "counts is not the global distinct count if a job ever spans two boards.*",
         *[f"- *{total.name}*: {total.note}" for total in funnel.source_totals if total.note],
     ]
 
