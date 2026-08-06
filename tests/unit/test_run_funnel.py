@@ -22,6 +22,7 @@ from boardwatch.reports.run_funnel import (
     Lead,
     RunFunnel,
     ScanContext,
+    ShortlistCounts,
     build_run_funnel,
     funnel_to_dict,
     funnel_to_markdown,
@@ -82,6 +83,10 @@ def funnel(
     shortlisted: int | None = None,
     hidden_ineligible: int = 5,
     hidden_non_swe: int = 8,
+    hidden_hard_filter: int = 0,
+    hidden_below_cutoff: int = 0,
+    skipped_not_new: int = 0,
+    considered: int | None = None,
     tailor_failed: int = 0,
     artifacts: TailoredArtifactCounts | None = None,
     marked_applied: int = 0,
@@ -94,6 +99,13 @@ def funnel(
     # imbalance is the one that test introduced deliberately.
     if shortlisted is None:
         shortlisted = len(leads) + tailor_failed
+    # Default to a BALANCED shortlist stage for the same reason as the tailor stage above: a
+    # caller not testing this stage should not have to know the identity to avoid tripping it.
+    if considered is None:
+        considered = (
+            shortlisted + hidden_ineligible + hidden_non_swe
+            + hidden_hard_filter + hidden_below_cutoff + skipped_not_new
+        )
     return build_run_funnel(
         run_id=42,
         started_at=None,
@@ -101,9 +113,15 @@ def funnel(
         scan=ScanContext(ran=True, boards_attempted=85, boards_complete=80, boards_failed=5,
                          postings_seen=13_590),
         corpus=counts or corpus(),
-        shortlisted=shortlisted,
-        hidden_ineligible=hidden_ineligible,
-        hidden_non_swe=hidden_non_swe,
+        shortlist=ShortlistCounts(
+            considered=considered,
+            shortlisted=shortlisted,
+            hidden_hard_filter=hidden_hard_filter,
+            hidden_non_swe=hidden_non_swe,
+            hidden_ineligible=hidden_ineligible,
+            hidden_below_cutoff=hidden_below_cutoff,
+            skipped_not_new=skipped_not_new,
+        ),
         leads=leads,
         tailor_failed=tailor_failed,
         tailored_artifacts=artifacts
@@ -285,7 +303,8 @@ def test_a_tracked_lead_that_lost_its_pdf_does_not_break_the_applied_stage() -> 
 
 
 def test_a_derived_stage_is_labelled_so_its_balance_is_not_read_as_evidence() -> None:
-    """`shortlist` balances by construction, because `capped_by_top_n` is the remainder.
+    """`attribution` and `verdict` balance by construction — they are SQL partitions of the
+    very set `entered` counts, so their sums equal it for every possible database state.
 
     That is bookkeeping, not verification, and the artifact must distinguish it from the
     stages that can actually fail. Otherwise a reader counting green ticks would credit the
@@ -293,20 +312,61 @@ def test_a_derived_stage_is_labelled_so_its_balance_is_not_read_as_evidence() ->
     """
     report = funnel()
 
-    assert stage(report, "shortlist").derived is True
-    assert stage(report, "corpus").derived is False, "the one genuinely falsifiable stage"
+    assert stage(report, "corpus").derived is False, "an independent NOT IN sweep"
     # Partitions of the very set `entered` counts, so their balance holds for every possible
     # input. Labelling them non-derived would present two unfailable ticks as evidence.
     assert stage(report, "attribution").derived is True
     assert stage(report, "verdict").derived is True
+    # Remainder buckets: one drop is computed from the others.
+    assert stage(report, "pdf").derived is True
+    assert stage(report, "applied").derived is True
 
-    # Scoped to the shortlist TABLE ROW. `"yes (derived)" in body` passes even when every row
+    # Scoped to the verdict TABLE ROW. `"yes (derived)" in body` passes even when every row
     # renders "**yes**", because the legend paragraph below the table contains the phrase.
     body = funnel_to_markdown(report)
-    row = next(line for line in body.splitlines() if line.startswith("| shortlist |"))
+    row = next(line for line in body.splitlines() if line.startswith("| verdict |"))
     assert row.rstrip().endswith("yes (derived) |"), row
     corpus_row = next(line for line in body.splitlines() if line.startswith("| corpus |"))
     assert corpus_row.rstrip().endswith("**yes** |"), corpus_row
+
+
+def test_the_shortlist_stage_is_evidence_because_the_ranker_reports_what_it_considered() -> None:
+    """P0 item 3's structural change: `shortlist` stopped being bookkeeping.
+
+    `entered` is the ranker's own considered count, measured independently of the five drop
+    counters, so this identity can genuinely fail. While `capped_by_top_n` was a remainder it
+    could not, and the artifact correctly refused to present it as evidence.
+    """
+    report = funnel(considered=20, shortlisted=1, hidden_ineligible=5, hidden_non_swe=8,
+                    hidden_hard_filter=4, hidden_below_cutoff=2, leads=[lead()])
+
+    shortlist = stage(report, "shortlist")
+    assert shortlist.derived is False
+    assert shortlist.entered == 20, "the ranker's considered population, not a sum of drops"
+    assert shortlist.reconciled is True
+    body = funnel_to_markdown(report)
+    row = next(line for line in body.splitlines() if line.startswith("| shortlist |"))
+    assert row.rstrip().endswith("**yes** |"), row
+    # Named in the artifact's own list of what could have failed, which is what the gate reads.
+    assert "shortlist" in next(
+        line for line in body.splitlines() if "could actually have failed" in line
+    )
+
+
+def test_a_posting_the_ranker_loses_breaks_the_shortlist_stage_instead_of_hiding() -> None:
+    """The failure this stage now exists to catch: a `continue` with no counter.
+
+    One posting considered but landing in no bucket must read as DOES NOT RECONCILE. Under the
+    old remainder-based `entered` this input was arithmetically impossible to express, which is
+    precisely why 14,873 postings could go missing without the artifact noticing.
+    """
+    report = funnel(considered=21, shortlisted=1, hidden_ineligible=5, hidden_non_swe=8,
+                    hidden_hard_filter=4, hidden_below_cutoff=2, leads=[lead()])
+
+    shortlist = stage(report, "shortlist")
+    assert shortlist.reconciled is False
+    assert report.reconciles is False
+    assert "shortlist" in [item.name for item in report.unreconciled]
 
 
 def test_a_verdict_outside_the_vocabulary_is_carried_not_discarded() -> None:

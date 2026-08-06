@@ -57,8 +57,11 @@ def run(
     console.print(
         f"run {summary.run_id} · {summary.scan_postings_seen} postings seen · "
         f"{summary.scan_open_postings} open · {summary.evaluated} evaluated · "
-        f"{summary.shortlisted} shortlisted "
-        f"({summary.hidden_ineligible} ineligible, {summary.hidden_non_swe} non-SWE hidden) · "
+        f"{summary.shortlist.shortlisted} shortlisted of "
+        f"{summary.shortlist.considered} considered "
+        f"({summary.shortlist.hidden_ineligible} ineligible, "
+        f"{summary.shortlist.hidden_non_swe} non-SWE, "
+        f"{summary.shortlist.hidden_below_cutoff} below cutoff) · "
         f"{len(summary.tailored)} tailored · {summary.leads_with_pdf} with PDF"
     )
     for lead in summary.tailored:

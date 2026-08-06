@@ -22,7 +22,13 @@ from boardwatch.eligibility.catalog import load_rules
 from boardwatch.eligibility.engine import ENGINE_KIND, current_evaluations, engine_version
 from boardwatch.eligibility.preflight import current_identity
 from boardwatch.reports.abstain import AbstainReport, build_abstain_report
-from boardwatch.reports.run_funnel import Lead, RunFunnel, ScanContext, build_run_funnel
+from boardwatch.reports.run_funnel import (
+    Lead,
+    RunFunnel,
+    ScanContext,
+    ShortlistCounts,
+    build_run_funnel,
+)
 from boardwatch.store.abstain_queries import count_requirement_dispositions
 from boardwatch.store.queries import current_posting_versions
 from boardwatch.store.run_funnel_queries import (
@@ -65,9 +71,7 @@ def collect_run_funnel(
     *,
     run_id: int,
     scan: ScanContext,
-    shortlisted: int,
-    hidden_ineligible: int,
-    hidden_non_swe: int,
+    shortlist: ShortlistCounts,
     tailored: list[tuple[int, str, str, Path, bool]],
     tailor_failed: int,
     errors: list[str],
@@ -141,9 +145,7 @@ def collect_run_funnel(
         finished_at=row.finished_at if row is not None else None,
         scan=scan,
         corpus=corpus,
-        shortlisted=shortlisted,
-        hidden_ineligible=hidden_ineligible,
-        hidden_non_swe=hidden_non_swe,
+        shortlist=shortlist,
         leads=leads,
         tailor_failed=tailor_failed,
         tailored_artifacts=tailored_artifacts,

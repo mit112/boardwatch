@@ -57,11 +57,30 @@ class RankedPosting:
 
 @dataclass(frozen=True)
 class RankedResults:
-    """The shortlist plus the counts hidden by each filter, so `top` can report all of them."""
+    """The shortlist plus every count needed to account for the postings considered.
+
+    `considered` and the four hidden counts exist so the funnel's shortlist stage can
+    reconcile: `considered == len(visible) + skipped_not_new + hidden_hard_filter +
+    hidden_non_swe + hidden_ineligible + hidden_below_cutoff`. Each is its own counter,
+    incremented where the posting actually leaves, never a remainder computed by
+    subtraction — a remainder cannot catch a `continue` that forgot to count, which is the
+    only way this identity realistically breaks (P0 item 3).
+    """
 
     visible: list[RankedPosting]
     hidden_ineligible: int
     hidden_non_swe: int = 0
+    # Postings the ranker looked at: open postings joined to their company. Measured
+    # independently of the loop below, which is what lets the identity above fail.
+    considered: int = 0
+    # Vetoed by exclude-title or a hard location filter, before the role gate or any score.
+    hidden_hard_filter: int = 0
+    # Cleared every filter but ranked outside `limit`. The bucket that did not exist before
+    # item 3: on a real run 14,873 postings left here and appeared in no counter at all.
+    hidden_below_cutoff: int = 0
+    # Narrowed away by `--new`. A scoping choice rather than a rejection, kept as its own
+    # bucket so the identity holds for `top --new` too instead of only for the pipeline.
+    skipped_not_new: int = 0
 
 
 def rank_open_postings(
@@ -120,8 +139,11 @@ def rank_open_postings(
         new_ids = _new_posting_ids(conn) if only_new else None
     scored: list[RankedPosting] = []
     hidden_non_swe = 0
+    skipped_not_new = 0
+    hidden_hard_filter = 0
     for row in rows:
         if new_ids is not None and int(row.id) not in new_ids:
+            skipped_not_new += 1
             continue
         if not passes_hard_filters(
             row.title,
@@ -130,6 +152,7 @@ def rank_open_postings(
             profile,
             settings.location_filter_mode,
         ):
+            hidden_hard_filter += 1
             continue
         # The role gate is categorical, so it runs beside the score rather than inside it:
         # no title fuzz can rescue a "Deal Strategist". It is counted and reportable, never
@@ -160,14 +183,26 @@ def rank_open_postings(
     # whole shortlist, not just the top N, so the user sees how many the filter removed.
     visible: list[RankedPosting] = []
     hidden = 0
+    hidden_below_cutoff = 0
     for posting in scored:
         if not include_ineligible and posting.verdict == "ineligible":
             hidden += 1
             continue
         if len(visible) < limit:
             visible.append(posting)
+        else:
+            # Counted, not discarded. Everything here cleared every filter and was beaten
+            # only by rank, which is a different reason from every other bucket and the one
+            # the funnel could not name before P0 item 3.
+            hidden_below_cutoff += 1
     return RankedResults(
-        visible=visible, hidden_ineligible=hidden, hidden_non_swe=hidden_non_swe
+        visible=visible,
+        hidden_ineligible=hidden,
+        hidden_non_swe=hidden_non_swe,
+        considered=len(rows),
+        hidden_hard_filter=hidden_hard_filter,
+        hidden_below_cutoff=hidden_below_cutoff,
+        skipped_not_new=skipped_not_new,
     )
 
 

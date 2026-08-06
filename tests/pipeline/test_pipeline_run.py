@@ -352,7 +352,7 @@ def test_every_lead_failing_to_tailor_is_fatal(
     monkeypatch.setattr(runner_mod, "run_tailor", boom)
     summary = _pipeline(env, tmp_path / "apps")
 
-    assert summary.shortlisted > 0, "nothing was shortlisted, so this test proves nothing"
+    assert summary.shortlist.shortlisted > 0, "nothing was shortlisted, so this proves nothing"
     assert summary.tailored == []
     assert summary.fatal is not None, "a run that produced no lead at all reported success"
 
@@ -424,7 +424,7 @@ def test_no_profile_is_a_real_run_that_produced_nothing_not_a_crash(
     summary = _pipeline(env, tmp_path / "apps")
 
     assert summary.tailored == []
-    assert summary.shortlisted == 0
+    assert summary.shortlist.shortlisted == 0
     assert any("no profile" in e for e in summary.errors)
     with get_engine(env).connect() as conn:
         finished = conn.execute(select(tables.runs.c.finished_at)).scalar_one()

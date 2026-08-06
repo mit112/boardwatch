@@ -6,11 +6,12 @@ non-lead was dropped* answerable **from the artifact alone, without reading code
 last clause is why this module renders Markdown as well as JSON, and why every stage carries
 its drops by name rather than leaving the reader to subtract two numbers.
 
-**Item 1 does not on its own meet that gate.** The ranker does not report how many postings it
-considered, so postings ranked below the `--top` cutoff land in no bucket here — the `shortlist`
-stage says so in its own note. P0 item 3 is what closes it.
+**P0 item 3 added the two halves item 1 could not carry:** the `shortlist` stage now enters at
+the ranker's own considered population, so hard-filter vetoes and everything below the `--top`
+cutoff are named buckets instead of vanishing; and the per-source outcome table answers *which
+source produced each lead* per board rather than only per lead.
 
-Three properties are load-bearing and each one exists because collapsing it destroys a
+Four properties are load-bearing and each one exists because collapsing it destroys a
 signal this program is built to preserve:
 
   * **A stage that is not instrumented reports `None`, never 0.** Same reasoning as
@@ -24,6 +25,12 @@ signal this program is built to preserve:
   * **`cache_hit_unattributed` is never folded into `cache_hit_prior_run`.** Per D-019 a
     NULL run_id means exactly one thing — the row predates attribution — and that population
     can only shrink. Folding it would erase the only evidence that no NULL leaked back in.
+  * **`unique` and `assisted` are `None` per source, never 0.** Both are dedup-attribution
+    quantities: `assisted` credits a source that arrived second for a posting another source
+    won. boardwatch's postings are 1:1 with jobs and each belongs to exactly one company, so
+    there is no second source to credit and neither is measurable until P6. Reporting 0 would
+    assert "no source ever arrived second" — the naive attribution that, per job-apps'
+    handover, nearly cut a working adapter.
 
 The stored verdict vocabulary is `eligible | ineligible | uncertain`; **there is no `abstain`
 verdict**. The keystone invariant's ABSTAIN persists as `uncertain`, so this module renames
@@ -126,6 +133,30 @@ class Lead:
 
 
 @dataclass(frozen=True)
+class ShortlistCounts:
+    """The ranker's population accounting: every exit it has, counted where it happens.
+
+    `considered` is the row count the ranker fetched, measured independently of the loop that
+    produces everything else. That is what makes `considered == shortlisted + every drop` a
+    falsifiable identity rather than bookkeeping — it breaks if a `continue` is ever added
+    without a counter, which is the only realistic way the ranker starts losing postings again.
+
+    This is the stage that closes Gate P0's *"why every non-lead was dropped"* clause. Before
+    P0 item 3 the ranker reported only `hidden_ineligible` and `hidden_non_swe`, so hard-filter
+    vetoes and everything below the `--top` cutoff landed in no bucket at all — 14,873 postings
+    on run 6.
+    """
+
+    considered: int
+    shortlisted: int
+    hidden_hard_filter: int = 0
+    hidden_non_swe: int = 0
+    hidden_ineligible: int = 0
+    hidden_below_cutoff: int = 0
+    skipped_not_new: int = 0
+
+
+@dataclass(frozen=True)
 class ScanContext:
     """Scan throughput. Deliberately NOT a funnel edge.
 
@@ -188,9 +219,7 @@ def build_run_funnel(
     finished_at: datetime | None,
     scan: ScanContext,
     corpus: CorpusCounts,
-    shortlisted: int,
-    hidden_ineligible: int,
-    hidden_non_swe: int,
+    shortlist: ShortlistCounts,
     leads: Sequence[Lead],
     tailor_failed: int,
     tailored_artifacts: TailoredArtifactCounts,
@@ -295,33 +324,48 @@ def build_run_funnel(
         ),
         Stage(
             name="shortlist",
-            # The RANKER's own decided population, not the verdict stage's `eligible`. Those
+            # The RANKER's own considered population, not the verdict stage's `eligible`. Those
             # are different sets and subtracting one from the other is what an earlier version
             # did: `eligible` spans every open posting's verdict, while the ranker's counters
             # cover only postings that reached it, and it hides on criteria the verdict stage
             # knows nothing about. With `ineligible` currently 0 store-wide `eligible` happens
-            # to dominate, but the moment P2 makes `ineligible` reachable the hidden counts
-            # exceed it, the remainder goes negative, and Gate P0's headline metric reads
-            # FAILED for an entirely benign reason.
-            entered=shortlisted + hidden_ineligible + hidden_non_swe,
-            advanced=shortlisted,
+            # to dominate, but the moment P2 makes `ineligible` reachable the remainder would
+            # go negative and Gate P0's headline metric would read FAILED for a benign reason.
+            entered=shortlist.considered,
+            advanced=shortlist.shortlisted,
             drops=(
-                Drop(reason="hidden_ineligible", count=hidden_ineligible),
-                Drop(reason="hidden_non_swe", count=hidden_non_swe, note="title role gate"),
+                Drop(
+                    reason="skipped_not_new",
+                    count=shortlist.skipped_not_new,
+                    note="narrowed away by --new; a scoping choice, not a rejection",
+                ),
+                Drop(
+                    reason="hidden_hard_filter",
+                    count=shortlist.hidden_hard_filter,
+                    note="excluded title, or a location the hard filter mode rejects",
+                ),
+                Drop(reason="hidden_non_swe", count=shortlist.hidden_non_swe,
+                     note="title role gate"),
+                Drop(reason="hidden_ineligible", count=shortlist.hidden_ineligible),
+                Drop(
+                    reason="capped_by_top_n",
+                    count=shortlist.hidden_below_cutoff,
+                    note="cleared every filter and was beaten only by rank",
+                ),
             ),
-            derived=True,
+            # NOT derived. `entered` is the ranker's own row count, measured independently of
+            # the five counters below, so this identity can genuinely fail — it is the stage
+            # P0 item 3 turned from bookkeeping into evidence.
+            derived=False,
             note=(
-                "DERIVED: `entered` is the sum of the ranker's own three outcomes, so it "
-                "balances by construction. NOT a continuation of `verdict` — the two count "
-                "different populations. **Postings ranked below the --top cutoff appear in no "
-                "counter here at all**: the ranker does not report how many it considered, so "
-                "the gap between the verdict stage and this one is uninstrumented. P0 item 3 "
-                "(the per-source outcome table) is where that gets closed."
+                "The ranker's whole considered population. NOT a continuation of `verdict` — "
+                "the two count different populations, so the numbers here will not match it. "
+                "Every exit is counted where the posting actually leaves."
             ),
         ),
         Stage(
             name="tailor",
-            entered=shortlisted,
+            entered=shortlist.shortlisted,
             advanced=tailored,
             drops=(Drop(reason="tailor_failed", count=tailor_failed),),
         ),
@@ -675,6 +719,7 @@ __all__ = [
     "Lead",
     "RunFunnel",
     "ScanContext",
+    "ShortlistCounts",
     "Stage",
     "WrittenArtifact",
     "build_run_funnel",
