@@ -836,7 +836,14 @@ distinct counts is not the global distinct count if a job ever spans two boards.
 1:1 makes that impossible today, but shipping an identity that depends on an accident of current data is
 how a check becomes a false green later.
 
-**The lesson, and why this entry keeps its own mistake.** *"Counts through a different path"* is not
+**The retraction took three passes, and that is the more useful lesson.** Correcting this entry and the
+`CHANGELOG` left the same false reasoning rendered into every funnel artifact and stated in
+`SourceTotal`'s docstring; a re-review then found it still alive in `count_by_source`'s docstring, at the
+query site. **One claim, four homes:** the decision log, the changelog, the prose the program prints, and
+the docstring beside the code that computes the number. Retracting a claim means grepping for it, not
+editing the document you wrote it in.
+
+**The rest of the lesson.** *"Counts through a different path"* is not
 satisfied by grouping the same query differently. A different **path** means a different table expression
 that can disagree — the way `no_current_evaluation` is its own `NOT IN` sweep. Grouping by a foreign key
 on a table you already joined is the same path with a different `GROUP BY`. The reasoning was written into

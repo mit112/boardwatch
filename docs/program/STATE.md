@@ -98,18 +98,30 @@ fatal scan outage, a missing profile — it reported 0 in / 0 out. While `derive
 bookkeeping; as evidence it became an affirmative claim that the ranker ran and accounted for everything.
 `PipelineSummary.shortlist` is now `None` until the ranker runs.
 
-**And a fourth defect that no review caught — I found it by re-reading the artifact.** Correcting D-028 and
-the `CHANGELOG` left the same falsified claim rendered into **every funnel artifact** and stated in
-`SourceTotal`'s docstring. Gate P0 requires the artifact to answer on its own, so a false explanation
-inside it is worse than one in a doc.
+**Then the falsified claim was found in a third and a fourth place.** Correcting D-028 and the `CHANGELOG`
+left it rendered into **every funnel artifact** and in `SourceTotal`'s docstring — found by re-reading the
+artifact, not by review. A re-review of the fix commit then found it *still* alive in the docstring of
+`count_by_source` itself, at the query site, where it was most likely to be believed and acted on.
 
-> **Correcting a document is not correcting the program.** A claim lives in at least three places: the
-> decision log, the changelog, and the prose the program prints. Fixing two of them is how a falsified
-> claim survives its own retraction.
+> **Correcting a document is not correcting the program.** This one claim lived in **four** places: the
+> decision log, the changelog, the prose the program prints, and the docstring at the query that produces
+> the number. Three separate passes were needed to kill it, and the last copy was the most dangerous.
+
+**A re-review of the fix commit found four more, one of them a real defect a layer up from the change.**
+The shortlist stage's new "not instrumented" note named *a missing profile or a scan outage* as the cause —
+a closed enumeration that fabricates a reason on any run that crashed for a third one. Chasing that
+exposed the actual bug: **an abort was recorded in `stage_errors`, which reaches the `runs` row, but not on
+the summary, which is what the artifact reads.** A crashed run's funnel therefore said `RECONCILES` with no
+FATAL line and an empty Errors section — the same "indistinguishable from a clean empty run" defect D-021
+fixed for the ledger, still live one layer up in the artifact. Fixed and pinned by a test that reads the
+artifact rather than the ledger. Also: an uninstrumented stage with no note rendered a bare `**` in the
+very section Gate P0 requires to be readable.
 
 ### Verified on real data
 
-Three `boardwatch run --no-scan --top 5` against a copy of the production store, exit 0, all reconciled.
+Four consecutive `boardwatch run --no-scan --top 5` against a copy of the production store (runs 5-8),
+exit 0, all reconciled — the last two on the post-review tree, confirming the corrected artifact prose
+carries no surviving copy of the falsified claim.
 Corpus 19,262 · eligible 18,174 · ineligible 0 (B7, P2's) · abstained 1,088 · 5 leads, 5 PDFs. Per
 provider: **greenhouse 5 leads; workday 0 from 37 boards and 4,685 eligible postings**; ashby 0; lever 0.
 One run at `--top 5` is not the ≥3 runs that argument needs — see `METRICS.md` for the cautions. The scan

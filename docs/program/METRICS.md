@@ -434,8 +434,9 @@ almost useless — a term the report explains is a term the report contains.
 
 ### The gap item 3 closed, measured
 
-`boardwatch run --no-scan --top 5` over a copy of the production store. The `shortlist` stage before and
-after, on the same corpus:
+`boardwatch run --no-scan --top 5` over a copy of the production store — **four consecutive runs (5, 6,
+7, 8), all reconciled, all exit 0**, the last two on the post-review tree. The `shortlist` stage before
+and after, on the same corpus:
 
 | | entered | advanced | dropped | in no bucket | reconciled |
 |---|---:|---:|---:|---:|---|
@@ -508,9 +509,17 @@ runs**. The rollup's arithmetic does check out independently: boards sum to 118,
 
 | Check | Found | Of which logic |
 |---|---:|---:|
-| Mutation checks (5, D-025 procedure, cold cache) | 5/5 caught | — |
+| Mutation checks (7, D-025 procedure, cold cache) | 7/7 caught | — |
 | Code review (diff vs main) | 3 | 3 |
-| Re-review of the fix commit | see below | |
+| Re-review of the fix commit (D-021) | 4 | 2 |
+| Docs-only review | see STATE | |
+
+**The re-review of the fix commit earned its keep, which is D-021's whole point.** It found the falsified
+join-path claim surviving in a **third** place — `count_by_source`'s own docstring, at the query site — and
+one real defect a layer above the change: an abort reached `stage_errors` and so the `runs` row, but never
+the summary the artifact reads, so **a crashed run's funnel reported `RECONCILES` with no FATAL line and an
+empty Errors section.** That is D-021's defect, fixed for the ledger in session 4, still live for the
+artifact until now.
 
 **All three code-review findings were real, and two were self-inflicted in a specific way worth
 recording:**
