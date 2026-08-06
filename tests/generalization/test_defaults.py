@@ -225,7 +225,13 @@ def test_a_removed_snapshot_key_is_reported_as_new() -> None:
 
 
 def test_the_heuristic_parameter_default_is_pinned() -> None:
-    assert snap.EXPECTED_PARAM_DEFAULTS == {"score_posting.half_life_days": "14.0"}
+    # zero_skill_prior is preference-bearing in the same way half_life_days is: it is the
+    # neutral coverage assumed for a posting with no recognized skills, and a 0.0 here is
+    # the punitive default §3.6 forbids. Pinned so a change has to be argued for.
+    assert snap.EXPECTED_PARAM_DEFAULTS == {
+        "score_posting.half_life_days": "14.0",
+        "score_posting.zero_skill_prior": "0.50",
+    }
 
 
 def test_a_same_named_method_cannot_shadow_a_changed_parameter_default() -> None:

@@ -34,8 +34,17 @@ def explain(score: Score) -> list[ExplanationRow]:
 
 def why_summary(score: Score, posted_at: datetime | None, now: datetime) -> str:
     parts: list[str] = []
-    if score.components["skill_coverage"].value is not None:
-        parts.append(f"covers {score.covered}/{score.posting_skill_count} skills")
+    coverage = score.components["skill_coverage"]
+    if coverage.value is not None:
+        # A zero-skill posting has a coverage VALUE without any skills behind it (the
+        # imputed neutral prior). Saying "covers 0/0 skills" would read as a measurement;
+        # naming the assumption keeps the one-line why honest about where the number came
+        # from, which is the only place a reader sees it in `top`.
+        parts.append(
+            f"coverage assumed {coverage.value:.2f}"
+            if score.posting_skill_count == 0
+            else f"covers {score.covered}/{score.posting_skill_count} skills"
+        )
     title = score.components["title_match"]
     if title.value is not None and title.value >= TITLE_WHY_THRESHOLD:
         parts.append("title")

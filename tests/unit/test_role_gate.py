@@ -1,0 +1,129 @@
+"""Title role gate (P13, M2).
+
+The ordering assertions are the point of this file. The deny patterns guard themselves
+with `(?!.*\\bsoftware\\b)`, which only sees text to the RIGHT of the match, so a
+denies-first gate vetoes "Software Quality Engineer" (it matches `quality engineer`,
+looks right, and finds no "software" because the word is on the LEFT). 16 real software
+titles were buried that way in the measured prototype. Rescue-first fixes all 16, and
+these tests pin that ordering so it cannot silently regress.
+"""
+
+import pytest
+
+from boardwatch.rank.role_gate import role_verdict
+
+# Live false positives the gate exists to demote — all three surfaced in a real `top` run.
+NOT_SWE_TITLES = [
+    "Deal Strategist",
+    "Asset Tracking Technician",
+    "On Shift (IOS) Technology Development Engineer – Night Shift 6",
+]
+
+# Real software titles. A `not_swe` here is the exact failure mode — a silently hidden job.
+NEVER_NOT_SWE_TITLES = [
+    "Software Engineer I, Backend (Collections)",
+    "Forward Deployed Software Engineer",  # a real protected zero-skill row
+    "DevOps Engineer",
+    "Machine Learning Engineer",
+    "Software Quality Engineer",
+    "Software Engineer II, Warehouse Automation",
+    "Data Warehouse Engineer",
+    "Site Reliability Engineer (Night Shift)",
+    "Kernel Driver Engineer",
+]
+
+
+class TestVerdicts:
+    @pytest.mark.parametrize("title", NOT_SWE_TITLES)
+    def test_noise_titles_are_vetoed(self, title: str) -> None:
+        verdict, reason = role_verdict(title)
+        assert verdict == "not_swe"
+        assert reason  # never silent: the veto always names what it matched
+
+    @pytest.mark.parametrize("title", NEVER_NOT_SWE_TITLES)
+    def test_software_titles_are_never_vetoed(self, title: str) -> None:
+        # `swe` or `uncertain` both pass: `uncertain` falls through to scoring unchanged,
+        # which is why the gate retains 100% of the protected population.
+        assert role_verdict(title)[0] != "not_swe"
+
+    def test_uncertain_is_reachable_and_reasoned(self) -> None:
+        verdict, reason = role_verdict("Data Warehouse Engineer")
+        assert verdict == "uncertain"
+        assert reason == "no role signal in title"
+
+
+class TestOrdering:
+    """Rescue runs BEFORE denies. Each of these matches a deny pattern textually."""
+
+    def test_software_test_engineer_is_swe(self) -> None:
+        # Matches `(test|validation|verification|quality) engineer`, whose trailing
+        # lookahead cannot see the "Software" to its left. Rescue-first is what saves it.
+        assert role_verdict("Software Test Engineer")[0] == "swe"
+
+    def test_software_quality_engineer_is_swe(self) -> None:
+        assert role_verdict("Software Quality Engineer")[0] == "swe"
+
+    def test_night_shift_deny_loses_to_the_rescue(self) -> None:
+        # "(night|day|swing|weekend) shift" is a hard deny; `site reliability` rescues first.
+        assert role_verdict("Site Reliability Engineer (Night Shift)")[0] == "swe"
+        # ...and with no software signal, the same deny still fires.
+        assert role_verdict("Production Associate – Night Shift")[0] == "not_swe"
+
+    def test_soft_denies_are_skipped_when_the_title_signals_software(self) -> None:
+        # `consultant(?!.*software)` is a SOFT deny: it applies only to titles with no
+        # software signal at all, so a signal-matched title is never reached by it.
+        assert role_verdict("Consultant")[0] == "not_swe"
+        assert role_verdict("Machine Learning Engineer, Consultant Tools")[0] == "swe"
+
+
+class TestNarrowedPatterns:
+    """Patterns the audit dropped or narrowed stay dropped, and what they were dropped
+    FOR still gets vetoed by the rest of the list."""
+
+    @pytest.mark.parametrize(
+        "title", ["Engineer, Retail Systems", "Backend Engineer, Manufacturing Cloud"]
+    )
+    def test_dropped_bare_domain_nouns_no_longer_veto(self, title: str) -> None:
+        assert role_verdict(title)[0] != "not_swe"
+
+    @pytest.mark.parametrize(
+        "title",
+        [
+            "Retail Sales Associate",
+            "Warehouse Operations",
+            "Truck Driver",
+            "Financial Controller",
+            "Research Fellow",
+        ],
+    )
+    def test_the_noise_those_patterns_caught_is_still_caught(self, title: str) -> None:
+        assert role_verdict(title)[0] == "not_swe"
+
+
+class TestAuditability:
+    def test_reason_names_the_matched_title_text(self) -> None:
+        # Mit's stated fear is a gate that silently hides a real job. The reason has to be
+        # checkable against the posting, so it quotes the text that decided the verdict.
+        _, reason = role_verdict("Asset Tracking Technician")
+        assert 'matched "Technician"' in reason
+
+    @pytest.mark.parametrize(
+        "title", NOT_SWE_TITLES + NEVER_NOT_SWE_TITLES + ["Data Warehouse Engineer"]
+    )
+    def test_every_reason_is_one_line(self, title: str) -> None:
+        assert "\n" not in role_verdict(title)[1]
+
+
+class TestLiveRunNarrowings:
+    """Two patterns whose ONLY veto across 7,745 live postings was a real software job.
+    Same marginal-veto criterion the original pattern audit used."""
+
+    @pytest.mark.parametrize(
+        "title", ["iOS Tooling Engineer", "Consultant Developer (Kotlin + Java) Hybrid position"]
+    )
+    def test_live_false_positives_are_released(self, title: str) -> None:
+        assert role_verdict(title)[0] != "not_swe"
+
+    @pytest.mark.parametrize("title", ["Tooling Technician", "Solutions Consultant, Mid-Market"])
+    def test_the_manufacturing_and_gtm_readings_are_still_vetoed(self, title: str) -> None:
+        assert role_verdict(title)[0] == "not_swe"

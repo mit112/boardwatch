@@ -20,6 +20,7 @@ from boardwatch.eligibility.preflight import current_identity
 from boardwatch.eligibility.read import current_verdicts
 from boardwatch.extract.taxonomy import load_taxonomy
 from boardwatch.rank.heuristic import ProfileView, passes_hard_filters, score_posting
+from boardwatch.rank.role_gate import role_verdict
 from boardwatch.store.queries import current_posting_versions
 from boardwatch.store.tables import companies, extractions, posting_events, postings
 
@@ -74,6 +75,7 @@ def select_new_matches(
     settings: Settings,
     *,
     now: datetime | None = None,
+    include_non_swe: bool = False,
 ) -> NotifyResult:
     now = now or utcnow()
     new_ids, max_event_id = _new_ids_and_max(conn, since_event_id)
@@ -121,11 +123,16 @@ def select_new_matches(
             continue
         if verdicts.get(int(row.id)) == "ineligible":
             continue
+        # Same default as `top`: a non-software title is not a "new match" worth a push.
+        # Suppressed rather than dropped — `top --include-non-swe` still shows it.
+        if not include_non_swe and role_verdict(row.title)[0] == "not_swe":
+            continue
         skills = set((row.extraction_json or {}).get("skills", []))
         score = score_posting(
             profile, skills, row.title, row.posted_at,
             list(row.locations_json or []), row.remote_policy,
             settings.weights, now, settings.recency_half_life_days,
+            settings.zero_skill_coverage_prior,
         )
         items.append(NotifyItem(
             posting_id=int(row.id), title=row.title, company=row.company_name,

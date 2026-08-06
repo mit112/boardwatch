@@ -18,6 +18,7 @@ EXPECTED_SETTINGS_DEFAULTS: dict[str, object] = {
     "Settings.detail_fetch_budget": 50,
     "Settings.recency_half_life_days": 14.0,
     "Settings.location_filter_mode": "soft",
+    "Settings.zero_skill_coverage_prior": 0.50,
     "Settings.weights": {
         "skill_coverage": 0.5,
         "title_match": 0.25,
@@ -64,6 +65,7 @@ SETTINGS_FIELD_CLASS: dict[str, str] = {
     "Settings.detail_fetch_budget": "operational",
     "Settings.recency_half_life_days": "preference",
     "Settings.location_filter_mode": "preference",
+    "Settings.zero_skill_coverage_prior": "preference",
     "Settings.weights": "preference",
     "Settings.llm": "capability",
     "RankWeights.skill_coverage": "preference",
@@ -87,6 +89,10 @@ SETTINGS_FIELD_CLASS: dict[str, str] = {
 # score_posting.half_life_days duplicates Settings.recency_half_life_days.
 EXPECTED_PARAM_DEFAULTS: dict[str, str] = {
     "score_posting.half_life_days": "14.0",
+    # Duplicates Settings.zero_skill_coverage_prior. Neutral by construction: the midpoint
+    # of the component's own range, chosen so it needs no corpus statistic. A 0.0 here would
+    # be the punitive default §3.6 forbids, so the value is worth re-reading on any change.
+    "score_posting.zero_skill_prior": "0.50",
 }
 
 # The init wizard's prompt defaults, in source order. Every profile and filter

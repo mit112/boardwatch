@@ -83,6 +83,11 @@ class Settings(BaseModel):
     detail_fetch_budget: int = Field(default=50, ge=1, le=1000)
     recency_half_life_days: float = 14.0
     location_filter_mode: Literal["soft", "hard"] = "soft"
+    # Coverage imputed when a posting has no recognized skills at all (§3.6). Dropping
+    # the component instead redistributes its 0.50 weight to whatever else scored well,
+    # which is the "free 1" §3.6 forbids just as much as a punitive 0. The midpoint of
+    # the component's own range needs no corpus statistic, so it stays D17-compatible.
+    zero_skill_coverage_prior: float = Field(default=0.50, ge=0.0, le=1.0)
     weights: RankWeights = Field(default_factory=RankWeights)
     llm: LLMTier = Field(default_factory=LLMTier)
     notify: NotifyTier = Field(default_factory=NotifyTier)

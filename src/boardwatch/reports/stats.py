@@ -20,6 +20,7 @@ from boardwatch.eligibility.preflight import run_eligibility
 from boardwatch.eligibility.read import current_verdicts
 from boardwatch.extract.preflight import run_preflight
 from boardwatch.rank.heuristic import passes_hard_filters, profile_view_from_row
+from boardwatch.rank.role_gate import role_verdict
 from boardwatch.store.queries import current_posting_versions, get_profile
 from boardwatch.store.stats_queries import count_open_postings, count_tracked_submitted
 from boardwatch.store.tables import postings
@@ -31,6 +32,7 @@ class PostingStat:
     posted_at: datetime | None
     passes_filters: bool
     verdict: str | None  # "eligible" | "uncertain" | "ineligible" | None (unevaluated)
+    non_swe: bool = False  # title role gate says non-software; `top` hides these by default
 
 
 @dataclass(frozen=True)
@@ -42,6 +44,7 @@ class StatsReport:
     unevaluated: int
     seen: int
     passes_filters: int
+    non_swe: int
     not_ineligible: int
     tracked: int
 
@@ -59,11 +62,17 @@ def summarize(
     ineligible = sum(1 for s in in_window if s.verdict == "ineligible")
     unevaluated = sum(1 for s in in_window if s.verdict is None)
     passes = sum(1 for s in stats if s.passes_filters)
+    # Reported alongside the chain, NOT subtracted from it. The role gate hides these from
+    # `top`, so an unreported count would make this readout disagree with what `top` shows;
+    # folding it into `passes_filters`/`not_ineligible`/the window buckets instead would
+    # redefine numbers the parity window is already measuring. Counted, not silent.
+    non_swe = sum(1 for s in stats if s.passes_filters and s.non_swe)
     not_ineligible = sum(1 for s in stats if s.passes_filters and s.verdict != "ineligible")
     return StatsReport(
         window_days=window_days,
         qualified=qualified, uncertain=uncertain, ineligible=ineligible, unevaluated=unevaluated,
-        seen=seen, passes_filters=passes, not_ineligible=not_ineligible, tracked=tracked,
+        seen=seen, passes_filters=passes, non_swe=non_swe,
+        not_ineligible=not_ineligible, tracked=tracked,
     )
 
 
@@ -107,6 +116,7 @@ def compute_stats(
                 profile, settings.location_filter_mode,
             ),
             verdict=verdicts.get(int(row.id)),
+            non_swe=role_verdict(row.title)[0] == "not_swe",
         )
         for row in rows
     ]

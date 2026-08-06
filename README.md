@@ -180,6 +180,14 @@ verdict split, and what fired per family) so you can watch the catalog working b
 trust a hidden count. By default `top` hides postings that are ruled out and reports the
 count; `top --include-ineligible` shows them.
 
+`top` also hides postings whose **title** is not a software role — a "Deal Strategist" or an
+"Asset Tracking Technician" that fuzzy title matching would otherwise float to the top. The
+same rule applies to `notify`. This filter is deliberately loud rather than silent: the count
+appears under the table, `stats` reports it, `show <id>` tells you what the gate made of any
+posting, and `top --include-non-swe` lists the hidden rows with the exact title text that
+vetoed each one. A title that gives no signal either way is never filtered — it is scored
+normally, so a genuine software job with an unusual title is not at risk.
+
 ---
 
 ## What changed since you last looked
