@@ -337,13 +337,14 @@ def count_by_source(
     partition of itself: an open posting whose company row vanished, or an artifact with no
     posting_version, shows up as a disagreement instead of silently shrinking the table.
     """
-    open_by_company = dict(
-        conn.execute(
+    open_by_company: dict[int, int] = {
+        int(row[0]): int(row[1])
+        for row in conn.execute(
             select(postings.c.company_id, func.count())
             .where(postings.c.status == "open")
             .group_by(postings.c.company_id)
         ).all()
-    )
+    }
 
     eligible_by_company: dict[int, int] = {}
     if identity is not None:
@@ -354,21 +355,23 @@ def count_by_source(
             engine_kind=engine_kind,
             engine_version=engine_version,
         ).subquery()
-        eligible_by_company = dict(
-            conn.execute(
+        eligible_by_company = {
+            int(row[0]): int(row[1])
+            for row in conn.execute(
                 select(postings.c.company_id, func.count())
                 .select_from(judged)
                 .join(postings, postings.c.id == judged.c.posting_id)
                 .where(judged.c.verdict == "eligible")
                 .group_by(postings.c.company_id)
             ).all()
-        )
+        }
 
     # artifacts carries no posting_id — only posting_version_id — so the board a lead came
     # from is reachable only through its version. An artifact whose posting_version_id is NULL
     # is attributable to no board and is what the leads reconciliation exists to surface.
-    leads_by_company = dict(
-        conn.execute(
+    leads_by_company: dict[int, int] = {
+        int(row[0]): int(row[1])
+        for row in conn.execute(
             select(postings.c.company_id, func.count(func.distinct(postings.c.id)))
             .select_from(artifacts)
             .join(posting_versions, posting_versions.c.id == artifacts.c.posting_version_id)
@@ -376,14 +379,15 @@ def count_by_source(
             .where(artifacts.c.run_id == run_id, artifacts.c.kind == TAILORED_KIND)
             .group_by(postings.c.company_id)
         ).all()
-    )
+    }
 
     applied_by_company: dict[int, int] = {}
     if posting_ids:
         # Same scoping and status filter as count_applied_for_postings, so the two agree by
         # construction on which rows count as a submission.
-        applied_by_company = dict(
-            conn.execute(
+        applied_by_company = {
+            int(row[0]): int(row[1])
+            for row in conn.execute(
                 select(postings.c.company_id, func.count(func.distinct(applications.c.job_id)))
                 .select_from(postings)
                 .join(applications, applications.c.job_id == postings.c.job_id)
@@ -393,7 +397,7 @@ def count_by_source(
                 )
                 .group_by(postings.c.company_id)
             ).all()
-        )
+        }
 
     # A board with no open postings can still own a lead, if its posting closed mid-run. Keyed
     # off the union rather than off open_postings alone so a lead can never vanish from the

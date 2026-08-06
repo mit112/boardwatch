@@ -91,14 +91,23 @@ nine items numbered 0-8, and **item numbers are stable** — later documents cit
    - the head is the **open-posting corpus**, not `observed` — `postings_seen` and `open_postings` are
      different populations (D-022);
    - `unique` reports **not instrumented** rather than 0, because dedup is P6 and has never run (D-023);
-   - `candidates` and `prefilter_stopped` **have no counterpart at all**. The ranker does not report how
-     many postings it considered, so the population entering the prefilter is unmeasured and postings
-     ranked below `--top` land in no bucket. **Item 3 below is what closes this**, and until it does,
-     Gate P0's *"why every non-lead was dropped"* clause is not met;
+   - `candidates` and `prefilter_stopped` had **no counterpart at all** when item 1 shipped: the ranker
+     did not report how many postings it considered, so the population entering the prefilter was
+     unmeasured and postings ranked below `--top` landed in no bucket — 14,873 of them on run 6.
+     **Item 3 closed this** (D-027). The `shortlist` stage now enters at the ranker's own considered
+     population and names all five of its exits, and because `entered` is measured independently of the
+     drops it is a stage whose balance can genuinely fail;
    - `attribution` and `tailor` are additions the run key made possible.
 2. **Per-rule abstain rate**, every run. This is the metric that makes a rule that cannot fire *visible*.
    **DONE** — `boardwatch eligibility abstain`, and emitted for all 44 rules inside the item-1 artifact.
-3. **Per-source outcome table**: `unique | assisted | eligible | leads | applied`.
+3. **Per-source outcome table**: `unique | assisted | eligible | leads | applied`. **DONE** — per
+   watched board, plus a provider rollup, in the item-1 artifact. Two departures, both measured:
+   **`unique` AND `assisted` both report `not instrumented`** — `assisted` credits a source that arrived
+   second for a posting another source won, so it is as dedup-dependent as `unique` and equally blocked on
+   P6 (D-026); and the denominator is **open postings per board, not `postings_seen`** (D-022). Shipped
+   with it, because the same gate clause needed both: the ranker's full population accounting, which is
+   what actually closes *"why every non-lead was dropped"* (D-027), and a per-board reconciliation that
+   fails when a lead or a verdict is attributable to no board (D-028).
 4. **Run manifest**: config hash, profile version, rule-catalog version, code fingerprint of
    decision-relevant modules, start/end, exit status.
 5. **Reconciliation check** — an invariant sweep asserting DB rows and on-disk artifacts agree. Counts

@@ -8,12 +8,44 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- **Per-source outcome table in the funnel artifact.** Per watched board: open postings, `eligible`,
+  `leads`, `applied` — plus a rollup by provider, since the question of whether direct-ATS-only can carry
+  the volume is a question about providers and 118 board rows do not answer it at a glance.
+
+  **`unique` and `assisted` both report `not instrumented`, never 0.** Both are dedup-attribution
+  quantities: `assisted` credits a source that arrived *second* for a posting another source won. Postings
+  here are 1:1 with jobs and each belongs to exactly one company, so there is no second source to credit
+  until dedup lands in P6. Reporting 0 would assert that no source ever arrived second — the naive
+  attribution that, per job-apps' own handover, nearly cost it a working adapter.
+
+  The denominator is every **open** posting a board owns, not what it listed this run: an unchanged board
+  answers 304 and lists nothing while still owning hundreds of open postings.
+
+  Two totals are re-swept per board and compared with the funnel's own figures. Both numbers come from the
+  store; what differs is the **join path** — the per-source sweep travels through `companies`, which the
+  funnel's stages never touch — so agreement means every posting and every artifact counted belongs to a
+  real board, and a lead attributable to no board now fails the run's reconciliation. `applied` is
+  deliberately excluded from that check: summing per-board distinct job counts is not the global distinct
+  count if a job ever spans two boards. The artifact says so rather than shipping an identity that holds
+  only by accident of the current data.
+
+- **The ranker now accounts for every posting it considered**, which is what makes the funnel's
+  `shortlist` stage evidence rather than bookkeeping. It previously reported two of its four exits, so
+  hard-filter vetoes and everything below the `--top` cutoff vanished — 14,873 postings on one real run.
+  All five exits are counted where the posting actually leaves, and `entered` is the ranker's own row
+  count measured independently of them, so the stage's balance can genuinely fail. `boardwatch run` now
+  prints how many postings were considered and how many fell below the cutoff.
+
+### Changed
+
+- **Funnel artifact version 1 → 2**, for the `sources` and `source_totals` sections.
+
 - **Per-run funnel artifact, written on every `boardwatch run`.** Two halves — `funnel-<run_id>.json` and
   `funnel-<run_id>.md` — land in `<out>/<YYYY-MM-DD>/` beside that day's tailored résumés, outside the git
   tree. The Markdown names the board each lead came from, and every stage states its drop buckets with
-  counts rather than leaving the reader to subtract. It does **not** yet account for every non-lead: the
-  ranker does not report how many postings it considered, so postings ranked below the `--top` cutoff
-  appear in no counter at all. The artifact names that gap; P0 item 3 is what closes it.
+  counts rather than leaving the reader to subtract. (As first shipped it did not account for every
+  non-lead — postings ranked below the `--top` cutoff appeared in no counter at all. P0 item 3, below,
+  closed that.)
 
   The funnel's head is the **open-posting corpus**, not the number of postings the scan listed. Those are
   different populations — a board answering 304 lists nothing, and `--no-scan` lists nothing at all — so
