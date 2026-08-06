@@ -2,8 +2,7 @@
 
 **Last updated:** 2026-08-06 (session 5, P0 in progress)
 **Updated by:** boardwatch (Claude)
-**Repo state at write time:** every P0 item claimed done below is merged to `main` **except item 1**,
-which is on `p0-funnel-artifact` until that branch merges; the tree is clean.
+**Repo state at write time:** every P0 item claimed done below is merged to `main`; the tree is clean.
 **This header carries no commit count or sha on purpose** — the previous one named both, went stale inside
 a single session when three later docs commits did not update it, and a cold session following the
 session-start ritual hit the disagreement on its very first check. State what is durably true; verify the
