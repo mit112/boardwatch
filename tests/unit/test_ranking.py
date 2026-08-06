@@ -55,6 +55,24 @@ class TestTitleMatch:
     def test_empty_target_list_is_undefined(self) -> None:
         assert title_match("Backend Engineer", ()) is None
 
+    def test_generic_only_shared_token_scores_zero(self) -> None:
+        # P12 daily-driver finding: a posting that shares only a generic filler
+        # token ("engineer") with every target is NOT a title match — token_set_ratio
+        # would otherwise hand "Field Service Engineer" ~0.80 off the lone "Engineer".
+        assert (
+            title_match(
+                "Field Service Engineer", ("Software Engineer", "Backend Engineer")
+            )
+            == 0.0
+        )
+        assert title_match("Control Systems Engineer", ("Software Engineer",)) == 0.0
+
+    def test_meaningful_shared_token_still_matches(self) -> None:
+        # A real domain token ("software") survives the guard and scores high even
+        # when the posting carries extra tokens.
+        assert title_match("Software Engineer, Money Movement", ("Software Engineer",)) == 1.0
+        assert title_match("Forward Deployed Software Engineer", ("Software Engineer",)) == 1.0
+
 
 class TestSkillCoverage:
     def test_uniform_coverage_fraction(self) -> None:
