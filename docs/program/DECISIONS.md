@@ -281,3 +281,140 @@ two were the reviewer catching precisely the self-serving error it was asked to 
 first pass missed are now owned: the **severity/policy layer** (all six families default to `preference`,
 so 1,427 evaluations with unmet *required* dispositions are still `eligible` and no user but Mit can ever
 get an `ineligible`) belongs to P2, and the **persona registry** committed to in D-011 had no phase at all.
+
+---
+
+## D-014 — `main` was red; program docs are subject to the generalization checker
+**2026-08-06 · session 2**
+
+**Context.** The first `make check` of session 2 exited **2** in the generalization stage, before pytest
+ran. Two violations, both rule R1 (home-directory absolute path), both in files committed by session 1's
+`84cfab6`: `PROGRAM.md:4` and `STATE.md:27` cited the job-apps handover as `/Users/<name>/dev/Job apps/...`.
+Verified pre-existing against `git show main:...`, not caused by session 2's changes.
+
+**Choice.** Fix both to `~/dev/Job apps/...`, the form R1's own message prescribes (`bc0973d`). Record that
+**docs are scanned**: `tools/generalization/discovery.py` enumerates via `git ls-files` with no exclusion
+filter, so *everything git-tracked is published* and every tracked file is scanned — `docs/` included.
+
+**Rejected.** Allowlisting the paths. R1 exists to keep one user's home directory out of a shipped repo;
+the path added nothing that `~` does not convey. Also rejected: treating it as trivial. Session 1 wrote
+"`make check` is the only gate" into `CLAUDE.md` and then committed twice without running it, so the gate
+was mandated and skipped in the same commit.
+
+**Consequence.** A docs-only commit is not exempt. Run `make check` before any commit, including docs.
+Note the asymmetry that made this survivable: `.md` is **not** in the checker's `DATA_SUFFIXES`, so docs
+escape the R7 data-admission rule — but they do *not* escape the R1–R6 shape rules.
+
+---
+
+## D-015 — Migration `run_attribution`: nullable, unnamed inline FK, evaluations + artifacts only
+**2026-08-06 · session 2**
+
+**Context.** P0 needs `run_id` on the tables behind the funnel's later stages. Four constraints found by
+reading the schema rather than the plan: (1) existing `run_id` FKs are *named*
+(`fk_posting_versions_run_id_runs`) but SQLite cannot add a named table-level constraint via
+`ALTER TABLE ADD COLUMN`; (2) `test_migrations_match_metadata` asserts
+`alembic.compare_metadata(...) == []`, so any name mismatch could fail the drift check; (3)
+`eligibility_evaluations` is **append-only** (`eligibility_evaluations_no_update` raises on UPDATE);
+(4) `PRAGMA foreign_keys=ON` is set on every connection (`store/db.py:30`).
+
+**Choice.** Two additive `ALTER TABLE ADD COLUMN ... INTEGER REFERENCES runs (id)`, nullable, no default,
+no index — the `p2_profile_eligibility` path, no table rebuild. FK is inline and therefore unnamed.
+Revision id is **`run_attribution`**, deliberately *not* `p0_*`: the existing `p0_`/`p2_` prefixes denote
+boardwatch's earlier *product* phases, and reusing `p0_` for this program's P0 would create a permanent
+ambiguity in migration history.
+
+**Verified, not assumed.** The unnamed FK satisfies `test_migrations_match_metadata` and still enforces —
+the round-trip test asserts a dangling `run_id` raises `IntegrityError` on both tables. `make check` exits
+**0** (2633 passed, coverage 94.98%).
+
+**Rejected.** `batch_alter_table` — a table rebuild would have to reconstruct the partial unique index and
+both append-only triggers, against this repo's established additive precedent. An index on `run_id` — no
+existing `run_id` column has one, and 20,637 rows scan in well under a millisecond; speculative. `run_id`
+on `applications`/`application_events` — both hold **0 rows**, so the column would be speculative; it
+lands with the work that first writes them.
+
+**Consequence.** Because the table is append-only, `eligibility_evaluations.run_id` can only ever be set
+at INSERT and can **never** be backfilled: the 20,637 existing rows are permanently NULL. NULL therefore
+means "written before run attribution existed" and the funnel must report it as its own bucket, never fold
+it into a real run's counts. The column alone changes nothing until the write paths thread `run_id` —
+`write_evaluation` (`eligibility/engine.py:242`) and `record_artifact` (`store/artifacts.py:17`) currently
+take no such parameter.
+
+---
+
+## D-016 — `run_id` means a pipeline run, and P0 introduces it
+**2026-08-06 · session 2 · ratified by Mit**
+
+**Context.** P0's funnel artifact needs a key, and no existing process spans the seven stages. `runs` rows
+are written in exactly one place — `insert_run` at `scan/coordinator.py:104`, inside the scan's file lock.
+Eligibility is judged later, as a preflight side-effect of `top`/`stats` (`eligibility/preflight.py:133`),
+with no `run_id` in scope. Tailoring is later still and single-posting (`run_tailor` takes one `posting_id`;
+**no batch orchestrator exists in `src/`**). The only thing that stitches them into a pipeline is
+`.agent/bin/bw-daily` (`bwd`), which is gitignored shell and not part of the product. The argument is
+structural — there is no code path in which a `run_id` is in scope when an evaluation or artifact is
+written. (`runs` holds 4 rows against 20,637 evaluations. Do **not** cite that ratio as the proof: 4 scan
+runs could legitimately produce 20,637 evaluations. It is consistent with the conclusion, not evidence for
+it.)
+
+**Choice.** `run_id` denotes a **pipeline run**: one command that runs scan → eligibility → tailor in
+sequence and owns the run identity across all of it. P0 introduces the pipeline-run row and the funnel
+artifact writer; `scan` populates the stages it owns; stages whose writers do not yet thread `run_id` are
+reported as an explicit `unattributed` bucket rather than as 0.
+
+**Rejected.** (a) *`run_id` = the scan run.* An evaluation would be filed under the run that captured its
+posting version rather than the run that judged it, so a past run's report keeps changing days later, and
+"already judged, cache hit" becomes indistinguishable from "judged during this run" — the exact
+indistinguishability D-013 added the migration to prevent. (b) *A time-window report like `stats`.* Bar
+metric B6 is "funnel reconciles 100% to a terminal state", and reconciliation needs a unit; a rolling window
+has none. `PROGRAM.md` §3.P0.4's run manifest would have no home, and the `run_attribution` migration would
+go unused.
+
+**Consequence.** P0 grows: it now builds a slice of what P3 was scheduled to build. This is accepted as
+*early* work rather than *extra* work — P3's "one command, unattended" needs exactly this row, so the
+alternative was building a throwaway key in P0 and re-keying at P3. It also puts `bwd` on a path to being
+replaced by a shipped command instead of gitignored shell. **Sequencing note:** per-rule abstain rate needs
+no `run_id` at all (it is a read over `eligibility_requirements` joined against the catalog enumeration), so
+it is built first and de-risks the rest of P0 independently of this decision.
+
+---
+
+## D-017 — second independent review; STATE's own header was the defect
+**2026-08-06 · session 3**
+
+**Context.** `p0-instrumentation` was five commits ahead of `main` and green under `make check`, but had
+been reviewed only by its author. Mit's standing merge permission requires **both** confidence and review,
+so a fresh agent with no shared context reviewed `main..p0-instrumentation` adversarially — the same move
+that produced D-013, and for the same reason: this program's documented failure mode is asserting things in
+its own favour.
+
+**Outcome: APPROVE WITH CHANGES.** The code half survived unchanged. The reviewer independently confirmed,
+against the repo and read-only against the live DB, that the migration is genuinely additive (no
+`batch_alter_table`, partial unique index and both append-only triggers intact), that its FK actually
+enforces (`store/db.py:30` sets `PRAGMA foreign_keys=ON` per connection), that `downgrade()` is a native
+DROP COLUMN that leaves `PRAGMA foreign_key_check` clean, that the test exercises the migration rather than
+a fresh schema (`upgrade(BASE)` → seed → `upgrade(HEAD)`), and that the revision chain has exactly one head.
+It also re-derived the load-bearing numbers: 6 families / 44 patterns, the never-fired set is **exactly** the
+7 rule_ids named, `experience_years:scoped_years_minimum` 11,670/11,670 `unknown`, the index is partial, and
+every `file:line` citation in the docs resolves to what the docs claim.
+
+**What it caught — all in the documents, none in the code:**
+
+1. **`STATE.md`'s header was false about the branch it described.** It claimed HEAD `c56bc11` and "2 commits
+   ahead" at a tip of `bf25023`, 5 ahead, and pinned the gate result to the older sha. The three docs commits
+   that added D-015 and D-016 never updated the header above them. A cold session following the
+   session-start ritual would find STATE and the repo disagreeing on the very first check.
+2. **`STATE.md`'s phase table contradicted four other places in the same file**, saying P0 items were
+   "blocked on open question 1" when that question is D-016-resolved and the blocked-items table said none.
+3. `METRICS.md` cited `tables.py` line numbers from *before* this branch shifted them by three — written
+   after the shift, checked against the file before it.
+4. D-016 and STATE both offered "`runs` has 4 rows vs 20,637 evaluations" as *evidence*. It is not: 4 scan
+   runs could legitimately produce 20,637 evaluations. The conclusion stands on the structural argument
+   (no code path has a `run_id` in scope at the write site); the ratio is a symptom.
+5. `PROGRAM.md` still read "awaiting Mit's approval" after approval.
+
+All five corrected before merge. **The lesson, which is the point of recording this:** the branch's *code*
+was reviewed by its author to a standard that held up, and its *documents* were not reviewed at all. In a
+program where a document is the read-first source of truth, a stale header is a defect of the same kind as
+a broken migration — it is the artifact a fresh session acts on. Treat `STATE.md`'s header as code: it is
+now self-flagging, and re-checking it against `git log` is part of editing the file.

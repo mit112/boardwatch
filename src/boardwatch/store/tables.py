@@ -247,6 +247,9 @@ eligibility_evaluations = Table(
     Column("score", Numeric, nullable=True),
     Column("raw_output_json", JSON, nullable=True),
     Column("created_at", DateTime, nullable=False),
+    # NULL = written before run attribution existed; never 0, never "run produced nothing".
+    # Append-only table, so this is set at INSERT and can never be backfilled.
+    Column("run_id", Integer, ForeignKey("runs.id"), nullable=True),
     UniqueConstraint("idempotency_key"),
     Index("ix_eligibility_evaluations_input_created", "input_id", "created_at", "id"),
     # Deterministic idempotency (D30): partial unique index, declared here ONLY so the
@@ -359,6 +362,8 @@ artifacts = Table(
     Column("byte_size", Integer, nullable=True),
     Column("meta_json", JSON, nullable=True),
     Column("created_at", DateTime, nullable=False),
+    # NULL = written before run attribution existed; never 0, never "run produced nothing".
+    Column("run_id", Integer, ForeignKey("runs.id"), nullable=True),
     Index("ix_artifacts_job_id", "job_id"),
 )
 
