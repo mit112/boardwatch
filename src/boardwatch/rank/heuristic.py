@@ -3,7 +3,12 @@ from config at call time, so changing weights/taxonomy/profile simply changes
 the next output — invalidation is a non-problem by construction.
 
 title_match (§11 sign-off): max over target titles of
-rapidfuzz.fuzz.token_set_ratio(posting_title, target, processor=default_process) / 100.
+rapidfuzz.fuzz.token_set_ratio(posting_title, target, processor=default_process) / 100,
+with a generic-token guard (P12 daily-driver finding): a target whose only shared
+tokens with the posting are generic filler ("engineer"/"developer"/seniority/numerals)
+is skipped, so "Field Service Engineer" no longer inherits ~0.80 off the lone "Engineer"
+token. skill_coverage stays untouched (§3.6 intact), so genuine SWE postings whose skills
+the taxonomy missed are not punished — only the title signal is tightened.
 The exclude-title hard veto is separate from scoring: exact-substring,
 case-folded. Undefined components renormalize over the remaining weights
 (§3.6 both directions; undefined triggers per plan deviation 7).
@@ -56,14 +61,49 @@ class Score:
     posting_skill_count: int
 
 
+# Filler tokens common to nearly every engineering title; a match on these alone
+# (e.g. "Field Service Engineer" vs "Software Engineer") is not a real title match.
+GENERIC_TITLE_TOKENS = frozenset(
+    {
+        "engineer",
+        "developer",
+        "senior",
+        "sr",
+        "staff",
+        "principal",
+        "lead",
+        "junior",
+        "jr",
+        "associate",
+        "new",
+        "grad",
+        "i",
+        "ii",
+        "iii",
+        "iv",
+        "1",
+        "2",
+        "3",
+        "4",
+    }
+)
+
+
 def title_match(posting_title: str, target_titles: Sequence[str]) -> float | None:
     if not target_titles:
         return None  # undefined -> renormalize (consistent with the zero-skill rule)
-    best = max(
-        fuzz.token_set_ratio(posting_title, target, processor=default_process)
-        for target in target_titles
-    )
-    return float(best) / 100.0
+    posting_tokens = set(default_process(posting_title).split())
+    best = 0.0
+    for target in target_titles:
+        shared = posting_tokens & set(default_process(target).split())
+        # Shares tokens with this target, but all of them are generic filler:
+        # skip its (otherwise generous) token_set_ratio. Targets that share a
+        # meaningful token, or share nothing at all, still score by fuzzy ratio.
+        if shared and not (shared - GENERIC_TITLE_TOKENS):
+            continue
+        ratio = fuzz.token_set_ratio(posting_title, target, processor=default_process)
+        best = max(best, ratio / 100.0)
+    return best
 
 
 def skill_coverage(
