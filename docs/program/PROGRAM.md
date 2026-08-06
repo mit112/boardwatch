@@ -93,7 +93,8 @@ nine items numbered 0-8, and **item numbers are stable** — later documents cit
    - `unique` reports **not instrumented** rather than 0, because dedup is P6 and has never run (D-023);
    - `candidates` and `prefilter_stopped` had **no counterpart at all** when item 1 shipped: the ranker
      did not report how many postings it considered, so the population entering the prefilter was
-     unmeasured and postings ranked below `--top` landed in no bucket — 14,873 of them on run 6.
+     unmeasured and postings leaving the ranker uncounted landed in no bucket — **15,959 of 19,262
+     open postings** on a measured run at `--top 5` (11,517 hard-filter vetoes, 4,442 below the cutoff).
      **Item 3 closed this** (D-027). The `shortlist` stage now enters at the ranker's own considered
      population and names all five of its exits, and because `entered` is measured independently of the
      drops it is a stage whose balance can genuinely fail;
@@ -106,8 +107,10 @@ nine items numbered 0-8, and **item numbers are stable** — later documents cit
    second for a posting another source won, so it is as dedup-dependent as `unique` and equally blocked on
    P6 (D-026); and the denominator is **open postings per board, not `postings_seen`** (D-022). Shipped
    with it, because the same gate clause needed both: the ranker's full population accounting, which is
-   what actually closes *"why every non-lead was dropped"* (D-027), and a per-board reconciliation that
-   fails when a lead or a verdict is attributable to no board (D-028).
+   what actually closes *"why every non-lead was dropped"* (D-027), and a per-board check on LEADS that
+   fails when a tailored artifact resolves to no board. A companion check on verdicts was written and
+   **deleted before merge because it could not fail** — D-028 is the entry that deletes it, and the
+   surviving leads check is a guard against a future writer rather than live evidence.
 4. **Run manifest**: config hash, profile version, rule-catalog version, code fingerprint of
    decision-relevant modules, start/end, exit status.
 5. **Reconciliation check** — an invariant sweep asserting DB rows and on-disk artifacts agree. Counts

@@ -434,19 +434,28 @@ almost useless — a term the report explains is a term the report contains.
 
 ### The gap item 3 closed, measured
 
-`boardwatch run --no-scan --top 5` over a copy of the production store — **four consecutive runs (5, 6,
-7, 8), all reconciled, all exit 0**, the last two on the post-review tree. The `shortlist` stage before
-and after, on the same corpus:
+`boardwatch run --no-scan --top 5` over a copy of the production store — **four consecutive runs, all
+reconciled, all exit 0**, the last two on the post-review tree.
+
+**Run-id warning.** This session used a FRESH copy of the store, so its run ids restart and collide with
+session 5's: these are ids 5-8 of *this* copy and are **not** session 5's runs 6-8. Where a figure below
+says "run 6" it means this session's. Ids are only unique within one store.
+
+The `shortlist` stage before and after, on the same corpus:
+
+Both rows are this session's corpus at `--top 5`; the first applies item 1's formula to it. (Session 5's
+own measured `entered` was 3,301, at `--top 3` — a different run, not comparable row-for-row.)
 
 | | entered | advanced | dropped | in no bucket | reconciled |
 |---|---:|---:|---:|---:|---|
-| item 1 (shipped session 5) | 3,303 | 5 | 3,298 | **15,959** | yes *(derived — could not fail)* |
+| item 1's formula, on this corpus | 3,303 | 5 | 3,298 | **15,959** | yes *(derived — could not fail)* |
 | item 3 (this session) | **19,262** | 5 | 19,257 | **0** | **yes** *(falsifiable)* |
 
 `entered` was the sum of the ranker's own outcomes, so it silently *excluded* everything the ranker never
 reported. It is now the ranker's considered population, measured as its own row count.
 
-**Where the 15,959 actually went** — the two buckets that did not exist before:
+**Where the 15,959 actually went** — the two buckets that did not exist before sum to exactly it
+(11,517 + 4,442 = **15,959**); the other three were already reported:
 
 | drop reason | count |
 |---|---:|
@@ -495,15 +504,22 @@ lever. All five leads came from greenhouse — four from one board (`affirm`), o
 Two cautions before this is used as an argument. It is **one run at one `--top 5`**: with a cutoff that
 tight, `leads` measures the top of the ranking, so a provider contributes nothing unless it holds one of
 the five best-scoring postings. And job-apps' own rule is to judge sources by built attribution over **≥3
-runs**. The rollup's arithmetic does check out independently: boards sum to 118, `open` to 19,262 and
-`eligible` to 18,174, matching the corpus and verdict stages exactly.
+runs**. The rollup's sums are a **transcription check, not evidence**: boards total 118, `open` 19,262 and
+`eligible` 18,174, matching the corpus and verdict stages — but per-board `open` and `eligible` are the
+same partitions those stages count, so they agree for every possible database state. This is exactly the
+agreement D-028 deleted a reconciliation for treating as proof; it confirms the numbers were transcribed
+correctly here and nothing more.
 
 `unique` and `assisted` report **not instrumented** for all 118 boards (D-026), never 0.
 
 ### Gate
 
-`make check` exit **0** — 2,745 passed (from 2,719), coverage **95%**, plain mode, real exit code.
-26 new tests. Confirmed on the fixed tree after the review round.
+`make check` exit **0** — **2,749 passed** (from 2,719), coverage **95%**, plain mode, real exit code.
+30 new tests. Measured on the final tree, after every review fix.
+
+*This figure was wrong twice before it was right* — 2,745, then 2,748 — each time because a later fix round
+added tests after the line was written. It is the `STATE.md`-header failure mode D-017 names, reproduced in
+`METRICS.md`: **do not write a test count until the last commit that can change it has landed.**
 
 ### Verification yield
 
@@ -512,7 +528,15 @@ runs**. The rollup's arithmetic does check out independently: boards sum to 118,
 | Mutation checks (7, D-025 procedure, cold cache) | 7/7 caught | — |
 | Code review (diff vs main) | 3 | 3 |
 | Re-review of the fix commit (D-021) | 4 | 2 |
-| Docs-only review | see STATE | |
+| Docs-only review (docs + shipped prose as the brief) | 22 | 3 blockers, 9 major, 10 minor |
+
+**The docs-only review out-yielded both code reviews combined, for the third session running.** Its three
+blockers were all the same falsified claim surviving in places the code reviews had not been pointed at —
+including a comment 90 lines below a docstring corrected in the same commit — plus `PROGRAM.md` citing
+D-028 as authority for the reconciliation D-028 deletes. It also found that **`14,873`, cited in five
+places including two code comments, was never a measured number**: it is `18,174 − 3,301`, a derived
+estimate from a different run at a different `--top`. This change measured the real figure (15,959) and
+then propagated the estimate anyway.
 
 **The re-review of the fix commit earned its keep, which is D-021's whole point.** It found the falsified
 join-path claim surviving in a **third** place — `count_by_source`'s own docstring, at the query site — and

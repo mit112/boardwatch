@@ -551,7 +551,10 @@ def test_boards_that_produced_a_lead_sort_above_boards_that_did_not(engine: Engi
     reason the table exists, so they must not be buried."""
     with engine.begin() as conn:
         run_id = _run(conn)
-        loud, huge = _board(conn, "loud"), _board(conn, "huge")
+        # `huge` FIRST, so its company id is lower. `company_ids` is a set of small ints and
+        # iterates in id order, so with `loud` inserted first this test passed even with the
+        # sort deleted entirely.
+        huge, loud = _board(conn, "huge"), _board(conn, "loud")
         for index in range(5):
             _posting_on(conn, huge, f"h{index}")
         version_id = _version(conn, _posting_on(conn, loud, "l1"), "l1")

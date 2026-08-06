@@ -362,7 +362,10 @@ def test_the_shortlist_stage_is_evidence_because_the_ranker_reports_what_it_cons
 
     shortlist = stage(report, "shortlist")
     assert shortlist.derived is False
-    assert shortlist.entered == 20, "the ranker's considered population, not a sum of drops"
+    # NOT proof that `entered` is independent of the drops — this fixture is balanced, so a
+    # remainder-based implementation gives 20 too. The sibling test below, with an UNBALANCED
+    # input, is what can actually fail. See the module docstring on what is and is not pinned.
+    assert shortlist.entered == 20
     assert shortlist.reconciled is True
     body = funnel_to_markdown(report)
     row = next(line for line in body.splitlines() if line.startswith("| shortlist |"))
@@ -378,7 +381,7 @@ def test_a_posting_the_ranker_loses_breaks_the_shortlist_stage_instead_of_hiding
 
     One posting considered but landing in no bucket must read as DOES NOT RECONCILE. Under the
     old remainder-based `entered` this input was arithmetically impossible to express, which is
-    precisely why 14,873 postings could go missing without the artifact noticing.
+    precisely why 15,959 postings could go missing without the artifact noticing.
     """
     report = funnel(considered=21, shortlisted=1, hidden_ineligible=5, hidden_non_swe=8,
                     hidden_hard_filter=4, hidden_below_cutoff=2, leads=[lead()])
@@ -433,10 +436,16 @@ def test_the_markdown_names_every_drop_reason_with_its_count() -> None:
     A reader must never have to subtract two numbers to discover why postings left the
     funnel, so each reason appears with its own figure.
     """
+    # Every shortlist bucket gets a DISTINCT non-zero count. With two of them left at 0, the
+    # renderer could swap `hidden_hard_filter` and `capped_by_top_n` and the suite stayed green
+    # — the artifact would misstate WHY postings were dropped and still reconcile.
     report = funnel(
         counts=corpus(no_current_evaluation=10, ineligible=20, uncertain=30),
         hidden_ineligible=5,
         hidden_non_swe=8,
+        hidden_hard_filter=4,
+        hidden_below_cutoff=2,
+        skipped_not_new=7,
         tailor_failed=3,
     )
     body = funnel_to_markdown(report)
@@ -449,6 +458,7 @@ def test_the_markdown_names_every_drop_reason_with_its_count() -> None:
     expected = {
         "no_current_evaluation": 10, "cache_hit_prior_run": 30, "cache_hit_unattributed": 10,
         "ineligible": 20, "abstained": 30, "hidden_ineligible": 5, "hidden_non_swe": 8,
+        "hidden_hard_filter": 4, "capped_by_top_n": 2, "skipped_not_new": 7,
         "tailor_failed": 3, "no_pdf": 0, "not_marked_applied": 1,
     }
     for reason, count in expected.items():
@@ -589,15 +599,29 @@ def test_the_per_source_table_names_each_board_and_its_outcomes() -> None:
     every board, every column and every quantity it explains, so a substring assertion over
     the whole document would pass against an empty table.
     """
-    report = funnel(sources=[source("stripe", leads=1, eligible=40),
-                             source("quiet", leads=0, eligible=0, open_postings=7)])
+    # Distinct values in every column, so no assertion is satisfied by a neighbouring cell and
+    # a swapped pair is caught. `eligible` matters most: its reconciliation was deleted for
+    # being unfailable, so this row is now the ONLY guard on the rendered per-board figure.
+    report = funnel(
+        counts=corpus(eligible=43),
+        artifacts=TailoredArtifactCounts(rows=1, with_pdf=1),
+        leads=[lead(7)],
+        sources=[source("stripe", leads=1, eligible=40, open_postings=100, applied=3),
+                 source("quiet", leads=0, eligible=2, open_postings=7, company_source="user")],
+    )
     body = funnel_to_markdown(report)
 
-    assert source_row(body, "greenhouse:stripe").split("|")[3].strip() == "100"
-    assert source_row(body, "greenhouse:stripe").split("|")[7].strip() == "1"
-    quiet = source_row(body, "greenhouse:quiet")
-    assert quiet.split("|")[3].strip() == "7"
-    assert quiet.split("|")[7].strip() == "0", "a board that produced nothing still gets a row"
+    stripe = [cell.strip() for cell in source_row(body, "greenhouse:stripe").split("|")]
+    assert stripe[2] == "registry", "registry/user column"
+    assert stripe[3] == "100", "open"
+    assert stripe[6] == "40", "eligible"
+    assert stripe[7] == "1", "leads"
+    assert stripe[8] == "3", "applied"
+    quiet = [cell.strip() for cell in source_row(body, "greenhouse:quiet").split("|")]
+    assert quiet[2] == "user"
+    assert quiet[3] == "7"
+    assert quiet[6] == "2"
+    assert quiet[7] == "0", "a board that produced nothing still gets a row"
 
 
 def test_unique_and_assisted_render_as_uninstrumented_in_the_row_itself() -> None:
@@ -679,19 +703,29 @@ def test_the_provider_rollup_aggregates_boards() -> None:
         counts=corpus(eligible=60),
         artifacts=TailoredArtifactCounts(rows=1, with_pdf=1),
         leads=[lead(7)],
+        # ashby FIRST, so the ordering assertion below tests the sort key rather than the
+        # order these were written in: `totals` is a dict built in source order.
         sources=[
-            source("stripe", provider="greenhouse", eligible=25, leads=1),
-            source("brex", provider="greenhouse", eligible=25, leads=0),
-            source("openai", provider="ashby", eligible=10, leads=0),
+            source("openai", provider="ashby", eligible=10, leads=0, open_postings=60),
+            source("stripe", provider="greenhouse", eligible=25, leads=1, open_postings=30),
+            source("brex", provider="greenhouse", eligible=25, leads=0, open_postings=20),
         ],
     )
     body = funnel_to_markdown(report)
 
-    greenhouse = next(line for line in body.splitlines() if line.startswith("| greenhouse |"))
-    assert greenhouse.split("|")[2].strip() == "2", "two boards rolled up"
-    assert greenhouse.split("|")[4].strip() == "50"
-    ashby = next(line for line in body.splitlines() if line.startswith("| ashby |"))
-    assert ashby.split("|")[2].strip() == "1"
+    def rollup_row(provider: str) -> list[str]:
+        prefix = f"| {provider} |"
+        row = next(line for line in body.splitlines() if line.startswith(prefix))
+        return [cell.strip() for cell in row.split("|")]
+
+    greenhouse = rollup_row("greenhouse")
+    assert greenhouse[2] == "2", "two boards rolled up"
+    assert greenhouse[3] == "50", "open summed, not the board count"
+    assert greenhouse[4] == "50", "eligible summed"
+    assert greenhouse[5] == "1", "leads summed"
+    ashby = rollup_row("ashby")
+    assert ashby[2] == "1"
+    assert ashby[3] == "60"
     # Leads first: the provider that produced one must outrank the one that did not.
     assert body.index("| greenhouse |") < body.index("| ashby |")
 

@@ -59,12 +59,18 @@ class RankedPosting:
 class RankedResults:
     """The shortlist plus every count needed to account for the postings considered.
 
-    `considered` and the four hidden counts exist so the funnel's shortlist stage can
-    reconcile: `considered == len(visible) + skipped_not_new + hidden_hard_filter +
-    hidden_non_swe + hidden_ineligible + hidden_below_cutoff`. Each is its own counter,
-    incremented where the posting actually leaves, never a remainder computed by
-    subtraction — a remainder cannot catch a `continue` that forgot to count, which is the
-    only way this identity realistically breaks (P0 item 3).
+    `considered` and the five drop counts exist so the funnel's shortlist stage can reconcile:
+    `considered == len(visible) + skipped_not_new + hidden_hard_filter + hidden_non_swe +
+    hidden_ineligible + hidden_below_cutoff`. Each is its own counter, incremented where the
+    posting actually leaves, never a remainder computed by subtraction — a remainder cannot
+    catch a `continue` that forgot to count, which is the only way this identity realistically
+    breaks (P0 item 3).
+
+    That `considered` is `len(rows)` rather than that sum is a **code-review invariant, not a
+    tested one**: the loop's exits are exhaustive, so rewriting it as the sum is behaviourally
+    identical on every valid input and no test can tell them apart. It still matters — with
+    `len(rows)` a single deleted counter is caught; with the sum it is self-consistent and
+    invisible.
     """
 
     visible: list[RankedPosting]
@@ -76,7 +82,8 @@ class RankedResults:
     # Vetoed by exclude-title or a hard location filter, before the role gate or any score.
     hidden_hard_filter: int = 0
     # Cleared every filter but ranked outside `limit`. The bucket that did not exist before
-    # item 3: on a real run 14,873 postings left here and appeared in no counter at all.
+    # item 3: on a real run at --top 5, 4,442 postings left here and appeared in no counter at
+    # all. (The larger 11,517 went out through hidden_hard_filter, also uncounted before.)
     hidden_below_cutoff: int = 0
     # Narrowed away by `--new`. A scoping choice rather than a rejection, kept as its own
     # bucket so the identity holds for `top --new` too instead of only for the pipeline.

@@ -176,8 +176,9 @@ class ShortlistCounts:
 
     This is the stage that closes Gate P0's *"why every non-lead was dropped"* clause. Before
     P0 item 3 the ranker reported only `hidden_ineligible` and `hidden_non_swe`, so hard-filter
-    vetoes and everything below the `--top` cutoff landed in no bucket at all — 14,873 postings
-    on run 6.
+    vetoes and everything below the `--top` cutoff landed in no bucket at all — **15,959 of
+    19,262 open postings** on this session's run 6, of which 11,517 were hard-filter vetoes and
+    4,442 were below the cutoff.
     """
 
     considered: int
@@ -236,15 +237,22 @@ class RunFunnel:
 
     @property
     def unattributable(self) -> tuple[SourceTotal, ...]:
-        """Totals the per-board sweep could not account for — a posting or artifact belonging
-        to no board. Gate P0 asks which source produced each lead, so this is part of it."""
+        """Totals the per-board sweep could not account for.
+
+        Today that means exactly one thing: a `resume_tailored` ARTIFACT this run counted that
+        resolves to no board. Postings are NOT checked — a posting belonging to no board is
+        unreachable, and the total that claimed to check it was deleted for being unfailable
+        (D-028). Gate P0 asks which source produced each lead, so the artifact side is the part
+        that matters.
+        """
         return tuple(total for total in self.source_totals if not total.agrees)
 
     @property
     def reconciles(self) -> bool:
         """Gate P0's "reconciles to 100%": every instrumented stage balances, both independent
-        recounts agree with what the pipeline reported, and every counted posting and artifact
-        is attributable to a watched board."""
+        recounts agree with what the pipeline reported, and every `resume_tailored` artifact
+        this run counted resolves to a board. Note the last clause covers ARTIFACTS only; no
+        posting-level attribution check exists, because one cannot fail (D-028)."""
         return not self.unreconciled and not self.disagreements and not self.unattributable
 
     @property

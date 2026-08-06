@@ -24,29 +24,27 @@ All notable changes to this project are documented here. The format follows
   **One** total is re-swept per board and compared with the funnel's own figure: `leads`, whose two sides
   have genuinely different shapes (`COUNT(*)` of this run's `resume_tailored` rows against
   `COUNT(DISTINCT posting)` resolved through `posting_versions`), so a lead that resolves to no board fails
-  the run's reconciliation. A second total over `eligible` was written and then deleted before merge: it
+  the run's reconciliation. Neither way it can disagree is reachable through today's tailor path, so it is
+  a guard against a future writer rather than live evidence — the artifact says so too. A second total over `eligible` was written and then deleted before merge: it
   grouped the same subquery the verdict stage counts, by a `NOT NULL` foreign key, joined on a primary key,
   so it agreed for every possible database state. `applied` is excluded for a different reason — summing
   per-board distinct job counts is not the global distinct count if a job ever spans two boards, which is
   impossible today only by accident of the current data.
 
 - **The ranker now accounts for every posting it considered**, which is what makes the funnel's
-  `shortlist` stage evidence rather than bookkeeping. It previously reported two of its four exits, so
-  hard-filter vetoes and everything below the `--top` cutoff vanished — 14,873 postings on one real run.
-  All five exits are counted where the posting actually leaves, and `entered` is the ranker's own row
-  count measured independently of them, so the stage's balance can genuinely fail. `boardwatch run` now
+  `shortlist` stage evidence rather than bookkeeping. It previously reported two of its **five** exits, so
+  hard-filter vetoes, `--new` narrowing and everything below the `--top` cutoff all vanished — **15,959 of
+  19,262 open postings** on a measured run at `--top 5`, of which 11,517 were hard-filter vetoes and 4,442
+  were below the cutoff. All five exits are counted where the posting actually leaves, and `entered` is the
+  ranker's own row count measured independently of them, so the stage's balance can genuinely fail. `boardwatch run` now
   prints how many postings were considered and how many fell below the cutoff.
 
-### Changed
-
-- **Funnel artifact version 1 → 2**, for the `sources` and `source_totals` sections.
 
 - **Per-run funnel artifact, written on every `boardwatch run`.** Two halves — `funnel-<run_id>.json` and
   `funnel-<run_id>.md` — land in `<out>/<YYYY-MM-DD>/` beside that day's tailored résumés, outside the git
   tree. The Markdown names the board each lead came from, and every stage states its drop buckets with
   counts rather than leaving the reader to subtract. (As first shipped it did not account for every
-  non-lead — postings ranked below the `--top` cutoff appeared in no counter at all. P0 item 3, below,
-  closed that.)
+  non-lead — postings ranked below the `--top` cutoff appeared in no counter at all. P0 item 3, above, closed that.)
 
   The funnel's head is the **open-posting corpus**, not the number of postings the scan listed. Those are
   different populations — a board answering 304 lists nothing, and `--no-scan` lists nothing at all — so
@@ -135,6 +133,8 @@ All notable changes to this project are documented here. The format follows
   what populates it. Both are in this same unreleased version.)*
 
 ### Changed
+
+- **Funnel artifact version 1 → 2**, for the `sources` and `source_totals` sections.
 
 - **`boardwatch doctor` now says "a run is in progress" rather than "a scan is in progress".** Since run
   attribution, an unfinished run is also a `boardwatch run` still tailoring or a standalone eligibility

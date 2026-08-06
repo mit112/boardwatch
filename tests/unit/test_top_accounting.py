@@ -1,14 +1,23 @@
 """The ranker accounts for every posting it considered (P0 item 3).
 
 Gate P0 requires *why every non-lead was dropped* to be answerable from the funnel artifact
-alone. Before this, `rank_open_postings` reported only two of its four exits: postings vetoed
-by the hard filters and postings that ranked below the `--top` cutoff simply vanished, and on
-a real run that was **14,873 postings in no bucket at all**.
+alone. Before this, `rank_open_postings` reported only two of its **five** exits: postings
+vetoed by the hard filters, postings narrowed away by `--new`, and postings that ranked below
+the `--top` cutoff all simply vanished. On a real run that was **15,959 of 19,262 open
+postings in no bucket at all** — 11,517 hard-filter vetoes and 4,442 below the cutoff.
 
 The identity these tests pin is `considered == visible + every drop`. It is worth pinning
 because it is the one arithmetic in the ranker that a future `continue` can silently break:
 adding an early exit without a counter makes the funnel's shortlist stage stop reconciling,
 which is exactly the signal Gate P0 is built on.
+
+**What these tests CANNOT pin, stated so nobody assumes otherwise.** That `considered` is
+`len(rows)` rather than the sum of the buckets is a **code-review invariant, not a tested
+one.** Rewriting it as an exact sum is behaviourally identical on every valid input — the
+loop's exits are exhaustive — so no test can distinguish the two, and a mutation review
+confirmed the substitution survives the whole suite. It still matters: with `len(rows)`,
+deleting any single counter is caught; with the sum, a missing counter is self-consistent and
+invisible. The guard is structural, and this note is the only thing defending it.
 """
 
 from __future__ import annotations
@@ -18,7 +27,9 @@ from pathlib import Path
 
 import pytest
 from sqlalchemy import Engine, insert
+from typer.testing import CliRunner
 
+from boardwatch.cli.app import app
 from boardwatch.cli.top_cmd import RankedResults, rank_open_postings
 from boardwatch.core.clock import utcnow
 from boardwatch.core.settings import Settings
@@ -36,12 +47,20 @@ NON_SWE_TITLE = "Deal Strategist"
 
 @pytest.fixture()
 def env(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
-    monkeypatch.setenv("BOARDWATCH_CONFIG_DIR", str(tmp_path / "cfg"))
+    # Config dir == data dir so `_settings` below and the CLI invocations in the ineligible
+    # test read the SAME facts and policy. With them split, `eligibility facts set` writes
+    # somewhere the engine under test never looks.
+    monkeypatch.setenv("BOARDWATCH_CONFIG_DIR", str(tmp_path / "data"))
     monkeypatch.delenv("GITHUB_ACTIONS", raising=False)
     return tmp_path / "data"
 
 
-def _seed(data_dir: Path, titles: list[str]) -> Engine:
+def _cli(data_dir: Path, args: list[str]) -> None:
+    result = CliRunner().invoke(app, ["--data-dir", str(data_dir), *args])
+    assert result.exit_code == 0, f"{args} failed: {result.stdout}"
+
+
+def _seed(data_dir: Path, titles: list[str], *, bodies: list[str] | None = None) -> Engine:
     """One company, one open posting per title, distinct posted_at so ranking is total.
 
     `exclude_titles=["intern"]` is what makes EXCLUDED_TITLE a deterministic hard-filter
@@ -58,6 +77,7 @@ def _seed(data_dir: Path, titles: list[str]) -> Engine:
             name="Acme", provider="greenhouse", slug="acme-acct", source="user", watched=True,
         )).inserted_primary_key[0])
         for offset, title in enumerate(titles):
+            body = bodies[offset] if bodies else "b"
             job_id = int(conn.execute(insert(jobs).values(created_at=NOW)).inserted_primary_key[0])
             posting_id = int(conn.execute(insert(postings).values(
                 company_id=company_id, job_id=job_id, provider_posting_id=f"pp-{offset}",
@@ -66,10 +86,11 @@ def _seed(data_dir: Path, titles: list[str]) -> Engine:
                 # Descending recency, so `scored` has a strict order and "below the cutoff"
                 # is a fact about a known posting rather than a tie broken arbitrarily.
                 posted_at=NOW - timedelta(days=offset), first_seen_at=NOW, last_seen_at=NOW,
-                status="open", consecutive_missing=0, content_hash=f"hh-{offset}", body_text="b",
+                status="open", consecutive_missing=0, content_hash=f"hh-{offset}",
+                body_text=body,
             )).inserted_primary_key[0])
             conn.execute(insert(posting_versions).values(
-                posting_id=posting_id, content_hash=f"hh-{offset}", body_text="b",
+                posting_id=posting_id, content_hash=f"hh-{offset}", body_text=body,
                 captured_at=NOW, capture_reason="new",
             ))
     return engine
@@ -111,8 +132,8 @@ def test_a_posting_below_the_top_cutoff_is_counted_rather_than_vanishing(env: Pa
     """The bucket that did not exist at all before item 3.
 
     Two software postings clear every filter and `limit=1`, so exactly one is shown and the
-    other is below the cutoff. Asserted as its own number, not as a remainder: on run 6 this
-    population was 14,873 and the artifact could not name it.
+    other is below the cutoff. Asserted as its own number, not as a remainder: on a real run at
+    --top 5 this population was 4,442 and the artifact could not name it.
     """
     results = _rank(env, ["Backend Engineer", "Platform Engineer"], limit=1)
     assert len(results.visible) == 1
@@ -158,4 +179,32 @@ def test_postings_narrowed_away_by_only_new_are_counted(env: Path) -> None:
     # No posting carries a `new` event past the cursor here, so all of them are narrowed out.
     assert results.skipped_not_new == 2
     assert results.visible == []
+    assert _accounted(results) == results.considered == 2
+
+
+# The only body text that makes the degree rule fire, so one posting persists as ineligible.
+DEGREE_BODY = "We are hiring a backend engineer. A Bachelor's degree is required."
+
+
+def test_a_posting_hidden_as_ineligible_is_not_also_counted_as_capped(env: Path) -> None:
+    """`hidden_ineligible` was 0 in every fixture, which left two real regressions invisible.
+
+    A mutation-based review found that with no fixture exercising this bucket, the whole
+    `capped_by_top_n` counter could be replaced by `len(scored) - len(visible)` — a remainder —
+    and the suite stayed green, silently folding hidden-ineligible postings into the cutoff
+    bucket. Deleting the `continue` that skips an ineligible posting also survived here.
+
+    `limit=10` with two postings means nothing can be capped, so the second assertion is the
+    load-bearing one: an ineligible posting must land in exactly ONE bucket.
+    """
+    _seed(env, ["Backend Engineer", "Platform Engineer"], bodies=[DEGREE_BODY, "b"])
+    _cli(env, ["eligibility", "facts", "set", "highest_degree", "none"])
+    _cli(env, ["eligibility", "policy", "set", "degree", "blocker"])
+    _cli(env, ["eligibility", "run"])
+
+    results = rank_open_postings(get_engine(env), _settings(env), limit=10)
+
+    assert results.hidden_ineligible == 1
+    assert results.hidden_below_cutoff == 0, "an ineligible posting was also counted as capped"
+    assert [posting.title for posting in results.visible] == ["Platform Engineer"]
     assert _accounted(results) == results.considered == 2

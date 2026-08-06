@@ -2,12 +2,14 @@
 
 **Last updated:** 2026-08-06 (session 6, P0 in progress)
 **Updated by:** boardwatch (Claude)
-**Repo state at write time:** every P0 item claimed done below is merged to `main`; the tree is clean.
+**Repo state at write time:** items 0, 1, 2 and 7 are on `main`. **Item 3 is complete on branch
+`p0-item3-per-source` and NOT yet merged** — verify with `git log --oneline -3` and `git branch`; if it has
+merged since, correct this line.
 **This header carries no commit count or sha on purpose** — the previous one named both, went stale inside
 a single session when three later docs commits did not update it, and a cold session following the
 session-start ritual hit the disagreement on its very first check. State what is durably true; verify the
 rest against `git log`. (D-017.)
-**Gate:** `make check` exits **0** (2745 passed, coverage 95%), measured in plain mode with the real exit code.
+**Gate:** `make check` exits **0** (2749 passed, coverage 95%), measured in plain mode with the real exit code.
 
 > This is the single file a fresh session with zero memory reads to know where the program stands.
 > If it disagrees with the repo, **the repo wins** — fix this file and note the correction in
@@ -38,11 +40,13 @@ rate, item **8** the fabrication counters.
    reconciles and has now done so on consecutive live runs in two separate sessions, but every one of them
    ran `--no-scan` against a copy of the production store, so **the scan stage has never been exercised
    under the gate**. This needs three consecutive runs of the real daily driver, which is P3's to
-   schedule. No code change is owed for it; it is a scheduling and observation task.
+   schedule. **Expected** to need no code change — it looks like a scheduling and observation task — but this is an
+   expectation, not a finding: `ScanContext` is deliberately not a funnel edge, so what a scan-on run adds
+   to the reconciliation has never been observed.
 2. *Why every non-lead was dropped, from the artifact alone.* **NOW MET** (session 6, item 3). The
-   `shortlist` stage enters at the ranker's own considered population — 19,262 on run 6, against 3,303
-   before — and names all five of its exits. **15,959 postings that previously landed in no bucket at all
-   are now attributed**, the largest being `hidden_hard_filter` at 11,517. The stage is also no longer
+   `shortlist` stage enters at the ranker's own considered population — **19,262**, against 3,301 measured
+   in session 5 — and names all five of its exits. **15,959 postings that previously landed in no bucket
+   at all are now attributed**, the largest being `hidden_hard_filter` at 11,517. The stage is also no longer
    `derived`, so its balance can genuinely fail; the artifact lists it beside `corpus` and `tailor` as a
    stage that could have caught a wrong number.
 3. *Per-rule abstain for every rule in the catalog.* **MET.** All 44 emitted every run, never-fired ones
@@ -81,7 +85,7 @@ cutoff each `continue`d with no counter, so the `shortlist` stage entered at the
 `derived`**: its balance can genuinely fail. The artifact lists it beside `corpus` and `tailor` as a stage
 that could have caught a wrong number — the first addition to that list since it was created.
 
-### The review found three defects, and two of them were mine in an instructive way
+### The reviews found eight defects, and six were mine in an instructive way
 
 **D-028 was written, cited D-023 as its authority, and then broke D-023's rule in the next file.** The
 per-source `eligible` reconciliation grouped the very same subquery the verdict stage counts, by a NOT NULL
@@ -103,9 +107,11 @@ left it rendered into **every funnel artifact** and in `SourceTotal`'s docstring
 artifact, not by review. A re-review of the fix commit then found it *still* alive in the docstring of
 `count_by_source` itself, at the query site, where it was most likely to be believed and acted on.
 
-> **Correcting a document is not correcting the program.** This one claim lived in **four** places: the
-> decision log, the changelog, the prose the program prints, and the docstring at the query that produces
-> the number. Three separate passes were needed to kill it, and the last copy was the most dangerous.
+> **Correcting a document is not correcting the program.** This one claim lived in **six** places: D-028,
+> the changelog, the prose the program prints, `SourceTotal`'s docstring, `count_by_source`'s docstring, and
+> a comment beside the assembly loop. It had also reached `PROGRAM.md`, which cited D-028 as the authority
+> for the reconciliation D-028 deletes. **Four separate passes each believed they had finished the
+> retraction.** Retracting a claim means grepping for it.
 
 **A re-review of the fix commit found four more, one of them a real defect a layer up from the change.**
 The shortlist stage's new "not instrumented" note named *a missing profile or a scan outage* as the cause —
@@ -124,8 +130,10 @@ exit 0, all reconciled — the last two on the post-review tree, confirming the 
 carries no surviving copy of the falsified claim.
 Corpus 19,262 · eligible 18,174 · ineligible 0 (B7, P2's) · abstained 1,088 · 5 leads, 5 PDFs. Per
 provider: **greenhouse 5 leads; workday 0 from 37 boards and 4,685 eligible postings**; ashby 0; lever 0.
-One run at `--top 5` is not the ≥3 runs that argument needs — see `METRICS.md` for the cautions. The scan
-stage was exercised not at all, so this is **not** the gate evidence for clause 1.
+**Four runs reconciled, but they are not four independent days of evidence** — they are repeat runs over
+one frozen store copy, so the provider attribution is one measurement observed four times, not the ≥3
+independent runs job-apps' rule asks for. See `METRICS.md` for the cautions. The scan stage was exercised
+not at all, so this is **not** the gate evidence for clause 1.
 
 ## What shipped in session 5 (2026-08-06)
 
@@ -421,7 +429,9 @@ boards and 4,685 eligible postings**, ashby 0, lever 0. This is the shape of evi
 unlock condition asks for, but it is one run at `--top 5` — where `leads` measures only the top of the
 ranking — and job-apps' own rule is ≥3 runs. Do not cite it as settled.
 
-<!-- superseded next action, kept for its starting points, which are still accurate -->
+<!-- SUPERSEDED next action, kept for its starting points. WARNING: one of them is now FALSE —
+     "Only `corpus` and `tailor` are falsifiable stages" was true before item 3 and is not now; the
+     artifact lists `corpus`, `shortlist`, `tailor`. The rest still hold. -->
 ### Previously: P0 item 3 — the per-source outcome table (DONE, session 6)
 
 **P0 item 3 — the per-source outcome table** (`unique | assisted | eligible | leads | applied`).
@@ -437,7 +447,8 @@ uninstrumented and postings ranked below the `--top` cutoff appear in no counter
   per-source table means one more query and one more section; the artifact's shape does not change.
 - **`companies` carries `provider`, `slug` and `source`** (`registry` | `user`, a CHECK-constrained
   pair). `lead_provenance` already joins postings → companies for exactly this.
-- **Only `corpus` and `tailor` are falsifiable stages today.** `attribution` and `verdict` are SQL
+- ~~**Only `corpus` and `tailor` are falsifiable stages today.**~~ **NO LONGER TRUE** — item 3 made
+  `shortlist` falsifiable too. The rest of this bullet still holds: `attribution` and `verdict` are SQL
   partitions of the set they are compared against and are marked `derived` for that reason (D-023).
   Do not "fix" them into looking like evidence — if a per-source table needs a real check, it needs a
   count through a genuinely different path, as the two cross-checks do.

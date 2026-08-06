@@ -426,8 +426,11 @@ def count_by_source(
     }
     outcomes = [
         SourceOutcome(
-            # A company row that vanished is a real anomaly: labelled unknown and kept, never
-            # dropped, so the reconciliation against the funnel's totals still catches it.
+            # Defensive only. `postings.company_id` is NOT NULL behind an enforced foreign
+            # key, so a missing company row is unreachable — this is not a check, and an
+            # earlier comment here wrongly claimed the kept-and-labelled row is what makes a
+            # reconciliation catch it. Keeping it would in fact hide it, since its count is
+            # still summed (D-028).
             provider=meta.get(company_id, ("unknown", "unknown", "unknown"))[0],
             board_slug=meta.get(company_id, ("unknown", "unknown", "unknown"))[1],
             company_source=meta.get(company_id, ("unknown", "unknown", "unknown"))[2],

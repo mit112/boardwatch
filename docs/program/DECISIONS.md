@@ -780,18 +780,24 @@ the two `None`s are P6's to fill, and the artifact says so in its own prose rath
 **Context.** D-023 marked `shortlist` `derived` because its `entered` was the sum of the ranker's own
 outcomes, so its balance held by construction. Worse, the ranker reported only two of its four exits:
 `passes_hard_filters` vetoes and everything below the `--top` cutoff each `continue`d with no counter.
-On run 6 that was **14,873 postings in no bucket at all**, and it is why Gate P0's *"why every non-lead
-was dropped"* clause was not met.
+On a measured run at `--top 5` that was **15,959 of 19,262 open postings in no bucket at all** — 11,517
+hard-filter vetoes and 4,442 below the cutoff — and it is why Gate P0's *"why every non-lead was dropped"*
+clause was not met. (An earlier figure of 14,873 circulated in these documents. It was never measured: it
+is `18,174 − 3,301`, a derived estimate from a different run at a different `--top`. Cite the measured
+numbers.)
 
-**Choice.** `rank_open_postings` now counts **all four exits plus the population it considered**.
+**Choice.** `rank_open_postings` now counts **all five exits plus the population it considered**. Five,
+not four: the `--new` narrowing was already an uncounted exit before this change, so the ranker had five
+ways out and reported two.
 `entered` is `len(rows)` — the ranker's own fetch — measured independently of the loop that produces the
 drops. So `considered == shortlisted + every drop` is a **genuinely falsifiable identity**: it breaks if a
 `continue` is ever added without a counter, which is the only realistic way postings start going missing
 again. The stage is therefore **not** `derived`, and it is the first stage besides `corpus` and `tailor`
 that the artifact lists as one whose balance could actually have failed.
 
-`skipped_not_new` is its own bucket even though no pipeline caller passes `only_new`, because an identity
-that holds for one caller and not another is not an identity — and `top --new` is a real caller.
+`skipped_not_new` is its own bucket even though no pipeline caller passes `only_new`. The `continue` it
+counts is **pre-existing**, not new here — it was simply never counted. An identity that holds for one
+caller and not another is not an identity, and `top --new` is a real caller.
 
 **Alternatives rejected.** *Compute the cutoff bucket as `considered - shortlisted - other drops`.* That
 is the remainder pattern D-023 exists to forbid: it makes the stage balance for every possible input, so it
@@ -839,9 +845,14 @@ how a check becomes a false green later.
 **The retraction took three passes, and that is the more useful lesson.** Correcting this entry and the
 `CHANGELOG` left the same false reasoning rendered into every funnel artifact and stated in
 `SourceTotal`'s docstring; a re-review then found it still alive in `count_by_source`'s docstring, at the
-query site. **One claim, four homes:** the decision log, the changelog, the prose the program prints, and
-the docstring beside the code that computes the number. Retracting a claim means grepping for it, not
-editing the document you wrote it in.
+query site — and a docs-only review then found a **sixth** copy, in a comment at the assembly step 90
+lines below the docstring that had just been corrected to say the opposite.
+
+**One claim, six homes:** this entry, the changelog, the prose the program prints, `SourceTotal`'s
+docstring, `count_by_source`'s docstring, and a comment beside the assembly loop. It also reached
+`PROGRAM.md`, which cites this entry as the authority for a reconciliation this entry deletes. Retracting
+a claim means grepping for it, not editing the document you wrote it in — and each pass that "finished"
+the retraction was wrong.
 
 **The rest of the lesson.** *"Counts through a different path"* is not
 satisfied by grouping the same query differently. A different **path** means a different table expression
