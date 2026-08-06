@@ -64,6 +64,8 @@ def run(
     for lead in summary.tailored:
         mark = "✓" if lead.pdf_built else "·"
         console.print(f"  {mark} {lead.company} — {lead.title} → {lead.out_dir}", markup=False)
+    if summary.funnel is not None:
+        console.print(f"  funnel → {summary.funnel.markdown_path}", markup=False)
     for err in summary.errors:
         console.print(f"  ! {err}", markup=False)
 

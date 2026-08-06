@@ -81,8 +81,23 @@ nine items numbered 0-8, and **item numbers are stable** — later documents cit
    plus D-019's invariant that `run_id` is never NULL on a new row, and D-020's split of who creates the
    row from who finishes it.
 1. **Per-run funnel artifact** (`json` + `md`), one per run: `observed → unique → candidates →
-   prefilter_stopped → eligible / ineligible / abstained → leads_with_pdf → marked_applied`.
+   prefilter_stopped → eligible / ineligible / abstained → leads_with_pdf → marked_applied`. **DONE** —
+   written to `<out_root>/<date>/funnel-<run_id>.{json,md}`, outside the git tree (D-024). Carries the
+   abstain report for every catalog rule, per-lead board provenance, and two cross-checks that recount
+   the deliverable from the store.
+
+   **The stages shipped are `dedup · corpus · attribution · verdict · shortlist · tailor · pdf · applied`,
+   which is not the list written above.** Every departure was measured, not assumed:
+   - the head is the **open-posting corpus**, not `observed` — `postings_seen` and `open_postings` are
+     different populations (D-022);
+   - `unique` reports **not instrumented** rather than 0, because dedup is P6 and has never run (D-023);
+   - `candidates` and `prefilter_stopped` **have no counterpart at all**. The ranker does not report how
+     many postings it considered, so the population entering the prefilter is unmeasured and postings
+     ranked below `--top` land in no bucket. **Item 3 below is what closes this**, and until it does,
+     Gate P0's *"why every non-lead was dropped"* clause is not met;
+   - `attribution` and `tailor` are additions the run key made possible.
 2. **Per-rule abstain rate**, every run. This is the metric that makes a rule that cannot fire *visible*.
+   **DONE** — `boardwatch eligibility abstain`, and emitted for all 44 rules inside the item-1 artifact.
 3. **Per-source outcome table**: `unique | assisted | eligible | leads | applied`.
 4. **Run manifest**: config hash, profile version, rule-catalog version, code fingerprint of
    decision-relevant modules, start/end, exit status.

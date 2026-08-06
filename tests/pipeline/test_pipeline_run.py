@@ -261,7 +261,9 @@ def test_a_lead_that_fails_to_tailor_leaves_no_empty_folder_behind(
 
     assert summary.tailor_failed > 0, "nothing failed, so this test proves nothing"
     assert summary.tailored == []
-    day_dirs = list(out_root.glob("*/*")) if out_root.exists() else []
+    # Directories only: a lead is a FOLDER, and the dated directory also holds the run's
+    # funnel artifact, which is a file and is meant to be there even when every lead failed.
+    day_dirs = [p for p in out_root.glob("*/*") if p.is_dir()] if out_root.exists() else []
     assert day_dirs == [], f"empty husks left behind: {day_dirs}"
 
 
