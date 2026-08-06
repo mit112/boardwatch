@@ -216,7 +216,10 @@ First run of `boardwatch eligibility abstain` (commit `540bb34`) against the liv
 Scope is **current evaluations for the current identity** — the same scope `eligibility summary` uses, so
 these are smaller than the all-time totals recorded in session 2 and that is expected, not a discrepancy.
 
-**Catalog coverage: 44 rules · 16,674 requirement rows · 0 unattributed · 0 out-of-catalog.**
+**Catalog coverage: 44 rules · 16,674 requirement rows across 19,262 evaluations · 0 unattributed ·
+0 out-of-catalog.** (All-time, for comparison: 17,753 rows / 20,637 evaluations. The independent review
+re-derived 7 never-fired and 17 fully-abstaining in *both* frames, so neither pathology is an artifact of
+scoping.)
 
 | Bucket | Count | Meaning |
 |---|---|---|

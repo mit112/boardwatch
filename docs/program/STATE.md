@@ -31,14 +31,27 @@ table, the run manifest, the reconciliation sweep, the stub rate, and the fabric
 
 ## What shipped in session 3 (2026-08-06)
 
+Everything below is on `main` and **pushed**. `make check` exited 0 at each commit (2650 passed, 94.91%).
+
 - **Merged `p0-instrumentation` to `main` and pushed** (`88c98d4`), after a second independent review.
-  `main` had been red since session 1 and is now green: `make check` exits 0, `generalization: OK`.
+  `main` had been red since session 1 and is now green: `make check` exits 0, `generalization: OK`. CI on
+  the merge: success.
 - **`540bb34` — per-rule abstain rate** (`boardwatch eligibility abstain`), P0 item 2. Enumerates from
   `load_rules()` and LEFT JOINs observed counts, so the 7 rules that have never fired are visible instead of
   absent. Never-fired reports as `never fired`, **never as 0%**.
-- **Review found the code clean and the documents stale** — see D-017. `STATE.md`'s own header was the
-  defect: it named a HEAD and a commit count that three later docs commits had invalidated. The header no
-  longer carries either.
+- **`fc6e8a5`** — closed four nits from a third review (of the abstain feature itself). See D-018.
+- **`5f254a3`, `193468e`** — this file, `METRICS.md`, `CHANGELOG.md`, and D-017/D-018.
+
+**Two independent reviews ran this session, and neither found a logic defect.** Both found documents and
+tests. D-017: `STATE.md`'s own header named a HEAD and commit count that three later docs commits had
+invalidated — the header no longer carries either. D-018: a test whose docstring cited a rendering fix
+**did not pin it** (it widened the terminal to 160 columns, dodging the 80-column condition the fix
+addressed; deleting the fix left the suite green), and `total_rows` — documented as the property B6
+reconciles against — had no caller and no assertion.
+
+> **The standing lesson, now twice-observed: review the documents and the tests, not just the code.**
+> A test that cannot fail is documentation with a green tick next to it. Confirm a new test fails without
+> its fix before trusting it.
 
 ### What the new metric immediately found
 
@@ -140,10 +153,21 @@ that owns run identity across all three. This is early P3 work, taken on deliber
 Everything below it in P0 depends on that row existing, which is why it goes first now that the
 `run_id`-independent metric (per-rule abstain rate) is done.
 
+**Starting points a fresh session should not re-derive.** `runs` rows are written in exactly one place —
+`insert_run` at `scan/coordinator.py:104`, inside the scan's file lock. Eligibility is judged later as a
+`top`/`stats` preflight side-effect (`eligibility/preflight.py:133`) with no `run_id` in scope, and tailoring
+is later still and single-posting (`run_tailor` takes one `posting_id`). **There is no batch orchestrator in
+`src/`** — the de facto one is `.agent/bin/bw-daily` (`bwd`), gitignored shell. The new command replaces
+that, and `build_abstain_report` (`reports/abstain.py`) is already a clean seam for the artifact to consume:
+it is a pure function of catalog + counts, so the funnel writer needs no new query.
+
 1. Thread `run_id` into the two write paths — `write_evaluation` (`eligibility/engine.py:242`) and
    `record_artifact` (`store/artifacts.py:17`) take no such parameter today, so the new column stays NULL
    forever until they do. **The migration alone changes no behaviour.**
-2. ~~Per-rule abstain rate~~ — **DONE, `540bb34`.** `boardwatch eligibility abstain`.
+2. ~~Per-rule abstain rate~~ — **DONE, `540bb34`.** `boardwatch eligibility abstain`. **But note the gap:**
+   `PROGRAM.md` §3.P0.2 says "every run" and Gate P0 requires it answerable *from the artifact alone*.
+   This ships an on-demand CLI table only. The metric exists and is correct; emitting it into a per-run
+   artifact is item 3's job. **Gate P0 is not met by this commit** — do not read item 2 as closing it.
 3. Funnel artifact (`json` + `md`) with cache hits as their own asserted stage
    (`store/eligibility.py:130`'s `inserted.rowcount == 0` **is** the cache-hit signal, computed today and
    discarded — this is plumbing an existing boolean out, not new detection).
