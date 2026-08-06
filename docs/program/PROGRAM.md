@@ -81,7 +81,13 @@ nine items numbered 0-8, and **item numbers are stable** — later documents cit
    plus D-019's invariant that `run_id` is never NULL on a new row, and D-020's split of who creates the
    row from who finishes it.
 1. **Per-run funnel artifact** (`json` + `md`), one per run: `observed → unique → candidates →
-   prefilter_stopped → eligible / ineligible / abstained → leads_with_pdf → marked_applied`.
+   prefilter_stopped → eligible / ineligible / abstained → leads_with_pdf → marked_applied`. **DONE** —
+   written to `<out_root>/<date>/funnel-<run_id>.{json,md}`, outside the git tree (D-024). Two departures
+   from the stage list above, both measured rather than assumed: the head is the **open-posting corpus**,
+   not `observed`, because `postings_seen` and `open_postings` are different populations (D-022); and
+   `unique` reports **not instrumented** rather than 0, because dedup is P6 and has never run (D-023).
+   Carries the abstain report for every catalog rule, per-lead board provenance, and two cross-checks that
+   recount the deliverable from the store.
 2. **Per-rule abstain rate**, every run. This is the metric that makes a rule that cannot fire *visible*.
 3. **Per-source outcome table**: `unique | assisted | eligible | leads | applied`.
 4. **Run manifest**: config hash, profile version, rule-catalog version, code fingerprint of

@@ -8,6 +8,29 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- **Per-run funnel artifact, written on every `boardwatch run`.** Two halves — `funnel-<run_id>.json` and
+  `funnel-<run_id>.md` — land in `<out>/<YYYY-MM-DD>/` beside that day's tailored résumés, outside the git
+  tree. The Markdown answers, on its own, which board produced each lead and why every non-lead was
+  dropped: every stage names its drop buckets with counts rather than leaving the reader to subtract.
+
+  The funnel's head is the **open-posting corpus**, not the number of postings the scan listed. Those are
+  different populations — a board answering 304 lists nothing, and `--no-scan` lists nothing at all — so
+  scan counts are reported as context in their own block rather than as a funnel edge.
+
+  Three stages carry reconciliations that can genuinely fail (`corpus`, `attribution`, `verdict`), plus two
+  cross-checks that recount `tailored` and `leads_with_pdf` from the store rather than trusting what the
+  pipeline reported. `leads_with_pdf` is read from `meta_json.typst_pdf_built`, not from a row count:
+  `artifacts.uri` holds the `.typ` path whether or not a PDF ever compiled.
+
+  Stages that nobody has instrumented report **`null`, never 0** — dedup has never run, and reporting 0
+  duplicates would assert the opposite of the truth. Stages whose drop bucket is the remainder of the
+  others are labelled `derived`, because their balance is arithmetic rather than evidence. The artifact
+  also carries the abstain rate for **every** rule in the catalog (including the ones that have never
+  fired) and the count of evaluations that carry no run at all, which is expected only to shrink.
+
+  Written from the same `finally` that closes the run row, so a run that crashed partway still leaves a
+  funnel explaining how far it got. A failure to write it is reported and never fails the run.
+
 - **`boardwatch run` — one command that runs scan → eligibility → tailor under a single run.**
   Until now nothing in `src/` spanned the three stages: `runs` rows were inserted only inside the
   scan's file lock, eligibility was judged later as a side-effect of `top`'s preflight, and

@@ -632,3 +632,101 @@ judgement. **Recorded in `STATE.md`'s known-gaps table so exit 0 is not misread 
 change found nineteen defects between them, and **the second review's most severe finding was a defect in
 the first review's fix.** A fix is new code and inherits none of the reviewed status of what it repairs.
 Re-review after a substantial fix round; do not treat "adopted all findings" as terminal.
+
+---
+
+## D-022 — the funnel's head is the open-posting corpus, not scan throughput
+**2026-08-06 · session 5 · P0 item 1**
+
+**Context.** `PROGRAM.md` §3.P0.1 names the stages `observed → unique → candidates → …`, and the obvious
+reading is that `observed` is `ScanSummary.postings_seen` flowing into the next stage. Measured before
+building: **`postings_seen` and `open_postings` are different populations.** `postings_seen` accumulates
+`result.listed` per board — a board that returns **304 unchanged lists nothing** — while `open_postings` is
+a whole-DB `COUNT(*) WHERE status='open'` taken after the fetch loop. On a `--no-scan` run `postings_seen`
+is 0 against a corpus of ~19,000.
+
+Chaining them would have produced a funnel edge whose drop bucket was **negative on most real runs**, and
+the reconciliation would have been reported as a failure of the pipeline rather than of the arithmetic.
+
+**Choice.** The funnel's head is the **open-posting corpus**, which is the population eligibility actually
+judges. Scan counts are emitted as **context**, in their own block, explicitly labelled as throughput and
+not as a funnel edge. Rejected: normalising the two into a common population (would need per-board
+attribution that does not exist until P0 item 3), and dropping scan from the artifact (the operator needs
+to know 5 of 85 boards were dead).
+
+## D-023 — a stage reports `None` when unmeasured, and says when its balance is bookkeeping
+**2026-08-06 · session 5 · P0 item 1**
+
+**Context.** Gate P0 wants "the funnel reconciles to 100%". Two ways to pass that gate dishonestly emerged
+while building it, and both are the same failure the abstain report already guards against.
+
+1. **A stage nobody instrumented reporting 0.** Dedup has never run — `jobs` and `postings` are 1:1 — so a
+   `duplicates_dropped: 0` would assert *boardwatch measured dedup and found none*, the opposite of the
+   truth, and would count towards the gate.
+2. **A stage whose drop bucket is the remainder of the others.** `shortlist`'s `capped_by_top_n`, `pdf`'s
+   `no_pdf` and `applied`'s `not_marked_applied` are all computed as balances, so those stages **cannot
+   fail to reconcile**. Presenting their green ticks beside the ones that can fail inflates the evidence.
+
+**Choice.** `Stage.entered/advanced` are `int | None`; `reconciled` returns **`None`** when unmeasured, not
+`True`, so an uninstrumented stage is excluded from the gate rather than silently passing it. Stages whose
+balance is arithmetic carry **`derived: true`** and render as `yes (derived)`. The genuinely falsifiable
+reconciliations are `corpus`, `attribution` and `verdict`, plus two **cross-checks** that recount `tailored`
+and `leads_with_pdf` from the store — `CLAUDE.md`'s "count the deliverable through a different path".
+
+This is the same rule as `abstain_rate is None` for a never-fired rule, applied one level up. Consequence
+accepted: `reconciles` is False whenever a recount disagrees, even though every stage balances — which is
+the point, since a self-report that agrees with itself is not evidence.
+
+**A test-design note worth keeping.** The store module's docstring claims `no_current_evaluation` is an
+independent `NOT EXISTS` sweep rather than `open_postings - evaluated`. Every test passed with that claim
+mutated to subtraction — the claim was documented and unpinned. Pinning it needed a corpus that genuinely
+**cannot** partition (one posting carrying two current-identity evaluations, which slips past the partial
+unique index because it keys on `input_id`): the sweep reports `reconciles False`, subtraction reports
+`True` by construction. **Derive the mutation from the sentence, not from the code** — again.
+
+## D-024 — the artifact is written from the `finally`, and never fails the run
+**2026-08-06 · session 5 · P0 item 1**
+
+**Context.** Where to emit decides what is diagnosable. Writing on the success path only would leave every
+crashed run — the ones worth diagnosing — with no artifact. Writing before `finish_run` would stamp every
+artifact with `finished_at: null`, reporting each run as still in progress.
+
+**Choice.** The write happens in the **same `finally` that closes the run row, immediately after
+`finish_run`**, so a run that raised partway still explains how far it got and still carries a real
+finish time. The call is wrapped in `try/except` that prints and swallows: that block can run **while an
+exception is propagating**, and raising there would replace the real cause of the failure with a reporting
+error, or discard already-produced leads on a healthy run. Reporting is not the deliverable.
+
+Written to `<out_root>/<date>/funnel-<run_id>.{json,md}` — **outside the git tree**, beside the day's
+tailored résumés. Generalization rule R7 requires a sha256-pinned `SHIPPED_DATA` entry for any tracked
+`.json`, which a per-run artifact can never satisfy. Named by run id, not by date, so two runs in one day
+do not overwrite each other.
+
+## D-025 — mutation testing has two failure modes that both report a false PASS
+**2026-08-06 · session 5 · process, learned the expensive way**
+
+**Context.** `CLAUDE.md` and D-020 already require confirming a test fails without its fix. This session
+showed the *procedure* for doing that is itself capable of lying, twice, in opposite directions.
+
+**1. Restoring with `git checkout -- src/` discards uncommitted fixes.** Mid-review I mutated a source
+file, checked the result, then "restored" it with `git checkout`. The fixes from the review round were
+still uncommitted, so the restore silently reverted them to the last commit. Two subsequent mutation
+results were then read against the **pre-fix** code and recorded as findings that were not real.
+**Commit before mutating, or back the file up outside git.**
+
+**2. Rewriting a source file in a loop leaves stale bytecode.** A mutate → test → `cp` back cycle
+produced a running module that was a *hybrid* — `inspect.getsource` showed the new source while the
+executing code object came from a cached `.pyc`. The tell was a stage whose `entered` matched the old
+implementation and whose drop count matched the new one, which no single version of the file could
+produce. One test then failed under `make check` having passed in isolation minutes earlier, and one
+mutation was recorded as CAUGHT that a clean re-run reports as SURVIVED. **Clear `__pycache__` between
+mutations, and re-confirm any surprising result in isolation with a cold cache.**
+
+**Choice.** Mutation runs follow a fixed shape: commit first · back up outside the tree · one mutation
+· clear `__pycache__` · run ONE test · restore · clear again. A batched loop over many mutations is
+what hid both failures here; when a batch disagrees with an isolated run, **the isolated run wins**.
+
+**Why this is a decision and not a note.** The whole point of mutation-checking is that it is the
+evidence a test is real. Evidence gathered by a procedure that can silently report the wrong answer is
+worth less than no evidence, because it is trusted. Both failure modes are silent and neither shows up
+as an error.

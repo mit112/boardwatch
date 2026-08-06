@@ -1,13 +1,13 @@
 # PROGRAM STATE — read this first
 
-**Last updated:** 2026-08-06 (session 4, P0 in progress)
+**Last updated:** 2026-08-06 (session 5, P0 in progress)
 **Updated by:** boardwatch (Claude)
 **Repo state at write time:** every P0 item claimed done below is merged to `main`; the tree is clean.
 **This header carries no commit count or sha on purpose** — the previous one named both, went stale inside
 a single session when three later docs commits did not update it, and a cold session following the
 session-start ritual hit the disagreement on its very first check. State what is durably true; verify the
 rest against `git log`. (D-017.)
-**Gate:** `make check` exits **0** (2679 passed, coverage 94.99%), measured in plain mode with the real exit code.
+**Gate:** `make check` exits **0** (2719 passed, coverage 95.05%), measured in plain mode with the real exit code.
 
 > This is the single file a fresh session with zero memory reads to know where the program stands.
 > If it disagrees with the repo, **the repo wins** — fix this file and note the correction in
@@ -23,15 +23,93 @@ rest against `git log`. (D-017.)
 `PROGRAM.md` §3.P0. Item 0 was added later, by D-016. Always cite `PROGRAM.md`'s numbers — an earlier
 version of this file invented its own and collided with them on the gate item.
 
-**Three of the nine are done:** item **0** (the pipeline-run row and `boardwatch run`), item **2**
-(per-rule abstain rate), and item **7** (the `run_id` migration *and* the threading that populates it —
-the column alone changed nothing, so item 7 was only half done until this session).
+**Four of the nine are done:** item **0** (the pipeline-run row and `boardwatch run`), item **1** (the
+per-run funnel artifact), item **2** (per-rule abstain rate), and item **7** (the `run_id` migration *and*
+the threading that populates it).
 
-**Six remain:** item **1** the funnel artifact *(this is the one that closes Gate P0)*, item **3** the
-per-source outcome table, item **4** the run manifest, item **5** the reconciliation sweep, item **6** the
-stub rate, item **8** the fabrication counters.
+**Five remain:** item **3** the per-source outcome table, item **4** the run manifest, item **5** the
+reconciliation sweep, item **6** the stub rate, item **8** the fabrication counters.
+
+**Gate P0 is still NOT met, and item 1 shipping does not by itself meet it.** The gate wants *three
+consecutive runs* where the funnel reconciles to 100%. The artifact that makes that checkable now exists
+and reconciled on three consecutive live runs this session (see below) — but those ran with `--no-scan`
+against a copy of the production store, so the scan stage has never been exercised under the gate. **The
+gate needs three consecutive runs of the real daily driver**, which is P3's job to schedule.
 
 ---
+
+## What shipped in session 5 (2026-08-06)
+
+**P0 item 1 — the per-run funnel artifact.** Every `boardwatch run` now writes
+`funnel-<run_id>.json` and `funnel-<run_id>.md` into `<out>/<YYYY-MM-DD>/`, beside that day's
+tailored résumés and outside the git tree. Named by run, not by date, so two runs in one day do not
+overwrite each other.
+
+Three things were measured before building and each changed the design:
+
+- **`postings_seen` and `open_postings` are different populations** (D-022). `postings_seen`
+  accumulates what each board LISTED — a board answering 304 lists nothing, `--no-scan` lists nothing
+  at all — while `open_postings` is a whole-DB count. Chaining them, which the stage list in
+  `PROGRAM.md` reads as implying, would produce a drop bucket that is **negative on most real runs**.
+  The funnel's head is the corpus; scan counts are context in their own block.
+- **`unique` cannot be measured at all.** `jobs` and `postings` are 1:1, dedup has never run. It
+  reports **not instrumented**, never 0 — reporting 0 duplicates asserts the opposite of the truth
+  and would count towards the gate (D-023).
+- **`leads_with_pdf` is not a row count.** Read from `meta_json.typst_pdf_built`, since
+  `artifacts.uri` holds the `.typ` path whether or not a PDF ever compiled.
+
+### The reviews found ten defects, and the most important one was about what counts as evidence
+
+**A code review found four logic defects; a test-quality review found six claims that were
+documented but not pinned.** The deepest finding runs through both:
+
+> **Two of the three reconciliations could not fail.** `attribution` and `verdict` are SQL
+> *partitions of the very set `entered` counts*, so their sums equal it for every possible database
+> state — yet they were labelled as evidence, beside `corpus`, which genuinely can fail. The artifact
+> was printing a uniform row of green ticks over one real check and two tautologies.
+
+Both are now `derived`, the two `*_reconciles` properties that could never return `False` are
+deleted rather than kept as decoration, and the artifact prints **which stages could actually have
+failed**. The honest evidence base is `corpus` (an independent `NOT EXISTS` sweep), `tailor`, and two
+cross-checks that recount the deliverable from the store.
+
+Also adopted:
+
+- **The shortlist stage subtracted the ranker's hidden counts from the verdict stage's `eligible`.**
+  Different populations, so the remainder could go negative and was clamped at 0 — which breaks the
+  stage's identity and drags Gate P0's headline metric to FAILED. **It does not fire today only
+  because `ineligible` is 0 store-wide**, so `eligible` dominates. The moment **P2** makes
+  `ineligible` reachable it would have fired on every run. Rooted at the ranker's own population now.
+- **The applied stage could report `advanced > entered`** — `marked_applied` counts over every
+  tailored posting while the stage was rooted at `leads_with_pdf`.
+- **`count_applied_for_postings` counted any status**, so a lead merely marked `interested` —
+  `create_application`'s default — was reported as a conversion in the one stage that measures
+  conversion.
+- **Six test claims were green against a mutation that falsified their own docstring.** Three drop
+  reasons passed on *substring collisions*: `"ineligible"` inside `"hidden_ineligible"`,
+  `"abstained"` in a column header, `"capped_by_top_n"` in a stage note. Deleting those `Drop`s
+  outright left the suite green. Every reason is now asserted in its rendered `- **reason**: N` form.
+  The derived-label and lead-source assertions matched the table HEADER and the legend prose rather
+  than the row.
+
+> **The lesson, sharpened again: a substring assertion over rendered prose is not a test of the
+> data.** The artifact explains itself in English, so almost every term it reports also appears in
+> its own commentary. Assert the rendered form, scoped to the row.
+
+**Two process errors worth recording, both in the mutation-checking procedure itself — D-025.** I
+reverted `src/` with `git checkout --` while the review fixes were still uncommitted, silently
+discarding them, so two mutation results were read against the pre-fix code. And a mutate → test →
+restore loop left **stale bytecode**: the running module was a hybrid whose `entered` came from the old
+implementation and whose drop count came from the new one. A test that passed in isolation then failed
+under `make check`, and one mutation recorded as CAUGHT was SURVIVED on a cold cache. **Commit before
+mutating, clear `__pycache__` between mutations, and when a batch disagrees with an isolated run the
+isolated run wins.**
+
+### Verified on real data
+
+Three consecutive `boardwatch run --no-scan` against a copy of the production store — runs 6, 7 and
+8 — **all three reconciled**, exit 0. Numbers in `METRICS.md`. Note this exercised the scan stage not
+at all, so it is **not** the gate evidence.
 
 ## What shipped in session 4 (2026-08-06)
 
@@ -235,35 +313,29 @@ changes adopted, none contested.
 
 ## Next action
 
-**The per-run funnel artifact** — P0 **item 1** (`PROGRAM.md` §3.P0). **This is the item that closes
-Gate P0**, and none of the three done items closes it: the gate requires the funnel to reconcile to 100% over three consecutive runs,
-per-rule abstain to be emitted for *every* rule, and *which source produced each lead and why every
-non-lead was dropped* to be answerable **from the artifact alone, without reading code**. What exists
-today is an on-demand CLI table (`eligibility abstain`) and a run row. Neither is an artifact.
+**P0 item 3 — the per-source outcome table** (`unique | assisted | eligible | leads | applied`).
+`PROGRAM.md` §3.P0.3. It is the natural next item for two reasons: the funnel artifact already
+carries per-lead board provenance, so the writer and the renderer both exist, and item 1 left a
+**named instrumentation gap that item 3 is what closes** — the ranker does not report how many
+postings it considered, so the span between the `verdict` stage and the `shortlist` stage is
+uninstrumented and postings ranked below the `--top` cutoff appear in no counter at all.
 
 **Starting points a fresh session should not re-derive.**
 
-- **The run key now exists and is populated.** `boardwatch run` owns a `runs` row across all three
-  stages; `PipelineSummary` (`pipeline/runner.py`) is a plain dataclass of exactly the per-stage counts
-  the artifact needs, built that way so the writer needs no new query.
-- **`build_abstain_report` (`reports/abstain.py`) is a pure function of catalog + counts** — already the
-  seam for the abstain half of the artifact.
-- **The cache-hit signal exists and is still discarded.** `store/eligibility.py`'s
-  `inserted.rowcount == 0` **is** the cache hit, computed on every call. Counting it is plumbing a
-  boolean out, not new detection. It must be its own asserted stage — D-016's whole argument.
-- **NULL `run_id` is its own funnel bucket.** Per D-019 it now means only "predates attribution"
-  (~20,637 unbackfillable rows). Never fold it into a run's counts and never into 0.
-- **`leads_with_pdf` is not a row count.** `artifacts.uri` stores the `.typ` path, not the PDF; whether a
-  PDF compiled lives only in `json_extract(meta_json,'$.typst_pdf_built') = 1`. A `resume_tailored` row
-  can exist with no PDF — that is D-006's silent degrade.
-- **Write the artifact OUTSIDE the git tree**, as tailored résumés already are: generalization rule R6
-  forbids any `.pdf` in the tracked tree and R7 requires a sha256-pinned `SHIPPED_DATA` entry for any
-  tracked `.json`. `.md` is exempt from R7.
+- **`reports/run_funnel.py` is pure and `store/run_funnel_queries.py` holds the reads.** Adding a
+  per-source table means one more query and one more section; the artifact's shape does not change.
+- **`companies` carries `provider`, `slug` and `source`** (`registry` | `user`, a CHECK-constrained
+  pair). `lead_provenance` already joins postings → companies for exactly this.
+- **Only `corpus` and `tailor` are falsifiable stages today.** `attribution` and `verdict` are SQL
+  partitions of the set they are compared against and are marked `derived` for that reason (D-023).
+  Do not "fix" them into looking like evidence — if a per-source table needs a real check, it needs a
+  count through a genuinely different path, as the two cross-checks do.
+- **`postings_seen` is not the corpus.** D-022. This will bite again on any per-source denominator:
+  a board that answered 304 listed nothing this run but still owns open postings.
 
-Then, still open in P0: item **3** the per-source outcome table, item **4** the run manifest (config hash,
-profile version, catalog version, code fingerprint, **exit status** — a `runs.status` column belongs there,
-not bolted on earlier), item **5** the reconciliation sweep, item **6** the stub rate, and item **8** the
-fabrication counters.
+Then, still open in P0: item **4** the run manifest (config hash, profile version, catalog version,
+code fingerprint, **exit status** — a `runs.status` column belongs there), item **5** the
+reconciliation sweep, item **6** the stub rate, and item **8** the fabrication counters.
 
 **Fabrication counters need new typed capture, not a query.** Aggregates die at `cli/tailor_cmd.py:196-204`
 and `:407-414` after `console.print`; Tier A's fail-safe (`TierASafetyError`) has no counter anywhere; and
@@ -277,7 +349,7 @@ computable but the typed abstain *reason* the keystone invariant wants is not.
 
 | Phase | Status | Gate met? |
 |---|---|---|
-| P0 Instrumentation | **in progress** — items 0, 2, 7 of 0-8 done; **item 1** (funnel artifact) is what closes the gate | **not met** |
+| P0 Instrumentation | **in progress** — items 0, 1, 2, 7 of 0-8 done | **not met** — needs three consecutive runs of the real driver, scan stage included |
 | P1 Résumé artifact gate | not started | — |
 | P2 Profile + keystone invariant | not started | — |
 | P3 Unattended one command | not started | — |

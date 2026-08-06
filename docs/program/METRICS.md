@@ -83,14 +83,22 @@ wrong.** Independent review found:
 
 One row per run once P0 lands. `—` = not emitted.
 
-| Date | Run id | Observed | Unique | Candidates | Eligible | Ineligible | Abstained | Leads | PDFs | QA pass | Stub rate | Exit |
-|---|---|---|---|---|---|---|---|---|---|---|---|---|
-| _(none yet — P0 item 1, the funnel artifact, is what fills this)_ | | | | | | | | | | | | |
+`Unique` is **`—` (not emitted)** and will stay so until P6: dedup has never run, and a `0` there would
+assert that boardwatch measured duplicates and found none.
 
-The run **key** now exists (`boardwatch run`, session 4) and `run_id` is populated on every evaluation and
-artifact. What is still missing is the **artifact** that emits these columns per run — P0 item 1. A row
-here written by hand from ad-hoc queries would defeat Gate P0, which requires the funnel answerable *from
-the artifact alone, without reading code*. So this stays empty on purpose until the writer exists.
+| Date | Run id | Corpus | Unique | Judged | Eligible | Ineligible | Abstained | Leads | PDFs | QA pass | Stub rate | Exit |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| 2026-08-06 | 6 | 19,262 | — | 8,462 | 18,174 | 0 | 1,088 | 3 | 3 | — | — | 0 |
+| 2026-08-06 | 7 | 19,262 | — | 0 | 18,174 | 0 | 1,088 | 3 | 3 | — | — | 0 |
+| 2026-08-06 | 8 | 19,262 | — | 0 | 18,174 | 0 | 1,088 | 3 | 3 | — | — | 0 |
+
+**These three rows were read out of the artifacts, not assembled by hand from ad-hoc queries** — which is
+the whole requirement, since Gate P0 asks for the funnel to be answerable *from the artifact alone*.
+
+**They are NOT the gate.** All three ran `--no-scan` against a copy of the production store, so the scan
+stage was never exercised, and `Observed` is deliberately renamed `Corpus` here: the funnel's head is every
+open posting, not the count a scan listed (D-022). The gate needs three consecutive runs of the real
+driver, scan included.
 
 ---
 
@@ -267,7 +275,7 @@ the keystone invariant.
 
 ---
 
-## Session 4 — 2026-08-06 · the pipeline-run row (P0 items 0 and 1)
+## Session 4 — 2026-08-06 · the pipeline-run row (P0 items 0 and 7)
 
 ### What changed in what the store can answer
 
@@ -341,3 +349,65 @@ both be readings of one store.
 still means one thing. Had any standalone write path leaked a NULL, that number would have grown.
 
 Exit 0. Runtime dominated by a taxonomy re-extraction of all 19,262 postings, not by the new code.
+
+---
+
+## Session 5 — 2026-08-06 · the per-run funnel artifact (P0 item 1)
+
+### Three consecutive live runs, `--no-scan`, against a copy of the production store
+
+All three **reconciled**, exit 0. Runs 6, 7 and 8; run 6 resumed 8,462 postings left pending by an
+earlier run that `timeout` had SIGKILLed, which is why its attribution split differs from 7 and 8.
+
+| stage | run 6 | run 7 | run 8 | note |
+|---|---:|---:|---:|---|
+| corpus entered (open postings) | 19,262 | 19,262 | 19,262 | the funnel's head |
+| corpus → evaluated | 19,262 | 19,262 | 19,262 | `no_current_evaluation` 0 in all three |
+| attribution → judged this run | 8,462 | 0 | 0 | run 6 finished the killed run's backlog |
+| attribution → cache hit, prior run | 10,800 | 19,262 | 19,262 | |
+| attribution → cache hit, unattributed | 0 | 0 | 0 | no NULL-run row is a CURRENT-identity evaluation |
+| verdict → eligible | 18,174 | 18,174 | 18,174 | |
+| verdict → ineligible | **0** | **0** | **0** | B7 again: still unreachable, P2 owns it |
+| verdict → abstained (`uncertain`) | 1,088 | 1,088 | 1,088 | |
+| shortlist → hidden non-SWE | 3,298 | 3,298 | 3,298 | title role gate |
+| shortlist → shortlisted | 3 | 3 | 3 | `--top 3` |
+| tailor → tailored | 3 | 3 | 3 | 0 failures |
+| pdf → with PDF | 3 | 3 | 3 | read from `meta_json.typst_pdf_built` |
+| applied → marked applied | 0 | 0 | 0 | `track` has still never been used |
+
+**Unattributed evaluations: 20,637 in all three runs — unchanged.** That is D-019's invariant holding
+across three more runs and 8,462 new attributed evaluations: the population can only shrink, so a
+constant number means no write path leaked a NULL back in.
+
+**Abstain, emitted every run as the artifact requires:** 44 rules · **7 never fired** · **17 fire and
+never decide** · 16,674 requirement rows. Identical to session 3's standalone measurement, which is
+the point — the artifact reports it per run without anyone running a CLI command.
+
+### What the three runs do NOT establish
+
+They ran `--no-scan`, so **the scan stage was never exercised**. Gate P0 wants three consecutive runs
+of the real driver. These establish that the artifact is correct and that the corpus reconciles at
+production scale; they are not the gate.
+
+Two numbers here are also **not evidence**, by construction (D-023): the `attribution` and `verdict`
+rows are SQL partitions of the set they are compared against, so their balance holds for any input.
+The falsifiable reconciliations in these runs are `corpus` and `tailor`, plus the two cross-checks.
+
+### Gate
+
+`make check` exit **0** — 2,719 passed (from 2,679), coverage **95.05%** (from 94.99%), plain mode,
+real exit code. 40 new tests.
+
+### Review yield
+
+Ten defects across two independent reviews, on code that had already been written carefully:
+
+| Review | Found | Of which logic |
+|---|---:|---:|
+| Code review (diff vs main) | 4 | 4 |
+| Test-quality review (mutation, derived from docstrings) | 6 | 0 (all were unpinnable claims) |
+
+**Every one of the six test findings was a test that PASSED while a mutation falsifying its own
+docstring also passed.** Three of them failed only on substring collisions inside the artifact's own
+explanatory prose. The artifact documents itself in English, which makes bare `in body` assertions
+almost useless — a term the report explains is a term the report contains.
