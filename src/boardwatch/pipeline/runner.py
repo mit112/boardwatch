@@ -223,9 +223,10 @@ def run_pipeline(
         # Every lead the ranker produced failed to render. Not "zero was provably right" —
         # zero was produced from a non-empty shortlist, which is a broken résumé path
         # (missing resume.yaml, typst gone), not an honest empty day.
-        if summary.fatal is None and summary.shortlist.shortlisted > 0 and not summary.tailored:
+        shortlisted = summary.shortlist.shortlisted
+        if summary.fatal is None and shortlisted > 0 and not summary.tailored:
             summary.fatal = (
-                f"every lead failed to tailor ({summary.tailor_failed}/{summary.shortlist.shortlisted})"
+                f"every lead failed to tailor ({summary.tailor_failed}/{shortlisted})"
             )
 
         summary.evaluated = _count_evaluations(engine, run_id)

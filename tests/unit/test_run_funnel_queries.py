@@ -21,6 +21,7 @@ from boardwatch.store.db import ensure_schema, get_engine
 from boardwatch.store.eligibility import RequirementItem, record_evaluation
 from boardwatch.store.run_funnel_queries import (
     count_applied_for_postings,
+    count_by_source,
     count_corpus,
     count_tailored_artifacts,
     count_unattributed_evaluations,
@@ -362,3 +363,204 @@ def test_merely_being_interested_is_not_being_applied(engine: Engine) -> None:
     with engine.connect() as conn:
         found = count_applied_for_postings(conn, [interested, withdrawn, applied])
     assert found == 1, "a tracked-but-not-applied lead was counted as applied"
+
+
+# --------------------------------------------------------------------------------------
+# Per-source outcomes (P0 item 3)
+# --------------------------------------------------------------------------------------
+
+
+def _board(conn: Connection, slug: str, *, source: str = "user", provider: str = "greenhouse") -> int:
+    return int(conn.execute(insert(companies).values(
+        name=slug, provider=provider, slug=slug, source=source, watched=True,
+    )).inserted_primary_key[0])
+
+
+def _posting_on(conn: Connection, company_id: int, tag: str, *, status: str = "open") -> int:
+    """A posting on an EXISTING board, so several can share one company row."""
+    job_id = int(conn.execute(insert(jobs).values(created_at=NOW)).inserted_primary_key[0])
+    return int(conn.execute(insert(postings).values(
+        company_id=company_id, job_id=job_id, provider_posting_id=tag, title="Eng",
+        normalized_title="eng", first_seen_at=NOW, last_seen_at=NOW, status=status,
+        consecutive_missing=0, content_hash=tag, body_text="b",
+    )).inserted_primary_key[0])
+
+
+def _by_source(engine: Engine, run_id: int, posting_ids: list[int] | None = None):
+    with engine.connect() as conn:
+        return count_by_source(
+            conn, identity=(PROFILE, RULES), engine_kind=KIND, engine_version=VERSION,
+            run_id=run_id, posting_ids=posting_ids or [],
+        )
+
+
+def test_open_postings_are_attributed_to_the_board_that_owns_them(engine: Engine) -> None:
+    """Two boards, unequal inventories. A wrong join would give both the same denominator."""
+    with engine.begin() as conn:
+        run_id = _run(conn)
+        big, small = _board(conn, "big"), _board(conn, "small", source="registry")
+        for tag in ("b1", "b2", "b3"):
+            _posting_on(conn, big, tag)
+        _posting_on(conn, small, "s1")
+
+    rows = {item.board: item for item in _by_source(engine, run_id)}
+    assert rows["greenhouse:big"].open_postings == 3
+    assert rows["greenhouse:small"].open_postings == 1
+    assert rows["greenhouse:small"].company_source == "registry"
+
+
+def test_a_closed_posting_is_outside_the_per_source_denominator(engine: Engine) -> None:
+    """`open_postings` must match the funnel's head, which counts OPEN postings only."""
+    with engine.begin() as conn:
+        run_id = _run(conn)
+        board = _board(conn, "acme")
+        _posting_on(conn, board, "open1")
+        _posting_on(conn, board, "closed1", status="closed")
+
+    assert _by_source(engine, run_id)[0].open_postings == 1
+
+
+def test_unique_and_assisted_are_none_rather_than_zero(engine: Engine) -> None:
+    """Both are dedup-attribution quantities and dedup is P6.
+
+    0 asserts "no source ever arrived second" — the naive attribution job-apps records as
+    having nearly cost it a working adapter. None says the truth: not measured.
+    """
+    with engine.begin() as conn:
+        run_id = _run(conn)
+        _posting_on(conn, _board(conn, "acme"), "p1")
+
+    row = _by_source(engine, run_id)[0]
+    assert row.unique is None
+    assert row.assisted is None
+
+
+def test_only_the_eligible_verdict_counts_towards_a_board(engine: Engine) -> None:
+    """`eligible` is a verdict filter, not a count of judged postings."""
+    with engine.begin() as conn:
+        run_id = _run(conn)
+        board = _board(conn, "acme")
+        for tag, verdict in (("y", "eligible"), ("n", "ineligible"), ("u", "uncertain")):
+            _judge(conn, _version(conn, _posting_on(conn, board, tag), tag),
+                   verdict=verdict, run_id=run_id)
+
+    row = _by_source(engine, run_id)[0]
+    assert row.open_postings == 3
+    assert row.eligible == 1
+
+
+def test_a_verdict_under_another_profile_is_not_attributed_to_the_board(engine: Engine) -> None:
+    """The identity scoping must hold per board too, or every board inflates on a re-profile."""
+    with engine.begin() as conn:
+        run_id = _run(conn)
+        board = _board(conn, "acme")
+        _judge(conn, _version(conn, _posting_on(conn, board, "p1"), "p1"),
+               verdict="eligible", run_id=run_id, profile="other-profile")
+
+    assert _by_source(engine, run_id)[0].eligible == 0
+
+
+def test_no_profile_reports_every_board_as_zero_eligible_rather_than_failing(engine: Engine) -> None:
+    """A fresh install has no identity. The denominator is still real, so the table still says so."""
+    with engine.begin() as conn:
+        run_id = _run(conn)
+        _posting_on(conn, _board(conn, "acme"), "p1")
+
+    with engine.connect() as conn:
+        rows = count_by_source(
+            conn, identity=None, engine_kind=KIND, engine_version=VERSION,
+            run_id=run_id, posting_ids=[],
+        )
+    assert rows[0].open_postings == 1
+    assert rows[0].eligible == 0
+
+
+def test_a_lead_is_attributed_to_its_board_through_the_posting_version(engine: Engine) -> None:
+    """`artifacts` carries no posting_id, only posting_version_id.
+
+    So the board a lead came from is reachable ONLY through its version. Getting this join
+    wrong is how Gate P0's "which source produced each lead" silently stops being answerable.
+    """
+    with engine.begin() as conn:
+        run_id = _run(conn)
+        winner, quiet = _board(conn, "winner"), _board(conn, "quiet")
+        _posting_on(conn, quiet, "q1")
+        version_id = _version(conn, _posting_on(conn, winner, "w1"), "w1")
+        record_artifact(
+            conn, kind="resume_tailored", uri="/out/w1.typ", posting_version_id=version_id,
+            content_hash="w1", generator="boardwatch.tailor", generator_version="1",
+            media_type="text/x-typst", meta={"typst_pdf_built": True}, run_id=run_id,
+        )
+
+    rows = {item.board: item for item in _by_source(engine, run_id)}
+    assert rows["greenhouse:winner"].leads == 1
+    assert rows["greenhouse:quiet"].leads == 0
+
+
+def test_a_lead_from_a_previous_run_is_not_credited_to_this_one(engine: Engine) -> None:
+    """Per-run means per-run; otherwise every board's lead count grows monotonically."""
+    with engine.begin() as conn:
+        this_run, other_run = _run(conn), _run(conn)
+        board = _board(conn, "acme")
+        for tag, rid in (("a", this_run), ("b", other_run)):
+            record_artifact(
+                conn, kind="resume_tailored", uri=f"/out/{tag}.typ",
+                posting_version_id=_version(conn, _posting_on(conn, board, tag), tag),
+                content_hash=tag, generator="boardwatch.tailor", generator_version="1",
+                media_type="text/x-typst", meta={"typst_pdf_built": True}, run_id=rid,
+            )
+
+    assert _by_source(engine, this_run)[0].leads == 1
+
+
+def test_a_board_whose_lead_posting_closed_still_appears(engine: Engine) -> None:
+    """A posting can close mid-run. Keying the table off open postings alone would drop the
+    board that produced a lead — and a missing lead reads as a smaller funnel."""
+    with engine.begin() as conn:
+        run_id = _run(conn)
+        board = _board(conn, "closer")
+        version_id = _version(conn, _posting_on(conn, board, "c1", status="closed"), "c1")
+        record_artifact(
+            conn, kind="resume_tailored", uri="/out/c1.typ", posting_version_id=version_id,
+            content_hash="c1", generator="boardwatch.tailor", generator_version="1",
+            media_type="text/x-typst", meta={"typst_pdf_built": True}, run_id=run_id,
+        )
+
+    rows = _by_source(engine, run_id)
+    assert [item.board for item in rows] == ["greenhouse:closer"]
+    assert rows[0].open_postings == 0
+    assert rows[0].leads == 1
+
+
+def test_applied_is_attributed_per_board_with_the_same_status_filter(engine: Engine) -> None:
+    """Must agree with count_applied_for_postings on what a submission is: `interested` is not."""
+    with engine.begin() as conn:
+        run_id = _run(conn)
+        board = _board(conn, "acme")
+        did = _posting_on(conn, board, "did")
+        _track(conn, did, "applied")
+        merely = _posting_on(conn, board, "merely")
+        _track(conn, merely, "interested")
+
+    rows = _by_source(engine, run_id, posting_ids=[did, merely])
+    assert rows[0].applied == 1
+
+
+def test_boards_that_produced_a_lead_sort_above_boards_that_did_not(engine: Engine) -> None:
+    """118 boards have open postings on the real store. The ones that produced a lead are the
+    reason the table exists, so they must not be buried."""
+    with engine.begin() as conn:
+        run_id = _run(conn)
+        loud, huge = _board(conn, "loud"), _board(conn, "huge")
+        for index in range(5):
+            _posting_on(conn, huge, f"h{index}")
+        version_id = _version(conn, _posting_on(conn, loud, "l1"), "l1")
+        record_artifact(
+            conn, kind="resume_tailored", uri="/out/l1.typ", posting_version_id=version_id,
+            content_hash="l1", generator="boardwatch.tailor", generator_version="1",
+            media_type="text/x-typst", meta={"typst_pdf_built": True}, run_id=run_id,
+        )
+
+    assert [item.board for item in _by_source(engine, run_id)] == [
+        "greenhouse:loud", "greenhouse:huge",
+    ]

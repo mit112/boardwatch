@@ -286,6 +286,157 @@ def lead_provenance(conn: Connection, posting_ids: list[int]) -> dict[int, Prove
     }
 
 
+@dataclass(frozen=True)
+class SourceOutcome:
+    """One watched board's outcomes this run — PROGRAM.md §3.P0 item 3.
+
+    `open_postings` is the denominator, and it is deliberately NOT `postings_seen` per board.
+    D-022: a board that answered 304 listed nothing this run and would show a denominator of
+    zero while still owning hundreds of open postings the funnel judged.
+
+    **`unique` and `assisted` are `None`, never 0.** Both are dedup-attribution quantities —
+    `assisted` credits a source that arrived second for a posting another source won. Postings
+    are 1:1 with jobs here and each belongs to exactly one company, so there is no second source
+    to credit and neither is measurable until P6 lands dedup. Reporting 0 would assert "no
+    source ever arrived second", which is the naive attribution job-apps records as having
+    nearly cost it a working adapter.
+    """
+
+    provider: str
+    board_slug: str
+    company_source: str
+    open_postings: int
+    eligible: int
+    leads: int
+    applied: int
+    unique: int | None = None
+    assisted: int | None = None
+
+    @property
+    def board(self) -> str:
+        return f"{self.provider}:{self.board_slug}"
+
+
+def count_by_source(
+    conn: Connection,
+    *,
+    identity: tuple[str, str] | None,
+    engine_kind: str,
+    engine_version: str,
+    run_id: int,
+    posting_ids: list[int],
+) -> tuple[SourceOutcome, ...]:
+    """Per-board outcomes, as four independent sweeps merged on company id.
+
+    Four sweeps rather than one joined query because `artifacts` and `applications` are both
+    many-per-posting in principle: folding them into a single GROUP BY would fan out and
+    multiply the open-posting denominator by rows that have nothing to do with it.
+
+    Every count here travels through the `companies` join that the funnel's own stages never
+    touch, so `sum(per_source) == funnel total` is a genuinely falsifiable check rather than a
+    partition of itself: an open posting whose company row vanished, or an artifact with no
+    posting_version, shows up as a disagreement instead of silently shrinking the table.
+    """
+    open_by_company = dict(
+        conn.execute(
+            select(postings.c.company_id, func.count())
+            .where(postings.c.status == "open")
+            .group_by(postings.c.company_id)
+        ).all()
+    )
+
+    eligible_by_company: dict[int, int] = {}
+    if identity is not None:
+        profile_hash, rules_hash = identity
+        judged = _current_identity_evaluations(
+            profile_hash=profile_hash,
+            rules_hash=rules_hash,
+            engine_kind=engine_kind,
+            engine_version=engine_version,
+        ).subquery()
+        eligible_by_company = dict(
+            conn.execute(
+                select(postings.c.company_id, func.count())
+                .select_from(judged)
+                .join(postings, postings.c.id == judged.c.posting_id)
+                .where(judged.c.verdict == "eligible")
+                .group_by(postings.c.company_id)
+            ).all()
+        )
+
+    # artifacts carries no posting_id — only posting_version_id — so the board a lead came
+    # from is reachable only through its version. An artifact whose posting_version_id is NULL
+    # is attributable to no board and is what the leads reconciliation exists to surface.
+    leads_by_company = dict(
+        conn.execute(
+            select(postings.c.company_id, func.count(func.distinct(postings.c.id)))
+            .select_from(artifacts)
+            .join(posting_versions, posting_versions.c.id == artifacts.c.posting_version_id)
+            .join(postings, postings.c.id == posting_versions.c.posting_id)
+            .where(artifacts.c.run_id == run_id, artifacts.c.kind == TAILORED_KIND)
+            .group_by(postings.c.company_id)
+        ).all()
+    )
+
+    applied_by_company: dict[int, int] = {}
+    if posting_ids:
+        # Same scoping and status filter as count_applied_for_postings, so the two agree by
+        # construction on which rows count as a submission.
+        applied_by_company = dict(
+            conn.execute(
+                select(postings.c.company_id, func.count(func.distinct(applications.c.job_id)))
+                .select_from(postings)
+                .join(applications, applications.c.job_id == postings.c.job_id)
+                .where(
+                    postings.c.id.in_(posting_ids),
+                    applications.c.status.in_(APPLIED_STATUSES),
+                )
+                .group_by(postings.c.company_id)
+            ).all()
+        )
+
+    # A board with no open postings can still own a lead, if its posting closed mid-run. Keyed
+    # off the union rather than off open_postings alone so a lead can never vanish from the
+    # table — a missing lead reads as a smaller funnel, the one thing this artifact must not do.
+    company_ids = (
+        set(open_by_company)
+        | set(eligible_by_company)
+        | set(leads_by_company)
+        | set(applied_by_company)
+    )
+    if not company_ids:
+        return ()
+    meta = {
+        int(row[0]): (str(row[1]), str(row[2]), str(row[3]))
+        for row in conn.execute(
+            select(companies.c.id, companies.c.provider, companies.c.slug, companies.c.source)
+            .where(companies.c.id.in_(company_ids))
+        ).all()
+    }
+    outcomes = [
+        SourceOutcome(
+            # A company row that vanished is a real anomaly: labelled unknown and kept, never
+            # dropped, so the reconciliation against the funnel's totals still catches it.
+            provider=meta.get(company_id, ("unknown", "unknown", "unknown"))[0],
+            board_slug=meta.get(company_id, ("unknown", "unknown", "unknown"))[1],
+            company_source=meta.get(company_id, ("unknown", "unknown", "unknown"))[2],
+            open_postings=int(open_by_company.get(company_id, 0)),
+            eligible=int(eligible_by_company.get(company_id, 0)),
+            leads=int(leads_by_company.get(company_id, 0)),
+            applied=int(applied_by_company.get(company_id, 0)),
+        )
+        for company_id in company_ids
+    ]
+    # Leads first: the artifact's job is to answer which source produced each lead, so the
+    # boards that produced one belong at the top rather than buried among 118 rows.
+    return tuple(
+        sorted(
+            outcomes,
+            key=lambda item: (-item.leads, -item.eligible, -item.open_postings, item.board),
+        )
+    )
+
+
 def count_applied_for_postings(conn: Connection, posting_ids: list[int]) -> int:
     """How many of these postings' jobs carry an application that was actually SUBMITTED.
 

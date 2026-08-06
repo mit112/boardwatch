@@ -33,8 +33,10 @@ from boardwatch.store.abstain_queries import count_requirement_dispositions
 from boardwatch.store.queries import current_posting_versions
 from boardwatch.store.run_funnel_queries import (
     CorpusCounts,
+    SourceOutcome,
     TailoredArtifactCounts,
     count_applied_for_postings,
+    count_by_source,
     count_corpus,
     count_open_postings,
     count_tailored_artifacts,
@@ -110,6 +112,16 @@ def collect_run_funnel(
             counts = count_requirement_dispositions(conn, [eid for eid, _ in evals.values()])
             abstain = build_abstain_report(catalog, counts)
 
+        # Per board (P0 item 3). Passed the identity rather than the two hashes so a run with
+        # no profile reports every board's `eligible` as 0 without a second code path.
+        sources: tuple[SourceOutcome, ...] = count_by_source(
+            conn,
+            identity=identity,
+            engine_kind=ENGINE_KIND,
+            engine_version=engine_version(),
+            run_id=run_id,
+            posting_ids=posting_ids,
+        )
         tailored_artifacts: TailoredArtifactCounts = count_tailored_artifacts(conn, run_id)
         marked_applied = count_applied_for_postings(conn, posting_ids)
         unattributed = count_unattributed_evaluations(conn)
@@ -146,6 +158,7 @@ def collect_run_funnel(
         scan=scan,
         corpus=corpus,
         shortlist=shortlist,
+        sources=sources,
         leads=leads,
         tailor_failed=tailor_failed,
         tailored_artifacts=tailored_artifacts,

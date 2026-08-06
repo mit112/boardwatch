@@ -28,7 +28,11 @@ from boardwatch.reports.run_funnel import (
     funnel_to_markdown,
     write_run_funnel,
 )
-from boardwatch.store.run_funnel_queries import CorpusCounts, TailoredArtifactCounts
+from boardwatch.store.run_funnel_queries import (
+    CorpusCounts,
+    SourceOutcome,
+    TailoredArtifactCounts,
+)
 
 BUNDLED = Path("does-not-exist")  # no override dir: load_rules falls back to the bundled catalog
 
@@ -92,6 +96,7 @@ def funnel(
     marked_applied: int = 0,
     abstain: AbstainReport | None = None,
     unattributed_evaluations: int = 20_637,
+    sources: list[SourceOutcome] | None = None,
 ) -> RunFunnel:
     leads = [lead()] if leads is None else leads
     # Default to a CONSISTENT tailor stage. Every shortlisted posting either produced a lead
@@ -106,13 +111,28 @@ def funnel(
             shortlisted + hidden_ineligible + hidden_non_swe
             + hidden_hard_filter + hidden_below_cutoff + skipped_not_new
         )
+    counts = counts or corpus()
+    tailored_artifacts = artifacts or TailoredArtifactCounts(
+        rows=len(leads), with_pdf=sum(1 for item in leads if item.pdf_built)
+    )
+    # Default to a per-source table that ACCOUNTS for the whole funnel, for the same reason the
+    # tailor and shortlist stages default to balanced: a test not aimed at attribution should
+    # not have to restate the totals to avoid tripping it.
+    if sources is None:
+        sources = [SourceOutcome(
+            provider="greenhouse", board_slug="stripe", company_source="registry",
+            open_postings=counts.open_postings,
+            eligible=counts.by_verdict.get("eligible", 0),
+            leads=tailored_artifacts.rows,
+            applied=marked_applied,
+        )]
     return build_run_funnel(
         run_id=42,
         started_at=None,
         finished_at=None,
         scan=ScanContext(ran=True, boards_attempted=85, boards_complete=80, boards_failed=5,
                          postings_seen=13_590),
-        corpus=counts or corpus(),
+        corpus=counts,
         shortlist=ShortlistCounts(
             considered=considered,
             shortlisted=shortlisted,
@@ -124,10 +144,8 @@ def funnel(
         ),
         leads=leads,
         tailor_failed=tailor_failed,
-        tailored_artifacts=artifacts
-        or TailoredArtifactCounts(
-            rows=len(leads), with_pdf=sum(1 for item in leads if item.pdf_built)
-        ),
+        tailored_artifacts=tailored_artifacts,
+        sources=sources,
         marked_applied=marked_applied,
         unattributed_evaluations=unattributed_evaluations,
         abstain=abstain or build_abstain_report(catalog(), {}),
@@ -517,7 +535,8 @@ def test_both_halves_are_written_and_named_by_run(tmp_path: Path) -> None:
     assert written.markdown_path == tmp_path / "funnel-42.md"
     payload = json.loads(written.json_path.read_text())
     assert payload["run_id"] == 42
-    assert payload["artifact_version"] == 1
+    # Bumped to 2 by P0 item 3, which added the sources and source_totals sections.
+    assert payload["artifact_version"] == 2
     assert written.markdown_path.read_text().startswith("# boardwatch run 42")
 
 
@@ -539,3 +558,126 @@ def test_the_json_keeps_every_drop_rather_than_pre_summing_them(tmp_path: Path) 
     assert stages["tailor"]["drops"][0] == {
         "reason": "tailor_failed", "count": 3, "note": "",
     }
+
+
+# --------------------------------------------------------------------------------------
+# Per-source outcomes (P0 item 3)
+# --------------------------------------------------------------------------------------
+
+
+def source(
+    slug: str = "stripe", *, provider: str = "greenhouse", company_source: str = "registry",
+    open_postings: int = 100, eligible: int = 40, leads: int = 1, applied: int = 0,
+) -> SourceOutcome:
+    return SourceOutcome(
+        provider=provider, board_slug=slug, company_source=company_source,
+        open_postings=open_postings, eligible=eligible, leads=leads, applied=applied,
+    )
+
+
+def source_row(body: str, board: str) -> str:
+    """The rendered per-source table row for one board, not merely a line mentioning it."""
+    return next(line for line in body.splitlines() if line.startswith(f"| {board} |"))
+
+
+def test_the_per_source_table_names_each_board_and_its_outcomes() -> None:
+    """Gate P0: which source produced each lead, from the artifact alone.
+
+    Asserted on the RENDERED ROW rather than with `in body`: the section's own prose names
+    every board, every column and every quantity it explains, so a substring assertion over
+    the whole document would pass against an empty table.
+    """
+    report = funnel(sources=[source("stripe", leads=1, eligible=40),
+                             source("quiet", leads=0, eligible=0, open_postings=7)])
+    body = funnel_to_markdown(report)
+
+    assert source_row(body, "greenhouse:stripe").split("|")[3].strip() == "100"
+    assert source_row(body, "greenhouse:stripe").split("|")[7].strip() == "1"
+    quiet = source_row(body, "greenhouse:quiet")
+    assert quiet.split("|")[3].strip() == "7"
+    assert quiet.split("|")[7].strip() == "0", "a board that produced nothing still gets a row"
+
+
+def test_unique_and_assisted_render_as_uninstrumented_in_the_row_itself() -> None:
+    """Not 0, and pinned inside the ROW. The paragraph above the table also says
+    "not instrumented", so `in body` would pass with the cells rendering 0."""
+    body = funnel_to_markdown(funnel(sources=[source("stripe")]))
+    cells = [cell.strip() for cell in source_row(body, "greenhouse:stripe").split("|")]
+
+    assert cells[4] == "not instrumented", "unique"
+    assert cells[5] == "not instrumented", "assisted"
+
+
+def test_unique_and_assisted_serialise_as_null_rather_than_zero(tmp_path: Path) -> None:
+    """A machine consumer must be able to tell "no duplicates" from "never measured"."""
+    written = write_run_funnel(funnel(sources=[source("stripe")]), tmp_path)
+    row = json.loads(written.json_path.read_text())["sources"][0]
+
+    assert row["unique"] is None
+    assert row["assisted"] is None
+    assert row["leads"] == 1
+
+
+def test_a_lead_attributable_to_no_board_fails_reconciliation() -> None:
+    """The check the companies join exists for.
+
+    The funnel counted a `resume_tailored` row for this run that the per-board sweep could not
+    resolve to any board — an artifact with no posting_version, or a vanished company row.
+    Gate P0 asks which source produced each lead, so this cannot be allowed to read as green.
+    """
+    report = funnel(
+        leads=[lead(7), lead(8)],
+        artifacts=TailoredArtifactCounts(rows=2, with_pdf=2),
+        sources=[source("stripe", leads=1)],
+    )
+
+    assert report.reconciles is False
+    assert [total.name for total in report.unattributable] == ["leads"]
+    body = funnel_to_markdown(report)
+    assert next(line for line in body.splitlines() if line.startswith("| leads |")).endswith(
+        "**NO** |"
+    )
+
+
+def test_a_verdict_belonging_to_no_board_fails_reconciliation() -> None:
+    """An open posting whose company row vanished: its verdict is in the funnel's `eligible`
+    but belongs to no source. A GROUP BY summing to its own total could never catch this."""
+    report = funnel(counts=corpus(eligible=40), sources=[source("stripe", eligible=39)])
+
+    assert report.reconciles is False
+    assert [total.name for total in report.unattributable] == ["eligible"]
+
+
+def test_a_fully_attributed_run_reconciles() -> None:
+    """The happy path must still be reachable, or the check above proves nothing."""
+    report = funnel(
+        leads=[lead(7)],
+        counts=corpus(eligible=40),
+        sources=[source("stripe", eligible=25, leads=1), source("brex", eligible=15, leads=0)],
+    )
+
+    assert report.unattributable == ()
+    assert report.reconciles is True
+
+
+def test_the_provider_rollup_aggregates_boards() -> None:
+    """PROGRAM.md's breadth question is about PROVIDERS; 118 board rows do not answer it."""
+    report = funnel(
+        counts=corpus(eligible=60),
+        artifacts=TailoredArtifactCounts(rows=1, with_pdf=1),
+        leads=[lead(7)],
+        sources=[
+            source("stripe", provider="greenhouse", eligible=25, leads=1),
+            source("brex", provider="greenhouse", eligible=25, leads=0),
+            source("openai", provider="ashby", eligible=10, leads=0),
+        ],
+    )
+    body = funnel_to_markdown(report)
+
+    greenhouse = next(line for line in body.splitlines() if line.startswith("| greenhouse |"))
+    assert greenhouse.split("|")[2].strip() == "2", "two boards rolled up"
+    assert greenhouse.split("|")[4].strip() == "50"
+    ashby = next(line for line in body.splitlines() if line.startswith("| ashby |"))
+    assert ashby.split("|")[2].strip() == "1"
+    # Leads first: the provider that produced one must outrank the one that did not.
+    assert body.index("| greenhouse |") < body.index("| ashby |")

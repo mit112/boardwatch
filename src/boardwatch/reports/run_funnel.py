@@ -46,9 +46,13 @@ from datetime import datetime
 from pathlib import Path
 
 from boardwatch.reports.abstain import AbstainReport
-from boardwatch.store.run_funnel_queries import CorpusCounts, TailoredArtifactCounts
+from boardwatch.store.run_funnel_queries import (
+    CorpusCounts,
+    SourceOutcome,
+    TailoredArtifactCounts,
+)
 
-ARTIFACT_VERSION = 1
+ARTIFACT_VERSION = 2
 
 # The stored verdict that carries the keystone invariant's ABSTAIN. Named here once so the
 # rename is visible rather than scattered through the renderers as a string literal.
@@ -112,6 +116,27 @@ class CrossCheck:
     @property
     def agrees(self) -> bool:
         return self.in_memory == self.from_store
+
+
+@dataclass(frozen=True)
+class SourceTotal:
+    """A funnel total re-swept per board, and the funnel's own figure for it.
+
+    Distinct from `CrossCheck`, whose two numbers are pipeline-memory vs store. Both numbers
+    here come from the store — the point is the JOIN PATH, not the source. The per-source sweep
+    reaches its counts through `companies`, which the funnel's own stages never touch, so the
+    two agreeing means every posting and every artifact this run counted is attributable to a
+    real board. A `GROUP BY` summing to its own total would prove nothing; this can fail.
+    """
+
+    name: str
+    funnel: int
+    per_source: int
+    note: str = ""
+
+    @property
+    def agrees(self) -> bool:
+        return self.funnel == self.per_source
 
 
 @dataclass(frozen=True)
@@ -182,6 +207,8 @@ class RunFunnel:
     stages: tuple[Stage, ...]
     leads: tuple[Lead, ...]
     cross_checks: tuple[CrossCheck, ...]
+    sources: tuple[SourceOutcome, ...]
+    source_totals: tuple[SourceTotal, ...]
     abstain: AbstainReport
     unattributed_evaluations: int
     errors: tuple[str, ...] = ()
@@ -200,10 +227,17 @@ class RunFunnel:
         return tuple(check for check in self.cross_checks if not check.agrees)
 
     @property
+    def unattributable(self) -> tuple[SourceTotal, ...]:
+        """Totals the per-board sweep could not account for — a posting or artifact belonging
+        to no board. Gate P0 asks which source produced each lead, so this is part of it."""
+        return tuple(total for total in self.source_totals if not total.agrees)
+
+    @property
     def reconciles(self) -> bool:
-        """Gate P0's "reconciles to 100%": every instrumented stage balances AND both
-        independent recounts agree with what the pipeline reported."""
-        return not self.unreconciled and not self.disagreements
+        """Gate P0's "reconciles to 100%": every instrumented stage balances, both independent
+        recounts agree with what the pipeline reported, and every counted posting and artifact
+        is attributable to a watched board."""
+        return not self.unreconciled and not self.disagreements and not self.unattributable
 
     @property
     def rules_missing_abstain(self) -> int:
@@ -220,6 +254,7 @@ def build_run_funnel(
     scan: ScanContext,
     corpus: CorpusCounts,
     shortlist: ShortlistCounts,
+    sources: Sequence[SourceOutcome],
     leads: Sequence[Lead],
     tailor_failed: int,
     tailored_artifacts: TailoredArtifactCounts,
@@ -420,6 +455,28 @@ def build_run_funnel(
         ),
     )
 
+    source_totals = (
+        SourceTotal(
+            name="eligible",
+            funnel=eligible,
+            per_source=sum(item.eligible for item in sources),
+            note=(
+                "verdict stage vs the per-board sweep. Disagreement means an open posting's "
+                "company row is missing, so its verdict belongs to no board"
+            ),
+        ),
+        SourceTotal(
+            name="leads",
+            funnel=tailored_artifacts.rows,
+            per_source=sum(item.leads for item in sources),
+            note=(
+                "resume_tailored rows for this run vs the same rows resolved to a board through "
+                "posting_versions. Disagreement means a lead cannot be attributed to any source, "
+                "which is exactly what Gate P0 asks the artifact to answer"
+            ),
+        ),
+    )
+
     return RunFunnel(
         run_id=run_id,
         started_at=started_at,
@@ -428,6 +485,8 @@ def build_run_funnel(
         stages=stages,
         leads=tuple(leads),
         cross_checks=cross_checks,
+        sources=tuple(sources),
+        source_totals=source_totals,
         abstain=abstain,
         unattributed_evaluations=unattributed_evaluations,
         errors=tuple(errors),
@@ -492,6 +551,32 @@ def funnel_to_dict(funnel: RunFunnel) -> dict[str, object]:
             }
             for lead in funnel.leads
         ],
+        "sources": [
+            {
+                "provider": item.provider,
+                "board_slug": item.board_slug,
+                "company_source": item.company_source,
+                "open_postings": item.open_postings,
+                # null, never 0: both are dedup-attribution quantities and dedup is P6. 0 would
+                # assert no source ever arrived second, which is the opposite of unknown.
+                "unique": item.unique,
+                "assisted": item.assisted,
+                "eligible": item.eligible,
+                "leads": item.leads,
+                "applied": item.applied,
+            }
+            for item in funnel.sources
+        ],
+        "source_totals": [
+            {
+                "name": total.name,
+                "funnel": total.funnel,
+                "per_source": total.per_source,
+                "agrees": total.agrees,
+                "note": total.note,
+            }
+            for total in funnel.source_totals
+        ],
         "unattributed_evaluations": funnel.unattributed_evaluations,
         "abstain": {
             "rules": [
@@ -523,6 +608,27 @@ def funnel_to_dict(funnel: RunFunnel) -> dict[str, object]:
 
 def _fmt(value: int | None) -> str:
     return "not instrumented" if value is None else str(value)
+
+
+def _provider_rollup(sources: Sequence[SourceOutcome]) -> list[tuple[str, int, int, int, int, int]]:
+    """(provider, boards, open, eligible, leads, applied), busiest first.
+
+    Kept beside the per-board table rather than replacing it because the two answer different
+    questions. PROGRAM.md's breadth argument — whether direct-ATS-only can carry the volume —
+    is a question about PROVIDERS, and 118 board rows do not answer it at a glance.
+    """
+    totals: dict[str, list[int]] = {}
+    for item in sources:
+        row = totals.setdefault(item.provider, [0, 0, 0, 0, 0])
+        row[0] += 1
+        row[1] += item.open_postings
+        row[2] += item.eligible
+        row[3] += item.leads
+        row[4] += item.applied
+    return sorted(
+        ((provider, *counts) for provider, counts in totals.items()),  # type: ignore[misc]
+        key=lambda row: (-row[4], -row[3], -row[2], row[0]),
+    )
 
 
 def funnel_to_markdown(funnel: RunFunnel) -> str:
@@ -635,6 +741,71 @@ def funnel_to_markdown(funnel: RunFunnel) -> str:
     else:
         lines.append("none.")
 
+    lines += [
+        "",
+        "## Per-source outcomes",
+        "",
+        f"{len(funnel.sources)} boards with anything to report this run.",
+        "",
+        "`unique` and `assisted` are **not instrumented** — both are dedup-attribution "
+        "quantities (`assisted` credits a source that arrived second for a posting another "
+        "source won), and dedup is P6. They are not 0: reporting 0 would assert that no source "
+        "ever arrived second, which is the naive attribution that nearly cost job-apps a "
+        "working adapter.",
+        "",
+        "`open` is every OPEN posting the board owns, **not** what it listed this run — an "
+        "unchanged board lists nothing and would otherwise show a denominator of zero.",
+        "",
+        "| board | registry/user | open | unique | assisted | eligible | leads | applied |",
+        "|---|---|---:|---|---|---:|---:|---:|",
+    ]
+    for item in funnel.sources:
+        lines.append(
+            f"| {item.board} | {item.company_source} | {item.open_postings} | "
+            f"{_fmt(item.unique)} | {_fmt(item.assisted)} | {item.eligible} | "
+            f"{item.leads} | {item.applied} |"
+        )
+    if not funnel.sources:
+        lines.append("| _(none)_ | — | 0 | not instrumented | not instrumented | 0 | 0 | 0 |")
+
+    lines += [
+        "",
+        "### By provider",
+        "",
+        "| provider | boards | open | eligible | leads | applied |",
+        "|---|---:|---:|---:|---:|---:|",
+    ]
+    for provider, boards, open_postings, eligible_count, leads_count, applied_count in (
+        _provider_rollup(funnel.sources)
+    ):
+        lines.append(
+            f"| {provider} | {boards} | {open_postings} | {eligible_count} | "
+            f"{leads_count} | {applied_count} |"
+        )
+
+    lines += [
+        "",
+        "### Attributable to a board",
+        "",
+        "| total | funnel | per-source | agree |",
+        "|---|---:|---:|---|",
+    ]
+    for total in funnel.source_totals:
+        lines.append(
+            f"| {total.name} | {total.funnel} | {total.per_source} | "
+            f"{'yes' if total.agrees else '**NO**'} |"
+        )
+    lines += [
+        "",
+        "*Both numbers are read from the store; what differs is the JOIN PATH. The per-source "
+        "sweep reaches its counts through `companies`, which the funnel's stages never touch, "
+        "so agreement means every posting and artifact counted belongs to a real board. "
+        "`applied` is deliberately NOT reconciled here: it counts distinct jobs per board, and "
+        "summing per-board distinct counts is not the global distinct count if a job ever spans "
+        "two boards.*",
+        *[f"- *{total.name}*: {total.note}" for total in funnel.source_totals if total.note],
+    ]
+
     never_fired = funnel.abstain.never_fired
     fully = funnel.abstain.fully_abstaining
     lines += [
@@ -720,6 +891,7 @@ __all__ = [
     "RunFunnel",
     "ScanContext",
     "ShortlistCounts",
+    "SourceTotal",
     "Stage",
     "WrittenArtifact",
     "build_run_funnel",
