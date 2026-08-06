@@ -15,11 +15,12 @@
 
 **P0 — Instrumentation. IN PROGRESS on branch `p0-instrumentation`.**
 
-Item 7 (the `run_id` migration) is **DONE and committed**. Items 1/2/8 (funnel artifact, per-rule abstain,
-fabrication counters) are **specified but blocked on one open question** — see "Open questions" below:
-`runs` rows are written only by `scan`, but eligibility and tailoring run in separate later processes, so
-there is no existing process whose boundaries match a seven-stage funnel. That has to be settled before the
-artifact is built, or the artifact gets keyed to the wrong notion of a run and P0 is rework.
+Item 7 (the `run_id` migration) is **DONE and committed**. Nothing is blocked: the one open question —
+what a `run_id` refers to — was **ratified by Mit as a pipeline run on 2026-08-06 (D-016)**, which grows P0
+to include a pipeline-run row that P3 would otherwise have built.
+
+Next up is **per-rule abstain rate**, chosen deliberately because it needs no `run_id` and so de-risks the
+rest of P0 independently of D-016.
 
 Branch is **not pushed and has no PR** — pushing is not covered by standing permission.
 
@@ -104,11 +105,18 @@ changes adopted, none contested.
 
 ## Next action
 
-**Settle what a "run" is (open question 1 below), then build the funnel artifact.**
+**Build per-rule abstain rate first — it needs no `run_id` at all.**
 
-Everything else about the artifact is already specified and researched. What is not settled is its key.
-Once that is decided, in order:
+It is a read over `eligibility_requirements` LEFT JOINed against the catalog enumeration, so it is
+independent of D-016 and de-risks the rest of P0. It is also the metric `PROGRAM.md` calls the highest-value
+single one in the program, and there is already a live 100%-abstain rule for it to surface
+(`experience_years:scoped_years_minimum`, 11,670/11,670). **Enumerate from `load_rules()` — never
+`GROUP BY rule_id`**, or the 7 rules that have never fired stay invisible.
 
+Then, per D-016 (pipeline run):
+
+0. Introduce the **pipeline-run row** — one command running scan → eligibility → tailor that owns run
+   identity across all three. This is early P3 work, deliberately.
 1. Thread `run_id` into the two write paths — `write_evaluation` (`eligibility/engine.py:242`) and
    `record_artifact` (`store/artifacts.py:17`) take no such parameter today, so the new column stays NULL
    forever until they do. **The migration alone changes no behaviour.**
@@ -144,13 +152,16 @@ tracked tree and R7 requires a sha256-pinned `SHIPPED_DATA` entry for tracked `.
 
 | Item | Blocked on | Since |
 |---|---|---|
-| P0 items 1/2/8 (funnel artifact, abstain rate, fabrication counters) | Open question 1 — what a `run_id` refers to | 2026-08-06 (session 2) |
+| _(none)_ — the run-key question was ratified as D-016 on 2026-08-06 | | |
 
 ---
 
 ## Open questions
 
-### 1. What is a "run"? — OPEN, blocks the P0 funnel artifact
+**None.** The run-key question was **ratified by Mit as option (b), pipeline run, on 2026-08-06** — see
+**D-016**. Do not re-litigate it. Its analysis is kept below because the rejected options carry the reasons.
+
+### 1. What is a "run"? — RESOLVED 2026-08-06 (D-016): a pipeline run
 
 **The problem, measured.** `runs` rows are inserted in exactly one place: `insert_run` at
 `scan/coordinator.py:104`, inside the scan's own file lock. `run_id` is then threaded as a plain parameter
@@ -179,11 +190,9 @@ bucket until their writers thread `run_id`. Do **not** silently pick (a): it mak
 "judged during this run" the same number, which is the exact indistinguishability D-013 added the migration
 to prevent.
 
-**Status: PROCEEDING UNDER (b) AS A STATED ASSUMPTION, not a ratified decision.** Mit was asked directly on
-2026-08-06 and the question timed out unanswered, so this is boardwatch's judgement, not his ruling. It is
-recorded here rather than in `DECISIONS.md` precisely because it is not settled — **confirm it with Mit
-before writing the pipeline-run row**, since that is the point after which reversing gets expensive. Nothing
-committed so far depends on the choice: the migration is correct under all three options.
+**Status: RATIFIED — (b), by Mit, 2026-08-06.** Recorded as **D-016**. P0 now includes the pipeline-run row
+and the funnel artifact writer; this is accepted as *early* P3 work rather than extra work, since P3's "one
+command, unattended" needs the same row and the alternative was re-keying at P3.
 
 ### 2. `main` is red until this branch merges — deliberate, not forgotten
 

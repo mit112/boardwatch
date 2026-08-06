@@ -340,3 +340,37 @@ means "written before run attribution existed" and the funnel must report it as 
 it into a real run's counts. The column alone changes nothing until the write paths thread `run_id` —
 `write_evaluation` (`eligibility/engine.py:242`) and `record_artifact` (`store/artifacts.py:17`) currently
 take no such parameter.
+
+---
+
+## D-016 — `run_id` means a pipeline run, and P0 introduces it
+**2026-08-06 · session 2 · ratified by Mit**
+
+**Context.** P0's funnel artifact needs a key, and no existing process spans the seven stages. `runs` rows
+are written in exactly one place — `insert_run` at `scan/coordinator.py:104`, inside the scan's file lock.
+Eligibility is judged later, as a preflight side-effect of `top`/`stats` (`eligibility/preflight.py:133`),
+with no `run_id` in scope. Tailoring is later still and single-posting (`run_tailor` takes one `posting_id`;
+**no batch orchestrator exists in `src/`**). The only thing that stitches them into a pipeline is
+`.agent/bin/bw-daily` (`bwd`), which is gitignored shell and not part of the product. Measured consequence:
+`runs` holds **4** rows against **20,637** evaluations — essentially every judgment ever made happened
+outside any run.
+
+**Choice.** `run_id` denotes a **pipeline run**: one command that runs scan → eligibility → tailor in
+sequence and owns the run identity across all of it. P0 introduces the pipeline-run row and the funnel
+artifact writer; `scan` populates the stages it owns; stages whose writers do not yet thread `run_id` are
+reported as an explicit `unattributed` bucket rather than as 0.
+
+**Rejected.** (a) *`run_id` = the scan run.* An evaluation would be filed under the run that captured its
+posting version rather than the run that judged it, so a past run's report keeps changing days later, and
+"already judged, cache hit" becomes indistinguishable from "judged during this run" — the exact
+indistinguishability D-013 added the migration to prevent. (b) *A time-window report like `stats`.* Bar
+metric B6 is "funnel reconciles 100% to a terminal state", and reconciliation needs a unit; a rolling window
+has none. `PROGRAM.md` §3.P0.4's run manifest would have no home, and the `run_attribution` migration would
+go unused.
+
+**Consequence.** P0 grows: it now builds a slice of what P3 was scheduled to build. This is accepted as
+*early* work rather than *extra* work — P3's "one command, unattended" needs exactly this row, so the
+alternative was building a throwaway key in P0 and re-keying at P3. It also puts `bwd` on a path to being
+replaced by a shipped command instead of gitignored shell. **Sequencing note:** per-rule abstain rate needs
+no `run_id` at all (it is a read over `eligibility_requirements` joined against the catalog enumeration), so
+it is built first and de-risks the rest of P0 independently of this decision.
