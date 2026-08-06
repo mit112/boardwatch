@@ -54,6 +54,9 @@ class ScanSummary:
     postings_seen: int = 0
     open_postings: int = 0
     errors: list[str] = field(default_factory=list)
+    # Set once the runs row exists. The pipeline reads it rather than minting its own, so the
+    # INSERT stays inside the scan lock (see pipeline/runner.py).
+    run_id: int = 0
 
 
 def default_providers() -> dict[str, Provider]:
@@ -68,7 +71,7 @@ def run_scan(
     providers: dict[str, Provider] | None = None,
     company: str | None = None,
     provider: str | None = None,
-    run_id: int | None = None,
+    finish: bool = True,
 ) -> ScanSummary:
     settings.data_dir.mkdir(parents=True, exist_ok=True)
     lock = FileLock(str(settings.data_dir / "scan.lock"))
@@ -84,7 +87,7 @@ def run_scan(
             providers or default_providers(),
             company,
             provider,
-            run_id,
+            finish,
         )
     finally:
         lock.release()
@@ -97,19 +100,18 @@ def _run_scan_locked(
     providers: dict[str, Provider],
     company: str | None,
     provider: str | None,
-    run_id: int | None = None,
+    finish: bool = True,
 ) -> ScanSummary:
     ensure_schema(engine)  # deferred to inside the lock: a REJECTED scan writes nothing
     summary = ScanSummary()
 
     with engine.connect() as conn:
         company_rows = get_watched_companies(conn, slug=company, provider=provider)
-    # A caller-supplied run_id means this scan is stage one of a pipeline that already owns
-    # the row, so the pipeline stamps finished_at. Minting here otherwise keeps the bare
-    # `boardwatch scan` contract intact: the insert stays INSIDE the lock, so a scan rejected
-    # for contention still writes nothing at all.
-    owns_run = run_id is None
-    active_run_id = insert_run(engine) if run_id is None else run_id
+    # The insert stays INSIDE the lock, so a scan rejected for contention writes nothing at
+    # all. `finish=False` means this scan is stage one of a pipeline: it records its counts
+    # but the pipeline stamps finished_at, so a run is not "finished" the moment scan returns.
+    active_run_id = insert_run(engine)
+    summary.run_id = active_run_id
 
     work: list[tuple[Any, Provider, BoardRequest]] = []
     with engine.connect() as conn:
@@ -198,6 +200,6 @@ def _run_scan_locked(
         closed_count=summary.closed,
         reopened_count=summary.reopened,
         errors=summary.errors,
-        finished=owns_run,
+        finished=finish,
     )
     return summary

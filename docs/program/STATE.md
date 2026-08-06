@@ -7,7 +7,7 @@
 a single session when three later docs commits did not update it, and a cold session following the
 session-start ritual hit the disagreement on its very first check. State what is durably true; verify the
 rest against `git log`. (D-017.)
-**Gate:** `make check` exits **0** (2670 passed, coverage 94.88%), measured in plain mode with the real exit code.
+**Gate:** `make check` exits **0** (2674 passed, coverage 94.95%), measured in plain mode with the real exit code.
 
 > This is the single file a fresh session with zero memory reads to know where the program stands.
 > If it disagrees with the repo, **the repo wins** — fix this file and note the correction in
@@ -34,15 +34,17 @@ table, the run manifest, the reconciliation sweep, the stub rate, and the fabric
 behaviour — the same criticism that applies to item 7's migration — so the row and the threading that
 populates it landed as one unit.
 
-- **`boardwatch run`** (`src/boardwatch/pipeline/runner.py`, `cli/run_cmd.py`). Mints the run row before
-  scan, stamps `finished_at` after tailor. `--top N` · `--out` · `--resume` · `--no-scan`. Exit 0 clean,
-  1 on stage errors, 2 on scan-lock contention. This is what `.agent/bin/bw-daily` becomes.
+- **`boardwatch run`** (`src/boardwatch/pipeline/runner.py`, `cli/run_cmd.py`). Owns one run row across
+  all three stages and stamps `finished_at` after tailor. `--top N` · `--out` · `--resume` · `--no-scan`.
+  **Exit 0 unless the run is fatally broken**, 2 on scan-lock contention — dead boards and leads that fail
+  to tailor are counted and printed but do NOT fail the run. This is what `.agent/bin/bw-daily` becomes.
 - **`run_id` threaded into both write paths.** `run_eligibility` → `write_evaluation` →
   `record_evaluation`, the opt-in LLM lane (`extract_and_record`, which bypasses `write_evaluation`), and
   `run_tailor` → all three artifact inserts.
-- **`runs` ownership split.** `finalize_run` gained `finished: bool = True`; new `finish_run` stamps
-  `finished_at` for whoever owns the row. Bare `boardwatch scan` is unchanged — the insert stays inside
-  the lock, so a contended scan still writes nothing.
+- **`runs` ownership split.** The **scan stage creates the row** (inside the lock it already holds) and
+  the **pipeline finishes it** — D-020. `finalize_run` gained `finished: bool = True`; new `finish_run`
+  stamps `finished_at`. A contended `boardwatch run` therefore writes **nothing at all**, inheriting
+  `scan`'s zero-write contract rather than merely closing an orphan row out.
 
 **The invariant this establishes — D-019, and the reason the work is worth this much care:**
 
@@ -57,9 +59,29 @@ Two consequences accepted on purpose, both in D-019: a **cache hit keeps the fir
 written; "cache hit" is its own funnel stage counted from the insert rowcount, never inferred from
 `run_id`), and a **reused master résumé artifact keeps the run that first authored it**.
 
-**Every new test was mutation-checked** — the fix reverted, the test watched go red, the fix restored —
-per the twice-recorded lesson in D-017/D-018. That surfaced one genuine gap: `finalize_run(finished=False)`
-had no test at all until the check was run.
+### The independent review found eleven real defects — the first session where they were in logic
+
+Sessions 1–3 established a pattern: reviews found documents and tests, never logic. **That pattern broke
+here, and it broke on new code.** All eleven were adopted; the load-bearing ones are in **D-020**:
+
+- The pipeline minted the run row **before** the scan lock, so `boardwatch run` migrated the live DB
+  outside the lock and stranded a row on contention. Fixed by moving the INSERT into the scan stage.
+- Scan errors were persisted **twice** (the scan stage writes them; `finish_run` appends; the pipeline
+  passed them again), making any per-run error count uninterpretable.
+- `boardwatch run` would have exited **1 on essentially every real run** — one dead board out of 85 was
+  enough — while `boardwatch scan` exits 0 for the identical condition. `errors` and `fatal` are now
+  separate fields.
+- No `try/finally`: any unexpected exception left a run row that `doctor` reports as in-progress forever.
+- `shortlisted` measured the `--top` flag rather than a funnel stage.
+
+**Two findings were tests of mine that could not fail** — the third and fourth occurrence of this class.
+One compared `summary.evaluated` to the *same query that produced it* while its docstring claimed it
+counted through a different path. The other asserted a value `insert_run` writes at birth, so deleting
+`finalize_run` **entirely** left it green.
+
+> **The sharpened lesson (D-020): a mutation test proves the mutation is caught, not that the docstring is
+> true.** Both tests were mutation-checked and both survived, because I picked the mutation from the code I
+> had written rather than from the claim the test made. Derive the mutation from the claim.
 
 ---
 
@@ -236,6 +258,13 @@ tracked tree and R7 requires a sha256-pinned `SHIPPED_DATA` entry for tracked `.
 | P7 Breadth | not started | — |
 
 ---
+
+## Known gaps carried forward, stated rather than papered over
+
+| Gap | Why it is not fixed here | Owner |
+|---|---|---|
+| **A `SIGKILL`ed run leaves a dangling `runs` row.** `try/finally` covers exceptions and Ctrl-C, not SIGKILL. Observed live: a verification run killed by `timeout` left `finished_at` NULL after writing 11,200 attributed evaluations. **A dangling row is a quarantine with no drain**, which `CLAUDE.md` calls a leak. | A reaper belongs with P3's stale-lock reclaim and the run manifest's exit status, not bolted onto the row's introduction | P3 / P0 item 4 |
+| **`runs` has no `status` column**, so "still running", "crashed" and "finished with errors" are only partly separable. | `PROGRAM.md` §3.P0.4 puts exit status in the run manifest; adding it early would mean designing the manifest twice | P0 item 4 |
 
 ## Blocked items
 

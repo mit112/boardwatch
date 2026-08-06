@@ -284,7 +284,7 @@ row is the key; the artifact is the deliverable. **Gate P0 remains not met.**
 ### Gate
 
 `make check` exit **0** — generalization OK, ruff clean, mypy `--strict` clean on 147 source files,
-2670 tests passed, coverage 94.88% (threshold 85%). Measured in plain mode with the real exit code.
+2674 tests passed, coverage 94.95% (threshold 85%). Measured in plain mode with the real exit code.
 
 ### Test-pinning discipline, applied and worth recording
 
@@ -295,3 +295,20 @@ stops the scan stage from marking a pipeline complete, had **no test at all**. T
 
 This is the third consecutive session in which the review-worthy defects were in tests and documents rather
 than logic (D-017, D-018, and now this). The pattern is stable enough to treat as a rule.
+
+### Independent review — the pattern from sessions 1–3 broke
+
+Three consecutive sessions had reviews that found **only** documents and tests. This one found **eleven
+defects, most of them in logic**, all in code written the same session. Recorded because the earlier
+pattern was starting to look like a property of the program rather than of the work being reviewed:
+
+| Class | Count | Examples |
+|---|---|---|
+| Logic / correctness | 6 | run row minted outside the scan lock; scan errors persisted twice; dangling run row on any unhandled exception |
+| Signal destruction | 2 | exit 1 on every real run; `shortlisted` measuring the `--top` flag |
+| Tests that cannot fail | 2 | `X == X` cross-check; asserting a value written at row birth |
+| Wrong message / hygiene | 1 | `doctor` calling every unfinished run a scan |
+
+**Both untestable tests had been mutation-checked and both survived**, because the mutation was derived
+from the code rather than from the claim the test's docstring made. That is the transferable lesson and it
+is now in D-020.

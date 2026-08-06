@@ -17,7 +17,14 @@ All notable changes to this project are documented here. The format follows
 
   Options: `--top N` (how many ranked postings to tailor, default 8), `--out` (root for the dated
   `<out>/<YYYY-MM-DD>/` folders), `--resume`, and `--no-scan` to reuse already-fetched postings.
-  Exit 0 on a clean run, 1 if any stage reported an error, 2 if another scan holds the lock.
+
+  Exit 2 if another scan holds the lock, 1 only if the run is fatally broken, and **0 otherwise —
+  including when some boards were unreachable or some leads would not tailor.** Those are counted,
+  printed and persisted, but they are the documented norm across 85 watched boards and `boardwatch scan`
+  already treats them as success; an exit status that is non-zero every day carries no information.
+
+  A contended run writes nothing at all: the run row is created by the scan stage, inside the file lock,
+  so there is no window in which the schema is migrated or a row inserted before the lock is held.
 
 - **`run_id` is now written on every evaluation and every artifact.** The column was added
   previously but nothing populated it, so it was NULL everywhere. It is now threaded through
@@ -34,6 +41,12 @@ All notable changes to this project are documented here. The format follows
   A cache hit keeps the run that first produced the evaluation, and a reused master résumé
   artifact keeps the run that first authored it — in both cases no row is written, and claiming
   otherwise would erase the distinction the column exists to record.
+
+### Changed
+
+- **`boardwatch doctor` now says "a run is in progress" rather than "a scan is in progress".** Since run
+  attribution, an unfinished run is also a `boardwatch run` still tailoring or a standalone eligibility
+  pass still judging — the old wording sent users looking for a held scan lock that was in fact free.
 
 - **`boardwatch eligibility abstain` — abstain rate for every rule in the catalog, including
   rules that have never fired.** `eligibility summary` groups the requirement rows that exist,

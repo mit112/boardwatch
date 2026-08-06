@@ -34,6 +34,11 @@ def env(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     return tmp_path / "data"
 
 
+def _run_count(engine: object) -> int:
+    with engine.connect() as conn:  # type: ignore[attr-defined]
+        return int(conn.execute(select(func.count()).select_from(tables.runs)).scalar_one())
+
+
 def _cli(data_dir: Path, args: list[str], stdin: str | None = None):
     return runner.invoke(app, ["--data-dir", str(data_dir), *args], input=stdin)
 
@@ -115,22 +120,32 @@ def test_one_run_row_spans_eligibility_and_tailor(env: Path, tmp_path: Path) -> 
     assert art_runs == {summary.run_id}, "an artifact escaped the pipeline's run"
 
 
-def test_the_summary_counts_evaluations_through_the_database_not_its_own_tally(
+def test_the_summary_counts_evaluations_through_a_genuinely_different_path(
     env: Path, tmp_path: Path
 ) -> None:
-    """Counted through a different path than the one that produced it (CLAUDE.md)."""
+    """Counted through a different path than the one that produced it (CLAUDE.md).
+
+    An earlier version of this test re-ran `_count_evaluations`' own query and compared the
+    result to itself — X == X, which cannot fail. The independent path is the evaluations'
+    parent `eligibility_inputs` rows: one distinct posting_version per evaluation, reached by
+    a join rather than by the run_id filter the summary used.
+    """
     _ready(env)
 
     summary = _pipeline(env, tmp_path / "apps")
 
     with get_engine(env).connect() as conn:
-        actual = conn.execute(
-            select(func.count())
-            .select_from(tables.eligibility_evaluations)
-            .where(tables.eligibility_evaluations.c.run_id == summary.run_id)
+        via_inputs = conn.execute(
+            select(func.count(func.distinct(tables.eligibility_inputs.c.posting_version_id)))
+            .select_from(
+                tables.eligibility_inputs.join(
+                    tables.eligibility_evaluations,
+                    tables.eligibility_evaluations.c.input_id == tables.eligibility_inputs.c.id,
+                )
+            )
         ).scalar_one()
-    assert summary.evaluated == actual
     assert summary.evaluated > 0
+    assert summary.evaluated == via_inputs
 
 
 def test_leads_land_in_a_dated_folder_per_posting(env: Path, tmp_path: Path) -> None:
@@ -146,14 +161,17 @@ def test_leads_land_in_a_dated_folder_per_posting(env: Path, tmp_path: Path) -> 
         assert lead.out_dir.parent.name.count("-") == 2  # YYYY-MM-DD
 
 
-def test_a_contended_scan_closes_its_run_row_rather_than_leaving_it_dangling(
-    env: Path, tmp_path: Path
-) -> None:
-    """`doctor` reports finished_at IS NULL as a still-running run; an aborted run is not that."""
+def test_a_contended_pipeline_writes_no_run_row_at_all(env: Path, tmp_path: Path) -> None:
+    """`boardwatch run` inherits `scan`'s "a rejected scan writes nothing" contract.
+
+    The scan stage creates the row, inside the lock. So contention cannot strand a row — which
+    is stronger than closing one out, and is why the pipeline does not mint before the lock.
+    """
     _ready(env)
     settings = load_settings(data_dir=env)
     engine = get_engine(env)
     settings.data_dir.mkdir(parents=True, exist_ok=True)
+    before = _run_count(engine)
     holder = FileLock(str(settings.data_dir / "scan.lock"))
     holder.acquire()
     try:
@@ -168,13 +186,115 @@ def test_a_contended_scan_closes_its_run_row_rather_than_leaving_it_dangling(
     finally:
         holder.release()
 
+    assert _run_count(engine) == before, "a contended pipeline stranded a run row"
+
+
+def test_an_unexpected_stage_failure_still_closes_the_run_row(
+    env: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A dangling run is reported by `doctor` as in-progress forever, one more per retry."""
+    _ready(env)
+    settings = load_settings(data_dir=env)
+    engine = get_engine(env)
+
+    import boardwatch.pipeline.runner as runner_mod
+
+    def boom(*_args: object, **_kw: object) -> None:
+        raise RuntimeError("taxonomy.yaml is malformed")
+
+    monkeypatch.setattr(runner_mod, "run_tailor", boom)
+    with pytest.raises(RuntimeError):
+        # The tailor loop catches Exception per lead, so make the failure escape the loop
+        # instead: a raise from finish-time accounting is the same unguarded window.
+        monkeypatch.setattr(runner_mod, "_count_evaluations", boom)
+        run_pipeline(
+            engine,
+            settings,
+            console=Console(quiet=True),
+            out_root=tmp_path / "apps",
+            resume_path=settings.config_dir / "resume.yaml",
+            skip_scan=True,
+        )
+
     with engine.connect() as conn:
-        runs = conn.execute(
-            select(tables.runs.c.finished_at, tables.runs.c.errors_json)
-        ).all()
-    assert len(runs) == 1
-    assert runs[0].finished_at is not None, "the aborted run was left looking still-running"
-    assert runs[0].errors_json == ["scan: lock held by another process"]
+        finished = conn.execute(select(tables.runs.c.finished_at)).scalars().all()
+    assert finished, "no run row was created, so this test proves nothing"
+    assert all(f is not None for f in finished), "an exception left a run row dangling"
+
+
+def test_a_lead_that_fails_to_tailor_leaves_no_empty_folder_behind(
+    env: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Listing the dated directory is the obvious independent count; a husk would inflate it."""
+    _ready(env)
+    out_root = tmp_path / "apps"
+
+    import boardwatch.pipeline.runner as runner_mod
+
+    def boom(*_args: object, **_kw: object) -> None:
+        raise RuntimeError("no extraction for this posting")
+
+    monkeypatch.setattr(runner_mod, "run_tailor", boom)
+    summary = _pipeline(env, out_root)
+
+    assert summary.tailor_failed > 0, "nothing failed, so this test proves nothing"
+    assert summary.tailored == []
+    day_dirs = list(out_root.glob("*/*")) if out_root.exists() else []
+    assert day_dirs == [], f"empty husks left behind: {day_dirs}"
+
+
+def test_scan_board_failures_are_reported_but_do_not_fail_the_run(
+    env: Path, tmp_path: Path
+) -> None:
+    """A few dead boards are the norm across 85 watched; `scan` itself exits 0 for them."""
+    _ready(env)
+    engine = get_engine(env)
+    with engine.begin() as conn:
+        conn.execute(
+            insert(tables.companies).values(
+                name="Ghost", provider="not-a-provider", slug="ghost",
+                source="user", watched=True,
+            )
+        )
+
+    summary = run_pipeline(
+        engine,
+        load_settings(data_dir=env),
+        console=Console(quiet=True),
+        out_root=tmp_path / "apps",
+        resume_path=load_settings(data_dir=env).config_dir / "resume.yaml",
+    )
+
+    assert any("ghost" in e for e in summary.errors), summary.errors
+    assert summary.fatal is None, "an unreachable board was treated as a run failure"
+
+
+def test_scan_errors_are_recorded_once_not_twice(env: Path, tmp_path: Path) -> None:
+    """The scan stage persists its own errors; finish_run appends, so passing them again dupes."""
+    _ready(env)
+    engine = get_engine(env)
+    with engine.begin() as conn:
+        conn.execute(
+            insert(tables.companies).values(
+                name="Ghost", provider="not-a-provider", slug="ghost",
+                source="user", watched=True,
+            )
+        )
+
+    summary = run_pipeline(
+        engine,
+        load_settings(data_dir=env),
+        console=Console(quiet=True),
+        out_root=tmp_path / "apps",
+        resume_path=load_settings(data_dir=env).config_dir / "resume.yaml",
+    )
+
+    with engine.connect() as conn:
+        persisted = conn.execute(
+            select(tables.runs.c.errors_json).where(tables.runs.c.id == summary.run_id)
+        ).scalar_one()
+    ghost = [e for e in (persisted or []) if "ghost" in e]
+    assert len(ghost) == 1, f"scan errors recorded {len(ghost)} times: {persisted}"
 
 
 def test_no_profile_is_a_real_run_that_produced_nothing_not_a_crash(
@@ -222,23 +342,27 @@ def test_scan_given_a_run_id_records_its_counts_without_claiming_the_run_finishe
 ) -> None:
     """Stage one of three must not stamp finished_at, or the pipeline reads as done at scan."""
     from boardwatch.scan.coordinator import run_scan
-    from boardwatch.store.queries import insert_run
 
-    ensure_schema(get_engine(env))
+    _seed_posting(env)  # one watched company, so boards_attempted must become non-zero
     settings = load_settings(data_dir=env)
     engine = get_engine(env)
-    owner = insert_run(engine)  # no watched companies: the scan is a no-op but still finalizes
 
-    run_scan(engine, settings, run_id=owner)
+    summary = run_scan(engine, settings, finish=False)
 
     with engine.connect() as conn:
         row = conn.execute(
-            select(tables.runs.c.finished_at, tables.runs.c.boards_attempted).where(
-                tables.runs.c.id == owner
-            )
+            select(
+                tables.runs.c.finished_at,
+                tables.runs.c.boards_attempted,
+                tables.runs.c.postings_seen,
+            ).where(tables.runs.c.id == summary.run_id)
         ).one()
         assert conn.execute(select(func.count()).select_from(tables.runs)).scalar_one() == 1
-    assert row.boards_attempted == 0, "the scan stage did not write its counts"
+    # postings_seen is NULL at birth and only finalize_run ever sets it, so asserting it is
+    # non-NULL is what actually pins "the counts were written". boards_attempted is 0 from
+    # birth, so on its own it pinned nothing — deleting finalize_run left the old test green.
+    assert row.postings_seen is not None, "the scan stage did not write its counts"
+    assert row.boards_attempted == 1
     assert row.finished_at is None, "the scan stage finished a run it does not own"
 
 

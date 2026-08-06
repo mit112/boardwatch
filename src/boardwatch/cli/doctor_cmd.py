@@ -101,7 +101,11 @@ def doctor(ctx: typer.Context, offline: bool = typer.Option(False, "--offline"))
             "'empty' here is unverifiable — it may be a typo'd slug.[/dim]"
         )
     if running:
-        console.print(f"[yellow]a scan is in progress (run {running.id})[/yellow]")
+        # Deliberately not "a scan is in progress": since run attribution landed, an
+        # unfinished run is also a `boardwatch run` still tailoring, or a standalone
+        # eligibility pass still judging. Naming it a scan sent users looking for a held
+        # scan lock that is in fact free.
+        console.print(f"[yellow]a run is in progress (run {running.id})[/yellow]")
 
     # schema check compares the DB's applied revision against the code's expected script head
     schema_ok = db_revision == schema_revision()

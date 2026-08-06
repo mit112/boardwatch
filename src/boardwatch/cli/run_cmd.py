@@ -36,7 +36,9 @@ def run(
     ),
 ) -> None:
     """Run the whole pipeline once, attributing every row it writes to one run."""
-    app_ctx = build_context(ctx.obj)
+    # ensure=False mirrors scan_cmd: run_scan migrates INSIDE the scan lock, so a contended
+    # run must not have migrated the live DB on its way to being rejected.
+    app_ctx = build_context(ctx.obj, ensure=False)
     settings = app_ctx.settings
     try:
         summary = run_pipeline(
@@ -55,13 +57,20 @@ def run(
     console.print(
         f"run {summary.run_id} · {summary.scan_postings_seen} postings seen · "
         f"{summary.scan_open_postings} open · {summary.evaluated} evaluated · "
-        f"{summary.shortlisted} shortlisted · {len(summary.tailored)} tailored · "
-        f"{summary.leads_with_pdf} with PDF"
+        f"{summary.shortlisted} shortlisted "
+        f"({summary.hidden_ineligible} ineligible, {summary.hidden_non_swe} non-SWE hidden) · "
+        f"{len(summary.tailored)} tailored · {summary.leads_with_pdf} with PDF"
     )
     for lead in summary.tailored:
         mark = "✓" if lead.pdf_built else "·"
         console.print(f"  {mark} {lead.company} — {lead.title} → {lead.out_dir}", markup=False)
     for err in summary.errors:
         console.print(f"  ! {err}", markup=False)
-    if summary.errors:
+
+    # Only a FATAL condition fails the run. A few unreachable boards and a few leads that
+    # would not tailor are the documented norm across 85 watched boards, and `boardwatch scan`
+    # already exits 0 for them; making the daily driver exit 1 every day would destroy the
+    # exit status as a signal. Both are still counted, printed and persisted above.
+    if summary.fatal is not None:
+        console.print(f"run {summary.run_id} FAILED: {summary.fatal}", markup=False)
         raise typer.Exit(code=1)

@@ -303,12 +303,17 @@ def extract_cmd(
     )
     evaluated = 0
     # This lane is invoked standalone, so it owns its run: a degenerate pipeline run whose
-    # only stage is the LLM extraction. Minting here rather than writing NULL is what keeps
-    # `run_id IS NULL` meaning "predates attribution" and nothing else.
-    run_id = ensure_run(app_ctx.engine, None)
+    # only stage is the LLM extraction. Minting rather than writing NULL is what keeps
+    # `run_id IS NULL` meaning "predates attribution" and nothing else — but it is minted
+    # LAZILY, on the first posting actually reached, matching run_eligibility. A provider
+    # outage makes every call return None, and a run row attributing zero rows would turn
+    # `runs` into a command log.
+    run_id: int | None = None
     for current in ordered:
         if evaluated >= settings.llm.max_calls_per_run:
             break
+        if run_id is None:
+            run_id = ensure_run(app_ctx.engine, None)
         with app_ctx.engine.begin() as conn:
             extract_and_record(
                 conn,
@@ -324,7 +329,8 @@ def extract_cmd(
                 run_id=run_id,
             )
         evaluated += 1
-    finish_run(app_ctx.engine, run_id)
+    if run_id is not None:
+        finish_run(app_ctx.engine, run_id)
     console.print(f"extracted {evaluated} postings")
 
 
