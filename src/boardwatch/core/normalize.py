@@ -14,7 +14,11 @@ import re
 
 _NON_ALNUM_SPACE = re.compile(r"[^a-z0-9 ]")
 _COMPANY_SUFFIXES = re.compile(r"\b(inc|llc|corp|co|ltd|technologies|technology|labs)\b")
-_NON_ALNUM_TO_SPACE = re.compile(r"[^a-z0-9 ]")
+# Title normalization is Unicode-aware (unlike normalize_company's pinned ASCII-only
+# caveat): an all-non-ASCII title (e.g. Korean) must keep its letters, otherwise it
+# collapses to "" and every such posting collides into one bucket. \W is Unicode-aware
+# for str patterns, and _ is excluded so titles fold the same way ASCII ones do.
+_NON_ALNUM_TO_SPACE = re.compile(r"[\W_]")
 _WS = re.compile(r"\s+")
 
 

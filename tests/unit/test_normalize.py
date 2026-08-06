@@ -44,6 +44,20 @@ class TestNormalizeTitle:
     def test_whitespace_collapsed(self) -> None:
         assert normalize_title("Software   Engineer\t II") == "software engineer ii"
 
+    def test_non_ascii_title_survives(self) -> None:
+        # Regression: an all-Korean title must not collapse to "" (which collided 64
+        # Coupang postings into one empty-string bucket). Title normalization keeps
+        # Unicode letters, unlike the ASCII-only company normalizer.
+        assert normalize_title("소프트웨어 엔지니어") == "소프트웨어 엔지니어"
+
+    def test_distinct_non_ascii_titles_do_not_collide(self) -> None:
+        assert normalize_title("소프트웨어 엔지니어") != normalize_title("백엔드 개발자")
+
+    def test_underscore_still_folds_to_space(self) -> None:
+        # \W keeps underscore as a word char, so it is excluded explicitly to match
+        # the previous ASCII behavior (underscores became spaces).
+        assert normalize_title("Software_Engineer") == "software engineer"
+
 
 class TestContentHash:
     def test_stable_across_whitespace_only_changes(self) -> None:
