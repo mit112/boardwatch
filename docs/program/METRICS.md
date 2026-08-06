@@ -128,3 +128,82 @@ clock; record the reset here with its cause.
 | Day | Date | B1 leads | B2 PDF% | B3 QA% | B4 fab | B5 empty | B6 recon% | B7 decisive | Notes |
 |---|---|---|---|---|---|---|---|---|---|
 | _(not started)_ | | | | | | | | | |
+
+---
+
+## Session 2 — 2026-08-06, P0 measurements
+
+Measured this session against the live store and the catalog loader. Two of session 1's descriptions of
+the schema were imprecise in ways that would have mis-shaped the funnel; both are corrected here.
+
+### Corrections to session 1's record
+
+| Session 1 said | Actually | Why it matters |
+|---|---|---|
+| `uq_eligibility_deterministic ON (input_id, engine_version)` | It is a **partial** unique index: `... WHERE engine_kind = 'deterministic'` (`tables.py:256`, `p0_eligibility.py:67`) | LLM-lane evaluations are **not** deduped by it, so the cache-hit stage is lane-specific, not one number |
+| The abstain verdict | There is **no** `abstain` value. Stored vocabulary is `eligible \| ineligible \| **uncertain**` (CHECK at `tables.py:259`) | The keystone invariant's ABSTAIN is persisted as `uncertain`; the funnel must state the mapping or look like it is missing a stage |
+
+### Rule catalog — enumerable, and 7 rules have never fired
+
+| Metric | Value | Source |
+|---|---|---|
+| Families | **6** | `eligibility/rules.yaml`, `families:` |
+| Individual rule patterns | **44** | 8 work_auth · 5 experience_years · 13 clearance · 13 degree · 4 contract_not_fte · 1 internship |
+| Canonical rule identity | `f"{family}:{pattern.id}"` | `catalog.py:98-105` (`PatternSpec.rule_id`) |
+| Pure enumeration (no evaluation) | `load_rules(config_dir)` → `[p.rule_id for f in c.families for p in f.patterns]` | `catalog.py:180` |
+| Distinct `rule_id` ever detected | **37** of 44 | `select count(distinct rule_id) from eligibility_requirements` |
+| **Rules that have never fired once** | **7** | `clearance:{sap_access,nato_access,active_confidential,doe_q,doe_l,public_trust}_required`, `work_auth:eu_authorization_required` |
+
+**A `GROUP BY rule_id` cannot produce this metric.** Those 7 rules emit no group at all — not 0%, absent.
+No table enumerates the catalog, so per-rule abstain *must* enumerate from `load_rules()` in Python and
+LEFT JOIN, or a rule that cannot fire stays invisible. That is the failure the metric exists to prevent.
+
+### A 100% abstain rate already exists, live
+
+| Rule | Rows | Abstained (`unknown`) | Rate |
+|---|---|---|---|
+| `experience_years:scoped_years_minimum` | 11,670 | 11,670 | **100%** |
+
+Its abstains split 10,523 `"requirement is scoped to a skill; no per-skill durations stored"`
+(`resolve.py:207-210` — unconditional for this pattern) + 1,147 stage-1 conflict. Separately,
+`clearance:clearable_required` returns UNKNOWN unconditionally regardless of facts (`resolve.py:244-245`).
+Per `CLAUDE.md`, these are monitoring failures, not conservatism.
+
+### Live ledger totals
+
+| Measure | Value |
+|---|---|
+| `eligibility_inputs` / `eligibility_evaluations` | 20,637 / 20,637 (1:1; deterministic only, 0 llm rows) |
+| Verdicts | eligible **19,527** · uncertain **1,110** · ineligible **0** |
+| `eligibility_requirements` rows | 17,753 — met 1,915 · unknown **14,112** · unmet 1,726 |
+| Profile policy override | `{"families": {"work_auth": "blocker"}}` — the only non-default |
+
+### Funnel attributability before this session's migration
+
+**1 of 7 stages** was run-attributable (`observed`, via `runs.postings_seen` / `board_scans.postings_listed`).
+`unique` is structurally identical to `observed` until P6 ships an identity layer. `candidates`,
+`prefilter_stopped`, the verdict split, `leads_with_pdf` and `marked_applied` were all unattributable.
+The `run_attribution` migration (`c56bc11`) addresses the schema half for two of them.
+
+### Two things that will not yield to a query
+
+- **`disposition='unknown'` conflates four distinct causes** — catalog `abstain_by` escape, stage-1
+  exclusive-group conflict, stage-1b split-threshold conflict, and resolver-missing-fact. They are
+  separable only by free-text `rationale`, which carries **no CHECK constraint** (unlike `disposition`), so
+  a source edit changes the strings silently. Per-rule abstain *rate* is computable; typed abstain
+  *reason* — which the keystone invariant's `ABSTAIN(missing_profile_field:X)` requires — is not.
+- **`RewriteRow.drop_reason` is 12 bare untyped strings** (`None`, `budget`, `error`, `no_candidate`,
+  `unchanged`, `judge`, and 6 `filter:*` values), contradicting `CLAUDE.md`'s "typed violations at the
+  raise site". Aggregates are computed twice for `console.print` (`cli/tailor_cmd.py:196-204`, `:407-414`)
+  and discarded. Raw rows do survive into `artifacts.meta_json` on non-dry-run Tier B only. Tier A's
+  fail-safe (`TierASafetyError`) is a whole-run raise with **no counter anywhere**.
+
+### One more trap for the artifact writer
+
+`artifacts.uri` stores the **`.typ` source path, not the PDF** (`reports/tailor.py:388-397,421`). Whether a
+PDF compiled lives only in `meta_json.typst_pdf_built`. So `leads_with_pdf` is
+`json_extract(meta_json,'$.typst_pdf_built') = 1`, not a row count — a `resume_tailored` row can exist with
+no PDF, which is exactly D-006's silent degrade. Also: generalization rule **R6 forbids any `.pdf` in the
+tracked tree**, and R7 requires a `SHIPPED_DATA` entry with a sha256 pin for tracked `.json`; `.md` is
+exempt from R7. The funnel artifact must therefore be written outside the git tree, as tailored résumés
+already are.

@@ -281,3 +281,62 @@ two were the reviewer catching precisely the self-serving error it was asked to 
 first pass missed are now owned: the **severity/policy layer** (all six families default to `preference`,
 so 1,427 evaluations with unmet *required* dispositions are still `eligible` and no user but Mit can ever
 get an `ineligible`) belongs to P2, and the **persona registry** committed to in D-011 had no phase at all.
+
+---
+
+## D-014 — `main` was red; program docs are subject to the generalization checker
+**2026-08-06 · session 2**
+
+**Context.** The first `make check` of session 2 exited **2** in the generalization stage, before pytest
+ran. Two violations, both rule R1 (home-directory absolute path), both in files committed by session 1's
+`84cfab6`: `PROGRAM.md:4` and `STATE.md:27` cited the job-apps handover as `/Users/<name>/dev/Job apps/...`.
+Verified pre-existing against `git show main:...`, not caused by session 2's changes.
+
+**Choice.** Fix both to `~/dev/Job apps/...`, the form R1's own message prescribes (`bc0973d`). Record that
+**docs are scanned**: `tools/generalization/discovery.py` enumerates via `git ls-files` with no exclusion
+filter, so *everything git-tracked is published* and every tracked file is scanned — `docs/` included.
+
+**Rejected.** Allowlisting the paths. R1 exists to keep one user's home directory out of a shipped repo;
+the path added nothing that `~` does not convey. Also rejected: treating it as trivial. Session 1 wrote
+"`make check` is the only gate" into `CLAUDE.md` and then committed twice without running it, so the gate
+was mandated and skipped in the same commit.
+
+**Consequence.** A docs-only commit is not exempt. Run `make check` before any commit, including docs.
+Note the asymmetry that made this survivable: `.md` is **not** in the checker's `DATA_SUFFIXES`, so docs
+escape the R7 data-admission rule — but they do *not* escape the R1–R6 shape rules.
+
+---
+
+## D-015 — Migration `run_attribution`: nullable, unnamed inline FK, evaluations + artifacts only
+**2026-08-06 · session 2**
+
+**Context.** P0 needs `run_id` on the tables behind the funnel's later stages. Four constraints found by
+reading the schema rather than the plan: (1) existing `run_id` FKs are *named*
+(`fk_posting_versions_run_id_runs`) but SQLite cannot add a named table-level constraint via
+`ALTER TABLE ADD COLUMN`; (2) `test_migrations_match_metadata` asserts
+`alembic.compare_metadata(...) == []`, so any name mismatch could fail the drift check; (3)
+`eligibility_evaluations` is **append-only** (`eligibility_evaluations_no_update` raises on UPDATE);
+(4) `PRAGMA foreign_keys=ON` is set on every connection (`store/db.py:30`).
+
+**Choice.** Two additive `ALTER TABLE ADD COLUMN ... INTEGER REFERENCES runs (id)`, nullable, no default,
+no index — the `p2_profile_eligibility` path, no table rebuild. FK is inline and therefore unnamed.
+Revision id is **`run_attribution`**, deliberately *not* `p0_*`: the existing `p0_`/`p2_` prefixes denote
+boardwatch's earlier *product* phases, and reusing `p0_` for this program's P0 would create a permanent
+ambiguity in migration history.
+
+**Verified, not assumed.** The unnamed FK satisfies `test_migrations_match_metadata` and still enforces —
+the round-trip test asserts a dangling `run_id` raises `IntegrityError` on both tables. `make check` exits
+**0** (2633 passed, coverage 94.98%).
+
+**Rejected.** `batch_alter_table` — a table rebuild would have to reconstruct the partial unique index and
+both append-only triggers, against this repo's established additive precedent. An index on `run_id` — no
+existing `run_id` column has one, and 20,637 rows scan in well under a millisecond; speculative. `run_id`
+on `applications`/`application_events` — both hold **0 rows**, so the column would be speculative; it
+lands with the work that first writes them.
+
+**Consequence.** Because the table is append-only, `eligibility_evaluations.run_id` can only ever be set
+at INSERT and can **never** be backfilled: the 20,637 existing rows are permanently NULL. NULL therefore
+means "written before run attribution existed" and the funnel must report it as its own bucket, never fold
+it into a real run's counts. The column alone changes nothing until the write paths thread `run_id` —
+`write_evaluation` (`eligibility/engine.py:242`) and `record_artifact` (`store/artifacts.py:17`) currently
+take no such parameter.

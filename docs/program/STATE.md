@@ -1,8 +1,9 @@
 # PROGRAM STATE — read this first
 
-**Last updated:** 2026-08-06 (session 1, program takeover)
+**Last updated:** 2026-08-06 (session 2, P0 started)
 **Updated by:** boardwatch (Claude)
-**Repo state at write time:** branch `main`, clean, HEAD `cb78846`
+**Repo state at write time:** branch `p0-instrumentation`, clean, HEAD `c56bc11`, 2 commits ahead of `main`
+**Gate:** `make check` exits **0** (2633 passed, coverage 94.98%) as of `c56bc11`
 
 > This is the single file a fresh session with zero memory reads to know where the program stands.
 > If it disagrees with the repo, **the repo wins** — fix this file and note the correction in
@@ -12,15 +13,47 @@
 
 ## Current phase
 
-**P0 — Instrumentation. NOT STARTED, APPROVED TO BEGIN.**
+**P0 — Instrumentation. IN PROGRESS on branch `p0-instrumentation`.**
 
-Plan approved by Mit 2026-08-06 after independent review (verdict APPROVE WITH CHANGES; all twelve
-required changes applied). **Nothing is blocked.** No source file has been modified yet — this session was
-analysis, planning and program machinery only.
+Item 7 (the `run_id` migration) is **DONE and committed**. Items 1/2/8 (funnel artifact, per-rule abstain,
+fabrication counters) are **specified but blocked on one open question** — see "Open questions" below:
+`runs` rows are written only by `scan`, but eligibility and tailoring run in separate later processes, so
+there is no existing process whose boundaries match a seven-stage funnel. That has to be settled before the
+artifact is built, or the artifact gets keyed to the wrong notion of a run and P0 is rework.
+
+Branch is **not pushed and has no PR** — pushing is not covered by standing permission.
 
 ---
 
-## What shipped this session
+## What shipped in session 2 (2026-08-06)
+
+Two commits on `p0-instrumentation`, `make check` green at each:
+
+- **`bc0973d`** — `main` was **red** and had been since session 1. `PROGRAM.md:4` and `STATE.md:27`
+  carried an absolute `/Users/<name>` path, violating generalization rule R1, so `make check` exited 2
+  before pytest ever ran. Session 1 wrote "`make check` is the only gate" and then committed twice without
+  running it. Fixed to `~/...`. See D-014 — **docs are scanned; a docs-only commit is not exempt.**
+- **`c56bc11`** — `run_attribution` migration: nullable `run_id` on `eligibility_evaluations` and
+  `artifacts`, plus round-trip test and the head-revision pin. See D-015.
+
+Research findings are in `METRICS.md` under "Session 2". The load-bearing ones:
+
+- **6 families, 44 rule patterns. 7 of the 44 have never fired once** in 20,637 evaluations. A
+  `GROUP BY rule_id` emits no group for them at all, so per-rule abstain **must** enumerate from
+  `load_rules()` and LEFT JOIN, or the rules it exists to expose stay invisible.
+- **A 100% abstain rate already exists:** `experience_years:scoped_years_minimum`, 11,670/11,670 `unknown`.
+- Two of session 1's schema claims were imprecise: the dedup index is **partial**
+  (`WHERE engine_kind = 'deterministic'`), and there is **no `abstain` verdict** — it is stored as
+  `uncertain`.
+- `disposition='unknown'` conflates **four** causes, separable only by free-text `rationale` with no CHECK
+  constraint. Abstain *rate* is computable; the typed abstain *reason* the keystone invariant wants is not.
+- `artifacts.uri` points at the **`.typ`, not the PDF**; PDF-built lives only in
+  `meta_json.typst_pdf_built`.
+- **Only 1 of 7 funnel stages** was run-attributable before the migration.
+
+---
+
+## What shipped in session 1
 
 Analysis, planning and program machinery — **zero source changes**. Committed as `84cfab6`.
 
@@ -71,15 +104,23 @@ changes adopted, none contested.
 
 ## Next action
 
-**Get approval, then start P0.** First P0 task once approved:
+**Settle what a "run" is (open question 1 below), then build the funnel artifact.**
 
-> Alembic migration adding nullable `run_id` to `eligibility_evaluations` and `artifacts`, then emit a
-> per-run funnel artifact (`json` + `md`) with stage counts, **per-rule abstain rate**, cache hits as an
-> asserted stage, and fabrication-gate counters.
+Everything else about the artifact is already specified and researched. What is not settled is its key.
+Once that is decided, in order:
 
-Per-rule abstain is the highest-value single metric in the program: it is what makes a rule that cannot
-fire visible as a high abstain rate instead of silently clearing every posting. The migration comes first
-because without it three of the seven funnel stages cannot be attributed to a run at all (D-013).
+1. Thread `run_id` into the two write paths — `write_evaluation` (`eligibility/engine.py:242`) and
+   `record_artifact` (`store/artifacts.py:17`) take no such parameter today, so the new column stays NULL
+   forever until they do. **The migration alone changes no behaviour.**
+2. Per-rule abstain rate, enumerated from `load_rules()` and LEFT JOINed — never `GROUP BY rule_id`.
+3. Funnel artifact (`json` + `md`) with cache hits as their own asserted stage
+   (`store/eligibility.py:130`'s `inserted.rowcount == 0` **is** the cache-hit signal, computed today and
+   discarded — this is plumbing an existing boolean out, not new detection).
+4. Fabrication counters. Needs new plumbing, not a query: aggregates die at `cli/tailor_cmd.py:196-204`
+   and `:407-414` after `console.print`, and Tier A's fail-safe has no counter anywhere.
+
+Write the artifact **outside the git tree** (as tailored résumés already are): R6 forbids any `.pdf` in the
+tracked tree and R7 requires a sha256-pinned `SHIPPED_DATA` entry for tracked `.json`. `.md` is exempt from R7.
 
 ---
 
@@ -87,7 +128,7 @@ because without it three of the seven funnel stages cannot be attributed to a ru
 
 | Phase | Status | Gate met? |
 |---|---|---|
-| P0 Instrumentation | not started | — |
+| P0 Instrumentation | **in progress** — item 7 done (`c56bc11`); items 1/2/8 blocked on open question 1 | — |
 | P1 Résumé artifact gate | not started | — |
 | P2 Profile + keystone invariant | not started | — |
 | P3 Unattended one command | not started | — |
@@ -103,13 +144,45 @@ because without it three of the seven funnel stages cannot be attributed to a ru
 
 | Item | Blocked on | Since |
 |---|---|---|
-| _(none)_ | | |
+| P0 items 1/2/8 (funnel artifact, abstain rate, fabrication counters) | Open question 1 — what a `run_id` refers to | 2026-08-06 (session 2) |
 
 ---
 
 ## Open questions
 
-**None.** All four were answered by Mit on 2026-08-06 — see `PROGRAM.md` §7 and `DECISIONS.md` D-010/D-011.
+### 1. What is a "run"? — OPEN, blocks the P0 funnel artifact
+
+**The problem, measured.** `runs` rows are inserted in exactly one place: `insert_run` at
+`scan/coordinator.py:104`, inside the scan's own file lock. `run_id` is then threaded as a plain parameter
+(no contextvar, no ambient state) through `apply_board` → `append_event`/`record_version_source`. But:
+
+- **Eligibility runs in a different process.** `run_eligibility` (`eligibility/preflight.py:133`) is called
+  from `top`, `stats` and `eligibility` preflight — never from `scan`. No `run_id` is in scope there.
+- **Tailoring runs in a third process, one posting at a time.** `run_tailor` takes a single `posting_id`;
+  **no batch orchestrator exists in `src/`**. The de facto batch driver is `.agent/bin/bw-daily` (`bwd`),
+  which is gitignored shell — it just calls `boardwatch tailor run <id> --out ...` in a loop.
+
+So a seven-stage funnel does not correspond to the boundaries of any process that exists. Live evidence:
+`runs` has **4** rows while `eligibility_evaluations` has **20,637** — essentially every evaluation was
+written outside any run.
+
+**The fork.** (a) `run_id` = the scan run, with downstream writers recording the scan they are working off —
+cheap, but an evaluation's "run" then means *the run that captured the version*, not when it was judged.
+(b) Broaden `runs` into a **pipeline run**: a new command wrapping scan → eligibility → tailor that owns the
+row and emits the artifact — this is what P3 builds anyway, so P0 would be laying P3's foundation early.
+(c) Make the funnel a **window** report like `stats`, not run-keyed at all — but then B6 ("funnel reconciles
+to a terminal state") has nothing to reconcile *per run*, and PROGRAM.md §3.P0.4's run manifest has no owner.
+
+**Recommendation: (b)**, scoped so P0 does not wait for P3 — introduce the pipeline-run row and the artifact
+writer now, have `scan` populate what it owns, and report downstream stages as an explicit `unattributed`
+bucket until their writers thread `run_id`. Do **not** silently pick (a): it makes "cache hit" and
+"judged during this run" the same number, which is the exact indistinguishability D-013 added the migration
+to prevent.
+
+### Previously resolved
+
+All four of session 1's questions were answered by Mit on 2026-08-06 — see `PROGRAM.md` §7 and
+`DECISIONS.md` D-010/D-011.
 
 Summary of the answers, because they carry program-wide weight:
 
