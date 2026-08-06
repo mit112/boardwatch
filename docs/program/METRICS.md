@@ -284,7 +284,7 @@ row is the key; the artifact is the deliverable. **Gate P0 remains not met.**
 ### Gate
 
 `make check` exit **0** — generalization OK, ruff clean, mypy `--strict` clean on 147 source files,
-2674 tests passed, coverage 94.95% (threshold 85%). Measured in plain mode with the real exit code.
+2679 tests passed, coverage 94.99% (threshold 85%). Measured in plain mode with the real exit code.
 
 ### Test-pinning discipline, applied and worth recording
 
@@ -302,13 +302,37 @@ Three consecutive sessions had reviews that found **only** documents and tests. 
 defects, most of them in logic**, all in code written the same session. Recorded because the earlier
 pattern was starting to look like a property of the program rather than of the work being reviewed:
 
-| Class | Count | Examples |
-|---|---|---|
-| Logic / correctness | 6 | run row minted outside the scan lock; scan errors persisted twice; dangling run row on any unhandled exception |
-| Signal destruction | 2 | exit 1 on every real run; `shortlisted` measuring the `--top` flag |
-| Tests that cannot fail | 2 | `X == X` cross-check; asserting a value written at row birth |
-| Wrong message / hygiene | 1 | `doctor` calling every unfinished run a scan |
+**Two** reviews ran, and the second — on the fix commit — found **eight more**, one of which was a defect
+in the first review's fix. Nineteen findings total on one change.
+
+| Class | Review 1 | Review 2 | Examples |
+|---|---|---|---|
+| Logic / correctness | 6 | 3 | run row minted outside the scan lock; scan errors persisted twice; the dangling-row fix left the scan window open; a crash recorded as a clean empty run |
+| Signal destruction | 2 | 1 | exit 1 on every real run — then, after the fix, **exit 0 on a total network outage** (bar metric B5) |
+| Tests that cannot fail | 2 | 2 | `X == X` cross-check; asserting a value written at row birth; a board-failure test that never failed a board; an untested exit-1 path |
+| Test hygiene | 0 | 1 | three tests making live HTTP calls to a real ATS endpoint |
+| Wrong message / docs | 1 | 1 | `doctor` calling every unfinished run a scan; a CHANGELOG claim true only of one code path |
 
 **Both untestable tests had been mutation-checked and both survived**, because the mutation was derived
 from the code rather than from the claim the test's docstring made. That is the transferable lesson and it
 is now in D-020.
+
+### Live verification — D-019's invariant, measured on a copy of the real store
+
+`boardwatch run --no-scan --top 3` against a copy of the production database (580 MB, 19,262 open
+postings). Real exit code captured, not piped — an earlier attempt read `tail`'s status through a pipe and
+was killed mid-eligibility without my noticing, which is the trap already recorded in memory.
+
+| Quantity | Before | After | Meaning |
+|---|---|---|---|
+| `runs` rows | 4 | 5 | one pipeline run |
+| `runs` with `finished_at IS NULL` | 0 | **0** | the run closed itself |
+| evaluations with a `run_id` | 0 | **19,262** | threading works at production scale |
+| evaluations with `run_id IS NULL` | 20,637 | **20,637** | **unchanged — not one row moved** |
+| artifacts with a `run_id` | 0 | 3 | all three writes attributed |
+| output folders / PDFs | — | 3 / 3 | no empty husks |
+
+**The third row is the whole point.** The unbackfillable population is exactly what it was, so `NULL`
+still means one thing. Had any standalone write path leaked a NULL, that number would have grown.
+
+Exit 0. Runtime dominated by a taxonomy re-extraction of all 19,262 postings, not by the new code.

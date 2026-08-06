@@ -7,7 +7,7 @@
 a single session when three later docs commits did not update it, and a cold session following the
 session-start ritual hit the disagreement on its very first check. State what is durably true; verify the
 rest against `git log`. (D-017.)
-**Gate:** `make check` exits **0** (2674 passed, coverage 94.95%), measured in plain mode with the real exit code.
+**Gate:** `make check` exits **0** (2679 passed, coverage 94.99%), measured in plain mode with the real exit code.
 
 > This is the single file a fresh session with zero memory reads to know where the program stands.
 > If it disagrees with the repo, **the repo wins** — fix this file and note the correction in
@@ -82,6 +82,33 @@ counted through a different path. The other asserted a value `insert_run` writes
 > **The sharpened lesson (D-020): a mutation test proves the mutation is caught, not that the docstring is
 > true.** Both tests were mutation-checked and both survived, because I picked the mutation from the code I
 > had written rather than from the claim the test made. Derive the mutation from the claim.
+
+### A second review, on the fix commit, found eight more — including a defect in the first fix
+
+**D-021.** The most important: my exit-code fix had **over-corrected into bar metric B5**. Going from "any
+error ⇒ exit 1" to "only a missing profile ⇒ exit 1" meant a **total network outage exited 0** with a
+success line — which `CLAUDE.md`'s own fail-safe table names explicitly (*"systemic outage ⇒ fatal"*). Two
+narrow fatal conditions were added: a systemic scan outage, and every shortlisted lead failing to tailor.
+
+Second most important: **D-020's own dangling-row fix had a hole.** The pipeline's `try/finally` starts
+after `run_scan` returns, but the row is created *inside* `run_scan` — so Ctrl-C during the multi-board
+fetch loop stranded exactly the row D-020 claimed to close. The scan now closes its own row on abort.
+
+Also: a crashed run was recorded as a *clean empty* run (the `finally` discarded the exception it held);
+**three tests were making live HTTP calls to `boards-api.greenhouse.io`**; the test named for board
+failures never failed a board (it used an unknown *provider*, a branch that deliberately never increments
+`failed`); and the exit-1 path had no test at all.
+
+> **The meta-lesson (D-021): a fix is new code and inherits none of the reviewed status of what it
+> repairs.** Two reviews on one change found nineteen defects, and the second review's most severe finding
+> was a defect in the first review's fix. Re-review after a substantial fix round.
+
+### Verified on real data, not just fixtures
+
+`boardwatch run` against a copy of the production store: **19,262 evaluations attributed** to one finished
+run, 3 artifacts, 3 PDFs, exit 0 — and the NULL population stayed at **exactly 20,637, unchanged**. That
+last number is the invariant: had any standalone write path leaked a NULL, it would have grown. Numbers in
+`METRICS.md`.
 
 ---
 
@@ -264,6 +291,7 @@ tracked tree and R7 requires a sha256-pinned `SHIPPED_DATA` entry for tracked `.
 | Gap | Why it is not fixed here | Owner |
 |---|---|---|
 | **A `SIGKILL`ed run leaves a dangling `runs` row.** `try/finally` covers exceptions and Ctrl-C, not SIGKILL. Observed live: a verification run killed by `timeout` left `finished_at` NULL after writing 11,200 attributed evaluations. **A dangling row is a quarantine with no drain**, which `CLAUDE.md` calls a leak. | A reaper belongs with P3's stale-lock reclaim and the run manifest's exit status, not bolted onto the row's introduction | P3 / P0 item 4 |
+| **The general zero-output guard is not built** — bar metric **B5**. Two unambiguous cases ARE fatal now (a systemic scan outage, and every shortlisted lead failing to tailor — D-021). What is missing is the judgement call: deciding when producing nothing was *provably right*. **Do not read exit 0 as "the run produced leads".** | That judgement is cohort completeness, P3 item 9; `PROGRAM.md` assigns B5's guard to P3 | P3 item 5 |
 | **`runs` has no `status` column**, so "still running", "crashed" and "finished with errors" are only partly separable. | `PROGRAM.md` §3.P0.4 puts exit status in the run manifest; adding it early would mean designing the manifest twice | P0 item 4 |
 
 ## Blocked items

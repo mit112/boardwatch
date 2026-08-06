@@ -7,7 +7,9 @@ that aborts is still closed out rather than left dangling for `doctor` to call s
 
 from pathlib import Path
 
+import httpx
 import pytest
+import respx
 from filelock import FileLock
 from rich.console import Console
 from sqlalchemy import func, insert, select
@@ -17,9 +19,19 @@ from boardwatch.cli.app import app
 from boardwatch.core.clock import utcnow
 from boardwatch.core.settings import load_settings
 from boardwatch.pipeline.runner import _slug, run_pipeline
+from boardwatch.providers.registry import build_providers
 from boardwatch.scan.coordinator import ScanLockHeldError
 from boardwatch.store import tables
 from boardwatch.store.db import ensure_schema, get_engine
+
+# The seeded company is a real watched greenhouse board, so any test that runs the scan stage
+# must mock it. Three of these tests previously reached boards-api.greenhouse.io for real,
+# which made them slow and network-dependent — every other scan test in the repo mocks.
+_GH = build_providers()["greenhouse"]
+# `init` registers a watched "acme" board of its own, on top of the seeded "acme2". Both must
+# be mocked or the test reaches the network and the failure counts include an accident.
+SEEDED_BOARDS = ("acme", "acme2")
+HEALTHY_BODY = b'{"jobs": []}'
 
 runner = CliRunner()
 
@@ -77,6 +89,16 @@ def _seed_posting(data_dir: Path, *, slug: str = "acme2") -> int:
             )
         )
     return posting_id
+
+
+def _add_live_board(data_dir: Path) -> None:
+    """A second watched board that answers 200, so "every board failed" is not the default."""
+    with get_engine(data_dir).begin() as conn:
+        conn.execute(
+            insert(tables.companies).values(
+                name="Live", provider="greenhouse", slug="live", source="user", watched=True
+            )
+        )
 
 
 def _ready(data_dir: Path) -> int:
@@ -243,58 +265,153 @@ def test_a_lead_that_fails_to_tailor_leaves_no_empty_folder_behind(
     assert day_dirs == [], f"empty husks left behind: {day_dirs}"
 
 
-def test_scan_board_failures_are_reported_but_do_not_fail_the_run(
-    env: Path, tmp_path: Path
-) -> None:
-    """A few dead boards are the norm across 85 watched; `scan` itself exits 0 for them."""
-    _ready(env)
-    engine = get_engine(env)
-    with engine.begin() as conn:
-        conn.execute(
-            insert(tables.companies).values(
-                name="Ghost", provider="not-a-provider", slug="ghost",
-                source="user", watched=True,
+def _scan_pipeline(env: Path, out_root: Path, *, status: int, extra_board: bool = False):
+    """Run the pipeline with the scan stage ON. Every seeded board answers `status`.
+
+    `extra_board` adds one healthy board, so "some boards failed" is distinguishable from
+    "every board failed" — the two cases have opposite fatality.
+    """
+    settings = load_settings(data_dir=env)
+    with respx.mock:
+        for slug in SEEDED_BOARDS:
+            respx.get(_GH.board_url(slug)).mock(return_value=httpx.Response(status))
+        if extra_board:
+            respx.get(_GH.board_url("live")).mock(
+                return_value=httpx.Response(200, content=HEALTHY_BODY)
             )
+        return run_pipeline(
+            get_engine(env),
+            settings,
+            console=Console(quiet=True),
+            out_root=out_root,
+            resume_path=settings.config_dir / "resume.yaml",
         )
 
-    summary = run_pipeline(
-        engine,
-        load_settings(data_dir=env),
-        console=Console(quiet=True),
-        out_root=tmp_path / "apps",
-        resume_path=load_settings(data_dir=env).config_dir / "resume.yaml",
-    )
 
-    assert any("ghost" in e for e in summary.errors), summary.errors
-    assert summary.fatal is None, "an unreachable board was treated as a run failure"
+def test_a_dead_board_is_reported_but_does_not_fail_the_run(env: Path, tmp_path: Path) -> None:
+    """A few dead boards are the norm across 85 watched; `scan` itself exits 0 for them.
+
+    The board must actually FAIL — an unknown *provider* takes a different branch that
+    deliberately never increments `failed`, so it would leave `scan_boards_failed` at 0 and
+    pin nothing.
+    """
+    _ready(env)
+    _add_live_board(env)
+
+    summary = _scan_pipeline(env, tmp_path / "apps", status=500, extra_board=True)
+
+    assert summary.scan_boards_failed == len(SEEDED_BOARDS), "no board actually failed"
+    assert summary.scan_boards_complete == 1, "the healthy board did not complete"
+    assert any("acme2" in e for e in summary.errors), summary.errors
+    assert summary.fatal is None, "dead boards alongside a healthy one failed the whole run"
+
+
+def test_every_board_failing_is_a_systemic_outage_and_IS_fatal(env: Path, tmp_path: Path) -> None:
+    """CLAUDE.md: "systemic outage => fatal (prevents the silent empty day)". Bar metric B5.
+
+    Not one board completing is DNS or the network, not a few rotten slugs — and reporting
+    success for it is precisely the silent empty day.
+    """
+    _ready(env)
+
+    summary = _scan_pipeline(env, tmp_path / "apps", status=500)
+
+    assert summary.scan_boards_complete == 0
+    assert summary.fatal is not None, "a total scan outage was reported as success"
+    assert "systemic" in summary.fatal
 
 
 def test_scan_errors_are_recorded_once_not_twice(env: Path, tmp_path: Path) -> None:
     """The scan stage persists its own errors; finish_run appends, so passing them again dupes."""
     _ready(env)
-    engine = get_engine(env)
-    with engine.begin() as conn:
-        conn.execute(
-            insert(tables.companies).values(
-                name="Ghost", provider="not-a-provider", slug="ghost",
-                source="user", watched=True,
-            )
-        )
+    _add_live_board(env)
 
-    summary = run_pipeline(
-        engine,
-        load_settings(data_dir=env),
-        console=Console(quiet=True),
-        out_root=tmp_path / "apps",
-        resume_path=load_settings(data_dir=env).config_dir / "resume.yaml",
-    )
+    summary = _scan_pipeline(env, tmp_path / "apps", status=500, extra_board=True)
 
-    with engine.connect() as conn:
+    with get_engine(env).connect() as conn:
         persisted = conn.execute(
             select(tables.runs.c.errors_json).where(tables.runs.c.id == summary.run_id)
         ).scalar_one()
-    ghost = [e for e in (persisted or []) if "ghost" in e]
-    assert len(ghost) == 1, f"scan errors recorded {len(ghost)} times: {persisted}"
+    dead = [e for e in (persisted or []) if "acme2" in e]
+    assert len(dead) == 1, f"scan errors recorded {len(dead)} times: {persisted}"
+
+
+def test_every_lead_failing_to_tailor_is_fatal(
+    env: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Zero leads from a NON-empty shortlist is a broken résumé path, not an honest empty day."""
+    _ready(env)
+
+    import boardwatch.pipeline.runner as runner_mod
+
+    def boom(*_a: object, **_k: object) -> None:
+        raise RuntimeError("resume.yaml is missing")
+
+    monkeypatch.setattr(runner_mod, "run_tailor", boom)
+    summary = _pipeline(env, tmp_path / "apps")
+
+    assert summary.shortlisted > 0, "nothing was shortlisted, so this test proves nothing"
+    assert summary.tailored == []
+    assert summary.fatal is not None, "a run that produced no lead at all reported success"
+
+
+def test_cli_exits_one_when_the_run_is_fatally_broken(env: Path, tmp_path: Path) -> None:
+    """The exit-1 side of the contract this change redefines; 0 and 2 are pinned elsewhere."""
+    _seed_posting(env)  # no `init`, so no profile: fatal
+
+    result = _cli(env, ["run", "--no-scan", "--out", str(tmp_path / "apps")])
+
+    assert result.exit_code == 1, result.output
+    assert "FAILED" in result.output
+
+
+def test_a_crash_mid_pipeline_is_recorded_not_left_looking_clean(
+    env: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Closing the row without recording why makes a crash indistinguishable from an empty run."""
+    _ready(env)
+
+    import boardwatch.pipeline.runner as runner_mod
+
+    def boom(*_a: object, **_k: object) -> None:
+        raise RuntimeError("taxonomy.yaml is malformed")
+
+    monkeypatch.setattr(runner_mod, "_count_evaluations", boom)
+    with pytest.raises(RuntimeError):
+        _pipeline(env, tmp_path / "apps")
+
+    with get_engine(env).connect() as conn:
+        errors = conn.execute(select(tables.runs.c.errors_json)).scalars().all()
+    assert any(
+        e and any("aborted" in item for item in e) for e in errors
+    ), f"the crash left no trace in the ledger: {errors}"
+
+
+def test_an_abort_during_the_scan_stage_still_closes_the_run_row(
+    env: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The scan creates the row, so the pipeline's try/finally cannot cover this window."""
+    _ready(env)
+    import boardwatch.scan.coordinator as coord
+
+    def boom(*_a: object, **_k: object) -> None:
+        raise KeyboardInterrupt
+
+    monkeypatch.setattr(coord, "_scan_body", boom)
+    settings = load_settings(data_dir=env)
+    with pytest.raises(KeyboardInterrupt):
+        run_pipeline(
+            get_engine(env),
+            settings,
+            console=Console(quiet=True),
+            out_root=tmp_path / "apps",
+            resume_path=settings.config_dir / "resume.yaml",
+        )
+
+    with get_engine(env).connect() as conn:
+        rows = conn.execute(select(tables.runs.c.finished_at)).scalars().all()
+    assert rows, "no run row was created, so this test proves nothing"
+    assert all(r is not None for r in rows), "an abort during scan left a run row dangling"
 
 
 def test_no_profile_is_a_real_run_that_produced_nothing_not_a_crash(

@@ -10,6 +10,7 @@ while the scan runs (§0.3).
 from __future__ import annotations
 
 from collections import defaultdict
+from collections.abc import Sequence
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass, field
 from typing import Any
@@ -27,6 +28,7 @@ from boardwatch.scan.workers import fetch_board_job
 from boardwatch.store.db import ensure_schema
 from boardwatch.store.queries import (
     finalize_run,
+    finish_run,
     get_validators,
     get_watched_companies,
     insert_run,
@@ -112,6 +114,33 @@ def _run_scan_locked(
     # but the pipeline stamps finished_at, so a run is not "finished" the moment scan returns.
     active_run_id = insert_run(engine)
     summary.run_id = active_run_id
+    try:
+        return _scan_body(
+            engine, settings, fetcher, providers, company, provider,
+            summary, company_rows, active_run_id, finish,
+        )
+    except BaseException as exc:
+        # The row exists from here on, and on an exception the caller never learns its id —
+        # `run_scan` returns nothing to read `ScanSummary.run_id` from. So the scan closes it
+        # itself, unconditionally, even when `finish=False`. Without this, Ctrl-C during the
+        # multi-board fetch loop leaves a row that `doctor` reports as in progress forever,
+        # one more per retry. This is the scan-side half of the same guard the pipeline holds.
+        finish_run(engine, active_run_id, errors=[f"scan: aborted: {exc!r}"])
+        raise
+
+
+def _scan_body(
+    engine: Engine,
+    settings: Settings,
+    fetcher: Fetcher,
+    providers: dict[str, Provider],
+    company: str | None,
+    provider: str | None,
+    summary: ScanSummary,
+    company_rows: Sequence[Any],
+    active_run_id: int,
+    finish: bool,
+) -> ScanSummary:
 
     work: list[tuple[Any, Provider, BoardRequest]] = []
     with engine.connect() as conn:

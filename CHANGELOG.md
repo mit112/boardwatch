@@ -18,13 +18,21 @@ All notable changes to this project are documented here. The format follows
   Options: `--top N` (how many ranked postings to tailor, default 8), `--out` (root for the dated
   `<out>/<YYYY-MM-DD>/` folders), `--resume`, and `--no-scan` to reuse already-fetched postings.
 
-  Exit 2 if another scan holds the lock, 1 only if the run is fatally broken, and **0 otherwise —
-  including when some boards were unreachable or some leads would not tailor.** Those are counted,
-  printed and persisted, but they are the documented norm across 85 watched boards and `boardwatch scan`
-  already treats them as success; an exit status that is non-zero every day carries no information.
+  Exit 2 if another scan holds the lock. Exit 1 when the run is fatally broken — no profile, a **systemic
+  scan outage** (boards attempted and not one completed, i.e. DNS/network rather than a few dead slugs),
+  or **every shortlisted lead failing to tailor**. Exit **0 otherwise, including when SOME boards were
+  unreachable or SOME leads would not tailor**: those are counted, printed and persisted, but they are the
+  documented norm across 85 watched boards and `boardwatch scan` already treats them as success, and an
+  exit status that is non-zero every day carries no information.
+
+  The two fatal cases above are the ones that would otherwise be silent empty days. The general
+  zero-output guard — deciding when producing nothing was *provably right* — needs cohort completeness
+  and is not built here.
 
   A contended run writes nothing at all: the run row is created by the scan stage, inside the file lock,
-  so there is no window in which the schema is migrated or a row inserted before the lock is held.
+  so on the default path there is no window in which the schema is migrated or a row inserted before the
+  lock is held. (`--no-scan` acquires no scan lock at all, so it migrates unlocked exactly as every other
+  read command does.)
 
 - **`run_id` is now written on every evaluation and every artifact.** The column was added
   previously but nothing populated it, so it was NULL everywhere. It is now threaded through

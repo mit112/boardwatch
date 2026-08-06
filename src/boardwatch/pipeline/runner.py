@@ -65,6 +65,7 @@ class PipelineSummary:
     scan_postings_seen: int = 0
     scan_open_postings: int = 0
     scan_boards_failed: int = 0
+    scan_boards_complete: int = 0
     evaluated: int = 0
     # The ranker's own three-way split, all of it. `shortlisted` alone is capped at --top and
     # so measures the flag rather than the funnel; the hidden counts are the denominators.
@@ -131,10 +132,25 @@ def run_pipeline(
             summary.scan_postings_seen = scan_summary.postings_seen
             summary.scan_open_postings = scan_summary.open_postings
             summary.scan_boards_failed = scan_summary.failed
+            summary.scan_boards_complete = scan_summary.complete
+            # CLAUDE.md's fail-safe table: "systemic outage => fatal (prevents the silent
+            # empty day)". Boards were attempted and NOT ONE completed is a DNS/network
+            # failure, not a few dead slugs. Reporting success for it is exactly bar metric
+            # B5's failure. Note this reads the outcome, not a status field.
+            attempted = scan_summary.companies
+            if attempted > 0 and scan_summary.complete == 0 and scan_summary.unchanged == 0:
+                summary.fatal = (
+                    f"systemic scan outage: {attempted} boards attempted, none completed"
+                )
             # NOT added to stage_errors: the scan stage already persisted these into
             # errors_json itself, and finish_run appends. Passing them again would record
             # every scan error twice and make any per-run error count uninterpretable.
             summary.errors.extend(scan_summary.errors)
+
+        if summary.fatal is not None:
+            stage_errors.append(f"scan: {summary.fatal}")
+            summary.errors.append(f"scan: {summary.fatal}")
+            return summary
 
         console.print("[bold]eligibility[/bold]")
         try:
@@ -185,8 +201,22 @@ def run_pipeline(
                 )
             )
 
+        # Every lead the ranker produced failed to render. Not "zero was provably right" —
+        # zero was produced from a non-empty shortlist, which is a broken résumé path
+        # (missing resume.yaml, typst gone), not an honest empty day.
+        if summary.fatal is None and summary.shortlisted > 0 and not summary.tailored:
+            summary.fatal = (
+                f"every lead failed to tailor ({summary.tailor_failed}/{summary.shortlisted})"
+            )
+
         summary.evaluated = _count_evaluations(engine, run_id)
         return summary
+    except BaseException as exc:
+        # #4: the finally below closes the row either way. Without recording the exception,
+        # a crashed run and a clean empty run are indistinguishable in the ledger — the row
+        # reads as finished with no errors. The message is in scope here; do not drop it.
+        stage_errors.append(f"pipeline: aborted: {exc!r}")
+        raise
     finally:
         finish_run(engine, run_id, errors=stage_errors)
 

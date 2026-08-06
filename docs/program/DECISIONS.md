@@ -568,3 +568,59 @@ other asserted `boards_attempted == 0`, which is the value `insert_run` writes a
 `finalize_run` **entirely** left it green. Both were mutation-checked and both passed the mutation I chose,
 because I mutated the half the test did pin. **The lesson sharpens: a mutation test proves the mutation is
 caught, not that the docstring is true.** Pick the mutation from the claim, not from the code.
+
+
+---
+
+## D-021 — second review: the exit-code fix had over-corrected into bar metric B5
+**2026-08-06 · session 4 · adopted from a second independent review**
+
+**Context.** D-020 fixed "`boardwatch run` exits 1 on essentially every real run" by making only a *fatal*
+condition fail the run. A second review, on the fix commit, found the correction had gone too far the other
+way: `fatal` was assigned in exactly one place (no profile), so **a total DNS/network outage exited 0** with
+a success line, and so did **every lead failing to tailor**. `CLAUDE.md`'s own fail-safe table says
+*"systemic outage ⇒ fatal (prevents the silent empty day)"*, and bar metric **B5** is literally *"a run that
+succeeds while producing nothing"*. The `CHANGELOG` entry claiming "1 only if the run is fatally broken" was
+false for the two most fatal conditions there are.
+
+**Choice.** Two further fatal conditions, both narrow and both read off outcomes rather than a status field:
+
+1. **Systemic scan outage** — boards were attempted and *not one* completed or came back unchanged. A few
+   rotten slugs among 85 stay non-fatal; zero successes is the network.
+2. **Every shortlisted lead failed to tailor** — zero leads from a *non-empty* shortlist is a broken résumé
+   path, not an honest empty day.
+
+**Deliberately still NOT built:** the general zero-output guard, i.e. deciding when producing nothing was
+*provably right*. That needs cohort completeness (P3 item 9) and `PROGRAM.md` assigns B5's guard to P3.
+The two cases above are the ones where "nothing" is unambiguously a fault, so they do not require that
+judgement. **Recorded in `STATE.md`'s known-gaps table so exit 0 is not misread as "produced leads".**
+
+**The other seven findings, all adopted:**
+
+- **D-020's own dangling-row fix had a hole.** The pipeline's `try/finally` begins *after* `run_scan`
+  returns, but the row is now created *inside* `run_scan` — so Ctrl-C during the multi-board fetch loop
+  stranded exactly the row D-020 claimed to have closed. On an exception the caller cannot learn the id
+  (nothing is returned), so the scan now closes the row itself, unconditionally, even when `finish=False`.
+- **A crashed run read as a clean empty run.** The `finally` stamped `finished_at` and discarded the
+  exception it had in scope. Now recorded into `errors_json`.
+- **Three tests were making live HTTP calls to `boards-api.greenhouse.io`** — the seeded company is a real
+  watched greenhouse board and the scan stage was not mocked, unlike every other scan test in the repo.
+  Offline or sandboxed CI would have burned ~90s per test on retries and gone red for the network.
+- **The test named for board failures never failed a board.** It used an unknown *provider*, which takes a
+  branch that deliberately never increments `failed` — so `scan_boards_failed` stayed 0 and was pinned by
+  nothing. Now a mocked 500 on a real provider.
+- **The exit-1 path had no test at all**; deleting it left the suite green. 0 and 2 were pinned, 1 was not.
+- **The "lazy" mint in `eligibility extract` could never be lazy** — the list is non-empty and the budget is
+  `ge=1`, so it always minted on the first iteration. Rather than fake laziness, the rule is now stated
+  honestly: the id must exist *before* a row can carry it, so this lane mints per invocation, and that is
+  correct **here** because `extract` is an explicit user action whose failure belongs in the ledger.
+  `run_eligibility` fires incidentally on every `top`, which is why its rule differs. The two invocations
+  differ, so the two rules differ.
+- **`--no-scan` migrates the schema unlocked**, exactly as every other read command does. Not a regression,
+  but the `CHANGELOG`'s "no window in which the schema is migrated before the lock is held" was true only
+  of the default path. Reworded.
+
+**The meta-point, and the reason this decision exists rather than a quiet fixup.** Two reviews on one
+change found nineteen defects between them, and **the second review's most severe finding was a defect in
+the first review's fix.** A fix is new code and inherits none of the reviewed status of what it repairs.
+Re-review after a substantial fix round; do not treat "adopted all findings" as terminal.

@@ -304,10 +304,16 @@ def extract_cmd(
     evaluated = 0
     # This lane is invoked standalone, so it owns its run: a degenerate pipeline run whose
     # only stage is the LLM extraction. Minting rather than writing NULL is what keeps
-    # `run_id IS NULL` meaning "predates attribution" and nothing else — but it is minted
-    # LAZILY, on the first posting actually reached, matching run_eligibility. A provider
-    # outage makes every call return None, and a run row attributing zero rows would turn
-    # `runs` into a command log.
+    # `run_id IS NULL` meaning "predates attribution" and nothing else.
+    #
+    # It is minted on the first posting reached, NOT conditioned on a row being written, and
+    # that is deliberate rather than lazy: the id has to exist before extract_and_record can
+    # write it, so there is no ordering in which a successful write precedes the mint. A
+    # provider outage therefore records a finished run attributing zero rows — which is
+    # correct HERE and would be wrong in run_eligibility. `extract` is an explicit user
+    # action, so "I ran extract and it produced nothing" belongs in the ledger; the
+    # eligibility preflight fires incidentally on every `top`, so minting there would turn
+    # `runs` into a command log. The two rules differ because the invocations differ.
     run_id: int | None = None
     for current in ordered:
         if evaluated >= settings.llm.max_calls_per_run:
