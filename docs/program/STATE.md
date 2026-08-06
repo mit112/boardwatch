@@ -179,6 +179,19 @@ bucket until their writers thread `run_id`. Do **not** silently pick (a): it mak
 "judged during this run" the same number, which is the exact indistinguishability D-013 added the migration
 to prevent.
 
+**Status: PROCEEDING UNDER (b) AS A STATED ASSUMPTION, not a ratified decision.** Mit was asked directly on
+2026-08-06 and the question timed out unanswered, so this is boardwatch's judgement, not his ruling. It is
+recorded here rather than in `DECISIONS.md` precisely because it is not settled — **confirm it with Mit
+before writing the pipeline-run row**, since that is the point after which reversing gets expensive. Nothing
+committed so far depends on the choice: the migration is correct under all three options.
+
+### 2. `main` is red until this branch merges — deliberate, not forgotten
+
+`bc0973d` (on this branch) is the fix. It was **not** cherry-picked onto `main` because pushing is not
+covered by standing permission and the branch merge resolves it anyway. A cold session that runs
+`make check` on `main` before merging will see generalization exit 2 — that is D-014, already diagnosed, not
+a new problem. Do not re-diagnose it.
+
 ### Previously resolved
 
 All four of session 1's questions were answered by Mit on 2026-08-06 — see `PROGRAM.md` §7 and
