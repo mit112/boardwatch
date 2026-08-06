@@ -72,6 +72,14 @@ the per-run funnel artifact P0 introduces. No gate depends on a metric that does
 
 Nothing below P0 is checkable without it, and it is the cheapest phase.
 
+**Item 0 was added to this list by D-016**, after the original eight were written. The list is therefore
+nine items numbered 0-8, and **item numbers are stable** — later documents cite them, so renumber nothing.
+
+0. **The pipeline-run row.** One command running scan -> eligibility -> tailor that owns run identity
+   across all three, because no existing process spans the seven funnel stages and nothing else here has a
+   key without it. Accepted as *early P3 work* rather than extra work (D-016). **DONE** — `boardwatch run`,
+   plus D-019's invariant that `run_id` is never NULL on a new row, and D-020's split of who creates the
+   row from who finishes it.
 1. **Per-run funnel artifact** (`json` + `md`), one per run: `observed → unique → candidates →
    prefilter_stopped → eligible / ineligible / abstained → leads_with_pdf → marked_applied`.
 2. **Per-rule abstain rate**, every run. This is the metric that makes a rule that cannot fire *visible*.
@@ -81,7 +89,9 @@ Nothing below P0 is checkable without it, and it is the cheapest phase.
 5. **Reconciliation check** — an invariant sweep asserting DB rows and on-disk artifacts agree. Counts
    from a different path than the one that produced them (job-apps spec-3 §6: self-report ≠ verification).
 6. **Stub-rate metric** at judge time — one number, reported every run. Cheap insurance; see §6 correction 4.
-7. **`run_id` migration** (Alembic, nullable) on `eligibility_evaluations` and `artifacts`. Without it,
+7. **`run_id` migration** (Alembic, nullable) on `eligibility_evaluations` and `artifacts`, **and the
+   threading that populates it** — the column alone changes no behaviour, so the migration is not this
+   item, only half of it. **DONE.** Without it,
    three of the seven funnel stages cannot be attributed to a run at all. **Count cache hits as their own
    asserted stage** — `uq_eligibility_deterministic ON (input_id, engine_version)` means a re-run over
    unchanged postings writes no evaluation rows, and "cache hit" vs "never judged" must not be

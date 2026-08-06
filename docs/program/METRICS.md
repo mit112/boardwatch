@@ -85,10 +85,10 @@ One row per run once P0 lands. `—` = not emitted.
 
 | Date | Run id | Observed | Unique | Candidates | Eligible | Ineligible | Abstained | Leads | PDFs | QA pass | Stub rate | Exit |
 |---|---|---|---|---|---|---|---|---|---|---|---|---|
-| _(none yet — item 3, the funnel artifact, is what fills this)_ | | | | | | | | | | | | |
+| _(none yet — P0 item 1, the funnel artifact, is what fills this)_ | | | | | | | | | | | | |
 
 The run **key** now exists (`boardwatch run`, session 4) and `run_id` is populated on every evaluation and
-artifact. What is still missing is the **artifact** that emits these columns per run — P0 item 3. A row
+artifact. What is still missing is the **artifact** that emits these columns per run — P0 item 1. A row
 here written by hand from ad-hoc queries would defeat Gate P0, which requires the funnel answerable *from
 the artifact alone, without reading code*. So this stays empty on purpose until the writer exists.
 
@@ -278,7 +278,7 @@ the keystone invariant.
 | Does any code path span scan → eligibility → tailor? | **no** — the only one was gitignored shell | `boardwatch run` |
 | Does `NULL run_id` have one meaning? | n/a (everything was NULL) | **yes** — "predates attribution", a set that can only shrink (D-019) |
 
-**Not yet answerable, and item 3 owes it:** the funnel counts per run, per source, as an artifact. The run
+**Not yet answerable, and P0 item 1 owes it:** the funnel counts per run, per source, as an artifact. The run
 row is the key; the artifact is the deliverable. **Gate P0 remains not met.**
 
 ### Gate
@@ -322,6 +322,11 @@ is now in D-020.
 `boardwatch run --no-scan --top 3` against a copy of the production database (580 MB, 19,262 open
 postings). Real exit code captured, not piped — an earlier attempt read `tail`'s status through a pipe and
 was killed mid-eligibility without my noticing, which is the trap already recorded in memory.
+
+**The copy was deleted and re-made from production before this run**, so the "Before" column below is the
+untouched production baseline and not the residue of that aborted attempt (which had left 11,200 attributed
+evaluations and one unfinished run). Stated because otherwise the two accounts in these documents cannot
+both be readings of one store.
 
 | Quantity | Before | After | Meaning |
 |---|---|---|---|

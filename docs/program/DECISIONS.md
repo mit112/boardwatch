@@ -474,6 +474,12 @@ stages did zero work — which is the direct corollary of Mit's 2026-08-06 rulin
 pipeline run with empty stages, and of his rejection of a `kind` column. One row shape everywhere.
 `run_id IS NULL` therefore has exactly one meaning, and it is a closed set that can only shrink.
 
+**Where the ratification came from, since D-016 does not contain it.** Mit was asked directly at the start
+of session 4, as two batched questions, and chose (a) the command name `boardwatch run` and (b) *"a bare
+`scan` writes a pipeline run with empty stages"* over *"keep it a scan-only row, marked as such with a
+`kind` column"*. D-016 ratified only what a run **means**; it says nothing about degenerate runs or a
+`kind` column, so those answers are logged here rather than being attributed to it.
+
 **The one guard that keeps this affordable.** `run_eligibility` mints **only once `pending` is non-empty**.
 Without that, every `top` invocation would log a run and `runs` would become a command log rather than a
 ledger of work. Test-locked: `test_eligibility_with_nothing_pending_mints_no_run`.
@@ -524,8 +530,10 @@ that makes it safe. Who executes the INSERT and what the id means are independen
 them is what made the first implementation look correct.
 
 **Consequence, and it is an improvement.** A contended `boardwatch run` now writes **nothing at all**,
-which is strictly stronger than closing an orphan row out. The test was rewritten to assert the stronger
-property.
+which is strictly stronger than closing an orphan row out. Pinned by a **new** test,
+`test_a_contended_pipeline_writes_no_run_row_at_all` in `tests/pipeline/test_pipeline_run.py`.
+`tests/pipeline/test_scan_lock.py` was **not** changed — it still covers bare `scan` only, which is why it
+never caught this.
 
 **Also adopted from the same review, each a real defect:**
 

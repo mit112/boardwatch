@@ -12,8 +12,9 @@ All notable changes to this project are documented here. The format follows
   Until now nothing in `src/` spanned the three stages: `runs` rows were inserted only inside the
   scan's file lock, eligibility was judged later as a side-effect of `top`'s preflight, and
   tailoring was later still and one posting at a time. The only thing stitching them together was
-  a shell script outside the package. `boardwatch run` mints the run row before the first stage
-  and stamps `finished_at` after the last, so a run means the pipeline, not the scan.
+  a shell script outside the package. `boardwatch run` owns one run row across all three stages and stamps
+  `finished_at` only after the last, so a run means the pipeline, not the scan. (The row itself is created
+  by the scan stage, inside the file lock — see below.)
 
   Options: `--top N` (how many ranked postings to tailor, default 8), `--out` (root for the dated
   `<out>/<YYYY-MM-DD>/` folders), `--resume`, and `--no-scan` to reuse already-fetched postings.
@@ -50,12 +51,6 @@ All notable changes to this project are documented here. The format follows
   artifact keeps the run that first authored it — in both cases no row is written, and claiming
   otherwise would erase the distinction the column exists to record.
 
-### Changed
-
-- **`boardwatch doctor` now says "a run is in progress" rather than "a scan is in progress".** Since run
-  attribution, an unfinished run is also a `boardwatch run` still tailoring or a standalone eligibility
-  pass still judging — the old wording sent users looking for a held scan lock that was in fact free.
-
 - **`boardwatch eligibility abstain` — abstain rate for every rule in the catalog, including
   rules that have never fired.** `eligibility summary` groups the requirement rows that exist,
   so a rule that has never been detected produces no group and is invisible in it; that is
@@ -75,11 +70,15 @@ All notable changes to this project are documented here. The format follows
   postings that stated they offer no sponsorship.
 
 - **Nullable `run_id` on `eligibility_evaluations` and `artifacts`** (Alembic revision
-  `run_attribution`, additive). Nothing writes it yet, so it stays NULL until the write paths
-  thread it; `eligibility_evaluations` is append-only, so rows predating the column can never be
-  backfilled and NULL means "predates attribution", never zero.
+  `run_attribution`, additive). `eligibility_evaluations` is append-only, so rows predating the column can
+  never be backfilled and NULL means "predates attribution", never zero. *(Landed inert; the entry above is
+  what populates it. Both are in this same unreleased version.)*
 
 ### Changed
+
+- **`boardwatch doctor` now says "a run is in progress" rather than "a scan is in progress".** Since run
+  attribution, an unfinished run is also a `boardwatch run` still tailoring or a standalone eligibility
+  pass still judging — the old wording sent users looking for a held scan lock that was in fact free.
 
 - **Ranking: a title role gate, and a neutral coverage for postings with no recognized
   skills.** These are one change in two parts, and they only work together — see below.

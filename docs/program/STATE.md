@@ -19,20 +19,25 @@ rest against `git log`. (D-017.)
 
 **P0 — Instrumentation. IN PROGRESS.** Nothing is blocked.
 
-Four of P0's eight items are done: item 7 (the `run_id` migration), item 2 (**per-rule abstain rate**),
-item 0 (**the pipeline-run row and `boardwatch run`**) and item 1 (**threading `run_id` into both write
-paths**). The migration is no longer inert — the column it added is populated on every write.
+**Numbering note, because session 4 briefly got this wrong:** P0 has **nine** items, numbered **0-8** in
+`PROGRAM.md` §3.P0. Item 0 was added later, by D-016. Always cite `PROGRAM.md`'s numbers — an earlier
+version of this file invented its own and collided with them on the gate item.
 
-Remaining P0 items: the **funnel artifact** (item 3, the one that actually closes Gate P0), the per-source
-table, the run manifest, the reconciliation sweep, the stub rate, and the fabrication counters.
+**Three of the nine are done:** item **0** (the pipeline-run row and `boardwatch run`), item **2**
+(per-rule abstain rate), and item **7** (the `run_id` migration *and* the threading that populates it —
+the column alone changed nothing, so item 7 was only half done until this session).
+
+**Six remain:** item **1** the funnel artifact *(this is the one that closes Gate P0)*, item **3** the
+per-source outcome table, item **4** the run manifest, item **5** the reconciliation sweep, item **6** the
+stub rate, item **8** the fabrication counters.
 
 ---
 
 ## What shipped in session 4 (2026-08-06)
 
-**P0 items 0 and 1, shipped together deliberately.** Item 0 alone would have changed no observable
-behaviour — the same criticism that applies to item 7's migration — so the row and the threading that
-populates it landed as one unit.
+**P0 items 0 and 7, shipped together deliberately.** Item 0 alone would have changed no observable
+behaviour — the same criticism that applied to item 7's migration when it landed inert last session — so
+the run row and the threading that populates it landed as one unit.
 
 - **`boardwatch run`** (`src/boardwatch/pipeline/runner.py`, `cli/run_cmd.py`). Owns one run row across
   all three stages and stamps `finished_at` after tailor. `--top N` · `--out` · `--resume` · `--no-scan`.
@@ -230,8 +235,8 @@ changes adopted, none contested.
 
 ## Next action
 
-**The per-run funnel artifact** — P0 item 3. **This is the item that closes Gate P0**, and none of the
-three done items closes it: the gate requires the funnel to reconcile to 100% over three consecutive runs,
+**The per-run funnel artifact** — P0 **item 1** (`PROGRAM.md` §3.P0). **This is the item that closes
+Gate P0**, and none of the three done items closes it: the gate requires the funnel to reconcile to 100% over three consecutive runs,
 per-rule abstain to be emitted for *every* rule, and *which source produced each lead and why every
 non-lead was dropped* to be answerable **from the artifact alone, without reading code**. What exists
 today is an on-demand CLI table (`eligibility abstain`) and a run row. Neither is an artifact.
@@ -255,18 +260,16 @@ today is an on-demand CLI table (`eligibility abstain`) and a run row. Neither i
   forbids any `.pdf` in the tracked tree and R7 requires a sha256-pinned `SHIPPED_DATA` entry for any
   tracked `.json`. `.md` is exempt from R7.
 
-Then, still open in P0: the per-source outcome table, the run manifest (item 4 — config hash, profile
-version, catalog version, code fingerprint, **exit status**; a `runs.status` column belongs there, not
-bolted on earlier), the reconciliation sweep, the stub rate, and the fabrication counters.
+Then, still open in P0: item **3** the per-source outcome table, item **4** the run manifest (config hash,
+profile version, catalog version, code fingerprint, **exit status** — a `runs.status` column belongs there,
+not bolted on earlier), item **5** the reconciliation sweep, item **6** the stub rate, and item **8** the
+fabrication counters.
 
 **Fabrication counters need new typed capture, not a query.** Aggregates die at `cli/tailor_cmd.py:196-204`
 and `:407-414` after `console.print`; Tier A's fail-safe (`TierASafetyError`) has no counter anywhere; and
-`RewriteRow.drop_reason` is 12 bare untyped strings. Likewise `disposition='unknown'` conflates **four**
+`RewriteRow.drop_reason` is **11** bare untyped strings (measured: 5 direct literals plus 6 distinct `filter:*` reasons). Likewise `disposition='unknown'` conflates **four**
 causes separable only by free-text `rationale`, which carries no CHECK constraint — so abstain *rate* is
 computable but the typed abstain *reason* the keystone invariant wants is not.
-
-Write the artifact **outside the git tree** (as tailored résumés already are): R6 forbids any `.pdf` in the
-tracked tree and R7 requires a sha256-pinned `SHIPPED_DATA` entry for tracked `.json`. `.md` is exempt from R7.
 
 ---
 
@@ -274,7 +277,7 @@ tracked tree and R7 requires a sha256-pinned `SHIPPED_DATA` entry for tracked `.
 
 | Phase | Status | Gate met? |
 |---|---|---|
-| P0 Instrumentation | **in progress** — items 7, 2, 0 and 1 done; item 3 (funnel artifact) is what closes the gate | **not met** |
+| P0 Instrumentation | **in progress** — items 0, 2, 7 of 0-8 done; **item 1** (funnel artifact) is what closes the gate | **not met** |
 | P1 Résumé artifact gate | not started | — |
 | P2 Profile + keystone invariant | not started | — |
 | P3 Unattended one command | not started | — |
@@ -309,7 +312,13 @@ tracked tree and R7 requires a sha256-pinned `SHIPPED_DATA` entry for tracked `.
 
 ### 1. What is a "run"? — RESOLVED 2026-08-06 (D-016): a pipeline run
 
-**The problem, measured.** `runs` rows are inserted in exactly one place: `insert_run` at
+> **Everything below this line is a FROZEN SNAPSHOT of the problem as it stood before session 4, kept
+> because the rejected options carry their reasons. It is NOT a description of the code today, and several
+> of its statements are now false:** `insert_run` is called from two places, not one; `run_eligibility`
+> *does* take a `run_id`; a batch orchestrator **does** exist in `src/` (`boardwatch run`); and `runs` no
+> longer holds 4 rows. Do not act on this section — see "What shipped in session 4" above.
+
+**The problem, as measured before session 4.** `runs` rows are inserted in exactly one place: `insert_run` at
 `scan/coordinator.py:104`, inside the scan's own file lock. `run_id` is then threaded as a plain parameter
 (no contextvar, no ambient state) through `apply_board` → `append_event`/`record_version_source`. But:
 
@@ -337,7 +346,8 @@ bucket until their writers thread `run_id`. Do **not** silently pick (a): it mak
 "judged during this run" the same number, which is the exact indistinguishability D-013 added the migration
 to prevent.
 
-**Status: RATIFIED — (b), by Mit, 2026-08-06.** Recorded as **D-016**. P0 now includes the pipeline-run row
+**Status: RATIFIED — (b), by Mit, 2026-08-06, and BUILT in session 4.** Recorded as **D-016**; the
+build and its two follow-on decisions are **D-019**, **D-020** and **D-021**. P0 now includes the pipeline-run row
 and the funnel artifact writer; this is accepted as *early* P3 work rather than extra work, since P3's "one
 command, unattended" needs the same row and the alternative was re-keying at P3.
 
