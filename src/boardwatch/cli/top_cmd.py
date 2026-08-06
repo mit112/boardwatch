@@ -31,6 +31,7 @@ from boardwatch.rank.heuristic import (
     profile_view_from_row,
     score_posting,
 )
+from boardwatch.rank.role_gate import RoleVerdict, role_verdict
 from boardwatch.store.app_state import get_digest_cursor
 from boardwatch.store.queries import current_posting_versions, get_profile
 from boardwatch.store.tables import companies, extractions, posting_events, postings
@@ -50,14 +51,17 @@ class RankedPosting:
     score: Score
     why: str
     verdict: str | None = None  # the current profile's eligibility verdict, None if unevaluated
+    role: RoleVerdict = "uncertain"  # title role gate; "not_swe" is hidden unless asked for
+    role_reason: str = ""
 
 
 @dataclass(frozen=True)
 class RankedResults:
-    """The shortlist plus the count hidden as ineligible, so `top` can report both."""
+    """The shortlist plus the counts hidden by each filter, so `top` can report all of them."""
 
     visible: list[RankedPosting]
     hidden_ineligible: int
+    hidden_non_swe: int = 0
 
 
 def rank_open_postings(
@@ -67,6 +71,7 @@ def rank_open_postings(
     now: datetime | None = None,
     limit: int = 10,
     include_ineligible: bool = False,
+    include_non_swe: bool = False,
     only_new: bool = False,
     output_console: Console = console,
 ) -> RankedResults:
@@ -113,15 +118,10 @@ def rank_open_postings(
         )
         new_ids = _new_posting_ids(conn) if only_new else None
     scored: list[RankedPosting] = []
+    hidden_non_swe = 0
     for row in rows:
         if new_ids is not None and int(row.id) not in new_ids:
             continue
-        skills = set((row.extraction_json or {}).get("skills", []))
-        score = score_posting(
-            profile, skills, row.title, row.posted_at,
-            list(row.locations_json or []), row.remote_policy,
-            settings.weights, now, settings.recency_half_life_days,
-        )
         if not passes_hard_filters(
             row.title,
             list(row.locations_json or []),
@@ -130,10 +130,27 @@ def rank_open_postings(
             settings.location_filter_mode,
         ):
             continue
+        # The role gate is categorical, so it runs beside the score rather than inside it:
+        # no title fuzz can rescue a "Deal Strategist". It is counted and reportable, never
+        # a silent drop — a veto you cannot see is how a real job disappears unnoticed.
+        role, role_reason = role_verdict(row.title)
+        if role == "not_swe" and not include_non_swe:
+            hidden_non_swe += 1
+            continue
+        skills = set((row.extraction_json or {}).get("skills", []))
+        score = score_posting(
+            profile, skills, row.title, row.posted_at,
+            list(row.locations_json or []), row.remote_policy,
+            settings.weights, now, settings.recency_half_life_days,
+            settings.zero_skill_coverage_prior,
+        )
+        why = why_summary(score, row.posted_at, now)
         scored.append(RankedPosting(
             posting_id=int(row.id), title=row.title, company=row.company_name,
-            score=score, why=why_summary(score, row.posted_at, now),
+            score=score,
+            why=f"{why} · role: {role_reason}" if role == "not_swe" else why,
             verdict=verdicts.get(int(row.id)),
+            role=role, role_reason=role_reason,
         ))
     scored.sort(key=lambda r: r.score.total, reverse=True)
     # Hide persisted-ineligible postings BEFORE the limit, so `top N` returns up to N shown
@@ -148,7 +165,9 @@ def rank_open_postings(
             continue
         if len(visible) < limit:
             visible.append(posting)
-    return RankedResults(visible=visible, hidden_ineligible=hidden)
+    return RankedResults(
+        visible=visible, hidden_ineligible=hidden, hidden_non_swe=hidden_non_swe
+    )
 
 
 def count_filter_matches(engine: Engine, settings: Settings) -> int | None:
@@ -221,6 +240,9 @@ def top(
     include_ineligible: bool = typer.Option(
         False, "--include-ineligible", help="Show postings persisted as ineligible."
     ),
+    include_non_swe: bool = typer.Option(
+        False, "--include-non-swe", help="Show postings the title role gate reads as non-software."
+    ),
     new: bool = typer.Option(
         False, "--new", help="Only postings first seen since your last digest."
     ),
@@ -235,6 +257,7 @@ def top(
             app_ctx.settings,
             limit=n,
             include_ineligible=include_ineligible,
+            include_non_swe=include_non_swe,
             only_new=new,
             output_console=output_console,
         )
@@ -251,13 +274,14 @@ def top(
                         "company": p.company,
                         "score": p.score.total,
                         "why": p.why,
+                        "role": p.role,
                     }
                     for p in results.visible
                 ]
             )
         )
         return
-    if not results.visible and not results.hidden_ineligible:
+    if not results.visible and not results.hidden_ineligible and not results.hidden_non_swe:
         if new:
             output_console.print("nothing new since your last digest")
         else:
@@ -280,5 +304,11 @@ def top(
         console.print(
             f'{results.hidden_ineligible} hidden as ineligible. "no flags" means no catalogued '
             "disqualifier was detected, not that you qualify.",
+            markup=False,
+        )
+    if results.hidden_non_swe and not include_non_swe:
+        console.print(
+            f"{results.hidden_non_swe} hidden as non-software roles — see them with "
+            "--include-non-swe, each with the title text that vetoed it.",
             markup=False,
         )

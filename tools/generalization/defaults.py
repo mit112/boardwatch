@@ -21,6 +21,9 @@ SCOPED_MODULES: tuple[str, ...] = (
     "src/boardwatch/cli/init_cmd.py",
     "src/boardwatch/cli/eligibility_cmd.py",
     "src/boardwatch/rank/heuristic.py",
+    # Scoped even though it holds no user preference: it holds TITLE data, and letting a
+    # split-out module escape R9 is the evasion this rule exists to catch.
+    "src/boardwatch/rank/role_gate.py",
     "src/boardwatch/eligibility/facts.py",
     "src/boardwatch/eligibility/hashing.py",
     "src/boardwatch/eligibility/catalog.py",

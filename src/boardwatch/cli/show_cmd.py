@@ -21,6 +21,7 @@ from boardwatch.extract.preflight import run_preflight
 from boardwatch.extract.taxonomy import load_taxonomy
 from boardwatch.rank.explain import explain
 from boardwatch.rank.heuristic import profile_view_from_row, score_posting
+from boardwatch.rank.role_gate import role_verdict
 from boardwatch.store.queries import get_profile
 from boardwatch.store.tables import companies, extractions, postings
 
@@ -110,6 +111,7 @@ def show(
             profile_view_from_row(profile_row), skills, row.title, row.posted_at,
             list(row.locations_json or []), row.remote_policy,
             settings.weights, utcnow(), settings.recency_half_life_days,
+            settings.zero_skill_coverage_prior,
         )
         table = Table(title=f"Score {score.total:.2f}")
         table.add_column("Component")
@@ -126,6 +128,12 @@ def show(
                 entry.detail,
             )
         console.print(table)
+        # `show <id>` is the audit surface for the role gate: every posting says what the
+        # gate made of its title, so a hidden row can always be looked up and checked.
+        # Plain line, markup off — the matched text is arbitrary title text.
+        role, role_reason = role_verdict(row.title)
+        hidden_note = " — hidden from top unless --include-non-swe" if role == "not_swe" else ""
+        console.print(f"Role: {role_reason}{hidden_note}", markup=False)
 
     catalog = load_rules(settings.config_dir)
     with engine.connect() as conn:

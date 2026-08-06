@@ -43,6 +43,7 @@ def stats(
     pipe.add_column("Count", justify="right")
     pipe.add_row("seen (open)", str(report.seen))
     pipe.add_row("passes filters", str(report.passes_filters))
+    pipe.add_row("  of which non-software (hidden from top)", str(report.non_swe))
     pipe.add_row("not ineligible", str(report.not_ineligible))
     pipe.add_row("tracked (submitted)", str(report.tracked))
     console.print(pipe)

@@ -6,6 +6,54 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Changed
+
+- **Ranking: a title role gate, and a neutral coverage for postings with no recognized
+  skills.** These are one change in two parts, and they only work together — see below.
+
+  A posting with no recognized skills used to have its `skill_coverage` component dropped and
+  the remaining weights renormalized. That is not neutral: renormalizing is arithmetically
+  identical to imputing the *weighted mean of the surviving components*, so dropping a
+  component promotes a posting whenever that component would have scored below the rest.
+  `skill_coverage` carries half the total weight and is undefined for about 18% of open
+  postings, so the effect was large — a posting with **zero** recognized skills and a perfect
+  title scored 0.9586 while a posting matching **7 of 8** skills scored 0.9168. §3.6 asks for
+  "neutral, never a punitive 0 or free 1"; the old behaviour delivered the free 1 (29 of 80
+  eligible zero-skill rows scored exactly 1.000). Coverage is now imputed at a neutral
+  `zero_skill_coverage_prior` (default `0.50`, configurable), which puts that posting at
+  0.7293 — exactly what a real 4-of-8 posting scores — and leaves the 7-of-8 row above it.
+  `skill_coverage()` itself is unchanged, the assumption is named in `show` and in the one-line
+  `why`, and the profile-side empty case still renormalizes.
+
+- **`top` and `notify` now skip postings whose TITLE is not a software role.** Fuzzy title
+  overlap cannot separate roles: Intel's "On Shift (IOS) Technology Development Engineer"
+  matched the target "iOS Engineer" through the literal "(IOS)" token and ranked **first** at
+  1.000. A categorical gate (`rank/role_gate.py`) runs beside the score and returns
+  `swe` / `not_swe` / `uncertain`. `uncertain` passes through to scoring completely unchanged,
+  which is why the gate keeps 100% of software-titled postings whose skills the taxonomy
+  missed. A body-text gate was measured and rejected: those postings have long bodies
+  genuinely empty of technical nouns, so no threshold separates them from noise.
+
+  **A `not_swe` verdict is never silent.** It is counted in `top`'s footer, listed in `stats`,
+  shown by `show <id>`, and viewable with `top --include-non-swe` — always carrying the exact
+  title text that vetoed it. A gate you cannot audit is how a real job disappears unnoticed.
+
+  Order inside the gate is load-bearing. The deny patterns guard themselves with
+  `(?!.*\bsoftware\b)`, and a negative lookahead only sees text to its right, so evaluating
+  denies first vetoes "Software Quality Engineer" — it matches `quality engineer`, looks right,
+  and misses the "Software" on the left. Sixteen real software titles were buried that way in
+  the prototype. Checking the software rescue first fixes all sixteen at no measured precision
+  cost and runs 2.3x faster. Regression tests pin the ordering.
+
+  Measured on 515 labelled postings: noise vetoed 76/76, targets kept 1.00, protected
+  software-titled zero-skill rows kept 1.00, P@20 1.00, P@50 0.89 -> 1.00. The two changes are
+  coupled: the imputation **alone** takes P@50 to 0.53, because it demotes the protected rows
+  while leaving one-spurious-skill noise in place.
+
+  Known and filed, not fixed: skill *extraction* precision is the root cause of the underlying
+  symptom — "Deal Strategist" is tagged `Concurrency`, "Asset Tracking Technician" `Real-time`.
+  That is separate work.
+
 ### Added
 
 - **`boardwatch stats` — one read-only readout of where you stand.** Two views over your

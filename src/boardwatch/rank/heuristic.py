@@ -7,11 +7,13 @@ rapidfuzz.fuzz.token_set_ratio(posting_title, target, processor=default_process)
 with a generic-token guard (P12 daily-driver finding): a target whose only shared
 tokens with the posting are generic filler ("engineer"/"developer"/seniority/numerals)
 is skipped, so "Field Service Engineer" no longer inherits ~0.80 off the lone "Engineer"
-token. skill_coverage stays untouched (§3.6 intact), so genuine SWE postings whose skills
-the taxonomy missed are not punished — only the title signal is tightened.
+token. skill_coverage() itself is untouched, so genuine SWE postings whose skills the
+taxonomy missed are still never punished.
 The exclude-title hard veto is separate from scoring: exact-substring,
 case-folded. Undefined components renormalize over the remaining weights
-(§3.6 both directions; undefined triggers per plan deviation 7).
+(§3.6; undefined triggers per plan deviation 7) — with one exception: a posting with no
+recognized skills at all takes a neutral imputed coverage instead, because renormalizing
+that component away is a promotion rather than a neutral act (see score_posting).
 """
 
 from __future__ import annotations
@@ -167,13 +169,30 @@ def score_posting(
     weights: RankWeights,
     now: datetime,
     half_life_days: float = 14.0,
+    zero_skill_prior: float = 0.50,
 ) -> Score:
     coverage_value, covered, skill_count = skill_coverage(profile.skills, posting_skills)
     if coverage_value is not None:
         coverage_detail = f"covers {covered}/{skill_count} skills"
+    elif not posting_skills and profile.skills:
+        # Impute rather than renormalize (§3.6). Renormalizing is arithmetically identical
+        # to imputing the weighted mean of the surviving components — a promotion, not a
+        # neutral act, whenever coverage would have scored below that mean. A neutral prior
+        # is what "never a punitive 0 or free 1" actually asks for. skill_coverage() itself
+        # is unchanged: the component is undefined, and this is the ranker's stated
+        # assumption about it.
+        coverage_value = zero_skill_prior
+        coverage_detail = (
+            "no recognized skills in this posting — "
+            f"coverage assumed neutral ({zero_skill_prior:.2f})"
+        )
     elif not posting_skills:
+        # Nothing on EITHER side: there is no comparison to be neutral about, so this
+        # renormalizes and a profile with no other signals still reads "no ranking
+        # signals" (plan deviation 7) rather than a flat prior on every posting.
         coverage_detail = "no recognized skills in this posting"
     else:
+        # Profile-side emptiness keeps renormalizing, per §3.6's own wording.
         coverage_detail = "no recognized skills in your profile"
     title_value = title_match(posting_title, profile.target_titles)
     recency_value = recency(posted_at, now, half_life_days)

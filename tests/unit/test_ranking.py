@@ -1,8 +1,9 @@
 from datetime import datetime, timedelta
+from pathlib import Path
 
 import pytest
 
-from boardwatch.core.settings import RankWeights
+from boardwatch.core.settings import RankWeights, Settings
 from boardwatch.rank.explain import explain, why_summary
 from boardwatch.rank.heuristic import (
     ProfileView,
@@ -83,6 +84,9 @@ class TestSkillCoverage:
         assert (covered, total) == (2, 3)
 
     def test_posting_without_skills_is_undefined(self) -> None:
+        # The FUNCTION's contract is unchanged by the imputation: the component really is
+        # undefined here. score_posting() is where the neutral assumption is applied and
+        # stated, so `show`/`why` can name it as an assumption rather than a measurement.
         value, _, _ = skill_coverage(frozenset({"Python"}), set())
         assert value is None  # neutral, never a punitive 0 or a free 1 (§3.6)
 
@@ -118,19 +122,69 @@ class TestLocationFit:
         assert location_fit(["New York, NY"], "unknown", profile) == 0.0
 
 
-class TestRenormalization:
-    def test_posting_without_skills_renormalizes(self) -> None:
+class TestZeroSkillImputation:
+    """§3.6 says the zero-skill case is 'neutral, never a punitive 0 or free 1'.
+
+    Renormalizing the component away satisfied only the first half: it is arithmetically
+    identical to imputing the weighted MEAN of the surviving components (~0.96 on the rows
+    that matter), which is the free 1 the rule forbids — 29 of 80 eligible zero-skill rows
+    scored exactly 1.000. Imputing a neutral prior enforces §3.6 rather than reopening it.
+    """
+
+    def test_posting_without_skills_takes_the_neutral_prior(self) -> None:
         score = score_posting(
             _profile(), set(), "Backend Engineer", NOW, ["New York"], "unknown",
             RankWeights(), NOW,
         )
-        # defined: title (1.0 x 0.25), recency (1.0 x 0.15), location (1.0 x 0.10)
-        assert score.total == pytest.approx(1.0)
-        assert score.components["skill_coverage"].value is None
+        assert score.components["skill_coverage"].value == pytest.approx(0.50)
+        # coverage 0.50x0.50 + title 0.25 + recency 0.15 + location 0.10, over weight 1.0
+        assert score.total == pytest.approx(0.75)
 
+    def test_the_inversion_is_fixed(self) -> None:
+        # THE defect this change exists to fix. Before imputation a posting with NO
+        # recognized skills outscored a posting matching 7 of 8 (0.9586 vs 0.9168),
+        # because dropping half the weight handed it to whatever else scored well.
+        # Dropping a component is not neutral; it is a promotion.
+        seven_of_eight = _profile(
+            skills=frozenset({"Python", "Go", "PostgreSQL", "Redis", "Kafka", "AWS", "Docker"}),
+            remote_only=True,
+        )
+        posted = NOW - timedelta(days=3)
+        args = ("Backend Engineer", posted, ["Anywhere"], "remote", RankWeights(), NOW)
+        zero_skill = score_posting(seven_of_eight, set(), *args)
+        seven = score_posting(
+            seven_of_eight,
+            {"Python", "Go", "PostgreSQL", "Redis", "Kafka", "AWS", "Docker", "Rust"},
+            *args,
+        )
+        assert zero_skill.total == pytest.approx(0.7293, abs=5e-5)
+        assert seven.total == pytest.approx(0.9168, abs=5e-5)
+        assert zero_skill.total < seven.total  # the inversion, pinned
+
+    def test_prior_is_configurable_and_zero_is_not_the_default(self) -> None:
+        args = (_profile(), set(), "Backend Engineer", NOW, ["New York"], "unknown")
+        punitive = score_posting(*args, RankWeights(), NOW, 14.0, 0.0)
+        assert punitive.components["skill_coverage"].value == 0.0
+        # A punitive 0 is explicitly rejected by §3.6 — it would swing this population from
+        # advantaged straight to buried. Guard against it silently becoming the default.
+        assert score_posting(*args, RankWeights(), NOW).total != punitive.total
+        assert Settings(data_dir=Path("d"), config_dir=Path("c")).zero_skill_coverage_prior == 0.50
+
+    def test_why_line_stays_one_line_and_names_the_assumption(self) -> None:
+        score = score_posting(
+            _profile(), set(), "Backend Engineer", NOW - timedelta(days=2), ["New York"],
+            "unknown", RankWeights(), NOW,
+        )
+        why = why_summary(score, NOW - timedelta(days=2), NOW)
+        # Never "covers 0/0 skills": that would read as a measurement, not an assumption.
+        assert why == "coverage assumed 0.50 · title · 2d"
+        assert "\n" not in why
+
+
+class TestRenormalization:
     def test_renormalized_weighted_mix(self) -> None:
         score = score_posting(
-            _profile(), set(), "Backend Engineer",
+            _profile(skills=frozenset()), {"Python"}, "Backend Engineer",
             NOW - timedelta(days=14), ["San Francisco"], "unknown",
             RankWeights(), NOW,
         )
@@ -213,9 +267,19 @@ class TestExplain:
         assert coverage_row.weighted == pytest.approx((2 / 3) * 0.50)
         assert why_summary(score, NOW - timedelta(days=2), NOW) == "covers 2/3 skills · title · 2d"
 
-    def test_no_skills_message_path(self) -> None:
+    def test_no_skills_message_names_the_assumed_value(self) -> None:
         score = score_posting(
             _profile(), set(), "Backend Engineer", NOW, ["New York"], "unknown",
             RankWeights(), NOW,
         )
+        assert score.components["skill_coverage"].detail == (
+            "no recognized skills in this posting — coverage assumed neutral (0.50)"
+        )
+
+    def test_no_skills_on_either_side_is_still_undefined(self) -> None:
+        score = score_posting(
+            _profile(skills=frozenset()), set(), "Backend Engineer", NOW, ["New York"],
+            "unknown", RankWeights(), NOW,
+        )
+        assert score.components["skill_coverage"].value is None
         assert score.components["skill_coverage"].detail == "no recognized skills in this posting"
