@@ -1,0 +1,133 @@
+# boardwatch — agent instructions
+
+**This file states only what is true now.** Change history goes in `docs/program/DECISIONS.md`; known gaps
+and current standing go in `docs/program/STATE.md`. Instructions that narrate their own history stop being
+followed — keep incidents out of this file.
+
+---
+
+## Session-start ritual — do this before anything else
+
+1. **Read `docs/program/STATE.md`.** It is the single source of truth for where the program stands:
+   current phase, what shipped, next action, blocked items, open questions.
+2. **Verify it against the repo.** `git log --oneline -5`, `git status`, and check that any phase STATE
+   claims is complete actually is. **If STATE and the repo disagree, the repo wins** — correct STATE and
+   record the correction in `DECISIONS.md`. A stale state file that is trusted is worse than none.
+3. **Pick the next task from `docs/program/PROGRAM.md`.** Work one phase at a time. **Do not start a phase
+   whose predecessor's gate has not been met.** A gate is met when its metric says so, not when the work
+   feels done.
+4. **Work.** Run the tests (below). 
+5. **Before ending, update `STATE.md` and `METRICS.md`** — even if the session accomplished little. An
+   honest "blocked on X" is worth more than silence. Append to `DECISIONS.md` for any architectural choice
+   so it is never re-litigated after a context reset.
+
+---
+
+## Program documents
+
+| File | What it is |
+|---|---|
+| `docs/program/STATE.md` | **Read first.** Current standing. Rewritten every session. |
+| `docs/program/PROGRAM.md` | Phases, measurable gates, scope, departures from job-apps' roadmap. |
+| `docs/program/DECISIONS.md` | Append-only decision log. Context · choice · alternatives rejected. |
+| `docs/program/METRICS.md` | Per-run numbers. Gates are checked here. |
+| `CHANGELOG.md` | Authoritative for what actually shipped. |
+
+`.agent/` and `.superpowers/` are gitignored working material — useful context, **not** a source of truth
+for released behaviour.
+
+---
+
+## Testing
+
+**`make check` is the only gate.** pytest + ruff + mypy passing individually is *not* green — the
+generalization checker only runs under `make check`. Run it in plain mode and capture the real exit code;
+never pipe it through `head`/`tail` (SIGPIPE kills the run and you will read a false negative).
+
+If a change has no runnable suite covering it, say so in one line rather than skipping silently.
+
+---
+
+## Scope — deliberately deferred by Mit, do not build
+
+- Cover letters
+- Outreach / referral scaffolding
+- Auto-apply, auto-fill, or browser automation of any kind
+
+**In scope even though it sounds adjacent:** per-JD résumé repositioning (that is tailoring), and marking a
+lead as applied (without it, applied roles re-surface forever and dedup can never improve).
+
+---
+
+## The keystone invariant
+
+> Every eligibility rule declares which user-profile fields it reads. If a declared field is missing or
+> unresolvable, the rule returns `ABSTAIN(missing_profile_field:X)` — **never** `ELIGIBLE`, **never**
+> `INELIGIBLE`. Abstain rates are reported per rule, every run.
+
+**A rule that cannot fire is a monitoring failure, not a conservatism feature.** This is what makes a
+never-resolving rule visible as a 100% abstain rate instead of silently clearing every posting.
+
+Related, and equally load-bearing:
+
+- `ABSTAIN` is never folded into either neighbour, in any report, ever.
+- `INELIGIBLE` must carry a quoted span from the frozen JD. No span ⇒ downgrade to `ABSTAIN`.
+- **"No flags" ≠ cleared.** `ELIGIBLE` carries its own evidence chain: which rule cleared which
+  requirement, against which profile field, citing which span, and which rules abstained.
+- Every quarantine needs a drain, designed in the same change as the quarantine, running on both sides of
+  the gate. A bucket without a scheduled re-entry path is a leak.
+
+---
+
+## Multi-tenancy is a requirement, not an aspiration
+
+boardwatch must serve an F-1 OPT new-grad engineer, a US-citizen senior nurse, and an EU-national paralegal
+**without code changes**. job-apps has empirical evidence on what breaks first: when a second user
+appeared, the thing that failed to port was the **eligibility taxonomy** — not the fetchers, not the
+templates, not the tracker.
+
+Split rules into **universal** (nothing user-specific) / **profile-dependent** (work auth, seniority,
+experience, employment terms) / **field-dependent** (role families, credentials, title taxonomies) from the
+start, and ship the taxonomy as versioned **data**, not code.
+
+---
+
+## Breadth is last
+
+Breadth multiplies whatever is downstream of it. If dedup leaks, breadth multiplies duplicates. If
+liveness is unchecked, breadth multiplies dead postings. job-apps is the proof: ~15,000 companies, and on
+2026-08-05 it turned 942 candidates into 75 résumés into **zero applications**, with a 465-item queue
+nobody can work through.
+
+**Add input only after conversion is proven.** The constraint applies to input; output-side work (PDF
+emission, unattended running) is exempt because it multiplies nothing.
+
+---
+
+## Engineering defaults
+
+- Reuse existing code → platform/native feature → stdlib → small dependency → new code (last resort).
+- Minimum code that solves the problem. No speculative abstractions, no unrequested configurability.
+- Surgical diffs: every changed line traces to the request. Do not reformat adjacent code.
+- Typed violations at the raise site — never classify behaviour by string-matching a message.
+- Closed, versioned catalogs. Out-of-catalog ⇒ treated as a failure, never as a new bucket.
+- A component's self-report is not verification. Count the deliverable through a different path than the
+  one that produced it.
+- **Fixtures must be derived from live config or fingerprinted so drift fails the test.** A green
+  end-to-end test whose fixture sits still while production churns passes for weeks while the behaviour
+  it guards has moved.
+- **A failed command is not a negative result.** Confirm a check actually ran before reading its silence
+  as evidence. Prefer reading code over reading a summary of code — a summary has already discarded the
+  details worth transferring.
+- Fail-safe direction is chosen **per gate** and they legitimately differ: judge unavailable ⇒ fail-open
+  (never silently delete a real job); fabrication check ⇒ fail-safe (drop tailoring, emit static);
+  systemic outage ⇒ fatal (prevents the silent empty day).
+
+---
+
+## Git
+
+- Descriptive commit messages, imperative mood. One logical change per commit.
+- **No AI attribution anywhere** — not in commits, PRs, branches, tags, or release notes. No
+  `Co-Authored-By` for Claude/Anthropic/any AI tool, no "Generated with" lines. Check the final message
+  before committing and strip anything a tool inserted.
