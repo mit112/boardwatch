@@ -800,31 +800,45 @@ could never catch the very defect it was added to catch.
 **Consequence.** Gate P0 clause 2 is closed *mechanically*. The clause is met when a run's artifact shows
 it, which is the live-run evidence recorded in `METRICS.md`, not this entry.
 
-## D-028 — a per-source total is reconciled by JOIN PATH, not by re-summing itself
-**2026-08-06 · session 6 · P0 item 3**
+## D-028 — only one per-source total was worth reconciling, and the first attempt could not fail
+**2026-08-06 · session 6 · P0 item 3 · corrected the same session, after review**
 
 **Context.** Adding a per-board `GROUP BY` invites the obvious check: does the table sum to the funnel's
-total? Taken naively that is another unfailable assertion of the kind D-023 deleted — a `GROUP BY` over a
-set always sums to that set's total.
+total? Two `SourceTotal`s shipped — `eligible` and `leads` — and this entry originally argued that both
+could genuinely fail because the per-source sweep "travels through the `companies` join, which the funnel's
+stages never touch". **That argument was wrong, and an independent review caught it the same session.**
 
-**Choice.** It is reconciled, but the reason it can fail is the **join path, not the arithmetic**. The
-per-source sweep reaches every count through `companies`, which the funnel's own stages never touch. So a
-disagreement means something real and specific:
+**What was actually true.** `eligible_by_company` groups the *very same* `_current_identity_evaluations`
+subquery that the verdict stage counts, by `postings.company_id`, joined to `postings` on its primary key
+— a join that can neither lose nor duplicate a row. `companies` is never joined in any counting sweep; it
+is read once, at the end, for display labels. And `postings.company_id` is `NOT NULL` behind an enforced
+foreign key (`PRAGMA foreign_keys=ON`), so the orphaned-company state this entry named as the failure mode
+**cannot occur at all**. Worse, the assembly step keeps a row whose company lookup misses and labels it
+`unknown`, so its count is still summed — which would neutralise the check even if the state were
+reachable.
 
-- **`eligible`** — an open posting whose company row vanished. Its verdict is in the funnel's `eligible`
-  and belongs to no board.
-- **`leads`** — a `resume_tailored` row for this run that resolves to no board. `artifacts` carries no
-  `posting_id`, only `posting_version_id`, so a NULL version or an orphaned posting makes a lead
-  unattributable — which is exactly what Gate P0 asks the artifact to answer.
+So `sum(per_source.eligible) == verdict.eligible` held for every possible database state. It was an
+unfailable assertion presented as evidence: precisely the defect **D-023** exists to forbid, reintroduced
+one entry after being written down.
 
-Both are carried as a new `SourceTotal` type rather than as `CrossCheck`, whose two fields are named
-`in_memory` and `from_store` and would be a lie here: both of these numbers come from the store.
-`RunFunnel.reconciles` includes them, so an unattributable lead fails the run's reconciliation.
+**Choice.** **The `eligible` total is deleted, not downgraded.** D-023 deleted two `*_reconciles`
+properties rather than keep them as decoration, and the same applies here.
 
-Measured on the production store: **0 orphan open postings today**, so the check passes — but it passes
-for a reason a database state can change, which is the whole distinction this entry draws.
+**`leads` survives**, because its two sides genuinely have different shapes: `COUNT(*)` of
+`resume_tailored` rows carrying this `run_id`, against `COUNT(DISTINCT postings.id)` resolved through
+`posting_versions`. It can disagree in two ways — an artifact whose `posting_version_id` is NULL resolves
+to no board, and two artifacts for one posting in one run collapse to a single distinct posting. Neither
+is reachable through the current tailor path, so **the artifact describes it as a guard against a future
+writer, not as live evidence.** That is a weaker claim than the one first shipped, and it is the true one.
 
 **`applied` is deliberately NOT reconciled.** It counts DISTINCT job ids per board, and summing per-board
 distinct counts is not the global distinct count if a job ever spans two boards. `jobs`/`postings` being
 1:1 makes that impossible today, but shipping an identity that depends on an accident of current data is
-how a check becomes a false green later. The artifact states the omission and why.
+how a check becomes a false green later.
+
+**The lesson, and why this entry keeps its own mistake.** *"Counts through a different path"* is not
+satisfied by grouping the same query differently. A different **path** means a different table expression
+that can disagree — the way `no_current_evaluation` is its own `NOT IN` sweep. Grouping by a foreign key
+on a table you already joined is the same path with a different `GROUP BY`. The reasoning was written into
+a decision entry and a CHANGELOG entry before it was checked, which is D-021's rule ignored: **a fix is
+new code and its documentation is new prose; neither inherits the reviewed status of what it repairs.**

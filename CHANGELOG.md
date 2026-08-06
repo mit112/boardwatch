@@ -21,13 +21,14 @@ All notable changes to this project are documented here. The format follows
   The denominator is every **open** posting a board owns, not what it listed this run: an unchanged board
   answers 304 and lists nothing while still owning hundreds of open postings.
 
-  Two totals are re-swept per board and compared with the funnel's own figures. Both numbers come from the
-  store; what differs is the **join path** — the per-source sweep travels through `companies`, which the
-  funnel's stages never touch — so agreement means every posting and every artifact counted belongs to a
-  real board, and a lead attributable to no board now fails the run's reconciliation. `applied` is
-  deliberately excluded from that check: summing per-board distinct job counts is not the global distinct
-  count if a job ever spans two boards. The artifact says so rather than shipping an identity that holds
-  only by accident of the current data.
+  **One** total is re-swept per board and compared with the funnel's own figure: `leads`, whose two sides
+  have genuinely different shapes (`COUNT(*)` of this run's `resume_tailored` rows against
+  `COUNT(DISTINCT posting)` resolved through `posting_versions`), so a lead that resolves to no board fails
+  the run's reconciliation. A second total over `eligible` was written and then deleted before merge: it
+  grouped the same subquery the verdict stage counts, by a `NOT NULL` foreign key, joined on a primary key,
+  so it agreed for every possible database state. `applied` is excluded for a different reason — summing
+  per-board distinct job counts is not the global distinct count if a job ever spans two boards, which is
+  impossible today only by accident of the current data.
 
 - **The ranker now accounts for every posting it considered**, which is what makes the funnel's
   `shortlist` stage evidence rather than bookkeeping. It previously reported two of its four exits, so
