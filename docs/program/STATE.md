@@ -1,13 +1,13 @@
 # PROGRAM STATE — read this first
 
-**Last updated:** 2026-08-06 (session 3, P0 in progress)
+**Last updated:** 2026-08-06 (session 4, P0 in progress)
 **Updated by:** boardwatch (Claude)
-**Repo state at write time:** P0's instrumentation work is merged to `main`; the tree is clean.
+**Repo state at write time:** every P0 item claimed done below is merged to `main`; the tree is clean.
 **This header carries no commit count or sha on purpose** — the previous one named both, went stale inside
 a single session when three later docs commits did not update it, and a cold session following the
 session-start ritual hit the disagreement on its very first check. State what is durably true; verify the
 rest against `git log`. (D-017.)
-**Gate:** `make check` exits **0** (2633 passed, coverage 94.98%), measured on this branch tip.
+**Gate:** `make check` exits **0** (2670 passed, coverage 94.88%), measured in plain mode with the real exit code.
 
 > This is the single file a fresh session with zero memory reads to know where the program stands.
 > If it disagrees with the repo, **the repo wins** — fix this file and note the correction in
@@ -17,15 +17,49 @@ rest against `git log`. (D-017.)
 
 ## Current phase
 
-**P0 — Instrumentation. IN PROGRESS on `main`.** Nothing is blocked.
+**P0 — Instrumentation. IN PROGRESS.** Nothing is blocked.
 
-Two of P0's eight items are done and on `main`: item 7 (the `run_id` migration) and item 2 (**per-rule
-abstain rate**). `main` is green and pushed for the first time since session 1 — the branch that fixed it
-merged this session.
+Four of P0's eight items are done: item 7 (the `run_id` migration), item 2 (**per-rule abstain rate**),
+item 0 (**the pipeline-run row and `boardwatch run`**) and item 1 (**threading `run_id` into both write
+paths**). The migration is no longer inert — the column it added is populated on every write.
 
-Remaining P0 items, in the order D-016 implies: the **pipeline-run row** (item 0, early P3 work taken on
-deliberately), then threading `run_id` into the two write paths, then the funnel artifact, the per-source
+Remaining P0 items: the **funnel artifact** (item 3, the one that actually closes Gate P0), the per-source
 table, the run manifest, the reconciliation sweep, the stub rate, and the fabrication counters.
+
+---
+
+## What shipped in session 4 (2026-08-06)
+
+**P0 items 0 and 1, shipped together deliberately.** Item 0 alone would have changed no observable
+behaviour — the same criticism that applies to item 7's migration — so the row and the threading that
+populates it landed as one unit.
+
+- **`boardwatch run`** (`src/boardwatch/pipeline/runner.py`, `cli/run_cmd.py`). Mints the run row before
+  scan, stamps `finished_at` after tailor. `--top N` · `--out` · `--resume` · `--no-scan`. Exit 0 clean,
+  1 on stage errors, 2 on scan-lock contention. This is what `.agent/bin/bw-daily` becomes.
+- **`run_id` threaded into both write paths.** `run_eligibility` → `write_evaluation` →
+  `record_evaluation`, the opt-in LLM lane (`extract_and_record`, which bypasses `write_evaluation`), and
+  `run_tailor` → all three artifact inserts.
+- **`runs` ownership split.** `finalize_run` gained `finished: bool = True`; new `finish_run` stamps
+  `finished_at` for whoever owns the row. Bare `boardwatch scan` is unchanged — the insert stays inside
+  the lock, so a contended scan still writes nothing.
+
+**The invariant this establishes — D-019, and the reason the work is worth this much care:**
+
+> **`run_id` is never NULL on a row written after this change.** A stage invoked standalone mints a
+> *degenerate* pipeline run rather than writing NULL. So NULL means exactly one thing — the row predates
+> attribution — and that population can only shrink.
+
+`run_eligibility` mints **only once `pending` is non-empty**, or every `top` invocation would log a run
+and `runs` would become a command log rather than a ledger of work.
+
+Two consequences accepted on purpose, both in D-019: a **cache hit keeps the first run's id** (no row is
+written; "cache hit" is its own funnel stage counted from the insert rowcount, never inferred from
+`run_id`), and a **reused master résumé artifact keeps the run that first authored it**.
+
+**Every new test was mutation-checked** — the fix reverted, the test watched go red, the fix restored —
+per the twice-recorded lesson in D-017/D-018. That surfaced one genuine gap: `finalize_run(finished=False)`
+had no test at all until the check was run.
 
 ---
 
@@ -147,32 +181,40 @@ changes adopted, none contested.
 
 ## Next action
 
-**Introduce the pipeline-run row** — P0 item 0, per D-016. One command running scan → eligibility → tailor
-that owns run identity across all three. This is early P3 work, taken on deliberately.
+**The per-run funnel artifact** — P0 item 3. **This is the item that closes Gate P0**, and none of the
+three done items closes it: the gate requires the funnel to reconcile to 100% over three consecutive runs,
+per-rule abstain to be emitted for *every* rule, and *which source produced each lead and why every
+non-lead was dropped* to be answerable **from the artifact alone, without reading code**. What exists
+today is an on-demand CLI table (`eligibility abstain`) and a run row. Neither is an artifact.
 
-Everything below it in P0 depends on that row existing, which is why it goes first now that the
-`run_id`-independent metric (per-rule abstain rate) is done.
+**Starting points a fresh session should not re-derive.**
 
-**Starting points a fresh session should not re-derive.** `runs` rows are written in exactly one place —
-`insert_run` at `scan/coordinator.py:104`, inside the scan's file lock. Eligibility is judged later as a
-`top`/`stats` preflight side-effect (`eligibility/preflight.py:133`) with no `run_id` in scope, and tailoring
-is later still and single-posting (`run_tailor` takes one `posting_id`). **There is no batch orchestrator in
-`src/`** — the de facto one is `.agent/bin/bw-daily` (`bwd`), gitignored shell. The new command replaces
-that, and `build_abstain_report` (`reports/abstain.py`) is already a clean seam for the artifact to consume:
-it is a pure function of catalog + counts, so the funnel writer needs no new query.
+- **The run key now exists and is populated.** `boardwatch run` owns a `runs` row across all three
+  stages; `PipelineSummary` (`pipeline/runner.py`) is a plain dataclass of exactly the per-stage counts
+  the artifact needs, built that way so the writer needs no new query.
+- **`build_abstain_report` (`reports/abstain.py`) is a pure function of catalog + counts** — already the
+  seam for the abstain half of the artifact.
+- **The cache-hit signal exists and is still discarded.** `store/eligibility.py`'s
+  `inserted.rowcount == 0` **is** the cache hit, computed on every call. Counting it is plumbing a
+  boolean out, not new detection. It must be its own asserted stage — D-016's whole argument.
+- **NULL `run_id` is its own funnel bucket.** Per D-019 it now means only "predates attribution"
+  (~20,637 unbackfillable rows). Never fold it into a run's counts and never into 0.
+- **`leads_with_pdf` is not a row count.** `artifacts.uri` stores the `.typ` path, not the PDF; whether a
+  PDF compiled lives only in `json_extract(meta_json,'$.typst_pdf_built') = 1`. A `resume_tailored` row
+  can exist with no PDF — that is D-006's silent degrade.
+- **Write the artifact OUTSIDE the git tree**, as tailored résumés already are: generalization rule R6
+  forbids any `.pdf` in the tracked tree and R7 requires a sha256-pinned `SHIPPED_DATA` entry for any
+  tracked `.json`. `.md` is exempt from R7.
 
-1. Thread `run_id` into the two write paths — `write_evaluation` (`eligibility/engine.py:242`) and
-   `record_artifact` (`store/artifacts.py:17`) take no such parameter today, so the new column stays NULL
-   forever until they do. **The migration alone changes no behaviour.**
-2. ~~Per-rule abstain rate~~ — **DONE, `540bb34`.** `boardwatch eligibility abstain`. **But note the gap:**
-   `PROGRAM.md` §3.P0.2 says "every run" and Gate P0 requires it answerable *from the artifact alone*.
-   This ships an on-demand CLI table only. The metric exists and is correct; emitting it into a per-run
-   artifact is item 3's job. **Gate P0 is not met by this commit** — do not read item 2 as closing it.
-3. Funnel artifact (`json` + `md`) with cache hits as their own asserted stage
-   (`store/eligibility.py:130`'s `inserted.rowcount == 0` **is** the cache-hit signal, computed today and
-   discarded — this is plumbing an existing boolean out, not new detection).
-4. Fabrication counters. Needs new plumbing, not a query: aggregates die at `cli/tailor_cmd.py:196-204`
-   and `:407-414` after `console.print`, and Tier A's fail-safe has no counter anywhere.
+Then, still open in P0: the per-source outcome table, the run manifest (item 4 — config hash, profile
+version, catalog version, code fingerprint, **exit status**; a `runs.status` column belongs there, not
+bolted on earlier), the reconciliation sweep, the stub rate, and the fabrication counters.
+
+**Fabrication counters need new typed capture, not a query.** Aggregates die at `cli/tailor_cmd.py:196-204`
+and `:407-414` after `console.print`; Tier A's fail-safe (`TierASafetyError`) has no counter anywhere; and
+`RewriteRow.drop_reason` is 12 bare untyped strings. Likewise `disposition='unknown'` conflates **four**
+causes separable only by free-text `rationale`, which carries no CHECK constraint — so abstain *rate* is
+computable but the typed abstain *reason* the keystone invariant wants is not.
 
 Write the artifact **outside the git tree** (as tailored résumés already are): R6 forbids any `.pdf` in the
 tracked tree and R7 requires a sha256-pinned `SHIPPED_DATA` entry for tracked `.json`. `.md` is exempt from R7.
@@ -183,7 +225,7 @@ tracked tree and R7 requires a sha256-pinned `SHIPPED_DATA` entry for tracked `.
 
 | Phase | Status | Gate met? |
 |---|---|---|
-| P0 Instrumentation | **in progress** — items 7 (`c56bc11`) and 2 (`540bb34`) done; nothing blocked | — |
+| P0 Instrumentation | **in progress** — items 7, 2, 0 and 1 done; item 3 (funnel artifact) is what closes the gate | **not met** |
 | P1 Résumé artifact gate | not started | — |
 | P2 Profile + keystone invariant | not started | — |
 | P3 Unattended one command | not started | — |
@@ -242,12 +284,13 @@ to prevent.
 and the funnel artifact writer; this is accepted as *early* P3 work rather than extra work, since P3's "one
 command, unattended" needs the same row and the alternative was re-keying at P3.
 
-### 2. `main` is red until this branch merges — deliberate, not forgotten
+### 2. ~~`main` is red until this branch merges~~ — RESOLVED, session 3
 
-`bc0973d` (on this branch) is the fix. It was **not** cherry-picked onto `main` because pushing is not
-covered by standing permission and the branch merge resolves it anyway. A cold session that runs
-`make check` on `main` before merging will see generalization exit 2 — that is D-014, already diagnosed, not
-a new problem. Do not re-diagnose it.
+`main` has been green since `88c98d4` merged. The cause was D-014: program docs carried an absolute
+`/Users/<name>` path violating generalization rule R1, so `make check` exited 2 in the generalization
+stage before pytest ran. **The lesson that generalizes and is still live: `docs/` IS scanned** —
+`tools/generalization/discovery.py` enumerates via `git ls-files` with no exclusion filter, so a
+docs-only commit is not exempt from `make check`. Do not re-diagnose the original failure.
 
 ### Previously resolved
 

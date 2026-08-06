@@ -26,7 +26,7 @@ from boardwatch.eligibility.engine import ENGINE_KIND, engine_version, evaluate,
 from boardwatch.eligibility.facts import Facts, Policy, parse_facts, parse_policy
 from boardwatch.eligibility.hashing import build_identity
 from boardwatch.eligibility.resolve import declared_fields
-from boardwatch.store.queries import get_profile
+from boardwatch.store.queries import ensure_run, finish_run, get_profile
 from boardwatch.store.tables import (
     eligibility_evaluations,
     eligibility_inputs,
@@ -45,6 +45,9 @@ class EligibilityStats:
     # without loading the catalog a second time. None when there is no profile.
     profile_hash: str | None = None
     rules_hash: str | None = None
+    # The run these evaluations were attributed to. None when nothing was evaluated, because
+    # a stage that judged nothing mints no run.
+    run_id: int | None = None
 
 
 def _pending(engine: Engine, profile_hash: str, rules_hash: str) -> list[tuple[int, str]]:
@@ -131,8 +134,20 @@ def current_identity(conn: Connection, settings: Settings) -> tuple[str, str] | 
 
 
 def run_eligibility(
-    engine: Engine, settings: Settings, console: Console | None = None
+    engine: Engine,
+    settings: Settings,
+    console: Console | None = None,
+    *,
+    run_id: int | None = None,
 ) -> EligibilityStats:
+    """Judge every posting pending under the current profile+rules identity.
+
+    `run_id` attributes the evaluations to the pipeline run that produced them. When the
+    caller has none — `top`, `export`, `stats` and `eligibility run` all trigger this as a
+    preflight side-effect — one is minted, but ONLY once there is pending work. A preflight
+    that finds nothing to judge writes no run row, so a `runs` table stays a ledger of runs
+    that did something rather than a log of every `top` invocation.
+    """
     console = console or Console()
     with engine.connect() as conn:
         profile_row = get_profile(conn)
@@ -155,6 +170,9 @@ def run_eligibility(
         return stats
 
     console.print(f"evaluating eligibility for {len(pending)} postings…")
+    owns_run = run_id is None
+    run_id = ensure_run(engine, run_id)
+    stats.run_id = run_id
     for chunk_start in range(0, len(pending), BATCH_SIZE):
         chunk = pending[chunk_start : chunk_start + BATCH_SIZE]
         with engine.begin() as conn:  # one commit per batch: resumable
@@ -172,6 +190,11 @@ def run_eligibility(
                     posting_version_id=posting_version_id,
                     identity=identity,
                     result=result,
+                    run_id=run_id,
                 )
                 stats.evaluated += 1
+    if owns_run:
+        # A run minted here spans only this stage, so it is complete the moment the last
+        # batch commits. A run passed in belongs to the pipeline, which finishes it.
+        finish_run(engine, run_id)
     return stats

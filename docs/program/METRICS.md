@@ -85,7 +85,12 @@ One row per run once P0 lands. `—` = not emitted.
 
 | Date | Run id | Observed | Unique | Candidates | Eligible | Ineligible | Abstained | Leads | PDFs | QA pass | Stub rate | Exit |
 |---|---|---|---|---|---|---|---|---|---|---|---|---|
-| _(none yet — P0 not started)_ | | | | | | | | | | | | |
+| _(none yet — item 3, the funnel artifact, is what fills this)_ | | | | | | | | | | | | |
+
+The run **key** now exists (`boardwatch run`, session 4) and `run_id` is populated on every evaluation and
+artifact. What is still missing is the **artifact** that emits these columns per run — P0 item 3. A row
+here written by hand from ad-hoc queries would defeat Gate P0, which requires the funnel answerable *from
+the artifact alone, without reading code*. So this stays empty on purpose until the writer exists.
 
 ---
 
@@ -259,3 +264,34 @@ The rate is computable; the typed **reason** is not. `disposition='unknown'` sti
 separable only by free-text `rationale` (session 2, above). So "17 rules never decide" is solid, and "why"
 is per-rule guesswork until the abstain reason is typed at the raise site. That is the next thing P0 owes
 the keystone invariant.
+
+---
+
+## Session 4 — 2026-08-06 · the pipeline-run row (P0 items 0 and 1)
+
+### What changed in what the store can answer
+
+| Question | Before | After |
+|---|---|---|
+| Which run judged this posting? | unanswerable — `run_id` was NULL on all ~20,637 evaluations | answerable for every evaluation written from now on |
+| Which run produced this résumé artifact? | unanswerable — NULL on all artifacts | answerable |
+| Does any code path span scan → eligibility → tailor? | **no** — the only one was gitignored shell | `boardwatch run` |
+| Does `NULL run_id` have one meaning? | n/a (everything was NULL) | **yes** — "predates attribution", a set that can only shrink (D-019) |
+
+**Not yet answerable, and item 3 owes it:** the funnel counts per run, per source, as an artifact. The run
+row is the key; the artifact is the deliverable. **Gate P0 remains not met.**
+
+### Gate
+
+`make check` exit **0** — generalization OK, ruff clean, mypy `--strict` clean on 147 source files,
+2670 tests passed, coverage 94.88% (threshold 85%). Measured in plain mode with the real exit code.
+
+### Test-pinning discipline, applied and worth recording
+
+Every new test was mutation-checked: the behaviour it names was removed, the test was watched go red, then
+the fix was restored. Eight mutations across the two new files; each produced exactly the failures expected
+and no others. The check earned its keep — it surfaced that `finalize_run(finished=False)`, the change that
+stops the scan stage from marking a pipeline complete, had **no test at all**. Two were added.
+
+This is the third consecutive session in which the review-worthy defects were in tests and documents rather
+than logic (D-017, D-018, and now this). The pattern is stable enough to treat as a rule.

@@ -50,22 +50,54 @@ def finalize_run(
     closed_count: int,
     reopened_count: int,
     errors: list[str],
+    finished: bool = True,
 ) -> None:
+    """Write the scan stage's counts onto a run row.
+
+    `finished=False` when the caller does not own the run — under `boardwatch run` the scan
+    is stage one of three, so stamping finished_at here would record the pipeline as complete
+    the moment scan returned. The owner calls finish_run instead.
+    """
+    values: dict[str, object] = {
+        "boards_attempted": boards_attempted,
+        "boards_complete": boards_complete,
+        "postings_seen": postings_seen,
+        "new_count": new_count,
+        "closed_count": closed_count,
+        "reopened_count": reopened_count,
+        "errors_json": errors,
+    }
+    if finished:
+        values["finished_at"] = utcnow()
     with engine.begin() as conn:
-        conn.execute(
-            update(runs)
-            .where(runs.c.id == run_id)
-            .values(
-                finished_at=utcnow(),
-                boards_attempted=boards_attempted,
-                boards_complete=boards_complete,
-                postings_seen=postings_seen,
-                new_count=new_count,
-                closed_count=closed_count,
-                reopened_count=reopened_count,
-                errors_json=errors,
-            )
-        )
+        conn.execute(update(runs).where(runs.c.id == run_id).values(**values))
+
+
+def finish_run(engine: Engine, run_id: int, *, errors: list[str] | None = None) -> None:
+    """Stamp finished_at on a run the caller owns, optionally appending stage errors.
+
+    Errors are appended, not replaced: the scan stage has already written its own into
+    errors_json by the time the pipeline finishes, and overwriting would lose them.
+    """
+    with engine.begin() as conn:
+        values: dict[str, object] = {"finished_at": utcnow()}
+        if errors:
+            existing = conn.execute(
+                select(runs.c.errors_json).where(runs.c.id == run_id)
+            ).scalar_one_or_none()
+            values["errors_json"] = list(existing or []) + errors
+        conn.execute(update(runs).where(runs.c.id == run_id).values(**values))
+
+
+def ensure_run(engine: Engine, run_id: int | None) -> int:
+    """Return the caller's run id, minting a fresh run row when there is none.
+
+    This is what keeps `run_id IS NULL` meaning exactly one thing — *the row predates run
+    attribution* — instead of also meaning "written outside a pipeline". Every stage that
+    writes an attributable row calls this, so a stage invoked standalone is recorded as a
+    degenerate pipeline run rather than as an unattributed write.
+    """
+    return insert_run(engine) if run_id is None else run_id
 
 
 def get_validators(conn: Connection, url: str) -> ResponseValidators | None:

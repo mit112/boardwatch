@@ -92,6 +92,7 @@ def extract_and_record(
     cache: ResponseCache,
     provider: str | None = None,
     model: str | None = None,
+    run_id: int | None = None,
 ) -> int | None:
     """Run the LLM lane once and record an advisory `engine_kind='llm'` audit row.
 
@@ -158,5 +159,6 @@ def extract_and_record(
         model=model,
         prompt_version=PROMPT_VERSION,
         idempotency_key=None,
+        run_id=run_id,
         raw_output={"raw": raw},
     )

@@ -99,6 +99,7 @@ def record_evaluation(
     prompt_version: str | None = None,
     idempotency_key: str | None = None,
     raw_output: dict[str, Any] | None = None,
+    run_id: int | None = None,
 ) -> int:
     input_id = _get_or_create_input(
         conn, posting_version_id=posting_version_id, profile_hash=profile_hash,
@@ -117,7 +118,7 @@ def record_evaluation(
                 input_id=input_id, engine_kind=engine_kind, engine_version=engine_version,
                 provider=provider, model=model, prompt_version=prompt_version,
                 idempotency_key=idempotency_key, verdict=verdict, score=score,
-                raw_output_json=raw_output, created_at=utcnow(),
+                raw_output_json=raw_output, created_at=utcnow(), run_id=run_id,
             )
             .on_conflict_do_nothing(
                 index_elements=[
@@ -128,7 +129,11 @@ def record_evaluation(
             )
         )
         if inserted.rowcount == 0:
-            # an equal row already exists, so this call is a no-op and its children exist
+            # an equal row already exists, so this call is a no-op and its children exist.
+            # The row keeps the run_id of the run that FIRST produced it, which is correct:
+            # "cache hit" is its own funnel stage counted from this rowcount, never inferred
+            # from run_id. Reattributing here would erase the distinction D-013 added the
+            # run_id column to preserve.
             return int(
                 conn.execute(
                     select(eligibility_evaluations.c.id).where(
@@ -151,7 +156,7 @@ def record_evaluation(
                 input_id=input_id, engine_kind=engine_kind, engine_version=engine_version,
                 provider=provider, model=model, prompt_version=prompt_version,
                 idempotency_key=idempotency_key, verdict=verdict, score=score,
-                raw_output_json=raw_output, created_at=utcnow(),
+                raw_output_json=raw_output, created_at=utcnow(), run_id=run_id,
             )
             .on_conflict_do_nothing(
                 index_elements=[eligibility_evaluations.c.idempotency_key]
@@ -174,7 +179,7 @@ def record_evaluation(
                     input_id=input_id, engine_kind=engine_kind, engine_version=engine_version,
                     provider=provider, model=model, prompt_version=prompt_version,
                     idempotency_key=idempotency_key, verdict=verdict, score=score,
-                    raw_output_json=raw_output, created_at=utcnow(),
+                    raw_output_json=raw_output, created_at=utcnow(), run_id=run_id,
                 )
             ).inserted_primary_key[0]  # type: ignore[index]
         )

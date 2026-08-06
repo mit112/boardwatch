@@ -454,3 +454,47 @@ fixed were *a test that did not pin the fix its own docstring cited* (widening t
 dodged the 80-column condition the fix addressed; deleting the fix left the suite green) and *a property
 documented as load-bearing that nothing asserted*. A test that cannot fail is documentation with a green
 tick next to it. Verify a new test fails without its fix before trusting it.
+
+## D-019 — `run_id` is never NULL on a row written after attribution exists
+**2026-08-06 · session 4**
+
+**Context.** D-016 settled that `run_id` denotes a *pipeline* run, and P0 item 0 built the row plus
+`boardwatch run`. Threading the column then exposed a second question D-016 did not reach: what should a
+stage write when it is invoked **standalone**? `run_eligibility` is a preflight side-effect of `top`,
+`export`, `stats` and `eligibility run`; `run_tailor` is invoked directly by `boardwatch tailor run`; the
+opt-in LLM lane is invoked by `eligibility extract`. None of those has a pipeline above it. Writing NULL
+was the obvious default and it is wrong: the ~20,637 pre-existing rows are permanently NULL and can never
+be backfilled (`eligibility_evaluations` is append-only), so NULL already means *predates attribution*.
+A second meaning makes the funnel's `unattributed` bucket unreadable — it would mix rows nothing can ever
+fix with rows a stage simply declined to attribute.
+
+**Choice.** Every write path either receives a `run_id` or mints one, via `ensure_run`
+(`store/queries.py`). A stage run standalone records a **degenerate pipeline run** — one whose other
+stages did zero work — which is the direct corollary of Mit's 2026-08-06 ruling that a bare `scan` is a
+pipeline run with empty stages, and of his rejection of a `kind` column. One row shape everywhere.
+`run_id IS NULL` therefore has exactly one meaning, and it is a closed set that can only shrink.
+
+**The one guard that keeps this affordable.** `run_eligibility` mints **only once `pending` is non-empty**.
+Without that, every `top` invocation would log a run and `runs` would become a command log rather than a
+ledger of work. Test-locked: `test_eligibility_with_nothing_pending_mints_no_run`.
+
+**Consequences accepted, both recorded because neither is obviously right.**
+1. **A cache hit keeps the *first* run's id.** `record_evaluation` returns early on
+   `inserted.rowcount == 0`, so no row is rewritten. Correct per D-016: "cache hit" is its own funnel
+   stage counted from that rowcount, never inferred from `run_id`. Reattributing would erase the very
+   distinction D-013 added the column to preserve.
+2. **A reused master résumé artifact keeps the run that first authored it.**
+   `get_or_create_master_artifact` is content-addressed, so `run_id` is recorded on CREATE only. The node
+   genuinely was not produced by this run. Counting masters per run needs a separate edge, not an
+   overwrite.
+
+**Ownership split in `runs`, required by the same change.** `finalize_run` previously wrote the scan
+counts *and* stamped `finished_at`. Under a pipeline that would mean the run finished when scan finished,
+so it gained `finished: bool = True` and the owner calls the new `finish_run` instead. The bare
+`boardwatch scan` contract is untouched: the insert stays **inside** the lock, so a scan rejected for
+contention still writes nothing at all (`tests/pipeline/test_scan_lock.py` continues to assert this).
+
+**Rejected.** *Writing NULL from standalone stages and filtering in the funnel.* It cannot be filtered —
+nothing distinguishes the two NULL populations. *A `kind` column on `runs`.* Ruled out by Mit on the same
+day: it forces every downstream funnel query to carry a qualifier, for a distinction that is already
+visible in the stage counts themselves.

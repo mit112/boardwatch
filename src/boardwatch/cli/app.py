@@ -15,6 +15,7 @@ from boardwatch.cli.export_cmd import export as _export
 from boardwatch.cli.init_cmd import init as _init
 from boardwatch.cli.notify_cmd import notify as _notify
 from boardwatch.cli.profile_cmd import profile_app
+from boardwatch.cli.run_cmd import run as _run
 from boardwatch.cli.scan_cmd import scan as _scan
 from boardwatch.cli.settings_cmd import settings_app
 from boardwatch.cli.show_cmd import show as _show
@@ -62,3 +63,4 @@ app.add_typer(track_app, name="track")
 app.command("export")(_export)
 app.add_typer(tailor_app, name="tailor")
 app.command("stats")(_stats)
+app.command("run")(_run)

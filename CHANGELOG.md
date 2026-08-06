@@ -8,6 +8,33 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- **`boardwatch run` — one command that runs scan → eligibility → tailor under a single run.**
+  Until now nothing in `src/` spanned the three stages: `runs` rows were inserted only inside the
+  scan's file lock, eligibility was judged later as a side-effect of `top`'s preflight, and
+  tailoring was later still and one posting at a time. The only thing stitching them together was
+  a shell script outside the package. `boardwatch run` mints the run row before the first stage
+  and stamps `finished_at` after the last, so a run means the pipeline, not the scan.
+
+  Options: `--top N` (how many ranked postings to tailor, default 8), `--out` (root for the dated
+  `<out>/<YYYY-MM-DD>/` folders), `--resume`, and `--no-scan` to reuse already-fetched postings.
+  Exit 0 on a clean run, 1 if any stage reported an error, 2 if another scan holds the lock.
+
+- **`run_id` is now written on every evaluation and every artifact.** The column was added
+  previously but nothing populated it, so it was NULL everywhere. It is now threaded through
+  `run_eligibility` → `write_evaluation` → `record_evaluation`, through the opt-in LLM lane, and
+  through `run_tailor` into all three artifact inserts.
+
+  A stage invoked on its own — `boardwatch tailor run`, `eligibility run`, `top`'s preflight —
+  mints its own run rather than writing NULL, so that **NULL keeps exactly one meaning: the row
+  predates run attribution.** Those rows cannot be backfilled (the evaluation ledger is
+  append-only), so preserving that single meaning is what lets a funnel report separate them from
+  live work instead of silently mixing the two. To keep `runs` a ledger of work rather than a
+  command log, the eligibility preflight mints a run only once it has something pending.
+
+  A cache hit keeps the run that first produced the evaluation, and a reused master résumé
+  artifact keeps the run that first authored it — in both cases no row is written, and claiming
+  otherwise would erase the distinction the column exists to record.
+
 - **`boardwatch eligibility abstain` — abstain rate for every rule in the catalog, including
   rules that have never fired.** `eligibility summary` groups the requirement rows that exist,
   so a rule that has never been detected produces no group and is invisible in it; that is
