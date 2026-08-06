@@ -22,12 +22,17 @@ from boardwatch.reports.run_funnel import (
     Lead,
     RunFunnel,
     ScanContext,
+    ShortlistCounts,
     build_run_funnel,
     funnel_to_dict,
     funnel_to_markdown,
     write_run_funnel,
 )
-from boardwatch.store.run_funnel_queries import CorpusCounts, TailoredArtifactCounts
+from boardwatch.store.run_funnel_queries import (
+    CorpusCounts,
+    SourceOutcome,
+    TailoredArtifactCounts,
+)
 
 BUNDLED = Path("does-not-exist")  # no override dir: load_rules falls back to the bundled catalog
 
@@ -82,11 +87,18 @@ def funnel(
     shortlisted: int | None = None,
     hidden_ineligible: int = 5,
     hidden_non_swe: int = 8,
+    hidden_hard_filter: int = 0,
+    hidden_below_cutoff: int = 0,
+    skipped_not_new: int = 0,
+    considered: int | None = None,
     tailor_failed: int = 0,
     artifacts: TailoredArtifactCounts | None = None,
     marked_applied: int = 0,
     abstain: AbstainReport | None = None,
     unattributed_evaluations: int = 20_637,
+    sources: list[SourceOutcome] | None = None,
+    # False models a run where the ranker never executed (no profile / fatal scan outage).
+    ranker_ran: bool = True,
 ) -> RunFunnel:
     leads = [lead()] if leads is None else leads
     # Default to a CONSISTENT tailor stage. Every shortlisted posting either produced a lead
@@ -94,22 +106,48 @@ def funnel(
     # imbalance is the one that test introduced deliberately.
     if shortlisted is None:
         shortlisted = len(leads) + tailor_failed
+    # Default to a BALANCED shortlist stage for the same reason as the tailor stage above: a
+    # caller not testing this stage should not have to know the identity to avoid tripping it.
+    if considered is None:
+        considered = (
+            shortlisted + hidden_ineligible + hidden_non_swe
+            + hidden_hard_filter + hidden_below_cutoff + skipped_not_new
+        )
+    counts = counts or corpus()
+    tailored_artifacts = artifacts or TailoredArtifactCounts(
+        rows=len(leads), with_pdf=sum(1 for item in leads if item.pdf_built)
+    )
+    # Default to a per-source table that ACCOUNTS for the whole funnel, for the same reason the
+    # tailor and shortlist stages default to balanced: a test not aimed at attribution should
+    # not have to restate the totals to avoid tripping it.
+    if sources is None:
+        sources = [SourceOutcome(
+            provider="greenhouse", board_slug="stripe", company_source="registry",
+            open_postings=counts.open_postings,
+            eligible=counts.by_verdict.get("eligible", 0),
+            leads=tailored_artifacts.rows,
+            applied=marked_applied,
+        )]
     return build_run_funnel(
         run_id=42,
         started_at=None,
         finished_at=None,
         scan=ScanContext(ran=True, boards_attempted=85, boards_complete=80, boards_failed=5,
                          postings_seen=13_590),
-        corpus=counts or corpus(),
-        shortlisted=shortlisted,
-        hidden_ineligible=hidden_ineligible,
-        hidden_non_swe=hidden_non_swe,
+        corpus=counts,
+        shortlist=ShortlistCounts(
+            considered=considered,
+            shortlisted=shortlisted,
+            hidden_hard_filter=hidden_hard_filter,
+            hidden_non_swe=hidden_non_swe,
+            hidden_ineligible=hidden_ineligible,
+            hidden_below_cutoff=hidden_below_cutoff,
+            skipped_not_new=skipped_not_new,
+        ) if ranker_ran else None,
         leads=leads,
         tailor_failed=tailor_failed,
-        tailored_artifacts=artifacts
-        or TailoredArtifactCounts(
-            rows=len(leads), with_pdf=sum(1 for item in leads if item.pdf_built)
-        ),
+        tailored_artifacts=tailored_artifacts,
+        sources=sources,
         marked_applied=marked_applied,
         unattributed_evaluations=unattributed_evaluations,
         abstain=abstain or build_abstain_report(catalog(), {}),
@@ -285,7 +323,8 @@ def test_a_tracked_lead_that_lost_its_pdf_does_not_break_the_applied_stage() -> 
 
 
 def test_a_derived_stage_is_labelled_so_its_balance_is_not_read_as_evidence() -> None:
-    """`shortlist` balances by construction, because `capped_by_top_n` is the remainder.
+    """`attribution` and `verdict` balance by construction — they are SQL partitions of the
+    very set `entered` counts, so their sums equal it for every possible database state.
 
     That is bookkeeping, not verification, and the artifact must distinguish it from the
     stages that can actually fail. Otherwise a reader counting green ticks would credit the
@@ -293,20 +332,64 @@ def test_a_derived_stage_is_labelled_so_its_balance_is_not_read_as_evidence() ->
     """
     report = funnel()
 
-    assert stage(report, "shortlist").derived is True
-    assert stage(report, "corpus").derived is False, "the one genuinely falsifiable stage"
+    assert stage(report, "corpus").derived is False, "an independent NOT IN sweep"
     # Partitions of the very set `entered` counts, so their balance holds for every possible
     # input. Labelling them non-derived would present two unfailable ticks as evidence.
     assert stage(report, "attribution").derived is True
     assert stage(report, "verdict").derived is True
+    # Remainder buckets: one drop is computed from the others.
+    assert stage(report, "pdf").derived is True
+    assert stage(report, "applied").derived is True
 
-    # Scoped to the shortlist TABLE ROW. `"yes (derived)" in body` passes even when every row
+    # Scoped to the verdict TABLE ROW. `"yes (derived)" in body` passes even when every row
     # renders "**yes**", because the legend paragraph below the table contains the phrase.
     body = funnel_to_markdown(report)
-    row = next(line for line in body.splitlines() if line.startswith("| shortlist |"))
+    row = next(line for line in body.splitlines() if line.startswith("| verdict |"))
     assert row.rstrip().endswith("yes (derived) |"), row
     corpus_row = next(line for line in body.splitlines() if line.startswith("| corpus |"))
     assert corpus_row.rstrip().endswith("**yes** |"), corpus_row
+
+
+def test_the_shortlist_stage_is_evidence_because_the_ranker_reports_what_it_considered() -> None:
+    """P0 item 3's structural change: `shortlist` stopped being bookkeeping.
+
+    `entered` is the ranker's own considered count, measured independently of the five drop
+    counters, so this identity can genuinely fail. While `capped_by_top_n` was a remainder it
+    could not, and the artifact correctly refused to present it as evidence.
+    """
+    report = funnel(considered=20, shortlisted=1, hidden_ineligible=5, hidden_non_swe=8,
+                    hidden_hard_filter=4, hidden_below_cutoff=2, leads=[lead()])
+
+    shortlist = stage(report, "shortlist")
+    assert shortlist.derived is False
+    # NOT proof that `entered` is independent of the drops — this fixture is balanced, so a
+    # remainder-based implementation gives 20 too. The sibling test below, with an UNBALANCED
+    # input, is what can actually fail. See the module docstring on what is and is not pinned.
+    assert shortlist.entered == 20
+    assert shortlist.reconciled is True
+    body = funnel_to_markdown(report)
+    row = next(line for line in body.splitlines() if line.startswith("| shortlist |"))
+    assert row.rstrip().endswith("**yes** |"), row
+    # Named in the artifact's own list of what could have failed, which is what the gate reads.
+    assert "shortlist" in next(
+        line for line in body.splitlines() if "could actually have failed" in line
+    )
+
+
+def test_a_posting_the_ranker_loses_breaks_the_shortlist_stage_instead_of_hiding() -> None:
+    """The failure this stage now exists to catch: a `continue` with no counter.
+
+    One posting considered but landing in no bucket must read as DOES NOT RECONCILE. Under the
+    old remainder-based `entered` this input was arithmetically impossible to express, which is
+    precisely why 15,959 postings could go missing without the artifact noticing.
+    """
+    report = funnel(considered=21, shortlisted=1, hidden_ineligible=5, hidden_non_swe=8,
+                    hidden_hard_filter=4, hidden_below_cutoff=2, leads=[lead()])
+
+    shortlist = stage(report, "shortlist")
+    assert shortlist.reconciled is False
+    assert report.reconciles is False
+    assert "shortlist" in [item.name for item in report.unreconciled]
 
 
 def test_a_verdict_outside_the_vocabulary_is_carried_not_discarded() -> None:
@@ -353,10 +436,16 @@ def test_the_markdown_names_every_drop_reason_with_its_count() -> None:
     A reader must never have to subtract two numbers to discover why postings left the
     funnel, so each reason appears with its own figure.
     """
+    # Every shortlist bucket gets a DISTINCT non-zero count. With two of them left at 0, the
+    # renderer could swap `hidden_hard_filter` and `capped_by_top_n` and the suite stayed green
+    # — the artifact would misstate WHY postings were dropped and still reconcile.
     report = funnel(
         counts=corpus(no_current_evaluation=10, ineligible=20, uncertain=30),
         hidden_ineligible=5,
         hidden_non_swe=8,
+        hidden_hard_filter=4,
+        hidden_below_cutoff=2,
+        skipped_not_new=7,
         tailor_failed=3,
     )
     body = funnel_to_markdown(report)
@@ -369,6 +458,7 @@ def test_the_markdown_names_every_drop_reason_with_its_count() -> None:
     expected = {
         "no_current_evaluation": 10, "cache_hit_prior_run": 30, "cache_hit_unattributed": 10,
         "ineligible": 20, "abstained": 30, "hidden_ineligible": 5, "hidden_non_swe": 8,
+        "hidden_hard_filter": 4, "capped_by_top_n": 2, "skipped_not_new": 7,
         "tailor_failed": 3, "no_pdf": 0, "not_marked_applied": 1,
     }
     for reason, count in expected.items():
@@ -457,7 +547,8 @@ def test_both_halves_are_written_and_named_by_run(tmp_path: Path) -> None:
     assert written.markdown_path == tmp_path / "funnel-42.md"
     payload = json.loads(written.json_path.read_text())
     assert payload["run_id"] == 42
-    assert payload["artifact_version"] == 1
+    # Bumped to 2 by P0 item 3, which added the sources and source_totals sections.
+    assert payload["artifact_version"] == 2
     assert written.markdown_path.read_text().startswith("# boardwatch run 42")
 
 
@@ -479,3 +570,201 @@ def test_the_json_keeps_every_drop_rather_than_pre_summing_them(tmp_path: Path) 
     assert stages["tailor"]["drops"][0] == {
         "reason": "tailor_failed", "count": 3, "note": "",
     }
+
+
+# --------------------------------------------------------------------------------------
+# Per-source outcomes (P0 item 3)
+# --------------------------------------------------------------------------------------
+
+
+def source(
+    slug: str = "stripe", *, provider: str = "greenhouse", company_source: str = "registry",
+    open_postings: int = 100, eligible: int = 40, leads: int = 1, applied: int = 0,
+) -> SourceOutcome:
+    return SourceOutcome(
+        provider=provider, board_slug=slug, company_source=company_source,
+        open_postings=open_postings, eligible=eligible, leads=leads, applied=applied,
+    )
+
+
+def source_row(body: str, board: str) -> str:
+    """The rendered per-source table row for one board, not merely a line mentioning it."""
+    return next(line for line in body.splitlines() if line.startswith(f"| {board} |"))
+
+
+def test_the_per_source_table_names_each_board_and_its_outcomes() -> None:
+    """Gate P0: which source produced each lead, from the artifact alone.
+
+    Asserted on the RENDERED ROW rather than with `in body`: the section's own prose names
+    every board, every column and every quantity it explains, so a substring assertion over
+    the whole document would pass against an empty table.
+    """
+    # Distinct values in every column, so no assertion is satisfied by a neighbouring cell and
+    # a swapped pair is caught. `eligible` matters most: its reconciliation was deleted for
+    # being unfailable, so this row is now the ONLY guard on the rendered per-board figure.
+    report = funnel(
+        counts=corpus(eligible=43),
+        artifacts=TailoredArtifactCounts(rows=1, with_pdf=1),
+        leads=[lead(7)],
+        sources=[source("stripe", leads=1, eligible=40, open_postings=100, applied=3),
+                 source("quiet", leads=0, eligible=2, open_postings=7, company_source="user")],
+    )
+    body = funnel_to_markdown(report)
+
+    stripe = [cell.strip() for cell in source_row(body, "greenhouse:stripe").split("|")]
+    assert stripe[2] == "registry", "registry/user column"
+    assert stripe[3] == "100", "open"
+    assert stripe[6] == "40", "eligible"
+    assert stripe[7] == "1", "leads"
+    assert stripe[8] == "3", "applied"
+    quiet = [cell.strip() for cell in source_row(body, "greenhouse:quiet").split("|")]
+    assert quiet[2] == "user"
+    assert quiet[3] == "7"
+    assert quiet[6] == "2"
+    assert quiet[7] == "0", "a board that produced nothing still gets a row"
+
+
+def test_unique_and_assisted_render_as_uninstrumented_in_the_row_itself() -> None:
+    """Not 0, and pinned inside the ROW. The paragraph above the table also says
+    "not instrumented", so `in body` would pass with the cells rendering 0."""
+    body = funnel_to_markdown(funnel(sources=[source("stripe")]))
+    cells = [cell.strip() for cell in source_row(body, "greenhouse:stripe").split("|")]
+
+    assert cells[4] == "not instrumented", "unique"
+    assert cells[5] == "not instrumented", "assisted"
+
+
+def test_unique_and_assisted_serialise_as_null_rather_than_zero(tmp_path: Path) -> None:
+    """A machine consumer must be able to tell "no duplicates" from "never measured"."""
+    written = write_run_funnel(funnel(sources=[source("stripe")]), tmp_path)
+    row = json.loads(written.json_path.read_text())["sources"][0]
+
+    assert row["unique"] is None
+    assert row["assisted"] is None
+    assert row["leads"] == 1
+
+
+def test_a_lead_attributable_to_no_board_fails_reconciliation() -> None:
+    """The one comparison whose two sides are shaped differently, so it can disagree.
+
+    The funnel counted `resume_tailored` ROWS for this run; the per-board sweep counted DISTINCT
+    postings resolved through `posting_versions`. An artifact whose posting_version_id is NULL
+    resolves to no board, and two artifacts for one posting collapse to one distinct posting.
+    Gate P0 asks which source produced each lead, so neither may read as green. NOT a test of a
+    vanished company row: `postings.company_id` is NOT NULL behind an enforced foreign key, so
+    that state is unreachable (D-028).
+    """
+    report = funnel(
+        leads=[lead(7), lead(8)],
+        artifacts=TailoredArtifactCounts(rows=2, with_pdf=2),
+        sources=[source("stripe", leads=1)],
+    )
+
+    assert report.reconciles is False
+    assert [total.name for total in report.unattributable] == ["leads"]
+    body = funnel_to_markdown(report)
+    assert next(line for line in body.splitlines() if line.startswith("| leads |")).endswith(
+        "**NO** |"
+    )
+
+
+def test_the_per_source_eligible_total_is_not_offered_as_a_reconciliation() -> None:
+    """It was, and a review showed it could not fail — so it was deleted, not kept as decoration.
+
+    `eligible_by_company` groups the very same current-identity subquery the verdict stage
+    counts, by a NOT NULL foreign key, joined on a primary key. Its sum equals the verdict
+    stage's `eligible` for every possible database state. Shipping that as evidence is the
+    defect D-023 exists to forbid, so the only remaining total is `leads`, whose two sides have
+    genuinely different shapes.
+    """
+    report = funnel(counts=corpus(eligible=40), sources=[source("stripe", eligible=39)])
+
+    assert [total.name for total in report.source_totals] == ["leads"]
+    # A per-board eligible count that disagrees with the verdict stage does NOT fail the run,
+    # because no honest implementation can produce that state.
+    assert report.reconciles is True
+
+
+def test_a_fully_attributed_run_reconciles() -> None:
+    """The happy path must still be reachable, or the check above proves nothing."""
+    report = funnel(
+        leads=[lead(7)],
+        counts=corpus(eligible=40),
+        sources=[source("stripe", eligible=25, leads=1), source("brex", eligible=15, leads=0)],
+    )
+
+    assert report.unattributable == ()
+    assert report.reconciles is True
+
+
+def test_the_provider_rollup_aggregates_boards() -> None:
+    """PROGRAM.md's breadth question is about PROVIDERS; 118 board rows do not answer it."""
+    report = funnel(
+        counts=corpus(eligible=60),
+        artifacts=TailoredArtifactCounts(rows=1, with_pdf=1),
+        leads=[lead(7)],
+        # ashby FIRST, so the ordering assertion below tests the sort key rather than the
+        # order these were written in: `totals` is a dict built in source order.
+        sources=[
+            source("openai", provider="ashby", eligible=10, leads=0, open_postings=60),
+            source("stripe", provider="greenhouse", eligible=25, leads=1, open_postings=30),
+            source("brex", provider="greenhouse", eligible=25, leads=0, open_postings=20),
+        ],
+    )
+    body = funnel_to_markdown(report)
+
+    def rollup_row(provider: str) -> list[str]:
+        prefix = f"| {provider} |"
+        row = next(line for line in body.splitlines() if line.startswith(prefix))
+        return [cell.strip() for cell in row.split("|")]
+
+    greenhouse = rollup_row("greenhouse")
+    assert greenhouse[2] == "2", "two boards rolled up"
+    assert greenhouse[3] == "50", "open summed, not the board count"
+    assert greenhouse[4] == "50", "eligible summed"
+    assert greenhouse[5] == "1", "leads summed"
+    ashby = rollup_row("ashby")
+    assert ashby[2] == "1"
+    assert ashby[3] == "60"
+    # Leads first: the provider that produced one must outrank the one that did not.
+    assert body.index("| greenhouse |") < body.index("| ashby |")
+
+
+def test_a_run_where_the_ranker_never_ran_reports_the_stage_as_unmeasured() -> None:
+    """A fatal scan outage and a missing profile both return before the ranker.
+
+    Reporting 0 in / 0 out would assert that it ran, considered nothing, and accounted for
+    everything — and since the stage is no longer `derived`, it would appear in the artifact's
+    list of stages whose balance could actually have failed. That is a fabricated green tick on
+    a stage that never executed.
+    """
+    report = funnel(ranker_ran=False, leads=[])
+
+    shortlist = stage(report, "shortlist")
+    assert shortlist.entered is None
+    assert shortlist.advanced is None
+    assert shortlist.reconciled is None, "an unmeasured stage must not report as reconciled"
+    assert shortlist not in report.instrumented_stages
+    # The tailor stage's `entered` is the shortlist count, so it is equally unknown.
+    assert stage(report, "tailor").entered is None
+
+    body = funnel_to_markdown(report)
+    failed_line = next(line for line in body.splitlines() if "could actually have failed" in line)
+    assert "shortlist" not in failed_line
+    assert "tailor" not in failed_line
+    row = next(line for line in body.splitlines() if line.startswith("| shortlist |"))
+    assert "not instrumented" in row, row
+
+
+def test_an_uninstrumented_stage_with_no_note_still_renders_a_readable_line() -> None:
+    """`tailor` carries no note, so an unmeasured run rendered a bare `**` under the drops.
+
+    Small, but this is the section Gate P0 requires to be readable without consulting code, and
+    a stray `**` in it is the artifact failing to explain a stage it chose not to measure.
+    """
+    body = funnel_to_markdown(funnel(ranker_ran=False, leads=[]))
+    tailor_index = body.splitlines().index("### tailor")
+    following = body.splitlines()[tailor_index + 1 : tailor_index + 3]
+
+    assert "**" not in following, following
+    assert any(line.strip() for line in following), "the stage explained nothing at all"

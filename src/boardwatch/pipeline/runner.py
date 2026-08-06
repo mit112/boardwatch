@@ -30,7 +30,12 @@ from sqlalchemy import Engine
 from boardwatch.core.clock import utcnow
 from boardwatch.core.settings import Settings
 from boardwatch.pipeline.funnel_writer import collect_run_funnel
-from boardwatch.reports.run_funnel import ScanContext, WrittenArtifact, write_run_funnel
+from boardwatch.reports.run_funnel import (
+    ScanContext,
+    ShortlistCounts,
+    WrittenArtifact,
+    write_run_funnel,
+)
 from boardwatch.reports.tailor import run_tailor
 from boardwatch.scan.coordinator import ScanSummary, run_scan
 from boardwatch.store.db import ensure_schema
@@ -52,7 +57,7 @@ class TailoredLead:
 class PipelineSummary:
     """What one pipeline run did, per stage.
 
-    Counts are what the funnel artifact (P0 item 3) will read; it is deliberately a plain
+    Counts are what the funnel artifact (P0 item 1) reads; it is deliberately a plain
     dataclass so that writer needs no new query.
 
     `errors` is every non-fatal problem, for the ledger and the operator. `fatal` is the one
@@ -69,11 +74,16 @@ class PipelineSummary:
     scan_boards_failed: int = 0
     scan_boards_complete: int = 0
     evaluated: int = 0
-    # The ranker's own three-way split, all of it. `shortlisted` alone is capped at --top and
-    # so measures the flag rather than the funnel; the hidden counts are the denominators.
-    shortlisted: int = 0
-    hidden_ineligible: int = 0
-    hidden_non_swe: int = 0
+    # The ranker's whole population accounting, not just what it showed. `shortlisted` alone
+    # is capped at --top and so measures the flag rather than the funnel; the considered count
+    # and the four hidden buckets are what let the funnel's shortlist stage reconcile.
+    #
+    # None until the ranker actually runs, and NOT a zeroed instance: a fatal scan outage and a
+    # missing profile both return before it. A default of considered=0 made the artifact report
+    # 0 in / 0 out on those runs and, because the stage is no longer `derived`, list it among
+    # the stages whose balance could have failed — asserting the ranker ran and accounted for
+    # everything when it never executed.
+    shortlist: ShortlistCounts | None = None
     tailored: list[TailoredLead] = field(default_factory=list)
     tailor_failed: int = 0
     errors: list[str] = field(default_factory=list)
@@ -173,9 +183,15 @@ def run_pipeline(
             stage_errors.append(f"eligibility: {summary.fatal}")
             summary.errors.append(f"eligibility: {summary.fatal}")
             return summary
-        summary.shortlisted = len(ranked.visible)
-        summary.hidden_ineligible = ranked.hidden_ineligible
-        summary.hidden_non_swe = ranked.hidden_non_swe
+        summary.shortlist = ShortlistCounts(
+            considered=ranked.considered,
+            shortlisted=len(ranked.visible),
+            hidden_hard_filter=ranked.hidden_hard_filter,
+            hidden_non_swe=ranked.hidden_non_swe,
+            hidden_ineligible=ranked.hidden_ineligible,
+            hidden_below_cutoff=ranked.hidden_below_cutoff,
+            skipped_not_new=ranked.skipped_not_new,
+        )
 
         console.print("[bold]tailor[/bold]")
         for posting in ranked.visible:
@@ -211,9 +227,10 @@ def run_pipeline(
         # Every lead the ranker produced failed to render. Not "zero was provably right" —
         # zero was produced from a non-empty shortlist, which is a broken résumé path
         # (missing resume.yaml, typst gone), not an honest empty day.
-        if summary.fatal is None and summary.shortlisted > 0 and not summary.tailored:
+        shortlisted = summary.shortlist.shortlisted if summary.shortlist else 0
+        if summary.fatal is None and shortlisted > 0 and not summary.tailored:
             summary.fatal = (
-                f"every lead failed to tailor ({summary.tailor_failed}/{summary.shortlisted})"
+                f"every lead failed to tailor ({summary.tailor_failed}/{shortlisted})"
             )
 
         summary.evaluated = _count_evaluations(engine, run_id)
@@ -222,7 +239,15 @@ def run_pipeline(
         # #4: the finally below closes the row either way. Without recording the exception,
         # a crashed run and a clean empty run are indistinguishable in the ledger — the row
         # reads as finished with no errors. The message is in scope here; do not drop it.
-        stage_errors.append(f"pipeline: aborted: {exc!r}")
+        message = f"pipeline: aborted: {exc!r}"
+        stage_errors.append(message)
+        # ALSO onto the summary, which is what the funnel artifact reads. Recording it only in
+        # stage_errors put it in the `runs` row but left the artifact reporting a crashed run as
+        # RECONCILES with no FATAL line and an empty Errors section — and Gate P0 asks the
+        # artifact to be answerable on its own.
+        summary.errors.append(message)
+        if summary.fatal is None:
+            summary.fatal = message
         raise
     finally:
         finish_run(engine, run_id, errors=stage_errors)
@@ -255,9 +280,7 @@ def _emit_funnel(
             boards_failed=summary.scan_boards_failed,
             postings_seen=summary.scan_postings_seen,
         ),
-        shortlisted=summary.shortlisted,
-        hidden_ineligible=summary.hidden_ineligible,
-        hidden_non_swe=summary.hidden_non_swe,
+        shortlist=summary.shortlist,
         tailored=[
             (lead.posting_id, lead.company, lead.title, lead.out_dir, lead.pdf_built)
             for lead in summary.tailored

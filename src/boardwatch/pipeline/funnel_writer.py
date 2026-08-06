@@ -22,13 +22,21 @@ from boardwatch.eligibility.catalog import load_rules
 from boardwatch.eligibility.engine import ENGINE_KIND, current_evaluations, engine_version
 from boardwatch.eligibility.preflight import current_identity
 from boardwatch.reports.abstain import AbstainReport, build_abstain_report
-from boardwatch.reports.run_funnel import Lead, RunFunnel, ScanContext, build_run_funnel
+from boardwatch.reports.run_funnel import (
+    Lead,
+    RunFunnel,
+    ScanContext,
+    ShortlistCounts,
+    build_run_funnel,
+)
 from boardwatch.store.abstain_queries import count_requirement_dispositions
 from boardwatch.store.queries import current_posting_versions
 from boardwatch.store.run_funnel_queries import (
     CorpusCounts,
+    SourceOutcome,
     TailoredArtifactCounts,
     count_applied_for_postings,
+    count_by_source,
     count_corpus,
     count_open_postings,
     count_tailored_artifacts,
@@ -65,9 +73,7 @@ def collect_run_funnel(
     *,
     run_id: int,
     scan: ScanContext,
-    shortlisted: int,
-    hidden_ineligible: int,
-    hidden_non_swe: int,
+    shortlist: ShortlistCounts | None,
     tailored: list[tuple[int, str, str, Path, bool]],
     tailor_failed: int,
     errors: list[str],
@@ -106,6 +112,16 @@ def collect_run_funnel(
             counts = count_requirement_dispositions(conn, [eid for eid, _ in evals.values()])
             abstain = build_abstain_report(catalog, counts)
 
+        # Per board (P0 item 3). Passed the identity rather than the two hashes so a run with
+        # no profile reports every board's `eligible` as 0 without a second code path.
+        sources: tuple[SourceOutcome, ...] = count_by_source(
+            conn,
+            identity=identity,
+            engine_kind=ENGINE_KIND,
+            engine_version=engine_version(),
+            run_id=run_id,
+            posting_ids=posting_ids,
+        )
         tailored_artifacts: TailoredArtifactCounts = count_tailored_artifacts(conn, run_id)
         marked_applied = count_applied_for_postings(conn, posting_ids)
         unattributed = count_unattributed_evaluations(conn)
@@ -141,9 +157,8 @@ def collect_run_funnel(
         finished_at=row.finished_at if row is not None else None,
         scan=scan,
         corpus=corpus,
-        shortlisted=shortlisted,
-        hidden_ineligible=hidden_ineligible,
-        hidden_non_swe=hidden_non_swe,
+        shortlist=shortlist,
+        sources=sources,
         leads=leads,
         tailor_failed=tailor_failed,
         tailored_artifacts=tailored_artifacts,

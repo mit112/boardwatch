@@ -6,11 +6,12 @@ non-lead was dropped* answerable **from the artifact alone, without reading code
 last clause is why this module renders Markdown as well as JSON, and why every stage carries
 its drops by name rather than leaving the reader to subtract two numbers.
 
-**Item 1 does not on its own meet that gate.** The ranker does not report how many postings it
-considered, so postings ranked below the `--top` cutoff land in no bucket here — the `shortlist`
-stage says so in its own note. P0 item 3 is what closes it.
+**P0 item 3 added the two halves item 1 could not carry:** the `shortlist` stage now enters at
+the ranker's own considered population, so hard-filter vetoes and everything below the `--top`
+cutoff are named buckets instead of vanishing; and the per-source outcome table answers *which
+source produced each lead* per board rather than only per lead.
 
-Three properties are load-bearing and each one exists because collapsing it destroys a
+Four properties are load-bearing and each one exists because collapsing it destroys a
 signal this program is built to preserve:
 
   * **A stage that is not instrumented reports `None`, never 0.** Same reasoning as
@@ -24,6 +25,12 @@ signal this program is built to preserve:
   * **`cache_hit_unattributed` is never folded into `cache_hit_prior_run`.** Per D-019 a
     NULL run_id means exactly one thing — the row predates attribution — and that population
     can only shrink. Folding it would erase the only evidence that no NULL leaked back in.
+  * **`unique` and `assisted` are `None` per source, never 0.** Both are dedup-attribution
+    quantities: `assisted` credits a source that arrived second for a posting another source
+    won. boardwatch's postings are 1:1 with jobs and each belongs to exactly one company, so
+    there is no second source to credit and neither is measurable until P6. Reporting 0 would
+    assert "no source ever arrived second" — the naive attribution that, per job-apps'
+    handover, nearly cut a working adapter.
 
 The stored verdict vocabulary is `eligible | ineligible | uncertain`; **there is no `abstain`
 verdict**. The keystone invariant's ABSTAIN persists as `uncertain`, so this module renames
@@ -39,9 +46,13 @@ from datetime import datetime
 from pathlib import Path
 
 from boardwatch.reports.abstain import AbstainReport
-from boardwatch.store.run_funnel_queries import CorpusCounts, TailoredArtifactCounts
+from boardwatch.store.run_funnel_queries import (
+    CorpusCounts,
+    SourceOutcome,
+    TailoredArtifactCounts,
+)
 
-ARTIFACT_VERSION = 1
+ARTIFACT_VERSION = 2
 
 # The stored verdict that carries the keystone invariant's ABSTAIN. Named here once so the
 # rename is visible rather than scattered through the renderers as a string literal.
@@ -108,6 +119,35 @@ class CrossCheck:
 
 
 @dataclass(frozen=True)
+class SourceTotal:
+    """A funnel total re-swept per board, and the funnel's own figure for it.
+
+    Distinct from `CrossCheck`, whose two numbers are pipeline-memory vs store. Both numbers
+    here come from the store; what has to differ for the comparison to be worth anything is the
+    SHAPE of the two counts.
+
+    Only one total qualifies, and a second one was deleted for failing this test (D-028). A
+    per-board `eligible` total grouped the very same subquery the verdict stage counts, by a
+    NOT NULL foreign key, joined on a primary key — so it agreed for every possible database
+    state. Grouping the same query differently is not "counting through a different path".
+
+    `leads` qualifies because its two sides are shaped differently: a row count of artifacts
+    against a distinct-posting count resolved through `posting_versions`. Neither way it can
+    disagree is reachable through today's tailor path, so it is a guard against a future
+    writer, not live evidence — and it says so rather than claiming more.
+    """
+
+    name: str
+    funnel: int
+    per_source: int
+    note: str = ""
+
+    @property
+    def agrees(self) -> bool:
+        return self.funnel == self.per_source
+
+
+@dataclass(frozen=True)
 class Lead:
     """One tailored lead and the board it came from.
 
@@ -123,6 +163,31 @@ class Lead:
     company_source: str
     out_dir: str
     pdf_built: bool
+
+
+@dataclass(frozen=True)
+class ShortlistCounts:
+    """The ranker's population accounting: every exit it has, counted where it happens.
+
+    `considered` is the row count the ranker fetched, measured independently of the loop that
+    produces everything else. That is what makes `considered == shortlisted + every drop` a
+    falsifiable identity rather than bookkeeping — it breaks if a `continue` is ever added
+    without a counter, which is the only realistic way the ranker starts losing postings again.
+
+    This is the stage that closes Gate P0's *"why every non-lead was dropped"* clause. Before
+    P0 item 3 the ranker reported only `hidden_ineligible` and `hidden_non_swe`, so hard-filter
+    vetoes and everything below the `--top` cutoff landed in no bucket at all — **15,959 of
+    19,262 open postings** on this session's run 6, of which 11,517 were hard-filter vetoes and
+    4,442 were below the cutoff.
+    """
+
+    considered: int
+    shortlisted: int
+    hidden_hard_filter: int = 0
+    hidden_non_swe: int = 0
+    hidden_ineligible: int = 0
+    hidden_below_cutoff: int = 0
+    skipped_not_new: int = 0
 
 
 @dataclass(frozen=True)
@@ -151,6 +216,8 @@ class RunFunnel:
     stages: tuple[Stage, ...]
     leads: tuple[Lead, ...]
     cross_checks: tuple[CrossCheck, ...]
+    sources: tuple[SourceOutcome, ...]
+    source_totals: tuple[SourceTotal, ...]
     abstain: AbstainReport
     unattributed_evaluations: int
     errors: tuple[str, ...] = ()
@@ -169,10 +236,24 @@ class RunFunnel:
         return tuple(check for check in self.cross_checks if not check.agrees)
 
     @property
+    def unattributable(self) -> tuple[SourceTotal, ...]:
+        """Totals the per-board sweep could not account for.
+
+        Today that means exactly one thing: a `resume_tailored` ARTIFACT this run counted that
+        resolves to no board. Postings are NOT checked — a posting belonging to no board is
+        unreachable, and the total that claimed to check it was deleted for being unfailable
+        (D-028). Gate P0 asks which source produced each lead, so the artifact side is the part
+        that matters.
+        """
+        return tuple(total for total in self.source_totals if not total.agrees)
+
+    @property
     def reconciles(self) -> bool:
-        """Gate P0's "reconciles to 100%": every instrumented stage balances AND both
-        independent recounts agree with what the pipeline reported."""
-        return not self.unreconciled and not self.disagreements
+        """Gate P0's "reconciles to 100%": every instrumented stage balances, both independent
+        recounts agree with what the pipeline reported, and every `resume_tailored` artifact
+        this run counted resolves to a board. Note the last clause covers ARTIFACTS only; no
+        posting-level attribution check exists, because one cannot fail (D-028)."""
+        return not self.unreconciled and not self.disagreements and not self.unattributable
 
     @property
     def rules_missing_abstain(self) -> int:
@@ -188,9 +269,8 @@ def build_run_funnel(
     finished_at: datetime | None,
     scan: ScanContext,
     corpus: CorpusCounts,
-    shortlisted: int,
-    hidden_ineligible: int,
-    hidden_non_swe: int,
+    shortlist: ShortlistCounts | None,
+    sources: Sequence[SourceOutcome],
     leads: Sequence[Lead],
     tailor_failed: int,
     tailored_artifacts: TailoredArtifactCounts,
@@ -212,6 +292,68 @@ def build_run_funnel(
 
     tailored = len(leads)
     with_pdf = sum(1 for lead in leads if lead.pdf_built)
+
+    if shortlist is None:
+        # The ranker never ran: a fatal scan outage or a missing profile returns before it. Its
+        # considered population is therefore UNKNOWN, and per this module's first rule that is
+        # reported as None. Reporting 0 in / 0 out with derived=False would assert the opposite
+        # — that the ranker ran, considered nothing and accounted for everything — and would put
+        # `shortlist` in the artifact's list of stages whose balance could actually have failed.
+        shortlist_stage = Stage(
+            name="shortlist",
+            entered=None,
+            advanced=None,
+            note=(
+                "NOT INSTRUMENTED. No shortlist counts were recorded for this run, so how many "
+                "postings the ranker considered is unknown and is reported as unmeasured rather "
+                "than as zero. **Why** is not asserted here: it is whatever the FATAL line and "
+                "the Errors section below say, and on an aborted run this stage cannot know. An "
+                "earlier version named a missing profile or a scan outage, which fabricated a "
+                "cause on any run that crashed for some third reason."
+            ),
+        )
+    else:
+        shortlist_stage = Stage(
+            name="shortlist",
+            # The RANKER's own considered population, not the verdict stage's `eligible`. Those
+            # are different sets and subtracting one from the other is what an earlier version
+            # did: `eligible` spans every open posting's verdict, while the ranker's counters
+            # cover only postings that reached it, and it hides on criteria the verdict stage
+            # knows nothing about. With `ineligible` currently 0 store-wide `eligible` happens
+            # to dominate, but the moment P2 makes `ineligible` reachable the remainder would
+            # go negative and Gate P0's headline metric would read FAILED for a benign reason.
+            entered=shortlist.considered,
+            advanced=shortlist.shortlisted,
+            drops=(
+                Drop(
+                    reason="skipped_not_new",
+                    count=shortlist.skipped_not_new,
+                    note="narrowed away by --new; a scoping choice, not a rejection",
+                ),
+                Drop(
+                    reason="hidden_hard_filter",
+                    count=shortlist.hidden_hard_filter,
+                    note="excluded title, or a location the hard filter mode rejects",
+                ),
+                Drop(reason="hidden_non_swe", count=shortlist.hidden_non_swe,
+                     note="title role gate"),
+                Drop(reason="hidden_ineligible", count=shortlist.hidden_ineligible),
+                Drop(
+                    reason="capped_by_top_n",
+                    count=shortlist.hidden_below_cutoff,
+                    note="cleared every filter and was beaten only by rank",
+                ),
+            ),
+            # NOT derived. `entered` is the ranker's own row count, measured independently of
+            # the five counters below, so this identity can genuinely fail — it is the stage
+            # P0 item 3 turned from bookkeeping into evidence.
+            derived=False,
+            note=(
+                "The ranker's whole considered population. NOT a continuation of `verdict` — "
+                "the two count different populations, so the numbers here will not match it. "
+                "Every exit is counted where the posting actually leaves."
+            ),
+        )
 
     stages = (
         Stage(
@@ -293,35 +435,12 @@ def build_run_funnel(
                 "`entered` counts. The split is the information; the tick is not."
             ),
         ),
-        Stage(
-            name="shortlist",
-            # The RANKER's own decided population, not the verdict stage's `eligible`. Those
-            # are different sets and subtracting one from the other is what an earlier version
-            # did: `eligible` spans every open posting's verdict, while the ranker's counters
-            # cover only postings that reached it, and it hides on criteria the verdict stage
-            # knows nothing about. With `ineligible` currently 0 store-wide `eligible` happens
-            # to dominate, but the moment P2 makes `ineligible` reachable the hidden counts
-            # exceed it, the remainder goes negative, and Gate P0's headline metric reads
-            # FAILED for an entirely benign reason.
-            entered=shortlisted + hidden_ineligible + hidden_non_swe,
-            advanced=shortlisted,
-            drops=(
-                Drop(reason="hidden_ineligible", count=hidden_ineligible),
-                Drop(reason="hidden_non_swe", count=hidden_non_swe, note="title role gate"),
-            ),
-            derived=True,
-            note=(
-                "DERIVED: `entered` is the sum of the ranker's own three outcomes, so it "
-                "balances by construction. NOT a continuation of `verdict` — the two count "
-                "different populations. **Postings ranked below the --top cutoff appear in no "
-                "counter here at all**: the ranker does not report how many it considered, so "
-                "the gap between the verdict stage and this one is uninstrumented. P0 item 3 "
-                "(the per-source outcome table) is where that gets closed."
-            ),
-        ),
+        shortlist_stage,
         Stage(
             name="tailor",
-            entered=shortlisted,
+            # None, not 0, for the same reason as the shortlist stage above: if the ranker never
+            # ran, how many leads it would have handed over is unknown rather than zero.
+            entered=None if shortlist is None else shortlist.shortlisted,
             advanced=tailored,
             drops=(Drop(reason="tailor_failed", count=tailor_failed),),
         ),
@@ -376,6 +495,28 @@ def build_run_funnel(
         ),
     )
 
+    # ONE total, not two. A per-board `eligible` total was shipped here and deleted after
+    # review: it grouped the very same current-identity subquery the verdict stage counts, by a
+    # NOT NULL foreign key, joined on a primary key — so its sum equalled the verdict stage's
+    # `eligible` for every possible database state. That is the unfailable-assertion defect
+    # D-023 exists to forbid, and it was labelled as evidence. Deleted rather than kept as
+    # decoration, exactly as D-023 deleted the two `*_reconciles` properties.
+    source_totals = (
+        SourceTotal(
+            name="leads",
+            funnel=tailored_artifacts.rows,
+            per_source=sum(item.leads for item in sources),
+            note=(
+                "resume_tailored ROWS for this run vs DISTINCT postings resolved to a board "
+                "through posting_versions. Different shapes, so it can disagree: an artifact "
+                "whose posting_version_id is NULL resolves to no board, and two artifacts for "
+                "one posting in one run collapse to a single distinct posting. Neither is "
+                "reachable through the normal tailor path, so treat this as a guard against a "
+                "future writer, not as live evidence"
+            ),
+        ),
+    )
+
     return RunFunnel(
         run_id=run_id,
         started_at=started_at,
@@ -384,6 +525,8 @@ def build_run_funnel(
         stages=stages,
         leads=tuple(leads),
         cross_checks=cross_checks,
+        sources=tuple(sources),
+        source_totals=source_totals,
         abstain=abstain,
         unattributed_evaluations=unattributed_evaluations,
         errors=tuple(errors),
@@ -448,6 +591,32 @@ def funnel_to_dict(funnel: RunFunnel) -> dict[str, object]:
             }
             for lead in funnel.leads
         ],
+        "sources": [
+            {
+                "provider": item.provider,
+                "board_slug": item.board_slug,
+                "company_source": item.company_source,
+                "open_postings": item.open_postings,
+                # null, never 0: both are dedup-attribution quantities and dedup is P6. 0 would
+                # assert no source ever arrived second, which is the opposite of unknown.
+                "unique": item.unique,
+                "assisted": item.assisted,
+                "eligible": item.eligible,
+                "leads": item.leads,
+                "applied": item.applied,
+            }
+            for item in funnel.sources
+        ],
+        "source_totals": [
+            {
+                "name": total.name,
+                "funnel": total.funnel,
+                "per_source": total.per_source,
+                "agrees": total.agrees,
+                "note": total.note,
+            }
+            for total in funnel.source_totals
+        ],
         "unattributed_evaluations": funnel.unattributed_evaluations,
         "abstain": {
             "rules": [
@@ -479,6 +648,27 @@ def funnel_to_dict(funnel: RunFunnel) -> dict[str, object]:
 
 def _fmt(value: int | None) -> str:
     return "not instrumented" if value is None else str(value)
+
+
+def _provider_rollup(sources: Sequence[SourceOutcome]) -> list[tuple[str, int, int, int, int, int]]:
+    """(provider, boards, open, eligible, leads, applied), busiest first.
+
+    Kept beside the per-board table rather than replacing it because the two answer different
+    questions. PROGRAM.md's breadth argument — whether direct-ATS-only can carry the volume —
+    is a question about PROVIDERS, and 118 board rows do not answer it at a glance.
+    """
+    totals: dict[str, list[int]] = {}
+    for item in sources:
+        row = totals.setdefault(item.provider, [0, 0, 0, 0, 0])
+        row[0] += 1
+        row[1] += item.open_postings
+        row[2] += item.eligible
+        row[3] += item.leads
+        row[4] += item.applied
+    return sorted(
+        ((provider, *counts) for provider, counts in totals.items()),  # type: ignore[misc]
+        key=lambda row: (-row[4], -row[3], -row[2], row[0]),
+    )
 
 
 def funnel_to_markdown(funnel: RunFunnel) -> str:
@@ -549,7 +739,10 @@ def funnel_to_markdown(funnel: RunFunnel) -> str:
     ]
     for stage in funnel.stages:
         if not stage.instrumented:
-            lines += [f"### {stage.name}", "", f"*{stage.note}*", ""]
+            # Guarded rather than relying on every uninstrumented stage carrying a note: an
+            # empty one rendered a bare `**` under "why every non-lead was dropped".
+            lines += [f"### {stage.name}", ""]
+            lines += [f"*{stage.note}*", ""] if stage.note else ["not measured this run.", ""]
             continue
         lines.append(f"### {stage.name} — {stage.entered} in, {stage.advanced} out")
         lines.append("")
@@ -590,6 +783,74 @@ def funnel_to_markdown(funnel: RunFunnel) -> str:
             )
     else:
         lines.append("none.")
+
+    lines += [
+        "",
+        "## Per-source outcomes",
+        "",
+        f"{len(funnel.sources)} boards owning an open posting, or a lead from this run.",
+        "",
+        "`unique` and `assisted` are **not instrumented** — both are dedup-attribution "
+        "quantities (`assisted` credits a source that arrived second for a posting another "
+        "source won), and dedup is P6. They are not 0: reporting 0 would assert that no source "
+        "ever arrived second, which is the naive attribution that nearly cost job-apps a "
+        "working adapter.",
+        "",
+        "`open` is every OPEN posting the board owns, **not** what it listed this run — an "
+        "unchanged board lists nothing and would otherwise show a denominator of zero.",
+        "",
+        "| board | registry/user | open | unique | assisted | eligible | leads | applied |",
+        "|---|---|---:|---|---|---:|---:|---:|",
+    ]
+    for item in funnel.sources:
+        lines.append(
+            f"| {item.board} | {item.company_source} | {item.open_postings} | "
+            f"{_fmt(item.unique)} | {_fmt(item.assisted)} | {item.eligible} | "
+            f"{item.leads} | {item.applied} |"
+        )
+    if not funnel.sources:
+        lines.append("| _(none)_ | — | 0 | not instrumented | not instrumented | 0 | 0 | 0 |")
+
+    lines += [
+        "",
+        "### By provider",
+        "",
+        "| provider | boards | open | eligible | leads | applied |",
+        "|---|---:|---:|---:|---:|---:|",
+    ]
+    for provider, boards, open_postings, eligible_count, leads_count, applied_count in (
+        _provider_rollup(funnel.sources)
+    ):
+        lines.append(
+            f"| {provider} | {boards} | {open_postings} | {eligible_count} | "
+            f"{leads_count} | {applied_count} |"
+        )
+
+    lines += [
+        "",
+        "### Attributable to a board",
+        "",
+        "| total | funnel | per-source | agree |",
+        "|---|---:|---:|---|",
+    ]
+    for total in funnel.source_totals:
+        lines.append(
+            f"| {total.name} | {total.funnel} | {total.per_source} | "
+            f"{'yes' if total.agrees else '**NO**'} |"
+        )
+    lines += [
+        "",
+        "*Both numbers are read from the store; what differs is the SHAPE of the count — a row "
+        "count of this run's artifacts against a distinct-posting count resolved through "
+        "`posting_versions`. Neither way it can disagree is reachable through today's tailor "
+        "path, so read this as a guard against a future writer rather than as live evidence. "
+        "Two quantities are deliberately NOT reconciled here. `eligible` cannot be: the "
+        "per-board sweep groups the same subquery the verdict stage counts, by a NOT NULL "
+        "foreign key, so it would agree for every possible database state (D-028). `applied` "
+        "cannot be either: it counts distinct jobs per board, and summing per-board distinct "
+        "counts is not the global distinct count if a job ever spans two boards.*",
+        *[f"- *{total.name}*: {total.note}" for total in funnel.source_totals if total.note],
+    ]
 
     never_fired = funnel.abstain.never_fired
     fully = funnel.abstain.fully_abstaining
@@ -675,6 +936,8 @@ __all__ = [
     "Lead",
     "RunFunnel",
     "ScanContext",
+    "ShortlistCounts",
+    "SourceTotal",
     "Stage",
     "WrittenArtifact",
     "build_run_funnel",

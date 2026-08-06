@@ -739,3 +739,124 @@ what hid both failures here; when a batch disagrees with an isolated run, **the 
 evidence a test is real. Evidence gathered by a procedure that can silently report the wrong answer is
 worth less than no evidence, because it is trusted. Both failure modes are silent and neither shows up
 as an error.
+
+## D-026 — `assisted` is as unmeasurable as `unique`, and both report `None`
+**2026-08-06 · session 6 · P0 item 3**
+
+**Context.** `PROGRAM.md` §3.P0.3 specifies the per-source table's columns as
+`unique | assisted | eligible | leads | applied`, inherited verbatim from job-apps' roadmap §3.2. D-023
+had already established that `unique` reports *not instrumented* because dedup is P6 and has never run.
+`assisted` was assumed to be a different kind of quantity and therefore measurable.
+
+**It is not.** job-apps' own text says what it means: *"Assisted-touch accounting matters — a source that
+always arrives second gets credited nothing by naive attribution, which is how job-apps nearly cut a
+working adapter."* `assisted` credits a source that arrived **second** for a posting some other source
+won. It is a dedup-attribution quantity, exactly like `unique`, and it presupposes that one posting can be
+seen by more than one source.
+
+boardwatch cannot express that. `jobs` and `postings` are 1:1, and a posting carries a single
+`company_id`. There is no second source to credit, so `assisted` has no measurable value until P6 lands
+dedup and grouping.
+
+**Choice.** **Both columns report `None` — never 0.** Per D-023's rule, 0 is not a weaker claim than
+`None`, it is a *different* claim: `assisted: 0` asserts that no source ever arrived second. That is
+precisely the naive attribution job-apps records as having nearly cost it a working adapter, so shipping
+it as a number would reproduce the failure the column exists to prevent.
+
+**Alternatives rejected.**
+- *Drop both columns.* Silently departs from the spec'd column list, and loses the visible P6 placeholder
+  that tells a reader the quantity is owed rather than irrelevant.
+- *Interpret `assisted` as "evaluated"* — i.e. postings the engine judged. It is a real number and it is
+  already in the funnel's verdict stage, but it is **not what the word means**, and renaming a measurable
+  quantity into a slot reserved for an unmeasurable one is how a gate gets passed by a metric that does
+  not measure the thing.
+
+**Consequence.** Three of the five spec'd columns carry numbers today. P0 item 3 is complete as specified;
+the two `None`s are P6's to fill, and the artifact says so in its own prose rather than in a code comment.
+
+## D-027 — the shortlist stage becomes evidence, by rooting it at what the ranker considered
+**2026-08-06 · session 6 · P0 item 3**
+
+**Context.** D-023 marked `shortlist` `derived` because its `entered` was the sum of the ranker's own
+outcomes, so its balance held by construction. Worse, the ranker reported only two of its four exits:
+`passes_hard_filters` vetoes and everything below the `--top` cutoff each `continue`d with no counter.
+On a measured run at `--top 5` that was **15,959 of 19,262 open postings in no bucket at all** — 11,517
+hard-filter vetoes and 4,442 below the cutoff — and it is why Gate P0's *"why every non-lead was dropped"*
+clause was not met. (An earlier figure of 14,873 circulated in these documents. It was never measured: it
+is `18,174 − 3,301`, a derived estimate from a different run at a different `--top`. Cite the measured
+numbers.)
+
+**Choice.** `rank_open_postings` now counts **all five exits plus the population it considered**. Five,
+not four: the `--new` narrowing was already an uncounted exit before this change, so the ranker had five
+ways out and reported two.
+`entered` is `len(rows)` — the ranker's own fetch — measured independently of the loop that produces the
+drops. So `considered == shortlisted + every drop` is a **genuinely falsifiable identity**: it breaks if a
+`continue` is ever added without a counter, which is the only realistic way postings start going missing
+again. The stage is therefore **not** `derived`, and it is the first stage besides `corpus` and `tailor`
+that the artifact lists as one whose balance could actually have failed.
+
+`skipped_not_new` is its own bucket even though no pipeline caller passes `only_new`. The `continue` it
+counts is **pre-existing**, not new here — it was simply never counted. An identity that holds for one
+caller and not another is not an identity, and `top --new` is a real caller.
+
+**Alternatives rejected.** *Compute the cutoff bucket as `considered - shortlisted - other drops`.* That
+is the remainder pattern D-023 exists to forbid: it makes the stage balance for every possible input, so it
+could never catch the very defect it was added to catch.
+
+**Consequence.** Gate P0 clause 2 is closed *mechanically*. The clause is met when a run's artifact shows
+it, which is the live-run evidence recorded in `METRICS.md`, not this entry.
+
+## D-028 — only one per-source total was worth reconciling, and the first attempt could not fail
+**2026-08-06 · session 6 · P0 item 3 · corrected the same session, after review**
+
+**Context.** Adding a per-board `GROUP BY` invites the obvious check: does the table sum to the funnel's
+total? Two `SourceTotal`s shipped — `eligible` and `leads` — and this entry originally argued that both
+could genuinely fail because the per-source sweep "travels through the `companies` join, which the funnel's
+stages never touch". **That argument was wrong, and an independent review caught it the same session.**
+
+**What was actually true.** `eligible_by_company` groups the *very same* `_current_identity_evaluations`
+subquery that the verdict stage counts, by `postings.company_id`, joined to `postings` on its primary key
+— a join that can neither lose nor duplicate a row. `companies` is never joined in any counting sweep; it
+is read once, at the end, for display labels. And `postings.company_id` is `NOT NULL` behind an enforced
+foreign key (`PRAGMA foreign_keys=ON`), so the orphaned-company state this entry named as the failure mode
+**cannot occur at all**. Worse, the assembly step keeps a row whose company lookup misses and labels it
+`unknown`, so its count is still summed — which would neutralise the check even if the state were
+reachable.
+
+So `sum(per_source.eligible) == verdict.eligible` held for every possible database state. It was an
+unfailable assertion presented as evidence: precisely the defect **D-023** exists to forbid, reintroduced
+one entry after being written down.
+
+**Choice.** **The `eligible` total is deleted, not downgraded.** D-023 deleted two `*_reconciles`
+properties rather than keep them as decoration, and the same applies here.
+
+**`leads` survives**, because its two sides genuinely have different shapes: `COUNT(*)` of
+`resume_tailored` rows carrying this `run_id`, against `COUNT(DISTINCT postings.id)` resolved through
+`posting_versions`. It can disagree in two ways — an artifact whose `posting_version_id` is NULL resolves
+to no board, and two artifacts for one posting in one run collapse to a single distinct posting. Neither
+is reachable through the current tailor path, so **the artifact describes it as a guard against a future
+writer, not as live evidence.** That is a weaker claim than the one first shipped, and it is the true one.
+
+**`applied` is deliberately NOT reconciled.** It counts DISTINCT job ids per board, and summing per-board
+distinct counts is not the global distinct count if a job ever spans two boards. `jobs`/`postings` being
+1:1 makes that impossible today, but shipping an identity that depends on an accident of current data is
+how a check becomes a false green later.
+
+**The retraction took three passes, and that is the more useful lesson.** Correcting this entry and the
+`CHANGELOG` left the same false reasoning rendered into every funnel artifact and stated in
+`SourceTotal`'s docstring; a re-review then found it still alive in `count_by_source`'s docstring, at the
+query site — and a docs-only review then found a **sixth** copy, in a comment at the assembly step 90
+lines below the docstring that had just been corrected to say the opposite.
+
+**One claim, six homes:** this entry, the changelog, the prose the program prints, `SourceTotal`'s
+docstring, `count_by_source`'s docstring, and a comment beside the assembly loop. It also reached
+`PROGRAM.md`, which cites this entry as the authority for a reconciliation this entry deletes. Retracting
+a claim means grepping for it, not editing the document you wrote it in — and each pass that "finished"
+the retraction was wrong.
+
+**The rest of the lesson.** *"Counts through a different path"* is not
+satisfied by grouping the same query differently. A different **path** means a different table expression
+that can disagree — the way `no_current_evaluation` is its own `NOT IN` sweep. Grouping by a foreign key
+on a table you already joined is the same path with a different `GROUP BY`. The reasoning was written into
+a decision entry and a CHANGELOG entry before it was checked, which is D-021's rule ignored: **a fix is
+new code and its documentation is new prose; neither inherits the reviewed status of what it repairs.**
