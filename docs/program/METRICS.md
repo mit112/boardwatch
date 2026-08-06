@@ -427,3 +427,108 @@ Ten defects across two independent reviews, on code that had already been writte
 docstring also passed.** Three of them passed only because of substring collisions inside the artifact's
 own explanatory prose — the term searched for was in the report's commentary, not its data. The artifact documents itself in English, which makes bare `in body` assertions
 almost useless — a term the report explains is a term the report contains.
+
+---
+
+## Session 6 — 2026-08-06 · P0 item 3, the per-source outcome table
+
+### The gap item 3 closed, measured
+
+`boardwatch run --no-scan --top 5` over a copy of the production store. The `shortlist` stage before and
+after, on the same corpus:
+
+| | entered | advanced | dropped | in no bucket | reconciled |
+|---|---:|---:|---:|---:|---|
+| item 1 (shipped session 5) | 3,303 | 5 | 3,298 | **15,959** | yes *(derived — could not fail)* |
+| item 3 (this session) | **19,262** | 5 | 19,257 | **0** | **yes** *(falsifiable)* |
+
+`entered` was the sum of the ranker's own outcomes, so it silently *excluded* everything the ranker never
+reported. It is now the ranker's considered population, measured as its own row count.
+
+**Where the 15,959 actually went** — the two buckets that did not exist before:
+
+| drop reason | count |
+|---|---:|
+| `hidden_hard_filter` (excluded title, or a rejected location) | **11,517** |
+| `hidden_non_swe` (title role gate) | 3,298 |
+| `capped_by_top_n` (cleared every filter, beaten only by rank) | **4,442** |
+| `hidden_ineligible` | 0 |
+| `skipped_not_new` | 0 |
+| **total** | **19,257** = 19,262 − 5 |
+
+`hidden_hard_filter` at **11,517 of 19,262 — 60% of the corpus — was entirely invisible before this
+session.** It is the single largest drop anywhere in the funnel, larger than every other bucket combined,
+and no metric reported it. It is a candidate for real scrutiny in P5, not necessarily a defect.
+
+The artifact now lists **`corpus`, `shortlist`, `tailor`** as the stages whose balance could actually have
+failed. It was `corpus`, `tailor` before.
+
+### Full funnel, run 6
+
+| stage | entered | advanced | dropped |
+|---|---:|---:|---:|
+| dedup | not instrumented | not instrumented | — |
+| corpus | 19,262 | 19,262 | 0 |
+| attribution | 19,262 | 19,262 | 0 |
+| verdict | 19,262 | 18,174 | 1,088 |
+| shortlist | 19,262 | 5 | 19,257 |
+| tailor | 5 | 5 | 0 |
+| pdf | 5 | 5 | 0 |
+| applied | 5 | 0 | 5 |
+
+`ineligible` **0**, unchanged — bar metric B7, P2's to fix. Reconciles: **yes**. Exit **0**.
+
+### Per-source, by provider — the first time boardwatch's own funnel can say this
+
+| provider | boards | open postings | eligible | **leads** |
+|---|---:|---:|---:|---:|
+| greenhouse | 63 | 11,648 | 11,098 | **5** |
+| workday | 37 | 5,216 | 4,685 | **0** |
+| ashby | 15 | 1,749 | 1,742 | **0** |
+| lever | 3 | 649 | 649 | **0** |
+| **total** | **118** | **19,262** | **18,174** | **5** |
+
+**Workday: 37 boards, 5,216 open postings, 4,685 of them eligible, and zero leads.** Same for ashby and
+lever. All five leads came from greenhouse — four from one board (`affirm`), one from `stripe`.
+
+Two cautions before this is used as an argument. It is **one run at one `--top 5`**: with a cutoff that
+tight, `leads` measures the top of the ranking, so a provider contributes nothing unless it holds one of
+the five best-scoring postings. And job-apps' own rule is to judge sources by built attribution over **≥3
+runs**. The rollup's arithmetic does check out independently: boards sum to 118, `open` to 19,262 and
+`eligible` to 18,174, matching the corpus and verdict stages exactly.
+
+`unique` and `assisted` report **not instrumented** for all 118 boards (D-026), never 0.
+
+### Gate
+
+`make check` exit **0** — 2,745 passed (from 2,719), coverage **95%**, plain mode, real exit code.
+26 new tests. Confirmed on the fixed tree after the review round.
+
+### Verification yield
+
+| Check | Found | Of which logic |
+|---|---:|---:|
+| Mutation checks (5, D-025 procedure, cold cache) | 5/5 caught | — |
+| Code review (diff vs main) | 3 | 3 |
+| Re-review of the fix commit | see below | |
+
+**All three code-review findings were real, and two were self-inflicted in a specific way worth
+recording:**
+
+1. **The `eligible` per-source reconciliation could not fail** — it grouped the same subquery the verdict
+   stage counts, by a NOT NULL foreign key, joined on a primary key. It was deleted. This is D-023's exact
+   defect, **reintroduced one decision entry after D-023 was cited as the authority against it.** The live
+   artifact rendered it as `| eligible | 18174 | 18174 | yes |` — a tick that could never have read
+   anything else.
+2. **Making `shortlist` non-derived made a second bug worse.** On runs where the ranker never executes (a
+   fatal scan outage, a missing profile), the stage reported 0 in / 0 out. As `derived` that was harmless
+   bookkeeping; as evidence it became an affirmative claim that the ranker ran and accounted for
+   everything, and put `shortlist` in the artifact's list of stages that could have failed. Now `None`.
+3. The section headline said *"boards with anything to report this run"* while the table is keyed off open
+   postings, which are not run-scoped.
+
+**A fourth defect was found by re-reading rather than by review, and it is the sharpest one:** correcting
+D-028 and the CHANGELOG left the *same falsified claim* rendered into every artifact and stated in
+`SourceTotal`'s docstring. Gate P0 requires the artifact to be answerable on its own, so a false
+explanation inside it is worse than one in a doc. **Correcting a document is not correcting the program:
+the prose that ships to the reader is a third place the claim lives.**

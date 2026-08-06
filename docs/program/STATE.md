@@ -1,13 +1,13 @@
 # PROGRAM STATE — read this first
 
-**Last updated:** 2026-08-06 (session 5, P0 in progress)
+**Last updated:** 2026-08-06 (session 6, P0 in progress)
 **Updated by:** boardwatch (Claude)
 **Repo state at write time:** every P0 item claimed done below is merged to `main`; the tree is clean.
 **This header carries no commit count or sha on purpose** — the previous one named both, went stale inside
 a single session when three later docs commits did not update it, and a cold session following the
 session-start ritual hit the disagreement on its very first check. State what is durably true; verify the
 rest against `git log`. (D-017.)
-**Gate:** `make check` exits **0** (2719 passed, coverage 95.05%), measured in plain mode with the real exit code.
+**Gate:** `make check` exits **0** (2745 passed, coverage 95%), measured in plain mode with the real exit code.
 
 > This is the single file a fresh session with zero memory reads to know where the program stands.
 > If it disagrees with the repo, **the repo wins** — fix this file and note the correction in
@@ -23,28 +23,97 @@ rest against `git log`. (D-017.)
 `PROGRAM.md` §3.P0. Item 0 was added later, by D-016. Always cite `PROGRAM.md`'s numbers — an earlier
 version of this file invented its own and collided with them on the gate item.
 
-**Four of the nine are done:** item **0** (the pipeline-run row and `boardwatch run`), item **1** (the
-per-run funnel artifact), item **2** (per-rule abstain rate), and item **7** (the `run_id` migration *and*
-the threading that populates it).
+**Five of the nine are done:** item **0** (the pipeline-run row and `boardwatch run`), item **1** (the
+per-run funnel artifact), item **2** (per-rule abstain rate), item **3** (the per-source outcome table
+*and* the ranker's population accounting), and item **7** (the `run_id` migration *and* the threading that
+populates it).
 
-**Five remain:** item **3** the per-source outcome table, item **4** the run manifest, item **5** the
-reconciliation sweep, item **6** the stub rate, item **8** the fabrication counters.
+**Four remain:** item **4** the run manifest, item **5** the reconciliation sweep, item **6** the stub
+rate, item **8** the fabrication counters.
 
-**Gate P0 is still NOT met, and item 1 shipping does not by itself meet it.** `PROGRAM.md` §3.P0 gives
-the gate three clauses, and **two are outstanding**:
+**Gate P0 is still NOT met, but only ONE of its three clauses is now outstanding** (it was two).
+`PROGRAM.md` §3.P0 gives the gate three clauses:
 
-1. *Three consecutive runs reconciling to 100%.* The artifact that makes this checkable now exists and
-   reconciled on three consecutive live runs this session (below) — but those ran `--no-scan` against a
-   copy of the production store, so **the scan stage has never been exercised under the gate**. This
-   needs three consecutive runs of the real daily driver, which is P3's to schedule.
-2. *Why every non-lead was dropped, from the artifact alone.* **Not met.** The ranker does not report how
-   many postings it considered, so postings ranked below the `--top` cutoff land in no bucket — 14,873 of
-   them on run 6. **P0 item 3 is what closes this**, and it is the next task for that reason.
-
-The third clause — per-rule abstain for every rule in the catalog — **is** met: all 44 are emitted every
-run, never-fired ones included.
+1. *Three consecutive runs reconciling to 100%.* **STILL OUTSTANDING — the only one.** The artifact
+   reconciles and has now done so on consecutive live runs in two separate sessions, but every one of them
+   ran `--no-scan` against a copy of the production store, so **the scan stage has never been exercised
+   under the gate**. This needs three consecutive runs of the real daily driver, which is P3's to
+   schedule. No code change is owed for it; it is a scheduling and observation task.
+2. *Why every non-lead was dropped, from the artifact alone.* **NOW MET** (session 6, item 3). The
+   `shortlist` stage enters at the ranker's own considered population — 19,262 on run 6, against 3,303
+   before — and names all five of its exits. **15,959 postings that previously landed in no bucket at all
+   are now attributed**, the largest being `hidden_hard_filter` at 11,517. The stage is also no longer
+   `derived`, so its balance can genuinely fail; the artifact lists it beside `corpus` and `tailor` as a
+   stage that could have caught a wrong number.
+3. *Per-rule abstain for every rule in the catalog.* **MET.** All 44 emitted every run, never-fired ones
+   included.
 
 ---
+
+## What shipped in session 6 (2026-08-06)
+
+**P0 item 3 — the per-source outcome table, and the ranker accounting that Gate P0 actually needed.**
+`PROGRAM.md` §3.P0.3 specifies only the table. The gate clause it was supposed to close needed something
+else as well, and shipping only the spec'd half would have left the clause open with no owner.
+
+**Two findings changed what item 3 could honestly deliver, and both were measured before building:**
+
+- **`assisted` is as unmeasurable as `unique`** (D-026). job-apps' own text defines it: a source that
+  *"always arrives second gets credited nothing by naive attribution, which is how job-apps nearly cut a
+  working adapter."* It is a dedup-attribution quantity. Postings here are 1:1 with jobs and each carries a
+  single `company_id`, so there is no second source to credit. **Both columns report `None`** — 0 would
+  assert that no source ever arrived second, reproducing the exact failure the column exists to prevent.
+  Three of the five spec'd columns carry numbers; the other two are P6's to fill.
+- **The spec'd table cannot close the gate clause.** A per-board `GROUP BY` of the verdict stage does not
+  say why a non-lead was dropped. The ranker's two uncounted exits do. So item 3 shipped both halves.
+
+### What the ranker was hiding
+
+`rank_open_postings` reported two of its four exits. Hard-filter vetoes and everything below the `--top`
+cutoff each `continue`d with no counter, so the `shortlist` stage entered at the *sum of its own outcomes*
+— which silently excluded everything the ranker never reported.
+
+> **15,959 of 19,262 open postings were in no bucket at all**, and the largest single drop in the entire
+> funnel — `hidden_hard_filter`, **11,517 postings, 60% of the corpus** — had never been reported by any
+> metric. Numbers in `METRICS.md`.
+
+`entered` is now the ranker's own row count, measured independently of the drops, so the stage is **not
+`derived`**: its balance can genuinely fail. The artifact lists it beside `corpus` and `tailor` as a stage
+that could have caught a wrong number — the first addition to that list since it was created.
+
+### The review found three defects, and two of them were mine in an instructive way
+
+**D-028 was written, cited D-023 as its authority, and then broke D-023's rule in the next file.** The
+per-source `eligible` reconciliation grouped the very same subquery the verdict stage counts, by a NOT NULL
+foreign key, joined on a primary key — so it agreed for **every possible database state**. The live
+artifact rendered it as `| eligible | 18174 | 18174 | yes |`. It is deleted, not downgraded, exactly as
+D-023 deleted the two `*_reconciles` properties.
+
+> **"Counts through a different path" is not satisfied by grouping the same query differently.** A
+> different path means a different table expression that can disagree, the way `no_current_evaluation` is
+> its own `NOT IN` sweep.
+
+**Making `shortlist` non-derived made a second bug worse.** On runs where the ranker never executes — a
+fatal scan outage, a missing profile — it reported 0 in / 0 out. While `derived` that was harmless
+bookkeeping; as evidence it became an affirmative claim that the ranker ran and accounted for everything.
+`PipelineSummary.shortlist` is now `None` until the ranker runs.
+
+**And a fourth defect that no review caught — I found it by re-reading the artifact.** Correcting D-028 and
+the `CHANGELOG` left the same falsified claim rendered into **every funnel artifact** and stated in
+`SourceTotal`'s docstring. Gate P0 requires the artifact to answer on its own, so a false explanation
+inside it is worse than one in a doc.
+
+> **Correcting a document is not correcting the program.** A claim lives in at least three places: the
+> decision log, the changelog, and the prose the program prints. Fixing two of them is how a falsified
+> claim survives its own retraction.
+
+### Verified on real data
+
+Three `boardwatch run --no-scan --top 5` against a copy of the production store, exit 0, all reconciled.
+Corpus 19,262 · eligible 18,174 · ineligible 0 (B7, P2's) · abstained 1,088 · 5 leads, 5 PDFs. Per
+provider: **greenhouse 5 leads; workday 0 from 37 boards and 4,685 eligible postings**; ashby 0; lever 0.
+One run at `--top 5` is not the ≥3 runs that argument needs — see `METRICS.md` for the cautions. The scan
+stage was exercised not at all, so this is **not** the gate evidence for clause 1.
 
 ## What shipped in session 5 (2026-08-06)
 
@@ -321,6 +390,28 @@ changes adopted, none contested.
 
 ## Next action
 
+**P0 item 4 — the run manifest.** `PROGRAM.md` §3.P0.4: config hash, profile version, rule-catalog
+version, code fingerprint of decision-relevant modules, start/end, and **exit status**. Two of the three
+gaps in the table below are waiting on it — `runs` has no `status` column, and the dangling-row reaper
+needs somewhere to record what it reclaimed — so it is the item that unblocks the most.
+
+Then, still open in P0: item **5** the reconciliation sweep, item **6** the stub rate, and item **8** the
+fabrication counters.
+
+**One measurement from item 3 deserves attention before P5, and is not a defect to fix now.**
+`hidden_hard_filter` dropped **11,517 of 19,262 open postings — 60% of the corpus — and was completely
+invisible until this session.** It is the largest single drop anywhere in the funnel, bigger than every
+other bucket combined. It may well be correct (an excluded-title or location veto), but nothing has ever
+looked at it. `PROGRAM.md` assigns selection quality to P5.
+
+**A second, for the breadth argument.** Per-provider leads on run 6: greenhouse 5, **workday 0 from 37
+boards and 4,685 eligible postings**, ashby 0, lever 0. This is the shape of evidence `PROGRAM.md`'s P7
+unlock condition asks for, but it is one run at `--top 5` — where `leads` measures only the top of the
+ranking — and job-apps' own rule is ≥3 runs. Do not cite it as settled.
+
+<!-- superseded next action, kept for its starting points, which are still accurate -->
+### Previously: P0 item 3 — the per-source outcome table (DONE, session 6)
+
 **P0 item 3 — the per-source outcome table** (`unique | assisted | eligible | leads | applied`).
 `PROGRAM.md` §3.P0.3. It is the natural next item for two reasons: the funnel artifact already
 carries per-lead board provenance, so the writer and the renderer both exist, and item 1 left a
@@ -357,7 +448,7 @@ computable but the typed abstain *reason* the keystone invariant wants is not.
 
 | Phase | Status | Gate met? |
 |---|---|---|
-| P0 Instrumentation | **in progress** — items 0, 1, 2, 7 of 0-8 done | **not met** — needs three consecutive runs of the real driver, scan stage included |
+| P0 Instrumentation | **in progress** — items 0, 1, 2, 3, 7 of 0-8 done | **not met** — one clause left: three consecutive runs of the real driver, scan stage included (P3 schedules it) |
 | P1 Résumé artifact gate | not started | — |
 | P2 Profile + keystone invariant | not started | — |
 | P3 Unattended one command | not started | — |
