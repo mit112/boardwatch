@@ -333,7 +333,11 @@ def build_run_funnel(
                 Drop(
                     reason="hidden_hard_filter",
                     count=shortlist.hidden_hard_filter,
-                    note="excluded title, or a location the hard filter mode rejects",
+                    note=(
+                        "excluded title; ALSO a rejected location when "
+                        "location_filter_mode is `hard`, which is not the default and has "
+                        "never been measured firing"
+                    ),
                 ),
                 Drop(reason="hidden_non_swe", count=shortlist.hidden_non_swe,
                      note="title role gate"),

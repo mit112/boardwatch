@@ -79,7 +79,9 @@ class RankedResults:
     # Postings the ranker looked at: open postings joined to their company. Measured
     # independently of the loop below, which is what lets the identity above fail.
     considered: int = 0
-    # Vetoed by exclude-title or a hard location filter, before the role gate or any score.
+    # Vetoed before the role gate or any score. Two clauses, but only one has ever been
+    # observed firing: measured 2026-08-06, all 11,517 were exclude-title vetoes and none was
+    # a location veto, because `location_filter_mode` defaults to `soft`.
     hidden_hard_filter: int = 0
     # Cleared every filter but ranked outside `limit`. The bucket that did not exist before
     # item 3: on a real run at --top 5, 4,442 postings left here and appeared in no counter at
