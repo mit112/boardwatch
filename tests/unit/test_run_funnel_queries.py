@@ -103,8 +103,11 @@ def _corpus(engine: Engine, run_id: int):
 def test_the_corpus_partitions_into_judged_and_unjudged(engine: Engine) -> None:
     """Every open posting is either judged under the current identity or it is not.
 
-    `no_current_evaluation` is its own NOT EXISTS sweep rather than `open - evaluated`, so
-    this identity is a genuine assertion about two independent queries agreeing.
+    This pins the BUCKET VALUES on a well-formed corpus. It deliberately does NOT claim to
+    prove the sweep is independent of `open - evaluated` — on a corpus that partitions
+    correctly the two are indistinguishable, so read alone this would be an X == X shape.
+    `test_a_double_judged_posting_breaks_the_partition_instead_of_hiding_it` is what pins
+    independence, and it needs a corpus that cannot partition to do it.
     """
     with engine.begin() as conn:
         run_id = _run(conn)
@@ -237,7 +240,6 @@ def test_attribution_splits_this_run_prior_runs_and_null_into_three(engine: Engi
     assert counts.judged_this_run == 1
     assert counts.cache_hit_prior_run == 1
     assert counts.cache_hit_unattributed == 1
-    assert counts.attribution_reconciles
 
 
 def test_verdicts_are_grouped_without_being_collapsed(engine: Engine) -> None:
@@ -250,7 +252,6 @@ def test_verdicts_are_grouped_without_being_collapsed(engine: Engine) -> None:
 
     counts = _corpus(engine, run_id)
     assert counts.by_verdict == {"eligible": 1, "ineligible": 1, "uncertain": 1}
-    assert counts.verdict_reconciles
 
 
 def test_the_unattributable_population_counts_only_null_run_ids(engine: Engine) -> None:
@@ -318,20 +319,46 @@ def test_lead_provenance_names_the_board_and_whether_it_was_user_added(engine: E
     assert found[posting_id].company_source == "registry"
 
 
-def test_applied_is_counted_through_the_job_anchor(engine: Engine) -> None:
-    """An application hangs off the canonical job, not off a posting, so a tracked
-    application survives its posting being revised or closed."""
+def _track(conn: Connection, posting_id: int, status: str) -> None:
+    job_id = int(conn.execute(postings.select().where(postings.c.id == posting_id)).one().job_id)
+    conn.execute(insert(applications).values(
+        job_id=job_id, attempt_no=1, status=status,
+        created_at=NOW, updated_at=NOW, submitted_at=NOW,
+    ))
+
+
+def test_applied_survives_the_posting_being_closed(engine: Engine) -> None:
+    """An application hangs off the canonical job, not off a posting.
+
+    So it must still be counted once its posting has CLOSED — which is the normal end state
+    of a posting you applied to. Scoping the job lookup to open postings would make the
+    applied count fall back to zero exactly as roles get filled.
+    """
     with engine.begin() as conn:
-        posting_id = _posting(conn, "a")
-        job_id = int(conn.execute(
-            postings.select().where(postings.c.id == posting_id)
-        ).one().job_id)
-        conn.execute(insert(applications).values(
-            job_id=job_id, attempt_no=1, status="applied",
-            created_at=NOW, updated_at=NOW, submitted_at=NOW,
-        ))
+        closed = _posting(conn, "a", status="closed")
+        _track(conn, closed, "applied")
         untracked = _posting(conn, "b")
 
     with engine.connect() as conn:
-        assert count_applied_for_postings(conn, [posting_id, untracked]) == 1
-        assert count_applied_for_postings(conn, []) == 0
+        assert count_applied_for_postings(conn, [closed, untracked]) == 1
+
+
+def test_merely_being_interested_is_not_being_applied(engine: Engine) -> None:
+    """`create_application` defaults to `interested`, which means a lead was tracked and
+    nothing more.
+
+    Counting it would report a posting nobody applied to as a conversion, in the one stage of
+    the funnel that claims to measure conversion. `withdrawn` is excluded too: it cannot
+    distinguish withdrawing an application from withdrawing interest before applying.
+    """
+    with engine.begin() as conn:
+        interested = _posting(conn, "a")
+        _track(conn, interested, "interested")
+        withdrawn = _posting(conn, "b")
+        _track(conn, withdrawn, "withdrawn")
+        applied = _posting(conn, "c")
+        _track(conn, applied, "interviewing")
+
+    with engine.connect() as conn:
+        found = count_applied_for_postings(conn, [interested, withdrawn, applied])
+    assert found == 1, "a tracked-but-not-applied lead was counted as applied"

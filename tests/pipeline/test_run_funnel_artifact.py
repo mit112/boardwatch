@@ -78,8 +78,9 @@ def test_a_run_emits_both_halves_beside_that_day_s_leads(env: Path, tmp_path: Pa
 
 def test_the_artifact_describes_the_run_that_just_happened(env: Path, tmp_path: Path) -> None:
     """Not a default-constructed shell: the run id, a finished timestamp, and a corpus whose
-    head is the posting actually seeded."""
+    head is every open posting, not the lead count."""
     _ready(env)
+    _seed_posting(env, slug="acme3")  # a second open posting, so the counts are not all 1
     out_root = tmp_path / "apps"
 
     summary = _pipeline(env, out_root)
@@ -88,8 +89,53 @@ def test_the_artifact_describes_the_run_that_just_happened(env: Path, tmp_path: 
     assert payload["run_id"] == summary.run_id
     assert payload["finished_at"] is not None, "written before the run row was closed"
     stages = {stage["name"]: stage for stage in payload["stages"]}
-    assert stages["corpus"]["entered"] == 1, "the corpus head is not the seeded open posting"
-    assert stages["attribution"]["advanced"] == 1, "the posting was not judged by THIS run"
+    # TWO open postings, only one of which is tailorable, so `entered` cannot be confused
+    # with any other quantity in the run. On a one-posting fixture every count is 1 and this
+    # assertion could not tell the funnel's head from `evaluated` or from the lead count.
+    assert stages["corpus"]["entered"] == 2, "the corpus head is not every OPEN posting"
+    assert stages["attribution"]["advanced"] == 2, "both postings were judged by THIS run"
+
+
+def test_a_real_run_reconciles(env: Path, tmp_path: Path) -> None:
+    """Gate P0's headline property, on an actual pipeline run rather than fed counts.
+
+    The unit tests prove `reconciles` can be False; this proves it is True end to end, which
+    is the thing the gate asks for three consecutive times. Without it, every reconciliation
+    in the suite is over numbers a test handed the builder.
+    """
+    _ready(env)
+    out_root = tmp_path / "apps"
+
+    _pipeline(env, out_root)
+    payload = _payload(out_root)
+
+    unbalanced = [s["name"] for s in payload["stages"] if s["reconciled"] is False]
+    disagreed = [c["name"] for c in payload["cross_checks"] if not c["agrees"]]
+    assert unbalanced == [], f"stages did not balance: {unbalanced}"
+    assert disagreed == [], f"the store disagreed with the pipeline: {disagreed}"
+    assert payload["reconciles"] is True
+
+
+def test_a_run_with_no_profile_still_reconciles(
+    env: Path, tmp_path: Path
+) -> None:
+    """A run with no profile judged nothing, and the funnel must say so and still balance.
+
+    The whole corpus lands in `no_current_evaluation` — which is the truth, not a
+    degradation — rather than the stage reporting counts it has no identity to compute.
+    """
+    _seed_posting(env)  # a posting, but deliberately no `init`, so no profile exists
+    out_root = tmp_path / "apps"
+
+    summary = _pipeline(env, out_root)
+    payload = _payload(out_root)
+
+    assert summary.fatal is not None, "a missing profile is fatal; the fixture is wrong"
+    stages = {stage["name"]: stage for stage in payload["stages"]}
+    assert stages["corpus"]["entered"] == 1
+    assert stages["corpus"]["advanced"] == 0, "nothing can be judged without a profile"
+    assert stages["corpus"]["drops"][0]["count"] == 1
+    assert payload["reconciles"] is True
 
 
 def test_the_artifact_names_the_board_each_lead_came_from(env: Path, tmp_path: Path) -> None:

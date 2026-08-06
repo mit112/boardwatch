@@ -12,10 +12,11 @@ signal this program is built to preserve:
   * **A stage that is not instrumented reports `None`, never 0.** Same reasoning as
     `reports/abstain.abstain_rate`: a dedup stage that has never run and a dedup stage that
     dropped nothing are opposite conditions, and 0 reads as the healthy one.
-  * **A stage whose drop bucket is a pure remainder is flagged `derived`.** Its
-    reconciliation is bookkeeping, not evidence — it cannot fail by construction. Only the
-    non-derived stages and the cross-checks are capable of catching a wrong number, and the
-    artifact says which is which instead of presenting one uniform row of green ticks.
+  * **A stage that balances by construction is flagged `derived`.** Either its buckets are a
+    SQL partition of what entered, or one bucket is the remainder of the others. Its
+    reconciliation cannot fail, so it is bookkeeping and not evidence. Only the non-derived
+    stages and the cross-checks can catch a wrong number, and the artifact names which is
+    which instead of presenting one uniform row of green ticks.
   * **`cache_hit_unattributed` is never folded into `cache_hit_prior_run`.** Per D-019 a
     NULL run_id means exactly one thing — the row predates attribution — and that population
     can only shrink. Folding it would erase the only evidence that no NULL leaked back in.
@@ -238,6 +239,7 @@ def build_run_funnel(
         ),
         Stage(
             name="attribution",
+            derived=True,
             entered=corpus.evaluated,
             advanced=corpus.judged_this_run,
             drops=(
@@ -255,11 +257,16 @@ def build_run_funnel(
                     ),
                 ),
             ),
-            note="The stage D-016 exists for: 'judged this run' and 'cache hit' are the same"
-            " number without run_id.",
+            note=(
+                "The stage D-016 exists for: 'judged this run' and 'cache hit' are the same "
+                "number without run_id. DERIVED — the three buckets are a SQL partition of "
+                "the very set `entered` counts, so this balance holds for every possible "
+                "database state. The bucket VALUES are the information here; the tick is not."
+            ),
         ),
         Stage(
             name="verdict",
+            derived=True,
             entered=corpus.evaluated,
             advanced=eligible,
             drops=(
@@ -277,25 +284,35 @@ def build_run_funnel(
                     " cannot shrink this stage silently",
                 ),
             ),
+            note=(
+                "DERIVED for the same reason as attribution: a GROUP BY over the set "
+                "`entered` counts. The split is the information; the tick is not."
+            ),
         ),
         Stage(
             name="shortlist",
-            entered=eligible,
+            # The RANKER's own decided population, not the verdict stage's `eligible`. Those
+            # are different sets and subtracting one from the other is what an earlier version
+            # did: `eligible` spans every open posting's verdict, while the ranker's counters
+            # cover only postings that reached it, and it hides on criteria the verdict stage
+            # knows nothing about. With `ineligible` currently 0 store-wide `eligible` happens
+            # to dominate, but the moment P2 makes `ineligible` reachable the hidden counts
+            # exceed it, the remainder goes negative, and Gate P0's headline metric reads
+            # FAILED for an entirely benign reason.
+            entered=shortlisted + hidden_ineligible + hidden_non_swe,
             advanced=shortlisted,
             drops=(
                 Drop(reason="hidden_ineligible", count=hidden_ineligible),
                 Drop(reason="hidden_non_swe", count=hidden_non_swe, note="title role gate"),
-                Drop(
-                    reason="capped_by_top_n",
-                    count=max(0, eligible - shortlisted - hidden_ineligible - hidden_non_swe),
-                    note="remainder: ranked below the --top cutoff",
-                ),
             ),
             derived=True,
             note=(
-                "DERIVED. capped_by_top_n is the remainder, so this stage cannot fail to "
-                "balance. The ranker's own population also differs from the verdict stage's "
-                "(it needs an extraction row), which is why the remainder is clamped at 0."
+                "DERIVED: `entered` is the sum of the ranker's own three outcomes, so it "
+                "balances by construction. NOT a continuation of `verdict` — the two count "
+                "different populations. **Postings ranked below the --top cutoff appear in no "
+                "counter here at all**: the ranker does not report how many it considered, so "
+                "the gap between the verdict stage and this one is uninstrumented. P0 item 3 "
+                "(the per-source outcome table) is where that gets closed."
             ),
         ),
         Stage(
@@ -319,12 +336,17 @@ def build_run_funnel(
         ),
         Stage(
             name="applied",
-            entered=with_pdf,
+            # Rooted at `tailored`, not `with_pdf`. `marked_applied` is counted over every
+            # tailored posting, so against `with_pdf` it can legitimately EXCEED what entered
+            # — a lead that degraded to no PDF but whose job was already tracked — and the
+            # clamped remainder would then report the stage as broken. Bounded by
+            # construction here: the count is DISTINCT job ids drawn from these postings.
+            entered=tailored,
             advanced=marked_applied,
             drops=(
                 Drop(
                     reason="not_marked_applied",
-                    count=max(0, with_pdf - marked_applied),
+                    count=tailored - marked_applied,
                     note="snapshot at write time; marking applied is a later manual act",
                 ),
             ),
@@ -507,11 +529,16 @@ def funnel_to_markdown(funnel: RunFunnel) -> str:
             f"{stage.dropped if stage.instrumented else '—'} | {mark} |"
         )
 
+    falsifiable = [s.name for s in funnel.instrumented_stages if not s.derived]
     lines += [
         "",
-        "`yes (derived)` means one drop bucket is the remainder of the others, so the stage "
-        "cannot fail to balance — bookkeeping, not evidence. The cross-checks below are what "
-        "can actually catch a wrong number in the tailor half.",
+        "`yes (derived)` means the stage balances by construction — its buckets are a "
+        "partition of what entered, or one bucket is the remainder of the others — so it "
+        "cannot fail. That is bookkeeping, not evidence; the numbers in such a stage are "
+        "still the point, but the tick beside them proves nothing.",
+        "",
+        f"**Stages whose balance could actually have failed: {', '.join(falsifiable) or 'none'}.** "
+        "Everything else that can catch a wrong number is in the cross-checks below.",
         "",
         "## Why every non-lead was dropped",
         "",

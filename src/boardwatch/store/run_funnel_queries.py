@@ -6,11 +6,15 @@ Every number here is read back out of the STORE, independently of the in-memory
 through a different path than the one that produced it."* The funnel writer compares the
 two and records any disagreement rather than picking a winner.
 
-**The counts are deliberately NOT derived from one another.** `no_current_evaluation` is
-its own `NOT EXISTS` sweep rather than `open_postings - evaluated`, and the attribution
-buckets are their own `GROUP BY` rather than a remainder. A reconciliation between numbers
-where one was computed by subtracting the others cannot ever fail, and an assertion that
-cannot fail is the defect this repo has now been burned by four times.
+**`no_current_evaluation` is its own `NOT EXISTS` sweep, never `open_postings - evaluated`.**
+A reconciliation between numbers where one was computed by subtracting the others cannot ever
+fail, and an assertion that cannot fail is the defect this repo has now been burned by four
+times. That makes `corpus_reconciles` the one identity here that a database state can break.
+
+The attribution buckets and the verdict split are a different matter and are NOT presented as
+evidence: both are SQL partitions of the very subquery `evaluated` counts, so their sums equal
+it by construction. Their VALUES carry the signal; the funnel marks those two stages `derived`
+so no reader mistakes their balance for verification.
 
 No import from `boardwatch.eligibility` — the engine kind and version are parameters. The
 eligibility layer reads and writes the store; the reverse dependency would invert the
@@ -36,6 +40,12 @@ from boardwatch.store.tables import (
 
 # The Tier A résumé artifact the pipeline's tailor stage writes, one per lead.
 TAILORED_KIND = "resume_tailored"
+
+# Application statuses that imply a submission actually happened. `interested` is excluded
+# because it is `create_application`'s default and means only that a lead was tracked;
+# `withdrawn` because it cannot distinguish withdrawing an application from withdrawing
+# interest before applying.
+APPLIED_STATUSES = ("applied", "interviewing", "offer", "rejected")
 
 # Attribution buckets. `unattributed` is kept apart from `prior_run` because a NULL run_id
 # means exactly one thing (D-019) — the row predates run attribution — and folding it into
@@ -66,19 +76,18 @@ class CorpusCounts:
 
     @property
     def corpus_reconciles(self) -> bool:
-        """Every open posting either has a current-identity evaluation or does not."""
+        """Every open posting either has a current-identity evaluation or does not.
+
+        The ONLY genuinely falsifiable identity in this dataclass, because
+        `no_current_evaluation` is its own NOT EXISTS sweep over a different table
+        expression. `judged_this_run + cache_hit_* == evaluated` and
+        `sum(by_verdict) == evaluated` are deliberately NOT offered as properties: both are
+        partitions of the very subquery `evaluated` counts, so they hold for every possible
+        database state. Shipping them as `*_reconciles` would be shipping two assertions that
+        cannot fail, which is the defect this repo keeps rediscovering. The funnel labels
+        those two stages `derived` instead.
+        """
         return self.open_postings == self.evaluated + self.no_current_evaluation
-
-    @property
-    def attribution_reconciles(self) -> bool:
-        """Every evaluated posting was judged this run or was already on file."""
-        return self.evaluated == (
-            self.judged_this_run + self.cache_hit_prior_run + self.cache_hit_unattributed
-        )
-
-    @property
-    def verdict_reconciles(self) -> bool:
-        return self.evaluated == sum(self.by_verdict.values())
 
 
 def _current_identity_evaluations(
@@ -277,11 +286,18 @@ def lead_provenance(conn: Connection, posting_ids: list[int]) -> dict[int, Prove
 
 
 def count_applied_for_postings(conn: Connection, posting_ids: list[int]) -> int:
-    """How many of these postings' jobs already carry an application row.
+    """How many of these postings' jobs carry an application that was actually SUBMITTED.
 
     A snapshot at artifact-write time, not a property of the run: `applications` has no
     run_id and marking applied is a later, manual act. Scoped through `jobs` because an
-    application hangs off the canonical job anchor, not off a posting.
+    application hangs off the canonical job anchor, not off a posting, so it survives its
+    posting being revised or closed.
+
+    Status is filtered, not ignored. `create_application` defaults to `interested`, which
+    means a lead was merely tracked — counting it would report a posting nobody applied to as
+    a conversion, in the one stage that claims to measure conversion. `withdrawn` is excluded
+    for the opposite reason: it is ambiguous, since interest can be withdrawn before applying.
+    A closed catalog, so a new status is a visible decision rather than a silent bucket.
     """
     if not posting_ids:
         return 0
@@ -289,7 +305,8 @@ def count_applied_for_postings(conn: Connection, posting_ids: list[int]) -> int:
     return int(
         conn.execute(
             select(func.count(func.distinct(applications.c.job_id))).where(
-                applications.c.job_id.in_(job_ids)
+                applications.c.job_id.in_(job_ids),
+                applications.c.status.in_(APPLIED_STATUSES),
             )
         ).scalar_one()
     )

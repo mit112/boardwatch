@@ -269,10 +269,19 @@ def test_a_derived_stage_is_labelled_so_its_balance_is_not_read_as_evidence() ->
     report = funnel()
 
     assert stage(report, "shortlist").derived is True
-    assert stage(report, "corpus").derived is False
-    assert stage(report, "attribution").derived is False
-    assert stage(report, "verdict").derived is False
-    assert "yes (derived)" in funnel_to_markdown(report)
+    assert stage(report, "corpus").derived is False, "the one genuinely falsifiable stage"
+    # Partitions of the very set `entered` counts, so their balance holds for every possible
+    # input. Labelling them non-derived would present two unfailable ticks as evidence.
+    assert stage(report, "attribution").derived is True
+    assert stage(report, "verdict").derived is True
+
+    # Scoped to the shortlist TABLE ROW. `"yes (derived)" in body` passes even when every row
+    # renders "**yes**", because the legend paragraph below the table contains the phrase.
+    body = funnel_to_markdown(report)
+    row = next(line for line in body.splitlines() if line.startswith("| shortlist |"))
+    assert row.rstrip().endswith("yes (derived) |"), row
+    corpus_row = next(line for line in body.splitlines() if line.startswith("| corpus |"))
+    assert corpus_row.rstrip().endswith("**yes** |"), corpus_row
 
 
 def test_a_verdict_outside_the_vocabulary_is_carried_not_discarded() -> None:
@@ -303,9 +312,14 @@ def test_the_markdown_names_the_board_that_produced_each_lead() -> None:
     """Gate P0: *which source produced each lead* — answerable from the artifact alone."""
     body = funnel_to_markdown(funnel(leads=[lead(7, slug="stripe"), lead(9, slug="ramp")]))
 
-    assert "greenhouse:stripe" in body
-    assert "greenhouse:ramp" in body
-    assert "registry" in body
+    # Scoped to the lead ROWS. A bare `"registry" in body` passes even when the column is
+    # replaced by a placeholder, because the table HEADER reads `| registry/user |`.
+    rows = [line for line in body.splitlines() if line.startswith("| 7 |") or
+            line.startswith("| 9 |")]
+    assert len(rows) == 2, body
+    assert "greenhouse:stripe" in rows[0]
+    assert "greenhouse:ramp" in rows[1]
+    assert all("| registry |" in row for row in rows), rows
 
 
 def test_the_markdown_names_every_drop_reason_with_its_count() -> None:
@@ -322,16 +336,20 @@ def test_the_markdown_names_every_drop_reason_with_its_count() -> None:
     )
     body = funnel_to_markdown(report)
 
-    for reason in (
-        "no_current_evaluation", "cache_hit_prior_run", "cache_hit_unattributed",
-        "ineligible", "abstained", "hidden_ineligible", "hidden_non_swe",
-        "capped_by_top_n", "tailor_failed", "no_pdf", "not_marked_applied",
-    ):
-        assert reason in body, f"{reason} is not explained in the artifact"
-
-    for figure in ("**no_current_evaluation**: 10", "**hidden_non_swe**: 8",
-                   "**tailor_failed**: 3"):
-        assert figure in body, f"{figure!r} missing: the reader would have to subtract"
+    # Every reason asserted in its RENDERED form, `- **reason**: N`, never as a bare
+    # substring. Three of these are substrings of something else on the page and passed even
+    # when their Drop was deleted outright: "ineligible" occurs inside "hidden_ineligible",
+    # "abstained" is a column header in the per-rule table, and "capped_by_top_n" appeared in
+    # a stage note. A bare `in body` check cannot tell prose from data.
+    expected = {
+        "no_current_evaluation": 10, "cache_hit_prior_run": 30, "cache_hit_unattributed": 10,
+        "ineligible": 20, "abstained": 30, "hidden_ineligible": 5, "hidden_non_swe": 8,
+        "tailor_failed": 3, "no_pdf": 0, "not_marked_applied": 1,
+    }
+    for reason, count in expected.items():
+        assert f"- **{reason}**: {count}" in body, (
+            f"{reason} is not stated with its count; the reader would have to subtract"
+        )
 
 
 def test_the_markdown_reports_every_catalog_rule_including_those_that_never_fired() -> None:
