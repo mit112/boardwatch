@@ -41,7 +41,12 @@ from boardwatch.store.artifacts import (
     get_or_create_master_artifact,
     record_artifact,
 )
-from boardwatch.store.queries import CurrentVersion, current_posting_versions
+from boardwatch.store.queries import (
+    CurrentVersion,
+    current_posting_versions,
+    ensure_run,
+    finish_run,
+)
 from boardwatch.store.tables import extractions, postings
 from boardwatch.tailor.apply import apply_plan
 from boardwatch.tailor.equivalences import EquivalenceTable, load_equivalences
@@ -293,6 +298,7 @@ def run_tailor(
     llm_provider_override: str | None = None,
     llm_model_override: str | None = None,
     llm_budget_override: int | None = None,
+    run_id: int | None = None,
 ) -> TailorResult:
     if fmt not in SUPPORTED_FORMATS:
         supported = ", ".join(SUPPORTED_FORMATS)
@@ -407,6 +413,12 @@ def run_tailor(
             str(pdf_path) if pdf_path is not None else None,
             rows,
         )
+        # Standalone `boardwatch tailor run` owns its run: a degenerate pipeline run whose
+        # only stage is this one posting. Minting rather than writing NULL keeps
+        # `run_id IS NULL` meaning "predates attribution" and nothing else. Under
+        # `boardwatch run` the pipeline supplies the id and all leads share it.
+        owns_run = run_id is None
+        run_id = ensure_run(engine, run_id)
         with engine.begin() as conn:
             master_id = get_or_create_master_artifact(
                 conn,
@@ -414,6 +426,7 @@ def run_tailor(
                 uri=str(resume_path),
                 generator_version=VALIDATOR_VERSION,
                 meta={"kind": "master", "version": VALIDATOR_VERSION},
+                run_id=run_id,
             )
             meta["master_artifact_id"] = master_id
             art_id = record_artifact(
@@ -426,6 +439,7 @@ def run_tailor(
                 generator_version=VALIDATOR_VERSION,
                 media_type="text/x-typst",
                 meta=meta,
+                run_id=run_id,
             )
             add_derivation(
                 conn, artifact_id=art_id, parent_artifact_id=master_id, relation="tailored_from"
@@ -468,11 +482,15 @@ def run_tailor(
                     generator_version=LLM_LANE_VERSION,
                     media_type="text/x-typst",
                     meta=llm_meta,
+                    run_id=run_id,
                 )
                 add_derivation(
                     conn, artifact_id=llm_art_id, parent_artifact_id=art_id,
                     relation="rewritten_from",
                 )
+
+        if owns_run:
+            finish_run(engine, run_id)
 
     return TailorResult(
         posting_id=posting_id,

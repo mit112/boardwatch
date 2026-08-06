@@ -10,6 +10,7 @@ while the scan runs (§0.3).
 from __future__ import annotations
 
 from collections import defaultdict
+from collections.abc import Sequence
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass, field
 from typing import Any
@@ -27,6 +28,7 @@ from boardwatch.scan.workers import fetch_board_job
 from boardwatch.store.db import ensure_schema
 from boardwatch.store.queries import (
     finalize_run,
+    finish_run,
     get_validators,
     get_watched_companies,
     insert_run,
@@ -54,6 +56,9 @@ class ScanSummary:
     postings_seen: int = 0
     open_postings: int = 0
     errors: list[str] = field(default_factory=list)
+    # Set once the runs row exists. The pipeline reads it rather than minting its own, so the
+    # INSERT stays inside the scan lock (see pipeline/runner.py).
+    run_id: int = 0
 
 
 def default_providers() -> dict[str, Provider]:
@@ -68,6 +73,7 @@ def run_scan(
     providers: dict[str, Provider] | None = None,
     company: str | None = None,
     provider: str | None = None,
+    finish: bool = True,
 ) -> ScanSummary:
     settings.data_dir.mkdir(parents=True, exist_ok=True)
     lock = FileLock(str(settings.data_dir / "scan.lock"))
@@ -83,6 +89,7 @@ def run_scan(
             providers or default_providers(),
             company,
             provider,
+            finish,
         )
     finally:
         lock.release()
@@ -95,13 +102,45 @@ def _run_scan_locked(
     providers: dict[str, Provider],
     company: str | None,
     provider: str | None,
+    finish: bool = True,
 ) -> ScanSummary:
     ensure_schema(engine)  # deferred to inside the lock: a REJECTED scan writes nothing
     summary = ScanSummary()
 
     with engine.connect() as conn:
         company_rows = get_watched_companies(conn, slug=company, provider=provider)
-    run_id = insert_run(engine)
+    # The insert stays INSIDE the lock, so a scan rejected for contention writes nothing at
+    # all. `finish=False` means this scan is stage one of a pipeline: it records its counts
+    # but the pipeline stamps finished_at, so a run is not "finished" the moment scan returns.
+    active_run_id = insert_run(engine)
+    summary.run_id = active_run_id
+    try:
+        return _scan_body(
+            engine, settings, fetcher, providers, company, provider,
+            summary, company_rows, active_run_id, finish,
+        )
+    except BaseException as exc:
+        # The row exists from here on, and on an exception the caller never learns its id —
+        # `run_scan` returns nothing to read `ScanSummary.run_id` from. So the scan closes it
+        # itself, unconditionally, even when `finish=False`. Without this, Ctrl-C during the
+        # multi-board fetch loop leaves a row that `doctor` reports as in progress forever,
+        # one more per retry. This is the scan-side half of the same guard the pipeline holds.
+        finish_run(engine, active_run_id, errors=[f"scan: aborted: {exc!r}"])
+        raise
+
+
+def _scan_body(
+    engine: Engine,
+    settings: Settings,
+    fetcher: Fetcher,
+    providers: dict[str, Provider],
+    company: str | None,
+    provider: str | None,
+    summary: ScanSummary,
+    company_rows: Sequence[Any],
+    active_run_id: int,
+    finish: bool,
+) -> ScanSummary:
 
     work: list[tuple[Any, Provider, BoardRequest]] = []
     with engine.connect() as conn:
@@ -160,7 +199,7 @@ def _run_scan_locked(
                     status="failed", postings=[], url=request.url,
                     observed_validators=None, error=f"unexpected worker error: {exc}",
                 )
-            result = apply_board(engine, snapshot, row.id, run_id)
+            result = apply_board(engine, snapshot, row.id, active_run_id)
             summary.postings_seen += result.listed
             summary.new += result.new
             summary.closed += result.closed
@@ -182,7 +221,7 @@ def _run_scan_locked(
             ).scalar_one()
         )
     finalize_run(
-        engine, run_id,
+        engine, active_run_id,
         boards_attempted=summary.companies,
         boards_complete=summary.complete,
         postings_seen=summary.postings_seen,
@@ -190,5 +229,6 @@ def _run_scan_locked(
         closed_count=summary.closed,
         reopened_count=summary.reopened,
         errors=summary.errors,
+        finished=finish,
     )
     return summary

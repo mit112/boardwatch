@@ -38,7 +38,13 @@ from boardwatch.llm.factory import build_client
 from boardwatch.llm.payload import preview_text
 from boardwatch.reports.abstain import build_abstain_report
 from boardwatch.store.abstain_queries import count_requirement_dispositions
-from boardwatch.store.queries import current_posting_versions, get_profile, save_eligibility
+from boardwatch.store.queries import (
+    current_posting_versions,
+    ensure_run,
+    finish_run,
+    get_profile,
+    save_eligibility,
+)
 from boardwatch.store.tables import eligibility_requirements
 
 console = Console()
@@ -296,9 +302,24 @@ def extract_cmd(
         )
     )
     evaluated = 0
+    # This lane is invoked standalone, so it owns its run: a degenerate pipeline run whose
+    # only stage is the LLM extraction. Minting rather than writing NULL is what keeps
+    # `run_id IS NULL` meaning "predates attribution" and nothing else.
+    #
+    # It is minted on the first posting reached, NOT conditioned on a row being written, and
+    # that is deliberate rather than lazy: the id has to exist before extract_and_record can
+    # write it, so there is no ordering in which a successful write precedes the mint. A
+    # provider outage therefore records a finished run attributing zero rows — which is
+    # correct HERE and would be wrong in run_eligibility. `extract` is an explicit user
+    # action, so "I ran extract and it produced nothing" belongs in the ledger; the
+    # eligibility preflight fires incidentally on every `top`, so minting there would turn
+    # `runs` into a command log. The two rules differ because the invocations differ.
+    run_id: int | None = None
     for current in ordered:
         if evaluated >= settings.llm.max_calls_per_run:
             break
+        if run_id is None:
+            run_id = ensure_run(app_ctx.engine, None)
         with app_ctx.engine.begin() as conn:
             extract_and_record(
                 conn,
@@ -311,8 +332,11 @@ def extract_cmd(
                 cache=cache,
                 provider=settings.llm.provider,
                 model=settings.llm.model,
+                run_id=run_id,
             )
         evaluated += 1
+    if run_id is not None:
+        finish_run(app_ctx.engine, run_id)
     console.print(f"extracted {evaluated} postings")
 
 

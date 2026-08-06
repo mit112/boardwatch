@@ -74,10 +74,11 @@ def rank_open_postings(
     include_non_swe: bool = False,
     only_new: bool = False,
     output_console: Console = console,
+    run_id: int | None = None,
 ) -> RankedResults:
     run_preflight(engine, settings, output_console)
     stats = run_eligibility(
-        engine, settings, output_console
+        engine, settings, output_console, run_id=run_id
     )  # no-op on a null profile; before the check
     version = load_taxonomy(settings.config_dir).version
     now = now or utcnow()

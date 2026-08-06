@@ -245,11 +245,16 @@ def write_evaluation(
     posting_version_id: int,
     identity: InputIdentity,
     result: EvaluationResult,
+    run_id: int | None = None,
 ) -> int:
     """Persist one deterministic evaluation, idempotently.
 
     verify_identity runs FIRST. The four tables carry BEFORE UPDATE/DELETE RAISE(ABORT)
     triggers, so a bad row can only ever be superseded, never corrected.
+
+    `run_id` attributes the row to the pipeline run that judged it. It is optional here only
+    because this is a store-level primitive; callers in `src/` always supply one, so a NULL
+    reaching the column means the row predates run attribution.
     """
     verify_identity(identity, posting_version_id=posting_version_id)
     return record_evaluation(
@@ -265,6 +270,7 @@ def write_evaluation(
         verdict=result.verdict,  # type: ignore[arg-type]
         score=None,  # D-P2-6: D17 forbids persisted scores
         requirements=result.requirements,
+        run_id=run_id,
     )
 
 

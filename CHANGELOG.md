@@ -8,6 +8,54 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- **`boardwatch run` — one command that runs scan → eligibility → tailor under a single run.**
+  Until now nothing in `src/` spanned the three stages: `runs` rows were inserted only inside the
+  scan's file lock, eligibility was judged later as a side-effect of `top`'s preflight, and
+  tailoring was later still and one posting at a time. The only thing stitching them together was
+  a shell script outside the package. `boardwatch run` mints the run row before the first stage
+  and stamps `finished_at` after the last, so a run means the pipeline, not the scan.
+
+  Options: `--top N` (how many ranked postings to tailor, default 8), `--out` (root for the dated
+  `<out>/<YYYY-MM-DD>/` folders), `--resume`, and `--no-scan` to reuse already-fetched postings.
+
+  Exit 2 if another scan holds the lock. Exit 1 when the run is fatally broken — no profile, a **systemic
+  scan outage** (boards attempted and not one completed, i.e. DNS/network rather than a few dead slugs),
+  or **every shortlisted lead failing to tailor**. Exit **0 otherwise, including when SOME boards were
+  unreachable or SOME leads would not tailor**: those are counted, printed and persisted, but they are the
+  documented norm across 85 watched boards and `boardwatch scan` already treats them as success, and an
+  exit status that is non-zero every day carries no information.
+
+  The two fatal cases above are the ones that would otherwise be silent empty days. The general
+  zero-output guard — deciding when producing nothing was *provably right* — needs cohort completeness
+  and is not built here.
+
+  A contended run writes nothing at all: the run row is created by the scan stage, inside the file lock,
+  so on the default path there is no window in which the schema is migrated or a row inserted before the
+  lock is held. (`--no-scan` acquires no scan lock at all, so it migrates unlocked exactly as every other
+  read command does.)
+
+- **`run_id` is now written on every evaluation and every artifact.** The column was added
+  previously but nothing populated it, so it was NULL everywhere. It is now threaded through
+  `run_eligibility` → `write_evaluation` → `record_evaluation`, through the opt-in LLM lane, and
+  through `run_tailor` into all three artifact inserts.
+
+  A stage invoked on its own — `boardwatch tailor run`, `eligibility run`, `top`'s preflight —
+  mints its own run rather than writing NULL, so that **NULL keeps exactly one meaning: the row
+  predates run attribution.** Those rows cannot be backfilled (the evaluation ledger is
+  append-only), so preserving that single meaning is what lets a funnel report separate them from
+  live work instead of silently mixing the two. To keep `runs` a ledger of work rather than a
+  command log, the eligibility preflight mints a run only once it has something pending.
+
+  A cache hit keeps the run that first produced the evaluation, and a reused master résumé
+  artifact keeps the run that first authored it — in both cases no row is written, and claiming
+  otherwise would erase the distinction the column exists to record.
+
+### Changed
+
+- **`boardwatch doctor` now says "a run is in progress" rather than "a scan is in progress".** Since run
+  attribution, an unfinished run is also a `boardwatch run` still tailoring or a standalone eligibility
+  pass still judging — the old wording sent users looking for a held scan lock that was in fact free.
+
 - **`boardwatch eligibility abstain` — abstain rate for every rule in the catalog, including
   rules that have never fired.** `eligibility summary` groups the requirement rows that exist,
   so a rule that has never been detected produces no group and is invisible in it; that is

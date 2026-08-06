@@ -28,6 +28,7 @@ def record_artifact(
     media_type: str | None = None,
     byte_size: int | None = None,
     meta: dict[str, Any] | None = None,
+    run_id: int | None = None,
 ) -> int:
     return int(
         conn.execute(
@@ -35,19 +36,29 @@ def record_artifact(
                 job_id=job_id, posting_version_id=posting_version_id, application_id=application_id,
                 kind=kind, uri=uri, content_hash=content_hash, generator=generator,
                 generator_version=generator_version, media_type=media_type, byte_size=byte_size,
-                meta_json=meta, created_at=utcnow(),
+                meta_json=meta, created_at=utcnow(), run_id=run_id,
             )
         ).inserted_primary_key[0]  # type: ignore[index]
     )
 
 
 def get_or_create_master_artifact(
-    conn: Connection, *, content_hash: str, uri: str, generator_version: str, meta: dict[str, Any]
+    conn: Connection,
+    *,
+    content_hash: str,
+    uri: str,
+    generator_version: str,
+    meta: dict[str, Any],
+    run_id: int | None = None,
 ) -> int:
     """Content-address the authored master résumé under (kind='resume_master', content_hash).
 
     Re-tailoring from the same master reuses the one master artifact instead of accreting
     duplicates, so lineage stays a clean fan-out from a single node (P7).
+
+    `run_id` is therefore recorded only on CREATE. A reused master keeps the run that first
+    authored it, which is the honest answer — the node was not produced by this run. Counting
+    masters per run would need a separate edge, not an overwrite of this column.
     """
     existing = conn.execute(
         select(artifacts.c.id).where(
@@ -59,6 +70,7 @@ def get_or_create_master_artifact(
     return record_artifact(
         conn, kind="resume_master", uri=uri, content_hash=content_hash,
         generator="boardwatch.tailor", generator_version=generator_version, meta=meta,
+        run_id=run_id,
     )
 
 

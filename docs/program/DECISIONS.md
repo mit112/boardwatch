@@ -454,3 +454,173 @@ fixed were *a test that did not pin the fix its own docstring cited* (widening t
 dodged the 80-column condition the fix addressed; deleting the fix left the suite green) and *a property
 documented as load-bearing that nothing asserted*. A test that cannot fail is documentation with a green
 tick next to it. Verify a new test fails without its fix before trusting it.
+
+## D-019 — `run_id` is never NULL on a row written after attribution exists
+**2026-08-06 · session 4**
+
+**Context.** D-016 settled that `run_id` denotes a *pipeline* run, and P0 item 0 built the row plus
+`boardwatch run`. Threading the column then exposed a second question D-016 did not reach: what should a
+stage write when it is invoked **standalone**? `run_eligibility` is a preflight side-effect of `top`,
+`export`, `stats` and `eligibility run`; `run_tailor` is invoked directly by `boardwatch tailor run`; the
+opt-in LLM lane is invoked by `eligibility extract`. None of those has a pipeline above it. Writing NULL
+was the obvious default and it is wrong: the ~20,637 pre-existing rows are permanently NULL and can never
+be backfilled (`eligibility_evaluations` is append-only), so NULL already means *predates attribution*.
+A second meaning makes the funnel's `unattributed` bucket unreadable — it would mix rows nothing can ever
+fix with rows a stage simply declined to attribute.
+
+**Choice.** Every write path either receives a `run_id` or mints one, via `ensure_run`
+(`store/queries.py`). A stage run standalone records a **degenerate pipeline run** — one whose other
+stages did zero work — which is the direct corollary of Mit's 2026-08-06 ruling that a bare `scan` is a
+pipeline run with empty stages, and of his rejection of a `kind` column. One row shape everywhere.
+`run_id IS NULL` therefore has exactly one meaning, and it is a closed set that can only shrink.
+
+**The one guard that keeps this affordable.** `run_eligibility` mints **only once `pending` is non-empty**.
+Without that, every `top` invocation would log a run and `runs` would become a command log rather than a
+ledger of work. Test-locked: `test_eligibility_with_nothing_pending_mints_no_run`.
+
+**Consequences accepted, both recorded because neither is obviously right.**
+1. **A cache hit keeps the *first* run's id.** `record_evaluation` returns early on
+   `inserted.rowcount == 0`, so no row is rewritten. Correct per D-016: "cache hit" is its own funnel
+   stage counted from that rowcount, never inferred from `run_id`. Reattributing would erase the very
+   distinction D-013 added the column to preserve.
+2. **A reused master résumé artifact keeps the run that first authored it.**
+   `get_or_create_master_artifact` is content-addressed, so `run_id` is recorded on CREATE only. The node
+   genuinely was not produced by this run. Counting masters per run needs a separate edge, not an
+   overwrite.
+
+**Ownership split in `runs`, required by the same change.** `finalize_run` previously wrote the scan
+counts *and* stamped `finished_at`. Under a pipeline that would mean the run finished when scan finished,
+so it gained `finished: bool = True` and the owner calls the new `finish_run` instead. The bare
+`boardwatch scan` contract is untouched: the insert stays **inside** the lock, so a scan rejected for
+contention still writes nothing at all (`tests/pipeline/test_scan_lock.py` continues to assert this).
+
+**Rejected.** *Writing NULL from standalone stages and filtering in the funnel.* It cannot be filtered —
+nothing distinguishes the two NULL populations. *A `kind` column on `runs`.* Ruled out by Mit on the same
+day: it forces every downstream funnel query to carry a qualifier, for a distinction that is already
+visible in the stage counts themselves.
+
+---
+
+## D-020 — the scan stage creates the run row; the pipeline finishes it
+**2026-08-06 · session 4 · adopted from an independent review**
+
+**Context.** D-019's first implementation had `boardwatch run` mint the `runs` row before calling
+`run_scan`. A review with no shared context found that this silently discarded two properties the scan
+path had been carefully built to have. `scan_cmd.py` deliberately calls `build_context(..., ensure=False)`
+because `run_scan` runs `ensure_schema` **inside** the file lock (`coordinator.py`: *"deferred to inside
+the lock: a REJECTED scan writes nothing"*). Minting first meant `boardwatch run` migrated the live
+database **outside** that lock — against a possibly-running older binary — and stranded a `runs` row
+whenever the lock was held. `tests/pipeline/test_scan_lock.py` asserts the zero-write property for `scan`
+only, so nothing caught it.
+
+**Choice.** The scan stage creates the row and exposes it as `ScanSummary.run_id`; the pipeline adopts
+that id and stamps `finished_at` at the end. `run_scan`'s `run_id` parameter is gone, replaced by
+`finish: bool = True`. With `--no-scan` there is no lock to sit inside, so the pipeline mints its own.
+
+**This is not the option D-016 rejected.** That option was `run_id` **denoting** the scan run, so an
+evaluation would be filed under the run that captured its posting version rather than the run that judged
+it. Here the id still denotes the pipeline; only the INSERT moves, to the one place already holding a lock
+that makes it safe. Who executes the INSERT and what the id means are independent questions, and conflating
+them is what made the first implementation look correct.
+
+**Consequence, and it is an improvement.** A contended `boardwatch run` now writes **nothing at all**,
+which is strictly stronger than closing an orphan row out. The test was rewritten to assert the stronger
+property.
+
+**Also adopted from the same review, each a real defect:**
+
+1. **Scan errors were recorded twice.** The scan stage persists its own into `errors_json`; `finish_run`
+   *appends*; the pipeline passed the same list again. Any per-run error count was 2× for scan errors and
+   1× for tailor errors — uninterpretable. The pipeline now passes only errors raised after scan.
+2. **`boardwatch run` would have exited 1 on essentially every real run.** Per-board failures land in
+   `summary.errors`, and across 85 watched boards a few dead ones are documented as normal; `boardwatch
+   scan` exits 0 for exactly the same condition. `PipelineSummary` now separates `errors` (everything, for
+   the ledger) from `fatal` (the one thing that fails the run). An exit status that is 1 every day carries
+   no information — the same signal destruction the run ledger exists to prevent.
+3. **A dangling run row on any unexpected exception.** Only two abort paths closed the row; a malformed
+   taxonomy or a Ctrl-C during the multi-minute tailor loop left `finished_at` NULL, which `doctor`
+   reports as in-progress forever, one more row per retry. Now a `try/finally`.
+4. **`shortlisted` measured the `--top` flag, not a funnel stage** — `len(ranked.visible)` is capped at
+   the limit. The ranker's `hidden_ineligible` and `hidden_non_swe`, the actual denominators, were being
+   discarded. All three are now carried.
+5. **`doctor` mislabelled every unfinished run as a scan.** Since attribution, an unfinished run is also a
+   pipeline still tailoring. Users were sent looking for a held scan lock that was free.
+6. **Failed leads left empty folders** in `~/boardwatch-applications/<date>/`. Counting the deliverable by
+   listing that directory is the obvious independent check, and a husk inflated it.
+7. **`eligibility extract` minted a run unconditionally**, contradicting the lazy-mint rule stated for
+   `run_eligibility` in the same change: a provider outage would file a finished run attributing zero
+   rows. Now minted on the first posting actually reached.
+8. **`date.today()` was the only local-clock read in `src/`.** An evening run wrote leads to one date's
+   folder while its run row recorded the next day's UTC timestamp. Now `utcnow().date()`.
+
+**Known gap this does NOT close, stated rather than papered over.** `try/finally` closes the run row on
+exceptions and on Ctrl-C. It cannot close it on `SIGKILL`. This was observed live, not theorised: a
+verification run against a copy of the real store was killed by a `timeout` after writing 11,200 attributed
+evaluations, and left its run row with `finished_at` NULL. **A dangling run row is a quarantine with no
+drain**, which `CLAUDE.md` names as a leak, and there is no reaper on either side of the gate. It belongs
+with P3's lock work (stale reclaim by atomic rename) and with the run manifest's exit status — filed there,
+not bolted on here.
+
+**Two of the review's findings were tests of mine that could not fail** — the third and fourth
+consecutive occurrence of this class (D-017, D-018). One asserted `summary.evaluated` against the *same*
+query that produced it (`X == X`) while its docstring claimed it counted through a different path. The
+other asserted `boards_attempted == 0`, which is the value `insert_run` writes at birth: deleting
+`finalize_run` **entirely** left it green. Both were mutation-checked and both passed the mutation I chose,
+because I mutated the half the test did pin. **The lesson sharpens: a mutation test proves the mutation is
+caught, not that the docstring is true.** Pick the mutation from the claim, not from the code.
+
+
+---
+
+## D-021 — second review: the exit-code fix had over-corrected into bar metric B5
+**2026-08-06 · session 4 · adopted from a second independent review**
+
+**Context.** D-020 fixed "`boardwatch run` exits 1 on essentially every real run" by making only a *fatal*
+condition fail the run. A second review, on the fix commit, found the correction had gone too far the other
+way: `fatal` was assigned in exactly one place (no profile), so **a total DNS/network outage exited 0** with
+a success line, and so did **every lead failing to tailor**. `CLAUDE.md`'s own fail-safe table says
+*"systemic outage ⇒ fatal (prevents the silent empty day)"*, and bar metric **B5** is literally *"a run that
+succeeds while producing nothing"*. The `CHANGELOG` entry claiming "1 only if the run is fatally broken" was
+false for the two most fatal conditions there are.
+
+**Choice.** Two further fatal conditions, both narrow and both read off outcomes rather than a status field:
+
+1. **Systemic scan outage** — boards were attempted and *not one* completed or came back unchanged. A few
+   rotten slugs among 85 stay non-fatal; zero successes is the network.
+2. **Every shortlisted lead failed to tailor** — zero leads from a *non-empty* shortlist is a broken résumé
+   path, not an honest empty day.
+
+**Deliberately still NOT built:** the general zero-output guard, i.e. deciding when producing nothing was
+*provably right*. That needs cohort completeness (P3 item 9) and `PROGRAM.md` assigns B5's guard to P3.
+The two cases above are the ones where "nothing" is unambiguously a fault, so they do not require that
+judgement. **Recorded in `STATE.md`'s known-gaps table so exit 0 is not misread as "produced leads".**
+
+**The other seven findings, all adopted:**
+
+- **D-020's own dangling-row fix had a hole.** The pipeline's `try/finally` begins *after* `run_scan`
+  returns, but the row is now created *inside* `run_scan` — so Ctrl-C during the multi-board fetch loop
+  stranded exactly the row D-020 claimed to have closed. On an exception the caller cannot learn the id
+  (nothing is returned), so the scan now closes the row itself, unconditionally, even when `finish=False`.
+- **A crashed run read as a clean empty run.** The `finally` stamped `finished_at` and discarded the
+  exception it had in scope. Now recorded into `errors_json`.
+- **Three tests were making live HTTP calls to `boards-api.greenhouse.io`** — the seeded company is a real
+  watched greenhouse board and the scan stage was not mocked, unlike every other scan test in the repo.
+  Offline or sandboxed CI would have burned ~90s per test on retries and gone red for the network.
+- **The test named for board failures never failed a board.** It used an unknown *provider*, which takes a
+  branch that deliberately never increments `failed` — so `scan_boards_failed` stayed 0 and was pinned by
+  nothing. Now a mocked 500 on a real provider.
+- **The exit-1 path had no test at all**; deleting it left the suite green. 0 and 2 were pinned, 1 was not.
+- **The "lazy" mint in `eligibility extract` could never be lazy** — the list is non-empty and the budget is
+  `ge=1`, so it always minted on the first iteration. Rather than fake laziness, the rule is now stated
+  honestly: the id must exist *before* a row can carry it, so this lane mints per invocation, and that is
+  correct **here** because `extract` is an explicit user action whose failure belongs in the ledger.
+  `run_eligibility` fires incidentally on every `top`, which is why its rule differs. The two invocations
+  differ, so the two rules differ.
+- **`--no-scan` migrates the schema unlocked**, exactly as every other read command does. Not a regression,
+  but the `CHANGELOG`'s "no window in which the schema is migrated before the lock is held" was true only
+  of the default path. Reworded.
+
+**The meta-point, and the reason this decision exists rather than a quiet fixup.** Two reviews on one
+change found nineteen defects between them, and **the second review's most severe finding was a defect in
+the first review's fix.** A fix is new code and inherits none of the reviewed status of what it repairs.
+Re-review after a substantial fix round; do not treat "adopted all findings" as terminal.
