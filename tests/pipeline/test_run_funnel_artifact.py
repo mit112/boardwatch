@@ -89,9 +89,12 @@ def test_the_artifact_describes_the_run_that_just_happened(env: Path, tmp_path: 
     assert payload["run_id"] == summary.run_id
     assert payload["finished_at"] is not None, "written before the run row was closed"
     stages = {stage["name"]: stage for stage in payload["stages"]}
-    # TWO open postings, only one of which is tailorable, so `entered` cannot be confused
-    # with any other quantity in the run. On a one-posting fixture every count is 1 and this
-    # assertion could not tell the funnel's head from `evaluated` or from the lead count.
+    # TWO open postings, so these cannot be confused with the lead count. They still cannot
+    # separate `entered` from `evaluated` — the pipeline judges everything open, so the two
+    # are equal on any healthy run. That distinction is pinned at the unit level, by
+    # test_scan_throughput_is_not_presented_as_a_funnel_edge, which can construct a corpus
+    # where they differ. What this asserts is that the artifact carries the run's real shape
+    # rather than a default-constructed one.
     assert stages["corpus"]["entered"] == 2, "the corpus head is not every OPEN posting"
     assert stages["attribution"]["advanced"] == 2, "both postings were judged by THIS run"
 

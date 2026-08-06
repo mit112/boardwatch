@@ -259,6 +259,31 @@ def test_a_pdf_that_never_compiled_is_caught_by_the_recount() -> None:
     assert report.reconciles is False
 
 
+def test_a_tracked_lead_that_lost_its_pdf_does_not_break_the_applied_stage() -> None:
+    """The applied stage is rooted at `tailored`, not at `leads_with_pdf`.
+
+    `marked_applied` is counted over every tailored posting, so against `with_pdf` it can
+    legitimately exceed what entered: a lead whose PDF failed to compile (D-006's silent
+    degrade) whose job was already tracked from an earlier day. The clamped remainder would
+    then report the stage as broken and drag Gate P0's headline metric down with it.
+
+    Two leads, one with no PDF, both already applied to: rooted at `with_pdf` this is
+    `entered=1, advanced=2` and cannot balance; rooted at `tailored` it is bounded, because
+    the count is DISTINCT job ids drawn from exactly these postings.
+    """
+    report = funnel(
+        leads=[lead(7, pdf_built=True), lead(9, pdf_built=False)],
+        artifacts=TailoredArtifactCounts(rows=2, with_pdf=1),
+        marked_applied=2,
+    )
+    applied = stage(report, "applied")
+
+    assert applied.entered == 2, "the applied stage is rooted at the PDF count again"
+    assert applied.advanced == 2
+    assert applied.reconciled is True
+    assert report.reconciles is True
+
+
 def test_a_derived_stage_is_labelled_so_its_balance_is_not_read_as_evidence() -> None:
     """`shortlist` balances by construction, because `capped_by_top_n` is the remainder.
 
