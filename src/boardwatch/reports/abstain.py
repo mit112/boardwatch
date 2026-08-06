@@ -40,18 +40,23 @@ class RuleAbstain:
     met: int
     unmet: int
     unknown: int
+    # Rows whose disposition is none of the three above. Impossible while the DB CHECK holds,
+    # and carried anyway so that widening that CHECK cannot make rows disappear from `observed`
+    # and quietly shrink every abstain-rate denominator in the report.
+    other: int = 0
 
     @property
     def observed(self) -> int:
-        return self.met + self.unmet + self.unknown
+        return self.met + self.unmet + self.unknown + self.other
 
     @property
     def abstain_rate(self) -> float | None:
         """None when the rule has never fired — a rate over zero rows is not 0%, it is undefined.
 
         This is the single most load-bearing line in the module. Returning 0.0 here would make
-        `experience_years:scoped_years_minimum` (11,670 rows, 11,670 abstains) and a rule that
-        has never once been detected report as equally healthy in opposite directions.
+        `experience_years:scoped_years_minimum` (10,872 abstains out of 10,872, measured
+        2026-08-06) and a rule that has never once been detected report as equally healthy, in
+        opposite directions.
         """
         if self.observed == 0:
             return None
@@ -126,6 +131,11 @@ def build_abstain_report(catalog: RulesCatalog, counts: DispositionCounts) -> Ab
             met=tallies[rule_id].get("met", 0),
             unmet=tallies[rule_id].get("unmet", 0),
             unknown=tallies[rule_id].get("unknown", 0),
+            other=sum(
+                count
+                for disposition, count in tallies[rule_id].items()
+                if disposition not in ("met", "unmet", "unknown")
+            ),
         )
         for rule_id, family_id in declared.items()
     )

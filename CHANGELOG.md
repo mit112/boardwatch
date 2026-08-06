@@ -6,6 +6,31 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- **`boardwatch eligibility abstain` — abstain rate for every rule in the catalog, including
+  rules that have never fired.** `eligibility summary` groups the requirement rows that exist,
+  so a rule that has never been detected produces no group and is invisible in it; that is
+  precisely backwards, because a rule which cannot fire is the one worth knowing about. The new
+  command enumerates from the rule catalog and joins the observed counts onto that enumeration.
+
+  Three states are kept distinct: `never fired` (no rows, so the rate is undefined and is
+  **not** reported as 0% — that would rank a rule which has never fired as the healthiest in
+  the catalog), `100%` (fires and never decides anything), and a real rate. Requirement rows
+  carrying no `rule_id`, or a `rule_id` the catalog does not declare, are reported as their own
+  buckets rather than folded into a rule; an undeclared `rule_id` exits non-zero, since the
+  catalog is closed.
+
+  On the current database it reports that 7 of 44 rules have never fired and 17 more fire
+  without ever deciding — among them every clearance rule that fires (105 detections, zero met
+  and zero unmet) and `work_auth:no_sponsorship_offered`, which has abstained on all 1,052
+  postings that stated they offer no sponsorship.
+
+- **Nullable `run_id` on `eligibility_evaluations` and `artifacts`** (Alembic revision
+  `run_attribution`, additive). Nothing writes it yet, so it stays NULL until the write paths
+  thread it; `eligibility_evaluations` is append-only, so rows predating the column can never be
+  backfilled and NULL means "predates attribution", never zero.
+
 ### Changed
 
 - **Ranking: a title role gate, and a neutral coverage for postings with no recognized

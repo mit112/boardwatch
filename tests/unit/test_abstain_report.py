@@ -131,9 +131,20 @@ def test_totals_reconcile_to_every_row_handed_in() -> None:
     }
     report = build_abstain_report(cat, counts)
 
-    accounted = (
-        sum(rule.observed for rule in report.rules)
-        + report.out_of_catalog_rows
-        + report.unattributed
-    )
-    assert accounted == sum(counts.values()) == 18
+    assert report.total_rows == sum(counts.values()) == 18
+    assert report.observed_rows == 7
+    assert report.out_of_catalog_rows == 5
+    assert report.unattributed == 6
+
+
+def test_an_unrecognised_disposition_still_counts_toward_observed() -> None:
+    """Impossible while the DB CHECK holds. Guarded so that widening it cannot silently shrink
+    every denominator in the report — a lost row would inflate abstain rates, not just vanish."""
+    cat = catalog()
+    rid = rule_ids(cat)[0]
+    report = build_abstain_report(cat, {(rid, "unknown"): 1, (rid, "not_a_disposition"): 3})
+
+    rule = report.rules[0]
+    assert (rule.other, rule.observed) == (3, 4)
+    assert rule.abstain_rate == 0.25
+    assert report.total_rows == 4

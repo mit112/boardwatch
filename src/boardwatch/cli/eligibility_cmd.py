@@ -366,6 +366,11 @@ def abstain_cmd(ctx: typer.Context) -> None:
     row to group, so it is invisible to `summary` and visible here as `never fired`. That is
     the keystone invariant's monitoring requirement — a rule that cannot fire must be a
     reported failure, not silence.
+
+    Scoped, like `summary`, to the CURRENT deterministic evaluation of each OPEN posting. So
+    `never fired` means "never fired in this scope": a rule that only ever fired on postings
+    that have since closed reports as never-fired here. The footer prints how many evaluations
+    were examined so a scope of zero cannot be mistaken for a catalog of dead rules.
     """
     app_ctx = build_context(ctx.obj)
     catalog = load_rules(app_ctx.settings.config_dir)
@@ -397,7 +402,11 @@ def abstain_cmd(ctx: typer.Context) -> None:
         elif rule.fully_abstaining:
             rate, style = "100%", "red"
         else:
-            rate, style = f"{rule.abstain_rate:.0%}", ""
+            # Guard the rounding: 1051/1052 formats as "100%" and would then be
+            # character-identical to a rule that genuinely never decides, collapsing the two
+            # states this report exists to keep apart.
+            rounded = f"{rule.abstain_rate:.0%}"
+            rate, style = (">99%" if rounded == "100%" else rounded), ""
         table.add_row(
             rule.rule_id, str(rule.observed), str(rule.met), str(rule.unmet),
             str(rule.unknown), rate, style=style or None,
@@ -406,7 +415,8 @@ def abstain_cmd(ctx: typer.Context) -> None:
 
     console.print(
         f"{len(report.rules)} rules · {len(report.never_fired)} never fired · "
-        f"{len(report.fully_abstaining)} fire but never decide · {report.observed_rows} rows"
+        f"{len(report.fully_abstaining)} fire but never decide · "
+        f"{report.total_rows} rows across {len(evals)} evaluations"
     )
     if report.unattributed:
         console.print(f"[yellow]{report.unattributed} rows carry no rule_id[/yellow]")

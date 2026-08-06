@@ -193,6 +193,21 @@ def test_abstain_names_rules_that_have_never_been_detected(
         assert rule_id in result.output
 
 
+def test_abstain_never_abbreviates_a_rule_id_on_a_narrow_terminal(
+    env: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """At 80 columns rich's default overflow truncates rule_ids to a shared prefix, so
+    `experience_years:total_years_minimum` and `..._preferred` both render as
+    `experience_years:total_y…` — two different rules, one string. The rule_id is this
+    report's key, so it may wrap but must never be abbreviated. Pins `overflow="fold"`.
+    """
+    monkeypatch.setenv("COLUMNS", "80")
+    assert _run(env, ["init"], INIT_INPUT).exit_code == 0
+    result = _run(env, ["eligibility", "abstain"])
+
+    assert "…" not in result.output
+
+
 def test_extract_skips_cleanly_when_extraction_disabled(env: Path) -> None:
     """Both the extraction feature and the LLM tier are off by default: `extract` must
     degrade to a one-line message and exit 0, never an error, with no profile or
