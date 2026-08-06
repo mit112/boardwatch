@@ -491,6 +491,20 @@ computable but the typed abstain *reason* the keystone invariant wants is not.
 | **The general zero-output guard is not built** — bar metric **B5**. Two unambiguous cases ARE fatal now (a systemic scan outage, and every shortlisted lead failing to tailor — D-021). What is missing is the judgement call: deciding when producing nothing was *provably right*. **Do not read exit 0 as "the run produced leads".** | That judgement is cohort completeness, P3 item 9; `PROGRAM.md` assigns B5's guard to P3 | P3 item 5 |
 | **`runs` has no `status` column**, so "still running", "crashed" and "finished with errors" are only partly separable. | `PROGRAM.md` §3.P0.4 puts exit status in the run manifest; adding it early would mean designing the manifest twice | P0 item 4 |
 
+## CI on `main` has no signal for item 3 — a GitHub incident, not a repo problem
+
+**2026-08-06.** `make check` was green locally at exit 0 on the merge commit itself, which is this
+project's stated gate, and item 3 was merged on that basis. But **GitHub Actions stopped dispatching
+workflows partway through the session.** Two `main` pushes (`6a54594`, `4d6209a`) produced **no runs at
+all**, and the last run created — for `6a27cf7` — sat queued for 3h50m with the annotation *"The job was
+not acquired by Runner of type hosted even after multiple attempts."* The cancel API itself returned
+HTTP 502.
+
+**What a fresh session should do:** `gh run list --limit 5 --branch main`. If runs for `6a54594` or later
+are absent or still queued, this is unresolved — re-trigger with an empty commit or
+`gh workflow run ci --ref main`. **Do not re-diagnose it as a test or config failure**; nothing in the
+repo caused it, and the four runs before it succeeded.
+
 ## Blocked items
 
 | Item | Blocked on | Since |

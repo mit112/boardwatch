@@ -525,10 +525,24 @@ added tests after the line was written. It is the `STATE.md`-header failure mode
 
 | Check | Found | Of which logic |
 |---|---:|---:|
-| Mutation checks (7, D-025 procedure, cold cache) | 7/7 caught | — |
+| Mutation checks (11, D-025 procedure, cold cache) | 11/11 caught | — |
 | Code review (diff vs main) | 3 | 3 |
 | Re-review of the fix commit (D-021) | 4 | 2 |
+| Test-quality review (mutation, derived from docstrings) | 11 | 3 that let real regressions through |
 | Docs-only review (docs + shipped prose as the brief) | 22 | 3 blockers, 9 major, 10 minor |
+
+**33 findings across four passes.** The last four of the eleven mutation checks were written *because* the
+test-quality review showed the first seven were not enough: three of its findings were mutations that
+survived the entire suite while falsifying a docstring in this diff — `hidden_ineligible` was 0 in every
+fixture, so the cutoff counter could become a subtraction; the two shortlist drop counts could be swapped so
+the artifact misstated *why* postings were dropped; and both ordering tests rode on insertion order rather
+than the sort key.
+
+**One finding was closed by weakening a claim rather than adding a test.** That `considered` is `len(rows)`
+and not the sum of the buckets **cannot be tested**: the loop's exits are exhaustive, so the substitution is
+behaviourally identical on every valid input. It is recorded in the code as a review invariant. The guard
+still earns its place — with `len(rows)` a single deleted counter is caught; with the sum, a missing counter
+is self-consistent and invisible.
 
 **The docs-only review out-yielded both code reviews combined, for the third session running.** Its three
 blockers were all the same falsified claim surviving in places the code reviews had not been pointed at —
