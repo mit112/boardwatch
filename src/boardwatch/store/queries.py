@@ -32,6 +32,25 @@ from boardwatch.store.tables import (
 # missing row with ONE set-oriented correlated EXISTS rather than a per-row lookup.
 _pv = posting_versions.alias("pv_current")
 
+# The closed catalog of run outcomes (P0 item 4). Out-of-catalog is a failure, never a new
+# bucket, so the setter raises rather than writing an unknown string.
+RUN_RUNNING = "running"
+RUN_OK = "ok"
+RUN_FAILED = "failed"
+RUN_STATUSES = frozenset({RUN_RUNNING, RUN_OK, RUN_FAILED})
+
+
+class UnknownRunStatusError(ValueError):
+    """A run status outside the closed catalog. Typed at the raise site, never a string match."""
+
+
+def _checked_status(status: str) -> str:
+    if status not in RUN_STATUSES:
+        raise UnknownRunStatusError(
+            f"{status!r} is not a run status; expected one of {sorted(RUN_STATUSES)}"
+        )
+    return status
+
 
 def insert_run(engine: Engine) -> int:
     with engine.begin() as conn:
@@ -69,18 +88,34 @@ def finalize_run(
     }
     if finished:
         values["finished_at"] = utcnow()
+        # A standalone scan owns its own run, so it is the one that closes it. `errors` here
+        # are per-board failures, which is the scan's normal partial outcome and not a failed
+        # run — Workday returns `partial` routinely. Only an unfinished row stays `running`.
+        values["status"] = RUN_OK
     with engine.begin() as conn:
         conn.execute(update(runs).where(runs.c.id == run_id).values(**values))
 
 
-def finish_run(engine: Engine, run_id: int, *, errors: list[str] | None = None) -> None:
-    """Stamp finished_at on a run the caller owns, optionally appending stage errors.
+def finish_run(
+    engine: Engine, run_id: int, *, errors: list[str] | None = None, status: str = RUN_OK
+) -> None:
+    """Stamp finished_at and the terminal status on a run the caller owns.
+
+    `status` is the run's exit status for P0 item 4's manifest. It is a parameter rather than
+    something inferred from `errors` because the two are not the same question: a run can
+    finish with per-lead tailor errors and still be a successful run, while a run killed
+    before this call has no errors recorded at all and is not successful. What an un-updated
+    row means is therefore fixed by the column default: `running` with `finished_at` NULL is
+    a run that never reached here, which after the process is gone means it was killed.
 
     Errors are appended, not replaced: the scan stage has already written its own into
     errors_json by the time the pipeline finishes, and overwriting would lose them.
     """
     with engine.begin() as conn:
-        values: dict[str, object] = {"finished_at": utcnow()}
+        values: dict[str, object] = {
+            "finished_at": utcnow(),
+            "status": _checked_status(status),
+        }
         if errors:
             existing = conn.execute(
                 select(runs.c.errors_json).where(runs.c.id == run_id)

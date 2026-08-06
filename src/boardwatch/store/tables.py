@@ -216,6 +216,10 @@ runs = Table(
     Column("closed_count", Integer, nullable=True),
     Column("reopened_count", Integer, nullable=True),
     Column("errors_json", JSON, nullable=True),
+    # Closed catalog: running | ok | failed. Enforced in Python at the write site
+    # (RunStatus), not by a CHECK constraint, because adding one to an existing SQLite
+    # table costs a full rebuild and this column has no backfill to protect.
+    Column("status", Text, nullable=False, server_default="running"),
 )
 
 eligibility_inputs = Table(

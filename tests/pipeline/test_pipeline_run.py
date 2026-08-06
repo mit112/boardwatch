@@ -420,6 +420,78 @@ def test_a_crash_mid_pipeline_is_recorded_in_the_ARTIFACT_not_only_the_ledger(
     assert any("aborted" in err for err in payload["errors"])
 
 
+def test_a_crashed_run_is_recorded_as_failed_not_left_reading_running(
+    env: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """`status` must agree with the artifact's FATAL line (P0 item 4).
+
+    The crash path sets `summary.fatal` before re-raising, so the `finally` has to close the
+    row as `failed`. If it closed as `ok`, the ledger would contradict the artifact for the
+    same run — and the whole point of an exit status is that a reader who never opens the
+    artifact still learns the run did not deliver.
+    """
+    _ready(env)
+    out_root = tmp_path / "apps"
+
+    import boardwatch.pipeline.runner as runner_mod
+
+    def boom(*_a: object, **_k: object) -> None:
+        raise RuntimeError("taxonomy.yaml is malformed")
+
+    monkeypatch.setattr(runner_mod, "_count_evaluations", boom)
+    with pytest.raises(RuntimeError):
+        _pipeline(env, out_root)
+
+    with get_engine(env).connect() as conn:
+        row = conn.execute(
+            select(tables.runs.c.status, tables.runs.c.finished_at)
+            .order_by(tables.runs.c.id.desc())
+            .limit(1)
+        ).one()
+    assert row.status == "failed", f"a crashed run was closed as {row.status!r}"
+    assert row.finished_at is not None, "the crashed run row was left open"
+
+    payload = json.loads(
+        next((out_root / utcnow().date().isoformat()).glob("funnel-*.json")).read_text()
+    )
+    assert (payload["fatal"] is not None) == (row.status == "failed"), (
+        "the ledger's status and the artifact's FATAL line disagree about the same run"
+    )
+
+
+def test_a_clean_run_is_recorded_as_ok(env: Path, tmp_path: Path) -> None:
+    """The other side of the same column: `failed` means nothing if nothing is ever `ok`."""
+    _ready(env)
+    _pipeline(env, tmp_path / "apps")
+
+    with get_engine(env).connect() as conn:
+        row = conn.execute(
+            select(tables.runs.c.status).order_by(tables.runs.c.id.desc()).limit(1)
+        ).one()
+    assert row.status == "ok", f"a clean run was closed as {row.status!r}"
+
+
+def test_a_run_row_nobody_closed_still_reads_running(env: Path) -> None:
+    """What an un-updated row MEANS, pinned (P0 item 4).
+
+    A SIGKILL never reaches the `finally`, so no code ever sets this row's status. The column
+    default is the only thing that decides what such a row says. `running` with `finished_at`
+    NULL is the killed-run signature; a default of `ok` would launder it into a clean run.
+    """
+    ensure_schema(get_engine(env))
+    with get_engine(env).begin() as conn:
+        run_id = conn.execute(
+            insert(tables.runs).values(started_at=utcnow(), boards_attempted=0)
+        ).inserted_primary_key[0]
+        row = conn.execute(
+            select(tables.runs.c.status, tables.runs.c.finished_at).where(
+                tables.runs.c.id == run_id
+            )
+        ).one()
+    assert row.status == "running", f"an unclosed run row read {row.status!r}"
+    assert row.finished_at is None
+
+
 def test_an_abort_during_the_scan_stage_still_closes_the_run_row(
     env: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

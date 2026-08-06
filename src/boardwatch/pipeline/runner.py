@@ -39,7 +39,7 @@ from boardwatch.reports.run_funnel import (
 from boardwatch.reports.tailor import run_tailor
 from boardwatch.scan.coordinator import ScanSummary, run_scan
 from boardwatch.store.db import ensure_schema
-from boardwatch.store.queries import ensure_run, finish_run
+from boardwatch.store.queries import RUN_FAILED, RUN_OK, ensure_run, finish_run
 
 DEFAULT_TOP_N = 8
 
@@ -250,7 +250,17 @@ def run_pipeline(
             summary.fatal = message
         raise
     finally:
-        finish_run(engine, run_id, errors=stage_errors)
+        # Tied to `fatal`, not to `stage_errors`: a run that lost one lead to a tailor failure
+        # is a successful run with an error, and the artifact's FATAL line is the thing a
+        # reader already treats as "this run did not deliver". Keeping the two in step means
+        # `status == failed` and a FATAL line in the artifact can never disagree. The crash
+        # path sets `summary.fatal` before re-raising, so an abort reaches here as `failed`.
+        finish_run(
+            engine,
+            run_id,
+            errors=stage_errors,
+            status=RUN_FAILED if summary.fatal is not None else RUN_OK,
+        )
         # After finish_run, so the artifact records a finished_at rather than reporting every
         # run as still in progress. Failure to write is reported and swallowed on purpose:
         # this block runs while an exception may be propagating, and raising here would
