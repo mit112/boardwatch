@@ -418,3 +418,39 @@ was reviewed by its author to a standard that held up, and its *documents* were 
 program where a document is the read-first source of truth, a stale header is a defect of the same kind as
 a broken migration — it is the artifact a fresh session acts on. Treat `STATE.md`'s header as code: it is
 now self-flagging, and re-checking it against `git log` is part of editing the file.
+
+---
+
+## D-018 — abstain-rate scope, and the `IN`-clause limit is a repo-wide debt, not this metric's
+**2026-08-06 · session 3**
+
+**Context.** The second independent review of session 3 (over `540bb34`, the per-rule abstain rate)
+returned APPROVE WITH CHANGES with eight findings, all MINOR. It confirmed the central design holds on
+every path — enumeration never re-derives from data, never-fired never folds into 0% — and independently
+re-derived all four live numbers. Four findings were fixed in `fc6e8a5`. Two are decisions worth pinning.
+
+**Scope, now stated rather than implied.** The report covers the **current deterministic evaluation of
+each OPEN posting**, matching `eligibility summary`. So `never fired` means *never fired in that scope*: a
+rule that only ever fired on postings that have since closed reports as never-fired. Live impact is ~1%
+(186 closed vs 19,262 open). Accepted rather than widened, because the metric's job is to describe the
+catalog against the postings a run would actually judge. The footer now prints the evaluation count, so a
+scope of zero cannot be misread as a catalog of dead rules — previously, with no profile at all, it printed
+"44 never fired" and exited 0.
+
+**Rejected: chunking the `IN` clause here.** Measured: SQLAlchemy renders expanding `IN` as one bind per
+element and SQLite's `SQLITE_LIMIT_VARIABLE_NUMBER` is 32,766; 19,262 evaluations are in scope, so there is
+59% headroom and it grows with open postings. It is a real ceiling but not this query's: `abstain_cmd`
+calls `current_evaluations` first, which passes a same-sized list to `.in_()` at `eligibility/engine.py:301`,
+so `abstain`, `summary` and `top` all fail at the identical threshold, in that earlier call. Fixing it here
+would leave the actual failure in place while looking solved. It belongs in a repo-wide chunking helper.
+
+**Also accepted:** `RuleAbstain.other` carries rows whose disposition is outside `met|unmet|unknown`.
+Impossible while the DB CHECK holds. Carried anyway because the alternative is that widening that CHECK
+silently shrinks every abstain-rate denominator in the report — a lost row does not merely vanish, it
+inflates the rates, which is the one number this metric exists to state correctly.
+
+**Standing lesson, second occurrence.** As in D-017, the defects were not in the logic. Two of the four
+fixed were *a test that did not pin the fix its own docstring cited* (widening the terminal to 160 columns
+dodged the 80-column condition the fix addressed; deleting the fix left the suite green) and *a property
+documented as load-bearing that nothing asserted*. A test that cannot fail is documentation with a green
+tick next to it. Verify a new test fails without its fix before trusting it.
