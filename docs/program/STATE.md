@@ -1,15 +1,16 @@
 # PROGRAM STATE — read this first
 
-**Last updated:** 2026-08-06 (session 6, P0 in progress)
+**Last updated:** 2026-08-06 (session 7, P0 in progress)
 **Updated by:** boardwatch (Claude)
-**Repo state at write time:** every P0 item claimed done below (0, 1, 2, 3, 7) is merged to `main` and
-pushed; the tree is clean. Verify with `git log --oneline -3` and `git status` — if they disagree, the repo
-wins.
+**Repo state at write time:** every P0 item claimed done below (0, 1, 2, 3, 7) is merged to `main`, plus
+the **exit-status half of item 4** (D-029). Item 4 itself is **NOT** done. Verify with
+`git log --oneline -3` and `git status` — if they disagree, the repo wins.
 **This header carries no commit count or sha on purpose** — the previous one named both, went stale inside
 a single session when three later docs commits did not update it, and a cold session following the
 session-start ritual hit the disagreement on its very first check. State what is durably true; verify the
 rest against `git log`. (D-017.)
-**Gate:** `make check` exits **0** (2749 passed, coverage 95%), measured in plain mode with the real exit code.
+**Gate:** `make check` exits **0** (2752 passed, coverage 95.08%, `generalization: OK`), measured in plain
+mode with the real exit code.
 
 > This is the single file a fresh session with zero memory reads to know where the program stands.
 > If it disagrees with the repo, **the repo wins** — fix this file and note the correction in
@@ -30,8 +31,29 @@ per-run funnel artifact), item **2** (per-rule abstain rate), item **3** (the pe
 *and* the ranker's population accounting), and item **7** (the `run_id` migration *and* the threading that
 populates it).
 
-**Four remain:** item **4** the run manifest, item **5** the reconciliation sweep, item **6** the stub
-rate, item **8** the fabrication counters.
+**Four remain:** item **4** the run manifest — **half built, see below**, item **5** the reconciliation
+sweep, item **6** the stub rate, item **8** the fabrication counters.
+
+**Item 4 is HALF done and must not be marked complete.** Session 7 shipped its exit-status half: `runs`
+now carries a `status` column over the closed catalog `running | ok | failed` (**D-029**). What is NOT
+built is the manifest itself — the config hash, and emission as a section of the funnel artifact with
+`ARTIFACT_VERSION` bumped 2→3.
+
+Most of what the spec line asks for **already exists and must be reused, not rebuilt**:
+
+| Manifest field | Status |
+|---|---|
+| code fingerprint of decision-relevant modules | **exists** — `eligibility/engine.py`'s AST digest over the closed list `("catalog.py", "detect.py", "resolve.py", "engine.py")` |
+| rule-catalog version | **exists** — prefer `rules_hash`, which covers `{catalog_version, catalog_source, policy}`, over the bare `RulesCatalog.version` |
+| profile version | **exists** — `profile_hash` |
+| start / end | **exists** — already read into the funnel |
+| exit status | **DONE this session** — `runs.status` |
+| config hash | **the only genuinely new piece** |
+
+`METRICS.md` §"Session 7 — what a config hash can honestly cover" carries the measured closed list of
+decision-relevant `Settings` fields and the gap statement to ship with it. Note the finding there:
+**`exclude_titles` is in no hash that exists today**, and it is the sole cause of the largest drop in the
+funnel.
 
 **Gate P0 is still NOT met, but only ONE of its three clauses is now outstanding** (it was two).
 `PROGRAM.md` §3.P0 gives the gate three clauses:
@@ -410,19 +432,29 @@ changes adopted, none contested.
 
 ## Next action
 
-**P0 item 4 — the run manifest.** `PROGRAM.md` §3.P0.4: config hash, profile version, rule-catalog
-version, code fingerprint of decision-relevant modules, start/end, and **exit status**. Two of the three
-gaps in the table below are waiting on it — `runs` has no `status` column, and the dangling-row reaper
-needs somewhere to record what it reclaimed — so it is the item that unblocks the most.
+**P0 item 4 — finish the run manifest.** Its exit-status half shipped in session 7 (`runs.status`,
+D-029). What remains is **the config hash and the artifact section**: add a manifest block to the funnel
+artifact carrying config hash, profile version (`profile_hash`), rule-catalog version
+(`RulesCatalog.version`), the code fingerprint (`eligibility/engine.py`'s existing AST digest),
+start/end, and `runs.status`; bump `ARTIFACT_VERSION` 2→3 and update the assertion in
+`tests/unit/test_run_funnel.py` that pins it. Reuse the existing machinery — see the table under
+"Current phase". `funnel_writer.py` already has the catalog, the identity and the `runs` row in scope.
 
 Then, still open in P0: item **5** the reconciliation sweep, item **6** the stub rate, and item **8** the
 fabrication counters.
 
-**One measurement from item 3 deserves attention before P5, and is not a defect to fix now.**
-`hidden_hard_filter` dropped **11,517 of 19,262 open postings — 60% of the corpus — and was completely
-invisible until this session.** It is the largest single drop anywhere in the funnel, bigger than every
-other bucket combined. It may well be correct (an excluded-title or location veto), but nothing has ever
-looked at it. `PROGRAM.md` assigns selection quality to P5.
+**`hidden_hard_filter` has now been looked at (session 7). Still P5's to fix, not a defect to fix now.**
+It dropped **11,517 of 19,262 open postings — 60% of the corpus**, the largest single drop anywhere in the
+funnel. Full measurement in `METRICS.md` §"Session 7". The headline correction:
+
+**The split is 100% `exclude_titles` / 0% location.** The location clause has *never executed* —
+`location_filter_mode` defaults to `"soft"` and the `config.toml` that could override it does not exist.
+Any statement that this drop has two active causes is wrong. Three mechanical defects in the 16-entry
+list: **`III` is unreachable** (every string containing `iii` contains `ii`), **`Sr` matches inside `SRE`
+and `Israel`**, **`Lead` matches inside `Leader`** (127 rejections, incl. Cisco's senior-IC "Technical
+Leader" family). But substring collateral is only **1.35%** — the real selection question is the
+**`II`/`III` band**, 69 SWE roles vetoed by an entry Mit put there deliberately. `PROGRAM.md` assigns
+selection quality to P5.
 
 **A second, for the breadth argument.** Per-provider leads on run 6: greenhouse 5, **workday 0 from 37
 boards and 4,685 eligible postings**, ashby 0, lever 0. This is the shape of evidence `PROGRAM.md`'s P7
@@ -455,9 +487,12 @@ uninstrumented and postings ranked below the `--top` cutoff appear in no counter
 - **`postings_seen` is not the corpus.** D-022. This will bite again on any per-source denominator:
   a board that answered 304 listed nothing this run but still owns open postings.
 
-Then, still open in P0: item **4** the run manifest (config hash, profile version, catalog version,
-code fingerprint, **exit status** — a `runs.status` column belongs there), item **5** the
-reconciliation sweep, item **6** the stub rate, and item **8** the fabrication counters.
+<!-- SUPERSEDED by the "Next action" section above, which is authoritative. Item 4's exit-status half
+     SHIPPED in session 7 (D-029): `runs.status` EXISTS — do not rebuild it. Kept only because the
+     fabrication-counter note below it is still live. -->
+Then, still open in P0: item **4**'s *remaining* half — the config hash and the artifact section (its
+exit status shipped) — item **5** the reconciliation sweep, item **6** the stub rate, and item **8** the
+fabrication counters.
 
 **Fabrication counters need new typed capture, not a query.** Aggregates die at `cli/tailor_cmd.py:196-204`
 and `:407-414` after `console.print`; Tier A's fail-safe (`TierASafetyError`) has no counter anywhere; and
@@ -487,9 +522,9 @@ computable but the typed abstain *reason* the keystone invariant wants is not.
 
 | Gap | Why it is not fixed here | Owner |
 |---|---|---|
-| **A `SIGKILL`ed run leaves a dangling `runs` row.** `try/finally` covers exceptions and Ctrl-C, not SIGKILL. Observed live: a verification run killed by `timeout` left `finished_at` NULL after writing 11,200 attributed evaluations. **A dangling row is a quarantine with no drain**, which `CLAUDE.md` calls a leak. | A reaper belongs with P3's stale-lock reclaim and the run manifest's exit status, not bolted onto the row's introduction | P3 / P0 item 4 |
+| **A `SIGKILL`ed run leaves a dangling `runs` row.** `try/finally` covers exceptions and Ctrl-C, not SIGKILL. Observed live: a verification run killed by `timeout` left `finished_at` NULL after writing 11,200 attributed evaluations. **A dangling row is a quarantine with no drain**, which `CLAUDE.md` calls a leak. | A reaper belongs with P3's stale-lock reclaim. The exit-status half it was waiting on shipped in session 7 (D-029), and `runs.status` is where a reaper records what it reclaimed; the reaper itself is P3 | P3 |
 | **The general zero-output guard is not built** — bar metric **B5**. Two unambiguous cases ARE fatal now (a systemic scan outage, and every shortlisted lead failing to tailor — D-021). What is missing is the judgement call: deciding when producing nothing was *provably right*. **Do not read exit 0 as "the run produced leads".** | That judgement is cohort completeness, P3 item 9; `PROGRAM.md` assigns B5's guard to P3 | P3 item 5 |
-| **`runs` has no `status` column**, so "still running", "crashed" and "finished with errors" are only partly separable. | `PROGRAM.md` §3.P0.4 puts exit status in the run manifest; adding it early would mean designing the manifest twice | P0 item 4 |
+| ~~**`runs` has no `status` column**~~ **CLOSED session 7** (D-029). Closed catalog `running \| ok \| failed`. Note what it does NOT separate: `running` + `finished_at` NULL still means only *nothing closed this row*, covering a run in flight, a killed run, AND a standalone lane that raised between `ensure_run` and its own `finish_run`. | — | done |
 
 ## CI on `main` has no signal for item 3 — a GitHub incident, not a repo problem
 

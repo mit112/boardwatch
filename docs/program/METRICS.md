@@ -459,7 +459,7 @@ reported. It is now the ranker's considered population, measured as its own row 
 
 | drop reason | count |
 |---|---:|
-| `hidden_hard_filter` (excluded title, or a rejected location) | **11,517** |
+| `hidden_hard_filter` (excluded title — **100%**; the location clause has never fired, see session 7) | **11,517** |
 | `hidden_non_swe` (title role gate) | 3,298 |
 | `capped_by_top_n` (cleared every filter, beaten only by rank) | **4,442** |
 | `hidden_ineligible` | 0 |
@@ -579,3 +579,85 @@ D-028 and the CHANGELOG left the *same falsified claim* rendered into every arti
 `SourceTotal`'s docstring. Gate P0 requires the artifact to be answerable on its own, so a false
 explanation inside it is worse than one in a doc. **Correcting a document is not correcting the program:
 the prose that ships to the reader is a third place the claim lives.**
+
+---
+
+## Session 7 (2026-08-06) — what `hidden_hard_filter` is actually dropping
+
+Item 3 measured the largest single drop in the funnel — **`hidden_hard_filter`, 11,517 of 19,262 open
+postings (59.8%)** — but nothing had looked inside it. Measured read-only against a copy of the production
+store; the copy was deleted afterwards and no `boardwatch` CLI command was invoked against the real store
+(every CLI entry point runs `alembic upgrade head`).
+
+**The reconstruction reproduced 11,517 exactly.** No discrepancy to explain.
+
+### The split is not what the funnel narrative implies
+
+`passes_hard_filters` has two causes: an `exclude_titles` substring veto, and `location_fit == 0.0` when
+`location_filter_mode == "hard"`.
+
+| cause | count | share |
+|---|---:|---:|
+| `exclude_titles` | **11,517** | **100%** |
+| `location_fit == 0.0` | **0** | 0% |
+
+**The location clause has never executed.** `location_filter_mode` is `Literal["soft","hard"] = "soft"`,
+its only override is `{config_dir}/config.toml`, and no such file exists; `BOARDWATCH_CONFIG_DIR` is unset.
+Counterfactually, `"hard"` would veto **12,891** — it would make the drop larger, not smaller.
+
+### Top rejecting `exclude_titles` entries (first match, sums to 11,517)
+
+Senior 3,851 · Manager 2,775 · Staff 1,263 · Sr 997 · Lead 962 · Director 686 · Principal 569 · II 257 ·
+Service Technician 49 · Sales Engineer 47 · Field Service Engineer 23 · Mechanical Engineer 23 ·
+Hardware Engineer 8 · Field Engineer 6 · Control Systems Engineer 1 · **III 0**.
+
+### Three mechanical defects in a 16-entry list
+
+- **`III` is unreachable.** It sits after `II`, and every string containing `iii` contains `ii`. Zero
+  rejections have it as their only cause.
+- **`Sr` matches inside `SRE` and `Israel`.** Every posting with "Israel" in the title is auto-vetoed
+  (i-**sr**-ael). Of 124 open SRE/Site-Reliability postings, 105 were rejected and 4 died purely on this
+  substring with no seniority token present.
+- **`Lead` matches inside `Leader`** — 127 rejections, including Cisco's entire "Technical Leader"
+  family, which at Cisco is a senior-IC *engineering* title.
+
+### Scale, stated against the temptation to over-read it
+
+Substring collateral is **155 rejections — 1.35%**, and it decomposes as `Lead`-in-"Leader" **127** ·
+`Sr` inside another word **24** (SRE, Israel, SRAM, ISR, CSR, Crossroads) · the four remaining
+`*_Engineer`/`Director`/`Staff` mid-word hits **4**. The other 98.65% is seniority filtering doing what the
+profile asked. **2,546 (22.1%)** of rejected titles carry a SWE signal, but most is deliberate
+(Senior 1,184 · Staff 700 · Sr 196 · Principal 174). The real selection question is the **`II`/`III`
+band** — 89 SWE titles contain a standalone `II`, and for **69** that entry is the sole reason.
+
+**Owner: P5 (selection quality).** Recorded as a measurement, not fixed.
+
+## Session 7 — what a config hash can honestly cover (input to P0 item 4)
+
+`profile_hash` is an **eligibility-facts** hash, not a profile-row hash: it covers only `Facts` fields
+declared by enabled rules. The ranker reads five profile columns — `skills_json`, `target_titles_json`,
+`exclude_titles_json`, `locations_json`, `remote_only` — and **none of the five is in `profile_hash` or in
+`Settings`.** So `exclude_titles`, the setting responsible for the entire 11,517-posting drop above, is
+covered by no hash that exists today.
+
+**The closed list must account for every field, or it is not closed** (`CLAUDE.md`: out-of-catalog is a
+failure, never a new bucket). `Settings` has **13** top-level fields and `LLMTier` has **8**; all 21 are
+classified below, so the build has no unenumerated field to silently include or drop.
+
+| bucket | fields |
+|---|---|
+| **IN — decision-relevant** | `weights` · `recency_half_life_days` · `zero_skill_coverage_prior` · `location_filter_mode` · `llm.enabled` · `llm.provider` · `llm.model` · `llm.base_url` · `llm.eligibility_extraction` · `llm.resume_tailoring` · `llm.resume_tailoring_via_agent` |
+| **OUT — machine-local** | `data_dir` · `config_dir` |
+| **OUT — throughput only** | `scan_workers` · `busy_timeout_ms` · `per_host_delay_seconds` · `retry_attempts` · `detail_fetch_budget` |
+| **OUT — delivery, post-selection** | `notify` (whole `NotifyTier`; it changes who is told, never which postings become leads) |
+| **OUT — budget, with a caveat** | `llm.max_calls_per_run` — a pure cap, but a lower one leaves some postings unevaluated, so it changes *coverage* rather than verdicts. Excluded deliberately; revisit if coverage ever becomes a reported metric. |
+
+`llm.resume_tailoring` and `llm.resume_tailoring_via_agent` are **IN** rather than dismissed as
+post-selection: they gate whether tailoring happens at all, and a lead with no résumé is not a lead.
+
+**The gap to document when the manifest ships:** a config hash over `Settings` alone does not cover the
+profile row or the skill taxonomy version — either of which changes which postings become leads without
+changing the hash. It is **not** a gap for the rules catalog policy: `rules_hash` already covers
+`{catalog_version, catalog_source, policy}` (`eligibility/hashing.py`). That argues for carrying
+`rules_hash` in the manifest rather than the bare `RulesCatalog.version` — a free upgrade, not a
+constraint.

@@ -860,3 +860,53 @@ that can disagree — the way `no_current_evaluation` is its own `NOT IN` sweep.
 on a table you already joined is the same path with a different `GROUP BY`. The reasoning was written into
 a decision entry and a CHANGELOG entry before it was checked, which is D-021's rule ignored: **a fix is
 new code and its documentation is new prose; neither inherits the reviewed status of what it repairs.**
+
+---
+
+## D-029 — `runs.status` is a closed catalog whose DEFAULT carries the meaning
+**2026-08-06 · session 7 · P0 item 4 (first half)**
+
+**Context.** `PROGRAM.md` §3.P0.4 puts exit status in the run manifest. `runs` recorded only
+`started_at`, `finished_at` and `errors_json`, so "finished clean", "finished with errors", "crashed" and
+"still running" were not separable in the ledger — `STATE.md`'s gap table names this and parks it here.
+
+**Choice.** A `status` column over the closed catalog `running | ok | failed`, enforced in Python by
+`UnknownRunStatusError` at the write site. **Not** a `CHECK` constraint: adding one to an existing SQLite
+table costs a full rebuild, and six tables carry an FK to `runs.id`.
+
+**The default is the load-bearing part, not the column.** A SIGKILL never reaches the pipeline's
+`finally`, so no code can ever set a terminal status for a killed run — whatever the column defaults to
+*is* what a killed run says forever. `running` keeps such a row saying `running` with `finished_at` NULL;
+`ok` would launder a killed run into a clean one. This is why the column belongs to the manifest rather
+than being bolted onto the row's introduction: the question it answers is "what does an un-updated row
+mean", and that has exactly one chance to be decided.
+
+**Status tracks `fatal`, not `errors`.** A run that loses one lead to a tailor failure is a successful run
+with an error. Binding status to `summary.fatal` means the ledger's status and the artifact's FATAL line
+cannot disagree about the same run — a test asserts that equivalence rather than the two values
+separately.
+
+**Alternatives rejected.** Inferring status from `finished_at`/`errors_json` at read time — that is the
+"inferrable-but-wrong" shape, and it cannot represent a killed run at all. A `CHECK` constraint — see the
+rebuild cost above.
+
+**What review caught, and it is the real lesson.** Two write paths recorded a *failed* run as `ok`, both
+by inheriting the new parameter's default:
+
+- the scan's own abort handler (`scan/coordinator.py`) closes the row on Ctrl-C, and under
+  `boardwatch run` the scan is called **outside** the pipeline's `try`, so that handler is the only place
+  a scan abort is ever recorded and no funnel artifact exists to contradict it;
+- a *total* scan outage on the standalone path, which `run_pipeline` already classifies as fatal — so the
+  same event recorded `ok` under `boardwatch scan` and `failed` under `boardwatch run`.
+
+**Adding a defaulted parameter to a shared writer silently backfills that default into every existing
+caller.** The two callers that needed a non-default were exactly the two failure paths. A new column with
+a safe-looking default is not additive at the call sites; each one is a decision.
+
+**Scope, stated honestly.** `running` + `finished_at` NULL means only *nothing closed this row* — a run in
+flight, a killed run, and a standalone lane that raised between `ensure_run` and its own `finish_run`
+(`reports/tailor.py`, `eligibility/preflight.py`, `cli/eligibility_cmd.py` all call it on the success path
+only) share that signature. Separating them needs P3's reaper. **This column does not claim to.**
+
+**Item 4 is HALF done.** The manifest itself — config hash, and emission as an artifact section with
+`ARTIFACT_VERSION` 2→3 — is not built. Do not mark item 4 complete.

@@ -8,6 +8,31 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- **A terminal exit status on every run row.** `runs.status` over the closed catalog
+  `running | ok | failed`, so the ledger can separate "finished clean", "finished with errors",
+  "crashed" and "still running". Out-of-catalog raises `UnknownRunStatusError` at the write site rather
+  than being enforced by a `CHECK` constraint — adding one to an existing SQLite table costs a full
+  rebuild, and six tables carry a foreign key to `runs.id`.
+
+  **The column default carries the meaning.** A `SIGKILL` never reaches the pipeline's `finally`, so no
+  code can ever set a terminal status for a killed run — whatever the column defaults to *is* what a
+  killed run says. It defaults to `running`, leaving such a row saying `running` with `finished_at` NULL;
+  a default of `ok` would launder a killed run into a clean one.
+
+  Status tracks the run's `fatal` condition, not its error list: a run that loses one lead to a tailor
+  failure is a successful run with an error. Tying it to `fatal` means the ledger's status and the funnel
+  artifact's FATAL line cannot disagree about the same run.
+
+  **Scope, stated rather than implied:** `running` with `finished_at` NULL means only *nothing closed this
+  row*. A run in flight, a killed run, and a standalone lane that raised between minting its run and
+  finishing it all share that signature; separating them needs the reaper that P3 owns.
+
+  Two write paths were recording a *failed* run as `ok` and were fixed with it: the scan's own abort
+  handler (under `boardwatch run` the scan is called outside the pipeline's `try`, so that handler is the
+  only place a scan abort is ever recorded), and a *total* scan outage on the standalone path, which the
+  pipeline already classified as fatal — so the same event reported `ok` under `boardwatch scan` and
+  `failed` under `boardwatch run`.
+
 - **Per-source outcome table in the funnel artifact.** Per watched board: open postings, `eligible`,
   `leads`, `applied` — plus a rollup by provider, since the question of whether direct-ATS-only can carry
   the volume is a question about providers and 118 board rows do not answer it at a glance.

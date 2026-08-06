@@ -112,7 +112,14 @@ nine items numbered 0-8, and **item numbers are stable** — later documents cit
    **deleted before merge because it could not fail** — D-028 is the entry that deletes it, and the
    surviving leads check is a guard against a future writer rather than live evidence.
 4. **Run manifest**: config hash, profile version, rule-catalog version, code fingerprint of
-   decision-relevant modules, start/end, exit status.
+   decision-relevant modules, start/end, exit status. **HALF DONE** — **exit status shipped** as
+   `runs.status`, a closed catalog `running | ok | failed` whose default is what a SIGKILLed run reports
+   (D-029). The manifest itself — the config hash and emission as an artifact section — is **not built**.
+   Most of the rest already exists and must be reused, not rebuilt: the code fingerprint is
+   `eligibility/engine.py`'s AST digest over a closed declared module list, the rule-catalog version is
+   `RulesCatalog.version`, the profile version is `profile_hash`, and start/end are already read into the
+   funnel. **The config hash is the only genuinely new piece**, and `METRICS.md` §"Session 7" carries the
+   measured closed list of decision-relevant `Settings` fields it must cover.
 5. **Reconciliation check** — an invariant sweep asserting DB rows and on-disk artifacts agree. Counts
    from a different path than the one that produced them (job-apps spec-3 §6: self-report ≠ verification).
 6. **Stub-rate metric** at judge time — one number, reported every run. Cheap insurance; see §6 correction 4.
