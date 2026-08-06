@@ -97,6 +97,8 @@ def funnel(
     abstain: AbstainReport | None = None,
     unattributed_evaluations: int = 20_637,
     sources: list[SourceOutcome] | None = None,
+    # False models a run where the ranker never executed (no profile / fatal scan outage).
+    ranker_ran: bool = True,
 ) -> RunFunnel:
     leads = [lead()] if leads is None else leads
     # Default to a CONSISTENT tailor stage. Every shortlisted posting either produced a lead
@@ -141,7 +143,7 @@ def funnel(
             hidden_ineligible=hidden_ineligible,
             hidden_below_cutoff=hidden_below_cutoff,
             skipped_not_new=skipped_not_new,
-        ),
+        ) if ranker_ran else None,
         leads=leads,
         tailor_failed=tailor_failed,
         tailored_artifacts=tailored_artifacts,
@@ -639,13 +641,21 @@ def test_a_lead_attributable_to_no_board_fails_reconciliation() -> None:
     )
 
 
-def test_a_verdict_belonging_to_no_board_fails_reconciliation() -> None:
-    """An open posting whose company row vanished: its verdict is in the funnel's `eligible`
-    but belongs to no source. A GROUP BY summing to its own total could never catch this."""
+def test_the_per_source_eligible_total_is_not_offered_as_a_reconciliation() -> None:
+    """It was, and a review showed it could not fail — so it was deleted, not kept as decoration.
+
+    `eligible_by_company` groups the very same current-identity subquery the verdict stage
+    counts, by a NOT NULL foreign key, joined on a primary key. Its sum equals the verdict
+    stage's `eligible` for every possible database state. Shipping that as evidence is the
+    defect D-023 exists to forbid, so the only remaining total is `leads`, whose two sides have
+    genuinely different shapes.
+    """
     report = funnel(counts=corpus(eligible=40), sources=[source("stripe", eligible=39)])
 
-    assert report.reconciles is False
-    assert [total.name for total in report.unattributable] == ["eligible"]
+    assert [total.name for total in report.source_totals] == ["leads"]
+    # A per-board eligible count that disagrees with the verdict stage does NOT fail the run,
+    # because no honest implementation can produce that state.
+    assert report.reconciles is True
 
 
 def test_a_fully_attributed_run_reconciles() -> None:
@@ -681,3 +691,29 @@ def test_the_provider_rollup_aggregates_boards() -> None:
     assert ashby.split("|")[2].strip() == "1"
     # Leads first: the provider that produced one must outrank the one that did not.
     assert body.index("| greenhouse |") < body.index("| ashby |")
+
+
+def test_a_run_where_the_ranker_never_ran_reports_the_stage_as_unmeasured() -> None:
+    """A fatal scan outage and a missing profile both return before the ranker.
+
+    Reporting 0 in / 0 out would assert that it ran, considered nothing, and accounted for
+    everything — and since the stage is no longer `derived`, it would appear in the artifact's
+    list of stages whose balance could actually have failed. That is a fabricated green tick on
+    a stage that never executed.
+    """
+    report = funnel(ranker_ran=False, leads=[])
+
+    shortlist = stage(report, "shortlist")
+    assert shortlist.entered is None
+    assert shortlist.advanced is None
+    assert shortlist.reconciled is None, "an unmeasured stage must not report as reconciled"
+    assert shortlist not in report.instrumented_stages
+    # The tailor stage's `entered` is the shortlist count, so it is equally unknown.
+    assert stage(report, "tailor").entered is None
+
+    body = funnel_to_markdown(report)
+    failed_line = next(line for line in body.splitlines() if "could actually have failed" in line)
+    assert "shortlist" not in failed_line
+    assert "tailor" not in failed_line
+    row = next(line for line in body.splitlines() if line.startswith("| shortlist |"))
+    assert "not instrumented" in row, row

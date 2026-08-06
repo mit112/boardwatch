@@ -424,7 +424,9 @@ def test_no_profile_is_a_real_run_that_produced_nothing_not_a_crash(
     summary = _pipeline(env, tmp_path / "apps")
 
     assert summary.tailored == []
-    assert summary.shortlist.shortlisted == 0
+    # None, not a zeroed count: the ranker never executed, so its considered population is
+    # unknown rather than zero. A zeroed instance made the funnel assert the opposite.
+    assert summary.shortlist is None
     assert any("no profile" in e for e in summary.errors)
     with get_engine(env).connect() as conn:
         finished = conn.execute(select(tables.runs.c.finished_at)).scalar_one()

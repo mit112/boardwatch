@@ -138,6 +138,14 @@ def test_a_run_with_no_profile_still_reconciles(
     assert stages["corpus"]["entered"] == 1
     assert stages["corpus"]["advanced"] == 0, "nothing can be judged without a profile"
     assert stages["corpus"]["drops"][0]["count"] == 1
+    # The ranker never ran, so `shortlist` must be UNMEASURED — not 0 in / 0 out. This run
+    # still reconciles, but only because an uninstrumented stage is excluded from the gate
+    # rather than silently passing it. Before the fix this stage reported zeros with
+    # derived=False, which put it in the artifact's list of stages that could have failed and
+    # asserted the ranker had run and accounted for everything.
+    assert stages["shortlist"]["entered"] is None
+    assert stages["shortlist"]["instrumented"] is False
+    assert stages["shortlist"]["reconciled"] is None
     assert payload["reconciles"] is True
 
 

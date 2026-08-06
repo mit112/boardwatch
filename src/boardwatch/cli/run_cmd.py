@@ -12,12 +12,24 @@ import typer
 from rich.console import Console
 
 from boardwatch.cli.context import build_context
-from boardwatch.pipeline.runner import DEFAULT_TOP_N, run_pipeline
+from boardwatch.pipeline.runner import DEFAULT_TOP_N, PipelineSummary, run_pipeline
 from boardwatch.scan.coordinator import SCAN_LOCK_MESSAGE, ScanLockHeldError
 
 console = Console()
 
 DEFAULT_OUT_ROOT = Path.home() / "boardwatch-applications"
+
+
+def _shortlist_line(summary: PipelineSummary) -> str:
+    """Says the ranker did not run, rather than printing zeros as if it had."""
+    if summary.shortlist is None:
+        return "ranker did not run"
+    counts = summary.shortlist
+    return (
+        f"{counts.shortlisted} shortlisted of {counts.considered} considered "
+        f"({counts.hidden_ineligible} ineligible, {counts.hidden_non_swe} non-SWE, "
+        f"{counts.hidden_below_cutoff} below cutoff)"
+    )
 
 
 def run(
@@ -57,11 +69,7 @@ def run(
     console.print(
         f"run {summary.run_id} · {summary.scan_postings_seen} postings seen · "
         f"{summary.scan_open_postings} open · {summary.evaluated} evaluated · "
-        f"{summary.shortlist.shortlisted} shortlisted of "
-        f"{summary.shortlist.considered} considered "
-        f"({summary.shortlist.hidden_ineligible} ineligible, "
-        f"{summary.shortlist.hidden_non_swe} non-SWE, "
-        f"{summary.shortlist.hidden_below_cutoff} below cutoff) · "
+        f"{_shortlist_line(summary)} · "
         f"{len(summary.tailored)} tailored · {summary.leads_with_pdf} with PDF"
     )
     for lead in summary.tailored:

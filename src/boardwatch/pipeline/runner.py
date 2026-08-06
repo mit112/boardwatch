@@ -77,9 +77,13 @@ class PipelineSummary:
     # The ranker's whole population accounting, not just what it showed. `shortlisted` alone
     # is capped at --top and so measures the flag rather than the funnel; the considered count
     # and the four hidden buckets are what let the funnel's shortlist stage reconcile.
-    shortlist: ShortlistCounts = field(
-        default_factory=lambda: ShortlistCounts(considered=0, shortlisted=0)
-    )
+    #
+    # None until the ranker actually runs, and NOT a zeroed instance: a fatal scan outage and a
+    # missing profile both return before it. A default of considered=0 made the artifact report
+    # 0 in / 0 out on those runs and, because the stage is no longer `derived`, list it among
+    # the stages whose balance could have failed — asserting the ranker ran and accounted for
+    # everything when it never executed.
+    shortlist: ShortlistCounts | None = None
     tailored: list[TailoredLead] = field(default_factory=list)
     tailor_failed: int = 0
     errors: list[str] = field(default_factory=list)
@@ -223,7 +227,7 @@ def run_pipeline(
         # Every lead the ranker produced failed to render. Not "zero was provably right" —
         # zero was produced from a non-empty shortlist, which is a broken résumé path
         # (missing resume.yaml, typst gone), not an honest empty day.
-        shortlisted = summary.shortlist.shortlisted
+        shortlisted = summary.shortlist.shortlisted if summary.shortlist else 0
         if summary.fatal is None and shortlisted > 0 and not summary.tailored:
             summary.fatal = (
                 f"every lead failed to tailor ({summary.tailor_failed}/{shortlisted})"

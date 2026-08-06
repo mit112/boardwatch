@@ -73,7 +73,7 @@ def collect_run_funnel(
     *,
     run_id: int,
     scan: ScanContext,
-    shortlist: ShortlistCounts,
+    shortlist: ShortlistCounts | None,
     tailored: list[tuple[int, str, str, Path, bool]],
     tailor_failed: int,
     errors: list[str],

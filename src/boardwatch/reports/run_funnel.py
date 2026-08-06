@@ -253,7 +253,7 @@ def build_run_funnel(
     finished_at: datetime | None,
     scan: ScanContext,
     corpus: CorpusCounts,
-    shortlist: ShortlistCounts,
+    shortlist: ShortlistCounts | None,
     sources: Sequence[SourceOutcome],
     leads: Sequence[Lead],
     tailor_failed: int,
@@ -276,6 +276,65 @@ def build_run_funnel(
 
     tailored = len(leads)
     with_pdf = sum(1 for lead in leads if lead.pdf_built)
+
+    if shortlist is None:
+        # The ranker never ran: a fatal scan outage or a missing profile returns before it. Its
+        # considered population is therefore UNKNOWN, and per this module's first rule that is
+        # reported as None. Reporting 0 in / 0 out with derived=False would assert the opposite
+        # — that the ranker ran, considered nothing and accounted for everything — and would put
+        # `shortlist` in the artifact's list of stages whose balance could actually have failed.
+        shortlist_stage = Stage(
+            name="shortlist",
+            entered=None,
+            advanced=None,
+            note=(
+                "NOT INSTRUMENTED. The ranker did not run this run — no profile, or a fatal "
+                "scan outage stopped the pipeline before it. How many postings it would have "
+                "considered is unknown, so this is reported as unmeasured rather than as zero."
+            ),
+        )
+    else:
+        shortlist_stage = Stage(
+            name="shortlist",
+            # The RANKER's own considered population, not the verdict stage's `eligible`. Those
+            # are different sets and subtracting one from the other is what an earlier version
+            # did: `eligible` spans every open posting's verdict, while the ranker's counters
+            # cover only postings that reached it, and it hides on criteria the verdict stage
+            # knows nothing about. With `ineligible` currently 0 store-wide `eligible` happens
+            # to dominate, but the moment P2 makes `ineligible` reachable the remainder would
+            # go negative and Gate P0's headline metric would read FAILED for a benign reason.
+            entered=shortlist.considered,
+            advanced=shortlist.shortlisted,
+            drops=(
+                Drop(
+                    reason="skipped_not_new",
+                    count=shortlist.skipped_not_new,
+                    note="narrowed away by --new; a scoping choice, not a rejection",
+                ),
+                Drop(
+                    reason="hidden_hard_filter",
+                    count=shortlist.hidden_hard_filter,
+                    note="excluded title, or a location the hard filter mode rejects",
+                ),
+                Drop(reason="hidden_non_swe", count=shortlist.hidden_non_swe,
+                     note="title role gate"),
+                Drop(reason="hidden_ineligible", count=shortlist.hidden_ineligible),
+                Drop(
+                    reason="capped_by_top_n",
+                    count=shortlist.hidden_below_cutoff,
+                    note="cleared every filter and was beaten only by rank",
+                ),
+            ),
+            # NOT derived. `entered` is the ranker's own row count, measured independently of
+            # the five counters below, so this identity can genuinely fail — it is the stage
+            # P0 item 3 turned from bookkeeping into evidence.
+            derived=False,
+            note=(
+                "The ranker's whole considered population. NOT a continuation of `verdict` — "
+                "the two count different populations, so the numbers here will not match it. "
+                "Every exit is counted where the posting actually leaves."
+            ),
+        )
 
     stages = (
         Stage(
@@ -357,50 +416,12 @@ def build_run_funnel(
                 "`entered` counts. The split is the information; the tick is not."
             ),
         ),
-        Stage(
-            name="shortlist",
-            # The RANKER's own considered population, not the verdict stage's `eligible`. Those
-            # are different sets and subtracting one from the other is what an earlier version
-            # did: `eligible` spans every open posting's verdict, while the ranker's counters
-            # cover only postings that reached it, and it hides on criteria the verdict stage
-            # knows nothing about. With `ineligible` currently 0 store-wide `eligible` happens
-            # to dominate, but the moment P2 makes `ineligible` reachable the remainder would
-            # go negative and Gate P0's headline metric would read FAILED for a benign reason.
-            entered=shortlist.considered,
-            advanced=shortlist.shortlisted,
-            drops=(
-                Drop(
-                    reason="skipped_not_new",
-                    count=shortlist.skipped_not_new,
-                    note="narrowed away by --new; a scoping choice, not a rejection",
-                ),
-                Drop(
-                    reason="hidden_hard_filter",
-                    count=shortlist.hidden_hard_filter,
-                    note="excluded title, or a location the hard filter mode rejects",
-                ),
-                Drop(reason="hidden_non_swe", count=shortlist.hidden_non_swe,
-                     note="title role gate"),
-                Drop(reason="hidden_ineligible", count=shortlist.hidden_ineligible),
-                Drop(
-                    reason="capped_by_top_n",
-                    count=shortlist.hidden_below_cutoff,
-                    note="cleared every filter and was beaten only by rank",
-                ),
-            ),
-            # NOT derived. `entered` is the ranker's own row count, measured independently of
-            # the five counters below, so this identity can genuinely fail — it is the stage
-            # P0 item 3 turned from bookkeeping into evidence.
-            derived=False,
-            note=(
-                "The ranker's whole considered population. NOT a continuation of `verdict` — "
-                "the two count different populations, so the numbers here will not match it. "
-                "Every exit is counted where the posting actually leaves."
-            ),
-        ),
+        shortlist_stage,
         Stage(
             name="tailor",
-            entered=shortlist.shortlisted,
+            # None, not 0, for the same reason as the shortlist stage above: if the ranker never
+            # ran, how many leads it would have handed over is unknown rather than zero.
+            entered=None if shortlist is None else shortlist.shortlisted,
             advanced=tailored,
             drops=(Drop(reason="tailor_failed", count=tailor_failed),),
         ),
@@ -455,24 +476,24 @@ def build_run_funnel(
         ),
     )
 
+    # ONE total, not two. A per-board `eligible` total was shipped here and deleted after
+    # review: it grouped the very same current-identity subquery the verdict stage counts, by a
+    # NOT NULL foreign key, joined on a primary key — so its sum equalled the verdict stage's
+    # `eligible` for every possible database state. That is the unfailable-assertion defect
+    # D-023 exists to forbid, and it was labelled as evidence. Deleted rather than kept as
+    # decoration, exactly as D-023 deleted the two `*_reconciles` properties.
     source_totals = (
-        SourceTotal(
-            name="eligible",
-            funnel=eligible,
-            per_source=sum(item.eligible for item in sources),
-            note=(
-                "verdict stage vs the per-board sweep. Disagreement means an open posting's "
-                "company row is missing, so its verdict belongs to no board"
-            ),
-        ),
         SourceTotal(
             name="leads",
             funnel=tailored_artifacts.rows,
             per_source=sum(item.leads for item in sources),
             note=(
-                "resume_tailored rows for this run vs the same rows resolved to a board through "
-                "posting_versions. Disagreement means a lead cannot be attributed to any source, "
-                "which is exactly what Gate P0 asks the artifact to answer"
+                "resume_tailored ROWS for this run vs DISTINCT postings resolved to a board "
+                "through posting_versions. Different shapes, so it can disagree: an artifact "
+                "whose posting_version_id is NULL resolves to no board, and two artifacts for "
+                "one posting in one run collapse to a single distinct posting. Neither is "
+                "reachable through the normal tailor path, so treat this as a guard against a "
+                "future writer, not as live evidence"
             ),
         ),
     )
@@ -745,7 +766,7 @@ def funnel_to_markdown(funnel: RunFunnel) -> str:
         "",
         "## Per-source outcomes",
         "",
-        f"{len(funnel.sources)} boards with anything to report this run.",
+        f"{len(funnel.sources)} boards owning an open posting, or a lead from this run.",
         "",
         "`unique` and `assisted` are **not instrumented** — both are dedup-attribution "
         "quantities (`assisted` credits a source that arrived second for a posting another "
