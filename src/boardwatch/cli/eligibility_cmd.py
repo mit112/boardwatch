@@ -17,6 +17,7 @@ from typing import NoReturn, get_args
 
 import typer
 from rich.console import Console
+from rich.table import Table
 from sqlalchemy import select
 
 from boardwatch.cli.context import build_context
@@ -35,6 +36,8 @@ from boardwatch.eligibility.preflight import current_identity, run_eligibility
 from boardwatch.llm.cache import ResponseCache
 from boardwatch.llm.factory import build_client
 from boardwatch.llm.payload import preview_text
+from boardwatch.reports.abstain import build_abstain_report
+from boardwatch.store.abstain_queries import count_requirement_dispositions
 from boardwatch.store.queries import current_posting_versions, get_profile, save_eligibility
 from boardwatch.store.tables import eligibility_requirements
 
@@ -352,6 +355,68 @@ def summary_cmd(ctx: typer.Context) -> None:
         )
     for (family, disposition), count in sorted(by_family.items()):
         console.print(f"  {family} · {disposition}: {count}")
+
+
+@eligibility_app.command("abstain")
+def abstain_cmd(ctx: typer.Context) -> None:
+    """Abstain rate for EVERY rule in the catalog, including rules that have never fired.
+
+    `summary` groups the rows that exist; this enumerates the catalog and joins the rows onto
+    it. The difference is the entire point: a rule that has never been detected produces no
+    row to group, so it is invisible to `summary` and visible here as `never fired`. That is
+    the keystone invariant's monitoring requirement — a rule that cannot fire must be a
+    reported failure, not silence.
+    """
+    app_ctx = build_context(ctx.obj)
+    catalog = load_rules(app_ctx.settings.config_dir)
+    with app_ctx.engine.connect() as conn:
+        identity = current_identity(conn, app_ctx.settings)
+        versions = current_posting_versions(conn, None)
+        version_ids = [cv.posting_version_id for cv in versions.values()]
+        evals = (
+            current_evaluations(conn, version_ids, *identity) if identity is not None else {}
+        )
+        eval_ids = [eval_id for eval_id, _ in evals.values()]
+        counts = count_requirement_dispositions(conn, eval_ids)
+    report = build_abstain_report(catalog, counts)
+
+    table = Table(title="per-rule abstain rate")
+    # Fold rather than ellipsize: at 80 columns rich truncates rule_ids to a common prefix,
+    # and `experience_years:total_years_minimum` / `..._preferred` then render identically.
+    # The rule_id IS the report's key, so it can wrap but must never be abbreviated.
+    table.add_column("rule", overflow="fold")
+    table.add_column("observed", justify="right")
+    table.add_column("met", justify="right")
+    table.add_column("unmet", justify="right")
+    table.add_column("abstained", justify="right")
+    table.add_column("rate", justify="right")
+    for rule in report.rules:
+        if rule.never_fired:
+            # Not "0%" — the rule produced no rows, so there is no rate to report.
+            rate, style = "never fired", "yellow"
+        elif rule.fully_abstaining:
+            rate, style = "100%", "red"
+        else:
+            rate, style = f"{rule.abstain_rate:.0%}", ""
+        table.add_row(
+            rule.rule_id, str(rule.observed), str(rule.met), str(rule.unmet),
+            str(rule.unknown), rate, style=style or None,
+        )
+    console.print(table)
+
+    console.print(
+        f"{len(report.rules)} rules · {len(report.never_fired)} never fired · "
+        f"{len(report.fully_abstaining)} fire but never decide · {report.observed_rows} rows"
+    )
+    if report.unattributed:
+        console.print(f"[yellow]{report.unattributed} rows carry no rule_id[/yellow]")
+    if report.out_of_catalog:
+        # Closed catalog: an undeclared rule_id is a failure, never a new bucket.
+        console.print(
+            f"[red]FAILURE: {report.out_of_catalog_rows} rows carry rule_ids the catalog does "
+            f"not declare: {', '.join(report.out_of_catalog)}[/red]"
+        )
+        raise typer.Exit(1)
 
 
 @policy_app.callback(invoke_without_command=True)

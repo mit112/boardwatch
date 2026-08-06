@@ -160,6 +160,39 @@ def test_summary_with_no_evaluations_reports_zero(env: Path) -> None:
     assert "no current-engine evaluation: 0" in result.output
 
 
+def test_abstain_lists_every_catalog_rule_on_an_empty_database(env: Path) -> None:
+    """The distinguishing behaviour vs `summary`: with zero rows, `summary` shows nothing and
+    `abstain` still shows all 44 rules, every one of them flagged `never fired`."""
+    assert _run(env, ["init"], INIT_INPUT).exit_code == 0
+    result = _run(env, ["eligibility", "abstain"])
+
+    assert result.exit_code == 0
+    assert "44 rules · 44 never fired" in result.output
+    assert "0 fire but never decide" in result.output
+    # A rule with no rows is never reported as 0% — that would read as "never abstains".
+    assert "0%" not in result.output
+
+
+def test_abstain_names_rules_that_have_never_been_detected(
+    env: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """These seven are exactly why enumeration cannot come from a GROUP BY.
+
+    Widened because rule_ids must render in full: at 80 columns rich abbreviates them to a
+    common prefix and two distinct rules become indistinguishable.
+    """
+    monkeypatch.setenv("COLUMNS", "160")
+    assert _run(env, ["init"], INIT_INPUT).exit_code == 0
+    result = _run(env, ["eligibility", "abstain"])
+
+    for rule_id in (
+        "clearance:doe_q_required",
+        "work_auth:eu_authorization_required",
+        "experience_years:total_years_minimum",
+    ):
+        assert rule_id in result.output
+
+
 def test_extract_skips_cleanly_when_extraction_disabled(env: Path) -> None:
     """Both the extraction feature and the LLM tier are off by default: `extract` must
     degrade to a one-line message and exit 0, never an error, with no profile or
@@ -176,4 +209,5 @@ def test_help_smoke(env: Path) -> None:
     assert runner.invoke(app, ["eligibility", "policy", "--help"]).exit_code == 0
     assert runner.invoke(app, ["eligibility", "run", "--help"]).exit_code == 0
     assert runner.invoke(app, ["eligibility", "summary", "--help"]).exit_code == 0
+    assert runner.invoke(app, ["eligibility", "abstain", "--help"]).exit_code == 0
     assert runner.invoke(app, ["eligibility", "extract", "--help"]).exit_code == 0
