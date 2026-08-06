@@ -535,10 +535,20 @@ all**, and the last run created — for `6a27cf7` — sat queued for 3h50m with 
 not acquired by Runner of type hosted even after multiple attempts."* The cancel API itself returned
 HTTP 502.
 
-**What a fresh session should do:** `gh run list --limit 5 --branch main`. If runs for `6a54594` or later
-are absent or still queued, this is unresolved — re-trigger with an empty commit or
-`gh workflow run ci --ref main`. **Do not re-diagnose it as a test or config failure**; nothing in the
-repo caused it, and the four runs before it succeeded.
+**Still unresolved at the end of session 7, and the failure has MOVED — check the right thing.** By
+21:41 GitHub had resumed *creating* runs (it backfilled queued runs for the two pushes that previously
+produced none), but **not one has been acquired by a runner**: three sat `queued` simultaneously, the
+oldest at 4h30m. So dispatch recovered and runner acquisition did not. A fresh session will see runs
+listed and must not read their existence as recovery — **check `status`, not presence.**
+
+Two corrections to the advice this section previously gave:
+- **`gh workflow run ci --ref main` does not work here** — the workflow has no `workflow_dispatch`
+  trigger (HTTP 422). An empty commit, or any real push, is the only re-trigger.
+- **An empty commit is usually unnecessary.** `main` already contains every merged item, so the next
+  real push gives the un-signalled commits their coverage transitively.
+
+**Do not re-diagnose it as a test or config failure**; nothing in the repo caused it, `make check` has
+been green at exit 0 on every commit, and the runs before the incident succeeded.
 
 ## Blocked items
 
