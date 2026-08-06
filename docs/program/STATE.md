@@ -2,9 +2,9 @@
 
 **Last updated:** 2026-08-06 (session 6, P0 in progress)
 **Updated by:** boardwatch (Claude)
-**Repo state at write time:** items 0, 1, 2 and 7 are on `main`. **Item 3 is complete on branch
-`p0-item3-per-source` and NOT yet merged** — verify with `git log --oneline -3` and `git branch`; if it has
-merged since, correct this line.
+**Repo state at write time:** every P0 item claimed done below (0, 1, 2, 3, 7) is merged to `main` and
+pushed; the tree is clean. Verify with `git log --oneline -3` and `git status` — if they disagree, the repo
+wins.
 **This header carries no commit count or sha on purpose** — the previous one named both, went stale inside
 a single session when three later docs commits did not update it, and a cold session following the
 session-start ritual hit the disagreement on its very first check. State what is durably true; verify the
