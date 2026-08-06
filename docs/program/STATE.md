@@ -22,7 +22,7 @@ analysis, planning and program machinery only.
 
 ## What shipped this session
 
-Analysis and program machinery only — **zero source changes**.
+Analysis, planning and program machinery — **zero source changes**. Committed as `84cfab6`.
 
 - Read all seven job-apps handover documents (2,609 lines) in `/Users/mitsheth/dev/Job apps/docs/boardwatch/`.
 - Verified job-apps' claims about boardwatch against boardwatch's actual code. job-apps never read this
