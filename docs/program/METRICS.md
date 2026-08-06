@@ -140,8 +140,8 @@ the schema were imprecise in ways that would have mis-shaped the funnel; both ar
 
 | Session 1 said | Actually | Why it matters |
 |---|---|---|
-| `uq_eligibility_deterministic ON (input_id, engine_version)` | It is a **partial** unique index: `... WHERE engine_kind = 'deterministic'` (`tables.py:256`, `p0_eligibility.py:67`) | LLM-lane evaluations are **not** deduped by it, so the cache-hit stage is lane-specific, not one number |
-| The abstain verdict | There is **no** `abstain` value. Stored vocabulary is `eligible \| ineligible \| **uncertain**` (CHECK at `tables.py:259`) | The keystone invariant's ABSTAIN is persisted as `uncertain`; the funnel must state the mapping or look like it is missing a stage |
+| `uq_eligibility_deterministic ON (input_id, engine_version)` | It is a **partial** unique index: `... WHERE engine_kind = 'deterministic'` (`tables.py:259-260`, `p0_eligibility.py:67`) | LLM-lane evaluations are **not** deduped by it, so the cache-hit stage is lane-specific, not one number |
+| The abstain verdict | There is **no** `abstain` value. Stored vocabulary is `eligible \| ineligible \| **uncertain**` (CHECK at `tables.py:262`) | The keystone invariant's ABSTAIN is persisted as `uncertain`; the funnel must state the mapping or look like it is missing a stage |
 
 ### Rule catalog — enumerable, and 7 rules have never fired
 

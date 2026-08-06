@@ -1,9 +1,11 @@
 # PROGRAM STATE — read this first
 
-**Last updated:** 2026-08-06 (session 2, P0 started)
+**Last updated:** 2026-08-06 (session 3, P0 in progress)
 **Updated by:** boardwatch (Claude)
-**Repo state at write time:** branch `p0-instrumentation`, clean, HEAD `c56bc11`, 2 commits ahead of `main`
-**Gate:** `make check` exits **0** (2633 passed, coverage 94.98%) as of `c56bc11`
+**Repo state at write time:** branch `p0-instrumentation`, clean, 5 commits ahead of `main`, tip is the
+docs commit that carries this header. **This header must be re-checked against `git log` every time this
+file is edited** — it went stale within one session because three later docs commits did not update it.
+**Gate:** `make check` exits **0** (2633 passed, coverage 94.98%), measured on this branch tip.
 
 > This is the single file a fresh session with zero memory reads to know where the program stands.
 > If it disagrees with the repo, **the repo wins** — fix this file and note the correction in
@@ -28,7 +30,7 @@ Branch is **not pushed and has no PR** — pushing is not covered by standing pe
 
 ## What shipped in session 2 (2026-08-06)
 
-Two commits on `p0-instrumentation`, `make check` green at each:
+Five commits on `p0-instrumentation` — two of substance, three recording them, `make check` green at each:
 
 - **`bc0973d`** — `main` was **red** and had been since session 1. `PROGRAM.md:4` and `STATE.md:27`
   carried an absolute `/Users/<name>` path, violating generalization rule R1, so `make check` exited 2
@@ -136,7 +138,7 @@ tracked tree and R7 requires a sha256-pinned `SHIPPED_DATA` entry for tracked `.
 
 | Phase | Status | Gate met? |
 |---|---|---|
-| P0 Instrumentation | **in progress** — item 7 done (`c56bc11`); items 1/2/8 blocked on open question 1 | — |
+| P0 Instrumentation | **in progress** — item 7 done (`c56bc11`); nothing blocked (D-016 ratified) | — |
 | P1 Résumé artifact gate | not started | — |
 | P2 Profile + keystone invariant | not started | — |
 | P3 Unattended one command | not started | — |
@@ -173,9 +175,10 @@ tracked tree and R7 requires a sha256-pinned `SHIPPED_DATA` entry for tracked `.
   **no batch orchestrator exists in `src/`**. The de facto batch driver is `.agent/bin/bw-daily` (`bwd`),
   which is gitignored shell — it just calls `boardwatch tailor run <id> --out ...` in a loop.
 
-So a seven-stage funnel does not correspond to the boundaries of any process that exists. Live evidence:
-`runs` has **4** rows while `eligibility_evaluations` has **20,637** — essentially every evaluation was
-written outside any run.
+So a seven-stage funnel does not correspond to the boundaries of any process that exists. The evidence is
+structural, above — no code path puts a `run_id` in scope where evaluations are written. (`runs` holds 4
+rows against 20,637 evaluations, but that ratio proves nothing on its own: 4 scan runs could legitimately
+produce 20,637 evaluations. It is a symptom, not the measurement.)
 
 **The fork.** (a) `run_id` = the scan run, with downstream writers recording the scan they are working off —
 cheap, but an evaluation's "run" then means *the run that captured the version*, not when it was judged.

@@ -1,6 +1,6 @@
 # boardwatch replacement program — plan of record
 
-**Owner:** boardwatch (Claude) · **Established:** 2026-08-06 · **Status:** awaiting Mit's approval
+**Owner:** boardwatch (Claude) · **Established:** 2026-08-06 · **Status:** approved, executing (P0)
 **Derived from** `~/dev/Job apps/docs/boardwatch/roadmap.md`, with documented departures (§6).
 **Current standing:** `docs/program/STATE.md` — read that first, every session.
 

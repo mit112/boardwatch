@@ -351,9 +351,11 @@ are written in exactly one place — `insert_run` at `scan/coordinator.py:104`, 
 Eligibility is judged later, as a preflight side-effect of `top`/`stats` (`eligibility/preflight.py:133`),
 with no `run_id` in scope. Tailoring is later still and single-posting (`run_tailor` takes one `posting_id`;
 **no batch orchestrator exists in `src/`**). The only thing that stitches them into a pipeline is
-`.agent/bin/bw-daily` (`bwd`), which is gitignored shell and not part of the product. Measured consequence:
-`runs` holds **4** rows against **20,637** evaluations — essentially every judgment ever made happened
-outside any run.
+`.agent/bin/bw-daily` (`bwd`), which is gitignored shell and not part of the product. The argument is
+structural — there is no code path in which a `run_id` is in scope when an evaluation or artifact is
+written. (`runs` holds 4 rows against 20,637 evaluations. Do **not** cite that ratio as the proof: 4 scan
+runs could legitimately produce 20,637 evaluations. It is consistent with the conclusion, not evidence for
+it.)
 
 **Choice.** `run_id` denotes a **pipeline run**: one command that runs scan → eligibility → tailor in
 sequence and owns the run identity across all of it. P0 introduces the pipeline-run row and the funnel
@@ -374,3 +376,45 @@ alternative was building a throwaway key in P0 and re-keying at P3. It also puts
 replaced by a shipped command instead of gitignored shell. **Sequencing note:** per-rule abstain rate needs
 no `run_id` at all (it is a read over `eligibility_requirements` joined against the catalog enumeration), so
 it is built first and de-risks the rest of P0 independently of this decision.
+
+---
+
+## D-017 — second independent review; STATE's own header was the defect
+**2026-08-06 · session 3**
+
+**Context.** `p0-instrumentation` was five commits ahead of `main` and green under `make check`, but had
+been reviewed only by its author. Mit's standing merge permission requires **both** confidence and review,
+so a fresh agent with no shared context reviewed `main..p0-instrumentation` adversarially — the same move
+that produced D-013, and for the same reason: this program's documented failure mode is asserting things in
+its own favour.
+
+**Outcome: APPROVE WITH CHANGES.** The code half survived unchanged. The reviewer independently confirmed,
+against the repo and read-only against the live DB, that the migration is genuinely additive (no
+`batch_alter_table`, partial unique index and both append-only triggers intact), that its FK actually
+enforces (`store/db.py:30` sets `PRAGMA foreign_keys=ON` per connection), that `downgrade()` is a native
+DROP COLUMN that leaves `PRAGMA foreign_key_check` clean, that the test exercises the migration rather than
+a fresh schema (`upgrade(BASE)` → seed → `upgrade(HEAD)`), and that the revision chain has exactly one head.
+It also re-derived the load-bearing numbers: 6 families / 44 patterns, the never-fired set is **exactly** the
+7 rule_ids named, `experience_years:scoped_years_minimum` 11,670/11,670 `unknown`, the index is partial, and
+every `file:line` citation in the docs resolves to what the docs claim.
+
+**What it caught — all in the documents, none in the code:**
+
+1. **`STATE.md`'s header was false about the branch it described.** It claimed HEAD `c56bc11` and "2 commits
+   ahead" at a tip of `bf25023`, 5 ahead, and pinned the gate result to the older sha. The three docs commits
+   that added D-015 and D-016 never updated the header above them. A cold session following the
+   session-start ritual would find STATE and the repo disagreeing on the very first check.
+2. **`STATE.md`'s phase table contradicted four other places in the same file**, saying P0 items were
+   "blocked on open question 1" when that question is D-016-resolved and the blocked-items table said none.
+3. `METRICS.md` cited `tables.py` line numbers from *before* this branch shifted them by three — written
+   after the shift, checked against the file before it.
+4. D-016 and STATE both offered "`runs` has 4 rows vs 20,637 evaluations" as *evidence*. It is not: 4 scan
+   runs could legitimately produce 20,637 evaluations. The conclusion stands on the structural argument
+   (no code path has a `run_id` in scope at the write site); the ratio is a symptom.
+5. `PROGRAM.md` still read "awaiting Mit's approval" after approval.
+
+All five corrected before merge. **The lesson, which is the point of recording this:** the branch's *code*
+was reviewed by its author to a standard that held up, and its *documents* were not reviewed at all. In a
+program where a document is the read-first source of truth, a stale header is a defect of the same kind as
+a broken migration — it is the artifact a fresh session acts on. Treat `STATE.md`'s header as code: it is
+now self-flagging, and re-checking it against `git log` is part of editing the file.
