@@ -17,16 +17,39 @@ rest against `git log`. (D-017.)
 
 ## Current phase
 
-**P0 — Instrumentation. IN PROGRESS on branch `p0-instrumentation`.**
+**P0 — Instrumentation. IN PROGRESS on `main`.** Nothing is blocked.
 
-Item 7 (the `run_id` migration) is **DONE and committed**. Nothing is blocked: the one open question —
-what a `run_id` refers to — was **ratified by Mit as a pipeline run on 2026-08-06 (D-016)**, which grows P0
-to include a pipeline-run row that P3 would otherwise have built.
+Two of P0's eight items are done and on `main`: item 7 (the `run_id` migration) and item 2 (**per-rule
+abstain rate**). `main` is green and pushed for the first time since session 1 — the branch that fixed it
+merged this session.
 
-Next up is **per-rule abstain rate**, chosen deliberately because it needs no `run_id` and so de-risks the
-rest of P0 independently of D-016.
+Remaining P0 items, in the order D-016 implies: the **pipeline-run row** (item 0, early P3 work taken on
+deliberately), then threading `run_id` into the two write paths, then the funnel artifact, the per-source
+table, the run manifest, the reconciliation sweep, the stub rate, and the fabrication counters.
 
-Branch is **not pushed and has no PR** — pushing is not covered by standing permission.
+---
+
+## What shipped in session 3 (2026-08-06)
+
+- **Merged `p0-instrumentation` to `main` and pushed** (`88c98d4`), after a second independent review.
+  `main` had been red since session 1 and is now green: `make check` exits 0, `generalization: OK`.
+- **`540bb34` — per-rule abstain rate** (`boardwatch eligibility abstain`), P0 item 2. Enumerates from
+  `load_rules()` and LEFT JOINs observed counts, so the 7 rules that have never fired are visible instead of
+  absent. Never-fired reports as `never fired`, **never as 0%**.
+- **Review found the code clean and the documents stale** — see D-017. `STATE.md`'s own header was the
+  defect: it named a HEAD and a commit count that three later docs commits had invalidated. The header no
+  longer carries either.
+
+### What the new metric immediately found
+
+**7 of 44 rules have never fired; 17 more fire and never decide.** Full numbers in `METRICS.md`. The two
+that matter most:
+
+- **The entire `clearance` family** — 105 detections, **0 met and 0 unmet, ever**. Every clearance rule
+  that fires is at 100% abstain.
+- **`work_auth:no_sponsorship_offered`: 1052/1052 abstained.** A thousand postings said in their own text
+  that they offer no sponsorship, and the engine concluded nothing on every one. This is **bar metric B7
+  measured rather than asserted**, and it is why `ineligible` is 0 across the whole database.
 
 ---
 
@@ -47,6 +70,8 @@ Research findings are in `METRICS.md` under "Session 2". The load-bearing ones:
   `GROUP BY rule_id` emits no group for them at all, so per-rule abstain **must** enumerate from
   `load_rules()` and LEFT JOIN, or the rules it exists to expose stay invisible.
 - **A 100% abstain rate already exists:** `experience_years:scoped_years_minimum`, 11,670/11,670 `unknown`.
+  *(Session-3 correction: it is not one rule. Measuring it properly found **17**, including the whole
+  `clearance` family. Session 2 found the one it happened to look at.)*
 - Two of session 1's schema claims were imprecise: the dedup index is **partial**
   (`WHERE engine_kind = 'deterministic'`), and there is **no `abstain` verdict** — it is stored as
   `uncertain`.
@@ -109,22 +134,16 @@ changes adopted, none contested.
 
 ## Next action
 
-**Build per-rule abstain rate first — it needs no `run_id` at all.**
+**Introduce the pipeline-run row** — P0 item 0, per D-016. One command running scan → eligibility → tailor
+that owns run identity across all three. This is early P3 work, taken on deliberately.
 
-It is a read over `eligibility_requirements` LEFT JOINed against the catalog enumeration, so it is
-independent of D-016 and de-risks the rest of P0. It is also the metric `PROGRAM.md` calls the highest-value
-single one in the program, and there is already a live 100%-abstain rule for it to surface
-(`experience_years:scoped_years_minimum`, 11,670/11,670). **Enumerate from `load_rules()` — never
-`GROUP BY rule_id`**, or the 7 rules that have never fired stay invisible.
+Everything below it in P0 depends on that row existing, which is why it goes first now that the
+`run_id`-independent metric (per-rule abstain rate) is done.
 
-Then, per D-016 (pipeline run):
-
-0. Introduce the **pipeline-run row** — one command running scan → eligibility → tailor that owns run
-   identity across all three. This is early P3 work, deliberately.
 1. Thread `run_id` into the two write paths — `write_evaluation` (`eligibility/engine.py:242`) and
    `record_artifact` (`store/artifacts.py:17`) take no such parameter today, so the new column stays NULL
    forever until they do. **The migration alone changes no behaviour.**
-2. Per-rule abstain rate, enumerated from `load_rules()` and LEFT JOINed — never `GROUP BY rule_id`.
+2. ~~Per-rule abstain rate~~ — **DONE, `540bb34`.** `boardwatch eligibility abstain`.
 3. Funnel artifact (`json` + `md`) with cache hits as their own asserted stage
    (`store/eligibility.py:130`'s `inserted.rowcount == 0` **is** the cache-hit signal, computed today and
    discarded — this is plumbing an existing boolean out, not new detection).
@@ -140,7 +159,7 @@ tracked tree and R7 requires a sha256-pinned `SHIPPED_DATA` entry for tracked `.
 
 | Phase | Status | Gate met? |
 |---|---|---|
-| P0 Instrumentation | **in progress** — item 7 done (`c56bc11`); nothing blocked (D-016 ratified) | — |
+| P0 Instrumentation | **in progress** — items 7 (`c56bc11`) and 2 (`540bb34`) done; nothing blocked | — |
 | P1 Résumé artifact gate | not started | — |
 | P2 Profile + keystone invariant | not started | — |
 | P3 Unattended one command | not started | — |

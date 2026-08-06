@@ -207,3 +207,52 @@ no PDF, which is exactly D-006's silent degrade. Also: generalization rule **R6 
 tracked tree**, and R7 requires a `SHIPPED_DATA` entry with a sha256 pin for tracked `.json`; `.md` is
 exempt from R7. The funnel artifact must therefore be written outside the git tree, as tailored résumés
 already are.
+
+---
+
+## Session 3 — 2026-08-06 · per-rule abstain rate, measured
+
+First run of `boardwatch eligibility abstain` (commit `540bb34`) against the live database.
+Scope is **current evaluations for the current identity** — the same scope `eligibility summary` uses, so
+these are smaller than the all-time totals recorded in session 2 and that is expected, not a discrepancy.
+
+**Catalog coverage: 44 rules · 16,674 requirement rows · 0 unattributed · 0 out-of-catalog.**
+
+| Bucket | Count | Meaning |
+|---|---|---|
+| Never fired | **7** | No detection has ever matched. Invisible to `GROUP BY`; this is why the metric enumerates the catalog. |
+| Fire but never decide | **17** | 100% abstain. The rule matches JD text and then resolves to `unknown` every single time. |
+| Working | 20 | Abstain rate strictly between 0% and 100%, or 0%. |
+
+### The 17 that fire and never decide
+
+**The entire `clearance` family.** All 7 clearance rules that have ever fired are at 100%: `polygraph`
+(3), `active_ts_sci` (8), `active_top_secret` (7), `active_secret` (16), `generic_clearance` (38),
+`clearable` (22), `clearance_preferred` (11) — **105 detections, 0 met, 0 unmet, ever.** The family has
+never once decided anything. `clearance:clearable_required` is unconditional by construction
+(`resolve.py:244-245` returns UNKNOWN regardless of facts); the other six are not, and their being at 100%
+too is the finding.
+
+**`work_auth` — 6 of the 7 rules that fire.** `no_sponsorship_offered` is **1052/1052 abstained**: a
+thousand postings stated in their own text that no sponsorship is offered, and the engine declined to
+conclude anything on every one. `us_citizen_required` 47/47, `us_citizen_or_lpr_required` 14/14,
+`uk_authorization_required` 8/8, `ca_authorization_required` 6/6, `sponsorship_available` 1/1. Only
+`us_authorization_required` decides (336 rows, 335 met).
+
+This is **bar metric B7 measured rather than asserted**, and it is the strongest evidence yet for D-007:
+the engine is not short a profile object, it is short the one disambiguating bit. `ineligible` is 0 across
+the entire database by design, and this is the mechanism by which that happens.
+
+**`experience_years:scoped_years_minimum`** — 10,872/10,872, the single largest abstaining rule and 65% of
+all requirement rows.
+
+**Four `degree` rules** at 100%: `bachelor_in_field_required` (79), `any_degree_required` (32),
+`master_in_field_required` (17). The `_in_field` variants abstaining while their plain counterparts decide
+(`bachelor_required` 17%, `master_required` 32%) points at a missing field-of-study fact, not a broken rule.
+
+### What this does not yet tell us
+
+The rate is computable; the typed **reason** is not. `disposition='unknown'` still conflates four causes
+separable only by free-text `rationale` (session 2, above). So "17 rules never decide" is solid, and "why"
+is per-rule guesswork until the abstain reason is typed at the raise site. That is the next thing P0 owes
+the keystone invariant.
