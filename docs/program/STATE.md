@@ -2,7 +2,8 @@
 
 **Last updated:** 2026-08-06 (session 5, P0 in progress)
 **Updated by:** boardwatch (Claude)
-**Repo state at write time:** every P0 item claimed done below is merged to `main`; the tree is clean.
+**Repo state at write time:** every P0 item claimed done below is merged to `main` **except item 1**,
+which is on `p0-funnel-artifact` until that branch merges; the tree is clean.
 **This header carries no commit count or sha on purpose** — the previous one named both, went stale inside
 a single session when three later docs commits did not update it, and a cold session following the
 session-start ritual hit the disagreement on its very first check. State what is durably true; verify the
@@ -30,11 +31,19 @@ the threading that populates it).
 **Five remain:** item **3** the per-source outcome table, item **4** the run manifest, item **5** the
 reconciliation sweep, item **6** the stub rate, item **8** the fabrication counters.
 
-**Gate P0 is still NOT met, and item 1 shipping does not by itself meet it.** The gate wants *three
-consecutive runs* where the funnel reconciles to 100%. The artifact that makes that checkable now exists
-and reconciled on three consecutive live runs this session (see below) — but those ran with `--no-scan`
-against a copy of the production store, so the scan stage has never been exercised under the gate. **The
-gate needs three consecutive runs of the real daily driver**, which is P3's job to schedule.
+**Gate P0 is still NOT met, and item 1 shipping does not by itself meet it.** `PROGRAM.md` §3.P0 gives
+the gate three clauses, and **two are outstanding**:
+
+1. *Three consecutive runs reconciling to 100%.* The artifact that makes this checkable now exists and
+   reconciled on three consecutive live runs this session (below) — but those ran `--no-scan` against a
+   copy of the production store, so **the scan stage has never been exercised under the gate**. This
+   needs three consecutive runs of the real daily driver, which is P3's to schedule.
+2. *Why every non-lead was dropped, from the artifact alone.* **Not met.** The ranker does not report how
+   many postings it considered, so postings ranked below the `--top` cutoff land in no bucket — 14,873 of
+   them on run 6. **P0 item 3 is what closes this**, and it is the next task for that reason.
+
+The third clause — per-rule abstain for every rule in the catalog — **is** met: all 44 are emitted every
+run, never-fired ones included.
 
 ---
 

@@ -663,9 +663,11 @@ while building it, and both are the same failure the abstain report already guar
 1. **A stage nobody instrumented reporting 0.** Dedup has never run — `jobs` and `postings` are 1:1 — so a
    `duplicates_dropped: 0` would assert *boardwatch measured dedup and found none*, the opposite of the
    truth, and would count towards the gate.
-2. **A stage whose drop bucket is the remainder of the others.** `shortlist`'s `capped_by_top_n`, `pdf`'s
-   `no_pdf` and `applied`'s `not_marked_applied` are all computed as balances, so those stages **cannot
-   fail to reconcile**. Presenting their green ticks beside the ones that can fail inflates the evidence.
+2. **A stage that balances by construction**, in either of two ways. `pdf`'s `no_pdf` and `applied`'s
+   `not_marked_applied` are remainders of the other buckets; `attribution` and `verdict` are SQL
+   *partitions of the very set they are compared against*, and `shortlist`'s `entered` is the sum of the
+   ranker's own three outcomes. None of them **can** fail to reconcile. Presenting their green ticks
+   beside the ones that can fail inflates the evidence.
 
 **Choice.** `Stage.entered/advanced` are `int | None`; `reconciled` returns **`None`** when unmeasured, not
 `True`, so an uninstrumented stage is excluded from the gate rather than silently passing it. Stages whose
@@ -673,12 +675,19 @@ balance is arithmetic carry **`derived: true`** and render as `yes (derived)`. T
 reconciliations are `corpus`, `attribution` and `verdict`, plus two **cross-checks** that recount `tailored`
 and `leads_with_pdf` from the store — `CLAUDE.md`'s "count the deliverable through a different path".
 
+The genuinely falsifiable reconciliations are **`corpus`** — its `no_current_evaluation` is an independent
+sweep over a different table expression — and **`tailor`**, plus the two cross-checks. Everything else is
+bookkeeping and is labelled as such, and the artifact prints the falsifiable list so a reader never has to
+derive it. **One consequence is NOT accounted for anywhere yet:** `shortlist` no longer absorbs postings
+ranked below the `--top` cutoff into a remainder, so those postings now sit in no bucket at all. That is an
+honest gap rather than a fabricated balance, and P0 item 3 owns it.
+
 This is the same rule as `abstain_rate is None` for a never-fired rule, applied one level up. Consequence
 accepted: `reconciles` is False whenever a recount disagrees, even though every stage balances — which is
 the point, since a self-report that agrees with itself is not evidence.
 
 **A test-design note worth keeping.** The store module's docstring claims `no_current_evaluation` is an
-independent `NOT EXISTS` sweep rather than `open_postings - evaluated`. Every test passed with that claim
+independent sweep (a `NOT IN` subquery) rather than `open_postings - evaluated`. Every test passed with that claim
 mutated to subtraction — the claim was documented and unpinned. Pinning it needed a corpus that genuinely
 **cannot** partition (one posting carrying two current-identity evaluations, which slips past the partial
 unique index because it keys on `input_id`): the sweep reports `reconciles False`, subtraction reports

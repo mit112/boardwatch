@@ -81,7 +81,12 @@ wrong.** Independent review found:
 
 ## Run log
 
-One row per run once P0 lands. `—` = not emitted.
+One row per run. `—` = not emitted.
+
+**Read the columns, not the row.** `Judged` is *this run's* attribution (`judged_this_run`); the verdict
+columns are the **whole current-identity corpus**, not a subset of `Judged`. Runs 7 and 8 judged nothing
+new and still report 18,174 eligible, which is correct and is not a funnel edge. Chaining these columns
+left-to-right would reproduce exactly the arithmetic D-022 exists to prevent.
 
 `Unique` is **`—` (not emitted)** and will stay so until P6: dedup has never run, and a `0` there would
 assert that boardwatch measured duplicates and found none.
@@ -104,13 +109,16 @@ driver, scan included.
 
 ## Per-rule abstain rate
 
-The metric that makes a rule which cannot fire visible. One column per run, one row per rule. Empty until
-P0 lands. A rule at 100% abstain is a monitoring failure, not a conservatism feature.
+The metric that makes a rule which cannot fire visible. A rule at 100% abstain is a monitoring failure,
+not a conservatism feature.
+
+**This table is superseded and kept only for its baseline column.** P0 item 2 shipped in session 3
+(`boardwatch eligibility abstain`) and item 1 now emits all 44 rules inside every run's funnel artifact.
+The live figures are in "Session 3" and "Session 5" below; do not maintain this table by hand.
 
 | Rule | Declared fields | Baseline abstain | Latest |
 |---|---|---|---|
-| `work_auth` | `work_authorization.status` | **~77%** (measured under review 2026-08-06, not 100% as originally inferred) | — |
-| _(remaining rules enumerated when P0 emits the catalog)_ | | | |
+| `work_auth` | `work_authorization.status` | **~77%** (measured under review 2026-08-06, not 100% as originally inferred) | see sessions 3 and 5 |
 
 **The `—` vs `0` convention worked on its own author.** This row originally read *"100% (inferred from
 D-007; not yet emitted)"*. Because it was labelled as inferred rather than stated flat, review caught it
@@ -286,7 +294,8 @@ the keystone invariant.
 | Does any code path span scan → eligibility → tailor? | **no** — the only one was gitignored shell | `boardwatch run` |
 | Does `NULL run_id` have one meaning? | n/a (everything was NULL) | **yes** — "predates attribution", a set that can only shrink (D-019) |
 
-**Not yet answerable, and P0 item 1 owes it:** the funnel counts per run, per source, as an artifact. The run
+**Not yet answerable when this was written — item 1 has since shipped the per-run artifact, and the
+per-source half is item 3:** the funnel counts per run, per source, as an artifact. The run
 row is the key; the artifact is the deliverable. **Gate P0 remains not met.**
 
 ### Gate
@@ -356,8 +365,13 @@ Exit 0. Runtime dominated by a taxonomy re-extraction of all 19,262 postings, no
 
 ### Three consecutive live runs, `--no-scan`, against a copy of the production store
 
-All three **reconciled**, exit 0. Runs 6, 7 and 8; run 6 resumed 8,462 postings left pending by an
-earlier run that `timeout` had SIGKILLed, which is why its attribution split differs from 7 and 8.
+All three **reconciled**, exit 0. Runs 6, 7 and 8; run 6 resumed 8,462 postings left pending by a
+*session-5* verification run that the foreground timeout had SIGKILLed, which is why its attribution
+split differs from 7 and 8. (A different kill event from session 4's, which stranded a row after 11,200
+evaluations — both are the same known gap: `try/finally` does not cover SIGKILL.)
+
+The table transcribes the buckets that were non-zero or load-bearing; `dedup` (not instrumented) and
+`shortlist → hidden_ineligible` (0 in all three) are omitted for width.
 
 | stage | run 6 | run 7 | run 8 | note |
 |---|---:|---:|---:|---|
@@ -389,9 +403,11 @@ They ran `--no-scan`, so **the scan stage was never exercised**. Gate P0 wants t
 of the real driver. These establish that the artifact is correct and that the corpus reconciles at
 production scale; they are not the gate.
 
-Two numbers here are also **not evidence**, by construction (D-023): the `attribution` and `verdict`
-rows are SQL partitions of the set they are compared against, so their balance holds for any input.
-The falsifiable reconciliations in these runs are `corpus` and `tailor`, plus the two cross-checks.
+**Five of the seven instrumented stages are `derived`** and are therefore not evidence, by construction
+(D-023): `attribution` and `verdict` are SQL partitions of the set they are compared against, `shortlist`
+is rooted at the sum of the ranker's own outcomes, and `pdf` and `applied` carry remainder buckets. Their
+balance holds for any input. The falsifiable reconciliations in these runs are **`corpus` and `tailor`**,
+plus the two cross-checks.
 
 ### Gate
 
@@ -408,6 +424,6 @@ Ten defects across two independent reviews, on code that had already been writte
 | Test-quality review (mutation, derived from docstrings) | 6 | 0 (all were unpinnable claims) |
 
 **Every one of the six test findings was a test that PASSED while a mutation falsifying its own
-docstring also passed.** Three of them failed only on substring collisions inside the artifact's own
-explanatory prose. The artifact documents itself in English, which makes bare `in body` assertions
+docstring also passed.** Three of them passed only because of substring collisions inside the artifact's
+own explanatory prose — the term searched for was in the report's commentary, not its data. The artifact documents itself in English, which makes bare `in body` assertions
 almost useless — a term the report explains is a term the report contains.

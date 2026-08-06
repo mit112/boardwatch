@@ -10,21 +10,25 @@ All notable changes to this project are documented here. The format follows
 
 - **Per-run funnel artifact, written on every `boardwatch run`.** Two halves — `funnel-<run_id>.json` and
   `funnel-<run_id>.md` — land in `<out>/<YYYY-MM-DD>/` beside that day's tailored résumés, outside the git
-  tree. The Markdown answers, on its own, which board produced each lead and why every non-lead was
-  dropped: every stage names its drop buckets with counts rather than leaving the reader to subtract.
+  tree. The Markdown names the board each lead came from, and every stage states its drop buckets with
+  counts rather than leaving the reader to subtract. It does **not** yet account for every non-lead: the
+  ranker does not report how many postings it considered, so postings ranked below the `--top` cutoff
+  appear in no counter at all. The artifact names that gap; P0 item 3 is what closes it.
 
   The funnel's head is the **open-posting corpus**, not the number of postings the scan listed. Those are
   different populations — a board answering 304 lists nothing, and `--no-scan` lists nothing at all — so
   scan counts are reported as context in their own block rather than as a funnel edge.
 
-  Three stages carry reconciliations that can genuinely fail (`corpus`, `attribution`, `verdict`), plus two
-  cross-checks that recount `tailored` and `leads_with_pdf` from the store rather than trusting what the
-  pipeline reported. `leads_with_pdf` is read from `meta_json.typst_pdf_built`, not from a row count:
-  `artifacts.uri` holds the `.typ` path whether or not a PDF ever compiled.
+  Two stages carry reconciliations that can genuinely fail (`corpus` and `tailor`), plus two cross-checks
+  that recount `tailored` and `leads_with_pdf` from the store rather than trusting what the pipeline
+  reported. `attribution` and `verdict` are SQL partitions of the set they are compared against, so their
+  balance holds for any input; they are labelled `derived` rather than presented as evidence.
+  `leads_with_pdf` is read from `meta_json.typst_pdf_built`, not from a row count: `artifacts.uri`
+  holds the `.typ` path whether or not a PDF ever compiled.
 
   Stages that nobody has instrumented report **`null`, never 0** — dedup has never run, and reporting 0
-  duplicates would assert the opposite of the truth. Stages whose drop bucket is the remainder of the
-  others are labelled `derived`, because their balance is arithmetic rather than evidence. The artifact
+  duplicates would assert the opposite of the truth. Stages that balance by construction are labelled
+  `derived`, and the artifact prints which stages could actually have failed. The artifact
   also carries the abstain rate for **every** rule in the catalog (including the ones that have never
   fired) and the count of evaluations that carry no run at all, which is expected only to shrink.
 

@@ -1,10 +1,14 @@
-"""The per-run funnel artifact — PROGRAM.md §3.P0 **item 1**, the item that closes Gate P0.
+"""The per-run funnel artifact — PROGRAM.md §3.P0 **item 1**.
 
 Gate P0 asks for three consecutive runs where the funnel reconciles to 100%, per-rule
 abstain for EVERY rule in the catalog, and *which source produced each lead and why every
 non-lead was dropped* answerable **from the artifact alone, without reading code**. That
 last clause is why this module renders Markdown as well as JSON, and why every stage carries
 its drops by name rather than leaving the reader to subtract two numbers.
+
+**Item 1 does not on its own meet that gate.** The ranker does not report how many postings it
+considered, so postings ranked below the `--top` cutoff land in no bucket here — the `shortlist`
+stage says so in its own note. P0 item 3 is what closes it.
 
 Three properties are load-bearing and each one exists because collapsing it destroys a
 signal this program is built to preserve:

@@ -6,7 +6,8 @@ Every number here is read back out of the STORE, independently of the in-memory
 through a different path than the one that produced it."* The funnel writer compares the
 two and records any disagreement rather than picking a winner.
 
-**`no_current_evaluation` is its own `NOT EXISTS` sweep, never `open_postings - evaluated`.**
+**`no_current_evaluation` is its own sweep — a `NOT IN` subquery — never
+`open_postings - evaluated`.**
 A reconciliation between numbers where one was computed by subtracting the others cannot ever
 fail, and an assertion that cannot fail is the defect this repo has now been burned by four
 times. That makes `corpus_reconciles` the one identity here that a database state can break.
@@ -80,7 +81,7 @@ class CorpusCounts:
 
         The ONLY genuinely falsifiable identity in this dataclass, because
         `no_current_evaluation` is its own NOT EXISTS sweep over a different table
-        expression. `judged_this_run + cache_hit_* == evaluated` and
+        expression (a NOT IN subquery). `judged_this_run + cache_hit_* == evaluated` and
         `sum(by_verdict) == evaluated` are deliberately NOT offered as properties: both are
         partitions of the very subquery `evaluated` counts, so they hold for every possible
         database state. Shipping them as `*_reconciles` would be shipping two assertions that
@@ -167,7 +168,7 @@ def count_corpus(
         conn.execute(select(func.count()).select_from(evaluated_sub)).scalar_one()
     )
 
-    # Its own NOT EXISTS sweep, not open_postings - evaluated. A posting lands here when it
+    # Its own sweep (a NOT IN subquery), not open_postings - evaluated. A posting lands here when it
     # has no version row at all, or its current version has never been judged under this
     # profile+rules identity — a corrected fact makes the whole corpus land here again.
     judged_ids = select(evaluated_sub.c.posting_id)
