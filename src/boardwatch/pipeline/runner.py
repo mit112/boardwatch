@@ -29,8 +29,10 @@ from sqlalchemy import Engine
 
 from boardwatch.core.clock import utcnow
 from boardwatch.core.settings import Settings
+from boardwatch.pipeline.funnel_writer import collect_run_funnel
+from boardwatch.reports.run_funnel import ScanContext, WrittenArtifact, write_run_funnel
 from boardwatch.reports.tailor import run_tailor
-from boardwatch.scan.coordinator import run_scan
+from boardwatch.scan.coordinator import ScanSummary, run_scan
 from boardwatch.store.db import ensure_schema
 from boardwatch.store.queries import ensure_run, finish_run
 
@@ -76,6 +78,9 @@ class PipelineSummary:
     tailor_failed: int = 0
     errors: list[str] = field(default_factory=list)
     fatal: str | None = None
+    # Where the per-run funnel artifact landed (P0 item 1). None only when writing it failed,
+    # which is reported to the console and never allowed to fail the run.
+    funnel: WrittenArtifact | None = None
 
     @property
     def leads_with_pdf(self) -> int:
@@ -123,6 +128,9 @@ def run_pipeline(
         run_id = ensure_run(engine, None)
 
     summary = PipelineSummary(run_id=run_id)
+    # Computed before the try so the finally can write the funnel artifact into it even when
+    # the run aborts partway — a crashed run is exactly when its funnel is worth having.
+    day_dir = out_root / utcnow().date().isoformat()
     # Everything from here to finish_run is guarded: a run row whose finished_at stays NULL is
     # reported by `doctor` as still in progress forever, and accretes one more row per retry.
     # Ctrl-C during the multi-minute tailor loop is the likeliest way to hit this.
@@ -170,7 +178,6 @@ def run_pipeline(
         summary.hidden_non_swe = ranked.hidden_non_swe
 
         console.print("[bold]tailor[/bold]")
-        day_dir = out_root / utcnow().date().isoformat()
         for posting in ranked.visible:
             dest = day_dir / _slug(posting.company, posting.posting_id)
             try:
@@ -219,6 +226,47 @@ def run_pipeline(
         raise
     finally:
         finish_run(engine, run_id, errors=stage_errors)
+        # After finish_run, so the artifact records a finished_at rather than reporting every
+        # run as still in progress. Failure to write is reported and swallowed on purpose:
+        # this block runs while an exception may be propagating, and raising here would
+        # replace the real cause of the failure with a reporting error.
+        try:
+            summary.funnel = _emit_funnel(engine, settings, summary, scan_summary, day_dir)
+        except Exception as exc:  # noqa: BLE001 - never mask the run's own outcome
+            console.print(f"  ! funnel artifact not written: {exc}", markup=False)
+
+
+def _emit_funnel(
+    engine: Engine,
+    settings: Settings,
+    summary: PipelineSummary,
+    scan_summary: ScanSummary | None,
+    day_dir: Path,
+) -> WrittenArtifact:
+    """Collect the funnel from the store and write both halves beside the day's leads."""
+    funnel = collect_run_funnel(
+        engine,
+        settings,
+        run_id=summary.run_id,
+        scan=ScanContext(
+            ran=scan_summary is not None,
+            boards_attempted=scan_summary.companies if scan_summary else 0,
+            boards_complete=summary.scan_boards_complete,
+            boards_failed=summary.scan_boards_failed,
+            postings_seen=summary.scan_postings_seen,
+        ),
+        shortlisted=summary.shortlisted,
+        hidden_ineligible=summary.hidden_ineligible,
+        hidden_non_swe=summary.hidden_non_swe,
+        tailored=[
+            (lead.posting_id, lead.company, lead.title, lead.out_dir, lead.pdf_built)
+            for lead in summary.tailored
+        ],
+        tailor_failed=summary.tailor_failed,
+        errors=summary.errors,
+        fatal=summary.fatal,
+    )
+    return write_run_funnel(funnel, day_dir)
 
 
 def _ensure_dir(path: Path) -> Path:
