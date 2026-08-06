@@ -27,6 +27,8 @@ from boardwatch.scan.apply import apply_board
 from boardwatch.scan.workers import fetch_board_job
 from boardwatch.store.db import ensure_schema
 from boardwatch.store.queries import (
+    RUN_FAILED,
+    RUN_OK,
     finalize_run,
     finish_run,
     get_validators,
@@ -125,7 +127,13 @@ def _run_scan_locked(
         # itself, unconditionally, even when `finish=False`. Without this, Ctrl-C during the
         # multi-board fetch loop leaves a row that `doctor` reports as in progress forever,
         # one more per retry. This is the scan-side half of the same guard the pipeline holds.
-        finish_run(engine, active_run_id, errors=[f"scan: aborted: {exc!r}"])
+        # `failed`, not the default `ok`: this row is closed with a finished_at, so nothing
+        # downstream can tell it apart from a clean run by timestamps alone — `doctor` looks
+        # only for a NULL finished_at. Under `boardwatch run` the scan is called outside the
+        # pipeline's own try, so this handler is the ONLY place a scan abort is ever recorded.
+        finish_run(
+            engine, active_run_id, errors=[f"scan: aborted: {exc!r}"], status=RUN_FAILED
+        )
         raise
 
 
@@ -230,5 +238,16 @@ def _scan_body(
         reopened_count=summary.reopened,
         errors=summary.errors,
         finished=finish,
+        # CLAUDE.md's fail-safe table: "systemic outage => fatal". `run_pipeline` already
+        # classifies this exact state as fatal, so without it here the SAME event records
+        # `ok` under `boardwatch scan` and `failed` under `boardwatch run`, and a query for
+        # failed runs misses every totally-failed standalone scan. A few dead boards are NOT
+        # this: Workday returns `partial` routinely, and only "attempted some, completed
+        # none" is the outage.
+        status=(
+            RUN_FAILED
+            if summary.companies > 0 and summary.complete == 0 and summary.unchanged == 0
+            else RUN_OK
+        ),
     )
     return summary

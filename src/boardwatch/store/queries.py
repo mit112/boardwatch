@@ -70,6 +70,7 @@ def finalize_run(
     reopened_count: int,
     errors: list[str],
     finished: bool = True,
+    status: str = RUN_OK,
 ) -> None:
     """Write the scan stage's counts onto a run row.
 
@@ -88,10 +89,11 @@ def finalize_run(
     }
     if finished:
         values["finished_at"] = utcnow()
-        # A standalone scan owns its own run, so it is the one that closes it. `errors` here
-        # are per-board failures, which is the scan's normal partial outcome and not a failed
-        # run — Workday returns `partial` routinely. Only an unfinished row stays `running`.
-        values["status"] = RUN_OK
+        # Only when this caller owns the run. `errors` is NOT the discriminator: per-board
+        # failures are the scan's normal partial outcome (Workday returns `partial`
+        # routinely), so the caller decides, and it is the only one that can tell a few dead
+        # boards from a systemic outage.
+        values["status"] = _checked_status(status)
     with engine.begin() as conn:
         conn.execute(update(runs).where(runs.c.id == run_id).values(**values))
 
@@ -104,9 +106,15 @@ def finish_run(
     `status` is the run's exit status for P0 item 4's manifest. It is a parameter rather than
     something inferred from `errors` because the two are not the same question: a run can
     finish with per-lead tailor errors and still be a successful run, while a run killed
-    before this call has no errors recorded at all and is not successful. What an un-updated
-    row means is therefore fixed by the column default: `running` with `finished_at` NULL is
-    a run that never reached here, which after the process is gone means it was killed.
+    before this call has no errors recorded at all and is not successful.
+
+    What an un-updated row means is fixed by the column default, and the honest statement is
+    narrower than "it was killed": `running` with `finished_at` NULL means only *nothing ever
+    closed this row*. Three conditions share that signature — a run still in flight, a run
+    killed by SIGKILL, and a standalone lane that raised between `ensure_run` and its own
+    `finish_run` (`reports/tailor.py`, `eligibility/preflight.py` and `cli/eligibility_cmd.py`
+    each call this on the success path only, with no `try/finally`). Separating those three
+    needs the reaper that P3 owns; this column does not claim to do it.
 
     Errors are appended, not replaced: the scan stage has already written its own into
     errors_json by the time the pipeline finishes, and overwriting would lose them.

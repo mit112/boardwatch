@@ -462,7 +462,11 @@ def test_a_crashed_run_is_recorded_as_failed_not_left_reading_running(
 def test_a_clean_run_is_recorded_as_ok(env: Path, tmp_path: Path) -> None:
     """The other side of the same column: `failed` means nothing if nothing is ever `ok`."""
     _ready(env)
-    _pipeline(env, tmp_path / "apps")
+    summary = _pipeline(env, tmp_path / "apps")
+    # Without this the test still passes if the fixture ever drifts to a zero-lead shortlist,
+    # because the all-leads-failed fatal is gated on `shortlisted > 0` — it would then be
+    # asserting `ok` over a run that produced nothing.
+    assert summary.tailored, "the fixture produced no leads, so `ok` here proves nothing"
 
     with get_engine(env).connect() as conn:
         row = conn.execute(
@@ -514,9 +518,19 @@ def test_an_abort_during_the_scan_stage_still_closes_the_run_row(
         )
 
     with get_engine(env).connect() as conn:
-        rows = conn.execute(select(tables.runs.c.finished_at)).scalars().all()
+        rows = conn.execute(
+            select(tables.runs.c.finished_at, tables.runs.c.status)
+        ).all()
     assert rows, "no run row was created, so this test proves nothing"
-    assert all(r is not None for r in rows), "an abort during scan left a run row dangling"
+    assert all(r.finished_at is not None for r in rows), (
+        "an abort during scan left a run row dangling"
+    )
+    # Closing the row is not enough. `doctor` only looks for a NULL finished_at, so a scan
+    # abort recorded as `ok` is invisible everywhere — and under `boardwatch run` the scan is
+    # called OUTSIDE the pipeline's try, so no funnel artifact is written to contradict it.
+    assert all(r.status == "failed" for r in rows), (
+        f"an aborted scan was recorded as {[r.status for r in rows]}, not failed"
+    )
 
 
 def test_no_profile_is_a_real_run_that_produced_nothing_not_a_crash(
