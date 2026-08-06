@@ -54,6 +54,22 @@ All notable changes to this project are documented here. The format follows
   symptom — "Deal Strategist" is tagged `Concurrency`, "Asset Tracking Technician" `Real-time`.
   That is separate work.
 
+- **Extraction precision: four generic buzzwords dropped from the skill taxonomy.**
+  `skill_coverage` is `|profile ∩ posting| / |posting|`, so a posting whose only recognized
+  skill is one the profile also has scores a perfect 1.0. Four taxonomy tokens —
+  `Scalability` (`\bscalab(le|ility)\b`), `Concurrency` (`\bconcurren(cy|t)\b|multi-thread`),
+  `Real-time` (`\breal[- ]time\b`) and `Agile/Scrum` (`\bagile\b|\bscrum\b`) — matched
+  non-technical prose ("scalable business processes", "multi-threaded deals", "real-time
+  locating systems", "agile environment"). Each is in the profile, so as a posting's sole
+  recognized skill it drove `skill_coverage` to 1.0 on ops/finance/sales roles the role gate
+  correctly leaves `uncertain` (e.g. "Commercial Contracts Specialist", "Accounts Receivable
+  Manager", "Deal Strategist"). On the live database this affected 257 such postings; 249 are
+  non-software roles now dropped to the neutral zero-skill prior, and only 8 are genuine
+  software postings (which the role gate keeps visible regardless). None of the four is ever
+  the sole recognized skill on a labelled TARGET posting, so removing them costs no target
+  coverage. Real, discriminating tokens — including `SQL`, `Distributed systems`,
+  `Low latency / high throughput` and `High availability` — are untouched.
+
 ### Added
 
 - **`boardwatch stats` — one read-only readout of where you stand.** Two views over your

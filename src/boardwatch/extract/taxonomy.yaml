@@ -116,18 +116,21 @@ patterns:
   # systems concepts
   - {name: 'Distributed systems', category: systems, pattern: '\bdistributed (systems?|computing|services|architecture)', case_sensitive: false}
   - {name: 'Microservices', category: systems, pattern: '\bmicro[- ]?services?\b', case_sensitive: false}
-  - {name: 'Scalability', category: systems, pattern: '\bscalab(le|ility)\b', case_sensitive: false}
   - {name: 'Low latency / high throughput', category: systems, pattern: '\blow[- ]latency\b|\bhigh[- ]throughput\b', case_sensitive: false}
   - {name: 'High availability', category: systems, pattern: '\bhigh(ly)?[- ]availab|\bfault[- ]toleran', case_sensitive: false}
-  - {name: 'Concurrency', category: systems, pattern: '\bconcurren(cy|t)\b|\bmulti[- ]?thread', case_sensitive: false}
-  - {name: 'Real-time', category: systems, pattern: '\breal[- ]time\b', case_sensitive: false}
   - {name: 'System design', category: systems, pattern: '\bsystem design\b', case_sensitive: false}
+  # Dropped generic buzzwords (P13 follow-up): 'Scalability' (\bscalab(le|ility)\b),
+  # 'Concurrency' (\bconcurren(cy|t)\b|multi-thread), 'Real-time' (\breal[- ]time\b) and
+  # 'Agile/Scrum' (\bagile\b|\bscrum\b) fired on non-technical prose ("scalable business",
+  # "multi-threaded deals", "real-time locating systems", "agile environment"). Each is in
+  # Mit's profile, so as a posting's SOLE recognized skill it degenerated skill_coverage to
+  # 1.0 on ops/finance roles the role gate rules 'uncertain'. None was ever the sole skill on
+  # a genuine software posting (TGTsolo=0), so removing them costs no target coverage.
   - {name: 'WebSockets', category: systems, pattern: '\bweb\s?sockets?\b', case_sensitive: false}
   - {name: 'Caching', category: systems, pattern: '\bcach(e|ing)\b', case_sensitive: false}
   # practices / security
   - {name: 'Testing (unit/integration/TDD)', category: practices, pattern: '\bunit[- ]test|integration test|test[- ]driven|\btdd\b|automated test', case_sensitive: false}
   - {name: 'Code review', category: practices, pattern: '\bcode reviews?\b', case_sensitive: false}
-  - {name: 'Agile/Scrum', category: practices, pattern: '\bagile\b|\bscrum\b', case_sensitive: false}
   - {name: 'Git', category: practices, pattern: '\bgit\b', case_sensitive: false}
   - {name: 'OAuth/Auth', category: practices, pattern: '\boauth\b|\bopenid\b|\bjwt\b|\bsso\b', case_sensitive: false}
   - {name: 'Security (word)', category: practices, pattern: '\bsecurity\b', case_sensitive: false}

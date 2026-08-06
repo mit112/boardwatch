@@ -14,10 +14,26 @@ from boardwatch.store import tables
 from boardwatch.store.db import ensure_schema, get_engine
 
 
-def test_bundled_taxonomy_has_119_patterns(tmp_path: Path) -> None:
+def test_bundled_taxonomy_has_115_patterns(tmp_path: Path) -> None:
     taxonomy = load_taxonomy(tmp_path)  # no override present -> bundled
     assert taxonomy.source == "bundled"
-    assert len(taxonomy.patterns) == 119
+    assert len(taxonomy.patterns) == 115
+
+
+def test_generic_buzzwords_are_not_in_the_taxonomy(tmp_path: Path) -> None:
+    """P13 follow-up: 'Scalability', 'Concurrency', 'Real-time' and 'Agile/Scrum' are
+    generic words that fire on non-technical prose. Each is in Mit's profile, so as a
+    posting's SOLE recognized skill it degenerated skill_coverage to a perfect 1.0 on
+    ops/finance roles the role gate rules 'uncertain'. None is ever the sole skill on a
+    genuine software posting, so they are excluded from the skill taxonomy entirely."""
+    taxonomy = load_taxonomy(tmp_path)
+    names = {p.name for p in taxonomy.patterns}
+    assert not (names & {"Scalability", "Concurrency", "Real-time", "Agile/Scrum"})
+    # and they no longer fire on the real-world prose that motivated the change
+    assert taxonomy.extract("We build scalable, resilient business processes") == set()
+    assert "Real-time" not in taxonomy.extract("experience with real-time locating systems (RTLS)")
+    assert "Concurrency" not in taxonomy.extract("pricing and structuring of multi-threaded deals")
+    assert "Agile/Scrum" not in taxonomy.extract("thrive in an agile, fast-paced environment")
 
 
 def test_override_wins_when_present(tmp_path: Path) -> None:
