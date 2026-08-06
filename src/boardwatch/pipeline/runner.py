@@ -239,7 +239,15 @@ def run_pipeline(
         # #4: the finally below closes the row either way. Without recording the exception,
         # a crashed run and a clean empty run are indistinguishable in the ledger — the row
         # reads as finished with no errors. The message is in scope here; do not drop it.
-        stage_errors.append(f"pipeline: aborted: {exc!r}")
+        message = f"pipeline: aborted: {exc!r}"
+        stage_errors.append(message)
+        # ALSO onto the summary, which is what the funnel artifact reads. Recording it only in
+        # stage_errors put it in the `runs` row but left the artifact reporting a crashed run as
+        # RECONCILES with no FATAL line and an empty Errors section — and Gate P0 asks the
+        # artifact to be answerable on its own.
+        summary.errors.append(message)
+        if summary.fatal is None:
+            summary.fatal = message
         raise
     finally:
         finish_run(engine, run_id, errors=stage_errors)

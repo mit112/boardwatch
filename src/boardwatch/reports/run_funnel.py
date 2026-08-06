@@ -296,9 +296,12 @@ def build_run_funnel(
             entered=None,
             advanced=None,
             note=(
-                "NOT INSTRUMENTED. The ranker did not run this run — no profile, or a fatal "
-                "scan outage stopped the pipeline before it. How many postings it would have "
-                "considered is unknown, so this is reported as unmeasured rather than as zero."
+                "NOT INSTRUMENTED. No shortlist counts were recorded for this run, so how many "
+                "postings the ranker considered is unknown and is reported as unmeasured rather "
+                "than as zero. **Why** is not asserted here: it is whatever the FATAL line and "
+                "the Errors section below say, and on an aborted run this stage cannot know. An "
+                "earlier version named a missing profile or a scan outage, which fabricated a "
+                "cause on any run that crashed for some third reason."
             ),
         )
     else:
@@ -728,7 +731,10 @@ def funnel_to_markdown(funnel: RunFunnel) -> str:
     ]
     for stage in funnel.stages:
         if not stage.instrumented:
-            lines += [f"### {stage.name}", "", f"*{stage.note}*", ""]
+            # Guarded rather than relying on every uninstrumented stage carrying a note: an
+            # empty one rendered a bare `**` under "why every non-lead was dropped".
+            lines += [f"### {stage.name}", ""]
+            lines += [f"*{stage.note}*", ""] if stage.note else ["not measured this run.", ""]
             continue
         lines.append(f"### {stage.name} — {stage.entered} in, {stage.advanced} out")
         lines.append("")

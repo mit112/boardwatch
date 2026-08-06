@@ -621,11 +621,14 @@ def test_unique_and_assisted_serialise_as_null_rather_than_zero(tmp_path: Path) 
 
 
 def test_a_lead_attributable_to_no_board_fails_reconciliation() -> None:
-    """The check the companies join exists for.
+    """The one comparison whose two sides are shaped differently, so it can disagree.
 
-    The funnel counted a `resume_tailored` row for this run that the per-board sweep could not
-    resolve to any board — an artifact with no posting_version, or a vanished company row.
-    Gate P0 asks which source produced each lead, so this cannot be allowed to read as green.
+    The funnel counted `resume_tailored` ROWS for this run; the per-board sweep counted DISTINCT
+    postings resolved through `posting_versions`. An artifact whose posting_version_id is NULL
+    resolves to no board, and two artifacts for one posting collapse to one distinct posting.
+    Gate P0 asks which source produced each lead, so neither may read as green. NOT a test of a
+    vanished company row: `postings.company_id` is NOT NULL behind an enforced foreign key, so
+    that state is unreachable (D-028).
     """
     report = funnel(
         leads=[lead(7), lead(8)],
@@ -717,3 +720,17 @@ def test_a_run_where_the_ranker_never_ran_reports_the_stage_as_unmeasured() -> N
     assert "tailor" not in failed_line
     row = next(line for line in body.splitlines() if line.startswith("| shortlist |"))
     assert "not instrumented" in row, row
+
+
+def test_an_uninstrumented_stage_with_no_note_still_renders_a_readable_line() -> None:
+    """`tailor` carries no note, so an unmeasured run rendered a bare `**` under the drops.
+
+    Small, but this is the section Gate P0 requires to be readable without consulting code, and
+    a stray `**` in it is the artifact failing to explain a stage it chose not to measure.
+    """
+    body = funnel_to_markdown(funnel(ranker_ran=False, leads=[]))
+    tailor_index = body.splitlines().index("### tailor")
+    following = body.splitlines()[tailor_index + 1 : tailor_index + 3]
+
+    assert "**" not in following, following
+    assert any(line.strip() for line in following), "the stage explained nothing at all"

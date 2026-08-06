@@ -332,10 +332,17 @@ def count_by_source(
     many-per-posting in principle: folding them into a single GROUP BY would fan out and
     multiply the open-posting denominator by rows that have nothing to do with it.
 
-    Every count here travels through the `companies` join that the funnel's own stages never
-    touch, so `sum(per_source) == funnel total` is a genuinely falsifiable check rather than a
-    partition of itself: an open posting whose company row vanished, or an artifact with no
-    posting_version, shows up as a disagreement instead of silently shrinking the table.
+    **`sum(per_source) == funnel total` is NOT generally a falsifiable check, and this docstring
+    used to claim it was.** Every sweep here groups by `postings.company_id` — a NOT NULL column
+    behind an enforced foreign key. `companies` is joined nowhere in the counting; it is read
+    once, at the end, for display labels. So grouping by board cannot lose or duplicate a
+    posting, and a per-board total compared against the same set the funnel already counted
+    agrees for every possible database state. A per-board `eligible` total was shipped on that
+    reasoning and deleted for it (D-028); do not reinstate it, or an `open_postings` equivalent,
+    on the belief that the board grouping makes it independent.
+
+    Only `leads` is worth comparing, and only because its two sides are shaped differently: a
+    row count of artifacts against a distinct-posting count resolved through `posting_versions`.
     """
     open_by_company: dict[int, int] = {
         int(row[0]): int(row[1])

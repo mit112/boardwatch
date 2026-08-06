@@ -5,6 +5,7 @@ and tailor, `finished_at` means "the pipeline is done" rather than "scan is done
 that aborts is still closed out rather than left dangling for `doctor` to call still-running.
 """
 
+import json
 from pathlib import Path
 
 import httpx
@@ -387,6 +388,36 @@ def test_a_crash_mid_pipeline_is_recorded_not_left_looking_clean(
     assert any(
         e and any("aborted" in item for item in e) for e in errors
     ), f"the crash left no trace in the ledger: {errors}"
+
+
+def test_a_crash_mid_pipeline_is_recorded_in_the_ARTIFACT_not_only_the_ledger(
+    env: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Gate P0 asks the artifact to be answerable ALONE, so the ledger is not enough.
+
+    The abort was recorded only in `stage_errors`, which reaches the `runs` row. The funnel is
+    built from the summary, so a crashed run's artifact reported RECONCILES with no FATAL line
+    and an empty Errors section — the exact "indistinguishable from a clean empty run" defect,
+    one layer up from where it was previously fixed.
+    """
+    _ready(env)
+    out_root = tmp_path / "apps"
+
+    import boardwatch.pipeline.runner as runner_mod
+
+    def boom(*_a: object, **_k: object) -> None:
+        raise RuntimeError("taxonomy.yaml is malformed")
+
+    monkeypatch.setattr(runner_mod, "_count_evaluations", boom)
+    with pytest.raises(RuntimeError):
+        _pipeline(env, out_root)
+
+    payload = json.loads(
+        next((out_root / utcnow().date().isoformat()).glob("funnel-*.json")).read_text()
+    )
+    assert payload["fatal"] is not None, "a crashed run's artifact claimed no fatal condition"
+    assert "aborted" in payload["fatal"]
+    assert any("aborted" in err for err in payload["errors"])
 
 
 def test_an_abort_during_the_scan_stage_still_closes_the_run_row(
