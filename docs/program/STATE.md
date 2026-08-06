@@ -24,7 +24,7 @@ analysis, planning and program machinery only.
 
 Analysis, planning and program machinery — **zero source changes**. Committed as `84cfab6`.
 
-- Read all seven job-apps handover documents (2,609 lines) in `/Users/mitsheth/dev/Job apps/docs/boardwatch/`.
+- Read all seven job-apps handover documents (2,609 lines) in `~/dev/Job apps/docs/boardwatch/`.
 - Verified job-apps' claims about boardwatch against boardwatch's actual code. job-apps never read this
   repo and said so; four of its factual claims about boardwatch are wrong as a result. See `DECISIONS.md`
   D-002, D-004, D-005, D-006, D-007, D-009 and `PROGRAM.md` §5.
