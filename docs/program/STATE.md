@@ -606,10 +606,15 @@ domain input nor Docker.** What is left is genuinely gated on things I cannot su
   `drop_reason`s; universal register lists (not per-field), tunable later. One fix round (authoritative
   `make check` caught an R7 SHIPPED_DATA gap the self-report missed; diff-review caught a real
   verb-diversity demote-without-diversifying bug). `make check` green (3003 passed, 95.34%).
-  **Next: P4 item 3b** (requirement-echo — the JD-semantic AND-gate: structural signal [no past-tense
-  action-verb opener / qualification-register phrasing] AND sub-7-gram overlap with the JD's
-  qualifications sentences, excluding canonical tokens; deterministic, fail-safe. Deepseek-review its
-  false-positive bounding at design), then items 4–7. Gate P4's blind-craft-review clause stays Mit's.
+  **P4 item 3b DONE (D-051, `b52b858`..`81518ed`) → ITEM 3 COMPLETE.** Requirement-echo AND-gate
+  (structural [(a) non-action-verb opener AND (b) qualification-register cue] AND corroboration [4-gram
+  with a JD qualifications sentence, ≥1 non-canonical token]); deepseek fixed the design (and/or→AND,
+  Jaccard→4-gram); impl review + one fix round closed two real false-positive holes (irregular-verb
+  openers; lowercase header span-leak). `make check` green (3037 passed, 95.32%).
+  **Next: P4 item 4** (deterministic de-senioritied title — a senior-titled JD must not stamp "Senior"
+  on a new-grad résumé; grounding first: does a per-JD title-repositioning step exist, and is the
+  seniority a profile fact already present or Mit-blocked?), then items 5–7 (layout assertions, keyword
+  coverage, persona registry). Gate P4's blind-craft-review clause stays Mit's (subjective).
 
 **Live findings still owed to Mit (unchanged):** (1) set `resume_max_pages=2` — his `resume.yaml` is 2pp,
 so at the shipped default of 1 every lead is correctly dropped (see below); (2) P1b cannot catch a bullet
