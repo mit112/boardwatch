@@ -81,10 +81,13 @@ Related, and equally load-bearing:
 
 ## Multi-tenancy is a requirement, not an aspiration
 
-boardwatch must serve an F-1 OPT new-grad engineer, a US-citizen senior nurse, and an EU-national paralegal
-**without code changes**. job-apps has empirical evidence on what breaks first: when a second user
-appeared, the thing that failed to port was the **eligibility taxonomy** — not the fetchers, not the
-templates, not the tracker.
+boardwatch is built to fit anyone who runs it — not just Mit. The user could be on OPT, a citizen, a visa
+holder in another country, or working in a field with nothing to do with software. The groundwork (rules,
+schema, tooling) must be generic; what makes it work for a *specific* person is their own profile, targets,
+and persona data layered on top — never new code.
+
+job-apps has empirical evidence on what breaks first: when a second user appeared, the thing that failed to
+port was the **eligibility taxonomy** — not the fetchers, not the templates, not the tracker.
 
 Split rules into **universal** (nothing user-specific) / **profile-dependent** (work auth, seniority,
 experience, employment terms) / **field-dependent** (role families, credentials, title taxonomies) from the
