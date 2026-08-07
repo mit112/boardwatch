@@ -6,6 +6,81 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- **A run reaper drains phantom `running` rows instead of leaving them permanent forever** (P3 slice 2,
+  D-046). A crashed or killed run left `runs.status='running'` with `finished_at IS NULL` with nothing to
+  separate it from a live run. `reap_stale_runs(engine, *, older_than)` marks rows matching
+  `status='running' AND finished_at IS NULL AND started_at < now-older_than` as `failed`, in a single
+  atomic `UPDATE ... RETURNING id` (append-only `json_insert` note — no read-modify-write). Discrimination
+  is age-based rather than process-liveness-based: `runs` carries no pid/heartbeat column, and a container
+  writer and a host writer have disjoint pid namespaces anyway. Default threshold is the new
+  `Settings.reap_stale_after_hours` (24h; classified operational, so it never enters `config_hash`). Runs
+  inside `doctor` (report+reap, guarded so a lock-contended write can never crash the diagnostic) and at
+  `boardwatch run` start, before the run's own row is minted. Fail-safe by construction: `finish_run` has
+  no `status='running'` precondition, so a false reap on a run that later finishes self-corrects its
+  `status` — though the `reaped` note intentionally persists in `errors_json` as a breadcrumb (an Opus 5
+  checkpoint review corrected the original docstring, which had claimed a complete self-correction) — and a
+  narrow theoretical `BUSY_SNAPSHOT` race on `finish_run`'s own read-modify-write is documented rather than
+  restructured (D-046, D-055).
+
+- **A P4 craft guard gauntlet — five deterministic checks on Tier-B rewrites, each reverting one bullet to
+  its Tier-A source rather than dropping the lead:**
+  - **Overmatch (style) guard** (D-048, `tailor/overmatch.py`, `OVERMATCH_VERSION="p4-overmatch-1"`): flags
+    a Tier-B bullet that lifts a verbatim ≥7-gram from the job description, or copies the JD's unusual
+    capitalization of a non-canonical term. Complements P1b's provenance (facts) veto — this one catches
+    lift, not fabrication — and runs after provenance, before the judge, so a bullet about to be reverted
+    never spends judge budget.
+  - **Canonical-vocab consolidation** (D-049, `tailor/canonical.py::build_canonical_vocab`): one
+    byte-identical source for the canonical-tech set (taxonomy names ∪ equivalence-table images), replacing
+    the same seed expression previously duplicated across `rewrite/lane.py` and `rewrite/agent_lane.py`. A
+    per-field vocabulary selector was declined as speculative — there is one field (SWE) today.
+  - **Register / buzzword / verb-diversity guards** (D-050): a banned-register phrase list and a
+    per-bullet buzzword-density ceiling (`tailor/register.yaml`, `register.py`), plus a résumé-wide
+    verb-opening-diversity post-pass (`rewrite/verb_diversity.py`; no more than 2 bullets share an opening
+    verb, and a rewrite is only demoted when doing so genuinely diversifies against the Tier-A verb that
+    would otherwise ship).
+  - **Requirement-echo detector** (D-051): an AND-gate flagging a Tier-B bullet that restates a JD
+    qualification instead of describing work — a structural qualification-register cue AND a shared 4-gram
+    with a JD qualifications-section sentence containing a non-canonical token, so pure tech-vocab overlap
+    never corroborates on its own.
+  - Each veto is a new closed `drop_reason` (`lift_rejected`, `banned_register`, `buzzword_density`,
+    `verb_repeat`, `requirement_echo`) reported on the funnel's `FabricationCounters`, all excluded from
+    bar metric B4's fabrication numerator — a conservative craft veto is not a caught fabrication. The
+    pre-existing structural filter rejects (`empty`/`not_single_line`/`too_long`) were split into their own
+    `filter_structural_rejected` bucket for the same reason (D-055 fix 3).
+
+- **Two run-time résumé layout gates, both fail-safe to the untailored master** — a violation degrades to
+  the master, it never drops a lead on layout alone:
+  - **Per-lead layout gate** (D-053, `validate_layout` in `reports/resume_gate.py`): asserts bullet length
+    ≤220 chars, bullet count ≤ `MAX_BULLETS_PER_ENTRY`, an escaping round-trip, and no template-artifact
+    token leak — run on the tailored and Tier-B renders. It does **not** run on the untailored master
+    (see Fixed, below).
+  - **Run-once master validation** (D-056, `validate_master` in `tailor/load.py`): checks the authored
+    master résumé once, at load, for a contact name and email and no template-artifact leak — deliberately
+    skipping bullet length/count, which are the author's own choice, not a rendering defect. A broken
+    master now aborts the run loudly (`MasterResumeError`, fatal) instead of silently dropping every lead
+    one at a time.
+
+### Fixed
+
+- **The per-lead layout gate no longer runs on the untailored master résumé, and can no longer drop a lead
+  on layout alone** (D-055, Opus 5 checkpoint review, fix 1 — HIGH). As first shipped, item 5a's gate also
+  ran on the master fallback and reused a *selection* cap (`MAX_BULLETS_PER_ENTRY`, which bullet selection
+  trims *to*) as a *layout* invariant; a low-`jd_skills` posting made `tailored == master`, both failed
+  identically, the master-fallback rescue did nothing, and the lead was dropped where before P4 it would
+  have shipped Mit's real résumé — breaking the "master fallback is unconditionally shippable" guarantee.
+  The per-lead gate now applies to the tailored and Tier-B renders only; a genuine compile failure on both
+  sides is the only remaining way a lead drops. Master-authoring defects are now caught separately, once,
+  at load instead (D-056, above).
+- **A valid single-combined-line résumé header (e.g. "Name · email · site") is no longer rejected as
+  missing a name** (D-056, fix round). `validate_master`'s original `len(resume.header) < 2` check assumed
+  a ≥2-line header as if it were schema rather than a scaffolding convention; fixed to check only that the
+  first header line is non-blank, decoupled from line count.
+- **A Tier-B rewrite's recorded lineage hash now points at the Tier-A bullet actually shipped, not at a
+  possibly-rejected tailored render** (D-055, fix 2). `tier_a_content_hash` was capturing whichever render
+  happened to run first rather than the shipped `chosen_hash`.
+
 ### Changed
 
 - **A held scan lock now names the blocking process instead of a generic message** (P3, §3.P3 item 1,
@@ -15,8 +90,9 @@ All notable changes to this project are documented here. The format follows
   is never a lock authority — `filelock` alone decides acquire/release — so a stale or corrupt sidecar only
   degrades the message, never correctness. `boardwatch scan`/`boardwatch run` now print the caught
   exception's own message instead of a hardcoded constant, so the pid-naming message actually reaches the
-  CLI. Stale-reclaim, token-gated unlock, and the run reaper (found unsound as designed by review) remain
-  deferred.
+  CLI. Stale-reclaim was declined outright, not deferred (D-045) — unsound as designed, and the OS already
+  reclaims a dead flock on process exit. Token-gated unlock remains deferred. The run reaper has since
+  shipped (D-046, see below).
 - **LLM adapter calls now retry transient 429/5xx failures with backoff instead of dropping the rewrite**
   (P3, §3.P3 item 10, D-040). Both `AnthropicClient` and `OpenAICompatClient` classify a 429 or 5xx
   response as `LLMTransientError` and retry through a shared `llm/retry.py` helper (tenacity,
