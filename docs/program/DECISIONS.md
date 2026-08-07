@@ -2218,3 +2218,36 @@ knowledge (SWE/iOS); everything non-tech is produced by the onboarding gatherer 
   nurse rules.
 - P4 item 7 stays buildable now as the mechanism + tech personas; the onboarding gatherer populates
   non-tech separately.
+
+## D-055 — Opus 5 checkpoint reviews of the session's big pieces (reaper + P4 guard gauntlet); fix-forwards
+
+**2026-08-07 · session 10 · review-checkpoint. Per Mit's bar: biggest checkpoints get an Opus 5 high review in fresh context ([[big-checkpoints-reviewed-by-opus5]]).**
+
+**Reaper (D-046) — Opus 5 review:** all load-bearing safety claims verified holding (status self-correction,
+RETURNING accounting, json_insert round-trip, two-concurrent-starts, config-hash class). Two LOW findings
+fixed-forward in `b2fe13d` (docs+test, no logic): the "self-corrects" claim was incomplete — the reap note
+persists in `errors_json` on a reaped-then-ok run (finish_run only appends), which is now documented as an
+intentional breadcrumb and pinned by a test; and a narrow theoretical BUSY_SNAPSHOT race on finish_run's
+RMW is documented (not restructured — too narrow).
+
+**P4 craft guard gauntlet (items 1/2/3a/3b/5a) — Opus 5 whole-cluster review found ONE HIGH defect five
+per-increment reviews missed** (the value of the bar): item 5a's layout gate ran on the untailored MASTER
+too, and `TOO_MANY_BULLETS` reused a *selection* cap (`MAX_BULLETS_PER_ENTRY=6`, which build_plan trims TO)
+as a *layout* invariant — so a low/zero-`jd_skills` posting made `tailored==master`, both failed
+identically, the degrade-to-untailored fallback rescued nothing, and the lead was DROPPED where pre-5a it
+shipped Mit's real résumé. This broke the "master fallback is unconditionally shippable / never silently
+delete a real job" guarantee. **Fixed-forward (`433cb1d`/`3ff0f6d`/`6c610fe`, make check 3069 passed):**
+- Fix 1 (HIGH): removed the per-lead `validate_layout(master, ...)` call — the layout gate applies to the
+  tailored + Tier-B renders ONLY; the master fallback is never gated per-lead. No layout violation alone
+  can drop a lead now; only a genuine compile failure on BOTH sides drops. Master-authoring defects belong
+  in item 5b (run-once, fatal at load) — not silent per-lead drops.
+- Fix 2 (MED): Tier-B lineage `tier_a_content_hash` now records the SHIPPED Tier-A hash (`chosen_hash`),
+  not the possibly-rejected tailored render's hash.
+- Fix 3 (LOW): structural filter rejects (`empty`/`not_single_line`/`too_long`) split into a
+  `filter_structural_rejected` bucket, excluded from the B4 fabrication numerator.
+
+**Deferred to LIVE-DATA-DRIVEN tuning (Opus 5 called these tuning, not defects — watch the now-surfaced
+funnel counters, esp. from the Gate-P3 parallel runs):** banned-register's zero-tolerance on
+"leveraged"/"spearheaded" (Mit's style call), and the overmatch unusual-caps check firing on legit tech
+not in the taxonomy (gRPC/GraphQL/OAuth/PyTorch/macOS). Both raise Tier-B→Tier-A revert rate; tune from
+measured false-positive rates, not speculatively.
