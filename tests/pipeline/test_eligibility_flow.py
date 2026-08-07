@@ -387,6 +387,62 @@ def test_eligible_with_cleared_requirements_renders_as_cleared(env: Path) -> Non
     assert "requirement" in show.output and "cleared" in show.output
 
 
+def test_eligible_with_a_non_met_row_renders_mixed_not_cleared(env: Path) -> None:
+    # Fix round 1's live case: an eligible verdict can carry a met BLOCKER row (e.g. work_auth)
+    # alongside a non-blocking PREFERENCE-family unmet row (e.g. degree, D-035's five families
+    # that stay preference). Rendering "2 requirements cleared" would claim the unmet row is
+    # cleared -- the exact overclaim item 6 exists to kill. The header must go neutral, and the
+    # true per-row disposition must still render below, unchanged.
+    from boardwatch.store.eligibility import RequirementItem, record_evaluation
+
+    posting_id = _seed_posting(env, DEGREE_BODY)
+    engine = get_engine(env)
+    catalog = load_rules(env.parent / "cfg")
+    with engine.begin() as conn:
+        save_profile(
+            conn, text="Backend engineer.", target_titles=[], exclude_titles=[],
+            locations=[], remote_only=False, skills=[], taxonomy_version="t",
+            resume_max_pages=1,
+        )
+        pv_id = conn.execute(
+            select(tables.posting_versions.c.id).where(
+                tables.posting_versions.c.posting_id == posting_id
+            )
+        ).scalar_one()
+        record_evaluation(
+            conn,
+            posting_version_id=int(pv_id),
+            profile_hash="ph", profile_snapshot={},
+            rules_hash="rh", rules_snapshot={"catalog_version": catalog.version},
+            input_fingerprint="fp", engine_kind="deterministic",
+            engine_version="1+deadbeefcafe", verdict="eligible", score=None,
+            requirements=[
+                RequirementItem(
+                    requiredness="required", requirement_text="US work authorization",
+                    jd_locator={"span": [0, 10]},
+                    disposition="met", rule_id="work_auth:citizen_or_lpr",
+                ),
+                RequirementItem(
+                    requiredness="required", requirement_text="Bachelor's degree preferred",
+                    jd_locator={"span": [36, 65]},
+                    disposition="unmet", rule_id="degree:bachelor_required",
+                ),
+            ],
+        )
+    with engine.connect() as conn:
+        view = load_audit(conn, posting_id, catalog)
+    assert view is not None
+    assert view.verdict == "eligible"  # the stored verdict is unchanged, presentation-only fix
+    assert view.presentation is VerdictPresentation.ELIGIBLE_MIXED
+    assert view.met_count == 1  # only the met row counts, never both
+
+    show = _run(env, ["show", str(posting_id)])
+    assert show.exit_code == 0
+    assert "2 requirements cleared" not in show.output  # the overclaim this test guards against
+    assert "1 cleared" in show.output  # the honest count, in neutral wording
+    assert "unmet" in show.output  # the true disposition of the second row still renders below
+
+
 def test_load_audit_tolerates_a_malformed_span(env: Path) -> None:
     # The eval tables are append-only and trigger-guarded, so a poison locator row (e.g. from a
     # future or hand write) could never be corrected. load_audit must render an empty quote for

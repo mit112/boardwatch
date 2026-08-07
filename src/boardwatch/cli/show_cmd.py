@@ -35,12 +35,20 @@ def _render_audit(audit: AuditView) -> None:
     "No flags" != cleared (CLAUDE.md, P2 item 6): an `eligible` that fired zero requirement
     rows is worded distinctly from one that fired and cleared some, via the typed
     `VerdictPresentation` derived from the stored verdict and requirement count — the stored
-    verdict itself is never touched."""
+    verdict itself is never touched. The header never says "cleared" for a row that isn't:
+    a `preference`-family row can be `unmet`/`unknown` without blocking the verdict (D-035), so
+    a mixed outcome gets neutral wording instead of an aggregate "N cleared" overclaim; the
+    per-requirement lines below always show each row's true disposition either way."""
+    n = len(audit.requirements)
     if audit.presentation is VerdictPresentation.ELIGIBLE_NO_RULES_APPLIED:
         header = "Eligibility: eligible — no eligibility rule applied (not screened)"
     elif audit.presentation is VerdictPresentation.ELIGIBLE_CLEARED:
-        n = len(audit.requirements)
         header = f"Eligibility: eligible — {n} requirement{'s' if n != 1 else ''} cleared"
+    elif audit.presentation is VerdictPresentation.ELIGIBLE_MIXED:
+        header = (
+            f"Eligibility: eligible — {n} requirement{'s' if n != 1 else ''} evaluated "
+            f"({audit.met_count} cleared; see details)"
+        )
     else:
         header = f"Eligibility: {audit.verdict}"
     if audit.is_historical:

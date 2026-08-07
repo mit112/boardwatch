@@ -62,11 +62,20 @@ class AuditRequirement:
 
 class VerdictPresentation(StrEnum):
     """A presentation-only classification derived from `verdict` and `requirements`. It never
-    feeds back into engine logic and never changes the stored `verdict` — it only distinguishes,
-    for rendering, an `eligible` that fired and cleared N requirement rows from an `eligible`
-    that fired none at all ("no flags" != cleared, CLAUDE.md; detect.py:27, P2 item 6)."""
+    feeds back into engine logic and never changes the stored `verdict`. For an `eligible`
+    verdict it distinguishes three cases ("no flags" != cleared, CLAUDE.md; detect.py:27, P2
+    item 6):
+
+    - zero requirement rows fired at all (`ELIGIBLE_NO_RULES_APPLIED`);
+    - one or more rows fired and EVERY one disposed `met` (`ELIGIBLE_CLEARED`);
+    - one or more rows fired but at least one is NOT `met` — a non-blocking `preference`-family
+      `unmet`/`unknown` row that did not stop the verdict, per D-035's five still-`preference`
+      families (`ELIGIBLE_MIXED`). Rendering this the same as `ELIGIBLE_CLEARED` would claim a
+      row is cleared when it is not — the exact overclaim this item exists to kill.
+    """
 
     ELIGIBLE_CLEARED = "eligible_cleared"
+    ELIGIBLE_MIXED = "eligible_mixed"
     ELIGIBLE_NO_RULES_APPLIED = "eligible_no_rules_applied"
     INELIGIBLE = "ineligible"
     UNCERTAIN = "uncertain"
@@ -81,14 +90,20 @@ class AuditView:
     requirements: tuple[AuditRequirement, ...]
 
     @property
+    def met_count(self) -> int:
+        """How many fired requirement rows are actually disposed `met` — the honest count
+        behind "cleared", never all rows regardless of disposition."""
+        return sum(1 for req in self.requirements if req.disposition == "met")
+
+    @property
     def presentation(self) -> VerdictPresentation:
-        if self.verdict == "eligible":
-            return (
-                VerdictPresentation.ELIGIBLE_CLEARED
-                if self.requirements
-                else VerdictPresentation.ELIGIBLE_NO_RULES_APPLIED
-            )
-        return VerdictPresentation(self.verdict)
+        if self.verdict != "eligible":
+            return VerdictPresentation(self.verdict)
+        if not self.requirements:
+            return VerdictPresentation.ELIGIBLE_NO_RULES_APPLIED
+        if self.met_count == len(self.requirements):
+            return VerdictPresentation.ELIGIBLE_CLEARED
+        return VerdictPresentation.ELIGIBLE_MIXED
 
 
 def load_audit(

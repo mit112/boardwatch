@@ -222,10 +222,12 @@ inputs=("total_years_experience",))`. What is missing is *enforcement* and *repo
 5. **INELIGIBLE must carry a quoted span** from the frozen JD. No span ⇒ downgrade to ABSTAIN.
 6. **Evidence chain for ELIGIBLE too** (job-apps spec-1 §6, where it says boardwatch should beat it):
    which rule cleared which requirement, against which profile field, citing which span, and which rules
-   abstained. "No flags" ≠ cleared. **DONE (session 12, D-036):** the four-table evidence chain already
-   stored the requirement rows (or zero); `AuditView.presentation` (a typed `VerdictPresentation`) derives
-   `eligible_no_rules_applied` vs. `eligible_cleared` from the existing row count, and `show` renders the
-   two distinctly — no schema change, stored `verdict` unchanged.
+   abstained. "No flags" ≠ cleared. **DONE (session 12, D-036, fix round 1 same session):** the four-table
+   evidence chain already stored the requirement rows (or zero); `AuditView.presentation` (a typed
+   `VerdictPresentation`) derives `eligible_no_rules_applied` / `eligible_cleared` / `eligible_mixed` from
+   the existing rows' dispositions (`met_count` vs. total), and `show` renders all three distinctly — never
+   claiming a non-`met` row (e.g. a D-035 `preference`-family unmet row) is "cleared" — no schema change,
+   stored `verdict` unchanged.
 7. **The severity/policy layer — the actual reason `ineligible` is unreachable.** `facts.py:66`: *"Only
    `blocker` can yield `ineligible`."* All six families shipped `default_policy: preference`
    (`rules.yaml:72,290,388,606,871,1032`). Live consequence: **1,713** unmet *required* dispositions,

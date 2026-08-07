@@ -1371,15 +1371,19 @@ roll-up (`detect.py:27`: "zero rows stores `eligible`... never 'a clean bill of 
 cases were indistinguishable on screen even though the requirement-row count needed to tell them apart was
 already sitting in `AuditView.requirements`.
 
-**Choice.** A derived, typed classification, `VerdictPresentation` (`StrEnum`, matching this repo's existing
-convention for small typed classifications — `GateReason`, `CompileReason`, `DiscrepancyKind`,
-`BoardHealth`), as a `@property` on `AuditView` (`eligibility/audit.py`): `eligible` + zero requirement rows
-→ `ELIGIBLE_NO_RULES_APPLIED`; `eligible` + one or more rows → `ELIGIBLE_CLEARED`; `ineligible`/`uncertain`
-pass through unchanged as `INELIGIBLE`/`UNCERTAIN`. It reads only the two fields `AuditView` already has
-(`verdict`, `requirements`) — no new stored column, no migration, no change to `engine.py`'s roll-up or to
-the stored `verdict` string. `show`'s `_render_audit` switches on `.presentation` to header either
-"eligible — no eligibility rule applied (not screened)" or "eligible — N requirement(s) cleared", leaving
-the ineligible/uncertain and evidence-line rendering below it untouched.
+**Choice (revised after fix round 1 below — see that section for what changed and why).** A derived, typed
+classification, `VerdictPresentation` (`StrEnum`, matching this repo's existing convention for small typed
+classifications — `GateReason`, `CompileReason`, `DiscrepancyKind`, `BoardHealth`), as a `@property` on
+`AuditView` (`eligibility/audit.py`), plus a `met_count` property counting only rows disposed `met`. For an
+`eligible` verdict: zero requirement rows → `ELIGIBLE_NO_RULES_APPLIED`; one or more rows and every one
+disposed `met` → `ELIGIBLE_CLEARED`; one or more rows but at least one NOT `met` (a non-blocking
+`preference`-family `unmet`/`unknown` row, D-035) → `ELIGIBLE_MIXED`. `ineligible`/`uncertain` pass through
+unchanged as `INELIGIBLE`/`UNCERTAIN`. It reads only fields `AuditView` already has (`verdict`,
+`requirements`) — no new stored column, no migration, no change to `engine.py`'s roll-up or to the stored
+`verdict` string. `show`'s `_render_audit` switches on `.presentation` to header "eligible — no eligibility
+rule applied (not screened)", "eligible — N requirement(s) cleared" (only when every row is `met`), or
+"eligible — N requirement(s) evaluated (M cleared; see details)" for the mixed case, leaving the
+ineligible/uncertain and evidence-line rendering below it untouched.
 
 **Scope.** Only the primary deterministic render path (`show <id>`'s `_render_audit`) was changed.
 `_render_llm_audit` (the opt-in, advisory LLM lane, D-P3-13) was deliberately left alone: it is a secondary,
@@ -1409,3 +1413,38 @@ small closed classification.
 **Consequence.** PROGRAM.md §3.P2 item 6 is DONE. `make check` exit code and counts recorded in the
 session report (`.superpowers/sdd/p2-profile-keystone/item6-report.md`); no engine or stored-verdict
 behavior changed, so this closes purely a reporting gap.
+
+**Fix round 1 (same session).** Review caught an honesty bug in the first cut: `ELIGIBLE_CLEARED`'s header
+counted `len(audit.requirements)` — every fired row, regardless of disposition — as "cleared". Under D-035,
+five families (`experience_years`, `clearance`, `degree`, `contract_not_fte`, `internship`) still ship
+`preference`, so an `eligible` verdict can legitimately carry a `met` blocker row (e.g. `work_auth`)
+alongside a non-blocking `unmet`/`unknown` `preference`-family row that never stopped the verdict. The
+original header rendered that as "eligible — 2 requirements cleared" — claiming the unmet row was cleared
+when it was not, which is the exact overclaim this item exists to kill, just one level down from the
+zero-vs-nonzero distinction the first cut fixed.
+
+Fixed by moving the counting into the property layer rather than the render: a new `AuditView.met_count`
+sums only rows disposed `met`, and `VerdictPresentation` gained a third member, `ELIGIBLE_MIXED`, for "one
+or more rows fired but not all `met`". `_render_audit` now headers `ELIGIBLE_MIXED` with neutral wording —
+"eligible — N requirement(s) evaluated (M cleared; see details)" — that states the honest `met_count`
+instead of implying every row cleared; the unmet/unknown row's true disposition still renders on the
+per-requirement line below, unchanged. `ELIGIBLE_CLEARED` now only fires when `met_count == len(requirements)`,
+so "N requirement(s) cleared" is true whenever it is said.
+
+**Verified (round 1).** Added `met_count` and the `ELIGIBLE_MIXED` branch; extended
+`tests/unit/test_eligibility_audit_presentation.py` with cases for one-met-plus-one-unmet, one-met-plus-one-
+unknown, and zero-met-of-two, each asserting `presentation is ELIGIBLE_MIXED` and the exact `met_count`; added
+`tests/pipeline/test_eligibility_flow.py::test_eligible_with_a_non_met_row_renders_mixed_not_cleared`, which
+writes a real evaluation row pair (`met` `work_auth` + `unmet` `degree`) via `record_evaluation`, asserts
+`presentation is ELIGIBLE_MIXED` and `met_count == 1`, then asserts on `show`'s actual output: `"2
+requirements cleared" not in output` (the overclaim) and `"1 cleared"` and the literal string `"unmet"` both
+present (the honest count and the still-visible true disposition). RED confirmed by stashing only the two
+source files (`audit.py`, `show_cmd.py`) back to the pre-fix-round-1 commit while keeping the new tests —
+6 failures (`AttributeError: no attribute 'met_count'` / `no attribute 'ELIGIBLE_MIXED'`). GREEN restored by
+popping the stash — 25/25 pass across both files. Mutation-verified by degrading the `ELIGIBLE_CLEARED`
+guard to `if self.met_count >= 0` (always true) — the 4 tests that assert `ELIGIBLE_MIXED` failed as
+expected; reverted, 25/25 green again. `git diff` on `engine.py`/`detect.py`/`resolve.py` stayed empty
+throughout — still presentation-only. `make check`: `generalization: OK`, ruff clean, mypy clean (159
+files), **2872 passed, 1 deselected**, coverage 95.39%, run in the foreground with output redirected
+directly to a file (`> log 2>&1`, no pipe) so the captured exit code is `make`'s own, not a downstream
+`tee`'s — exit **0**.

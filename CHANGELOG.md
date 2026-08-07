@@ -8,11 +8,15 @@ All notable changes to this project are documented here. The format follows
 
 ### Changed
 
-- **`show` now renders an `eligible` verdict that fired zero eligibility rules distinctly from one that
-  fired and cleared some** (P2, §3.P2 item 6, D-036). Previously both rendered as a bare "Eligibility:
-  eligible" — "no flags" is not the same claim as "cleared". A new derived `AuditView.presentation`
-  (`VerdictPresentation`, no schema change, stored `verdict` unchanged) now headers the two cases
-  "eligible — no eligibility rule applied (not screened)" and "eligible — N requirement(s) cleared".
+- **`show` now renders an `eligible` verdict that fired zero eligibility rules, one that fired and
+  cleared all of them, and one that fired some non-blocking `preference`-family rows that were NOT
+  cleared, as three distinct headers** (P2, §3.P2 item 6, D-036). Previously all three rendered as a
+  bare "Eligibility: eligible" — "no flags" is not the same claim as "cleared", and a fired-but-unmet
+  row is not "cleared" either, even when it did not block the verdict (D-035's five still-`preference`
+  families). A new derived `AuditView.presentation` (`VerdictPresentation`, no schema change, stored
+  `verdict` unchanged) now headers the three cases "eligible — no eligibility rule applied (not
+  screened)", "eligible — N requirement(s) cleared" (only when every fired row is `met`), and
+  "eligible — N requirement(s) evaluated (M cleared; see details)" for the mixed case.
 - **`work_auth`'s default severity is now `blocker`, not `preference`** (P2, §3.P2 item 7, D-035). Every
   eligibility family previously shipped `default_policy: preference`, so a fresh, policy-less profile got
   **0 `ineligible` verdicts ever** — the multi-tenancy requirement failing for anyone who had not, like Mit,
