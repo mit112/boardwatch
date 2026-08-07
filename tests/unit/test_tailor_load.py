@@ -84,10 +84,21 @@ def test_validate_master_rejects_empty_header() -> None:
     assert exc_info.value.reason is GateReason.CONTACT_BLOCK_MISSING_NAME
 
 
-def test_validate_master_rejects_single_line_header() -> None:
+def test_validate_master_rejects_single_line_header_with_no_email() -> None:
+    # A single header line with no email anywhere is a real rejection, but for the EMAIL
+    # reason, not line-count: line count alone is not the invariant (see the passing
+    # combined-line case below).
     with pytest.raises(MasterResumeError) as exc_info:
         validate_master(_master(header=["Ada Lovelace"]))
-    assert exc_info.value.reason is GateReason.CONTACT_BLOCK_MISSING_NAME
+    assert exc_info.value.reason is GateReason.CONTACT_BLOCK_INVALID_EMAIL
+
+
+def test_validate_master_accepts_a_single_combined_header_line_with_name_and_email() -> None:
+    # A single-element header carrying "name · email · links" all on one line is a real
+    # résumé convention (design fixtures use single-element headers; nothing in the Resume
+    # schema, validate_slots, or the Typst renderer requires >=2 header lines). Gating on
+    # line count alone was a false-fatal that would reject a genuinely valid master.
+    validate_master(_master(header=["Ada Lovelace · ada@example.com · github.com/ada"]))
 
 
 def test_validate_master_rejects_blank_name_line() -> None:
@@ -132,8 +143,7 @@ def test_load_resume_rejects_a_master_missing_contact_info(tmp_path: Path) -> No
     p = tmp_path / "resume.yaml"
     p.write_text(
         """\
-header:
-  - "Ada Lovelace"
+header: []
 education: []
 skill_groups: []
 entries:
@@ -149,6 +159,31 @@ entries:
         load_resume(p)
     assert exc_info.value.reason is GateReason.CONTACT_BLOCK_MISSING_NAME
     assert isinstance(exc_info.value, ResumeLoadError)
+
+
+def test_load_resume_rejects_a_master_with_no_email(tmp_path: Path) -> None:
+    # A single header line with a name but no email anywhere is a real rejection, on the
+    # EMAIL reason — mirrors the unit-level no-email case above, exercised through the full
+    # load_resume() path.
+    p = tmp_path / "resume.yaml"
+    p.write_text(
+        """\
+header:
+  - "Ada Lovelace"
+education: []
+skill_groups: []
+entries:
+  - entry_id: "e1"
+    heading: "Senior Engineer"
+    bullets:
+      - bullet_id: "b1"
+        text: "Did a thing"
+""",
+        encoding="utf-8",
+    )
+    with pytest.raises(MasterResumeError) as exc_info:
+        load_resume(p)
+    assert exc_info.value.reason is GateReason.CONTACT_BLOCK_INVALID_EMAIL
 
 
 def test_load_resume_rejects_a_master_with_a_template_artifact(tmp_path: Path) -> None:

@@ -48,11 +48,10 @@ def validate_master(resume: Resume) -> None:
     more than 6 bullets, is Mit's authoring choice on the master. Gating the master on them
     was exactly the regression D-055 removed — this function must not reintroduce it.
     """
-    if len(resume.header) < 2 or not resume.header[0].strip():
+    if not resume.header or not resume.header[0].strip():
         raise MasterResumeError(
             GateReason.CONTACT_BLOCK_MISSING_NAME,
-            "master résumé header is missing a name "
-            "(need at least 2 lines: name, then a contact line)",
+            "master résumé header is missing a name (empty header, or a blank first line)",
         )
     if not any(_EMAIL_PATTERN.search(line) for line in resume.header):
         raise MasterResumeError(
