@@ -21,7 +21,9 @@ mode with the real exit code.
 
 ## Current phase
 
-**P0 — Instrumentation. IN PROGRESS.** Nothing is blocked.
+**P0 — Instrumentation. GATE MET (session 8); one build item (5) left.** Nothing is blocked. Gate P0's
+three clauses are all satisfied, so P1 is unblocked — but item 5 (the reconciliation sweep) is still
+unshipped P0 work and should land before P0 is called complete.
 
 **Numbering note, because session 4 briefly got this wrong:** P0 has **nine** items, numbered **0-8** in
 `PROGRAM.md` §3.P0. Item 0 was added later, by D-016. Always cite `PROGRAM.md`'s numbers — an earlier
@@ -55,15 +57,15 @@ profile columns the ranker reads. The one residual gap — the **skill-taxonomy 
 artifact's own manifest note. Item 6 (stub rate) and item 8 (fabrication counters) shipped in the same
 change; see `CHANGELOG.md` and D-030.
 
-**Gate P0 is still NOT met, but only ONE of its three clauses is now outstanding** (it was two).
-`PROGRAM.md` §3.P0 gives the gate three clauses:
+**Gate P0 is now MET — all three clauses.** `PROGRAM.md` §3.P0 gives the gate three clauses:
 
-1. *Three consecutive runs reconciling to 100%.* **IN PROGRESS this session — the only clause left.**
-   Session 8 launched three consecutive **real** `boardwatch run --top 5` invocations (no `--no-scan`)
-   from a worktree pinned to `66291bf`, so the scan stage is exercised under the gate for the first time —
-   every prior gate run used `--no-scan` against a frozen store copy. Confirmed the scan stage genuinely
-   ran (the live store grew ~70 MB with an active WAL during run 1). **See `METRICS.md` §"Session 8" for
-   the reconciliation outcome of each run once complete.** No code change was needed, as expected.
+1. *Three consecutive runs reconciling to 100%.* **MET (session 8).** Three consecutive real
+   `boardwatch run --top 5` invocations (no `--no-scan`, run_ids **5, 6, 7**) from a worktree pinned to
+   `66291bf` — all RECONCILE, all exit 0, the scan stage exercised for the first time under the gate (135
+   boards attempted each; the corpus GREW 20,803 → 22,114 → 23,455 as the scan discovered new postings).
+   `METRICS.md` §"Session 8" has the full table. Caveat recorded there: these three produced artifact **v2**
+   (the pinned worktree predates v3), which is fine — reconciliation is version-independent. No code change
+   was needed, as expected.
 2. *Why every non-lead was dropped, from the artifact alone.* **NOW MET** (session 6, item 3). The
    `shortlist` stage enters at the ranker's own considered population — **19,262**, against 3,301 measured
    in session 5 — and names all five of its exits. **15,959 postings that previously landed in no bucket
@@ -506,7 +508,7 @@ computable but the typed abstain *reason* the keystone invariant wants is not.
 
 | Phase | Status | Gate met? |
 |---|---|---|
-| P0 Instrumentation | **in progress** — items 0, 1, 2, 3, 4, 6, 7, 8 of 0-8 done; only item 5 left | **not met** — one clause left: three consecutive real-driver runs (scan stage included), launched session 8, outcome pending in METRICS §"Session 8" |
+| P0 Instrumentation | **gate MET** (session 8) — items 0, 1, 2, 3, 4, 6, 7, 8 of 0-8 done; only build item 5 (reconciliation sweep) left | **MET** — three consecutive real-driver runs (5, 6, 7) all reconcile with the scan stage exercised; abstain per rule; why-dropped answerable from the artifact |
 | P1 Résumé artifact gate | not started | — |
 | P2 Profile + keystone invariant | not started | — |
 | P3 Unattended one command | not started | — |

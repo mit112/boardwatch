@@ -677,11 +677,29 @@ invocations (no `--no-scan`) launched from the `boardwatch-scan` worktree pinned
 the scan stage under the gate for the first time. Run 1 grew the live store ~70 MB with an active WAL,
 confirming the scan stage genuinely fetched and wrote.
 
-| run | reconciles | scan boards (attempted/complete/failed) | corpus | leads | exit |
-|---|---|---|---|---|---|
-| 1 | _pending_ | _pending_ | _pending_ | _pending_ | _pending_ |
-| 2 | _pending_ | _pending_ | _pending_ | _pending_ | _pending_ |
-| 3 | _pending_ | _pending_ | _pending_ | _pending_ | _pending_ |
+| run_id | reconciles | scan boards (attempt/complete/failed · listed) | corpus | judged this run (rest cache) | verdict eligible | leads/PDF | exit |
+|---|---|---|---|---|---|---|---|
+| 5 (run 1) | **RECONCILES** | 135 / 80 / 12 · 14,824 | 20,803 | 20,803 (full re-eval — taxonomy changed) | 19,573 | 5 / 5 | 0 |
+| 6 (run 2) | **RECONCILES** | 135 / 17 / 12 · 3,862 | 22,114 | 1,422 (20,692 cache) | 20,759 | 5 / 5 | 0 |
+| 7 (run 3) | **RECONCILES** | 135 / 19 / 12 · 3,987 | 23,455 | 1,363 (22,092 cache) | 21,962 | 5 / 5 | 0 |
 
-**Fill this table from each run's `funnel-<run_id>.md` before marking Gate P0's clause 1 met.** The runs
-were unattended and may not have finished when this was written; a `_pending_` row is not a pass.
+**Gate P0 clause 1 is MET.** Three consecutive real `boardwatch run --top 5` (no `--no-scan`), all
+reconciling, all exit 0, the scan stage genuinely exercised — 135 boards attempted each, real listing, and
+the corpus GREW each run (20,803 → 22,114 → 23,455) as the scan discovered new postings. Run 1 re-evaluated
+the whole corpus because the taxonomy identity had changed since the store's last eligibility run; runs 2
+and 3 were mostly cache hits, exactly the repeat-run behaviour the attribution stage exists to show.
+`ineligible` is 0 on all three (bar metric B7, P2's). 12 boards failed on all three — the same dead
+Workday endpoints (HTTP 401/422), non-fatal by design.
+
+**Honest caveat: these three gate runs produced artifact v2, not v3.** They were run from a worktree
+pinned to `66291bf` (the pre-v3 commit) precisely so the scan runs stayed on a stable tree while artifact
+v3 was edited on `main`. Reconciliation is version-independent — v3 changed no reconciliation logic, only
+added the manifest/stub/fabrication sections — so the gate is validly met by v2 artifacts. Artifact v3's
+new sections are validated by tests (fixtures) and by the independent code review of `faa4394`; a
+confirmatory `--no-scan` run from `main` on the real store (to eyeball manifest/stub/fabrication on live
+data) was launched separately — record its artifact_version=3 output when it lands.
+
+**A dangling `runs` row was created and NOT drained:** the first `--no-scan` v3-validation attempt was
+killed by a 120s harness timeout (SIGTERM does not run the pipeline's `finally`), leaving a row at
+`status='running'`, `finished_at` NULL — the exact quarantine-with-no-drain the P3 reaper owns (D-029). One
+more instance of a known gap, recorded rather than hidden.
