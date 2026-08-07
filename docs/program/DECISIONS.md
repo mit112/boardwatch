@@ -1876,3 +1876,32 @@ the "design fork worth Mit's input" the review flagged, not yet resolved.
 let a reclaimer steal a live lock); waiting to build even the message-only half until the reclaim/reaper
 redesign lands (rejected — the notify-loudly clause is independently useful and does not need the reclaim
 machinery to be safe, per CLAUDE.md's minimum-code default).
+
+## D-044 — P3 slice 5b: KEEP today's Tier-A downgrade on provider/quota error; decline the "never downgrade" inversion
+
+**2026-08-07 · session 10 · P3 (item 10, the never-downgrade half — decided autonomously under Mit's
+standing "make the calls" delegation; reversible).**
+
+**Context.** P3 item 10 asks that the pipeline "never silently downgrade to the deterministic engine" and
+instead leave leads pending/resumable on a quota cap. Today (`tailor/rewrite/lane.py:96,208`) a Tier-B
+provider/quota error is contained → `drop_reason="error"`/`"budget"`, the bullet keeps its deterministic
+Tier-A text, and the lead SHIPS. That is a silent downgrade — but a REASONABLE fail-safe: a lead with a
+solid, structural, no-fabrication Tier-A bullet is a good, shippable outcome, not a failure.
+
+**Choice — KEEP the current behavior; decline the inversion.** Inverting it (a new non-terminal
+pending/resumable lead state + threading a QuotaExceeded past the two containment boundaries + reworking the
+slice-3 cohort-completeness invariant, which demands a terminal state per shortlisted posting) is a large,
+risky change whose payoff is dubious: for an UNATTENDED daily driver, "ship the Tier-A lead now" beats
+"leave it pending and produce no lead today." Per CLAUDE.md's minimum-code / no-speculative-abstractions
+doctrine, and the fail-safe table ("fabrication check ⇒ drop tailoring, emit static" — i.e. downgrading to
+the deterministic output IS the sanctioned fail-safe), the status quo is the correct default.
+
+**Reversible + the one thing that WOULD change the call:** if Mit wants Tier-B rewording treated as
+load-bearing enough that its absence should block a lead (rather than degrade to Tier-A), that is his call
+to make — this decision is the conservative default, not a foreclosure. Until then: no pending/resumable
+state, no cohort-invariant rework, no batched-judging (defers with it).
+
+**This resolves the 5b fork.** Remaining P3 open items: item 4-adjacent taxonomy is P2 (needs Mit's
+domain input on the field→family mapping); the lock reclaim + run reaper stay deferred (reclaim proven
+unsound; a sound reaper needs process-liveness identity — fresh context); item 8's cross-OS two-writer test
+is environmentally blocked (no Docker here). Idempotence declined (D-042).
