@@ -694,8 +694,11 @@ generalized mechanism, keep Mit's instance local. This applies system wide.**
   discovery. **Nothing is generating Mit's résumés daily right now.** P1 and P3 close a live gap.
 - **The tailoring architecture is already correct.** Typed skeleton, plain-text-only model contract,
   Python-owns-markup, independent entailment judge — all present. Do not rebuild it. (`PROGRAM.md` §5.1.)
-- **`typst` is installed** at `/opt/homebrew/bin/typst`. "No PDF" is a silent-degrade code path, not a
-  missing binary.
+- **`typst` is installed** at `/opt/homebrew/bin/typst`. The old "No PDF" silent-degrade code path
+  (D-006) was **ELIMINATED by P1a** (D-032, §3.P1 — Gate P1 MET): a PDF-less lead can no longer ship
+  silently — a missing binary now raises/aborts the run fatal, a compile failure or page-limit overflow
+  now falls back to the untailored master or drops the lead outright, and a `resume_tailored` row always
+  has a compliant PDF.
 - **`track` exists but has never been used** — `applications` and `application_events` are both 0 rows.
 - **`jobs` and `postings` are both 19,448** — `job_id` is 1:1, grouping has never run, duplicate leakage
   is structurally unmeasurable until P6.

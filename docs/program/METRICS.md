@@ -742,11 +742,13 @@ classes, the dropped timestamp/eval-count comparisons and why).
 
 ## Session 9 — 2026-08-07 · P1a build, gate, and dogfood (résumé artifact integrity)
 
-**Build.** `p1a-resume-artifact-gate` branch, six commits (`59cb1d4` profile column + migration, `c741a85`
-gate core + untailored fallback, `3695eb6` pipeline/CLI enforcement, `d57e37d` Dockerfile + doctor
-packaging, plus two fix rounds `50ef003`/`0dbf636`/`e1b9370`/`5b3266f` from independent review). `make
-check` on the branch: **exit 0 — 2828 passed, 1 deselected, coverage 95.17%, `generalization: OK`**, ruff
-and `mypy --strict` both clean. (Session 8's last measured number was 2785 passed / 95.12% at the P0
+**Build.** `p1a-resume-artifact-gate` branch, nine commits across five tasks (`8c7ab6e` pure gate core —
+`CompileOutcome`, `evaluate_compile`, `validate_slots` — `59cb1d4` profile column + migration, `c741a85`
+gate/fallback wiring in `run_tailor`, `3695eb6` pipeline/CLI enforcement, `d57e37d` Dockerfile + doctor
+packaging, plus one fix round per task from independent review — `e1b9370`, `50ef003`, `0dbf636`,
+`5b3266f`). `make check` on the branch: **exit 0 — 2828 passed, 1 deselected, coverage 95.17%,
+`generalization: OK`**, ruff and `mypy --strict` both clean. (Session 8's last measured number was 2785
+passed / 95.12% at the P0
 close-out; the growth is P1a's own new tests.)
 
 **Dogfood run 1 — the real local store, real `~/boardwatch-applications`, live profile at its shipped

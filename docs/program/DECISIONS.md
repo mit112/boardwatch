@@ -1118,11 +1118,13 @@ fabrication-lexicon veto plus verb-swap provenance, slotting into `run_tier_b_co
   `<day_dir>/_failed/<slug>.log` before the drop, so "compile log captured per lead" holds even for dropped
   leads.
 - **Slot-filled assertion ships as a standalone `validate_slots(resume)` function, NOT a `Resume`
-  `model_validator`.** This is a design refinement made during the build, not a change from the original
-  design intent: a `model_validator` runs on *every* construction (including legitimately-partial
-  intermediate models built during tailoring) and raises pydantic's own error type. `validate_slots` is
-  called once, explicitly, on the fully-tailored model right before render, and raises the repo's typed
-  `ResumeValidationError` — treated exactly like a compile failure (fallback → possibly drop).
+  `model_validator` as design §4.6 specified.** The goal is unchanged from the design — assert a filled
+  header, ≥1 entry, ≥1 bullet per entry, non-blank bullet text, fail-closed. The mechanism changed during
+  the build: a `model_validator` runs on *every* construction, including legitimately-partial intermediate
+  `Resume` models built mid-tailoring, and raises pydantic's own error type, not the repo's. `validate_slots`
+  is instead called once, explicitly, at the render gate on the fully-tailored model, and raises the
+  repo's typed `ResumeValidationError` there — treated exactly like a compile failure (fallback → possibly
+  drop) rather than rejecting a partial construction that was never meant to be shippable.
 - **Typst packaging: Dockerfile layer pins the same 0.15.1 binary as local, plus a `doctor` version
   probe.** An older/newer typst may accept `compile` but break the `eval` page-count query syntax, which
   would silently make every lead fall back or drop with no obvious cause — so `doctor` warns loudly on a

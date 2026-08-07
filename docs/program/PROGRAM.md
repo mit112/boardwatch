@@ -459,8 +459,9 @@ architecture rebuild.
 job-apps prescribes vendoring the Typst binary. `typst` is installed at `/opt/homebrew/bin/typst` and
 `reports/tailor.py:104` shells out to it correctly. The actual defect is `tailor_cmd.py:193` printing
 *"source only (no PDF; typst not available or compile failed)"* and continuing — a silent degrade that
-also conflates an environment fault with a lead fault. Fix is a hard gate plus disambiguation. Vendoring
-is a P7-era distribution concern.
+also conflates an environment fault with a lead fault. Fix is a hard gate plus disambiguation. **Shipped —
+P1a (D-032, §3.P1) closed this exact defect: Gate P1 is MET.** Vendoring is a P7-era distribution
+concern.
 
 **3. The applied write-back path already exists; the gap is the suppression loop.**
 job-apps: *"Build the marking path in Phase 5."* `boardwatch track add|status|list|log` already writes an
