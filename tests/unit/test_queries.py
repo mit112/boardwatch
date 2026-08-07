@@ -182,16 +182,29 @@ def test_reap_stale_runs_is_idempotent_on_a_second_call(engine: Engine) -> None:
 
 def test_a_false_reap_self_corrects_when_finish_run_completes_it(engine: Engine) -> None:
     """`finish_run` has no `status='running'` precondition, so a reaped-then-completed run
-    ends up `ok` — proving a false reap is benign (the soundness claim, as a test)."""
+    ends up `ok` — proving a false reap is benign (the soundness claim, as a test).
+
+    That self-correction is `status`-only, not `errors_json`: `finish_run(errors=None)` never
+    touches `errors_json`, so the `reaped: ...` note this reaper appended persists on an
+    otherwise-successful row. This is intentional (the note is a truthful breadcrumb that the
+    run breached the 24h threshold before completing) rather than an oversight — pinned here so
+    a future change that starts clearing the note on completion is a deliberate decision, not a
+    silent behavior change."""
     run_id = _insert_run_row(engine, started_at=utcnow() - timedelta(hours=25))
     reaped = reap_stale_runs(engine, older_than=timedelta(hours=24))
     assert reaped == [run_id]
+    reaped_note = _run_row(engine, run_id).errors_json[-1]
+    assert reaped_note.startswith("reaped")
 
     finish_run(engine, run_id, status=RUN_OK)
 
     row = _run_row(engine, run_id)
     assert row.status == RUN_OK
     assert row.finished_at is not None
+    assert row.errors_json[-1] == reaped_note, (
+        "the reaped note should persist through a clean finish_run — it is a truthful "
+        "breadcrumb of the >24h threshold breach, not a stale artifact to strip"
+    )
 
 
 def test_get_validators_round_trip(engine: Engine) -> None:

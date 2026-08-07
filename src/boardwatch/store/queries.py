@@ -128,6 +128,14 @@ def finish_run(
 
     Errors are appended, not replaced: the scan stage has already written its own into
     errors_json by the time the pipeline finishes, and overwriting would lose them.
+
+    Known narrow race: the `errors` branch is a SELECT-then-UPDATE read-modify-write on
+    errors_json, not a single atomic statement (unlike `reap_stale_runs`'s `json_insert`). In
+    WAL mode, `SQLITE_BUSY_SNAPSHOT` — which `busy_timeout` does not retry — is possible if
+    `reap_stale_runs` commits a write to this same row between this function's SELECT and
+    UPDATE. It requires a run finishing WITH errors while concurrently crossing the reaper's
+    >24h threshold in this exact microsecond gap — extraordinarily narrow, and not worth
+    restructuring this function's read-modify-write for.
     """
     with engine.begin() as conn:
         values: dict[str, object] = {
@@ -160,9 +168,15 @@ def reap_stale_runs(engine: Engine, *, older_than: timedelta) -> list[int]:
     (its own UPDATE mutates zero rows of that id) but a SELECT-derived list would still claim
     it as reaped. `RETURNING` reports exactly what THIS call mutated, never what it merely saw.
 
-    A false reap is benign and self-corrects: `finish_run` has no `status='running'`
-    precondition, so a run that breaches the threshold and then finishes normally overwrites
-    `failed` with its real terminal status.
+    A false reap self-corrects `status`, not `errors_json`: `finish_run` has no
+    `status='running'` precondition, so a run that breaches the threshold and then finishes
+    normally overwrites `failed` with its real terminal status. The `reaped: ...` note this
+    function appended, though, is never removed — `finish_run` only ever appends to
+    `errors_json` (see its docstring), it does not strip prior entries. That persistence is
+    intentional, not a bug to fix: a run that took over the threshold and then completed is
+    genuinely anomalous, and the note is a truthful breadcrumb of that, worth keeping even on
+    an otherwise-successful run. Do not read this as "fully self-corrects" — only the status
+    column does.
     """
     now = utcnow()
     cutoff = now - older_than
