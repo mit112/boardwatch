@@ -14,7 +14,7 @@ from sqlalchemy import select
 
 from boardwatch.cli.context import build_context
 from boardwatch.core.clock import utcnow
-from boardwatch.eligibility.audit import AuditView, load_audit, load_llm_audit
+from boardwatch.eligibility.audit import AuditView, VerdictPresentation, load_audit, load_llm_audit
 from boardwatch.eligibility.catalog import load_rules
 from boardwatch.eligibility.preflight import current_identity
 from boardwatch.extract.preflight import run_preflight
@@ -30,8 +30,19 @@ console = Console()
 
 def _render_audit(audit: AuditView) -> None:
     """The persisted eligibility audit, evidence linked. Plain lines, no Rich markup, so a
-    disposition or a sliced quote can never be read as a style tag."""
-    header = f"Eligibility: {audit.verdict}"
+    disposition or a sliced quote can never be read as a style tag.
+
+    "No flags" != cleared (CLAUDE.md, P2 item 6): an `eligible` that fired zero requirement
+    rows is worded distinctly from one that fired and cleared some, via the typed
+    `VerdictPresentation` derived from the stored verdict and requirement count — the stored
+    verdict itself is never touched."""
+    if audit.presentation is VerdictPresentation.ELIGIBLE_NO_RULES_APPLIED:
+        header = "Eligibility: eligible — no eligibility rule applied (not screened)"
+    elif audit.presentation is VerdictPresentation.ELIGIBLE_CLEARED:
+        n = len(audit.requirements)
+        header = f"Eligibility: eligible — {n} requirement{'s' if n != 1 else ''} cleared"
+    else:
+        header = f"Eligibility: {audit.verdict}"
     if audit.is_historical:
         header += f" (historical, captured {audit.captured_at})"
     console.print(header, markup=False)

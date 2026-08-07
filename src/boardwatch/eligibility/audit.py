@@ -25,6 +25,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime
+from enum import StrEnum
 from typing import Any
 
 from sqlalchemy import Connection, Select, select
@@ -59,6 +60,18 @@ class AuditRequirement:
     support: tuple[AuditSupport, ...]
 
 
+class VerdictPresentation(StrEnum):
+    """A presentation-only classification derived from `verdict` and `requirements`. It never
+    feeds back into engine logic and never changes the stored `verdict` — it only distinguishes,
+    for rendering, an `eligible` that fired and cleared N requirement rows from an `eligible`
+    that fired none at all ("no flags" != cleared, CLAUDE.md; detect.py:27, P2 item 6)."""
+
+    ELIGIBLE_CLEARED = "eligible_cleared"
+    ELIGIBLE_NO_RULES_APPLIED = "eligible_no_rules_applied"
+    INELIGIBLE = "ineligible"
+    UNCERTAIN = "uncertain"
+
+
 @dataclass(frozen=True)
 class AuditView:
     verdict: str
@@ -66,6 +79,16 @@ class AuditView:
     is_historical: bool
     catalog_version_matches: bool
     requirements: tuple[AuditRequirement, ...]
+
+    @property
+    def presentation(self) -> VerdictPresentation:
+        if self.verdict == "eligible":
+            return (
+                VerdictPresentation.ELIGIBLE_CLEARED
+                if self.requirements
+                else VerdictPresentation.ELIGIBLE_NO_RULES_APPLIED
+            )
+        return VerdictPresentation(self.verdict)
 
 
 def load_audit(

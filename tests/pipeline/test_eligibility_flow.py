@@ -13,7 +13,7 @@ from typer.testing import CliRunner
 from boardwatch.cli.app import app
 from boardwatch.cli.context import build_context
 from boardwatch.core.clock import utcnow
-from boardwatch.eligibility.audit import load_audit
+from boardwatch.eligibility.audit import VerdictPresentation, load_audit
 from boardwatch.eligibility.catalog import load_rules
 from boardwatch.eligibility.facts import parse_facts, parse_policy
 from boardwatch.eligibility.preflight import run_eligibility
@@ -351,6 +351,40 @@ def test_show_agrees_with_top_after_toggling_a_fact_back(env: Path) -> None:
     # show reads the audit for the CURRENT profile (identity A), matching what top hides,
     # not the newer identity-B evaluation that also exists on this version.
     assert "Eligibility: ineligible" in show.output
+
+
+def test_eligible_with_zero_requirements_renders_as_no_rule_applied(env: Path) -> None:
+    # "No flags" != cleared (CLAUDE.md, P2 item 6): a plain body no family detects anything in
+    # must not read the same as an `eligible` that actually fired and cleared requirements.
+    posting_id = _evaluate_open(env, PLAIN_BODY, degree="none")
+    catalog = load_rules(env.parent / "cfg")
+    engine = get_engine(env)
+    with engine.connect() as conn:
+        view = load_audit(conn, posting_id, catalog)
+    assert view is not None
+    assert view.verdict == "eligible"  # the stored verdict is unchanged
+    assert view.requirements == ()
+    assert view.presentation is VerdictPresentation.ELIGIBLE_NO_RULES_APPLIED
+
+    show = _run(env, ["show", str(posting_id)])
+    assert show.exit_code == 0
+    assert "no eligibility rule applied" in show.output
+
+
+def test_eligible_with_cleared_requirements_renders_as_cleared(env: Path) -> None:
+    posting_id = _evaluate_open(env, DEGREE_BODY, degree="bachelor")
+    catalog = load_rules(env.parent / "cfg")
+    engine = get_engine(env)
+    with engine.connect() as conn:
+        view = load_audit(conn, posting_id, catalog)
+    assert view is not None
+    assert view.verdict == "eligible"  # the stored verdict is unchanged
+    assert len(view.requirements) >= 1
+    assert view.presentation is VerdictPresentation.ELIGIBLE_CLEARED
+
+    show = _run(env, ["show", str(posting_id)])
+    assert show.exit_code == 0
+    assert "requirement" in show.output and "cleared" in show.output
 
 
 def test_load_audit_tolerates_a_malformed_span(env: Path) -> None:

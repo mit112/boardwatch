@@ -8,6 +8,11 @@ All notable changes to this project are documented here. The format follows
 
 ### Changed
 
+- **`show` now renders an `eligible` verdict that fired zero eligibility rules distinctly from one that
+  fired and cleared some** (P2, §3.P2 item 6, D-036). Previously both rendered as a bare "Eligibility:
+  eligible" — "no flags" is not the same claim as "cleared". A new derived `AuditView.presentation`
+  (`VerdictPresentation`, no schema change, stored `verdict` unchanged) now headers the two cases
+  "eligible — no eligibility rule applied (not screened)" and "eligible — N requirement(s) cleared".
 - **`work_auth`'s default severity is now `blocker`, not `preference`** (P2, §3.P2 item 7, D-035). Every
   eligibility family previously shipped `default_policy: preference`, so a fresh, policy-less profile got
   **0 `ineligible` verdicts ever** — the multi-tenancy requirement failing for anyone who had not, like Mit,

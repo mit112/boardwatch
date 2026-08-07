@@ -1356,3 +1356,56 @@ PROGRAM.md §3.P2 item 7 is DONE for `work_auth`; the other five families' sever
 tracked as before. This closes Gate P2's headline metric (B7: work-auth decisive) for the canonical hard
 stop; the remaining Gate P2 clauses (items 3, 4, 6, and the three-profile/non-SWE-field leg) are unchanged
 by this session and still open.
+
+## D-036 — `eligible` with zero fired requirements renders distinctly from `eligible` with cleared ones
+
+**2026-08-07 · session 12 · P2 (item 6, "no flags" != cleared).**
+
+**Context.** PROGRAM.md §3.P2 item 6 calls for an evidence chain for `ELIGIBLE` too: "which rule cleared
+which requirement... 'No flags' != cleared" (CLAUDE.md's own keystone-adjacent invariant). The gap was
+narrower than a missing evidence chain — the four-table chain already exists and `AuditView.requirements`
+already carries either the cleared rows or an empty tuple. The gap was purely presentational: `engine.py`'s
+roll-up (`detect.py:27`: "zero rows stores `eligible`... never 'a clean bill of health'") defaults to
+`eligible` whether zero rules fired or N fired and all cleared, and `show`'s render
+(`cli/show_cmd.py::_render_audit`) printed the bare `f"Eligibility: {audit.verdict}"` for both, so the two
+cases were indistinguishable on screen even though the requirement-row count needed to tell them apart was
+already sitting in `AuditView.requirements`.
+
+**Choice.** A derived, typed classification, `VerdictPresentation` (`StrEnum`, matching this repo's existing
+convention for small typed classifications — `GateReason`, `CompileReason`, `DiscrepancyKind`,
+`BoardHealth`), as a `@property` on `AuditView` (`eligibility/audit.py`): `eligible` + zero requirement rows
+→ `ELIGIBLE_NO_RULES_APPLIED`; `eligible` + one or more rows → `ELIGIBLE_CLEARED`; `ineligible`/`uncertain`
+pass through unchanged as `INELIGIBLE`/`UNCERTAIN`. It reads only the two fields `AuditView` already has
+(`verdict`, `requirements`) — no new stored column, no migration, no change to `engine.py`'s roll-up or to
+the stored `verdict` string. `show`'s `_render_audit` switches on `.presentation` to header either
+"eligible — no eligibility rule applied (not screened)" or "eligible — N requirement(s) cleared", leaving
+the ineligible/uncertain and evidence-line rendering below it untouched.
+
+**Scope.** Only the primary deterministic render path (`show <id>`'s `_render_audit`) was changed.
+`_render_llm_audit` (the opt-in, advisory LLM lane, D-P3-13) was deliberately left alone: it is a secondary,
+dimmed, clearly-labeled-advisory surface next to the authoritative verdict, not the primary "is this
+`eligible` a residue or a clearance" question item 6 is about; if Mit wants the same distinction there,
+that is a small follow-up, not a blocker.
+
+**Verified.** `AuditView.presentation` is exercised directly (`tests/unit/test_eligibility_audit_presentation.py`,
+pure dataclass construction, no DB) for all four outcomes, plus an integration pair in
+`tests/pipeline/test_eligibility_flow.py` that runs the real deterministic engine end to end (`eligibility
+run` + `show`) against a body with zero catalog matches (`PLAIN_BODY`) and a body with one cleared
+`degree` requirement (`DEGREE_BODY`), asserting the CLI's rendered string in each case. The classification
+was mutation-tested: inverting the `if self.requirements` branch flips all five of these tests to failing,
+confirming they discriminate the two `eligible` cases rather than passing vacuously. `git diff
+src/boardwatch/eligibility/engine.py` and every prior test asserting a bare `verdict == "eligible"` are
+unchanged by this session — the stored verdict and the engine's roll-up logic were never touched, only a
+new read-only presentation layer was added on top.
+
+**Rejected.** A schema change (a stored `cleared_by_rules` column, or a fourth verdict value) — rejected as
+unnecessary: the requirement-row count needed to derive the distinction was already persisted and readable
+via the existing `AuditView.requirements` tuple, so a schema change would only add migration risk for no
+new information. A plain `bool` property (`cleared_by_rules`) instead of the 3-member-relevant enum — also
+considered, but the enum reads directly in the render's `match`-like `if/elif` without re-deriving the
+ineligible/uncertain cases, and matches the repo's established `StrEnum` idiom for exactly this kind of
+small closed classification.
+
+**Consequence.** PROGRAM.md §3.P2 item 6 is DONE. `make check` exit code and counts recorded in the
+session report (`.superpowers/sdd/p2-profile-keystone/item6-report.md`); no engine or stored-verdict
+behavior changed, so this closes purely a reporting gap.
