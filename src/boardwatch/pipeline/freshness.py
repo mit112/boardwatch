@@ -9,12 +9,16 @@ those cases out — and it checks them independently of each other, not as one c
 so a caller can say WHICH clause failed.
 
 No new schema. `runs.status`/`started_at`/`finished_at` (D-029) and `count_tailored_artifacts`
-(P0 item 1) are both reused as-is. The one new comparison is the folder count: every OTHER
-directory entry under `day_dir` is counted from the filesystem and checked against the store's
-row count for `run_id` — independent of the in-memory `PipelineSummary` that produced them,
-per `CLAUDE.md`'s "count the deliverable through a different path than the one that produced
-it," and this is the first place that verification runs against the FILESYSTEM rather than a
-second store query (§3.P3 item 6, "filesystem-truth counts").
+(P0 item 1) are both reused as-is. The one new comparison is the folder count — and it MUST be
+scoped to this run_id's own artifact rows, never to "every directory under `day_dir`": two
+`boardwatch run`s on the same calendar date is a legitimate case (it is WHY every artifact is
+suffixed by run_id), and counting every subdirectory in the shared day folder would count the
+OTHER run's lead folders too, making both runs read as unreconciled the moment a second run adds
+its own. Per run_id's `resume_tailored` artifact ROWS are read from the store, each row's `uri`
+(the `.typ` path) is resolved to its parent lead folder, and existence is checked per row — the
+same per-run population `count_tailored_artifacts` already counts, verified against the
+FILESYSTEM instead of a second store query (§3.P3 item 6, "filesystem-truth counts"; CLAUDE.md:
+"count the deliverable through a different path than the one that produced it").
 """
 
 from __future__ import annotations
@@ -22,11 +26,11 @@ from __future__ import annotations
 from dataclasses import dataclass
 from pathlib import Path
 
-from sqlalchemy import Engine, select
+from sqlalchemy import Connection, Engine, select
 
 from boardwatch.store.queries import RUN_FAILED, RUN_OK
-from boardwatch.store.run_funnel_queries import count_tailored_artifacts
-from boardwatch.store.tables import runs
+from boardwatch.store.run_funnel_queries import TAILORED_KIND, count_tailored_artifacts
+from boardwatch.store.tables import artifacts, runs
 
 # The two terminal statuses `finish_run` ever writes. `running` (the column's default) is
 # excluded on purpose: `store/queries.py`'s own docstring names that as meaning only "nothing
@@ -47,14 +51,18 @@ class Freshness:
     funnel_present: bool
     status: str | None
     dated_to_folder: bool
+    # Both counted over THIS run_id's own `resume_tailored` rows only — never over every
+    # subdirectory in the shared day folder, which would also count a second same-day run's
+    # leads and make both runs read as unreconciled the moment either one adds folders.
     folder_count: int
     artifact_rows: int
 
     @property
     def reconciles(self) -> bool:
-        """The filesystem's lead-folder count against the store's artifact-row count for this
-        run_id — the same quantity the funnel's `tailored` cross-check already recounts
-        in-memory-vs-store, now recounted filesystem-vs-store."""
+        """Every one of THIS run_id's `resume_tailored` rows resolves (via its `uri`'s parent)
+        to a lead folder that actually exists on disk — the same per-run population the
+        funnel's `tailored` cross-check already recounts in-memory-vs-store, now recounted
+        filesystem-vs-store, and scoped to run_id exactly as that cross-check is."""
         return self.folder_count == self.artifact_rows
 
     @property
@@ -86,13 +94,27 @@ class Freshness:
         return tuple(reasons)
 
 
+def _existing_lead_folders(conn: Connection, run_id: int) -> int:
+    """How many of run_id's OWN `resume_tailored` artifact rows resolve to a lead folder that
+    actually exists on disk. `uri` stores the `.typ` path (`run_funnel_queries.py`'s own
+    docstring); its parent directory is the `<slug>/` folder the tailor loop created. Checked
+    per row, not deduplicated into a folder set first, so a row whose folder went missing is
+    caught even if another row for the same run happens to share a folder.
+    """
+    uris = conn.execute(
+        select(artifacts.c.uri).where(
+            artifacts.c.run_id == run_id, artifacts.c.kind == TAILORED_KIND
+        )
+    ).scalars().all()
+    return sum(1 for uri in uris if Path(str(uri)).parent.is_dir())
+
+
 def check_run_freshness(engine: Engine, run_id: int, day_dir: Path) -> Freshness:
     """Read-only. `day_dir` is the dated output folder (`<out_root>/<date>/`) the run wrote
     into; `date` is taken from `day_dir.name`, the same string `run_pipeline` derived it from.
     """
     date_str = day_dir.name
     funnel_present = (day_dir / f"funnel-{run_id}.md").exists()
-    folder_count = sum(1 for p in day_dir.iterdir() if p.is_dir()) if day_dir.is_dir() else 0
 
     with engine.connect() as conn:
         row = conn.execute(
@@ -101,6 +123,7 @@ def check_run_freshness(engine: Engine, run_id: int, day_dir: Path) -> Freshness
             )
         ).one_or_none()
         artifact_rows = count_tailored_artifacts(conn, run_id).rows
+        folder_count = _existing_lead_folders(conn, run_id)
 
     status = row.status if row is not None else None
     dated_to_folder = (

@@ -5,6 +5,13 @@ and a temp directory, so this is not the fully pure style of `test_run_funnel.py
 `test_morning.py`, but it takes no pipeline dependency and asserts each of the three clauses
 (`funnel_present`, terminal status + same-day, folder/artifact reconciliation) independently, so
 a failure names WHICH one broke rather than only that the combined verdict flipped.
+
+The folder/artifact reconciliation is deliberately scoped to run_id's own `resume_tailored`
+rows (via each row's `uri` -> its parent lead folder), never to "every directory under
+`day_dir`" — two `boardwatch run`s can legitimately share one calendar date (it is WHY every
+artifact is suffixed by run_id), and `test_two_same_day_runs_each_reconcile_independently`
+below is the regression test for the bug a day-scoped folder count would reintroduce: it would
+count the OTHER run's lead folder too and report BOTH runs as unreconciled.
 """
 
 from __future__ import annotations
@@ -47,12 +54,17 @@ def _touch_funnel(day_dir: Path, run_id: int) -> None:
     (day_dir / f"funnel-{run_id}.md").write_text("stub\n", encoding="utf-8")
 
 
-def _lead_folder(day_dir: Path, name: str) -> None:
-    (day_dir / name).mkdir()
+def _lead_folder(day_dir: Path, name: str) -> Path:
+    folder = day_dir / name
+    folder.mkdir()
+    return folder
 
 
-def _tailored_artifact_row(engine: Engine, run_id: int) -> None:
-    """One `resume_tailored` artifact row for `run_id` — the store side of the reconciliation."""
+def _tailored_artifact_row(engine: Engine, run_id: int, day_dir: Path, folder: str) -> None:
+    """One `resume_tailored` artifact row for `run_id`, whose `uri` names the `.typ` path under
+    `day_dir/<folder>/` — the store side of the reconciliation. Does NOT create the folder;
+    callers that want the row's folder to exist call `_lead_folder` themselves.
+    """
     with engine.begin() as conn:
         job_id = int(
             conn.execute(insert(jobs).values(created_at=SAME_DAY)).inserted_primary_key[0]
@@ -61,7 +73,7 @@ def _tailored_artifact_row(engine: Engine, run_id: int) -> None:
             insert(artifacts).values(
                 job_id=job_id,
                 kind="resume_tailored",
-                uri="/out/2026-08-07/acme-1/resume.typ",
+                uri=str(day_dir / folder / "resume.typ"),
                 created_at=SAME_DAY,
                 run_id=run_id,
             )
@@ -76,13 +88,43 @@ def test_fresh_when_terminal_same_day_and_folders_reconcile(
     day_dir = _day_dir(tmp_path)
     _touch_funnel(day_dir, run_id)
     _lead_folder(day_dir, "acme-1")
-    _tailored_artifact_row(engine, run_id)
+    _tailored_artifact_row(engine, run_id, day_dir, "acme-1")
 
     result = check_run_freshness(engine, run_id, day_dir)
 
     assert result.fresh is True
     assert result.reasons == ()
     assert result.folder_count == result.artifact_rows == 1
+
+
+def test_two_same_day_runs_each_reconcile_independently(
+    engine: Engine, tmp_path: Path
+) -> None:
+    """The exact gap fix-round-1 caught: two runs sharing one `<date>/` folder must each be
+    checked against ONLY their own lead folder, not the other run's. A day-scoped folder count
+    (`sum(1 for p in day_dir.iterdir() if p.is_dir())`) would see 2 folders for either run_id's
+    1 artifact row and report BOTH as unreconciled — which is what the mutation below confirms.
+    """
+    run_id_1 = insert_run(engine)
+    _set_run(engine, run_id_1, started_at=SAME_DAY, finished_at=SAME_DAY, status=RUN_OK)
+    run_id_2 = insert_run(engine)
+    _set_run(engine, run_id_2, started_at=SAME_DAY, finished_at=SAME_DAY, status=RUN_OK)
+
+    day_dir = _day_dir(tmp_path)  # shared by both runs
+    _touch_funnel(day_dir, run_id_1)
+    _touch_funnel(day_dir, run_id_2)
+    _lead_folder(day_dir, "acme-1")
+    _tailored_artifact_row(engine, run_id_1, day_dir, "acme-1")
+    _lead_folder(day_dir, "beta-2")
+    _tailored_artifact_row(engine, run_id_2, day_dir, "beta-2")
+
+    result_1 = check_run_freshness(engine, run_id_1, day_dir)
+    result_2 = check_run_freshness(engine, run_id_2, day_dir)
+
+    assert result_1.fresh is True, result_1.reasons
+    assert result_1.folder_count == result_1.artifact_rows == 1
+    assert result_2.fresh is True, result_2.reasons
+    assert result_2.folder_count == result_2.artifact_rows == 1
 
 
 def test_flagged_when_run_is_still_running(engine: Engine, tmp_path: Path) -> None:
@@ -130,14 +172,14 @@ def test_flagged_when_no_funnel_artifact_is_present(engine: Engine, tmp_path: Pa
 def test_flagged_when_lead_folders_do_not_reconcile_with_the_store(
     engine: Engine, tmp_path: Path
 ) -> None:
-    """A folder deleted (or never written) after the store recorded the artifact, or an extra
-    folder left over from another run, must both fail this — count_tailored_artifacts vs a
-    real filesystem listing, not the pipeline's own in-memory count of what it wrote."""
+    """A folder deleted (or never written) after the store recorded the artifact must fail
+    this — `count_tailored_artifacts` vs a real filesystem check of each row's own folder, not
+    the pipeline's own in-memory count of what it wrote."""
     run_id = insert_run(engine)
     _set_run(engine, run_id, started_at=SAME_DAY, finished_at=SAME_DAY, status=RUN_OK)
     day_dir = _day_dir(tmp_path)
     _touch_funnel(day_dir, run_id)
-    _tailored_artifact_row(engine, run_id)  # store says 1 tailored row
+    _tailored_artifact_row(engine, run_id, day_dir, "acme-1")  # store says 1 tailored row
     # ...but no lead folder was left on disk.
 
     result = check_run_freshness(engine, run_id, day_dir)
