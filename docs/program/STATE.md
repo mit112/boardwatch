@@ -22,7 +22,16 @@ mode with the real exit code. Item 5 supplements this gate; per D-031, Gate P0 i
 ## Current phase
 
 **P0 — Instrumentation. COMPLETE (session 9).** All nine build items are shipped and merged to `main`.
-Nothing is blocked. **P1 (résumé artifact gate) is the next phase.**
+Nothing is blocked. **P1 (résumé artifact gate) is now IN PROGRESS (session 9, overnight autonomous run).**
+
+**P1 is being executed in two slices** (decomposed during P1 brainstorming, 2026-08-07):
+- **P1a — artifact integrity gate** (items 1, 2, 3, 3b, 4, 5 of PROGRAM.md §3.P1): hard PDF gate,
+  binary-missing-vs-compile-failure split, page-count hard fail (Typst-native `typst eval` query, SPIKED),
+  degraded untailored-master fallback, per-lead compile-log capture, slot-filled assertion, typst
+  Dockerfile+doctor packaging. **This slice MEETS Gate P1.** Design: `.superpowers/sdd/p1a-resume-artifact-gate/design.md`.
+  Status at this write: design done + deepseek-reviewed; implementation plan / build underway.
+- **P1b — Tier-B token-provenance validator** (item 3c): the LLM-lane truth gate feeding bar metric B4.
+  Deferred to its own brainstorm after P1a ships (it gates nothing in Gate P1 and is design-heavy).
 
 **Numbering note, because session 4 briefly got this wrong:** P0 has **nine** items, numbered **0-8** in
 `PROGRAM.md` §3.P0. Item 0 was added later, by D-016. Always cite `PROGRAM.md`'s numbers — an earlier
