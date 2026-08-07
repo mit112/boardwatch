@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import hashlib
 from collections.abc import Callable
-from dataclasses import dataclass
 from typing import TypeVar
 
 from boardwatch.extract.taxonomy import Taxonomy
@@ -13,6 +12,9 @@ from boardwatch.tailor.equivalences import EquivalenceTable
 from boardwatch.tailor.model import Resume
 from boardwatch.tailor.overmatch import overmatch_reasons
 from boardwatch.tailor.plan import Rewrite
+from boardwatch.tailor.register import EMPTY_REGISTER, RegisterTable, load_register
+from boardwatch.tailor.register import banned_register_reasons as _banned_register_reasons
+from boardwatch.tailor.register import buzzword_density_reasons as _buzzword_density_reasons
 from boardwatch.tailor.rewrite.filter import passes_overmatch_filter
 from boardwatch.tailor.rewrite.judge import parse_verdict
 from boardwatch.tailor.rewrite.prompt import (
@@ -22,30 +24,14 @@ from boardwatch.tailor.rewrite.prompt import (
     build_rewrite_payload,
 )
 from boardwatch.tailor.rewrite.provenance import reword_is_provenanced
+from boardwatch.tailor.rewrite.result import RewriteRow as RewriteRow
+from boardwatch.tailor.rewrite.result import TierBResult as TierBResult
+from boardwatch.tailor.rewrite.verb_diversity import enforce_verb_diversity
 
 # (a_text, jd_skills) -> candidate rewrite text (already stripped), or None.
 Proposer = Callable[[str, set[str]], str | None]
 # (a_text, candidate) -> raw judge reply.
 Judge = Callable[[str, str], str]
-
-
-@dataclass(frozen=True)
-class RewriteRow:
-    bullet_id: str
-    entry_id: str
-    a_text: str
-    b_text: str
-    filter_pass: bool
-    judge_verdict: str | None
-    kept: bool
-    drop_reason: str | None
-
-
-@dataclass(frozen=True)
-class TierBResult:
-    accepted: list[Rewrite]
-    rows: list[RewriteRow]
-    calls_made: int
 
 
 class _BudgetExceeded(Exception):
@@ -66,6 +52,7 @@ def run_tier_b_core(
     budget: int,
     jd_text: str = "",
     canonical: frozenset[str] = frozenset(),
+    register: RegisterTable = EMPTY_REGISTER,
 ) -> TierBResult:
     accepted: list[Rewrite] = []
     rows: list[RewriteRow] = []
@@ -214,6 +201,45 @@ def run_tier_b_core(
                 )
                 continue
 
+            if _banned_register_reasons(candidate, register.banned_phrases):
+                # A closed-catalog AI-résumé cliché ("responsible for", "synergy", ...)
+                # reads as bot-written even when every token is fact-provenanced and
+                # lift-free (P4 item 3a, 2a). Zero tolerance: any hit vetoes the
+                # candidate before spending a judge call on it.
+                rows.append(
+                    RewriteRow(
+                        bullet_id=b.bullet_id,
+                        entry_id=entry.entry_id,
+                        a_text=a_text,
+                        b_text=candidate,
+                        filter_pass=True,
+                        judge_verdict=None,
+                        kept=False,
+                        drop_reason="banned_register",
+                    )
+                )
+                continue
+
+            if _buzzword_density_reasons(
+                candidate, register.buzzwords, register.buzzword_density_ceiling
+            ):
+                # Occasional hype is tolerated; clustering several buzzwords into one
+                # bullet is not (P4 item 3a, 2b) -- same fail-safe shape as the register
+                # veto above.
+                rows.append(
+                    RewriteRow(
+                        bullet_id=b.bullet_id,
+                        entry_id=entry.entry_id,
+                        a_text=a_text,
+                        b_text=candidate,
+                        filter_pass=True,
+                        judge_verdict=None,
+                        kept=False,
+                        drop_reason="buzzword_density",
+                    )
+                )
+                continue
+
             try:
                 verdict = parse_verdict(_guarded(judge, a_text, candidate))
             except _BudgetExceeded:
@@ -273,7 +299,11 @@ def run_tier_b_core(
                     )
                 )
 
-    return TierBResult(accepted=accepted, rows=rows, calls_made=state["calls"])
+    # Verb-opening diversity (P4 item 3a, 2c) is résumé-wide, not per-bullet, so it runs
+    # once here as a post-pass over the assembled result rather than as a gate inside the
+    # loop above -- see verb_diversity.py's module docstring.
+    core_result = TierBResult(accepted=accepted, rows=rows, calls_made=state["calls"])
+    return enforce_verb_diversity(tailored_a, core_result)
 
 
 def run_tier_b(
@@ -330,4 +360,5 @@ def run_tier_b(
         budget=budget,
         jd_text=jd_text,
         canonical=canonical,
+        register=load_register(),
     )

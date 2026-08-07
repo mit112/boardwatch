@@ -13,6 +13,7 @@ from boardwatch.extract.taxonomy import Taxonomy
 from boardwatch.tailor.canonical import build_canonical_vocab
 from boardwatch.tailor.equivalences import load_equivalences
 from boardwatch.tailor.model import Resume
+from boardwatch.tailor.register import load_register
 from boardwatch.tailor.rewrite.agent_io import (
     BulletRef,
     CandidatesFile,
@@ -160,4 +161,5 @@ def apply_agent_rewrites(
         budget=budget,
         jd_text=jd_text,
         canonical=canonical,
+        register=load_register(),
     )
