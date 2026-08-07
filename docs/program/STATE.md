@@ -2,16 +2,15 @@
 
 **Last updated:** 2026-08-07 (session 9, P1a shipped)
 **Updated by:** boardwatch (Claude)
-**Repo state at write time:** all nine P0 items (0-8) are merged to `main`. P1a (the résumé artifact
-integrity gate — PROGRAM.md §3.P1 items 1, 2, 3, 3b, 4, 5) is built on branch
-`p1a-resume-artifact-gate`, not yet merged. Verify with `git log --oneline -3` and `git status` — if they
-disagree, the repo wins.
+**Repo state at write time:** all nine P0 items (0-8) AND P1a (the résumé artifact integrity gate —
+PROGRAM.md §3.P1 items 1, 2, 3, 3b, 4, 5) are merged to `main` and pushed. Verify with
+`git log --oneline -3` and `git status` — if they disagree, the repo wins.
 **This header carries no commit count or sha on purpose** — the previous one named both, went stale inside
 a single session when three later docs commits did not update it, and a cold session following the
 session-start ritual hit the disagreement on its very first check. State what is durably true; verify the
 rest against `git log`. (D-017.)
 **Gate:** `make check` exits **0** (2828 passed, 1 deselected, coverage 95.17%, `generalization: OK`),
-measured in plain mode with the real exit code on `p1a-resume-artifact-gate`. Item 5 supplements Gate P0;
+measured in plain mode with the real exit code on `main` (P1a merged). Item 5 supplements Gate P0;
 per D-031, Gate P0 is not re-anchored to `verify` exiting 0 — it was already MET on D-030's evidence.
 
 > This is the single file a fresh session with zero memory reads to know where the program stands.
@@ -23,9 +22,10 @@ per D-031, Gate P0 is not re-anchored to `verify` exiting 0 — it was already M
 ## Current phase
 
 **P0 — Instrumentation. COMPLETE (session 9).** All nine build items are shipped and merged to `main`.
-**P1a — résumé artifact integrity gate. SHIPPED (session 9), Gate P1 MET.** Built on
-`p1a-resume-artifact-gate` (not yet merged to `main`); `make check` exits 0 on the branch (2828 passed, 1
-deselected, coverage 95.17%, `generalization: OK`).
+**P1a — résumé artifact integrity gate. SHIPPED + MERGED to `main` (session 9), Gate P1 MET.**
+`make check` exits 0 on `main` (2828 passed, 1 deselected, coverage 95.17%, `generalization: OK`).
+**Next: P1b — the Tier-B token-provenance validator (item 3c), the remaining P1 work** (design-heavy;
+its own brainstorm — see the P1b bullet below and design §9).
 
 **P1 was executed in two slices** (decomposed during P1 brainstorming, 2026-08-07):
 - **P1a — artifact integrity gate** (items 1, 2, 3, 3b, 4, 5 of PROGRAM.md §3.P1): hard PDF gate,
