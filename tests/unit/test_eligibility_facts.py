@@ -47,7 +47,9 @@ def test_structured_facts_round_trip() -> None:
         highest_degree="master",
     )
     payload = facts_payload(facts)
-    assert payload["work_authorization"] == {"status": "citizen", "jurisdiction": "us"}
+    assert payload["work_authorization"] == {
+        "status": "citizen", "jurisdiction": "us", "needs_sponsorship": None,
+    }
     assert payload["security_clearance"] == {
         "scheme": "us_dod", "level": "top_secret", "state": "active", "accesses": ["sci"],
     }

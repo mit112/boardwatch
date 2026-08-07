@@ -169,6 +169,61 @@ def test_unavailable_sponsorship_is_unmet_only_for_a_sponsorship_need(catalog) -
     assert _one(catalog, body, citizen, "no_sponsorship_offered") == "met"
 
 
+# ---- needs_sponsorship bit (P2a): disentangles sponsorship need from work-auth status so
+# ---- an ead_or_similar holder can be DECIDED instead of forced to abstain (D-P2-11).
+
+def test_needs_sponsorship_false_disentangles_an_ead_holder_from_unknown(catalog) -> None:
+    """The bit's whole purpose: status alone cannot say whether an ead_or_similar holder
+    needs sponsorship, so this used to be forced to `unknown`. The explicit bit answers it."""
+    body = "We do not offer visa sponsorship."
+    facts = Facts(work_authorization=WorkAuthFact(
+        status="ead_or_similar", jurisdiction="us", needs_sponsorship=False
+    ))
+    assert _one(catalog, body, facts, "no_sponsorship_offered") == "met"
+
+
+def test_needs_sponsorship_true_is_unmet_even_for_an_ead_holder(catalog) -> None:
+    body = "We do not offer visa sponsorship."
+    facts = Facts(work_authorization=WorkAuthFact(
+        status="ead_or_similar", jurisdiction="us", needs_sponsorship=True
+    ))
+    assert _one(catalog, body, facts, "no_sponsorship_offered") == "unmet"
+
+
+@pytest.mark.parametrize(
+    ("status", "expected"),
+    [("citizen", "met"), ("permanent_resident", "met"), ("ead_or_similar", "unknown"),
+     ("needs_sponsorship", "unmet"), ("prefer_not_to_say", "unknown")],
+)
+def test_needs_sponsorship_unset_falls_back_to_todays_status_inference(
+    catalog, status: str, expected: str
+) -> None:
+    """The bit absent (None) must be byte-identical to behaviour before it existed."""
+    body = "We do not offer visa sponsorship."
+    facts = Facts(work_authorization=WorkAuthFact(status=status, jurisdiction="us"))
+    assert _one(catalog, body, facts, "no_sponsorship_offered") == expected
+
+
+def test_needs_sponsorship_false_does_not_satisfy_a_citizenship_only_restriction(catalog) -> None:
+    """CRITICAL SAFETY (facts.py:3-6): an EAD holder who needs no sponsorship is still not a
+    citizen. The bit must only ever influence the sponsorship branch, never citizenship."""
+    facts = Facts(work_authorization=WorkAuthFact(
+        status="ead_or_similar", jurisdiction="us", needs_sponsorship=False
+    ))
+    assert _one(catalog, "Applicants must be US citizens.", facts,
+                "us_citizen_required") == "unknown"
+
+
+def test_needs_sponsorship_bit_does_not_leak_into_citizen_or_lpr_branch(catalog) -> None:
+    """Same safety property against the other citizenship-adjacent branch: a citizen who
+    (nonsensically) set needs_sponsorship=True still resolves on citizenship, not the bit."""
+    facts = Facts(work_authorization=WorkAuthFact(
+        status="citizen", jurisdiction="us", needs_sponsorship=True
+    ))
+    assert _one(catalog, "This role is open to US citizens or green card holders only.", facts,
+                "us_citizen_or_lpr_required") == "met"
+
+
 # ---- experience_years
 
 @pytest.mark.parametrize(("total", "expected"), [(8, "met"), (5, "met"), (4, "unmet")])

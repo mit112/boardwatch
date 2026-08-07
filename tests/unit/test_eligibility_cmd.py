@@ -73,6 +73,15 @@ def test_setting_one_structured_field_preserves_the_other(env: Path) -> None:
     assert facts.work_authorization.jurisdiction == "us"
 
 
+def test_setting_the_needs_sponsorship_bit(env: Path) -> None:
+    assert _run(env, ["init"], INIT_INPUT).exit_code == 0
+    assert _run(env, ["eligibility", "facts", "set",
+                      "work_authorization.needs_sponsorship", "no"]).exit_code == 0
+    facts, _ = _facts(env)
+    assert facts.work_authorization is not None
+    assert facts.work_authorization.needs_sponsorship is False
+
+
 def test_setting_a_choice_set_field(env: Path) -> None:
     assert _run(env, ["init"], INIT_INPUT).exit_code == 0
     assert _run(env, ["eligibility", "facts", "set", "security_clearance.accesses",

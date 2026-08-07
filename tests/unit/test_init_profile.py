@@ -129,17 +129,19 @@ def test_help_smoke(env: Path) -> None:
 
 # --- Task 11: catalog-driven eligibility during init and profile edit ---
 
-# Eligibility prompts, in catalog family order: work_auth(status,jurisdiction,policy),
+# Eligibility prompts, in catalog family order:
+# work_auth(status,jurisdiction,needs_sponsorship,policy),
 # experience_years(total,policy), clearance(scheme,level,state,accesses,policy),
 # degree(highest_degree,policy), contract_not_fte(preference,policy),
 # internship(preference,policy). A blank field is skipped; a blank policy takes the default.
-# This script is POSITIONAL, so a new family shifts every later answer. That is why P9 had to
-# edit it, and why test_init_reprompts_on_a_bad_eligibility_answer_instead_of_aborting in
+# This script is POSITIONAL, so a new family (or field) shifts every later answer. That is
+# why P9 and P2a had to edit it, and why
+# test_init_reprompts_on_a_bad_eligibility_answer_instead_of_aborting in
 # tests/pipeline/test_eligibility_flow.py builds its stdin from catalog.families instead.
 _ELIG_INIT = (
     "3\nacme\nBackend engineer: Python, Go.\n\n\n\nn\n"  # companies, profile, filters, remote
-    "y\n"                       # set up eligibility now?
-    "citizen\nus\nblocker\n"    # work_auth
+    "y\n"                          # set up eligibility now?
+    "citizen\nus\n\nblocker\n"     # work_auth: skip needs_sponsorship
     "\n\n"                      # experience_years: skip field, default policy
     "\n\n\n\n\n"                # clearance: skip four fields, default policy
     "none\nblocker\n"           # degree
@@ -186,7 +188,7 @@ def test_profile_edit_updates_eligibility(env: Path) -> None:
         "\n\n\n\n\n"                        # keep profile text and all filters
         "\n"                               # keep resume max pages
         "y\n"                              # update eligibility checks?
-        "permanent_resident\nus\n\n"       # work_auth: change status, default policy
+        "permanent_resident\nus\n\n\n"     # work_auth: change status, skip bit, default policy
         "\n\n"                             # experience_years
         "\n\n\n\n\n"                       # clearance
         "master\n\n"                       # degree: change to master, default policy

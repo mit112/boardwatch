@@ -162,6 +162,20 @@ def _resolve_work_auth(detection: Detection, facts: Facts, family: FamilySpec) -
             if status == "needs_sponsorship":
                 return Resolution(MET, "sponsorship is offered", support)
             return Resolution(UNKNOWN, "nothing to decide: no sponsorship needed")
+        # P2a: the explicit bit, when declared, is authoritative here and bypasses the
+        # status-based inference below — it is precisely what lets an ead_or_similar holder
+        # be DECIDED instead of forced to UNKNOWN. Scoped to this sponsorship branch only:
+        # it is read nowhere else in this function, so it can never satisfy a citizenship or
+        # authorization requirement (the CRITICAL SAFETY property in facts.py:3-6).
+        if wa.needs_sponsorship is not None:
+            bit_support = _fact_support(
+                "work_authorization.needs_sponsorship", wa.needs_sponsorship
+            )
+            if wa.needs_sponsorship:
+                return Resolution(
+                    UNMET, "sponsorship is required but not offered", bit_support
+                )
+            return Resolution(MET, "does not need sponsorship", bit_support)
         if status == "needs_sponsorship":
             return Resolution(UNMET, "sponsorship is required but not offered", support)
         # A jurisdiction-free "no sponsorship" restriction that decides UNMET above without
@@ -170,7 +184,7 @@ def _resolve_work_auth(detection: Detection, facts: Facts, family: FamilySpec) -
         # cannot possibly block (prototype finding 50). ead_or_similar is the one status that
         # must not be collapsed here: an F-1 OPT holder is precisely who "we do not sponsor"
         # ends the runway for, and the fact model cannot tell them from an asylee who needs
-        # nothing, so it is genuinely undecidable.
+        # nothing, so it is genuinely undecidable — unless the bit above already answered it.
         if status == "ead_or_similar":
             return Resolution(
                 UNKNOWN, "authorization is conditional; a sponsorship need cannot be ruled out"

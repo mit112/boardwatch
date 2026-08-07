@@ -28,6 +28,12 @@ class WorkAuthFact(BaseModel):
 
     status: str | None = None
     jurisdiction: str | None = None
+    # P2a. Orthogonal to `status`: `ead_or_similar` alone cannot say whether sponsorship is
+    # needed, which forced that status to UNKNOWN against a sponsorship restriction (D-P2-11
+    # applies here too — the bit ONLY ever answers the sponsorship question, never
+    # citizenship). Absent means "not declared"; the resolver then falls back to the
+    # status-based inference exactly as before this field existed.
+    needs_sponsorship: bool | None = None
 
 
 class ClearanceFact(BaseModel):

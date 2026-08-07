@@ -78,6 +78,11 @@ families:
       - name: jurisdiction
         type: choice
         choices: [us, ca, uk, eu, other, unspecified]
+      # P2a: orthogonal to `status`. Declaring this explicitly is what lets an
+      # ead_or_similar holder be DECIDED against a sponsorship restriction instead of
+      # forced to abstain; left unset, the resolver falls back to `status` alone.
+      - name: needs_sponsorship
+        type: bool
     implies_vocabulary:
       - authorization_required
       - citizenship_required
