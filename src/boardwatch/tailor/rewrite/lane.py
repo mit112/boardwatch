@@ -8,6 +8,7 @@ from typing import TypeVar
 from boardwatch.extract.taxonomy import Taxonomy
 from boardwatch.llm.cache import ResponseCache
 from boardwatch.llm.client import ModelClient
+from boardwatch.tailor.canonical import build_canonical_vocab
 from boardwatch.tailor.equivalences import EquivalenceTable
 from boardwatch.tailor.model import Resume
 from boardwatch.tailor.overmatch import overmatch_reasons
@@ -314,13 +315,10 @@ def run_tier_b(
         build_judge_payload(a, c), JUDGE_PROMPT_VERSION
     )
 
-    # The canonical-tech vocab overmatch's caps check exempts, seeded from what boardwatch
-    # already has (P4 item 1, D-048): taxonomy skill names lowercased union the
-    # equivalence-table's approved swap images. Item 2 (per-field canonical vocab) later
-    # replaces this source; overmatch_reasons itself stays agnostic to where it came from.
-    canonical = frozenset(p.name.lower() for p in taxonomy.patterns) | frozenset(
-        img.lower() for img in table.images()
-    )
+    # The canonical-tech vocab overmatch's caps check exempts (P4 item 1, D-048), sourced
+    # from the shared accessor (P4 item 2): overmatch_reasons itself stays agnostic to
+    # where it came from.
+    canonical = build_canonical_vocab(taxonomy, table).terms
 
     return run_tier_b_core(
         tailored_a,

@@ -10,6 +10,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from boardwatch.extract.taxonomy import Taxonomy
+from boardwatch.tailor.canonical import build_canonical_vocab
 from boardwatch.tailor.equivalences import load_equivalences
 from boardwatch.tailor.model import Resume
 from boardwatch.tailor.rewrite.agent_io import (
@@ -145,11 +146,9 @@ def apply_agent_rewrites(
     budget = 2 * sum(len(e.bullets) for e in tailored.entries)
 
     table = load_equivalences()
-    # Same canonical-tech seeding as the API lane (run_tier_b): taxonomy skill names
-    # lowercased union the equivalence table's approved swap images (P4 item 1, D-048).
-    canonical = frozenset(p.name.lower() for p in taxonomy.patterns) | frozenset(
-        img.lower() for img in table.images()
-    )
+    # Same canonical-tech seeding as the API lane (run_tier_b), via the shared accessor
+    # (P4 item 1, D-048; P4 item 2).
+    canonical = build_canonical_vocab(taxonomy, table).terms
 
     return run_tier_b_core(
         tailored,
