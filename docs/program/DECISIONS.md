@@ -2029,3 +2029,34 @@ test-pinned. `make check` green (2967 passed, 95.36% cov), authoritative re-run 
 
 **Next P4 slices:** item 2 (per-field canonical vocab + aliases as versioned data — replaces item 1's
 seeded `canonical` source), then items 3–7. Gate P4's blind-craft-review clause stays Mit's (subjective).
+
+## D-049 — P4 item 2: consolidate the canonical-vocab seed; DECLINE the per-field selector (YAGNI)
+
+**2026-08-07 · session 10 · P4 (item 2 — built + declined-in-part, merged). Under D-047.**
+
+**Context.** Item 2 as titled is "canonical technology vocabulary + aliases, per field." A grounding pass
+(`.superpowers/sdd/p4-craft/item2-canonical-vocab-design.md`) found most of it ALREADY EXISTS: taxonomy.yaml
+(canonical tech names) + equivalences.yaml (alias pairs), both versioned data; re-spelling to the JD's
+wording is already wired via `tailor/plan.py::_applicable_swaps` and guarded safe by provenance + item 1's
+overmatch. The one real defect: item 1 seeded its `canonical` set with the SAME 3-line expression
+duplicated verbatim in `rewrite/lane.py` and `rewrite/agent_lane.py` (both comments said "item 2 replaces
+this source").
+
+**Choice — build the consolidation, decline the selector.** New `tailor/canonical.py`:
+`build_canonical_vocab(taxonomy, table, *, field="swe") -> CanonicalVocab(field, terms, version)`, deriving
+`terms` byte-identically to the former expression (a behavior-preserving refactor, guarded by the unchanged
+lane/overmatch suites + a parity test) and a `version` = sha256 of the two source versions + field. Both
+call sites now read it. **The per-field SELECTOR/dispatch is DECLINED as speculative:** there is exactly
+one field's vocabulary today (SWE), Mit is not a source for a second now (same reason P2 item 4 stays
+deferred), and configurability for a hypothetical second field is the abstraction the engineering defaults
+forbid. The `field="swe"` tag documents intent and makes future keying a one-line change — that is the
+whole per-field concession until a second field's content exists.
+
+**Reviews.** Crux verified by the orchestrator (byte-identical derivation, both call sites, parity test).
+Implementer caught its own first parity fixture being mutation-blind (a `JS→JavaScript` image that is also
+a taxonomy name, so a dropped-union mutation stayed green) and switched to a synthetic non-overlapping
+image, confirming red — the [[mutation-testing-lies-two-ways]] discipline. `make check` green (2970 passed,
+95.37%), authoritative re-run by the orchestrator.
+
+**Next P4 slice:** item 3 (guard extensions — banned register, buzzword-density ceiling, verb-opening
+diversity, requirement-echo detection [PROGRAM.md calls it "the most damaging AI-résumé tell"]).

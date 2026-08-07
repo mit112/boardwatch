@@ -597,8 +597,13 @@ domain input nor Docker.** What is left is genuinely gated on things I cannot su
   `03aefb0`..`15880a6`+`f1cbb3d`):** deterministic overmatch guard (verbatim ≥7-gram lift + unusual-caps
   copy) reverts a Tier-B bullet to Tier-A with `drop_reason="overmatch"`; distinct from the pre-existing
   invention filter; two-gate reviewed (diff-reviewer clean), `make check` green (2967 passed, 95.36%).
-  **Next: P4 item 2** (per-field canonical vocab + aliases as versioned DATA — replaces item 1's seeded
-  `canonical` source), then items 3–7. Gate P4's blind-craft-review clause stays Mit's (subjective).
+  **P4 item 2 DONE (D-049, `f4207f8`+`cf24891`):** consolidated item 1's duplicated `canonical` seed into
+  `tailor/canonical.py::build_canonical_vocab` (behavior-preserving; parity-tested); most of item 2 already
+  existed (taxonomy + equivalences), and the per-field SELECTOR was DECLINED as YAGNI (one field's vocab
+  today; `field="swe"` tag makes future keying trivial). `make check` green (2970 passed, 95.37%).
+  **Next: P4 item 3** (guard extensions — banned register, buzzword-density ceiling, verb-opening
+  diversity, requirement-echo detection [the roadmap's "most damaging AI-résumé tell"]), then items 4–7.
+  Gate P4's blind-craft-review clause stays Mit's (subjective).
 
 **Live findings still owed to Mit (unchanged):** (1) set `resume_max_pages=2` — his `resume.yaml` is 2pp,
 so at the shipped default of 1 every lead is correctly dropped (see below); (2) P1b cannot catch a bullet
