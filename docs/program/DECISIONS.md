@@ -1997,3 +1997,35 @@ same-OS two-writer test "will pass and prove nothing about the failure actually 
 **Sequencing.** P4 item 1 first (`overmatch.py` verbatim-span-lift + unusual-capitalization port — fully
 deterministic, no model, self-contained), then the rest of §3.P4 in order. Gate P4's blind-craft-review
 clause stays Mit's (subjective, needs him); the deterministic clauses are all buildable now.
+
+## D-048 — P4 item 1: deterministic overmatch (verbatim-lift + unusual-caps) guard SHIPPED; first P4 slice
+
+**2026-08-07 · session 10 · P4 (item 1 — built, two-gate-reviewed, merged). Under D-047.**
+
+**Context.** P4's craft rubric leads with `overmatch.py` (job-apps' deterministic style/lift guard). It is
+the STYLE complement to P1b's provenance (FACTS) guard: a bullet that copy-pastes a long JD span or the
+JD's unusual capitalization reads as bot output even when every token is fact-provenanced.
+
+**Choice.** Ported `overmatch_reasons(rewrite, jd, *, canonical, min_ngram=7)` near-verbatim into
+`tailor/overmatch.py` (`OVERMATCH_VERSION="p4-overmatch-1"`), with ONE deliberate change: the canonical-
+tech set is INJECTED, not a hardcoded vocab import — P4 item 2 owns the per-field vocab; item 1 seeds
+`canonical` from existing data (taxonomy skill names ∪ equivalence-table images, lowercased). Wired into
+`rewrite/lane.py::run_tier_b_core` as the style gate AFTER provenance and BEFORE the judge (no judge
+budget spent on a bullet about to be reverted); an over-match reverts the bullet to Tier-A (fail-safe:
+drop tailoring, emit static) with the new closed-catalog `drop_reason="overmatch"`. The JD **body_text**
+was threaded into both Tier-B lanes from the IMMUTABLE `posting_versions.body_text` (not the mutable
+`postings` head).
+
+**Not a duplicate of the existing `passes_overmatch_filter`.** That older, confusingly-named filter guards
+INVENTION (a skill/entity NOT in the source → `drop_reason="filter:invented_*"`); the new guard catches
+LIFT (text copied FROM the JD) — opposite directions, complementary. Kept the counters distinct
+(`lift_rejected` for the new veto vs the pre-existing `overmatch_filtered`), both excluded from the B4
+fabrication numerator (a lift is a style reject, not a fabrication).
+
+**Reviews.** deepseek not needed (a small, mutation-tested deterministic port). diff-reviewer (full
+4-commit range): NO defects — verified JD-threading uses the immutable version, canonical-set parity
+across both lanes, byte-for-byte port fidelity, catalog completeness + `other` bucket, lane order
+test-pinned. `make check` green (2967 passed, 95.36% cov), authoritative re-run by the orchestrator.
+
+**Next P4 slices:** item 2 (per-field canonical vocab + aliases as versioned data — replaces item 1's
+seeded `canonical` source), then items 3–7. Gate P4's blind-craft-review clause stays Mit's (subjective).
