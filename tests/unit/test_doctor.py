@@ -15,6 +15,18 @@ from boardwatch.store.db import ensure_schema, get_engine
 runner = CliRunner()
 
 
+@pytest.fixture(autouse=True)
+def _typst_present(monkeypatch):
+    # These tests are about board health/schema/integrity, not the typst probe — isolate
+    # them from whatever toolchain happens to be on the machine running the suite (the
+    # typst check itself is exercised directly in test_doctor_typst.py).
+    from boardwatch.cli import doctor_cmd
+    monkeypatch.setattr(
+        doctor_cmd, "check_typst",
+        lambda: doctor_cmd.TypstCheck(found=True, version="0.15.1", failed=False, message=None),
+    )
+
+
 class FakeProvider:
     """healthcheck returns a programmed BoardHealth per slug (ignores the fetcher)."""
     def __init__(self, mapping: dict[str, BoardHealth]) -> None:

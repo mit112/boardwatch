@@ -54,10 +54,22 @@ def check_typst() -> TypstCheck:
     result = subprocess.run(["typst", "--version"], capture_output=True, text=True)
     match = re.search(r"\d+\.\d+\.\d+", result.stdout)
     version = match.group(0) if match else None
+    if result.returncode != 0 or version is None:
+        # a present binary that fails to run (wrong arch, corrupt install, ...) is exactly
+        # as broken as a missing one — the PDF gate cannot use it either way
+        return TypstCheck(
+            found=True,
+            version=version,
+            failed=True,
+            message=(
+                f"typst --version failed (exit {result.returncode}); reinstall typst "
+                f"{_TYPST_PINNED_VERSION} — required for the résumé PDF gate"
+            ),
+        )
     message = None
     if version != _TYPST_PINNED_VERSION:
         message = (
-            f"typst version is {version or 'unknown'}, pinned version is "
+            f"typst version is {version}, pinned version is "
             f"{_TYPST_PINNED_VERSION} — the page-count query syntax is version-sensitive"
         )
     return TypstCheck(found=True, version=version, message=message)
