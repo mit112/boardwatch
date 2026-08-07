@@ -121,3 +121,11 @@ def test_case_insensitive_source_match():
     table = _make_table()
     result = reword_is_provenanced("Built PYTHON service", "Built python SERVICE", table=table)
     assert result.ok is True
+
+
+def test_b_side_punctuation_only_allowed():
+    """Punctuation added only to b_text is skipped and does not count as unjustified."""
+    table = _make_table()
+    result = reword_is_provenanced("Built the service", "Built, the service!", table=table)
+    assert result.ok is True
+    assert result.offending == ()
