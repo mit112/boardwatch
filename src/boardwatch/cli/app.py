@@ -23,6 +23,7 @@ from boardwatch.cli.stats_cmd import stats as _stats
 from boardwatch.cli.tailor_cmd import tailor_app
 from boardwatch.cli.top_cmd import top as _top
 from boardwatch.cli.track_cmd import track_app
+from boardwatch.cli.verify_cmd import verify as _verify
 
 app = typer.Typer(no_args_is_help=True, add_completion=False)
 console = Console()
@@ -64,3 +65,4 @@ app.command("export")(_export)
 app.add_typer(tailor_app, name="tailor")
 app.command("stats")(_stats)
 app.command("run")(_run)
+app.command("verify")(_verify)
