@@ -2134,3 +2134,30 @@ title), item 5 (layout/section-order/bullet-count/contact-integrity assertions),
 by re-spelling), item 7 (persona registry — D-011's two personas; note its per-persona protected-fact set
 may need Mit's content, like item 2's per-field concern — ground it before assuming buildable). Gate P4's
 blind-craft-review clause stays Mit's (subjective).
+
+## D-052 — P4 item 4: DEFER the de-senioritizer into item 7 (don't build inert dead code); do items 5–6 first
+
+**2026-08-07 · session 10 · P4 (item 4 — deferred by decision, not built. Reversible). Under D-047.**
+
+**Context.** A grounding pass (`.superpowers/sdd/p4-craft/item4-deterministic-title-design.md`) found item 4
+("deterministic title with seniority stripping") has NO call site today: the `Resume` model
+(`tailor/model.py:37-42`) has no forward-looking title/headline field; past-job `Entry.heading`s are
+factual history, frozen identical master↔tailored by `safety.py:49,59` (you never strip a candidate's REAL
+past seniority); and there is no seniority profile field (`store/tables.py:189-205`;
+`Facts.total_years_experience` feeds eligibility, not tailoring). A JD-driven résumé title is only born in
+**item 7** (persona registry, D-011) — which nothing in `src/` implements yet.
+
+**Choice — do NOT build item 4 now as an inert utility.** A `strip_seniority_markers()` + `seniority.yaml`
+with no caller is dead code until item 7, tested only in isolation where its interface can drift from what
+item 7 needs — the speculative abstraction the engineering defaults forbid ("every changed line traces to
+the request; new code last resort"). Instead: **build the de-senioritizer AS PART OF item 7**, when the
+JD-driven title (its caller) exists. When built, it must reuse `tokens.py`'s `has_whole_token`/
+`whole_token_sub` word-boundary machinery to avoid the substring-collision traps this repo already
+measured in `hidden_hard_filter` (Sr∈SRE/Israel, Lead∈Leader, III unreachable after II — `METRICS.md`).
+The general down-level rule (a senior candidate keeping their real level) is additionally Mit-blocked (no
+seniority profile field), same shape as item 2's per-field / P2 item 4's content deferrals.
+
+**Reorder:** do item 5 (layout/section-order/bullet-count/contact-integrity assertions — act on the
+already-assembled résumé, live call site) and item 6 (keyword coverage vs JD terms — live inputs) NEXT;
+item 4 rides with item 7. Alternatives rejected: (a) build item 4 inert now — dead code for a possibly-
+Mit-blocked phase; (b) skip item 4 entirely — no, the de-senioritizer is genuinely needed, just at item 7.

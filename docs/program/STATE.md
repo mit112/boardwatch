@@ -611,10 +611,14 @@ domain input nor Docker.** What is left is genuinely gated on things I cannot su
   with a JD qualifications sentence, ≥1 non-canonical token]); deepseek fixed the design (and/or→AND,
   Jaccard→4-gram); impl review + one fix round closed two real false-positive holes (irregular-verb
   openers; lowercase header span-leak). `make check` green (3037 passed, 95.32%).
-  **Next: P4 item 4** (deterministic de-senioritied title — a senior-titled JD must not stamp "Senior"
-  on a new-grad résumé; grounding first: does a per-JD title-repositioning step exist, and is the
-  seniority a profile fact already present or Mit-blocked?), then items 5–7 (layout assertions, keyword
-  coverage, persona registry). Gate P4's blind-craft-review clause stays Mit's (subjective).
+  **P4 item 4 DEFERRED into item 7 (D-052):** grounding found it has NO call site today — no forward-looking
+  résumé title field exists until item 7 (persona registry) creates one; building the de-senioritizer now
+  would be inert dead code. It rides with item 7 (reusing `tokens.py` word-boundary machinery to dodge the
+  Sr∈SRE / Lead∈Leader / III-after-II traps); the general down-level rule is additionally Mit-blocked (no
+  seniority profile field). **Next: P4 item 5** (layout/section-order/bullet-count/contact-integrity
+  assertions on the assembled résumé — live call site), then item 6 (keyword coverage vs JD terms), then
+  item 7 (persona registry + the deferred title/de-senioritizer; ground for Mit-blocked persona content
+  first). Gate P4's blind-craft-review clause stays Mit's (subjective).
 
 **Live findings still owed to Mit (unchanged):** (1) set `resume_max_pages=2` — his `resume.yaml` is 2pp,
 so at the shipped default of 1 every lead is correctly dropped (see below); (2) P1b cannot catch a bullet
