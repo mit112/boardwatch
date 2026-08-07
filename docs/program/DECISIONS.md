@@ -1253,3 +1253,40 @@ change that standing — it closes the one item Gate P1's own text did not requi
 fully complete.** Verified only by deterministic unit and lane-integration tests, mutation-checked per the
 task brief (fabrication-hole regressions, judge-not-called-on-veto, counter-not-folded-into-`rejected`); no
 live Tier-B LLM run was exercised this session — say so rather than inventing a dogfood, per D-012.
+
+## D-034 — `needs_sponsorship` is an orthogonal bit on the work-auth fact, and it only decides sponsorship rules
+
+**2026-08-07 · session 10 · P2 (item 2, the first P2a slice).**
+
+**Context.** PROGRAM.md §3.P2 item 2 calls for `work_authorization.needs_sponsorship` as a field distinct
+from `status`. Today it is entangled: `needs_sponsorship` is one *value* of the `status` enum
+(`rules.yaml:77`), so an `ead_or_similar` (EAD / F-1 OPT) holder cannot state a sponsorship need
+independently of status, and `_resolve_work_auth` is forced to `UNKNOWN` for them (`resolve.py:174-177`:
+"authorization is conditional; a sponsorship need cannot be ruled out"). The keystone abstain is correct but
+undecidable-by-construction, not by fact.
+
+**Choice.** Add `needs_sponsorship: bool | None = None` to `WorkAuthFact` (nested — it threads through the
+already-declared `work_authorization` input and the identity hash automatically). In `_resolve_work_auth`,
+use it **only in the `sponsorship_unavailable` sub-branch**: `True → UNMET`, `False → MET`, `None → the exact
+prior status-based inference` (so behaviour is byte-identical when the bit is unset). It disentangles the
+OPT-holder case: `ead_or_similar` + `needs_sponsorship=False` now resolves `MET` instead of abstaining.
+
+**Two safety properties, both verified (one by an independent reviewer mutation).** (1) The bit **never**
+influences a citizenship/authorization verdict — every path in the sponsorship branch returns before
+fall-through, and `needs_sponsorship` is read nowhere else, so `needs_sponsorship=False` cannot satisfy a
+"US citizens only" restriction (an EAD holder who needs no sponsorship is still not a citizen — the exact
+failure `facts.py:3-6` warns against). (2) With the bit `None`, behaviour is byte-identical to before.
+
+**Deliberately scoped.** The `sponsorship_available` sub-branch is left untouched — the literal
+`True→UNMET/False→MET` mapping would invert polarity there (an *offer* + needing sponsorship is MET, not
+UNMET). And no cross-field coherence guard for self-contradictory combos (citizen + `needs_sponsorship=True`)
+— it only ever yields `UNMET` on that one requirement, never a wrong `ELIGIBLE`, mirroring the absence of a
+`status`/`jurisdiction` coherence check today. Both are flagged follow-ups, not this change.
+
+**Alternatives rejected.** A bare `needs_sponsorship` bool used broadly (rejected: `facts.py:3-6` — it would
+wrongly satisfy citizenship rules). Fail-safe: the bit can only turn a forced abstain into a user-declared
+decision in the sponsorship branch; it never makes eligibility less conservative on citizenship.
+
+This is the first P2a (fail-safe) slice; the rest of P2 (typed keystone-abstain enforcement, facts
+`schema_version`, and the fail-dangerous P2b severity-default / taxonomy decisions) is tracked in
+`.superpowers/sdd/p2-profile-keystone/design.md` and STATE's next-action.

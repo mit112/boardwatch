@@ -212,7 +212,9 @@ inputs=("total_years_experience",))`. What is missing is *enforcement* and *repo
 
 1. **Versioned, validated, hashed profile**, part of every verdict cache key.
 2. **`work_authorization.needs_sponsorship` as a field distinct from `status`.** This is the whole
-   work-auth fix (§6, correction 6) — one disambiguating bit, not a rebuild.
+   work-auth fix (§6, correction 6) — one disambiguating bit, not a rebuild. **DONE (session 10, D-034):**
+   orthogonal bit on `WorkAuthFact`, influences sponsorship rules only (never citizenship), `None` = prior
+   behaviour.
 3. **Enforce the invariant:** a rule whose declared field is missing or unresolvable returns
    `ABSTAIN(missing_profile_field:X)` — never ELIGIBLE, never INELIGIBLE.
 4. **Three-tier rule taxonomy** — universal / profile-dependent / field-dependent — as versioned *data*,

@@ -8,6 +8,11 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- **`work_authorization.needs_sponsorship` as an orthogonal bit** on the eligibility work-auth fact (P2,
+  §3.P2 item 2, D-034). Previously sponsorship need was entangled as a `status` enum value, forcing an
+  EAD/F-1-OPT holder to abstain; the bit lets them state a sponsorship need independently of status, so
+  `ead_or_similar` + `needs_sponsorship=false` now resolves decisively. It influences only sponsorship
+  rules — never citizenship rules — and with the bit unset, behaviour is unchanged.
 - **A Tier-B reword provenance veto, fail-closed to the Tier-A bullet** (P1b, PROGRAM.md §3.P1 item 3c,
   D-033). The LLM-assisted rewording lane had no check that a reword's content is actually traceable to the
   source; a fabrication like *"single-handedly re-architected … eliminating downtime"* passed the existing
