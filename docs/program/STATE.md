@@ -601,9 +601,15 @@ domain input nor Docker.** What is left is genuinely gated on things I cannot su
   `tailor/canonical.py::build_canonical_vocab` (behavior-preserving; parity-tested); most of item 2 already
   existed (taxonomy + equivalences), and the per-field SELECTOR was DECLINED as YAGNI (one field's vocab
   today; `field="swe"` tag makes future keying trivial). `make check` green (2970 passed, 95.37%).
-  **Next: P4 item 3** (guard extensions — banned register, buzzword-density ceiling, verb-opening
-  diversity, requirement-echo detection [the roadmap's "most damaging AI-résumé tell"]), then items 4–7.
-  Gate P4's blind-craft-review clause stays Mit's (subjective).
+  **P4 item 3a DONE (D-050, `c0ef15e`..`7c1b8d5`):** banned-register + buzzword-density (per-bullet
+  Tier-B gates) + verb-opening diversity (résumé-wide post-pass), reverting to Tier-A with the new
+  `drop_reason`s; universal register lists (not per-field), tunable later. One fix round (authoritative
+  `make check` caught an R7 SHIPPED_DATA gap the self-report missed; diff-review caught a real
+  verb-diversity demote-without-diversifying bug). `make check` green (3003 passed, 95.34%).
+  **Next: P4 item 3b** (requirement-echo — the JD-semantic AND-gate: structural signal [no past-tense
+  action-verb opener / qualification-register phrasing] AND sub-7-gram overlap with the JD's
+  qualifications sentences, excluding canonical tokens; deterministic, fail-safe. Deepseek-review its
+  false-positive bounding at design), then items 4–7. Gate P4's blind-craft-review clause stays Mit's.
 
 **Live findings still owed to Mit (unchanged):** (1) set `resume_max_pages=2` — his `resume.yaml` is 2pp,
 so at the shipped default of 1 every lead is correctly dropped (see below); (2) P1b cannot catch a bullet
