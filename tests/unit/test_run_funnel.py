@@ -912,3 +912,44 @@ def test_provenance_vetoes_are_counted_separately_from_the_b4_numerator() -> Non
         "2" in line and "reverted to Tier-A for lack of provenance" in line
         for line in body.splitlines()
     )
+
+
+def test_overmatch_vetoes_are_counted_separately_from_the_b4_numerator() -> None:
+    """P4 item 1 (D-048): the deterministic overmatch (verbatim-lift / unusual-caps) veto is
+    a conservative, deliberately over-broad guard, not a caught fabrication -- same
+    treatment as provenance. It must land in its own named bucket (`lift_rejected`), not
+    `other` (out-of-catalog) and not `rejected` (the B4 numerator, judge + the OLDER
+    pre-judge overmatch filter only). Distinguished from `filter:overmatch_tech`, which is a
+    different, older mechanism that happens to share the "overmatch" name."""
+    rows: list[dict[str, object]] = [
+        {"kept": False, "drop_reason": "overmatch"},
+        {"kept": False, "drop_reason": "overmatch"},
+        {"kept": False, "drop_reason": "provenance"},
+        {"kept": False, "drop_reason": "judge"},
+        {"kept": False, "drop_reason": "filter:overmatch_tech"},
+    ]
+    report = funnel(rewrite_rows=rows)
+    fab = report.fabrication
+    assert fab.lift_rejected == 2
+    assert fab.provenance_rejected == 1
+    assert fab.other == 0
+    # Mutation check: `rejected` must stay judge + the older overmatch filter only, unmoved
+    # by the new overmatch (lift) rows.
+    assert (fab.judge_rejected, fab.overmatch_filtered, fab.rejected) == (1, 1, 2)
+    payload = funnel_to_dict(report)["fabrication"]
+    assert payload["lift_rejected"] == 2
+    assert payload["rejected"] == 2
+    body = funnel_to_markdown(report)
+    assert any(
+        "2" in line and "verbatim JD-span lift or unusual capitalization" in line
+        for line in body.splitlines()
+    )
+
+
+def test_an_unclassified_overmatch_variant_would_still_land_in_other() -> None:
+    """CLAUDE.md: out-of-catalog is a failure, never a new bucket. A near-miss string that
+    is NOT exactly "overmatch" (e.g. a typo or a future sub-reason) must surface as `other`,
+    not silently get folded into `lift_rejected`."""
+    report = funnel(rewrite_rows=[{"kept": False, "drop_reason": "overmatched"}])
+    assert report.fabrication.lift_rejected == 0
+    assert report.fabrication.other == 1

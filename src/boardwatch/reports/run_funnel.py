@@ -256,6 +256,14 @@ class FabricationCounters:
     `provenance_rejected` (P1b) counts rewords vetoed by the token-provenance check — deliberately
     over-broad, so it is reported distinctly and deliberately excluded from `rejected` below: a
     conservative veto is not a caught fabrication.
+
+    `lift_rejected` (P4 item 1, D-048) counts rewords vetoed by the deterministic overmatch
+    guard (`drop_reason="overmatch"`) — a verbatim JD-span lift or a copy of the JD's own
+    unusual capitalization of a non-canonical term. Same treatment as `provenance_rejected`
+    and reported distinctly from `overmatch_filtered` above (an unrelated, older, pre-judge
+    invented-entity/skill filter that shares the "overmatch" name by coincidence): a
+    style/lift veto is conservative, not a caught fabrication, so it too is excluded from
+    `rejected` below.
     """
 
     lane: str
@@ -268,6 +276,7 @@ class FabricationCounters:
     error: int
     no_candidate: int
     provenance_rejected: int
+    lift_rejected: int
     other: int
 
     @property
@@ -280,7 +289,8 @@ def build_fabrication_counters(
     rewrite_rows: Sequence[dict[str, object]], *, lane: str = "tier_b"
 ) -> FabricationCounters:
     """Fold per-bullet Tier-B rewrite rows into the closed outcome catalog. Pure."""
-    kept = unchanged = judge = overmatch = budget = error = no_candidate = provenance = other = 0
+    kept = unchanged = judge = overmatch = budget = error = no_candidate = provenance = 0
+    lift = other = 0
     for row in rewrite_rows:
         if row.get("kept"):
             kept += 1
@@ -300,6 +310,8 @@ def build_fabrication_counters(
             no_candidate += 1
         elif reason == "provenance":
             provenance += 1
+        elif reason == "overmatch":
+            lift += 1
         else:
             other += 1
     return FabricationCounters(
@@ -313,6 +325,7 @@ def build_fabrication_counters(
         error=error,
         no_candidate=no_candidate,
         provenance_rejected=provenance,
+        lift_rejected=lift,
         other=other,
     )
 
@@ -725,6 +738,7 @@ def funnel_to_dict(funnel: RunFunnel) -> dict[str, object]:
             "error": funnel.fabrication.error,
             "no_candidate": funnel.fabrication.no_candidate,
             "provenance_rejected": funnel.fabrication.provenance_rejected,
+            "lift_rejected": funnel.fabrication.lift_rejected,
             "other": funnel.fabrication.other,
             "rejected": funnel.fabrication.rejected,
         },
@@ -1102,6 +1116,10 @@ def funnel_to_markdown(funnel: RunFunnel) -> str:
         "",
         f"{fab.provenance_rejected} rewrites reverted to Tier-A for lack of provenance "
         "(a conservative veto, not a caught fabrication — excluded from `rejected` above)",
+        "",
+        f"{fab.lift_rejected} rewrites reverted to Tier-A for a verbatim JD-span lift or "
+        "unusual capitalization copied from the JD (a conservative veto, not a caught "
+        "fabrication — excluded from `rejected` above)",
         "",
         "*Bar metric B4 is 0 fabrications over n≥100. `bullets_seen` is n; the two truth gates "
         "are the fail-closed entailment judge and the deterministic overmatch filter. Tier A is "
