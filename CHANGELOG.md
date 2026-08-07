@@ -13,8 +13,6 @@ All notable changes to this project are documented here. The format follows
   `boardwatch scan`** (P3, §3.P3 item 4, D-037). Previously the same "attempted > 0, complete == 0,
   unchanged == 0" logic was written out twice; behavior is unchanged, this only removes the risk of the
   two copies drifting apart.
-
-
 - **`show` now renders an `eligible` verdict that fired zero eligibility rules, one that fired and
   cleared all of them, and one that fired some non-blocking `preference`-family rows that were NOT
   cleared, as three distinct headers** (P2, §3.P2 item 6, D-036). Previously all three rendered as a

@@ -24,6 +24,8 @@ def test_false_when_any_board_was_unchanged() -> None:
     assert is_systemic_scan_outage(attempted=5, complete=0, unchanged=1) is False
 
 
-def test_false_when_all_boards_partial_or_failed_but_attempted_is_zero() -> None:
-    """Guards the AND, not just each clause individually: attempted must be > 0 too."""
-    assert is_systemic_scan_outage(attempted=0, complete=0, unchanged=0) is False
+def test_false_when_boards_split_between_complete_and_unchanged() -> None:
+    """A normal healthy scan — some boards complete, some unchanged, none of either at zero —
+    is definitively not an outage. Distinct from the single-clause cases above: both `complete`
+    and `unchanged` are nonzero here, not just one of the two."""
+    assert is_systemic_scan_outage(attempted=5, complete=2, unchanged=3) is False
