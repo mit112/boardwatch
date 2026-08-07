@@ -577,9 +577,31 @@ changes adopted, none contested.
 
 ## Next action
 
-**P0 and P1 are both complete.** P1a (résumé artifact gate, session 9) and P1b (Tier-B token-provenance
-validator, session 10, D-033) are both shipped on `p1b-tier-b-provenance`, which is not yet merged to
-`main`. **Next: P2 — profile object + the keystone invariant** (PROGRAM.md §3.P2).
+**P0, P1, P2-core, and P3-build are all complete (session 10, 2026-08-07).** The run reaper merged
+(D-046, `2ce8e2d`+`91e0992`, `make check` green) was the **last P3 build item that needs neither Mit's
+domain input nor Docker.** What is left is genuinely gated on things I cannot supply autonomously:
+
+- **P2 item 4 (personas / field-dependent taxonomy) + Gate P2** — Gate P2 evaluates one JD against
+  **three** profiles (F-1 OPT SWE / US-citizen senior nurse / EU paralegal). That needs Mit's persona
+  content: which rule families are field-specific and how each field maps. The mechanism without the
+  content is speculative (YAGNI). **Mit's domain call.**
+- **P3 item 8 + Gate P3** — Gate P3 requires 7 consecutive unattended runs (operational; only Mit
+  accumulates these) **and** the two-writer test green, whose load-bearing cross-OS case needs
+  **Docker** (absent here; `docker info` fails). The documented-stance half shipped (D-041,
+  `WAL_DISCIPLINE.md`); the harness half is environmentally blocked.
+
+- **THE NEXT DECISION IS MIT'S: do we build P4 (deterministic craft rubric) ahead of Gate P3?** P4's
+  items 1–7 (port `overmatch.py`, canonical vocab, guard extensions, deterministic de-senioritied title,
+  layout assertions, keyword coverage, persona registry) are **functionally independent of the unattended
+  runner** and build on the **already-met Gate P1** — so they are buildable now on their merits. But the
+  session-start ritual forbids starting a phase before its predecessor's gate is met, and Gate P3 is
+  Docker+operationally blocked, not build-blocked. Reordering the roadmap to build P4 ahead of Gate P3 is
+  a **program-structure decision reserved for Mit** (unlike tonight's within-phase declines D-044/D-045).
+  If Mit says go, P4 item 1 (`overmatch.py` port, fully deterministic, no model) is the clean first slice.
+
+**Live findings still owed to Mit (unchanged):** (1) set `resume_max_pages=2` — his `resume.yaml` is 2pp,
+so at the shipped default of 1 every lead is correctly dropped (see below); (2) P1b cannot catch a bullet
+that recombines real résumé numbers into a false claim (numeric-recombination limitation, D-033).
 
 **A live, actionable finding from the P1a dogfood, not a code defect — surfaced 2026-08-07.** On the real
 store, at the profile's shipped default `resume_max_pages=1`, `boardwatch run` drops **every** shortlisted
