@@ -109,6 +109,15 @@ def _existing_lead_folders(conn: Connection, run_id: int) -> int:
     return sum(1 for uri in uris if Path(str(uri)).parent.is_dir())
 
 
+def folders_reconcile(conn: Connection, run_id: int) -> tuple[int, int]:
+    """`(folder_count, artifact_rows)` for run_id's own `resume_tailored` rows — the same pair
+    `Freshness.reconciles` compares, exposed on its own so a caller mid-run (P3 item 6's
+    filesystem-truth guard, before the funnel or `finish_run` have written) can check JUST this
+    clause without `funnel_present`/`status`, which would spuriously fail before those exist.
+    """
+    return _existing_lead_folders(conn, run_id), count_tailored_artifacts(conn, run_id).rows
+
+
 def check_run_freshness(engine: Engine, run_id: int, day_dir: Path) -> Freshness:
     """Read-only. `day_dir` is the dated output folder (`<out_root>/<date>/`) the run wrote
     into; `date` is taken from `day_dir.name`, the same string `run_pipeline` derived it from.
@@ -144,4 +153,4 @@ def check_run_freshness(engine: Engine, run_id: int, day_dir: Path) -> Freshness
     )
 
 
-__all__ = ["TERMINAL_STATUSES", "Freshness", "check_run_freshness"]
+__all__ = ["TERMINAL_STATUSES", "Freshness", "check_run_freshness", "folders_reconcile"]

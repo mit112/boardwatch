@@ -22,7 +22,7 @@ from pathlib import Path
 import pytest
 from sqlalchemy import Engine, insert, update
 
-from boardwatch.pipeline.freshness import check_run_freshness
+from boardwatch.pipeline.freshness import check_run_freshness, folders_reconcile
 from boardwatch.store.db import ensure_schema, get_engine
 from boardwatch.store.queries import RUN_FAILED, RUN_OK, RUN_RUNNING, insert_run
 from boardwatch.store.tables import artifacts, jobs, runs
@@ -214,6 +214,39 @@ def test_flagged_when_the_day_dir_does_not_exist_on_disk(engine: Engine, tmp_pat
     assert result.fresh is False
     assert result.funnel_present is False
     assert result.folder_count == 0
+
+
+def test_folders_reconcile_is_usable_before_the_funnel_or_finish_run_have_written(
+    engine: Engine, tmp_path: Path
+) -> None:
+    """P3 item 6's filesystem-truth guard calls this MID-run, before `finish_run` stamps a
+    terminal status and before the funnel is written — `check_run_freshness`'s other two
+    clauses (`funnel_present`, `status`) would spuriously fail at that point; this clause alone
+    must not depend on either.
+    """
+    run_id = insert_run(engine)  # status stays `running`, no funnel written anywhere
+    day_dir = _day_dir(tmp_path)
+    _lead_folder(day_dir, "acme-1")
+    _tailored_artifact_row(engine, run_id, day_dir, "acme-1")
+
+    with engine.connect() as conn:
+        folder_count, artifact_rows = folders_reconcile(conn, run_id)
+
+    assert (folder_count, artifact_rows) == (1, 1)
+
+
+def test_folders_reconcile_flags_a_folder_missing_from_disk(
+    engine: Engine, tmp_path: Path
+) -> None:
+    run_id = insert_run(engine)
+    day_dir = _day_dir(tmp_path)
+    _tailored_artifact_row(engine, run_id, day_dir, "acme-1")  # store row, no folder on disk
+
+    with engine.connect() as conn:
+        folder_count, artifact_rows = folders_reconcile(conn, run_id)
+
+    assert folder_count == 0
+    assert artifact_rows == 1
 
 
 def test_a_failed_run_is_still_a_valid_terminal_status(engine: Engine, tmp_path: Path) -> None:

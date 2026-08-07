@@ -31,7 +31,9 @@ from boardwatch.core.clock import utcnow
 from boardwatch.core.settings import Settings
 from boardwatch.eligibility.audit import AuditView, load_audit
 from boardwatch.eligibility.catalog import load_rules
+from boardwatch.eligibility.engine import ENGINE_KIND, engine_version
 from boardwatch.eligibility.preflight import current_identity
+from boardwatch.pipeline.freshness import folders_reconcile
 from boardwatch.pipeline.funnel_writer import collect_run_funnel
 from boardwatch.reports.morning import MorningLead, build_morning, write_morning
 from boardwatch.reports.resume_gate import LeadArtifactError, TypstUnavailableError
@@ -45,7 +47,7 @@ from boardwatch.reports.tailor import run_tailor
 from boardwatch.scan.coordinator import ScanSummary, is_systemic_scan_outage, run_scan
 from boardwatch.store.db import ensure_schema
 from boardwatch.store.queries import RUN_FAILED, RUN_OK, ensure_run, finish_run
-from boardwatch.store.run_funnel_queries import lead_provenance
+from boardwatch.store.run_funnel_queries import count_eligible_judged_this_run, lead_provenance
 from boardwatch.store.tables import postings
 
 DEFAULT_TOP_N = 8
@@ -100,6 +102,11 @@ class PipelineSummary:
     shortlist: ShortlistCounts | None = None
     tailored: list[TailoredLead] = field(default_factory=list)
     tailor_failed: int = 0
+    # The posting_id of every candidate that failed to tailor, alongside the count above.
+    # Threaded through so the cohort-completeness guard (P3 item 9) can reconcile by ID SET
+    # against `ranked.visible`, rather than by count — a count identity balances even when one
+    # candidate vanished and another was double-counted; an ID-set difference cannot.
+    tailor_failed_ids: list[int] = field(default_factory=list)
     # Every Tier-B rewrite row across all leads this run — the fabrication counters (P0 item 8)
     # are folded from these. Empty when LLM tailoring is off, which is an honest zero.
     rewrite_rows: list[dict[str, object]] = field(default_factory=list)
@@ -115,6 +122,38 @@ class PipelineSummary:
     @property
     def leads_with_pdf(self) -> int:
         return sum(1 for lead in self.tailored if lead.pdf_built)
+
+
+def _cohort_guard(
+    visible_ids: frozenset[int], lead_ids: frozenset[int], failed_ids: frozenset[int]
+) -> str | None:
+    """P3 item 9 — every SHORTLISTED candidate must reach a terminal state: a lead or a tailor
+    failure. `visible_ids - (lead_ids | failed_ids)` is the unaccounted set; comparing SETS
+    rather than `len(visible) == len(lead) + len(failed)` is deliberate — a compensating bug
+    (one candidate lost, a different one double-counted as a lead) balances the count identity
+    but cannot hide inside a set difference.
+    """
+    unaccounted = visible_ids - (lead_ids | failed_ids)
+    if unaccounted:
+        ids = ", ".join(str(posting_id) for posting_id in sorted(unaccounted))
+        return f"cohort incomplete: {len(unaccounted)} shortlisted candidates unaccounted: {ids}"
+    return None
+
+
+def _zero_output_guard(eligible_judged_this_run: int) -> str | None:
+    """P3 item 5 (B5) — 0 leads is provably right IFF this run did no NEW eligible work.
+
+    `eligible_judged_this_run` is run_id-attributed (not a cross-run handled ledger): a
+    steady-state day where every eligible posting is a cache hit from a PRIOR run has this at
+    0 and is honest. > 0 with 0 leads means new eligible work existed this run and nothing came
+    of it — the silent-empty-day this guard exists to catch.
+    """
+    if eligible_judged_this_run > 0:
+        return (
+            f"empty day not provably right: {eligible_judged_this_run} eligible postings "
+            "judged this run but 0 leads"
+        )
+    return None
 
 
 def _slug(company: str, posting_id: int) -> str:
@@ -243,6 +282,7 @@ def run_pipeline(
                 # directory is the obvious independent check, and a husk would inflate it.
                 _remove_if_empty(dest)
                 summary.tailor_failed += 1
+                summary.tailor_failed_ids.append(posting.posting_id)
                 message = f"tailor: posting {posting.posting_id}: {exc}"
                 stage_errors.append(message)
                 summary.errors.append(message)
@@ -252,6 +292,7 @@ def run_pipeline(
                 # directory is the obvious independent check, and a husk would inflate it.
                 _remove_if_empty(dest)
                 summary.tailor_failed += 1
+                summary.tailor_failed_ids.append(posting.posting_id)
                 message = f"tailor: posting {posting.posting_id}: {exc}"
                 stage_errors.append(message)
                 summary.errors.append(message)
@@ -279,6 +320,54 @@ def run_pipeline(
             summary.fatal = (
                 f"every lead failed to tailor ({summary.tailor_failed}/{shortlisted})"
             )
+
+        # P3 item 5 (B5) — zero-output guard. Only reachable here when `shortlisted == 0` (the
+        # `shortlisted > 0` empty case is already fatal above), i.e. a candidate-less day.
+        # Checked BEFORE cohort completeness (design's stated order) so the more specific
+        # empty-day message wins when both would otherwise fire on the same run.
+        if summary.fatal is None and not summary.tailored:
+            with engine.connect() as conn:
+                identity = current_identity(conn, settings)
+                # None only when the profile vanished mid-run after `rank_open_postings`
+                # already required one to exist — unreachable in practice. Treated as "no
+                # NEW eligible work is knowable", not as suspicious, per the fail-safe stance:
+                # ambiguity here must not manufacture a false alarm.
+                eligible_judged_this_run = (
+                    count_eligible_judged_this_run(
+                        conn,
+                        profile_hash=identity[0],
+                        rules_hash=identity[1],
+                        engine_kind=ENGINE_KIND,
+                        engine_version=engine_version(),
+                        run_id=run_id,
+                    )
+                    if identity is not None
+                    else 0
+                )
+            summary.fatal = _zero_output_guard(eligible_judged_this_run)
+
+        # P3 item 9 — cohort completeness. Every SHORTLISTED candidate (`ranked.visible`, which
+        # EXCLUDES `skipped_not_new` — top_cmd.py:63) must have reached a terminal state: a lead
+        # (`summary.tailored`) or a tailor failure (`summary.tailor_failed_ids`). Reconciled by
+        # posting_id SET, not by count, so a compensating bug cannot balance.
+        if summary.fatal is None:
+            visible_ids = frozenset(posting.posting_id for posting in ranked.visible)
+            lead_ids = frozenset(lead.posting_id for lead in summary.tailored)
+            failed_ids = frozenset(summary.tailor_failed_ids)
+            summary.fatal = _cohort_guard(visible_ids, lead_ids, failed_ids)
+
+        # P3 item 6 — filesystem-truth. The leads the DB says this run produced must have a
+        # folder on disk. Reuses slice 4's `pipeline/freshness.py` reconciliation rather than a
+        # second implementation; only the folder/artifact-row clause, not `funnel_present` or
+        # `status`, since neither has been written yet at this point in the run.
+        if summary.fatal is None:
+            with engine.connect() as conn:
+                folder_count, artifact_rows = folders_reconcile(conn, run_id)
+            if folder_count != artifact_rows:
+                summary.fatal = (
+                    f"filesystem-truth: {folder_count} lead folder(s) on disk vs "
+                    f"{artifact_rows} tailored artifact row(s) in the store for run {run_id}"
+                )
 
         summary.evaluated = _count_evaluations(engine, run_id)
         return summary

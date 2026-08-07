@@ -45,6 +45,15 @@ All notable changes to this project are documented here. The format follows
   Checks the run's terminal status, that `started_at`/`finished_at` fall on that date, and that
   the lead folders on disk reconcile with the store's tailored-artifact row count for that
   run_id. No new schema.
+- **Three run-integrity guards on `boardwatch run`, each capable of turning a run non-zero, none capable
+  of suppressing a real failure** (P3, §3.P3 items 5, 9, 6, D-039): a **zero-output guard** — 0 leads
+  fails the run unless the count of open postings verdict `eligible` AND judged BY THIS RUN
+  (`run_id`-attributed, not a cross-run ledger) is also 0, so a steady-state day where every eligible
+  posting is a prior-run cache hit stays honest; a **cohort-completeness guard** — every candidate the
+  ranker shortlisted (`ranked.visible`) must have become a lead or a recorded tailor failure, reconciled
+  by posting_id SET rather than count, so a compensating bug cannot balance it; and a
+  **filesystem-truth guard** — the leads the store says this run produced must have folders on disk,
+  reusing the freshness reconciliation rather than a second implementation.
 - **`work_authorization.needs_sponsorship` as an orthogonal bit** on the eligibility work-auth fact (P2,
   §3.P2 item 2, D-034). Previously sponsorship need was entangled as a `status` enum value, forcing an
   EAD/F-1-OPT holder to abstain; the bit lets them state a sponsorship need independently of status, so

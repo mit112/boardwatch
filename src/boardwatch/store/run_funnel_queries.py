@@ -230,6 +230,41 @@ def count_corpus(
     )
 
 
+def count_eligible_judged_this_run(
+    conn: Connection,
+    *,
+    profile_hash: str,
+    rules_hash: str,
+    engine_kind: str,
+    engine_version: str,
+    run_id: int,
+) -> int:
+    """Open postings whose CURRENT-identity evaluation is verdict `eligible` AND was itself
+    judged by THIS run (`run_id` attribution) — the P3 item 5 (B5) zero-output guard's
+    predicate.
+
+    Deliberately run_id-attributed rather than a cross-run "handled ledger": a steady-state day
+    where every eligible posting is a cache hit from a PRIOR run has this count at 0 and is
+    honest (nothing NEW happened this run), which is exactly what dissolves the reviewer's
+    false-alarm concern without inventing a second identity path. Reuses
+    `_current_identity_evaluations` — the same subquery `count_corpus` partitions — rather than
+    a new one, per CLAUDE.md's closed-catalog default.
+    """
+    sub = _current_identity_evaluations(
+        profile_hash=profile_hash,
+        rules_hash=rules_hash,
+        engine_kind=engine_kind,
+        engine_version=engine_version,
+    ).subquery()
+    return int(
+        conn.execute(
+            select(func.count())
+            .select_from(sub)
+            .where(sub.c.verdict == "eligible", sub.c.run_id == run_id)
+        ).scalar_one()
+    )
+
+
 def count_unattributed_evaluations(conn: Connection) -> int:
     """Evaluations carrying no run at all, across the WHOLE store.
 

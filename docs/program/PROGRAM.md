@@ -272,7 +272,14 @@ and nearly every line is an incident.
    correct but duplicated; consolidated into `is_systemic_scan_outage` (`scan/coordinator.py`), used by
    both `run_pipeline` and standalone `run_scan`, no behavior change.
 5. **Zero-output guard** — a run producing nothing exits non-zero unless zero was provably right.
-6. **Filesystem-truth counts** as independent verification of the DB's self-report.
+   **DONE** (D-039) — `pipeline/runner.py::_zero_output_guard`: provably right IFF the count of open
+   postings verdict `eligible` AND judged with THIS run's `run_id`
+   (`run_funnel_queries.count_eligible_judged_this_run`) is 0. Run_id-attributed, not a cross-run
+   "handled ledger" — a steady-state day where every eligible posting is a prior-run cache hit reads as
+   honest with no new bookkeeping.
+6. **Filesystem-truth counts** as independent verification of the DB's self-report. **DONE** (D-039) —
+   `pipeline/freshness.py::folders_reconcile`, factored out of slice 4's own reconciliation so the
+   pipeline can call just this clause mid-run, before the funnel or a terminal `runs.status` exist.
 7. **Morning artifact** — ranked leads, apply URL, PDF path, verdict + span, one line of why.
    **DONE** (D-038) — `reports/morning.py`, `morning-<run_id>.{json,md}` beside the funnel,
    sourced from the same run-scoped tailored-leads population as the funnel, never from
@@ -285,7 +292,11 @@ and nearly every line is an incident.
 9. **Cohort completeness as a mechanism, not a phrase.** Item 5's "unless zero was provably right" *is*
    cohort completeness. A day is `complete` only when every posting that materialised into a **candidate**
    reached a terminal state — not every posting observed. That distinction cost job-apps several days of
-   an evidence window to scaffold-only orphans that never settled.
+   an evidence window to scaffold-only orphans that never settled. **DONE** (D-039) —
+   `pipeline/runner.py::_cohort_guard`: the candidate set is `ranked.visible` (verified to already exclude
+   `skipped_not_new`), reconciled against `summary.tailored` ∪ `summary.tailor_failed_ids` by **posting_id
+   SET**, not by count — a compensating bug (one candidate lost, another double-counted) can balance a
+   count identity but cannot hide inside a set difference.
 10. **Tier-B quota and idempotence.** At 2 model calls per bullet, B1's ≥10 leads/day is ~300 calls/day
    unattended. Needs: meta-hash idempotence keyed on JD + template + model + prompt version +
    `profile_version` + `persona_version` so a re-run is not a full re-tailor; batched judging in the API

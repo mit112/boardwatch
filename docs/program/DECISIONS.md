@@ -1601,3 +1601,108 @@ ruff clean, mypy clean (161 source files), **2897 passed, 1 deselected**, covera
 verdict, or the tailor/PDF logic — both additions are read-only reporting layered on facts the pipeline
 already computed or already persisted. `doctor` surfacing of `Freshness` is left unwired, as the design
 allowed ("optionally"); nothing downstream depends on it existing yet.
+
+---
+
+## D-039 — run-integrity guards: cohort completeness by ID set, zero-output provably-right via run_id attribution, filesystem-truth reusing slice-4
+
+**2026-08-07 · session 15 · P3 slice 3 ("P3-run-integrity").**
+
+**Context.** PROGRAM.md §3.P3 items 5, 9 and 6 are the three fail-safe guards left in the phase: a run
+producing 0 leads must exit non-zero unless zero was *provably* right (item 5, bar metric B5); a run that
+reached the tailor stage must account for every candidate it shortlisted, not just balance a count (item
+9); and the DB's self-report of what it tailored must be checked against the filesystem, independently
+(item 6). The design (`.superpowers/sdd/p3-unattended-runner/slice3-design.md`) went through a deepseek-v4
+review that reworked the zero-output predicate before any of this was built — the review's Major 3 flagged
+that a fuzzy "handled ledger" for excluding prior-run work was ill-defined, and its Blocker flagged that
+the cohort formula might omit `skipped_not_new` postings that settle in neither the lead nor the failed
+bucket.
+
+**Choice.**
+
+1. **Candidate == shortlisted, not observed.** A candidate is a posting the ranker put in `ranked.visible`
+   — verified (not assumed) to already EXCLUDE `skipped_not_new`: `top_cmd.py`'s own accounting identity is
+   `considered == len(visible) + skipped_not_new + hidden_hard_filter + hidden_non_swe + hidden_ineligible
+   + hidden_below_cutoff` (`top_cmd.py:63`), so the reviewer's Blocker does not arise — `visible` is exactly
+   the population the tailor loop iterates, with nothing skipped mixed in.
+2. **Terminal == lead | failed.** `PipelineSummary` gained `tailor_failed_ids: list[int]`, appended
+   alongside the existing `tailor_failed` counter at both of the tailor loop's `except` sites
+   (`LeadArtifactError` and the generic per-lead `except Exception`) — threading the design asked for rather
+   than deriving the count from `summary.tailored`, since the counter already existed and only the IDs were
+   missing.
+3. **`_cohort_guard(visible_ids, lead_ids, failed_ids) -> str | None`**, a pure function in
+   `pipeline/runner.py`, reconciles by **set difference** (`visible_ids - (lead_ids | failed_ids)`), not by
+   count equality (reviewer Minor, resolved) — a compensating bug (one candidate lost, a different id
+   double-counted as a lead) balances `len(visible) == len(lead) + len(failed)` but cannot hide inside a
+   set difference. Names every unaccounted posting_id in the fatal message.
+4. **`_zero_output_guard(eligible_judged_this_run) -> str | None`**, the reworked predicate: 0 leads is
+   provably right IFF this run did no NEW eligible work, measured as the count of open postings whose
+   CURRENT evaluation is verdict `eligible` AND was itself judged with **this run's `run_id`** — never a
+   cross-run "handled ledger" (the fuzzy mechanism the review's Major 2/3 objected to). A steady-state day
+   where every eligible posting is a cache hit from a PRIOR run has this count at 0 and is honest — which
+   is what dissolves the false alarm without inventing any new bookkeeping. `scan healthy` is not
+   re-checked here because it is structurally guaranteed: `is_systemic_scan_outage` (D-037) already returns
+   the run before the tailor stage is ever reached, so the guard is unreachable on an outage. The count
+   comes from a new store query, `run_funnel_queries.count_eligible_judged_this_run`, which reuses
+   `_current_identity_evaluations` — the same subquery `count_corpus` already partitions — rather than a
+   second identity path, filtered to `verdict == 'eligible' AND run_id == this_run`.
+5. **Filesystem-truth reuses slice 4, does not reimplement it.** `pipeline/freshness.py` gained
+   `folders_reconcile(conn, run_id) -> tuple[int, int]`, factored out of `_existing_lead_folders` +
+   `count_tailored_artifacts` — the same pair `Freshness.reconciles` already compares — but callable on its
+   own. It has to be separate from `check_run_freshness`/`Freshness.fresh`: the guard runs INSIDE the
+   pipeline's `try`, before `finish_run` stamps a terminal status and before the funnel is written, so
+   `funnel_present` and `status` would spuriously fail at that point if the guard called the full
+   `Freshness` check instead of just this one clause.
+6. **Wiring, all in `pipeline/runner.py`, all setting `summary.fatal`** (the slice-1 contract's single
+   discriminator, fail-safe direction only — a guard can only turn a run non-zero, never suppress a real
+   failure): zero-output checked first, then cohort, then filesystem-truth, matching the design's stated
+   order so the more specific empty-day message wins when more than one would fire on the same run. Every
+   guard is gated on `summary.fatal is None`, so an already-fatal stage (typst-unavailable, the pre-existing
+   every-lead-failed case) is never overwritten and never doubly diagnosed.
+
+**Documented residual.** A scan that "succeeds" but silently returns empty pages — 0 new postings for a
+bad reason, not a genuine outage — is not distinguishable from a legitimate all-`unchanged` day by the
+zero-output predicate alone. That gap is knowingly left to the systemic-outage guard (D-037) plus the
+stub-rate metric (P0 item 6) plus slice-4 freshness (D-038), per the design's own accept-and-note stance —
+over-reaching this predicate to cover it would have meant inventing exactly the fuzzy cross-run ledger the
+review already rejected.
+
+**Rejected.** A combined count identity (`len(visible) == len(lead) + len(failed)`) instead of an id-set
+reconciliation — rejected per the review's Minor, and pinned by
+`test_cohort_guard_by_id_set_catches_a_compensating_bug_a_count_check_would_miss`, which constructs exactly
+such a compensating bug and shows the count identity balances while the id-set catches it. A cross-run
+"handled ledger" tracking which postings a prior run already disposed of — rejected per the review's
+Major 3; `judged_this_run` (run_id attribution, D-016/D-019) already answers the same question with no new
+state. Calling `check_run_freshness`/`Freshness.fresh` wholesale for the filesystem-truth guard — rejected
+because the funnel and the terminal `runs.status` do not exist yet at the point in the run the guard needs
+to fire, which would make every healthy run spuriously fatal on `funnel_present`/`status` alone.
+
+**Verified.** TDD throughout: `_cohort_guard` and `_zero_output_guard` are pure functions tested directly
+with synthetic id sets/counts in `tests/pipeline/test_pipeline_run.py` (balances not fatal, a vanished
+candidate fatal and named, the compensating-bug-vs-count-check case above, both zero-output predicate
+sides). `count_eligible_judged_this_run` is tested in `tests/unit/test_run_funnel_queries.py` against a
+real SQLite engine (counted when judged this run, NOT counted when the same verdict was judged by a prior
+run, NOT counted when the verdict is `ineligible`). `folders_reconcile` is tested in
+`tests/unit/test_freshness.py`, including explicitly against a `running`-status row with no funnel file to
+pin that it does not depend on either. End-to-end, `tests/pipeline/test_pipeline_run.py` adds: a genuinely
+empty corpus (no open postings at all) staying non-fatal; a fresh eligible posting forced to 0 leads
+(`--top 0`) going fatal with the exact "empty day not provably right" message; the steady-state case run
+TWICE — the first run tailors a real lead, the second (`--top 0`, same profile+rules identity) has the
+posting's evaluation attributed to the FIRST run's `run_id` and stays non-fatal, which is the review's
+named false-alarm actually exercised rather than only argued about; a lead whose folder is deleted after
+`run_tailor` succeeds (monkeypatched to sabotage the real tailor call, not to fake the guard) going fatal
+with the `filesystem-truth` message; and an explicit regression pinning that a normal run with real leads
+stays `summary.fatal is None`. Every new fatal-path test was confirmed to fail without its guard by
+temporarily reverting the corresponding wiring block and re-running the file in isolation; all reverted
+before proceeding. Pre-existing `tests/pipeline/test_pipeline_run.py`,
+`tests/pipeline/test_run_funnel_artifact.py`, and `tests/pipeline/test_run_pdf_gate.py` (funnel + PDF-gate)
+re-run unchanged and stayed green — `tailor_failed_ids` is additive alongside the untouched `tailor_failed`
+counter, and no existing call site's argument shape changed. `make check`: `generalization: OK`, ruff
+clean, mypy clean, **2913 passed, 1 deselected**, coverage **95.38%**, run in the foreground with output
+redirected directly to a file (no pipe, so the captured exit code is `make`'s own) — exit **0**.
+
+**Consequence.** PROGRAM.md §3.P3 items 5, 9 and 6 are DONE. No change to the eligibility engine, the
+stored verdict, or the tailor/PDF logic — every guard is read-only over facts the pipeline or the store
+already computed, and every guard can only move a run from `ok` to `failed`, never the reverse. P3 slice 5
+(LLM economics, item 10) and item 8 (single-writer discipline) are what remains of the phase; slice 2
+(lock/reaper) stays flagged unsound (D-036's session, "STATE: P3 slice 2 design found UNSOUND by review").

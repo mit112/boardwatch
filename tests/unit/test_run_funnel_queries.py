@@ -23,6 +23,7 @@ from boardwatch.store.run_funnel_queries import (
     count_applied_for_postings,
     count_by_source,
     count_corpus,
+    count_eligible_judged_this_run,
     count_stub_postings,
     count_tailored_artifacts,
     count_unattributed_evaluations,
@@ -571,6 +572,51 @@ def test_boards_that_produced_a_lead_sort_above_boards_that_did_not(engine: Engi
     assert [item.board for item in _by_source(engine, run_id)] == [
         "greenhouse:loud", "greenhouse:huge",
     ]
+
+
+# --------------------------------------------------------------------------------------
+# P3 item 5 (B5) — the zero-output guard's predicate
+# --------------------------------------------------------------------------------------
+
+
+def _eligible_judged_this_run(engine: Engine, run_id: int) -> int:
+    with engine.connect() as conn:
+        return count_eligible_judged_this_run(
+            conn, profile_hash=PROFILE, rules_hash=RULES,
+            engine_kind=KIND, engine_version=VERSION, run_id=run_id,
+        )
+
+
+def test_an_eligible_posting_judged_by_this_run_counts(engine: Engine) -> None:
+    with engine.begin() as conn:
+        run_id = _run(conn)
+        _judge(conn, _version(conn, _posting(conn, "a"), "a"), verdict="eligible", run_id=run_id)
+
+    assert _eligible_judged_this_run(engine, run_id) == 1
+
+
+def test_an_eligible_posting_judged_by_a_prior_run_is_a_steady_state_cache_hit_not_counted(
+    engine: Engine,
+) -> None:
+    """The review's flagged false alarm: a cache-hit-only steady-state day must read as 0 new
+    eligible work for THIS run, even though eligible postings exist in the store."""
+    with engine.begin() as conn:
+        prior_run, this_run = _run(conn), _run(conn)
+        _judge(conn, _version(conn, _posting(conn, "a"), "a"), verdict="eligible", run_id=prior_run)
+
+    assert _eligible_judged_this_run(engine, this_run) == 0
+
+
+def test_an_ineligible_posting_judged_by_this_run_is_not_counted(engine: Engine) -> None:
+    """The guard's predicate is `eligible AND judged_this_run`, not merely judged_this_run —
+    fresh work that resulted in an `ineligible` verdict is not the failure mode being caught."""
+    with engine.begin() as conn:
+        run_id = _run(conn)
+        _judge(
+            conn, _version(conn, _posting(conn, "a"), "a"), verdict="ineligible", run_id=run_id,
+        )
+
+    assert _eligible_judged_this_run(engine, run_id) == 0
 
 
 def test_count_stub_postings_counts_only_open_empty_bodies(engine: Engine) -> None:

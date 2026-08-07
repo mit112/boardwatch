@@ -19,7 +19,7 @@ from typer.testing import CliRunner
 from boardwatch.cli.app import app
 from boardwatch.core.clock import utcnow
 from boardwatch.core.settings import load_settings
-from boardwatch.pipeline.runner import _slug, run_pipeline
+from boardwatch.pipeline.runner import _cohort_guard, _slug, _zero_output_guard, run_pipeline
 from boardwatch.providers.registry import build_providers
 from boardwatch.scan.coordinator import ScanLockHeldError
 from boardwatch.store import tables
@@ -632,3 +632,144 @@ def test_slug_is_filesystem_safe_and_unique_per_posting(
     company: str, posting_id: int, expected: str
 ) -> None:
     assert _slug(company, posting_id) == expected
+
+
+# --------------------------------------------------------------------------------------
+# P3 slice 3 — run-integrity guards (PROGRAM.md §3.P3 items 5, 9, 6)
+# --------------------------------------------------------------------------------------
+
+
+def test_cohort_guard_balances_when_every_candidate_reached_a_terminal_state() -> None:
+    assert _cohort_guard(frozenset({1, 2, 3}), frozenset({1, 2}), frozenset({3})) is None
+
+
+def test_cohort_guard_is_fatal_and_names_the_vanished_candidate() -> None:
+    message = _cohort_guard(frozenset({1, 2, 3}), frozenset({1, 2}), frozenset())
+
+    assert message is not None
+    assert "cohort incomplete" in message
+    assert "3" in message
+
+
+def test_cohort_guard_by_id_set_catches_a_compensating_bug_a_count_check_would_miss() -> None:
+    """The design's named mutation: reconciling by COUNT instead of by ID SET.
+
+    `visible={1,2,3}`; a mislabeled/double-counted lead lands `4` (not a shortlisted candidate
+    at all) in `leads`, and candidate `3` is lost. `len(visible) == len(leads) + len(failed)`
+    (3 == 3 + 0) balances — a count check would miss it. The id-set check still catches `3` as
+    unaccounted, which is exactly why the guard reconciles by set (reviewer Minor, resolved).
+    """
+    visible = frozenset({1, 2, 3})
+    leads = frozenset({1, 2, 4})
+    failed: frozenset[int] = frozenset()
+    assert len(visible) == len(leads) + len(failed), "the count identity should balance here"
+
+    message = _cohort_guard(visible, leads, failed)
+
+    assert message is not None, "the count-based identity balances, but a candidate is missing"
+    assert "3" in message
+
+
+def test_zero_output_guard_is_not_fatal_when_no_new_eligible_work_happened() -> None:
+    assert _zero_output_guard(0) is None
+
+
+def test_zero_output_guard_is_fatal_when_new_eligible_work_produced_no_lead() -> None:
+    message = _zero_output_guard(5)
+
+    assert message is not None
+    assert "empty day not provably right" in message
+    assert "5" in message
+
+
+def _ready_no_posting(data_dir: Path) -> None:
+    """A profile, but no posting at all — the genuinely empty-corpus case."""
+    assert _cli(data_dir, ["init"], INIT_INPUT).exit_code == 0
+    assert _cli(data_dir, ["tailor", "init"]).exit_code == 0
+
+
+def test_a_genuinely_empty_corpus_is_not_a_false_alarm(env: Path, tmp_path: Path) -> None:
+    """Honest empty day: no open postings at all, so no eligible work could exist. Exit 0."""
+    _ready_no_posting(env)
+
+    summary = _pipeline(env, tmp_path / "apps")
+
+    assert summary.shortlist is not None
+    assert summary.shortlist.shortlisted == 0
+    assert summary.tailored == []
+    assert summary.fatal is None, summary.fatal
+
+
+def test_zero_leads_with_fresh_eligible_work_this_run_is_fatal(
+    env: Path, tmp_path: Path
+) -> None:
+    """Suspicious case: an eligible posting exists and was judged BY THIS RUN, yet the ranker
+    shortlisted nothing (forced here with `--top 0`) — 0 leads is not provably right."""
+    _ready(env)
+
+    summary = _pipeline(env, tmp_path / "apps", top_n=0)
+
+    assert summary.shortlist is not None
+    assert summary.shortlist.shortlisted == 0
+    assert summary.tailored == []
+    assert summary.fatal is not None
+    assert "empty day not provably right" in summary.fatal
+
+
+def test_steady_state_where_eligible_work_is_all_prior_run_cache_hits_is_not_fatal(
+    env: Path, tmp_path: Path
+) -> None:
+    """The review's flagged false alarm (Major 3, resolved): eligible postings exist, but every
+    one was already judged by a PRIOR run under the same profile+rules identity — this run did
+    no NEW eligible work. `judged_this_run` (run_id) attribution is what tells this apart from
+    the suspicious case above, without a cross-run handled ledger.
+    """
+    _ready(env)
+    out_root = tmp_path / "apps"
+    first = _pipeline(env, out_root)
+    assert first.fatal is None, first.fatal
+    assert first.tailored, "the fixture produced no lead on run 1, so run 2 proves nothing"
+
+    second = _pipeline(env, out_root, top_n=0)
+
+    assert second.shortlist is not None
+    assert second.shortlist.shortlisted == 0
+    assert second.tailored == []
+    assert second.fatal is None, second.fatal
+
+
+def test_a_lead_whose_folder_disappeared_after_tailoring_is_filesystem_truth_fatal(
+    env: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """P3 item 6 — the DB says a lead was produced, but its folder is gone from disk. Counting
+    the deliverable through a different path than the one that produced it (CLAUDE.md)."""
+    _ready(env)
+    import shutil
+
+    import boardwatch.pipeline.runner as runner_mod
+
+    real_run_tailor = runner_mod.run_tailor
+
+    def sabotage(*args: object, **kwargs: object):
+        result = real_run_tailor(*args, **kwargs)
+        shutil.rmtree(kwargs["out_dir"])  # type: ignore[arg-type]
+        return result
+
+    monkeypatch.setattr(runner_mod, "run_tailor", sabotage)
+    summary = _pipeline(env, tmp_path / "apps")
+
+    assert summary.tailored, "nothing was tailored, so this proves nothing"
+    assert summary.fatal is not None
+    assert "filesystem-truth" in summary.fatal
+
+
+def test_a_normal_run_that_produced_leads_stays_non_fatal(env: Path, tmp_path: Path) -> None:
+    """Regression: the guards must not fire on a healthy run. Distinct from
+    `test_a_clean_run_is_recorded_as_ok`, which checks `runs.status`; this checks the guards'
+    own discriminator directly."""
+    _ready(env)
+
+    summary = _pipeline(env, tmp_path / "apps")
+
+    assert summary.tailored, "the fixture produced no lead, so this proves nothing"
+    assert summary.fatal is None, summary.fatal
