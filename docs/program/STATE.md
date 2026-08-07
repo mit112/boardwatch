@@ -590,14 +590,15 @@ domain input nor Docker.** What is left is genuinely gated on things I cannot su
   **Docker** (absent here; `docker info` fails). The documented-stance half shipped (D-041,
   `WAL_DISCIPLINE.md`); the harness half is environmentally blocked.
 
-- **THE NEXT DECISION IS MIT'S: do we build P4 (deterministic craft rubric) ahead of Gate P3?** P4's
-  items 1–7 (port `overmatch.py`, canonical vocab, guard extensions, deterministic de-senioritied title,
-  layout assertions, keyword coverage, persona registry) are **functionally independent of the unattended
-  runner** and build on the **already-met Gate P1** — so they are buildable now on their merits. But the
-  session-start ritual forbids starting a phase before its predecessor's gate is met, and Gate P3 is
-  Docker+operationally blocked, not build-blocked. Reordering the roadmap to build P4 ahead of Gate P3 is
-  a **program-structure decision reserved for Mit** (unlike tonight's within-phase declines D-044/D-045).
-  If Mit says go, P4 item 1 (`overmatch.py` port, fully deterministic, no model) is the clean first slice.
+- **P4 IS UNDERWAY (D-047, decided autonomously under Mit's "keep plowing / don't get stuck" mandate).**
+  Rationale: P4's craft rubric is functionally independent of the unattended runner and builds on the
+  already-met Gate P1; Gate P3 is blocked only by Docker (item 8) + operational runs, neither a P4 build
+  dependency; blocking all build on that is exactly "getting stuck." Reversible. **P4 item 1 DONE (D-048,
+  `03aefb0`..`15880a6`+`f1cbb3d`):** deterministic overmatch guard (verbatim ≥7-gram lift + unusual-caps
+  copy) reverts a Tier-B bullet to Tier-A with `drop_reason="overmatch"`; distinct from the pre-existing
+  invention filter; two-gate reviewed (diff-reviewer clean), `make check` green (2967 passed, 95.36%).
+  **Next: P4 item 2** (per-field canonical vocab + aliases as versioned DATA — replaces item 1's seeded
+  `canonical` source), then items 3–7. Gate P4's blind-craft-review clause stays Mit's (subjective).
 
 **Live findings still owed to Mit (unchanged):** (1) set `resume_max_pages=2` — his `resume.yaml` is 2pp,
 so at the shipped default of 1 every lead is correctly dropped (see below); (2) P1b cannot catch a bullet
