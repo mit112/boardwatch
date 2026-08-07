@@ -76,10 +76,11 @@ SHIPPED_DATA: dict[str, DataEntry] = {
     "src/boardwatch/tailor/register.yaml": DataEntry(
         kind="taxonomy",
         reason="Curated universal English-register slop catalog (banned phrases, "
-        "buzzwords, per-bullet buzzword-density ceiling) for the P4 craft guards. "
-        "Describes bad résumé register in general, not one user. Bundled-only, NOT "
-        "user-overridable (safety-critical); frozen by sha256 pin.",
-        pin="sha256:616d7f3e19ab1b56ea725f33e2586a8e5d44bff8a0faa2bf49a87ae6bd76a70e",
+        "buzzwords, per-bullet buzzword-density ceiling, qualification-register cues "
+        "for P4 item 3b) for the P4 craft guards. Describes bad résumé register in "
+        "general, not one user. Bundled-only, NOT user-overridable (safety-critical); "
+        "frozen by sha256 pin.",
+        pin="sha256:7450b5a139d1ad893e0712fb1a4c87f4c04d9045e7f1fcaaf949e206aa8fca55",
     ),
     "src/boardwatch/registry/companies.yaml": DataEntry(
         kind="company_enumeration",

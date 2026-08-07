@@ -28,6 +28,10 @@ class RegisterTable:
     banned_phrases: tuple[str, ...]
     buzzwords: tuple[str, ...]
     buzzword_density_ceiling: int
+    # P4 item 3b: the qualification-register cue catalog (see register.yaml). Not used
+    # standalone -- a hit is signal (b) of requirement_echo.py's AND-gate, never a veto
+    # on its own.
+    qualification_cues: tuple[str, ...]
     version: str
 
 
@@ -36,7 +40,11 @@ class RegisterTable:
 # anything, so existing `run_tier_b_core` callers that do not pass `register` keep
 # behaving exactly as before.
 EMPTY_REGISTER = RegisterTable(
-    banned_phrases=(), buzzwords=(), buzzword_density_ceiling=0, version="empty"
+    banned_phrases=(),
+    buzzwords=(),
+    buzzword_density_ceiling=0,
+    qualification_cues=(),
+    version="empty",
 )
 
 
@@ -68,6 +76,7 @@ def load_register() -> RegisterTable:
         raise RegisterError("register.yaml: top-level document must be a mapping")
     banned_phrases = _parse_str_list(data, "banned_phrases")
     buzzwords = _parse_str_list(data, "buzzwords")
+    qualification_cues = _parse_str_list(data, "qualification_cues")
     ceiling = data.get("buzzword_density_ceiling")
     # No bool check omission: `isinstance(True, int)` is True in Python, and a stray
     # `buzzword_density_ceiling: true` would silently become ceiling=1.
@@ -77,6 +86,7 @@ def load_register() -> RegisterTable:
         banned_phrases=banned_phrases,
         buzzwords=buzzwords,
         buzzword_density_ceiling=ceiling,
+        qualification_cues=qualification_cues,
         version=version,
     )
 
@@ -105,3 +115,12 @@ def buzzword_density_reasons(text: str, buzzwords: tuple[str, ...], ceiling: int
     if len(hits) > ceiling:
         return [f"buzzword density {len(hits)} exceeds ceiling {ceiling}: {', '.join(hits)}"]
     return []
+
+
+def qualification_cue_reasons(text: str, cues: tuple[str, ...]) -> list[str]:
+    """Any hit signals the bullet reads as a qualification/capability statement
+    ("Experience with...", "Ability to...") rather than a completed-action
+    accomplishment -- P4 item 3b's structural signal (b). Not a veto on its own: the
+    caller (`requirement_echo.py`) AND-gates this against a corroboration signal before
+    flagging anything."""
+    return [f"qualification cue: '{cue}'" for cue in cues if _phrase_pattern(cue).search(text)]

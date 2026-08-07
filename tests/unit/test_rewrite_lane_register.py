@@ -20,6 +20,7 @@ _REGISTER = RegisterTable(
     banned_phrases=("responsible for", "synergy"),
     buzzwords=("innovative", "seamless"),
     buzzword_density_ceiling=1,
+    qualification_cues=(),
     version="test",
 )
 

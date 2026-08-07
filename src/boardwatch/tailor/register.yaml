@@ -33,3 +33,19 @@ buzzwords:
 # Per-bullet ceiling (roadmap:502 scopes this explicitly per bullet, not per résumé): more
 # than 1 buzzword hit in a single bullet reads as keyword-stuffed.
 buzzword_density_ceiling: 1
+# P4 item 3b: qualification-register cues -- the stock phrasings a JD's qualifications
+# section uses ("You have experience with X") that a genuine accomplishment bullet
+# essentially never does ("Built X, cutting Y by Z%"). One of the two signals the
+# requirement-echo detector AND-gates on (see requirement_echo.py); a hit alone never
+# vetoes anything -- it must ALSO corroborate against the JD's own qualifications prose.
+qualification_cues:
+  - "experience with"
+  - "experience building"
+  - "experience in"
+  - "knowledge of"
+  - "familiarity with"
+  - "ability to"
+  - "proven ability to"
+  - "strong understanding of"
+  - "understanding of"
+  - "years of experience"

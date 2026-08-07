@@ -12,10 +12,12 @@ from boardwatch.tailor.register import (
     banned_register_reasons,
     buzzword_density_reasons,
     load_register,
+    qualification_cue_reasons,
 )
 
 _BANNED = ("responsible for", "synergy")
 _BUZZWORDS = ("innovative", "seamless", "dynamic")
+_CUES = ("experience with", "knowledge of", "ability to")
 
 
 def test_register_version_is_defined():
@@ -93,12 +95,45 @@ def test_zero_ceiling_flags_a_single_buzzword():
     assert buzzword_density_reasons("Built an innovative plan", _BUZZWORDS, 0) != []
 
 
+# -- qualification_cue_reasons (P4 item 3b) -----------------------------------
+
+
+def test_clean_bullet_has_no_qualification_cue_reasons():
+    assert qualification_cue_reasons("Built the launch plan for a growing team", _CUES) == []
+
+
+def test_qualification_cue_hit_names_the_cue():
+    reasons = qualification_cue_reasons("Experience with distributed systems", _CUES)
+    assert len(reasons) == 1
+    assert "experience with" in reasons[0]
+
+
+def test_qualification_cue_match_is_case_insensitive():
+    reasons = qualification_cue_reasons("KNOWLEDGE OF distributed systems", _CUES)
+    assert len(reasons) == 1
+
+
+def test_qualification_cue_does_not_match_inside_a_longer_word():
+    assert qualification_cue_reasons("Grew our knowledgeoftheindustry program", _CUES) == []
+
+
+def test_multiple_qualification_cues_are_all_named():
+    reasons = qualification_cue_reasons(
+        "Experience with and knowledge of distributed systems", _CUES
+    )
+    assert len(reasons) == 2
+
+
+def test_empty_qualification_cues_catalog_never_flags():
+    assert qualification_cue_reasons("Experience with everything", ()) == []
+
+
 # -- load_register -------------------------------------------------------
 
 
 def test_load_register_returns_non_empty_catalogs_with_a_version():
     table = load_register()
-    assert table.banned_phrases and table.buzzwords
+    assert table.banned_phrases and table.buzzwords and table.qualification_cues
     assert table.buzzword_density_ceiling >= 0
     assert isinstance(table.version, str) and table.version
 
