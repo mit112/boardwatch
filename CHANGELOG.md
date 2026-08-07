@@ -8,6 +8,14 @@ All notable changes to this project are documented here. The format follows
 
 ### Changed
 
+- **LLM adapter calls now retry transient 429/5xx failures with backoff instead of dropping the rewrite**
+  (P3, §3.P3 item 10, D-040). Both `AnthropicClient` and `OpenAICompatClient` classify a 429 or 5xx
+  response as `LLMTransientError` and retry through a shared `llm/retry.py` helper (tenacity,
+  `Retry-After` honored when the provider sends one, bounded at 4 attempts) before falling back to
+  today's Tier-A-keeping containment on exhaustion. The retry lives inside the adapter's own request path,
+  below the rewrite lane's per-call budget metering, so a retried call still costs exactly one budget
+  unit. Any other non-2xx status, or an invalid response body, still raises the flat, non-retryable
+  `LLMError` unchanged.
 - **The systemic-scan-outage predicate is now one function, `is_systemic_scan_outage`
   (`scan/coordinator.py`), called by both the pipeline (`run_pipeline`) and the standalone
   `boardwatch scan`** (P3, §3.P3 item 4, D-037). Previously the same "attempted > 0, complete == 0,

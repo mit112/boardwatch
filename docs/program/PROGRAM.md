@@ -302,7 +302,12 @@ and nearly every line is an incident.
    `profile_version` + `persona_version` so a re-run is not a full re-tailor; batched judging in the API
    lane (the agent lane already batches); and **split rate-limit classes** — a quota cap aborts the batch,
    a transient 429 retries with backoff. Untailored leads stay pending for a resumable re-run, and the
-   run **never silently downgrades** to the deterministic engine to finish.
+   run **never silently downgrades** to the deterministic engine to finish. **PARTIAL** (D-040) — the
+   transient-429/5xx-retries-with-backoff half of the rate-limit-class split is **DONE**: both LLM
+   adapters classify 429/5xx as `LLMTransientError` and retry through a shared `llm/retry.py` helper
+   (tenacity, `Retry-After` honored, bounded at 4 attempts), placed below the rewrite lane's per-call
+   budget metering so a retried call still costs one unit. Still open: the quota-abort half, resumable
+   idempotence, and the never-silently-downgrade guarantee — P3 slice 5b, a Mit fork deliberately deferred.
 
 **Gate P3:** **7** consecutive unattended runs with **0** silent empty days, **0** runs reporting success
 while producing nothing, **0** stale-day feeds, and the two-writer test green. (Seven, not fourteen — the

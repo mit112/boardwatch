@@ -10,10 +10,15 @@ from typing import Any
 
 import httpx
 
-from boardwatch.llm.client import LLMError
+from boardwatch.llm.client import LLMError, LLMTransientError
+from boardwatch.llm.retry import parse_retry_after, request_with_retry
 
 # Timeout for HTTP requests in seconds
 _TIMEOUT = 30.0
+
+# Retryable per D-040: rate limit + server-side transients. Anything else is
+# a non-retryable LLMError.
+_RETRYABLE_STATUSES = frozenset({429, 500, 502, 503, 504})
 
 
 class OpenAICompatClient:
@@ -74,10 +79,16 @@ class OpenAICompatClient:
 
         # Use the provided client or create a new one
         client = self._client or httpx.Client()
-        try:
+
+        def _do_request() -> str:
             response = client.post(url, json=payload, headers=headers, timeout=_TIMEOUT)
 
-            # Check for HTTP errors
+            # Transient (retryable) vs. flat (non-retryable) HTTP errors
+            if response.status_code in _RETRYABLE_STATUSES:
+                raise LLMTransientError(
+                    f"HTTP {response.status_code}: {response.text}",
+                    retry_after=parse_retry_after(response),
+                )
             if response.status_code < 200 or response.status_code >= 300:
                 raise LLMError(f"HTTP {response.status_code}: {response.text}")
 
@@ -95,6 +106,9 @@ class OpenAICompatClient:
                 return content
             except (KeyError, IndexError, TypeError) as e:
                 raise LLMError("Invalid response body: missing choices[0].message.content") from e
+
+        try:
+            return request_with_retry(_do_request)
         finally:
             # Only close the client if we created it
             if self._owned_client:

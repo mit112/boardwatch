@@ -1706,3 +1706,82 @@ stored verdict, or the tailor/PDF logic — every guard is read-only over facts 
 already computed, and every guard can only move a run from `ok` to `failed`, never the reverse. P3 slice 5
 (LLM economics, item 10) and item 8 (single-writer discipline) are what remains of the phase; slice 2
 (lock/reaper) stays flagged unsound (D-036's session, "STATE: P3 slice 2 design found UNSOUND by review").
+
+## D-040 — LLM transient-error retry-with-backoff, ported from politeness into a shared adapter helper
+
+**2026-08-07 · session 16 · P3 slice 5a part 1 ("P3-llm-retry").**
+
+**Context.** `llm/anthropic.py` and `llm/openai_compat.py` both raised a flat `LLMError` for ANY non-2xx
+HTTP status — no distinction between a 429/5xx transient that would likely succeed on retry and a genuinely
+bad request. Every rewrite in the Tier-B lane that hit a rate limit or a momentary server hiccup lost its
+reword and fell back to the Tier-A bullet, for a failure that a retry would usually have recovered. Item 10
+of PROGRAM.md §3.P3 names exactly this split: "a quota cap aborts the batch, a transient 429 retries with
+backoff." `core/politeness.py` already had the identical pattern for the board fetcher — a distinguishable
+retryable-status exception, `tenacity.Retrying` with `wait_exponential_jitter(initial=0.5, max=8.0)`,
+`Retry-After` honored over the exponential wait — so this is a port, not a new design.
+
+**Choice.**
+
+1. **`LLMTransientError(LLMError)`** (`llm/client.py`), carrying an optional `retry_after: float | None`.
+   `LLMError` stays the flat, non-retryable base — existing callers catching `LLMError` (the rewrite lane's
+   containment boundary, `tests/unit/test_llm_adapters.py`'s original 5xx/invalid-body tests) keep working
+   unchanged, since `LLMTransientError` IS-A `LLMError`.
+2. **One shared helper, `llm/retry.py`**, not duplicated across the two adapters: `request_with_retry(fn,
+   *, attempts=DEFAULT_ATTEMPTS)` runs `fn`, retrying ONLY on `LLMTransientError` (`retry_if_exception_type`
+   — a plain `LLMError` is not an instance of the subclass and is never retried), honoring the exception's
+   `retry_after` over `wait_exponential_jitter` when the provider sent one, capped at `DEFAULT_ATTEMPTS = 4`
+   total tries, then re-raising the last error. `parse_retry_after` is a small local copy of
+   `politeness.py`'s version (same header, same HTTP-date-ignored fallback) rather than a cross-import — the
+   module's own docstring states it must never import `boardwatch.store`, mirroring `politeness.py`'s
+   fetch-side boundary (not mechanically enforced by `test_import_hygiene.py`'s `FETCH_ONLY_MODULES` list,
+   since neither adapter has ever had a reason to import store).
+3. **Both adapters classify status BEFORE the existing body-parsing try/except**: `status_code in
+   {429,500,502,503,504}` → `LLMTransientError` with `parse_retry_after(response)`; any other non-2xx →
+   the unchanged flat `LLMError`; an invalid JSON body or a missing content path stays `LLMError` too — a
+   malformed 200 is not a transient failure, retrying it would just replay the same malformed body.
+4. **Placement is BELOW the rewrite lane's budget metering, not beside it.** `tailor/rewrite/lane.py`'s
+   `_guarded` wraps `client.complete()` and increments `state["calls"]` exactly once per invocation,
+   regardless of what happens inside that call. The retry loop lives entirely inside `complete()` (wrapping
+   only the HTTP request + response classification, not the `httpx.Client` construction/teardown around
+   it), so N HTTP attempts for one logical rewrite-or-judge call still cost 1 budget unit. Confirmed by
+   inspection, not just argued: `_guarded`'s counter is a variable captured by `lane.py`'s own closure, with
+   no visibility into the adapter at all — there is no code path by which a retry inside `complete()` could
+   touch it.
+
+**Rejected.** Duplicating the tenacity `Retrying` setup separately in `anthropic.py` and `openai_compat.py`
+— rejected because the two adapters' retry semantics are identical (same statuses, same backoff, same
+`Retry-After` rule), and a single shared helper is the only way a future third adapter doesn't need to
+re-derive the pattern a third time. Importing `core/politeness.py`'s `_parse_retry_after` directly instead
+of a local copy — rejected: it is private (underscore-prefixed) to that module, and importing across the
+fetch/LLM boundary for one four-line pure function creates a coupling the boundary comment exists to avoid,
+for no benefit over duplicating four lines. Adding a `Settings` field for the attempt cap, mirroring
+`Fetcher`'s `retry_attempts` — rejected as unrequested configurability; item 10 asks for a bounded cap, not
+an operator-tunable one, and `DEFAULT_ATTEMPTS` is a plain constant importable by tests without one.
+
+**Verified.** TDD: `tests/unit/test_llm_retry.py` unit-tests the shared helper directly (transient-then-
+succeed, `retry_after` honored over the exponential wait, attempts exhausted re-raises `LLMTransientError`,
+a non-transient `LLMError` propagates on the first call with no retry) with `time.sleep` monkeypatched to a
+no-op or a recorder throughout — no real sleeps, no network. `tests/unit/test_llm_adapters.py` adds the
+same coverage at the adapter layer for BOTH `OpenAICompatClient` and `AnthropicClient` (429-then-success,
+all four 5xx variants parametrized, `Retry-After` honored, exhausted attempts surface `LLMTransientError`,
+a 400 fails on the first call and is confirmed NOT an `LLMTransientError`), plus updates the two pre-existing
+5xx tests to assert `route.call_count == DEFAULT_ATTEMPTS` and the pre-existing invalid-JSON-body test to
+assert `route.call_count == 1` — the old flat-`LLMError`-on-5xx assertion still holds (subclass), it just
+now also retries first. Mutation-verified live in this session, not just narrated: widening
+`retry_if_exception_type(LLMTransientError)` to `retry_if_exception_type(Exception)` failed both
+`test_non_transient_error_is_not_retried` and `test_openai_compat_non_retryable_400_fails_fast`; raising
+`stop_after_attempt(100)` in place of the `attempts` parameter failed
+`test_attempts_exhausted_reraises_transient_error`; adding `400` to `openai_compat.py`'s
+`_RETRYABLE_STATUSES` failed `test_openai_compat_non_retryable_400_fails_fast` with the exact "got
+`LLMTransientError`, expected not" assertion. All three mutations reverted before proceeding. `make check`:
+generalization OK, ruff clean, mypy `--strict` clean, **2933 passed, 1 deselected**, coverage **95.36%**,
+run in the foreground with output redirected to a file (never piped), exit **0**.
+
+**Consequence.** PROGRAM.md §3.P3 item 10's rate-limit-class clause is PARTIALLY done — "a transient 429
+retries with backoff" now holds for both adapters; "a quota cap aborts the batch" and the never-silently-
+downgrade requirement are P3 slice 5b, deliberately out of scope here (a Mit fork on the never-downgrade
+policy). Idempotence (meta-hash keyed on JD + template + model + prompt version + `profile_version` +
+`persona_version`) and batched judging are also still open, unaffected by this change. No change to
+`tailor/rewrite/lane.py`'s containment semantics, budget accounting, or `run_tailor` — a retry can only
+RECOVER a call that would otherwise have landed on `drop_reason="error"`; on exhaustion, the lane sees the
+exact same `Exception` it always caught and takes the exact same Tier-A-keeping path.
