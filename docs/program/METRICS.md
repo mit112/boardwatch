@@ -661,3 +661,27 @@ changing the hash. It is **not** a gap for the rules catalog policy: `rules_hash
 `{catalog_version, catalog_source, policy}` (`eligibility/hashing.py`). That argues for carrying
 `rules_hash` in the manifest rather than the bare `RulesCatalog.version` — a free upgrade, not a
 constraint.
+
+---
+
+## Session 8 — 2026-08-06 · P0 items 4, 6, 8 (artifact v3) + the scan-run gate
+
+**Build.** Artifact v3 (`ARTIFACT_VERSION` 2→3) shipped items 4 (run manifest), 6 (stub rate) and 8
+(fabrication counters) as one change (commit `faa4394`). `make check` exit 0: **2766 passed, coverage
+95.08%, `generalization: OK`**. Independent review of the commit: clean, no substantive defects. Config
+hash covers a closed classification of all 13 `Settings` + 8 `LLMTier` fields (fails on drift); the new
+`profile_row_hash` closes the `exclude_titles` gap the session-7 analysis flagged (D-030).
+
+**The scan-run gate clause (Gate P0 clause 1).** Three consecutive **real** `boardwatch run --top 5`
+invocations (no `--no-scan`) launched from the `boardwatch-scan` worktree pinned to `66291bf`, exercising
+the scan stage under the gate for the first time. Run 1 grew the live store ~70 MB with an active WAL,
+confirming the scan stage genuinely fetched and wrote.
+
+| run | reconciles | scan boards (attempted/complete/failed) | corpus | leads | exit |
+|---|---|---|---|---|---|
+| 1 | _pending_ | _pending_ | _pending_ | _pending_ | _pending_ |
+| 2 | _pending_ | _pending_ | _pending_ | _pending_ | _pending_ |
+| 3 | _pending_ | _pending_ | _pending_ | _pending_ | _pending_ |
+
+**Fill this table from each run's `funnel-<run_id>.md` before marking Gate P0's clause 1 met.** The runs
+were unattended and may not have finished when this was written; a `_pending_` row is not a pass.

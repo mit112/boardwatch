@@ -112,17 +112,18 @@ nine items numbered 0-8, and **item numbers are stable** — later documents cit
    **deleted before merge because it could not fail** — D-028 is the entry that deletes it, and the
    surviving leads check is a guard against a future writer rather than live evidence.
 4. **Run manifest**: config hash, profile version, rule-catalog version, code fingerprint of
-   decision-relevant modules, start/end, exit status. **HALF DONE** — **exit status shipped** as
-   `runs.status`, a closed catalog `running | ok | failed` whose default is what a SIGKILLed run reports
-   (D-029). The manifest itself — the config hash and emission as an artifact section — is **not built**.
-   Most of the rest already exists and must be reused, not rebuilt: the code fingerprint is
-   `eligibility/engine.py`'s AST digest over a closed declared module list, the rule-catalog version is
-   `RulesCatalog.version`, the profile version is `profile_hash`, and start/end are already read into the
-   funnel. **The config hash is the only genuinely new piece**, and `METRICS.md` §"Session 7" carries the
-   measured closed list of decision-relevant `Settings` fields it must cover.
+   decision-relevant modules, start/end, exit status. **DONE** (D-029 exit status; D-030 the manifest
+   section, `ARTIFACT_VERSION` 2→3). The code fingerprint is `engine_version()`'s AST digest, the
+   rule-catalog version is `rules_hash`, the profile version is `profile_facts_hash`, start/end and
+   `runs.status` come off the `runs` row — all reused. Two hashes were new: `config_hash` over a **closed
+   classification of all 13 `Settings` + 8 `LLMTier` fields** (fails on drift), and `profile_row_hash` over
+   the five ranker columns incl. `exclude_titles`, closing the gap `profile_hash` left. Residual gap named
+   in the artifact: the skill-taxonomy version.
 5. **Reconciliation check** — an invariant sweep asserting DB rows and on-disk artifacts agree. Counts
    from a different path than the one that produced them (job-apps spec-3 §6: self-report ≠ verification).
 6. **Stub-rate metric** at judge time — one number, reported every run. Cheap insurance; see §6 correction 4.
+   **DONE** (D-030) — open postings with an empty `body_text` over the corpus head, in the artifact; `None`
+   over an empty corpus, never 0%.
 7. **`run_id` migration** (Alembic, nullable) on `eligibility_evaluations` and `artifacts`, **and the
    threading that populates it** — the column alone changes no behaviour, so the migration is not this
    item, only half of it. **DONE.** Without it,
@@ -133,6 +134,9 @@ nine items numbered 0-8, and **item numbers are stable** — later documents cit
 8. **Fabrication-gate counters** in the funnel artifact: rejections and fail-safe fallbacks per lane.
    `rewrite/lane.py:29-37`'s `RewriteRow.drop_reason` already carries the data. job-apps §12 lists this as
    a day-one metric that cannot be retrofitted, and it is the only mechanism that ever feeds bar metric B4.
+   **DONE** (D-030) — Tier-B `drop_reason`s folded into a closed catalog with the two truth-gate rejections
+   (judge, overmatch filter) counted apart from fallbacks; an unrecognised reason is a FAILURE, not a new
+   bucket. Tier A's `TierASafetyError` fail-safe still has no counter (stated gap).
 
 ### Bar → phase → gate traceability
 

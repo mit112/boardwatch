@@ -910,3 +910,48 @@ only) share that signature. Separating them needs P3's reaper. **This column doe
 
 **Item 4 is HALF done.** The manifest itself — config hash, and emission as an artifact section with
 `ARTIFACT_VERSION` 2→3 — is not built. Do not mark item 4 complete.
+
+## D-030 — the run manifest ships two hashes, closing the profile-row gap rather than only noting it
+
+**Context.** P0 item 4's remaining half — the config hash and the artifact section — carried one open
+scope call (recorded at session-7 handoff): the manifest's "profile version" is `profile_hash`, an
+eligibility-*facts* hash, and the ranker reads five profile columns (`skills`, `target_titles`,
+`exclude_titles`, `locations`, `remote_only`) that no existing hash covers. `exclude_titles` alone drives
+the single largest drop in the funnel (session 7: 11,517 rejections), so a manifest carrying only
+`profile_hash` would report two runs as identical while the setting responsible for that drop changed
+underneath it. The fork: ship the config hash and *document* the gap, or add a profile-row hash and *close*
+it.
+
+**Choice: close it.** `get_profile(conn)` was already in scope in `funnel_writer`, so `profile_row_hash`
+over the five columns is a few lines and needs no new query. Shipping it is strictly more instrumentation
+than documenting a gap, and it directly answers the measured problem. The manifest therefore carries BOTH
+`profile_facts_hash` (what eligibility scoped by) and `profile_row_hash` (what the ranker read). The one
+residual gap that is NOT closed — the **skill-taxonomy version** (`taxonomy.yaml` can change which postings
+score as covered without moving either hash) — is stated in the artifact's own manifest note rather than
+left implicit.
+
+**The config hash is a closed catalog that fails on drift.** `reports/manifest.py` encodes the METRICS
+§"Session 7" classification of all 13 `Settings` + 8 `LLMTier` fields as IN/OUT sets, and `config_hash`
+raises `UnclassifiedSettingError` if any field is in neither. A `Settings` field added later cannot be
+swept silently into or out of the hash — the build breaks until someone decides whether it changes which
+postings become leads. `rules_hash` (covering `{catalog_version, catalog_source, policy}`) is carried in
+preference to the bare `RulesCatalog.version`, as the session-7 analysis recommended.
+
+**Stub definition (item 6): an OPEN posting whose `body_text` is empty after trimming.** `body_text` is
+NOT NULL, so a stub is a whitespace-only body, never a missing row; the numerator is denominated over
+`count_open_postings` so the two share the corpus head. The query uses SQLite's **two-arg** `trim` with an
+explicit strip set (` \t\n\r\f\v`) — the one-arg form removes spaces only, so a tab/newline body would
+otherwise slip through as non-empty (caught by a test that inserts exactly that). §6 correction 4: this is
+insurance, expected near zero for structured ATS JSON.
+
+**Fabrication counters (item 8): the Tier-B `drop_reason` strings are mapped into a closed outcome
+catalog** in `build_fabrication_counters`, with `judge_rejected` and `overmatch_filtered` (the two truth
+gates B4 measures) counted apart from the `budget`/`error`/`no_candidate` fallbacks. Any `drop_reason` the
+catalog does not name lands in `other` and prints a FAILURE line — out-of-catalog is a failure, never a
+new bucket (`CLAUDE.md`). Tier A is structural and cannot fabricate, so it is not counted; its own
+`TierASafetyError` fail-safe still has no counter, which remains a stated gap.
+
+**Item 5 (the reconciliation sweep) was deliberately NOT folded into artifact v3.** It is a DB-rows-vs-
+on-disk-artifacts invariant sweep counting through a different path; the artifact's existing `cross_checks`
+are per-run pipeline-memory-vs-store. Keeping them separate means item 5 ships as a standalone verifier and
+does not collide with the v3 batch. It is the next P0 item.

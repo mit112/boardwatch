@@ -1,10 +1,11 @@
 # PROGRAM STATE — read this first
 
-**Last updated:** 2026-08-06 (session 7, P0 in progress)
+**Last updated:** 2026-08-06 (session 8, P0 in progress)
 **Updated by:** boardwatch (Claude)
-**Repo state at write time:** every P0 item claimed done below (0, 1, 2, 3, 7) is merged to `main`, plus
-the **exit-status half of item 4** (D-029). Item 4 itself is **NOT** done. Verify with
-`git log --oneline -3` and `git status` — if they disagree, the repo wins.
+**Repo state at write time:** every P0 item claimed done below (0, 1, 2, 3, **4**, **6**, 7, **8**) is
+merged to `main`. Item 4 is now **fully** done — the manifest section shipped this session (D-030). Only
+item **5** (the reconciliation sweep) remains. Verify with `git log --oneline -3` and `git status` — if
+they disagree, the repo wins.
 **This header carries no commit count or sha on purpose** — the previous one named both, went stale inside
 a single session when three later docs commits did not update it, and a cold session following the
 session-start ritual hit the disagreement on its very first check. State what is durably true; verify the
@@ -26,45 +27,43 @@ mode with the real exit code.
 `PROGRAM.md` §3.P0. Item 0 was added later, by D-016. Always cite `PROGRAM.md`'s numbers — an earlier
 version of this file invented its own and collided with them on the gate item.
 
-**Five of the nine are done:** item **0** (the pipeline-run row and `boardwatch run`), item **1** (the
+**Eight of the nine are done:** item **0** (the pipeline-run row and `boardwatch run`), item **1** (the
 per-run funnel artifact), item **2** (per-rule abstain rate), item **3** (the per-source outcome table
-*and* the ranker's population accounting), and item **7** (the `run_id` migration *and* the threading that
-populates it).
+*and* the ranker's population accounting), item **4** (the run manifest — completed this session), item
+**6** (the stub rate), item **7** (the `run_id` migration *and* the threading that populates it), and item
+**8** (the fabrication counters).
 
-**Four remain:** item **4** the run manifest — **half built, see below**, item **5** the reconciliation
-sweep, item **6** the stub rate, item **8** the fabrication counters.
+**One remains:** item **5**, the reconciliation sweep.
 
-**Item 4 is HALF done and must not be marked complete.** Session 7 shipped its exit-status half: `runs`
-now carries a `status` column over the closed catalog `running | ok | failed` (**D-029**). What is NOT
-built is the manifest itself — the config hash, and emission as a section of the funnel artifact with
-`ARTIFACT_VERSION` bumped 2→3.
+**Item 4 is now fully DONE (session 8, D-030).** Its exit-status half (`runs.status`) shipped in session
+7; this session shipped the manifest itself as a section of the funnel artifact, with `ARTIFACT_VERSION`
+bumped 2→3. Everything the spec line asked for was reused, not rebuilt, except the two genuinely-new
+hashes:
 
-Most of what the spec line asks for **already exists and must be reused, not rebuilt**:
-
-| Manifest field | Status |
+| Manifest field | Shipped as |
 |---|---|
-| code fingerprint of decision-relevant modules | **exists** — `eligibility/engine.py`'s AST digest over the closed list `("catalog.py", "detect.py", "resolve.py", "engine.py")` |
-| rule-catalog version | **exists** — prefer `rules_hash`, which covers `{catalog_version, catalog_source, policy}`, over the bare `RulesCatalog.version` |
-| profile version | **exists** — `profile_hash` |
-| start / end | **exists** — already read into the funnel |
-| exit status | **DONE this session** — `runs.status` |
-| config hash | **the only genuinely new piece** |
+| code fingerprint of decision-relevant modules | `engine_version()`'s AST digest (reused) |
+| rule-catalog version | `rules_hash` — `{catalog_version, catalog_source, policy}` (reused, preferred over bare version) |
+| profile version | `profile_facts_hash` (the eligibility `profile_hash`, reused) |
+| start / end | already read into the funnel (reused) |
+| exit status | `runs.status` (session 7) |
+| config hash | **NEW** — over a closed classification of all 21 `Settings`+`LLMTier` fields; fails on drift |
+| profile-row hash | **NEW** — over the five ranker columns incl. `exclude_titles`, closing the measured gap (D-030) |
 
-`METRICS.md` §"Session 7 — what a config hash can honestly cover" carries the measured closed list of
-decision-relevant `Settings` fields and the gap statement to ship with it. Note the finding there:
-**`exclude_titles` is in no hash that exists today**, and it is the sole cause of the largest drop in the
-funnel.
+**The `exclude_titles` gap is now closed, not merely documented.** `profile_row_hash` covers the five
+profile columns the ranker reads. The one residual gap — the **skill-taxonomy version** — is named in the
+artifact's own manifest note. Item 6 (stub rate) and item 8 (fabrication counters) shipped in the same
+change; see `CHANGELOG.md` and D-030.
 
 **Gate P0 is still NOT met, but only ONE of its three clauses is now outstanding** (it was two).
 `PROGRAM.md` §3.P0 gives the gate three clauses:
 
-1. *Three consecutive runs reconciling to 100%.* **STILL OUTSTANDING — the only one.** The artifact
-   reconciles and has now done so on consecutive live runs in two separate sessions, but every one of them
-   ran `--no-scan` against a copy of the production store, so **the scan stage has never been exercised
-   under the gate**. This needs three consecutive runs of the real daily driver, which is P3's to
-   schedule. **Expected** to need no code change — it looks like a scheduling and observation task — but this is an
-   expectation, not a finding: `ScanContext` is deliberately not a funnel edge, so what a scan-on run adds
-   to the reconciliation has never been observed.
+1. *Three consecutive runs reconciling to 100%.* **IN PROGRESS this session — the only clause left.**
+   Session 8 launched three consecutive **real** `boardwatch run --top 5` invocations (no `--no-scan`)
+   from a worktree pinned to `66291bf`, so the scan stage is exercised under the gate for the first time —
+   every prior gate run used `--no-scan` against a frozen store copy. Confirmed the scan stage genuinely
+   ran (the live store grew ~70 MB with an active WAL during run 1). **See `METRICS.md` §"Session 8" for
+   the reconciliation outcome of each run once complete.** No code change was needed, as expected.
 2. *Why every non-lead was dropped, from the artifact alone.* **NOW MET** (session 6, item 3). The
    `shortlist` stage enters at the ranker's own considered population — **19,262**, against 3,301 measured
    in session 5 — and names all five of its exits. **15,959 postings that previously landed in no bucket
@@ -432,16 +431,17 @@ changes adopted, none contested.
 
 ## Next action
 
-**P0 item 4 — finish the run manifest.** Its exit-status half shipped in session 7 (`runs.status`,
-D-029). What remains is **the config hash and the artifact section**: add a manifest block to the funnel
-artifact carrying config hash, profile version (`profile_hash`), rule-catalog version
-(`RulesCatalog.version`), the code fingerprint (`eligibility/engine.py`'s existing AST digest),
-start/end, and `runs.status`; bump `ARTIFACT_VERSION` 2→3 and update the assertion in
-`tests/unit/test_run_funnel.py` that pins it. Reuse the existing machinery — see the table under
-"Current phase". `funnel_writer.py` already has the catalog, the identity and the `runs` row in scope.
+**P0 item 5 — the reconciliation sweep.** The last P0 build item. An invariant sweep asserting DB rows
+and on-disk artifacts agree, counting from a **different path** than the one that produced them
+(`CLAUDE.md`: self-report ≠ verification). D-030 settled that it ships as a **standalone verifier**, NOT as
+an extension of the funnel artifact's existing `cross_checks` — those are per-run pipeline-memory-vs-store,
+while item 5 is a broader DB-vs-disk invariant. Keeping them separate avoids colliding with the just-shipped
+artifact v3.
 
-Then, still open in P0: item **5** the reconciliation sweep, item **6** the stub rate, and item **8** the
-fabrication counters.
+**Also outstanding: observe the three scan runs to completion and record their reconciliation in
+`METRICS.md` §"Session 8".** That closes Gate P0's last clause (above). The runs were launched in session 8
+from the `boardwatch-scan` worktree; if they had not finished when this was written, a later session must
+confirm all three reconciled with the scan stage exercised before marking the gate met.
 
 **`hidden_hard_filter` has now been looked at (session 7). Still P5's to fix, not a defect to fix now.**
 It dropped **11,517 of 19,262 open postings — 60% of the corpus**, the largest single drop anywhere in the
@@ -506,7 +506,7 @@ computable but the typed abstain *reason* the keystone invariant wants is not.
 
 | Phase | Status | Gate met? |
 |---|---|---|
-| P0 Instrumentation | **in progress** — items 0, 1, 2, 3, 7 of 0-8 done | **not met** — one clause left: three consecutive runs of the real driver, scan stage included (P3 schedules it) |
+| P0 Instrumentation | **in progress** — items 0, 1, 2, 3, 4, 6, 7, 8 of 0-8 done; only item 5 left | **not met** — one clause left: three consecutive real-driver runs (scan stage included), launched session 8, outcome pending in METRICS §"Session 8" |
 | P1 Résumé artifact gate | not started | — |
 | P2 Profile + keystone invariant | not started | — |
 | P3 Unattended one command | not started | — |

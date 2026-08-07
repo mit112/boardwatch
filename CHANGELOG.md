@@ -8,6 +8,29 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- **A run manifest, a stub rate and fabrication counters in the funnel artifact** (artifact v3;
+  `ARTIFACT_VERSION` 2→3) — P0 items 4, 6 and 8, batched because all three add a section to the same
+  artifact.
+
+  - **Manifest** (item 4): the versioned identity a run ran under, so two runs can be compared for
+    reproducibility from the artifact alone — code fingerprint, `rules_hash`, `profile_facts_hash`,
+    start/end and `runs.status`, all reused, plus two new hashes. `config_hash` covers the
+    decision-relevant `Settings` fields over a **closed classification of all 21 `Settings`+`LLMTier`
+    fields** that raises `UnclassifiedSettingError` on any unclassified field. `profile_row_hash` covers
+    the five profile columns the ranker reads (`skills`, `target_titles`, `exclude_titles`, `locations`,
+    `remote_only`) — none of which `profile_hash` covers, though `exclude_titles` drives the largest drop
+    in the funnel. The one residual gap, the skill-taxonomy version, is named in the manifest note (D-030).
+
+  - **Stub rate** (item 6): open postings with an empty JD body over the corpus head, one number every
+    run — `None` over an empty corpus, never 0%. Expected near zero for structured ATS JSON; a non-trivial
+    value is the signal a scraped source has appeared. The query uses SQLite's two-arg `trim` so a
+    tab/newline-only body counts as a stub.
+
+  - **Fabrication counters** (item 8, feeds bar metric B4): the Tier-B rewrite `drop_reason`s folded into a
+    closed catalog, with the two truth-gate rejections (fail-closed entailment judge, deterministic
+    overmatch filter) counted apart from the budget/error/no_candidate fallbacks. An unrecognised
+    `drop_reason` lands in `other` and prints a FAILURE line rather than being absorbed silently.
+
 - **A terminal exit status on every run row.** `runs.status` over the closed catalog
   `running | ok | failed`, so the ledger can separate "finished clean", "finished with errors",
   "crashed" and "still running". Out-of-catalog raises `UnknownRunStatusError` at the write site rather
