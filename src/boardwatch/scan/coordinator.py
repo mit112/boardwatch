@@ -44,6 +44,18 @@ class ScanLockHeldError(Exception):
     """Raised when another scan process holds the scan lock (D20). Added in Task 9."""
 
 
+def is_systemic_scan_outage(*, attempted: int, complete: int, unchanged: int) -> bool:
+    """CLAUDE.md's fail-safe table: "systemic outage => fatal (prevents the silent empty day)".
+
+    Boards were attempted and NOT ONE completed (nor was left unchanged) is a DNS/network
+    failure, not a few dead slugs. A few dead boards are NOT this: Workday returns `partial`
+    routinely, and only "attempted some, completed/unchanged none" is the outage. This is the
+    single predicate both `run_scan` (standalone) and `run_pipeline` classify a run's outcome
+    by, so the two callers can never disagree on the same event (D-037).
+    """
+    return attempted > 0 and complete == 0 and unchanged == 0
+
+
 @dataclass
 class ScanSummary:
     companies: int = 0
@@ -239,14 +251,16 @@ def _scan_body(
         errors=summary.errors,
         finished=finish,
         # CLAUDE.md's fail-safe table: "systemic outage => fatal". `run_pipeline` already
-        # classifies this exact state as fatal, so without it here the SAME event records
-        # `ok` under `boardwatch scan` and `failed` under `boardwatch run`, and a query for
-        # failed runs misses every totally-failed standalone scan. A few dead boards are NOT
-        # this: Workday returns `partial` routinely, and only "attempted some, completed
-        # none" is the outage.
+        # classifies this exact state as fatal via the same `is_systemic_scan_outage`
+        # predicate (D-037), so the SAME event can never record `ok` under `boardwatch scan`
+        # and `failed` under `boardwatch run`.
         status=(
             RUN_FAILED
-            if summary.companies > 0 and summary.complete == 0 and summary.unchanged == 0
+            if is_systemic_scan_outage(
+                attempted=summary.companies,
+                complete=summary.complete,
+                unchanged=summary.unchanged,
+            )
             else RUN_OK
         ),
     )

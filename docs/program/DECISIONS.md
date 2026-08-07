@@ -1448,3 +1448,61 @@ throughout — still presentation-only. `make check`: `generalization: OK`, ruff
 files), **2872 passed, 1 deselected**, coverage 95.39%, run in the foreground with output redirected
 directly to a file (`> log 2>&1`, no pipe) so the captured exit code is `make`'s own, not a downstream
 `tee`'s — exit **0**.
+
+---
+
+## D-037 — the fatal-vs-non-fatal contract is written, and the outage predicate is one function
+
+**2026-08-07 · session 13 · P3 slice 1 ("P3-contract").**
+
+**Context.** PROGRAM.md §3.P3 item 3 asks for the fatal-vs-non-fatal policy to be *written* (job-apps
+spec-3 §12 as the starting table) before any more P3 code is built on top of it — today the policy exists
+only as code comments citing CLAUDE.md's fail-safe table, scattered across `runner.py` and
+`cli/run_cmd.py`, with nothing a reader can check the code against. Item 4 asks for the systemic-outage
+guard to read the decision field, not a status field — it already did (`runner.py` reads
+`scan_summary.complete`/`unchanged`, not any stored `status`), but the exact same predicate,
+`attempted > 0 and complete == 0 and unchanged == 0`, was written out twice: once in
+`pipeline/runner.py` (deciding `summary.fatal` for the pipeline) and once in `scan/coordinator.py`
+(deciding `RUN_FAILED` for a standalone `boardwatch scan`). Two copies of one predicate is exactly the
+drift risk PROGRAM.md's own comment at the second site already warned about ("without it here the SAME
+event records `ok` under `boardwatch scan` and `failed` under `boardwatch run`") — the warning was
+correct, but nothing enforced it.
+
+**Choice.** Two changes, both derived from the code rather than inventing new policy:
+
+1. **`docs/program/RUN_CONTRACT.md`** — a new program doc citing exact `file:line` for each of the four
+   existing fatal conditions (systemic scan outage, no profile, typst unavailable, every-lead-failed) plus
+   the crash path, the non-fatal norm (per-lead/per-board errors), the lock-held case (exit 2, no run
+   row), and the exit-code table (0/1/2). It also states the known gap the design doc already
+   flagged — `running` + NULL `finished_at` collapses three situations (in-flight / SIGKILL / a
+   standalone lane's unhandled raise, `store/queries.py:111-117`) — and says explicitly that resolving it
+   is P3 slice 2's run reaper, not this slice, so the contract does not overclaim completeness it doesn't
+   have.
+2. **`is_systemic_scan_outage(*, attempted, complete, unchanged) -> bool`**, a pure function added to
+   `scan/coordinator.py` (importable from `pipeline/runner.py` without a cycle, since `runner.py` already
+   imports from `coordinator.py`). Both call sites now call it instead of repeating the boolean
+   expression; the expression itself is byte-for-byte what was already there — `attempted > 0 and
+   complete == 0 and unchanged == 0` — so no run's fatal/failed classification changes.
+
+**Rejected.** A module docstring in place of a standalone doc — rejected because PROGRAM.md's own item 3
+wants the contract checkable independent of which module happens to house the runner today, and a table
+with a `file:line` column reads better as a doc than as a comment block. Placing the helper in a new
+`scan/outcomes.py` module — rejected as an unrequested abstraction for one four-line function; putting it
+in `coordinator.py` (which both callers can already reach) needed no new module and no import-cycle
+workaround.
+
+**Verified.** `tests/unit/test_scan_outage.py` (new) exercises the helper directly: true only when
+attempted>0 and complete==0 and unchanged==0, false when attempted==0, false when complete>0, false when
+unchanged>0. TDD-style RED confirmed by mutating the helper's `return` to `return True` in place — 4 of
+the 5 new tests failed as expected, plus the pre-existing
+`tests/pipeline/test_pipeline_run.py::test_a_dead_board_is_reported_but_does_not_fail_the_run` (a healthy
+board alongside dead ones must NOT be fatal) also failed under the mutation, confirming the existing
+outage-behavior test still discriminates through the new call site. Reverted the mutation; GREEN restored
+(48/48 across the three affected test files). `make check`: `generalization: OK`, ruff clean, mypy clean
+(159 source files), **2877 passed, 1 deselected**, coverage **95.39%**, run in the foreground with output
+redirected directly to a file (no pipe, so the captured exit code is `make`'s own) — exit **0**.
+
+**Consequence.** PROGRAM.md §3.P3 items 3 and 4 are DONE. No behavior change to any run's `fatal`/`status`
+outcome — this closes a documentation gap and a duplication risk, nothing else. P3 slice 2
+(`P3-lock-liveness`, the run reaper) is unblocked to build against a written contract instead of inferring
+one from comments.

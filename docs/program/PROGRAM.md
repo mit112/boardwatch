@@ -261,8 +261,12 @@ and nearly every line is an incident.
    primitive wholesale would contradict this repo's own reuse-first default.
 2. **Freshness, not existence** — is this artifact from *this* run?
 3. **Written fatal-vs-non-fatal contract** before coding it (job-apps spec-3 §12 is the starting table).
+   **DONE** (D-037) — `docs/program/RUN_CONTRACT.md`, derived from and cited against the four existing
+   fatal conditions; the `running`+NULL-`finished_at` gap is named there but left to slice 2's run reaper.
 4. **Systemic-outage guard** reading the **decision** field, not the status field. Status is a policy
-   output and is blind to a total outage by construction.
+   output and is blind to a total outage by construction. **DONE** (D-037) — the predicate was already
+   correct but duplicated; consolidated into `is_systemic_scan_outage` (`scan/coordinator.py`), used by
+   both `run_pipeline` and standalone `run_scan`, no behavior change.
 5. **Zero-output guard** — a run producing nothing exits non-zero unless zero was provably right.
 6. **Filesystem-truth counts** as independent verification of the DB's self-report.
 7. **Morning artifact** — ranked leads, apply URL, PDF path, verdict + span, one line of why.

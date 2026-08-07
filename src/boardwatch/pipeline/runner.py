@@ -38,7 +38,7 @@ from boardwatch.reports.run_funnel import (
     write_run_funnel,
 )
 from boardwatch.reports.tailor import run_tailor
-from boardwatch.scan.coordinator import ScanSummary, run_scan
+from boardwatch.scan.coordinator import ScanSummary, is_systemic_scan_outage, run_scan
 from boardwatch.store.db import ensure_schema
 from boardwatch.store.queries import RUN_FAILED, RUN_OK, ensure_run, finish_run
 
@@ -156,11 +156,15 @@ def run_pipeline(
             summary.scan_boards_failed = scan_summary.failed
             summary.scan_boards_complete = scan_summary.complete
             # CLAUDE.md's fail-safe table: "systemic outage => fatal (prevents the silent
-            # empty day)". Boards were attempted and NOT ONE completed is a DNS/network
-            # failure, not a few dead slugs. Reporting success for it is exactly bar metric
-            # B5's failure. Note this reads the outcome, not a status field.
+            # empty day)". `is_systemic_scan_outage` (D-037) is the same predicate
+            # `coordinator.py`'s standalone scan uses, so the two can never disagree on the
+            # same event. Note this reads the outcome, not a status field.
             attempted = scan_summary.companies
-            if attempted > 0 and scan_summary.complete == 0 and scan_summary.unchanged == 0:
+            if is_systemic_scan_outage(
+                attempted=attempted,
+                complete=scan_summary.complete,
+                unchanged=scan_summary.unchanged,
+            ):
                 summary.fatal = (
                     f"systemic scan outage: {attempted} boards attempted, none completed"
                 )
