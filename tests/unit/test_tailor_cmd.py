@@ -330,6 +330,7 @@ def test_run_unsupported_format_exits_1(env: Env, tmp_path: Path) -> None:
 MULTI_OP_RESUME = """\
 header:
   - "Ada Lovelace"
+  - "ada@example.com"
 education:
   - "BSc Mathematics — Example University — 2018"
 skill_groups:

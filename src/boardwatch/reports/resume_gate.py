@@ -47,6 +47,11 @@ class GateReason(StrEnum):
     TOO_MANY_BULLETS = "too_many_bullets"
     ESCAPING_MISMATCH = "escaping_mismatch"
     TEMPLATE_ARTIFACT = "template_artifact"
+    # P4 item 5b: run-once, fatal checks on the authored MASTER at load time (see
+    # `tailor.load.validate_master`). TEMPLATE_ARTIFACT above is reused for the
+    # master-authoring instance of that check rather than duplicated.
+    CONTACT_BLOCK_MISSING_NAME = "contact_block_missing_name"
+    CONTACT_BLOCK_INVALID_EMAIL = "contact_block_invalid_email"
 
 
 @dataclass(frozen=True)
@@ -137,9 +142,11 @@ class LayoutViolation(ResumeValidationError):
         self.reason = reason
 
 
-def _layout_scan_fields(resume: Resume) -> list[tuple[str, str]]:
+def layout_scan_fields(resume: Resume) -> list[tuple[str, str]]:
     """(text, description) pairs for the template-artifact scan: header, education, every
-    skill group's label and items, and every entry's heading and bullets."""
+    skill group's label and items, and every entry's heading and bullets. Not underscore-
+    prefixed: reused by `tailor.load.validate_master` (P4 item 5b) for the master-authoring
+    instance of the same scan, so the field list is defined once for both populations."""
     fields: list[tuple[str, str]] = [(h, "header") for h in resume.header]
     fields += [(ed, "education") for ed in resume.education]
     for g in resume.skill_groups:
@@ -209,7 +216,7 @@ def validate_layout(resume: Resume, source: str) -> None:
                 source, f'#resume-bullet("{escape(b.text)}")', f"bullet {b.bullet_id!r}"
             )
 
-    for text, where in _layout_scan_fields(resume):
+    for text, where in layout_scan_fields(resume):
         token = contains_template_artifact(text)
         if token is not None:
             raise LayoutViolation(

@@ -157,6 +157,30 @@ def test_cli_run_exits_nonzero_when_typst_binary_is_missing(
     assert result.exit_code != 0, result.output
 
 
+def test_broken_master_resume_is_a_run_level_fatal_not_a_per_lead_drop(
+    env: Path, tmp_path: Path
+) -> None:
+    """P4 item 5b: a master résumé missing contact info is an authoring fault, exactly like a
+    missing `typst` binary — it aborts the tailor stage rather than being rediscovered lead by
+    lead and reported as "every lead failed to tailor"."""
+    _ready(env)
+    settings = load_settings(data_dir=env)
+    (settings.config_dir / "resume.yaml").write_text(
+        'header:\n  - "Ada Lovelace"\neducation: []\nskill_groups: []\nentries:\n'
+        '  - entry_id: "e1"\n    heading: "Senior Engineer"\n    bullets:\n'
+        '      - bullet_id: "b1"\n        text: "Did a thing"\n',
+        encoding="utf-8",
+    )
+    out_root = tmp_path / "apps"
+
+    summary = _pipeline(env, out_root)
+
+    assert summary.tailored == []
+    assert summary.fatal is not None
+    assert "master résumé" in summary.fatal
+    assert _run_status(env, summary.run_id) == "failed"
+
+
 def test_every_tailored_lead_has_a_built_pdf_on_a_normal_run(env: Path, tmp_path: Path) -> None:
     """The gate's headline property (P1a): every lead the pipeline reports carries a PDF, using
     the real `typst` binary rather than an injected runner."""

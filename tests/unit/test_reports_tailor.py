@@ -69,6 +69,7 @@ def _resume_same_render_different_ids(tmp_path: Path, name: str, *, prefix: str)
     path.write_text(
         "header:\n"
         '  - "Ada Lovelace"\n'
+        '  - "ada@example.com"\n'
         "education:\n"
         '  - "BSc Mathematics — Example University — 2018"\n'
         "skill_groups:\n"
@@ -97,6 +98,7 @@ def _resume_same_render_different_ids(tmp_path: Path, name: str, *, prefix: str)
 _AUDIT_RESUME = """\
 header:
   - "Grace Hopper"
+  - "grace@example.com"
 education:
   - "BSc Mathematics — Example University — 2016"
 skill_groups:

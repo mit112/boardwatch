@@ -61,6 +61,7 @@ def _empty_bullets_resume_yaml(tmp_path: Path) -> Path:
     path.write_text(
         "header:\n"
         '  - "Ada Lovelace"\n'
+        '  - "ada@example.com"\n'
         "education:\n"
         '  - "BSc Mathematics — Example University — 2018"\n'
         "skill_groups:\n"
@@ -322,6 +323,7 @@ def _degrade_layout_resume_yaml(tmp_path: Path) -> Path:
     path.write_text(
         "header:\n"
         '  - "Ada Lovelace"\n'
+        '  - "ada@example.com"\n'
         "education:\n"
         '  - "BSc Mathematics — Example University — 2018"\n'
         "skill_groups:\n"
@@ -349,6 +351,7 @@ def _seven_bullets_resume_yaml(tmp_path: Path) -> Path:
     path.write_text(
         "header:\n"
         '  - "Ada Lovelace"\n'
+        '  - "ada@example.com"\n'
         "education:\n"
         '  - "BSc Mathematics — Example University — 2018"\n'
         "skill_groups:\n"

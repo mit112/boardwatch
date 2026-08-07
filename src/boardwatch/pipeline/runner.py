@@ -50,6 +50,7 @@ from boardwatch.store.db import ensure_schema
 from boardwatch.store.queries import RUN_FAILED, RUN_OK, ensure_run, finish_run, reap_stale_runs
 from boardwatch.store.run_funnel_queries import count_eligible_judged_this_run, lead_provenance
 from boardwatch.store.tables import postings
+from boardwatch.tailor.load import ResumeLoadError
 
 DEFAULT_TOP_N = 8
 
@@ -282,6 +283,17 @@ def run_pipeline(
                 # PATH or it isn't, so every remaining lead would fail identically — abort the
                 # stage rather than burn through the whole shortlist re-discovering that.
                 summary.fatal = f"typst binary unavailable: {exc}"
+                message = f"tailor: {summary.fatal}"
+                stage_errors.append(message)
+                summary.errors.append(message)
+                break
+            except ResumeLoadError as exc:
+                # A malformed or genuinely-broken master résumé (P4 item 5b: a bad contact
+                # block, a leftover template artifact) is an authoring fault, not a per-lead
+                # one — `load_resume()` re-validates it on every call, so every remaining lead
+                # would fail identically. Abort the stage rather than rediscovering that lead
+                # by lead, exactly like `TypstUnavailableError` above.
+                summary.fatal = f"master résumé invalid: {exc}"
                 message = f"tailor: {summary.fatal}"
                 stage_errors.append(message)
                 summary.errors.append(message)
