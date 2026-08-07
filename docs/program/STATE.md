@@ -29,6 +29,16 @@ without changing that standing.
 Gate P1 MET.** `make check` exits 0 on `main` (2846 passed, 1 deselected, coverage 95.20%,
 `generalization: OK`). **Next: P2 — profile object + the keystone invariant** (PROGRAM.md §3.P2).
 
+**P2 has been explored + decomposed (2026-08-07) — see `.superpowers/sdd/p2-profile-keystone/design.md`.**
+Much of P2 is already built (INELIGIBLE spans, the 4-table evidence chain, and the severity *mechanism* all
+exist). The remaining work splits by SAFETY: **P2a (fail-safe, buildable now)** = `needs_sponsorship` bit,
+typed keystone `ABSTAIN(missing_profile_field:X)` enforcement, facts `schema_version`, and the
+eligible-cleared-vs-residue guard; **P2b (fail-DANGEROUS — needs Mit)** = which rule families default to
+`blocker` (a wrong default silently deletes real jobs for every user) and the 3-tier `career.field` taxonomy.
+**TWO DECISIONS await Mit** (design §3): (1) `work_auth: blocker` by default + everything else preference
+(recommended) or also `clearance`? (2) lightweight `applies_when.career_field` family gate (recommended) or
+the full 3-way split? Gate P2 needs the `work_auth`→blocker flip. Prior catalog WIP: `.agent/p2-catalog/`.
+
 **P1 was executed in two slices** (decomposed during P1 brainstorming, 2026-08-07):
 - **P1a — artifact integrity gate** (items 1, 2, 3, 3b, 4, 5 of PROGRAM.md §3.P1): hard PDF gate,
   binary-missing-vs-compile-failure split, page-count hard fail (Typst-native `typst eval` query, SPIKED),
