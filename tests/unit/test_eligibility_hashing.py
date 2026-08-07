@@ -157,6 +157,36 @@ def test_the_fingerprint_is_sensitive_to_a_fact_change(tmp_path: Path) -> None:
     assert a.input_fingerprint != b.input_fingerprint
 
 
+def test_the_fingerprint_is_sensitive_to_a_sub_field_of_a_structured_fact(
+    tmp_path: Path,
+) -> None:
+    """P2a: `needs_sponsorship` is a nested field on `WorkAuthFact`, not a new top-level
+    Facts field, so nothing in declared_fields or the resolver's `inputs` names it directly.
+    It only re-keys the hash because facts_payload dumps the WHOLE work_authorization object
+    and declared_fields["work_auth"] names that object wholesale (hashing.py:84-92). That
+    mechanism is unlocked by reasoning about the code, not by a test, until now: every other
+    hash-sensitivity test here varies a top-level scalar fact, never a sub-field of a
+    structured one, so a change that accidentally narrowed the snapshot to named sub-fields
+    (dropping this one) would pass every existing test in this module."""
+    varying = FACTS.model_copy(
+        update={"work_authorization": FACTS.work_authorization.model_copy(  # type: ignore[union-attr]
+            update={"needs_sponsorship": False}
+        )}
+    )
+    a = _identity(tmp_path)
+    b = _identity(tmp_path, facts=varying)
+    assert a.profile_hash != b.profile_hash
+    assert a.input_fingerprint != b.input_fingerprint
+    # And a second, different bit value re-keys again, distinct from both `a` and `None`.
+    varying_true = FACTS.model_copy(
+        update={"work_authorization": FACTS.work_authorization.model_copy(  # type: ignore[union-attr]
+            update={"needs_sponsorship": True}
+        )}
+    )
+    c = _identity(tmp_path, facts=varying_true)
+    assert c.profile_hash not in (a.profile_hash, b.profile_hash)
+
+
 def test_the_fingerprint_is_sensitive_to_a_policy_change(tmp_path: Path) -> None:
     a = _identity(tmp_path)
     b = _identity(tmp_path, policy=Policy(families={"degree": "blocker"}))
