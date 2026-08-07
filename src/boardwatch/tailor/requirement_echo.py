@@ -11,7 +11,11 @@ See `.superpowers/sdd/p4-craft/item3b-requirement-echo-design.md` (the buildable
 
 AND-gate, both signals required to flag:
 
-  structural       (a) the bullet does NOT open with a past-tense/gerund action verb, AND
+  structural       (a) the bullet does NOT open with a past-tense/gerund action verb --
+                    checked as "ends in ed/ing" (regular verbs) OR is one of a small
+                    closed set of common IRREGULAR past-tense résumé openers
+                    (`_IRREGULAR_ACTION_VERBS`: Built, Grew, Drove, ...), which do not
+                    end in "ed"/"ing" as literal characters -- AND
                     (b) it contains a qualification-register phrase ("experience with",
                         "knowledge of", ...) from register.yaml's `qualification_cues`.
   corroboration     the bullet shares at least one 4-gram (4 consecutive lowercased word
@@ -53,10 +57,22 @@ _QUAL_HEADER = re.compile(
 
 # The generic "this line reads as SOME section heading" test used only to find where a
 # qualifications span ENDS -- deliberately looser than _QUAL_HEADER (which names what a
-# qualifications heading specifically says): short, no sentence-ending punctuation, every
-# significant word capitalized. Over-matching here only SHRINKS the span, which is the
-# fail-safe direction (less corroboration material, never more).
+# qualifications heading specifically says): short, no sentence-ending punctuation.
+# Over-matching here only SHRINKS the span, which is the fail-safe direction (less
+# corroboration material, never more).
 _ANY_HEADER = re.compile(r"^[A-Za-z][A-Za-z /&'-]{0,58}:?$")
+
+# Closed-class "glue" words that make up short, real section headers whose words AFTER
+# the first are NOT capitalized ("What you will get", "About the team") -- fix for a
+# real false-positive hole: the original end-boundary test required EVERY word
+# capitalized, so this common header shape ran the span past it into benefits/perks
+# prose. Deliberately NOT extended to open-class nouns: a genuine qualification line
+# ("Bachelors degree preferred", "Experience with distributed systems") has real
+# content words after the first, none of which are glue, so it is never mistaken for a
+# header by this path.
+_HEADER_GLUE_WORDS: frozenset[str] = frozenset(
+    {"you", "your", "we", "us", "our", "will", "get", "gets", "the", "a", "an", "team"}
+)
 
 
 def _looks_like_header(line: str) -> bool:
@@ -68,7 +84,16 @@ def _looks_like_header(line: str) -> bool:
     if not _ANY_HEADER.match(stripped):
         return False
     words = stripped.rstrip(":").split()
-    return bool(words) and len(words) <= 6 and all(w[0].isupper() for w in words if w[0].isalpha())
+    if not words or len(words) > 6 or not words[0][0].isupper():
+        return False
+    # Path 1: every significant word capitalized (Title-Case/ALL-CAPS headers like
+    # "Benefits:", "REQUIREMENTS", "Nice To Have Skills").
+    if all(w[0].isupper() for w in words if w[0].isalpha()):
+        return True
+    # Path 2: a lowercase-continuation header whose words AFTER the first are all
+    # closed-class glue. A genuine qualification line's later words are real content,
+    # never glue-only, so this path never swallows one.
+    return all(w.lower() in _HEADER_GLUE_WORDS for w in words[1:])
 
 
 def qualifications_span(body_text: str) -> list[str]:
@@ -107,9 +132,22 @@ def jd_qualification_sentences(body_text: str) -> list[str]:
     return [unit_text for _offset, unit_text in split_units(text, scope="sentence")]
 
 
+# Common IRREGULAR past-tense résumé-bullet openers -- these do not end in "ed"/"ing" as
+# literal characters (unlike "Built"'s regular cousins "Designed"/"Reduced"), so the
+# suffix check alone misses them and treats a genuine completed-action opener as a
+# capability claim. Closed, greppable, tunable set; no POS tagger.
+_IRREGULAR_ACTION_VERBS: frozenset[str] = frozenset(
+    {
+        "built", "ran", "drove", "wrote", "made", "grew", "sold", "set", "cut", "won",
+        "held", "kept", "chose", "took", "gave", "began", "brought", "met", "sent",
+        "spent", "taught", "oversaw", "rebuilt", "drew", "rose", "spoke", "led",
+    }
+)
+
+
 def _opens_with_action_verb(bullet: str) -> bool:
     verb = _opening_verb(bullet)
-    return verb.endswith("ed") or verb.endswith("ing")
+    return verb.endswith("ed") or verb.endswith("ing") or verb in _IRREGULAR_ACTION_VERBS
 
 
 def requirement_echo_reasons(

@@ -215,3 +215,96 @@ def test_no_header_means_a_would_be_echo_bullet_still_does_not_flag():
         requirement_echo_reasons(bullet, sentences, canonical=_EMPTY, qualification_cues=_CUES)
         == []
     )
+
+
+# -- red-team fix 1: irregular past-tense action-verb openers ----------------------
+#
+# `_opens_with_action_verb`'s ed/ing suffix check misses IRREGULAR past-tense verbs
+# ("Grew", "Built", "Drove", ...), which do not end in "ed"/"ing" as literal characters.
+# Without recognizing them, (a) wrongly fires on a genuine, quantified accomplishment
+# that legitimately reuses register-cue phrasing ("gaining experience with X") and the
+# JD's own skill vocabulary (expected, safe corroboration) -- these three are the
+# reviewer-confirmed false positives.
+
+
+def test_grew_opener_with_gained_experience_phrasing_is_not_flagged():
+    bullet = (
+        "Grew team capability by gaining hands-on experience with distributed systems "
+        "architecture while scaling infrastructure to handle 10M requests per day"
+    )
+    qual = (
+        "You have experience with distributed systems architecture and are comfortable "
+        "scaling infrastructure."
+    )
+    assert (
+        requirement_echo_reasons(bullet, [qual], canonical=_EMPTY, qualification_cues=_CUES)
+        == []
+    )
+
+
+def test_built_opener_with_strong_understanding_phrasing_is_not_flagged():
+    bullet = (
+        "Built strong understanding of distributed systems by architecting a payments "
+        "platform processing 50M transactions monthly, reducing latency 35%"
+    )
+    qual = (
+        "You have a strong understanding of distributed systems and experience "
+        "architecting payments platforms."
+    )
+    assert (
+        requirement_echo_reasons(bullet, [qual], canonical=_EMPTY, qualification_cues=_CUES)
+        == []
+    )
+
+
+def test_drove_opener_with_ability_to_phrasing_is_not_flagged():
+    bullet = (
+        "Drove ability to scale microservice deployments across three regions, cutting "
+        "infra spend 28%"
+    )
+    qual = (
+        "You have the ability to scale microservice deployments across multiple regions "
+        "reliably."
+    )
+    assert (
+        requirement_echo_reasons(bullet, [qual], canonical=_EMPTY, qualification_cues=_CUES)
+        == []
+    )
+
+
+# -- red-team fix 2: a lowercase-continuation header ends the qualifications span --
+#
+# The OLD end-boundary test required every word in a header-like line to be
+# capitalized, so a common real section boundary like "What you will get" (only its
+# first word capitalized) was NOT recognized -- the span ran past it into benefits
+# prose, widening the corroboration surface.
+
+
+def test_a_lowercase_continuation_header_like_what_you_will_get_ends_the_span():
+    body = (
+        "Requirements:\n"
+        "Experience with distributed systems and scalable APIs.\n"
+        "What you will get\n"
+        "Unlimited PTO and a generous learning experience with new technology stipend.\n"
+    )
+    span = qualifications_span(body)
+    assert span == ["Experience with distributed systems and scalable APIs."]
+    assert not any("Unlimited PTO" in line for line in span)
+
+
+def test_benefits_prose_past_a_lowercase_header_never_corroborates_an_echo():
+    """End-to-end: a bullet that 4-gram-matches ONLY the benefits sentence past "What
+    you will get" must not flag, because Fix 2 excludes that sentence from the
+    qualifications span in the first place."""
+    body = (
+        "Requirements:\n"
+        "Experience with distributed systems and scalable APIs.\n"
+        "What you will get\n"
+        "Unlimited PTO and a generous learning experience with new technology stipend.\n"
+    )
+    bullet = "Ability to gain learning experience with new technology daily"
+    sentences = jd_qualification_sentences(body)
+    assert (
+        requirement_echo_reasons(bullet, sentences, canonical=_EMPTY, qualification_cues=_CUES)
+        == []
+    )
