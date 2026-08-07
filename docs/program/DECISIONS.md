@@ -2095,3 +2095,42 @@ test (`ta != rw`, seeding bug → a wrongly-KEPT over-cap rewrite) that the regr
 
 **Next P4 slice:** item 3b (requirement-echo — the JD-semantic AND-gate; deepseek-review its false-positive
 bounding at the design stage), then items 4–7.
+
+## D-051 — P4 item 3b: requirement-echo detector SHIPPED; item 3 COMPLETE
+
+**2026-08-07 · session 10 · P4 (item 3b — built, deepseek design review + two-gate impl review + one fix round, merged). Under D-047.**
+
+**Context.** The subtle craft check: a Tier-B bullet that RESTATES a JD requirement (paraphrase, not the
+verbatim lift overmatch already catches) instead of describing work. Whole risk = false positives, so it
+must never flag a genuine accomplishment that legitimately shares tech vocab with the JD.
+
+**Design (deepseek-reviewed at spec stage).** AND-gate, deterministic, no model:
+- Structural = (a) opener is NOT a past-tense/gerund action verb AND (b) contains a qualification-register
+  cue (`qualification_cues` added to `register.yaml`).
+- Corroboration = shares a 4-gram (4 consecutive tokens) with a sentence from the JD's qualifications
+  section, with ≥1 of the 4 tokens NON-canonical (pure tech-vocab overlap never corroborates).
+- Qualifications span sliced by a header heuristic + reused `eligibility/detect.py::split_units`.
+deepseek fixed two design defects pre-build: the structural "and/or" → AND (OR wrongly fires on a
+headline fragment), and Jaccard/3-gram → 4-gram-with-a-non-canonical-token (generic engineering words
+survive tech-token removal and trip real accomplishments).
+
+**Impl review found two REAL false-positive holes; fixed.** The diff-reviewer EXECUTED the predicate and
+found: (1) irregular past-tense action-verb openers ("Grew/Built/Drove/Wrote…") defeat the ed/ing (a)
+heuristic, so metric-bearing accomplishments phrased "gained/built experience with <JD skill>" were
+wrongly flagged → fixed with a closed `_IRREGULAR_ACTION_VERBS` set; (2) the qualifications-span
+UNDER-detected a lowercase boundary like "What you will get", leaking benefits prose into the
+corroboration surface → fixed by a second header-recognition path (first word capitalized + trailing
+glue words), verified to keep real qual lines like "Bachelors degree preferred" inside the span. 5
+red-team tests added (each red-before-green). `make check` green (3037 passed, 95.32%), authoritative
+re-run by the orchestrator.
+
+**Accepted bounded-recall tradeoffs (all fail-safe, shrink-span/miss directions):** the irregular-verb
+set and `_HEADER_GLUE_WORDS` are closed (won't catch every irregular verb or "Compensation & Benefits");
+a bare single-word capitalized line reads as a header (pre-existing, shrinks span). A miss ships a
+truthful bullet; a false positive reverts to the truthful Tier-A — the shared craft-guard posture.
+
+**ITEM 3 COMPLETE** (3a D-050 + 3b here). **Next P4 slices:** item 4 (deterministic de-senioritied
+title), item 5 (layout/section-order/bullet-count/contact-integrity assertions), item 6 (keyword coverage
+by re-spelling), item 7 (persona registry — D-011's two personas; note its per-persona protected-fact set
+may need Mit's content, like item 2's per-field concern — ground it before assuming buildable). Gate P4's
+blind-craft-review clause stays Mit's (subjective).
