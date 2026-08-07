@@ -162,8 +162,7 @@ dropped* is answerable **from the artifact alone, without reading code**.
 The render path exists and is architecturally sound (§6, correction 1). What is missing is enforcement.
 
 **P1a (items 1, 2, 3, 3b, 4, 5) is DONE — shipped on `p1a-resume-artifact-gate`, Gate P1 MET (D-032).**
-**P1b (item 3c) is the remaining P1 work**, deferred to its own brainstorm (design:
-`.superpowers/sdd/p1a-resume-artifact-gate/design.md` §9).
+**P1b (item 3c) is DONE (D-033).** P1 (P1a + P1b) is now fully complete.
 
 1. **DONE.** Kill the silent source-only degrade. ~~`tailor_cmd.py:193,402` currently prints
    `"source only (no PDF; typst not available or compile failed)"` and continues.~~ Split into
@@ -183,11 +182,13 @@ The render path exists and is architecturally sound (§6, correction 1). What is
    Dockerfile layer (pinned to the local 0.15.1 version) and `doctor` probes both presence and version,
    warning loudly on a mismatch (an unpinned typst can silently break the `eval` page-count syntax).
    Vendoring still waits for P7.
-3c. **P1b — not started.** Tier-B token-provenance validator (see §5.1) — the lane in daily use currently
-   has none. Placed here rather than P4 because it is a truth gate, not a craft gate. Design sketch:
-   `.superpowers/sdd/p1a-resume-artifact-gate/design.md` §9 (a closed fabrication-lexicon veto plus
-   verb-swap provenance, slotting into `run_tier_b_core` after `passes_overmatch_filter`, before the
-   judge).
+3c. **DONE (P1b, D-033).** Tier-B token-provenance validator (see §5.1) — a deterministic allowlist
+   (`reword_is_provenanced`, `tailor/rewrite/provenance.py`) vetoes any reword whose content tokens are not
+   a source token, an approved equivalence-table image, or a claim-free structural connective — no stemmer,
+   no modals/auxiliaries. Slots into `run_tier_b_core` (and `screen_candidates`) after
+   `passes_overmatch_filter`, before the judge. Vetoed rewords get `drop_reason="provenance"` and keep the
+   Tier-A bullet; counted by a separate `provenance_rejected` counter, never folded into B4's fabrication
+   numerator. Placed here rather than P4 because it is a truth gate, not a craft gate.
 4. **DONE.** Slot-filled assertion (job-apps resume-transfer §13.1) — shipped as a standalone
    `validate_slots(resume)` function (a build-time refinement from a `Resume` `model_validator`, which
    would run on every construction including legitimately-partial intermediate models), raising

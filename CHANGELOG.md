@@ -8,6 +8,28 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- **A Tier-B reword provenance veto, fail-closed to the Tier-A bullet** (P1b, PROGRAM.md §3.P1 item 3c,
+  D-033). The LLM-assisted rewording lane had no check that a reword's content is actually traceable to the
+  source; a fabrication like *"single-handedly re-architected … eliminating downtime"* passed the existing
+  overmatch filter, which only vetoes ALLCAPS/entity additions.
+
+  - **`reword_is_provenanced`** (`tailor/rewrite/provenance.py`) is a pure, deterministic allowlist: every
+    content token in a reword must be a source token, an approved equivalence-table image, or a member of
+    a closed, versioned connective allowlist of claim-free structural words (articles/prepositions/
+    coordinators only). No stemmer and no modals/auxiliaries — both were shown to let fabrications through
+    (verb→agent-noun via a shared stem; a future-commitment fabricated via `will`).
+  - **Slots before the judge**, in both `run_tier_b_core` (the API lane) and `screen_candidates` (the
+    no-API-key agent lane), so a fabricated reword never spends a judge call. A veto emits a new closed
+    `drop_reason="provenance"` and keeps the deterministic Tier-A bullet.
+  - **A separate `provenance_rejected` fabrication counter**, reported on its own funnel line and
+    deliberately **not** folded into bar metric B4's numerator (`rejected = judge_rejected +
+    overmatch_filtered`) — a conservative veto is not a caught fabrication.
+  - **`LLM_LANE_VERSION` bumped `tier-b-1` → `tier-b-2`**, invalidating cached Tier-B outputs from before
+    the gate existed.
+  - **The honest cost:** the gate is deliberately aggressive — a benign synonym or tense variant
+    (`optimize`→`improve`, `optimize`→`optimized`) is vetoed and reverts to Tier-A until the equivalence
+    table is curated to permit specific swaps.
+
 - **A hard résumé PDF gate — no lead ships without a compliant, compiled PDF** (P1a). Replaces the old
   silent `"source only (no PDF; typst not available or compile failed)"` degrade with a typed,
   fail-closed pipeline:

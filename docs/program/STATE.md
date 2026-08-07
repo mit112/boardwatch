@@ -1,17 +1,20 @@
 # PROGRAM STATE — read this first
 
-**Last updated:** 2026-08-07 (session 9, P1a shipped)
+**Last updated:** 2026-08-07 (session 10, P1b shipped — P1 fully complete)
 **Updated by:** boardwatch (Claude)
-**Repo state at write time:** all nine P0 items (0-8) AND P1a (the résumé artifact integrity gate —
-PROGRAM.md §3.P1 items 1, 2, 3, 3b, 4, 5) are merged to `main` and pushed. Verify with
+**Repo state at write time:** all nine P0 items (0-8), P1a (the résumé artifact integrity gate —
+PROGRAM.md §3.P1 items 1, 2, 3, 3b, 4, 5), and P1b (item 3c, the Tier-B token-provenance validator, D-033)
+are shipped on branch `p1b-tier-b-provenance`, not yet merged to `main`. Verify with
 `git log --oneline -3` and `git status` — if they disagree, the repo wins.
 **This header carries no commit count or sha on purpose** — the previous one named both, went stale inside
 a single session when three later docs commits did not update it, and a cold session following the
 session-start ritual hit the disagreement on its very first check. State what is durably true; verify the
 rest against `git log`. (D-017.)
-**Gate:** `make check` exits **0** (2828 passed, 1 deselected, coverage 95.17%, `generalization: OK`),
-measured in plain mode with the real exit code on `main` (P1a merged). Item 5 supplements Gate P0;
-per D-031, Gate P0 is not re-anchored to `verify` exiting 0 — it was already MET on D-030's evidence.
+**Gate:** `make check` exits **0** (2846 passed, 1 deselected, coverage 95.20%, `generalization: OK`),
+measured in plain mode with the real exit code on `p1b-tier-b-provenance` (P1b's tree). Item 5 supplements
+Gate P0; per D-031, Gate P0 is not re-anchored to `verify` exiting 0 — it was already MET on D-030's
+evidence. Gate P1 was already MET on P1a's evidence (D-032); P1b (D-033) closes the one remaining P1 item
+without changing that standing.
 
 > This is the single file a fresh session with zero memory reads to know where the program stands.
 > If it disagrees with the repo, **the repo wins** — fix this file and note the correction in
@@ -22,10 +25,9 @@ per D-031, Gate P0 is not re-anchored to `verify` exiting 0 — it was already M
 ## Current phase
 
 **P0 — Instrumentation. COMPLETE (session 9).** All nine build items are shipped and merged to `main`.
-**P1a — résumé artifact integrity gate. SHIPPED + MERGED to `main` (session 9), Gate P1 MET.**
-`make check` exits 0 on `main` (2828 passed, 1 deselected, coverage 95.17%, `generalization: OK`).
-**Next: P1b — the Tier-B token-provenance validator (item 3c), the remaining P1 work** (design-heavy;
-its own brainstorm — see the P1b bullet below and design §9).
+**P1 — résumé artifact gate. FULLY COMPLETE (session 10): P1a + P1b both shipped, Gate P1 MET.**
+`make check` exits 0 on `p1b-tier-b-provenance` (2846 passed, 1 deselected, coverage 95.20%,
+`generalization: OK`). **Next: P2 — profile object + the keystone invariant** (PROGRAM.md §3.P2).
 
 **P1 was executed in two slices** (decomposed during P1 brainstorming, 2026-08-07):
 - **P1a — artifact integrity gate** (items 1, 2, 3, 3b, 4, 5 of PROGRAM.md §3.P1): hard PDF gate,
@@ -34,9 +36,13 @@ its own brainstorm — see the P1b bullet below and design §9).
   Dockerfile+doctor packaging. **DONE — this slice MEETS Gate P1.** Design:
   `.superpowers/sdd/p1a-resume-artifact-gate/design.md`. Decisions: **D-032**.
 - **P1b — Tier-B token-provenance validator** (item 3c): the LLM-lane truth gate feeding bar metric B4.
-  **The remaining P1 work.** Deferred to its own brainstorm (it gates nothing in Gate P1 and is
-  design-heavy) — see design §9 for the shape already sketched: a closed fabrication-lexicon veto plus
-  verb-swap provenance, slotting into `run_tier_b_core` after `passes_overmatch_filter`, before the judge.
+  **DONE (session 10, D-033).** A deterministic provenance allowlist (`reword_is_provenanced`,
+  `tailor/rewrite/provenance.py`) — source-token / equivalence-image / claim-free structural connective
+  ONLY, no stemmer, no modals/auxiliaries — vetoes any Tier-B reword with an unjustified content token
+  before the judge runs, keeping the Tier-A bullet. New closed `drop_reason="provenance"` feeds a
+  **separate** `provenance_rejected` counter, never folded into B4's fabrication numerator. Design:
+  `.superpowers/sdd/p1b-tier-b-provenance/design.md`. Decisions: **D-033**. It gates nothing in Gate P1's
+  own text (already MET on P1a's evidence) but is the item that makes P1 *fully* complete.
 
 **Gate P1 is MET.** Deterministic tests pin every branch (binary-missing-fatal, compile-failure and
 page-limit-exceeded → untailored fallback, both-unshippable → drop with no artifact and no folder, Tier-B
@@ -465,9 +471,9 @@ changes adopted, none contested.
 
 ## Next action
 
-**P0 is complete. P1a (résumé artifact gate) is SHIPPED and Gate P1 is MET (session 9).** P1b (the Tier-B
-token-provenance validator, item 3c) is the remaining P1 work — brainstorm it next, then build; see design
-§9 for the shape already sketched. `p1a-resume-artifact-gate` is not yet merged to `main`.
+**P0 and P1 are both complete.** P1a (résumé artifact gate, session 9) and P1b (Tier-B token-provenance
+validator, session 10, D-033) are both shipped on `p1b-tier-b-provenance`, which is not yet merged to
+`main`. **Next: P2 — profile object + the keystone invariant** (PROGRAM.md §3.P2).
 
 **A live, actionable finding from the P1a dogfood, not a code defect — surfaced 2026-08-07.** On the real
 store, at the profile's shipped default `resume_max_pages=1`, `boardwatch run` drops **every** shortlisted
@@ -564,7 +570,7 @@ computable but the typed abstain *reason* the keystone invariant wants is not.
 | Phase | Status | Gate met? |
 |---|---|---|
 | P0 Instrumentation | **COMPLETE** (session 9) — all nine items 0-8 done, incl. item 5 (`boardwatch verify`, session 9) | **MET** (session 8, D-030) — three consecutive real-driver runs (5, 6, 7) all reconcile with the scan stage exercised; abstain per rule; why-dropped answerable from the artifact. Item 5 supplements this gate and does not re-anchor it (D-031) |
-| P1 Résumé artifact gate | **P1a COMPLETE** (session 9, `p1a-resume-artifact-gate`, not yet merged); P1b (Tier-B provenance, item 3c) not started | **MET** (session 9, D-032) — deterministic fallback/fatal/drop tests + real-store dogfood both directions (default-config FATAL drop, isolated-copy 100% PDF at correct page count) |
+| P1 Résumé artifact gate | **FULLY COMPLETE** (session 10) — P1a (session 9) + P1b (session 10, D-033), both on `p1b-tier-b-provenance`, not yet merged to `main` | **MET** (session 9, D-032; P1b D-033 closes item 3c without changing the standing) — deterministic fallback/fatal/drop tests + real-store dogfood both directions (default-config FATAL drop, isolated-copy 100% PDF at correct page count); P1b verified by deterministic unit/lane tests only, no live Tier-B LLM run exercised |
 | P2 Profile + keystone invariant | not started | — |
 | P3 Unattended one command | not started | — |
 | P4 Craft gate | not started | — |

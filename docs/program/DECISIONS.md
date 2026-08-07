@@ -1165,3 +1165,91 @@ DB-re-query path. **A live, actionable finding, not a code defect:** Mit's real 
 fit in the new-grad default of 1 page, so `boardwatch run` on his real profile will drop every lead until
 either the résumé is shortened or `resume_max_pages` is set to 2 — recorded in `STATE.md`'s next action
 rather than silently worked around.
+
+---
+
+## D-033 — Tier-B reword provenance: a deterministic allowlist, fail-closed to Tier-A, counted separately from B4
+**2026-08-07 · session 10 · P1b, closes PROGRAM.md §3.P1 item 3c**
+
+**Context.** D-032 split P1 into P1a (shipped) and P1b (item 3c, deferred): the Tier-B LLM-rewording lane
+had no token-provenance validator, so a fabricated reword like *"single-handedly re-architected … eliminating
+downtime"* passed the existing overmatch filter, which only vetoes ALLCAPS/entity additions and permits new
+ordinary lowercase words. Design (`.superpowers/sdd/p1b-tier-b-provenance/design.md`) sketched three
+approaches: (A) a fabrication-phrase blocklist, (B) a deterministic provenance allowlist fail-closed to the
+structural Tier-A bullet, (C) judge independence (a second, differently-configured judge). An unbiased
+review by `deepseek-v4-flash`, run before planning, falsified the draft's own soundness claim.
+
+**Choice — approach B.** Every content token in a reword must be justified as one of exactly three kinds:
+a source token, an approved equivalence-table image, or a member of a closed, versioned connective allowlist
+of claim-free structural words (articles/prepositions/coordinators only — `the a an of to for and or with in
+on at from by as that`). Any other content token vetoes the reword; the bullet keeps its Tier-A text. Chosen
+over (A) — a blocklist is exactly the pattern this repo already rejected once, in P7b's Tier-B build (the
+allowlist-not-blocklist lesson): a closed permit-list of justification sources is
+sound in a way an open-ended list of forbidden phrases can never be, because growing what a blocklist misses
+is unbounded while growing what an allowlist permits is a deliberate, auditable edit. Over (C) — judge
+independence is a real complement (a second judge configuration catching what the first misses) but is a
+separate, later change; it does not remove the need for a deterministic floor Tier B can be shipped with
+today.
+
+**No stemmer; no modals or auxiliaries — both were shown, not assumed, to let fabrications through.** An
+earlier draft justified a `b`-side token that shared a stem with a source token, and separately allowed
+modal/auxiliary verbs into the connective set. The unbiased review broke both with concrete cases:
+
+- **Verb → agent-noun via a stem.** Source *"Architected the service"* → reword *"Architect of the service"*.
+  `Architected` and `Architect` share the stem `architect`, so a naive stemmer justifies `Architect` — but a
+  verb and an agent noun/title are different claims (did the work vs. holds the role). Same hole for
+  `Managed`→`Manager`, `Developed`→`Developer`.
+- **Future-commitment fabrication via a modal.** Source *"Implemented the checkout flow"* → reword *"Will
+  implement the checkout flow"*. If `will` were in the connective allowlist (it looked structural, like
+  `the`/`of`), the check would justify it — but a future commitment is not the same claim as a completed one.
+
+Both fixes make the check strictly *source-token / equivalence-image / claim-free-connective, nothing
+derived* — which is what makes the fail-closed soundness claim ("a fabrication cannot pass") actually hold.
+A tense variant with no table pair (`optimize`→`optimized`) is therefore also vetoed; there is no morphology
+escape hatch, only the equivalence table.
+
+**Where it slots.** In `tailor/rewrite/lane.py::run_tier_b_core`, immediately after `passes_overmatch_filter`
+succeeds and **before** the entailment judge call, so a fabricated reword never spends a judge call and the
+gate does not depend on the same model that proposed the reword also catching it. Also wired into
+`tailor/rewrite/agent_lane.py::screen_candidates` (the agent-lane `screen` step), so the no-API-key lane gets
+identical early feedback. Both lanes converge on `run_tier_b_core`, so the veto covers both call paths from
+one insertion.
+
+**Closed-catalog bookkeeping.** `drop_reason == "provenance"` joins the existing closed set (`judge`,
+`unchanged`, `filter:*`, …) in `reports/tailor.py`'s `op` classifier and `cli/tailor_cmd.py`'s
+`fallback:{drop_reason}` tag — no string-matching, a new member is a visible, wired decision. A **separate**
+`FabricationCounters.provenance_rejected` counter (P0 item 8's home) records it, reported on its own line in
+the funnel Markdown. **It is deliberately NOT folded into `rejected`**, the B4-facing fabrication numerator
+(`rejected = judge_rejected + overmatch_filtered`): provenance is intentionally over-broad — `optimize`→
+`improve` is a *documented, intended* veto, not a caught fabrication — so summing it in would inflate B4
+with conservative false-vetoes and obscure the true fabrication-catch rate. A conservative veto is not a
+caught fabrication; they are different signals and are reported as such.
+
+**Versioned data, and cache invalidation.** The connective allowlist ships as a frozenset constant with its
+own `PROVENANCE_VERSION` (`"p1b-provenance-1"`), recorded in `llm_meta` alongside the existing
+`llm_lane_version` so an artifact proves which version of the gate ran — the published mechanism, tuned by
+data Mit (or any user) can edit, per PROGRAM.md §3b. `LLM_LANE_VERSION` bumped `"tier-b-1"` → `"tier-b-2"` so
+cached Tier-B outputs from before the gate existed are invalidated rather than silently trusted.
+
+**The honest cost, recorded so it is never later "discovered" as a bug.** The gate is deliberately
+aggressive: even a benign synonym or a plain tense change — `optimize`→`improve`, `optimize`→`optimized` — is
+vetoed today and reverts to the Tier-A bullet, because neither has an approved equivalence-table pair yet.
+Tier-B rewording only grows more useful as the equivalence table is curated with specific, deliberate swaps.
+This is accepted, not a defect: Tier B is opt-in, the Tier-A bullet it falls back to is already structurally
+sound, and the alternative — permitting synonym drift without an explicit approval — is exactly the
+fabrication channel B4 exists to close. Matches `CLAUDE.md`'s fail-safe table verbatim: *"fabrication check ⇒
+fail-safe (drop tailoring, emit static)."*
+
+**Rejected.** (A) Blocklist — repo allowlist-not-blocklist lesson. (C) Judge independence — real, deferred,
+not a substitute for a deterministic floor. A stemmer/morphology justification — unsound (verb→agent-noun).
+Modals/auxiliaries in the connective set — unsound (future-commitment fabrication). Case-sensitive source
+matching to close the `US`→`us` case-fold collision — accepted as a low-impact minor instead (the overmatch
+filter already gates ALLCAPS/entity *additions*; this is only a fold collision on a token already present),
+rather than spuriously vetoing ordinary sentence-initial capitalization changes.
+
+**Consequence.** `make check` exits 0 (2846 passed, 1 deselected, coverage 95.20%, `generalization: OK`) —
+see `METRICS.md`. **PROGRAM.md §3.P1 item 3c is DONE; Gate P1 was already MET (D-032) and P1b does not
+change that standing — it closes the one item Gate P1's own text did not require. P1 (P1a + P1b) is now
+fully complete.** Verified only by deterministic unit and lane-integration tests, mutation-checked per the
+task brief (fabrication-hole regressions, judge-not-called-on-veto, counter-not-folded-into-`rejected`); no
+live Tier-B LLM run was exercised this session — say so rather than inventing a dogfood, per D-012.

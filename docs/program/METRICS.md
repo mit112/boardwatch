@@ -825,3 +825,34 @@ actual store and actual résumé content, in **both** directions — the fatal/d
 the live default, and the 100%-PDF/correct-page-count/log-captured path fires correctly once the page
 limit matches the résumé's real length. The mismatch between the two is recorded as a live next action in
 `STATE.md`, not silently resolved.
+
+---
+
+## Session 10 — 2026-08-07 · P1b gate, decisions (Tier-B token-provenance validator, D-033)
+
+**`make check`: exit 0.** `2846 passed, 1 deselected in 223.69s`, coverage **95.20%**, `generalization: OK`
+— measured in plain mode (no `head`/`tail`), real exit code captured with `; echo "MAKE_CHECK_EXIT:$?"` in
+the same command, on branch `p1b-tier-b-provenance`. (2846 vs. P1a's session-9 figure of 2828: +18 tests
+from P1b's build round — the pure-check suite, the two fabrication-hole regressions, lane-integration and
+counter tests.)
+
+| Metric | Value |
+|---|---|
+| Tests passed | 2846 (1 deselected) |
+| Coverage | 95.20% |
+| `PROVENANCE_VERSION` | `p1b-provenance-1` |
+| `LLM_LANE_VERSION` | `tier-b-1` → `tier-b-2` (bumped so cached pre-gate Tier-B outputs are invalidated) |
+| New fabrication counter | `FabricationCounters.provenance_rejected` — reported on its own funnel line, **not** summed into `rejected` (the B4 numerator stays `judge_rejected + overmatch_filtered`) |
+| New closed `drop_reason` | `"provenance"` |
+
+**No live Tier-B LLM run was exercised this session.** P1b is verified entirely by deterministic unit
+tests (`tests/unit/test_rewrite_provenance.py`) and lane-integration tests
+(`tests/unit/test_rewrite_lane_provenance.py`, plus the fabrication-counter assertions in
+`tests/unit/test_run_funnel.py`) — no dogfood against a real API-key or agent-lane Tier-B invocation ran.
+Recording this plainly rather than inventing a dogfood, per D-012: the mechanism is proven at the unit and
+lane level; its behaviour under real model output is unmeasured until a live Tier-B run happens.
+
+**Consequence for the program.** PROGRAM.md §3.P1 item 3c is DONE. Gate P1's own text was already MET on
+P1a's evidence (D-032, session 9) — P1b does not re-anchor that gate, it closes the one item Gate P1 did
+not itself require. **P1 (P1a + P1b) is now fully complete.** Next phase: P2 — profile object + the
+keystone invariant.
