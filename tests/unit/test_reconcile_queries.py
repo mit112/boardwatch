@@ -84,6 +84,18 @@ def test_null_run_id_artifacts_are_excluded(engine: Engine) -> None:
     assert counts.tailored_rows == 0
 
 
+def test_run_status_empty_when_run_row_absent(engine: Engine) -> None:
+    """No `runs` row for this id at all (orphaned artifact / bad --run id): run_status must be
+    "" rather than None, since "" is what reconcile() treats as the never-a-valid-status
+    anomaly. Regression for the `else ""` fallback in db_counts_for_run."""
+    with engine.connect() as conn:
+        counts = db_counts_for_run(conn, 9999)
+    assert counts.run_status == ""
+    assert counts.tailored_rows == 0
+    assert counts.tailored_with_pdf == 0
+    assert counts.distinct_lead_postings == 0
+
+
 def test_tailored_file_rows_covers_both_kinds(engine: Engine) -> None:
     with engine.begin() as conn:
         run_id = _run(conn)

@@ -81,6 +81,10 @@ def _resolve_run_artifact(out_root: Path, run_id: int) -> Path | None:
     the run's start date. The glob finds an artifact even when its `runs` row was deleted — the
     orphaned-artifact case whose `run_status=""` anomaly the reconciliation exists to surface.
     The numeric filename is exact (`funnel-7.json` never matches `funnel-70.json`)."""
+    # The first glob (bare out_root/funnel-<id>.json) is a --run-only convenience for a funnel
+    # placed directly under out_root; the no-run sweep in `verify` only globs "*/funnel-*.json"
+    # (day-folders) and never examines this bare path, because production always writes into a
+    # day-folder.
     return next(iter(sorted(out_root.glob(f"funnel-{run_id}.json"))
                      or sorted(out_root.glob(f"*/funnel-{run_id}.json"))), None)
 
