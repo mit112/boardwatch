@@ -190,18 +190,21 @@ def run_cmd(
             )
         else:
             console.print("dry run — source only, nothing written")
+    elif result.pdf_path is not None and result.degraded:
+        console.print(
+            f"pdf: {result.pdf_path} "
+            f"(degraded: untailored fallback, reason={result.degrade_reason})"
+        )
     elif result.pdf_path is not None:
-        if result.degraded:
-            console.print(
-                f"pdf: {result.pdf_path} "
-                f"(degraded: untailored fallback, reason={result.degrade_reason})"
-            )
-        else:
-            console.print(f"pdf: {result.pdf_path}")
+        console.print(f"pdf: {result.pdf_path}")
     else:
-        # Unreachable in practice: outside a dry run, run_tailor raises TypstUnavailableError
-        # or LeadArtifactError (caught above) before ever returning without a PDF.
-        console.print("source only (no PDF; typst not available or compile failed)")
+        # Outside a dry run, run_tailor raises TypstUnavailableError or LeadArtifactError
+        # (caught above) before ever returning without a PDF — a PDF-less non-raising result
+        # is exactly the silent false-success P1a exists to eliminate, so a regression that
+        # reintroduces one must fail loudly here, not print a success-shaped message.
+        raise AssertionError(
+            "unreachable: run_tailor yields a PDF (shippable or degraded) or raises"
+        )
 
     if result.rewrites is not None:
         reworded = sum(1 for r in result.rewrites if r["kept"])
@@ -411,18 +414,21 @@ def rewrite_apply_cmd(
     console.print(
         f"kept {len(result.kept)} · dropped {len(result.dropped)} · swaps {len(result.swaps)}"
     )
-    if result.pdf_path is not None:
-        if result.degraded:
-            console.print(
-                f"pdf: {result.pdf_path} "
-                f"(degraded: untailored fallback, reason={result.degrade_reason})"
-            )
-        else:
-            console.print(f"pdf: {result.pdf_path}")
+    if result.pdf_path is not None and result.degraded:
+        console.print(
+            f"pdf: {result.pdf_path} "
+            f"(degraded: untailored fallback, reason={result.degrade_reason})"
+        )
+    elif result.pdf_path is not None:
+        console.print(f"pdf: {result.pdf_path}")
     else:
-        # Unreachable in practice: run_tailor raises TypstUnavailableError or
-        # LeadArtifactError (caught above) before ever returning without a PDF.
-        console.print("source only (no PDF; typst not available or compile failed)")
+        # run_tailor raises TypstUnavailableError or LeadArtifactError (caught above) before
+        # ever returning without a PDF — a PDF-less non-raising result is exactly the silent
+        # false-success P1a exists to eliminate, so a regression that reintroduces one must
+        # fail loudly here, not print a success-shaped message.
+        raise AssertionError(
+            "unreachable: run_tailor yields a PDF (shippable or degraded) or raises"
+        )
 
     # tb_override always populates result.rewrites (run_tailor's Tier B guard fires
     # whenever client-or-tb_override is given); see reports/tailor.py.
