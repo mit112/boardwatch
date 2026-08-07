@@ -30,6 +30,7 @@ from sqlalchemy import Engine
 from boardwatch.core.clock import utcnow
 from boardwatch.core.settings import Settings
 from boardwatch.pipeline.funnel_writer import collect_run_funnel
+from boardwatch.reports.resume_gate import LeadArtifactError, TypstUnavailableError
 from boardwatch.reports.run_funnel import (
     ScanContext,
     ShortlistCounts,
@@ -208,6 +209,24 @@ def run_pipeline(
                     out_dir=_ensure_dir(dest),
                     run_id=run_id,
                 )
+            except TypstUnavailableError as exc:
+                # An environment fault, not a per-lead failure (P1a): the binary is either on
+                # PATH or it isn't, so every remaining lead would fail identically — abort the
+                # stage rather than burn through the whole shortlist re-discovering that.
+                summary.fatal = f"typst binary unavailable: {exc}"
+                message = f"tailor: {summary.fatal}"
+                stage_errors.append(message)
+                summary.errors.append(message)
+                break
+            except LeadArtifactError as exc:
+                # Leave no empty folder behind: counting the deliverable by listing the dated
+                # directory is the obvious independent check, and a husk would inflate it.
+                _remove_if_empty(dest)
+                summary.tailor_failed += 1
+                message = f"tailor: posting {posting.posting_id}: {exc}"
+                stage_errors.append(message)
+                summary.errors.append(message)
+                continue
             except Exception as exc:  # one lead failing is not the run failing (P1 item 5)
                 # Leave no empty folder behind: counting the deliverable by listing the dated
                 # directory is the obvious independent check, and a husk would inflate it.

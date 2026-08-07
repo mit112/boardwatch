@@ -247,6 +247,68 @@ def test_run_out_dir_receives_pdf_when_typst_available(
     assert not (env.data_dir / "tailored").exists()
 
 
+# --- P1a résumé-artifact gate ----------------------------------------------------------
+
+
+def test_run_compile_failure_exits_nonzero_with_no_source_only_string(
+    env: Env, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """Both the tailored and untailored-master renders fail: `run_tailor` raises
+    `LeadArtifactError` rather than returning a PDF-less result, so the CLI must exit
+    non-zero and never fall into the old "source only" print (which claimed success)."""
+    _run(env, ["tailor", "init"])
+    posting_id = _seed_open_posting(env)
+    out = tmp_path / "artifacts"
+
+    def _fake_typst(typ: Path, pdf: Path) -> CompileOutcome:
+        return CompileOutcome(CompileReason.COMPILE_FAILED, None, None, "boom")
+
+    monkeypatch.setattr("boardwatch.reports.tailor._default_runner", _fake_typst)
+    result = _run(env, ["tailor", "run", str(posting_id), "--out", str(out)])
+    assert result.exit_code == 1, result.stdout
+    assert "source only" not in result.stdout
+
+
+def test_run_binary_missing_exits_nonzero_with_install_hint(
+    env: Env, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    _run(env, ["tailor", "init"])
+    posting_id = _seed_open_posting(env)
+    out = tmp_path / "artifacts"
+
+    monkeypatch.setattr("boardwatch.reports.tailor.shutil.which", lambda name: None)
+    result = _run(env, ["tailor", "run", str(posting_id), "--out", str(out)])
+    assert result.exit_code == 1, result.stdout
+    assert "typst" in result.stdout.lower()
+    assert "install" in result.stdout.lower()
+
+
+def test_run_degraded_lead_prints_degraded_marker_and_exits_zero(
+    env: Env, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """Only the untailored-master render compiles: the lead still ships (exit 0), but the
+    printed `pdf:` line must say so rather than reading identically to a clean tailored run.
+
+    Asserts on the literal "(degraded:" marker, not a bare "degraded" substring — pytest's own
+    `tmp_path` is derived from the test's name and would otherwise make this pass for free.
+    """
+    _run(env, ["tailor", "init"])
+    posting_id = _seed_open_posting(env)
+    out = tmp_path / "artifacts"
+
+    def _fake_typst(typ: Path, pdf: Path) -> CompileOutcome:
+        if "untailored" in typ.name:
+            pdf.write_bytes(b"%PDF")
+            return CompileOutcome(CompileReason.OK, pdf, 1, "ok")
+        return CompileOutcome(CompileReason.COMPILE_FAILED, None, None, "boom")
+
+    monkeypatch.setattr("boardwatch.reports.tailor._default_runner", _fake_typst)
+    result = _run(env, ["tailor", "run", str(posting_id), "--out", str(out)])
+    assert result.exit_code == 0, result.stdout
+    assert "(degraded:" in result.stdout
+    assert "source only" not in result.stdout
+
+
 def test_run_unsupported_format_exits_1(env: Env, tmp_path: Path) -> None:
     _run(env, ["tailor", "init"])
     posting_id = _seed_open_posting(env)

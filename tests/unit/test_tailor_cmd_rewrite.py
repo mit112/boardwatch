@@ -28,6 +28,7 @@ from boardwatch.store.tables import (
     posting_versions,
     postings,
 )
+from boardwatch.tailor.render.outcome import CompileOutcome, CompileReason
 from boardwatch.tailor.rewrite.agent_io import (
     Candidate,
     CandidatesFile,
@@ -406,6 +407,87 @@ def test_rewrite_apply_emits_llm_artifact_with_lineage(env: Env, tmp_path: Path)
     llm_typ = out_dir / f"tailored-{posting_id}-llm.typ"
     assert llm_typ.exists()
     assert "reworded (Tier B)" in llm_typ.read_text(encoding="utf-8")
+
+
+def _apply_fixture(env: Env, tmp_path: Path) -> tuple[int, Path, Path]:
+    """A posting plus a matching candidates.json/verdicts.json pair, ready for `rewrite
+    apply` — the shared setup for the PDF-gate tests below and the happy path above."""
+    _write_config(env, "[llm]\nresume_tailoring_via_agent = true\n")
+    _run(env, ["tailor", "init"])
+    posting_id = _seed_open_posting(env, skills=("python", "javascript"))
+
+    request_out = tmp_path / "rewrite_request.json"
+    req_result = _run(
+        env, ["tailor", "rewrite", "request", str(posting_id), "--out", str(request_out)]
+    )
+    assert req_result.exit_code == 0, req_result.stdout
+
+    candidates_path = tmp_path / "candidates.json"
+    dump_json(
+        CandidatesFile(
+            request_id="req-1",
+            candidates=[
+                Candidate(
+                    bullet_id="acme-1",
+                    candidate="Shipped a Python service handling 2M requests/day on Kubernetes",
+                ),
+            ],
+        ),
+        candidates_path,
+    )
+    verdicts_path = tmp_path / "verdicts.json"
+    dump_json(
+        VerdictsFile(
+            request_id="req-1",
+            verdicts=[Verdict(bullet_id="acme-1", raw_reply="ENTAILED")],
+        ),
+        verdicts_path,
+    )
+    return posting_id, candidates_path, verdicts_path
+
+
+def test_rewrite_apply_compile_failure_exits_nonzero_not_a_traceback(
+    env: Env, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Both the tailored and untailored-master renders fail: `run_tailor` raises
+    `LeadArtifactError`. Before this change `rewrite apply` had no try/except around
+    `run_tailor` at all, so this would surface as an unhandled traceback rather than a
+    clean, user-facing failure."""
+    posting_id, candidates_path, verdicts_path = _apply_fixture(env, tmp_path)
+
+    def _fake_typst(typ: Path, pdf: Path) -> CompileOutcome:
+        return CompileOutcome(CompileReason.COMPILE_FAILED, None, None, "boom")
+
+    monkeypatch.setattr("boardwatch.reports.tailor._default_runner", _fake_typst)
+    result = _run(
+        env,
+        [
+            "tailor", "rewrite", "apply", str(posting_id),
+            "--candidates", str(candidates_path), "--verdicts", str(verdicts_path),
+        ],
+    )
+    assert result.exit_code == 1, result.stdout
+    assert result.exception is None or isinstance(result.exception, SystemExit)
+    assert "no shippable résumé PDF" in result.stdout
+
+
+def test_rewrite_apply_binary_missing_exits_nonzero_with_install_hint(
+    env: Env, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    posting_id, candidates_path, verdicts_path = _apply_fixture(env, tmp_path)
+
+    monkeypatch.setattr("boardwatch.reports.tailor.shutil.which", lambda name: None)
+    result = _run(
+        env,
+        [
+            "tailor", "rewrite", "apply", str(posting_id),
+            "--candidates", str(candidates_path), "--verdicts", str(verdicts_path),
+        ],
+    )
+    assert result.exit_code == 1, result.stdout
+    assert result.exception is None or isinstance(result.exception, SystemExit)
+    assert "typst" in result.stdout.lower()
+    assert "install" in result.stdout.lower()
 
 
 def test_rewrite_apply_rejects_mismatched_request_ids(env: Env, tmp_path: Path) -> None:

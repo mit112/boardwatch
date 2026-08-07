@@ -119,6 +119,11 @@ class TailorResult:
     llm_pdf_path: Path | None = None
     rewrites: list[dict[str, Any]] | None = None
     llm_artifact_id: int | None = None
+    # False/None on a dry run (the compile gate never runs) and on a shippable non-degraded
+    # PDF; True + the tailored gate's failure reason when the untailored-master fallback is
+    # what actually shipped (P1a task 4 — the CLI needs this to print the degraded marker).
+    degraded: bool = False
+    degrade_reason: str | None = None
 
 
 def _default_runner(typ: Path, pdf: Path) -> CompileOutcome:
@@ -421,6 +426,11 @@ def run_tailor(
     art_id: int | None = None
     llm_pdf_path: Path | None = None
     llm_art_id: int | None = None
+    # Declared here, not inside `if not dry_run:` below, so the final TailorResult can report
+    # them unconditionally — a dry run never touches the compile gate, so both stay at their
+    # honest "nothing to report" default.
+    degraded = False
+    degrade_reason: str | None = None
     if not dry_run:
         with engine.connect() as conn:
             profile_row = get_profile(conn)
@@ -452,8 +462,6 @@ def run_tailor(
         if tailored_gate.reason is GateReason.BINARY_MISSING:
             raise TypstUnavailableError(_TYPST_MISSING_MSG)
 
-        degraded = False
-        degrade_reason: str | None = None
         if tailored_gate.shippable:
             chosen_gate = tailored_gate
             chosen_typ_uri = str(typ_path)
@@ -612,4 +620,6 @@ def run_tailor(
         llm_pdf_path=llm_pdf_path,
         rewrites=llm_rows,
         llm_artifact_id=llm_art_id,
+        degraded=degraded,
+        degrade_reason=degrade_reason,
     )

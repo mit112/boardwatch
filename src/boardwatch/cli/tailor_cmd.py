@@ -191,8 +191,16 @@ def run_cmd(
         else:
             console.print("dry run — source only, nothing written")
     elif result.pdf_path is not None:
-        console.print(f"pdf: {result.pdf_path}")
+        if result.degraded:
+            console.print(
+                f"pdf: {result.pdf_path} "
+                f"(degraded: untailored fallback, reason={result.degrade_reason})"
+            )
+        else:
+            console.print(f"pdf: {result.pdf_path}")
     else:
+        # Unreachable in practice: outside a dry run, run_tailor raises TypstUnavailableError
+        # or LeadArtifactError (caught above) before ever returning without a PDF.
         console.print("source only (no PDF; typst not available or compile failed)")
 
     if result.rewrites is not None:
@@ -382,17 +390,21 @@ def rewrite_apply_cmd(
     llm_budget = 2 * sum(len(e.bullets) for e in tailored.entries)
 
     out_dir = out if out is not None else settings.data_dir / "tailored"
-    result = run_tailor(
-        app_ctx.engine,
-        settings,
-        posting_id,
-        resume_path=resolved_resume_path,
-        out_dir=out_dir,
-        tb_override=tb,
-        llm_provider_override="claude-code-agent",
-        llm_model_override="subscription",
-        llm_budget_override=llm_budget,
-    )
+    try:
+        result = run_tailor(
+            app_ctx.engine,
+            settings,
+            posting_id,
+            resume_path=resolved_resume_path,
+            out_dir=out_dir,
+            tb_override=tb,
+            llm_provider_override="claude-code-agent",
+            llm_model_override="subscription",
+            llm_budget_override=llm_budget,
+        )
+    except (TypstUnavailableError, LeadArtifactError) as exc:
+        console.print(str(exc))
+        raise typer.Exit(code=1) from exc
 
     jd_skills_str = ", ".join(result.jd_skills) or "none"
     console.print(f"posting {result.posting_id} · jd skills: {jd_skills_str}")
@@ -400,8 +412,16 @@ def rewrite_apply_cmd(
         f"kept {len(result.kept)} · dropped {len(result.dropped)} · swaps {len(result.swaps)}"
     )
     if result.pdf_path is not None:
-        console.print(f"pdf: {result.pdf_path}")
+        if result.degraded:
+            console.print(
+                f"pdf: {result.pdf_path} "
+                f"(degraded: untailored fallback, reason={result.degrade_reason})"
+            )
+        else:
+            console.print(f"pdf: {result.pdf_path}")
     else:
+        # Unreachable in practice: run_tailor raises TypstUnavailableError or
+        # LeadArtifactError (caught above) before ever returning without a PDF.
         console.print("source only (no PDF; typst not available or compile failed)")
 
     # tb_override always populates result.rewrites (run_tailor's Tier B guard fires
