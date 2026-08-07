@@ -91,15 +91,18 @@ All fail-safe, independent of P2 item 4. **Slice 5 (LLM economics) has been grou
   retries 429/5xx with exponential-jitter + Retry-After, INSIDE `complete()` (one budget unit per logical
   call), falling through to today's Tier-A containment on exhaustion. Isolated to `llm/*`; non-transient
   errors unchanged.
-- **5a part 2 (idempotence short-circuit) — REMAINING (fresh context; has a subtlety):** skip re-tailor
-  when a `resume_tailored`(+`_llm`) artifact for this posting_version + identity tuple exists with its PDF.
-  Touches `run_tailor`'s core (which P0/P1a/P3 depend on) → fresh context. Fail-safe (skip only on exact
-  match, else re-tailor). **CRITICAL identity-key subtlety (found while designing, not yet built):** the key
-  must include EVERYTHING that affects the artifact's *validity*, not just its tailoring inputs — in
-  particular `resume_max_pages` (which is NOT in `profile_hash`; it's deliberately out of the ranker hash).
-  Otherwise changing the page limit and re-running would skip-and-reuse a PDF that now VIOLATES the P1a
-  page gate, silently bypassing it. Include resume_max_pages (+ anything else the P1a gate reads) in the
-  idempotence key, or re-validate the reused PDF against the current gate before skipping.
+- **5a part 2 (idempotence short-circuit) — DESIGN ATTEMPTED + deepseek-reviewed + FOUND UNSOUND
+  (2 blockers + 4 majors); DO NOT BUILD; needs a fresh-context structural rethink.**
+  `.superpowers/sdd/p3-unattended-runner/slice5a-idempotence-design.md` (marked unsound, full findings + fix
+  directions at the end). The "re-validate the reused PDF against the current P1a gate" insight (closing the
+  `resume_max_pages`-not-in-key trap) is necessary but NOT sufficient. Remaining holes: identity key omits a
+  Typst template/renderer version (net-new — no version exists; synthesize an AST/source digest of
+  `render/typst.py`) and the `tier_b_enabled` mode; re-validation must be MANDATORY for ALL P1a gates (page +
+  slots + Tier-B provenance), not conditional; and the row-write/retry semantics must upsert on
+  `(run_id, posting_version_id)` (or use a new run_id on retry) or a crash-retry double-counts the lead and
+  breaks the slice-3 cohort invariant. **THREE consecutive P3 designs (slice 2, slice 3 predicate, this) the
+  review found unsound at high context — a clear signal the remaining subtle P3 slices need a fresh context
+  window, not high-context grinding.**
 - **5b (a THIRD MIT FORK — do NOT build autonomously):** quota-cap-abort + a pending/resumable lead state +
   "never silently downgrade to deterministic." This INVERTS the current (reasonable) design where a
   provider error/budget-exhaustion drops to the structural Tier-A bullet and the lead ships — and it reworks
