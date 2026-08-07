@@ -39,10 +39,13 @@ from boardwatch.llm.cache import ResponseCache
 from boardwatch.llm.client import ModelClient
 from boardwatch.reports.resume_gate import (
     GateReason,
+    GateResult,
+    LayoutViolation,
     LeadArtifactError,
     ResumeValidationError,
     TypstUnavailableError,
     evaluate_compile,
+    validate_layout,
     validate_slots,
 )
 from boardwatch.store.artifacts import (
@@ -458,16 +461,22 @@ def run_tailor(
 
         try:
             validate_slots(tailored)
+            validate_layout(tailored, source)
+        except LayoutViolation as exc:
+            # A structural layout violation (P4 item 5a): never sent to typst, straight to
+            # the untailored-master fallback below — same posture as a slot failure.
+            tailored_gate = GateResult(exc.reason, False, None, None, str(exc))
         except ResumeValidationError as exc:
             # Treated exactly like a failed compile: never sent to typst, straight to the
             # untailored-master fallback below.
             tailored_outcome = CompileOutcome(
                 CompileReason.COMPILE_FAILED, None, None, f"slot validation failed: {exc}"
             )
+            tailored_gate = evaluate_compile(tailored_outcome, max_pages=max_pages)
         else:
             # No lock held here: to_pdf shells out / touches the filesystem freely.
             tailored_outcome = renderer.to_pdf(source, Path(out_dir), name, chosen_runner)
-        tailored_gate = evaluate_compile(tailored_outcome, max_pages=max_pages)
+            tailored_gate = evaluate_compile(tailored_outcome, max_pages=max_pages)
         if tailored_gate.reason is GateReason.BINARY_MISSING:
             raise TypstUnavailableError(_TYPST_MISSING_MSG)
 
@@ -477,10 +486,17 @@ def run_tailor(
             chosen_hash = tailored_hash
         else:
             untailored_source = renderer.emit(master)
-            untailored_outcome = renderer.to_pdf(
-                untailored_source, Path(out_dir), untailored_name, chosen_runner
-            )
-            untailored_gate = evaluate_compile(untailored_outcome, max_pages=max_pages)
+            try:
+                validate_layout(master, untailored_source)
+            except LayoutViolation as exc:
+                # Same posture as the tailored side: a layout-violating master is never
+                # sent to typst either — it falls straight through to the drop below.
+                untailored_gate = GateResult(exc.reason, False, None, None, str(exc))
+            else:
+                untailored_outcome = renderer.to_pdf(
+                    untailored_source, Path(out_dir), untailored_name, chosen_runner
+                )
+                untailored_gate = evaluate_compile(untailored_outcome, max_pages=max_pages)
             if untailored_gate.reason is GateReason.BINARY_MISSING:
                 raise TypstUnavailableError(_TYPST_MISSING_MSG)
             if untailored_gate.shippable:

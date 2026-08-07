@@ -86,3 +86,17 @@ def test_parse_bullets_count_excludes_preamble_definition() -> None:
     src = TypstRenderer().emit(r)
     total_bullets = sum(len(e.bullets) for e in r.entries)
     assert len(parse_bullets(src)) == total_bullets
+
+
+def test_emit_section_order_is_header_education_skills_entries() -> None:
+    """Section order is fixed by emit()'s own source-code order — no live input can vary
+    it (PROGRAM.md P4 item 5a). A regression guard, not a per-lead runtime gate: gating
+    this at runtime would be vacuous (D-028) since nothing today could ever make it fail."""
+    r = R()
+    src = TypstRenderer().emit(r)
+    assert (
+        src.index('#resume-header("')
+        < src.index('#resume-education("')
+        < src.index('#resume-skills("')
+        < src.index('#resume-entry("')
+    )

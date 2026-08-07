@@ -117,7 +117,7 @@ entries:
       - bullet_id: "b5"
         text: "Migrated the Python worker fleet off legacy hosts"
       - bullet_id: "b6"
-        text: "Ran the weekly incident meeting"
+        text: "Ran the weekly cross-team incident review meeting"
       - bullet_id: "b7"
         text: "Drafted the on-call rotation policy"
       - bullet_id: "b8"

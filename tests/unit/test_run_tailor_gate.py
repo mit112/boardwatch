@@ -305,3 +305,114 @@ def test_slot_validation_failure_falls_back_like_compile_failed(tmp_path: Path) 
     tailored = next(r for r in rows if r.kind == "resume_tailored")
     assert tailored.meta_json["degraded"] is True
     assert tailored.meta_json["degrade_reason"] == "compile_failed"
+
+
+# --- P4 item 5a: the per-lead layout gate --------------------------------------------
+
+
+def _degrade_layout_resume_yaml(tmp_path: Path) -> Path:
+    """One entry, one bullet, within the length band as authored. The JD skill match
+    "JavaScript" triggers Tier A's OWN JS->JavaScript equivalence swap (build_plan/apply.py),
+    growing the bullet past BULLET_MAX_LENGTH in the tailored résumé while the untailored
+    master (pre-swap) stays within band — a genuine per-lead risk the gate must catch, not
+    an injected fixture."""
+    filler = "a" * 150
+    path = tmp_path / "degrade-layout-resume.yaml"
+    path.write_text(
+        "header:\n"
+        '  - "Ada Lovelace"\n'
+        "education:\n"
+        '  - "BSc Mathematics — Example University — 2018"\n'
+        "skill_groups:\n"
+        '  - label: "Languages"\n'
+        '    items: ["Python"]\n'
+        "entries:\n"
+        '  - entry_id: "acme-sre"\n'
+        '    heading: "Senior Engineer — Acme — 2021–2024 — Remote"\n'
+        "    bullets:\n"
+        '      - bullet_id: "acme-1"\n'
+        f'        text: "Shipped the {filler} dashboard rollout using the JS build '
+        'pipeline reliably"\n',
+        encoding="utf-8",
+    )
+    return path
+
+
+def _seven_bullets_resume_yaml(tmp_path: Path) -> Path:
+    """7 bullets in one entry, no JD skill matches: build_plan's `if not jd_skills` short-
+    circuit emits no trimming ops at all, so both the tailored (an identity copy of master)
+    and the untailored master exceed MAX_BULLETS_PER_ENTRY identically. This is the real gap
+    item 5a closes — a zero-skill JD ships an untrimmed entry unless the layout gate catches
+    it (design doc, §3)."""
+    path = tmp_path / "seven-bullets-resume.yaml"
+    path.write_text(
+        "header:\n"
+        '  - "Ada Lovelace"\n'
+        "education:\n"
+        '  - "BSc Mathematics — Example University — 2018"\n'
+        "skill_groups:\n"
+        '  - label: "Languages"\n'
+        '    items: ["Python"]\n'
+        "entries:\n"
+        '  - entry_id: "acme-sre"\n'
+        '    heading: "Senior Engineer — Acme — 2021–2024 — Remote"\n'
+        "    bullets:\n"
+        '      - bullet_id: "b1"\n'
+        '        text: "Wrote onboarding docs and runbooks for the on-call rotation"\n'
+        '      - bullet_id: "b2"\n'
+        '        text: "Built a Python service for billing reconciliation nightly"\n'
+        '      - bullet_id: "b3"\n'
+        '        text: "Shipped a dashboard used daily by the operations team"\n'
+        '      - bullet_id: "b4"\n'
+        '        text: "Mentored two interns through their first shipped change"\n'
+        '      - bullet_id: "b5"\n'
+        '        text: "Ran the quarterly incident review with every stakeholder"\n'
+        '      - bullet_id: "b6"\n'
+        '        text: "Negotiated the vendor contract renewal with procurement"\n'
+        '      - bullet_id: "b7"\n'
+        '        text: "Organised the internal engineering reading group sessions"\n',
+        encoding="utf-8",
+    )
+    return path
+
+
+def test_layout_violation_falls_back_to_untailored_degraded(tmp_path: Path) -> None:
+    def runner(typ: Path, pdf: Path) -> CompileOutcome:
+        assert "untailored" in typ.name  # the tailored side must never reach the runner
+        return _ok(pdf, 1)
+
+    settings = _settings(tmp_path)
+    engine = _engine(settings)
+    pid = _seed(engine, settings, skills=("JavaScript",))
+    out = tmp_path / "day" / "acme-lead"
+    run_tailor(
+        engine, settings, pid, resume_path=_degrade_layout_resume_yaml(tmp_path), out_dir=out,
+        typst_runner=runner,
+    )
+    rows = _artifact_rows(engine)
+    tailored = next(r for r in rows if r.kind == "resume_tailored")
+    assert tailored.meta_json["degraded"] is True
+    assert tailored.meta_json["degrade_reason"] == "bullet_too_long"
+    assert tailored.meta_json["typst_pdf_built"] is True
+
+
+def test_layout_violation_on_both_sides_drops_lead(tmp_path: Path) -> None:
+    def runner(typ: Path, pdf: Path) -> CompileOutcome:
+        raise AssertionError("a layout-violating résumé must never reach the typst runner")
+
+    settings = _settings(tmp_path)
+    engine = _engine(settings)
+    pid = _seed(engine, settings)  # skills=() -> tailored is an identity copy of master
+    day_dir = tmp_path / "day"
+    out = day_dir / "acme-lead"
+    out.mkdir(parents=True)
+    with pytest.raises(LeadArtifactError):
+        run_tailor(
+            engine, settings, pid, resume_path=_seven_bullets_resume_yaml(tmp_path), out_dir=out,
+            typst_runner=runner,
+        )
+    assert _artifact_rows(engine) == []
+    assert not out.exists()
+    failed_log = day_dir / "_failed" / "acme-lead.log"
+    assert failed_log.exists()
+    assert "too_many_bullets" in failed_log.read_text(encoding="utf-8")
