@@ -856,3 +856,22 @@ lane level; its behaviour under real model output is unmeasured until a live Tie
 P1a's evidence (D-032, session 9) — P1b does not re-anchor that gate, it closes the one item Gate P1 did
 not itself require. **P1 (P1a + P1b) is now fully complete.** Next phase: P2 — profile object + the
 keystone invariant.
+
+## Gate P3 window — 2026-08-07 (parallel session): NOT STARTED, blocked
+
+The operational-half accumulation (7 consecutive clean `boardwatch run` days) never began — the
+prerequisite (a résumé that produces ≥1 lead+PDF) is unmet. **Zero runs against the live store; read-only.**
+
+| Check | Value |
+|---|---|
+| `resume_max_pages` (Mit) | **1** (pinned by Mit; other users may set 2+) |
+| Résumé pages (`resume.yaml`, typst 0.15.1, app renderer) | **2** |
+| Consequence at limit=1 | every `boardwatch run` drops all leads → 0/0 FATAL → counter cannot advance |
+| Résumé summary field | **none** (schema = header/education/skill_groups/entries) |
+| Trim: cap skills 58→28 | still 2pp (skills wrap; ~0 vertical cost) |
+| Trim: drop crop-rf only | still 2pp |
+| Trim: drop crop-rf + gamified-learning | **1pp** |
+
+**Disposition:** Mit paused for major résumé rework in a separate session. Gate P3 operational half stays
+UNMET; two-writer test (item 8, Docker) also still pending. Details: memory
+`gate-p3-blocked-on-one-page-resume`; STATE.md Gate-P3 bullet.

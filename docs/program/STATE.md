@@ -592,9 +592,22 @@ domain input nor Docker.** What is left is genuinely gated on things I cannot su
   **The 7-run half can be accumulated by a PARALLEL Claude Code session (or cron) Mit runs on this machine**
   (owns the daily `bwd` + per-run `verify`/funnel Gate-P3 recording), in parallel with dev here — no
   contention (`make check` uses temp DBs; the scan lock serializes live runs). **Prerequisite:** fix the
-  live config first (`resume_max_pages=2` + résumé passes the layout gate) or every run drops all leads.
+  live config first (a 1-page résumé) or every run drops all leads.
   The two-writer test half still needs **Docker** (absent; `docker info` fails); documented-stance half
   shipped (D-041). So the parallel session closes the operational half only.
+  **ATTEMPTED + BLOCKED 2026-08-07 (parallel Gate-P3 session, read-only, live store untouched):** the
+  operational half **never started** — the prerequisite is unmet. Correction to the line above: **Mit
+  pins `resume_max_pages=1` for himself** (other users may set 2+), and his authored
+  `resume.yaml` renders to **2 pages**, so every `boardwatch run` drops all leads → 0/0 FATAL → the
+  7-run counter can never advance. Measured (typst 0.15.1, app renderer): the résumé has **no summary
+  field** (schema = header/education/skill_groups/entries only — the overflow is content volume, not a
+  summary); page 2 = only the two oldest projects. Capping skills does nothing (they wrap, ~0 vertical
+  cost); only fewer entries / shorter bullets help (drop crop-rf **+** gamified-learning → 1pp). **Mit
+  paused for major résumé rework in a separate session.** Also: the daily driver is `boardwatch run`,
+  **not** `bwd`/`.agent/bin/bw-daily` (that predates `run` and emits no run_id/funnel artifact, so the
+  handoff's `verify --run` procedure needs `run`); `profile edit` has no `--resume-max-pages` flag (the
+  value is a profile-DB column); CLI is `uv run boardwatch`; `boardwatch doctor` hung >120s.
+  See memory `gate-p3-blocked-on-one-page-resume`.
 
 - **P4 IS UNDERWAY (D-047, decided autonomously under Mit's "keep plowing / don't get stuck" mandate).**
   Rationale: P4's craft rubric is functionally independent of the unattended runner and builds on the
