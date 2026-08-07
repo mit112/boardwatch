@@ -91,18 +91,15 @@ All fail-safe, independent of P2 item 4. **Slice 5 (LLM economics) has been grou
   retries 429/5xx with exponential-jitter + Retry-After, INSIDE `complete()` (one budget unit per logical
   call), falling through to today's Tier-A containment on exhaustion. Isolated to `llm/*`; non-transient
   errors unchanged.
-- **5a part 2 (idempotence short-circuit) — DESIGN ATTEMPTED + deepseek-reviewed + FOUND UNSOUND
-  (2 blockers + 4 majors); DO NOT BUILD; needs a fresh-context structural rethink.**
-  `.superpowers/sdd/p3-unattended-runner/slice5a-idempotence-design.md` (marked unsound, full findings + fix
-  directions at the end). The "re-validate the reused PDF against the current P1a gate" insight (closing the
-  `resume_max_pages`-not-in-key trap) is necessary but NOT sufficient. Remaining holes: identity key omits a
-  Typst template/renderer version (net-new — no version exists; synthesize an AST/source digest of
-  `render/typst.py`) and the `tier_b_enabled` mode; re-validation must be MANDATORY for ALL P1a gates (page +
-  slots + Tier-B provenance), not conditional; and the row-write/retry semantics must upsert on
-  `(run_id, posting_version_id)` (or use a new run_id on retry) or a crash-retry double-counts the lead and
-  breaks the slice-3 cohort invariant. **THREE consecutive P3 designs (slice 2, slice 3 predicate, this) the
-  review found unsound at high context — a clear signal the remaining subtle P3 slices need a fresh context
-  window, not high-context grinding.**
+- **5a part 2 (idempotence short-circuit) — DECLINED (D-042), per YAGNI. NOT a remaining item.**
+  Two designs (high-context + a fresh opus agent's) both failed deepseek review (2 blockers+4 majors, then
+  3 more: Typst-binary-version not in key, racy insert-if-absent w/o a unique index, copied artifacts not
+  hash-verified). Decisive value judgment: the existing `llm/cache.py` response cache ALREADY avoids
+  re-paying the expensive LLM API calls on a resumable re-run (item 10's material goal); a tailor-level
+  short-circuit only additionally saves a cheap Typst render and needs heavy correctness-hazardous machinery
+  to be safe — over-engineering for its payoff (same disposition as P2 item 1). Revisit only with concrete
+  evidence of a material render cost. (Separately logged in D-042: response-cache HITS may still consume the
+  `_guarded` budget — a small real inefficiency for a future look.)
 - **5b (a THIRD MIT FORK — do NOT build autonomously):** quota-cap-abort + a pending/resumable lead state +
   "never silently downgrade to deterministic." This INVERTS the current (reasonable) design where a
   provider error/budget-exhaustion drops to the structural Tier-A bullet and the lead ships — and it reworks
