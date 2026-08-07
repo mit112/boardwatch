@@ -1932,3 +1932,42 @@ high-context grind (three consecutive high-context P3 designs came back unsound 
 items needing input beyond a fresh context window: P2 item 4's taxonomy CONTENT (which rule families are
 field-specific for a US-nurse / EU-paralegal persona — Mit's domain call), and item 8's cross-OS test
 (needs Docker). Everything else this session was built or reasoned-declined.
+
+## D-046 — P3 slice 2: age-based run REAPER (no schema); this CLOSES the last non-Mit / non-Docker P3 build item
+
+**2026-08-07 · session 10 · P3 (slice 2, the reaper half — built, reviewed, merged).**
+
+**Context.** A crashed/killed run leaves a permanent phantom `runs` row (`status='running'`,
+`finished_at IS NULL`) — `finish_run`'s own docstring names "the reaper that P3 owns" as what separates
+that signature from a live run and a raised standalone lane. D-045 declined the reclaim; this is the reap.
+
+**Why age-based, not process-liveness (correcting the D-045-era premise).** The `runs` table has no
+pid/heartbeat column, so there is nothing to check `os.kill(pid,0)` against, and adding one only works
+same-host (a container writer and a host writer have disjoint pid namespaces — item 8's domain). Age is
+the sound discriminator instead: a real boardwatch run — even the daily driver over hundreds of leads with
+LLM tailoring + retry backoff — is minutes, not hours.
+
+**Mechanism.** `reap_stale_runs(engine, *, older_than)` marks rows matching
+`status='running' AND finished_at IS NULL AND started_at < now-older_than` as `failed`, appending a note,
+in a SINGLE atomic `UPDATE ... RETURNING id` (`json_insert` for the append — no read-modify-write; the
+returned id list is exactly what THIS call mutated, not a pre-UPDATE snapshot that over-reports under a
+race). Default threshold `Settings.reap_stale_after_hours=24` (operational; classified CONFIG_IRRELEVANT
+so it never enters `config_hash`, and "operational" in the generalization snapshot). Drains in `doctor`
+(report+reap, guarded so a lock-contended write can never crash the diagnostic) and at `run_pipeline`
+start before the run's own row is minted (swallow-and-logged).
+
+**Why sound / fail-safe.** `finish_run` has no `status='running'` precondition, so a false-reap of a run
+that breaches 24h and then finishes self-corrects (`failed`→its real terminal status); the only residual
+is an honest `reaped` note on such a >24h run. No guard re-reads `runs.status` — freshness treats `failed`
+as terminal (verified) and is run-scoped, so there is no cascade-abort of a later run.
+
+**Reviews.** deepseek (design): found a real `errors_json` read-modify-write race in the first cut → fixed
+by the single atomic statement; threshold 6h→24h; its alleged freshness cascade disproven against the
+code. diff-reviewer (implementation): found doctor's reap unguarded (fixed), the return list a pre-UPDATE
+snapshot (fixed via RETURNING), and a discrimination test gap (added). `make check` green (2948 passed,
+95.33% coverage), authoritative gate re-run by the orchestrator.
+
+**The correct-but-deferred alternative:** a `last_heartbeat_at` column bumped every ~60s, reaping on
+heartbeat-staleness not start-age, distinguishes a slow-but-live run precisely. It costs a schema
+migration + a periodic writer; deferred as a follow-up. **With this merged, the last P3 build item that
+needs neither Mit's domain input nor Docker is closed.**

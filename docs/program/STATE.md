@@ -71,14 +71,14 @@ net-new work clusters into 5 **fail-safe** slices:
   Make the reaper race-safe by gating on the run's lock being *acquirable now*, not an age floor.
   **DECIDED (D-045): stale-reclaim DECLINED** — unsound AND unnecessary (POSIX releases a dead holder's
   flock, so bare `FileLock.acquire()` already reclaims it; the cross-platform edge is item 8's, no Docker
-  here). The loud-notify shipped (D-043). **The run REAPER (`running`+NULL rows) is IN BUILD** — the
-  "needs pid liveness / fresh context" premise was WRONG: there is no pid column to check, and an
-  AGE-BASED reaper is sound because `finish_run` has no status precondition (a false-reap self-corrects)
-  and freshness treats `failed` as terminal (VERIFIED, no cascade). Design in
-  `.superpowers/sdd/p3-unattended-runner/slice2-reaper-design.md`, deepseek-reviewed (its real
-  errors_json read-modify-write race fixed via a single atomic `json_insert`+`WHERE status='running'`
-  UPDATE; threshold 24h; its alleged freshness cascade disproven by the code). Implementer dispatched
-  2026-08-07; records D-046 on merge. Heartbeat-column reaper is the deferred correct alternative.
+  here). The loud-notify shipped (D-043). **The run REAPER (`running`+NULL rows) is DONE (D-046).** Age-based (no schema): a single atomic
+  `UPDATE ... RETURNING id` marks `running`+NULL rows older than `reap_stale_after_hours` (24) `failed`;
+  drains in `doctor` (guarded) and at `run` start (before the run's own row is minted). Sound because
+  `finish_run` has no status precondition (false-reap self-corrects) and freshness treats `failed` as
+  terminal (VERIFIED). Two reviews (deepseek design → fixed a real errors_json race; diff-reviewer impl →
+  fixed unguarded doctor + pre-UPDATE-snapshot return via RETURNING). `make check` green (2948 passed,
+  95.33%). Heartbeat-column reaper is the deferred correct alternative. **Slice 2 COMPLETE; with it, the
+  last non-Mit / non-Docker P3 build item is closed.**
 - **(3) P3-run-integrity — DONE (D-039, merged):** three run-integrity guards in `pipeline/runner.py`, all
   setting `summary.fatal` (fail-safe): cohort completeness (`visible` posting-id set == leads ∪ failed,
   ID-based); zero-output guard (0 leads is provably-right IFF scan healthy AND `eligible-judged-this-run`==0,
