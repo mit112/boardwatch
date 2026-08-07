@@ -41,9 +41,11 @@ exist). **Shipped this session (all merged, reviewed, `make check` green):**
   resolver registry and asserts every family × every pattern (all 33) abstains on empty `Facts()` — a new
   family/pattern that forgets to abstain now fails the gate. (Typed `AbstainReason` enum deferred — ~15
   call sites, no behaviour change; the property test is the enforcement.)
-- **items 5 & 6 largely already satisfied**: INELIGIBLE carries a span (offset locator, quoted on demand);
-  the ELIGIBLE evidence chain (rule→disposition→span→profile-fact) exists. Residual: the *zero-rows*
-  eligible-residue vs eligible-cleared distinction (item 6 guard) — a reporting-honesty gap, low urgency.
+- **items 5 & 6 DONE**: INELIGIBLE carries a span (pre-existing offset locator); the ELIGIBLE evidence
+  chain exists; and item 6's honesty gap is now closed (D-036) — a typed `VerdictPresentation` renders an
+  eligible verdict as *cleared* (all rows met), *mixed* (non-met but non-blocking rows — never claims those
+  cleared), or *no rule applied* (zero rows / residue). Presentation-only; verdict/engine unchanged.
+- **item 4 (taxonomy) is the ONLY remaining P2 item — awaits Mit** (see below).
 
 **DECLINED (YAGNI):** item 1's facts `schema_version` — validated + hashed already hold; a schema-version
 field is speculative hardening with unclear payoff (schema changes are rare and arrive with value changes
