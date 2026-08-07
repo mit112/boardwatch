@@ -281,6 +281,23 @@ def test_cli_renders_mid_scan(tmp_path, monkeypatch) -> None:
     assert "in progress" in result.stdout
 
 
+def test_doctor_survives_a_reap_failure_and_still_prints_diagnostics(tmp_path, monkeypatch) -> None:
+    """A reap write can contend with a concurrent `run` under the busy_timeout and raise.
+    `doctor` must stay usable — print its diagnostics and compute its exit code from the real
+    health check — rather than crash before any of that ever prints."""
+    from boardwatch.cli import doctor_cmd
+
+    def boom(engine, *, older_than):
+        raise RuntimeError("database is locked")
+
+    monkeypatch.setattr(doctor_cmd, "reap_stale_runs", boom)
+    result = _cli(tmp_path, monkeypatch, {"acme": BoardHealth.OK})
+
+    assert result.exit_code == 0, result.output
+    assert "stale-run reap failed" in result.output
+    assert "integrity" in result.output.lower()
+
+
 def test_doctor_reaps_a_stale_running_row_and_reports_it(tmp_path, monkeypatch) -> None:
     def stale_run(eng):
         with eng.begin() as conn:

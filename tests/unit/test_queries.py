@@ -116,6 +116,23 @@ def test_reap_stale_runs_leaves_recent_running_and_old_ok_rows_untouched(engine:
     assert _run_row(engine, old_ok).status == RUN_OK
 
 
+def test_reap_stale_runs_discriminates_a_stale_row_from_a_fresh_one_in_the_same_call(
+    engine: Engine,
+) -> None:
+    """One call, two `running` rows: only the row past the cutoff is reaped. The other tests
+    here either have no matching row (an early no-op) or a single row (no sibling to prove
+    the UPDATE's WHERE discriminates row-by-row rather than something equivalent to
+    updating-by-a-captured-id-list)."""
+    stale_id = _insert_run_row(engine, started_at=utcnow() - timedelta(hours=25))
+    fresh_id = _insert_run_row(engine, started_at=utcnow() - timedelta(hours=1))
+
+    reaped = reap_stale_runs(engine, older_than=timedelta(hours=24))
+
+    assert reaped == [stale_id]
+    assert _run_row(engine, stale_id).status == RUN_FAILED
+    assert _run_row(engine, fresh_id).status == RUN_RUNNING
+
+
 def test_reap_stale_runs_leaves_a_running_row_with_finished_at_already_set_untouched(
     engine: Engine,
 ) -> None:

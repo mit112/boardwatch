@@ -147,11 +147,18 @@ def reap_stale_runs(engine: Engine, *, older_than: timedelta) -> list[int]:
 
     Age-based, not liveness-based: `runs` carries no pid/heartbeat column, and adding one
     would only work same-host anyway. A single atomic UPDATE re-checks
-    `status='running' AND finished_at IS NULL AND started_at < cutoff` INSIDE the statement,
-    not just in the SELECT below it, so a row `finish_run` closes between the two is skipped
-    by the UPDATE's own predicate, and calling this twice reaps nothing the second time — no
-    read-modify-write, no lost update, no duplicate note. `errors_json` is appended to via
-    `json_insert`, atomically, rather than read back and rewritten.
+    `status='running' AND finished_at IS NULL AND started_at < cutoff` INSIDE the statement, so
+    a row `finish_run` closes concurrently is skipped by the UPDATE's own predicate, and
+    calling this twice reaps nothing the second time — no read-modify-write, no lost update, no
+    duplicate note. `errors_json` is appended to via `json_insert`, atomically, rather than
+    read back and rewritten.
+
+    The returned/logged ids come from the UPDATE's own `RETURNING`, never from a separate
+    pre-UPDATE `SELECT`: under a race between two reapers (two `run` starts, or `doctor`
+    racing a `run`, against the same cutoff), a pre-UPDATE `SELECT` can still see a row as
+    `running` a moment before the winner's UPDATE closes it — the loser's data is correct
+    (its own UPDATE mutates zero rows of that id) but a SELECT-derived list would still claim
+    it as reaped. `RETURNING` reports exactly what THIS call mutated, never what it merely saw.
 
     A false reap is benign and self-corrects: `finish_run` has no `status='running'`
     precondition, so a run that breaches the threshold and then finishes normally overwrites
@@ -167,10 +174,7 @@ def reap_stale_runs(engine: Engine, *, older_than: timedelta) -> list[int]:
     hours = older_than.total_seconds() / 3600
     note = f"reaped: running with no terminal status for > {hours:g}h"
     with engine.begin() as conn:
-        reaped_ids = [int(row.id) for row in conn.execute(select(runs.c.id).where(stale)).all()]
-        if not reaped_ids:
-            return []
-        conn.execute(
+        result = conn.execute(
             update(runs)
             .where(stale)
             .values(
@@ -180,8 +184,9 @@ def reap_stale_runs(engine: Engine, *, older_than: timedelta) -> list[int]:
                     func.coalesce(runs.c.errors_json, literal_column("'[]'")), "$[#]", note
                 ),
             )
+            .returning(runs.c.id)
         )
-    return reaped_ids
+        return [int(row.id) for row in result.all()]
 
 
 def ensure_run(engine: Engine, run_id: int | None) -> int:

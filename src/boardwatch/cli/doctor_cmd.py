@@ -109,10 +109,16 @@ def doctor(ctx: typer.Context, offline: bool = typer.Option(False, "--offline"))
 
     # P3 slice 2 (D-046): the operator-facing drain. Reports and reaps in the same call —
     # idempotent, safe to invoke anytime — so a stale `running` row never needs a separate
-    # command to clear.
-    reaped = reap_stale_runs(
-        app_ctx.engine, older_than=timedelta(hours=app_ctx.settings.reap_stale_after_hours)
-    )
+    # command to clear. Swallowed and logged, mirroring `runner.py`'s guard on the same call:
+    # `doctor` must stay usable (print its diagnostics, compute its exit code) even when the
+    # write contends with a concurrent `run` under the busy_timeout and raises.
+    try:
+        reaped = reap_stale_runs(
+            app_ctx.engine, older_than=timedelta(hours=app_ctx.settings.reap_stale_after_hours)
+        )
+    except Exception as exc:  # noqa: BLE001 - never block doctor's own diagnostics
+        reaped = []
+        console.print(f"  ! stale-run reap failed: {exc}", markup=False)
     if reaped:
         console.print(
             f"[yellow]reaped {len(reaped)} stale run(s) (running with no terminal status "
