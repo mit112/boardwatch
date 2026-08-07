@@ -85,11 +85,21 @@ nothing; needs a real cross-process/cross-OS concurrent-writer harness.
 above). **Slice 5 (LLM economics) + item 8 (cross-OS two-writer test) REMAIN** — each substantial and
 design-heavy; recommend a fresh context window per slice (session-10's slice-2 unsound-design, slice-4
 freshness-scope, and slice-3 predicate reworks were all caught by review — a sign these want sharp context).
-All fail-safe, independent of P2 item 4. Slice 5 scope: meta-hash idempotence (JD+template+model+prompt+
-profile+persona → skip re-tailor on a re-run; today a re-run fully re-tailors) + split LLM rate-limit classes
-(clients raise a flat `LLMError` on any non-2xx — no 429/quota split, no backoff, no resumable-pending;
-never silently downgrade to the deterministic engine). Isolated to `llm/*` + `reports/tailor.py` +
-`tailor/rewrite/*`. Item 8: a real cross-process/cross-OS concurrent-writer harness (same-OS proves nothing).
+All fail-safe, independent of P2 item 4. **Slice 5 (LLM economics) has been grounded + decomposed** —
+`.superpowers/sdd/p3-unattended-runner/slice5-design.md`:
+- **5a (SOUND, fail-safe, ready to build):** (i) retry-with-backoff on transient 429/5xx — adapters raise
+  distinguishable `LLMError` subclasses, `call()` wraps a bounded tenacity retry honoring Retry-After
+  (port `core/politeness.py`), falling through to today's containment; (ii) meta-hash idempotence
+  short-circuit — skip re-tailor when a `resume_tailored` artifact for this posting_version + identity tuple
+  (all fields already in `meta_json` + `profile_hash`; `persona_version` deferred to P4) already exists with
+  its PDF. → **D-040 at build.**
+- **5b (a THIRD MIT FORK — do NOT build autonomously):** quota-cap-abort + a pending/resumable lead state +
+  "never silently downgrade to deterministic." This INVERTS the current (reasonable) design where a
+  provider error/budget-exhaustion drops to the structural Tier-A bullet and the lead ships — and it reworks
+  the slice-3 cohort-completeness invariant (which demands a terminal state per shortlisted posting).
+  **Decide first:** is a solid Tier-A bullet on quota/error a GOOD outcome (keep today's downgrade — don't
+  build 5b) or a failure to leave pending? Batched judging defers with 5b.
+Item 8: a real cross-process/cross-OS concurrent-writer harness (same-OS proves nothing) — separate + hard.
 
 **DECLINED (YAGNI):** item 1's facts `schema_version` — validated + hashed already hold; a schema-version
 field is speculative hardening with unclear payoff (schema changes are rare and arrive with value changes
