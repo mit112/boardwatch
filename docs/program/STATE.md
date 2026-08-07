@@ -47,6 +47,17 @@ exist). **Shipped this session (all merged, reviewed, `make check` green):**
   cleared), or *no rule applied* (zero rows / residue). Presentation-only; verdict/engine unchanged.
 - **item 4 (taxonomy) is the ONLY remaining P2 item — awaits Mit** (see below).
 
+**P3 (unattended one-command runner) is now DECOMPOSED and building** —
+`.superpowers/sdd/p3-unattended-runner/design.md`. Grounded exploration found the foundation exists (single
+`fatal` discriminator, WAL already set, `run_id` plumbing, outage guard already reads the decision field);
+net-new work clusters into 5 **fail-safe** slices: (1) P3-contract — write the fatal-vs-non-fatal contract +
+consolidate the duplicated outage predicate (DO FIRST, governs slice 3); (2) P3-lock-liveness — lock
+metadata/stale-reclaim/token/notify + the P3-owned run reaper; (3) P3-run-integrity — zero-output guard ==
+cohort completeness + filesystem-truth; (4) P3-output — freshness + morning artifact; (5) P3-llm-economics —
+meta-hash idempotence + split LLM rate-limit classes. Cross-cutting highest-risk: the two-writer cross-OS
+WAL test (item 8). All fail-safe (no job-deletion risk), independent of P2 item 4 — building autonomously,
+slice 1 first.
+
 **DECLINED (YAGNI):** item 1's facts `schema_version` — validated + hashed already hold; a schema-version
 field is speculative hardening with unclear payoff (schema changes are rare and arrive with value changes
 that already re-key `profile_hash`). Build it only if a concrete need appears.
