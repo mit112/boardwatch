@@ -66,9 +66,11 @@ net-new work clusters into 5 **fail-safe** slices:
   alone. Make the reaper race-safe by gating on the run's lock being *acquirable now*, not an age floor.
   **A MIT FORK:** is stale-reclaim + auto-reap worth the complexity, or is "loud notify + acquirable-lock
   reaper + doctor surfacing" enough? Do not build slice 2 until this is resolved.
-- **(3) P3-run-integrity — REMAINING:** zero-output guard == cohort completeness + filesystem-truth (needs
-  the contract, now in place). Design-heavy: must define "candidate" + its terminal state. Best in fresh
-  context.
+- **(3) P3-run-integrity — DONE (D-039, merged):** three run-integrity guards in `pipeline/runner.py`, all
+  setting `summary.fatal` (fail-safe): cohort completeness (`visible` posting-id set == leads ∪ failed,
+  ID-based); zero-output guard (0 leads is provably-right IFF scan healthy AND `eligible-judged-this-run`==0,
+  run_id-attributed → no steady-state false alarm); filesystem-truth (run-scoped folder reconciliation,
+  reused from slice 4). Read-only; both highest-risk properties mutation-verified by the reviewer.
 - **(4) P3-output — DONE (D-038, merged):** `reports/morning.py` writes `morning-<run_id>.md/json` in the
   day folder (sibling of the funnel; apply URL · PDF path · honest verdict label · quoted span · one-line
   why per lead), fed by threading the ranker's verdict/why through the runner + a `postings.url` join +
@@ -79,10 +81,15 @@ net-new work clusters into 5 **fail-safe** slices:
   `llm/*` + `reports/tailor.py` + `tailor/rewrite/*`).
 Cross-cutting highest-risk, REMAINING: the two-writer cross-OS WAL test (item 8) — a same-OS test proves
 nothing; needs a real cross-process/cross-OS concurrent-writer harness.
-**P3 status:** slices 1 (D-037) + 4 (D-038) DONE + merged. Slice 2 is UNSOUND (rethink + Mit fork above).
-Slices 3, 5, and item 8 REMAIN — each substantial and design-heavy; recommend a fresh context window per
-slice (the session-10 slice-2 unsound-design and slice-4 freshness-scope bugs were both caught by review, a
-sign these want sharp context). All fail-safe, independent of P2 item 4.
+**P3 status:** slices 1 (D-037), 3 (D-039), 4 (D-038) DONE + merged. Slice 2 is UNSOUND (rethink + Mit fork
+above). **Slice 5 (LLM economics) + item 8 (cross-OS two-writer test) REMAIN** — each substantial and
+design-heavy; recommend a fresh context window per slice (session-10's slice-2 unsound-design, slice-4
+freshness-scope, and slice-3 predicate reworks were all caught by review — a sign these want sharp context).
+All fail-safe, independent of P2 item 4. Slice 5 scope: meta-hash idempotence (JD+template+model+prompt+
+profile+persona → skip re-tailor on a re-run; today a re-run fully re-tailors) + split LLM rate-limit classes
+(clients raise a flat `LLMError` on any non-2xx — no 429/quota split, no backoff, no resumable-pending;
+never silently downgrade to the deterministic engine). Isolated to `llm/*` + `reports/tailor.py` +
+`tailor/rewrite/*`. Item 8: a real cross-process/cross-OS concurrent-writer harness (same-OS proves nothing).
 
 **DECLINED (YAGNI):** item 1's facts `schema_version` — validated + hashed already hold; a schema-version
 field is speculative hardening with unclear payoff (schema changes are rare and arrive with value changes
