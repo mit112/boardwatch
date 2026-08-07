@@ -695,9 +695,17 @@ Workday endpoints (HTTP 401/422), non-fatal by design.
 pinned to `66291bf` (the pre-v3 commit) precisely so the scan runs stayed on a stable tree while artifact
 v3 was edited on `main`. Reconciliation is version-independent — v3 changed no reconciliation logic, only
 added the manifest/stub/fabrication sections — so the gate is validly met by v2 artifacts. Artifact v3's
-new sections are validated by tests (fixtures) and by the independent code review of `faa4394`; a
-confirmatory `--no-scan` run from `main` on the real store (to eyeball manifest/stub/fabrication on live
-data) was launched separately — record its artifact_version=3 output when it lands.
+new sections are validated by tests (fixtures), by the independent code review of `faa4394`, and by a
+confirmatory `--no-scan` run from `main` on the real store — **run_id 9, `artifact_version` 3, reconciles**:
+manifest all six fields populated (`status: ok`, all five hashes present — real profile), **stub rate
+17 / 23,455 = 0.07%** (near-zero, exactly as §6 correction 4 predicted for structured ATS JSON), and
+fabrication all-zero with `bullets_seen: 0` (Tier B is off in Mit's config — the designed honest zero, not
+a hidden one). `funnel-9.{json,md}` in `~/boardwatch-applications/2026-08-07/`.
+
+A second `--no-scan` run started unexpectedly afterward and was stopped with SIGINT; it closed cleanly as
+run_id 10 (`status: failed`, `fatal: pipeline: aborted: KeyboardInterrupt()`, artifact v3, reconciles) —
+a live confirmation of D-029 (fatal tracks status; the interrupt ran the pipeline's `finally`, so no
+dangling row). The only dangling `running` row remains the one from the earlier 120s-SIGTERM-killed attempt.
 
 **A dangling `runs` row was created and NOT drained:** the first `--no-scan` v3-validation attempt was
 killed by a 120s harness timeout (SIGTERM does not run the pipeline's `finally`), leaving a row at
