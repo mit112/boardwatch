@@ -638,11 +638,19 @@ domain input nor Docker.** What is left is genuinely gated on things I cannot su
   (bullet length/count, escaping round-trip, hyphen-aware template-artifact) on tailored + master +
   Tier-B; degrade-then-drop. Fix round removed a lead-dropping 40-char floor, fixed a "Todo-list"
   false-positive, closed the ungated-Tier-B gap. `make check` green (3067 passed, 95.37%).
-  **Next: P4 item 5b** (run-once contact-block integrity + master-authoring artifact leak, fatal in
-  `load_resume`), then item 6 (keyword coverage vs JD terms), then item 7 (persona registry MECHANISM +
-  tech seed + the deferred de-senioritizer). Gate P4's blind-craft-review clause stays Mit's (subjective).
-  **D-054: item 7's non-tech persona CONTENT is no longer Mit-blocked — it is gathered per-user at
-  onboarding (see persona section below); item 7 ships the mechanism + tech personas now.**
+  **P4 item 5b DONE (D-056, `d9c7bf1`..`f99600c`):** run-once, fatal `validate_master` at `load_resume`
+  (contact-block name + email + template-artifact leak; deliberately NOT length/count — that was the D-055
+  regression); a broken master aborts the run loudly (runner `except ResumeLoadError` before the generic
+  catch) instead of silent per-lead drops. Reviewed; one fix round removed a false-fatal on single-line
+  headers (`len(header)<2`→`not header`). `make check` green (3084 passed, 95.39%). **→ P4 ITEM 5 COMPLETE.**
+  **NEXT ACTION (new session): P4 item 6** — keyword coverage measured against JD *requirement* terms,
+  achieved only by re-spelling existing facts (ground it first: reuse the canonical vocab + the
+  qualifications-span slicer from item 3b; it's a MEASUREMENT/report, likely not a veto). **Then item 7**
+  (persona registry MECHANISM + tech seed + the deferred de-senioritizer [reuse `tokens.py` word-boundary
+  to dodge Sr∈SRE/Lead∈Leader/III-after-II] — per D-054 the mechanism is buildable now; non-tech persona
+  CONTENT comes from the onboarding-gatherer, NOT Mit-authored). Gate P4's blind-craft-review stays Mit's.
+  **NEW build item (D-054): the onboarding-gatherer** — user-facing; DESIGN-FIRST (brainstorm; surface the
+  "go out and gather" mechanism choices to Mit); do not build blindly.
 
 **Live findings still owed to Mit (unchanged):** (1) set `resume_max_pages=2` — his `resume.yaml` is 2pp,
 so at the shipped default of 1 every lead is correctly dropped (see below); (2) P1b cannot catch a bullet

@@ -2251,3 +2251,29 @@ funnel counters, esp. from the Gate-P3 parallel runs):** banned-register's zero-
 "leveraged"/"spearheaded" (Mit's style call), and the overmatch unusual-caps check firing on legit tech
 not in the taxonomy (gRPC/GraphQL/OAuth/PyTorch/macOS). Both raise Tier-B→Tier-A revert rate; tune from
 measured false-positive rates, not speculatively.
+
+## D-056 — P4 item 5b: run-once fatal master-résumé validation at load; item 5 COMPLETE
+
+**2026-08-07 · session 10 · P4 (item 5b — built, reviewed + one fix round, merged). Under D-047.**
+
+**Context.** D-055 Fix 1 removed the per-lead layout gate from the untailored master (it was dropping leads
+on legitimate authored content). Master-authoring defects belong instead in a run-once, fatal-at-load
+check — this is that check.
+
+**Choice.** `validate_master(resume)` in `tailor/load.py` (`MasterResumeError(ResumeLoadError)` carrying a
+typed `GateReason`), called once in `load_resume`. Checks: contact-block has a name (non-blank first header
+line) AND an email (regex across all header lines) AND no template-artifact leak (reuses item 5a's
+`contains_template_artifact`/`layout_scan_fields`). DELIBERATELY does not check bullet length/count — those
+are legitimate on Mit's authored master (the D-055 regression). `runner.py` gained `except ResumeLoadError`
+before the generic catch so a broken master aborts the run LOUDLY (fatal) on the first lead rather than
+silent per-lead drops; the CLI single-lead path already catches it.
+
+**Review + fix round.** diff-review found ONE false-fatal: `len(resume.header) < 2` wrongly rejected a valid
+single-combined-line header ("Name · email · site") — the ≥2-line rule is a scaffold convention, not the
+schema. Fixed to `not resume.header or not resume.header[0].strip()` (name decoupled from line count; email
+check unchanged, already scans all lines). Everything else clean (email regex handles plus/subdomain/
+mailto; the whole `ResumeLoadError` family is correctly load-fatal, not per-lead-recoverable). `make check`
+green (3084 passed, 95.39%), authoritative re-run by the orchestrator.
+
+**P4 ITEM 5 COMPLETE** (5a D-053 + 5b here). Remaining P4: item 6 (keyword coverage), item 7 (persona
+registry mechanism + tech seed + the deferred de-senioritizer). Gate P4's blind-craft-review stays Mit's.
