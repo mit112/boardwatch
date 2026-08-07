@@ -259,7 +259,11 @@ and nearly every line is an incident.
    would otherwise delete each other's lock), unlock only on token match, and a held lock that
    **notifies loudly with the blocking pid** rather than silently no-opping. Porting job-apps' `mkdir`
    primitive wholesale would contradict this repo's own reuse-first default.
-2. **Freshness, not existence** — is this artifact from *this* run?
+2. **Freshness, not existence** — is this artifact from *this* run? **DONE** (D-038) —
+   `pipeline/freshness.py::check_run_freshness`: a `<date>/` folder's `funnel-<run_id>` must map
+   to a `runs` row with a terminal status, `started_at`/`finished_at` dated to that folder, and
+   its lead folders on disk must reconcile with the store's tailored-artifact row count for that
+   run_id. No new schema; every clause named independently so a caller can say WHICH one failed.
 3. **Written fatal-vs-non-fatal contract** before coding it (job-apps spec-3 §12 is the starting table).
    **DONE** (D-037) — `docs/program/RUN_CONTRACT.md`, derived from and cited against the four existing
    fatal conditions; the `running`+NULL-`finished_at` gap is named there but left to slice 2's run reaper.
@@ -270,6 +274,9 @@ and nearly every line is an incident.
 5. **Zero-output guard** — a run producing nothing exits non-zero unless zero was provably right.
 6. **Filesystem-truth counts** as independent verification of the DB's self-report.
 7. **Morning artifact** — ranked leads, apply URL, PDF path, verdict + span, one line of why.
+   **DONE** (D-038) — `reports/morning.py`, `morning-<run_id>.{json,md}` beside the funnel,
+   sourced from the same run-scoped tailored-leads population as the funnel, never from
+   cursor-scoped `digest`/`notify`.
 8. **Single-writer discipline** on the SQLite file, a documented WAL stance, and a test that opens two
    writers concurrently (job-apps spec-2 §10.1). **The test must cover the cross-OS case**, not just
    same-OS: boardwatch ships a Docker image over a host-mounted DB, which *is* the Linux-container-plus-

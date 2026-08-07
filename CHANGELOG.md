@@ -33,6 +33,18 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- **A run-scoped morning artifact, `morning-<run_id>.{json,md}`, written beside the funnel**
+  (P3, §3.P3 item 7, D-038). For every lead a run tailored: apply URL, résumé PDF path, the
+  honest `AuditView.presentation` verdict label, a quoted evidence span (or the eligibility
+  rationale), and the ranker's one-line why — ranked by score. It links to `funnel-<run_id>.md`
+  for the accounting rather than restating it, and is sourced from the same population as the
+  funnel (this run's tailored leads), never from cursor-scoped `digest`/`notify`.
+- **A freshness check, `check_run_freshness`** (`pipeline/freshness.py`), for whether a
+  `<date>/` output folder's artifacts are genuinely from a finished run of that calendar date
+  (P3, §3.P3 item 2, D-038) — not just a folder that happens to contain a `funnel-<run_id>.md`.
+  Checks the run's terminal status, that `started_at`/`finished_at` fall on that date, and that
+  the lead folders on disk reconcile with the store's tailored-artifact row count for that
+  run_id. No new schema.
 - **`work_authorization.needs_sponsorship` as an orthogonal bit** on the eligibility work-auth fact (P2,
   §3.P2 item 2, D-034). Previously sponsorship need was entangled as a `status` enum value, forcing an
   EAD/F-1-OPT holder to abstain; the bit lets them state a sponsorship need independently of status, so

@@ -25,11 +25,15 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from rich.console import Console
-from sqlalchemy import Engine
+from sqlalchemy import Engine, select
 
 from boardwatch.core.clock import utcnow
 from boardwatch.core.settings import Settings
+from boardwatch.eligibility.audit import AuditView, load_audit
+from boardwatch.eligibility.catalog import load_rules
+from boardwatch.eligibility.preflight import current_identity
 from boardwatch.pipeline.funnel_writer import collect_run_funnel
+from boardwatch.reports.morning import MorningLead, build_morning, write_morning
 from boardwatch.reports.resume_gate import LeadArtifactError, TypstUnavailableError
 from boardwatch.reports.run_funnel import (
     ScanContext,
@@ -41,6 +45,8 @@ from boardwatch.reports.tailor import run_tailor
 from boardwatch.scan.coordinator import ScanSummary, is_systemic_scan_outage, run_scan
 from boardwatch.store.db import ensure_schema
 from boardwatch.store.queries import RUN_FAILED, RUN_OK, ensure_run, finish_run
+from boardwatch.store.run_funnel_queries import lead_provenance
+from boardwatch.store.tables import postings
 
 DEFAULT_TOP_N = 8
 
@@ -52,6 +58,13 @@ class TailoredLead:
     title: str
     out_dir: Path
     pdf_built: bool
+    # Threaded from the ranker's `RankedPosting` / `run_tailor`'s result rather than
+    # re-derived later — they are already computed once here and the morning artifact
+    # (P3 item 7) is the only other reader. `pdf_path` is the real compiled path, distinct
+    # from `pdf_built`: the latter is a bool the funnel already carries, this is where it is.
+    why: str = ""
+    score: float = 0.0
+    pdf_path: Path | None = None
 
 
 @dataclass
@@ -95,6 +108,9 @@ class PipelineSummary:
     # Where the per-run funnel artifact landed (P0 item 1). None only when writing it failed,
     # which is reported to the console and never allowed to fail the run.
     funnel: WrittenArtifact | None = None
+    # Where the per-run morning artifact landed (P3 item 7). Same fail-safe as `funnel`: a
+    # reporting failure is swallowed and reported to the console, never allowed to fail the run.
+    morning: WrittenArtifact | None = None
 
     @property
     def leads_with_pdf(self) -> int:
@@ -249,6 +265,9 @@ def run_pipeline(
                     title=posting.title,
                     out_dir=dest,
                     pdf_built=result.pdf_path is not None,
+                    why=posting.why,
+                    score=posting.score.total,
+                    pdf_path=result.pdf_path,
                 )
             )
 
@@ -297,6 +316,13 @@ def run_pipeline(
             summary.funnel = _emit_funnel(engine, settings, summary, scan_summary, day_dir)
         except Exception as exc:  # noqa: BLE001 - never mask the run's own outcome
             console.print(f"  ! funnel artifact not written: {exc}", markup=False)
+        # AFTER the funnel: the morning artifact links to `funnel-<run_id>.md` by name rather
+        # than by the WrittenArtifact above, so it renders that link even when the funnel
+        # itself failed to write (the name is deterministic from run_id either way).
+        try:
+            summary.morning = _emit_morning(engine, settings, summary, day_dir)
+        except Exception as exc:  # noqa: BLE001 - never mask the run's own outcome
+            console.print(f"  ! morning artifact not written: {exc}", markup=False)
 
 
 def _emit_funnel(
@@ -329,6 +355,91 @@ def _emit_funnel(
         fatal=summary.fatal,
     )
     return write_run_funnel(funnel, day_dir)
+
+
+def _strongest_evidence(audit: AuditView | None) -> tuple[str | None, str | None]:
+    """The strongest cleared requirement's quote, or the eligibility rationale.
+
+    "Strongest" is the longest non-empty quote among `met` requirements — the most specific
+    evidenced span available. Falls back to the first requirement carrying a rationale (any
+    disposition) when no `met` requirement has a usable quote — e.g. an INELIGIBLE verdict, or
+    a met requirement whose stored span failed to resolve. Returns `(None, None)`, never a
+    fabricated string, when the audit itself is absent or carries nothing usable.
+    """
+    if audit is None:
+        return None, None
+    met_quotes = [req.quote for req in audit.requirements if req.disposition == "met" and req.quote]
+    if met_quotes:
+        return "quote", max(met_quotes, key=len)
+    for req in audit.requirements:
+        if req.rationale:
+            return "rationale", req.rationale
+    return None, None
+
+
+def _emit_morning(
+    engine: Engine,
+    settings: Settings,
+    summary: PipelineSummary,
+    day_dir: Path,
+) -> WrittenArtifact:
+    """Build the morning artifact (P3 item 7) from this run's already-tailored leads and write
+    it beside the funnel.
+
+    Sourced from `summary.tailored` — the SAME population the funnel's Leads table carries —
+    never from `digest`/`notify`, which are cursor-scoped to "new since last look" and would
+    silently drop a re-tailored lead whose posting was not `new` this run. `why`/`score` were
+    already computed once by the ranker and threaded onto `TailoredLead`; `apply_url` is a
+    fresh `postings.url` join (one query for every posting_id, mirroring `reports/notify.py`);
+    the verdict label and evidence span come from a per-lead `load_audit` call reusing this
+    run's own (profile_hash, rules_hash) identity, so the label agrees with what `top`/`show`
+    would render for the same posting right now.
+    """
+    posting_ids = [lead.posting_id for lead in summary.tailored]
+    catalog = load_rules(settings.config_dir)
+
+    with engine.connect() as conn:
+        identity = current_identity(conn, settings)
+        profile_hash, rules_hash = identity if identity is not None else (None, None)
+        urls: dict[int, str | None] = {}
+        if posting_ids:
+            urls = {
+                int(row.id): row.url
+                for row in conn.execute(
+                    select(postings.c.id, postings.c.url).where(postings.c.id.in_(posting_ids))
+                ).all()
+            }
+        provenance = lead_provenance(conn, posting_ids)
+        rows: list[MorningLead] = []
+        for lead in summary.tailored:
+            audit = load_audit(
+                conn, lead.posting_id, catalog, profile_hash=profile_hash, rules_hash=rules_hash
+            )
+            evidence_kind, evidence_text = _strongest_evidence(audit)
+            prov = provenance.get(lead.posting_id)
+            board = f"{prov.provider}:{prov.board_slug}" if prov is not None else "unknown"
+            rows.append(
+                MorningLead(
+                    posting_id=lead.posting_id,
+                    title=lead.title,
+                    company=lead.company,
+                    board=board,
+                    score=lead.score,
+                    why=lead.why,
+                    verdict_label=(
+                        audit.presentation.value if audit is not None else "no_audit_on_record"
+                    ),
+                    apply_url=urls.get(lead.posting_id),
+                    pdf_path=str(lead.pdf_path) if lead.pdf_path is not None else None,
+                    evidence_kind=evidence_kind,
+                    evidence_text=evidence_text,
+                )
+            )
+
+    artifact = build_morning(
+        run_id=summary.run_id, funnel_name=f"funnel-{summary.run_id}.md", leads=rows
+    )
+    return write_morning(artifact, day_dir)
 
 
 def _ensure_dir(path: Path) -> Path:

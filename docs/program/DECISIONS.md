@@ -1506,3 +1506,98 @@ redirected directly to a file (no pipe, so the captured exit code is `make`'s ow
 outcome — this closes a documentation gap and a duplication risk, nothing else. P3 slice 2
 (`P3-lock-liveness`, the run reaper) is unblocked to build against a written contract instead of inferring
 one from comments.
+
+---
+
+## D-038 — the run-scoped morning artifact, and freshness from run_id + a terminal row + the funnel's own reconciliation
+
+**2026-08-07 · session 14 · P3 slice 4 ("P3-output").**
+
+**Context.** PROGRAM.md §3.P3 items 2 and 7 were the two remaining fail-safe (read-only, presentation-only)
+slices: a morning artifact — ranked leads, apply URL, PDF path, verdict + span, one line of why — and a
+freshness check that a `<date>/` folder's artifacts are genuinely from a real, finished run of that
+calendar date, not merely present. Both had to be built without sourcing from `digest`/`notify`
+(`reports/notify.py`, `reports/digest.py`): those two are cursor-scoped ("new since I last looked"), a
+different population from "every lead this run tailored" — the funnel's (P0 item 1) population, which is
+the one this artifact had to match. The ranker already computes `verdict`/`why`/`score` per posting
+(`cli/top_cmd.py::RankedPosting`), but `run_pipeline`'s tailor loop collapsed that to
+`TailoredLead(posting_id, company, title, out_dir, pdf_built)` before the funnel writer ever saw it
+(`pipeline/runner.py`), discarding exactly the fields item 7 needed.
+
+**Choice.**
+
+1. **`reports/morning.py`** — a new writer, pure-builder-plus-writer split mirroring `reports/run_funnel.py`:
+   `MorningLead` (posting_id, title, company, board, score, why, `verdict_label`, `apply_url`, `pdf_path`,
+   `evidence_kind`/`evidence_text`) → `build_morning` (ranks by score, descending, stable) →
+   `morning_to_dict`/`morning_to_markdown` → `write_morning`, emitting `morning-<run_id>.{json,md}` beside
+   the funnel (reuses `run_funnel.WrittenArtifact` rather than a second near-identical dataclass). It links
+   to `funnel-<run_id>.md` by name for the accounting rather than restating any of it — two writers
+   repeating one fact is the drift risk `run_funnel.py`'s own docstring already warns against.
+2. **`TailoredLead` gained `why: str`, `score: float`, `pdf_path: Path | None`** (defaulted, so the
+   funnel's existing 5-field unpacking in `runner.py::_emit_funnel` is untouched) — threaded straight from
+   `RankedPosting`/`run_tailor`'s result at the one place they are already computed, in the tailor loop.
+   `verdict` was deliberately NOT threaded: item 7 asks for "the honest `AuditView.presentation` label"
+   (D-036), not the bare stored `verdict`, so the morning writer calls `eligibility/audit.py::load_audit`
+   per lead instead, reusing this run's own `current_identity` (profile_hash, rules_hash) — the same
+   identity the funnel writer already resolves — so the label agrees with what `top`/`show` would render
+   for that posting right now. A new `_emit_morning` in `pipeline/runner.py` joins `postings.url` for every
+   posting_id in one query (mirroring `reports/notify.py`'s existing select) and reuses
+   `run_funnel_queries.lead_provenance` for the board string. It runs in the same `finally` block as
+   `_emit_funnel`, immediately after it, and swallows-and-reports on failure exactly like the funnel (a
+   reporting failure must never mask the run's own outcome). The evidence span is "the strongest cleared
+   requirement's quote, or the eligibility rationale" per the design: the longest non-empty quote among
+   `met` requirements, falling back to the first requirement's rationale (any disposition) when no `met`
+   requirement has a usable quote, and `(None, None)` — never a fabricated string — when nothing is
+   available. Every field the design named (apply URL, PDF path, verdict, evidence) renders an honest
+   named absence when the underlying fact is missing, never a blank cell.
+3. **`pipeline/freshness.py::check_run_freshness(engine, run_id, day_dir) -> Freshness`** — no new schema.
+   Three independent clauses, each recorded on the returned dataclass rather than collapsed into one bool
+   first: `funnel_present` (does `funnel-<run_id>.md` exist in `day_dir`), `status in {RUN_OK, RUN_FAILED}`
+   with `started_at`/`finished_at` both dated to `day_dir.name` (`running` is excluded on purpose —
+   `store/queries.py`'s own docstring already names that state as covering an in-flight run, a SIGKILL, and
+   an unhandled crash alike, none of which this artifact can vouch for), and `reconciles` — every
+   `<slug>/` directory actually on disk under `day_dir` counted and compared against
+   `run_funnel_queries.count_tailored_artifacts(conn, run_id).rows`. That last comparison is genuinely new,
+   not a re-presentation of the funnel's existing `tailored` cross-check: the funnel compares the
+   pipeline's in-memory lead count against the store, while this compares the **filesystem** against the
+   store — the first place in the repo that verifies a deliverable against disk rather than against a
+   second query, per CLAUDE.md's "count the deliverable through a different path than the one that
+   produced it" and §3.P3 item 6 ("filesystem-truth counts"). `Freshness.reasons` names every clause that
+   failed, not just the combined verdict, so a caller (a future `doctor` surface, left unwired this slice)
+   can say WHICH one broke.
+
+**Rejected.** Sourcing the morning artifact from `digest`/`notify`'s cursor-scoped population — rejected
+per the design brief and the funnel's own warning; it would silently drop a re-tailored lead whose posting
+was not `new` this run. Threading the ranker's raw `verdict` onto `TailoredLead` for display — rejected as
+dead weight: `AuditView.presentation` is the field item 7 actually asks for, and an unused field on a
+mutable dataclass is exactly the "speculative" surface CLAUDE.md's engineering defaults forbid. A single
+combined `Freshness.fresh` bool with no per-clause detail — rejected because "flagged, but not why" is not
+better than "flagged"; a caller diagnosing a stale-day feed needs to know which of the three checks failed.
+
+**Verified.** TDD: `tests/unit/test_morning.py` (7 tests, pure builder — ranking, every promised column
+present in both halves, the funnel-link-not-restate assertion, and the missing-url/pdf/evidence honest-
+render case) and `tests/unit/test_freshness.py` (8 tests, a real SQLite engine + tmp filesystem — fresh on
+a terminal same-day reconciling run, flagged on `running`, flagged on a different-day `started_at`, flagged
+on a missing funnel file, flagged on a folder/artifact-row mismatch, flagged on an unknown run_id, flagged
+on a missing `day_dir`, and `failed` accepted as terminal too) all pass. `tests/pipeline/test_morning_artifact.py`
+(5 tests, e2e, mirrors `test_run_funnel_artifact.py`'s seed/`--no-scan` pattern) proves the artifact is
+actually emitted beside the funnel, carries the real `postings.url` and the real compiled PDF path, and —
+the load-bearing assertion — that `verdict_label` equals a fresh, independent `load_audit(...).presentation`
+call for the same posting, not a value the runner invented on its own path. Mutation-verified three ways,
+each reverted after confirming the catch: (1) `Freshness.fresh` hardcoded to `return True` — 6 of 8
+freshness tests failed as expected (the two already-fresh-shaped cases passed trivially); (2) the morning
+writer's `verdict_label` hardcoded to the literal `"eligible"` — the e2e presentation-equality test failed,
+catching the exact overclaim item 7 exists to prevent; (3) `morning.py`'s three `_fmt_*` honest-fallback
+helpers stripped to return `""` on a missing fact instead of naming it — the missing-url/pdf/evidence unit
+test failed. All reverted; suites confirmed green again after each revert before proceeding.
+`tests/pipeline/test_run_funnel_artifact.py` and `tests/pipeline/test_pipeline_run.py` (96 tests, funnel +
+PDF-gate) re-run unchanged and stayed green — the `TailoredLead` field additions are additive-only and the
+funnel's own tuple-unpacking of `summary.tailored` was not touched. `make check`: `generalization: OK`,
+ruff clean, mypy clean (161 source files), **2897 passed, 1 deselected**, coverage **95.31%**
+(`morning.py` 97%, `freshness.py` 97%), run in the foreground with output redirected directly to a file
+(no pipe, so the captured exit code is `make`'s own) — exit **0**.
+
+**Consequence.** PROGRAM.md §3.P3 items 2 and 7 are DONE. No change to the eligibility engine, the stored
+verdict, or the tailor/PDF logic — both additions are read-only reporting layered on facts the pipeline
+already computed or already persisted. `doctor` surfacing of `Freshness` is left unwired, as the design
+allowed ("optionally"); nothing downstream depends on it existing yet.

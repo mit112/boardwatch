@@ -77,6 +77,8 @@ def run(
         console.print(f"  {mark} {lead.company} — {lead.title} → {lead.out_dir}", markup=False)
     if summary.funnel is not None:
         console.print(f"  funnel → {summary.funnel.markdown_path}", markup=False)
+    if summary.morning is not None:
+        console.print(f"  morning → {summary.morning.markdown_path}", markup=False)
     for err in summary.errors:
         console.print(f"  ! {err}", markup=False)
 
