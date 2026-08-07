@@ -6,7 +6,6 @@ import pytest
 
 from boardwatch.reports.resume_gate import (
     BULLET_MAX_LENGTH,
-    BULLET_MIN_LENGTH,
     TEMPLATE_ARTIFACT_TOKENS,
     GateReason,
     LayoutViolation,
@@ -136,23 +135,30 @@ def test_validate_layout_rejects_bullet_too_long() -> None:
     assert exc_info.value.reason is GateReason.BULLET_TOO_LONG
 
 
-def test_validate_layout_rejects_bullet_too_short() -> None:
-    text = "a" * (BULLET_MIN_LENGTH - 1)
+def test_validate_layout_bullet_max_length_boundary_is_clean() -> None:
+    text = "a" * BULLET_MAX_LENGTH
     r = _layout_resume(
         entries=[Entry(entry_id="e1", heading="H", bullets=[_clean_bullet(text=text)])]
     )
-    with pytest.raises(LayoutViolation) as exc_info:
-        validate_layout(r, TypstRenderer().emit(r))
-    assert exc_info.value.reason is GateReason.BULLET_TOO_SHORT
+    validate_layout(r, TypstRenderer().emit(r))  # no raise
 
 
-def test_validate_layout_bullet_length_boundaries_are_clean() -> None:
-    for length in (BULLET_MIN_LENGTH, BULLET_MAX_LENGTH):
-        text = "a" * length
-        r = _layout_resume(
-            entries=[Entry(entry_id="e1", heading="H", bullets=[_clean_bullet(text=text)])]
-        )
-        validate_layout(r, TypstRenderer().emit(r))  # no raise
+@pytest.mark.parametrize(
+    "text",
+    [
+        "Cut p99 latency 40%",
+        "Shipped v2 to 10M users",
+        "Led migration to Kubernetes",
+    ],
+)
+def test_validate_layout_accepts_legitimate_short_bullets(text: str) -> None:
+    # There is no length FLOOR (coordinator review, footgun fix): a concise, real bullet
+    # must never trip the gate — unlike the ceiling, a short bullet renders fine and this
+    # gate also runs on the untailored MASTER, so a floor would risk dropping every lead.
+    r = _layout_resume(
+        entries=[Entry(entry_id="e1", heading="H", bullets=[_clean_bullet(text=text)])]
+    )
+    validate_layout(r, TypstRenderer().emit(r))  # no raise
 
 
 def test_validate_layout_rejects_too_many_bullets() -> None:
@@ -213,6 +219,23 @@ def test_contains_template_artifact_is_case_insensitive() -> None:
 
 def test_contains_template_artifact_returns_none_for_clean_text() -> None:
     assert contains_template_artifact(_CLEAN_BULLET_TEXT) is None
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "Built a Todo-list app with 50K downloads",
+        "Shipped a TodoMVC-based tool for the release team",
+    ],
+)
+def test_contains_template_artifact_does_not_flag_hyphenated_product_names(text: str) -> None:
+    # Coordinator review, false positive: a plain substring match fired inside legitimate
+    # product/framework names. A word-like token must only fire standalone.
+    assert contains_template_artifact(text) is None
+
+
+def test_contains_template_artifact_still_flags_standalone_todo() -> None:
+    assert contains_template_artifact("standalone TODO here") == "TODO"
 
 
 @pytest.mark.parametrize("token", TEMPLATE_ARTIFACT_TOKENS)

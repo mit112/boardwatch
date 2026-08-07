@@ -5,12 +5,13 @@ reports compile facts (CompileOutcome); this module applies the page-count POLIC
 typed failures the tailoring flow raises. Pure — no subprocess, no DB, no filesystem.
 
 Also houses the P4 item 5a per-lead structural layout gate (`validate_layout`): deterministic
-assertions — bullet length band, bullet-count ceiling, an escaping round-trip, and leftover
-template artifacts — that P1a's slot check does not cover.
+assertions — a bullet length ceiling, bullet-count ceiling, an escaping round-trip, and
+leftover template artifacts — that P1a's slot check does not cover.
 """
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
 from enum import StrEnum
 from pathlib import Path
@@ -43,7 +44,6 @@ class GateReason(StrEnum):
     COMPILE_FAILED = "compile_failed"
     PAGE_LIMIT_EXCEEDED = "page_limit_exceeded"
     BULLET_TOO_LONG = "bullet_too_long"
-    BULLET_TOO_SHORT = "bullet_too_short"
     TOO_MANY_BULLETS = "too_many_bullets"
     ESCAPING_MISMATCH = "escaping_mismatch"
     TEMPLATE_ARTIFACT = "template_artifact"
@@ -91,29 +91,38 @@ def validate_slots(resume: Resume) -> None:
 
 # --- P4 item 5a: per-lead structural layout gate ----------------------------------------
 
-BULLET_MIN_LENGTH = 40
 BULLET_MAX_LENGTH = 220
 
-# Closed catalog of leftover template/placeholder tells. Case-insensitive substring match —
-# shared by the per-lead layout gate (5a) and the master-authoring check (5b, not built yet).
-TEMPLATE_ARTIFACT_TOKENS: tuple[str, ...] = (
-    "{{",
-    "}}",
-    "TODO",
-    "FIXME",
-    "lorem",
-    "ipsum",
-    "XXX",
-    "<placeholder>",
-)
+# Closed catalog of leftover template/placeholder tells, shared by the per-lead layout gate
+# (5a) and the master-authoring check (5b, not built yet). Split by how a token can safely
+# be matched:
+#   - symbols can never legitimately appear in résumé prose, so a plain case-insensitive
+#     substring match is correct and cheap.
+#   - word-like tokens (TODO, lorem, ...) are real English/Latin words that also occur inside
+#     legitimate product/framework names ("Todo-list app", "TodoMVC-based tool"), so they are
+#     matched as a standalone token only — see `_word_token_pattern` below.
+TEMPLATE_ARTIFACT_SYMBOLS: tuple[str, ...] = ("{{", "}}", "<placeholder>")
+TEMPLATE_ARTIFACT_WORDS: tuple[str, ...] = ("TODO", "FIXME", "lorem", "ipsum", "XXX")
+TEMPLATE_ARTIFACT_TOKENS: tuple[str, ...] = TEMPLATE_ARTIFACT_SYMBOLS + TEMPLATE_ARTIFACT_WORDS
+
+
+def _word_token_pattern(token: str) -> re.Pattern[str]:
+    # A stricter boundary than \w alone: a hyphen does not count as a separator either, so
+    # a word-like token glued into a hyphenated compound name ("Todo-list", "TodoMVC-based")
+    # is not flagged as a standalone occurrence — only genuine standalone usage is.
+    return re.compile(rf"(?<![\w-]){re.escape(token)}(?![\w-])", re.IGNORECASE)
 
 
 def contains_template_artifact(text: str) -> str | None:
     """Return the offending token if `text` contains a leftover template/placeholder tell
-    from the closed catalog above, else None. Case-insensitive substring match."""
+    from the closed catalog above, else None. Symbols match as a substring; word-like
+    tokens match only as a standalone token (see `_word_token_pattern`)."""
     lowered = text.lower()
-    for token in TEMPLATE_ARTIFACT_TOKENS:
+    for token in TEMPLATE_ARTIFACT_SYMBOLS:
         if token.lower() in lowered:
+            return token
+    for token in TEMPLATE_ARTIFACT_WORDS:
+        if _word_token_pattern(token).search(text):
             return token
     return None
 
@@ -155,10 +164,15 @@ def _assert_escaped_round_trip(source: str, expected_line: str, where: str) -> N
 
 def validate_layout(resume: Resume, source: str) -> None:
     """Deterministic structural assertions P1a's `validate_slots` does not cover (PROGRAM.md
-    P4 item 5a): bullet length band, bullet-count ceiling per entry, an escaping round-trip
-    against the already-emitted `.typ` `source`, and leftover template artifacts. Raises
-    `LayoutViolation` (a `ResumeValidationError`), mirroring `validate_slots`'s shape and
-    call convention. Pure — no subprocess, no DB, no filesystem."""
+    P4 item 5a): a bullet length ceiling, bullet-count ceiling per entry, an escaping
+    round-trip against the already-emitted `.typ` `source`, and leftover template artifacts.
+    Raises `LayoutViolation` (a `ResumeValidationError`), mirroring `validate_slots`'s shape
+    and call convention. Pure — no subprocess, no DB, no filesystem.
+
+    No length FLOOR: a short bullet ("Cut p99 latency 40%") renders and reads fine — there
+    is no rendering defect a floor would catch that `validate_slots` (empty/blank bullets)
+    doesn't already, and this gate also runs on the untailored MASTER, so a floor would risk
+    dropping every lead over one legitimately concise bullet in the authored résumé."""
     for entry in resume.entries:
         if len(entry.bullets) > MAX_BULLETS_PER_ENTRY:
             raise LayoutViolation(
@@ -168,11 +182,6 @@ def validate_layout(resume: Resume, source: str) -> None:
             )
         for bullet in entry.bullets:
             length = len(bullet.text)
-            if length < BULLET_MIN_LENGTH:
-                raise LayoutViolation(
-                    GateReason.BULLET_TOO_SHORT,
-                    f"bullet {bullet.bullet_id!r} is {length} chars (floor {BULLET_MIN_LENGTH})",
-                )
             if length > BULLET_MAX_LENGTH:
                 raise LayoutViolation(
                     GateReason.BULLET_TOO_LONG,
