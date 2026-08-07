@@ -87,12 +87,19 @@ design-heavy; recommend a fresh context window per slice (session-10's slice-2 u
 freshness-scope, and slice-3 predicate reworks were all caught by review — a sign these want sharp context).
 All fail-safe, independent of P2 item 4. **Slice 5 (LLM economics) has been grounded + decomposed** —
 `.superpowers/sdd/p3-unattended-runner/slice5-design.md`:
-- **5a (SOUND, fail-safe, ready to build):** (i) retry-with-backoff on transient 429/5xx — adapters raise
-  distinguishable `LLMError` subclasses, `call()` wraps a bounded tenacity retry honoring Retry-After
-  (port `core/politeness.py`), falling through to today's containment; (ii) meta-hash idempotence
-  short-circuit — skip re-tailor when a `resume_tailored` artifact for this posting_version + identity tuple
-  (all fields already in `meta_json` + `profile_hash`; `persona_version` deferred to P4) already exists with
-  its PDF. → **D-040 at build.**
+- **5a part 1 (retry-backoff) — DONE (D-040, merged):** `llm/retry.py` (`request_with_retry` + `LLMTransientError`)
+  retries 429/5xx with exponential-jitter + Retry-After, INSIDE `complete()` (one budget unit per logical
+  call), falling through to today's Tier-A containment on exhaustion. Isolated to `llm/*`; non-transient
+  errors unchanged.
+- **5a part 2 (idempotence short-circuit) — REMAINING (fresh context; has a subtlety):** skip re-tailor
+  when a `resume_tailored`(+`_llm`) artifact for this posting_version + identity tuple exists with its PDF.
+  Touches `run_tailor`'s core (which P0/P1a/P3 depend on) → fresh context. Fail-safe (skip only on exact
+  match, else re-tailor). **CRITICAL identity-key subtlety (found while designing, not yet built):** the key
+  must include EVERYTHING that affects the artifact's *validity*, not just its tailoring inputs — in
+  particular `resume_max_pages` (which is NOT in `profile_hash`; it's deliberately out of the ranker hash).
+  Otherwise changing the page limit and re-running would skip-and-reuse a PDF that now VIOLATES the P1a
+  page gate, silently bypassing it. Include resume_max_pages (+ anything else the P1a gate reads) in the
+  idempotence key, or re-validate the reused PDF against the current gate before skipping.
 - **5b (a THIRD MIT FORK — do NOT build autonomously):** quota-cap-abort + a pending/resumable lead state +
   "never silently downgrade to deterministic." This INVERTS the current (reasonable) design where a
   provider error/budget-exhaustion drops to the structural Tier-A bullet and the lead ships — and it reworks
