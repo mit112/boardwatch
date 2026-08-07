@@ -1905,3 +1905,30 @@ state, no cohort-invariant rework, no batched-judging (defers with it).
 domain input on the field→family mapping); the lock reclaim + run reaper stay deferred (reclaim proven
 unsound; a sound reaper needs process-liveness identity — fresh context); item 8's cross-OS two-writer test
 is environmentally blocked (no Docker here). Idempotence declined (D-042).
+
+## D-045 — P3 slice 2: DECLINE custom stale-reclaim (unsound AND unnecessary); the loud-notify shipped, the reaper stays fresh-context
+
+**2026-08-07 · session 10 · P3 (slice 2, the reclaim half — decided autonomously; reversible).**
+
+**Context.** Slice 2 item 1 wanted stale-lock reclaim (a dead scan's lock reclaimed by a later run). The
+designed mechanism (atomic-rename reclaim + token-unlock) was proven UNSOUND (D-noted in slice2-design.md:
+`os.replace` arbitrates a pathname, `filelock` locks an inode → a reclaimer can steal a live lock / two
+reclaimers both win).
+
+**Choice — DECLINE custom stale-reclaim entirely.** Beyond being unsound as designed, it is UNNECESSARY on
+the primary (POSIX) platform: `filelock` uses OS advisory locks (flock/fcntl), which the kernel releases
+when the holding process dies — so a crashed scan's lock is already auto-reclaimed by the next bare
+`FileLock.acquire()`. No custom rename/token machinery is needed for the common case. The genuinely-hard
+cross-platform edge (Windows / network / container-host mounts) is item 8's concern (currently
+environmentally unbuildable — no Docker) and must not be papered over with an unsound reclaim.
+
+**What shipped instead (D-043):** the sound, message-only loud-notify (a held lock names the blocking pid).
+**What remains (fresh context):** the run REAPER for `running`+NULL rows — deferred because a SOUND reaper
+needs process-liveness IDENTITY (pid+start-time / pidfd, not `os.kill(pid,0)` which pid-reuse defeats) to
+avoid reaping a live standalone/`--no-scan` run; that is subtle concurrency work for a fresh context, not a
+high-context grind (three consecutive high-context P3 designs came back unsound this session).
+
+**This + D-044 resolve the slice-2 and 5b forks to conservative, reversible declines.** The only remaining
+items needing input beyond a fresh context window: P2 item 4's taxonomy CONTENT (which rule families are
+field-specific for a US-nurse / EU-paralegal persona — Mit's domain call), and item 8's cross-OS test
+(needs Docker). Everything else this session was built or reasoned-declined.
