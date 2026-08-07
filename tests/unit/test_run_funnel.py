@@ -1006,3 +1006,37 @@ def test_an_unclassified_register_variant_would_still_land_in_other() -> None:
         0,
     )
     assert fab.other == 3
+
+
+def test_requirement_echo_vetoes_are_counted_separately_from_the_b4_numerator() -> None:
+    """P4 item 3b: a requirement-echo veto is a conservative style/register veto, not a
+    caught fabrication -- same treatment as the three P4 item 3a register buckets. Lands
+    in its own named bucket, not `other` (out-of-catalog) and not `rejected` (the B4
+    numerator, judge + the older pre-judge overmatch filter only)."""
+    rows: list[dict[str, object]] = [
+        {"kept": False, "drop_reason": "requirement_echo"},
+        {"kept": False, "drop_reason": "requirement_echo"},
+        {"kept": False, "drop_reason": "judge"},
+        {"kept": False, "drop_reason": "filter:overmatch_tech"},
+    ]
+    report = funnel(rewrite_rows=rows)
+    fab = report.fabrication
+    assert fab.requirement_echo_rejected == 2
+    assert fab.other == 0
+    # Mutation check: `rejected` must stay judge + overmatch only, unmoved by the new
+    # requirement-echo bucket.
+    assert (fab.judge_rejected, fab.overmatch_filtered, fab.rejected) == (1, 1, 2)
+    payload = funnel_to_dict(report)["fabrication"]
+    assert payload["requirement_echo_rejected"] == 2
+    assert payload["rejected"] == 2
+    body = funnel_to_markdown(report)
+    assert any(
+        "2" in line and "restating a JD qualification" in line for line in body.splitlines()
+    )
+
+
+def test_an_unclassified_requirement_echo_variant_would_still_land_in_other() -> None:
+    """CLAUDE.md: out-of-catalog is a failure, never a new bucket."""
+    report = funnel(rewrite_rows=[{"kept": False, "drop_reason": "requirement_echoes"}])
+    assert report.fabrication.requirement_echo_rejected == 0
+    assert report.fabrication.other == 1

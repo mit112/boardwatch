@@ -15,6 +15,8 @@ from boardwatch.tailor.plan import Rewrite
 from boardwatch.tailor.register import EMPTY_REGISTER, RegisterTable, load_register
 from boardwatch.tailor.register import banned_register_reasons as _banned_register_reasons
 from boardwatch.tailor.register import buzzword_density_reasons as _buzzword_density_reasons
+from boardwatch.tailor.requirement_echo import jd_qualification_sentences
+from boardwatch.tailor.requirement_echo import requirement_echo_reasons as _requirement_echo_reasons
 from boardwatch.tailor.rewrite.filter import passes_overmatch_filter
 from boardwatch.tailor.rewrite.judge import parse_verdict
 from boardwatch.tailor.rewrite.prompt import (
@@ -53,6 +55,7 @@ def run_tier_b_core(
     jd_text: str = "",
     canonical: frozenset[str] = frozenset(),
     register: RegisterTable = EMPTY_REGISTER,
+    qualification_sentences: tuple[str, ...] = (),
 ) -> TierBResult:
     accepted: list[Rewrite] = []
     rows: list[RewriteRow] = []
@@ -240,6 +243,30 @@ def run_tier_b_core(
                 )
                 continue
 
+            if _requirement_echo_reasons(
+                candidate,
+                list(qualification_sentences),
+                canonical=canonical,
+                qualification_cues=register.qualification_cues,
+            ):
+                # A candidate that RESTATES a JD qualification instead of describing
+                # real work (P4 item 3b) reads as the single most damaging AI-résumé
+                # tell -- same fail-safe shape as the guards above: revert to Tier-A
+                # before spending a judge call on a reword that can never be trusted.
+                rows.append(
+                    RewriteRow(
+                        bullet_id=b.bullet_id,
+                        entry_id=entry.entry_id,
+                        a_text=a_text,
+                        b_text=candidate,
+                        filter_pass=True,
+                        judge_verdict=None,
+                        kept=False,
+                        drop_reason="requirement_echo",
+                    )
+                )
+                continue
+
             try:
                 verdict = parse_verdict(_guarded(judge, a_text, candidate))
             except _BudgetExceeded:
@@ -349,6 +376,10 @@ def run_tier_b(
     # from the shared accessor (P4 item 2): overmatch_reasons itself stays agnostic to
     # where it came from.
     canonical = build_canonical_vocab(taxonomy, table).terms
+    # Requirement-echo's corroboration material (P4 item 3b): computed ONCE per résumé
+    # here, not per bullet inside run_tier_b_core's loop -- the JD's qualifications
+    # section does not change bullet to bullet.
+    qual_sentences = tuple(jd_qualification_sentences(jd_text))
 
     return run_tier_b_core(
         tailored_a,
@@ -361,4 +392,5 @@ def run_tier_b(
         jd_text=jd_text,
         canonical=canonical,
         register=load_register(),
+        qualification_sentences=qual_sentences,
     )

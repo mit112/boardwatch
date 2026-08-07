@@ -14,6 +14,7 @@ from boardwatch.tailor.canonical import build_canonical_vocab
 from boardwatch.tailor.equivalences import load_equivalences
 from boardwatch.tailor.model import Resume
 from boardwatch.tailor.register import load_register
+from boardwatch.tailor.requirement_echo import jd_qualification_sentences
 from boardwatch.tailor.rewrite.agent_io import (
     BulletRef,
     CandidatesFile,
@@ -150,6 +151,9 @@ def apply_agent_rewrites(
     # Same canonical-tech seeding as the API lane (run_tier_b), via the shared accessor
     # (P4 item 1, D-048; P4 item 2).
     canonical = build_canonical_vocab(taxonomy, table).terms
+    # Same requirement-echo seeding as the API lane (P4 item 3b): computed once per
+    # résumé, not per bullet.
+    qual_sentences = tuple(jd_qualification_sentences(jd_text))
 
     return run_tier_b_core(
         tailored,
@@ -162,4 +166,5 @@ def apply_agent_rewrites(
         jd_text=jd_text,
         canonical=canonical,
         register=load_register(),
+        qualification_sentences=qual_sentences,
     )

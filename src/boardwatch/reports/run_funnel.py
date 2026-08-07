@@ -272,6 +272,11 @@ class FabricationCounters:
     an excess-repeat rewrite (`"verb_repeat"`). Same treatment as `provenance_rejected` and
     `lift_rejected`: these are craft/register vetoes, not caught fabrications, so all three
     are excluded from `rejected` below.
+
+    `requirement_echo_rejected` (P4 item 3b) counts rewords vetoed for RESTATING a JD
+    qualification instead of describing real work (`drop_reason="requirement_echo"`) — the
+    paraphrase case `lift_rejected`'s verbatim-lift check is silent on. Same treatment as
+    the other craft/register vetoes: excluded from `rejected` below.
     """
 
     lane: str
@@ -288,6 +293,7 @@ class FabricationCounters:
     banned_register_rejected: int
     buzzword_rejected: int
     verb_diversity_rejected: int
+    requirement_echo_rejected: int
     other: int
 
     @property
@@ -301,7 +307,7 @@ def build_fabrication_counters(
 ) -> FabricationCounters:
     """Fold per-bullet Tier-B rewrite rows into the closed outcome catalog. Pure."""
     kept = unchanged = judge = overmatch = budget = error = no_candidate = provenance = 0
-    lift = banned_register = buzzword = verb_diversity = other = 0
+    lift = banned_register = buzzword = verb_diversity = requirement_echo = other = 0
     for row in rewrite_rows:
         if row.get("kept"):
             kept += 1
@@ -329,6 +335,8 @@ def build_fabrication_counters(
             buzzword += 1
         elif reason == "verb_repeat":
             verb_diversity += 1
+        elif reason == "requirement_echo":
+            requirement_echo += 1
         else:
             other += 1
     return FabricationCounters(
@@ -346,6 +354,7 @@ def build_fabrication_counters(
         banned_register_rejected=banned_register,
         buzzword_rejected=buzzword,
         verb_diversity_rejected=verb_diversity,
+        requirement_echo_rejected=requirement_echo,
         other=other,
     )
 
@@ -762,6 +771,7 @@ def funnel_to_dict(funnel: RunFunnel) -> dict[str, object]:
             "banned_register_rejected": funnel.fabrication.banned_register_rejected,
             "buzzword_rejected": funnel.fabrication.buzzword_rejected,
             "verb_diversity_rejected": funnel.fabrication.verb_diversity_rejected,
+            "requirement_echo_rejected": funnel.fabrication.requirement_echo_rejected,
             "other": funnel.fabrication.other,
             "rejected": funnel.fabrication.rejected,
         },
@@ -1149,6 +1159,10 @@ def funnel_to_markdown(funnel: RunFunnel) -> str:
         f"ceiling · {fab.verb_diversity_rejected} for repeating an opening verb past the "
         "résumé-wide cap (craft/register vetoes, not caught fabrications — excluded from "
         "`rejected` above)",
+        "",
+        f"{fab.requirement_echo_rejected} rewrites reverted to Tier-A for restating a JD "
+        "qualification instead of describing real work (a craft/register veto, not a "
+        "caught fabrication — excluded from `rejected` above)",
         "",
         "*Bar metric B4 is 0 fabrications over n≥100. `bullets_seen` is n; the two truth gates "
         "are the fail-closed entailment judge and the deterministic overmatch filter. Tier A is "
