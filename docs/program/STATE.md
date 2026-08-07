@@ -55,9 +55,17 @@ net-new work clusters into 5 **fail-safe** slices:
   table (4 fatal conditions + crash path + non-fatal norm + lock-held + the running/NULL gap the reaper
   resolves), each row citing file:line; and the duplicated systemic-outage predicate is consolidated into
   `is_systemic_scan_outage(...)` (`scan/coordinator.py`), used by both call sites.
-- **(2) P3-lock-liveness — NEXT:** scan lock is bare `filelock` with no metadata — add pid/started/token,
-  atomic-rename stale reclaim, token-match unlock, loud notify-with-blocking-pid; + the P3-owned **run
-  reaper** (resolve `running`+NULL-`finished_at`, deferred to P3 by `finish_run`'s docstring).
+- **(2) P3-lock-liveness — ⛔ DESIGN FOUND UNSOUND by deepseek review; DO NOT BUILD as written; needs a
+  rethink.** `.superpowers/sdd/p3-unattended-runner/slice2-design.md` (marked unsound, with the full finding
+  + salvage). Core error: `os.replace` arbitrates a *pathname* while `filelock` locks an *inode*, so the
+  "atomic-rename reclaim" violates mutual exclusion (a reclaimer can steal a live lock; two reclaimers can
+  both win). Also: reaper liveness is TOCTOU, standalone-lane age-reap is unsound, and `os.kill(pid,0)` is
+  defeated by pid reuse. **Rethink direction:** likely DELETE the custom reclaim — a crashed holder's OS
+  `flock` is already released on process exit, so a bare `filelock.acquire()` may reclaim it; use the
+  sidecar only for the loud "held by pid N" message. Use (pid, start-time)/pidfd for liveness, not the pid
+  alone. Make the reaper race-safe by gating on the run's lock being *acquirable now*, not an age floor.
+  **A MIT FORK:** is stale-reclaim + auto-reap worth the complexity, or is "loud notify + acquirable-lock
+  reaper + doctor surfacing" enough? Do not build slice 2 until this is resolved.
 - **(3) P3-run-integrity:** zero-output guard == cohort completeness + filesystem-truth (needs the contract,
   now in place).
 - **(4) P3-output:** freshness assertion + morning artifact (apply URL/verdict/span/why per lead).
