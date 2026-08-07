@@ -878,6 +878,34 @@ def test_fabrication_counters_classify_every_drop_reason() -> None:
     assert "2 rejected" in line and "1 judge" in line and "1 overmatch" in line
 
 
+def test_structural_filter_rejects_are_excluded_from_the_b4_numerator() -> None:
+    """`passes_overmatch_filter` (tailor/rewrite/filter.py) emits structural rejects (empty,
+    not_single_line, too_long) alongside its fabrication catches (invented_entity,
+    invented_skill). A structural malformation is not a fabrication and must not inflate B4's
+    `rejected` numerator — it lands in its own `filter_structural_rejected` bucket instead."""
+    rows: list[dict[str, object]] = [
+        {"kept": False, "drop_reason": "filter:too_long"},
+        {"kept": False, "drop_reason": "filter:empty"},
+        {"kept": False, "drop_reason": "filter:not_single_line"},
+        {"kept": False, "drop_reason": "filter:invented_entity"},
+        {"kept": False, "drop_reason": "judge"},
+    ]
+    report = funnel(rewrite_rows=rows)
+    fab = report.fabrication
+    assert fab.filter_structural_rejected == 3
+    # Mutation check: only the fabrication catch (invented_entity) counts toward
+    # `overmatch_filtered`/`rejected` — the three structural rejects must not.
+    assert (fab.judge_rejected, fab.overmatch_filtered, fab.rejected) == (1, 1, 2)
+    assert fab.other == 0
+    payload = funnel_to_dict(report)["fabrication"]
+    assert payload["filter_structural_rejected"] == 3
+    assert payload["rejected"] == 2
+    body = funnel_to_markdown(report)
+    assert any(
+        "3" in line and "structural malformation" in line for line in body.splitlines()
+    )
+
+
 def test_an_unknown_drop_reason_is_a_failure_bucket_not_a_silent_drop() -> None:
     """CLAUDE.md: out-of-catalog is a failure, never a new bucket. An unrecognised Tier-B
     outcome must surface as `other` and print a FAILURE line, not vanish."""

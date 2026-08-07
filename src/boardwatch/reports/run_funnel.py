@@ -238,6 +238,13 @@ class StubRate:
 # is never a new bucket), not silently discarded.
 _FILTER_PREFIX = "filter:"
 
+# `passes_overmatch_filter` (tailor/rewrite/filter.py) emits these three STRUCTURAL rejects
+# (empty output, multi-line output, output too long against the source) alongside its
+# fabrication catches (invented_entity, invented_skill, added_number). A structural reject is
+# not a fabrication and must not inflate B4's `rejected` numerator — see
+# `filter_structural_rejected` below.
+_STRUCTURAL_FILTER_REASONS = frozenset({"empty", "not_single_line", "too_long"})
+
 
 @dataclass(frozen=True)
 class FabricationCounters:
@@ -277,6 +284,12 @@ class FabricationCounters:
     qualification instead of describing real work (`drop_reason="requirement_echo"`) — the
     paraphrase case `lift_rejected`'s verbatim-lift check is silent on. Same treatment as
     the other craft/register vetoes: excluded from `rejected` below.
+
+    `filter_structural_rejected` (P4 checkpoint fix) counts the three STRUCTURAL rejects the
+    pre-judge overmatch filter also emits (`filter:empty`, `filter:not_single_line`,
+    `filter:too_long`) — an empty/multi-line/too-long candidate is a structural malformation,
+    not a fabrication, so unlike its sibling reasons under `_FILTER_PREFIX` it is EXCLUDED
+    from `overmatch_filtered` and therefore from `rejected` below.
     """
 
     lane: str
@@ -294,6 +307,7 @@ class FabricationCounters:
     buzzword_rejected: int
     verb_diversity_rejected: int
     requirement_echo_rejected: int
+    filter_structural_rejected: int
     other: int
 
     @property
@@ -308,6 +322,7 @@ def build_fabrication_counters(
     """Fold per-bullet Tier-B rewrite rows into the closed outcome catalog. Pure."""
     kept = unchanged = judge = overmatch = budget = error = no_candidate = provenance = 0
     lift = banned_register = buzzword = verb_diversity = requirement_echo = other = 0
+    filter_structural = 0
     for row in rewrite_rows:
         if row.get("kept"):
             kept += 1
@@ -318,7 +333,10 @@ def build_fabrication_counters(
         elif reason == "judge":
             judge += 1
         elif isinstance(reason, str) and reason.startswith(_FILTER_PREFIX):
-            overmatch += 1
+            if reason[len(_FILTER_PREFIX) :] in _STRUCTURAL_FILTER_REASONS:
+                filter_structural += 1
+            else:
+                overmatch += 1
         elif reason == "budget":
             budget += 1
         elif reason == "error":
@@ -355,6 +373,7 @@ def build_fabrication_counters(
         buzzword_rejected=buzzword,
         verb_diversity_rejected=verb_diversity,
         requirement_echo_rejected=requirement_echo,
+        filter_structural_rejected=filter_structural,
         other=other,
     )
 
@@ -772,6 +791,7 @@ def funnel_to_dict(funnel: RunFunnel) -> dict[str, object]:
             "buzzword_rejected": funnel.fabrication.buzzword_rejected,
             "verb_diversity_rejected": funnel.fabrication.verb_diversity_rejected,
             "requirement_echo_rejected": funnel.fabrication.requirement_echo_rejected,
+            "filter_structural_rejected": funnel.fabrication.filter_structural_rejected,
             "other": funnel.fabrication.other,
             "rejected": funnel.fabrication.rejected,
         },
@@ -1163,6 +1183,11 @@ def funnel_to_markdown(funnel: RunFunnel) -> str:
         f"{fab.requirement_echo_rejected} rewrites reverted to Tier-A for restating a JD "
         "qualification instead of describing real work (a craft/register veto, not a "
         "caught fabrication — excluded from `rejected` above)",
+        "",
+        f"{fab.filter_structural_rejected} rewrites reverted to Tier-A for a structural "
+        "malformation (empty, multi-line, or too-long candidate) caught by the pre-judge "
+        "overmatch filter (a structural reject, not a caught fabrication — excluded from "
+        "`rejected` above)",
         "",
         "*Bar metric B4 is 0 fabrications over n≥100. `bullets_seen` is n; the two truth gates "
         "are the fail-closed entailment judge and the deterministic overmatch filter. Tier A is "
