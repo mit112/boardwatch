@@ -41,6 +41,7 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- **`docs/program/WAL_DISCIPLINE.md`** — documented SQLite/WAL concurrency stance (P3 item 8 doc half, D-041): per-connection WAL + busy_timeout + single-writer scan lock; names the untested cross-OS two-writer config as the remaining hard half.
 - **A run-scoped morning artifact, `morning-<run_id>.{json,md}`, written beside the funnel**
   (P3, §3.P3 item 7, D-038). For every lead a run tailored: apply URL, résumé PDF path, the
   honest `AuditView.presentation` verdict label, a quoted evidence span (or the eligibility

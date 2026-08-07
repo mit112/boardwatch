@@ -1785,3 +1785,25 @@ policy). Idempotence (meta-hash keyed on JD + template + model + prompt version 
 `tailor/rewrite/lane.py`'s containment semantics, budget accounting, or `run_tailor` — a retry can only
 RECOVER a call that would otherwise have landed on `drop_reason="error"`; on exhaustion, the lane sees the
 exact same `Exception` it always caught and takes the exact same Tier-A-keeping path.
+
+## D-041 — the SQLite/WAL concurrency stance is now documented (P3 item 8, doc half)
+
+**2026-08-07 · session 10 · P3 (item 8, the documented-stance half).**
+
+**Context.** PROGRAM.md §3.P3 item 8 asks for a "documented WAL stance + a two-writer test incl. the
+cross-OS case." The stance existed only in code + scattered comments; the two-writer test does not exist.
+
+**Choice.** Wrote `docs/program/WAL_DISCIPLINE.md` capturing the already-existing, verified stance:
+per-connection `WAL` + `busy_timeout=5000` + `foreign_keys=ON` (`db.py:26-31`); the scan lock serializes
+whole SCANS (not the DB), `apply_board` is the serial single writer, and WAL+busy_timeout keep reads + small
+writes safe alongside a running scan (D-020). It names the REMAINING hard half explicitly: no two-writer
+test exists (only lock-rejection), and critically no CROSS-OS test — the Docker-Linux-container +
+macOS-host-mounted-DB config that corrupted job-apps' PK is untested, and a same-OS test proves nothing
+about it. That harness is deliberately deferred to a fresh context window (test-infrastructure-hard).
+
+**Fail-safe posture recorded:** the scan lock fails closed (2nd scan rejected, never half-corrupts);
+busy_timeout makes contention wait not error; the untested cross-OS path is a verification GAP, not a
+known-broken behavior — but running two writers across the container/host boundary is not proven safe until
+the harness exists, so avoid it operationally.
+
+**This is the doc half of item 8 only.** The two-writer/cross-OS test remains open (fresh context).
