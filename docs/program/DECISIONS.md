@@ -2277,3 +2277,27 @@ green (3084 passed, 95.39%), authoritative re-run by the orchestrator.
 
 **P4 ITEM 5 COMPLETE** (5a D-053 + 5b here). Remaining P4: item 6 (keyword coverage), item 7 (persona
 registry mechanism + tech seed + the deferred de-senioritizer). Gate P4's blind-craft-review stays Mit's.
+
+## D-057 — Résumé TAILORING is fundamentally wrong; a dedicated fix session precedes Gate 3 (and, recommended, the remaining P4 polish)
+
+**2026-08-07 · session 10 close · Mit, re-prioritization.**
+
+**Context.** Investigating the Gate-P3 operational-half work (which surfaced the real tailored output on
+Mit's live résumé) made Mit realise **the résumé tailoring "is not right at all."** This is distinct from
+the already-recorded page-count/config finding — it is the tailoring behaviour itself (how Tier-A
+repositioning and/or Tier-B rewording actually transform the résumé), not just a limit setting.
+
+**Decision.** A **dedicated résumé-tailoring-fix session** must happen **before Gate 3** — Gate 3's 7
+unattended runs are meaningless while the tailored output is wrong. It is explicitly a separate session
+(not folded into the P4 flow).
+
+**Sequencing (orchestrator recommendation, pending Mit's confirm):** the tailoring fix should also precede
+the remaining **P4 items 6–7** and any further P4 polish — P4 is craft-gating ON the tailored output, so
+polishing/gating a broken tailoring foundation is low-value until the foundation is right. The P4 work
+already merged (items 1/2/3/5) stands (the guards are sound + reviewed), but building MORE on top before
+fixing tailoring is premature.
+
+**Open — needs Mit's problem statement.** What specifically is wrong with the tailoring (which stage —
+Tier-A repositioning, Tier-B rewording, bullet selection, section/entry choice, the plan? what does the
+bad output look like?) is TBD. The fix session should START by diagnosing against Mit's (reworked) résumé
++ a real JD before changing code. Captured here so the direction is not lost even if unspecified now.
