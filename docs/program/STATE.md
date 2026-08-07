@@ -71,9 +71,14 @@ net-new work clusters into 5 **fail-safe** slices:
   Make the reaper race-safe by gating on the run's lock being *acquirable now*, not an age floor.
   **DECIDED (D-045): stale-reclaim DECLINED** — unsound AND unnecessary (POSIX releases a dead holder's
   flock, so bare `FileLock.acquire()` already reclaims it; the cross-platform edge is item 8's, no Docker
-  here). The loud-notify shipped (D-043). **Only the run REAPER remains** (`running`+NULL rows) — deferred to
-  fresh context because a sound reaper needs process-liveness IDENTITY (pid+start-time/pidfd, not
-  `os.kill(pid,0)`) to avoid reaping a live `--no-scan` run. Not a Mit fork anymore; a fresh-context build.
+  here). The loud-notify shipped (D-043). **The run REAPER (`running`+NULL rows) is IN BUILD** — the
+  "needs pid liveness / fresh context" premise was WRONG: there is no pid column to check, and an
+  AGE-BASED reaper is sound because `finish_run` has no status precondition (a false-reap self-corrects)
+  and freshness treats `failed` as terminal (VERIFIED, no cascade). Design in
+  `.superpowers/sdd/p3-unattended-runner/slice2-reaper-design.md`, deepseek-reviewed (its real
+  errors_json read-modify-write race fixed via a single atomic `json_insert`+`WHERE status='running'`
+  UPDATE; threshold 24h; its alleged freshness cascade disproven by the code). Implementer dispatched
+  2026-08-07; records D-046 on merge. Heartbeat-column reaper is the deferred correct alternative.
 - **(3) P3-run-integrity — DONE (D-039, merged):** three run-integrity guards in `pipeline/runner.py`, all
   setting `summary.fatal` (fail-safe): cohort completeness (`visible` posting-id set == leads ∪ failed,
   ID-based); zero-output guard (0 leads is provably-right IFF scan healthy AND `eligible-judged-this-run`==0,
