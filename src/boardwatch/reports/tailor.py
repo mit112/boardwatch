@@ -485,18 +485,20 @@ def run_tailor(
             chosen_typ_uri = str(typ_path)
             chosen_hash = tailored_hash
         else:
+            # No layout gate here (P4 checkpoint fix): the untailored master is the
+            # unconditionally-shippable safety net (P1a — never silently delete a real
+            # job). It is Mit's authored, already page-valid résumé; `validate_layout`'s
+            # TOO_MANY_BULLETS reuses MAX_BULLETS_PER_ENTRY, which is a *selection* cap
+            # `build_plan` trims TO, so the authored master can legitimately have entries
+            # that exceed it before trimming. Gating this fallback on the same check the
+            # tailored side just failed dropped leads a zero-/low-skill JD should still
+            # ship. Master-authoring defects belong in a future run-once, load-time check
+            # (item 5b), not this per-lead path.
             untailored_source = renderer.emit(master)
-            try:
-                validate_layout(master, untailored_source)
-            except LayoutViolation as exc:
-                # Same posture as the tailored side: a layout-violating master is never
-                # sent to typst either — it falls straight through to the drop below.
-                untailored_gate = GateResult(exc.reason, False, None, None, str(exc))
-            else:
-                untailored_outcome = renderer.to_pdf(
-                    untailored_source, Path(out_dir), untailored_name, chosen_runner
-                )
-                untailored_gate = evaluate_compile(untailored_outcome, max_pages=max_pages)
+            untailored_outcome = renderer.to_pdf(
+                untailored_source, Path(out_dir), untailored_name, chosen_runner
+            )
+            untailored_gate = evaluate_compile(untailored_outcome, max_pages=max_pages)
             if untailored_gate.reason is GateReason.BINARY_MISSING:
                 raise TypstUnavailableError(_TYPST_MISSING_MSG)
             if untailored_gate.shippable:

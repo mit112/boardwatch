@@ -397,26 +397,45 @@ def test_layout_violation_falls_back_to_untailored_degraded(tmp_path: Path) -> N
     assert tailored.meta_json["typst_pdf_built"] is True
 
 
-def test_layout_violation_on_both_sides_drops_lead(tmp_path: Path) -> None:
+def test_zero_skill_seven_bullet_lead_ships_untailored_master_not_dropped(
+    tmp_path: Path,
+) -> None:
+    """P4 checkpoint fix (was `test_layout_violation_on_both_sides_drops_lead`, which this
+    behavior supersedes): the untailored MASTER fallback must never be gated by
+    `validate_layout`. It is the unconditionally-shippable safety net (P1a — never silently
+    delete a real job) -- Mit's authored, already page-valid résumé.
+
+    `TOO_MANY_BULLETS` reuses `MAX_BULLETS_PER_ENTRY`, a *selection* cap `build_plan` trims
+    entries TO. With no JD skills, `build_plan` returns empty ops, so the tailored résumé is
+    an identity copy of the (untrimmed) authored master -- a 7-bullet entry that legitimately
+    exceeds the 6-bullet ceiling. Before the fix, the tailored side failed the layout gate,
+    degraded to the master, and the SAME gate then failed the master too, dropping a lead
+    pre-checkpoint-fix shipped as Mit's real résumé. The fix removes the master-side gate, so
+    both attempts reach the untailored render, which the runner below compiles successfully."""
+
     def runner(typ: Path, pdf: Path) -> CompileOutcome:
-        raise AssertionError("a layout-violating résumé must never reach the typst runner")
+        # The tailored side still fails layout pre-render and must never reach the runner;
+        # the untailored master, no longer gated, does reach it and compiles cleanly.
+        assert "untailored" in typ.name
+        return _ok(pdf, 1)
 
     settings = _settings(tmp_path)
     engine = _engine(settings)
     pid = _seed(engine, settings)  # skills=() -> tailored is an identity copy of master
     day_dir = tmp_path / "day"
     out = day_dir / "acme-lead"
-    out.mkdir(parents=True)
-    with pytest.raises(LeadArtifactError):
-        run_tailor(
-            engine, settings, pid, resume_path=_seven_bullets_resume_yaml(tmp_path), out_dir=out,
-            typst_runner=runner,
-        )
-    assert _artifact_rows(engine) == []
-    assert not out.exists()
+    res = run_tailor(
+        engine, settings, pid, resume_path=_seven_bullets_resume_yaml(tmp_path), out_dir=out,
+        typst_runner=runner,
+    )
+    rows = _artifact_rows(engine)
+    tailored = next(r for r in rows if r.kind == "resume_tailored")
+    assert tailored.meta_json["degraded"] is True
+    assert tailored.meta_json["degrade_reason"] == "too_many_bullets"
+    assert tailored.meta_json["typst_pdf_built"] is True
+    assert res.pdf_path is not None and res.pdf_path.exists()
     failed_log = day_dir / "_failed" / "acme-lead.log"
-    assert failed_log.exists()
-    assert "too_many_bullets" in failed_log.read_text(encoding="utf-8")
+    assert not failed_log.exists()
 
 
 def test_tier_b_layout_violation_is_skipped_tier_a_ships(tmp_path: Path) -> None:
