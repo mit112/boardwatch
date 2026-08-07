@@ -37,9 +37,16 @@ enforcement (the load-bearing keystone surgery; deserves fresh context + a small
 reason is a new `eligibility_requirements` column or lives only on the in-memory `Resolution`), facts
 `schema_version`, and the eligible-cleared-vs-residue guard. **P2b (fail-DANGEROUS — needs Mit):** which rule families default to
 `blocker` (a wrong default silently deletes real jobs for every user) and the 3-tier `career.field` taxonomy.
-**TWO DECISIONS await Mit** (design §3): (1) `work_auth: blocker` by default + everything else preference
-(recommended) or also `clearance`? (2) lightweight `applies_when.career_field` family gate (recommended) or
-the full 3-way split? Gate P2 needs the `work_auth`→blocker flip. Prior catalog WIP: `.agent/p2-catalog/`.
+**DECISION #1 MADE (session 10, D-035, merged):** `work_auth: blocker` by default, the other five families
+stay `preference` (opt-in) — the conservative Gate-P2-meeting choice. **Gate P2 headline is now 2/3 met:** a
+fresh F-1/OPT profile → decisive INELIGIBLE-with-span on a no-sponsorship JD; a citizen → eligible on the
+same JD (proven by shipped-default `Policy()` tests). The 3rd profile (non-SWE) needs item 4.
+**DECISION #2 still awaits Mit:** the taxonomy shape (item 4) — lightweight `applies_when.career_field`
+family gate (recommended) or the full 3-way split? Also open (lower urgency): should any of the other five
+families (esp. `clearance`) also default to `blocker`? Prior catalog WIP: `.agent/p2-catalog/`.
+**Remaining P2a (fail-safe, building autonomously):** item 3 keystone enforcement (a cross-resolver property
+test "empty facts ⇒ every rule abstains" + a typed in-memory abstain reason — NOT a blanket wrapper, which
+would break multi-input alternatives like `degree`; no DB migration), facts `schema_version`, guards.
 
 **P1 was executed in two slices** (decomposed during P1 brainstorming, 2026-08-07):
 - **P1a — artifact integrity gate** (items 1, 2, 3, 3b, 4, 5 of PROGRAM.md §3.P1): hard PDF gate,
