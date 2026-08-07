@@ -485,3 +485,44 @@ def test_tier_b_clean_rewrite_still_ships_as_second_artifact(tmp_path: Path) -> 
     )
     rows = _artifact_rows(engine)
     assert {r.kind for r in rows} == {"resume_master", "resume_tailored", "resume_tailored_llm"}
+
+
+def test_tier_b_lineage_references_the_shipped_tier_a_artifact_after_degrade(
+    tmp_path: Path,
+) -> None:
+    """P4 checkpoint fix: when Tier A degrades to the untailored master, Tier B's recorded
+    `tier_a_content_hash` must match the content_hash the shipped `resume_tailored` artifact
+    actually carries (the untailored source's hash) -- not the rejected tailored render's
+    hash, which was never written anywhere. Before the fix, `tier_a_content_hash` pointed at
+    a résumé that never shipped while `tier_a_artifact_id` pointed at the row that did."""
+
+    def runner(typ: Path, pdf: Path) -> CompileOutcome:
+        if "-llm" in typ.name or "untailored" in typ.name:
+            return _ok(pdf, 1)
+        return _fail("tailored compile boom")  # forces Tier A to degrade
+
+    settings = _settings(tmp_path)
+    engine = _engine(settings)
+    # skills=("Rust",) matches only the SECOND scaffold bullet ("...in Rust"), so build_plan
+    # reorders it ahead of the first -- the tailored render's bullet order (and therefore its
+    # content_hash) genuinely differs from the untailored master's. Without that difference,
+    # `tailored_hash` and `chosen_hash` coincide by construction and this test cannot fail for
+    # what it claims.
+    pid = _seed(engine, settings, skills=("Rust",))
+    out = tmp_path / "out"
+    res = run_tailor(
+        engine, settings, pid, resume_path=_resume_yaml(tmp_path), out_dir=out,
+        typst_runner=runner,
+        tb_override=TierBResult(
+            accepted=[Rewrite(bullet_id="acme-1", text="Shipped a clean rewrite of the bullet")],
+            rows=[], calls_made=0,
+        ),
+    )
+    rows = _artifact_rows(engine)
+    tier_a = next(r for r in rows if r.kind == "resume_tailored")
+    tier_b = next(r for r in rows if r.kind == "resume_tailored_llm")
+    assert tier_a.meta_json["degraded"] is True
+    assert tier_b.meta_json["tier_a_artifact_id"] == res.tailored_artifact_id
+    # The load-bearing assertion: Tier B's lineage hash must equal what Tier A actually
+    # shipped, not the rejected tailored render (`tailored_hash` inside run_tailor).
+    assert tier_b.meta_json["tier_a_content_hash"] == tier_a.content_hash

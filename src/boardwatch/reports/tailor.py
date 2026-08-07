@@ -608,7 +608,11 @@ def run_tailor(
                     "provider": llm_provider_override or settings.llm.provider,
                     "model": llm_model_override or settings.llm.model,
                     "tier_a_artifact_id": art_id,
-                    "tier_a_content_hash": tailored_hash,
+                    # The hash of what actually shipped as the Tier-A artifact above
+                    # (`chosen_hash`), not the rejected tailored render's `tailored_hash`
+                    # — when Tier A degraded to the untailored master, those two differ,
+                    # and this lineage must match `tier_a_artifact_id`'s own content_hash.
+                    "tier_a_content_hash": chosen_hash,
                     "posting_id": cv.posting_id,
                     "posting_version_id": cv.posting_version_id,
                     "calls_made": tb.calls_made,
