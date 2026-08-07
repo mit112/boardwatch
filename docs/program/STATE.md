@@ -31,9 +31,11 @@ Gate P1 MET.** `make check` exits 0 on `main` (2846 passed, 1 deselected, covera
 
 **P2 has been explored + decomposed (2026-08-07) — see `.superpowers/sdd/p2-profile-keystone/design.md`.**
 Much of P2 is already built (INELIGIBLE spans, the 4-table evidence chain, and the severity *mechanism* all
-exist). The remaining work splits by SAFETY: **P2a (fail-safe, buildable now)** = `needs_sponsorship` bit,
-typed keystone `ABSTAIN(missing_profile_field:X)` enforcement, facts `schema_version`, and the
-eligible-cleared-vs-residue guard; **P2b (fail-DANGEROUS — needs Mit)** = which rule families default to
+exist). The remaining work splits by SAFETY. **P2a (fail-safe, buildable now):** `needs_sponsorship` bit
+**DONE (session 10, D-034, merged)**; still to build — typed keystone `ABSTAIN(missing_profile_field:X)`
+enforcement (the load-bearing keystone surgery; deserves fresh context + a small call on whether the typed
+reason is a new `eligibility_requirements` column or lives only on the in-memory `Resolution`), facts
+`schema_version`, and the eligible-cleared-vs-residue guard. **P2b (fail-DANGEROUS — needs Mit):** which rule families default to
 `blocker` (a wrong default silently deletes real jobs for every user) and the 3-tier `career.field` taxonomy.
 **TWO DECISIONS await Mit** (design §3): (1) `work_auth: blocker` by default + everything else preference
 (recommended) or also `clearance`? (2) lightweight `applies_when.career_field` family gate (recommended) or
