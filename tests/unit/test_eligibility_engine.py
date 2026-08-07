@@ -281,6 +281,74 @@ def test_a_blocker_unknown_yields_uncertain(catalog) -> None:
     assert result.verdict == "uncertain"
 
 
+# ------------------------------------------------------ shipped-default severity (D-035)
+#
+# Every test above passes an explicit all-`blocker` fixture (`BLOCK_ALL`), which is exactly
+# what the severity-layer review flagged as the gap: it proves the MECHANISM works but
+# never exercises the SHIPPED DEFAULT a fresh, policy-less user actually gets. These use a
+# bare `Policy()` — no overrides — because that is what `work_auth: blocker` in
+# rules.yaml's `default_policy` actually ships to a new profile.
+
+_NO_SPONSORSHIP_JD = (
+    "We are hiring a backend engineer. We do not offer visa sponsorship for this role."
+)
+
+
+def test_shipped_default_makes_a_fresh_profile_ineligible_on_a_work_auth_hard_stop(
+    catalog,
+) -> None:
+    """The multi-tenancy fix: a fresh user with NO policy overrides (`Policy()`) must get a
+    decisive `ineligible` on a genuine work-auth hard stop, not the old 0-ineligible-ever
+    behaviour every family shipped before D-035."""
+    facts = Facts(
+        work_authorization=WorkAuthFact(
+            status="needs_sponsorship", jurisdiction="us", needs_sponsorship=True
+        )
+    )
+    result = evaluate(_NO_SPONSORSHIP_JD, facts, Policy(), catalog)
+    assert result.verdict == "ineligible"
+    row = next(
+        r for r in result.requirements if r.rule_id == "work_auth:no_sponsorship_offered"
+    )
+    assert row.disposition == "unmet"
+    # the ineligible row carries a real JD span, never an empty/degenerate one
+    start, end = row.jd_locator["span"]
+    assert end > start >= 0
+    assert _NO_SPONSORSHIP_JD[start:end]  # a genuine quoted substring, not a placeholder
+
+
+def test_shipped_default_still_abstains_when_no_work_auth_fact_is_declared(catalog) -> None:
+    """The keystone guard: the SAME hard-stop JD, under the SAME shipped-default `Policy()`,
+    must never resolve to `ineligible` when the user has not declared work_authorization at
+    all. A rule that cannot fire is a monitoring failure, not a conservatism feature, but it
+    must also never silently delete the posting for a user who simply hasn't answered yet."""
+    result = evaluate(_NO_SPONSORSHIP_JD, Facts(), Policy(), catalog)
+    assert result.verdict == "uncertain"
+    assert result.verdict != "ineligible"
+
+
+def test_shipped_default_yields_different_correct_verdicts_by_profile(catalog) -> None:
+    """Two profiles against the identical JD, both under the shipped-default `Policy()`:
+    an F-1/OPT holder (`ead_or_similar` + `needs_sponsorship=True`, P2a's canonical case for
+    a status that alone would abstain) is decided `ineligible`, while a US citizen who does
+    not need sponsorship is decided `eligible` on the same restriction. Same posting, same
+    policy, different facts, different — and correct — outcomes."""
+    opt_facts = Facts(
+        work_authorization=WorkAuthFact(
+            status="ead_or_similar", jurisdiction="us", needs_sponsorship=True
+        )
+    )
+    citizen_facts = Facts(
+        work_authorization=WorkAuthFact(
+            status="citizen", jurisdiction="us", needs_sponsorship=False
+        )
+    )
+    opt_result = evaluate(_NO_SPONSORSHIP_JD, opt_facts, Policy(), catalog)
+    citizen_result = evaluate(_NO_SPONSORSHIP_JD, citizen_facts, Policy(), catalog)
+    assert opt_result.verdict == "ineligible"
+    assert citizen_result.verdict == "eligible"
+
+
 def test_score_is_always_written_null(catalog, db, version_id: int) -> None:
     """D17 rejects persisted scores; writing one smuggles a score cache into an audit
     ledger (D-P2-6)."""

@@ -69,7 +69,13 @@ families:
     label: Work authorization
     fact: work_authorization
     answer_type: structured
-    default_policy: preference
+    # D-035: work_auth is the sole family whose SHIPPED default is `blocker`, not
+    # `preference`. It is the canonical hard stop (B7), the most-developed family, and
+    # keystone-gated (resolve.py aborts to UNKNOWN, never `unmet`, when the fact is absent),
+    # so flipping only this assignment is what makes a fresh multi-tenant profile return a
+    # decisive `ineligible` on a genuine work-auth stop instead of 0 ineligible ever. The
+    # other five families stay `preference`: they are false-skip-risky and remain opt-in.
+    default_policy: blocker
     question: "Which best describes your work authorization for the roles you are targeting?"
     fields:
       - name: status

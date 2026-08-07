@@ -330,7 +330,15 @@ class TestReviewRegressions:
         self, catalog: RulesCatalog, body: str
     ) -> None:
         assert rows(catalog, body, FTE_ONLY) == []
-        assert verdict(catalog, body, FTE_ONLY) == "eligible"
+        # D-035: work_auth ships `blocker` by default, and one corpus sentence here
+        # ("...not able to sponsor visas, including CPT/OPT...") is ALSO a genuine
+        # work-auth restriction that FTE_ONLY declares no work_authorization fact for, so
+        # it now correctly abstains to `uncertain` under the shipped default rather than
+        # `eligible`. That is a different family entirely; isolate it the same way `rows()`
+        # already isolates contract_not_fte/internship, so this test keeps testing only
+        # what its name says.
+        isolated = Policy(families={**BLOCK_BOTH.families, "work_auth": "preference"})
+        assert verdict(catalog, body, FTE_ONLY, isolated) == "eligible"
 
     @pytest.mark.parametrize(
         "body,facts",

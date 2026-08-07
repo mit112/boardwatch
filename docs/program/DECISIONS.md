@@ -1290,3 +1290,69 @@ decision in the sponsorship branch; it never makes eligibility less conservative
 This is the first P2a (fail-safe) slice; the rest of P2 (typed keystone-abstain enforcement, facts
 `schema_version`, and the fail-dangerous P2b severity-default / taxonomy decisions) is tracked in
 `.superpowers/sdd/p2-profile-keystone/design.md` and STATE's next-action.
+
+## D-035 — `work_auth` ships `default_policy: blocker`; the other five families stay `preference`
+
+**2026-08-07 · session 11 · P2 (item 7, the fail-dangerous P2b severity-default slice).**
+
+**Context.** PROGRAM.md §3.P2 item 7 named the actual reason `ineligible` was unreachable: the severity
+*mechanism* was already correct and tested (`engine.py:227-238` — `blocker` + `required` + `unmet` →
+`ineligible`), but all six families shipped `default_policy: preference` (`rules.yaml`), so a fresh,
+policy-less profile got **0 `ineligible` ever**. Mit was unaffected only because he sets `work_auth:
+blocker` by hand; a new F-1/OPT or citizen user was not. That is the multi-tenancy requirement failing at
+exactly the point `CLAUDE.md` forbids — a monitoring failure dressed as conservatism.
+
+**Choice.** Flip only `work_auth`'s `default_policy` from `preference` to `blocker` (`rules.yaml:72`).
+Leave all five other families (`experience_years`, `clearance`, `degree`, `contract_not_fte`,
+`internship`) at `preference`. Rationale for singling out `work_auth`: it is the canonical hard stop
+(bar metric B7), the most-developed family (suppressors, jurisdiction scoping, negation handling, the
+P2a `needs_sponsorship` bit from D-034), and it is keystone-gated — `_resolve_work_auth` (`resolve.py:146`)
+returns `UNKNOWN` when `facts.work_authorization` is absent, never `unmet`, so the family can only ever
+decide `ineligible` when the user has actually declared a work-auth fact that is genuinely unmet. The other
+five are false-skip-risky (a wrong `blocker` default there silently deletes real jobs on a shaky pattern)
+and stay opt-in pending Mit's per-family review — this decision does not resolve them, it resolves the one
+family the keystone and the corpus both support flipping today.
+
+**Mechanism vs. assignment.** Nothing in `engine.py`, `resolve.py`, or the roll-up changed. `rules.yaml`'s
+`default_policy` field already existed and was already read by `catalog.materialised_policy` and honored by
+`evaluate`'s roll-up; only the *value* on one family's declaration moved. This is the "sane per-field
+defaults ship; the assignment is the user's" split PROGRAM.md §3b already called for — it was simply never
+exercised because every family's shipped assignment was the same conservative value.
+
+**Verified.** `evaluate(body, facts, Policy(), catalog)` — the bare, override-free default a fresh profile
+actually gets — now returns `ineligible` for a profile declaring `work_authorization.needs_sponsorship`
+against a JD containing a genuine no-sponsorship restriction, with the `ineligible` row's `jd_locator`
+carrying a real, non-empty span into the frozen JD. The same JD under the same shipped default returns
+`eligible` for a US-citizen profile and `ineligible` for an F-1/OPT (`ead_or_similar` +
+`needs_sponsorship=True`) profile — two profiles, one posting, two different and individually correct
+verdicts (Gate P2's headline, partial: the third roadmap profile, a non-SWE field, needs the still-deferred
+`career.field` taxonomy, item 4). The keystone guard was independently re-verified under the new default: a
+profile that declares no `work_authorization` fact at all, against the identical JD, still resolves
+`uncertain` — never `ineligible` — because the resolver's absent-fact branch returns `UNKNOWN`, and
+`UNKNOWN` + `blocker` rolls up to `uncertain`, not `ineligible`, in the roll-up's `blocking()` any() test.
+
+**Fallout, investigated rather than patched over.** One existing test
+(`test_a_refusal_to_engage_contractors_is_not_a_contractor_role`, `tests/pipeline/test_eligibility_new_families.py`)
+asserted an overall `verdict() == "eligible"` for a corpus sentence about refusing contractors that also,
+incidentally, contains a genuine sponsorship-refusal clause ("...not able to sponsor visas, including
+CPT/OPT..."). Its facts fixture (`FTE_ONLY`) declares no `work_authorization`, so under the new default the
+posting correctly abstains to `uncertain` on that clause — a true finding, not a regression. The test's
+actual intent (proving the `contract_not_fte` suppressor does not misfire on this sentence) was already
+isolated by its `rows()` helper, which filters to the two P9 families only; `verdict()` had no equivalent
+isolation. Fixed by isolating `verdict()`'s policy for this one case (`work_auth: preference` alongside the
+existing `contract_not_fte`/`internship` overrides), matching the isolation the file's own comments already
+prescribed for `rows()` — not by weakening the assertion.
+
+**Generalization pin.** `rules.yaml` is a sha256-pinned shipped taxonomy (D-P2-7,
+`tools/generalization/allowlists.py`); the pin was recomputed and updated to match the new file content.
+
+**Rejected.** Flipping all six families to `blocker` — rejected outright by the brief as the false-skip-risky
+direction the other five families exist to avoid; not evaluated further. Flipping none and only improving
+reporting — rejected because it leaves Gate P2's headline (a fresh profile returns decisive `INELIGIBLE`)
+permanently unmet; reporting a problem is not the same as fixing the one instance that is safe to fix now.
+
+**Consequence.** `make check` exits 0 (2860 passed, 1 deselected, coverage 95.35%, `generalization: OK`).
+PROGRAM.md §3.P2 item 7 is DONE for `work_auth`; the other five families' severity decision remains open,
+tracked as before. This closes Gate P2's headline metric (B7: work-auth decisive) for the canonical hard
+stop; the remaining Gate P2 clauses (items 3, 4, 6, and the three-profile/non-SWE-field leg) are unchanged
+by this session and still open.

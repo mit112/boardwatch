@@ -6,6 +6,17 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Changed
+
+- **`work_auth`'s default severity is now `blocker`, not `preference`** (P2, §3.P2 item 7, D-035). Every
+  eligibility family previously shipped `default_policy: preference`, so a fresh, policy-less profile got
+  **0 `ineligible` verdicts ever** — the multi-tenancy requirement failing for anyone who had not, like Mit,
+  set `work_auth: blocker` by hand. `work_auth` is the canonical hard-stop family (bar metric B7),
+  the most-developed, and keystone-gated (it abstains to `uncertain`, never `ineligible`, when
+  `work_authorization` is undeclared), so it is the one family safe to flip today; the other five
+  (`experience_years`, `clearance`, `degree`, `contract_not_fte`, `internship`) remain `preference`,
+  opt-in, pending further review.
+
 ### Added
 
 - **`work_authorization.needs_sponsorship` as an orthogonal bit** on the eligibility work-auth fact (P2,

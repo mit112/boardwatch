@@ -214,7 +214,9 @@ def test_the_policy_map_is_materialised_from_catalog_defaults(tmp_path: Path) ->
     catalog = load_rules(tmp_path)
     materialised = catalog.materialised_policy(Policy())
     assert set(materialised) == {f.id for f in catalog.families}
-    assert set(materialised.values()) == {"preference"}
+    # work_auth ships `blocker` by default (D-035); every other family ships `preference`.
+    assert materialised["work_auth"] == "blocker"
+    assert {v for f, v in materialised.items() if f != "work_auth"} == {"preference"}
     overridden = catalog.materialised_policy(Policy(families={"degree": "blocker"}))
     assert overridden["degree"] == "blocker"
     assert overridden["clearance"] == "preference"

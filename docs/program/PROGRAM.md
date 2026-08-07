@@ -224,13 +224,18 @@ inputs=("total_years_experience",))`. What is missing is *enforcement* and *repo
    which rule cleared which requirement, against which profile field, citing which span, and which rules
    abstained. "No flags" ≠ cleared.
 7. **The severity/policy layer — the actual reason `ineligible` is unreachable.** `facts.py:66`: *"Only
-   `blocker` can yield `ineligible`."* All six families ship `default_policy: preference`
+   `blocker` can yield `ineligible`."* All six families shipped `default_policy: preference`
    (`rules.yaml:72,290,388,606,871,1032`). Live consequence: **1,713** unmet *required* dispositions,
-   **1,427** evaluations carrying one and still verdict `eligible`, **0** `ineligible` ever. Mit is
+   **1,427** evaluations carrying one and still verdict `eligible`, **0** `ineligible` ever. Mit was
    unaffected only because he set `work_auth: blocker` by hand — **a fresh user with a perfect profile
-   gets zero ineligible verdicts by default.** That is the multi-tenancy requirement failing at exactly
+   got zero ineligible verdicts by default.** That is the multi-tenancy requirement failing at exactly
    the point `CLAUDE.md` forbids. Severity belongs in the published/personal split (§3b): the *mechanism*
-   and sane per-field defaults ship; the *assignment* is the user's.
+   and sane per-field defaults ship; the *assignment* is the user's. **DONE for `work_auth` (session 11,
+   D-035):** `rules.yaml:72` now ships `default_policy: blocker` — the canonical hard stop, most-developed
+   family, keystone-gated (abstains to `uncertain`, never `ineligible`, when the fact is absent). A fresh
+   profile now gets a decisive `ineligible` on a genuine work-auth stop. The other five families
+   (`experience_years`, `clearance`, `degree`, `contract_not_fte`, `internship`) remain `preference` —
+   they are false-skip-risky and stay opt-in pending Mit's decision.
 
 **Gate P2:** the same JD evaluated against **three** profiles (F-1 OPT new-grad SWE / US-citizen senior
 SWE / non-SWE field) yields three different and individually correct verdicts; Mit's profile returns a
