@@ -5,6 +5,10 @@ UNREACHABLE paths can take minutes (tenacity retries + timeouts)."""
 
 from __future__ import annotations
 
+import re
+import shutil
+import subprocess
+from dataclasses import dataclass
 from importlib.metadata import version as package_version
 
 import typer
@@ -22,6 +26,41 @@ from boardwatch.store.db import schema_revision
 from boardwatch.store.queries import last_complete_scan_ages
 
 console = Console()
+
+_TYPST_PINNED_VERSION = "0.15.1"
+
+
+@dataclass
+class TypstCheck:
+    found: bool
+    version: str | None = None
+    failed: bool = False  # missing binary — contributes to doctor's non-zero exit
+    message: str | None = None  # install guidance (failure) or version-mismatch warning
+
+
+def check_typst() -> TypstCheck:
+    """Probe for the pinned typst binary (résumé PDF gate, P1a). Missing binary is an
+    actionable failure; a version other than the pin is a loud warning, not a hard fail —
+    the page-count `typst eval` syntax the gate relies on is version-sensitive."""
+    if shutil.which("typst") is None:
+        return TypstCheck(
+            found=False,
+            failed=True,
+            message=(
+                f"typst not found; install typst {_TYPST_PINNED_VERSION} "
+                "(https://github.com/typst/typst/releases) — required for the résumé PDF gate"
+            ),
+        )
+    result = subprocess.run(["typst", "--version"], capture_output=True, text=True)
+    match = re.search(r"\d+\.\d+\.\d+", result.stdout)
+    version = match.group(0) if match else None
+    message = None
+    if version != _TYPST_PINNED_VERSION:
+        message = (
+            f"typst version is {version or 'unknown'}, pinned version is "
+            f"{_TYPST_PINNED_VERSION} — the page-count query syntax is version-sensitive"
+        )
+    return TypstCheck(found=True, version=version, message=message)
 
 
 def _db_revision(conn: Connection) -> str | None:
@@ -116,5 +155,12 @@ def doctor(ctx: typer.Context, offline: bool = typer.Option(False, "--offline"))
         f"{'ok' if schema_ok else f'MISMATCH (db={db_revision}, code={schema_revision()})'}"
     )
 
-    failed = report.actionable or not integrity_ok or not schema_ok
+    typst_check = check_typst()
+    console.print(f"typst: {typst_check.version or 'NOT FOUND'}")
+    if typst_check.failed:
+        console.print(f"[red]{typst_check.message}[/red]")
+    elif typst_check.message:
+        console.print(f"[yellow]{typst_check.message}[/yellow]")
+
+    failed = report.actionable or not integrity_ok or not schema_ok or typst_check.failed
     raise typer.Exit(code=1 if failed else 0)
