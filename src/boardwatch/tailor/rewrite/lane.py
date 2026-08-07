@@ -10,6 +10,7 @@ from boardwatch.llm.cache import ResponseCache
 from boardwatch.llm.client import ModelClient
 from boardwatch.tailor.equivalences import EquivalenceTable
 from boardwatch.tailor.model import Resume
+from boardwatch.tailor.overmatch import overmatch_reasons
 from boardwatch.tailor.plan import Rewrite
 from boardwatch.tailor.rewrite.filter import passes_overmatch_filter
 from boardwatch.tailor.rewrite.judge import parse_verdict
@@ -62,6 +63,8 @@ def run_tier_b_core(
     table: EquivalenceTable,
     jd_skills: set[str],
     budget: int,
+    jd_text: str = "",
+    canonical: frozenset[str] = frozenset(),
 ) -> TierBResult:
     accepted: list[Rewrite] = []
     rows: list[RewriteRow] = []
@@ -189,6 +192,27 @@ def run_tier_b_core(
                 )
                 continue
 
+            reasons = overmatch_reasons(candidate, jd_text, canonical=canonical)
+            if reasons:
+                # A bullet that lifts a long verbatim JD span, or copies the JD's own
+                # unusual capitalization of a non-canonical term, reads as bot copy-paste
+                # even when every token is fact-provenanced (P4 item 1, D-048). Same
+                # fail-safe shape as the provenance veto above: revert to Tier-A before
+                # spending a judge call on a reword that can never be trusted stylistically.
+                rows.append(
+                    RewriteRow(
+                        bullet_id=b.bullet_id,
+                        entry_id=entry.entry_id,
+                        a_text=a_text,
+                        b_text=candidate,
+                        filter_pass=True,
+                        judge_verdict=None,
+                        kept=False,
+                        drop_reason="overmatch",
+                    )
+                )
+                continue
+
             try:
                 verdict = parse_verdict(_guarded(judge, a_text, candidate))
             except _BudgetExceeded:
@@ -263,6 +287,7 @@ def run_tier_b(
     budget: int,
     provider: str | None = None,
     base_url: str | None = None,
+    jd_text: str = "",
 ) -> TierBResult:
     # ResponseCache.key() only takes a model STRING, but the same model name can point
     # at a different provider or endpoint (self-hosted vs. hosted, a base_url swap).
@@ -289,6 +314,14 @@ def run_tier_b(
         build_judge_payload(a, c), JUDGE_PROMPT_VERSION
     )
 
+    # The canonical-tech vocab overmatch's caps check exempts, seeded from what boardwatch
+    # already has (P4 item 1, D-048): taxonomy skill names lowercased union the
+    # equivalence-table's approved swap images. Item 2 (per-field canonical vocab) later
+    # replaces this source; overmatch_reasons itself stays agnostic to where it came from.
+    canonical = frozenset(p.name.lower() for p in taxonomy.patterns) | frozenset(
+        img.lower() for img in table.images()
+    )
+
     return run_tier_b_core(
         tailored_a,
         propose=propose,
@@ -297,4 +330,6 @@ def run_tier_b(
         table=table,
         jd_skills=jd_skills,
         budget=budget,
+        jd_text=jd_text,
+        canonical=canonical,
     )
