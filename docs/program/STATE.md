@@ -4,14 +4,14 @@
 **Updated by:** boardwatch (Claude)
 **Repo state at write time:** all nine P0 items (0-8), P1a (the résumé artifact integrity gate —
 PROGRAM.md §3.P1 items 1, 2, 3, 3b, 4, 5), and P1b (item 3c, the Tier-B token-provenance validator, D-033)
-are shipped on branch `p1b-tier-b-provenance`, not yet merged to `main`. Verify with
-`git log --oneline -3` and `git status` — if they disagree, the repo wins.
+are merged to `main` and pushed. **P1 is fully complete.** Verify with `git log --oneline -3` and
+`git status` — if they disagree, the repo wins.
 **This header carries no commit count or sha on purpose** — the previous one named both, went stale inside
 a single session when three later docs commits did not update it, and a cold session following the
 session-start ritual hit the disagreement on its very first check. State what is durably true; verify the
 rest against `git log`. (D-017.)
 **Gate:** `make check` exits **0** (2846 passed, 1 deselected, coverage 95.20%, `generalization: OK`),
-measured in plain mode with the real exit code on `p1b-tier-b-provenance` (P1b's tree). Item 5 supplements
+measured in plain mode with the real exit code on `main` (P1a+P1b merged). Item 5 supplements
 Gate P0; per D-031, Gate P0 is not re-anchored to `verify` exiting 0 — it was already MET on D-030's
 evidence. Gate P1 was already MET on P1a's evidence (D-032); P1b (D-033) closes the one remaining P1 item
 without changing that standing.
@@ -25,8 +25,8 @@ without changing that standing.
 ## Current phase
 
 **P0 — Instrumentation. COMPLETE (session 9).** All nine build items are shipped and merged to `main`.
-**P1 — résumé artifact gate. FULLY COMPLETE (session 10): P1a + P1b both shipped, Gate P1 MET.**
-`make check` exits 0 on `p1b-tier-b-provenance` (2846 passed, 1 deselected, coverage 95.20%,
+**P1 — résumé artifact gate. FULLY COMPLETE + MERGED to `main` (session 10): P1a + P1b both shipped,
+Gate P1 MET.** `make check` exits 0 on `main` (2846 passed, 1 deselected, coverage 95.20%,
 `generalization: OK`). **Next: P2 — profile object + the keystone invariant** (PROGRAM.md §3.P2).
 
 **P1 was executed in two slices** (decomposed during P1 brainstorming, 2026-08-07):
