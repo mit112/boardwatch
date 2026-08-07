@@ -73,6 +73,14 @@ SHIPPED_DATA: dict[str, DataEntry] = {
         "(safety-critical); frozen by sha256 pin.",
         pin="sha256:e0eb98d678e181d6022e265a68381581dc15012bdcfe0eebae337a2db3766627",
     ),
+    "src/boardwatch/tailor/register.yaml": DataEntry(
+        kind="taxonomy",
+        reason="Curated universal English-register slop catalog (banned phrases, "
+        "buzzwords, per-bullet buzzword-density ceiling) for the P4 craft guards. "
+        "Describes bad résumé register in general, not one user. Bundled-only, NOT "
+        "user-overridable (safety-critical); frozen by sha256 pin.",
+        pin="sha256:616d7f3e19ab1b56ea725f33e2586a8e5d44bff8a0faa2bf49a87ae6bd76a70e",
+    ),
     "src/boardwatch/registry/companies.yaml": DataEntry(
         kind="company_enumeration",
         reason="The one public starter registry of company job boards. Schema-validated, "
