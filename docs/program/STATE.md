@@ -440,10 +440,13 @@ an extension of the funnel artifact's existing `cross_checks` — those are per-
 while item 5 is a broader DB-vs-disk invariant. Keeping them separate avoids colliding with the just-shipped
 artifact v3.
 
-**Also outstanding: observe the three scan runs to completion and record their reconciliation in
-`METRICS.md` §"Session 8".** That closes Gate P0's last clause (above). The runs were launched in session 8
-from the `boardwatch-scan` worktree; if they had not finished when this was written, a later session must
-confirm all three reconciled with the scan stage exercised before marking the gate met.
+**Loose end from session 8 (not blocking):** a confirmatory `--no-scan` run from `main` was launched to
+eyeball artifact **v3**'s manifest/stub/fabrication sections on real store data (the three gate runs used
+the pre-v3 pinned worktree, so they wrote v2). It was still evaluating at session close. **Record its
+`artifact_version=3` output in `METRICS.md` §"Session 8" when it lands** — it writes into
+`~/boardwatch-applications/2026-08-07/`. This is confirmation only; v3 is already validated by tests and the
+review of `faa4394`. Also note: a 120s-timeout-killed earlier attempt left one dangling `runs` row
+(`status='running'`, `finished_at` NULL) — the P3 reaper's to drain.
 
 **`hidden_hard_filter` has now been looked at (session 7). Still P5's to fix, not a defect to fix now.**
 It dropped **11,517 of 19,262 open postings — 60% of the corpus**, the largest single drop anywhere in the
