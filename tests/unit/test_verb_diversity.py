@@ -147,10 +147,73 @@ def test_tier_a_content_is_never_demoted_regardless_of_repetition():
 
 
 def test_max_repeats_is_configurable():
-    resume = _resume([("b1", "Wrote the x report")])
-    accepted = [Rewrite(bullet_id="b1", text="Built the x report")]
-    rows = [_kept_row("b1", "Wrote the x report", "Built the x report")]
+    """With the cap tightened to 1, a single genuine baseline "Built" bullet is already
+    enough to force the next accepted "Built" rewrite to demote to its OWN (diversifying)
+    Tier-A original, which opens with a different verb."""
+    resume = _resume([("base", "Built the x service"), ("b1", "Wrote the y report")])
+    accepted = [Rewrite(bullet_id="b1", text="Built the y report")]
+    rows = [_kept_row("b1", "Wrote the y report", "Built the y report")]
     result = TierBResult(accepted=accepted, rows=rows, calls_made=2)
-    out = enforce_verb_diversity(resume, result, max_repeats=0)
+    out = enforce_verb_diversity(resume, result, max_repeats=1)
     assert out.accepted == []
     assert out.rows[0].drop_reason == "verb_repeat"
+
+
+def test_no_useless_demote_when_the_tier_a_fallback_shares_the_rewrites_verb():
+    """P4 item 3a fix: 3 bullets whose Tier-A originals AND accepted rewrites all open
+    with "Built", max_repeats=2. Demoting the 3rd to Tier-A would ALSO ship "Built" --
+    zero diversity gain -- so the guard must keep it rather than perform a useless
+    demote. (The pre-fix algorithm demoted unconditionally past the cap and would have
+    reverted b3, still shipping 3 "Built" bullets but sacrificing a good rewrite for
+    nothing.)"""
+    resume = _resume(
+        [
+            ("b1", "Built the x service"),
+            ("b2", "Built the y pipeline"),
+            ("b3", "Built the z dashboard"),
+        ]
+    )
+    accepted = [
+        Rewrite(bullet_id="b1", text="Built the x thing"),
+        Rewrite(bullet_id="b2", text="Built the y thing"),
+        Rewrite(bullet_id="b3", text="Built the z thing"),
+    ]
+    rows = [
+        _kept_row("b1", "Built the x service", "Built the x thing"),
+        _kept_row("b2", "Built the y pipeline", "Built the y thing"),
+        _kept_row("b3", "Built the z dashboard", "Built the z thing"),
+    ]
+    result = TierBResult(accepted=accepted, rows=rows, calls_made=6)
+    out = enforce_verb_diversity(resume, result)
+    assert out.accepted == accepted
+    assert [r.kept for r in out.rows] == [True, True, True]
+    assert all(r.drop_reason is None for r in out.rows)
+
+
+def test_baseline_seed_excludes_a_bullets_own_unshipped_tier_a_text():
+    """P4 item 3a fix: the baseline seed must NOT count an accepted bullet's own Tier-A
+    text (it may never ship). Two bullets, both Tier-A "Built...", both accepted
+    rewrites "Shipped...", max_repeats=1: with the correct exclusion, the histogram
+    starts empty, b1's "Shipped" ships clean, and b2's "Shipped" collides with b1's --
+    demoting b2 to ITS OWN Tier-A "Built..." genuinely diversifies (a different, unused
+    verb), so b2 demotes. Without the exclusion, the baseline would have already
+    counted both bullets' un-shipped "Built" openers before the walk even starts,
+    making "built" falsely look saturated -- so b2's demote-check would wrongly
+    conclude demoting can't help and keep the over-cap "Shipped" rewrite instead."""
+    resume = _resume(
+        [("b1", "Built the x service"), ("b2", "Built the y service")]
+    )
+    accepted = [
+        Rewrite(bullet_id="b1", text="Shipped the x service"),
+        Rewrite(bullet_id="b2", text="Shipped the y service"),
+    ]
+    rows = [
+        _kept_row("b1", "Built the x service", "Shipped the x service"),
+        _kept_row("b2", "Built the y service", "Shipped the y service"),
+    ]
+    result = TierBResult(accepted=accepted, rows=rows, calls_made=4)
+    out = enforce_verb_diversity(resume, result, max_repeats=1)
+    assert [r.bullet_id for r in out.accepted] == ["b1"]
+    assert [r.kept for r in out.rows] == [True, False]
+    assert out.rows[1].bullet_id == "b2"
+    assert out.rows[1].drop_reason == "verb_repeat"
