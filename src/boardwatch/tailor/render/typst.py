@@ -4,6 +4,7 @@ from pathlib import Path
 
 from boardwatch.tailor.model import Resume
 from boardwatch.tailor.render import TypstRunner
+from boardwatch.tailor.render.outcome import CompileOutcome
 
 _PREAMBLE = (
     '#let resume-header(t) = text(weight: "bold", t)\n'
@@ -36,11 +37,15 @@ class TypstRenderer:
                 if b.bullet_id in reworded:
                     lines.append("// reworded (Tier B)")
                 lines.append(f'#resume-bullet("{escape(b.text)}")')
+        # Non-rendering #metadata, so it cannot alter layout or leak into parse_bullets,
+        # which only matches #resume-bullet(...) lines. The page-count query in
+        # reports/tailor.py's _default_runner reads this label back out.
+        lines.append("#context [#metadata(counter(page).final().first()) <total-pages>]")
         return "\n".join(lines) + "\n"
 
     def to_pdf(
         self, source: str, out_dir: Path, name: str, runner: TypstRunner
-    ) -> Path | None:
+    ) -> CompileOutcome:
         out_dir.mkdir(parents=True, exist_ok=True)
         typ = out_dir / f"{name}.typ"
         typ.write_text(source, encoding="utf-8")
@@ -48,4 +53,4 @@ class TypstRenderer:
         # Both paths are deterministic per posting, so a failed compile after an earlier
         # success would otherwise leave last run's PDF next to this run's .typ.
         pdf.unlink(missing_ok=True)
-        return pdf if runner(typ, pdf) and pdf.exists() else None
+        return runner(typ, pdf)

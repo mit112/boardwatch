@@ -1,0 +1,274 @@
+"""The résumé compile gate + untailored-master fallback inside run_tailor (P1a Task 3).
+
+Uses an injected TypstRunner scripted by filename (the tailored vs. untailored vs. Tier-B
+.typ files run_tailor writes are named distinctly), so "tailored fails, untailored ok" and
+friends are directly expressible without a real typst binary. Mirrors
+tests/unit/test_reports_tailor.py's `_settings`/`_engine`/`_seed`/`_resume_yaml` fixtures.
+"""
+
+from __future__ import annotations
+
+from collections.abc import Callable
+from datetime import datetime
+from pathlib import Path
+
+import pytest
+from sqlalchemy import Engine, insert
+
+from boardwatch.core.settings import Settings
+from boardwatch.extract.taxonomy import load_taxonomy
+from boardwatch.reports.resume_gate import LeadArtifactError, TypstUnavailableError
+from boardwatch.reports.tailor import run_tailor
+from boardwatch.store.db import ensure_schema, get_engine
+from boardwatch.store.tables import (
+    artifacts,
+    companies,
+    extractions,
+    jobs,
+    posting_versions,
+    postings,
+)
+from boardwatch.tailor.load import scaffold_template
+from boardwatch.tailor.render.outcome import CompileOutcome, CompileReason
+from boardwatch.tailor.rewrite.lane import TierBResult
+
+NOW = datetime(2026, 8, 2, 12, 0, 0)
+
+Runner = Callable[[Path, Path], CompileOutcome]
+
+
+def _settings(tmp_path: Path) -> Settings:
+    return Settings(data_dir=tmp_path / "data", config_dir=tmp_path / "cfg")
+
+
+def _engine(settings: Settings) -> Engine:
+    engine = get_engine(settings.data_dir)
+    ensure_schema(engine)
+    return engine
+
+
+def _resume_yaml(tmp_path: Path) -> Path:
+    path = tmp_path / "resume.yaml"
+    path.write_text(scaffold_template(), encoding="utf-8")
+    return path
+
+
+def _empty_bullets_resume_yaml(tmp_path: Path) -> Path:
+    """An entry with every bullet deleted — validate_slots must reject this before render."""
+    path = tmp_path / "empty-entry-resume.yaml"
+    path.write_text(
+        "header:\n"
+        '  - "Ada Lovelace"\n'
+        "education:\n"
+        '  - "BSc Mathematics — Example University — 2018"\n'
+        "skill_groups:\n"
+        '  - label: "Languages"\n'
+        '    items: ["Python"]\n'
+        "entries:\n"
+        '  - entry_id: "acme-sre"\n'
+        '    heading: "Senior Engineer — Acme — 2021–2024 — Remote"\n'
+        "    bullets: []\n",
+        encoding="utf-8",
+    )
+    return path
+
+
+def _seed(
+    engine: Engine,
+    settings: Settings,
+    *,
+    status: str = "open",
+    content_hash: str = "h1",
+    body: str = "Python JavaScript backend services",
+    skills: tuple[str, ...] = (),
+    slug: str = "acme",
+) -> int:
+    """Insert company+job+posting+version+extraction; return posting_id.
+
+    Default skills=() so build_plan's `if not jd_skills: return TailorPlan(ops=())` fires —
+    the tailored résumé is then an identity copy of the master, which is what lets the
+    empty-bullets-entry fixture above reach validate_slots unchanged.
+    """
+    with engine.begin() as conn:
+        company_id = int(
+            conn.execute(
+                insert(companies).values(
+                    name=slug, provider="greenhouse", slug=slug, source="user", watched=True
+                )
+            ).inserted_primary_key[0]
+        )
+        job_id = int(conn.execute(insert(jobs).values(created_at=NOW)).inserted_primary_key[0])
+        posting_id = int(
+            conn.execute(
+                insert(postings).values(
+                    company_id=company_id, job_id=job_id, provider_posting_id=f"pp-{slug}",
+                    title="Backend Engineer", normalized_title="backend engineer",
+                    url=f"https://example.test/{slug}", locations_json=["Remote"],
+                    remote_policy="remote", posted_at=NOW, first_seen_at=NOW, last_seen_at=NOW,
+                    status=status, consecutive_missing=0, content_hash=content_hash, body_text=body,
+                )
+            ).inserted_primary_key[0]
+        )
+        conn.execute(
+            insert(posting_versions).values(
+                posting_id=posting_id, content_hash=content_hash, body_text=body,
+                captured_at=NOW, capture_reason="new",
+            )
+        )
+        conn.execute(
+            insert(extractions).values(
+                posting_id=posting_id, content_hash=content_hash, kind="taxonomy",
+                engine_version=load_taxonomy(settings.config_dir).version,
+                json={"skills": list(skills)}, created_at=NOW,
+            )
+        )
+    return posting_id
+
+
+def _ok(pdf: Path, pages: int, log: str = "ok") -> CompileOutcome:
+    pdf.write_bytes(b"%PDF-1.7\n%stub\n")
+    return CompileOutcome(CompileReason.OK, pdf, pages, log)
+
+
+def _fail(log: str = "boom") -> CompileOutcome:
+    return CompileOutcome(CompileReason.COMPILE_FAILED, None, None, log)
+
+
+def _artifact_rows(engine: Engine) -> list[object]:
+    with engine.connect() as conn:
+        return list(conn.execute(artifacts.select()).fetchall())
+
+
+def test_tailored_compile_failed_falls_back_to_untailored_degraded(tmp_path: Path) -> None:
+    def runner(typ: Path, pdf: Path) -> CompileOutcome:
+        if "untailored" in typ.name:
+            return _ok(pdf, 1)
+        return _fail("tailored compile boom")
+
+    settings = _settings(tmp_path)
+    engine = _engine(settings)
+    pid = _seed(engine, settings)
+    out = tmp_path / "day" / "acme-lead"
+    res = run_tailor(
+        engine, settings, pid, resume_path=_resume_yaml(tmp_path), out_dir=out, typst_runner=runner,
+    )
+    rows = _artifact_rows(engine)
+    tailored = next(r for r in rows if r.kind == "resume_tailored")
+    assert tailored.meta_json["degraded"] is True
+    assert tailored.meta_json["degrade_reason"] == "compile_failed"
+    assert tailored.meta_json["typst_pdf_built"] is True
+    pdf_uri = Path(tailored.meta_json["pdf_uri"])
+    assert pdf_uri.exists()
+    log_uri = Path(tailored.meta_json["compile_log_uri"])
+    assert log_uri.exists()
+    assert res.pdf_path == pdf_uri
+
+
+def test_tailored_over_page_limit_falls_back_to_untailored_degraded(tmp_path: Path) -> None:
+    def runner(typ: Path, pdf: Path) -> CompileOutcome:
+        pages = 1 if "untailored" in typ.name else 2
+        return _ok(pdf, pages)
+
+    settings = _settings(tmp_path)
+    engine = _engine(settings)
+    pid = _seed(engine, settings)
+    out = tmp_path / "day" / "acme-lead"
+    run_tailor(
+        engine, settings, pid, resume_path=_resume_yaml(tmp_path), out_dir=out, typst_runner=runner,
+    )
+    rows = _artifact_rows(engine)
+    tailored = next(r for r in rows if r.kind == "resume_tailored")
+    assert tailored.meta_json["degraded"] is True
+    assert tailored.meta_json["degrade_reason"] == "page_limit_exceeded"
+    assert Path(tailored.meta_json["compile_log_uri"]).exists()
+
+
+def test_both_unshippable_drops_lead_no_artifact_no_folder(tmp_path: Path) -> None:
+    def runner(typ: Path, pdf: Path) -> CompileOutcome:
+        return _fail(f"boom:{typ.name}")
+
+    settings = _settings(tmp_path)
+    engine = _engine(settings)
+    pid = _seed(engine, settings)
+    day_dir = tmp_path / "day"
+    out = day_dir / "acme-lead"
+    out.mkdir(parents=True)
+    with pytest.raises(LeadArtifactError):
+        run_tailor(
+            engine, settings, pid, resume_path=_resume_yaml(tmp_path), out_dir=out, typst_runner=runner,
+        )
+    assert _artifact_rows(engine) == []
+    assert not out.exists()
+    failed_log = day_dir / "_failed" / "acme-lead.log"
+    assert failed_log.exists()
+    assert failed_log.read_text(encoding="utf-8")
+
+
+def test_binary_missing_raises_typst_unavailable(tmp_path: Path) -> None:
+    def runner(typ: Path, pdf: Path) -> CompileOutcome:
+        return CompileOutcome(CompileReason.BINARY_MISSING, None, None, "")
+
+    settings = _settings(tmp_path)
+    engine = _engine(settings)
+    pid = _seed(engine, settings)
+    out = tmp_path / "out"
+    with pytest.raises(TypstUnavailableError):
+        run_tailor(
+            engine, settings, pid, resume_path=_resume_yaml(tmp_path), out_dir=out, typst_runner=runner,
+        )
+
+
+def test_tier_b_binary_missing_raises_typst_unavailable(tmp_path: Path) -> None:
+    def runner(typ: Path, pdf: Path) -> CompileOutcome:
+        if "-llm" in typ.name:
+            return CompileOutcome(CompileReason.BINARY_MISSING, None, None, "")
+        return _ok(pdf, 1)
+
+    settings = _settings(tmp_path)
+    engine = _engine(settings)
+    pid = _seed(engine, settings)
+    out = tmp_path / "out"
+    with pytest.raises(TypstUnavailableError):
+        run_tailor(
+            engine, settings, pid, resume_path=_resume_yaml(tmp_path), out_dir=out, typst_runner=runner,
+            tb_override=TierBResult(accepted=[], rows=[], calls_made=0),
+        )
+
+
+def test_tailored_ok_within_limit_is_not_degraded(tmp_path: Path) -> None:
+    def runner(typ: Path, pdf: Path) -> CompileOutcome:
+        return _ok(pdf, 1)
+
+    settings = _settings(tmp_path)
+    engine = _engine(settings)
+    pid = _seed(engine, settings)
+    out = tmp_path / "out"
+    res = run_tailor(
+        engine, settings, pid, resume_path=_resume_yaml(tmp_path), out_dir=out, typst_runner=runner,
+    )
+    rows = _artifact_rows(engine)
+    tailored = next(r for r in rows if r.kind == "resume_tailored")
+    assert not tailored.meta_json.get("degraded")
+    assert tailored.meta_json["typst_pdf_built"] is True
+    assert Path(tailored.meta_json["pdf_uri"]).exists()
+    assert Path(tailored.meta_json["compile_log_uri"]).exists()
+    assert res.pdf_path is not None and res.pdf_path.exists()
+
+
+def test_slot_validation_failure_falls_back_like_compile_failed(tmp_path: Path) -> None:
+    def runner(typ: Path, pdf: Path) -> CompileOutcome:
+        assert "untailored" in typ.name  # the tailored side must never reach the runner
+        return _ok(pdf, 1)
+
+    settings = _settings(tmp_path)
+    engine = _engine(settings)
+    pid = _seed(engine, settings)  # skills=() -> tailored is an identity copy of master
+    out = tmp_path / "day" / "acme-lead"
+    run_tailor(
+        engine, settings, pid, resume_path=_empty_bullets_resume_yaml(tmp_path), out_dir=out,
+        typst_runner=runner,
+    )
+    rows = _artifact_rows(engine)
+    tailored = next(r for r in rows if r.kind == "resume_tailored")
+    assert tailored.meta_json["degraded"] is True
+    assert tailored.meta_json["degrade_reason"] == "compile_failed"

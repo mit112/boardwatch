@@ -37,6 +37,7 @@ from boardwatch.store.tables import (
 )
 from boardwatch.tailor.load import scaffold_template
 from boardwatch.tailor.plan import MAX_BULLETS_PER_ENTRY
+from boardwatch.tailor.render.outcome import CompileOutcome, CompileReason
 from boardwatch.tailor.rewrite.lane import TierBResult
 
 NOW = datetime(2026, 8, 2, 12, 0, 0)
@@ -194,9 +195,9 @@ def _seed(
     return posting_id
 
 
-def _runner_ok(typ: Path, pdf: Path) -> bool:
+def _runner_ok(typ: Path, pdf: Path) -> CompileOutcome:
     pdf.write_bytes(b"%PDF")
-    return True
+    return CompileOutcome(CompileReason.OK, pdf, 1, "ok")
 
 
 def test_dry_run_writes_nothing(tmp_path: Path) -> None:
@@ -441,10 +442,10 @@ def test_no_write_lock_held_across_render(tmp_path: Path) -> None:
     engine = _engine(settings)
     pid = _seed(engine, settings)
 
-    def runner(typ: Path, pdf: Path) -> bool:
+    def runner(typ: Path, pdf: Path) -> CompileOutcome:
         insert_run(engine)  # independent engine.begin(): would deadlock under a held lock
         pdf.write_bytes(b"%PDF")
-        return True
+        return CompileOutcome(CompileReason.OK, pdf, 1, "ok")
 
     res = run_tailor(engine, settings, pid, resume_path=_resume_yaml(tmp_path),
                      out_dir=tmp_path / "out", typst_runner=runner)

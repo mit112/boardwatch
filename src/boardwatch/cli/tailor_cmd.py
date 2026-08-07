@@ -19,6 +19,7 @@ from boardwatch.core.settings import Settings, load_settings
 from boardwatch.extract.taxonomy import load_taxonomy
 from boardwatch.llm.cache import ResponseCache
 from boardwatch.llm.factory import build_client
+from boardwatch.reports.resume_gate import LeadArtifactError, TypstUnavailableError
 from boardwatch.reports.tailor import (
     NoCurrentVersionError,
     UnsupportedFormatError,
@@ -159,6 +160,8 @@ def run_cmd(
         NoCurrentVersionError,
         TierASafetyError,
         UnsupportedFormatError,
+        TypstUnavailableError,
+        LeadArtifactError,
     ) as exc:
         console.print(str(exc))
         raise typer.Exit(code=1) from exc

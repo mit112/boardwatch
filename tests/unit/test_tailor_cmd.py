@@ -21,6 +21,7 @@ from boardwatch.extract.taxonomy import load_taxonomy
 from boardwatch.store.db import ensure_schema, get_engine
 from boardwatch.store.tables import companies, extractions, jobs, posting_versions, postings
 from boardwatch.tailor.load import scaffold_template
+from boardwatch.tailor.render.outcome import CompileOutcome, CompileReason
 from boardwatch.tailor.safety import TierASafetyError
 
 runner = CliRunner()
@@ -201,16 +202,27 @@ def test_run_resume_override_is_honoured(env: Env, tmp_path: Path) -> None:
     assert (env.data_dir / "tailored" / f"tailored-{posting_id}.typ").is_file()
 
 
-def test_run_out_dir_override_is_honoured(env: Env, tmp_path: Path) -> None:
+def test_run_out_dir_override_is_honoured(
+    env: Env, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    # A stub stands in for `typst` (never shelled out to) so this test's outcome does not
+    # depend on whether the machine running it happens to have typst installed — since a
+    # missing binary is now a fatal TypstUnavailableError (not a silent PDF skip), the
+    # command's own exit code would otherwise vary with the host, not with --out.
     _run(env, ["tailor", "init"])
     posting_id = _seed_open_posting(env)
     out = tmp_path / "artifacts"
-    # No typst on the test runner, so to_pdf skips the PDF; the .typ must still land
-    # in --out and the command must still succeed.
+
+    def _fake_typst(typ: Path, pdf: Path) -> CompileOutcome:
+        pdf.write_bytes(b"%PDF")
+        return CompileOutcome(CompileReason.OK, pdf, 1, "ok")
+
+    monkeypatch.setattr("boardwatch.reports.tailor._default_runner", _fake_typst)
     result = _run(env, ["tailor", "run", str(posting_id), "--out", str(out)])
     assert result.exit_code == 0, result.stdout
     assert (out / f"tailored-{posting_id}.typ").is_file()
-    assert sorted(p.suffix for p in out.iterdir()) in ([".typ"], [".pdf", ".typ"])
+    assert (out / f"tailored-{posting_id}.pdf").is_file()
+    assert (out / "typst-compile.log").is_file()
     assert not (env.data_dir / "tailored").exists()  # default location untouched
 
 
@@ -223,9 +235,9 @@ def test_run_out_dir_receives_pdf_when_typst_available(
     posting_id = _seed_open_posting(env)
     out = tmp_path / "artifacts"
 
-    def _fake_typst(typ: Path, pdf: Path) -> bool:
+    def _fake_typst(typ: Path, pdf: Path) -> CompileOutcome:
         pdf.write_bytes(b"%PDF")
-        return True
+        return CompileOutcome(CompileReason.OK, pdf, 1, "ok")
 
     monkeypatch.setattr("boardwatch.reports.tailor._default_runner", _fake_typst)
     result = _run(env, ["tailor", "run", str(posting_id), "--out", str(out)])

@@ -6,8 +6,9 @@ from pathlib import Path
 from typing import Protocol
 
 from boardwatch.tailor.model import Resume
+from boardwatch.tailor.render.outcome import CompileOutcome
 
-TypstRunner = Callable[[Path, Path], bool]
+TypstRunner = Callable[[Path, Path], CompileOutcome]
 
 _BULLET = re.compile(r'#resume-bullet\("((?:[^"\\]|\\.)*)"\)')
 
@@ -17,7 +18,7 @@ class Renderer(Protocol):
 
     def to_pdf(
         self, source: str, out_dir: Path, name: str, runner: TypstRunner
-    ) -> Path | None: ...
+    ) -> CompileOutcome: ...
 
 
 def _unescape(s: str) -> str:

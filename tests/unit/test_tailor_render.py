@@ -5,6 +5,7 @@ from pathlib import Path
 
 from boardwatch.tailor.model import Bullet, Entry, Resume, SkillGroup
 from boardwatch.tailor.render import parse_bullets
+from boardwatch.tailor.render.outcome import CompileOutcome, CompileReason
 from boardwatch.tailor.render.typst import TypstRenderer
 
 
@@ -47,13 +48,22 @@ def test_non_bullet_firewall() -> None:
     assert strip(base) == strip(adv)  # non-bullet regions identical
 
 
+def _ok_runner(typ: Path, pdf: Path) -> CompileOutcome:
+    pdf.write_bytes(b"%PDF")
+    return CompileOutcome(CompileReason.OK, pdf, 1, "ok")
+
+
+def _failed_runner(typ: Path, pdf: Path) -> CompileOutcome:
+    return CompileOutcome(CompileReason.COMPILE_FAILED, None, None, "boom")
+
+
 def test_to_pdf_uses_injected_runner(tmp_path: Path) -> None:
     rnd = TypstRenderer()
     src = rnd.emit(R())
-    ok = rnd.to_pdf(src, tmp_path, "out", runner=lambda typ, pdf: pdf.write_bytes(b"%PDF") or True)
-    assert ok and ok.suffix == ".pdf" and ok.exists()
-    missing = rnd.to_pdf(src, tmp_path, "out2", runner=lambda typ, pdf: False)
-    assert missing is None
+    ok = rnd.to_pdf(src, tmp_path, "out", runner=_ok_runner)
+    assert ok.reason is CompileReason.OK and ok.pdf_path is not None and ok.pdf_path.exists()
+    missing = rnd.to_pdf(src, tmp_path, "out2", runner=_failed_runner)
+    assert missing.reason is CompileReason.COMPILE_FAILED and missing.pdf_path is None
 
 
 def test_to_pdf_failed_recompile_removes_stale_pdf(tmp_path: Path) -> None:
@@ -61,12 +71,12 @@ def test_to_pdf_failed_recompile_removes_stale_pdf(tmp_path: Path) -> None:
     # not leave last run's PDF sitting next to this run's freshly written .typ.
     rnd = TypstRenderer()
     first = rnd.emit(R(b1="Shipped JS"))
-    ok = rnd.to_pdf(first, tmp_path, "out", runner=lambda typ, pdf: pdf.write_bytes(b"%PDF") or True)
-    assert ok and ok.exists()
+    ok = rnd.to_pdf(first, tmp_path, "out", runner=_ok_runner)
+    assert ok.pdf_path is not None and ok.pdf_path.exists()
 
     second = rnd.emit(R(b1="Rewritten bullet"))
-    missing = rnd.to_pdf(second, tmp_path, "out", runner=lambda typ, pdf: False)
-    assert missing is None
+    missing = rnd.to_pdf(second, tmp_path, "out", runner=_failed_runner)
+    assert missing.pdf_path is None
     assert not (tmp_path / "out.pdf").exists()
     assert (tmp_path / "out.typ").read_text(encoding="utf-8") == second
 

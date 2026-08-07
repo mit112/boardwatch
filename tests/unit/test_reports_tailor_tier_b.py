@@ -31,6 +31,7 @@ from boardwatch.store.tables import (
     postings,
 )
 from boardwatch.tailor.load import scaffold_template
+from boardwatch.tailor.render.outcome import CompileOutcome, CompileReason
 
 NOW = datetime(2026, 8, 2, 12, 0, 0)
 
@@ -98,9 +99,9 @@ def _seed(
     return posting_id
 
 
-def _runner_ok(typ: Path, pdf: Path) -> bool:
+def _runner_ok(typ: Path, pdf: Path) -> CompileOutcome:
     pdf.write_bytes(b"%PDF")
-    return True
+    return CompileOutcome(CompileReason.OK, pdf, 1, "ok")
 
 
 class ScriptedClient:

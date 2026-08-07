@@ -24,6 +24,7 @@ transaction as Tier A's write.
 from __future__ import annotations
 
 import hashlib
+import shutil
 import subprocess
 from dataclasses import dataclass
 from pathlib import Path
@@ -36,6 +37,14 @@ from boardwatch.extract.preflight import run_preflight
 from boardwatch.extract.taxonomy import Taxonomy, load_taxonomy
 from boardwatch.llm.cache import ResponseCache
 from boardwatch.llm.client import ModelClient
+from boardwatch.reports.resume_gate import (
+    GateReason,
+    LeadArtifactError,
+    ResumeValidationError,
+    TypstUnavailableError,
+    evaluate_compile,
+    validate_slots,
+)
 from boardwatch.store.artifacts import (
     add_derivation,
     get_or_create_master_artifact,
@@ -46,6 +55,7 @@ from boardwatch.store.queries import (
     current_posting_versions,
     ensure_run,
     finish_run,
+    get_profile,
 )
 from boardwatch.store.tables import extractions, postings
 from boardwatch.tailor.apply import apply_plan
@@ -54,6 +64,7 @@ from boardwatch.tailor.load import load_resume
 from boardwatch.tailor.model import Resume
 from boardwatch.tailor.plan import Delete, EquivalenceSwap, TailorPlan, build_plan
 from boardwatch.tailor.render import TypstRunner
+from boardwatch.tailor.render.outcome import CompileOutcome, CompileReason
 from boardwatch.tailor.render.typst import TypstRenderer
 from boardwatch.tailor.rewrite.lane import TierBResult, run_tier_b
 from boardwatch.tailor.rewrite.prompt import JUDGE_PROMPT_VERSION, REWRITE_PROMPT_VERSION
@@ -62,6 +73,10 @@ from boardwatch.tailor.safety import enforce_tier_a
 VALIDATOR_VERSION = "tier-a-1"
 LLM_LANE_VERSION = "tier-b-1"
 SUPPORTED_FORMATS = ("typst",)
+_TYPST_MISSING_MSG = (
+    "typst binary not found on PATH; install it (e.g. `brew install typst` or "
+    "https://github.com/typst/typst#installation) to render résumé PDFs"
+)
 
 
 class NoCurrentVersionError(RuntimeError):
@@ -106,12 +121,28 @@ class TailorResult:
     llm_artifact_id: int | None = None
 
 
-def _default_runner(typ: Path, pdf: Path) -> bool:
+def _default_runner(typ: Path, pdf: Path) -> CompileOutcome:
+    if shutil.which("typst") is None:
+        return CompileOutcome(CompileReason.BINARY_MISSING, None, None, "")
+    compiled = subprocess.run(
+        ["typst", "compile", str(typ), str(pdf)], capture_output=True, text=True
+    )
+    log = compiled.stdout + compiled.stderr
+    if compiled.returncode != 0 or not pdf.exists():
+        return CompileOutcome(CompileReason.COMPILE_FAILED, None, None, log)
+    queried = subprocess.run(
+        ["typst", "eval", "query(<total-pages>).first().value", "--in", str(typ)],
+        capture_output=True, text=True,
+    )
     try:
-        r = subprocess.run(["typst", "compile", str(typ), str(pdf)], capture_output=True)
-        return r.returncode == 0 and pdf.exists()
-    except FileNotFoundError:
-        return False
+        pages = int(queried.stdout.strip())
+    except ValueError:
+        # A compiled doc we emit always carries the <total-pages> label; a failure here
+        # means a typst version whose `eval` syntax differs — treat as a compile failure
+        # so the lead falls back rather than shipping an unmeasured PDF. (doctor's version
+        # probe is the proactive guard.)
+        return CompileOutcome(CompileReason.COMPILE_FAILED, None, None, log + queried.stderr)
+    return CompileOutcome(CompileReason.OK, pdf, pages, log)
 
 
 def _sha(text: str) -> str:
@@ -391,28 +422,104 @@ def run_tailor(
     llm_pdf_path: Path | None = None
     llm_art_id: int | None = None
     if not dry_run:
+        with engine.connect() as conn:
+            profile_row = get_profile(conn)
+        # The stored column has no floor (Task 2 review note): a missing profile or a
+        # non-positive value both fall back to 1 rather than being trusted verbatim — a 0
+        # would make every lead exceed the limit.
+        max_pages = max(1, profile_row.resume_max_pages) if profile_row is not None else 1
+        chosen_runner = typst_runner or _default_runner
+
         name = f"tailored-{posting_id}"
-        typ_uri = str(Path(out_dir) / f"{name}.typ")  # deterministic reference (§5)
-        # No lock held here: to_pdf shells out / touches the filesystem freely.
-        pdf_path = renderer.to_pdf(source, Path(out_dir), name, typst_runner or _default_runner)
+        typ_path = Path(out_dir) / f"{name}.typ"  # deterministic reference (§5)
+        pdf_path_candidate = Path(out_dir) / f"{name}.pdf"
+        untailored_name = f"untailored-{posting_id}"
+        untailored_typ_path = Path(out_dir) / f"{untailored_name}.typ"
+        untailored_pdf_path = Path(out_dir) / f"{untailored_name}.pdf"
+
+        try:
+            validate_slots(tailored)
+        except ResumeValidationError as exc:
+            # Treated exactly like a failed compile: never sent to typst, straight to the
+            # untailored-master fallback below.
+            tailored_outcome = CompileOutcome(
+                CompileReason.COMPILE_FAILED, None, None, f"slot validation failed: {exc}"
+            )
+        else:
+            # No lock held here: to_pdf shells out / touches the filesystem freely.
+            tailored_outcome = renderer.to_pdf(source, Path(out_dir), name, chosen_runner)
+        tailored_gate = evaluate_compile(tailored_outcome, max_pages=max_pages)
+        if tailored_gate.reason is GateReason.BINARY_MISSING:
+            raise TypstUnavailableError(_TYPST_MISSING_MSG)
+
+        degraded = False
+        degrade_reason: str | None = None
+        if tailored_gate.shippable:
+            chosen_gate = tailored_gate
+            chosen_typ_uri = str(typ_path)
+            chosen_hash = tailored_hash
+        else:
+            untailored_source = renderer.emit(master)
+            untailored_outcome = renderer.to_pdf(
+                untailored_source, Path(out_dir), untailored_name, chosen_runner
+            )
+            untailored_gate = evaluate_compile(untailored_outcome, max_pages=max_pages)
+            if untailored_gate.reason is GateReason.BINARY_MISSING:
+                raise TypstUnavailableError(_TYPST_MISSING_MSG)
+            if untailored_gate.shippable:
+                degraded = True
+                degrade_reason = tailored_gate.reason.value
+                chosen_gate = untailored_gate
+                chosen_typ_uri = str(untailored_typ_path)
+                chosen_hash = _sha(untailored_source)
+            else:
+                # Both attempts failed: no artifact, no folder — only the failure log.
+                combined_log = (
+                    f"tailored ({tailored_gate.reason.value}):\n{tailored_gate.log}\n\n"
+                    f"untailored ({untailored_gate.reason.value}):\n{untailored_gate.log}"
+                )
+                day_dir = Path(out_dir).parent
+                failed_dir = day_dir / "_failed"
+                failed_dir.mkdir(parents=True, exist_ok=True)
+                failed_log_path = failed_dir / f"{Path(out_dir).name}.log"
+                failed_log_path.write_text(combined_log, encoding="utf-8")
+                # Leave no partial output behind: delete only what this call itself may
+                # have written, then the now-empty lead folder.
+                for p in (typ_path, pdf_path_candidate, untailored_typ_path, untailored_pdf_path):
+                    p.unlink(missing_ok=True)
+                try:
+                    Path(out_dir).rmdir()
+                except OSError:
+                    pass  # not empty (unrelated files present) or already gone
+                raise LeadArtifactError(
+                    f"posting {posting_id}: no shippable résumé PDF "
+                    f"(tailored={tailored_gate.reason.value}, "
+                    f"untailored={untailored_gate.reason.value}); log: {failed_log_path}"
+                )
+
+        assert chosen_gate.pdf_path is not None  # shippable => evaluate_compile's OK branch
+        pdf_path = chosen_gate.pdf_path
+        log_path = Path(out_dir) / "typst-compile.log"
+        log_path.write_text(chosen_gate.log, encoding="utf-8")
+
         llm_uri: str | None = None
         if (client is not None or tb_override is not None) and llm_source is not None:
             llm_name = f"tailored-{posting_id}-llm"
             llm_uri = str(Path(out_dir) / f"{llm_name}.typ")
-            llm_pdf_path = renderer.to_pdf(
-                llm_source, Path(out_dir), llm_name, typst_runner or _default_runner
-            )
-        meta = _trace(
-            plan,
-            jd_skills,
-            table,
-            master_hash,
-            cv,
-            fmt,
-            pdf_path is not None,
-            str(pdf_path) if pdf_path is not None else None,
-            rows,
-        )
+            llm_outcome = renderer.to_pdf(llm_source, Path(out_dir), llm_name, chosen_runner)
+            llm_gate = evaluate_compile(llm_outcome, max_pages=max_pages)
+            if llm_gate.reason is GateReason.BINARY_MISSING:
+                raise TypstUnavailableError(_TYPST_MISSING_MSG)
+            if llm_gate.shippable:
+                llm_pdf_path = llm_gate.pdf_path
+            # else: skip the Tier B PDF; Tier A's PDF above remains the lead's deliverable.
+
+        meta = _trace(plan, jd_skills, table, master_hash, cv, fmt, True, str(pdf_path), rows)
+        meta["degraded"] = degraded
+        if degraded:
+            meta["degrade_reason"] = degrade_reason
+        meta["compile_log_uri"] = str(log_path)
+
         # Standalone `boardwatch tailor run` owns its run: a degenerate pipeline run whose
         # only stage is this one posting. Minting rather than writing NULL keeps
         # `run_id IS NULL` meaning "predates attribution" and nothing else. Under
@@ -432,9 +539,9 @@ def run_tailor(
             art_id = record_artifact(
                 conn,
                 kind="resume_tailored",
-                uri=typ_uri,
+                uri=chosen_typ_uri,
                 posting_version_id=cv.posting_version_id,
-                content_hash=tailored_hash,
+                content_hash=chosen_hash,
                 generator="boardwatch.tailor",
                 generator_version=VALIDATOR_VERSION,
                 media_type="text/x-typst",
@@ -444,11 +551,7 @@ def run_tailor(
             add_derivation(
                 conn, artifact_id=art_id, parent_artifact_id=master_id, relation="tailored_from"
             )
-            if (
-                (client is not None or tb_override is not None)
-                and llm_source is not None
-                and llm_uri is not None
-            ):
+            if llm_uri is not None:
                 llm_meta = {
                     "tier": "B",
                     "llm_lane_version": LLM_LANE_VERSION,
@@ -470,6 +573,8 @@ def run_tailor(
                         if llm_budget_override is not None
                         else settings.llm.max_calls_per_run
                     ),
+                    "typst_pdf_built": llm_pdf_path is not None,
+                    "pdf_uri": str(llm_pdf_path) if llm_pdf_path is not None else None,
                     "rewrites": llm_rows,
                 }
                 llm_art_id = record_artifact(
