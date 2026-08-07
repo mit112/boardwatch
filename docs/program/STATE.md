@@ -50,13 +50,20 @@ exist). **Shipped this session (all merged, reviewed, `make check` green):**
 **P3 (unattended one-command runner) is now DECOMPOSED and building** —
 `.superpowers/sdd/p3-unattended-runner/design.md`. Grounded exploration found the foundation exists (single
 `fatal` discriminator, WAL already set, `run_id` plumbing, outage guard already reads the decision field);
-net-new work clusters into 5 **fail-safe** slices: (1) P3-contract — write the fatal-vs-non-fatal contract +
-consolidate the duplicated outage predicate (DO FIRST, governs slice 3); (2) P3-lock-liveness — lock
-metadata/stale-reclaim/token/notify + the P3-owned run reaper; (3) P3-run-integrity — zero-output guard ==
-cohort completeness + filesystem-truth; (4) P3-output — freshness + morning artifact; (5) P3-llm-economics —
-meta-hash idempotence + split LLM rate-limit classes. Cross-cutting highest-risk: the two-writer cross-OS
-WAL test (item 8). All fail-safe (no job-deletion risk), independent of P2 item 4 — building autonomously,
-slice 1 first.
+net-new work clusters into 5 **fail-safe** slices:
+- **(1) P3-contract — DONE (D-037, merged):** `docs/program/RUN_CONTRACT.md` writes the fatal-vs-non-fatal
+  table (4 fatal conditions + crash path + non-fatal norm + lock-held + the running/NULL gap the reaper
+  resolves), each row citing file:line; and the duplicated systemic-outage predicate is consolidated into
+  `is_systemic_scan_outage(...)` (`scan/coordinator.py`), used by both call sites.
+- **(2) P3-lock-liveness — NEXT:** scan lock is bare `filelock` with no metadata — add pid/started/token,
+  atomic-rename stale reclaim, token-match unlock, loud notify-with-blocking-pid; + the P3-owned **run
+  reaper** (resolve `running`+NULL-`finished_at`, deferred to P3 by `finish_run`'s docstring).
+- **(3) P3-run-integrity:** zero-output guard == cohort completeness + filesystem-truth (needs the contract,
+  now in place).
+- **(4) P3-output:** freshness assertion + morning artifact (apply URL/verdict/span/why per lead).
+- **(5) P3-llm-economics:** meta-hash idempotence + split LLM rate-limit classes.
+Cross-cutting highest-risk: the two-writer cross-OS WAL test (item 8). All fail-safe (no job-deletion risk),
+independent of P2 item 4 — building autonomously, slice 2 next.
 
 **DECLINED (YAGNI):** item 1's facts `schema_version` — validated + hashed already hold; a schema-version
 field is speculative hardening with unclear payoff (schema changes are rare and arrive with value changes
