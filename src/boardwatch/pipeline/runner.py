@@ -86,6 +86,9 @@ class PipelineSummary:
     shortlist: ShortlistCounts | None = None
     tailored: list[TailoredLead] = field(default_factory=list)
     tailor_failed: int = 0
+    # Every Tier-B rewrite row across all leads this run — the fabrication counters (P0 item 8)
+    # are folded from these. Empty when LLM tailoring is off, which is an honest zero.
+    rewrite_rows: list[dict[str, object]] = field(default_factory=list)
     errors: list[str] = field(default_factory=list)
     fatal: str | None = None
     # Where the per-run funnel artifact landed (P0 item 1). None only when writing it failed,
@@ -214,6 +217,8 @@ def run_pipeline(
                 stage_errors.append(message)
                 summary.errors.append(message)
                 continue
+            if result.rewrites is not None:
+                summary.rewrite_rows.extend(result.rewrites)
             summary.tailored.append(
                 TailoredLead(
                     posting_id=posting.posting_id,
@@ -296,6 +301,7 @@ def _emit_funnel(
             for lead in summary.tailored
         ],
         tailor_failed=summary.tailor_failed,
+        rewrite_rows=summary.rewrite_rows,
         errors=summary.errors,
         fatal=summary.fatal,
     )

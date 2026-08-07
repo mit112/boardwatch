@@ -52,7 +52,7 @@ from boardwatch.store.run_funnel_queries import (
     TailoredArtifactCounts,
 )
 
-ARTIFACT_VERSION = 2
+ARTIFACT_VERSION = 3
 
 # The stored verdict that carries the keystone invariant's ABSTAIN. Named here once so the
 # rename is visible rather than scattered through the renderers as a string literal.
@@ -191,6 +191,125 @@ class ShortlistCounts:
 
 
 @dataclass(frozen=True)
+class RunManifest:
+    """P0 item 4: the versioned identity a run ran under, so two runs can be compared for
+    reproducibility from the artifact alone.
+
+    Five of the six fields are REUSED, not rebuilt (see `reports/manifest.py`): the code
+    fingerprint is `engine_version()`, `rules_hash` covers `{catalog_version, source, policy}`,
+    `profile_facts_hash` is the eligibility `profile_hash`, and start/end + `status` come off
+    the `runs` row. `config_hash` and `profile_row_hash` are the two genuinely-new hashes.
+
+    The hashes that depend on a profile are `None` on a run with no profile — the same run that
+    reports the whole corpus as `no_current_evaluation`. `code_fingerprint`, `config_hash` and
+    `status` are always present.
+    """
+
+    code_fingerprint: str
+    config_hash: str
+    profile_facts_hash: str | None
+    profile_row_hash: str | None
+    rules_hash: str | None
+    status: str
+
+
+@dataclass(frozen=True)
+class StubRate:
+    """P0 item 6: the fraction of the corpus whose JD body is empty, reported every run.
+
+    A stub is a posting the fetcher could not give a body for. §6 correction 4: this is a
+    pathology of HTML scraping, and boardwatch reads structured ATS JSON, so the number should
+    stay near zero — it is cheap insurance that fires visibly if a non-API source ever makes it
+    non-trivial, at which point the recovery chain gets built with evidence rather than on spec.
+    """
+
+    open_postings: int
+    stubs: int
+
+    @property
+    def rate(self) -> float | None:
+        """None over an empty corpus — a rate over zero rows is undefined, not 0%."""
+        return None if self.open_postings == 0 else self.stubs / self.open_postings
+
+
+# The closed catalog of Tier-B rewrite outcomes. `drop_reason` is an untyped string at the
+# raise site (`tailor/rewrite/lane.py`), so it is mapped here into named buckets; anything the
+# catalog does not name lands in `other`, which is a FAILURE signal (CLAUDE.md: out-of-catalog
+# is never a new bucket), not silently discarded.
+_FILTER_PREFIX = "filter:"
+
+
+@dataclass(frozen=True)
+class FabricationCounters:
+    """P0 item 8 / bar metric B4: the fabrication gate's per-lane tally.
+
+    Tier B is the LLM-assisted lane, the only one that can fabricate — Tier A is structural and
+    cannot. `judge_rejected` and `overmatch_filtered` are the two truth gates: the fail-closed
+    entailment judge and the deterministic overmatch filter. `budget`/`error`/`no_candidate`
+    are non-fabrication fallbacks. `other` counts any `drop_reason` the closed catalog does not
+    name and is a defect if non-zero.
+
+    Not instrumented for Tier A: its own fail-safe (`TierASafetyError`) has no counter yet, and
+    `bullets_seen` counts only bullets that reached the Tier-B lane. Zero here means Tier B did
+    not run (LLM tailoring off), which is an honest zero, not a hidden one.
+    """
+
+    lane: str
+    bullets_seen: int
+    kept: int
+    unchanged: int
+    judge_rejected: int
+    overmatch_filtered: int
+    budget: int
+    error: int
+    no_candidate: int
+    other: int
+
+    @property
+    def rejected(self) -> int:
+        """The two truth-gate rejections — what bar metric B4 is 0-or-not against."""
+        return self.judge_rejected + self.overmatch_filtered
+
+
+def build_fabrication_counters(
+    rewrite_rows: Sequence[dict[str, object]], *, lane: str = "tier_b"
+) -> FabricationCounters:
+    """Fold per-bullet Tier-B rewrite rows into the closed outcome catalog. Pure."""
+    kept = unchanged = judge = overmatch = budget = error = no_candidate = other = 0
+    for row in rewrite_rows:
+        if row.get("kept"):
+            kept += 1
+            continue
+        reason = row.get("drop_reason")
+        if reason == "unchanged":
+            unchanged += 1
+        elif reason == "judge":
+            judge += 1
+        elif isinstance(reason, str) and reason.startswith(_FILTER_PREFIX):
+            overmatch += 1
+        elif reason == "budget":
+            budget += 1
+        elif reason == "error":
+            error += 1
+        elif reason == "no_candidate":
+            no_candidate += 1
+        else:
+            other += 1
+    return FabricationCounters(
+        lane=lane,
+        bullets_seen=len(rewrite_rows),
+        kept=kept,
+        unchanged=unchanged,
+        judge_rejected=judge,
+        overmatch_filtered=overmatch,
+        budget=budget,
+        error=error,
+        no_candidate=no_candidate,
+        other=other,
+    )
+
+
+@dataclass(frozen=True)
 class ScanContext:
     """Scan throughput. Deliberately NOT a funnel edge.
 
@@ -212,12 +331,15 @@ class RunFunnel:
     run_id: int
     started_at: datetime | None
     finished_at: datetime | None
+    manifest: RunManifest
     scan: ScanContext
     stages: tuple[Stage, ...]
     leads: tuple[Lead, ...]
     cross_checks: tuple[CrossCheck, ...]
     sources: tuple[SourceOutcome, ...]
     source_totals: tuple[SourceTotal, ...]
+    stub_rate: StubRate
+    fabrication: FabricationCounters
     abstain: AbstainReport
     unattributed_evaluations: int
     errors: tuple[str, ...] = ()
@@ -267,6 +389,7 @@ def build_run_funnel(
     run_id: int,
     started_at: datetime | None,
     finished_at: datetime | None,
+    manifest: RunManifest,
     scan: ScanContext,
     corpus: CorpusCounts,
     shortlist: ShortlistCounts | None,
@@ -275,6 +398,8 @@ def build_run_funnel(
     tailor_failed: int,
     tailored_artifacts: TailoredArtifactCounts,
     marked_applied: int,
+    stub_postings: int,
+    rewrite_rows: Sequence[dict[str, object]],
     unattributed_evaluations: int,
     abstain: AbstainReport,
     errors: Sequence[str] = (),
@@ -525,12 +650,15 @@ def build_run_funnel(
         run_id=run_id,
         started_at=started_at,
         finished_at=finished_at,
+        manifest=manifest,
         scan=scan,
         stages=stages,
         leads=tuple(leads),
         cross_checks=cross_checks,
         sources=tuple(sources),
         source_totals=source_totals,
+        stub_rate=StubRate(open_postings=corpus.open_postings, stubs=stub_postings),
+        fabrication=build_fabrication_counters(rewrite_rows),
         abstain=abstain,
         unattributed_evaluations=unattributed_evaluations,
         errors=tuple(errors),
@@ -564,6 +692,33 @@ def funnel_to_dict(funnel: RunFunnel) -> dict[str, object]:
         "reconciles": funnel.reconciles,
         "fatal": funnel.fatal,
         "errors": list(funnel.errors),
+        "manifest": {
+            "code_fingerprint": funnel.manifest.code_fingerprint,
+            "config_hash": funnel.manifest.config_hash,
+            "profile_facts_hash": funnel.manifest.profile_facts_hash,
+            "profile_row_hash": funnel.manifest.profile_row_hash,
+            "rules_hash": funnel.manifest.rules_hash,
+            "status": funnel.manifest.status,
+        },
+        "stub_rate": {
+            "open_postings": funnel.stub_rate.open_postings,
+            "stubs": funnel.stub_rate.stubs,
+            # None, never 0.0, over an empty corpus — see StubRate.rate.
+            "rate": funnel.stub_rate.rate,
+        },
+        "fabrication": {
+            "lane": funnel.fabrication.lane,
+            "bullets_seen": funnel.fabrication.bullets_seen,
+            "kept": funnel.fabrication.kept,
+            "unchanged": funnel.fabrication.unchanged,
+            "judge_rejected": funnel.fabrication.judge_rejected,
+            "overmatch_filtered": funnel.fabrication.overmatch_filtered,
+            "budget": funnel.fabrication.budget,
+            "error": funnel.fabrication.error,
+            "no_candidate": funnel.fabrication.no_candidate,
+            "other": funnel.fabrication.other,
+            "rejected": funnel.fabrication.rejected,
+        },
         "scan": {
             "ran": funnel.scan.ran,
             "boards_attempted": funnel.scan.boards_attempted,
@@ -689,7 +844,27 @@ def funnel_to_markdown(funnel: RunFunnel) -> str:
     ]
     if funnel.fatal:
         lines.append(f"- **FATAL:** {funnel.fatal}")
+    m = funnel.manifest
     lines += [
+        "",
+        "## Manifest",
+        "",
+        "*What this run ran AS. Two runs sharing every hash below should turn the same corpus "
+        "into the same leads. A hash tied to the profile is `—` on a run with no profile.*",
+        "",
+        "| field | value |",
+        "|---|---|",
+        f"| status | {m.status} |",
+        f"| code fingerprint | {m.code_fingerprint} |",
+        f"| config hash | {m.config_hash} |",
+        f"| profile facts hash | {m.profile_facts_hash or '—'} |",
+        f"| profile row hash | {m.profile_row_hash or '—'} |",
+        f"| rules hash | {m.rules_hash or '—'} |",
+        "",
+        "*`config hash` covers the decision-relevant `Settings`; `profile row hash` covers the "
+        "five profile columns the ranker reads (incl. `exclude_titles`). Neither covers the "
+        "skill-taxonomy version — `taxonomy.yaml` can change which postings score as covered "
+        "without moving either hash.*",
         "",
         "## Scan",
         "",
@@ -894,6 +1069,41 @@ def funnel_to_markdown(funnel: RunFunnel) -> str:
             f"{', '.join(funnel.abstain.out_of_catalog)}",
         ]
 
+    stub = funnel.stub_rate
+    stub_rate = "not instrumented (empty corpus)" if stub.rate is None else f"{stub.rate:.2%}"
+    fab = funnel.fabrication
+    lines += [
+        "",
+        "## Stub rate",
+        "",
+        f"{stub.stubs} of {stub.open_postings} open postings have an empty JD body · "
+        f"rate {stub_rate}",
+        "",
+        "*A stub is a posting whose body the fetcher could not populate. boardwatch reads "
+        "structured ATS JSON, so this should stay near zero; a non-trivial value is the signal "
+        "that a scraped source has appeared and the recovery chain is now worth building.*",
+        "",
+        "## Fabrication gate",
+        "",
+        f"lane `{fab.lane}` · {fab.bullets_seen} bullets seen · {fab.rejected} rejected by a "
+        f"truth gate ({fab.judge_rejected} judge, {fab.overmatch_filtered} overmatch) · "
+        f"{fab.kept} kept · {fab.unchanged} unchanged",
+        "",
+        f"fallbacks: {fab.budget} budget · {fab.error} error · {fab.no_candidate} no_candidate",
+        "",
+        "*Bar metric B4 is 0 fabrications over n≥100. `bullets_seen` is n; the two truth gates "
+        "are the fail-closed entailment judge and the deterministic overmatch filter. Tier A is "
+        "structural and cannot fabricate, so it is not counted here. 0 bullets means the LLM "
+        "lane did not run this run — an honest zero.*",
+    ]
+    if fab.other:
+        lines += [
+            "",
+            f"**FAILURE — {fab.other} rewrite rows carried a drop_reason the closed catalog does "
+            "not name.** A Tier-B outcome reached the funnel unclassified; this is a defect, not "
+            "a new bucket.",
+        ]
+
     lines += [
         "",
         "## Unattributed",
@@ -937,13 +1147,17 @@ __all__ = [
     "ARTIFACT_VERSION",
     "CrossCheck",
     "Drop",
+    "FabricationCounters",
     "Lead",
     "RunFunnel",
+    "RunManifest",
     "ScanContext",
     "ShortlistCounts",
     "SourceTotal",
     "Stage",
+    "StubRate",
     "WrittenArtifact",
+    "build_fabrication_counters",
     "build_run_funnel",
     "funnel_to_dict",
     "funnel_to_markdown",

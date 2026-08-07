@@ -22,15 +22,17 @@ from boardwatch.eligibility.catalog import load_rules
 from boardwatch.eligibility.engine import ENGINE_KIND, current_evaluations, engine_version
 from boardwatch.eligibility.preflight import current_identity
 from boardwatch.reports.abstain import AbstainReport, build_abstain_report
+from boardwatch.reports.manifest import config_hash, profile_row_hash
 from boardwatch.reports.run_funnel import (
     Lead,
     RunFunnel,
+    RunManifest,
     ScanContext,
     ShortlistCounts,
     build_run_funnel,
 )
 from boardwatch.store.abstain_queries import count_requirement_dispositions
-from boardwatch.store.queries import current_posting_versions
+from boardwatch.store.queries import current_posting_versions, get_profile
 from boardwatch.store.run_funnel_queries import (
     CorpusCounts,
     SourceOutcome,
@@ -39,6 +41,7 @@ from boardwatch.store.run_funnel_queries import (
     count_by_source,
     count_corpus,
     count_open_postings,
+    count_stub_postings,
     count_tailored_artifacts,
     count_unattributed_evaluations,
     lead_provenance,
@@ -76,6 +79,7 @@ def collect_run_funnel(
     shortlist: ShortlistCounts | None,
     tailored: list[tuple[int, str, str, Path, bool]],
     tailor_failed: int,
+    rewrite_rows: list[dict[str, object]],
     errors: list[str],
     fatal: str | None,
 ) -> RunFunnel:
@@ -126,9 +130,34 @@ def collect_run_funnel(
         marked_applied = count_applied_for_postings(conn, posting_ids)
         unattributed = count_unattributed_evaluations(conn)
         provenance = lead_provenance(conn, posting_ids)
+        stub_postings = count_stub_postings(conn)
+        profile_row = get_profile(conn)
         row = conn.execute(
-            select(runs.c.started_at, runs.c.finished_at).where(runs.c.id == run_id)
+            select(runs.c.started_at, runs.c.finished_at, runs.c.status).where(
+                runs.c.id == run_id
+            )
         ).one_or_none()
+
+    manifest = RunManifest(
+        code_fingerprint=engine_version(),
+        config_hash=config_hash(settings),
+        profile_facts_hash=identity[0] if identity is not None else None,
+        rules_hash=identity[1] if identity is not None else None,
+        profile_row_hash=(
+            profile_row_hash(
+                skills=profile_row.skills_json,
+                target_titles=profile_row.target_titles_json,
+                exclude_titles=profile_row.exclude_titles_json,
+                locations=profile_row.locations_json,
+                remote_only=profile_row.remote_only,
+            )
+            if profile_row is not None
+            else None
+        ),
+        # `runs.status` is `running` until finish_run stamps it; a funnel written from the
+        # pipeline's finally block reads the terminal value finish_run just wrote (D-029).
+        status=row.status if row is not None else "running",
+    )
 
     leads = [
         Lead(
@@ -155,6 +184,7 @@ def collect_run_funnel(
         run_id=run_id,
         started_at=row.started_at if row is not None else None,
         finished_at=row.finished_at if row is not None else None,
+        manifest=manifest,
         scan=scan,
         corpus=corpus,
         shortlist=shortlist,
@@ -163,6 +193,8 @@ def collect_run_funnel(
         tailor_failed=tailor_failed,
         tailored_artifacts=tailored_artifacts,
         marked_applied=marked_applied,
+        stub_postings=stub_postings,
+        rewrite_rows=rewrite_rows,
         unattributed_evaluations=unattributed,
         abstain=abstain,
         errors=errors,

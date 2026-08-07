@@ -23,6 +23,7 @@ from boardwatch.store.run_funnel_queries import (
     count_applied_for_postings,
     count_by_source,
     count_corpus,
+    count_stub_postings,
     count_tailored_artifacts,
     count_unattributed_evaluations,
     lead_provenance,
@@ -47,7 +48,10 @@ def _run(conn: Connection) -> int:
     )
 
 
-def _posting(conn: Connection, slug: str, *, status: str = "open", source: str = "user") -> int:
+def _posting(
+    conn: Connection, slug: str, *, status: str = "open", source: str = "user",
+    body_text: str = "b",
+) -> int:
     cid = int(conn.execute(insert(companies).values(
         name="Acme", provider="greenhouse", slug=f"board-{slug}", source=source, watched=True,
     )).inserted_primary_key[0])
@@ -55,7 +59,7 @@ def _posting(conn: Connection, slug: str, *, status: str = "open", source: str =
     return int(conn.execute(insert(postings).values(
         company_id=cid, job_id=jid, provider_posting_id=slug, title="Eng",
         normalized_title="eng", first_seen_at=NOW, last_seen_at=NOW, status=status,
-        consecutive_missing=0, content_hash=slug, body_text="b",
+        consecutive_missing=0, content_hash=slug, body_text=body_text,
     )).inserted_primary_key[0])
 
 
@@ -567,3 +571,15 @@ def test_boards_that_produced_a_lead_sort_above_boards_that_did_not(engine: Engi
     assert [item.board for item in _by_source(engine, run_id)] == [
         "greenhouse:loud", "greenhouse:huge",
     ]
+
+
+def test_count_stub_postings_counts_only_open_empty_bodies(engine: Engine) -> None:
+    """A stub is an OPEN posting whose JD body is empty after trimming. A whitespace-only body
+    is a stub; a closed empty posting is not counted, and a real body is not a stub."""
+    with engine.begin() as conn:
+        _posting(conn, "real", body_text="a full job description")
+        _posting(conn, "empty", body_text="")
+        _posting(conn, "whitespace", body_text="   \n\t")
+        _posting(conn, "closed-empty", status="closed", body_text="")
+    with engine.connect() as conn:
+        assert count_stub_postings(conn) == 2

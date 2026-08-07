@@ -21,6 +21,7 @@ from boardwatch.reports.abstain import AbstainReport, build_abstain_report
 from boardwatch.reports.run_funnel import (
     Lead,
     RunFunnel,
+    RunManifest,
     ScanContext,
     ShortlistCounts,
     build_run_funnel,
@@ -99,6 +100,9 @@ def funnel(
     sources: list[SourceOutcome] | None = None,
     # False models a run where the ranker never executed (no profile / fatal scan outage).
     ranker_ran: bool = True,
+    manifest: RunManifest | None = None,
+    stub_postings: int = 0,
+    rewrite_rows: list[dict[str, object]] | None = None,
 ) -> RunFunnel:
     leads = [lead()] if leads is None else leads
     # Default to a CONSISTENT tailor stage. Every shortlisted posting either produced a lead
@@ -132,6 +136,14 @@ def funnel(
         run_id=42,
         started_at=None,
         finished_at=None,
+        manifest=manifest or RunManifest(
+            code_fingerprint="engine-1+abc123def456",
+            config_hash="c0ffee",
+            profile_facts_hash="pf00",
+            profile_row_hash="pr00",
+            rules_hash="ru1e5",
+            status="ok",
+        ),
         scan=ScanContext(ran=True, boards_attempted=85, boards_complete=80, boards_failed=5,
                          postings_seen=13_590),
         corpus=counts,
@@ -149,6 +161,8 @@ def funnel(
         tailored_artifacts=tailored_artifacts,
         sources=sources,
         marked_applied=marked_applied,
+        stub_postings=stub_postings,
+        rewrite_rows=rewrite_rows or [],
         unattributed_evaluations=unattributed_evaluations,
         abstain=abstain or build_abstain_report(catalog(), {}),
     )
@@ -547,8 +561,8 @@ def test_both_halves_are_written_and_named_by_run(tmp_path: Path) -> None:
     assert written.markdown_path == tmp_path / "funnel-42.md"
     payload = json.loads(written.json_path.read_text())
     assert payload["run_id"] == 42
-    # Bumped to 2 by P0 item 3, which added the sources and source_totals sections.
-    assert payload["artifact_version"] == 2
+    # Bumped to 3 by P0 item 4/6/8, which added the manifest, stub_rate and fabrication sections.
+    assert payload["artifact_version"] == 3
     assert written.markdown_path.read_text().startswith("# boardwatch run 42")
 
 
@@ -768,3 +782,107 @@ def test_an_uninstrumented_stage_with_no_note_still_renders_a_readable_line() ->
 
     assert "**" not in following, following
     assert any(line.strip() for line in following), "the stage explained nothing at all"
+
+
+# --------------------------------------------------------------------------------------
+# Artifact v3 — manifest (item 4), stub rate (item 6), fabrication counters (item 8)
+# --------------------------------------------------------------------------------------
+
+
+def test_manifest_renders_in_both_halves() -> None:
+    """The manifest is what makes two runs comparable for reproducibility; it must survive to
+    the JSON a check reads and the Markdown a human reads."""
+    report = funnel(
+        manifest=RunManifest(
+            code_fingerprint="engine-2+deadbeef1234",
+            config_hash="CONFIGHASH",
+            profile_facts_hash="PFHASH",
+            profile_row_hash="PRHASH",
+            rules_hash="RULESHASH",
+            status="ok",
+        )
+    )
+    payload = funnel_to_dict(report)["manifest"]
+    assert payload == {
+        "code_fingerprint": "engine-2+deadbeef1234",
+        "config_hash": "CONFIGHASH",
+        "profile_facts_hash": "PFHASH",
+        "profile_row_hash": "PRHASH",
+        "rules_hash": "RULESHASH",
+        "status": "ok",
+    }
+    body = funnel_to_markdown(report)
+    config_row = next(line for line in body.splitlines() if line.startswith("| config hash |"))
+    assert "CONFIGHASH" in config_row
+    prow = next(line for line in body.splitlines() if line.startswith("| profile row hash |"))
+    assert "PRHASH" in prow
+
+
+def test_manifest_shows_dash_for_absent_profile_hashes() -> None:
+    """A run with no profile has no profile-dependent hash; the artifact must say so as `—`,
+    not render a Python `None` a reader would misread."""
+    report = funnel(
+        manifest=RunManifest(
+            code_fingerprint="engine-2+abc",
+            config_hash="C",
+            profile_facts_hash=None,
+            profile_row_hash=None,
+            rules_hash=None,
+            status="ok",
+        )
+    )
+    body = funnel_to_markdown(report)
+    prow = next(line for line in body.splitlines() if line.startswith("| profile row hash |"))
+    assert "None" not in prow
+    assert prow.strip().endswith("| — |")
+
+
+def test_stub_rate_reports_a_fraction_scoped_to_its_row() -> None:
+    report = funnel(counts=corpus(open_postings=200), stub_postings=4)
+    assert report.stub_rate.rate == 0.02
+    payload = funnel_to_dict(report)["stub_rate"]
+    assert payload == {"open_postings": 200, "stubs": 4, "rate": 0.02}
+    body = funnel_to_markdown(report)
+    line = next(line for line in body.splitlines() if "empty JD body" in line)
+    assert "4 of 200" in line and "2.00%" in line
+
+
+def test_stub_rate_over_an_empty_corpus_is_none_never_zero() -> None:
+    """A rate over zero rows is undefined; 0% would read as a healthy corpus of stubs."""
+    report = funnel(counts=corpus(open_postings=0), stub_postings=0)
+    assert report.stub_rate.rate is None
+    assert funnel_to_dict(report)["stub_rate"]["rate"] is None
+    body = funnel_to_markdown(report)
+    assert any("not instrumented" in line for line in body.splitlines() if "rate" in line)
+
+
+def test_fabrication_counters_classify_every_drop_reason() -> None:
+    """The two truth gates (judge, overmatch filter) are the fabrication signal B4 measures;
+    they must be counted apart from the non-fabrication fallbacks."""
+    rows: list[dict[str, object]] = [
+        {"kept": True, "drop_reason": None},
+        {"kept": False, "drop_reason": "unchanged"},
+        {"kept": False, "drop_reason": "judge"},
+        {"kept": False, "drop_reason": "filter:overmatch_tech"},
+        {"kept": False, "drop_reason": "budget"},
+        {"kept": False, "drop_reason": "error"},
+        {"kept": False, "drop_reason": "no_candidate"},
+    ]
+    report = funnel(rewrite_rows=rows)
+    fab = report.fabrication
+    assert (fab.bullets_seen, fab.kept, fab.unchanged) == (7, 1, 1)
+    assert (fab.judge_rejected, fab.overmatch_filtered, fab.rejected) == (1, 1, 2)
+    assert (fab.budget, fab.error, fab.no_candidate, fab.other) == (1, 1, 1, 0)
+    body = funnel_to_markdown(report)
+    line = next(line for line in body.splitlines() if "rejected by a truth gate" in line)
+    assert "2 rejected" in line and "1 judge" in line and "1 overmatch" in line
+
+
+def test_an_unknown_drop_reason_is_a_failure_bucket_not_a_silent_drop() -> None:
+    """CLAUDE.md: out-of-catalog is a failure, never a new bucket. An unrecognised Tier-B
+    outcome must surface as `other` and print a FAILURE line, not vanish."""
+    report = funnel(rewrite_rows=[{"kept": False, "drop_reason": "teleported"}])
+    assert report.fabrication.other == 1
+    body = funnel_to_markdown(report)
+    assert any("FAILURE" in line and "closed catalog does not name" in line
+               for line in body.splitlines())

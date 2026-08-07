@@ -144,6 +144,23 @@ def count_open_postings(conn: Connection) -> int:
     )
 
 
+def count_stub_postings(conn: Connection) -> int:
+    """Open postings whose JD body is empty after trimming — the stub-rate numerator (P0 item 6).
+
+    Denominated over `count_open_postings`, so the two share the corpus head. `body_text` is
+    NOT NULL, so a stub is a whitespace-only body, not a missing row. The two-arg `trim` names
+    the strip set explicitly — SQLite's one-arg `trim` removes spaces ONLY, so a body of tabs
+    or newlines would otherwise slip through as non-empty."""
+    return int(
+        conn.execute(
+            select(func.count())
+            .select_from(postings)
+            .where(postings.c.status == "open")
+            .where(func.trim(postings.c.body_text, " \t\n\r\f\v") == "")
+        ).scalar_one()
+    )
+
+
 def count_corpus(
     conn: Connection,
     *,
