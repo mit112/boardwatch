@@ -1807,3 +1807,27 @@ known-broken behavior — but running two writers across the container/host boun
 the harness exists, so avoid it operationally.
 
 **This is the doc half of item 8 only.** The two-writer/cross-OS test remains open (fresh context).
+
+## D-042 — the tailor-level idempotence short-circuit is DECLINED (YAGNI); the response cache already covers it
+
+**2026-08-07 · session 10 · P3 (item 10, idempotence half).**
+
+**Context.** P3 item 10 wants "a re-run is not a full re-tailor." Two design attempts (one at high context,
+one by a fresh opus agent) were each deepseek-reviewed and found unsound/incomplete — 2 blockers+4 majors,
+then 3 more majors (Typst-binary-version-not-in-key, racy insert-if-absent without a unique index, copied
+artifacts not hash-verified). Full findings in `.superpowers/sdd/p3-unattended-runner/slice5a-idempotence-design.md`.
+
+**Choice — DECLINE it.** The material cost item 10 targets — re-paying LLM API calls on a resumable re-run —
+is ALREADY avoided by the existing `llm/cache.py` response cache (per-bullet propose/judge keyed on
+content-hash+prompt+model). A tailor-level short-circuit only additionally saves a cheap Typst render, and
+making that safe demands heavy, correctness-hazardous machinery (typst-version keying, PDF hash-verification,
+a partial unique index on `artifacts`, and careful cohort/provenance interactions) — proven by four
+unsound/incomplete iterations. Per CLAUDE.md's minimum-code / no-speculative-abstractions / new-code-last
+doctrine, that is over-engineering for its payoff. Same disposition as P2 item 1 (schema_version): declined,
+revisit only with concrete evidence of a material render cost.
+
+**Recorded gap (not conflated):** LLM response-cache HITS may still increment the `_guarded` budget counter
+(a re-run could exhaust budget on cache hits and drop later bullets to Tier-A despite making no API call) —
+a small, real, SEPARATE inefficiency worth a future look, not part of this decision.
+
+**Alternatives rejected:** a fifth idempotence redesign (diminishing returns; low value over the cache).
