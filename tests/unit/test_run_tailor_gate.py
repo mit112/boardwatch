@@ -30,6 +30,7 @@ from boardwatch.store.tables import (
     postings,
 )
 from boardwatch.tailor.load import scaffold_template
+from boardwatch.tailor.plan import Rewrite
 from boardwatch.tailor.render.outcome import CompileOutcome, CompileReason
 from boardwatch.tailor.rewrite.lane import TierBResult
 
@@ -416,3 +417,52 @@ def test_layout_violation_on_both_sides_drops_lead(tmp_path: Path) -> None:
     failed_log = day_dir / "_failed" / "acme-lead.log"
     assert failed_log.exists()
     assert "too_many_bullets" in failed_log.read_text(encoding="utf-8")
+
+
+def test_tier_b_layout_violation_is_skipped_tier_a_ships(tmp_path: Path) -> None:
+    """A layout-violating Tier B rewrite must never reach typst; Tier A's own PDF (already
+    gated above) remains the lead's sole deliverable -- fail-soft, not fail-drop."""
+
+    def runner(typ: Path, pdf: Path) -> CompileOutcome:
+        assert "-llm" not in typ.name  # the layout-violating Tier B .typ must never compile
+        return _ok(pdf, 1)
+
+    settings = _settings(tmp_path)
+    engine = _engine(settings)
+    pid = _seed(engine, settings)  # skills=() -> scaffold's tailored is an identity copy
+    out = tmp_path / "out"
+    res = run_tailor(
+        engine, settings, pid, resume_path=_resume_yaml(tmp_path), out_dir=out,
+        typst_runner=runner,
+        tb_override=TierBResult(
+            accepted=[Rewrite(bullet_id="acme-1", text="a" * 221)], rows=[], calls_made=0,
+        ),
+    )
+    assert res.pdf_path is not None and res.pdf_path.exists()
+    rows = _artifact_rows(engine)
+    assert {r.kind for r in rows} == {"resume_master", "resume_tailored"}  # no *_llm artifact
+    tailored = next(r for r in rows if r.kind == "resume_tailored")
+    assert not tailored.meta_json.get("degraded")
+
+
+def test_tier_b_clean_rewrite_still_ships_as_second_artifact(tmp_path: Path) -> None:
+    """Regression guard: a layout-clean Tier B rewrite must still ship its own artifact --
+    the new gate must not skip Tier B when it has nothing to catch."""
+
+    def runner(typ: Path, pdf: Path) -> CompileOutcome:
+        return _ok(pdf, 1)
+
+    settings = _settings(tmp_path)
+    engine = _engine(settings)
+    pid = _seed(engine, settings)
+    out = tmp_path / "out"
+    run_tailor(
+        engine, settings, pid, resume_path=_resume_yaml(tmp_path), out_dir=out,
+        typst_runner=runner,
+        tb_override=TierBResult(
+            accepted=[Rewrite(bullet_id="acme-1", text="Shipped a clean rewrite of the bullet")],
+            rows=[], calls_made=0,
+        ),
+    )
+    rows = _artifact_rows(engine)
+    assert {r.kind for r in rows} == {"resume_master", "resume_tailored", "resume_tailored_llm"}

@@ -538,14 +538,26 @@ def run_tailor(
         llm_uri: str | None = None
         if (client is not None or tb_override is not None) and llm_source is not None:
             llm_name = f"tailored-{posting_id}-llm"
-            llm_uri = str(Path(out_dir) / f"{llm_name}.typ")
-            llm_outcome = renderer.to_pdf(llm_source, Path(out_dir), llm_name, chosen_runner)
-            llm_gate = evaluate_compile(llm_outcome, max_pages=max_pages)
-            if llm_gate.reason is GateReason.BINARY_MISSING:
-                raise TypstUnavailableError(_TYPST_MISSING_MSG)
-            if llm_gate.shippable:
-                llm_pdf_path = llm_gate.pdf_path
-            # else: skip the Tier B PDF; Tier A's PDF above remains the lead's deliverable.
+            try:
+                validate_layout(tailored_b, llm_source)
+            except LayoutViolation:
+                # Fail-soft, not fail-drop: Tier B is the path most likely to produce an
+                # off-band bullet or leaked boilerplate (LLM-rewritten, unaudited for
+                # layout), but Tier A's own PDF above is already gated and remains the
+                # lead's deliverable. Treated as if Tier B were never attempted -- never
+                # sent to typst, and llm_uri stays None so the resume_tailored_llm insert
+                # below is skipped too, rather than recording an artifact for a résumé
+                # that was never shippable.
+                pass
+            else:
+                llm_uri = str(Path(out_dir) / f"{llm_name}.typ")
+                llm_outcome = renderer.to_pdf(llm_source, Path(out_dir), llm_name, chosen_runner)
+                llm_gate = evaluate_compile(llm_outcome, max_pages=max_pages)
+                if llm_gate.reason is GateReason.BINARY_MISSING:
+                    raise TypstUnavailableError(_TYPST_MISSING_MSG)
+                if llm_gate.shippable:
+                    llm_pdf_path = llm_gate.pdf_path
+                # else: skip the Tier B PDF; Tier A's PDF above remains the lead's deliverable.
 
         meta = _trace(plan, jd_skills, table, master_hash, cv, fmt, True, str(pdf_path), rows)
         meta["degraded"] = degraded
