@@ -252,6 +252,10 @@ class FabricationCounters:
     Not instrumented for Tier A: its own fail-safe (`TierASafetyError`) has no counter yet, and
     `bullets_seen` counts only bullets that reached the Tier-B lane. Zero here means Tier B did
     not run (LLM tailoring off), which is an honest zero, not a hidden one.
+
+    `provenance_rejected` (P1b) counts rewords vetoed by the token-provenance check — deliberately
+    over-broad, so it is reported distinctly and deliberately excluded from `rejected` below: a
+    conservative veto is not a caught fabrication.
     """
 
     lane: str
@@ -263,6 +267,7 @@ class FabricationCounters:
     budget: int
     error: int
     no_candidate: int
+    provenance_rejected: int
     other: int
 
     @property
@@ -275,7 +280,7 @@ def build_fabrication_counters(
     rewrite_rows: Sequence[dict[str, object]], *, lane: str = "tier_b"
 ) -> FabricationCounters:
     """Fold per-bullet Tier-B rewrite rows into the closed outcome catalog. Pure."""
-    kept = unchanged = judge = overmatch = budget = error = no_candidate = other = 0
+    kept = unchanged = judge = overmatch = budget = error = no_candidate = provenance = other = 0
     for row in rewrite_rows:
         if row.get("kept"):
             kept += 1
@@ -293,6 +298,8 @@ def build_fabrication_counters(
             error += 1
         elif reason == "no_candidate":
             no_candidate += 1
+        elif reason == "provenance":
+            provenance += 1
         else:
             other += 1
     return FabricationCounters(
@@ -305,6 +312,7 @@ def build_fabrication_counters(
         budget=budget,
         error=error,
         no_candidate=no_candidate,
+        provenance_rejected=provenance,
         other=other,
     )
 
@@ -716,6 +724,7 @@ def funnel_to_dict(funnel: RunFunnel) -> dict[str, object]:
             "budget": funnel.fabrication.budget,
             "error": funnel.fabrication.error,
             "no_candidate": funnel.fabrication.no_candidate,
+            "provenance_rejected": funnel.fabrication.provenance_rejected,
             "other": funnel.fabrication.other,
             "rejected": funnel.fabrication.rejected,
         },
@@ -1090,6 +1099,9 @@ def funnel_to_markdown(funnel: RunFunnel) -> str:
         f"{fab.kept} kept · {fab.unchanged} unchanged",
         "",
         f"fallbacks: {fab.budget} budget · {fab.error} error · {fab.no_candidate} no_candidate",
+        "",
+        f"{fab.provenance_rejected} rewrites reverted to Tier-A for lack of provenance "
+        "(a conservative veto, not a caught fabrication — excluded from `rejected` above)",
         "",
         "*Bar metric B4 is 0 fabrications over n≥100. `bullets_seen` is n; the two truth gates "
         "are the fail-closed entailment judge and the deterministic overmatch filter. Tier A is "

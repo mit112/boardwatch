@@ -886,3 +886,29 @@ def test_an_unknown_drop_reason_is_a_failure_bucket_not_a_silent_drop() -> None:
     body = funnel_to_markdown(report)
     assert any("FAILURE" in line and "closed catalog does not name" in line
                for line in body.splitlines())
+
+
+def test_provenance_vetoes_are_counted_separately_from_the_b4_numerator() -> None:
+    """A provenance veto is a conservative, deliberately over-broad guard, not a caught
+    fabrication (P1b). It must land in its own named bucket — not `other` (out-of-catalog)
+    and not `rejected` (the B4 numerator, judge + overmatch only)."""
+    rows: list[dict[str, object]] = [
+        {"kept": False, "drop_reason": "provenance"},
+        {"kept": False, "drop_reason": "provenance"},
+        {"kept": False, "drop_reason": "judge"},
+        {"kept": False, "drop_reason": "filter:overmatch_tech"},
+    ]
+    report = funnel(rewrite_rows=rows)
+    fab = report.fabrication
+    assert fab.provenance_rejected == 2
+    assert fab.other == 0
+    # Mutation check: `rejected` must stay judge + overmatch only, unmoved by provenance rows.
+    assert (fab.judge_rejected, fab.overmatch_filtered, fab.rejected) == (1, 1, 2)
+    payload = funnel_to_dict(report)["fabrication"]
+    assert payload["provenance_rejected"] == 2
+    assert payload["rejected"] == 2
+    body = funnel_to_markdown(report)
+    assert any(
+        "2" in line and "reverted to Tier-A for lack of provenance" in line
+        for line in body.splitlines()
+    )
