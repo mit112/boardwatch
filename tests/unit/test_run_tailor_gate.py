@@ -20,6 +20,7 @@ from boardwatch.extract.taxonomy import load_taxonomy
 from boardwatch.reports.resume_gate import LeadArtifactError, TypstUnavailableError
 from boardwatch.reports.tailor import run_tailor
 from boardwatch.store.db import ensure_schema, get_engine
+from boardwatch.store.queries import save_profile
 from boardwatch.store.tables import (
     artifacts,
     companies,
@@ -252,6 +253,38 @@ def test_tailored_ok_within_limit_is_not_degraded(tmp_path: Path) -> None:
     assert tailored.meta_json["typst_pdf_built"] is True
     assert Path(tailored.meta_json["pdf_uri"]).exists()
     assert Path(tailored.meta_json["compile_log_uri"]).exists()
+    assert res.pdf_path is not None and res.pdf_path.exists()
+
+
+def test_max_pages_honors_saved_profile_value(tmp_path: Path) -> None:
+    """A saved profile's resume_max_pages=2 must actually be read, not floored to 1.
+
+    The injected runner reports 2 pages for every compile (tailored and, were it reached,
+    untailored). With max_pages correctly read as 2, the tailored render is within limit and
+    ships un-degraded. If the profile_row branch were broken (e.g. hardcoded to 1), 2 pages
+    would exceed a limit of 1 and this would either degrade or — since the untailored
+    fallback would also report 2 pages — drop the lead entirely.
+    """
+
+    def runner(typ: Path, pdf: Path) -> CompileOutcome:
+        return _ok(pdf, 2)
+
+    settings = _settings(tmp_path)
+    engine = _engine(settings)
+    with engine.begin() as conn:
+        save_profile(
+            conn, text="t", target_titles=[], exclude_titles=[], locations=[],
+            remote_only=False, skills=[], taxonomy_version="v1", resume_max_pages=2,
+        )
+    pid = _seed(engine, settings)
+    out = tmp_path / "out"
+    res = run_tailor(
+        engine, settings, pid, resume_path=_resume_yaml(tmp_path), out_dir=out, typst_runner=runner,
+    )
+    rows = _artifact_rows(engine)
+    tailored = next(r for r in rows if r.kind == "resume_tailored")
+    assert not tailored.meta_json.get("degraded")
+    assert tailored.meta_json["typst_pdf_built"] is True
     assert res.pdf_path is not None and res.pdf_path.exists()
 
 
