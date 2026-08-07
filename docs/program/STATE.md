@@ -69,8 +69,11 @@ net-new work clusters into 5 **fail-safe** slices:
   likely DELETE the custom reclaim — a crashed holder's OS `flock` is already released on process exit, so
   a bare `filelock.acquire()` may reclaim it. Use (pid, start-time)/pidfd for liveness, not the pid alone.
   Make the reaper race-safe by gating on the run's lock being *acquirable now*, not an age floor.
-  **A MIT FORK:** is stale-reclaim + auto-reap worth the complexity, or is "loud notify + acquirable-lock
-  reaper + doctor surfacing" enough? Do not build the reclaim/reaper half until this is resolved.
+  **DECIDED (D-045): stale-reclaim DECLINED** — unsound AND unnecessary (POSIX releases a dead holder's
+  flock, so bare `FileLock.acquire()` already reclaims it; the cross-platform edge is item 8's, no Docker
+  here). The loud-notify shipped (D-043). **Only the run REAPER remains** (`running`+NULL rows) — deferred to
+  fresh context because a sound reaper needs process-liveness IDENTITY (pid+start-time/pidfd, not
+  `os.kill(pid,0)`) to avoid reaping a live `--no-scan` run. Not a Mit fork anymore; a fresh-context build.
 - **(3) P3-run-integrity — DONE (D-039, merged):** three run-integrity guards in `pipeline/runner.py`, all
   setting `summary.fatal` (fail-safe): cohort completeness (`visible` posting-id set == leads ∪ failed,
   ID-based); zero-output guard (0 leads is provably-right IFF scan healthy AND `eligible-judged-this-run`==0,
@@ -105,12 +108,11 @@ All fail-safe, independent of P2 item 4. **Slice 5 (LLM economics) has been grou
   to be safe — over-engineering for its payoff (same disposition as P2 item 1). Revisit only with concrete
   evidence of a material render cost. (Separately logged in D-042: response-cache HITS may still consume the
   `_guarded` budget — a small real inefficiency for a future look.)
-- **5b (a THIRD MIT FORK — do NOT build autonomously):** quota-cap-abort + a pending/resumable lead state +
-  "never silently downgrade to deterministic." This INVERTS the current (reasonable) design where a
-  provider error/budget-exhaustion drops to the structural Tier-A bullet and the lead ships — and it reworks
-  the slice-3 cohort-completeness invariant (which demands a terminal state per shortlisted posting).
-  **Decide first:** is a solid Tier-A bullet on quota/error a GOOD outcome (keep today's downgrade — don't
-  build 5b) or a failure to leave pending? Batched judging defers with 5b.
+- **5b — DECIDED (D-044): DECLINE the "never-downgrade" inversion; keep today's Tier-A downgrade.** For an
+  unattended driver, a solid deterministic Tier-A bullet on a provider/quota error is a GOOD shippable
+  outcome (and the fail-safe table sanctions "drop tailoring, emit static"). No pending/resumable state, no
+  cohort rework, no batched judging. Reversible — Mit can request the inversion if he wants Tier-B treated as
+  load-bearing. NOT a remaining item.
 Item 8: **doc half DONE (D-041, `docs/program/WAL_DISCIPLINE.md`)** — the WAL/busy_timeout/single-writer
 stance is now documented. **Test half REMAINS:** a real cross-process/cross-OS concurrent-writer harness
 (Docker-Linux-container + macOS-host-mounted-DB — same-OS proves nothing); test-infra-hard, fresh context.
