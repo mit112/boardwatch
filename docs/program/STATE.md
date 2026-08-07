@@ -109,7 +109,9 @@ All fail-safe, independent of P2 item 4. **Slice 5 (LLM economics) has been grou
   the slice-3 cohort-completeness invariant (which demands a terminal state per shortlisted posting).
   **Decide first:** is a solid Tier-A bullet on quota/error a GOOD outcome (keep today's downgrade — don't
   build 5b) or a failure to leave pending? Batched judging defers with 5b.
-Item 8: a real cross-process/cross-OS concurrent-writer harness (same-OS proves nothing) — separate + hard.
+Item 8: **doc half DONE (D-041, `docs/program/WAL_DISCIPLINE.md`)** — the WAL/busy_timeout/single-writer
+stance is now documented. **Test half REMAINS:** a real cross-process/cross-OS concurrent-writer harness
+(Docker-Linux-container + macOS-host-mounted-DB — same-OS proves nothing); test-infra-hard, fresh context.
 
 **DECLINED (YAGNI):** item 1's facts `schema_version` — validated + hashed already hold; a schema-version
 field is speculative hardening with unclear payoff (schema changes are rare and arrive with value changes
