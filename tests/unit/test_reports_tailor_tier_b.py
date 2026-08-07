@@ -123,9 +123,17 @@ def test_tier_b_emits_second_artifact_and_edge(tmp_path: Path) -> None:
     pid = _seed(engine, settings)
     out = tmp_path / "out"
     # scaffold_template() has two bullets -> propose+judge each = up to 4 bodies; both
-    # rewrites are short and entity/number-free, so the overmatch filter passes both, and
-    # the scripted judge marks both ENTAILED.
-    client = ScriptedClient(["Shipped it", "ENTAILED", "Led it", "ENTAILED"])
+    # rewrites are entity/number-free and provenanced (only a connective swapped), so the
+    # overmatch filter and the provenance check both pass, and the scripted judge marks
+    # both ENTAILED.
+    client = ScriptedClient(
+        [
+            "Built the Python service handling 2M requests/day on Kubernetes",
+            "ENTAILED",
+            "Cut p99 latency 40% by rewriting the hot path with Rust",
+            "ENTAILED",
+        ]
+    )
     res = run_tailor(
         engine, settings, pid, resume_path=_resume_yaml(tmp_path), out_dir=out,
         typst_runner=_runner_ok, client=client, cache=ResponseCache(tmp_path / "c"),

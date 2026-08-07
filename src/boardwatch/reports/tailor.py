@@ -68,10 +68,13 @@ from boardwatch.tailor.render.outcome import CompileOutcome, CompileReason
 from boardwatch.tailor.render.typst import TypstRenderer
 from boardwatch.tailor.rewrite.lane import TierBResult, run_tier_b
 from boardwatch.tailor.rewrite.prompt import JUDGE_PROMPT_VERSION, REWRITE_PROMPT_VERSION
+from boardwatch.tailor.rewrite.provenance import PROVENANCE_VERSION
 from boardwatch.tailor.safety import enforce_tier_a
 
 VALIDATOR_VERSION = "tier-a-1"
-LLM_LANE_VERSION = "tier-b-1"
+# Bumped for P1b (D-033): the lane now vetoes un-provenanced rewords before the judge,
+# so a cached pre-gate Tier-B reply must not be replayed as if it had passed the gate.
+LLM_LANE_VERSION = "tier-b-2"
 SUPPORTED_FORMATS = ("typst",)
 _TYPST_MISSING_MSG = (
     "typst binary not found on PATH; install it (e.g. `brew install typst` or "
@@ -383,6 +386,7 @@ def run_tailor(
                 cache,
                 jd_skills=jd_skills,
                 taxonomy=taxonomy,
+                table=table,
                 model=settings.llm.model or "unknown",
                 budget=settings.llm.max_calls_per_run,
                 provider=settings.llm.provider,
@@ -565,6 +569,7 @@ def run_tailor(
                     "llm_lane_version": LLM_LANE_VERSION,
                     "rewrite_prompt_version": REWRITE_PROMPT_VERSION,
                     "judge_prompt_version": JUDGE_PROMPT_VERSION,
+                    "provenance_version": PROVENANCE_VERSION,
                     "provider": llm_provider_override or settings.llm.provider,
                     "model": llm_model_override or settings.llm.model,
                     "tier_a_artifact_id": art_id,

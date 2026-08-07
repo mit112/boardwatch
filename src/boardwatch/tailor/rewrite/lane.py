@@ -8,6 +8,7 @@ from typing import TypeVar
 from boardwatch.extract.taxonomy import Taxonomy
 from boardwatch.llm.cache import ResponseCache
 from boardwatch.llm.client import ModelClient
+from boardwatch.tailor.equivalences import EquivalenceTable
 from boardwatch.tailor.model import Resume
 from boardwatch.tailor.plan import Rewrite
 from boardwatch.tailor.rewrite.filter import passes_overmatch_filter
@@ -18,6 +19,7 @@ from boardwatch.tailor.rewrite.prompt import (
     build_judge_payload,
     build_rewrite_payload,
 )
+from boardwatch.tailor.rewrite.provenance import reword_is_provenanced
 
 # (a_text, jd_skills) -> candidate rewrite text (already stripped), or None.
 Proposer = Callable[[str, set[str]], str | None]
@@ -57,6 +59,7 @@ def run_tier_b_core(
     propose: Proposer,
     judge: Judge,
     taxonomy: Taxonomy,
+    table: EquivalenceTable,
     jd_skills: set[str],
     budget: int,
 ) -> TierBResult:
@@ -165,6 +168,27 @@ def run_tier_b_core(
                 )
                 continue
 
+            pr = reword_is_provenanced(a_text, candidate, table=table)
+            if not pr.ok:
+                # Every content token in the reword must trace to the source, an
+                # approved equivalence image, or a claim-free connective (P1b, D-033).
+                # A fabrication here is caught deterministically and cheaply -- veto
+                # before spending a judge call on a reword that can never be trusted,
+                # and keep the Tier-A bullet (only `accepted` rewrites are ever applied).
+                rows.append(
+                    RewriteRow(
+                        bullet_id=b.bullet_id,
+                        entry_id=entry.entry_id,
+                        a_text=a_text,
+                        b_text=candidate,
+                        filter_pass=True,
+                        judge_verdict=None,
+                        kept=False,
+                        drop_reason="provenance",
+                    )
+                )
+                continue
+
             try:
                 verdict = parse_verdict(_guarded(judge, a_text, candidate))
             except _BudgetExceeded:
@@ -234,6 +258,7 @@ def run_tier_b(
     *,
     jd_skills: set[str],
     taxonomy: Taxonomy,
+    table: EquivalenceTable,
     model: str,
     budget: int,
     provider: str | None = None,
@@ -269,6 +294,7 @@ def run_tier_b(
         propose=propose,
         judge=judge,
         taxonomy=taxonomy,
+        table=table,
         jd_skills=jd_skills,
         budget=budget,
     )

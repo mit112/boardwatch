@@ -10,6 +10,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from boardwatch.extract.taxonomy import Taxonomy
+from boardwatch.tailor.equivalences import load_equivalences
 from boardwatch.tailor.model import Resume
 from boardwatch.tailor.rewrite.agent_io import (
     BulletRef,
@@ -21,6 +22,7 @@ from boardwatch.tailor.rewrite.agent_io import (
 )
 from boardwatch.tailor.rewrite.filter import passes_overmatch_filter
 from boardwatch.tailor.rewrite.lane import TierBResult, run_tier_b_core
+from boardwatch.tailor.rewrite.provenance import reword_is_provenanced
 
 
 def build_rewrite_request(
@@ -60,6 +62,7 @@ def screen_candidates(
     a_text_by_bullet_id = {
         bullet.bullet_id: bullet.text for entry in tailored.entries for bullet in entry.bullets
     }
+    table = load_equivalences()
     items: list[JudgeItem] = []
     drops: list[ScreenDrop] = []
     for candidate in candidates.candidates:
@@ -74,6 +77,13 @@ def screen_candidates(
         result = passes_overmatch_filter(a_text, candidate.candidate, taxonomy)
         if not result.passed:
             drops.append(ScreenDrop(bullet_id=bullet_id, reason=f"filter:{result.reason}"))
+            continue
+        # Same veto as run_tier_b_core, applied here too: this step's whole purpose is to
+        # screen out candidates before spending an external judge agent call, and an
+        # un-provenanced reword is exactly the kind of call not worth spending (P1b, D-033).
+        pr = reword_is_provenanced(a_text, candidate.candidate, table=table)
+        if not pr.ok:
+            drops.append(ScreenDrop(bullet_id=bullet_id, reason="provenance"))
             continue
         items.append(JudgeItem(bullet_id=bullet_id, a_text=a_text, candidate=candidate.candidate))
     return JudgeRequest(request_id=request_id, items=items), drops
@@ -137,6 +147,7 @@ def apply_agent_rewrites(
         propose=propose,
         judge=judge,
         taxonomy=taxonomy,
+        table=load_equivalences(),
         jd_skills=jd_skills,
         budget=budget,
     )

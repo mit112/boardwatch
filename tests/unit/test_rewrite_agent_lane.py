@@ -107,16 +107,32 @@ def test_screen_keeps_passing_candidate_with_cli_a_text(tmp_path) -> None:
     tailored = _sample_tailored_resume()
     candidates = CandidatesFile(
         request_id="r1",
-        candidates=[Candidate(bullet_id="b1", candidate="Shipped a Python service")],
+        candidates=[Candidate(bullet_id="b1", candidate="Built the Python service")],
     )
     judge_req, drops = screen_candidates(tailored, candidates, _tax(tmp_path), request_id="r1")
     assert drops == []
     assert judge_req.request_id == "r1"
     assert judge_req.items == [
         JudgeItem(
-            bullet_id="b1", a_text="Built a Python service", candidate="Shipped a Python service"
+            bullet_id="b1", a_text="Built a Python service", candidate="Built the Python service"
         )
     ]
+
+
+def test_screen_drops_fabricated_reword_as_provenance(tmp_path) -> None:
+    """The same veto run_tier_b_core applies, run here too: this step's whole point is to
+    screen out candidates before an external judge agent call, and a fabricated reword is
+    exactly the kind of call not worth spending."""
+    tailored = _sample_tailored_resume()
+    candidates = CandidatesFile(
+        request_id="r1",
+        # "quickly" is not in the source, not a connective, not an equivalence image --
+        # passes the overmatch filter (no invented entity/skill/number) but not provenance.
+        candidates=[Candidate(bullet_id="b1", candidate="Built a Python service quickly")],
+    )
+    judge_req, drops = screen_candidates(tailored, candidates, _tax(tmp_path), request_id="r1")
+    assert judge_req.items == []
+    assert ScreenDrop(bullet_id="b1", reason="provenance") in drops
 
 
 def test_screen_drops_unknown_bullet_id(tmp_path) -> None:
@@ -137,7 +153,7 @@ def test_apply_agent_rewrites_keeps_exact_entailed_verdict(tmp_path) -> None:
     tailored = _sample_tailored_resume()
     candidates = CandidatesFile(
         request_id="r1",
-        candidates=[Candidate(bullet_id="b1", candidate="Shipped a Python service")],
+        candidates=[Candidate(bullet_id="b1", candidate="Built the Python service")],
     )
     verdicts = VerdictsFile(
         request_id="r1", verdicts=[Verdict(bullet_id="b1", raw_reply="ENTAILED")]
@@ -155,7 +171,7 @@ def test_apply_agent_rewrites_drops_non_canonical_verdict(tmp_path) -> None:
     tailored = _sample_tailored_resume()
     candidates = CandidatesFile(
         request_id="r1",
-        candidates=[Candidate(bullet_id="b1", candidate="Shipped a Python service")],
+        candidates=[Candidate(bullet_id="b1", candidate="Built the Python service")],
     )
     verdicts = VerdictsFile(
         request_id="r1",
@@ -177,7 +193,7 @@ def test_apply_agent_rewrites_missing_verdict_and_missing_candidate_drop_closed(
     tailored = _sample_tailored_resume()
     candidates = CandidatesFile(
         request_id="r1",
-        candidates=[Candidate(bullet_id="b1", candidate="Shipped a Python service")],
+        candidates=[Candidate(bullet_id="b1", candidate="Built the Python service")],
     )
     verdicts = VerdictsFile(request_id="r1", verdicts=[])
     result = apply_agent_rewrites(tailored, candidates, verdicts, _tax(tmp_path), {"python"})

@@ -248,7 +248,7 @@ def test_rewrite_screen_writes_jd_free_judge_request(env: Env, tmp_path: Path) -
                 # passes the filter -> should survive to the judge
                 Candidate(
                     bullet_id="acme-1",
-                    candidate="Shipped a Python service handling 2M requests/day on Kubernetes",
+                    candidate="Built the Python service handling 2M requests/day on Kubernetes",
                 ),
                 # byte-equal to a_text -> dropped "unchanged"
                 Candidate(
@@ -283,7 +283,7 @@ def test_rewrite_screen_writes_jd_free_judge_request(env: Env, tmp_path: Path) -
     item = judge_req.items[0]
     assert item.bullet_id == "acme-1"
     assert item.a_text == "Built a Python service handling 2M requests/day on Kubernetes"
-    assert item.candidate == "Shipped a Python service handling 2M requests/day on Kubernetes"
+    assert item.candidate == "Built the Python service handling 2M requests/day on Kubernetes"
 
     # CRITICAL: judge_request.json must be structurally JD-free -- no jd/jd_skills key
     # anywhere in the raw JSON, not just absent from the parsed model.
@@ -350,7 +350,7 @@ def test_rewrite_apply_emits_llm_artifact_with_lineage(env: Env, tmp_path: Path)
                 # passes the overmatch filter -> proceeds to the (agent) judge
                 Candidate(
                     bullet_id="acme-1",
-                    candidate="Shipped a Python service handling 2M requests/day on Kubernetes",
+                    candidate="Built the Python service handling 2M requests/day on Kubernetes",
                 ),
             ],
         ),

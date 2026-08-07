@@ -222,7 +222,14 @@ def test_tier_b_dry_run_does_not_claim_nothing_written(
     _write_config(env, "[llm]\nresume_tailoring = true\n")
     monkeypatch.setattr(
         "boardwatch.cli.tailor_cmd.build_client",
-        lambda settings: _FakeClient(["Shipped it", "ENTAILED", "Led it", "ENTAILED"]),
+        lambda settings: _FakeClient(
+            [
+                "Built the Python service handling 2M requests/day on Kubernetes",
+                "ENTAILED",
+                "Cut p99 latency 40% by rewriting the hot path with Rust",
+                "ENTAILED",
+            ]
+        ),
     )
     _run(env, ["tailor", "init"])
     posting_id = _seed_open_posting(env)
@@ -268,7 +275,14 @@ def test_tier_b_report_shows_reworded_count_and_disclaimer(
     monkeypatch.setenv("BOARDWATCH_LLM_API_KEY", "fake-key")
     monkeypatch.setattr(
         "boardwatch.cli.tailor_cmd.build_client",
-        lambda settings: _FakeClient(["Shipped it", "ENTAILED", "Led it", "ENTAILED"]),
+        lambda settings: _FakeClient(
+            [
+                "Built the Python service handling 2M requests/day on Kubernetes",
+                "ENTAILED",
+                "Cut p99 latency 40% by rewriting the hot path with Rust",
+                "ENTAILED",
+            ]
+        ),
     )
     _run(env, ["tailor", "init"])
     posting_id = _seed_open_posting(env)
@@ -290,7 +304,9 @@ def test_tier_b_report_shows_budget_hint_when_exhausted(
     monkeypatch.setenv("BOARDWATCH_LLM_API_KEY", "fake-key")
     monkeypatch.setattr(
         "boardwatch.cli.tailor_cmd.build_client",
-        lambda settings: _FakeClient(["Shipped it", "ENTAILED"]),
+        lambda settings: _FakeClient(
+            ["Built the Python service handling 2M requests/day on Kubernetes", "ENTAILED"]
+        ),
     )
     _run(env, ["tailor", "init"])
     posting_id = _seed_open_posting(env)
