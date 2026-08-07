@@ -30,20 +30,30 @@ Gate P1 MET.** `make check` exits 0 on `main` (2846 passed, 1 deselected, covera
 `generalization: OK`). **Next: P2 — profile object + the keystone invariant** (PROGRAM.md §3.P2).
 
 **P2 has been explored + decomposed (2026-08-07) — see `.superpowers/sdd/p2-profile-keystone/design.md`.**
-Much of P2 is already built (INELIGIBLE spans, the 4-table evidence chain, and the severity *mechanism* all
-exist). The remaining work splits by SAFETY. **P2a (fail-safe, buildable now):** `needs_sponsorship` bit
-**DONE (session 10, D-034, merged)**; still to build — typed keystone `ABSTAIN(missing_profile_field:X)`
-enforcement (the load-bearing keystone surgery; deserves fresh context + a small call on whether the typed
-reason is a new `eligibility_requirements` column or lives only on the in-memory `Resolution`), facts
-`schema_version`, and the eligible-cleared-vs-residue guard. **P2b (fail-DANGEROUS — needs Mit):** which rule families default to
-`blocker` (a wrong default silently deletes real jobs for every user) and the 3-tier `career.field` taxonomy.
-**DECISION #1 MADE (session 10, D-035, merged):** `work_auth: blocker` by default, the other five families
-stay `preference` (opt-in) — the conservative Gate-P2-meeting choice. **Gate P2 headline is now 2/3 met:** a
-fresh F-1/OPT profile → decisive INELIGIBLE-with-span on a no-sponsorship JD; a citizen → eligible on the
-same JD (proven by shipped-default `Policy()` tests). The 3rd profile (non-SWE) needs item 4.
-**DECISION #2 still awaits Mit:** the taxonomy shape (item 4) — lightweight `applies_when.career_field`
-family gate (recommended) or the full 3-way split? Also open (lower urgency): should any of the other five
-families (esp. `clearance`) also default to `blocker`? Prior catalog WIP: `.agent/p2-catalog/`.
+Much of P2 was already built (INELIGIBLE spans, the 4-table evidence chain, and the severity *mechanism* all
+exist). **Shipped this session (all merged, reviewed, `make check` green):**
+- **item 2 — `needs_sponsorship` bit** (D-034): orthogonal bit on `WorkAuthFact`, sponsorship-rules only.
+- **item 7 — `work_auth: blocker` by default** (D-035): the other five families stay `preference` (opt-in).
+  **Gate P2 headline is now 2/3 met** — a fresh F-1/OPT profile → decisive INELIGIBLE-with-span on a
+  no-sponsorship JD; a citizen → eligible on the same JD (proven by shipped-default `Policy()` tests). The
+  3rd profile (non-SWE) needs item 4.
+- **item 3 — keystone invariant machine-enforced**: `tests/unit/test_keystone_invariant.py` iterates the
+  resolver registry and asserts every family × every pattern (all 33) abstains on empty `Facts()` — a new
+  family/pattern that forgets to abstain now fails the gate. (Typed `AbstainReason` enum deferred — ~15
+  call sites, no behaviour change; the property test is the enforcement.)
+- **items 5 & 6 largely already satisfied**: INELIGIBLE carries a span (offset locator, quoted on demand);
+  the ELIGIBLE evidence chain (rule→disposition→span→profile-fact) exists. Residual: the *zero-rows*
+  eligible-residue vs eligible-cleared distinction (item 6 guard) — a reporting-honesty gap, low urgency.
+
+**DECLINED (YAGNI):** item 1's facts `schema_version` — validated + hashed already hold; a schema-version
+field is speculative hardening with unclear payoff (schema changes are rare and arrive with value changes
+that already re-key `profile_hash`). Build it only if a concrete need appears.
+
+**STILL AWAITS MIT (the one fail-dangerous decision left):** item 4 — the taxonomy shape:
+a lightweight `applies_when.career_field` family gate + a `career.field` fact (recommended, minimal
+multi-tenancy, unblocks the 3rd Gate-P2 profile) vs the full universal/profile/field 3-way split. Also open
+(lower urgency): should any other family (esp. `clearance`) also default to `blocker`? Prior catalog WIP to
+review first: `.agent/p2-catalog/` (a reviewed oracle `proto.py` + alternate rules snapshots).
 **Remaining P2a (fail-safe, building autonomously):** item 3 keystone enforcement (a cross-resolver property
 test "empty facts ⇒ every rule abstains" + a typed in-memory abstain reason — NOT a blanket wrapper, which
 would break multi-input alternatives like `degree`; no DB migration), facts `schema_version`, guards.
