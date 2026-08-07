@@ -264,6 +264,14 @@ class FabricationCounters:
     invented-entity/skill filter that shares the "overmatch" name by coincidence): a
     style/lift veto is conservative, not a caught fabrication, so it too is excluded from
     `rejected` below.
+
+    `banned_register_rejected` / `buzzword_rejected` / `verb_diversity_rejected` (P4 item
+    3a) count the three new craft-register guards — a closed-catalog AI-résumé cliché
+    (`drop_reason="banned_register"`), a per-bullet buzzword-density ceiling
+    (`"buzzword_density"`), and the résumé-wide verb-opening-diversity post-pass demoting
+    an excess-repeat rewrite (`"verb_repeat"`). Same treatment as `provenance_rejected` and
+    `lift_rejected`: these are craft/register vetoes, not caught fabrications, so all three
+    are excluded from `rejected` below.
     """
 
     lane: str
@@ -277,6 +285,9 @@ class FabricationCounters:
     no_candidate: int
     provenance_rejected: int
     lift_rejected: int
+    banned_register_rejected: int
+    buzzword_rejected: int
+    verb_diversity_rejected: int
     other: int
 
     @property
@@ -290,7 +301,7 @@ def build_fabrication_counters(
 ) -> FabricationCounters:
     """Fold per-bullet Tier-B rewrite rows into the closed outcome catalog. Pure."""
     kept = unchanged = judge = overmatch = budget = error = no_candidate = provenance = 0
-    lift = other = 0
+    lift = banned_register = buzzword = verb_diversity = other = 0
     for row in rewrite_rows:
         if row.get("kept"):
             kept += 1
@@ -312,6 +323,12 @@ def build_fabrication_counters(
             provenance += 1
         elif reason == "overmatch":
             lift += 1
+        elif reason == "banned_register":
+            banned_register += 1
+        elif reason == "buzzword_density":
+            buzzword += 1
+        elif reason == "verb_repeat":
+            verb_diversity += 1
         else:
             other += 1
     return FabricationCounters(
@@ -326,6 +343,9 @@ def build_fabrication_counters(
         no_candidate=no_candidate,
         provenance_rejected=provenance,
         lift_rejected=lift,
+        banned_register_rejected=banned_register,
+        buzzword_rejected=buzzword,
+        verb_diversity_rejected=verb_diversity,
         other=other,
     )
 
@@ -739,6 +759,9 @@ def funnel_to_dict(funnel: RunFunnel) -> dict[str, object]:
             "no_candidate": funnel.fabrication.no_candidate,
             "provenance_rejected": funnel.fabrication.provenance_rejected,
             "lift_rejected": funnel.fabrication.lift_rejected,
+            "banned_register_rejected": funnel.fabrication.banned_register_rejected,
+            "buzzword_rejected": funnel.fabrication.buzzword_rejected,
+            "verb_diversity_rejected": funnel.fabrication.verb_diversity_rejected,
             "other": funnel.fabrication.other,
             "rejected": funnel.fabrication.rejected,
         },
@@ -1120,6 +1143,12 @@ def funnel_to_markdown(funnel: RunFunnel) -> str:
         f"{fab.lift_rejected} rewrites reverted to Tier-A for a verbatim JD-span lift or "
         "unusual capitalization copied from the JD (a conservative veto, not a caught "
         "fabrication — excluded from `rejected` above)",
+        "",
+        f"{fab.banned_register_rejected} rewrites reverted to Tier-A for a banned-register "
+        f"cliché · {fab.buzzword_rejected} for exceeding the per-bullet buzzword-density "
+        f"ceiling · {fab.verb_diversity_rejected} for repeating an opening verb past the "
+        "résumé-wide cap (craft/register vetoes, not caught fabrications — excluded from "
+        "`rejected` above)",
         "",
         "*Bar metric B4 is 0 fabrications over n≥100. `bullets_seen` is n; the two truth gates "
         "are the fail-closed entailment judge and the deterministic overmatch filter. Tier A is "

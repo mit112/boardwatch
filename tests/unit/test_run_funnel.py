@@ -953,3 +953,56 @@ def test_an_unclassified_overmatch_variant_would_still_land_in_other() -> None:
     report = funnel(rewrite_rows=[{"kept": False, "drop_reason": "overmatched"}])
     assert report.fabrication.lift_rejected == 0
     assert report.fabrication.other == 1
+
+
+def test_register_vetoes_are_counted_separately_from_the_b4_numerator() -> None:
+    """P4 item 3a: the three craft-register guards (banned-register, buzzword-density,
+    verb-diversity) are conservative style/register vetoes, not caught fabrications -- same
+    treatment as provenance_rejected/lift_rejected. Each lands in its own named bucket, not
+    `other` (out-of-catalog) and not `rejected` (the B4 numerator, judge + the older
+    pre-judge overmatch filter only)."""
+    rows: list[dict[str, object]] = [
+        {"kept": False, "drop_reason": "banned_register"},
+        {"kept": False, "drop_reason": "banned_register"},
+        {"kept": False, "drop_reason": "buzzword_density"},
+        {"kept": False, "drop_reason": "verb_repeat"},
+        {"kept": False, "drop_reason": "judge"},
+        {"kept": False, "drop_reason": "filter:overmatch_tech"},
+    ]
+    report = funnel(rewrite_rows=rows)
+    fab = report.fabrication
+    assert fab.banned_register_rejected == 2
+    assert fab.buzzword_rejected == 1
+    assert fab.verb_diversity_rejected == 1
+    assert fab.other == 0
+    # Mutation check: `rejected` must stay judge + overmatch only, unmoved by the three new
+    # register buckets.
+    assert (fab.judge_rejected, fab.overmatch_filtered, fab.rejected) == (1, 1, 2)
+    payload = funnel_to_dict(report)["fabrication"]
+    assert payload["banned_register_rejected"] == 2
+    assert payload["buzzword_rejected"] == 1
+    assert payload["verb_diversity_rejected"] == 1
+    assert payload["rejected"] == 2
+    body = funnel_to_markdown(report)
+    assert any(
+        "2" in line and "banned-register cliché" in line for line in body.splitlines()
+    )
+
+
+def test_an_unclassified_register_variant_would_still_land_in_other() -> None:
+    """CLAUDE.md: out-of-catalog is a failure, never a new bucket. Near-miss strings that
+    are NOT exactly the three closed-catalog reasons must surface as `other`."""
+    report = funnel(
+        rewrite_rows=[
+            {"kept": False, "drop_reason": "banned_registers"},
+            {"kept": False, "drop_reason": "buzzword_densities"},
+            {"kept": False, "drop_reason": "verb_repeats"},
+        ]
+    )
+    fab = report.fabrication
+    assert (fab.banned_register_rejected, fab.buzzword_rejected, fab.verb_diversity_rejected) == (
+        0,
+        0,
+        0,
+    )
+    assert fab.other == 3
