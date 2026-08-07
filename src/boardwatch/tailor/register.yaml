@@ -1,0 +1,35 @@
+# P4 item 3a: universal résumé-craft register data (banned-phrase blocklist + buzzword
+# density catalog), mirroring equivalences.yaml's shape. Not field-dependent -- corporate
+# clichés read the same on a SWE's, a nurse's, or a paralegal's résumé (see
+# .superpowers/sdd/p4-craft/item3-guard-extensions-design.md §2a/§2b). Seeded from
+# job-apps' roadmap examples + general judgment; a taste input, tunable from live-run
+# false positives, not a structural blocker.
+banned_phrases:
+  - "responsible for"
+  - "duties included"
+  - "team player"
+  - "results-driven"
+  - "detail-oriented"
+  - "go-getter"
+  - "think outside the box"
+  - "synergy"
+  - "leverage synergies"
+  - "spearheaded"
+  - "leveraged"
+  - "passionate about"
+  - "proven track record"
+  - "wearing many hats"
+buzzwords:
+  - "innovative"
+  - "dynamic"
+  - "cutting-edge"
+  - "world-class"
+  - "best-in-class"
+  - "rockstar"
+  - "ninja"
+  - "guru"
+  - "seamless"
+  - "game-changing"
+# Per-bullet ceiling (roadmap:502 scopes this explicitly per bullet, not per résumé): more
+# than 1 buzzword hit in a single bullet reads as keyword-stuffed.
+buzzword_density_ceiling: 1
