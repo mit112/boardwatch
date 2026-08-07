@@ -643,7 +643,16 @@ domain input nor Docker.** What is left is genuinely gated on things I cannot su
   regression); a broken master aborts the run loudly (runner `except ResumeLoadError` before the generic
   catch) instead of silent per-lead drops. Reviewed; one fix round removed a false-fatal on single-line
   headers (`len(header)<2`→`not header`). `make check` green (3084 passed, 95.39%). **→ P4 ITEM 5 COMPLETE.**
-  **NEXT ACTION (new session): P4 item 6** — keyword coverage measured against JD *requirement* terms,
+  **⛔ NEXT ACTION IS NOT P4 item 6 — READ THIS (D-057, Mit 2026-08-07):** Mit determined the résumé
+  **TAILORING is fundamentally wrong** (surfaced by the Gate-P3 work seeing real output — NOT just the
+  page-count config). A **dedicated résumé-tailoring-fix session** must come FIRST — before Gate 3, and
+  (orchestrator rec, pending Mit confirm) before the remaining P4 items 6–7, because P4 gates ON the
+  tailored output and polishing a broken foundation is low-value. That session should START by diagnosing
+  the actual bad output against Mit's reworked résumé + a real JD (which tailoring stage is wrong:
+  Tier-A repositioning / Tier-B rewording / bullet selection / the plan?) BEFORE changing code — the
+  specifics are TBD (Mit to provide). The merged P4 guards (items 1/2/3/5) stand; just don't build more on
+  top yet. **Only after tailoring is fixed** do the items below resume.
+  **DEFERRED next action — P4 item 6** — keyword coverage measured against JD *requirement* terms,
   achieved only by re-spelling existing facts (ground it first: reuse the canonical vocab + the
   qualifications-span slicer from item 3b; it's a MEASUREMENT/report, likely not a veto). **Then item 7**
   (persona registry MECHANISM + tech seed + the deferred de-senioritizer [reuse `tokens.py` word-boundary
