@@ -2060,3 +2060,38 @@ image, confirming red — the [[mutation-testing-lies-two-ways]] discipline. `ma
 
 **Next P4 slice:** item 3 (guard extensions — banned register, buzzword-density ceiling, verb-opening
 diversity, requirement-echo detection [PROGRAM.md calls it "the most damaging AI-résumé tell"]).
+
+## D-050 — P4 item 3a: banned-register + buzzword-density + verb-diversity craft guards SHIPPED
+
+**2026-08-07 · session 10 · P4 (item 3a — built, two-gate-reviewed + one fix round, merged). Under D-047.**
+
+**Context.** Item 3 is four craft checks; grounding split it 3a (mechanical) / 3b (requirement-echo,
+subtler). 3a: two per-bullet Tier-B gates (banned-register, buzzword-density) + one résumé-wide post-pass
+(verb-opening diversity). All are net-new (no job-apps source). Word lists are UNIVERSAL English register,
+not per-field (unlike item 2's tech vocab) — seedable now, tunable from live false positives later.
+
+**Choice.** `tailor/register.yaml` (14 banned phrases, 10 buzzwords, per-bullet density ceiling 1) +
+`register.py` (pure predicates, case-insensitive, word-boundary matched); `rewrite/verb_diversity.py`
+(`enforce_verb_diversity`, max_repeats=2, whole-`TierBResult` post-pass); wired into `run_tier_b_core`
+after overmatch / before the judge (per-bullet gates revert to Tier-A with `drop_reason` in
+{`banned_register`,`buzzword_density`,`verb_repeat`}, all excluded from the B4 fabrication numerator).
+`RewriteRow`/`TierBResult` moved to `rewrite/result.py` to break a circular import (`lane` re-exports
+them). Guards act ONLY on Tier-B rewrites — Mit's authored Tier-A content is never rejected.
+
+**Reviews found real defects; fixed.** (1) The authoritative `make check` re-run (self-report was green
+only because the implementer ran generalization BEFORE git-tracking `register.yaml`) caught R7: the new
+data file must be in `SHIPPED_DATA` — added with a sha256 pin (verified matching the file). (2) diff-review
+found a genuine logic bug: `enforce_verb_diversity` demoted a rewrite to Tier-A without accounting for the
+Tier-A verb that then ships, so when the Tier-A original shares the rewrite's opening verb (the COMMON
+case — provenance-preserving rewrites reuse the source verb) the invariant was silently violated. Fixed to
+demote ONLY when it genuinely diversifies (`ta_verb != rw_verb` and the Tier-A verb is under cap),
+accounting for the shipped Tier-A verb; docstring corrected to the honest achievable invariant (the Tier-A
+baseline is never touched and may exceed the cap). (3) added the missing double-count-exclusion regression
+test. `make check` green (3003 passed, 95.34%), authoritative re-run by the orchestrator.
+
+**Lesson reinforced ([[confirm-a-test-fails-without-its-fix]]):** the implementer found the fix-request's
+literal "wrongly-demoted" narrative was untestable after the Fix-2 guard, and built the discriminating
+test (`ta != rw`, seeding bug → a wrongly-KEPT over-cap rewrite) that the regression actually requires.
+
+**Next P4 slice:** item 3b (requirement-echo — the JD-semantic AND-gate; deepseek-review its false-positive
+bounding at the design stage), then items 4–7.
