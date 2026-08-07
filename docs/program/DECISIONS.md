@@ -955,3 +955,107 @@ new bucket (`CLAUDE.md`). Tier A is structural and cannot fabricate, so it is no
 on-disk-artifacts invariant sweep counting through a different path; the artifact's existing `cross_checks`
 are per-run pipeline-memory-vs-store. Keeping them separate means item 5 ships as a standalone verifier and
 does not collide with the v3 batch. It is the next P0 item.
+
+---
+
+## D-031 — `boardwatch verify` is a standalone DB↔artifact reconciliation sweep, supplementing Gate P0 rather than re-anchoring it
+
+**Context.** P0 item 5, the last build item, needed a home. D-030 already ruled out folding it into the
+funnel artifact: the artifact's `cross_checks` run in-process, at write time, comparing pipeline memory to
+the store; item 5 crosses the serialize-then-reload boundary — it reads the **frozen artifact off disk**
+and re-derives its run-keyed quantities from the DB **now** — and it touches the filesystem, which no
+in-process check does. It needs no `ARTIFACT_VERSION` bump: it consumes the artifact, it does not extend
+it.
+
+**Choice: `boardwatch verify`, a standalone command; a supplement to Gate P0, not a re-anchor.** The
+in-artifact cross-checks remain the per-run reconciliation and Gate P0 stays met exactly as recorded
+(D-030, three consecutive real runs). `verify` adds a DB-vs-disk layer as an additional on-demand guard.
+Gate P0's reconciliation clause is not re-expressed as "`verify` exits 0" — that would move the goalposts
+onto a check invented after the gate was already met.
+
+**Two invariant classes, deliberately asymmetric in what they check.**
+
+- **Class A — frozen artifact vs. fresh DB re-query, scoped to four `run_id`-filtered fields that cannot
+  legitimately change after the run finished:** `cross_checks["tailored"].from_store` against
+  `COUNT(*) WHERE run_id=X AND kind='resume_tailored'`; `cross_checks["leads_with_pdf"].from_store` against
+  the pdf-built count; `len(leads)` against `COUNT(DISTINCT posting_version_id)`; and `manifest.status`
+  against `runs.status`. This is a **serialize-then-reload consistency check, not a "different path"** — for
+  immutable run-keyed rows the re-query equals the frozen value unless the write serialized a different
+  number than it stamped, or the row was later mutated/deleted. Both are real defects worth catching, but
+  the "different path" mandate is satisfied by Class B, not Class A.
+- **Class B — DB vs. filesystem, the load-bearing "different path."** For every `artifacts` row with
+  `run_id=X AND kind IN ('resume_tailored', 'resume_tailored_llm')` — **both** tailored kinds, since Tier B
+  (`resume_tailored_llm`) also writes a run-keyed `.typ` deliverable and a Tier-A-only scan would silently
+  miss a missing Tier-B file — assert the `.typ` at `uri` exists, and where `meta_json.typst_pdf_built` is
+  truthy, assert the file at **`meta_json.pdf_uri`** exists. The PDF path is read explicitly rather than
+  derived by extension-swapping a "sibling" path, because the pipeline is free to write PDFs elsewhere and a
+  guessed path would false-positive on every row. `resume_tailored_llm` carries no `pdf_uri`, so its Class-B
+  check is `.typ`-only.
+
+**Explicitly excluded, with reasons, so a future reader does not "strengthen" this into a tautology or a
+flake:**
+
+- **`judged_this_run` (the eval count) is NOT reconciled.** It comes from `count_corpus`, scoped to open
+  postings' current version under the deterministic engine identity
+  (`engine_kind`/`profile_hash`/`rules_hash`/version). A naive `COUNT(*) FROM eligibility_evaluations WHERE
+  run_id=X` counts a broader population — LLM-lane rows, closed postings, non-current versions — so it would
+  false-positive the moment the LLM eligibility lane writes a row. Faithfully re-deriving the identity-scoped
+  number would mean replicating the producer's own subquery, i.e. re-treading the same path §9 of the design
+  forbids as a tautology. Dropped rather than shipped unsound.
+- **`started_at`/`finished_at` are NOT reconciled.** They are scalars copied verbatim from the same
+  immutable `runs` row this re-query reads (near-tautological), and comparing an `isoformat()` string
+  against SQLite's `YYYY-MM-DD HH:MM:SS.sss` serialization is a false-positive generator for timestamps that
+  are actually equal. Dropped rather than papered over with canonicalization for a check that barely earns
+  its place.
+- **Whole-DB / time-varying fields are NOT reconciled** — `corpus.*`, `marked_applied`,
+  `unattributed_evaluations`, `stub_rate.*`, `sources[*]`, the abstain report — comparing them would produce
+  spurious failures on any store that kept working after the run.
+
+This is the mirror image of the trap D-023/D-028 killed: there the danger was a check that *cannot* fail;
+here it is a check that fails for the *wrong* reason. Both are unsound in the same way and are handled the
+same way — deleted, not downgraded.
+
+**Behaviour: two modes, each with its own enumeration source and exit policy.**
+
+- **`verify --run <id>`** locates the artifact by **globbing `<out_root>/*/funnel-<id>.json`** — the exact
+  numeric filename, so `funnel-7` never matches `funnel-70` — rather than reconstructing the path from the
+  run's start date. The glob still finds an artifact whose `runs` row was later deleted, which is exactly
+  the orphaned-artifact case a `STATUS_MISMATCH` (`run_status=""`) exists to surface. If no file is found,
+  that is a `NO_ARTIFACT` discrepancy → non-zero exit: a request to verify a specific run that cannot be
+  verified is a failure of the request, not a silent skip.
+- **`verify` (sweep)** enumerates the `funnel-*.json` files actually present on disk and verifies each. It
+  does **not** enumerate the `runs` table and demand an artifact per row — runs 1–4 (pre-item-1) and any
+  dangling run legitimately have no artifact and never will, so demanding one would make the sweep
+  permanently non-zero for reasons unrelated to any real defect. A run with no on-disk artifact is out of
+  the sweep's scope: not a silent PASS, simply never examined, and the summary states how many artifacts
+  were found and checked.
+- **Exit policy, both modes:** exit 0 iff every *examined* artifact reconciles with zero discrepancies;
+  non-zero on any discrepancy, where "discrepancy" includes `NO_ARTIFACT` (`--run` mode) and
+  `MALFORMED_FUNNEL` (either mode). `verify` reports, it never "fixes" — a disagreement is made visible, not
+  silently resolved.
+
+**Closed `DiscrepancyKind` catalog** (constructed at the raise site, so out-of-catalog is impossible):
+`NO_ARTIFACT`, `MALFORMED_FUNNEL` (a parse/field failure maps to a typed kind rather than crashing the
+sweep — a truncated write, disk-full, or manual edit becomes visible, not an unhandled exception),
+`TAILORED_COUNT_MISMATCH`, `PDF_COUNT_MISMATCH`, `LEAD_COUNT_MISMATCH`, `STATUS_MISMATCH` (skipped, not
+failed, for v2 artifacts with no manifest), `MISSING_TYP_FILE`, `MISSING_PDF_FILE`. There is no
+`TIMESTAMP_MISMATCH` and no `EVAL_COUNT_MISMATCH` — both were designed, found unsound, and dropped before
+shipping (above).
+
+**Shape mirrors item 1's pure/query/glue split** (`reports/reconcile.py` pure; `store/reconcile_queries.py`
+the independent `run_id`-scoped re-query reads, deliberately a different query surface from
+`run_funnel_queries.py` so Class A does not recount through the same code the artifact used;
+`cli/verify_cmd.py` the glue). Read-only throughout — no write path, no mutation of the store or the
+artifacts, no re-running of `collect_run_funnel` (that would be the same-path tautology this whole design
+avoids).
+
+**Verified on the real store, 2026-08-07:** `verify` (sweep) checked runs 5, 6, 7, 9, 10 — all reconcile,
+exit 0 (5–7 are v2, `STATUS_MISMATCH` correctly skipped for lack of a manifest; 9–10 are v3, all four
+Class-A checks plus Class-B file existence passed); the dangling run 8 (no artifact) was correctly out of
+the sweep's scope. `verify --run 9` → exit 0. `verify --run 8` (the dangling run) → exit 1, a single
+`NO_ARTIFACT` discrepancy — confirming unverifiable is never a silent PASS. Read-only: no store changes.
+
+**Consequence.** Gate P0 is unaffected — it was already MET on D-030's three-run evidence. `verify` is
+additional, on-demand, unit-tested-under-`make check` coverage of a failure mode (DB row present, file
+missing) the gate's own evidence never had to exercise. `docs/program/` carries this decision; the design
+lived in gitignored `.superpowers/sdd/p0-item5-reconciliation/design.md` per `CLAUDE.md`.

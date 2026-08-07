@@ -8,6 +8,15 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- **`boardwatch verify`** — a standalone DB↔artifact reconciliation sweep (P0 item 5). Reads a run's frozen
+  `funnel-<run_id>.json` off disk, re-queries the store independently for the run-keyed quantities that
+  cannot legitimately change after the run finished (tailored-row count, PDF-built count, distinct lead
+  count, exit status), and — the load-bearing check — confirms every run-keyed tailored artifact the DB
+  records (`resume_tailored` and `resume_tailored_llm`) actually has a file on disk, reading
+  `meta_json.pdf_uri` explicitly rather than guessing a sibling path. `verify --run <id>` verifies one run
+  and exits non-zero with `NO_ARTIFACT` if no artifact exists for it; plain `verify` sweeps every
+  `funnel-*.json` present on disk. Read-only; supplements Gate P0 rather than re-anchoring it (D-031).
+
 - **A run manifest, a stub rate and fabrication counters in the funnel artifact** (artifact v3;
   `ARTIFACT_VERSION` 2→3) — P0 items 4, 6 and 8, batched because all three add a section to the same
   artifact.

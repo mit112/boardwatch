@@ -711,3 +711,29 @@ dangling row). The only dangling `running` row remains the one from the earlier 
 killed by a 120s harness timeout (SIGTERM does not run the pipeline's `finally`), leaving a row at
 `status='running'`, `finished_at` NULL — the exact quarantine-with-no-drain the P3 reaper owns (D-029). One
 more instance of a known gap, recorded rather than hidden.
+
+---
+
+## Session 9 — 2026-08-07 · P0 item 5, the reconciliation sweep (`boardwatch verify`)
+
+**Build.** `boardwatch verify` shipped across three commits (`fefbd65` pure core `reports/reconcile.py`,
+`e38aabf` store re-query `store/reconcile_queries.py`, `8a8882d` CLI `cli/verify_cmd.py` + `app.py`
+wiring), then this session's docs/gate close-out. `make check` exit **0**: **2785 passed, 1 deselected,
+coverage 95.12%, `generalization: OK`**, ruff and `mypy --strict` both clean.
+
+**Dogfood run against the real local store + real `~/boardwatch-applications`, read-only throughout:**
+
+| Invocation | Runs checked | Result |
+|---|---|---|
+| `boardwatch verify` (sweep) | 5, 6, 7, 9, 10 | **all reconcile, exit 0.** Runs 5-7 are v2 artifacts (no manifest ⇒ `STATUS_MISMATCH` correctly skipped, not failed); runs 9-10 are v3 — all four Class-A checks (tailored rows, pdf count, lead count, status) plus Class-B file existence passed on both. |
+| `boardwatch verify --run 9` | 9 | exit 0 |
+| `boardwatch verify --run 8` | 8 (dangling run, no funnel artifact) | **exit 1**, single `NO_ARTIFACT` discrepancy — confirms unverifiable is never a silent PASS |
+
+The dangling run 8 is correctly **out of scope** of the sweep (no on-disk `funnel-8.json` exists to
+examine) but is correctly caught as a hard failure when named explicitly via `--run`. No store or
+filesystem mutation occurred in any of the three invocations — `verify` is read-only by design (D-031).
+
+**Gate P0 standing: unchanged.** This run is additional evidence for the D-031 supplement, not new gate
+evidence — Gate P0 was already MET in session 8 on three consecutive real `boardwatch run --top 5`
+invocations. See D-031 for the full design record (closed `DiscrepancyKind` catalog, the two invariant
+classes, the dropped timestamp/eval-count comparisons and why).

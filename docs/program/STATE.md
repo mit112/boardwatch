@@ -1,17 +1,17 @@
 # PROGRAM STATE — read this first
 
-**Last updated:** 2026-08-06 (session 8, P0 in progress)
+**Last updated:** 2026-08-07 (session 9, P0 complete)
 **Updated by:** boardwatch (Claude)
-**Repo state at write time:** every P0 item claimed done below (0, 1, 2, 3, **4**, **6**, 7, **8**) is
-merged to `main`. Item 4 is now **fully** done — the manifest section shipped this session (D-030). Only
-item **5** (the reconciliation sweep) remains. Verify with `git log --oneline -3` and `git status` — if
-they disagree, the repo wins.
+**Repo state at write time:** all nine P0 items (0-8) are merged to `main`, including item **5** (the
+reconciliation sweep, `boardwatch verify`) — the last one. Verify with `git log --oneline -3` and
+`git status` — if they disagree, the repo wins.
 **This header carries no commit count or sha on purpose** — the previous one named both, went stale inside
 a single session when three later docs commits did not update it, and a cold session following the
 session-start ritual hit the disagreement on its very first check. State what is durably true; verify the
 rest against `git log`. (D-017.)
-**Gate:** `make check` exits **0** (2752 passed, coverage 95.08%, `generalization: OK`), measured in plain
-mode with the real exit code.
+**Gate:** `make check` exits **0** (2785 passed, coverage 95.12%, `generalization: OK`), measured in plain
+mode with the real exit code. Item 5 supplements this gate; per D-031, Gate P0 is not re-anchored to
+`verify` exiting 0 — it was already MET on D-030's evidence.
 
 > This is the single file a fresh session with zero memory reads to know where the program stands.
 > If it disagrees with the repo, **the repo wins** — fix this file and note the correction in
@@ -21,21 +21,26 @@ mode with the real exit code.
 
 ## Current phase
 
-**P0 — Instrumentation. GATE MET (session 8); one build item (5) left.** Nothing is blocked. Gate P0's
-three clauses are all satisfied, so P1 is unblocked — but item 5 (the reconciliation sweep) is still
-unshipped P0 work and should land before P0 is called complete.
+**P0 — Instrumentation. COMPLETE (session 9).** All nine build items are shipped and merged to `main`.
+Nothing is blocked. **P1 (résumé artifact gate) is the next phase.**
 
 **Numbering note, because session 4 briefly got this wrong:** P0 has **nine** items, numbered **0-8** in
 `PROGRAM.md` §3.P0. Item 0 was added later, by D-016. Always cite `PROGRAM.md`'s numbers — an earlier
 version of this file invented its own and collided with them on the gate item.
 
-**Eight of the nine are done:** item **0** (the pipeline-run row and `boardwatch run`), item **1** (the
-per-run funnel artifact), item **2** (per-rule abstain rate), item **3** (the per-source outcome table
-*and* the ranker's population accounting), item **4** (the run manifest — completed this session), item
-**6** (the stub rate), item **7** (the `run_id` migration *and* the threading that populates it), and item
-**8** (the fabrication counters).
+**All nine are done:** item **0** (the pipeline-run row and `boardwatch run`), item **1** (the per-run
+funnel artifact), item **2** (per-rule abstain rate), item **3** (the per-source outcome table *and* the
+ranker's population accounting), item **4** (the run manifest), item **5** (the reconciliation sweep,
+`boardwatch verify` — session 9), item **6** (the stub rate), item **7** (the `run_id` migration *and* the
+threading that populates it), and item **8** (the fabrication counters).
 
-**One remains:** item **5**, the reconciliation sweep.
+**Item 5 does NOT change Gate P0's standing.** D-031: `boardwatch verify` is a **supplement, not a
+re-anchor** — Gate P0 was already MET (session 8, D-030) on three consecutive real `boardwatch run --top 5`
+runs, and its reconciliation clause is not re-expressed as "`verify` exits 0". `verify` adds an on-demand
+DB-vs-disk guard (every run-keyed tailored artifact the DB records actually exists on disk) that the gate's
+own evidence never had to exercise. Dogfooded on the real store, 2026-08-07: sweep checked runs 5, 6, 7, 9,
+10, all reconcile, exit 0; `verify --run 8` (the one dangling run, no funnel artifact) correctly exits 1
+with `NO_ARTIFACT` — unverifiable is never a silent PASS. `METRICS.md` §"Session 9" has the full record.
 
 **Item 4 is now fully DONE (session 8, D-030).** Its exit-status half (`runs.status`) shipped in session
 7; this session shipped the manifest itself as a section of the funnel artifact, with `ARTIFACT_VERSION`
@@ -433,12 +438,18 @@ changes adopted, none contested.
 
 ## Next action
 
-**P0 item 5 — the reconciliation sweep.** The last P0 build item. An invariant sweep asserting DB rows
-and on-disk artifacts agree, counting from a **different path** than the one that produced them
-(`CLAUDE.md`: self-report ≠ verification). D-030 settled that it ships as a **standalone verifier**, NOT as
-an extension of the funnel artifact's existing `cross_checks` — those are per-run pipeline-memory-vs-store,
-while item 5 is a broader DB-vs-disk invariant. Keeping them separate avoids colliding with the just-shipped
-artifact v3.
+**P0 is complete. P1 (résumé artifact gate) is next** — see `PROGRAM.md` for its scope. Nothing in P0
+remains unshipped.
+
+**Session 9 — P0 item 5, the last P0 build item, SHIPPED.** `boardwatch verify`: a standalone invariant
+sweep asserting DB rows and on-disk artifacts agree, counting from a **different path** than the one that
+produced them (`CLAUDE.md`: self-report ≠ verification). Per D-030/D-031 it ships as a **standalone
+verifier**, NOT as an extension of the funnel artifact's existing `cross_checks` — those are per-run
+pipeline-memory-vs-store, while item 5 is a broader DB-vs-disk invariant, and it does **not** change Gate
+P0's standing (already MET, session 8). Dogfooded against the real store 2026-08-07: sweep mode checked
+runs 5, 6, 7, 9, 10 (v2 and v3 artifacts both), all reconcile, exit 0; `--run 9` exits 0; `--run 8` (the
+dangling run with no funnel artifact) correctly exits 1 with a single `NO_ARTIFACT` discrepancy. Read-only
+throughout. Full record: `METRICS.md` §"Session 9", D-031.
 
 **Session-8 loose end — RESOLVED.** The confirmatory `--no-scan` run from `main` completed:
 `funnel-9.{json,md}` in `~/boardwatch-applications/2026-08-07/` is `artifact_version` 3, reconciles, with
@@ -511,7 +522,7 @@ computable but the typed abstain *reason* the keystone invariant wants is not.
 
 | Phase | Status | Gate met? |
 |---|---|---|
-| P0 Instrumentation | **gate MET** (session 8) — items 0, 1, 2, 3, 4, 6, 7, 8 of 0-8 done; only build item 5 (reconciliation sweep) left | **MET** — three consecutive real-driver runs (5, 6, 7) all reconcile with the scan stage exercised; abstain per rule; why-dropped answerable from the artifact |
+| P0 Instrumentation | **COMPLETE** (session 9) — all nine items 0-8 done, incl. item 5 (`boardwatch verify`, session 9) | **MET** (session 8, D-030) — three consecutive real-driver runs (5, 6, 7) all reconcile with the scan stage exercised; abstain per rule; why-dropped answerable from the artifact. Item 5 supplements this gate and does not re-anchor it (D-031) |
 | P1 Résumé artifact gate | not started | — |
 | P2 Profile + keystone invariant | not started | — |
 | P3 Unattended one command | not started | — |
