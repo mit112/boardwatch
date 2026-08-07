@@ -258,7 +258,13 @@ and nearly every line is an incident.
    metadata, stale reclaim by atomic **rename** (never `rm -rf` — two racers that both see a dead pid
    would otherwise delete each other's lock), unlock only on token match, and a held lock that
    **notifies loudly with the blocking pid** rather than silently no-opping. Porting job-apps' `mkdir`
-   primitive wholesale would contradict this repo's own reuse-first default.
+   primitive wholesale would contradict this repo's own reuse-first default. **PARTIAL** (D-043) — the
+   notify-loudly clause is **DONE**: a message-only `scan.lock.meta` sidecar (pid/hostname/started_at,
+   written/removed around the existing `FileLock` acquire/release, never a lock authority) names the
+   blocking process on contention, falling back to the generic message if the sidecar is missing or
+   malformed. Still open: the review (`slice2-design.md`) found the token/stale-reclaim/reaper design
+   UNSOUND as written (rename doesn't arbitrate the same primitive `FileLock` locks) — that redesign,
+   and the run reaper, remain deferred to a future P3 slice.
 2. **Freshness, not existence** — is this artifact from *this* run? **DONE** (D-038) —
    `pipeline/freshness.py::check_run_freshness`: a `<date>/` folder's `funnel-<run_id>` must map
    to a `runs` row with a terminal status, `started_at`/`finished_at` dated to that folder, and

@@ -1831,3 +1831,48 @@ revisit only with concrete evidence of a material render cost.
 a small, real, SEPARATE inefficiency worth a future look, not part of this decision.
 
 **Alternatives rejected:** a fifth idempotence redesign (diminishing returns; low value over the cache).
+
+## D-043 — the scan lock now notifies loudly with the blocking pid; the sidecar is message-only, never a lock authority
+
+**2026-08-07 · session 10 · P3 (item 1, notify-loudly clause only).**
+
+**Context.** `.superpowers/sdd/p3-unattended-runner/slice2-design.md`'s full item-1 design (token-authenticated
+sidecar, unlock-only-on-token-match, stale reclaim by atomic rename, the run reaper) was deepseek-reviewed and
+found UNSOUND: `os.replace` arbitrates a pathname, not the inode `filelock.FileLock` actually locks, so
+"reclaim by rename" doesn't compose with a real lock acquirer (2 blockers — a reclaimer can steal a live lock,
+two reclaimers can both "win") plus 4 majors (sidecar-removal race, reaper TOCTOU, unsound age-only reap for
+the standalone lane, pid-reuse defeating `os.kill(pid,0)` liveness). That review explicitly separated the
+unsound reclaim/reaper machinery from the "notify loudly" half, which it called sound on its own.
+
+**Choice — build only the sound half.** `run_scan` (`scan/coordinator.py`) now writes a sidecar
+(`scan.lock.meta`, atomically via temp-file + `os.replace`) containing `{pid, hostname, started_at}`
+immediately after a successful `lock.acquire()`, and removes it (best-effort, swallowing `OSError`) in the
+same `finally` that releases the lock. On contention (`Timeout`), `_lock_held_message` reads the sidecar and,
+if present and well-formed, raises `ScanLockHeldError` naming the blocking pid + hostname + started_at and
+telling the operator to remove the lock file if that process is gone; a missing, unreadable, or malformed
+sidecar falls back to the unchanged generic `SCAN_LOCK_MESSAGE` — never a crash.
+
+**Why this is sound where the fuller design wasn't:** the sidecar is written and read only in the message
+path. `filelock.FileLock` remains the sole authority over acquire/release; nothing here ever inspects the
+sidecar to decide whether the lock is free, and nothing here removes or renames the lock file itself. A stale
+sidecar (process died without reaching the `finally`, or a foreign leftover file) can only make a held-lock
+message name a dead pid — cosmetic, already hedged by the message's own "if that process is gone" clause —
+never a correctness issue, because no acquire/release/reclaim decision ever reads it.
+
+**A follow-on fix, in scope because "notify loudly" was otherwise dead on arrival:** `run_cmd.py` and
+`scan_cmd.py` caught `ScanLockHeldError` but printed the imported `SCAN_LOCK_MESSAGE` constant directly,
+never the caught exception's own message — harmless before this change (the exception's message was
+always exactly that constant) but it would have silently discarded the new pid-naming message, so a real
+`boardwatch scan`/`boardwatch run` user would never see it. Both now `except ScanLockHeldError as exc:
+console.print(str(exc))`; the exit-2 path and control flow are otherwise unchanged.
+
+**Deferred, unchanged from the review's verdict:** stale-reclaim by rename, token-gated unlock, and the run
+reaper for `running`+NULL-`finished_at` rows remain OUT OF SCOPE, to be redesigned per the review's direction
+(reclaim arbitrated by `filelock` itself rather than a side-channel rename; process identity via
+pid+start-time, not a bare pid; the reaper gated on "is the lock acquirable now," not an age floor) — this is
+the "design fork worth Mit's input" the review flagged, not yet resolved.
+
+**Alternatives rejected:** shipping the full slice2-design.md protocol as reviewed (blocked — unsound, would
+let a reclaimer steal a live lock); waiting to build even the message-only half until the reclaim/reaper
+redesign lands (rejected — the notify-loudly clause is independently useful and does not need the reclaim
+machinery to be safe, per CLAUDE.md's minimum-code default).

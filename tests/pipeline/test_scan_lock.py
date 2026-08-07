@@ -4,6 +4,9 @@ Cross-platform by construction: filelock + subprocess + sys.executable, no
 POSIX-only APIs — Windows CI is the real reviewer here.
 """
 
+import json
+import os
+import socket
 import subprocess
 import sys
 import time
@@ -16,6 +19,7 @@ from typer.testing import CliRunner
 
 from boardwatch.cli.app import app
 from boardwatch.core.settings import Settings
+from boardwatch.scan import coordinator
 from boardwatch.scan.coordinator import SCAN_LOCK_MESSAGE, ScanLockHeldError, run_scan
 from boardwatch.store import tables
 from boardwatch.store.db import DB_FILENAME, ensure_schema, get_engine
@@ -110,6 +114,88 @@ def test_reads_work_while_scan_lock_is_held(
     version_result = runner.invoke(app, ["version"])
     assert version_result.exit_code == 0
     assert _row_count(engine, tables.postings) == 0  # direct reads succeed too
+
+
+def test_sidecar_written_on_acquire_and_removed_on_release(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """P3 slice 2 item 1 (notify-loudly): the sidecar exists while the lock is held, with this
+    process's pid/hostname/started_at, and is gone once the lock is released."""
+    data_dir = tmp_path / "data"
+    engine = get_engine(data_dir)
+    ensure_schema(engine)
+    settings = Settings(data_dir=data_dir, config_dir=tmp_path)
+    meta_path = data_dir / "scan.lock.meta"
+
+    real_insert_run = coordinator.insert_run
+    seen: dict[str, object] = {}
+
+    def spy_insert_run(engine_: object) -> int:
+        # insert_run runs INSIDE the scan lock, so this is the moment to check the sidecar.
+        assert meta_path.exists()
+        seen["meta"] = json.loads(meta_path.read_text())
+        return real_insert_run(engine_)  # type: ignore[arg-type]
+
+    monkeypatch.setattr(coordinator, "insert_run", spy_insert_run)
+    run_scan(engine, settings)
+
+    meta = seen["meta"]
+    assert isinstance(meta, dict)
+    assert meta["pid"] == os.getpid()
+    assert meta["hostname"] == socket.gethostname()
+    assert isinstance(meta["started_at"], str) and meta["started_at"]
+    assert not meta_path.exists()
+
+
+def test_contention_with_valid_sidecar_names_blocking_pid(
+    held_lock: Path, tmp_path: Path
+) -> None:
+    data_dir = held_lock
+    meta_path = data_dir / "scan.lock.meta"
+    meta_path.write_text(
+        json.dumps(
+            {"pid": 999999, "hostname": "some-other-host", "started_at": "2026-08-07T00:00:00"}
+        )
+    )
+    engine = get_engine(data_dir)
+    ensure_schema(engine)
+    settings = Settings(data_dir=data_dir, config_dir=tmp_path)
+
+    with pytest.raises(ScanLockHeldError) as exc_info:
+        run_scan(engine, settings)
+
+    message = str(exc_info.value)
+    assert "999999" in message
+    assert "some-other-host" in message
+
+
+def test_contention_with_missing_sidecar_falls_back_to_generic_message(
+    held_lock: Path, tmp_path: Path
+) -> None:
+    data_dir = held_lock  # no scan.lock.meta written by anyone
+    engine = get_engine(data_dir)
+    ensure_schema(engine)
+    settings = Settings(data_dir=data_dir, config_dir=tmp_path)
+
+    with pytest.raises(ScanLockHeldError) as exc_info:
+        run_scan(engine, settings)
+
+    assert str(exc_info.value) == SCAN_LOCK_MESSAGE
+
+
+def test_contention_with_malformed_sidecar_falls_back_to_generic_message(
+    held_lock: Path, tmp_path: Path
+) -> None:
+    data_dir = held_lock
+    (data_dir / "scan.lock.meta").write_bytes(b"\x00\x01not-json{{{")
+    engine = get_engine(data_dir)
+    ensure_schema(engine)
+    settings = Settings(data_dir=data_dir, config_dir=tmp_path)
+
+    with pytest.raises(ScanLockHeldError) as exc_info:
+        run_scan(engine, settings)
+
+    assert str(exc_info.value) == SCAN_LOCK_MESSAGE
 
 
 def test_second_in_process_scan_raises_typed_error(tmp_path: Path) -> None:

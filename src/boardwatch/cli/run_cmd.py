@@ -13,7 +13,7 @@ from rich.console import Console
 
 from boardwatch.cli.context import build_context
 from boardwatch.pipeline.runner import DEFAULT_TOP_N, PipelineSummary, run_pipeline
-from boardwatch.scan.coordinator import SCAN_LOCK_MESSAGE, ScanLockHeldError
+from boardwatch.scan.coordinator import ScanLockHeldError
 
 console = Console()
 
@@ -62,8 +62,8 @@ def run(
             resume_path=resume_path or settings.config_dir / "resume.yaml",
             skip_scan=skip_scan,
         )
-    except ScanLockHeldError:
-        console.print(SCAN_LOCK_MESSAGE)
+    except ScanLockHeldError as exc:
+        console.print(str(exc))  # names the blocking pid when the sidecar has one (D-043)
         raise typer.Exit(code=2) from None
 
     console.print(

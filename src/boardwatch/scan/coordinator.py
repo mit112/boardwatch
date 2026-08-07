@@ -9,15 +9,20 @@ while the scan runs (§0.3).
 
 from __future__ import annotations
 
+import json
+import os
+import socket
 from collections import defaultdict
 from collections.abc import Sequence
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Any
 
 from filelock import FileLock, Timeout
 from sqlalchemy import Engine, func, select
 
+from boardwatch.core.clock import utcnow
 from boardwatch.core.models import BoardRequest, BoardSnapshot
 from boardwatch.core.politeness import Fetcher
 from boardwatch.core.settings import Settings
@@ -42,6 +47,57 @@ SCAN_LOCK_MESSAGE = "another scan is already running; try again when it finishes
 
 class ScanLockHeldError(Exception):
     """Raised when another scan process holds the scan lock (D20). Added in Task 9."""
+
+
+def _lock_meta_path(lock_path: Path) -> Path:
+    return lock_path.with_name(lock_path.name + ".meta")
+
+
+def _write_lock_meta(meta_path: Path) -> None:
+    """Best-effort, message-only sidecar (P3 slice 2 item 1). `filelock` is the sole lock
+    authority — this file is never read to decide whether to acquire or release; it only lets a
+    held lock name the blocking process. Written atomically (temp file + `os.replace`) so a
+    reader never observes a partial write. A write failure must not abort the scan over a
+    cosmetic feature, so it degrades to no sidecar (contention falls back to the generic
+    message) rather than raising.
+    """
+    payload = {
+        "pid": os.getpid(),
+        "hostname": socket.gethostname(),
+        "started_at": utcnow().isoformat(),
+    }
+    tmp_path = meta_path.with_name(meta_path.name + ".tmp")
+    try:
+        tmp_path.write_text(json.dumps(payload))
+        os.replace(tmp_path, meta_path)
+    except OSError:
+        pass
+
+
+def _remove_lock_meta(meta_path: Path) -> None:
+    """Best-effort removal; must never mask the run's actual outcome."""
+    try:
+        meta_path.unlink()
+    except OSError:
+        pass
+
+
+def _lock_held_message(lock_path: Path, meta_path: Path) -> str:
+    """Loud message naming the blocking pid/host/started_at when the sidecar is present and
+    valid; the generic `SCAN_LOCK_MESSAGE` otherwise (missing, unreadable, or malformed sidecar —
+    a stale/corrupt sidecar is cosmetic here, never a correctness issue, per D-043)."""
+    try:
+        payload = json.loads(meta_path.read_text())
+        pid = payload["pid"]
+        hostname = payload["hostname"]
+        started_at = payload["started_at"]
+    except (OSError, ValueError, KeyError, TypeError):
+        return SCAN_LOCK_MESSAGE
+    return (
+        f"another scan is already running — held by pid {pid} on {hostname} since "
+        f"{started_at}. If that process is gone, the lock is stale; remove {lock_path} "
+        "to clear it."
+    )
 
 
 def is_systemic_scan_outage(*, attempted: int, complete: int, unchanged: int) -> bool:
@@ -90,11 +146,14 @@ def run_scan(
     finish: bool = True,
 ) -> ScanSummary:
     settings.data_dir.mkdir(parents=True, exist_ok=True)
-    lock = FileLock(str(settings.data_dir / "scan.lock"))
+    lock_path = settings.data_dir / "scan.lock"
+    meta_path = _lock_meta_path(lock_path)
+    lock = FileLock(str(lock_path))
     try:
         lock.acquire(blocking=False)  # before schema setup, the runs insert, any fetch (D20)
     except Timeout as exc:
-        raise ScanLockHeldError(SCAN_LOCK_MESSAGE) from exc
+        raise ScanLockHeldError(_lock_held_message(lock_path, meta_path)) from exc
+    _write_lock_meta(meta_path)  # message-only; never governs the lock itself
     try:
         return _run_scan_locked(
             engine,
@@ -106,6 +165,7 @@ def run_scan(
             finish,
         )
     finally:
+        _remove_lock_meta(meta_path)
         lock.release()
 
 

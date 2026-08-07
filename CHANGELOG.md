@@ -8,6 +8,15 @@ All notable changes to this project are documented here. The format follows
 
 ### Changed
 
+- **A held scan lock now names the blocking process instead of a generic message** (P3, §3.P3 item 1,
+  D-043). `run_scan` writes a message-only sidecar (`scan.lock.meta`: pid/hostname/started_at) around the
+  existing `FileLock` acquire/release; on contention the error names the blocking pid, host, and start
+  time, falling back to the unchanged generic message if the sidecar is missing or malformed. The sidecar
+  is never a lock authority — `filelock` alone decides acquire/release — so a stale or corrupt sidecar only
+  degrades the message, never correctness. `boardwatch scan`/`boardwatch run` now print the caught
+  exception's own message instead of a hardcoded constant, so the pid-naming message actually reaches the
+  CLI. Stale-reclaim, token-gated unlock, and the run reaper (found unsound as designed by review) remain
+  deferred.
 - **LLM adapter calls now retry transient 429/5xx failures with backoff instead of dropping the rewrite**
   (P3, §3.P3 item 10, D-040). Both `AnthropicClient` and `OpenAICompatClient` classify a 429 or 5xx
   response as `LLMTransientError` and retry through a shared `llm/retry.py` helper (tenacity,

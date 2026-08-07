@@ -55,17 +55,22 @@ net-new work clusters into 5 **fail-safe** slices:
   table (4 fatal conditions + crash path + non-fatal norm + lock-held + the running/NULL gap the reaper
   resolves), each row citing file:line; and the duplicated systemic-outage predicate is consolidated into
   `is_systemic_scan_outage(...)` (`scan/coordinator.py`), used by both call sites.
-- **(2) P3-lock-liveness — ⛔ DESIGN FOUND UNSOUND by deepseek review; DO NOT BUILD as written; needs a
-  rethink.** `.superpowers/sdd/p3-unattended-runner/slice2-design.md` (marked unsound, with the full finding
-  + salvage). Core error: `os.replace` arbitrates a *pathname* while `filelock` locks an *inode*, so the
-  "atomic-rename reclaim" violates mutual exclusion (a reclaimer can steal a live lock; two reclaimers can
-  both win). Also: reaper liveness is TOCTOU, standalone-lane age-reap is unsound, and `os.kill(pid,0)` is
-  defeated by pid reuse. **Rethink direction:** likely DELETE the custom reclaim — a crashed holder's OS
-  `flock` is already released on process exit, so a bare `filelock.acquire()` may reclaim it; use the
-  sidecar only for the loud "held by pid N" message. Use (pid, start-time)/pidfd for liveness, not the pid
-  alone. Make the reaper race-safe by gating on the run's lock being *acquirable now*, not an age floor.
+- **(2) P3-lock-liveness — the notify-loudly clause is DONE (D-043, this session); reclaim/reaper remain
+  ⛔ UNSOUND, not built.** `scan/coordinator.py` now writes a message-only `scan.lock.meta` sidecar
+  (pid/hostname/started_at) around the existing `FileLock` acquire/release; on contention the raised
+  `ScanLockHeldError` names the blocking pid+host+started_at, falling back to the unchanged generic
+  message if the sidecar is missing/malformed. The sidecar never governs acquire/release/reclaim —
+  `filelock` remains the sole authority — so this is sound on its own even though the fuller design isn't.
+  **Still deferred**, per `.superpowers/sdd/p3-unattended-runner/slice2-design.md`'s review: stale-reclaim
+  by atomic rename, token-gated unlock, and the run reaper. Core error: `os.replace` arbitrates a
+  *pathname* while `filelock` locks an *inode*, so the "atomic-rename reclaim" violates mutual exclusion
+  (a reclaimer can steal a live lock; two reclaimers can both win). Also: reaper liveness is TOCTOU,
+  standalone-lane age-reap is unsound, and `os.kill(pid,0)` is defeated by pid reuse. **Rethink direction:**
+  likely DELETE the custom reclaim — a crashed holder's OS `flock` is already released on process exit, so
+  a bare `filelock.acquire()` may reclaim it. Use (pid, start-time)/pidfd for liveness, not the pid alone.
+  Make the reaper race-safe by gating on the run's lock being *acquirable now*, not an age floor.
   **A MIT FORK:** is stale-reclaim + auto-reap worth the complexity, or is "loud notify + acquirable-lock
-  reaper + doctor surfacing" enough? Do not build slice 2 until this is resolved.
+  reaper + doctor surfacing" enough? Do not build the reclaim/reaper half until this is resolved.
 - **(3) P3-run-integrity — DONE (D-039, merged):** three run-integrity guards in `pipeline/runner.py`, all
   setting `summary.fatal` (fail-safe): cohort completeness (`visible` posting-id set == leads ∪ failed,
   ID-based); zero-output guard (0 leads is provably-right IFF scan healthy AND `eligible-judged-this-run`==0,

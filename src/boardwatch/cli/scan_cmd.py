@@ -7,7 +7,7 @@ import typer
 from rich.console import Console
 
 from boardwatch.cli.context import build_context
-from boardwatch.scan.coordinator import SCAN_LOCK_MESSAGE, ScanLockHeldError, run_scan
+from boardwatch.scan.coordinator import ScanLockHeldError, run_scan
 
 console = Console()
 
@@ -21,8 +21,8 @@ def scan(
     app_ctx = build_context(ctx.obj, ensure=False)  # run_scan migrates inside the lock
     try:
         summary = run_scan(app_ctx.engine, app_ctx.settings, company=company, provider=provider)
-    except ScanLockHeldError:
-        console.print(SCAN_LOCK_MESSAGE)
+    except ScanLockHeldError as exc:
+        console.print(str(exc))  # names the blocking pid when the sidecar has one (D-043)
         raise typer.Exit(code=2) from None
     from boardwatch.cli.top_cmd import count_filter_matches
 
