@@ -264,7 +264,7 @@ def rewrite_request_cmd(
     app_ctx = build_context(ctx.obj)
     settings = app_ctx.settings
     try:
-        tailored, jd_skills, _taxonomy = plan_tier_a(
+        tailored, jd_skills, _taxonomy, _jd_text = plan_tier_a(
             app_ctx.engine,
             settings,
             posting_id,
@@ -315,7 +315,7 @@ def rewrite_screen_cmd(
     app_ctx = build_context(ctx.obj)
     settings = app_ctx.settings
     try:
-        tailored, _jd_skills, taxonomy = plan_tier_a(
+        tailored, _jd_skills, taxonomy, _jd_text = plan_tier_a(
             app_ctx.engine,
             settings,
             posting_id,
@@ -370,7 +370,7 @@ def rewrite_apply_cmd(
     settings = app_ctx.settings
     resolved_resume_path = _resume_path(settings, resume_path)
     try:
-        tailored, jd_skills, taxonomy = plan_tier_a(
+        tailored, jd_skills, taxonomy, jd_text = plan_tier_a(
             app_ctx.engine, settings, posting_id, resume_path=resolved_resume_path
         )
     except (ResumeLoadError, NoCurrentVersionError, TierASafetyError) as exc:
@@ -386,7 +386,7 @@ def rewrite_apply_cmd(
             "re-run screen + judge for this request, or pass the matching files"
         )
         raise typer.Exit(code=1)
-    tb = apply_agent_rewrites(tailored, candidates, verdicts, taxonomy, jd_skills)
+    tb = apply_agent_rewrites(tailored, candidates, verdicts, taxonomy, jd_skills, jd_text=jd_text)
     # Recomputed identically to the budget apply_agent_rewrites enforced internally (2x
     # bullet count) so the artifact's recorded `budget` matches the cap that was actually
     # applied — these two computations must stay in sync.

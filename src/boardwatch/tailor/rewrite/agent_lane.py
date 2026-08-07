@@ -95,6 +95,8 @@ def apply_agent_rewrites(
     verdicts: VerdictsFile,
     taxonomy: Taxonomy,
     jd_skills: set[str],
+    *,
+    jd_text: str = "",
 ) -> TierBResult:
     """Step 3 of the subscription Tier B agent lane: replay the agent's candidates +
     the judge's verdicts through `run_tier_b_core` — the SAME filter/verdict/row path
@@ -142,12 +144,21 @@ def apply_agent_rewrites(
     # agent lane (subscription calls aren't API-metered).
     budget = 2 * sum(len(e.bullets) for e in tailored.entries)
 
+    table = load_equivalences()
+    # Same canonical-tech seeding as the API lane (run_tier_b): taxonomy skill names
+    # lowercased union the equivalence table's approved swap images (P4 item 1, D-048).
+    canonical = frozenset(p.name.lower() for p in taxonomy.patterns) | frozenset(
+        img.lower() for img in table.images()
+    )
+
     return run_tier_b_core(
         tailored,
         propose=propose,
         judge=judge,
         taxonomy=taxonomy,
-        table=load_equivalences(),
+        table=table,
         jd_skills=jd_skills,
         budget=budget,
+        jd_text=jd_text,
+        canonical=canonical,
     )

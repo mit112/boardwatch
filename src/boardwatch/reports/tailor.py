@@ -312,13 +312,17 @@ def _plan_tier_a(
 
 def plan_tier_a(
     engine: Engine, settings: Settings, posting_id: int, *, resume_path: Path
-) -> tuple[Resume, set[str], Taxonomy]:
+) -> tuple[Resume, set[str], Taxonomy, str]:
     """Tier A prefix for callers that only need the tailored résumé + JD skills +
-    taxonomy — the subscription Tier B agent lane (P7b task 4). Reuses `run_tailor`'s
-    exact Tier A selection logic rather than re-deriving it.
+    taxonomy + JD body text — the subscription Tier B agent lane (P7b task 4). Reuses
+    `run_tailor`'s exact Tier A selection logic rather than re-deriving it.
+
+    The JD body text (P4 item 1, D-048) is the current OPEN posting version's body,
+    exactly what the API lane's `run_tailor` passes to `run_tier_b` -- callers that do not
+    need it for their own step (e.g. the request/screen steps) discard it.
     """
     r = _plan_tier_a(engine, settings, posting_id, resume_path=resume_path)
-    return r.tailored, r.jd_skills, r.taxonomy
+    return r.tailored, r.jd_skills, r.taxonomy, r.cv.body_text
 
 
 def run_tailor(
@@ -391,6 +395,7 @@ def run_tailor(
                 budget=settings.llm.max_calls_per_run,
                 provider=settings.llm.provider,
                 base_url=settings.llm.base_url,
+                jd_text=cv.body_text,
             )
         else:
             # Subscription agent lane (P7b task 6): the filter/verdict/row path already
