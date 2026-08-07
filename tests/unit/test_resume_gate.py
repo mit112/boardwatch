@@ -77,3 +77,8 @@ def test_validate_slots_rejects_no_entries() -> None:
 def test_validate_slots_rejects_entry_with_no_bullets() -> None:
     with pytest.raises(ResumeValidationError):
         validate_slots(_resume(entries=[Entry(entry_id="e1", heading="Co", bullets=[])]))
+
+
+def test_validate_slots_rejects_blank_bullet() -> None:
+    with pytest.raises(ResumeValidationError):
+        validate_slots(_resume(entries=[Entry(entry_id="e1", heading="Co", bullets=[Bullet(bullet_id="b1", text=" ")])]))
