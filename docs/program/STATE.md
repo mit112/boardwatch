@@ -66,12 +66,23 @@ net-new work clusters into 5 **fail-safe** slices:
   alone. Make the reaper race-safe by gating on the run's lock being *acquirable now*, not an age floor.
   **A MIT FORK:** is stale-reclaim + auto-reap worth the complexity, or is "loud notify + acquirable-lock
   reaper + doctor surfacing" enough? Do not build slice 2 until this is resolved.
-- **(3) P3-run-integrity:** zero-output guard == cohort completeness + filesystem-truth (needs the contract,
-  now in place).
-- **(4) P3-output:** freshness assertion + morning artifact (apply URL/verdict/span/why per lead).
-- **(5) P3-llm-economics:** meta-hash idempotence + split LLM rate-limit classes.
-Cross-cutting highest-risk: the two-writer cross-OS WAL test (item 8). All fail-safe (no job-deletion risk),
-independent of P2 item 4 — building autonomously, slice 2 next.
+- **(3) P3-run-integrity — REMAINING:** zero-output guard == cohort completeness + filesystem-truth (needs
+  the contract, now in place). Design-heavy: must define "candidate" + its terminal state. Best in fresh
+  context.
+- **(4) P3-output — DONE (D-038, merged):** `reports/morning.py` writes `morning-<run_id>.md/json` in the
+  day folder (sibling of the funnel; apply URL · PDF path · honest verdict label · quoted span · one-line
+  why per lead), fed by threading the ranker's verdict/why through the runner + a `postings.url` join +
+  per-lead `load_audit`; and `pipeline/freshness.py` asserts a day's artifacts are from a terminal same-day
+  run whose own lead folders reconcile (run-scoped). Read-only; verdict/engine unchanged. `doctor` wiring
+  for freshness deliberately deferred.
+- **(5) P3-llm-economics — REMAINING:** meta-hash idempotence + split LLM rate-limit classes (isolated to
+  `llm/*` + `reports/tailor.py` + `tailor/rewrite/*`).
+Cross-cutting highest-risk, REMAINING: the two-writer cross-OS WAL test (item 8) — a same-OS test proves
+nothing; needs a real cross-process/cross-OS concurrent-writer harness.
+**P3 status:** slices 1 (D-037) + 4 (D-038) DONE + merged. Slice 2 is UNSOUND (rethink + Mit fork above).
+Slices 3, 5, and item 8 REMAIN — each substantial and design-heavy; recommend a fresh context window per
+slice (the session-10 slice-2 unsound-design and slice-4 freshness-scope bugs were both caught by review, a
+sign these want sharp context). All fail-safe, independent of P2 item 4.
 
 **DECLINED (YAGNI):** item 1's facts `schema_version` — validated + hashed already hold; a schema-version
 field is speculative hardening with unclear payoff (schema changes are rare and arrive with value changes
