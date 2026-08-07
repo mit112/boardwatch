@@ -99,6 +99,7 @@ def test_profile_edit_rederives_skills(env: Path) -> None:
         "\n"  # keep exclude titles
         "\n"  # keep locations
         "n\n"  # remote only
+        "\n"  # keep resume max pages
         "n\n"  # update eligibility checks? no
     )
     result = _invoke(env, ["profile", "edit"], edit_input)
@@ -183,6 +184,7 @@ def test_profile_edit_updates_eligibility(env: Path) -> None:
     assert _invoke(env, ["init"], _ELIG_INIT).exit_code == 0
     edit = (
         "\n\n\n\n\n"                        # keep profile text and all filters
+        "\n"                               # keep resume max pages
         "y\n"                              # update eligibility checks?
         "permanent_resident\nus\n\n"       # work_auth: change status, default policy
         "\n\n"                             # experience_years

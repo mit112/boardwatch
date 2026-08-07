@@ -121,6 +121,7 @@ def test_the_transcript_on_an_upgraded_install_with_null_columns(env: Path) -> N
         save_profile(
             conn, text="Backend engineer.", target_titles=[], exclude_titles=[],
             locations=[], remote_only=False, skills=[], taxonomy_version="t",
+            resume_max_pages=1,
         )
         assert conn.execute(select(tables.profile.c.eligibility_facts_json)).scalar_one() is None
     _set_facts_and_policy(env)
@@ -148,6 +149,7 @@ def _evaluate_open(env: Path, body: str, *, degree: str = "none") -> int:
         save_profile(
             conn, text="Backend engineer.", target_titles=[], exclude_titles=[],
             locations=[], remote_only=False, skills=[], taxonomy_version="t",
+            resume_max_pages=1,
         )
     assert _run(env, ["eligibility", "facts", "set", "highest_degree", degree]).exit_code == 0
     assert _run(env, ["eligibility", "policy", "set", "degree", "blocker"]).exit_code == 0
@@ -244,6 +246,7 @@ def _seed_many(data_dir: Path, count: int) -> None:
         save_profile(
             conn, text="Backend engineer.", target_titles=[], exclude_titles=[],
             locations=[], remote_only=False, skills=[], taxonomy_version="t",
+            resume_max_pages=1,
         )
         for i in range(count):
             job_id = int(

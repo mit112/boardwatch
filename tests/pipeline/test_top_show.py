@@ -36,6 +36,7 @@ def _seed_profile(engine: Engine, config_dir: Path, text: str = "Python, Go, Pos
             conn, text=text, target_titles=["Backend Engineer"], exclude_titles=[],
             locations=["Remote"], remote_only=False,
             skills=sorted(taxonomy.extract(text)), taxonomy_version=taxonomy.version,
+            resume_max_pages=1,
         )
 
 
@@ -253,6 +254,7 @@ def _seed_flagged_corpus(data_dir: Path) -> None:
         save_profile(
             conn, text="Backend engineer.", target_titles=[], exclude_titles=[],
             locations=[], remote_only=False, skills=[], taxonomy_version="t",
+            resume_max_pages=1,
         )
     _seed_one(data_dir, title="Open Role", body=PLAIN_BODY, slug="open")
     _seed_one(data_dir, title="Blocked Role", body=DEGREE_BODY, slug="blocked")
@@ -290,6 +292,7 @@ def test_top_hides_ineligible_before_applying_the_limit(env: Path, tmp_path: Pat
         save_profile(
             conn, text="Backend engineer.", target_titles=[], exclude_titles=[],
             locations=[], remote_only=False, skills=[], taxonomy_version="t",
+            resume_max_pages=1,
         )
     blocked = _seed_one(tmp_path, title="Blocked Role", body=DEGREE_BODY, slug="blocked")
     eligible = _seed_one(tmp_path, title="Eligible Role", body=PLAIN_BODY, slug="eligible")
@@ -324,6 +327,7 @@ def test_top_never_hides_an_unevaluated_posting(env: Path, tmp_path: Path) -> No
         save_profile(
             conn, text="Backend engineer.", target_titles=[], exclude_titles=[],
             locations=[], remote_only=False, skills=[], taxonomy_version="t",
+            resume_max_pages=1,
         )
     _seed_one(save_profile_dir, title="Unseen Role", body=DEGREE_BODY, slug="unseen")
     # no `eligibility run`: the posting has no evaluation, so it must still appear with `-`

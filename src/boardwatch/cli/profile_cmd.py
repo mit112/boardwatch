@@ -38,6 +38,7 @@ class ProfileInput(BaseModel):
     exclude_titles: list[str]
     locations: list[str]
     remote_only: bool
+    resume_max_pages: int = 1
 
 
 def persist_profile(
@@ -49,6 +50,7 @@ def persist_profile(
     exclude_titles: list[str],
     locations: list[str],
     remote_only: bool,
+    resume_max_pages: int = 1,
 ) -> list[str]:
     """Save the singleton profile, re-deriving skills via the taxonomy engine.
 
@@ -61,6 +63,7 @@ def persist_profile(
         exclude_titles=exclude_titles,
         locations=locations,
         remote_only=remote_only,
+        resume_max_pages=resume_max_pages,
     )
     taxonomy = load_taxonomy(settings.config_dir)
     skills = sorted(taxonomy.extract(data.text))
@@ -74,6 +77,7 @@ def persist_profile(
             remote_only=data.remote_only,
             skills=skills,
             taxonomy_version=taxonomy.version,
+            resume_max_pages=data.resume_max_pages,
         )
     if not skills:
         console.print(ZERO_SKILL_WARNING)
@@ -127,6 +131,9 @@ def edit(ctx: typer.Context) -> None:
         "Locations (comma separated)", default=", ".join(row.locations_json or [])
     )
     remote_only = typer.confirm("Remote only?", default=bool(row.remote_only))
+    resume_max_pages = typer.prompt(
+        "Résumé max pages", default=row.resume_max_pages, type=int
+    )
     persist_profile(
         app_ctx.engine,
         app_ctx.settings,
@@ -135,6 +142,7 @@ def edit(ctx: typer.Context) -> None:
         exclude_titles=split_csv(excludes),
         locations=split_csv(locations),
         remote_only=remote_only,
+        resume_max_pages=resume_max_pages,
     )
 
     # The same three eligibility prompts as init, so the feature is reachable on an existing

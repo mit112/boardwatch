@@ -108,7 +108,7 @@ def _base_profile(engine) -> None:
     with engine.begin() as conn:
         save_profile(
             conn, text="a profile", target_titles=[], exclude_titles=[], locations=[],
-            remote_only=False, skills=[], taxonomy_version="v1",
+            remote_only=False, skills=[], taxonomy_version="v1", resume_max_pages=1,
         )
 
 
@@ -148,7 +148,7 @@ def test_save_profile_never_wipes_declared_facts(tmp_path: Path) -> None:
         save_profile(
             conn, text="edited profile", target_titles=["Backend Engineer"],
             exclude_titles=[], locations=[], remote_only=True, skills=["Python"],
-            taxonomy_version="v2",
+            taxonomy_version="v2", resume_max_pages=1,
         )
     with engine.connect() as conn:
         row = get_profile(conn)

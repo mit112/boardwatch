@@ -41,6 +41,7 @@ def test_k_taxonomy_edit_triggers_preflight_on_next_top(
             locations=[], remote_only=False,
             skills=sorted(load_taxonomy(cfg).extract("Python and Zig enthusiast.")),
             taxonomy_version=bundled_version,
+            resume_max_pages=1,
         )
 
     first = runner.invoke(app, ["--data-dir", str(tmp_path), "top"])

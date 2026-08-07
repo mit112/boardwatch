@@ -71,6 +71,7 @@ def _seed_db(tmp_path) -> None:
             remote_only=False,
             skills=sorted(taxonomy.extract("Python, Go, PostgreSQL")),
             taxonomy_version=taxonomy.version,
+            resume_max_pages=1,
         )
 
 

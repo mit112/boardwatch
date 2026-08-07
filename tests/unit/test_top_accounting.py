@@ -72,6 +72,7 @@ def _seed(data_dir: Path, titles: list[str], *, bodies: list[str] | None = None)
         save_profile(
             conn, text="Backend engineer.", target_titles=[], exclude_titles=["intern"],
             locations=[], remote_only=False, skills=[], taxonomy_version="t",
+            resume_max_pages=1,
         )
         company_id = int(conn.execute(insert(companies).values(
             name="Acme", provider="greenhouse", slug="acme-acct", source="user", watched=True,

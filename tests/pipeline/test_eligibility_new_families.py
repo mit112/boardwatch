@@ -637,6 +637,7 @@ class TestCatalogChangeReEvaluates:
             save_profile(
                 conn, text="Backend engineer.", target_titles=[], exclude_titles=[],
                 locations=[], remote_only=False, skills=[], taxonomy_version="t",
+                resume_max_pages=1,
             )
         return posting_id
 

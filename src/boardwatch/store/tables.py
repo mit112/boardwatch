@@ -197,6 +197,7 @@ profile = Table(
     Column("exclude_titles_json", JSON, nullable=True),
     Column("locations_json", JSON, nullable=True),
     Column("remote_only", Boolean, nullable=False, default=False),
+    Column("resume_max_pages", Integer, nullable=False, server_default="1"),
     Column("eligibility_facts_json", JSON, nullable=True),
     Column("eligibility_policy_json", JSON, nullable=True),
     Column("updated_at", DateTime, nullable=False),

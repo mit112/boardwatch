@@ -213,6 +213,7 @@ def save_profile(
     remote_only: bool,
     skills: list[str],
     taxonomy_version: str,
+    resume_max_pages: int,
 ) -> None:
     stmt = sqlite_insert(profile).values(
         id=1,
@@ -223,6 +224,7 @@ def save_profile(
         exclude_titles_json=exclude_titles,
         locations_json=locations,
         remote_only=remote_only,
+        resume_max_pages=resume_max_pages,
         updated_at=utcnow(),
     )
     conn.execute(
@@ -236,6 +238,7 @@ def save_profile(
                 "exclude_titles_json": stmt.excluded.exclude_titles_json,
                 "locations_json": stmt.excluded.locations_json,
                 "remote_only": stmt.excluded.remote_only,
+                "resume_max_pages": stmt.excluded.resume_max_pages,
                 "updated_at": stmt.excluded.updated_at,
             },
         )

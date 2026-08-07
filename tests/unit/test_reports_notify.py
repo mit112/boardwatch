@@ -54,7 +54,7 @@ def _seed_profile(
         save_profile(
             conn, text="Backend engineer.", target_titles=list(target_titles),
             exclude_titles=list(exclude_titles), locations=[], remote_only=False,
-            skills=[], taxonomy_version="t",
+            skills=[], taxonomy_version="t", resume_max_pages=1,
         )
 
 
