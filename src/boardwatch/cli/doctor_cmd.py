@@ -9,6 +9,7 @@ import re
 import shutil
 import subprocess
 from dataclasses import dataclass
+from datetime import timedelta
 from importlib.metadata import version as package_version
 
 import typer
@@ -23,7 +24,7 @@ from boardwatch.scan.coordinator import default_providers
 from boardwatch.scan.health import probe_health
 from boardwatch.store import tables
 from boardwatch.store.db import schema_revision
-from boardwatch.store.queries import last_complete_scan_ages
+from boardwatch.store.queries import last_complete_scan_ages, reap_stale_runs
 
 console = Console()
 
@@ -105,6 +106,18 @@ def doctor(ctx: typer.Context, offline: bool = typer.Option(False, "--offline"))
         raise typer.Exit(code=1)
 
     report = probe_health(app_ctx.engine, app_ctx.settings, offline=offline)
+
+    # P3 slice 2 (D-046): the operator-facing drain. Reports and reaps in the same call —
+    # idempotent, safe to invoke anytime — so a stale `running` row never needs a separate
+    # command to clear.
+    reaped = reap_stale_runs(
+        app_ctx.engine, older_than=timedelta(hours=app_ctx.settings.reap_stale_after_hours)
+    )
+    if reaped:
+        console.print(
+            f"[yellow]reaped {len(reaped)} stale run(s) (running with no terminal status "
+            f"for > {app_ctx.settings.reap_stale_after_hours}h): {reaped}[/yellow]"
+        )
 
     with app_ctx.engine.connect() as conn:
         ages = last_complete_scan_ages(conn)

@@ -6,6 +6,7 @@ that aborts is still closed out rather than left dangling for `doctor` to call s
 """
 
 import json
+from datetime import timedelta
 from pathlib import Path
 
 import httpx
@@ -473,6 +474,40 @@ def test_a_clean_run_is_recorded_as_ok(env: Path, tmp_path: Path) -> None:
             select(tables.runs.c.status).order_by(tables.runs.c.id.desc()).limit(1)
         ).one()
     assert row.status == "ok", f"a clean run was closed as {row.status!r}"
+
+
+def test_a_stale_prior_run_is_reaped_before_a_new_no_scan_run_starts(
+    env: Path, tmp_path: Path
+) -> None:
+    """P3 slice 2 (D-046): the reaper drains a crashed prior run's phantom `running` row at
+    pipeline start, before this run mints its own — and a healthy run still exits 0."""
+    _ready(env)
+    engine = get_engine(env)
+    with engine.begin() as conn:
+        stale_id = int(
+            conn.execute(
+                insert(tables.runs).values(
+                    started_at=utcnow() - timedelta(hours=25), boards_attempted=0
+                )
+            ).inserted_primary_key[0]
+        )
+
+    result = _cli(env, ["run", "--no-scan", "--out", str(tmp_path / "apps")])
+
+    assert result.exit_code == 0, result.output
+    with engine.connect() as conn:
+        rows = {
+            r.id: (r.status, r.finished_at)
+            for r in conn.execute(
+                select(tables.runs.c.id, tables.runs.c.status, tables.runs.c.finished_at)
+            ).all()
+        }
+    assert rows[stale_id] == ("failed", rows[stale_id][1])
+    assert rows[stale_id][1] is not None, "the stale row's finished_at was not stamped"
+    new_id = max(rows)
+    assert new_id != stale_id, "the new run reused the stale run's id"
+    assert rows[new_id][0] == "ok", f"the new run reconciled as {rows[new_id][0]!r}, not ok"
+    assert rows[new_id][1] is not None
 
 
 def test_a_run_row_nobody_closed_still_reads_running(env: Path) -> None:

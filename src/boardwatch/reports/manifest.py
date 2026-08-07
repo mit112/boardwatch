@@ -46,6 +46,7 @@ _CONFIG_IRRELEVANT: frozenset[str] = frozenset(
         "busy_timeout_ms",         # throughput
         "scan_workers",            # throughput
         "detail_fetch_budget",     # throughput
+        "reap_stale_after_hours",  # run bookkeeping/liveness — never which postings become leads
         "notify",              # delivery, post-selection: changes who is told, not which leads
     }
 )

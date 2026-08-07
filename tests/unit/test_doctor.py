@@ -5,6 +5,7 @@ from sqlalchemy import func, insert, select, text, update
 from typer.testing import CliRunner
 
 from boardwatch.cli.app import app
+from boardwatch.core.clock import utcnow
 from boardwatch.core.settings import Settings
 from boardwatch.providers.base import BoardHealth
 from boardwatch.registry.validate import CompanyEntry
@@ -272,9 +273,32 @@ def test_cli_exit_code(tmp_path, monkeypatch, status, exit_code) -> None:
 def test_cli_renders_mid_scan(tmp_path, monkeypatch) -> None:
     def open_run(eng):
         with eng.begin() as conn:
-            conn.execute(insert(tables.runs).values(started_at=datetime(2026, 1, 1), finished_at=None))
+            # A genuinely fresh started_at: the reaper (P3 slice 2) now drains anything
+            # older than reap_stale_after_hours, and a fixed past date would be reaped
+            # before doctor's "in progress" check ever saw it as still running.
+            conn.execute(insert(tables.runs).values(started_at=utcnow(), finished_at=None))
     result = _cli(tmp_path, monkeypatch, {"acme": BoardHealth.OK}, extra=open_run)
     assert "in progress" in result.stdout
+
+
+def test_doctor_reaps_a_stale_running_row_and_reports_it(tmp_path, monkeypatch) -> None:
+    def stale_run(eng):
+        with eng.begin() as conn:
+            conn.execute(insert(tables.runs).values(started_at=datetime(2020, 1, 1), finished_at=None))
+    result = _cli(tmp_path, monkeypatch, {"acme": BoardHealth.OK}, extra=stale_run)
+
+    assert "reaped" in result.stdout.lower()
+    with get_engine(tmp_path / "data").connect() as conn:
+        row = conn.execute(
+            select(tables.runs.c.status, tables.runs.c.finished_at)
+        ).one()
+    assert row.status == "failed"
+    assert row.finished_at is not None
+
+
+def test_doctor_reaps_nothing_on_a_clean_db(tmp_path, monkeypatch) -> None:
+    result = _cli(tmp_path, monkeypatch, {"acme": BoardHealth.OK})
+    assert "reaped" not in result.stdout.lower()
 
 
 def test_cli_schema_mismatch_exits_nonzero(tmp_path, monkeypatch) -> None:

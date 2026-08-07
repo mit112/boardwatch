@@ -1,11 +1,22 @@
+from datetime import datetime, timedelta
 from pathlib import Path
 
 import pytest
 from sqlalchemy import Engine, insert, select
 
+from boardwatch.core.clock import utcnow
 from boardwatch.store import tables
 from boardwatch.store.db import ensure_schema, get_engine
-from boardwatch.store.queries import finalize_run, get_validators, insert_run
+from boardwatch.store.queries import (
+    RUN_FAILED,
+    RUN_OK,
+    RUN_RUNNING,
+    finalize_run,
+    finish_run,
+    get_validators,
+    insert_run,
+    reap_stale_runs,
+)
 
 
 @pytest.fixture()
@@ -41,6 +52,129 @@ def test_finalize_run_records_derived_counts(engine: Engine) -> None:
     assert row.new_count == 5
     assert row.closed_count == 1
     assert row.errors_json == ["acme: HTTP 503"]
+
+
+def _insert_run_row(
+    engine: Engine,
+    *,
+    started_at: datetime,
+    status: str = RUN_RUNNING,
+    finished_at: datetime | None = None,
+    errors_json: list[str] | None = None,
+) -> int:
+    values: dict[str, object] = {
+        "started_at": started_at, "boards_attempted": 0, "status": status,
+        "finished_at": finished_at,
+    }
+    if errors_json is not None:
+        values["errors_json"] = errors_json
+    with engine.begin() as conn:
+        result = conn.execute(insert(tables.runs).values(**values))
+        return int(result.inserted_primary_key[0])
+
+
+def _run_row(engine: Engine, run_id: int):
+    with engine.connect() as conn:
+        return conn.execute(select(tables.runs).where(tables.runs.c.id == run_id)).one()
+
+
+# --- reap_stale_runs (P3 slice 2, D-046) --------------------------------------------
+
+
+def test_reap_stale_runs_reaps_an_old_running_row_and_preserves_prior_errors(
+    engine: Engine,
+) -> None:
+    run_id = _insert_run_row(
+        engine,
+        started_at=utcnow() - timedelta(hours=25),
+        errors_json=["scan: board x failed"],
+    )
+
+    reaped = reap_stale_runs(engine, older_than=timedelta(hours=24))
+
+    assert reaped == [run_id]
+    row = _run_row(engine, run_id)
+    assert row.status == RUN_FAILED
+    assert row.finished_at is not None
+    assert row.errors_json[0] == "scan: board x failed"
+    assert row.errors_json[-1].startswith("reaped")
+
+
+def test_reap_stale_runs_leaves_recent_running_and_old_ok_rows_untouched(engine: Engine) -> None:
+    recent_running = _insert_run_row(engine, started_at=utcnow() - timedelta(hours=1))
+    old_ok = _insert_run_row(
+        engine,
+        started_at=utcnow() - timedelta(hours=25),
+        status=RUN_OK,
+        finished_at=utcnow(),
+    )
+
+    reaped = reap_stale_runs(engine, older_than=timedelta(hours=24))
+
+    assert reaped == []
+    assert _run_row(engine, recent_running).status == RUN_RUNNING
+    assert _run_row(engine, old_ok).status == RUN_OK
+
+
+def test_reap_stale_runs_leaves_a_running_row_with_finished_at_already_set_untouched(
+    engine: Engine,
+) -> None:
+    """A `running` row that somehow already carries a `finished_at` is not this reaper's
+    business — `finished_at IS NULL` is checked explicitly, not inferred from `status` alone."""
+    run_id = _insert_run_row(
+        engine,
+        started_at=utcnow() - timedelta(hours=25),
+        status=RUN_RUNNING,
+        finished_at=utcnow(),
+    )
+
+    reaped = reap_stale_runs(engine, older_than=timedelta(hours=24))
+
+    assert reaped == []
+    assert _run_row(engine, run_id).status == RUN_RUNNING
+
+
+def test_reap_stale_runs_leaves_a_non_running_status_row_untouched_regardless_of_finished_at(
+    engine: Engine,
+) -> None:
+    """`status='running'` is checked explicitly, not inferred from `finished_at` alone — a
+    row that already reads a terminal status is never this reaper's business."""
+    run_id = _insert_run_row(
+        engine, started_at=utcnow() - timedelta(hours=25), status=RUN_OK, finished_at=None
+    )
+
+    reaped = reap_stale_runs(engine, older_than=timedelta(hours=24))
+
+    assert reaped == []
+    assert _run_row(engine, run_id).status == RUN_OK
+
+
+def test_reap_stale_runs_is_idempotent_on_a_second_call(engine: Engine) -> None:
+    run_id = _insert_run_row(engine, started_at=utcnow() - timedelta(hours=25))
+    first = reap_stale_runs(engine, older_than=timedelta(hours=24))
+    assert first == [run_id]
+
+    second = reap_stale_runs(engine, older_than=timedelta(hours=24))
+
+    assert second == []
+    row = _run_row(engine, run_id)
+    assert row.errors_json is not None and len(row.errors_json) == 1, (
+        "a second reap appended a duplicate note"
+    )
+
+
+def test_a_false_reap_self_corrects_when_finish_run_completes_it(engine: Engine) -> None:
+    """`finish_run` has no `status='running'` precondition, so a reaped-then-completed run
+    ends up `ok` — proving a false reap is benign (the soundness claim, as a test)."""
+    run_id = _insert_run_row(engine, started_at=utcnow() - timedelta(hours=25))
+    reaped = reap_stale_runs(engine, older_than=timedelta(hours=24))
+    assert reaped == [run_id]
+
+    finish_run(engine, run_id, status=RUN_OK)
+
+    row = _run_row(engine, run_id)
+    assert row.status == RUN_OK
+    assert row.finished_at is not None
 
 
 def test_get_validators_round_trip(engine: Engine) -> None:

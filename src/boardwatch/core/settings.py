@@ -76,6 +76,9 @@ class Settings(BaseModel):
     per_host_delay_seconds: float = Field(default=1.0, ge=0.25)  # §3.4 floor
     retry_attempts: int = Field(default=3, ge=1, le=10)          # total attempts; 1 = no retry
     busy_timeout_ms: int = 5000
+    # A `running` row this old with no terminal status is a crashed/killed run, not one still
+    # in flight (P3 slice 2, D-046). Age-based because `runs` carries no pid/heartbeat column.
+    reap_stale_after_hours: int = Field(default=24, ge=1)
     scan_workers: int = Field(default=4, ge=1, le=8)
     # Multi-endpoint providers (SmartRecruiters) need one detail request per UNSEEN
     # posting because their list carries no bodies. Bounds a first scan of a large

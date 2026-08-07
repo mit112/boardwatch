@@ -22,6 +22,7 @@ id rather than minting its own; run standalone, each still mints one, which is w
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from datetime import timedelta
 from pathlib import Path
 
 from rich.console import Console
@@ -46,7 +47,7 @@ from boardwatch.reports.run_funnel import (
 from boardwatch.reports.tailor import run_tailor
 from boardwatch.scan.coordinator import ScanSummary, is_systemic_scan_outage, run_scan
 from boardwatch.store.db import ensure_schema
-from boardwatch.store.queries import RUN_FAILED, RUN_OK, ensure_run, finish_run
+from boardwatch.store.queries import RUN_FAILED, RUN_OK, ensure_run, finish_run, reap_stale_runs
 from boardwatch.store.run_funnel_queries import count_eligible_judged_this_run, lead_provenance
 from boardwatch.store.tables import postings
 
@@ -184,6 +185,14 @@ def run_pipeline(
     # Deferred: top_cmd imports from the CLI layer, and importing it at module scope makes
     # pipeline -> cli -> pipeline a cycle the moment run_cmd imports this.
     from boardwatch.cli.top_cmd import NoProfileError, rank_open_postings
+
+    # P3 slice 2 (D-046): drain any crashed/killed prior run before minting this one's row.
+    # Never touches the row this run is about to create (it doesn't exist yet). Swallowed and
+    # logged, mirroring `_emit_funnel` below: a drain failure must never block a new run.
+    try:
+        reap_stale_runs(engine, older_than=timedelta(hours=settings.reap_stale_after_hours))
+    except Exception as exc:  # noqa: BLE001 - never mask the run's own outcome
+        console.print(f"  ! stale-run reap failed: {exc}", markup=False)
 
     scan_summary = None
     if not skip_scan:

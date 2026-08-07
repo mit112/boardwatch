@@ -43,6 +43,7 @@ def test_a_machine_local_or_throughput_change_does_not_change_the_hash(tmp_path:
     base = config_hash(_settings(tmp_path))
     assert config_hash(_settings(tmp_path, scan_workers=8)) == base
     assert config_hash(_settings(tmp_path, detail_fetch_budget=999)) == base
+    assert config_hash(_settings(tmp_path, reap_stale_after_hours=1)) == base
     assert config_hash(_settings(tmp_path, llm=LLMTier(max_calls_per_run=7))) == base
 
 
