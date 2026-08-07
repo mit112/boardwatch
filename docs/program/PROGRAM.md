@@ -161,33 +161,48 @@ dropped* is answerable **from the artifact alone, without reading code**.
 
 The render path exists and is architecturally sound (§6, correction 1). What is missing is enforcement.
 
-1. **Kill the silent source-only degrade.** `tailor_cmd.py:193,402` currently prints
-   `"source only (no PDF; typst not available or compile failed)"` and continues. Split the two causes —
-   binary-missing is an environment fault, compile-failure is a lead fault — and make each a hard,
-   distinguishable failure. A lead without a PDF is not a lead.
-2. **Page count = hard fail.** N from profile (1 for new-grad). Absent today; verified nowhere in `src/`.
-3. **Overflow detection — Typst-native.** *(Corrected: the original clause said "zero overfull/underfull
-   `hbox`/`vbox`", copied from job-apps. Those are **LaTeX** concepts. Verified: `typst 0.15.1` exits 0
-   with no diagnostic output on a deliberately overflowing document, so that clause was vacuously
-   satisfiable and would have been recorded as a pass forever.)* Use a Typst-native check — assert
-   rendered page count against the profile's N, and assert content fits via `measure`/`layout` bounds.
-   The compile log is currently captured at `reports/tailor.py:104` and discarded; capture it per lead
-   for diagnosis regardless.
-3b. **Packaging, because P1 turns a degrade into a hard failure.** `typst` is on Mit's laptop but is
-   **not** in the `Dockerfile` and **not** in `pyproject.toml`. A hard PDF gate therefore breaks every
-   Docker and PyPI user — violating §3b/D-010. Add a `typst` layer to the Dockerfile and a loud
-   `doctor`/startup preflight that names the missing binary and how to install it. Hours, not a vendoring
-   project; vendoring still waits.
-3c. **Tier-B token-provenance validator** (see §5.1) — the lane in daily use currently has none.
-   Placed here rather than P4 because it is a truth gate, not a craft gate.
-4. **Slot-filled assertion** (job-apps resume-transfer §13.1): if a slot was expected to be filled, assert
-   it was, and fail the lead if not.
-5. **Degraded path** (job-apps §13.3): on compile failure, retry with the untailored résumé before giving
-   up. A plain résumé beats none. Only then fail that lead — non-fatal for the run.
+**P1a (items 1, 2, 3, 3b, 4, 5) is DONE — shipped on `p1a-resume-artifact-gate`, Gate P1 MET (D-032).**
+**P1b (item 3c) is the remaining P1 work**, deferred to its own brainstorm (design:
+`.superpowers/sdd/p1a-resume-artifact-gate/design.md` §9).
 
-**Gate P1:** on a real run, **100%** of leads emit a PDF; **0** page-count violations; **0** overfull
-boxes; compile log captured per lead; and an injected compile failure demonstrably falls back to
-untailored rather than losing the lead.
+1. **DONE.** Kill the silent source-only degrade. ~~`tailor_cmd.py:193,402` currently prints
+   `"source only (no PDF; typst not available or compile failed)"` and continues.~~ Split into
+   `TypstUnavailableError` (binary-missing, environment fault, run-fatal) vs. `COMPILE_FAILED`/
+   `PAGE_LIMIT_EXCEEDED` (lead fault, routes to the fallback in item 5) — closed `CompileReason`/
+   `GateReason` catalogs, never string-matched. A lead without a compliant PDF is never recorded.
+2. **DONE.** Page count = hard fail. `resume_max_pages` is a new profile column, N from profile (default
+   1 for new-grad), enforced in `evaluate_compile`.
+3. **DONE.** Overflow detection — Typst-native. *(Corrected: the original clause said "zero
+   overfull/underfull `hbox`/`vbox`", copied from job-apps. Those are **LaTeX** concepts. Verified: `typst
+   0.15.1` exits 0 with no diagnostic output on a deliberately overflowing document, so that clause was
+   vacuously satisfiable and would have been recorded as a pass forever.)* Shipped as `page_count > N` via
+   a `typst eval` query against a `<total-pages>` metadata label the renderer injects (spiked against
+   0.15.1 before building). The compile log, previously captured and discarded, is now written per lead
+   to `typst-compile.log` (and to `_failed/<slug>.log` for a dropped lead).
+3b. **DONE.** Packaging, because P1 turns a degrade into a hard failure. `typst` is now installed by a
+   Dockerfile layer (pinned to the local 0.15.1 version) and `doctor` probes both presence and version,
+   warning loudly on a mismatch (an unpinned typst can silently break the `eval` page-count syntax).
+   Vendoring still waits for P7.
+3c. **P1b — not started.** Tier-B token-provenance validator (see §5.1) — the lane in daily use currently
+   has none. Placed here rather than P4 because it is a truth gate, not a craft gate. Design sketch:
+   `.superpowers/sdd/p1a-resume-artifact-gate/design.md` §9 (a closed fabrication-lexicon veto plus
+   verb-swap provenance, slotting into `run_tier_b_core` after `passes_overmatch_filter`, before the
+   judge).
+4. **DONE.** Slot-filled assertion (job-apps resume-transfer §13.1) — shipped as a standalone
+   `validate_slots(resume)` function (a build-time refinement from a `Resume` `model_validator`, which
+   would run on every construction including legitimately-partial intermediate models), raising
+   `ResumeValidationError`, called once on the tailored model right before render.
+5. **DONE.** Degraded path (job-apps §13.3): on compile failure or page-limit overflow, retry with the
+   untailored résumé before giving up. A plain résumé beats none. Only if the untailored master is also
+   unshippable is that lead dropped — non-fatal for the run unless every shortlisted lead fails (D-021).
+
+**Gate P1: MET.** On a real run, **100%** of leads emit a PDF; **0** page-count violations; **0** overfull
+boxes (Typst-native: page count honestly stands in for the vacuous LaTeX concept); compile log captured
+per lead; and an injected compile failure demonstrably falls back to untailored rather than losing the
+lead. Evidence: deterministic tests pinning every catalog branch, plus a real-store dogfood 2026-08-07
+exercising both the FATAL/drop path (live default `resume_max_pages=1` against Mit's real 2-page résumé)
+and the 100%-PDF path (isolated store copy at `resume_max_pages=2`) — full record in `METRICS.md`
+§"Session 9 — P1a dogfood" and `DECISIONS.md` D-032.
 
 ### P2 — Profile object and the keystone invariant
 

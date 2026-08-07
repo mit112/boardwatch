@@ -8,6 +8,31 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- **A hard résumé PDF gate — no lead ships without a compliant, compiled PDF** (P1a). Replaces the old
+  silent `"source only (no PDF; typst not available or compile failed)"` degrade with a typed,
+  fail-closed pipeline:
+
+  - **Binary-missing vs. compile-failure, split at the type.** A missing `typst` on `PATH` is an
+    environment fault (`TypstUnavailableError`) that aborts the whole run fatal and exits the CLI
+    non-zero with install guidance; a compile failure or a page-count overflow on one lead's résumé is a
+    per-lead fault handled by the fallback below. Both are drawn from closed catalogs
+    (`CompileReason`, `GateReason`) — never string-matched.
+  - **Page count is a hard fail, checked Typst-native.** A new `resume_max_pages` profile column (default
+    1) is enforced via a `typst eval` query against a metadata label the renderer now injects into every
+    emitted résumé — no PDF-parsing dependency, no reliance on LaTeX-only `hbox`/`vbox` diagnostics (which
+    Typst does not emit).
+  - **Untailored-master fallback.** A tailored résumé that fails to compile or overflows the page limit
+    falls back to rendering the untailored master; if that also fails, the lead is dropped with **no**
+    `resume_tailored` row and **no** lead folder left behind — a plain compliant résumé beats none, and a
+    dropped lead is invisible to the store rather than a half-written artifact.
+  - **A compile log captured per lead**, including for a dropped lead (written to a durable
+    `_failed/<slug>.log` before cleanup), so a fallback or a drop is always diagnosable after the fact.
+  - **A slot-filled assertion** (`validate_slots`) runs on the tailored résumé right before render and
+    fails the lead (routing into the same fallback) if tailoring stripped an entry down to nothing.
+  - **`typst` is now packaged, not just assumed installed.** The Dockerfile installs the pinned release
+    binary, and `doctor` probes both presence and version, warning loudly on a mismatch — an
+    unpinned typst can silently break the page-count query syntax and make every lead fall back or drop.
+
 - **`boardwatch verify`** — a standalone DB↔artifact reconciliation sweep (P0 item 5). Reads a run's frozen
   `funnel-<run_id>.json` off disk, re-queries the store independently for the run-keyed quantities that
   cannot legitimately change after the run finished (tailored-row count, PDF-built count, distinct lead

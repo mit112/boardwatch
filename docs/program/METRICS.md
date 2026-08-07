@@ -737,3 +737,89 @@ filesystem mutation occurred in any of the three invocations — `verify` is rea
 evidence — Gate P0 was already MET in session 8 on three consecutive real `boardwatch run --top 5`
 invocations. See D-031 for the full design record (closed `DiscrepancyKind` catalog, the two invariant
 classes, the dropped timestamp/eval-count comparisons and why).
+
+---
+
+## Session 9 — 2026-08-07 · P1a build, gate, and dogfood (résumé artifact integrity)
+
+**Build.** `p1a-resume-artifact-gate` branch, six commits (`59cb1d4` profile column + migration, `c741a85`
+gate core + untailored fallback, `3695eb6` pipeline/CLI enforcement, `d57e37d` Dockerfile + doctor
+packaging, plus two fix rounds `50ef003`/`0dbf636`/`e1b9370`/`5b3266f` from independent review). `make
+check` on the branch: **exit 0 — 2828 passed, 1 deselected, coverage 95.17%, `generalization: OK`**, ruff
+and `mypy --strict` both clean. (Session 8's last measured number was 2785 passed / 95.12% at the P0
+close-out; the growth is P1a's own new tests.)
+
+**Dogfood run 1 — the real local store, real `~/boardwatch-applications`, live profile at its shipped
+default (`resume_max_pages=1`):**
+
+```
+uv run boardwatch run --no-scan --top 3
+```
+
+| Metric | Value |
+|---|---|
+| run_id | 11 |
+| shortlisted | 3 (affirm-15498, affirm-15499, affirm-2012) |
+| tailored | **0** |
+| with PDF | **0** |
+| exit code | **1** |
+| run status | `FATAL: every lead failed to tailor (3/3)` |
+| reconciliation | RECONCILES (`boardwatch verify --run 11` → exit 0, no discrepancies on the 0/0 result) |
+| lead folders left behind | **0** — drop-cleanup verified: no `affirm-15498`/`affirm-15499`/`affirm-2012` directories exist under `~/boardwatch-applications/2026-08-07/` |
+| per-lead logs | `_failed/affirm-{15498,15499,2012}.log`, each recording both attempts: `tailored (page_limit_exceeded)` and `untailored (page_limit_exceeded)` |
+
+**Root cause, independently confirmed outside the app (not read from boardwatch's own report):** Mit's
+authored `resume.yaml` (`{config_dir}/resume.yaml`, 4,946 chars of emitted Typst) compiles to **2 pages**
+against the profile's `resume_max_pages=1`:
+
+```
+$ typst compile master.typ master.pdf   # exit 0
+$ typst eval "query(<total-pages>).first().value" --in master.typ
+2
+```
+
+This is the gate working as designed — both the tailored render and the untailored-master fallback
+genuinely exceed the configured limit, so the lead is correctly dropped and the run correctly goes FATAL
+(D-021's "every shortlisted lead failed to tailor" clause) rather than silently degrading (the old D-006
+behaviour). It is a live, actionable config/content mismatch, not a P1a defect — Mit's real résumé does
+not fit in the new-grad default of 1 page.
+
+**Dogfood run 2 — confirmatory, real postings + real profile content, isolated data-dir copy, page limit
+raised to match the résumé's real length:** to obtain the "100% of leads emit a PDF" happy-path evidence
+Gate P1 asks for without mutating Mit's live production database, the live SQLite file was **copied**
+(`cp`, never `UPDATE`d in place) to a scratch data-dir, `resume_max_pages` was set to 2 in the **copy
+only**, and boardwatch was pointed at the copy with `--data-dir`:
+
+```
+uv run boardwatch --data-dir <scratch-copy> run --no-scan --top 3 --out <scratch-out>
+```
+
+| Metric | Value |
+|---|---|
+| run_id | 12 (in the scratch copy — independent counter from the live store) |
+| shortlisted | 3 (same three postings — same corpus, unaffected by the config change) |
+| tailored | **3 / 3** |
+| with PDF | **3 / 3** |
+| exit code | **0** |
+| reconciliation | RECONCILES (`boardwatch verify --run 12 --out-root <scratch-out>` → exit 0, no discrepancies) |
+
+Per-lead artifact check, each confirmed **two independent ways** (not boardwatch's own self-report):
+
+| Lead | PDF exists | `typst eval` page count | Raw-PDF `/Type /Page` marker count | `typst-compile.log` |
+|---|---|---|---|---|
+| affirm-15498 | yes (35,985 bytes) | 2 | 2 | present, empty (clean compile, no diagnostics) |
+| affirm-15499 | yes (35,985 bytes) | 2 | 2 | present, empty |
+| affirm-2012 | yes (35,982 bytes) | 2 | 2 | present, empty |
+
+An empty `typst-compile.log` is the expected shape for a successful compile with no warnings — `log` is
+captured stdout+stderr, and typst is silent on a clean compile; it is not evidence of a missing check.
+
+**The live store was never mutated.** `sqlite3 boardwatch.db "SELECT resume_max_pages FROM profile"`
+still returns `1` on the real database after both dogfood runs — confirmed after run 2 completed.
+
+**Gate P1 verdict: MET.** Deterministic unit/pipeline/CLI tests (cited in D-032) pin every catalog branch
+with fabricated `CompileOutcome`s; this session's real-data dogfood is the corroborating evidence on Mit's
+actual store and actual résumé content, in **both** directions — the fatal/drop path fires correctly at
+the live default, and the 100%-PDF/correct-page-count/log-captured path fires correctly once the page
+limit matches the résumé's real length. The mismatch between the two is recorded as a live next action in
+`STATE.md`, not silently resolved.

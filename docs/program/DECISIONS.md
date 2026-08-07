@@ -1059,3 +1059,107 @@ the sweep's scope. `verify --run 9` → exit 0. `verify --run 8` (the dangling r
 additional, on-demand, unit-tested-under-`make check` coverage of a failure mode (DB row present, file
 missing) the gate's own evidence never had to exercise. `docs/program/` carries this decision; the design
 lived in gitignored `.superpowers/sdd/p0-item5-reconciliation/design.md` per `CLAUDE.md`.
+
+---
+
+## D-032 — P1a ships a hard PDF gate as impure-runner/pure-policy, splits P1b out, and closes D-006's silent degrade
+**2026-08-07 · session 9**
+
+**Context.** P1's five clauses (PROGRAM.md §3.P1, items 1–5) are not homogeneous. Items 1, 2, 3, 3b, 4 and
+5 are all artifact-integrity — a lead either has a compliant PDF or it does not, checkable mechanically.
+Item 3c (Tier-B token-provenance validator) is a truth gate feeding bar metric B4, is design-heavy on its
+own (a fabricated claim like *"single-handedly re-architected … eliminating downtime"* passes today's
+overmatch filter because it permits new ordinary lowercase words), and gates nothing in Gate P1 as written.
+
+**Choice — decompose into P1a (this build) and P1b (deferred).** P1a ships items 1/2/3/3b/4/5 and MEETS
+Gate P1 on its own. Item 4 (slot-filled) folds in as a trivial build-time assertion rather than its own
+slice. P1b (item 3c) is brainstormed separately after P1a ships — see design §9 for its shape (a closed
+fabrication-lexicon veto plus verb-swap provenance, slotting into `run_tier_b_core` after
+`passes_overmatch_filter`, before the judge).
+
+**Sub-decisions, all recorded together because one design produced them:**
+
+- **Page count is Typst-native, via `typst eval` on an injected `<total-pages>` metadata label**
+  (`TypstRenderer.emit` appends the label so every emitted résumé is queryable), spiked live against typst
+  0.15.1 before building. **Overflow == `page_count > N`.** NOT PDF byte-parsing (fragile across
+  compression/object-streams) and NOT a new Python PDF dependency. LaTeX `hbox`/`vbox` overfull is
+  **vacuous in Typst** — 0.15.1 exits 0 with no diagnostic on a deliberately overflowing document — so "0
+  overfull boxes" is honestly re-expressed as "rendered page count == N." Horizontal overflow of an
+  unbreakable token is out of scope (typst will not flag it; the captured compile log is the diagnostic if
+  it ever appears).
+- **`resume_max_pages` is a new profile column** (additive Alembic migration, nullable, default 1 for
+  new-grad), wired into `save_profile`/`get_profile`/`ProfileInput`/`profile edit`. Kept **OUT of
+  `profile_row_hash`** — page count is a tailoring/render knob, not a ranker input, and multi-tenancy
+  demands it be per-user (a senior's résumé is legitimately 2 pages), not a global `Settings` constant.
+- **Impure runner, pure policy.** `_default_runner` (`reports/tailor.py`) returns a `CompileOutcome` —
+  facts only, no `resume_max_pages` in scope, so it can never decide "too long." `evaluate_compile`
+  (`reports/resume_gate.py`) is the pure function that turns an outcome + `max_pages` into a `GateResult`.
+  Closed catalogs `CompileReason` (`OK` / `BINARY_MISSING` / `COMPILE_FAILED`) and `GateReason` (adds
+  `PAGE_LIMIT_EXCEEDED`) — no string-matching to classify a failure. `CompileOutcome.__post_init__`
+  enforces its own invariant (`OK` iff `pdf_path`/`page_count` are both set) so a fabricated/buggy runner
+  cannot smuggle an inconsistent outcome past the gate.
+- **Binary-missing is FATAL; compile-failure/overflow is per-lead.** `BINARY_MISSING` is an environment
+  fault — raises `TypstUnavailableError`, the pipeline aborts the whole run (`summary.fatal`), the CLI
+  exits non-zero with install guidance. `doctor` catches it proactively; the runtime raise is the backstop,
+  not a third mechanism. A `COMPILE_FAILED` or `PAGE_LIMIT_EXCEEDED` on the *tailored* résumé is a lead
+  fault: it triggers the untailored-master fallback (below), never a run-level abort. Tier-B is the one
+  exception inside the per-lead branch — its own `BINARY_MISSING` still re-raises fatal rather than
+  degrading to the Tier-A bullet, because the environment-fault split is absolute and must not be
+  swallowed by the Tier-B degrade branch (adopted from the design's unbiased review, Major finding).
+- **Untailored-master fallback, and a dropped lead writes NO artifact and leaves NO folder.** Tailored
+  not-shippable → render the untailored master and gate it too; shippable → record the artifact with
+  `meta.degraded = true` and the tailored `GateReason` as `meta.degrade_reason` (a plain compliant résumé
+  beats none); also not shippable → drop the lead via a typed `LeadArtifactError`, writing no
+  `resume_tailored` row and leaving no lead folder (the pipeline's existing `_remove_if_empty` cleans the
+  husk). This is the fix for **D-006**: the old `tailor_cmd.py` behaviour printed *"source only (no PDF;
+  typst not available or compile failed)"* and continued with exit 0. That silent degrade is gone — a
+  `resume_tailored` row now always has a compiled, page-compliant PDF, and the run only reports success on
+  leads that actually have one. The full compile log (both attempts) is written to a durable
+  `<day_dir>/_failed/<slug>.log` before the drop, so "compile log captured per lead" holds even for dropped
+  leads.
+- **Slot-filled assertion ships as a standalone `validate_slots(resume)` function, NOT a `Resume`
+  `model_validator`.** This is a design refinement made during the build, not a change from the original
+  design intent: a `model_validator` runs on *every* construction (including legitimately-partial
+  intermediate models built during tailoring) and raises pydantic's own error type. `validate_slots` is
+  called once, explicitly, on the fully-tailored model right before render, and raises the repo's typed
+  `ResumeValidationError` — treated exactly like a compile failure (fallback → possibly drop).
+- **Typst packaging: Dockerfile layer pins the same 0.15.1 binary as local, plus a `doctor` version
+  probe.** An older/newer typst may accept `compile` but break the `eval` page-count query syntax, which
+  would silently make every lead fall back or drop with no obvious cause — so `doctor` warns loudly on a
+  version mismatch, not just on a missing binary, folded into the existing non-zero-exit gate.
+
+**Lesson from Task 5's fix round, generalizable beyond this feature.** Wiring an environment probe
+(`shutil.which("typst")` / `typst --version`) into `doctor` coupled **pre-existing, unrelated** tests
+(`test_doctor.py`'s board-health/schema/integrity suite) to whatever typst toolchain happens to be on the
+machine running `make check` — they invoke `doctor` end-to-end and so silently depended on a real local
+binary that has nothing to do with what they claim to test. Fixed by an `autouse` fixture in
+`test_doctor.py` that monkeypatches `check_typst()` to a canned healthy result, isolating those tests from
+the local toolchain; `test_doctor_typst.py` alone exercises the real probe (including a present-but-broken
+binary, which is now a hard failure, not folded into the "unknown version" warning). **The generalizable
+rule: any command-level test that transitively calls a newly-added environment probe must isolate that
+probe with a fixture, or the suite silently stops being toolchain-independent.**
+
+**Rejected.** Vendoring typst into `pyproject` — it is a system binary; Dockerfile + `doctor` is the
+P1-era answer, vendoring stays P7. A third preflight mechanism beyond the `TypstUnavailableError` raise
+and `doctor` — redundant with both. Reconciling `PAGE_LIMIT_EXCEEDED` differently for Tier A vs. treating
+it as a lead-fault everywhere — Tier B never triggers the untailored-master fallback or a lead drop; it
+just omits its overlay PDF and records `degraded`/absence in `llm_meta`, since Tier A is the base and Tier
+B is strictly additive.
+
+**Consequence — Gate P1 is MET.** Deterministic tests pin every branch with fabricated `CompileOutcome`s
+(`tests/unit/test_resume_gate.py`, `tests/unit/test_run_tailor_gate.py`, `tests/pipeline/test_run_pdf_gate.py`,
+`tests/unit/test_typst_runner.py`, `tests/unit/test_doctor_typst.py`) — binary-missing-fatal,
+compile-failure→untailored-fallback, page-limit→untailored-fallback, both-unshippable→drop-with-no-artifact,
+Tier-B binary-missing re-raising fatal instead of degrading. Real-data dogfood (`METRICS.md` §"Session 9 —
+P1a dogfood") confirmed **both** directions on the live store: at the profile's shipped default
+(`resume_max_pages=1`), all 3 shortlisted leads correctly triggered the FATAL every-lead-failed path
+because Mit's own authored `resume.yaml` compiles to 2 pages — independently confirmed via a direct
+`typst compile` + `typst eval` outside the app, and via `boardwatch verify --run 11` reconciling on the
+0-tailored, 0-PDF result, with the drop-cleanup leaving no lead folders. On an isolated copy of the same
+store (`--data-dir`, live DB never touched) with `resume_max_pages=2`, all 3 leads shipped a PDF, each
+independently confirmed at page count 2 by both `typst eval` and a raw PDF byte-scan for `/Type /Page`
+markers, each with a `typst-compile.log`, and `boardwatch verify --run 12` reconciled through the
+DB-re-query path. **A live, actionable finding, not a code defect:** Mit's real résumé content does not
+fit in the new-grad default of 1 page, so `boardwatch run` on his real profile will drop every lead until
+either the résumé is shortened or `resume_max_pages` is set to 2 — recorded in `STATE.md`'s next action
+rather than silently worked around.

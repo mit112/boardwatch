@@ -1,17 +1,18 @@
 # PROGRAM STATE — read this first
 
-**Last updated:** 2026-08-07 (session 9, P0 complete)
+**Last updated:** 2026-08-07 (session 9, P1a shipped)
 **Updated by:** boardwatch (Claude)
-**Repo state at write time:** all nine P0 items (0-8) are merged to `main`, including item **5** (the
-reconciliation sweep, `boardwatch verify`) — the last one. Verify with `git log --oneline -3` and
-`git status` — if they disagree, the repo wins.
+**Repo state at write time:** all nine P0 items (0-8) are merged to `main`. P1a (the résumé artifact
+integrity gate — PROGRAM.md §3.P1 items 1, 2, 3, 3b, 4, 5) is built on branch
+`p1a-resume-artifact-gate`, not yet merged. Verify with `git log --oneline -3` and `git status` — if they
+disagree, the repo wins.
 **This header carries no commit count or sha on purpose** — the previous one named both, went stale inside
 a single session when three later docs commits did not update it, and a cold session following the
 session-start ritual hit the disagreement on its very first check. State what is durably true; verify the
 rest against `git log`. (D-017.)
-**Gate:** `make check` exits **0** (2785 passed, coverage 95.12%, `generalization: OK`), measured in plain
-mode with the real exit code. Item 5 supplements this gate; per D-031, Gate P0 is not re-anchored to
-`verify` exiting 0 — it was already MET on D-030's evidence.
+**Gate:** `make check` exits **0** (2828 passed, 1 deselected, coverage 95.17%, `generalization: OK`),
+measured in plain mode with the real exit code on `p1a-resume-artifact-gate`. Item 5 supplements Gate P0;
+per D-031, Gate P0 is not re-anchored to `verify` exiting 0 — it was already MET on D-030's evidence.
 
 > This is the single file a fresh session with zero memory reads to know where the program stands.
 > If it disagrees with the repo, **the repo wins** — fix this file and note the correction in
@@ -22,16 +23,33 @@ mode with the real exit code. Item 5 supplements this gate; per D-031, Gate P0 i
 ## Current phase
 
 **P0 — Instrumentation. COMPLETE (session 9).** All nine build items are shipped and merged to `main`.
-Nothing is blocked. **P1 (résumé artifact gate) is now IN PROGRESS (session 9, overnight autonomous run).**
+**P1a — résumé artifact integrity gate. SHIPPED (session 9), Gate P1 MET.** Built on
+`p1a-resume-artifact-gate` (not yet merged to `main`); `make check` exits 0 on the branch (2828 passed, 1
+deselected, coverage 95.17%, `generalization: OK`).
 
-**P1 is being executed in two slices** (decomposed during P1 brainstorming, 2026-08-07):
+**P1 was executed in two slices** (decomposed during P1 brainstorming, 2026-08-07):
 - **P1a — artifact integrity gate** (items 1, 2, 3, 3b, 4, 5 of PROGRAM.md §3.P1): hard PDF gate,
   binary-missing-vs-compile-failure split, page-count hard fail (Typst-native `typst eval` query, SPIKED),
   degraded untailored-master fallback, per-lead compile-log capture, slot-filled assertion, typst
-  Dockerfile+doctor packaging. **This slice MEETS Gate P1.** Design: `.superpowers/sdd/p1a-resume-artifact-gate/design.md`.
-  Status at this write: design done + deepseek-reviewed; implementation plan / build underway.
+  Dockerfile+doctor packaging. **DONE — this slice MEETS Gate P1.** Design:
+  `.superpowers/sdd/p1a-resume-artifact-gate/design.md`. Decisions: **D-032**.
 - **P1b — Tier-B token-provenance validator** (item 3c): the LLM-lane truth gate feeding bar metric B4.
-  Deferred to its own brainstorm after P1a ships (it gates nothing in Gate P1 and is design-heavy).
+  **The remaining P1 work.** Deferred to its own brainstorm (it gates nothing in Gate P1 and is
+  design-heavy) — see design §9 for the shape already sketched: a closed fabrication-lexicon veto plus
+  verb-swap provenance, slotting into `run_tier_b_core` after `passes_overmatch_filter`, before the judge.
+
+**Gate P1 is MET.** Deterministic tests pin every branch (binary-missing-fatal, compile-failure and
+page-limit-exceeded → untailored fallback, both-unshippable → drop with no artifact and no folder, Tier-B
+binary-missing re-raising fatal rather than degrading) — see D-032 for the full test list. Real-data
+dogfood on 2026-08-07 (`METRICS.md` §"Session 9 — P1a dogfood") exercised **both** directions on the live
+store: at the shipped default `resume_max_pages=1`, all 3 real shortlisted leads correctly hit the FATAL
+every-lead-failed path (Mit's own authored `resume.yaml` compiles to 2 pages, confirmed independently
+outside the app with `typst compile`/`typst eval`); on an isolated copy of the same store
+(`--data-dir`, live DB never touched) with `resume_max_pages=2`, all 3 leads shipped a PDF at the correct
+page count (confirmed two independent ways — `typst eval` and a raw PDF byte-scan), each with a
+`typst-compile.log`, and `boardwatch verify` reconciled both runs through the DB-re-query path.
+**Live, actionable finding, not a code defect:** Mit's real profile at its default page limit currently
+drops every lead — see "Next action" below.
 
 **Numbering note, because session 4 briefly got this wrong:** P0 has **nine** items, numbered **0-8** in
 `PROGRAM.md` §3.P0. Item 0 was added later, by D-016. Always cite `PROGRAM.md`'s numbers — an earlier
@@ -447,8 +465,22 @@ changes adopted, none contested.
 
 ## Next action
 
-**P0 is complete. P1 (résumé artifact gate) is next** — see `PROGRAM.md` for its scope. Nothing in P0
-remains unshipped.
+**P0 is complete. P1a (résumé artifact gate) is SHIPPED and Gate P1 is MET (session 9).** P1b (the Tier-B
+token-provenance validator, item 3c) is the remaining P1 work — brainstorm it next, then build; see design
+§9 for the shape already sketched. `p1a-resume-artifact-gate` is not yet merged to `main`.
+
+**A live, actionable finding from the P1a dogfood, not a code defect — surfaced 2026-08-07.** On the real
+store, at the profile's shipped default `resume_max_pages=1`, `boardwatch run` drops **every** shortlisted
+lead: Mit's own authored `resume.yaml` compiles to **2 pages**, independently confirmed outside the app
+(`typst compile` + `typst eval query(<total-pages>).first().value`), so both the tailored and the
+untailored-master fallback exceed the 1-page limit and the run ends FATAL with 0 leads, 0 PDFs (real run
+11, `~/boardwatch-applications/2026-08-07/funnel-11.md`, `boardwatch verify --run 11` reconciles on the
+0/0 result). This is the gate working exactly as designed — it is refusing to ship a résumé that violates
+Mit's own configured limit, not malfunctioning. **The gate is correct; the live default is wrong for
+Mit's actual résumé content.** Two ways to close it, Mit's call: shorten `resume.yaml` to fit 1 page, or
+`boardwatch profile edit --resume-max-pages 2`. Nothing was changed in the live store to work around this
+— the dogfood's confirmatory "100% PDF" evidence was gathered on an isolated **copy** of the store instead
+(`METRICS.md` §"Session 9 — P1a dogfood").
 
 **Session 9 — P0 item 5, the last P0 build item, SHIPPED.** `boardwatch verify`: a standalone invariant
 sweep asserting DB rows and on-disk artifacts agree, counting from a **different path** than the one that
@@ -532,7 +564,7 @@ computable but the typed abstain *reason* the keystone invariant wants is not.
 | Phase | Status | Gate met? |
 |---|---|---|
 | P0 Instrumentation | **COMPLETE** (session 9) — all nine items 0-8 done, incl. item 5 (`boardwatch verify`, session 9) | **MET** (session 8, D-030) — three consecutive real-driver runs (5, 6, 7) all reconcile with the scan stage exercised; abstain per rule; why-dropped answerable from the artifact. Item 5 supplements this gate and does not re-anchor it (D-031) |
-| P1 Résumé artifact gate | not started | — |
+| P1 Résumé artifact gate | **P1a COMPLETE** (session 9, `p1a-resume-artifact-gate`, not yet merged); P1b (Tier-B provenance, item 3c) not started | **MET** (session 9, D-032) — deterministic fallback/fatal/drop tests + real-store dogfood both directions (default-config FATAL drop, isolated-copy 100% PDF at correct page count) |
 | P2 Profile + keystone invariant | not started | — |
 | P3 Unattended one command | not started | — |
 | P4 Craft gate | not started | — |
