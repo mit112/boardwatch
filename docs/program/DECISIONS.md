@@ -2161,3 +2161,60 @@ seniority profile field), same shape as item 2's per-field / P2 item 4's content
 already-assembled résumé, live call site) and item 6 (keyword coverage vs JD terms — live inputs) NEXT;
 item 4 rides with item 7. Alternatives rejected: (a) build item 4 inert now — dead code for a possibly-
 Mit-blocked phase; (b) skip item 4 entirely — no, the de-senioritizer is genuinely needed, just at item 7.
+
+## D-053 — P4 item 5a: per-lead layout gate SHIPPED (bullet length/count, escaping round-trip, template-artifact)
+
+**2026-08-07 · session 10 · P4 (item 5a — built, two-gate-reviewed + one fix round, merged). Under D-047.**
+
+**Context.** "Asserted, not hoped for": deterministic structural assertions on the assembled résumé,
+complementing P1a's PDF gate (page count / overflow / non-empty slots). Grounding split item 5 into 5a
+(per-lead: bullet length, bullet count, escaping, template-artifact) and 5b (run-once: contact-block +
+master-authoring artifact leak). Section order was correctly kept TEST-ONLY (a runtime check would be
+vacuous — the D-028 anti-pattern).
+
+**Choice.** `validate_layout(resume, source)` in `resume_gate.py` (new `GateReason`s + `LayoutViolation`
+typed at the raise site), wired into `run_tailor`'s degrade-to-untailored-then-drop path (reusing the
+`PAGE_LIMIT_EXCEEDED` machinery). Bullet ceiling reuses `MAX_BULLETS_PER_ENTRY=6`; escaping is a
+round-trip assertion (not new logic); template-artifact catalog split into symbols (substring) + words
+(hyphen-aware word-boundary). Applied to tailored AND untailored-master AND (after review) Tier-B.
+
+**Two-gate review + fix round caught real footguns.** The diff-reviewer found: a 40-char bullet FLOOR
+that would false-drop concise real bullets AND (worse) gate Mit's authored master → drop every lead →
+`BULLET_TOO_SHORT` REMOVED entirely (`validate_slots` already rejects empty; a floor catches no rendering
+defect); a template-artifact substring match flagging "Todo-list"/"TodoMVC" → hyphen-aware word-boundary
+regex `(?<![\w-])TOKEN(?![\w-])`; and a scope gap (Tier-B résumé ungated) → Tier-B now runs
+`validate_layout` (fail-soft: skip Tier-B, ship Tier-A). `make check` green (3067 passed, 95.37%),
+authoritative re-run by the orchestrator. Minor accepted follow-up: a Tier-B layout violation records no
+`resume_tailored_llm` artifact (DB/disk stay in sync) so leaves no audit trace vs "Tier-B not run".
+
+## D-054 — Personas / field-specific knowledge are GATHERED per-user at onboarding, never authored by us (we ship tech expertise only)
+
+**2026-08-07 · session 10 · KEYSTONE architectural decision by Mit. Resolves the P2-item-4 / P4-item-7 / Gate-P2 persona-content blocker.**
+
+**Context.** Gate P2 requires one JD evaluated against three profiles (F-1 OPT SWE / US senior nurse / EU
+paralegal); P4 item 7's persona registry needs per-persona protected-fact sets. Both appeared "Mit-blocked"
+because we lack domain knowledge of nursing/paralegal eligibility rules.
+
+**Mit's decision (verbatim intent).** "We'll never have specialized knowledge of anything other than tech
+roles. Since this is user-facing, it should be part of the beginning setup process with the potential user
+where the system goes out and gathers all this info which affects their own user." So: field-specific
+content (eligibility taxonomy, persona protected-facts, role vocabulary) is **NOT authored/shipped by us**
+for non-tech fields. It is **gathered per-user at onboarding** — the system actively gathers, for THAT
+user's field, the info that governs their eligibility/tailoring. We ship the MECHANISM + our tech-role
+knowledge (SWE/iOS); everything non-tech is produced by the onboarding gatherer and scoped to that user
+(personal data, local — extends [[boardwatch-program-generalized-vs-personal]]).
+
+**Implications (roadmap).**
+- P2 item 4 (field-dependent taxonomy) + P4 item 7 (persona registry) are NO LONGER Mit-blocked on content:
+  they become "ship the field-keyed mechanism + tech seed"; non-tech content comes from onboarding.
+- **NEW build item: the onboarding/setup gatherer** — a user-facing flow that, given a user's field, gathers
+  (research- / LLM- / Q&A-driven) their eligibility taxonomy + persona + vocabulary as versioned per-user
+  data. Substantial; needs its own brainstorm/design (how "go out and gather" works concretely; how the
+  gathered taxonomy is validated against the keystone abstain invariant; storage/versioning per user). Do
+  NOT build blindly — design first, surface the gathering-mechanism choices to Mit.
+- **Gate P2 REFRAMES:** it validates the MECHANISM — the engine correctly applies a field taxonomy for ≥3
+  fields where the non-tech taxonomies are ONBOARDING-GATHERED (or fixtures representing gathered output),
+  not hand-authored-by-us. "Three profiles" tests that the gatherer+engine generalize, not that we wrote
+  nurse rules.
+- P4 item 7 stays buildable now as the mechanism + tech personas; the onboarding gatherer populates
+  non-tech separately.

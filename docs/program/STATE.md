@@ -581,14 +581,20 @@ changes adopted, none contested.
 (D-046, `2ce8e2d`+`91e0992`, `make check` green) was the **last P3 build item that needs neither Mit's
 domain input nor Docker.** What is left is genuinely gated on things I cannot supply autonomously:
 
-- **P2 item 4 (personas / field-dependent taxonomy) + Gate P2** — Gate P2 evaluates one JD against
-  **three** profiles (F-1 OPT SWE / US-citizen senior nurse / EU paralegal). That needs Mit's persona
-  content: which rule families are field-specific and how each field maps. The mechanism without the
-  content is speculative (YAGNI). **Mit's domain call.**
-- **P3 item 8 + Gate P3** — Gate P3 requires 7 consecutive unattended runs (operational; only Mit
-  accumulates these) **and** the two-writer test green, whose load-bearing cross-OS case needs
-  **Docker** (absent here; `docker info` fails). The documented-stance half shipped (D-041,
-  `WAL_DISCIPLINE.md`); the harness half is environmentally blocked.
+- **P2 item 4 (personas / field-dependent taxonomy) + Gate P2 — RESOLVED by D-054 (Mit, 2026-08-07):**
+  non-tech field content is NOT authored by us (we only have tech expertise) — it is **gathered per-user
+  at onboarding** (the system gathers each user's field-specific eligibility taxonomy / persona /
+  vocabulary as versioned per-user data). So item 4 / P4 item 7 become "ship the field-keyed mechanism +
+  tech seed"; a **NEW onboarding-gatherer build item** (needs its own design) produces non-tech content;
+  **Gate P2 reframes** to validate the mechanism against ≥3 fields whose non-tech taxonomies are gathered
+  (or gathered-output fixtures), not hand-authored. No longer Mit-content-blocked.
+- **P3 item 8 + Gate P3** — Gate P3 = 7 consecutive unattended runs **AND** the two-writer test green.
+  **The 7-run half can be accumulated by a PARALLEL Claude Code session (or cron) Mit runs on this machine**
+  (owns the daily `bwd` + per-run `verify`/funnel Gate-P3 recording), in parallel with dev here — no
+  contention (`make check` uses temp DBs; the scan lock serializes live runs). **Prerequisite:** fix the
+  live config first (`resume_max_pages=2` + résumé passes the layout gate) or every run drops all leads.
+  The two-writer test half still needs **Docker** (absent; `docker info` fails); documented-stance half
+  shipped (D-041). So the parallel session closes the operational half only.
 
 - **P4 IS UNDERWAY (D-047, decided autonomously under Mit's "keep plowing / don't get stuck" mandate).**
   Rationale: P4's craft rubric is functionally independent of the unattended runner and builds on the
@@ -615,10 +621,15 @@ domain input nor Docker.** What is left is genuinely gated on things I cannot su
   résumé title field exists until item 7 (persona registry) creates one; building the de-senioritizer now
   would be inert dead code. It rides with item 7 (reusing `tokens.py` word-boundary machinery to dodge the
   Sr∈SRE / Lead∈Leader / III-after-II traps); the general down-level rule is additionally Mit-blocked (no
-  seniority profile field). **Next: P4 item 5** (layout/section-order/bullet-count/contact-integrity
-  assertions on the assembled résumé — live call site), then item 6 (keyword coverage vs JD terms), then
-  item 7 (persona registry + the deferred title/de-senioritizer; ground for Mit-blocked persona content
-  first). Gate P4's blind-craft-review clause stays Mit's (subjective).
+  seniority profile field). **P4 item 5a DONE (D-053, `d738932`..`5295baa`):** per-lead layout gate
+  (bullet length/count, escaping round-trip, hyphen-aware template-artifact) on tailored + master +
+  Tier-B; degrade-then-drop. Fix round removed a lead-dropping 40-char floor, fixed a "Todo-list"
+  false-positive, closed the ungated-Tier-B gap. `make check` green (3067 passed, 95.37%).
+  **Next: P4 item 5b** (run-once contact-block integrity + master-authoring artifact leak, fatal in
+  `load_resume`), then item 6 (keyword coverage vs JD terms), then item 7 (persona registry MECHANISM +
+  tech seed + the deferred de-senioritizer). Gate P4's blind-craft-review clause stays Mit's (subjective).
+  **D-054: item 7's non-tech persona CONTENT is no longer Mit-blocked — it is gathered per-user at
+  onboarding (see persona section below); item 7 ships the mechanism + tech personas now.**
 
 **Live findings still owed to Mit (unchanged):** (1) set `resume_max_pages=2` — his `resume.yaml` is 2pp,
 so at the shipped default of 1 every lead is correctly dropped (see below); (2) P1b cannot catch a bullet
