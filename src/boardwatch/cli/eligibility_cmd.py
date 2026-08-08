@@ -36,6 +36,7 @@ from boardwatch.eligibility.facts import (
     parse_facts,
     parse_policy,
 )
+from boardwatch.eligibility.gate_handshake import apply_gate_verdicts, build_gate_request
 from boardwatch.eligibility.oracle import (
     OracleVerdict,
     apply_oracle_verdicts,
@@ -47,6 +48,7 @@ from boardwatch.eligibility.scoring import SHIP_AUDIT_COVERAGE_BAR, load_labeled
 from boardwatch.llm.cache import ResponseCache
 from boardwatch.llm.factory import build_client
 from boardwatch.llm.payload import preview_text
+from boardwatch.pipeline.runner import DEFAULT_TOP_N
 from boardwatch.reports.abstain import build_abstain_report
 from boardwatch.store.abstain_queries import count_requirement_dispositions
 from boardwatch.store.queries import (
@@ -66,9 +68,14 @@ policy_app = typer.Typer(invoke_without_command=True, help="Show or set severity
 label_app = typer.Typer(
     no_args_is_help=True, help="Oracle-judge labeling handshake: request/apply."
 )
+gate_app = typer.Typer(
+    no_args_is_help=True,
+    help="Final eligibility gate handshake over the ranked shortlist: request/apply.",
+)
 eligibility_app.add_typer(facts_app, name="facts")
 eligibility_app.add_typer(policy_app, name="policy")
 eligibility_app.add_typer(label_app, name="label")
+eligibility_app.add_typer(gate_app, name="gate")
 
 # Worksheet default: the labeled-set *.jsonl directory the label/score commands read and
 # write. Rooted under the user's own data_dir (not a repo-relative path) so multi-tenancy
@@ -605,6 +612,110 @@ def label_apply_cmd(
     if by_verdict:
         console.print(
             "by_verdict: " + ", ".join(f"{k} {v}" for k, v in sorted(by_verdict.items()))
+        )
+
+
+@gate_app.command("request")
+def gate_request_cmd(
+    ctx: typer.Context,
+    top: int = typer.Option(  # noqa: B008
+        DEFAULT_TOP_N,
+        "--top",
+        help="Shortlist size to judge (default matches the pipeline's own shortlist, "
+        "NOT `top`'s own default of 10 — the gate judges exactly what a run tailors).",
+    ),
+    out: Path | None = typer.Option(  # noqa: B008
+        None,
+        "--out",
+        help="Output path for the gate request JSON (default {data_dir}/gate_request.json).",
+    ),
+) -> None:
+    """Build a final-gate label request from the ranked shortlist's visible postings.
+
+    Runs the same ranking `boardwatch top` shows, takes its visible postings, and builds
+    one independence-preserving request row per posting (label = posting id, no `hint`,
+    no prior engine verdict — `build_gate_request`/`build_label_request`'s contract).
+    """
+    # Imported here, not at module scope: cli.top_cmd's rank_open_postings is the shared
+    # ranking path, but eligibility_cmd otherwise has no reason to depend on cli.top_cmd,
+    # so the import stays local to the one command that needs it.
+    from boardwatch.cli.top_cmd import NoProfileError, rank_open_postings
+
+    app_ctx = build_context(ctx.obj)
+    settings = app_ctx.settings
+    catalog = load_rules(settings.config_dir)
+    with app_ctx.engine.connect() as conn:
+        profile_row = get_profile(conn)
+    if profile_row is None:
+        _no_profile()
+    facts = parse_facts(profile_row.eligibility_facts_json)
+    try:
+        results = rank_open_postings(app_ctx.engine, settings, limit=top)
+    except NoProfileError:
+        _no_profile()
+    with app_ctx.engine.connect() as conn:
+        versions = current_posting_versions(conn, None)
+    request_id = uuid.uuid4().hex
+    request = build_gate_request(results.visible, versions, facts, catalog, request_id=request_id)
+    out_path = out if out is not None else settings.data_dir / "gate_request.json"
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    out_path.write_text(json.dumps(request, indent=2), encoding="utf-8")
+    console.print(f"wrote {out_path}")
+    console.print(f"request_id={request_id} · {len(request['items'])} items")
+
+
+@gate_app.command("apply")
+def gate_apply_cmd(
+    ctx: typer.Context,
+    verdicts_path: Path = typer.Option(  # noqa: B008
+        ...,
+        "--verdicts",
+        help="Path to the judge's gate verdicts JSON (a list of verdict objects).",
+    ),
+    top: int = typer.Option(  # noqa: B008
+        DEFAULT_TOP_N,
+        "--top",
+        help="Shortlist size the verdicts were judged against (must match `gate request`'s "
+        "--top); verdicts beyond this many are ignored, so a stale or tampered verdicts "
+        "file cannot widen the gate past the shortlist it was built from.",
+    ),
+) -> None:
+    """Apply final-gate verdicts to their postings' current OPEN versions.
+
+    Runs each verdict through the same accept-then-keystone-span gate `record_gate_verdict`
+    applies, and writes one `engine_kind='llm'` / `engine_version='final_gate:...'` row per
+    posting under the user's STORED facts and policy (never the labeling pass's all-blocker
+    reference policy — that would compute a different identity and the ranker's read would
+    silently no-op). Demoted postings (written `ineligible`) are printed as a warning,
+    mirroring `label apply`'s hard-negative warning.
+    """
+    app_ctx = build_context(ctx.obj)
+    settings = app_ctx.settings
+    catalog = load_rules(settings.config_dir)
+    with app_ctx.engine.connect() as conn:
+        profile_row = get_profile(conn)
+    if profile_row is None:
+        _no_profile()
+    facts = parse_facts(profile_row.eligibility_facts_json)
+    policy = parse_policy(profile_row.eligibility_policy_json)
+    raw_verdicts: list[dict[str, Any]] = json.loads(verdicts_path.read_text(encoding="utf-8"))
+    verdicts = [OracleVerdict(**item) for item in raw_verdicts[:top]]
+
+    with app_ctx.engine.connect() as conn:
+        versions = current_posting_versions(conn, None)
+    with app_ctx.engine.begin() as conn:
+        result = apply_gate_verdicts(
+            conn, verdicts, versions=versions, facts=facts, policy=policy, catalog=catalog,
+        )
+
+    console.print(
+        f"judged {result.judged} · ineligible {result.ineligible} · "
+        f"downgraded {result.downgraded}"
+    )
+    if result.demoted_labels:
+        console.print(
+            f"[yellow]WARNING: demoted to ineligible: "
+            f"{', '.join(result.demoted_labels)}[/yellow]"
         )
 
 
