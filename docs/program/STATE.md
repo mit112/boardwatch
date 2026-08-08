@@ -1,6 +1,9 @@
 # PROGRAM STATE — read this first
 
-**Last updated:** 2026-08-07 (résumé-tailoring-fix session, resumed — Increment-1 plan RE-REVIEWED 2nd pass [D-059, both reviewers REWORK, all findings folded in] + CLEARED to execute; tectonic 0.17.0 installed; no source merged this session)
+**Last updated:** 2026-08-08 (résumé-tailoring-fix session, execution — Increment 1 [LaTeX render substrate]
+EXECUTED + SHIPPED to `main`, D-060; Typst→tectonic swap complete; Mit's résumé now renders 1pp, resolving
+the old Gate-P3 2pp blocker; NEW blocker found — 3 over-220-char bullets force an untailored-master degrade
+on every posting, Mit's to fix)
 **Updated by:** boardwatch (Claude)
 **Repo state at write time:** all nine P0 items (0-8), P1a (the résumé artifact integrity gate —
 PROGRAM.md §3.P1 items 1, 2, 3, 3b, 4, 5), and P1b (item 3c, the Tier-B token-provenance validator, D-033)
@@ -686,11 +689,29 @@ domain input nor Docker.** What is left is genuinely gated on things I cannot su
     `_pdf_page_count` `re.MULTILINE`, expanded Task-6 breaking-test list, full keystone-field entailment
     tests, doctor version regex, and 8 minors). Both reviewers confirmed the entailment tightening, escape,
     firewall, macro arities, and fail-safe posture sound. Verdicts at `review2-soundness.md`/`review2-tests.md`.
-  - **NEXT ACTION: execute Increment 1** (subagent-driven; `make check` gates each task; per-task diff review
-    between tasks), starting **Task 1** (tectonic doctor probe + Dockerfile). A 3rd plan-review is declined
-    (D-059). After Task 7 renders Mit's résumé, validate against his real job-apps SDE PDF (three-category
-    gap check) BEFORE writing the Increment 2 (bolding) and Increment 3 (title/summary) plans. Execution not
-    yet started — checkpointed for a fresh context window (the 7-task build is large).
+  - **Increment-1 EXECUTED + SHIPPED — D-060 (2026-08-08).** Built via subagent-driven development: 7 TDD
+    tasks (`1aebe18`..`27e179f`), each gated by `make check` and independently reviewed, plus a final
+    whole-branch Opus review — all clean. `make check` on `main`: **3098 passed, 1 deselected, coverage
+    95.33%, `generalization: OK`.** The Typst→tectonic swap is complete: `render/typst.py` and its tests are
+    DELETED; tectonic compiles Mit's own `resume_base.tex` (installed to `{config_dir}/resume_template.tex`
+    + a structured `resume.yaml`); page count reads `pdfinfo`. **Big result 1 — the old Gate-P3 blocker is
+    RESOLVED:** Mit's real résumé now renders to **1 page** (verified by a real compile + `pdfinfo`, not
+    the app's self-report), so the 2pp-at-limit-1 problem recorded in memory
+    `gate-p3-blocked-on-one-page-resume` no longer holds. **Big result 2:** fidelity vs. his job-apps LaTeX
+    PDF is a layout match — the required three-category gap check found zero layout/emitter bugs.
+    **Big result 3 — a NEW real blocker, content not engine:** three bullets in `resume.yaml` (the National
+    Internet Observatory entry's first bullet, and both StreakSync bullets) exceed the per-lead layout
+    gate's 220-char ceiling (D-053), so Tier-A degrades to the untailored master on **every** posting until
+    Mit shortens them. Also Mit's to fix, not a code gap: `resume.yaml` is missing a 4th project (Knowledge
+    Forge), has stale `skill_groups`, and no `extracurricular`; separately, the **job-apps source**
+    `~/dev/Job apps/resume_base.tex` has a stale `CGPA: 8.5/10` — the installed copy was corrected to
+    `8.81/10` during Task 7, so the two now disagree.
+  - **NEXT ACTION is the 220-char bullet fix — Mit's, not a build item.** Once the three bullets are
+    shortened, tailoring stops degrading to the master on every run, and **P4 items 6–7 and the Gate-3
+    operational runs — both parked behind D-057's "fix tailoring first" ruling — can resume with no further
+    build.** After that, Increment 2 (`\textbf{}` keyword bolding from `jd_skills`) and Increment 3
+    (per-role title/summary selection) are each their own plan, still not built. Option i (single-sourcing
+    Header/Education from `resume.yaml`) remains a documented fast-follow.
 
   **DEFERRED next action — P4 item 6** — keyword coverage measured against JD *requirement* terms,
   achieved only by re-spelling existing facts (ground it first: reuse the canonical vocab + the

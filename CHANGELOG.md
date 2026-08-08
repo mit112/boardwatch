@@ -6,6 +6,41 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Changed
+
+- **The résumé render engine is now tectonic compiling the user's own LaTeX template, replacing Typst**
+  (résumé-tailoring fix, Increment 1 — D-058, D-060). Diagnosis found the tailored output read as a
+  "plain-text dump" for two reasons: a five-line Typst stub preamble with no real page setup, and tailoring
+  itself being near-invisible. Typst could only ever *approximate* the user's own template — a different
+  typesetting engine cannot reproduce a LaTeX file byte-for-byte — so tectonic (a single ~30 MB LaTeX
+  binary, the same footprint class as Typst) now compiles the résumé's real `.tex` source unchanged.
+
+  - **`render/typst.py` and its tests are deleted.** A new `LatexRenderer` (`render/latex.py`) emits
+    sections into `%%SECTIONS%%` markers in a bundled default template (`render/templates/resume_base.tex`,
+    registered in `SHIPPED_DATA`); a user's own template installs to `{config_dir}/resume_template.tex` and
+    overrides the bundled default. `_validate_template` now requires the `%%SECTIONS%%` markers to be
+    present in the resolved template, so a malformed template fails loudly instead of degrading silently.
+  - **Bolding moves to native inline `\textbf{}`**, matching the job-apps LaTeX pattern; entailment
+    (`output_is_entailed`) strips markup before comparing tokens to the master, and any non-`\textbf{}`
+    LaTeX command inside a bullet is a violation.
+  - **Page count now reads `pdfinfo`** instead of a Typst-native metadata query.
+  - **`Entry` gained structured fields** — `kind`, `title`, `dates`, `subtitle`, `location` — plus a new
+    `Resume.extracurricular` section, so LaTeX subheadings (role/company/dates on one line, tech stack on
+    the next) render correctly; entailment now checks all of them, not just `title`.
+  - **The persisted meta key `typst_pdf_built` keeps its legacy name.** Renaming it would ripple into
+    funnel/reconcile queries that already read it, which is out of scope for this change.
+  - Header and Education stay template-hardcoded in this increment (job-apps-exact); single-sourcing them
+    from `resume.yaml` is a documented fast-follow, not built here. Keyword bolding from `jd_skills`
+    (Increment 2) and per-role authored title/summary selection (Increment 3) are each their own plan.
+
+  **Result: the user's real résumé now renders to 1 page** (verified by a real compile plus `pdfinfo`,
+  measured on Mit's own résumé), resolving the standing Gate-P3 blocker where the old Typst stub rendered
+  an authored résumé to 2 pages against a `resume_max_pages=1` limit, dropping every lead on every run.
+  Fidelity against Mit's job-apps LaTeX PDF is a layout match — no emitter or layout bugs found. A new, real
+  remaining blocker was found, and it is content, not the render engine: three bullets in Mit's
+  `resume.yaml` exceed the per-lead layout gate's 220-character ceiling (D-053), so Tier-A degrades to the
+  untailored master on every posting until they are shortened.
+
 ### Added
 
 - **A run reaper drains phantom `running` rows instead of leaving them permanent forever** (P3 slice 2,

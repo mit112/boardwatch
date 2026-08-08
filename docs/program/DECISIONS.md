@@ -2391,3 +2391,71 @@ gap) BEFORE writing the Increment 2 (bolding) and Increment 3 (title/summary) pl
 **Status.** Plan execution-ready; prereqs met (tectonic 0.17.0, pdfinfo). Execution not yet started —
 checkpointed here for a fresh context window (the 7-task build is large). Reviewer verdicts preserved at
 `review2-soundness.md` / `review2-tests.md` (gitignored working material).
+
+## D-060 — Increment 1 (LaTeX render substrate) executed and shipped to `main`; the Typst→tectonic swap is complete
+
+**2026-08-08 · résumé-tailoring-fix session, execution.**
+
+**Context.** D-057/D-058/D-059 diagnosed the tailoring problem, ratified tectonic compiling Mit's own
+`resume_base.tex` as the render engine (reversing Typst), and cleared the revised 7-task Increment-1 plan
+for execution after two fresh-context re-reviews. Execution had not started.
+
+**Choice.** Executed the plan via subagent-driven development — 7 TDD tasks, each gated by `make check`,
+each reviewed independently, plus a final whole-branch Opus review — and merged to `main`. Every review
+returned clean; no REWORK round survived past its own task.
+
+Commits, in order: `1aebe18` (Task 1 — tectonic doctor probe + Dockerfile, drop the typst probe), `e9c0393`
+(Task 2 — LaTeX escape/unescape + the `\resumeItem{}` firewall + a `CompileRunner` alias moved to the leaf
+`render/outcome.py`, per D-059's import-graph fix), `ce87deb` (Task 3 — structured `Entry` fields
+`kind`/`title`/`dates`/`subtitle`/`location` + `Resume.extracurricular`, with entailment tightened to cover
+all of them), `0b60146`+`b8d68ed` (Task 4 — `LatexRenderer.emit` sections + a bundled default template
+`render/templates/resume_base.tex`, registered in `SHIPPED_DATA`), `59c5c09`+`63adaa8` (Task 5 — the
+tectonic `_default_runner` + `pdfinfo`-based page count, `re.MULTILINE` per D-059), `b6ed1f5`+`aaef3dd`
+(Task 6 — rewired `validate_layout`+`run_tailor` to LaTeX/tectonic, `media_type` `text/x-tex`, `.tex`
+artifacts, `RenderToolMissingError`/`TemplateArtifactError` made fatal, **deleted `typst.py` and its
+tests**; also dropped the bundled template's pdfTeX-only `\input{glyphtounicode}` /
+`\pdfgentounicode=1` — those break tectonic's XeTeX engine), `0bb0d2a` (Task 7 — installed Mit's real
+template + his structured `resume.yaml` into `{config_dir}`, plus an end-to-end test), `27e179f`
+(final-review fix — `_validate_template` now requires `%%SECTIONS%%` markers in the resolved template, so
+a malformed template can no longer degrade silently).
+
+The persisted meta key `typst_pdf_built` is deliberately **kept** under its legacy name — renaming it
+ripples into funnel/reconcile queries that read it, and that rename is out of scope for this increment.
+Header and Education stay template-hardcoded (job-apps-exact), per the design's own increment cut;
+single-sourcing them from `resume.yaml` (Option i) remains a documented fast-follow, not built here.
+
+**`make check`: exit 0 — 3098 passed, 1 deselected, coverage 95.33%, `generalization: OK`.**
+
+**Three results, in order of how much they change the program's standing:**
+
+1. **Mit's real résumé now renders to 1 page** via tectonic + his own dense LaTeX template — verified by a
+   real compile plus `pdfinfo`, not by the app's self-report. This **resolves the Gate-P3 blocker** recorded
+   in memory `gate-p3-blocked-on-one-page-resume`: under the old Typst stub, `resume.yaml` rendered to 2
+   pages against Mit's pinned `resume_max_pages=1`, so every `boardwatch run` dropped every lead 0/0 FATAL
+   and the 7-run operational counter could never advance. That blocker is now RESOLVED — the render engine
+   fix removed it as a side effect, exactly as D-057's session anticipated it might.
+2. **Fidelity vs. Mit's job-apps résumé: same layout, no emitter/layout bugs found.** The three-category
+   gap check D-059 required after Task 7 (layout bug / `resume.yaml` data gap / model-structure gap) found
+   zero layout-bug-category defects.
+3. **A NEW real remaining tailoring blocker was found, and it is content, not engine.** Three bullets in
+   Mit's `resume.yaml` — the National Internet Observatory entry's first bullet (245 chars) and both
+   StreakSync bullets (234 and 232 chars) — exceed the per-lead layout gate's 220-char bullet ceiling
+   (D-053, `reports/resume_gate.py::validate_layout`). Because the gate is fail-safe-to-master, Tier-A
+   tailoring degrades to the untailored master résumé on **every** posting until those three bullets are
+   shortened. This is now the actual thing standing between Mit and useful tailoring — not the render
+   substrate, which is sound. Also measured, and Mit's to author: `resume.yaml` is missing a 4th project
+   (Knowledge Forge — confirmed absent from the live file, not merely unmentioned), its `skill_groups` are
+   stale, and `extracurricular` is unset. The model already supports all three; none is a code gap.
+   Separately: the job-apps source `~/dev/Job apps/resume_base.tex` carries a stale `CGPA: 8.5/10`
+   (confirmed by `grep`); the installed copy at `{config_dir}/resume_template.tex` was corrected to
+   `CGPA: 8.81/10` during Task 7's install, so the two templates now disagree and job-apps' own copy is the
+   one that is wrong.
+
+**Deferred, unchanged from D-058's design:** Increment 2 (`\textbf{}` keyword bolding from `jd_skills`) and
+Increment 3 (per-role authored title/summary selection) are each their own plan, not built here. Option i
+(single-sourcing Header/Education from `resume.yaml` instead of hardcoding them in the template) is a
+documented fast-follow. The 220-char-bullet content fix is Mit's to make, not a build item.
+
+**Consequence.** The render substrate is no longer the open question; content is. P4 items 6–7 and the
+Gate-3 operational runs, both parked behind D-057's "fix tailoring first" ruling, can proceed once Mit
+shortens the three bullets — nothing further needs to be built to unblock them.

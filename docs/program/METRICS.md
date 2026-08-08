@@ -893,3 +893,50 @@ changed). Recorded for honesty per the session-end ritual.
 
 **Disposition:** Increment-1 plan CLEARED to execute (D-059); 3rd plan-review declined; execution not yet
 started (checkpointed for a fresh window). Next: Task 1 (tectonic doctor probe + Dockerfile), subagent-driven.
+
+## Résumé-render session (execution) — 2026-08-08 · Increment-1 build, D-060
+
+**Build.** Executed via subagent-driven development: 7 TDD tasks (`1aebe18`..`27e179f`), each gated by
+`make check` and independently reviewed, plus a final whole-branch Opus review. All reviews returned clean —
+no REWORK round survived past its own task.
+
+| Check | Value |
+|---|---|
+| Tasks | 7 |
+| Commits | `1aebe18`, `e9c0393`, `ce87deb`, `0b60146`, `b8d68ed`, `59c5c09`, `63adaa8`, `b6ed1f5`, `aaef3dd`, `0bb0d2a`, `27e179f` |
+| `make check` | exit **0** — **3098 passed, 1 deselected**, coverage **95.33%**, `generalization: OK` |
+| Files deleted | `render/typst.py` + its test module |
+| `typst_pdf_built` meta key | kept under its legacy name (deliberate — see D-060) |
+
+**Real-résumé result.** Mit's authored `resume.yaml`, compiled by tectonic against his own
+`resume_base.tex`, renders to **1 page** (confirmed with a real compile + `pdfinfo`, not the app's
+self-report). Under the old Typst stub it rendered to 2 pages against his pinned `resume_max_pages=1`,
+which is the exact condition that left Gate P3's operational window at 0/0 FATAL every run (see memory
+`gate-p3-blocked-on-one-page-resume`). **That blocker is now RESOLVED** as a side effect of the render-engine
+swap — no résumé content changed to achieve it.
+
+**Fidelity check (the three-category gap check D-059 required after Task 7).** Layout vs. Mit's real
+job-apps LaTeX PDF: match, zero layout/emitter-category defects found.
+
+**New finding — a content blocker, not an engine defect.** Three bullets in `resume.yaml` exceed the
+per-lead layout gate's 220-character ceiling (D-053, `validate_layout`):
+
+| Entry | Bullet | Length |
+|---|---:|---:|
+| National Internet Observatory (Northeastern) | bullet 1 | **245 chars** |
+| StreakSync (iOS app) | bullet 1 | **234 chars** |
+| StreakSync (iOS app) | bullet 2 | **232 chars** |
+
+Because the gate is fail-safe-to-master, all three overflows mean Tier-A tailoring degrades to the
+untailored master résumé on **every** posting until they are shortened — measured directly against the
+live `resume.yaml`, not inferred. Also measured, and Mit's to author (the model already supports all
+three): `resume.yaml` is missing a 4th project (Knowledge Forge — confirmed absent, not merely unlisted),
+`skill_groups` are stale, and `extracurricular` is unset. Separately: `~/dev/Job apps/resume_base.tex`
+(job-apps' own copy) still reads `CGPA: 8.5/10`; the installed copy at
+`{config_dir}/resume_template.tex` was corrected to `CGPA: 8.81/10` during Task 7's install, so the two
+now disagree and the job-apps copy is the stale one.
+
+**Disposition:** Increment 1 SHIPPED to `main`. Increments 2 (keyword bolding) and 3 (title/summary select)
+remain their own plans, not started. P4 items 6–7 and the Gate-3 operational-run window, both parked behind
+D-057's "fix tailoring first" ruling, can resume once Mit shortens the three over-length bullets — no
+further build is required to unblock them.
