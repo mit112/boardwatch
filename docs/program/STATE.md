@@ -12,6 +12,13 @@ labeling worksheet — no verdict-changing rule shipped. The verdict-changing ru
 Mit's human-verified labeled set; design ready at `.superpowers/sdd/p5-eligibility-decides/design-p5b.md`.
 Prior context holds: Increment 1 D-060; Mit's résumé renders 1pp; the 3 over-220-char bullets remain Mit's
 deferred content fix.)
+**P5b answer-key oracle judge — DESIGN DONE (D-067, 2026-08-08), awaiting Mit's spec review.** The two
+reserved decisions are made: (1) **agent lane, no API key** — reuse the P7b handshake, Claude Code judges
+via a new `eligibility-judge` skill; (2) **human audit deferred** but its drain designed now
+(`label_provenance:"oracle"` + audited-coverage warning + `_applied/`-ineligible flag + B1–B4 gated on the
+audit). Design: `.superpowers/sdd/p5-eligibility-decides/design-p5b-oracle-judge-agent-lane.md`. **No src
+written** (brainstorming hard-gate). Next action: Mit reviews the spec → `writing-plans` → build with review
+gates. B1–B4 stay gated on the labeled set, which this oracle produces.
 **Updated by:** boardwatch (Claude)
 **Repo state at write time:** all nine P0 items (0-8), P1a (the résumé artifact integrity gate —
 PROGRAM.md §3.P1 items 1, 2, 3, 3b, 4, 5), and P1b (item 3c, the Tier-B token-provenance validator, D-033)

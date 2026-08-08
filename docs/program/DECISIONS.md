@@ -2707,3 +2707,43 @@ per Mit's "use deepseek as second eyes" overnight directive, plus a diff-reviewe
 **Consequence.** P5 decision-*integrity* foundations are in. The remaining P5 items are Mit's morning:
 they change verdicts (need the labeled set to measure precision) or need his job-apps data. See the P5b
 design (`.superpowers/sdd/p5-eligibility-decides/design-p5b.md`) for the ready-to-execute mechanism plan.
+
+## D-067 — P5 answer-key oracle judge: agent-lane port + deferred (but drained) human audit
+
+**Context.** D-066 settled that the Gate-P5 answer key is AI-oracle-produced + human-audited-on-a-sample
+via a port of job-apps' judge+gate flow, in its own dedicated session. This session did the deep
+research (job-apps `eligibility/{judge,gate,manifest,reasons,evidence}.py`, `deep_jd_eligibility_audit.py`,
+`resume_tailor/model.py`, `spec-1-eligibility-internals.md`; boardwatch `scoring/extract_llm/ground/
+engine/catalog/facts` + the P7b agent lane), resolved the two reserved open questions, and wrote the
+design (`.superpowers/sdd/p5-eligibility-decides/design-p5b-oracle-judge-agent-lane.md`).
+
+**Decisions (Mit, 2026-08-08):**
+1. **Oracle lane = the agent lane (no API key)** — reuse the P7b subscription handshake: a CLI writes a
+   JD+facts request JSON, Claude Code itself judges it via a new `eligibility-judge` skill, a CLI `apply`
+   writes the answer key. Chosen over the paid-API `build_client` loop and over two-model agreement.
+   Rationale: it is the literal shape of D-066 ("the user runs it through their own AI"), zero per-token
+   cost, ships without requiring an API key, and reuses an existing proven pattern. The DeepSeek lesson
+   (job-apps killed a cheaper judge that false-kept 21/22 hard stops) is honored because the agent lane is
+   a strong-tier model, not a cheap one.
+2. **Human audit = deferred** — a first Gate-P5 measurement comes from the oracle alone; the human
+   sample-audit ships before B1–B4 (verdict-changing rules). Because a deferred audit is a quarantine,
+   its **drain is designed in this same change** (keystone): every oracle row is marked
+   `label_provenance: "oracle"`, `boardwatch eligibility score` reports audited coverage (0% now with a
+   "NOT yet integrity-anchored" warning), the `apply` step already flags any `_applied/` hard-negative the
+   oracle called `ineligible` (a partial anchor available now), and B1–B4 shipping is gated on the audit.
+
+**Shape (non-circular by construction).** The measured thing is the deterministic engine; the oracle is
+an LLM reading JD + `Facts` in natural language — different mechanisms. The oracle never sees the engine's
+verdict nor the worksheet's `hint` (job-apps' prior guess). `accept_oracle_verdict` re-runs a ported
+`resolve_provenance` + the four-ANDed routability gate in deterministic Python (reason ∈ the 6 catalog
+families AND confidence=="high" AND a JD-verified informative span), **downgrading any unverified oracle
+`ineligible` to `uncertain`** — fail-open, so the oracle can never write a false INELIGIBLE into ground
+truth. `reason`/`spans` are stored for audit/triage/recall, not consumed by `score()` (confirmed:
+`score` checks the *engine's* span, not the key's).
+
+**Explicitly out of scope (YAGNI):** the judge does NOT become a runtime lane that can emit `ineligible`
+(`extract_llm` stays capped to eligible|uncertain); no paid-API oracle; no new EvidencePacket extractor;
+no per-row `manual_review` port (our `label_provenance` is the deliberate improvement).
+
+**Status:** DESIGN written + self-reviewed, awaiting Mit's spec review. No source code written this
+session (brainstorming hard-gate). Next: Mit reviews the spec → `writing-plans` → build with review gates.
