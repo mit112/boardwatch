@@ -45,6 +45,13 @@ rigorous ineligible-call audit anchor. Also found: a 2nd latent over-fire (boile
 experience" tenure brags). NOTE (Mit): a skip-folder posting can be there because it EXPIRED, not for
 eligibility — folder labels carry no eligibility signal, only the JD text does. Non-blocking oracle
 follow-ups recorded in D-068.
+**AGREED (D-071, Mit): the next session builds a TWO-STAGE eligibility gate** — (a) the deterministic
+precision fix above PLUS (b) a cheap-model **final gate over the ranked shortlist** (job-apps' proven
+pattern). Constraints: **model-agnostic** (deepseek is Mit-personal, NOT universal — never hardcode a
+provider); the cheap-but-good endpoint is a **Sonnet-class pass via the existing agent lane** (skill-driven,
+subscription cost, no per-call API — as the oracle/`tailor-rewrite` skills already do), not a paid cheap
+API; the deepseek cache is corroboration-only, not ground truth. Keep the deterministic stage
+precision-first (a false-positive delete is unrecoverable). Write the plan fresh, then execute.
 **Updated by:** boardwatch (Claude)
 **Repo state at write time:** all nine P0 items (0-8), P1a (the résumé artifact integrity gate —
 PROGRAM.md §3.P1 items 1, 2, 3, 3b, 4, 5), and P1b (item 3c, the Tier-B token-provenance validator, D-033)

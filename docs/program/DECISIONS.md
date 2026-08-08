@@ -2892,3 +2892,30 @@ instruction.
 P5 met). It touches the digested engine set (re-keys the LLM cache via `engine_version()`), so it wants a
 fresh context with TDD + review + `make check`. Optionally pair it with the deepseek cross-match to bank a
 rigorous ineligible-call audit anchor.
+
+## D-071 — Two-stage eligibility gate agreed for a fresh session; model-agnostic, agent-lane cheap gate
+
+**Context.** After D-069/D-070, Mit agreed (2026-08-08) to build BOTH halves in a new session: (a) the
+deterministic-engine precision fix (the disjunction over-fire) AND (b) a cheap-model **final eligibility
+gate over the ranked shortlist** — job-apps' proven pattern (deterministic shortlist → a decent-but-cheap
+model reads the final JDs as the last gate; that pattern produced job-apps' deepseek `verdict_cache.json`).
+
+**Constraints Mit set — load-bearing, do not re-litigate:**
+- **Model-agnostic / multi-tenant.** deepseek is Mit's PERSONAL choice, not universal. The final gate must
+  be provider-pluggable; **do NOT hardcode deepseek** or any single provider (CLAUDE.md multi-tenancy
+  invariant). boardwatch ships the mechanism; the user supplies the provider.
+- **The effective "cheap but good" endpoint is a Sonnet-class final JD pass.** Mit stopped using deepseek
+  because he still needed a Sonnet 4.6 final pass anyway — so the cheap model alone wasn't sufficient.
+  boardwatch's existing **agent lane** (Claude Code judges via a skill — subscription cost, no per-call
+  API, as the P5 oracle and `tailor-rewrite` skills already do) IS that cheap-but-good gate; reuse it
+  rather than wiring a paid cheap API.
+- **deepseek cache is corroboration-only, not ground truth** (Mit didn't fully trust it — the Sonnet pass
+  was the real decider). In the D-070 cross-match, agreement raises confidence; disagreement flags a row
+  for the Sonnet-class judge to adjudicate, never auto-corrects the oracle answer key.
+- **Keep the deterministic stage precision-first** (fix the disjunction) regardless — a false-positive
+  delete removes a real job before any model sees it (unrecoverable). The two halves are complementary:
+  deterministic stage = precise, span-carrying, free; agent-lane final gate = recovers the recall the
+  title-blind engine can't reach (this run: experience 1/23, contract 0/7, internship 0/4).
+
+**Next.** A fresh session writes the two-stage plan honoring these constraints and executes it (TDD +
+review + `make check`).
