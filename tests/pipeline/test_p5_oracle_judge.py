@@ -19,9 +19,11 @@ import pytest
 from boardwatch.eligibility.catalog import load_rules
 from boardwatch.eligibility.oracle import (
     JUDGING_POLICY,
+    POLICY_VERSION,
     OracleVerdict,
     OracleVerdictError,
     accept_oracle_verdict,
+    apply_oracle_verdicts,
     build_label_request,
     is_allowed_reason,
     read_worksheet,
@@ -188,3 +190,60 @@ def test_build_request_marks_applied_as_hard_negative(tmp_path):
     )
     req = build_label_request(read_worksheet(ws), CAT, request_id="r")
     assert req["items"][0]["bucket"] == "hard_negative"  # H1: applied/ prefix
+
+
+def _row(label, verdict=None, prov=None):
+    r = {
+        "label": label,
+        "expected_verdict": verdict,
+        "facts": {},
+        "body_text": "Active TS/SCI required.",
+        "hint": "h",
+        "company": "C",
+        "title": "T",
+    }
+    if prov:
+        r["label_provenance"] = prov
+        r["oracle_policy_version"] = "old"
+    return r
+
+
+def test_apply_merges_and_preserves_columns():
+    rows = [_row("skip/a")]
+    v = [OracleVerdict("skip/a", "ineligible", "clearance", "Active TS/SCI required.", "high")]
+    merged, res = apply_oracle_verdicts(rows, v, CAT)
+    m = merged[0]
+    assert m["expected_verdict"] == "ineligible" and m["label_provenance"] == "oracle"
+    assert m["hint"] == "h" and m["company"] == "C" and m["title"] == "T"  # M5 survive
+    assert m["oracle_policy_version"] == POLICY_VERSION
+    assert res.labeled == 1 and res.by_verdict["ineligible"] == 1
+
+
+def test_apply_idempotent_skips_current_version():  # M4
+    rows = [_row("skip/a", "ineligible", prov="oracle")]
+    rows[0]["oracle_policy_version"] = POLICY_VERSION  # already current
+    v = [OracleVerdict("skip/a", "eligible", None, "", "high")]
+    merged, res = apply_oracle_verdicts(rows, v, CAT)
+    assert merged[0]["expected_verdict"] == "ineligible"  # untouched
+    assert res.overwritten == 0
+
+
+def test_apply_overwrites_stale_oracle_version():  # M4
+    rows = [_row("skip/a", "ineligible", prov="oracle")]  # oracle_policy_version="old"
+    v = [OracleVerdict("skip/a", "eligible", None, "", "high")]
+    merged, res = apply_oracle_verdicts(rows, v, CAT)
+    assert merged[0]["expected_verdict"] == "eligible" and res.overwritten == 1
+
+
+def test_apply_never_touches_audited():  # M4
+    rows = [_row("skip/a", "ineligible", prov="audited")]
+    v = [OracleVerdict("skip/a", "eligible", None, "", "high")]
+    merged, res = apply_oracle_verdicts(rows, v, CAT)
+    assert merged[0]["expected_verdict"] == "ineligible" and res.overwritten == 0
+
+
+def test_apply_flags_hard_negative_ineligible():  # H1
+    rows = [_row("applied/a")]
+    v = [OracleVerdict("applied/a", "ineligible", "clearance", "Active TS/SCI required.", "high")]
+    merged, res = apply_oracle_verdicts(rows, v, CAT)
+    assert res.hard_negative_ineligible == ("applied/a",)

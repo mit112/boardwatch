@@ -268,3 +268,89 @@ def build_label_request(
         "judging_policy": JUDGING_POLICY,
         "items": items,
     }
+
+
+@dataclass(frozen=True)
+class ApplyResult:
+    """Report from `apply_oracle_verdicts`: what got labeled, and integrity flags worth
+    surfacing (H1: hard-negatives the oracle accepted as ineligible)."""
+
+    labeled: int
+    downgraded: int
+    overwritten: int
+    hard_negative_ineligible: tuple[str, ...]
+    by_verdict: dict[str, int]
+
+
+def _skip_row(row: dict[str, Any]) -> bool:
+    """M4: version-aware idempotency. Never overwrite a human-audited row; never
+    re-label a row already stamped by this exact oracle policy+prompt version
+    (idempotent no-op); never overwrite a hand label (a non-null verdict with no
+    `label_provenance` at all — i.e. not previously written by this function)."""
+    provenance = row.get("label_provenance")
+    if provenance == "audited":
+        return True
+    if (
+        provenance == "oracle"
+        # missing key defaults to "matches current" — accept_oracle_verdict always
+        # stamps both fields together, so a real stale row always has BOTH set to
+        # its old values; only an absent field (never previously stamped) is
+        # treated as vacuously current.
+        and row.get("oracle_policy_version", POLICY_VERSION) == POLICY_VERSION
+        and row.get("oracle_prompt_version", PROMPT_VERSION) == PROMPT_VERSION
+    ):
+        return True
+    if row.get("expected_verdict") is not None and provenance is None:
+        return True
+    return False
+
+
+def apply_oracle_verdicts(
+    rows: list[dict[str, Any]], verdicts: list[OracleVerdict], catalog: RulesCatalog
+) -> tuple[list[dict[str, Any]], ApplyResult]:
+    """Run each verdict through `accept_oracle_verdict` and merge the result back into
+    its worksheet row by `label`, in place (M5: preserves every other column — `hint`,
+    `company`, `title`, `source`, `facts`, `body_text`, ...). Skips rows the M4 guard
+    protects. Flags `applied/`-prefix (hard-negative, H1) rows accepted as `ineligible`
+    for review — Mit actually applied to those, so an ineligible verdict is a red flag,
+    not necessarily a bug."""
+    by_label = {r["label"]: r for r in rows}
+    labeled = 0
+    downgraded = 0
+    overwritten = 0
+    hard_negatives: list[str] = []
+    by_verdict: dict[str, int] = {}
+
+    for v in verdicts:
+        row = by_label.get(v.label)
+        if row is None or _skip_row(row):
+            continue
+        was_stale_oracle = row.get("label_provenance") == "oracle"
+        accepted = accept_oracle_verdict(v, row.get("body_text", ""), catalog)
+        row["expected_verdict"] = accepted.expected_verdict
+        row["reason"] = accepted.reason
+        row["spans"] = [list(s) for s in accepted.spans]
+        row["confidence"] = accepted.confidence
+        row["evidence"] = accepted.evidence
+        row["label_provenance"] = accepted.label_provenance
+        row["oracle_policy_version"] = accepted.oracle_policy_version
+        row["oracle_prompt_version"] = accepted.oracle_prompt_version
+        row["downgraded"] = accepted.downgraded
+
+        labeled += 1
+        if accepted.downgraded:
+            downgraded += 1
+        if was_stale_oracle:
+            overwritten += 1
+        by_verdict[accepted.expected_verdict] = by_verdict.get(accepted.expected_verdict, 0) + 1
+        if _bucket(v.label) == "hard_negative" and accepted.expected_verdict == "ineligible":
+            hard_negatives.append(v.label)
+
+    result = ApplyResult(
+        labeled=labeled,
+        downgraded=downgraded,
+        overwritten=overwritten,
+        hard_negative_ineligible=tuple(hard_negatives),
+        by_verdict=by_verdict,
+    )
+    return rows, result
