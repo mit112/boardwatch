@@ -92,6 +92,19 @@ SHIPPED_DATA: dict[str, DataEntry] = {
         reason="Alembic migration template",
         pin="sha256:114d2c8daf1106848ce42d0c5f13a4d0056ec4205dfc568999d988c131bb8c54",
     ),
+    "src/boardwatch/tailor/render/templates/resume_base.tex": DataEntry(
+        kind="template",
+        reason="Bundled default LaTeX résumé template for the tectonic render substrate "
+        "(Increment 1, Task 4). Generic placeholder header/contact/education only ('Your "
+        "Name', example.com contact, a sample degree) so the default is user-agnostic; a "
+        "real user's résumé installs their own at {config_dir}/resume_template.tex (Task 7) "
+        "and that file wins over this one. Describes LaTeX layout macros, not any user's "
+        "data.",
+        provenance="first-party",
+        source="derived from the 'Jake's Resume' LaTeX template lineage via job-apps' "
+        "~/dev/Job apps/resume_base.tex, genericized for this repo",
+        pin="sha256:d7715a26bc9f549743d722d92711da741b3c844e4247fd7a9ae126512486caa8",
+    ),
     "tests/fixtures/ashby/dead.json": DataEntry(
         kind="fixture",
         reason=_FIXTURE,

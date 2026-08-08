@@ -47,7 +47,7 @@ def test_parse_bullets_handles_escaped_literal_braces():
 
 def _r() -> Resume:
     return Resume(
-        header=["Mit Sheth", "houston · m@x.com"],
+        header=["Mit Sheth", "houston · m@example.com"],
         education=["MS — NEU — 2025"],
         skill_groups=[SkillGroup(label="Languages", items=["Python", "C/C++"])],
         entries=[
@@ -102,7 +102,7 @@ def test_emit_heading_only_entry_does_not_crash():
     from boardwatch.tailor.render.latex import LatexRenderer
 
     # Blocker-2 regression: default kind="experience", title=None -> must fall back, not escape(None)
-    r = Resume(header=["N", "e@x.com"], education=["ed"],
+    r = Resume(header=["N", "e@example.com"], education=["ed"],
                skill_groups=[SkillGroup(label="L", items=["Python"])],
                entries=[Entry(entry_id="e1", heading="Engineer — Acme — 2020",
                               bullets=[Bullet(bullet_id="b1", text="Did a thing")])])

@@ -48,7 +48,7 @@ def test_scope_covers_data_files_repo_wide() -> None:
     assert "src/boardwatch/eligibility/rules.yaml" in scope
     assert "tests/fixtures/lever/normal.json" in scope
     assert "src/boardwatch/tailor/register.yaml" in scope
-    assert len(scope) == 38
+    assert len(scope) == 39
 
 
 def test_scope_excludes_tooling_config_and_workflows() -> None:
