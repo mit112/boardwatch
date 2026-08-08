@@ -12,11 +12,21 @@ from boardwatch.tailor.render.outcome import CompileReason
 # package bundle (hundreds of MB) on FIRST compile — an installed-but-offline env will FAIL the
 # OK test, not skip it. Task 1's Dockerfile warms the bundle at image-build time; run locally
 # online at least once so the bundle is cached before `make check` in an offline setting.
-pytestmark = pytest.mark.skipif(shutil.which("tectonic") is None, reason="tectonic not installed")
+#
+# NOTE (fix round 1, review m1): this used to be a module-level `pytestmark`, which skipped
+# ALL tests in this file — including `test_pdf_page_count_parses_multiline_pdfinfo_output`,
+# which monkeypatches `subprocess.run` and needs neither tectonic nor pdfinfo. That test's
+# whole purpose is to catch a regression of the `re.MULTILINE` fix, so it must run in exactly
+# the environments (pdfinfo present, tectonic not yet installed) where the regression is most
+# likely. The skip is now applied per-test, only to the two real-compile tests below.
+_requires_tectonic = pytest.mark.skipif(
+    shutil.which("tectonic") is None, reason="tectonic not installed"
+)
 
 _MINIMAL = "\\documentclass{article}\n\\begin{document}\nHello \\% world\n\\end{document}\n"
 
 
+@_requires_tectonic
 def test_default_runner_compiles_and_counts_pages(tmp_path: Path):
     tex = tmp_path / "r.tex"
     tex.write_text(_MINIMAL)
@@ -24,6 +34,7 @@ def test_default_runner_compiles_and_counts_pages(tmp_path: Path):
     assert out.reason is CompileReason.OK and out.page_count == 1 and out.pdf_path.exists()
 
 
+@_requires_tectonic
 def test_default_runner_reports_compile_failure(tmp_path: Path):
     # Robust failure (not halt-on-error dependent): a document class that cannot exist.
     tex = tmp_path / "bad.tex"
