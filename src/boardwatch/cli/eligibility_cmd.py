@@ -703,10 +703,20 @@ def gate_apply_cmd(
 
     with app_ctx.engine.connect() as conn:
         versions = current_posting_versions(conn, None)
+    # D-019: a standalone stage (no pipeline above it) either receives a run_id or mints
+    # one via ensure_run, so every attributable row is attributable and run_id IS NULL
+    # keeps its one meaning ("predates attribution"). Mirrors `eligibility extract`'s own
+    # standalone-LLM-lane pattern just above. Gated on there being at least one verdict to
+    # apply — same guard `run_eligibility` uses (D-019) — so an empty/no-op invocation does
+    # not log a run.
+    run_id: int | None = ensure_run(app_ctx.engine, None) if verdicts else None
     with app_ctx.engine.begin() as conn:
         result = apply_gate_verdicts(
             conn, verdicts, versions=versions, facts=facts, policy=policy, catalog=catalog,
+            run_id=run_id,
         )
+    if run_id is not None:
+        finish_run(app_ctx.engine, run_id)
 
     console.print(
         f"judged {result.judged} · ineligible {result.ineligible} · "
