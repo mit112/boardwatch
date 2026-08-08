@@ -3,10 +3,12 @@
 **Last updated:** 2026-08-08 (overnight autonomous run — **P4 items 6 AND 7 both SHIPPED to `main`**:
 item 6 keyword-coverage `58f032e`/D-061, item 7 persona-registry+de-senioritizer `1988c39`/D-063; both
 diff-reviewed + deepseek-reviewed, `make check` green (3148 passed / 95.23%). **P4 BUILD IS COMPLETE**
-(items 1–7); only Gate P4's blind-craft review remains, which is Mit's. Now building **P5a** — the
-verdict-SAFE eligibility slices (design `.superpowers/sdd/p5-eligibility-decides/design-p5a.md`, deepseek-
-reviewed); verdict-changing + data-gated P5 work deferred to Mit's morning. Prior context holds: Increment 1
-D-060; Mit's résumé renders 1pp; the 3 over-220-char bullets remain Mit's deferred content fix.)
+(items 1–7); only Gate P4's blind-craft review remains, which is Mit's. **P5a SHIPPED** (`faf8aa9`, D-064,
+diff- + deepseek-reviewed, `make check` green 3525 passed / 95.17%): three verdict-SAFE eligibility-integrity
+slices (INELIGIBLE-span property gate; out-of-catalog family/disposition FAILURE surfacing; LLM cache keyed
+on profile+catalog identity). Verdict-changing + data-gated P5 work (P5b) deferred to Mit's morning — design
+ready at `.superpowers/sdd/p5-eligibility-decides/design-p5b.md`. Prior context holds: Increment 1 D-060;
+Mit's résumé renders 1pp; the 3 over-220-char bullets remain Mit's deferred content fix.)
 **Updated by:** boardwatch (Claude)
 **Repo state at write time:** all nine P0 items (0-8), P1a (the résumé artifact integrity gate —
 PROGRAM.md §3.P1 items 1, 2, 3, 3b, 4, 5), and P1b (item 3c, the Tier-B token-provenance validator, D-033)
@@ -740,16 +742,20 @@ domain input nor Docker.** What is left is genuinely gated on things I cannot su
     `%%TITLE%%` pair into his `{config_dir}/resume_template.tex` so the persona title renders for him (the
     bundled template has it; skill-order + entry emphasis render regardless). The 220-char bullet trim +
     Increments 2/3 remain Mit's deferred content work.
-    **NEXT ACTION (overnight, in progress): P5a** — the verdict-SAFE eligibility slices (design +
-    grounding in `.superpowers/sdd/p5-eligibility-decides/`, deepseek-reviewed): S1 a corpus-wide
-    "0 INELIGIBLE without a span" property gate, S2 out-of-catalog family/verdict-level FAILURE guard in
-    `reports/abstain.py`, S3 widen the LLM cache key with profile/catalog identity (compose into the
-    `content_hash` at the `extract_llm.py` call site — do NOT change `ResponseCache.key`'s signature, the
-    tailor rewrite lane also calls it). **Deferred to Mit's morning (verdict-changing or data-gated):**
-    P5 item 1 new hard-stop families, item 3 named exceptions, item 4 REQUIRED/PREFERRED slicer (all
-    verdict-changing — need the labeled set to measure Gate-P5 precision), item 5 the ~200-JD labeled set,
-    item 6 the 35+ visa phrases from `~/dev/Job apps/`. Gate P5 precision run cannot execute until the
-    labeled set exists.
+    **P5a SHIPPED (D-064, `faf8aa9`):** the three verdict-SAFE eligibility-integrity slices are on `main`,
+    diff- + deepseek-reviewed, `make check` green (3525 passed / 95.17%) — S1 corpus-wide
+    "0 INELIGIBLE without a span" property gate, S2 out-of-catalog family/disposition FAILURE surfacing in
+    `reports/abstain.py`, S3 LLM cache keyed on profile+catalog identity.
+    **NEXT ACTION — P5b, MIT's morning (verdict-changing + data-gated; NOT built overnight on purpose):**
+    P5 item 1 new hard-stop families, item 3 named exceptions (`up_to_n`/`range_0_n`/`internships_count` +
+    an explicit exception-name field), item 4 REQUIRED/PREFERRED section slicer — all change deterministic
+    verdicts, and a false INELIGIBLE silently deletes a real job, so they need the labeled set to measure
+    Gate-P5 precision (≥0.95 on INELIGIBLE) before shipping. Data-gated: item 5 the ~200-JD + ~50-hard-
+    negative labeled set (curate from `~/dev/Job apps/` skipped folders — reading it is authorized, D-010),
+    item 6 the 35+ visa/sponsorship block phrases (from job-apps `batch_tailor_pipeline.py`). The mechanism
+    plan is ready at `.superpowers/sdd/p5-eligibility-decides/design-p5b.md` (deepseek-reviewed) — it needs
+    Mit to (a) provide/curate the labeled set and (b) greenlight, then it can execute against the precision
+    gate. Gate P5 cannot be measured until the labeled set exists.
 
   **DEFERRED next action — P4 item 6** — keyword coverage measured against JD *requirement* terms,
   achieved only by re-spelling existing facts (ground it first: reuse the canonical vocab + the

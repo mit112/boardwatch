@@ -33,6 +33,19 @@ All notable changes to this project are documented here. The format follows
   original master, so persona shaping can't inflate it. Shipped `1988c39`; `make check` green (3148 passed,
   95.23%).
 
+- **P5a — verdict-safe eligibility-integrity slices** (D-064). Three changes that raise decision integrity
+  without altering any deterministic eligibility verdict: (1) a corpus-wide **property gate** asserting
+  every INELIGIBLE result carries a non-empty quoted JD span (Gate P5's "0 INELIGIBLE without a span");
+  (2) `boardwatch eligibility abstain` now surfaces an out-of-catalog **family** and any **disposition
+  token** outside `{met,unmet,unknown}` as their own FAILURE lines (closed-catalog discipline), while still
+  reconciling the anomaly into `total_rows` so denominators never silently shrink; (3) the opt-in LLM
+  eligibility lane's response cache is now keyed on **profile + catalog identity** (`profile_hash` +
+  `rules_hash` folded into the cache key), so a cached verdict is never replayed across a changed profile
+  or rule catalog — `ResponseCache.key`'s signature is unchanged, leaving the tailor rewrite lane intact.
+  Shipped `faf8aa9`; `make check` green (3525 passed, 95.17%). Verdict-changing P5 items (new families,
+  named exceptions, REQUIRED/PREFERRED context) and data-gated items (labeled eval set, 35+ visa phrases)
+  are deferred — they need the human-verified labeled set to measure Gate P5's precision.
+
 ### Changed
 
 - **The résumé render engine is now tectonic compiling the user's own LaTeX template, replacing Typst**

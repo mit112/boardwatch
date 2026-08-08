@@ -2581,3 +2581,46 @@ Mit's** (read 10 tailored résumés mixed with job-apps output, unlabeled; corpu
 his `{config_dir}/resume_template.tex` carries the `%%TITLE%%` pair (the bundled template has it;
 his installed copy predates it) — a personal-instance follow-up, not a code gap; skill-group reorder
 and entry emphasis render regardless.
+
+## D-064 — P5a: three verdict-SAFE eligibility-integrity slices shipped to `main`
+
+**2026-08-08 · overnight autonomous run.** First P5 increment. Design + grounding:
+`.superpowers/sdd/p5-eligibility-decides/{design-p5a.md,grounding.md}`.
+
+**Context + the governing decision.** P5 ("eligibility that decides", §3.P5) is gated by **precision
+≥ 0.95 on INELIGIBLE** measured on a human-verified labeled set, because a false INELIGIBLE silently
+deletes a real job. That gate cannot be measured without the labeled set (which is Mit's data,
+job-apps' skipped folders). **So for an unattended overnight run, no verdict-changing eligibility
+logic was shipped** — only slices that raise decision *integrity* without changing any deterministic
+verdict. Verdict-changing items (new hard-stop families §1, named exceptions §3, REQUIRED-vs-PREFERRED
+slicer §4) and data-gated items (labeled set §5, 35+ visa phrases §6) are deferred to Mit's morning.
+
+**Shipped (fast-forward merge `faf8aa9`; `make check` green — 3525 passed, 1 deselected, 95.17%,
+generalization OK; two independent reviews — diff-review "CLEAN", deepseek "ship as-is"):**
+- **S1 (`6641957`, test only)** — a corpus-wide **property gate** (`tests/pipeline/test_ineligible_span_gate.py`)
+  asserting every `ineligible` result over the oracle corpus carries a non-empty quoted JD span
+  (Gate P5's "0 INELIGIBLE without a span"). Previously only structural + ad-hoc per-case; now a gate.
+  Non-vacuous (guards that ≥1 ineligible case is exercised); the blocking requirement is reconstructed
+  from `rule_id.split(":")[0]` × `materialised_policy`, matching the engine's roll-up. No engine change
+  (no real span-less INELIGIBLE surfaced across ~370 ineligible corpus cases).
+- **S2 (`9a33a74`, reporting only)** — `reports/abstain.py` + `boardwatch eligibility abstain` now
+  surface an out-of-catalog **family** and any **disposition token** outside `{met,unmet,unknown}`
+  (imported from `resolve`, not respelled) as their own red FAILURE lines, all printed before a single
+  `Exit(1)`. **Reconciled with a pre-existing invariant:** a bad disposition on a *known* rule still
+  counts into `RuleAbstain.other`/`total_rows` (denominators must not silently shrink), so the anomaly
+  is BOTH surfaced AND reconciled — never folded away. Defaulted new fields ⇒ no funnel-artifact drift.
+- **S3 (`faf8aa9`, cache correctness only)** — the opt-in LLM eligibility lane's response-cache key now
+  folds `profile_hash` + `rules_hash` into the `content_hash` argument (identity composed at the
+  `extract_llm.py` call site; `build_identity` hoisted before the key and reused for
+  `record_evaluation`). **`ResponseCache.key`'s signature is untouched** because the tailor rewrite lane
+  (`tailor/rewrite/lane.py:358`) also calls it and must stay identity-free — this two-caller fact was a
+  **deepseek design-review catch** that corrected the original "single caller" plan before build. A
+  changed profile or bumped catalog is now a genuine cache MISS. The lane still cannot emit `ineligible`.
+
+**Process:** both a deepseek DESIGN review (caught the two-caller error) and a deepseek DIFF review ran,
+per Mit's "use deepseek as second eyes" overnight directive, plus a diff-reviewer and my own `make check`
+(a subagent misreported a green gate earlier tonight — self-report is not verification). All converged.
+
+**Consequence.** P5 decision-*integrity* foundations are in. The remaining P5 items are Mit's morning:
+they change verdicts (need the labeled set to measure precision) or need his job-apps data. See the P5b
+design (`.superpowers/sdd/p5-eligibility-decides/design-p5b.md`) for the ready-to-execute mechanism plan.
