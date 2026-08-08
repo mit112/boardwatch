@@ -199,6 +199,53 @@ def test_score_flags_a_predicted_ineligible_without_a_span(catalog, monkeypatch)
 
 
 # --------------------------------------------------------------------------- #
+# audited_coverage + meets_ship_gate — the mechanical deferred-audit drain
+# --------------------------------------------------------------------------- #
+
+
+def test_audited_coverage_zero_for_all_oracle(catalog) -> None:
+    cases = [
+        LabeledCase(
+            "sponsor-tp", _SPONSOR_JD, _needs_sponsorship(), "ineligible", label_provenance="oracle"
+        ),
+        LabeledCase("auth-tn", _AUTH_JD, _citizen(), "eligible", label_provenance="oracle"),
+    ]
+    report = score(cases, catalog)
+    assert report.audited_coverage == 0.0
+    # precision clears the bar on its own; the drain is what should still block ship.
+    assert report.meets_gate(0.95) is True
+    assert report.meets_ship_gate() is False
+
+
+def test_audited_coverage_counts_audited(catalog) -> None:
+    cases = [
+        LabeledCase(
+            "sponsor-tp", _SPONSOR_JD, _needs_sponsorship(), "ineligible", label_provenance="audited"
+        ),
+        LabeledCase("auth-tn", _AUTH_JD, _citizen(), "eligible", label_provenance="oracle"),
+    ]
+    report = score(cases, catalog)
+    assert report.audited_coverage == pytest.approx(0.5)
+
+
+def test_meets_ship_gate_requires_coverage(catalog) -> None:
+    cases = [
+        LabeledCase(
+            "sponsor-tp", _SPONSOR_JD, _needs_sponsorship(), "ineligible", label_provenance="oracle"
+        ),
+        LabeledCase("auth-tn", _AUTH_JD, _citizen(), "eligible", label_provenance="oracle"),
+    ]
+    report = score(cases, catalog)
+    assert report.precision == pytest.approx(1.0)
+    assert report.audited_coverage == 0.0
+    assert report.meets_gate(0.95) is True
+    # meets_gate alone passes on precision; meets_ship_gate additionally requires
+    # audited coverage to clear its own bar.
+    assert report.meets_ship_gate() is False
+    assert report.meets_ship_gate(min_audited_coverage=0.0) is True
+
+
+# --------------------------------------------------------------------------- #
 # load_labeled_set — the on-disk format the worksheet fills in
 # --------------------------------------------------------------------------- #
 

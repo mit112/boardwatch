@@ -13,10 +13,17 @@ Under the shipped all-`preference` default, INELIGIBLE is structurally 0 — eng
 policy sets every DECLARED family to `blocker` so the gate measures the RULES, not a user's
 policy. Mit's personal policy is a separate, unscored instance.
 
-This module lives OUTSIDE the digested engine set (catalog/detect/resolve/engine): adding a
-helper to any of those re-keys the whole cached corpus via `engine_version()`. The
-"0 INELIGIBLE without a span" property is defined here once (`carries_valid_span`) and shared
-with the P5a S1 corpus gate so the two cannot drift.
+The deferred-audit drain is mechanical, not a printed warning: `LabeledCase.label_provenance`
+marks a row `"oracle"` (AI-judged only) or `"audited"` (human-checked), `PrecisionReport.
+audited_coverage` measures the audited fraction of the labeled set, and `meets_ship_gate`
+refuses to pass unless BOTH precision and audited coverage clear their bars — so an
+all-oracle, zero-audit run cannot ship on `meets_gate` alone.
+
+This module changes as the mechanism it measures changes — this file legitimately changes
+here too — but it still lives OUTSIDE the digested engine set (catalog/detect/resolve/engine):
+adding a helper to any of those re-keys the whole cached corpus via `engine_version()`, while
+edits here do not. The "0 INELIGIBLE without a span" property is defined here once
+(`carries_valid_span`) and shared with the P5a S1 corpus gate so the two cannot drift.
 """
 
 from __future__ import annotations
@@ -35,6 +42,10 @@ from boardwatch.eligibility.resolve import UNKNOWN
 from boardwatch.store.eligibility import RequirementItem
 
 LABELED_VERDICTS = frozenset({"eligible", "ineligible", "uncertain"})
+
+# Placeholder bar for PrecisionReport.meets_ship_gate's audited-coverage requirement.
+# Mit confirms the real value at ship time; 0.20 is not a measured or negotiated number.
+SHIP_AUDIT_COVERAGE_BAR: float = 0.20
 
 
 class LabeledSetError(ValueError):
@@ -100,6 +111,7 @@ class LabeledCase:
     expected_verdict: str
     spans: tuple[tuple[int, int], ...] = ()
     source: str | None = None
+    label_provenance: str | None = None
 
 
 @dataclass(frozen=True)
@@ -121,6 +133,7 @@ class PrecisionReport:
     span_violations: tuple[str, ...]
     false_positives: tuple[Mismatch, ...]
     mismatches: tuple[Mismatch, ...]
+    audited_coverage: float
 
     @property
     def is_measurable(self) -> bool:
@@ -138,6 +151,16 @@ class PrecisionReport:
             and self.precision >= threshold
             and not self.span_violations
         )
+
+    def meets_ship_gate(
+        self,
+        threshold: float = 0.95,
+        min_audited_coverage: float = SHIP_AUDIT_COVERAGE_BAR,
+    ) -> bool:
+        """The mechanical deferred-audit drain: `meets_gate` alone can pass on an
+        all-oracle labeled set with zero human audit. Shipping requires BOTH the
+        precision bar and a minimum audited fraction of the labeled set."""
+        return self.meets_gate(threshold) and self.audited_coverage >= min_audited_coverage
 
 
 def score(
@@ -191,6 +214,8 @@ def score(
     abstain_rate_by_rule = {
         rule_id: abstained.get(rule_id, 0) / count for rule_id, count in fired.items()
     }
+    audited = sum(1 for case in cases if case.label_provenance == "audited")
+    audited_coverage = audited / len(cases) if cases else 0.0
 
     return PrecisionReport(
         total=len(cases),
@@ -203,6 +228,7 @@ def score(
         span_violations=tuple(span_violations),
         false_positives=tuple(false_positives),
         mismatches=tuple(mismatches),
+        audited_coverage=audited_coverage,
     )
 
 
@@ -259,6 +285,7 @@ def _parse_row(row: object, where: str) -> LabeledCase | None:
         # location like every other field, not surface a bare ValueError/TypeError.
         raise LabeledSetError(f"{where}: malformed spans: {exc}") from exc
     source = row.get("source")
+    label_provenance = row.get("label_provenance")
     return LabeledCase(
         label=label,
         body_text=body_text,
@@ -266,4 +293,5 @@ def _parse_row(row: object, where: str) -> LabeledCase | None:
         expected_verdict=verdict,
         spans=spans,
         source=source if isinstance(source, str) else None,
+        label_provenance=label_provenance if isinstance(label_provenance, str) else None,
     )
