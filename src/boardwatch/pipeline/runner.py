@@ -52,6 +52,7 @@ from boardwatch.store.run_funnel_queries import count_eligible_judged_this_run, 
 from boardwatch.store.tables import postings
 from boardwatch.tailor.coverage import CoverageReport
 from boardwatch.tailor.load import ResumeLoadError
+from boardwatch.tailor.persona import PersonaError
 from boardwatch.tailor.render.latex import TemplateArtifactError
 
 DEFAULT_TOP_N = 8
@@ -300,6 +301,16 @@ def run_pipeline(
                 # would fail identically. Abort the stage rather than rediscovering that lead
                 # by lead, exactly like `RenderToolMissingError` above.
                 summary.fatal = f"master résumé invalid: {exc}"
+                message = f"tailor: {summary.fatal}"
+                stage_errors.append(message)
+                summary.errors.append(message)
+                break
+            except PersonaError as exc:
+                # A malformed persona registry (bundled or {config_dir} override) is a
+                # configuration fault, not a per-lead one — `load_personas()` re-validates it on
+                # every call, so every remaining lead would fail identically. Fail the run
+                # loudly rather than silently degrading each lead, exactly like the two above.
+                summary.fatal = f"persona registry invalid: {exc}"
                 message = f"tailor: {summary.fatal}"
                 stage_errors.append(message)
                 summary.errors.append(message)

@@ -73,6 +73,7 @@ from boardwatch.tailor.coverage import (
 from boardwatch.tailor.equivalences import EquivalenceTable, load_equivalences
 from boardwatch.tailor.load import load_resume
 from boardwatch.tailor.model import Resume
+from boardwatch.tailor.persona import apply_persona, load_personas, select_persona
 from boardwatch.tailor.plan import Delete, EquivalenceSwap, TailorPlan, build_plan
 from boardwatch.tailor.render.latex import LatexRenderer
 from boardwatch.tailor.render.outcome import CompileOutcome, CompileReason, CompileRunner
@@ -80,6 +81,7 @@ from boardwatch.tailor.rewrite.lane import TierBResult, run_tier_b
 from boardwatch.tailor.rewrite.prompt import JUDGE_PROMPT_VERSION, REWRITE_PROMPT_VERSION
 from boardwatch.tailor.rewrite.provenance import PROVENANCE_VERSION
 from boardwatch.tailor.safety import enforce_tier_a
+from boardwatch.tailor.title import resolve_title
 
 VALIDATOR_VERSION = "tier-a-1"
 # Bumped for P1b (D-033): the lane now vetoes un-provenanced rewords before the judge,
@@ -114,6 +116,12 @@ class _TierAPlan:
     table: EquivalenceTable
     plan: TailorPlan
     cv: CurrentVersion
+    # P4 item 7: the persona lens chosen for this JD and the headline title it resolved to.
+    # `master` stays the ORIGINAL authored résumé (its hash, coverage, and the untailored
+    # safety-net render must not be shaped by a presentation lens); `tailored` is built from
+    # the persona-shaped résumé, so `tailored.title` carries `resolved_title` into the render.
+    persona_id: str
+    resolved_title: str
 
 
 @dataclass(frozen=True)
@@ -141,6 +149,8 @@ class TailorResult:
     # REPORT, never a veto — it never changes `kept`/`dropped`/`degraded`. None when a coverage
     # measurement error was swallowed (fail-safe: a metric bug must not delete a real résumé).
     coverage: CoverageReport | None = None
+    # P4 item 7: the persona lens applied for this JD (also recorded in the artifact meta_json).
+    persona_id: str | None = None
 
 
 def _pdf_page_count(pdf: Path) -> int | None:
@@ -268,6 +278,8 @@ def _trace(
     pdf_uri: str | None,
     rows: list[dict[str, Any]],
     coverage: CoverageReport | None,
+    persona_id: str,
+    resolved_title: str,
 ) -> dict[str, Any]:
     return {
         "validator_version": VALIDATOR_VERSION,
@@ -277,6 +289,9 @@ def _trace(
         "posting_version_id": cv.posting_version_id,
         "jd_skills": sorted(jd_skills),
         "format": fmt,
+        # P4 item 7 audit: the persona lens and the headline it resolved to for this JD.
+        "persona_id": persona_id,
+        "resolved_title": resolved_title,
         # legacy meta key name (D-058); renaming ripples into funnel/reconcile — out of scope
         "typst_pdf_built": pdf_built,
         "pdf_uri": pdf_uri,
@@ -296,15 +311,24 @@ def _plan_tier_a(
     """
     run_preflight(engine, settings)
     taxonomy = load_taxonomy(settings.config_dir)
+    # A malformed registry (bundled OR override) raises PersonaError here, before any render or
+    # write — the pipeline runner treats it as a run-level fatal, never a per-lead degrade.
+    registry = load_personas(settings.config_dir)
 
     with engine.connect() as conn:
         cv = current_posting_versions(conn, [posting_id]).get(posting_id)
         if cv is None:
             raise NoCurrentVersionError(f"posting {posting_id} has no current version")
-        # current_posting_versions ignores status for an explicit list; enforce open here.
-        status = conn.execute(select(postings.c.status).where(postings.c.id == posting_id)).scalar()
-        if status != "open":
-            raise NoCurrentVersionError(f"posting {posting_id} is not open (status={status!r})")
+        # current_posting_versions ignores status for an explicit list; enforce open here, and
+        # read the posting title in the same round-trip — it is the persona-selection input.
+        prow = conn.execute(
+            select(postings.c.status, postings.c.title).where(postings.c.id == posting_id)
+        ).one()
+        if prow.status != "open":
+            raise NoCurrentVersionError(
+                f"posting {posting_id} is not open (status={prow.status!r})"
+            )
+        jd_title = str(prow.title)
         row = conn.execute(
             select(extractions.c.json)
             .select_from(
@@ -323,10 +347,18 @@ def _plan_tier_a(
     jd_skills: set[str] = set((row.json if row else {}).get("skills", []))
 
     master = load_resume(Path(resume_path))
+    # Shape the résumé through the persona lens BEFORE planning: the JD title selects the
+    # persona, the persona resolves the headline title, and the shaped résumé (reordered skill
+    # groups, entry subset, headline) is what all of Tier A operates on. `apply_persona` never
+    # fabricates — it only selects and reorders EXISTING master facts — so the Tier A firewall
+    # compares `tailored` against `shaped`, which is itself entailed by `master`.
+    persona = select_persona(jd_title, registry)
+    resolved_title = resolve_title(jd_title, persona)
+    shaped = apply_persona(master, persona, resolved_title)
     table = load_equivalences()
-    plan = build_plan(master, jd_skills, table, taxonomy)
-    tailored = apply_plan(master, plan, table)
-    enforce_tier_a(master, tailored, plan, table)  # raises before any render or write
+    plan = build_plan(shaped, jd_skills, table, taxonomy)
+    tailored = apply_plan(shaped, plan, table)
+    enforce_tier_a(shaped, tailored, plan, table)  # raises before any render or write
 
     return _TierAPlan(
         master=master,
@@ -336,6 +368,8 @@ def _plan_tier_a(
         table=table,
         plan=plan,
         cv=cv,
+        persona_id=persona.id,
+        resolved_title=resolved_title,
     )
 
 
@@ -380,6 +414,7 @@ def run_tailor(
     r = _plan_tier_a(engine, settings, posting_id, resume_path=resume_path)
     master, tailored, jd_skills, taxonomy = r.master, r.tailored, r.jd_skills, r.taxonomy
     table, plan, cv = r.table, r.plan, r.cv
+    persona_id, resolved_title = r.persona_id, r.resolved_title
 
     renderer = LatexRenderer(config_dir=settings.config_dir)
     source = renderer.emit(tailored)
@@ -600,7 +635,8 @@ def run_tailor(
                 # else: skip the Tier B PDF; Tier A's PDF above remains the lead's deliverable.
 
         meta = _trace(
-            plan, jd_skills, table, master_hash, cv, fmt, True, str(pdf_path), rows, coverage
+            plan, jd_skills, table, master_hash, cv, fmt, True, str(pdf_path), rows, coverage,
+            persona_id, resolved_title,
         )
         meta["degraded"] = degraded
         if degraded:
@@ -707,4 +743,5 @@ def run_tailor(
         degraded=degraded,
         degrade_reason=degrade_reason,
         coverage=coverage,
+        persona_id=persona_id,
     )
