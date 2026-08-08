@@ -148,3 +148,46 @@ def test_an_unrecognised_disposition_still_counts_toward_observed() -> None:
     assert (rule.other, rule.observed) == (3, 4)
     assert rule.abstain_rate == 0.25
     assert report.total_rows == 4
+
+
+def test_a_family_outside_the_catalog_is_surfaced_as_a_failure() -> None:
+    """Closed catalog at the FAMILY level: a disposition observed under a family the catalog
+    does not declare is a failure, never a silent new bucket. Distinct from the rule_id
+    surfacing, so a report reader learns which VOCABULARY drifted, not only which id."""
+    cat = catalog()
+    report = build_abstain_report(cat, {("ghost:retired_rule", "met"): 7})
+
+    assert report.out_of_catalog_families == ("ghost",)
+    # A catalog family never appears here, and the failure is not folded into any real rule.
+    assert all(f not in {f.id for f in cat.families} for f in report.out_of_catalog_families)
+    assert all(rule.family != "ghost" for rule in report.rules)
+
+
+def test_a_bogus_disposition_token_is_surfaced_as_a_failure() -> None:
+    """Closed token set: a disposition outside {met, unmet, unknown} — including a stray
+    verdict literal like 'eligible' leaking into the disposition column — is surfaced as a
+    FAILURE rather than only counted. It still reconciles into `observed`/`total_rows` (the
+    denominator invariant one level up), but it is never invisible: the anomaly gets its own
+    failure line instead of being quietly absorbed."""
+    cat = catalog()
+    rid = rule_ids(cat)[0]
+    report = build_abstain_report(
+        cat, {(rid, "met"): 1, (rid, "eligible"): 2, (rid, "not_a_disposition"): 3}
+    )
+
+    assert report.bad_dispositions == ("eligible", "not_a_disposition")
+    # Surfaced AND still reconciled — not dropped, not hidden.
+    assert report.total_rows == 6
+    assert report.rules[0].observed == 6
+
+
+def test_valid_dispositions_produce_no_bogus_token_failure() -> None:
+    """The closed-token guard must not fire on the legitimate vocabulary."""
+    cat = catalog()
+    rid = rule_ids(cat)[0]
+    report = build_abstain_report(
+        cat, {(rid, "met"): 1, (rid, "unmet"): 1, (rid, "unknown"): 1}
+    )
+
+    assert report.bad_dispositions == ()
+    assert report.out_of_catalog_families == ()

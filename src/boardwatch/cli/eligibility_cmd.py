@@ -444,12 +444,30 @@ def abstain_cmd(ctx: typer.Context) -> None:
     )
     if report.unattributed:
         console.print(f"[yellow]{report.unattributed} rows carry no rule_id[/yellow]")
+    # Closed catalog, three dimensions: an undeclared rule_id, a family the catalog does not
+    # declare, or a disposition token outside {met, unmet, unknown}. Each is a FAILURE, never
+    # a new bucket. Print every one that fired before exiting, so a run is not diagnosed one
+    # anomaly at a time.
+    failed = False
     if report.out_of_catalog:
-        # Closed catalog: an undeclared rule_id is a failure, never a new bucket.
         console.print(
             f"[red]FAILURE: {report.out_of_catalog_rows} rows carry rule_ids the catalog does "
             f"not declare: {', '.join(report.out_of_catalog)}[/red]"
         )
+        failed = True
+    if report.out_of_catalog_families:
+        console.print(
+            f"[red]FAILURE: dispositions observed under families the catalog does not "
+            f"declare: {', '.join(report.out_of_catalog_families)}[/red]"
+        )
+        failed = True
+    if report.bad_dispositions:
+        console.print(
+            f"[red]FAILURE: dispositions outside the closed set {{met, unmet, unknown}}: "
+            f"{', '.join(report.bad_dispositions)}[/red]"
+        )
+        failed = True
+    if failed:
         raise typer.Exit(1)
 
 

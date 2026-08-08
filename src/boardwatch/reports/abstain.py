@@ -25,10 +25,18 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 
 from boardwatch.eligibility.catalog import RulesCatalog
+from boardwatch.eligibility.resolve import MET, UNKNOWN, UNMET
 
 # (rule_id, disposition) -> row count. rule_id is None for rows the schema allows to carry no
 # rule attribution at all.
 DispositionCounts = Mapping[tuple[str | None, str], int]
+
+# The closed vocabulary the disposition column may carry, enumerated from the resolve
+# constants rather than respelled here (spec trap 5). A token outside this set — a bogus
+# string, or a verdict literal like `eligible` leaking into the disposition column — is a
+# closed-catalog violation and is surfaced as a FAILURE, exactly like an out-of-catalog
+# rule_id.
+CLOSED_DISPOSITIONS = frozenset({MET, UNMET, UNKNOWN})
 
 
 @dataclass(frozen=True)
@@ -80,6 +88,13 @@ class AbstainReport:
     out_of_catalog: tuple[str, ...]
     out_of_catalog_rows: int
     unattributed: int
+    # Anomalies surfaced rather than bucketed, extending the closed-catalog discipline past
+    # the rule_id to the family and the disposition token. Neither shrinks a denominator: the
+    # rows they name are still counted (out-of-catalog families under `out_of_catalog_rows`,
+    # bogus dispositions under each rule's `other`), so reconciliation holds. They exist so a
+    # drifted vocabulary reads as a FAILURE line instead of silence.
+    out_of_catalog_families: tuple[str, ...] = ()
+    bad_dispositions: tuple[str, ...] = ()
 
     @property
     def never_fired(self) -> tuple[RuleAbstain, ...]:
@@ -112,17 +127,28 @@ def build_abstain_report(catalog: RulesCatalog, counts: DispositionCounts) -> Ab
         for pattern in family.patterns
     }
 
+    family_ids = {family.id for family in catalog.families}
     tallies: dict[str, dict[str, int]] = {rule_id: {} for rule_id in declared}
     out_of_catalog: dict[str, int] = {}
+    out_of_catalog_families: set[str] = set()
+    bad_dispositions: set[str] = set()
     unattributed = 0
 
     for (rule_id, disposition), count in counts.items():
+        if disposition not in CLOSED_DISPOSITIONS:
+            bad_dispositions.add(disposition)
         if rule_id is None:
             unattributed += count
         elif rule_id in tallies:
             tallies[rule_id][disposition] = tallies[rule_id].get(disposition, 0) + count
         else:
             out_of_catalog[rule_id] = out_of_catalog.get(rule_id, 0) + count
+            # A rule_id is `<family>:<pattern>`; a rule the catalog does not declare may also
+            # name a family it does not declare. Surface that family too, so the report names
+            # the drifted VOCABULARY, not only the unknown id.
+            family = rule_id.split(":", 1)[0]
+            if family not in family_ids:
+                out_of_catalog_families.add(family)
 
     rules = tuple(
         RuleAbstain(
@@ -144,4 +170,6 @@ def build_abstain_report(catalog: RulesCatalog, counts: DispositionCounts) -> Ab
         out_of_catalog=tuple(sorted(out_of_catalog)),
         out_of_catalog_rows=sum(out_of_catalog.values()),
         unattributed=unattributed,
+        out_of_catalog_families=tuple(sorted(out_of_catalog_families)),
+        bad_dispositions=tuple(sorted(bad_dispositions)),
     )
