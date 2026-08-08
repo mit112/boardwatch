@@ -1,6 +1,6 @@
 # PROGRAM STATE — read this first
 
-**Last updated:** 2026-08-07 (résumé-tailoring-fix session — D-057 diagnosis DONE, D-058 engine ratified, Increment-1 plan reviewed + ready to execute; no source merged this session)
+**Last updated:** 2026-08-07 (résumé-tailoring-fix session, resumed — Increment-1 plan RE-REVIEWED 2nd pass [D-059, both reviewers REWORK, all findings folded in] + CLEARED to execute; tectonic 0.17.0 installed; no source merged this session)
 **Updated by:** boardwatch (Claude)
 **Repo state at write time:** all nine P0 items (0-8), P1a (the résumé artifact integrity gate —
 PROGRAM.md §3.P1 items 1, 2, 3, 3b, 4, 5), and P1b (item 3c, the Tier-B token-provenance validator, D-033)
@@ -677,11 +677,20 @@ domain input nor Docker.** What is left is genuinely gated on things I cannot su
     `.typ`→`.tex` rename; resolved-template artifact scan; `Resume.extracurricular` + honest 3-category
     fidelity check; tectonic bundle-warm; etc.). Reviews at `review-deepseek.md`/`review-opus.md` (of the
     superseded Typst draft) + the plan-review is summarized in the plan's Self-Review.
-  - **NEXT ACTION: execute Increment 1** (subagent-driven recommended), starting **Task 1** (tectonic
-    doctor probe + Dockerfile). Prereq: `brew install tectonic`. After Task 7 renders Mit's résumé,
-    validate against his real job-apps SDE PDF (three-category gap check) BEFORE writing the Increment 2
-    (bolding) and Increment 3 (title/summary) plans. Mit optionally wants a re-review of the revised plan
-    before execution — confirm his choice at session resume.
+  - **Increment-1 plan RE-REVIEWED (2nd pass) + CLEARED to execute — D-059.** At resume Mit chose a
+    second re-review of the revised plan before execution. tectonic **0.17.0** installed (D-058 prereq);
+    pdfinfo present. Two fresh-context Opus reviewers (soundness · tests) BOTH returned REWORK; every
+    finding was verified against the live tree and folded into the plan (2 shared blockers — the
+    `TypstRunner` import graph, fixed by moving `CompileRunner` to leaf `render/outcome.py` +
+    expand-then-contract; and the dash contradiction, fixed by normalizing `–`/`—`→`--` in `escape()` — plus
+    `_pdf_page_count` `re.MULTILINE`, expanded Task-6 breaking-test list, full keystone-field entailment
+    tests, doctor version regex, and 8 minors). Both reviewers confirmed the entailment tightening, escape,
+    firewall, macro arities, and fail-safe posture sound. Verdicts at `review2-soundness.md`/`review2-tests.md`.
+  - **NEXT ACTION: execute Increment 1** (subagent-driven; `make check` gates each task; per-task diff review
+    between tasks), starting **Task 1** (tectonic doctor probe + Dockerfile). A 3rd plan-review is declined
+    (D-059). After Task 7 renders Mit's résumé, validate against his real job-apps SDE PDF (three-category
+    gap check) BEFORE writing the Increment 2 (bolding) and Increment 3 (title/summary) plans. Execution not
+    yet started — checkpointed for a fresh context window (the 7-task build is large).
 
   **DEFERRED next action — P4 item 6** — keyword coverage measured against JD *requirement* terms,
   achieved only by re-spelling existing facts (ground it first: reuse the canonical vocab + the

@@ -2344,3 +2344,50 @@ replacing/alongside the typst binary. pdfinfo already present.
 
 **Status.** Engine ratified. The fill mechanism, gate re-expression, header/education sourcing, and
 increment re-cut are in the revised design.md, pending Mit's review before `writing-plans`.
+
+## D-059 — Increment-1 plan cleared for execution after a SECOND fresh-context re-review (both REWORK, all folded in)
+
+**2026-08-07 · résumé-tailoring-fix session (resumed) · Mit chose "re-review the revised plan first".**
+
+**Context.** The revised Increment-1 plan (LaTeX/tectonic render substrate) had already passed one
+fresh-context Opus review (REWORK → revised). At resume, Mit elected a second re-review before execution
+rather than proceeding straight to code. tectonic **0.17.0** was installed (`brew install tectonic`; the
+D-058 prereq); `pdfinfo` already present.
+
+**What the re-review found.** Two fresh-context Opus reviewers ran in parallel with distinct lenses
+(soundness/line-refs · test-rigor/coverage/keystone). **Both returned REWORK** — soundness: 2 blockers +
+2 majors + 5 minors; tests: 1 blocker + 5 majors + 3 minors. Every load-bearing claim was verified against
+the live tree before folding (not taken on the reviewers' word). The blockers were real and would have
+failed `make check`:
+- **Import graph (both reviewers).** Renaming `TypstRunner`→`CompileRunner` in `render/__init__.py` breaks
+  `reports/tailor.py:69` + `render/typst.py:6` until Task 6 (package unimportable across 4 commits), and
+  adding `unescape`-from-`latex` into `__init__` while `latex.py` imports the runner alias back from
+  `__init__` is a circular import ruff's isort+E402 make fatal. **Resolved together:** move `CompileRunner`
+  to the leaf `render/outcome.py` + expand-then-contract the `TypstRunner` alias (kept Tasks 2–5, removed
+  Task 6) so every commit stays green.
+- **Dash contradiction (both).** Fixtures fed `–`/`—`, assertions expected `--`, `escape()` normalized
+  neither → emit tests fail even with a correct impl. **Resolved:** `escape()` normalizes `–`/`—`→`--` as
+  the single site.
+
+Majors folded in: `_pdf_page_count` needs `re.MULTILINE` (real `pdfinfo` puts `Pages:` on line ~11 — a
+false-green in the given code); Task-6 breaking-test list under-enumerated (3 tier-B/rewrite files +
+freshness/reconcile/run_funnel, now behind a non-exhaustive grep); keystone entailment tested only `title`
+of 5 new fields (now all 5 + `extracurricular`); doctor version regex was case-sensitive vs the real
+"Tectonic 0.17.0" (now word-agnostic + tuple floor + live-derived fixture); one `parse_bullets` test used a
+balanced brace so it couldn't fail for its claim (now a lone brace). All 8 minors folded.
+
+**Both reviewers independently CONFIRMED sound:** the entailment tightening cannot falsely reject
+(`apply_plan` rebuilds via `model_copy`, preserving the new fields; Tier-A never sets them), and the
+single-pass `escape`, brace-depth firewall, macro arities, the deliberate `{{`/`}}` non-scan, and the
+fail-safe posture are all correct.
+
+**Decision.** The revised plan (`.superpowers/sdd/resume-render-tailoring/plan-increment-1-render-substrate.md`,
+Self-Review "Re-review 2 pass") is **cleared to execute** — subagent-driven, `make check` gating each task,
+a per-task diff review between tasks. A third plan-review is declined (diminishing returns; the remaining
+risk surface is the actual code, reviewed per-task). After Task 7 renders Mit's résumé, validate against his
+real job-apps SDE PDF via the three-category gap check (layout bug / resume.yaml data gap / model-structure
+gap) BEFORE writing the Increment 2 (bolding) and Increment 3 (title/summary) plans.
+
+**Status.** Plan execution-ready; prereqs met (tectonic 0.17.0, pdfinfo). Execution not yet started —
+checkpointed here for a fresh context window (the 7-task build is large). Reviewer verdicts preserved at
+`review2-soundness.md` / `review2-tests.md` (gitignored working material).
