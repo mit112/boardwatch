@@ -940,3 +940,25 @@ now disagree and the job-apps copy is the stale one.
 remain their own plans, not started. P4 items 6–7 and the Gate-3 operational-run window, both parked behind
 D-057's "fix tailoring first" ruling, can resume once Mit shortens the three over-length bullets — no
 further build is required to unblock them.
+
+## Session 2026-08-08 — P4-craft + P5a (overnight autonomous run)
+
+Three increments shipped to `main`, each `make check` green (plain mode, real exit code captured), each
+diff-reviewed and deepseek-reviewed:
+
+| Increment | Commit | Tests passed | Coverage | Notes |
+|---|---|---:|---:|---|
+| P4 item 6 — keyword coverage | `58f032e` | 3112 | 95.32% | +14 tests; report, not a veto |
+| P4 item 7 — persona registry + de-senioritizer | `1988c39` | 3148 | 95.23% | +36 tests; eligibility engine untouched |
+| P5a — eligibility-integrity slices (S1/S2/S3) | `faf8aa9` | 3525 | 95.17% | S1 corpus span-gate parametrized over the oracle corpus |
+
+Baseline at session start (`004a500`): 3098 passed, 95.33%. No deterministic eligibility verdict changed
+this session (P5a is verdict-safe by construction; P4 is tailoring/rendering).
+
+**Gate P5 status:** NOT measurable yet — no human-verified labeled set exists (the 987-case oracle corpus
+is machine-generated, not ground truth). Precision-on-INELIGIBLE cannot be computed until the labeled set
++ reference all-blocker policy ship (P5b B0, Mit-gated). P5a's span-gate confirms **0 INELIGIBLE without a
+quoted span** across all ~370 ineligible oracle cases.
+
+**Process:** one build subagent misreported `make check` EXIT=0 while generalization was failing (R7, an
+unregistered `personas.yaml`); caught by re-running the gate in the main tree (self-report ≠ verification).
