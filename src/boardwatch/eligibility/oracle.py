@@ -24,6 +24,9 @@ shipping a preference/title collection as a module default): the stopword set si
 from __future__ import annotations
 
 import re
+from dataclasses import dataclass
+
+from boardwatch.eligibility.catalog import RulesCatalog
 
 # Verdict-cache invalidation knobs, ported from job-apps judge.py:14-15. Bump either to
 # force a clean re-judge of every JD once later tasks wire the cache key.
@@ -79,3 +82,81 @@ def span_of(evidence: str, jd_text: str) -> tuple[int, int] | None:
     if idx < 0:
         return None
     return (idx, idx + len(ev))
+
+
+class OracleVerdictError(ValueError):
+    """Raised when an OracleVerdict.decision is out of the {eligible,ineligible,uncertain}
+    vocabulary (e.g. job-apps' legacy "move" decision)."""
+
+
+@dataclass(frozen=True)
+class OracleVerdict:
+    """Raw judge output, pre-gate. Mirrors job-apps' judge.py verdict shape."""
+
+    label: str
+    decision: str
+    reason: str | None
+    evidence: str
+    confidence: str
+
+
+@dataclass(frozen=True)
+class AcceptedLabel:
+    """Answer-key row: the judge's verdict after the ineligible-gate has run."""
+
+    label: str
+    expected_verdict: str
+    reason: str | None
+    spans: tuple[tuple[int, int], ...]
+    confidence: str
+    evidence: str
+    label_provenance: str
+    oracle_policy_version: str
+    oracle_prompt_version: str
+    downgraded: bool
+
+
+_VERDICTS = frozenset({"eligible", "ineligible", "uncertain"})
+
+
+def is_allowed_reason(reason: str | None, catalog: RulesCatalog) -> bool:
+    return reason is not None and reason in {f.id for f in catalog.families}
+
+
+def accept_oracle_verdict(v: OracleVerdict, jd_text: str, catalog: RulesCatalog) -> AcceptedLabel:
+    """The four-ANDed ineligible-gate, reused as an answer-key-integrity gate. Accept
+    `ineligible` ONLY if the reason is in-catalog AND confidence is high AND the evidence
+    resolves provenance against the JD — else downgrade to `uncertain` (fail-open: never
+    a false INELIGIBLE in ground truth). This is the H2 no-force-fit rule: a hard stop
+    whose category isn't one of the 6 families becomes uncertain, never mislabeled — the
+    engine is title-blind, so seniority/location/role hard stops legitimately cannot be
+    scored here."""
+    decision = v.decision.strip().lower()
+    if decision not in _VERDICTS:
+        raise OracleVerdictError(f"decision {v.decision!r} not in {sorted(_VERDICTS)}")
+    confidence = v.confidence.strip().lower()
+    accepted: str = decision
+    downgraded = False
+    spans: tuple[tuple[int, int], ...] = ()
+    if decision == "ineligible":
+        if (
+            is_allowed_reason(v.reason, catalog)
+            and confidence == "high"
+            and resolve_provenance(v.evidence, jd_text)
+        ):
+            s = span_of(v.evidence, jd_text)
+            spans = (s,) if s is not None else ()  # L3: tolerate normalized-only match
+        else:
+            accepted, downgraded = "uncertain", True
+    return AcceptedLabel(
+        label=v.label,
+        expected_verdict=accepted,
+        reason=v.reason if accepted == "ineligible" else None,
+        spans=spans,
+        confidence=confidence,
+        evidence=v.evidence,
+        label_provenance="oracle",
+        oracle_policy_version=POLICY_VERSION,
+        oracle_prompt_version=PROMPT_VERSION,
+        downgraded=downgraded,
+    )
