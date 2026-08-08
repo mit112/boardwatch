@@ -2301,3 +2301,46 @@ fixing tailoring is premature.
 Tier-A repositioning, Tier-B rewording, bullet selection, section/entry choice, the plan? what does the
 bad output look like?) is TBD. The fix session should START by diagnosing against Mit's (reworked) résumé
 + a real JD before changing code. Captured here so the direction is not lost even if unspecified now.
+
+## D-058 — Résumé render engine = tectonic compiling the user's actual LaTeX template (Typst decision reversed)
+
+**2026-08-07 · résumé-tailoring-fix session · Mit, ratified via explicit choice.**
+
+**Context.** The D-057 fix session first proposed Typst (a `spike.pdf` reproduced the job-apps "Jake's
+Resume" look). Mit rendered the spike against his real job-apps SDE résumé and rejected the equivalence:
+"not the same as my job apps resume, even it looks similar, it's different." A concrete side-by-side diff
+(this session) confirmed: most visible gaps (density, two-line role/company entries, bullet markers) were
+spike sloppiness that Typst *could* fix — but one gap is fundamental: his template is a **LaTeX** file
+(`~/dev/Job apps/resume_base.tex`), and Typst is a different typesetting engine, so it can only ever
+*approximate* his PDF, never reproduce it. That directly contradicts the design's own governing principle
+("the user's own template, only content changes") and his precedent ("I gave job-apps my résumé + LaTeX
+template and it just worked").
+
+**Correction to the earlier Typst rationale.** The Typst decision leaned on "LaTeX rebuilds a heavy
+toolchain." That was overstated: **tectonic** is a single ~30 MB LaTeX binary (Rust, on-demand package
+fetch) — the same footprint argument used *for* Typst — and it compiles his actual `.tex` unchanged.
+
+**Decision.** Render Mit's résumé by compiling his real `resume_base.tex` with **tectonic**. Output is
+identical to job-apps because it is the same template and the same engine class. Page-count moves from the
+Typst `<total-pages>` metadata query to `pdfinfo` (already installed) / PDF parse. The tailoring logic
+(reorder, keyword-bold, summary/title select) is engine-agnostic and unchanged; only the render layer, the
+three emit-mirror gates (`validate_layout` / `parse_bullets` / `output_is_entailed`), and the page-count
+method are re-expressed for LaTeX.
+
+**Consequence — one review blocker inverts.** Opus's "inline `*bold*` markup breaks the byte-identical
+round-trip" blocker was Typst-specific. job-apps' `deterministic_resume_tailor.py` proves the LaTeX
+pattern: bolding is inline `\textbf{}` in the payload, and the no-fabrication guard *strips* `\textbf{}`
+before comparing tokens to the master (its `normalize_text`). boardwatch adopts that: bolding is native
+inline `\textbf{}`; entailment becomes strip-markup-then-token-compare; any non-`\textbf{}` LaTeX command
+in a bullet is a violation.
+
+**Alternatives rejected.** (a) *Tuned Typst* — visually close, keeps shipped Typst infra, but never
+pixel-identical across engines; fails Mit's "same, not similar" bar. (b) *Pluggable both engines* —
+most faithful to multi-tenancy but builds a Typst path nobody has asked for (YAGNI / breadth-is-last);
+revisitable if a real user brings a Typst/other template.
+
+**New dependency.** tectonic (not yet on PATH) — install locally + package in the Docker image (plan item),
+replacing/alongside the typst binary. pdfinfo already present.
+
+**Status.** Engine ratified. The fill mechanism, gate re-expression, header/education sourcing, and
+increment re-cut are in the revised design.md, pending Mit's review before `writing-plans`.

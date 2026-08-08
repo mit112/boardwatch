@@ -1,6 +1,6 @@
 # PROGRAM STATE — read this first
 
-**Last updated:** 2026-08-07 (session 10, P1b shipped — P1 fully complete)
+**Last updated:** 2026-08-07 (résumé-tailoring-fix session — D-057 diagnosis DONE, D-058 engine ratified, Increment-1 plan reviewed + ready to execute; no source merged this session)
 **Updated by:** boardwatch (Claude)
 **Repo state at write time:** all nine P0 items (0-8), P1a (the résumé artifact integrity gate —
 PROGRAM.md §3.P1 items 1, 2, 3, 3b, 4, 5), and P1b (item 3c, the Tier-B token-provenance validator, D-033)
@@ -652,6 +652,37 @@ domain input nor Docker.** What is left is genuinely gated on things I cannot su
   Tier-A repositioning / Tier-B rewording / bullet selection / the plan?) BEFORE changing code — the
   specifics are TBD (Mit to provide). The merged P4 guards (items 1/2/3/5) stand; just don't build more on
   top yet. **Only after tailoring is fixed** do the items below resume.
+
+  **UPDATE — résumé-tailoring-fix session (2026-08-07), D-057 no longer "TBD":**
+  - **Diagnosis DONE** (`.superpowers/sdd/resume-render-tailoring/diagnosis.md`): the tailored output was a
+    "plain-text dump" for two root causes — (1) the renderer preamble was a 5-line Typst stub (no page
+    setup, fonts, sections, rules, dates), and (2) the tailoring itself is near-invisible (Tier-A only
+    reorders/deletes bullets within an entry, ≤3 bullets each so ~no-op; no keyword bolding; no
+    summary/title; Tier-B off by default). Mit's real complaint: it doesn't look like his job-apps
+    "Jake's Resume" LaTeX output.
+  - **Engine RATIFIED — D-058: tectonic compiling Mit's actual `resume_base.tex` (Typst REVERSED).** Mit
+    rejected a Typst spike as "not the same" — his template is a LaTeX file, so Typst can only approximate.
+    tectonic = single ~30MB LaTeX binary (the earlier "LaTeX is heavy" rationale was wrong); output is
+    identical to job-apps. Page-count moves to `pdfinfo` (installed). Tailoring core (model + Tier-A +
+    `output_is_entailed`) is engine-agnostic and stays; only the render layer + the 3 emit-mirror gates +
+    page-count change. tectonic NOT yet installed (`brew install tectonic` prereq).
+  - **Design APPROVED by Mit** (`.superpowers/sdd/resume-render-tailoring/design.md`): principle
+    template≠content (ship the mechanism, user's own template is data); **three increments** — (1) LaTeX
+    render substrate, (2) `\textbf{}` keyword bolding from `jd_skills`, (3) per-role authored title/summary
+    select. Header+Education stay template-hardcoded in Increment 1 (job-apps-exact); single-source
+    (Option i) is a documented fast-follow.
+  - **Increment-1 plan WRITTEN + REVIEWED + REVISED** (`plan-increment-1-render-substrate.md`, 7 TDD
+    tasks). Fresh-context Opus review returned REWORK; all 3 blockers + 2 majors + 5 minors folded in
+    (single-pass LaTeX escape; `title is None` fallback before kind-routing + scaffold; complete
+    `.typ`→`.tex` rename; resolved-template artifact scan; `Resume.extracurricular` + honest 3-category
+    fidelity check; tectonic bundle-warm; etc.). Reviews at `review-deepseek.md`/`review-opus.md` (of the
+    superseded Typst draft) + the plan-review is summarized in the plan's Self-Review.
+  - **NEXT ACTION: execute Increment 1** (subagent-driven recommended), starting **Task 1** (tectonic
+    doctor probe + Dockerfile). Prereq: `brew install tectonic`. After Task 7 renders Mit's résumé,
+    validate against his real job-apps SDE PDF (three-category gap check) BEFORE writing the Increment 2
+    (bolding) and Increment 3 (title/summary) plans. Mit optionally wants a re-review of the revised plan
+    before execution — confirm his choice at session resume.
+
   **DEFERRED next action — P4 item 6** — keyword coverage measured against JD *requirement* terms,
   achieved only by re-spelling existing facts (ground it first: reuse the canonical vocab + the
   qualifications-span slicer from item 3b; it's a MEASUREMENT/report, likely not a veto). **Then item 7**
