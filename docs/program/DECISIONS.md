@@ -2535,3 +2535,49 @@ worktree (`p4-item7-persona` @ base `58f032e`) but the build subagent terminated
 **session usage limit** (resets 03:30 America/Chicago) before writing anything — the worktree is clean, no
 work lost, `main` unaffected. Resuming is a single dispatch from the design doc once the limit resets. This
 decision is recorded now so the design + the two forks are not re-litigated on resume.
+
+## D-063 — P4 item 7 (persona registry + live de-senioritizer) shipped to `main`; P4 build complete
+
+**2026-08-08 · overnight autonomous run.** Executes the D-062 design.
+
+**Choice.** Built the D-062 design via subagent-driven development in an isolated worktree, then
+rebased onto `main` and fast-forward merged (`1988c39`). New: `tailor/persona.py` (`Persona`,
+`PersonaRegistry`, `PersonaError`, `load_personas`, `select_persona`, `apply_persona`),
+`tailor/personas.yaml` (bundled seed: `general_swe` default + `ios` example, both `entries: null`),
+`tailor/title.py` (`strip_seniority`, `resolve_title`). Modified: `tailor/model.py` (optional
+`Resume.title`), `render/latex.py` (fill the paired `%%TITLE_START%%/%%TITLE_END%%` slot, escaped,
+graceful degrade), `reports/tailor.py` (select+apply persona before Tier-A planning; `persona_id`
++ `resolved_title` into the artifact `meta_json`), `pipeline/runner.py` (`PersonaError` → run-level
+fatal, between the two existing fatal handlers). `make check` green: **3148 passed, 1 deselected,
+95.23%, generalization OK.**
+
+**Load-bearing properties verified:** the coverage denominator (D-061) stays the ORIGINAL master
+(persona shaping never inflates keyword coverage); the Tier-A entailment firewall bases on the
+persona-shaped résumé, sound because `apply_persona` only selects/reorders EXISTING master facts and
+the `resolved_title` is not part of the entailment surface; a malformed registry is a loud run-level
+fatal, an unmatched JD family is the normal default-persona path.
+
+**Reviews:** diff-review (one real finding — `apply_persona` didn't guard duplicate `entries` ids,
+and `model_copy` skips `Resume._unique_ids`, so a hand-authored override could silently render an
+entry twice; fixed by a load-time duplicate-id guard + test) and a **deepseek** second-eyes pass
+(verdict "minor nits, OK to ship after"). Fixes taken: the dup-id guard, `personas.yaml` registered
+in `SHIPPED_DATA` with a sha256 pin (R7), the repo-wide data-scope count bumped 39→40, and NULL/blank
+JD title → default persona (`str(prow.title or "")`).
+
+**Two process notes worth keeping:**
+- **A build subagent misreported a green gate.** It claimed `make check` EXIT=0 at 3147 passed, but
+  the generalization checker — which runs FIRST and aborts before pytest — was failing on the
+  unregistered `personas.yaml` (R7). A self-report is not verification; re-running the gate in the
+  main tree caught it. (Reinforces `CLAUDE.md`: a component's self-report is not verification.)
+- **A deepseek suggestion was declined on fail-safe grounds.** Deepseek's one "should-fix" was to
+  wrap `select_persona`'s `classify_role_family` call and re-raise as `PersonaError` (fatal). Declined:
+  a degenerate *per-lead* JD title must fall back to the default persona (fail-open), not abort the
+  whole run — and `classify_role_family` cannot raise for the typed `str` input anyway. Applied the
+  reviewer's concrete NULL-title nit instead. (receiving-code-review: verify, don't perform agreement.)
+
+**Consequence.** P4's build items are all shipped (items 1–7). **Gate P4's blind-craft review is
+Mit's** (read 10 tailored résumés mixed with job-apps output, unlabeled; corpus = job-apps' existing
+`_applied/` folders) and is the only remaining P4 work. The persona title renders for Mit only once
+his `{config_dir}/resume_template.tex` carries the `%%TITLE%%` pair (the bundled template has it;
+his installed copy predates it) — a personal-instance follow-up, not a code gap; skill-group reorder
+and entry emphasis render regardless.

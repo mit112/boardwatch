@@ -19,6 +19,20 @@ All notable changes to this project are documented here. The format follows
   bug records `coverage=None` and never drops a lead. Shipped `58f032e`; `make check` green (3112 passed,
   95.32%).
 
+- **Persona registry + résumé title de-senioritizer** (P4 item 7 + folded-in item 4 — D-063). A persona is
+  a résumé-*presentation* lens (title, skill-group order, entry subset), never an eligibility variant, so
+  the profile DB and eligibility engine are untouched. A versioned `tailor/personas.yaml` (bundled seed +
+  `{config_dir}` override) declares personas; `select_persona` deterministically picks one from the JD's
+  role family (`classify_role_family`, never a model; unmatched → the required default); `apply_persona`
+  reorders skill groups and selects/orders the entry subset on a new frozen `Resume` with an optional
+  `title`. The title is the JD title with seniority stripped (`tailor/title.py`, boundary-safe: `Sr`∉`SRE`,
+  `Lead`∉`Leader`, `III` before `II`), validated against the persona's family — a "Senior iOS Engineer" JD
+  yields an "iOS Engineer" headline, never stamping "Senior" on a new-grad résumé. Rendered into the paired
+  `%%TITLE%%` template slot (graceful degrade when absent). A malformed registry is a loud run-level fatal;
+  an unmatched JD family is the normal default path. Keyword coverage (item 6) still measures against the
+  original master, so persona shaping can't inflate it. Shipped `1988c39`; `make check` green (3148 passed,
+  95.23%).
+
 ### Changed
 
 - **The résumé render engine is now tectonic compiling the user's own LaTeX template, replacing Typst**

@@ -1,11 +1,12 @@
 # PROGRAM STATE — read this first
 
-**Last updated:** 2026-08-08 (P4-craft session — **P4 item 6 [keyword-coverage measurement] SHIPPED to
-`main`**, `58f032e`, D-061, review-clean, `make check` green 3112 passed / 95.32%; **P4 item 7 [persona
-registry + de-senioritizer] DESIGNED + worktree-ready, D-062, build NOT started — dispatched build hit an
-Anthropic session usage limit (resets 03:30 America/Chicago) before writing, worktree clean, nothing lost**.
-Prior context still holds: Increment 1 shipped D-060; Mit's résumé renders 1pp; the 3 over-220-char bullets
-remain Mit's deferred content fix.)
+**Last updated:** 2026-08-08 (overnight autonomous run — **P4 items 6 AND 7 both SHIPPED to `main`**:
+item 6 keyword-coverage `58f032e`/D-061, item 7 persona-registry+de-senioritizer `1988c39`/D-063; both
+diff-reviewed + deepseek-reviewed, `make check` green (3148 passed / 95.23%). **P4 BUILD IS COMPLETE**
+(items 1–7); only Gate P4's blind-craft review remains, which is Mit's. Now building **P5a** — the
+verdict-SAFE eligibility slices (design `.superpowers/sdd/p5-eligibility-decides/design-p5a.md`, deepseek-
+reviewed); verdict-changing + data-gated P5 work deferred to Mit's morning. Prior context holds: Increment 1
+D-060; Mit's résumé renders 1pp; the 3 over-220-char bullets remain Mit's deferred content fix.)
 **Updated by:** boardwatch (Claude)
 **Repo state at write time:** all nine P0 items (0-8), P1a (the résumé artifact integrity gate —
 PROGRAM.md §3.P1 items 1, 2, 3, 3b, 4, 5), and P1b (item 3c, the Tier-B token-provenance validator, D-033)
@@ -729,13 +730,26 @@ domain input nor Docker.** What is left is genuinely gated on things I cannot su
     worktree-ready but NOT built** — design at `.superpowers/sdd/p4-item7-persona-registry/design.md`,
     decisions ratified in **D-062** (persona = a résumé-presentation lens, NOT an eligibility variant, so the
     profile DB + eligibility engine are untouched; the de-senioritizer is made live by resolving the résumé
-    title from the JD title with seniority stripped). The build was dispatched into worktree
-    `p4-item7-persona` (base `58f032e`) but the subagent **hit an Anthropic session usage limit (resets 03:30
-    America/Chicago) and terminated before writing anything** — the worktree is clean, nothing lost, `main`
-    unaffected. **NEXT ACTION (post-limit-reset): dispatch the item 7 build from its design doc** — it is a
-    single, well-specified SDD dispatch; then review + merge as usual. After item 7, Gate P4's blind-craft
-    review is Mit's, and P5 is the next phase. The 220-char bullet trim + Increments 2/3 remain as before
-    (Mit's deferred content work; independent of item 7).
+    title from the JD title with seniority stripped).
+    **UPDATE — item 7 SHIPPED (D-063, `1988c39`):** built overnight via SDD, diff-reviewed (found + fixed a
+    duplicate-`entries`-id gap) and deepseek-reviewed ("OK to ship after nits"; one fatal-abort suggestion
+    DECLINED on fail-safe grounds — a degenerate per-lead title falls back to the default persona, never
+    aborts the run), `make check` green (3148 passed / 95.23%). **P4 BUILD IS COMPLETE (items 1–7).**
+    **Two remaining P4 items are MIT's:** (1) **Gate P4's blind-craft review** (read 10 tailored résumés
+    mixed with job-apps output, unlabeled; corpus = job-apps' `_applied/` folders); (2) install the
+    `%%TITLE%%` pair into his `{config_dir}/resume_template.tex` so the persona title renders for him (the
+    bundled template has it; skill-order + entry emphasis render regardless). The 220-char bullet trim +
+    Increments 2/3 remain Mit's deferred content work.
+    **NEXT ACTION (overnight, in progress): P5a** — the verdict-SAFE eligibility slices (design +
+    grounding in `.superpowers/sdd/p5-eligibility-decides/`, deepseek-reviewed): S1 a corpus-wide
+    "0 INELIGIBLE without a span" property gate, S2 out-of-catalog family/verdict-level FAILURE guard in
+    `reports/abstain.py`, S3 widen the LLM cache key with profile/catalog identity (compose into the
+    `content_hash` at the `extract_llm.py` call site — do NOT change `ResponseCache.key`'s signature, the
+    tailor rewrite lane also calls it). **Deferred to Mit's morning (verdict-changing or data-gated):**
+    P5 item 1 new hard-stop families, item 3 named exceptions, item 4 REQUIRED/PREFERRED slicer (all
+    verdict-changing — need the labeled set to measure Gate-P5 precision), item 5 the ~200-JD labeled set,
+    item 6 the 35+ visa phrases from `~/dev/Job apps/`. Gate P5 precision run cannot execute until the
+    labeled set exists.
 
   **DEFERRED next action — P4 item 6** — keyword coverage measured against JD *requirement* terms,
   achieved only by re-spelling existing facts (ground it first: reuse the canonical vocab + the
