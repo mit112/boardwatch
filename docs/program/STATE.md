@@ -769,11 +769,17 @@ domain input nor Docker.** What is left is genuinely gated on things I cannot su
     (gitignored):** `.superpowers/sdd/p5-eligibility-decides/labeled-set/` holds `extract_candidates.py`, a
     stratified **173-row worksheet** (123 hard-stop candidates across families + 50 `_applied/` hard
     negatives from job-apps), and `README.md` labeling instructions — real JD bodies stay local (§3b).
-    **Still Mit's, still the critical path:** (a) label the worksheet (fill `expected_verdict` + INELIGIBLE
-    spans), (b) confirm the reference candidate `facts` profile (seeded F-1/OPT SWE new-grad; empty facts ⇒
-    all-abstain), (c) decide where the FINAL labeled set lives (committed-redacted vs local + configurable
-    gate dir — a publish/licensing call the synthetic oracle corpus sidestepped). Once labeled, B1–B4
-    execute one at a time, each gated by `score().meets_gate()` before merge.
+    **Reference `facts` RESOLVED** — = Mit's real profile from job-apps `autoapply/profile.json`
+    (`ead_or_similar` + `needs_sponsorship`, `master`, `fte_only`, excl. internships; `total_years=1` fits
+    his new-grad targeting of 0/0-1/0-2/1+ roles), baked into the LOCAL worksheet only (§3b). **Answer-key
+    location RESOLVED** — user-config location for the published mechanism; Mit's stays in the gitignored
+    `labeled-set/`.
+    **NEXT ACTION — D-066 (Mit 2026-08-08): the answer key is no longer hand-labeled.** It is
+    **AI-oracle-produced + human-audited on a small sample**, via a **PORT of job-apps' LLM judge+gate flow,
+    then improved** — and this is **its own dedicated in-depth session** (do not squeeze into a tail).
+    Cold-start brief: `.superpowers/sdd/p5-eligibility-decides/design-p5b-answer-key-judge-port.md` (job-apps
+    sources to study, boardwatch pieces to reuse incl. the B0 scorer, the integrity guardrail, oracle-model
+    TBD). Once the answer key exists, B1–B4 execute one at a time, each gated by `score().meets_gate()`.
 
   **DEFERRED next action — P4 item 6** — keyword coverage measured against JD *requirement* terms,
   achieved only by re-spelling existing facts (ground it first: reuse the canonical vocab + the

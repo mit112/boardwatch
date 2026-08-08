@@ -2582,6 +2582,40 @@ his `{config_dir}/resume_template.tex` carries the `%%TITLE%%` pair (the bundled
 his installed copy predates it) — a personal-instance follow-up, not a code gap; skill-group reorder
 and entry emphasis render regardless.
 
+## D-066 — P5 answer-key is AI-oracle + human-audit-a-sample via a job-apps judge port (its own session)
+
+**2026-08-08 · Mit.** Amends design-p5b.md's B0 "human-verifies-*everything*" premise. Grounding +
+cold-start brief: `.superpowers/sdd/p5-eligibility-decides/design-p5b-answer-key-judge-port.md`.
+
+**Context.** The Gate-P5 answer key (held-out labeled set) exists to measure the deterministic engine's
+INELIGIBLE precision before it's trusted to auto-drop jobs. The B0 design assumed Mit hand-labels ~200 JDs.
+**Mit rejected that as contrary to the product:** boardwatch is *for* automating the hard/boring
+eligibility work with AI — a user installs it and runs it through their own AI model; hand-labeling is
+exactly what should be automated. Verified precedent: **job-apps already does this** — its eligibility
+judge is LLM-backed (Claude sole judge; DeepSeek removed for "false-keeping hard stops"), and its ground
+truth was a one-time AI (Codex) audit of 121 folders, not hand-labeled per run.
+
+**Decision.**
+1. The answer key is **AI-produced (an oracle judge) + human-audited on a small stratified sample**, not
+   hand-labeled in full. The sample audit (weighted to INELIGIBLE calls + `applied/` hard negatives) is the
+   integrity anchor — without it, "precision ≥0.95" only means "two models agree," and a shared false
+   INELIGIBLE still deletes a real job (the exact failure job-apps hit with DeepSeek). Not circular: the
+   LLM oracle and the deterministic engine are different mechanisms.
+2. **Path = PORT job-apps' judge+gate flow, then improve** (Mit's choice over a bespoke hack): study
+   `eligibility/judge.py`/`gate.py`/`manifest.py`/`reasons.py`/`evidence.py`, `deep_jd_eligibility_audit.py`,
+   `test_eligibility_ground_truth.py`+`eligibility_labels.json`. Improve with boardwatch's spans/evidence
+   chain, closed catalog, and the B0 precision gate as a first-class measurement.
+3. **This is its own dedicated in-depth session** — not squeezed into a tail. The B0 scorer (D-065) and the
+   173-row worksheet already feed it; it produces the answer key the scorer consumes.
+4. **Oracle model = decided during that session's scoping** (Mit: "decide after I scope it") — Claude
+   strong-tier vs two-model agreement vs boardwatch's existing LLM-lane wiring/cost.
+5. **#3 (answer-key location) RESOLVED:** published mechanism reads a user-config location (custom if
+   asked); `load_labeled_set(dir)` already takes the path, nothing committed into `src/`. Mit's instance
+   stays inside the project but outside the code (the gitignored `labeled-set/` dir).
+
+**Consequence.** B1–B4 remain gated on the answer key, which is now produced by this AI-oracle+audit
+mechanism rather than hand-labeling. No code shipped for D-066 yet — it is the next dedicated session.
+
 ## D-065 — P5b B0 scaffolding: reference all-blocker policy + precision scorer + labeling worksheet
 
 **2026-08-08 · at Mit's greenlight** ("prep P5b B0 scaffolding"). The label-INDEPENDENT parts of
