@@ -1,0 +1,37 @@
+# boardwatch persona registry (bundled seed).
+#
+# A persona is a résumé-PRESENTATION lens: it changes which résumé facts are
+# surfaced, in what order, and under which headline title. It NEVER touches
+# eligibility facts, the profile, or a lead's ship/drop decision.
+#
+# Multi-tenancy: copy this file to {config_dir}/personas.yaml to override it
+# with your own personas. That file wins wholesale when present, exactly like
+# taxonomy.yaml / rules.yaml. Never edit this bundled seed to hold personal data.
+#
+# Enforced at load time:
+#   - EXACTLY ONE persona has `default: true`
+#   - persona ids are unique
+#   - every role_families value is a member of the closed classify_role_family
+#     output set: mobile, security, devops_sre, data_eng, ml_ai, fullstack,
+#     frontend, backend, general_swe
+#   - skill_group_order reorders Resume.skill_groups by label; unlisted groups
+#     keep their relative order and are appended after
+#   - `entries: null` renders every master entry in the master's order; a list
+#     of entry_ids renders EXACTLY those entries, in that order (an unknown id
+#     is an error at apply time — a persona never silently drops a fact)
+#
+# `version` is not authored here; it is derived (SHA-256 of the canonical
+# content plus PERSONA_REVISION).
+personas:
+  - id: general_swe
+    title: "Software Engineer"
+    default: true
+    role_families: [backend, frontend, fullstack, data_eng, devops_sre, ml_ai, security, general_swe]
+    skill_group_order: [Languages, Backend, Infrastructure, Frontend]
+    entries: null
+  - id: ios
+    title: "iOS Engineer"
+    default: false
+    role_families: [mobile]
+    skill_group_order: [Languages, "iOS / Mobile", Backend]
+    entries: null

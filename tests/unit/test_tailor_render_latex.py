@@ -173,6 +173,37 @@ def test_validate_template_rejects_missing_sections_markers(tmp_path):
         resolve_template(tmp_path)
 
 
+def test_emit_renders_escaped_title_when_template_has_the_pair():
+    from boardwatch.tailor.render.latex import LatexRenderer
+
+    r = _r().model_copy(update={"title": "iOS & Backend Engineer"})
+    src = LatexRenderer().emit(r)  # bundled template carries the TITLE pair
+    assert r"iOS \& Backend Engineer" in src  # escaped title present
+    # no stray marker survives, regardless of whether a title was injected
+    assert "%%TITLE_START%%" not in src and "%%TITLE_END%%" not in src
+
+
+def test_emit_title_none_renders_no_title_line_and_no_stray_marker():
+    from boardwatch.tailor.render.latex import LatexRenderer
+
+    src = LatexRenderer().emit(_r())  # _r() has title=None
+    assert "%%TITLE_START%%" not in src and "%%TITLE_END%%" not in src
+    # sections markers still survive untouched
+    assert "%%SECTIONS_START%%" in src and "%%SECTIONS_END%%" in src
+
+
+def test_emit_degrades_when_template_lacks_the_title_pair(tmp_path):
+    from boardwatch.tailor.render.latex import LatexRenderer
+
+    (tmp_path / "resume_template.tex").write_text(
+        "HEADER ONLY\n%%SECTIONS_START%%\n%%SECTIONS_END%%\n"
+    )
+    r = _r().model_copy(update={"title": "iOS Engineer"})
+    src = LatexRenderer(config_dir=tmp_path).emit(r)  # no crash even though title is set
+    assert "iOS Engineer" not in src  # nowhere to put it; degrade silently
+    assert "%%TITLE" not in src
+
+
 def test_to_pdf_writes_tex_and_deletes_stale_pdf(tmp_path):
     from boardwatch.tailor.render.latex import LatexRenderer
     from boardwatch.tailor.render.outcome import CompileOutcome, CompileReason

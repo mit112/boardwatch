@@ -49,6 +49,10 @@ class Resume(BaseModel):
     skill_groups: list[SkillGroup]
     entries: list[Entry]
     extracurricular: list[str] = Field(default_factory=list)
+    # Persona headline title (P4 item 7). Optional and default None so existing resume.yaml
+    # files and every existing Resume construction load unchanged; the render wires it into
+    # the template's TITLE slot only when set. Distinct from `Entry.title` (a per-job title).
+    title: str | None = None
 
     @model_validator(mode="after")
     def _unique_ids(self) -> Resume:

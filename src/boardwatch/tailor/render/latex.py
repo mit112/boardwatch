@@ -206,13 +206,37 @@ class LatexRenderer:
             + _projects(resume.entries, reworded)
             + _extracurricular(resume)
         )
-        # Mirrors build_resume.sh's awk insertion: on the START marker line, print it, then
-        # the section body, then fall through to the untouched END marker line. Both markers
-        # survive in the output; only the region between them changes.
+        # The persona headline (P4 item 7): a single escaped line, styled to match the
+        # template's centered name header. None when the résumé carries no persona title.
+        title_line = (
+            f"    {{\\small \\scshape {escape(resume.title)}}} \\\\ \\vspace{{2pt}}"
+            if resume.title
+            else None
+        )
+        # SECTIONS: mirrors build_resume.sh's awk insertion — on the START marker line, print
+        # it, then the section body, then fall through to the untouched END marker line. Both
+        # SECTIONS markers survive in the output; only the region between them changes.
+        #
+        # TITLE differs deliberately: its marker PAIR is consumed, never echoed, so no
+        # `%%TITLE_*%%` token can survive into the .tex. When the résumé has a title the
+        # escaped headline replaces the pair; when it does not (or a custom template omits the
+        # pair) the slot degrades to nothing — no crash, no title, no stray marker.
         out_lines: list[str] = []
+        in_title = False
         for line in template.splitlines():
+            stripped = line.strip()
+            if stripped == "%%TITLE_START%%":
+                in_title = True
+                if title_line is not None:
+                    out_lines.append(title_line)
+                continue
+            if stripped == "%%TITLE_END%%":
+                in_title = False
+                continue
+            if in_title:
+                continue  # drop any placeholder content between the TITLE markers
             out_lines.append(line)
-            if line.strip() == "%%SECTIONS_START%%":
+            if stripped == "%%SECTIONS_START%%":
                 out_lines.extend(sections.splitlines())
         return "\n".join(out_lines) + "\n"
 
