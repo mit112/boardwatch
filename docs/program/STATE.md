@@ -20,10 +20,15 @@ oracle judge — `resolve_provenance`/`accept_oracle_verdict` four-ANDed gate wi
 (`audited_coverage`/`meets_ship_gate`/`SHIP_AUDIT_COVERAGE_BAR=0.20`), the `eligibility label request/apply`
 + `score` CLI, the `eligibility-judge` skill, and the `PROGRAM.md` §3.P5 gate line. The two reserved
 decisions (both made): **agent lane, no API key** (Claude Code judges via the skill) + **human audit
-deferred** with a mechanical drain. **Next action: run the oracle over the 173-row worksheet** (Mit-local:
-`boardwatch eligibility label request` → the `eligibility-judge` skill → `label apply`) → first Gate-P5
-number via `boardwatch eligibility score`. B1–B4 stay blocked until the deferred human sample-audit lifts
-audited coverage ≥ `SHIP_AUDIT_COVERAGE_BAR` (0.20). Non-blocking follow-ups recorded in D-068.
+deferred** with a mechanical drain. **Next action: the AGENT runs the oracle over the 173-row worksheet** — this is NOT gated on Mit. The
+worksheet is already seeded from job-apps (`_skipped/` + `_applied/` → frozen JD bodies) with Mit's real
+facts, and the agent-lane oracle IS Claude Code judging (the `eligibility-judge` skill). So next session:
+`boardwatch eligibility label request` → invoke `/eligibility-judge` (judge every row from JD + facts,
+treating **job-apps as the knowledge/gold-mine source** — never the engine verdict or the `hint`) → `label
+apply` → `boardwatch eligibility score` for the first Gate-P5 number. B1–B4 stay blocked until the deferred
+human sample-audit lifts audited coverage ≥ `SHIP_AUDIT_COVERAGE_BAR` (0.20) — and even that audit can lean
+on job-apps' existing signal (the `_applied/` folders are known-eligible hard negatives; job-apps already
+did a one-time Codex ground-truth audit). Non-blocking follow-ups recorded in D-068.
 **Updated by:** boardwatch (Claude)
 **Repo state at write time:** all nine P0 items (0-8), P1a (the résumé artifact integrity gate —
 PROGRAM.md §3.P1 items 1, 2, 3, 3b, 4, 5), and P1b (item 3c, the Tier-B token-provenance validator, D-033)
