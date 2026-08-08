@@ -2745,5 +2745,10 @@ truth. `reason`/`spans` are stored for audit/triage/recall, not consumed by `sco
 (`extract_llm` stays capped to eligible|uncertain); no paid-API oracle; no new EvidencePacket extractor;
 no per-row `manual_review` port (our `label_provenance` is the deliberate improvement).
 
-**Status:** DESIGN written + self-reviewed, awaiting Mit's spec review. No source code written this
-session (brainstorming hard-gate). Next: Mit reviews the spec → `writing-plans` → build with review gates.
+**Status:** DESIGN written + self-reviewed, then hardened by two independent fresh-context reviews
+(Opus + deepseek-flash, both **SHIP-WITH-CHANGES**; all five ground-truth claims verified by each). Their
+reconciled findings are folded into the design doc's authoritative "Review revisions" section — two HIGH
+(the hard-negative label prefix is `applied/` not `_applied/`; 39% of hard-stops are in unmodeled families
+the oracle must NOT force-fit) plus mechanical-drain, normalized-provenance, reference-policy-in-request,
+version-idempotency, and raw-dict-merge fixes. No source code written this session (brainstorming
+hard-gate). Next: Mit reviews the (revised) spec → `writing-plans` → build with review gates.
