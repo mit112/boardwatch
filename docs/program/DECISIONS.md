@@ -2919,3 +2919,33 @@ model reads the final JDs as the last gate; that pattern produced job-apps' deep
 
 **Next.** A fresh session writes the two-stage plan honoring these constraints and executes it (TDD +
 review + `make check`).
+
+## D-072 — Model-tier benchmark for the eligibility judge + published guidance (research, next sessions)
+
+**Context.** Mit (2026-08-08), extending D-071. In his experience an older Sonnet (Sonnet 4.6) is good at JD
+eligibility judging; he wants to experiment with **Haiku 4.5** and an even older Sonnet to find **where
+accuracy drops off**, publish that drop-off so each user picks a model by their own usage/budget (not
+everyone has the same usage), and reuse the finding to keep optimizing his personal workflow. Standing theme:
+always optimize / increase efficiency.
+
+**Decision.** Run a model-tier benchmark for the eligibility final-gate task, reusing the P5 labeled set as
+the harness — do NOT build a new ground-truth set.
+
+**Design sketch (for the fresh session):**
+- **Harness = the existing 173-row answer key + `eligibility score`.** For each candidate model, run it as
+  the judge over all 173 rows (agent lane with a model override, or the API with explicit model IDs), then
+  score its verdicts against the answer key: **INELIGIBLE precision** (the headline — a cheap model that
+  over-rejects silently deletes real jobs, the expensive error), recall, overall agreement, and per-family.
+- **Models:** a known-good Sonnet baseline, Haiku 4.5 (cheapest), an older Sonnet (find the drop-off); plus
+  whatever is accessible.
+- **Access nuance:** the subagent model override exposes the current families (sonnet/opus/haiku/fable);
+  pinning specific older versions (Sonnet 4.6) likely needs explicit API model IDs — confirm access first.
+- **Ground-truth caveat:** the key is oracle-produced + only partially audited, so agreement measures
+  reproduction of the reference calls. **Solidify first** by expanding the audited slice (the D-070 deepseek
+  cross-match) so agreement = accuracy, not agreement-with-the-oracle.
+- **Output = a published `model → precision/recall/cost` table + guidance** so users choose per budget
+  (multi-tenancy: ship the mechanism + the data, the user decides). The same table picks the D-071
+  agent-lane final gate's DEFAULT model and informs Mit's personal workflow.
+
+**Sequence.** Do it alongside/after the D-071 two-stage build (the final gate is where the chosen model
+plugs in); gate the benchmark's validity on first expanding the audited ground-truth slice.

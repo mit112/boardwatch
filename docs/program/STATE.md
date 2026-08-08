@@ -52,6 +52,12 @@ provider); the cheap-but-good endpoint is a **Sonnet-class pass via the existing
 subscription cost, no per-call API — as the oracle/`tailor-rewrite` skills already do), not a paid cheap
 API; the deepseek cache is corroboration-only, not ground truth. Keep the deterministic stage
 precision-first (a false-positive delete is unrecoverable). Write the plan fresh, then execute.
+**ALSO AGREED (D-072, Mit): a model-tier benchmark for the eligibility judge** — reuse the 173-row answer
+key as the harness, run each candidate model (a known-good Sonnet baseline, Haiku 4.5, an older Sonnet) as
+the judge over all 173 rows, `score` vs the key (INELIGIBLE precision is the headline — a cheap model that
+over-rejects deletes real jobs), find the drop-off, and PUBLISH a `model → precision/recall/cost` table so
+users pick by budget. Solidify the ground truth first (the D-070 deepseek cross-match) so agreement =
+accuracy. Picks the D-071 final gate's default model too.
 **Updated by:** boardwatch (Claude)
 **Repo state at write time:** all nine P0 items (0-8), P1a (the résumé artifact integrity gate —
 PROGRAM.md §3.P1 items 1, 2, 3, 3b, 4, 5), and P1b (item 3c, the Tier-B token-provenance validator, D-033)
