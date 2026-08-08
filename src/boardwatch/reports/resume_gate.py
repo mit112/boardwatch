@@ -18,12 +18,12 @@ from pathlib import Path
 
 from boardwatch.tailor.model import Resume
 from boardwatch.tailor.plan import MAX_BULLETS_PER_ENTRY
+from boardwatch.tailor.render.latex import escape
 from boardwatch.tailor.render.outcome import CompileOutcome, CompileReason
-from boardwatch.tailor.render.typst import escape
 
 
-class TypstUnavailableError(RuntimeError):
-    """The `typst` binary is not on PATH. An environment fault, never a per-lead failure:
+class RenderToolMissingError(RuntimeError):
+    """The `tectonic` binary is not on PATH. An environment fault, never a per-lead failure:
     the pipeline turns it into a run-level fatal and the CLI exits non-zero with install
     guidance."""
 
@@ -167,11 +167,11 @@ def layout_scan_fields(resume: Resume) -> list[tuple[str, str]]:
     return fields
 
 
-def _assert_escaped_round_trip(source: str, expected_line: str, where: str) -> None:
+def _assert_escaped_round_trip(source: str, expected: str, where: str) -> None:
     """`escape()` re-derived from the model field must appear verbatim in the already-
-    emitted `.typ` source — belt-and-suspenders against a future emit path that forgets to
-    escape (typst.py's `escape()` itself is not new logic; this only asserts it held)."""
-    if expected_line not in source:
+    emitted LaTeX `source` — belt-and-suspenders against a future emit path that forgets
+    to escape (latex.py's `escape()` itself is not new logic; this only asserts it held)."""
+    if expected not in source:
         raise LayoutViolation(
             GateReason.ESCAPING_MISMATCH,
             f"{where}: emitted source does not match escape() round-trip",
@@ -181,9 +181,16 @@ def _assert_escaped_round_trip(source: str, expected_line: str, where: str) -> N
 def validate_layout(resume: Resume, source: str) -> None:
     """Deterministic structural assertions P1a's `validate_slots` does not cover (PROGRAM.md
     P4 item 5a): a bullet length ceiling, bullet-count ceiling per entry, an escaping
-    round-trip against the already-emitted `.typ` `source`, and leftover template artifacts.
+    round-trip against the already-emitted LaTeX `source`, and leftover template artifacts.
     Raises `LayoutViolation` (a `ResumeValidationError`), mirroring `validate_slots`'s shape
     and call convention. Pure — no subprocess, no DB, no filesystem.
+
+    The round-trip checks are per-bullet/per-skill-item/per-entry-heading SUBSTRING PRESENCE
+    assertions against the rendered LaTeX, not a full-document enumeration via `parse_bullets`
+    — the user's real template defines `\\resumeSubItem{...\\resumeItem{#1}...}`, whose body
+    would make `parse_bullets` scrape a spurious "#1". Header/education are NOT asserted here:
+    Increment 1's template hardcodes them (never model-rendered), and `_validate_template`
+    guards the rendered header/education at template-resolve time instead.
 
     No length FLOOR: a short bullet ("Cut p99 latency 40%") renders and reads fine — there
     is no rendering defect a floor would catch that `validate_slots` (empty/blank bullets)
@@ -205,24 +212,20 @@ def validate_layout(resume: Resume, source: str) -> None:
                     f"(ceiling {BULLET_MAX_LENGTH})",
                 )
 
-    for h in resume.header:
-        _assert_escaped_round_trip(source, f'#resume-header("{escape(h)}")', "header")
-    for ed in resume.education:
-        _assert_escaped_round_trip(source, f'#resume-education("{escape(ed)}")', "education")
     for g in resume.skill_groups:
-        items = ", ".join(g.items)
         _assert_escaped_round_trip(
-            source,
-            f'#resume-skills("{escape(g.label)}", "{escape(items)}")',
-            f"skill group {g.label!r}",
+            source, f"\\textbf{{{escape(g.label)}}}:", f"skill group {g.label!r}"
         )
+        for item in g.items:
+            _assert_escaped_round_trip(
+                source, escape(item), f"skill group {g.label!r} item {item!r}"
+            )
     for e in resume.entries:
-        _assert_escaped_round_trip(
-            source, f'#resume-entry("{escape(e.heading)}")', f"entry {e.entry_id!r} heading"
-        )
+        heading_text = escape(e.title) if e.title is not None else escape(e.heading)
+        _assert_escaped_round_trip(source, heading_text, f"entry {e.entry_id!r} heading")
         for b in e.bullets:
             _assert_escaped_round_trip(
-                source, f'#resume-bullet("{escape(b.text)}")', f"bullet {b.bullet_id!r}"
+                source, f"\\resumeItem{{{escape(b.text)}}}", f"bullet {b.bullet_id!r}"
             )
 
     for text, where in layout_scan_fields(resume):

@@ -273,7 +273,7 @@ def test_the_unattributable_population_counts_only_null_run_ids(engine: Engine) 
 
 
 def test_a_tailored_row_without_a_compiled_pdf_is_not_counted_as_a_pdf(engine: Engine) -> None:
-    """D-006's silent degrade. `artifacts.uri` holds the `.typ` path either way.
+    """D-006's silent degrade. `artifacts.uri` holds the `.tex` path either way.
 
     A row count would report a lead with no PDF as delivered; whether the PDF compiled lives
     only in `meta_json.typst_pdf_built`. Two rows, one PDF — a COUNT(*) would say two.
@@ -283,10 +283,10 @@ def test_a_tailored_row_without_a_compiled_pdf_is_not_counted_as_a_pdf(engine: E
         for tag, built in (("a", True), ("b", False)):
             version_id = _version(conn, _posting(conn, tag), tag)
             record_artifact(
-                conn, kind="resume_tailored", uri=f"/out/{tag}.typ",
+                conn, kind="resume_tailored", uri=f"/out/{tag}.tex",
                 posting_version_id=version_id, content_hash=tag,
                 generator="boardwatch.tailor", generator_version="1",
-                media_type="text/x-typst", meta={"typst_pdf_built": built}, run_id=run_id,
+                media_type="text/x-tex", meta={"typst_pdf_built": built}, run_id=run_id,
             )
 
     with engine.connect() as conn:
@@ -303,10 +303,10 @@ def test_tailored_artifacts_are_scoped_to_the_run(engine: Engine) -> None:
         for tag, rid in (("a", this_run), ("b", other_run)):
             version_id = _version(conn, _posting(conn, tag), tag)
             record_artifact(
-                conn, kind="resume_tailored", uri=f"/out/{tag}.typ",
+                conn, kind="resume_tailored", uri=f"/out/{tag}.tex",
                 posting_version_id=version_id, content_hash=tag,
                 generator="boardwatch.tailor", generator_version="1",
-                media_type="text/x-typst", meta={"typst_pdf_built": True}, run_id=rid,
+                media_type="text/x-tex", meta={"typst_pdf_built": True}, run_id=rid,
             )
 
     with engine.connect() as conn:
@@ -492,9 +492,9 @@ def test_a_lead_is_attributed_to_its_board_through_the_posting_version(engine: E
         _posting_on(conn, quiet, "q1")
         version_id = _version(conn, _posting_on(conn, winner, "w1"), "w1")
         record_artifact(
-            conn, kind="resume_tailored", uri="/out/w1.typ", posting_version_id=version_id,
+            conn, kind="resume_tailored", uri="/out/w1.tex", posting_version_id=version_id,
             content_hash="w1", generator="boardwatch.tailor", generator_version="1",
-            media_type="text/x-typst", meta={"typst_pdf_built": True}, run_id=run_id,
+            media_type="text/x-tex", meta={"typst_pdf_built": True}, run_id=run_id,
         )
 
     rows = {item.board: item for item in _by_source(engine, run_id)}
@@ -509,10 +509,10 @@ def test_a_lead_from_a_previous_run_is_not_credited_to_this_one(engine: Engine) 
         board = _board(conn, "acme")
         for tag, rid in (("a", this_run), ("b", other_run)):
             record_artifact(
-                conn, kind="resume_tailored", uri=f"/out/{tag}.typ",
+                conn, kind="resume_tailored", uri=f"/out/{tag}.tex",
                 posting_version_id=_version(conn, _posting_on(conn, board, tag), tag),
                 content_hash=tag, generator="boardwatch.tailor", generator_version="1",
-                media_type="text/x-typst", meta={"typst_pdf_built": True}, run_id=rid,
+                media_type="text/x-tex", meta={"typst_pdf_built": True}, run_id=rid,
             )
 
     assert _by_source(engine, this_run)[0].leads == 1
@@ -526,9 +526,9 @@ def test_a_board_whose_lead_posting_closed_still_appears(engine: Engine) -> None
         board = _board(conn, "closer")
         version_id = _version(conn, _posting_on(conn, board, "c1", status="closed"), "c1")
         record_artifact(
-            conn, kind="resume_tailored", uri="/out/c1.typ", posting_version_id=version_id,
+            conn, kind="resume_tailored", uri="/out/c1.tex", posting_version_id=version_id,
             content_hash="c1", generator="boardwatch.tailor", generator_version="1",
-            media_type="text/x-typst", meta={"typst_pdf_built": True}, run_id=run_id,
+            media_type="text/x-tex", meta={"typst_pdf_built": True}, run_id=run_id,
         )
 
     rows = _by_source(engine, run_id)
@@ -564,9 +564,9 @@ def test_boards_that_produced_a_lead_sort_above_boards_that_did_not(engine: Engi
             _posting_on(conn, huge, f"h{index}")
         version_id = _version(conn, _posting_on(conn, loud, "l1"), "l1")
         record_artifact(
-            conn, kind="resume_tailored", uri="/out/l1.typ", posting_version_id=version_id,
+            conn, kind="resume_tailored", uri="/out/l1.tex", posting_version_id=version_id,
             content_hash="l1", generator="boardwatch.tailor", generator_version="1",
-            media_type="text/x-typst", meta={"typst_pdf_built": True}, run_id=run_id,
+            media_type="text/x-tex", meta={"typst_pdf_built": True}, run_id=run_id,
         )
 
     assert [item.board for item in _by_source(engine, run_id)] == [

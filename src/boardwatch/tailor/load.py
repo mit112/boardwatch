@@ -24,7 +24,7 @@ class MasterResumeError(ResumeLoadError):
     master itself. A `ResumeLoadError` subclass on purpose — every existing caller that already
     treats a malformed `resume.yaml` as fatal (the CLI's `except ResumeLoadError` sites) treats
     this identically with no further change, and the pipeline runner special-cases
-    `ResumeLoadError` as a run-level fatal for the same reason `TypstUnavailableError` is: this
+    `ResumeLoadError` as a run-level fatal for the same reason `RenderToolMissingError` is: this
     is an authoring/environment fault, not a per-lead one, so every remaining lead would fail
     identically and re-discovering that lead by lead wastes compile time for no new information.
     """

@@ -33,7 +33,7 @@ def _db(**kw: object) -> DbCounts:
 def _typ(kind: str = "resume_tailored", *, typ_exists: bool = True,
          pdf_expected: bool = True, pdf_exists: bool = True) -> FileCheck:
     return FileCheck(
-        kind=kind, typ_uri="/leads/a.typ", typ_exists=typ_exists,
+        kind=kind, typ_uri="/leads/a.tex", typ_exists=typ_exists,
         pdf_expected=pdf_expected, pdf_uri="/leads/a.pdf", pdf_exists=pdf_exists,
     )
 
@@ -85,7 +85,7 @@ def test_missing_typ_file() -> None:
                        files=[_typ(typ_exists=False)])
     assert not report.ok
     assert _kinds(report) == {DiscrepancyKind.MISSING_TYP_FILE}
-    assert report.discrepancies[0].path == "/leads/a.typ"
+    assert report.discrepancies[0].path == "/leads/a.tex"
 
 
 def test_missing_pdf_file_when_expected() -> None:
@@ -97,7 +97,7 @@ def test_missing_pdf_file_when_expected() -> None:
 
 def test_llm_row_never_asserts_a_pdf() -> None:
     # resume_tailored_llm carries no pdf_uri, so pdf_expected is False; a missing PDF is fine,
-    # a missing .typ is not.
+    # a missing .tex is not.
     report = reconcile(run_id=7, artifact=_artifact(), db=_db(),
                        files=[_typ("resume_tailored_llm", pdf_expected=False, pdf_exists=False)])
     assert report.ok

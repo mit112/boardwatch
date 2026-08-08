@@ -61,7 +61,7 @@ def _lead_folder(day_dir: Path, name: str) -> Path:
 
 
 def _tailored_artifact_row(engine: Engine, run_id: int, day_dir: Path, folder: str) -> None:
-    """One `resume_tailored` artifact row for `run_id`, whose `uri` names the `.typ` path under
+    """One `resume_tailored` artifact row for `run_id`, whose `uri` names the `.tex` path under
     `day_dir/<folder>/` — the store side of the reconciliation. Does NOT create the folder;
     callers that want the row's folder to exist call `_lead_folder` themselves.
     """
@@ -73,7 +73,7 @@ def _tailored_artifact_row(engine: Engine, run_id: int, day_dir: Path, folder: s
             insert(artifacts).values(
                 job_id=job_id,
                 kind="resume_tailored",
-                uri=str(day_dir / folder / "resume.typ"),
+                uri=str(day_dir / folder / "resume.tex"),
                 created_at=SAME_DAY,
                 run_id=run_id,
             )

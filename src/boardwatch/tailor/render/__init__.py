@@ -7,10 +7,6 @@ from boardwatch.tailor.model import Resume
 from boardwatch.tailor.render.latex import unescape
 from boardwatch.tailor.render.outcome import CompileOutcome, CompileRunner
 
-# Transitional alias (Task 6 removes it — expand-then-contract): reports/tailor.py and
-# render/typst.py still import TypstRunner through Tasks 2-5.
-TypstRunner = CompileRunner
-
 
 class Renderer(Protocol):
     def emit(self, resume: Resume, *, reworded: frozenset[str] = frozenset()) -> str: ...

@@ -19,7 +19,7 @@ from boardwatch.core.settings import Settings, load_settings
 from boardwatch.extract.taxonomy import load_taxonomy
 from boardwatch.llm.cache import ResponseCache
 from boardwatch.llm.factory import build_client
-from boardwatch.reports.resume_gate import LeadArtifactError, TypstUnavailableError
+from boardwatch.reports.resume_gate import LeadArtifactError, RenderToolMissingError
 from boardwatch.reports.tailor import (
     NoCurrentVersionError,
     UnsupportedFormatError,
@@ -27,6 +27,7 @@ from boardwatch.reports.tailor import (
     run_tailor,
 )
 from boardwatch.tailor.load import ResumeLoadError, load_resume, scaffold_template
+from boardwatch.tailor.render.latex import TemplateArtifactError
 from boardwatch.tailor.rewrite.agent_io import CandidatesFile, VerdictsFile, dump_json, load_json
 from boardwatch.tailor.rewrite.agent_lane import (
     apply_agent_rewrites,
@@ -102,7 +103,7 @@ def run_cmd(
         None, "--out", help="Output directory (default {data_dir}/tailored)."
     ),
     fmt: str = typer.Option(  # noqa: B008
-        "typst", "--format", help="Render format (typst is the only 1.0 adapter)."
+        "latex", "--format", help="Render format (latex is the only 1.0 adapter)."
     ),
     dry_run: bool = typer.Option(  # noqa: B008
         False, "--dry-run", help="Render and report without writing artifacts."
@@ -160,7 +161,8 @@ def run_cmd(
         NoCurrentVersionError,
         TierASafetyError,
         UnsupportedFormatError,
-        TypstUnavailableError,
+        RenderToolMissingError,
+        TemplateArtifactError,
         LeadArtifactError,
     ) as exc:
         console.print(str(exc))
@@ -198,10 +200,11 @@ def run_cmd(
     elif result.pdf_path is not None:
         console.print(f"pdf: {result.pdf_path}")
     else:
-        # Outside a dry run, run_tailor raises TypstUnavailableError or LeadArtifactError
-        # (caught above) before ever returning without a PDF — a PDF-less non-raising result
-        # is exactly the silent false-success P1a exists to eliminate, so a regression that
-        # reintroduces one must fail loudly here, not print a success-shaped message.
+        # Outside a dry run, run_tailor raises RenderToolMissingError, TemplateArtifactError,
+        # or LeadArtifactError (caught above) before ever returning without a PDF — a
+        # PDF-less non-raising result is exactly the silent false-success P1a exists to
+        # eliminate, so a regression that reintroduces one must fail loudly here, not print
+        # a success-shaped message.
         raise AssertionError(
             "unreachable: run_tailor yields a PDF (shippable or degraded) or raises"
         )
@@ -405,7 +408,7 @@ def rewrite_apply_cmd(
             llm_model_override="subscription",
             llm_budget_override=llm_budget,
         )
-    except (TypstUnavailableError, LeadArtifactError) as exc:
+    except (RenderToolMissingError, TemplateArtifactError, LeadArtifactError) as exc:
         console.print(str(exc))
         raise typer.Exit(code=1) from exc
 
@@ -422,10 +425,10 @@ def rewrite_apply_cmd(
     elif result.pdf_path is not None:
         console.print(f"pdf: {result.pdf_path}")
     else:
-        # run_tailor raises TypstUnavailableError or LeadArtifactError (caught above) before
-        # ever returning without a PDF — a PDF-less non-raising result is exactly the silent
-        # false-success P1a exists to eliminate, so a regression that reintroduces one must
-        # fail loudly here, not print a success-shaped message.
+        # run_tailor raises RenderToolMissingError, TemplateArtifactError, or LeadArtifactError
+        # (caught above) before ever returning without a PDF — a PDF-less non-raising result
+        # is exactly the silent false-success P1a exists to eliminate, so a regression that
+        # reintroduces one must fail loudly here, not print a success-shaped message.
         raise AssertionError(
             "unreachable: run_tailor yields a PDF (shippable or degraded) or raises"
         )

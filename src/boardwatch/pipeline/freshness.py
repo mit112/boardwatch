@@ -15,7 +15,7 @@ scoped to this run_id's own artifact rows, never to "every directory under `day_
 suffixed by run_id), and counting every subdirectory in the shared day folder would count the
 OTHER run's lead folders too, making both runs read as unreconciled the moment a second run adds
 its own. Per run_id's `resume_tailored` artifact ROWS are read from the store, each row's `uri`
-(the `.typ` path) is resolved to its parent lead folder, and existence is checked per row — the
+(the `.tex` path) is resolved to its parent lead folder, and existence is checked per row — the
 same per-run population `count_tailored_artifacts` already counts, verified against the
 FILESYSTEM instead of a second store query (§3.P3 item 6, "filesystem-truth counts"; CLAUDE.md:
 "count the deliverable through a different path than the one that produced it").
@@ -96,7 +96,7 @@ class Freshness:
 
 def _existing_lead_folders(conn: Connection, run_id: int) -> int:
     """How many of run_id's OWN `resume_tailored` artifact rows resolve to a lead folder that
-    actually exists on disk. `uri` stores the `.typ` path (`run_funnel_queries.py`'s own
+    actually exists on disk. `uri` stores the `.tex` path (`run_funnel_queries.py`'s own
     docstring); its parent directory is the `<slug>/` folder the tailor loop created. Checked
     per row, not deduplicated into a folder set first, so a row whose folder went missing is
     caught even if another row for the same run happens to share a folder.

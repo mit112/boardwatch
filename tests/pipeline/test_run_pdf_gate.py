@@ -1,6 +1,6 @@
 """The P1a résumé-artifact gate enforced end to end in the pipeline (P1a Task 4).
 
-Task 3 made `run_tailor` raise `TypstUnavailableError` (an environment fault — the binary is
+Task 3 made `run_tailor` raise `RenderToolMissingError` (an environment fault — the binary is
 either on PATH or it isn't) and `LeadArtifactError` (a lead has no shippable PDF after the
 untailored-master fallback) instead of silently returning a result with `pdf_path=None`. This
 proves the pipeline's tailor loop actually reacts to both, and that the two map to different
@@ -142,7 +142,7 @@ def test_binary_missing_is_a_run_level_fatal_not_a_per_lead_drop(
 
     assert summary.tailored == []
     assert summary.fatal is not None
-    assert "typst" in summary.fatal.lower()
+    assert "tectonic" in summary.fatal.lower()
     assert _run_status(env, summary.run_id) == "failed"
 
 

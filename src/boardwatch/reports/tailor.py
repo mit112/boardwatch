@@ -43,8 +43,8 @@ from boardwatch.reports.resume_gate import (
     GateResult,
     LayoutViolation,
     LeadArtifactError,
+    RenderToolMissingError,
     ResumeValidationError,
-    TypstUnavailableError,
     evaluate_compile,
     validate_layout,
     validate_slots,
@@ -67,9 +67,8 @@ from boardwatch.tailor.equivalences import EquivalenceTable, load_equivalences
 from boardwatch.tailor.load import load_resume
 from boardwatch.tailor.model import Resume
 from boardwatch.tailor.plan import Delete, EquivalenceSwap, TailorPlan, build_plan
-from boardwatch.tailor.render import TypstRunner
-from boardwatch.tailor.render.outcome import CompileOutcome, CompileReason
-from boardwatch.tailor.render.typst import TypstRenderer
+from boardwatch.tailor.render.latex import LatexRenderer
+from boardwatch.tailor.render.outcome import CompileOutcome, CompileReason, CompileRunner
 from boardwatch.tailor.rewrite.lane import TierBResult, run_tier_b
 from boardwatch.tailor.rewrite.prompt import JUDGE_PROMPT_VERSION, REWRITE_PROMPT_VERSION
 from boardwatch.tailor.rewrite.provenance import PROVENANCE_VERSION
@@ -79,7 +78,7 @@ VALIDATOR_VERSION = "tier-a-1"
 # Bumped for P1b (D-033): the lane now vetoes un-provenanced rewords before the judge,
 # so a cached pre-gate Tier-B reply must not be replayed as if it had passed the gate.
 LLM_LANE_VERSION = "tier-b-2"
-SUPPORTED_FORMATS = ("typst",)
+SUPPORTED_FORMATS = ("latex",)
 _RENDER_TOOL_MISSING_MSG = (
     "tectonic binary not found on PATH; install it (e.g. `brew install tectonic` or "
     "https://tectonic-typesetting.github.io/en-US/install.html) to render résumé PDFs"
@@ -91,7 +90,7 @@ class NoCurrentVersionError(RuntimeError):
 
 
 class UnsupportedFormatError(ValueError):
-    """Asked for a render format this build has no adapter for (Typst is the sole 1.0 adapter)."""
+    """Asked for a render format this build has no adapter for (LaTeX is the sole 1.0 adapter)."""
 
 
 @dataclass(frozen=True)
@@ -266,6 +265,7 @@ def _trace(
         "posting_version_id": cv.posting_version_id,
         "jd_skills": sorted(jd_skills),
         "format": fmt,
+        # legacy meta key name (D-058); renaming ripples into funnel/reconcile — out of scope
         "typst_pdf_built": pdf_built,
         "pdf_uri": pdf_uri,
         "dropped": [op.bullet_id for op in plan.ops if isinstance(op, Delete)],
@@ -348,9 +348,9 @@ def run_tailor(
     *,
     resume_path: Path,
     out_dir: Path,
-    fmt: str = "typst",
+    fmt: str = "latex",
     dry_run: bool = False,
-    typst_runner: TypstRunner | None = None,
+    typst_runner: CompileRunner | None = None,
     client: ModelClient | None = None,
     cache: ResponseCache | None = None,
     tb_override: TierBResult | None = None,
@@ -368,7 +368,7 @@ def run_tailor(
     master, tailored, jd_skills, taxonomy = r.master, r.tailored, r.jd_skills, r.taxonomy
     table, plan, cv = r.table, r.plan, r.cv
 
-    renderer = TypstRenderer()
+    renderer = LatexRenderer(config_dir=settings.config_dir)
     source = renderer.emit(tailored)
     # Hash the authored model, not its render: the render drops bullet_id/entry_id/tech_tags,
     # so two different masters that merely *look* the same would content-address to one
@@ -466,21 +466,21 @@ def run_tailor(
         chosen_runner = typst_runner or _default_runner
 
         name = f"tailored-{posting_id}"
-        typ_path = Path(out_dir) / f"{name}.typ"  # deterministic reference (§5)
+        typ_path = Path(out_dir) / f"{name}.tex"  # deterministic reference (§5)
         pdf_path_candidate = Path(out_dir) / f"{name}.pdf"
         untailored_name = f"untailored-{posting_id}"
-        untailored_typ_path = Path(out_dir) / f"{untailored_name}.typ"
+        untailored_typ_path = Path(out_dir) / f"{untailored_name}.tex"
         untailored_pdf_path = Path(out_dir) / f"{untailored_name}.pdf"
 
         try:
             validate_slots(tailored)
             validate_layout(tailored, source)
         except LayoutViolation as exc:
-            # A structural layout violation (P4 item 5a): never sent to typst, straight to
+            # A structural layout violation (P4 item 5a): never sent to tectonic, straight to
             # the untailored-master fallback below — same posture as a slot failure.
             tailored_gate = GateResult(exc.reason, False, None, None, str(exc))
         except ResumeValidationError as exc:
-            # Treated exactly like a failed compile: never sent to typst, straight to the
+            # Treated exactly like a failed compile: never sent to tectonic, straight to the
             # untailored-master fallback below.
             tailored_outcome = CompileOutcome(
                 CompileReason.COMPILE_FAILED, None, None, f"slot validation failed: {exc}"
@@ -491,7 +491,7 @@ def run_tailor(
             tailored_outcome = renderer.to_pdf(source, Path(out_dir), name, chosen_runner)
             tailored_gate = evaluate_compile(tailored_outcome, max_pages=max_pages)
         if tailored_gate.reason is GateReason.BINARY_MISSING:
-            raise TypstUnavailableError(_RENDER_TOOL_MISSING_MSG)
+            raise RenderToolMissingError(_RENDER_TOOL_MISSING_MSG)
 
         if tailored_gate.shippable:
             chosen_gate = tailored_gate
@@ -513,7 +513,7 @@ def run_tailor(
             )
             untailored_gate = evaluate_compile(untailored_outcome, max_pages=max_pages)
             if untailored_gate.reason is GateReason.BINARY_MISSING:
-                raise TypstUnavailableError(_RENDER_TOOL_MISSING_MSG)
+                raise RenderToolMissingError(_RENDER_TOOL_MISSING_MSG)
             if untailored_gate.shippable:
                 degraded = True
                 degrade_reason = tailored_gate.reason.value
@@ -547,7 +547,7 @@ def run_tailor(
 
         assert chosen_gate.pdf_path is not None  # shippable => evaluate_compile's OK branch
         pdf_path = chosen_gate.pdf_path
-        log_path = Path(out_dir) / "typst-compile.log"
+        log_path = Path(out_dir) / "tectonic-compile.log"
         log_path.write_text(chosen_gate.log, encoding="utf-8")
 
         llm_uri: str | None = None
@@ -560,16 +560,16 @@ def run_tailor(
                 # off-band bullet or leaked boilerplate (LLM-rewritten, unaudited for
                 # layout), but Tier A's own PDF above is already gated and remains the
                 # lead's deliverable. Treated as if Tier B were never attempted -- never
-                # sent to typst, and llm_uri stays None so the resume_tailored_llm insert
+                # sent to tectonic, and llm_uri stays None so the resume_tailored_llm insert
                 # below is skipped too, rather than recording an artifact for a résumé
                 # that was never shippable.
                 pass
             else:
-                llm_uri = str(Path(out_dir) / f"{llm_name}.typ")
+                llm_uri = str(Path(out_dir) / f"{llm_name}.tex")
                 llm_outcome = renderer.to_pdf(llm_source, Path(out_dir), llm_name, chosen_runner)
                 llm_gate = evaluate_compile(llm_outcome, max_pages=max_pages)
                 if llm_gate.reason is GateReason.BINARY_MISSING:
-                    raise TypstUnavailableError(_RENDER_TOOL_MISSING_MSG)
+                    raise RenderToolMissingError(_RENDER_TOOL_MISSING_MSG)
                 if llm_gate.shippable:
                     llm_pdf_path = llm_gate.pdf_path
                 # else: skip the Tier B PDF; Tier A's PDF above remains the lead's deliverable.
@@ -604,7 +604,7 @@ def run_tailor(
                 content_hash=chosen_hash,
                 generator="boardwatch.tailor",
                 generator_version=VALIDATOR_VERSION,
-                media_type="text/x-typst",
+                media_type="text/x-tex",
                 meta=meta,
                 run_id=run_id,
             )
@@ -650,7 +650,7 @@ def run_tailor(
                     content_hash=llm_hash,
                     generator="boardwatch.tailor",
                     generator_version=LLM_LANE_VERSION,
-                    media_type="text/x-typst",
+                    media_type="text/x-tex",
                     meta=llm_meta,
                     run_id=run_id,
                 )

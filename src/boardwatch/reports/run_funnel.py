@@ -688,7 +688,7 @@ def build_run_funnel(
             from_store=tailored_artifacts.with_pdf,
             note=(
                 "pipeline's pdf_built flags vs json_extract(meta_json,'$.typst_pdf_built'). "
-                "artifacts.uri is the .typ path either way, so a row count would not do"
+                "artifacts.uri is the .tex path either way, so a row count would not do"
             ),
         ),
     )

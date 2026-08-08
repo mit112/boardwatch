@@ -285,7 +285,7 @@ def count_unattributed_evaluations(conn: Connection) -> int:
 class TailoredArtifactCounts:
     """What the artifacts table says this run produced, read back independently.
 
-    `with_pdf` is NOT a row count. `artifacts.uri` stores the `.typ` path whether or not a
+    `with_pdf` is NOT a row count. `artifacts.uri` stores the `.tex` path whether or not a
     PDF was ever compiled, so a `resume_tailored` row can exist with no PDF — that is D-006's
     silent degrade, and reading `COUNT(*)` here would report it as a delivered lead. Whether
     the PDF compiled lives only in `meta_json.typst_pdf_built`.

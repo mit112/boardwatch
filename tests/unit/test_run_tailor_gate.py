@@ -1,8 +1,8 @@
 """The résumé compile gate + untailored-master fallback inside run_tailor (P1a Task 3).
 
-Uses an injected TypstRunner scripted by filename (the tailored vs. untailored vs. Tier-B
-.typ files run_tailor writes are named distinctly), so "tailored fails, untailored ok" and
-friends are directly expressible without a real typst binary. Mirrors
+Uses an injected compile runner scripted by filename (the tailored vs. untailored vs. Tier-B
+.tex files run_tailor writes are named distinctly), so "tailored fails, untailored ok" and
+friends are directly expressible without a real tectonic binary. Mirrors
 tests/unit/test_reports_tailor.py's `_settings`/`_engine`/`_seed`/`_resume_yaml` fixtures.
 """
 
@@ -17,7 +17,7 @@ from sqlalchemy import Engine, insert
 
 from boardwatch.core.settings import Settings
 from boardwatch.extract.taxonomy import load_taxonomy
-from boardwatch.reports.resume_gate import LeadArtifactError, TypstUnavailableError
+from boardwatch.reports.resume_gate import LeadArtifactError, RenderToolMissingError
 from boardwatch.reports.tailor import run_tailor
 from boardwatch.store.db import ensure_schema, get_engine
 from boardwatch.store.queries import save_profile
@@ -207,7 +207,7 @@ def test_both_unshippable_drops_lead_no_artifact_no_folder(tmp_path: Path) -> No
     assert failed_log.read_text(encoding="utf-8")
 
 
-def test_binary_missing_raises_typst_unavailable(tmp_path: Path) -> None:
+def test_binary_missing_raises_render_tool_missing(tmp_path: Path) -> None:
     def runner(typ: Path, pdf: Path) -> CompileOutcome:
         return CompileOutcome(CompileReason.BINARY_MISSING, None, None, "")
 
@@ -215,13 +215,13 @@ def test_binary_missing_raises_typst_unavailable(tmp_path: Path) -> None:
     engine = _engine(settings)
     pid = _seed(engine, settings)
     out = tmp_path / "out"
-    with pytest.raises(TypstUnavailableError):
+    with pytest.raises(RenderToolMissingError):
         run_tailor(
             engine, settings, pid, resume_path=_resume_yaml(tmp_path), out_dir=out, typst_runner=runner,
         )
 
 
-def test_tier_b_binary_missing_raises_typst_unavailable(tmp_path: Path) -> None:
+def test_tier_b_binary_missing_raises_render_tool_missing(tmp_path: Path) -> None:
     def runner(typ: Path, pdf: Path) -> CompileOutcome:
         if "-llm" in typ.name:
             return CompileOutcome(CompileReason.BINARY_MISSING, None, None, "")
@@ -231,7 +231,7 @@ def test_tier_b_binary_missing_raises_typst_unavailable(tmp_path: Path) -> None:
     engine = _engine(settings)
     pid = _seed(engine, settings)
     out = tmp_path / "out"
-    with pytest.raises(TypstUnavailableError):
+    with pytest.raises(RenderToolMissingError):
         run_tailor(
             engine, settings, pid, resume_path=_resume_yaml(tmp_path), out_dir=out, typst_runner=runner,
             tb_override=TierBResult(accepted=[], rows=[], calls_made=0),
@@ -446,7 +446,7 @@ def test_tier_b_layout_violation_is_skipped_tier_a_ships(tmp_path: Path) -> None
     gated above) remains the lead's sole deliverable -- fail-soft, not fail-drop."""
 
     def runner(typ: Path, pdf: Path) -> CompileOutcome:
-        assert "-llm" not in typ.name  # the layout-violating Tier B .typ must never compile
+        assert "-llm" not in typ.name  # the layout-violating Tier B .tex must never compile
         return _ok(pdf, 1)
 
     settings = _settings(tmp_path)

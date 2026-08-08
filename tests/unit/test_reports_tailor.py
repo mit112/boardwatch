@@ -62,7 +62,7 @@ def _resume_yaml(tmp_path: Path) -> Path:
 def _resume_same_render_different_ids(tmp_path: Path, name: str, *, prefix: str) -> Path:
     """Two of these render byte-identically but are different authored documents.
 
-    TypstRenderer.emit drops entry_id/bullet_id/tech_tags, so hashing the *render* made
+    LatexRenderer.emit drops entry_id/bullet_id/tech_tags, so hashing the *render* made
     these collide onto one resume_master; only hashing the model tells them apart.
     """
     path = tmp_path / name
@@ -231,14 +231,14 @@ def test_real_run_records_artifacts_and_edge(tmp_path: Path) -> None:
     )
     assert res.tailored_artifact_id is not None
     assert res.pdf_path is not None and res.pdf_path.exists()
-    assert (out / f"tailored-{pid}.typ").exists()
+    assert (out / f"tailored-{pid}.tex").exists()
     with engine.connect() as conn:
         rows = conn.execute(artifacts.select()).fetchall()
         kinds = {r.kind for r in rows}
         assert kinds == {"resume_master", "resume_tailored"}
         tailored = next(r for r in rows if r.kind == "resume_tailored")
-        assert tailored.uri.endswith(f"tailored-{pid}.typ")  # ref is the deterministic .typ
-        assert tailored.media_type == "text/x-typst"
+        assert tailored.uri.endswith(f"tailored-{pid}.tex")  # ref is the deterministic .tex
+        assert tailored.media_type == "text/x-tex"
         assert tailored.meta_json["master_content_hash"]
         assert tailored.meta_json["equivalences_version"]
         assert "bullets" in tailored.meta_json
@@ -382,7 +382,7 @@ def test_unsupported_format_raises_before_any_write(tmp_path: Path) -> None:
     out = tmp_path / "out"
     with pytest.raises(UnsupportedFormatError):
         run_tailor(engine, settings, pid, resume_path=_resume_yaml(tmp_path), out_dir=out,
-                   fmt="latex", typst_runner=_runner_ok)
+                   fmt="typst", typst_runner=_runner_ok)
     assert not out.exists()
     with engine.connect() as conn:
         assert conn.execute(artifacts.select()).first() is None

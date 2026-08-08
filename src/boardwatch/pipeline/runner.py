@@ -37,7 +37,7 @@ from boardwatch.eligibility.preflight import current_identity
 from boardwatch.pipeline.freshness import folders_reconcile
 from boardwatch.pipeline.funnel_writer import collect_run_funnel
 from boardwatch.reports.morning import MorningLead, build_morning, write_morning
-from boardwatch.reports.resume_gate import LeadArtifactError, TypstUnavailableError
+from boardwatch.reports.resume_gate import LeadArtifactError, RenderToolMissingError
 from boardwatch.reports.run_funnel import (
     ScanContext,
     ShortlistCounts,
@@ -51,6 +51,7 @@ from boardwatch.store.queries import RUN_FAILED, RUN_OK, ensure_run, finish_run,
 from boardwatch.store.run_funnel_queries import count_eligible_judged_this_run, lead_provenance
 from boardwatch.store.tables import postings
 from boardwatch.tailor.load import ResumeLoadError
+from boardwatch.tailor.render.latex import TemplateArtifactError
 
 DEFAULT_TOP_N = 8
 
@@ -278,11 +279,12 @@ def run_pipeline(
                     out_dir=_ensure_dir(dest),
                     run_id=run_id,
                 )
-            except TypstUnavailableError as exc:
-                # An environment fault, not a per-lead failure (P1a): the binary is either on
-                # PATH or it isn't, so every remaining lead would fail identically — abort the
-                # stage rather than burn through the whole shortlist re-discovering that.
-                summary.fatal = f"typst binary unavailable: {exc}"
+            except (RenderToolMissingError, TemplateArtifactError) as exc:
+                # An environment/authoring fault, not a per-lead failure (P1a): either the
+                # compiler binary is missing from PATH or the template itself is broken, so
+                # every remaining lead would fail identically — abort the stage rather than
+                # burn through the whole shortlist re-discovering that.
+                summary.fatal = f"render tool unavailable: {exc}"
                 message = f"tailor: {summary.fatal}"
                 stage_errors.append(message)
                 summary.errors.append(message)
@@ -292,7 +294,7 @@ def run_pipeline(
                 # block, a leftover template artifact) is an authoring fault, not a per-lead
                 # one — `load_resume()` re-validates it on every call, so every remaining lead
                 # would fail identically. Abort the stage rather than rediscovering that lead
-                # by lead, exactly like `TypstUnavailableError` above.
+                # by lead, exactly like `RenderToolMissingError` above.
                 summary.fatal = f"master résumé invalid: {exc}"
                 message = f"tailor: {summary.fatal}"
                 stage_errors.append(message)
@@ -335,7 +337,7 @@ def run_pipeline(
 
         # Every lead the ranker produced failed to render. Not "zero was provably right" —
         # zero was produced from a non-empty shortlist, which is a broken résumé path
-        # (missing resume.yaml, typst gone), not an honest empty day.
+        # (missing resume.yaml, tectonic gone), not an honest empty day.
         shortlisted = summary.shortlist.shortlisted if summary.shortlist else 0
         if summary.fatal is None and shortlisted > 0 and not summary.tailored:
             summary.fatal = (

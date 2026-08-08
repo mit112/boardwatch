@@ -144,8 +144,8 @@ def test_tier_b_emits_second_artifact_and_edge(tmp_path: Path) -> None:
     assert len(res.rewrites) == 2
     assert all(r["kept"] for r in res.rewrites)
     # both source files written
-    assert (out / f"tailored-{pid}.typ").exists()
-    assert (out / f"tailored-{pid}-llm.typ").exists()
+    assert (out / f"tailored-{pid}.tex").exists()
+    assert (out / f"tailored-{pid}-llm.tex").exists()
     with engine.connect() as conn:
         edges = get_derivations(conn, res.llm_artifact_id)
         rows = conn.execute(artifacts.select()).fetchall()
@@ -177,8 +177,8 @@ def test_tier_b_off_is_tier_a_identical(tmp_path: Path) -> None:
     """
     resume = _resume_yaml(tmp_path)
     # Same out_dir for both runs: each engine is an independent, freshly seeded database,
-    # so pid_a == pid_b == 1 and both write tailored-1.typ with byte-identical content —
-    # sharing the directory means pdf_uri/typ_uri are identical too, not just the content,
+    # so pid_a == pid_b == 1 and both write tailored-1.tex with byte-identical content —
+    # sharing the directory means pdf_uri/tex_uri are identical too, not just the content,
     # so meta_json can be compared with zero exclusions below.
     out = tmp_path / "out"
 
@@ -194,7 +194,7 @@ def test_tier_b_off_is_tier_a_identical(tmp_path: Path) -> None:
     assert res_a.rewrites is None
     assert res_a.llm_source is None
     assert res_a.llm_pdf_path is None
-    assert not (out / f"tailored-{pid_a}-llm.typ").exists()
+    assert not (out / f"tailored-{pid_a}-llm.tex").exists()
     with e_a.connect() as conn:
         rows = conn.execute(artifacts.select()).fetchall()
     assert {r.kind for r in rows} == {"resume_master", "resume_tailored"}
@@ -240,7 +240,7 @@ def test_tier_b_dry_run_writes_nothing(tmp_path: Path) -> None:
     )
     assert res.llm_artifact_id is None
     assert res.llm_source is not None  # preview computed in-memory
-    assert not out.exists() or list(out.glob("*.typ")) == []
+    assert not out.exists() or list(out.glob("*.tex")) == []
     with engine.connect() as conn:
         assert conn.execute(artifacts.select()).first() is None
 
@@ -267,6 +267,6 @@ def test_tier_b_zero_accepted_rewrites_still_emits_second_artifact(tmp_path: Pat
     # Both candidates invent a number the source bullet doesn't have -> the filter's
     # specific reason ("added_number") is carried, not the flat "filter".
     assert all(r["drop_reason"] == "filter:added_number" for r in res.rewrites)
-    assert (out / f"tailored-{pid}-llm.typ").exists()
+    assert (out / f"tailored-{pid}-llm.tex").exists()
     # zero accepted rewrites -> Tier B render is byte-identical to Tier A's
     assert res.llm_source == res.source

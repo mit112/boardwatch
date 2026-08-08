@@ -141,10 +141,15 @@ def _bullet_lines(e: Entry, reworded: frozenset[str]) -> str:
 
 
 def _experience(entries: list[Entry], reworded: frozenset[str]) -> str:
+    # An empty \resumeSubHeadingListStart...End (an itemize with zero \item) is a LaTeX
+    # error ("Something's wrong--perhaps a missing \item"), not a blank section — so a
+    # résumé with no "experience" entries must omit the whole section, mirroring
+    # `_extracurricular`'s guard.
+    matching = [e for e in entries if e.kind == "experience"]
+    if not matching:
+        return ""
     lines = ["\\section{Experience}", "\\resumeSubHeadingListStart"]
-    for e in entries:
-        if e.kind != "experience":
-            continue
+    for e in matching:
         lines.append(_subheading(e))
         lines.append("\\resumeItemListStart")
         lines.append(_bullet_lines(e, reworded))
@@ -154,10 +159,12 @@ def _experience(entries: list[Entry], reworded: frozenset[str]) -> str:
 
 
 def _projects(entries: list[Entry], reworded: frozenset[str]) -> str:
+    # Same empty-itemize hazard as `_experience` above.
+    matching = [e for e in entries if e.kind == "project"]
+    if not matching:
+        return ""
     lines = ["\\section{Projects}", "\\resumeSubHeadingListStart"]
-    for e in entries:
-        if e.kind != "project":
-            continue
+    for e in matching:
         lines.append(_subheading(e))
         lines.append("\\resumeItemListStart")
         lines.append(_bullet_lines(e, reworded))

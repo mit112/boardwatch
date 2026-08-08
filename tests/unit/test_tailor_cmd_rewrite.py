@@ -404,7 +404,7 @@ def test_rewrite_apply_emits_llm_artifact_with_lineage(env: Env, tmp_path: Path)
         e.relation == "rewritten_from" and e.parent_artifact_id == tier_a_row.id for e in edges
     )
 
-    llm_typ = out_dir / f"tailored-{posting_id}-llm.typ"
+    llm_typ = out_dir / f"tailored-{posting_id}-llm.tex"
     assert llm_typ.exists()
     assert "reworded (Tier B)" in llm_typ.read_text(encoding="utf-8")
 
@@ -486,7 +486,7 @@ def test_rewrite_apply_binary_missing_exits_nonzero_with_install_hint(
     )
     assert result.exit_code == 1, result.stdout
     assert result.exception is None or isinstance(result.exception, SystemExit)
-    assert "typst" in result.stdout.lower()
+    assert "tectonic" in result.stdout.lower()
     assert "install" in result.stdout.lower()
 
 

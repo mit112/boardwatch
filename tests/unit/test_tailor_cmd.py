@@ -199,15 +199,15 @@ def test_run_resume_override_is_honoured(env: Env, tmp_path: Path) -> None:
     assert result.exit_code == 0, result.stdout
     assert not (env.config_dir / "resume.yaml").exists()
     assert "guarantee: PASS" in result.stdout.replace("\n", "")
-    assert (env.data_dir / "tailored" / f"tailored-{posting_id}.typ").is_file()
+    assert (env.data_dir / "tailored" / f"tailored-{posting_id}.tex").is_file()
 
 
 def test_run_out_dir_override_is_honoured(
     env: Env, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    # A stub stands in for `typst` (never shelled out to) so this test's outcome does not
-    # depend on whether the machine running it happens to have typst installed — since a
-    # missing binary is now a fatal TypstUnavailableError (not a silent PDF skip), the
+    # A stub stands in for `tectonic` (never shelled out to) so this test's outcome does not
+    # depend on whether the machine running it happens to have tectonic installed — since a
+    # missing binary is now a fatal RenderToolMissingError (not a silent PDF skip), the
     # command's own exit code would otherwise vary with the host, not with --out.
     _run(env, ["tailor", "init"])
     posting_id = _seed_open_posting(env)
@@ -220,9 +220,9 @@ def test_run_out_dir_override_is_honoured(
     monkeypatch.setattr("boardwatch.reports.tailor._default_runner", _fake_typst)
     result = _run(env, ["tailor", "run", str(posting_id), "--out", str(out)])
     assert result.exit_code == 0, result.stdout
-    assert (out / f"tailored-{posting_id}.typ").is_file()
+    assert (out / f"tailored-{posting_id}.tex").is_file()
     assert (out / f"tailored-{posting_id}.pdf").is_file()
-    assert (out / "typst-compile.log").is_file()
+    assert (out / "tectonic-compile.log").is_file()
     assert not (env.data_dir / "tailored").exists()  # default location untouched
 
 
@@ -279,7 +279,7 @@ def test_run_binary_missing_exits_nonzero_with_install_hint(
     monkeypatch.setattr("boardwatch.reports.tailor.shutil.which", lambda name: None)
     result = _run(env, ["tailor", "run", str(posting_id), "--out", str(out)])
     assert result.exit_code == 1, result.stdout
-    assert "typst" in result.stdout.lower()
+    assert "tectonic" in result.stdout.lower()
     assert "install" in result.stdout.lower()
 
 
@@ -313,9 +313,9 @@ def test_run_unsupported_format_exits_1(env: Env, tmp_path: Path) -> None:
     _run(env, ["tailor", "init"])
     posting_id = _seed_open_posting(env)
     out = tmp_path / "artifacts"
-    result = _run(env, ["tailor", "run", str(posting_id), "--format", "latex", "--out", str(out)])
+    result = _run(env, ["tailor", "run", str(posting_id), "--format", "typst", "--out", str(out)])
     assert result.exit_code == 1
-    assert "latex" in result.stdout.replace("\n", "")
+    assert "typst" in result.stdout.replace("\n", "")
     assert not out.exists()
     assert not (env.data_dir / "tailored").exists()
 

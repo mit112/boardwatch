@@ -298,7 +298,7 @@ def test_the_store_disagreeing_with_the_pipeline_fails_reconciliation() -> None:
 def test_a_pdf_that_never_compiled_is_caught_by_the_recount() -> None:
     """D-006's silent degrade, as a cross-check.
 
-    `artifacts.uri` holds the `.typ` path whether or not a PDF was ever produced, so a row
+    `artifacts.uri` holds the `.tex` path whether or not a PDF was ever produced, so a row
     count cannot tell a delivered lead from a degraded one. When the pipeline claims a PDF
     and `meta_json.typst_pdf_built` does not agree, the artifact must say so.
     """

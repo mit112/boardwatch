@@ -56,14 +56,14 @@ def test_db_counts_scope_by_run_and_kind(engine: Engine) -> None:
         other = _run(conn)
         v1, v2 = _version(conn, "v1"), _version(conn, "v2")
         v_other = _version(conn, "vo")
-        record_artifact(conn, kind="resume_tailored", uri="/a.typ", posting_version_id=v1,
+        record_artifact(conn, kind="resume_tailored", uri="/a.tex", posting_version_id=v1,
                         meta={"typst_pdf_built": True, "pdf_uri": "/a.pdf"}, run_id=run_id)
-        record_artifact(conn, kind="resume_tailored", uri="/b.typ", posting_version_id=v2,
+        record_artifact(conn, kind="resume_tailored", uri="/b.tex", posting_version_id=v2,
                         meta={"typst_pdf_built": False, "pdf_uri": None}, run_id=run_id)
         # excluded: wrong run, and an LLM row (not a resume_tailored count)
-        record_artifact(conn, kind="resume_tailored", uri="/o.typ", posting_version_id=v_other,
+        record_artifact(conn, kind="resume_tailored", uri="/o.tex", posting_version_id=v_other,
                         meta={"typst_pdf_built": True, "pdf_uri": "/o.pdf"}, run_id=other)
-        record_artifact(conn, kind="resume_tailored_llm", uri="/a.llm.typ",
+        record_artifact(conn, kind="resume_tailored_llm", uri="/a.llm.tex",
                         posting_version_id=v1, meta={}, run_id=run_id)
     with engine.connect() as conn:
         counts = db_counts_for_run(conn, run_id)
@@ -77,7 +77,7 @@ def test_null_run_id_artifacts_are_excluded(engine: Engine) -> None:
     with engine.begin() as conn:
         run_id = _run(conn)
         v1 = _version(conn, "v1")
-        record_artifact(conn, kind="resume_tailored", uri="/n.typ", posting_version_id=v1,
+        record_artifact(conn, kind="resume_tailored", uri="/n.tex", posting_version_id=v1,
                         meta={"typst_pdf_built": True, "pdf_uri": "/n.pdf"}, run_id=None)
     with engine.connect() as conn:
         counts = db_counts_for_run(conn, run_id)
@@ -100,9 +100,9 @@ def test_tailored_file_rows_covers_both_kinds(engine: Engine) -> None:
     with engine.begin() as conn:
         run_id = _run(conn)
         v1 = _version(conn, "v1")
-        record_artifact(conn, kind="resume_tailored", uri="/a.typ", posting_version_id=v1,
+        record_artifact(conn, kind="resume_tailored", uri="/a.tex", posting_version_id=v1,
                         meta={"typst_pdf_built": True, "pdf_uri": "/a.pdf"}, run_id=run_id)
-        record_artifact(conn, kind="resume_tailored_llm", uri="/a.llm.typ",
+        record_artifact(conn, kind="resume_tailored_llm", uri="/a.llm.tex",
                         posting_version_id=v1, meta={}, run_id=run_id)
     with engine.connect() as conn:
         rows = tailored_file_rows(conn, run_id)
