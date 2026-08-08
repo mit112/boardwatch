@@ -117,6 +117,11 @@ def load_personas(config_dir: Path) -> PersonaRegistry:
             entries: tuple[str, ...] | None = None
         else:
             entries = _string_tuple(entries_raw, origin, pid, "entries")
+            if len(set(entries)) != len(entries):
+                raise PersonaError(
+                    f"{origin}: persona {pid!r} entries contains duplicate entry_id(s) "
+                    f"{[e for e in entries if entries.count(e) > 1]}"
+                )
         personas.append(
             Persona(
                 id=pid,

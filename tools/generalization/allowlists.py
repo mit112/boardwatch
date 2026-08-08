@@ -82,6 +82,14 @@ SHIPPED_DATA: dict[str, DataEntry] = {
         "frozen by sha256 pin.",
         pin="sha256:7450b5a139d1ad893e0712fb1a4c87f4c04d9045e7f1fcaaf949e206aa8fca55",
     ),
+    "src/boardwatch/tailor/personas.yaml": DataEntry(
+        kind="taxonomy",
+        reason="Curated generic persona registry (résumé-presentation lenses: title, "
+        "skill-group order, entry subset, deterministic JD role-family selection). Describes "
+        "the mechanism, not one user; overridable per user via {config_dir}/personas.yaml "
+        "(P4 item 7, D-062)",
+        pin="sha256:baa9e9cbe736182e7a8b3376a3699d383e191a1d5526f765b0de63b06e185c3c",
+    ),
     "src/boardwatch/registry/companies.yaml": DataEntry(
         kind="company_enumeration",
         reason="The one public starter registry of company job boards. Schema-validated, "

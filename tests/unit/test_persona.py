@@ -119,6 +119,23 @@ def test_duplicate_id_is_an_error(tmp_path: Path) -> None:
         load_personas(cfg)
 
 
+def test_duplicate_entries_id_is_an_error(tmp_path: Path) -> None:
+    # A hand-authored override that repeats an entry_id must fail loudly at load time,
+    # not silently render the same fact twice (model_copy skips Resume._unique_ids).
+    cfg = _write(
+        tmp_path,
+        "personas:\n"
+        "  - id: a\n"
+        '    title: "A"\n'
+        "    default: true\n"
+        "    role_families: [general_swe]\n"
+        "    skill_group_order: []\n"
+        "    entries: [acme, acme]\n",
+    )
+    with pytest.raises(PersonaError):
+        load_personas(cfg)
+
+
 def test_role_family_outside_closed_set_is_an_error(tmp_path: Path) -> None:
     cfg = _write(
         tmp_path,
