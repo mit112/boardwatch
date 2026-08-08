@@ -17,14 +17,16 @@ runner = CliRunner()
 
 
 @pytest.fixture(autouse=True)
-def _typst_present(monkeypatch):
-    # These tests are about board health/schema/integrity, not the typst probe — isolate
+def _tectonic_present(monkeypatch):
+    # These tests are about board health/schema/integrity, not the tectonic probe — isolate
     # them from whatever toolchain happens to be on the machine running the suite (the
-    # typst check itself is exercised directly in test_doctor_typst.py).
+    # tectonic check itself is exercised directly in test_doctor_tectonic.py).
     from boardwatch.cli import doctor_cmd
     monkeypatch.setattr(
-        doctor_cmd, "check_typst",
-        lambda: doctor_cmd.TypstCheck(found=True, version="0.15.1", failed=False, message=None),
+        doctor_cmd, "check_tectonic",
+        lambda: doctor_cmd.TectonicCheck(
+            available=True, version="0.17.0", failed=False, warning=None, detail="tectonic 0.17.0"
+        ),
     )
 
 

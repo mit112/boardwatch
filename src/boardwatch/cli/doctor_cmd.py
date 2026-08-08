@@ -28,52 +28,52 @@ from boardwatch.store.queries import last_complete_scan_ages, reap_stale_runs
 
 console = Console()
 
-_TYPST_PINNED_VERSION = "0.15.1"
+_TECTONIC_MIN_VERSION = (0, 15, 0)
 
 
-@dataclass
-class TypstCheck:
-    found: bool
-    version: str | None = None
-    failed: bool = False  # missing binary — contributes to doctor's non-zero exit
-    message: str | None = None  # install guidance (failure) or version-mismatch warning
+@dataclass(frozen=True)
+class TectonicCheck:
+    available: bool
+    version: str | None
+    failed: bool  # missing/broken binary — contributes to doctor's non-zero exit
+    warning: str | None  # below-floor version warning (not a failure)
+    detail: str  # install guidance (failure) or a human-readable status line
 
 
-def check_typst() -> TypstCheck:
-    """Probe for the pinned typst binary (résumé PDF gate, P1a). Missing binary is an
-    actionable failure; a version other than the pin is a loud warning, not a hard fail —
-    the page-count `typst eval` syntax the gate relies on is version-sensitive."""
-    if shutil.which("typst") is None:
-        return TypstCheck(
-            found=False,
-            failed=True,
-            message=(
-                f"typst not found; install typst {_TYPST_PINNED_VERSION} "
-                "(https://github.com/typst/typst/releases) — required for the résumé PDF gate"
-            ),
+def check_tectonic() -> TectonicCheck:
+    """Probe for the tectonic binary (résumé PDF gate, Increment-1). Missing binary is an
+    actionable failure; tectonic auto-fetches packages on demand, so a below-floor version
+    is a loud warning rather than a hard fail — unlike typst, no exact pin is required."""
+    if shutil.which("tectonic") is None:
+        detail = (
+            "tectonic not found on PATH; install it (`brew install tectonic` / "
+            "https://tectonic-typesetting.github.io) to render résumé PDFs"
         )
-    result = subprocess.run(["typst", "--version"], capture_output=True, text=True)
-    match = re.search(r"\d+\.\d+\.\d+", result.stdout)
+        return TectonicCheck(
+            available=False, version=None, failed=True, warning=None, detail=detail
+        )
+    result = subprocess.run(["tectonic", "--version"], capture_output=True, text=True)
+    match = re.search(r"(\d+)\.(\d+)\.(\d+)", result.stdout)
     version = match.group(0) if match else None
-    if result.returncode != 0 or version is None:
+    if result.returncode != 0 or match is None:
         # a present binary that fails to run (wrong arch, corrupt install, ...) is exactly
         # as broken as a missing one — the PDF gate cannot use it either way
-        return TypstCheck(
-            found=True,
-            version=version,
-            failed=True,
-            message=(
-                f"typst --version failed (exit {result.returncode}); reinstall typst "
-                f"{_TYPST_PINNED_VERSION} — required for the résumé PDF gate"
-            ),
+        detail = (
+            f"tectonic --version failed (exit {result.returncode}); reinstall tectonic "
+            "— required for the résumé PDF gate"
         )
-    message = None
-    if version != _TYPST_PINNED_VERSION:
-        message = (
-            f"typst version is {version}, pinned version is "
-            f"{_TYPST_PINNED_VERSION} — the page-count query syntax is version-sensitive"
+        return TectonicCheck(
+            available=True, version=version, failed=True, warning=None, detail=detail
         )
-    return TypstCheck(found=True, version=version, message=message)
+    parsed = (int(match.group(1)), int(match.group(2)), int(match.group(3)))
+    warning = None
+    # tuple compare — a string compare mis-orders "0.9.0" < "0.15.0"
+    if parsed < _TECTONIC_MIN_VERSION:
+        floor = ".".join(str(p) for p in _TECTONIC_MIN_VERSION)
+        warning = f"tectonic version is {version}, below the recommended {floor} floor"
+    return TectonicCheck(
+        available=True, version=version, failed=False, warning=warning, detail=f"tectonic {version}"
+    )
 
 
 def _db_revision(conn: Connection) -> str | None:
@@ -186,12 +186,12 @@ def doctor(ctx: typer.Context, offline: bool = typer.Option(False, "--offline"))
         f"{'ok' if schema_ok else f'MISMATCH (db={db_revision}, code={schema_revision()})'}"
     )
 
-    typst_check = check_typst()
-    console.print(f"typst: {typst_check.version or 'NOT FOUND'}")
-    if typst_check.failed:
-        console.print(f"[red]{typst_check.message}[/red]")
-    elif typst_check.message:
-        console.print(f"[yellow]{typst_check.message}[/yellow]")
+    tectonic_check = check_tectonic()
+    console.print(f"tectonic: {tectonic_check.version or 'NOT FOUND'}")
+    if tectonic_check.failed:
+        console.print(f"[red]{tectonic_check.detail}[/red]")
+    elif tectonic_check.warning:
+        console.print(f"[yellow]{tectonic_check.warning}[/yellow]")
 
-    failed = report.actionable or not integrity_ok or not schema_ok or typst_check.failed
+    failed = report.actionable or not integrity_ok or not schema_ok or tectonic_check.failed
     raise typer.Exit(code=1 if failed else 0)
