@@ -1112,3 +1112,38 @@ folder-name-only human-audit flags. Bottom line: the ineligible answer key is **
 The 4 flags are all eligible-side (answer key possibly too lenient on unmodeled non-SWE / seniority
 families), routed to a future Sonnet-class judge. Findings (gitignored):
 `.superpowers/sdd/plan-p5b-oracle-judge/deepseek-crossmatch-findings.md`.
+
+---
+
+## Session — 2026-08-08 (D-071b final eligibility gate build — no answer-key number changes)
+
+**This build changes no deterministic gate metric.** The final gate lane (`eligibility/final_gate.py`,
+`eligibility/gate_handshake.py`, `cli/eligibility_cmd.py`'s `eligibility gate request/apply`,
+`cli/top_cmd.py`'s ranker hook) is purely additive over the ranker: it never touches
+`eligibility_evaluations` rows written by the deterministic `engine_kind='deterministic'` lane, and it never
+runs over the 173-row labeled set (the gate only judges postings on the CURRENT ranked shortlist — the
+labeled set is a fixed historical corpus, not a live shortlist). So the numbers this session's own build
+does **not** move are the ones already on record from the prior session:
+
+- **`boardwatch eligibility score`** — INELIGIBLE precision **16/16 = 100%**, audited coverage **28%**,
+  `meets_ship_gate` True, exit 0 (D-073, unchanged by this build — re-run to confirm: same command as the
+  prior session, same 173-row worksheet, no source file this build touched is in `score`'s dependency
+  graph).
+- **Recall** stays **0.276 (16/58)** on the labeled set for the identical reason: the gate has no answer-key
+  entry point at all, so there is nothing for it to move.
+
+**What this lane's "recall contribution" actually is, and why it cannot be a `score` number.** D-071 framed
+the final gate as the mechanism that recovers the recall the deterministic stage abstains on (experience
+1/23, contract 0/7, internship 0/4 in the prior session's run). That recovery happens only when
+`eligibility gate request`/`gate apply` are run against a REAL ranked shortlist and a real judge — a
+measurement made **live, per run**, not against the frozen 173-row key. `boardwatch eligibility gate apply`
+prints its own tally (`judged N · ineligible N · downgraded N`) each time it runs; that tally, accumulated
+over real runs, is the honest measurement of this lane's contribution — there is no way to retrofit it onto
+the existing precision/recall table without conflating "judged on the live shortlist" with "judged on the
+held-out key," which is exactly the independence violation the oracle's own design forbids.
+
+**Build verification, not a gate measurement:** 4 SDD tasks + 1 fix round (`60d7abb..1270ae9`), each
+task-reviewed; commit-by-commit test counts are in `.superpowers/sdd/plan-p5-final-gate/task-*-report.md`
+(Task 1: 17 passed; Task 2 pre-fix: 8 passed, post-fix: 11 passed; Task 3: 2 passed, plus 19 passed across
+adjacent suites with no regression). `make generalization` — the docs-only gate for this task — is recorded
+in this session's commit message; the full `make check` gate is Task 5's, not this task's, per the plan.

@@ -3001,3 +3001,77 @@ gitignored at `.superpowers/sdd/plan-p5b-oracle-judge/deepseek-crossmatch-findin
 next build — the deterministic precision-first stage now feeds a cheap-model final gate over the shortlist to
 recover the title-blind recall (this run: experience 1/23, contract 0/7, internship 0/4) — followed by the
 model-tier benchmark (D-072).
+
+## D-074 — Final eligibility gate lane SHIPPED (persistent, agent-lane, fail-open); Gate P5 unchanged
+
+**Context.** D-071 agreed a two-stage eligibility gate: the deterministic precision-first stage (done,
+D-073) plus a cheap agent-lane final gate over the ranked shortlist to recover the recall the deterministic
+stage abstains on (experience/contract/internship families). D-071b turned that into a spec + 5-task TDD
+plan (`.superpowers/sdd/p5-eligibility-decides/design-p5-final-gate.md`,
+`.superpowers/sdd/p5-eligibility-decides/plan-p5-final-gate.md`), hardened by two independent fresh-context
+reviews (Opus + deepseek) that converged on the same issues before any code was written — the two that
+matter most are below; a third, mechanical one (scope the existing advisory `load_llm_audit` read to the
+`llm:%` prefix so it can never pick up a `final_gate:` row) was folded straight into the plan with no open
+question.
+
+**Choice.** A persistent, fail-open, additive `engine_kind='llm'` lane, versioned
+`engine_version='final_gate:<POLICY_VERSION>:<PROMPT_VERSION>'` — distinguished from the existing advisory
+`extract_llm` lane (`llm:<PROMPT_VERSION>`, no `final_gate:` prefix) purely by the version string, no new
+column or table. Built as 4 SDD tasks + 1 fix round on `p5-final-gate` (`60d7abb..1270ae9`): (1)
+`eligibility/final_gate.py::record_gate_verdict` + the scoped `eligibility/read.py::current_gate_verdicts` +
+`audit.py`'s disjoint-prefix fix; (2) `eligibility/gate_handshake.py` + `cli/eligibility_cmd.py`'s
+`eligibility gate request`/`gate apply`; (3) `cli/top_cmd.py::rank_open_postings` hides on gate-ineligible
+alongside deterministic-ineligible through one shared `hidden_ineligible` counter.
+
+**The two pre-code blockers, and how each was actually verified in the build (not just designed away):**
+
+1. **Identity-join.** `record_gate_verdict` computes its write identity via
+   `hashing.build_identity(posting_version_id, facts, policy, catalog, declared_fields)` — the SAME call
+   `run_eligibility`/`preflight` make — using whatever `facts`/`policy` the caller supplies.
+   `gate_apply_cmd` supplies the profile's STORED `facts`/`policy` (`parse_facts`/`parse_policy`), never the
+   oracle's all-blocker reference policy the labeling pass uses. Task 2's review round strengthened the
+   identity test to prove this is load-bearing: it builds a `wrong_identity` from an all-blocker `Policy`
+   and asserts `current_gate_verdicts` under that identity returns nothing while the STORED identity returns
+   the write, then confirmed — via a scripted mutation hardcoding the all-blocker policy inside
+   `apply_gate_verdicts` — that the ORIGINAL (pre-strengthened) test would NOT have caught that regression.
+2. **Keystone-span.** `record_gate_verdict` re-checks `accepted.spans` after `accept_oracle_verdict`; an
+   accepted `ineligible` with no resolvable span downgrades `persisted` to `uncertain` before the write, so
+   it never reaches the store as a span-less INELIGIBLE. `apply_gate_verdicts` independently mirrors the
+   same check for its own tally, so the CLI's printed counts match what was actually persisted, not the
+   judge's raw `decision`. Task 1's test
+   (`test_ineligible_without_resolvable_span_downgrades_to_uncertain`) uses an en-dash evidence string that
+   `resolve_provenance` accepts (normalized) but a raw substring `find` misses — confirming the downgrade
+   fires on exactly the case it exists for.
+
+**A third defect, found only in this build's own review — not predicted by the pre-code reviews: `gate
+apply`'s CLI wiring wrote `run_id=NULL`.** `apply_gate_verdicts` (the pure module) already accepted and
+threaded a `run_id` parameter correctly; `gate_apply_cmd` simply never minted or passed one, so every
+gate-apply invocation persisted evaluations with `run_id=NULL` — a D-019 violation (`run_id` must never be
+NULL on a row written after that decision; a standalone stage either receives a `run_id` or mints one).
+Fixed by mirroring `eligibility extract`'s existing standalone-lane pattern: `ensure_run(engine, None)`
+before the write transaction, `finish_run` after it commits, gated on there being ≥1 verdict to apply (the
+same non-empty guard `run_eligibility` uses so a no-op invocation does not log a degenerate run). Verified
+load-bearing by reverting the fix and watching the new CLI-level test fail exactly as predicted, then
+restoring it.
+
+**Why reusing `engine_kind='llm'` is migration-free, not a shortcut.** `eligibility_evaluations.engine_kind`
+carries no CHECK constraint enumerating its allowed values (only `verdict` does, per session 2's finding) —
+it is a free-text column read by equality/prefix at each call site. The two lanes that matter
+(`extract_llm`'s advisory reads, the deterministic reads) are already disambiguated by `engine_version`
+prefix wherever it counts, not by `engine_kind` alone. Disambiguating the new gate lane the same way — a
+`final_gate:` prefix, scoped in the two readers that needed it (`audit.py`, `read.py`) — required touching
+zero other call sites. A genuinely new `engine_kind` value would only be *forced* by a schema CHECK
+constraint gating that column, which does not exist; adding one anyway would mean a SQLite table rebuild
+(SQLite `ALTER TABLE` cannot add or change a CHECK constraint in place) for no behavioural gain over a
+version-string prefix.
+
+**Deferred, not built:** the D-072 model-tier benchmark (which will also pick this gate's default judge
+model); inline `bwd`/daily-driver wiring of `gate request`/`gate apply` into the unattended runner; a paid-API
+judge (D-071's model-agnostic constraint stands — the request/verdicts JSON is the provider boundary, so a
+paid API can plug in later without touching this lane).
+
+**Consequence.** Gate P5's own precision/recall numbers on the 173-row answer key are unchanged by this
+build — the gate lane is purely additive over the ranker (a gate `uncertain`/`eligible`/missing row changes
+nothing; only a persisted `ineligible` hides a posting, alongside the deterministic lane). Its recall
+contribution is a live-run measurement, not something the answer key can score: the gate only ever runs over
+the ranker's current shortlist, never over the labeled set's off-shortlist rows.

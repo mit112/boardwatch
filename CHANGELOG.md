@@ -22,6 +22,23 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- **Final eligibility gate — a persistent, agent-lane check over the live shortlist** (D-074). A second,
+  standing eligibility lane distinct from the one-time P5 answer-key labeling pass: `boardwatch eligibility
+  gate request [--top N] [--out]` builds a JD-blind request from the ranked shortlist (the same request
+  shape `label request` uses); the `eligibility-judge` skill judges it with the identical JD-and-facts-only
+  rules; `boardwatch eligibility gate apply --verdicts path [--top N]` persists the verdicts as a new
+  INELIGIBLE-capable `engine_kind='llm'`, `engine_version='final_gate:<POLICY_VERSION>:<PROMPT_VERSION>'`
+  evaluation (`eligibility/final_gate.py::record_gate_verdict`), keystone-guarded (an accepted ineligible
+  with an unresolvable JD span downgrades to `uncertain`, fail-open) and written under the user's STORED
+  facts+policy so the identity matches what the ranker reads. `boardwatch top`/`boardwatch run` now hide a
+  posting when EITHER the deterministic engine OR this gate says `ineligible` (one shared counter; a gate
+  `uncertain`/`eligible`/missing row changes nothing). The advisory `extract_llm` lane's own read
+  (`load_llm_audit`) is now scoped to its disjoint `llm:%` version prefix so it can never mislabel a gate row
+  as advisory. `gate apply` mints its own `run_id` per D-019 and warns if the verdicts file exceeds `--top`.
+  Migration-free (reuses `engine_kind='llm'`, disambiguated by `engine_version` prefix — no schema change);
+  model-agnostic (the request/verdicts JSON is the provider boundary). This lane is purely additive: it
+  changes no deterministic verdict and no number on the existing P5 precision/recall answer key.
+
 - **P5b answer-key oracle judge — agent lane, no API key** (D-068). An AI oracle produces the Gate-P5
   answer key (`expected_verdict` ∈ eligible/ineligible/uncertain + spans) through a 3-step CLI handshake
   driven by the user's own Claude Code — the `eligibility-judge` skill — mirroring the P7b subscription lane:

@@ -1,6 +1,6 @@
 ---
 name: eligibility-judge
-description: Drive boardwatch's P5 eligibility-oracle labeling handshake — an independent, JD-and-facts-only judge that produces the answer key's eligible/ineligible/uncertain verdicts for the held-out labeled set (Gate P5). Use when the user asks to label the P5 eligibility set, run the oracle, or mentions `boardwatch eligibility label`.
+description: Drive boardwatch's independent, JD-and-facts-only eligibility judge — either to produce the P5 answer key's eligible/ineligible/uncertain verdicts for the held-out labeled set (Gate P5), or to run the same judging as the final eligibility gate over the live ranked shortlist. Use when the user asks to label the P5 eligibility set, run the oracle, run the final gate, or mentions `boardwatch eligibility label` or `boardwatch eligibility gate`.
 ---
 
 # eligibility-judge
@@ -138,3 +138,45 @@ the result is **oracle-only** until a human has audited a sample of it. Per
 `docs/program/PROGRAM.md` §3.P5, `eligibility score` itself exits non-zero
 until the audited-coverage bar is met — running this skill labels the set, it
 does not by itself close Gate P5.
+
+## 5. The same judging also drives the final gate over the live shortlist
+
+Steps 1-4 above build the Gate-P5 **answer key** — a one-time, held-out
+labeling pass. The identical JD-and-facts-only judging (the independence
+property, REQUIRED-vs-PREFERRED, the six-family blocker policy, no
+force-fitting, mandatory verbatim evidence — all unchanged, reuse them by
+reference, do not re-derive or restate them here) also drives boardwatch's
+**final eligibility gate**: a standing, agent-lane check over the *live* ranked
+shortlist, run whenever the user wants a fresh pass before tailoring.
+
+The handshake is the same shape, different endpoints and a different purpose:
+
+```
+boardwatch eligibility gate request [--top N] [--out path]
+```
+
+writes `gate_request.json` (default `{data_dir}/gate_request.json`) — one
+request row per posting on the ranked shortlist, JD-blind of the deterministic
+engine's own verdict for that posting, in the same `label_request.json` shape
+as step 1. Judge it exactly as in step 2 (same schema, same rules, same
+`verdicts.json` output — a `label` here is a posting id, not a worksheet row
+id, but the judging is identical). Then:
+
+```
+boardwatch eligibility gate apply --verdicts verdicts.json [--top N]
+```
+
+**This is not `label apply`, and the difference matters.** `label apply`
+writes into the worksheet — it is building the answer key, and nothing it
+does is visible to a live run. `gate apply` writes into the store as a new
+`engine_kind='llm'`, `final_gate:`-versioned evaluation lane: a `high`-
+confidence, catalog-allowed, JD-verified-span `ineligible` verdict here
+**filters future shortlists** (`boardwatch top` / `boardwatch run` hide that
+posting alongside anything the deterministic engine already calls
+ineligible). Everything else — `eligible`, `uncertain`, low confidence, an
+unresolvable span — changes nothing (fail-open). Never confuse the two: `gate
+apply` decides what a real user sees next, `label apply` only measures how
+well the engine is doing against a held-out key.
+
+Run `gate request`/`gate apply` on demand, not as part of labeling; the two
+handshakes are independent and can be run in either order or neither.

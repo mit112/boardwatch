@@ -94,6 +94,31 @@ contradictions) ⇒ the ineligible answer key is corroborated; 4 eligible-side f
 cheap Sonnet-class agent-lane final gate over the shortlist to recover recall: experience 1/23, contract 0/7,
 internship 0/4), then the D-072 benchmark. Both fresh-context. Answer key + oracle outputs stay Mit-local
 and gitignored — keep them out of commits.
+**D-071b BUILT (2026-08-08, later session): the final eligibility gate lane ships.** `p5-final-gate`
+(`60d7abb..1270ae9`, 4 SDD tasks + 1 fix round): `eligibility/final_gate.py::record_gate_verdict` persists an
+agent-lane judge's verdict as a new INELIGIBLE-capable `engine_kind='llm'` /
+`engine_version='final_gate:<POLICY_VERSION>:<PROMPT_VERSION>'` lane, keystone-guarded (an accepted
+ineligible with an unresolvable raw-JD span downgrades to `uncertain`, fail-open);
+`eligibility/read.py::current_gate_verdicts` reads it back scoped to that prefix (latest-wins per posting
+version); `audit.py::load_llm_audit`'s advisory read is now scoped to the disjoint `llm:%` prefix so it can
+never mislabel a gate row as advisory. `eligibility/gate_handshake.py` + `cli/eligibility_cmd.py` add
+`boardwatch eligibility gate request [--top N] [--out]` (a JD-blind request off the ranked shortlist, judged
+by the same `eligibility-judge` skill) and `gate apply --verdicts path [--top N]` (mints a `run_id` per
+D-019, runs each verdict through `oracle.accept_oracle_verdict`, persists under the user's STORED
+facts+policy — never the labeling pass's all-blocker reference policy). `cli/top_cmd.py::rank_open_postings`
+now hides a posting when EITHER the deterministic lane OR the gate lane says `ineligible` (one shared
+`hidden_ineligible` counter; purely additive — a gate `uncertain`/`eligible`/missing row changes nothing).
+Two blockers from the pre-code fresh-context reviews were pre-resolved before any code (identity-join
+proven via `build_identity`'s STORED-policy read; the keystone-span empty-span downgrade), and the build's
+own review caught one more the pre-code reviews didn't predict: `gate apply`'s CLI wiring originally wrote
+`run_id=NULL` (a D-019 violation) even though the pure `apply_gate_verdicts` module already threaded it
+correctly — fixed by minting via `ensure_run`, mirroring `eligibility extract`'s existing pattern. **Gate
+P5 is UNCHANGED and still MET** — this lane is additive over the ranker only; it changes no deterministic
+verdict and no precision/recall number on the 173-row answer key. Full record: **D-074**. Spec/plan:
+`.superpowers/sdd/p5-eligibility-decides/design-p5-final-gate.md` /
+`.superpowers/sdd/p5-eligibility-decides/plan-p5-final-gate.md`. **NEXT = the D-072 model-tier benchmark**
+(fresh context), which also picks this gate's default judge model; inline `bwd` wiring and a paid-API judge
+are deferred, not built.
 **Updated by:** boardwatch (Claude)
 **Repo state at write time:** all nine P0 items (0-8), P1a (the résumé artifact integrity gate —
 PROGRAM.md §3.P1 items 1, 2, 3, 3b, 4, 5), and P1b (item 3c, the Tier-B token-provenance validator, D-033)
