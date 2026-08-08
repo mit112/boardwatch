@@ -8,6 +8,18 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- **P5b B0 scaffolding — the Gate-P5 precision scorer + reference policy** (D-065). `eligibility/scoring.py`
+  measures the P5 gate without shipping any verdict-changing rule: `reference_all_blocker_policy(catalog)`
+  (a code constant setting every catalog family to `blocker`, per PROGRAM.md:384 — auto-covers future B4
+  families, no fixture/drift), `score()` → `PrecisionReport` (INELIGIBLE precision `None`-vs-0/0 disciplined,
+  recall, per-rule abstain rate, false-positive triage, span violations), `meets_gate(0.95)`, and
+  `load_labeled_set()` reading a `*.jsonl` worksheet that fills in over time (null verdict = unlabeled →
+  skipped; malformed row fails loud). `carries_valid_span` extends P5a S1's "0 INELIGIBLE without a span"
+  property to the labeled set, shared rather than forked, and deliberately kept out of the digested engine
+  modules. The verdict-changing rules (B1–B4) stay gated on Mit's human-verified labeled set. A stratified
+  173-row candidate worksheet + labeling instructions were seeded locally (gitignored — real JD bodies are
+  personal data). `make check` green (3551 passed, 95.25%), new module 100% covered.
+
 - **Keyword-coverage measurement for tailored résumés** (P4 item 6 — D-061). A per-lead and per-run report
   (never a veto) of how many of a JD's *requirement* terms the résumé genuinely covers. The denominator is
   the JD's qualifications span (via the existing `qualifications_span`), falling back to whole-body skills

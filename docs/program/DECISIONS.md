@@ -2582,6 +2582,55 @@ his `{config_dir}/resume_template.tex` carries the `%%TITLE%%` pair (the bundled
 his installed copy predates it) — a personal-instance follow-up, not a code gap; skill-group reorder
 and entry emphasis render regardless.
 
+## D-065 — P5b B0 scaffolding: reference all-blocker policy + precision scorer + labeling worksheet
+
+**2026-08-08 · at Mit's greenlight** ("prep P5b B0 scaffolding"). The label-INDEPENDENT parts of
+P5b B0 (`.superpowers/sdd/p5-eligibility-decides/design-p5b.md`). Nothing verdict-changing shipped —
+that stays gated on the human-verified labeled set (D-064's governing constraint holds).
+
+**Context.** Gate P5 = precision ≥ 0.95 on INELIGIBLE on a human-verified labeled set. Building the
+verdict-changing rules (B1–B4) before the scorer exists reproduces job-apps' anti-pattern §11.6 (a
+procedure that can't produce the evidence it needs). So the scorer + reference policy come first, and
+they need no labels to *build* — only to *run*. This ships them; Mit still supplies the labels.
+
+**Shipped (`src/boardwatch/eligibility/scoring.py` + `tests/pipeline/test_p5_precision_scorer.py`):**
+- **Reference all-blocker policy — a CODE CONSTANT, not a yaml fixture.** `reference_all_blocker_policy(catalog)`
+  returns `Policy(families={f.id: "blocker" for f in catalog.families})`. PROGRAM.md:384 mandates scoring
+  under a policy where every family is a blocker (under the shipped all-`preference` default INELIGIBLE is
+  structurally 0, so precision is 0/0). Chosen as a constant derived from `catalog.families` rather than a
+  pinned `reference_all_blocker.yaml` **because it auto-covers a family added in B4 with zero edits and has
+  no drift surface** — so no `SHIPPED_DATA` entry and no `test_inventory` count bump (contrast the
+  alternative the design offered).
+- **Precision scorer.** `score(cases, catalog, policy=None)` → `PrecisionReport`: INELIGIBLE
+  precision (`TP/predicted_ineligible`, `None` when nothing is predicted ineligible — never 0/0 read as a
+  pass), recall, per-fired-rule abstain rate, `false_positives` (the expensive error, surfaced by label),
+  and `span_violations`. `meets_gate(0.95)` = measurable ∧ precision defined ∧ ≥ threshold ∧ no span
+  violation. `is_measurable` guards the vacuous case (a set with no true INELIGIBLE).
+- **Span property, shared not forked.** `carries_valid_span`/`blocking_requirements` extend P5a S1's
+  "0 INELIGIBLE without a span" from the oracle corpus to the labeled set (deepseek finding 6). Placed in
+  `scoring.py`, NOT in `engine.py`: engine/catalog/detect/resolve are digested into `engine_version()`, so a
+  helper there would re-key the entire cached corpus.
+- **Loader.** `load_labeled_set(dir)` reads `*.jsonl`; a null-verdict row is an unlabeled worksheet row
+  (skipped — the worksheet and the labeled set are one file, filled over time); a bad verdict/facts row
+  fails LOUD (`LabeledSetError`) — the opposite of production's fail-closed `parse_facts`, because a
+  malformed ground-truth row would silently mis-score the gate.
+
+**Local-only (gitignored `.superpowers/sdd/p5-eligibility-decides/labeled-set/`), NOT committed:**
+`extract_candidates.py` seeds a stratified **173-row worksheet** (123 hard-stop candidates across families
++ 50 `_applied/` hard negatives) from job-apps `_skipped/`/`_applied/` (authorized, D-010), loader-compatible;
+`README.md` has the labeling procedure. **Real scraped JD bodies are personal data (§3b)** — they stay local.
+
+**Two decisions surfaced to Mit (his, not guessed):** (1) the reference candidate `facts` profile (seeded
+as F-1/OPT SWE new-grad — an empty profile makes every rule abstain, so a concrete one is required); (2)
+where the *final* labeled set lives — committing ~200 real JDs into a to-be-published repo is a licensing
+question the synthetic oracle corpus sidestepped (options: local + configurable gate dir, or a
+redacted/synthesised committed subset).
+
+**Gate:** `make check` exits 0 (3551 passed, 1 deselected, 95.25%, generalization OK); new module 100%
+covered. Diff-reviewed (one low finding closed: `load_labeled_set` now wraps a malformed-`spans` parse in
+`LabeledSetError` with a location, matching every other field). Verdict-changing B1–B4 remain gated on
+Mit's labeled set.
+
 ## D-064 — P5a: three verdict-SAFE eligibility-integrity slices shipped to `main`
 
 **2026-08-08 · overnight autonomous run.** First P5 increment. Design + grounding:

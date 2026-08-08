@@ -6,9 +6,12 @@ diff-reviewed + deepseek-reviewed, `make check` green (3148 passed / 95.23%). **
 (items 1–7); only Gate P4's blind-craft review remains, which is Mit's. **P5a SHIPPED** (`faf8aa9`, D-064,
 diff- + deepseek-reviewed, `make check` green 3525 passed / 95.17%): three verdict-SAFE eligibility-integrity
 slices (INELIGIBLE-span property gate; out-of-catalog family/disposition FAILURE surfacing; LLM cache keyed
-on profile+catalog identity). Verdict-changing + data-gated P5 work (P5b) deferred to Mit's morning — design
-ready at `.superpowers/sdd/p5-eligibility-decides/design-p5b.md`. Prior context holds: Increment 1 D-060;
-Mit's résumé renders 1pp; the 3 over-220-char bullets remain Mit's deferred content fix.)
+on profile+catalog identity). **P5b B0 label-INDEPENDENT scaffolding SHIPPED (D-065):** the Gate-P5
+precision scorer + reference all-blocker policy (`eligibility/scoring.py`) + a stratified 173-row local
+labeling worksheet — no verdict-changing rule shipped. The verdict-changing rules (B1–B4) stay gated on
+Mit's human-verified labeled set; design ready at `.superpowers/sdd/p5-eligibility-decides/design-p5b.md`.
+Prior context holds: Increment 1 D-060; Mit's résumé renders 1pp; the 3 over-220-char bullets remain Mit's
+deferred content fix.)
 **Updated by:** boardwatch (Claude)
 **Repo state at write time:** all nine P0 items (0-8), P1a (the résumé artifact integrity gate —
 PROGRAM.md §3.P1 items 1, 2, 3, 3b, 4, 5), and P1b (item 3c, the Tier-B token-provenance validator, D-033)
@@ -756,6 +759,21 @@ domain input nor Docker.** What is left is genuinely gated on things I cannot su
     plan is ready at `.superpowers/sdd/p5-eligibility-decides/design-p5b.md` (deepseek-reviewed) — it needs
     Mit to (a) provide/curate the labeled set and (b) greenlight, then it can execute against the precision
     gate. Gate P5 cannot be measured until the labeled set exists.
+    **UPDATE — P5b B0 label-independent scaffolding SHIPPED (D-065, 2026-08-08):** at Mit's greenlight the
+    parts of B0 that need no labels to BUILD (only to RUN) are on `main`: `eligibility/scoring.py` —
+    `reference_all_blocker_policy` (code constant, all families→`blocker`, PROGRAM.md:384, auto-covers B4),
+    `score()`→`PrecisionReport` (INELIGIBLE precision/recall, per-rule abstain, false-positive triage, span
+    violations, `meets_gate(0.95)`), `carries_valid_span` (extends P5a S1's span property to the labeled
+    set, shared not forked), and `load_labeled_set` (a `*.jsonl` worksheet, null-verdict rows skipped as
+    unlabeled). 26 tests, module 100% covered, `make check` green (3551 passed, 95.25%). **Local-only
+    (gitignored):** `.superpowers/sdd/p5-eligibility-decides/labeled-set/` holds `extract_candidates.py`, a
+    stratified **173-row worksheet** (123 hard-stop candidates across families + 50 `_applied/` hard
+    negatives from job-apps), and `README.md` labeling instructions — real JD bodies stay local (§3b).
+    **Still Mit's, still the critical path:** (a) label the worksheet (fill `expected_verdict` + INELIGIBLE
+    spans), (b) confirm the reference candidate `facts` profile (seeded F-1/OPT SWE new-grad; empty facts ⇒
+    all-abstain), (c) decide where the FINAL labeled set lives (committed-redacted vs local + configurable
+    gate dir — a publish/licensing call the synthetic oracle corpus sidestepped). Once labeled, B1–B4
+    execute one at a time, each gated by `score().meets_gate()` before merge.
 
   **DEFERRED next action — P4 item 6** — keyword coverage measured against JD *requirement* terms,
   achieved only by re-spelling existing facts (ground it first: reuse the canonical vocab + the
