@@ -24,6 +24,7 @@ transaction as Tier A's write.
 from __future__ import annotations
 
 import hashlib
+import re
 import shutil
 import subprocess
 from dataclasses import dataclass
@@ -79,9 +80,9 @@ VALIDATOR_VERSION = "tier-a-1"
 # so a cached pre-gate Tier-B reply must not be replayed as if it had passed the gate.
 LLM_LANE_VERSION = "tier-b-2"
 SUPPORTED_FORMATS = ("typst",)
-_TYPST_MISSING_MSG = (
-    "typst binary not found on PATH; install it (e.g. `brew install typst` or "
-    "https://github.com/typst/typst#installation) to render résumé PDFs"
+_RENDER_TOOL_MISSING_MSG = (
+    "tectonic binary not found on PATH; install it (e.g. `brew install tectonic` or "
+    "https://tectonic-typesetting.github.io/en-US/install.html) to render résumé PDFs"
 )
 
 
@@ -132,28 +133,40 @@ class TailorResult:
     degrade_reason: str | None = None
 
 
-def _default_runner(typ: Path, pdf: Path) -> CompileOutcome:
-    if shutil.which("typst") is None:
+def _pdf_page_count(pdf: Path) -> int | None:
+    """Shell `pdfinfo` and parse its `Pages:` line. Real `pdfinfo` output lists `Pages:`
+    well after Creator/Producer/CreationDate/etc (around line 11), never on line 1 — the
+    `re.MULTILINE` flag is load-bearing so `^` anchors to each line, not just position 0.
+    Missing binary, non-zero exit, or unparseable output all fall through to `None`."""
+    if shutil.which("pdfinfo") is None:
+        return None
+    result = subprocess.run(["pdfinfo", str(pdf)], capture_output=True, text=True)
+    if result.returncode != 0:
+        return None
+    match = re.search(r"^Pages:\s+(\d+)", result.stdout, re.MULTILINE)
+    return int(match.group(1)) if match else None
+
+
+def _default_runner(tex: Path, pdf: Path) -> CompileOutcome:
+    if shutil.which("tectonic") is None:
         return CompileOutcome(CompileReason.BINARY_MISSING, None, None, "")
     compiled = subprocess.run(
-        ["typst", "compile", str(typ), str(pdf)], capture_output=True, text=True
-    )
-    log = compiled.stdout + compiled.stderr
-    if compiled.returncode != 0 or not pdf.exists():
-        return CompileOutcome(CompileReason.COMPILE_FAILED, None, None, log)
-    queried = subprocess.run(
-        ["typst", "eval", "query(<total-pages>).first().value", "--in", str(typ)],
+        ["tectonic", "-X", "compile", "--outfmt", "pdf", "--outdir", str(pdf.parent), str(tex)],
         capture_output=True, text=True,
     )
-    try:
-        pages = int(queried.stdout.strip())
-    except ValueError:
-        # A compiled doc we emit always carries the <total-pages> label; a failure here
-        # means a typst version whose `eval` syntax differs — treat as a compile failure
-        # so the lead falls back rather than shipping an unmeasured PDF. (doctor's version
-        # probe is the proactive guard.)
-        return CompileOutcome(CompileReason.COMPILE_FAILED, None, None, log + queried.stderr)
-    return CompileOutcome(CompileReason.OK, pdf, pages, log)
+    log = compiled.stdout + compiled.stderr
+    # tectonic names its output PDF by the .tex stem, not the requested `pdf` path.
+    produced = pdf.parent / f"{tex.stem}.pdf"
+    if compiled.returncode != 0 or not produced.exists():
+        return CompileOutcome(CompileReason.COMPILE_FAILED, None, None, log)
+    if produced != pdf:
+        shutil.move(str(produced), str(pdf))
+    page_count = _pdf_page_count(pdf)
+    if page_count is None:
+        # Mirrors the old typst fallback: an unmeasured PDF is treated as a compile
+        # failure so the lead falls back rather than shipping without a page count.
+        return CompileOutcome(CompileReason.COMPILE_FAILED, None, None, log)
+    return CompileOutcome(CompileReason.OK, pdf, page_count, log)
 
 
 def _sha(text: str) -> str:
@@ -478,7 +491,7 @@ def run_tailor(
             tailored_outcome = renderer.to_pdf(source, Path(out_dir), name, chosen_runner)
             tailored_gate = evaluate_compile(tailored_outcome, max_pages=max_pages)
         if tailored_gate.reason is GateReason.BINARY_MISSING:
-            raise TypstUnavailableError(_TYPST_MISSING_MSG)
+            raise TypstUnavailableError(_RENDER_TOOL_MISSING_MSG)
 
         if tailored_gate.shippable:
             chosen_gate = tailored_gate
@@ -500,7 +513,7 @@ def run_tailor(
             )
             untailored_gate = evaluate_compile(untailored_outcome, max_pages=max_pages)
             if untailored_gate.reason is GateReason.BINARY_MISSING:
-                raise TypstUnavailableError(_TYPST_MISSING_MSG)
+                raise TypstUnavailableError(_RENDER_TOOL_MISSING_MSG)
             if untailored_gate.shippable:
                 degraded = True
                 degrade_reason = tailored_gate.reason.value
@@ -556,7 +569,7 @@ def run_tailor(
                 llm_outcome = renderer.to_pdf(llm_source, Path(out_dir), llm_name, chosen_runner)
                 llm_gate = evaluate_compile(llm_outcome, max_pages=max_pages)
                 if llm_gate.reason is GateReason.BINARY_MISSING:
-                    raise TypstUnavailableError(_TYPST_MISSING_MSG)
+                    raise TypstUnavailableError(_RENDER_TOOL_MISSING_MSG)
                 if llm_gate.shippable:
                     llm_pdf_path = llm_gate.pdf_path
                 # else: skip the Tier B PDF; Tier A's PDF above remains the lead's deliverable.
