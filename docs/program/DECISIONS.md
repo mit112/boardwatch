@@ -2795,3 +2795,45 @@ items for already-labeled oracle rows until a "stale-oracle-version" selection c
 **Next.** Run the oracle over the 173-row worksheet (Mit-local: `boardwatch eligibility label request` →
 the `eligibility-judge` skill → `label apply`) → first Gate-P5 measurement via `boardwatch eligibility
 score`. B1–B4 stay blocked until the deferred human sample-audit lifts audited coverage ≥ the bar.
+
+## D-069 — First Gate-P5 measurement: precision 94% (16/17), one FP = a disjunctive-experience over-fire
+
+**Context.** Ran the agent-lane oracle over the seeded 173-row worksheet (D-068's next action) —
+`label request` → `/eligibility-judge` (5 subagents × ~35 rows, each judging from `jd_text` + `facts`
+only, `label`/`bucket` treated as opaque) → merge+validate 173 verdicts → `label apply` → `score`. Numbers
+recorded in `METRICS.md` (2026-08-08 P5 oracle run #1); Mit-local specifics (posting names, JD quotes) live
+in the gitignored `.superpowers/sdd/plan-p5b-oracle-judge/oracle-run-1-findings.md`. Worksheet, verdicts,
+and filled answer key stay gitignored (§3b) — nothing real committed.
+
+**The number.** Answer key (after the four-ANDed gate): eligible 89 · ineligible 58 · uncertain 26.
+`score`: **precision 94% (16/17)** on INELIGIBLE, `meets_gate: False`, 0 span violations, audited 0% ⇒
+`score` exits 1 — the mechanical drain firing exactly as designed, NOT a failure. Recall (secondary) 16/58.
+
+**Choice / finding.** The precision gap to 0.95 is a **single, clean class**, so no policy re-litigation is
+needed — just the record of where the engine over-fires. The sole false positive: the engine flagged a
+posting INELIGIBLE via `experience_years:total_years_minimum` (matching a "M+ years professional experience"
+span) where the requirement is actually **disjunctive** — "N years **with** a degree **or** M years" — and
+the candidate satisfies the degree-gated lower path (N years + degree). The engine matched the higher
+pure-experience alternative, blind to the `or` and to the met degree branch. The oracle correctly judged it
+eligible. **This is the B1–B4 map:** teach the experience-years detector to respect alternative/disjunctive
+paths (a satisfied degree-gated path suppresses the pure-experience alternative); that removes the only FP →
+16/16 = 100% precision. Also visible in the recall table (METRICS): `work_auth` is the one well-modeled
+family (12/16); `contract_not_fte` (0/7) and `internship` (0/4) are entirely unmodeled.
+
+**Alternatives rejected.** (1) Fixing the disjunction bug NOW — declined: **B1–B4 are blocked until audited
+coverage ≥ 0.20** (D-066/D-068), and this measurement is oracle-only/provisional until a human audits a
+sample. Building the rule change before the answer key is integrity-anchored reproduces the exact
+build-before-you-can-measure anti-pattern the scorer exists to prevent. (2) Trusting the job-apps folder
+labels as ground truth — declined and re-vindicated: the judges repeatedly overrode mislabeled rows from JD
+text alone (e.g. `clearance_required`-labeled postings with no clearance clause; `no_sponsorship` labels
+with no such text; `min_18_years` = an age minimum), which is precisely why the independent oracle, not the
+label, is the answer key. The one FP is a case where the *engine* (not the oracle) agreed with a wrong label.
+
+**Integrity flag (H1).** One `applied/` hard-negative (known-eligible — Mit applied) was judged ineligible
+on an experience minimum; `apply` surfaced it as a warning. Belongs in the deferred audit's stratified
+sample — either an oracle mis-score of an alt-path/preferred year count or an over-bar application.
+
+**Next.** The deferred human sample-audit (stratified toward ineligible calls + the `applied/`
+hard-negatives) to lift audited coverage ≥ 0.20 and unblock B1–B4 — starting with the disjunctive
+experience-years fix above. That audit can lean on job-apps' existing signal (the `_applied/` folders are
+known-eligible; job-apps already ran a one-time ground-truth audit).

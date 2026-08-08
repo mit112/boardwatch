@@ -1024,3 +1024,44 @@ bundled data file (the oracle + reference policy are code), so no SHIPPED_DATA/i
 Coverage held ~95.2% throughout; generalization OK at every gate. **The Gate-P5 precision NUMBER is not yet
 measured** — it requires running the oracle over Mit's local 173-row worksheet (a Mit-local step). B1–B4
 remain blocked until audited coverage ≥ SHIP_AUDIT_COVERAGE_BAR (0.20).
+
+## Session — 2026-08-08 (P5 oracle run #1 — first Gate-P5 precision number)
+
+Ran the agent-lane oracle over the 173-row worksheet (`/eligibility-judge`, 5 subagents × ~35 rows, each
+judging from `jd_text` + `facts` only). Aggregate numbers only below — the worksheet, `verdicts.json`, and
+the filled answer key stay Mit-local/gitignored (§3b); specifics live in the gitignored
+`.superpowers/sdd/plan-p5b-oracle-judge/oracle-run-1-findings.md`.
+
+**Answer key** (after `apply`'s four-ANDed gate: labeled 173 · downgraded 6 · overwritten 0):
+**eligible 89 · ineligible 58 · uncertain 26**. The 6 downgrades are the non-high-confidence ineligibles;
+all 58 high-confidence ineligibles cleared provenance (0 span violations). 20 of the 26 uncertains are
+out-of-family hard stops (seniority, enrollment-required entry roles, location, licensure, hardware/RTL) the
+oracle refused to force-fit into the six families — the ~39% unmodeled tail the gate excludes by design.
+
+**Gate-P5 measurement (oracle-only, provisional until audited):**
+
+```
+total 173 · predicted_ineligible 17 · true_ineligible 58
+precision: 94% (16/17) · meets_gate: False · audited: 0% → exit 1 (mechanical drain, by design)
+```
+
+**Precision 16/17 = 94.1% — one false positive short of the 0.95 gate.** Recall (secondary) ≈ 28% (16/58);
+the engine is title-blind and models the six families unevenly:
+
+| family | engine recall (caught / true-ineligible) |
+|---|---|
+| work_auth | 12 / 16 (well modeled) |
+| experience_years | 1 / 23 |
+| clearance | 3 / 8 |
+| contract_not_fte | 0 / 7 (unmodeled) |
+| internship | 0 / 4 (unmodeled) |
+
+**The sole false positive is one clean class** (see D-069): `experience_years:total_years_minimum` over-fires
+on a **disjunctive requirement** — "N years **with** a degree **or** M years" — by matching the higher
+pure-experience alternative (M) even though the candidate satisfies the degree-gated lower path (N). Fixing
+that disjunction handling removes the only FP → 16/16 = 100% precision, recall unchanged. **This is the
+B1–B4 map, but B1–B4 stay blocked until the human sample-audit lifts audited coverage ≥ 0.20.**
+
+Also surfaced (integrity flag, H1): one `applied/` hard-negative (known-eligible, Mit applied) was judged
+ineligible on an experience minimum — either an oracle mis-score of a preferred/alt-path year count or an
+over-bar application; flagged for the audit, not silently accepted.

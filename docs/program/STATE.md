@@ -20,15 +20,20 @@ oracle judge — `resolve_provenance`/`accept_oracle_verdict` four-ANDed gate wi
 (`audited_coverage`/`meets_ship_gate`/`SHIP_AUDIT_COVERAGE_BAR=0.20`), the `eligibility label request/apply`
 + `score` CLI, the `eligibility-judge` skill, and the `PROGRAM.md` §3.P5 gate line. The two reserved
 decisions (both made): **agent lane, no API key** (Claude Code judges via the skill) + **human audit
-deferred** with a mechanical drain. **Next action: the AGENT runs the oracle over the 173-row worksheet** — this is NOT gated on Mit. The
-worksheet is already seeded from job-apps (`_skipped/` + `_applied/` → frozen JD bodies) with Mit's real
-facts, and the agent-lane oracle IS Claude Code judging (the `eligibility-judge` skill). So next session:
-`boardwatch eligibility label request` → invoke `/eligibility-judge` (judge every row from JD + facts,
-treating **job-apps as the knowledge/gold-mine source** — never the engine verdict or the `hint`) → `label
-apply` → `boardwatch eligibility score` for the first Gate-P5 number. B1–B4 stay blocked until the deferred
-human sample-audit lifts audited coverage ≥ `SHIP_AUDIT_COVERAGE_BAR` (0.20) — and even that audit can lean
-on job-apps' existing signal (the `_applied/` folders are known-eligible hard negatives; job-apps already
-did a one-time Codex ground-truth audit). Non-blocking follow-ups recorded in D-068.
+deferred** with a mechanical drain.
+**FIRST GATE-P5 NUMBER MEASURED (D-069, 2026-08-08): precision 94% (16/17) on INELIGIBLE — one FP short of
+the 0.95 gate.** The agent-lane oracle judged all 173 rows (5 subagents, JD+facts only); answer key =
+eligible 89 · ineligible 58 · uncertain 26; `score` exits 1 (audited 0% < 0.20 — the mechanical drain
+firing AS DESIGNED, not a failure). **The single false positive is one clean class:**
+`experience_years:total_years_minimum` over-fires on a **disjunctive** requirement ("N years **with** a
+degree **or** M years") by matching the higher pure-experience alternative when the candidate satisfies the
+degree-gated lower path — fixing that → 16/16 = 100%. That is the **B1–B4 map**. Recall table + integrity
+flags in `METRICS.md` (2026-08-08 run #1); Mit-local specifics gitignored in
+`.superpowers/sdd/plan-p5b-oracle-judge/oracle-run-1-findings.md`. **Next action: the deferred human
+sample-audit** (stratified toward ineligible calls + the `applied/` hard-negatives) to lift audited
+coverage ≥ 0.20 and unblock B1–B4 — it can lean on job-apps' existing signal (the `_applied/` folders are
+known-eligible; job-apps already did a one-time ground-truth audit). Do NOT build the B-slices before the
+answer key is audited. Non-blocking follow-ups recorded in D-068.
 **Updated by:** boardwatch (Claude)
 **Repo state at write time:** all nine P0 items (0-8), P1a (the résumé artifact integrity gate —
 PROGRAM.md §3.P1 items 1, 2, 3, 3b, 4, 5), and P1b (item 3c, the Tier-B token-provenance validator, D-033)
