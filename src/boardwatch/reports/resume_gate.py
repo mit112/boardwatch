@@ -154,7 +154,16 @@ def layout_scan_fields(resume: Resume) -> list[tuple[str, str]]:
         fields.extend((item, f"skill group {g.label!r} item {item!r}") for item in g.items)
     for e in resume.entries:
         fields.append((e.heading, f"entry {e.entry_id!r} heading"))
+        if e.title is not None:
+            fields.append((e.title, f"entry {e.entry_id!r} title"))
+        if e.dates is not None:
+            fields.append((e.dates, f"entry {e.entry_id!r} dates"))
+        if e.subtitle is not None:
+            fields.append((e.subtitle, f"entry {e.entry_id!r} subtitle"))
+        if e.location is not None:
+            fields.append((e.location, f"entry {e.entry_id!r} location"))
         fields.extend((b.text, f"bullet {b.bullet_id!r}") for b in e.bullets)
+    fields.extend((line, "extracurricular") for line in resume.extracurricular)
     return fields
 
 

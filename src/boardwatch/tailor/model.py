@@ -32,6 +32,14 @@ class Entry(BaseModel):
     entry_id: str = Field(min_length=1)
     heading: str
     bullets: list[Bullet]
+    # Structured fields for the LaTeX subheading emitter (Task 4). All optional with
+    # backward-compatible defaults so existing fixtures that set only `heading` still
+    # validate; `heading` remains the fallback for `title is None` entries + artifact-scan.
+    kind: str = "experience"  # "experience" | "project"
+    title: str | None = None
+    dates: str | None = None
+    subtitle: str | None = None
+    location: str | None = None
 
 
 class Resume(BaseModel):
@@ -40,6 +48,7 @@ class Resume(BaseModel):
     education: list[str]
     skill_groups: list[SkillGroup]
     entries: list[Entry]
+    extracurricular: list[str] = Field(default_factory=list)
 
     @model_validator(mode="after")
     def _unique_ids(self) -> Resume:

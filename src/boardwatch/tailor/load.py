@@ -102,6 +102,11 @@ skill_groups:
 entries:
   - entry_id: "acme-sre"
     heading: "Senior Engineer — Acme — 2021–2024 — Remote"
+    kind: "experience"
+    title: "Senior Engineer"
+    dates: "2021 -- 2024"
+    subtitle: "Acme"
+    location: "Remote"
     bullets:
       - bullet_id: "acme-1"
         text: "Built a Python service handling 2M requests/day on Kubernetes"

@@ -49,6 +49,7 @@ def output_is_entailed(
         master.header != tailored.header
         or master.education != tailored.education
         or master.skill_groups != tailored.skill_groups
+        or master.extracurricular != tailored.extracurricular
     ):
         return False
     if [e.entry_id for e in master.entries] != [e.entry_id for e in tailored.entries]:
@@ -56,7 +57,14 @@ def output_is_entailed(
     swap = {p.from_phrase.lower(): p.to_phrase for p in table.as_pairs()}
     m_bullets = {b.bullet_id: b for e in master.entries for b in e.bullets}
     for me, te in zip(master.entries, tailored.entries, strict=True):
-        if me.heading != te.heading:
+        if (
+            me.heading != te.heading
+            or me.kind != te.kind
+            or me.title != te.title
+            or me.dates != te.dates
+            or me.subtitle != te.subtitle
+            or me.location != te.location
+        ):
             return False
         t_ids = {b.bullet_id for b in te.bullets}
         if not t_ids.issubset({b.bullet_id for b in me.bullets}):  # no new bullets

@@ -99,6 +99,26 @@ def test_non_table_swap_rejected_by_output_check() -> None:
     assert not output_is_entailed(m, bad, TBL)
 
 
+@pytest.mark.parametrize("field,value", [
+    ("kind", "project"), ("title", "Altered Title"), ("dates", "2099 -- 2100"),
+    ("subtitle", "Altered Co"), ("location", "Mars"),
+])
+def test_entailment_rejects_changed_entry_field(field, value):
+    # re-review 2 M3: ALL five new structured fields must be in the entailment equality, not just
+    # `title`. Each mutation flips the tailored entry away from the master's default -> not entailed.
+    m = M()  # existing factory
+    t = m.model_copy(update={"entries": [
+        m.entries[0].model_copy(update={field: value})]})
+    assert output_is_entailed(m, t, TBL) is False
+
+
+def test_entailment_rejects_changed_extracurricular():
+    # re-review 2 M3: the resume-level extracurricular list is in the equality block too.
+    m = M().model_copy(update={"extracurricular": ["Original line"]})
+    t = m.model_copy(update={"extracurricular": ["Tampered line"]})
+    assert output_is_entailed(m, t, TBL) is False
+
+
 def test_altered_non_bullet_region_rejected() -> None:
     m = M()
     plan = build_plan(m, {"Python"}, TBL, TAX)
