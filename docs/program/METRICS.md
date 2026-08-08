@@ -962,3 +962,44 @@ quoted span** across all ~370 ineligible oracle cases.
 
 **Process:** one build subagent misreported `make check` EXIT=0 while generalization was failing (R7, an
 unregistered `personas.yaml`); caught by re-running the gate in the main tree (self-report ≠ verification).
+
+## Session 2026-08-08 — P5b B0 scaffolding (scorer + reference policy) + D-066 pivot
+
+At Mit's greenlight ("prep P5b B0 scaffolding"). Two commits to `main`, gate-green in plain mode with the
+real exit code captured (never piped to head/tail):
+
+| Change | Commit | Tests passed | Coverage | Notes |
+|---|---|---:|---:|---|
+| P5b B0 scorer + reference all-blocker policy (D-065) | `f53cdf3` | 3551 | 95.25% | new `eligibility/scoring.py` 100% covered; 26 tests; diff-reviewed (one low finding closed) |
+| D-066 direction + STATE (docs only) | `04459f4` | — | — | no code change |
+
+Baseline at session start (`3319ea9`): 3525 passed, 95.17%. **No deterministic eligibility verdict changed**
+— the scorer only measures; `reference_all_blocker_policy` is a scoring policy, not a runtime default.
+
+**Candidate worksheet stratification (LOCAL, gitignored — real JD bodies are personal data §3b).**
+`extract_candidates.py` seeded **173 rows** from job-apps `_skipped/`/`_applied/`:
+
+| Bucket | Rows |
+|---|---:|
+| experience_years | 30 |
+| role_family (B4) | 30 |
+| work_auth | 18 |
+| clearance | 12 |
+| seniority_language (B4) | 12 |
+| contract_not_fte | 6 |
+| internship | 6 |
+| location (B4) | 6 |
+| language (unmodeled) | 3 |
+| hard negatives (`_applied/`) | 50 |
+
+Excluded 161 skip-reason categories as junk / P6-liveness (`posting_closed`, `not_live`, `stub_jd`, …).
+
+**Reference candidate facts** = Mit's real profile from job-apps `autoapply/profile.json`, verified against
+the live engine under the all-blocker policy: `ead_or_similar`+`needs_sponsorship`→ no-sponsorship JD
+`ineligible`, authorized-to-work JD `eligible`; 5+yrs at `total_years=1` → `ineligible`; PhD-required at
+`master` → `ineligible`. Recall note recorded: "US citizens only" → `uncertain` (not `ineligible`) for an
+EAD holder — precision-safe, a real recall gap (a B4 data point).
+
+**Gate P5 status:** still NOT measurable — no answer key yet. **D-066 pivot (Mit):** the answer key will be
+**AI-oracle-produced + human-audited on a sample** via a **port of job-apps' LLM judge+gate flow**, as its
+own dedicated session (not hand-labeled). B1–B4 remain gated on that answer key.
