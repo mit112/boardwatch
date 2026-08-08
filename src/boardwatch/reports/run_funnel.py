@@ -40,6 +40,8 @@ it on the way out and says so, rather than silently presenting a column the sche
 from __future__ import annotations
 
 import json
+import statistics
+from collections import Counter
 from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import datetime
@@ -51,6 +53,10 @@ from boardwatch.store.run_funnel_queries import (
     SourceOutcome,
     TailoredArtifactCounts,
 )
+from boardwatch.tailor.coverage import CoverageReport
+
+# How many distinct missing requirement terms the coverage summary lists, most-frequent first.
+_TOP_MISSING = 10
 
 ARTIFACT_VERSION = 3
 
@@ -379,6 +385,48 @@ def build_fabrication_counters(
 
 
 @dataclass(frozen=True)
+class CoverageSummary:
+    """P4 item 6: this run's keyword-coverage roll-up across leads. A REPORT, never a gate.
+
+    `leads_measured` is how many leads produced a coverage report at all; `leads_with_fraction`
+    is the subset whose JD named at least one recognized requirement term (a JD with none has
+    `fraction is None`, and averaging that in would be dividing by an undefined denominator).
+    `mean`/`median` are `None` — never 0.0 — when no lead has a fraction, for the same reason a
+    single lead's fraction is: 0.0 asserts "covers none of many requirements", not "nothing to
+    measure". `top_missing` names the requirement terms most leads lacked, most-frequent first.
+    """
+
+    leads_measured: int
+    leads_with_fraction: int
+    mean_fraction: float | None
+    median_fraction: float | None
+    top_missing: tuple[tuple[str, int], ...]
+
+
+def build_coverage_summary(
+    coverages: Sequence[CoverageReport | None],
+) -> CoverageSummary:
+    """Fold per-lead coverage reports into a run-level summary. Pure; mirrors
+    `build_fabrication_counters`. A 0-lead run (or one where every measurement was unavailable)
+    fabricates nothing: zero leads measured, `None` averages, no missing terms."""
+    measured = [c for c in coverages if c is not None]
+    fractions = [c.fraction for c in measured if c.fraction is not None]
+    missing: Counter[str] = Counter()
+    for report in measured:
+        missing.update(report.missing)
+    top_missing = tuple(
+        sorted(missing.items(), key=lambda kv: (-kv[1], kv[0]))[:_TOP_MISSING]
+    )
+    return CoverageSummary(
+        leads_measured=len(measured),
+        leads_with_fraction=len(fractions),
+        mean_fraction=sum(fractions) / len(fractions) if fractions else None,
+        median_fraction=statistics.median(fractions) if fractions else None,
+        top_missing=top_missing,
+    )
+
+
+@dataclass(frozen=True)
 class ScanContext:
     """Scan throughput. Deliberately NOT a funnel edge.
 
@@ -409,6 +457,7 @@ class RunFunnel:
     source_totals: tuple[SourceTotal, ...]
     stub_rate: StubRate
     fabrication: FabricationCounters
+    coverage: CoverageSummary
     abstain: AbstainReport
     unattributed_evaluations: int
     errors: tuple[str, ...] = ()
@@ -471,6 +520,7 @@ def build_run_funnel(
     rewrite_rows: Sequence[dict[str, object]],
     unattributed_evaluations: int,
     abstain: AbstainReport,
+    coverages: Sequence[CoverageReport | None] = (),
     errors: Sequence[str] = (),
     fatal: str | None = None,
 ) -> RunFunnel:
@@ -728,6 +778,7 @@ def build_run_funnel(
         source_totals=source_totals,
         stub_rate=StubRate(open_postings=corpus.open_postings, stubs=stub_postings),
         fabrication=build_fabrication_counters(rewrite_rows),
+        coverage=build_coverage_summary(coverages),
         abstain=abstain,
         unattributed_evaluations=unattributed_evaluations,
         errors=tuple(errors),
@@ -794,6 +845,16 @@ def funnel_to_dict(funnel: RunFunnel) -> dict[str, object]:
             "filter_structural_rejected": funnel.fabrication.filter_structural_rejected,
             "other": funnel.fabrication.other,
             "rejected": funnel.fabrication.rejected,
+        },
+        "coverage": {
+            "leads_measured": funnel.coverage.leads_measured,
+            "leads_with_fraction": funnel.coverage.leads_with_fraction,
+            # None, never 0.0, when no lead has a fraction — see CoverageSummary.
+            "mean_fraction": funnel.coverage.mean_fraction,
+            "median_fraction": funnel.coverage.median_fraction,
+            "top_missing": [
+                {"term": term, "count": count} for term, count in funnel.coverage.top_missing
+            ],
         },
         "scan": {
             "ran": funnel.scan.ran,
@@ -1202,6 +1263,30 @@ def funnel_to_markdown(funnel: RunFunnel) -> str:
             "a new bucket.",
         ]
 
+    cov = funnel.coverage
+    mean = "—" if cov.mean_fraction is None else f"{cov.mean_fraction:.0%}"
+    median = "—" if cov.median_fraction is None else f"{cov.median_fraction:.0%}"
+    lines += [
+        "",
+        "## Keyword coverage",
+        "",
+        f"{cov.leads_measured} lead(s) measured · {cov.leads_with_fraction} with a JD naming "
+        f"recognized requirement terms · mean coverage {mean} · median {median}",
+        "",
+        "*Of the requirement terms a JD asks for, how many the MASTER résumé genuinely has — a "
+        "REPORT, never a veto: it changes no kept/dropped/degraded decision. The numerator is "
+        "the authored résumé's real skills, never the tailored output, so a term a tailored "
+        "bullet merely echoes still reads as missing. Mean/median are `—`, not 0%, when no lead "
+        "had a JD with recognized requirements.*",
+        "",
+    ]
+    if cov.top_missing:
+        lines.append("Most-frequently missing requirement terms:")
+        lines.append("")
+        lines += [f"- **{term}**: missing from {count} lead(s)" for term, count in cov.top_missing]
+    else:
+        lines.append("No requirement terms were missing across the measured leads.")
+
     lines += [
         "",
         "## Unattributed",
@@ -1243,6 +1328,7 @@ def write_run_funnel(funnel: RunFunnel, out_dir: Path) -> WrittenArtifact:
 # Re-exported so callers assembling a funnel need one import, not four.
 __all__ = [
     "ARTIFACT_VERSION",
+    "CoverageSummary",
     "CrossCheck",
     "Drop",
     "FabricationCounters",
@@ -1255,6 +1341,7 @@ __all__ = [
     "Stage",
     "StubRate",
     "WrittenArtifact",
+    "build_coverage_summary",
     "build_fabrication_counters",
     "build_run_funnel",
     "funnel_to_dict",

@@ -452,3 +452,60 @@ def test_no_write_lock_held_across_render(tmp_path: Path) -> None:
     res = run_tailor(engine, settings, pid, resume_path=_resume_yaml(tmp_path),
                      out_dir=tmp_path / "out", typst_runner=runner)
     assert res.tailored_artifact_id is not None
+
+
+# -- P4 item 6: keyword-coverage measurement (a REPORT, never a veto) ---------------
+
+
+def test_meta_json_carries_coverage_block_from_the_qualifications_span(tmp_path: Path) -> None:
+    """The tailored artifact records a `coverage` block, and when the JD has a qualifications
+    header the denominator is that span (source `qualifications`). The master audit résumé has
+    Python + JavaScript but not Kubernetes, so Kubernetes reads as MISSING — the anti-echo
+    guarantee measured against the master, not the tailored render."""
+    settings = _settings(tmp_path)
+    engine = _engine(settings)
+    pid = _seed(engine, settings, body="Requirements:\nPython and Kubernetes required.\n")
+    run_tailor(
+        engine, settings, pid, resume_path=_audit_resume_yaml(tmp_path),
+        out_dir=tmp_path / "out", typst_runner=_runner_ok,
+    )
+    with engine.connect() as conn:
+        rows = conn.execute(artifacts.select()).fetchall()
+    meta = next(r for r in rows if r.kind == "resume_tailored").meta_json
+    cov = meta["coverage"]
+    assert cov["denominator_source"] == "qualifications"
+    assert "Python" in cov["covered"]
+    assert "Kubernetes" in cov["missing"]
+    assert cov["fraction"] == 0.5
+
+
+def test_coverage_falls_back_to_body_source_when_no_header(tmp_path: Path) -> None:
+    settings = _settings(tmp_path)
+    engine = _engine(settings)
+    # Default seed body ("Python JavaScript backend services") carries no qualifications header.
+    pid = _seed(engine, settings)
+    run_tailor(
+        engine, settings, pid, resume_path=_audit_resume_yaml(tmp_path),
+        out_dir=tmp_path / "out", typst_runner=_runner_ok,
+    )
+    with engine.connect() as conn:
+        rows = conn.execute(artifacts.select()).fetchall()
+    meta = next(r for r in rows if r.kind == "resume_tailored").meta_json
+    assert meta["coverage"]["denominator_source"] == "body"
+
+
+def test_coverage_is_not_a_veto_a_zero_coverage_lead_still_ships(tmp_path: Path) -> None:
+    """A JD whose only requirement terms the résumé lacks yields fraction 0.0 — and the lead
+    still tailors and records an artifact. Coverage never gates keep/drop/degrade."""
+    settings = _settings(tmp_path)
+    engine = _engine(settings)
+    pid = _seed(engine, settings, body="Requirements:\nMust know Kubernetes and Terraform.\n")
+    res = run_tailor(
+        engine, settings, pid, resume_path=_audit_resume_yaml(tmp_path),
+        out_dir=tmp_path / "out", typst_runner=_runner_ok,
+    )
+    assert res.tailored_artifact_id is not None  # not dropped
+    assert res.kept  # bullets survived tailoring exactly as they would without coverage
+    assert res.coverage is not None
+    assert res.coverage.fraction == 0.0
+    assert res.coverage.covered_count == 0

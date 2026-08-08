@@ -30,6 +30,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from boardwatch.reports.run_funnel import WrittenArtifact
+from boardwatch.tailor.coverage import CoverageReport, coverage_to_dict
 
 ARTIFACT_VERSION = 1
 
@@ -57,6 +58,9 @@ class MorningLead:
     pdf_path: str | None
     evidence_kind: str | None
     evidence_text: str | None
+    # P4 item 6: keyword coverage of the JD's requirement terms against Mit's real résumé. A
+    # report, not a gate — `None` when it could not be measured, which renders honestly below.
+    coverage: CoverageReport | None = None
 
 
 @dataclass(frozen=True)
@@ -96,6 +100,7 @@ def morning_to_dict(artifact: MorningArtifact) -> dict[str, object]:
                 "pdf_path": lead.pdf_path,
                 "evidence_kind": lead.evidence_kind,
                 "evidence_text": lead.evidence_text,
+                "coverage": coverage_to_dict(lead.coverage),
             }
             for lead in artifact.leads
         ],
@@ -116,6 +121,22 @@ def _fmt_evidence(kind: str | None, text: str | None) -> str:
     if kind == "quote":
         return f'"{text}"'
     return f"rationale: {text}"
+
+
+def _fmt_coverage(coverage: CoverageReport | None) -> str:
+    """`covers N/M requirement terms (source)`, or an honest absence. When the JD names zero
+    recognized requirements (`fraction is None`) we say so rather than printing `0/0`."""
+    if coverage is None:
+        return "not measured"
+    if coverage.fraction is None:
+        return f"no recognized requirements in JD {coverage.denominator_source}"
+    line = (
+        f"covers {coverage.covered_count}/{coverage.total_count} requirement terms "
+        f"({coverage.denominator_source})"
+    )
+    if coverage.missing:
+        line += f"\n- **missing:** {', '.join(coverage.missing)}"
+    return line
 
 
 def morning_to_markdown(artifact: MorningArtifact) -> str:
@@ -141,6 +162,7 @@ def morning_to_markdown(artifact: MorningArtifact) -> str:
             f"- **apply:** {_fmt_url(lead.apply_url)}",
             f"- **résumé PDF:** {_fmt_pdf(lead.pdf_path)}",
             f"- **evidence:** {_fmt_evidence(lead.evidence_kind, lead.evidence_text)}",
+            f"- **coverage:** {_fmt_coverage(lead.coverage)}",
             f"- **why ranked here:** {lead.why}",
             "",
         ]

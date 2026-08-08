@@ -24,6 +24,7 @@ from boardwatch.reports.run_funnel import (
     RunManifest,
     ScanContext,
     ShortlistCounts,
+    build_coverage_summary,
     build_run_funnel,
     funnel_to_dict,
     funnel_to_markdown,
@@ -34,6 +35,7 @@ from boardwatch.store.run_funnel_queries import (
     SourceOutcome,
     TailoredArtifactCounts,
 )
+from boardwatch.tailor.coverage import CoverageReport
 
 BUNDLED = Path("does-not-exist")  # no override dir: load_rules falls back to the bundled catalog
 
@@ -103,6 +105,7 @@ def funnel(
     manifest: RunManifest | None = None,
     stub_postings: int = 0,
     rewrite_rows: list[dict[str, object]] | None = None,
+    coverages: list[CoverageReport | None] | None = None,
 ) -> RunFunnel:
     leads = [lead()] if leads is None else leads
     # Default to a CONSISTENT tailor stage. Every shortlisted posting either produced a lead
@@ -163,6 +166,7 @@ def funnel(
         marked_applied=marked_applied,
         stub_postings=stub_postings,
         rewrite_rows=rewrite_rows or [],
+        coverages=coverages or [],
         unattributed_evaluations=unattributed_evaluations,
         abstain=abstain or build_abstain_report(catalog(), {}),
     )
@@ -1068,3 +1072,58 @@ def test_an_unclassified_requirement_echo_variant_would_still_land_in_other() ->
     report = funnel(rewrite_rows=[{"kept": False, "drop_reason": "requirement_echoes"}])
     assert report.fabrication.requirement_echo_rejected == 0
     assert report.fabrication.other == 1
+
+
+# -- P4 item 6: keyword-coverage summary section -----------------------------------
+
+
+def _cov(fraction: float | None, missing: tuple[str, ...] = ()) -> CoverageReport:
+    total = 0 if fraction is None else 4
+    covered = 0 if fraction is None else round(fraction * total)
+    return CoverageReport(
+        covered=tuple(f"c{i}" for i in range(covered)),
+        missing=missing,
+        denominator_source="qualifications",
+        covered_count=covered,
+        total_count=total,
+        fraction=fraction,
+    )
+
+
+def test_build_coverage_summary_averages_only_leads_with_a_fraction() -> None:
+    summary = build_coverage_summary(
+        [
+            _cov(0.5, missing=("Kubernetes", "Go")),
+            _cov(1.0, missing=()),
+            _cov(None),  # JD named no recognized requirements: excluded from the average
+            None,  # measurement unavailable: not counted as measured at all
+        ]
+    )
+    assert summary.leads_measured == 3
+    assert summary.leads_with_fraction == 2
+    assert summary.mean_fraction == 0.75
+    assert summary.median_fraction == 0.75
+    assert ("Kubernetes", 1) in summary.top_missing
+
+
+def test_zero_lead_run_fabricates_no_coverage() -> None:
+    summary = build_coverage_summary([])
+    assert summary.leads_measured == 0
+    assert summary.leads_with_fraction == 0
+    # None, never 0.0 — a mean over zero leads is undefined, not "covers nothing".
+    assert summary.mean_fraction is None
+    assert summary.median_fraction is None
+    assert summary.top_missing == ()
+
+
+def test_coverage_section_renders_in_the_markdown_artifact() -> None:
+    leads_cov = [_cov(0.5, missing=("Kubernetes",))]
+    body = funnel_to_markdown(funnel(leads=[lead()], coverages=leads_cov))
+    assert "## Keyword coverage" in body
+    assert "Kubernetes" in body
+    assert "REPORT, never a veto" in body
+
+
+def test_coverage_section_says_measured_zero_when_no_coverage() -> None:
+    body = funnel_to_markdown(funnel(leads=[lead()]))
+    assert "0 lead(s) measured" in body

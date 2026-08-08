@@ -13,6 +13,7 @@ in the artifact instead of being resolved silently in favour of whichever ran la
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from pathlib import Path
 
 from sqlalchemy import Engine, select
@@ -47,6 +48,7 @@ from boardwatch.store.run_funnel_queries import (
     lead_provenance,
 )
 from boardwatch.store.tables import runs
+from boardwatch.tailor.coverage import CoverageReport
 
 # What a corpus looks like when there is no profile: the head is still countable, but nothing
 # downstream of it has been judged, so every split is unknown rather than zero.
@@ -80,6 +82,7 @@ def collect_run_funnel(
     tailored: list[tuple[int, str, str, Path, bool]],
     tailor_failed: int,
     rewrite_rows: list[dict[str, object]],
+    coverages: Sequence[CoverageReport | None] = (),
     errors: list[str],
     fatal: str | None,
 ) -> RunFunnel:
@@ -87,7 +90,8 @@ def collect_run_funnel(
 
     `tailored` is (posting_id, company, title, out_dir, pdf_built) per lead — plain tuples so
     this module does not import `PipelineSummary` and make pipeline -> reports -> pipeline a
-    cycle.
+    cycle. `coverages` is one per-lead coverage report in the SAME order (P4 item 6), passed
+    separately from the tuple exactly as `rewrite_rows` is.
     """
     catalog = load_rules(settings.config_dir)
     posting_ids = [posting_id for posting_id, _, _, _, _ in tailored]
@@ -197,6 +201,7 @@ def collect_run_funnel(
         rewrite_rows=rewrite_rows,
         unattributed_evaluations=unattributed,
         abstain=abstain,
+        coverages=coverages,
         errors=errors,
         fatal=fatal,
     )

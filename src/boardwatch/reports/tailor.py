@@ -63,6 +63,13 @@ from boardwatch.store.queries import (
 )
 from boardwatch.store.tables import extractions, postings
 from boardwatch.tailor.apply import apply_plan
+from boardwatch.tailor.coverage import (
+    CoverageReport,
+    coverage_report,
+    coverage_to_dict,
+    requirement_terms,
+    resume_fact_skills,
+)
 from boardwatch.tailor.equivalences import EquivalenceTable, load_equivalences
 from boardwatch.tailor.load import load_resume
 from boardwatch.tailor.model import Resume
@@ -130,6 +137,10 @@ class TailorResult:
     # what actually shipped (P1a task 4 — the CLI needs this to print the degraded marker).
     degraded: bool = False
     degrade_reason: str | None = None
+    # P4 item 6: how many of the JD's requirement terms the MASTER résumé genuinely has. A
+    # REPORT, never a veto — it never changes `kept`/`dropped`/`degraded`. None when a coverage
+    # measurement error was swallowed (fail-safe: a metric bug must not delete a real résumé).
+    coverage: CoverageReport | None = None
 
 
 def _pdf_page_count(pdf: Path) -> int | None:
@@ -256,6 +267,7 @@ def _trace(
     pdf_built: bool,
     pdf_uri: str | None,
     rows: list[dict[str, Any]],
+    coverage: CoverageReport | None,
 ) -> dict[str, Any]:
     return {
         "validator_version": VALIDATOR_VERSION,
@@ -270,6 +282,7 @@ def _trace(
         "pdf_uri": pdf_uri,
         "dropped": [op.bullet_id for op in plan.ops if isinstance(op, Delete)],
         "bullets": rows,
+        "coverage": coverage_to_dict(coverage),
     }
 
 
@@ -384,6 +397,18 @@ def run_tailor(
         if isinstance(op, EquivalenceSwap)
     ]
     rows = _audit_rows(master, tailored, plan, jd_skills, taxonomy)
+
+    # P4 item 6: keyword coverage of the JD's requirement terms against the MASTER résumé (the
+    # anti-echo denominator — never the tailored output). Wrapped fail-safe: a bug here records
+    # coverage=None and never aborts, so a measurement error can never delete a real résumé.
+    coverage: CoverageReport | None
+    try:
+        jd_requirement_skills, denominator_source = requirement_terms(cv.body_text, taxonomy)
+        coverage = coverage_report(
+            jd_requirement_skills, resume_fact_skills(master, taxonomy), denominator_source
+        )
+    except Exception:  # noqa: BLE001 - a coverage-measurement bug must not drop the lead
+        coverage = None
 
     # Tier B: opt-in LLM rewording, gated on an explicit client. Runs whether or not this
     # is a dry run — the preview must reflect what a real run would produce — but it never
@@ -574,7 +599,9 @@ def run_tailor(
                     llm_pdf_path = llm_gate.pdf_path
                 # else: skip the Tier B PDF; Tier A's PDF above remains the lead's deliverable.
 
-        meta = _trace(plan, jd_skills, table, master_hash, cv, fmt, True, str(pdf_path), rows)
+        meta = _trace(
+            plan, jd_skills, table, master_hash, cv, fmt, True, str(pdf_path), rows, coverage
+        )
         meta["degraded"] = degraded
         if degraded:
             meta["degrade_reason"] = degrade_reason
@@ -679,4 +706,5 @@ def run_tailor(
         llm_artifact_id=llm_art_id,
         degraded=degraded,
         degrade_reason=degrade_reason,
+        coverage=coverage,
     )

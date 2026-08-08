@@ -50,6 +50,7 @@ from boardwatch.store.db import ensure_schema
 from boardwatch.store.queries import RUN_FAILED, RUN_OK, ensure_run, finish_run, reap_stale_runs
 from boardwatch.store.run_funnel_queries import count_eligible_judged_this_run, lead_provenance
 from boardwatch.store.tables import postings
+from boardwatch.tailor.coverage import CoverageReport
 from boardwatch.tailor.load import ResumeLoadError
 from boardwatch.tailor.render.latex import TemplateArtifactError
 
@@ -70,6 +71,9 @@ class TailoredLead:
     why: str = ""
     score: float = 0.0
     pdf_path: Path | None = None
+    # P4 item 6: this lead's keyword-coverage report, carried for the morning artifact and the
+    # funnel's coverage summary. None when the measurement was unavailable — never a veto.
+    coverage: CoverageReport | None = None
 
 
 @dataclass
@@ -332,6 +336,7 @@ def run_pipeline(
                     why=posting.why,
                     score=posting.score.total,
                     pdf_path=result.pdf_path,
+                    coverage=result.coverage,
                 )
             )
 
@@ -463,6 +468,9 @@ def _emit_funnel(
         ],
         tailor_failed=summary.tailor_failed,
         rewrite_rows=summary.rewrite_rows,
+        # P4 item 6: one coverage report per lead, same order as `tailored`, for the funnel's
+        # coverage summary. Mirrors how `rewrite_rows` is passed separately, not via the Lead.
+        coverages=[lead.coverage for lead in summary.tailored],
         errors=summary.errors,
         fatal=summary.fatal,
     )
@@ -545,6 +553,7 @@ def _emit_morning(
                     pdf_path=str(lead.pdf_path) if lead.pdf_path is not None else None,
                     evidence_kind=evidence_kind,
                     evidence_text=evidence_text,
+                    coverage=lead.coverage,
                 )
             )
 
