@@ -11,16 +11,20 @@ floor. See oracle.py's module docstring and D-010/D-066/D-067 for the design rec
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 import pytest
 
 from boardwatch.eligibility.catalog import load_rules
 from boardwatch.eligibility.oracle import (
+    JUDGING_POLICY,
     OracleVerdict,
     OracleVerdictError,
     accept_oracle_verdict,
+    build_label_request,
     is_allowed_reason,
+    read_worksheet,
     resolve_provenance,
     span_of,
 )
@@ -122,3 +126,65 @@ def test_is_allowed_reason_membership():
     assert is_allowed_reason("clearance", CAT) is True
     assert is_allowed_reason("role_family", CAT) is False
     assert is_allowed_reason(None, CAT) is False
+
+
+def test_judging_policy_states_no_force_fit_rule():
+    # H2: the no-force-fit rule must be present verbatim, not paraphrased away.
+    assert (
+        "If the JD states a decisive hard stop whose category is NOT one of the "
+        "reason_catalog families, output `uncertain` — never force-fit it into a "
+        "different family."
+    ) in JUDGING_POLICY
+
+
+def test_build_request_excludes_hint_includes_policy(tmp_path):
+    ws = tmp_path / "candidates.jsonl"
+    ws.write_text(
+        json.dumps(
+            {
+                "label": "skip/x",
+                "expected_verdict": None,
+                "hint": "secret guess",
+                "company": "Acme",
+                "title": "SWE",
+                "source": "u",
+                "facts": {"total_years_experience": 1},
+                "body_text": "JD body",
+            }
+        )
+        + "\n"
+        + json.dumps(
+            {
+                "label": "applied/y",
+                "expected_verdict": "eligible",  # already labeled
+                "facts": {},
+                "body_text": "done",
+            }
+        )
+        + "\n"
+    )
+    rows = read_worksheet(ws)
+    assert len(rows) == 2  # includes the null-verdict row (load_labeled_set would drop it)
+    req = build_label_request(rows, CAT, request_id="r1")
+    assert req["request_id"] == "r1"
+    assert req["policy"] == {"families": {f.id: "blocker" for f in CAT.families}}  # M3
+    assert set(req["reason_catalog"]) == {f.id for f in CAT.families}
+    assert req["policy_version"] and req["prompt_version"]
+    items = req["items"]
+    assert len(items) == 1 and items[0]["label"] == "skip/x"  # only unlabeled
+    assert "hint" not in items[0]  # independence
+    assert items[0]["facts"] == {"total_years_experience": 1}
+    assert items[0]["bucket"] == "hard_stop"  # H1: derived from label prefix
+    assert items[0]["jd_text"] == "JD body"
+
+
+def test_build_request_marks_applied_as_hard_negative(tmp_path):
+    ws = tmp_path / "c.jsonl"
+    ws.write_text(
+        json.dumps(
+            {"label": "applied/z", "expected_verdict": None, "facts": {}, "body_text": "b"}
+        )
+        + "\n"
+    )
+    req = build_label_request(read_worksheet(ws), CAT, request_id="r")
+    assert req["items"][0]["bucket"] == "hard_negative"  # H1: applied/ prefix

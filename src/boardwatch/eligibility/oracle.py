@@ -23,8 +23,11 @@ shipping a preference/title collection as a module default): the stopword set si
 
 from __future__ import annotations
 
+import json
 import re
 from dataclasses import dataclass
+from pathlib import Path
+from typing import Any
 
 from boardwatch.eligibility.catalog import RulesCatalog
 
@@ -32,6 +35,66 @@ from boardwatch.eligibility.catalog import RulesCatalog
 # force a clean re-judge of every JD once later tasks wire the cache key.
 POLICY_VERSION = "p5-oracle-1"
 PROMPT_VERSION = "p5-oracle-1"
+
+# Multi-tenant rewrite of job-apps' F-1/OPT-hardcoded prompt (`~/dev/Job apps/eligibility/
+# judge.py:73-101`, reading authorized by D-010). That original prompt hardcodes one
+# person's visa story ("F-1 OPT candidate", "no/again-future sponsorship") directly into
+# the instructions; this version judges against whatever `facts` the request supplies, so
+# the same prompt serves a citizen, a visa holder in another country, or an OPT candidate
+# without a code change (multi-tenancy invariant, CLAUDE.md).
+#
+# M3: the reference labeling policy treats all six catalog families as blockers, even
+# though the engine's own `default_policy` treats several of them (experience_years,
+# clearance, degree, contract_not_fte, internship) as soft "preference" signals at
+# runtime. That split is deliberate: an answer key that never lets those families produce
+# `ineligible` couldn't validate the engine's handling of them at all. The request payload
+# carries this as an explicit `policy.families` map (see `build_label_request`), not just
+# a version string, so the judge's assumed policy is inspectable and not tacit.
+# R9: JUDGING_POLICY stays the single module-level string this file ships (no separate
+# string-collection constant). The H2 no-force-fit sentence below is spliced in via
+# adjacent string-literal concatenation (no `+`, no embedded newline) purely so it reads
+# as one unbroken sentence while still respecting this file's 100-char line limit — the
+# assignment below is still exactly one `JUDGING_POLICY = """...""" ` expression.
+JUDGING_POLICY = (
+    """You are an eligibility judge. Decide whether the job description (JD) below
+presents a hard stop against the candidate described by `facts`, using ONLY the JD text and
+`facts` supplied in this request. Do not consult, and are not given, any prior guess, engine
+verdict, or human label for this posting — judge independently.
+
+`facts` describes ONE real candidate and may include: work-authorization status and whether
+they need sponsorship (`ead_or_similar`, `needs_sponsorship`, or equivalent), highest degree
+held, employment-type preference (e.g. full-time only), total years of professional
+experience, and security-clearance status. Treat every field in `facts` as ground truth about
+this candidate; a field that is absent means "unknown," not "no."
+
+For every requirement the JD states, first classify it as REQUIRED or PREFERRED. Only a
+REQUIRED hard stop that the candidate's `facts` fail can produce `ineligible` — a PREFERRED /
+nice-to-have qualification the candidate lacks is never itself a hard stop.
+
+The reference policy for this labeling pass treats ALL SIX reason_catalog families as
+blockers: work_auth, experience_years, clearance, degree, contract_not_fte, internship. A
+REQUIRED hard stop in any of these six families, that the supplied `facts` fail, is eligible
+to produce `ineligible` — regardless of whether the live engine treats that family as a soft
+preference at runtime; this judging pass is calibrating the answer key, not replaying engine
+policy.
+
+"""
+    "If the JD states a decisive hard stop whose category is NOT one of the "
+    "reason_catalog families, output `uncertain` — never force-fit it into a "
+    "different family."
+    """
+(Seniority language, role-family mismatch, location, and similar hard stops are real but
+out of scope for this six-family judgment; they belong to `uncertain`, not to the nearest
+available reason.)
+
+Return one verdict object per item, using ONLY this schema:
+  decision: "eligible" | "ineligible" | "uncertain"
+  reason: one of the reason_catalog family ids, or null (null unless decision is "ineligible")
+  evidence: the verbatim decisive sentence from the JD (required whenever decision is
+    "ineligible"; the exact substring must appear in the JD text, not a paraphrase)
+  confidence: "high" | "medium" | "low"
+"""
+)
 
 _MIN_TOTAL_TOKENS = 3
 _MIN_CONTENT_TOKENS = 2
@@ -160,3 +223,48 @@ def accept_oracle_verdict(v: OracleVerdict, jd_text: str, catalog: RulesCatalog)
         oracle_prompt_version=PROMPT_VERSION,
         downgraded=downgraded,
     )
+
+
+def read_worksheet(path: Path) -> list[dict[str, Any]]:
+    """Raw jsonl reader: every row as a dict, unlabeled rows INCLUDED. Deliberately not
+    `scoring.load_labeled_set`, which discards rows with `expected_verdict is None` — the
+    whole point here is to find those rows so they can be sent to the judge (M5)."""
+    rows: list[dict[str, Any]] = []
+    for line in path.read_text(encoding="utf-8").splitlines():
+        if line.strip():
+            rows.append(json.loads(line))
+    return rows
+
+
+def _bucket(label: str) -> str:
+    """H1: hard-negatives carry the `applied/` prefix (extract_candidates.py:187), NOT
+    `_applied/` — that is a job-apps source-folder name, never a worksheet label."""
+    return "hard_negative" if label.startswith("applied/") else "hard_stop"
+
+
+def build_label_request(
+    rows: list[dict[str, Any]], catalog: RulesCatalog, *, request_id: str
+) -> dict[str, Any]:
+    """The request JSON payload sent to the judge. Selects only unlabeled rows
+    (`expected_verdict is None`) and drops `hint` from every item (independence: the
+    judge must never see a prior guess for the label it is about to produce)."""
+    fam = [f.id for f in catalog.families]
+    items = [
+        {
+            "label": r["label"],
+            "facts": r.get("facts", {}),
+            "jd_text": r.get("body_text", ""),
+            "bucket": _bucket(r["label"]),
+        }
+        for r in rows
+        if r.get("expected_verdict") is None
+    ]
+    return {
+        "request_id": request_id,
+        "policy_version": POLICY_VERSION,
+        "prompt_version": PROMPT_VERSION,
+        "reason_catalog": fam,
+        "policy": {"families": {f: "blocker" for f in fam}},  # M3
+        "judging_policy": JUDGING_POLICY,
+        "items": items,
+    }
