@@ -2459,3 +2459,79 @@ documented fast-follow. The 220-char-bullet content fix is Mit's to make, not a 
 **Consequence.** The render substrate is no longer the open question; content is. P4 items 6–7 and the
 Gate-3 operational runs, both parked behind D-057's "fix tailoring first" ruling, can proceed once Mit
 shortens the three bullets — nothing further needs to be built to unblock them.
+
+## D-061 — P4 item 6 (keyword-coverage measurement) shipped to `main`
+
+**2026-08-08 · P4-craft session.**
+
+**Context.** With Increment 1 banked (D-060), Mit deferred the 220-char bullet trim and directed work at
+the productive build that is independent of it — P4 items 6–7 (STATE.md session-close). Item 6:
+"Keyword coverage measured properly against JD requirement terms, achieved only by re-spelling existing
+facts" (PROGRAM.md §3.P4.6). STATE.md had already ruled it a MEASUREMENT, not a veto.
+
+**Choice.** Built it as a report, not a gate. Two properties make it "measured properly":
+1. **Denominator = JD _requirement_ terms**, sliced from the JD's qualifications span via the existing
+   `qualifications_span` (item 3b), falling back to whole-body skills only when no qualifications header is
+   found; `denominator_source` records which (`"qualifications"` | `"body"`) so a body figure is never read
+   as a requirements figure.
+2. **Numerator counts only facts the MASTER résumé genuinely has** — `resume_fact_skills` reads
+   `master.entries[].bullets[].text` + `master.skill_groups[].items` (never the tailored output, never
+   header/education prose), so a tailored bullet that *echoes* a JD term — the exact AI-résumé tell item 3b
+   vetoes — cannot inflate coverage. Re-spelling is handled for free by `Taxonomy.extract` returning
+   canonical skill names.
+
+New pure module `tailor/coverage.py` (`CoverageReport`, `requirement_terms`, `resume_fact_skills`,
+`coverage_report`, `coverage_to_dict`); `fraction is None` — never `0.0` — when a JD has zero recognized
+requirement terms. Surfaced per-lead in the tailored artifact's `meta_json` and the morning report, and a
+run-level `build_coverage_summary` (mean/median over leads with a fraction, top missing terms) mirrors
+`build_fabrication_counters`. Fail-safe: the computation is wrapped so a measurement bug records
+`coverage=None` and never drops a real résumé. The ranker's `skill_coverage` (profile-vs-JD, a ranking
+signal) was left untouched.
+
+Built via subagent-driven development in an isolated worktree; independent diff-review returned clean (no
+correctness/requirement/security defects; the anti-echo test confirmed genuinely falsifiable, not a
+tautology — one low-severity defense-in-depth note about the integration-level tests, not a gap).
+Fast-forward merged to `main` as `58f032e`, pushed. `make check`: exit 0 — **3112 passed, 1 deselected,
+coverage 95.32%, `generalization: OK`**.
+
+## D-062 — Persona (P4 item 7) is a résumé-presentation lens, not an eligibility variant; the de-senioritizer is made live via JD-title stripping
+
+**2026-08-08 · P4-craft session. Decided under Mit's "whatever's best / full throttle" delegation.**
+
+**Context.** P4 item 7 (PROGRAM.md §3.P4.7) commits to two personas (SDE / iOS) with "different
+protected-fact sets" (D-011) and no phase built the mechanism (confirmed greenfield — nothing named
+`persona` in `src/`). The folded-in deferred item 4 (D-052) is a title de-senioritizer that D-052 parked as
+inert because "no forward-looking title field exists yet."
+
+**Choice (the two forks that needed Mit and were delegated to the recommended reading):**
+
+1. **Fork A — a persona is a présentation lens, NOT an eligibility variant.** For one person the eligibility
+   facts (work-auth, `needs_sponsorship`, years, degree) are properties of the *person* and do not change
+   between an SDE and an iOS framing. So "protected-fact subset" = the subset of the master résumé's
+   ENTRIES a persona surfaces (plus title, skill-group ordering), never a subset of eligibility Facts. The
+   singleton `profile` DB table and the eligibility engine are therefore **untouched** by item 7 — which
+   also removes the only risky piece, so item 7 is complete as a presentation build (Fork B: nothing
+   eligibility-related deferred). This keeps the keystone invariant and multi-tenancy clean.
+
+2. **The de-senioritizer is made LIVE (resolving D-052's dead-code objection).** The rendered résumé title
+   is the **JD title, seniority-stripped, and validated against the selected persona's role family**
+   (falling back to the persona's authored base title when the stripped title is empty or out-of-family).
+   That gives `strip_seniority` a real exercised call site — a "Senior iOS Engineer" JD yields an "iOS
+   Engineer" headline, never stamping "Senior" on a new-grad résumé (item 4's exact requirement) — without
+   building inert code. We only *strip* seniority markers; we do NOT down-level to a specific level (that
+   still needs a seniority profile field, Mit-blocked). Boundary-safe via `tailor/tokens.py` (Sr∉SRE,
+   Lead∉Leader, strip III before II).
+
+**Design** (full spec at `.superpowers/sdd/p4-item7-persona-registry/design.md`): a versioned
+`personas.yaml` registry (bundled seed + `{config_dir}` override, modelled on `taxonomy.py`/`catalog.py`);
+deterministic `select_persona` keyed on `classify_role_family` (mobile→ios, else→general_swe; empty/unmatched
+→ the single required default), never a model; `apply_persona` reorders skill groups + selects/orders the
+entry subset + sets the title on a new frozen `Resume` (new optional `Resume.title` field); render wiring
+into the PAIRED `%%TITLE_START%%/%%TITLE_END%%` template markers with graceful degrade when the pair or the
+title is absent. Selection keys on role_family alone (a `primary_stack` axis is YAGNI for two personas).
+
+**Status: DESIGNED + worktree-ready, BUILD NOT STARTED.** The item 7 build was dispatched into an isolated
+worktree (`p4-item7-persona` @ base `58f032e`) but the build subagent terminated immediately on an Anthropic
+**session usage limit** (resets 03:30 America/Chicago) before writing anything — the worktree is clean, no
+work lost, `main` unaffected. Resuming is a single dispatch from the design doc once the limit resets. This
+decision is recorded now so the design + the two forks are not re-litigated on resume.

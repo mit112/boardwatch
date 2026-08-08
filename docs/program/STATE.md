@@ -1,9 +1,11 @@
 # PROGRAM STATE — read this first
 
-**Last updated:** 2026-08-08 (résumé-tailoring-fix session, execution — Increment 1 [LaTeX render substrate]
-EXECUTED + SHIPPED to `main`, D-060; Typst→tectonic swap complete; Mit's résumé now renders 1pp, resolving
-the old Gate-P3 2pp blocker; NEW blocker found — 3 over-220-char bullets force an untailored-master degrade
-on every posting, Mit's to fix)
+**Last updated:** 2026-08-08 (P4-craft session — **P4 item 6 [keyword-coverage measurement] SHIPPED to
+`main`**, `58f032e`, D-061, review-clean, `make check` green 3112 passed / 95.32%; **P4 item 7 [persona
+registry + de-senioritizer] DESIGNED + worktree-ready, D-062, build NOT started — dispatched build hit an
+Anthropic session usage limit (resets 03:30 America/Chicago) before writing, worktree clean, nothing lost**.
+Prior context still holds: Increment 1 shipped D-060; Mit's résumé renders 1pp; the 3 over-220-char bullets
+remain Mit's deferred content fix.)
 **Updated by:** boardwatch (Claude)
 **Repo state at write time:** all nine P0 items (0-8), P1a (the résumé artifact integrity gate —
 PROGRAM.md §3.P1 items 1, 2, 3, 3b, 4, 5), and P1b (item 3c, the Tier-B token-provenance validator, D-033)
@@ -717,6 +719,23 @@ domain input nor Docker.** What is left is genuinely gated on things I cannot su
     NOT treat the trim as an urgent block: it gates Increments 2/3 and visible tailoring, but P4 items 6–7
     (persona registry + de-senioritizer) are fully independent of it and are the productive build to start
     when work resumes. Increment 1 is banked, pushed (`76f75f5`), gate-green.
+    **Session update (2026-08-08, P4-craft) — item 6 SHIPPED, item 7 READY:** work resumed on P4 items 6–7
+    exactly as the line above prescribed (the deferred bullet trim does NOT block them). **P4 item 6
+    (keyword-coverage measurement) is DONE** — merged to `main` (`58f032e`, D-061), diff-review clean,
+    `make check` green (3112 passed, 95.32%). It is a report, not a veto: coverage counts JD-requirement
+    terms (qualifications-span denominator, body fallback) that the **master** résumé genuinely covers, so
+    an echoed JD term can't inflate it; surfaced in artifact meta + morning report + a run-level funnel
+    summary. **P4 item 7 (persona registry + the now-live title de-senioritizer) is DESIGNED and
+    worktree-ready but NOT built** — design at `.superpowers/sdd/p4-item7-persona-registry/design.md`,
+    decisions ratified in **D-062** (persona = a résumé-presentation lens, NOT an eligibility variant, so the
+    profile DB + eligibility engine are untouched; the de-senioritizer is made live by resolving the résumé
+    title from the JD title with seniority stripped). The build was dispatched into worktree
+    `p4-item7-persona` (base `58f032e`) but the subagent **hit an Anthropic session usage limit (resets 03:30
+    America/Chicago) and terminated before writing anything** — the worktree is clean, nothing lost, `main`
+    unaffected. **NEXT ACTION (post-limit-reset): dispatch the item 7 build from its design doc** — it is a
+    single, well-specified SDD dispatch; then review + merge as usual. After item 7, Gate P4's blind-craft
+    review is Mit's, and P5 is the next phase. The 220-char bullet trim + Increments 2/3 remain as before
+    (Mit's deferred content work; independent of item 7).
 
   **DEFERRED next action — P4 item 6** — keyword coverage measured against JD *requirement* terms,
   achieved only by re-spelling existing facts (ground it first: reuse the canonical vocab + the

@@ -6,6 +6,19 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- **Keyword-coverage measurement for tailored résumés** (P4 item 6 — D-061). A per-lead and per-run report
+  (never a veto) of how many of a JD's *requirement* terms the résumé genuinely covers. The denominator is
+  the JD's qualifications span (via the existing `qualifications_span`), falling back to whole-body skills
+  when no qualifications header is found, recording which source was used. The numerator counts only skills
+  the **master** résumé actually has (`tailor/coverage.py::resume_fact_skills`), never the tailored output —
+  so a bullet that echoes a JD term cannot inflate coverage. `fraction` is `None`, never `0.0`, when a JD
+  has no recognized requirement terms. Surfaced in each tailored artifact's `meta_json`, the morning report,
+  and a run-level funnel summary (mean/median coverage, most-frequent missing terms). Fail-safe: a coverage
+  bug records `coverage=None` and never drops a lead. Shipped `58f032e`; `make check` green (3112 passed,
+  95.32%).
+
 ### Changed
 
 - **The résumé render engine is now tectonic compiling the user's own LaTeX template, replacing Typst**
