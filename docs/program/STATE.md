@@ -712,6 +712,11 @@ domain input nor Docker.** What is left is genuinely gated on things I cannot su
     build.** After that, Increment 2 (`\textbf{}` keyword bolding from `jd_skills`) and Increment 3
     (per-role title/summary selection) are each their own plan, still not built. Option i (single-sourcing
     Header/Education from `resume.yaml`) remains a documented fast-follow.
+    **Session close (2026-08-08):** Mit was shown a live 1-page render of the master résumé and
+    **explicitly deferred the bullet trim** — it is not rejected, just not now. So a cold session should
+    NOT treat the trim as an urgent block: it gates Increments 2/3 and visible tailoring, but P4 items 6–7
+    (persona registry + de-senioritizer) are fully independent of it and are the productive build to start
+    when work resumes. Increment 1 is banked, pushed (`76f75f5`), gate-green.
 
   **DEFERRED next action — P4 item 6** — keyword coverage measured against JD *requirement* terms,
   achieved only by re-spelling existing facts (ground it first: reuse the canonical vocab + the
