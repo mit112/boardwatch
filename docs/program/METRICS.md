@@ -875,3 +875,21 @@ prerequisite (a résumé that produces ≥1 lead+PDF) is unmet. **Zero runs agai
 **Disposition:** Mit paused for major résumé rework in a separate session. Gate P3 operational half stays
 UNMET; two-writer test (item 8, Docker) also still pending. Details: memory
 `gate-p3-blocked-on-one-page-resume`; STATE.md Gate-P3 bullet.
+
+## Résumé-render session (resumed) — 2026-08-07 · Increment-1 plan re-review (D-059)
+
+**No runs; no source merged.** Plan-hardening + review session only (`make check` not exercised — no code
+changed). Recorded for honesty per the session-end ritual.
+
+| Check | Value |
+|---|---|
+| tectonic | **installed, 0.17.0** (`brew install tectonic`; newer than the plan's 0.15.0 floor) |
+| pdfinfo | present (poppler 26.08.0) |
+| Re-reviewers (fresh-context Opus, parallel) | 2 — soundness · tests |
+| Verdicts | both **REWORK** |
+| Findings folded | soundness 2B+2M+5m; tests 1B+5M+3m (deduped: 2 shared blockers) |
+| Live-tree verification of blockers | import graph + dash + `pdfinfo` `Pages:` line + doctor version string — all CONFIRMED before folding |
+| Docs committed | `eafc676` (D-059, STATE, DECISIONS) |
+
+**Disposition:** Increment-1 plan CLEARED to execute (D-059); 3rd plan-review declined; execution not yet
+started (checkpointed for a fresh window). Next: Task 1 (tectonic doctor probe + Dockerfile), subagent-driven.
