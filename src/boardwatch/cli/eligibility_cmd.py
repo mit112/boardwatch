@@ -496,6 +496,22 @@ def _worksheet_dir(settings: Settings, worksheet: Path | None) -> Path:
     return worksheet if worksheet is not None else settings.data_dir / _DEFAULT_WORKSHEET_DIRNAME
 
 
+def _require_worksheet_dir(settings: Settings, worksheet: Path | None) -> Path:
+    """Resolve the worksheet dir and fail loud if it does not exist.
+
+    `Path.glob` and `load_labeled_set` both treat a missing directory as "no rows" —
+    correct for a legitimate empty worksheet, wrong for a typo'd or unmounted `--worksheet`
+    path, which would otherwise print a quiet "0 unlabeled" / all-zero tallies / "total 0"
+    and exit 0, indistinguishable from real emptiness. An EXISTING but empty directory (0
+    `*.jsonl` files, or every row already labeled) is NOT an error and must not raise here.
+    """
+    worksheet_dir = _worksheet_dir(settings, worksheet)
+    if not worksheet_dir.is_dir():
+        console.print(f"[red]worksheet directory not found: {worksheet_dir}[/red]")
+        raise typer.Exit(2)
+    return worksheet_dir
+
+
 @label_app.command("request")
 def label_request_cmd(
     ctx: typer.Context,
@@ -520,7 +536,7 @@ def label_request_cmd(
     app_ctx = build_context(ctx.obj)
     settings = app_ctx.settings
     catalog = load_rules(settings.config_dir)
-    worksheet_dir = _worksheet_dir(settings, worksheet)
+    worksheet_dir = _require_worksheet_dir(settings, worksheet)
     rows: list[dict[str, Any]] = []
     for path in sorted(worksheet_dir.glob("*.jsonl")):
         rows.extend(read_worksheet(path))
@@ -557,7 +573,7 @@ def label_apply_cmd(
     app_ctx = build_context(ctx.obj)
     settings = app_ctx.settings
     catalog = load_rules(settings.config_dir)
-    worksheet_dir = _worksheet_dir(settings, worksheet)
+    worksheet_dir = _require_worksheet_dir(settings, worksheet)
     raw_verdicts: list[dict[str, Any]] = json.loads(verdicts_path.read_text(encoding="utf-8"))
     verdicts = [OracleVerdict(**item) for item in raw_verdicts]
 
@@ -611,7 +627,7 @@ def score_cmd(
     app_ctx = build_context(ctx.obj)
     settings = app_ctx.settings
     catalog = load_rules(settings.config_dir)
-    worksheet_dir = _worksheet_dir(settings, worksheet)
+    worksheet_dir = _require_worksheet_dir(settings, worksheet)
     cases = load_labeled_set(worksheet_dir)
     report = score(cases, catalog)
 

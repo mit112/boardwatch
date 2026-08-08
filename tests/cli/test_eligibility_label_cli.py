@@ -167,3 +167,26 @@ def test_score_reports_audited_coverage_warning_and_drains_on_unaudited_ineligib
     assert "NOT integrity-anchored; run the audit before shipping B1-B4" in result.stdout
     # M1: at least one reference-ineligible label + unmet ship gate (0% audited) -> exit 1.
     assert result.exit_code == 1
+
+
+def test_label_request_missing_worksheet_dir_errors_loudly(env: Path, tmp_path: Path) -> None:
+    missing = tmp_path / "does-not-exist"
+    result = _run(
+        env,
+        ["eligibility", "label", "request", "--worksheet", str(missing)],
+    )
+    assert result.exit_code != 0
+    # rich may hard-wrap a long path across lines in a non-tty test runner; newlines carry
+    # no content of their own, so stripping them before the substring check is safe.
+    flattened = result.stdout.replace("\n", "")
+    assert "worksheet directory not found" in flattened
+    assert str(missing) in flattened
+
+
+def test_score_missing_worksheet_dir_errors_loudly(env: Path, tmp_path: Path) -> None:
+    missing = tmp_path / "does-not-exist"
+    result = _run(env, ["eligibility", "score", "--worksheet", str(missing)])
+    assert result.exit_code != 0
+    flattened = result.stdout.replace("\n", "")
+    assert "worksheet directory not found" in flattened
+    assert str(missing) in flattened
