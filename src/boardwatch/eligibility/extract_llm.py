@@ -112,8 +112,26 @@ def extract_and_record(
         return None
 
     payload = build_payload(jd_text)
+    # The identity is needed twice: to widen the cache key here, and to attribute the row at
+    # record_evaluation below. Compute it BEFORE the key — its profile_hash/rules_hash depend
+    # only on facts/policy/catalog, never on the raw response — and reuse the one object.
+    identity = build_identity(
+        posting_version_id=posting_version_id,
+        facts=facts,
+        policy=policy,
+        catalog=catalog,
+        declared_fields=declared_fields(),
+    )
     content_hash = hashlib.sha256(jd_text.encode("utf-8")).hexdigest()
-    cache_key = cache.key(content_hash, PROMPT_VERSION, model or "unknown")
+    # ResponseCache.key is shared with the tailor rewrite lane and must stay identity-free, so
+    # the profile + catalog identity is folded into the content_hash ARGUMENT here rather than
+    # into key() itself. Without it a cached response would replay across a changed profile or
+    # rule catalog: the same JD adjudicated against different facts (or a bumped catalog
+    # version) would wrongly HIT.
+    identity_hash = hashlib.sha256(
+        f"{content_hash}:{identity.profile_hash}:{identity.rules_hash}".encode()
+    ).hexdigest()
+    cache_key = cache.key(identity_hash, PROMPT_VERSION, model or "unknown")
 
     raw = cache.get(cache_key)
     if raw is None:
@@ -132,14 +150,6 @@ def extract_and_record(
         "eligible"
         if items and all(item.disposition == "met" for item in items)
         else "uncertain"
-    )
-
-    identity = build_identity(
-        posting_version_id=posting_version_id,
-        facts=facts,
-        policy=policy,
-        catalog=catalog,
-        declared_fields=declared_fields(),
     )
 
     return record_evaluation(
