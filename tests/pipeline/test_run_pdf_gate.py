@@ -191,3 +191,29 @@ def test_every_tailored_lead_has_a_built_pdf_on_a_normal_run(env: Path, tmp_path
 
     assert summary.tailored, "nothing was tailored, so this test proves nothing"
     assert all(lead.pdf_built for lead in summary.tailored)
+
+
+def test_tailored_artifact_row_is_a_real_tex_file_with_pdf_built_meta(
+    env: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Task 7 end-to-end proof for the LaTeX/tectonic swap: a fake `_default_runner` stands in
+    for tectonic, but the assertion reads the persisted `resume_tailored` artifact ROW back from
+    the store — a different path than the one that wrote it (never trust a component's own
+    self-report) — and confirms the LaTeX-era shape: `.tex` uri, `media_type="text/x-tex"`, and
+    the legacy `typst_pdf_built` meta key still True."""
+    _ready(env)
+    out_root = tmp_path / "apps"
+
+    monkeypatch.setattr("boardwatch.reports.tailor._default_runner", lambda tex, pdf: _ok(pdf))
+    summary = _pipeline(env, out_root)
+
+    assert summary.tailored, "nothing was tailored, so this test proves nothing"
+    with get_engine(env).connect() as conn:
+        rows = conn.execute(
+            select(tables.artifacts).where(tables.artifacts.c.kind == "resume_tailored")
+        ).fetchall()
+    assert rows, "no resume_tailored artifact row was written"
+    for row in rows:
+        assert row.media_type == "text/x-tex"
+        assert row.uri.endswith(".tex")
+        assert row.meta_json["typst_pdf_built"] is True
