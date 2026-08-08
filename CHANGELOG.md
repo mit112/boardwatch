@@ -6,6 +6,20 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Fixed
+
+- **Disjunctive experience-years over-fire — Gate P5 MET at 100% precision** (D-073). The `experience_years`
+  family's `total_years_minimum` / `range_years_minimum` patterns read the pure-years arm of a DISJUNCTION
+  ("a Bachelor's degree … **or** N years of experience") as a hard floor, so a master's-plus-one-year
+  candidate was told INELIGIBLE on a posting they clear via the degree path — deleting a real job, the
+  unrecoverable direction. Both patterns now carry `abstain_by: [&degree_alternative_to_years]`, so a
+  degree-gated alternative makes the years bar ABSTAIN (verdict `uncertain`) instead of resolving `unmet`,
+  mirroring the degree family's "degree OR equivalent experience" handling. On the 173-row labeled set this
+  moved exactly one verdict (the SpaceX false positive, `ineligible → uncertain`), taking INELIGIBLE
+  precision 16/17 → **16/16 (100%)** with recall unchanged and zero span violations, so
+  `boardwatch eligibility score` now exits 0. `abstain_by` is document-scoped (like the degree precedent);
+  the recall the abstain concedes is the two-stage gate's (D-071) to recover.
+
 ### Added
 
 - **P5b answer-key oracle judge — agent lane, no API key** (D-068). An AI oracle produces the Gate-P5

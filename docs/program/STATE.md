@@ -1,10 +1,13 @@
 # PROGRAM STATE — read this first
 
-**Last updated:** 2026-08-08 (P5 oracle session — **first Gate-P5 number measured: precision 94% (16/17)**,
-D-069; **audited via historic data ⇒ B1–B4 unblocked at 28% coverage**, D-070; two-stage eligibility gate
-agreed for a fresh session, D-071; model-tier benchmark agreed, D-072. All four decisions pushed to `main`.
-**The current standing + next action is the D-069→D-072 block a few paragraphs below** — read that, not this
-line, for what to do next. Earlier-session context, kept for history: **P4 items 6 AND 7 both SHIPPED to `main`**:
+**Last updated:** 2026-08-08 (P5 disjunctive-fix session — **Gate P5 MET: INELIGIBLE precision 100% (16/16),
+`score` exits 0**, D-073; the disjunctive experience-years over-fire from D-069 is fixed, blast radius
+exactly the one SpaceX FP; the D-070 deepseek cross-match was EXECUTED and corroborates the ineligible answer
+key, zero contradictions. Prior-session decisions still stand: D-069 first number (94%), D-070 audit-via-
+historic-data + B1–B4 unblock, D-071 two-stage gate agreed, D-072 model-tier benchmark agreed.
+**Current standing + next action is the D-073 block immediately below.** The NEXT BUILD is the D-071 two-stage
+eligibility gate (recover the title-blind recall the deterministic stage abstains), then the D-072 model-tier
+benchmark — both fresh-context sessions. Earlier-session context, kept for history: **P4 items 6 AND 7 both SHIPPED to `main`**:
 item 6 keyword-coverage `58f032e`/D-061, item 7 persona-registry+de-senioritizer `1988c39`/D-063; both
 diff-reviewed + deepseek-reviewed, `make check` green (3148 passed / 95.23%). **P4 BUILD IS COMPLETE**
 (items 1–7); only Gate P4's blind-craft review remains, which is Mit's. **P5a SHIPPED** (`faf8aa9`, D-064,
@@ -62,6 +65,22 @@ the judge over all 173 rows, `score` vs the key (INELIGIBLE precision is the hea
 over-rejects deletes real jobs), find the drop-off, and PUBLISH a `model → precision/recall/cost` table so
 users pick by budget. Solidify the ground truth first (the D-070 deepseek cross-match) so agreement =
 accuracy. Picks the D-071 final gate's default model too.
+**GATE P5 MET (D-073, 2026-08-08): INELIGIBLE precision 100% (16/16), `meets_gate` True, audited 28%,
+`score` exits 0.** The D-069 disjunctive over-fire is fixed: `experience_years:{total,range}_years_minimum`
+now carries `abstain_by: [&degree_alternative_to_years]`, so "a Bachelor's … OR N years of experience"
+ABSTAINS the years bar (→ `uncertain`) instead of resolving `unmet` — mirroring the degree family's "degree
+OR equivalent experience" abstain. Validated through the real engine over all 173 rows BEFORE coding:
+**exactly one verdict moved** (SpaceX `ineligible → uncertain`), the 16 TPs untouched, recall unchanged
+(0.276), zero span violations. TDD + fresh-context diff review (no material defects; mutation-confirmed) +
+`make check` green; the R7 `rules.yaml` pin was re-reviewed and updated. Known safe-direction boundary
+recorded in D-073 (the years→degree arm can also abstain a conjunctive "N years AND a degree" floor — a
+recall miss for the LLM stage, never an FP). **The D-070 deepseek cross-match was executed:** 173/173 rows
+mapped; on the 58 ineligible rows every historic verdict agrees (deepseek 7/7, either-model 10/10, zero
+contradictions) ⇒ the ineligible answer key is corroborated; 4 eligible-side flags routed to a future judge.
+**Next build = the D-071 two-stage gate** (deterministic precision-first stage — now done — feeding a
+cheap Sonnet-class agent-lane final gate over the shortlist to recover recall: experience 1/23, contract 0/7,
+internship 0/4), then the D-072 benchmark. Both fresh-context. Answer key + oracle outputs stay Mit-local
+and gitignored — keep them out of commits.
 **Updated by:** boardwatch (Claude)
 **Repo state at write time:** all nine P0 items (0-8), P1a (the résumé artifact integrity gate —
 PROGRAM.md §3.P1 items 1, 2, 3, 3b, 4, 5), and P1b (item 3c, the Tier-B token-provenance validator, D-033)

@@ -171,6 +171,25 @@ def test_two_detections_that_agree_are_corroboration_not_a_split(catalog) -> Non
     assert result.verdict == "ineligible"
 
 
+def test_a_degree_gated_disjunction_never_rejects_on_the_years_arm(catalog) -> None:
+    """GATE-P5 REGRESSION LOCK (the SpaceX false positive). "A Bachelor's ... or N years of
+    experience" clears on EITHER arm; a master's-plus-one-year candidate satisfies the
+    degree path, so resolving the pure-years arm to `unmet` and returning INELIGIBLE deleted
+    a real job — the unrecoverable direction the deterministic stage must never take. The
+    years arm abstains, so the verdict is `uncertain`, not `ineligible`. The two-stage LLM
+    gate is what turns such an abstain into a decision; the deterministic stage only refuses
+    to reject.
+    """
+    body = "A Bachelor's degree in CS or 3+ years of professional experience is required."
+    facts = Facts(total_years_experience=1, highest_degree="master")
+    result = evaluate(body, facts, BLOCK_ALL, catalog)
+    assert result.verdict != "ineligible"
+
+    # positive control: a plain floor with no degree alternative still rejects below it
+    plain = "8+ years of professional experience is required."
+    assert evaluate(plain, facts, BLOCK_ALL, catalog).verdict == "ineligible"
+
+
 def test_a_conflict_in_one_group_does_not_touch_another_group(catalog) -> None:
     """work_auth declares two independent groups, so each resolves separately."""
     body = (

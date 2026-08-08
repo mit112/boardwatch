@@ -350,6 +350,19 @@ families:
         # than bare `prefer` so that "candidates who prefer remote work" is not a hedge either.
         suppressed_by_unit:
           - &years_hedges "preferred|desirable|a\\s+plus|nice\\s+to\\s+have|ideally|bonus|advantageous|strongly\\s+desired|desired\\b(?!\\s+(?:candidate|applicant|profile|skill|qualification|attribute|trait|background|characteristic|competenc|experience|expertise)\\w*)|we\\s+(?:would\\s+)?prefer|preference\\s+for"
+        # A DEGREE-GATED DISJUNCTION ("a Bachelor's ... OR N years of experience") is not a
+        # floor: the posting clears on EITHER arm, and the degree arm is undecidable because
+        # the field of study is not stored. Reading the pure-years arm as a hard bar told a
+        # master's-plus-one-year candidate INELIGIBLE and deleted a real job (Gate-P5 SpaceX
+        # FP). So the years bar ABSTAINS here rather than resolving `unmet`, exactly as the
+        # degree family abstains on "degree OR equivalent experience" (degree_equivalence).
+        # abstain_by, not a suppressor: dropping would return `eligible` by silence; abstain
+        # keeps the row visible and undecidable, for the two-stage gate to decide. The `or`
+        # must bridge a degree DIRECTLY to a years-of-experience arm, both same-line (no \n
+        # in the gap) — "degree in X, Y, or a related field" coordinates FIELDS, not a
+        # degree-vs-experience choice, and must not abstain a genuine floor elsewhere.
+        abstain_by:
+          - &degree_alternative_to_years "(?:(?:Bachelor['’‘]?s?|Master['’‘]?s?|Doctora\\w+|Ph\\.?D\\.?|(?<![\\w.])B\\.?S\\.?(?!\\w)|(?<![\\w.])B\\.?A\\.?(?!\\w)|(?<![\\w.])M\\.?S\\.?(?!\\w)|(?<![\\w.])M\\.?Sc\\.?(?!\\w)|(?<![\\w.])M\\.?Eng\\.?(?!\\w)|(?<![\\w.])M\\.?B\\.?A\\.?(?!\\w)|(?:Graduate|Advanced|Undergraduate)\\s+degree|degree\\s+in)[^.\\n]{0,80}?\\bor\\b\\s*(?:a\\s+minimum\\s+of\\s+|at\\s+least\\s+)?\\d{1,2}\\s*\\+?\\s*years?\\b[^.\\n]{0,25}?experience)|(?:\\d{1,2}\\s*\\+?\\s*years?\\b[^.\\n]{0,25}?experience[^.\\n]{0,40}?\\bor\\b[^.\\n]{0,40}?(?:Bachelor['’‘]?s?|Master['’‘]?s?|Doctora\\w+|Ph\\.?D\\.?|(?<![\\w.])B\\.?S\\.?(?!\\w)|(?<![\\w.])B\\.?A\\.?(?!\\w)|(?<![\\w.])M\\.?S\\.?(?!\\w)|(?<![\\w.])M\\.?Sc\\.?(?!\\w)|(?<![\\w.])M\\.?Eng\\.?(?!\\w)|(?<![\\w.])M\\.?B\\.?A\\.?(?!\\w)|(?:Graduate|Advanced|Undergraduate)\\s+degree|degree\\s+in))"
       - id: range_years_minimum
         requiredness: required
         implies: range_years_minimum
@@ -359,6 +372,9 @@ families:
         pattern: '\b(?P<years>\d{1,2})\s*(?:[-–—]|\s+to\s+)\s*\d{1,2}\s*\+?\s*years?\b(?>\s+of)?(?>(?:\s+(?:professional|relevant|industry|work|hands-on|total|overall|full-time))*)\s+experience\b(?!\s+(?:with|in|using|of|on|building|developing|designing|as|leading|managing|supporting)\b)'
         subject_suppressors: [*company_side_years]
         suppressed_by_unit: [*years_hedges]
+        # Same either-path disjunction guard as total_years_minimum: "3-5 years ... or a
+        # Master's degree" clears on either arm and must abstain, not resolve `unmet`.
+        abstain_by: [*degree_alternative_to_years]
       # The subject suppressor goes on ALL THREE, not just total_years_minimum. Left off
       # here, scoped_years_minimum fires on the company-side sentence on its own and the
       # exclusive group these three share rewrites the genuine row to unknown anyway.

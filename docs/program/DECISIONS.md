@@ -2949,3 +2949,55 @@ the harness — do NOT build a new ground-truth set.
 
 **Sequence.** Do it alongside/after the D-071 two-stage build (the final gate is where the chosen model
 plugs in); gate the benchmark's validity on first expanding the audited ground-truth slice.
+
+## D-073 — Disjunctive experience-years fix SHIPPED; Gate P5 MET (precision 100%)
+
+**Context.** D-069's sole Gate-P5 false positive was `experience_years:{total,range}_years_minimum`
+over-firing on a DISJUNCTIVE requirement — "a Bachelor's degree … **or** N years of experience" — by reading
+the pure-years arm as a hard floor. On the SpaceX row ("1+ years … with Bachelors … or 3+ years professional
+experience"; candidate = master's + 1 yr) it resolved `unmet` → INELIGIBLE, deleting a real job (the
+unrecoverable direction). D-070 verified the FP is genuine and the blast radius exactly 1 row.
+
+**Decision.** Add an `abstain_by` regex (`&degree_alternative_to_years`, anchored on `total_years_minimum`,
+aliased onto `range_years_minimum`) that makes the years bar **ABSTAIN** (→ UNKNOWN, verdict `uncertain`)
+when a degree-gated disjunctive alternative is present — instead of resolving `unmet`. This mirrors the
+`degree` family's existing `&degree_equivalence` handling of "degree OR equivalent experience": abstain, not
+drop (dropping returns `eligible` by silence, the worse direction). The deterministic stage stays
+precision-first; the recall the abstain concedes is the two-stage gate's (D-071) to recover.
+
+**Alternatives rejected.** (a) A resolver-level fix — the resolver sees one detection and no neighbours, so
+it can't see the disjunction. (b) A span-local abstain — `abstain_by` is document-scoped by design (matches
+the degree precedent); a new unit-scoped abstain mechanism was unjustified engine surface for a
+safe-direction concern. (c) Dropping the detection — would return `eligible` by silence, violating the
+keystone.
+
+**Validation (measured, not asserted).** Before writing code, the candidate regex was run through the real
+engine over all 173 answer-key rows: it moved **exactly one verdict** (SpaceX `ineligible → uncertain`), left
+the 16 true positives untouched, and produced zero span violations. An early over-broad draft also abstained
+`Zachary_Piper` ("Bachelor's degree in CS, …, **or** a related field\n0-2 years") — an "or" coordinating
+FIELDS across a newline; tightened by forbidding `\n` in the bridge and requiring the `or` to sit directly
+against a years arm. Final: `boardwatch eligibility score` → **precision 100% (16/16), meets_gate True,
+audited 28%, exit 0 ⇒ Gate P5 MET.** Recall unchanged (0.276). TDD (3 tests red→green + positive/negative/
+document-scope controls); diff reviewed in fresh context = no material defects (mutation-confirmed the tests
+fail without the fix; no ReDoS; document-scope honestly tested). `make check` green. The R7 sha256 pin on
+`rules.yaml` (`tools/generalization/allowlists.py`) was re-reviewed and updated deliberately.
+
+**Known boundary (recorded, no change warranted — the safe direction).** The years→degree arm also matches a
+CONJUNCTIVE floor when an unrelated `or` sits inside the experience clause, e.g. "5 years of experience in
+Python or Java, and a Bachelor's degree" — abstaining a genuine "BOTH years AND degree" bar. This is a
+recall-direction miss (routed to the LLM stage), never a precision/FP-deletion risk, and is consistent with
+the document-scoped design. Locked by `test_the_disjunction_abstain_is_document_scoped`.
+
+**Ground truth corroborated (D-070 cross-match executed).** The retired job-apps `deepseek-reasoner`
+`verdict_cache.json` (an INDEPENDENT model) was cross-matched to all 173 rows (173/173 mapped via the
+reproduced job-apps sha scheme). On the 58 ineligible answer-key rows, every row carrying any historic
+verdict agrees (deepseek 7/7, either-model 10/10), **zero contradictions** ⇒ the ineligible answer key is
+corroborated, not inflated. The only disagreements were 4 eligible-side rows (answer key possibly too
+lenient on non-SWE / seniority — unmodeled families), flagged for a future Sonnet-class judge, none
+threatening the precision claim. Corroboration-only (deepseek is Mit-personal, never ground truth); findings
+gitignored at `.superpowers/sdd/plan-p5b-oracle-judge/deepseek-crossmatch-findings.md`.
+
+**Next.** Gate P5's precision bar is now met deterministically. The two-stage eligibility gate (D-071) is the
+next build — the deterministic precision-first stage now feeds a cheap-model final gate over the shortlist to
+recover the title-blind recall (this run: experience 1/23, contract 0/7, internship 0/4) — followed by the
+model-tier benchmark (D-072).

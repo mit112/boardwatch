@@ -139,7 +139,10 @@ def test_the_bundled_catalog_carries_every_suppressor_kind(tmp_path: Path) -> No
         # an ownership verb before an internship mention says the JD runs the programme. The
         # same words AFTER the trigger are ordinary prose in a genuine posting.
         "subject_suppressors": 19,
-        "abstain_by": 7,
+        # 7 on the degree family (degree_equivalence) + 2 on the experience family
+        # (degree_alternative_to_years on total_ and range_years_minimum, D-073): a
+        # degree-gated disjunctive alternative makes the years bar abstain, not resolve unmet.
+        "abstain_by": 9,
         "jurisdiction_map": 2,
         "consumes_cues": 1,
     }

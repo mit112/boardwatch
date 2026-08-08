@@ -185,6 +185,73 @@ def test_company_side_years_are_suppressed(catalog) -> None:
     assert "active_secret_required" in found  # positive control
 
 
+def test_a_degree_gated_disjunction_abstains_the_pure_years_bar(catalog) -> None:
+    """REGRESSION LOCK for the P5 SpaceX false positive (Gate-P5 precision).
+
+    "A Bachelor's ... OR N years of experience" is a DISJUNCTION: the posting clears on
+    EITHER the degree-gated path OR the pure-experience path. Reading the pure-years arm as
+    a hard floor told a master's-plus-one-year candidate INELIGIBLE, deleting a real job —
+    the unrecoverable direction. The degree branch is undecidable (field of study is not
+    stored), so the years bar ABSTAINS rather than resolving `unmet`, exactly as the degree
+    family abstains on "degree OR equivalent experience".
+    """
+    body = "A Bachelor's degree in Computer Science or 3+ years of professional experience is required."
+    dets = detect(body, catalog, enabled_families=ALL)
+    by_id = {d.pattern.id: d for d in dets}
+    assert by_id["total_years_minimum"].abstained  # the "... or 3+ years ..." arm is undecidable
+    assert any(d.family == "degree" for d in dets)  # positive control: degree family still fires
+
+
+def test_a_plain_years_floor_with_no_degree_alternative_is_still_decided(catalog) -> None:
+    """The positive control for the disjunction guard: a floor that is NOT part of an
+    either-path disjunction must stay decidable, or the guard would spare every hard bar."""
+    dets = [d for d in detect("8+ years of professional experience is required.",
+                              catalog, enabled_families=ALL)
+            if d.pattern.id == "total_years_minimum"]
+    assert dets and all(d.abstained is None for d in dets)
+
+
+def test_the_disjunction_abstain_is_document_scoped(catalog) -> None:
+    """SETTLED behaviour, locked so it is not misread as a bug. `abstain_by` is
+    document-scoped by design (like the degree family's equivalence escape), so a
+    disjunction anywhere in a posting abstains EVERY years bar in it, including a plain
+    co-located floor. This is the safe direction — abstaining never deletes a real job, and
+    the two-stage gate decides the abstained rows — and it kept the Gate-P5 blast radius to
+    the single SpaceX row on the real 173-case set."""
+    body = (
+        "A Bachelor's degree in CS or 3+ years of experience is required. "
+        "10+ years of professional experience is required."
+    )
+    dets = [d for d in detect(body, catalog, enabled_families=ALL)
+            if d.pattern.id == "total_years_minimum"]
+    assert len(dets) == 2 and all(d.abstained for d in dets)
+
+
+def test_a_range_years_disjunction_with_a_degree_abstains(catalog) -> None:
+    """The disjunction guard is on the range pattern too: "3-5 years of experience or a
+    Master's degree" is the same either-path requirement as the total-years form."""
+    body = "3-5 years of experience or a Master's degree is required."
+    dets = [d for d in detect(body, catalog, enabled_families=ALL)
+            if d.pattern.id == "range_years_minimum"]
+    assert dets and dets[0].abstained  # kept visible, marked undecidable
+
+
+def test_or_coordinating_fields_of_study_does_not_abstain_a_years_bar(catalog) -> None:
+    """NEGATIVE control for the disjunction guard. "Bachelor's degree in X, Y, or a related
+    field" coordinates FIELDS OF STUDY, not a degree-vs-experience choice, and the years bar
+    lives in a separate sentence. Abstaining it would silently spare a genuine floor. The
+    guard must require the `or` to bridge the degree directly to a years-of-experience arm,
+    not cross a line break into an unrelated requirement."""
+    body = (
+        "Bachelor's degree in Computer Science, Software Engineering, or a related field.\n"
+        "0-2 years of professional experience is required."
+    )
+    dets = [d for d in detect(body, catalog, enabled_families=ALL)
+            if d.pattern.id in ("total_years_minimum", "range_years_minimum")]
+    assert dets  # the years bar is detected
+    assert all(d.abstained is None for d in dets)  # ...and decided, never abstained
+
+
 # ---------------------------------------------------------------- scoping and ordering
 
 def test_an_ignored_family_is_never_matched(catalog) -> None:

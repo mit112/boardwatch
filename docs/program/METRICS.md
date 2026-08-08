@@ -1077,3 +1077,38 @@ still 94% < 0.95, so `score` still exits 1). Disjunction-bug blast radius = exac
 latent over-fire found: boilerplate "N years of experience" tenure-brag matches (harmless only when a
 work_auth stop co-occurs). Independent ground truth located for the rigorous ineligible-call follow-up:
 job-apps' 121-row human/Codex audit + a 10,042-verdict deepseek-reasoner cache (different-model judge).
+
+## Session — 2026-08-08 (P5 run #2 — disjunctive fix, Gate P5 MET at 100%; D-073)
+
+**`boardwatch eligibility score --worksheet .superpowers/sdd/p5-eligibility-decides/labeled-set`:**
+
+```
+total 173 · predicted_ineligible 16 · true_ineligible 58
+precision: 100% · meets_gate: True · audited: 28% → exit 0
+```
+
+**Gate P5 MET.** INELIGIBLE precision 16/16 = **100%** (≥ 0.95), audited coverage 28% (≥ 0.20),
+`meets_ship_gate` True, `score` exits 0. Up from run #1's 94% (16/17). **Recall unchanged at 0.276
+(16/58)** — the fix only removed the false positive, it added no true positive (recall is the two-stage
+gate's, D-071). Zero span violations.
+
+**What changed:** the disjunctive experience-years fix (D-073) — `abstain_by: [&degree_alternative_to_years]`
+on `experience_years:{total,range}_years_minimum`. Pre-build validation over all 173 rows through the real
+engine: **exactly one verdict moved** — `SpaceX … ineligible → uncertain` — the 16 TPs untouched. An
+over-broad first draft also abstained `Zachary_Piper` ("degree in CS, …, or a related field\n0-2 years", an
+"or" coordinating fields across a newline); tightened out (forbid `\n` in the bridge; require the `or`
+adjacent to a years arm). `experience_years:total_years_minimum` fires `unmet` on only 3 of 173 rows; the
+other two (Accenture non-SWE, an AMD/visa row) stay INELIGIBLE via work_auth, so the disjunction fix could
+only ever move SpaceX — blast radius = 1, verified.
+
+**Ground-truth corroboration (D-070 cross-match, executed this session).** The job-apps
+`deepseek-reasoner` `verdict_cache.json` (independent model) mapped to **173/173** rows via the reproduced
+job-apps sha scheme (`sha256(_norm(full job_description.txt)) | policy | prompt | provider | model`; body-only
+hashing reproduced 3/173, full-file matching reproduced all 173). Polarity verified from job-apps code:
+`move = INELIGIBLE`, `keep = ELIGIBLE`. On the 58 ineligible answer-key rows: **deepseek 7/7 agree,
+either-model 10/10 agree, zero contradictions**; eligible side 31 agree / 1 disagree (deepseek) with 3
+folder-name-only human-audit flags. Bottom line: the ineligible answer key is **corroborated**
+(confirmation-without-contradiction; thin coverage because most oracle-sourced JDs were never deepseek-judged).
+The 4 flags are all eligible-side (answer key possibly too lenient on unmodeled non-SWE / seniority
+families), routed to a future Sonnet-class judge. Findings (gitignored):
+`.superpowers/sdd/plan-p5b-oracle-judge/deepseek-crossmatch-findings.md`.
