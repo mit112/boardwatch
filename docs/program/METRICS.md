@@ -1065,3 +1065,15 @@ B1–B4 map, but B1–B4 stay blocked until the human sample-audit lifts audited
 Also surfaced (integrity flag, H1): one `applied/` hard-negative (known-eligible, Mit applied) was judged
 ineligible on an experience minimum — either an oracle mis-score of a preferred/alt-path year count or an
 over-bar application; flagged for the audit, not silently accepted.
+
+**Audit via historic data (same session, D-070 — Mit declined manual audit).** All 17 engine-predicted-
+ineligible rows verified against the engine span + facts: 16 genuine TPs (clearance / work_auth no-sponsorship
+/ contract+experience) + the 1 disjunction FP ⇒ **precision 94% is real, not inflated**. The engine calls
+INELIGIBLE on **0 / 50** `applied/` rows (zero false positives on roles Mit actually applied to) — an
+independent eligible-side precision corroboration; the lone `applied/`-ineligible is the AWS experience row,
+a policy-scope artifact (Mit applies above the year bar; correct under the reference all-blocker policy).
+**49 `applied/` rows marked `audited` ⇒ audited coverage 0% → 28% ≥ 0.20 ⇒ B1–B4 unblocked** (precision
+still 94% < 0.95, so `score` still exits 1). Disjunction-bug blast radius = exactly 1 row (fix → 100%). 2nd
+latent over-fire found: boilerplate "N years of experience" tenure-brag matches (harmless only when a
+work_auth stop co-occurs). Independent ground truth located for the rigorous ineligible-call follow-up:
+job-apps' 121-row human/Codex audit + a 10,042-verdict deepseek-reasoner cache (different-model judge).

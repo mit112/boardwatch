@@ -2837,3 +2837,58 @@ sample — either an oracle mis-score of an alt-path/preferred year count or an 
 hard-negatives) to lift audited coverage ≥ 0.20 and unblock B1–B4 — starting with the disjunctive
 experience-years fix above. That audit can lean on job-apps' existing signal (the `_applied/` folders are
 known-eligible; job-apps already ran a one-time ground-truth audit).
+
+## D-070 — Audit via historic data (Mit declined manual audit); B1–B4 unblocked at 28% coverage
+
+**Context.** Immediately after D-069 Mit said he will not do the manual audit himself and to *continue
+testing using the historic data*. D-066 already sanctioned leaning on job-apps' existing signal for the
+audit; this decision executes that path. **Interpretation stated on the record:** here `label_provenance =
+"audited"` means *corroborated against independent historic ground truth*, not fresh human eyeballing.
+
+**What was done (all against gitignored Mit-local data; specifics in
+`.superpowers/sdd/plan-p5b-oracle-judge/oracle-run-1-findings.md`):**
+1. **Full verification of the precision computation.** Every one of the 17 engine-predicted-INELIGIBLE
+   rows was checked against the engine's cited span + the candidate facts (not the oracle's self-report):
+   the 16 TPs are all genuine hard stops (clearance "TS/SCI required"; work_auth explicit no-sponsorship /
+   citizens-or-GC-only vs an EAD holder; one contract+experience), and the 1 FP is the genuine SpaceX
+   disjunction over-fire. **Precision 16/17 = 94% is real — no inflated/hidden false positive.**
+2. **`applied/` hard-negative audit (human-action ground truth).** The engine (reference all-blocker) calls
+   INELIGIBLE on **0 / 50** rows Mit actually applied to — zero false positives on real applications, an
+   independent precision corroboration on the eligible side. **49 marked `audited`;** audited coverage
+   **0% → 28% ≥ 0.20 ⇒ B1–B4 UNBLOCKED.** (Precision still 94% < 0.95, so `score` still exits 1 — the
+   coverage blocker is lifted, the precision blocker is not.)
+3. **The one `applied/` row the oracle called ineligible (an experience minimum) is a policy-scope
+   artifact, not an error** — Mit applies above the year bar under his own soft-experience policy, while the
+   oracle is correct under the reference all-blocker policy. Left `oracle`, flagged, not force-confirmed.
+
+**Findings recorded for the B-work.** (a) The disjunction bug's blast radius is **exactly one row** —
+`experience_years:total_years_minimum` fires required-unmet on only 3 rows corpus-wide and the other two are
+independently ineligible via work_auth, so fixing the disjunction removes only the FP → 16/16 = 100% with no
+TP affected. (b) A **second latent over-fire class**: the same rule matched a company-age boilerplate year
+count ("N years of experience" as a tenure brag), harmless here only because a work_auth stop co-occurs.
+
+**Independent ground truth located for the rigorous follow-up.** job-apps holds a human/Codex-verified
+audit (`resumes/2026-06-12/deep_jd_eligibility_audit.json`, `manual_review: true`, 121 postings) and a
+**10,042-verdict deepseek-reasoner cache** (`eligibility/verdict_cache.json`, an independent different-model
+judge). The current audited anchor is human-action on the *eligible* side; the recommended next step to make
+it rigorous on the *ineligible-call* side (the design's intended stratum) is to cross-match the worksheet
+rows to the deepseek cache by JD sha and measure agreement — independent-judge corroboration, still no
+manual work from Mit.
+
+**Alternatives rejected.** (1) Using the job-apps skip-reason folder names as ground truth — declined again;
+this run re-proved they are noisy (clearance-labeled postings with no clearance clause, `min_18_years` = an
+age minimum), **and (Mit, 2026-08-08) a posting can sit in an eligibility-labeled skip folder because it had
+EXPIRED by the time he reached it** — so folder membership conflates liveness/expiry, dedup, and eligibility
+and carries no reliable eligibility signal. Only the JD text does; hence the JD-text-only oracle, and hence
+the ineligible-call corroboration must come from an independent JD-reading judge (the deepseek cache), never
+from folder membership. (This does not touch the precision number, which compares engine verdict to the
+oracle answer key regardless of why any posting was skipped.) (2) Marking the *ineligible-call* rows `audited`
+off my own re-read — declined: my controller-level re-verification is a second AI pass, not independent of
+the oracle's kind; it is reported as corroboration but not banked as the audit anchor (the deepseek
+cross-match is). (3) Blocking further progress on a human audit Mit has declined — declined per his explicit
+instruction.
+
+**Next.** B1–B4 are unblocked. First B-item: the disjunctive experience-years fix (→ 100% precision → Gate
+P5 met). It touches the digested engine set (re-keys the LLM cache via `engine_version()`), so it wants a
+fresh context with TDD + review + `make check`. Optionally pair it with the deepseek cross-match to bank a
+rigorous ineligible-call audit anchor.

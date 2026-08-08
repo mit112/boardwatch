@@ -29,11 +29,22 @@ firing AS DESIGNED, not a failure). **The single false positive is one clean cla
 degree **or** M years") by matching the higher pure-experience alternative when the candidate satisfies the
 degree-gated lower path — fixing that → 16/16 = 100%. That is the **B1–B4 map**. Recall table + integrity
 flags in `METRICS.md` (2026-08-08 run #1); Mit-local specifics gitignored in
-`.superpowers/sdd/plan-p5b-oracle-judge/oracle-run-1-findings.md`. **Next action: the deferred human
-sample-audit** (stratified toward ineligible calls + the `applied/` hard-negatives) to lift audited
-coverage ≥ 0.20 and unblock B1–B4 — it can lean on job-apps' existing signal (the `_applied/` folders are
-known-eligible; job-apps already did a one-time ground-truth audit). Do NOT build the B-slices before the
-answer key is audited. Non-blocking follow-ups recorded in D-068.
+`.superpowers/sdd/plan-p5b-oracle-judge/oracle-run-1-findings.md`.
+**AUDIT DONE VIA HISTORIC DATA, B1–B4 UNBLOCKED (D-070, 2026-08-08 — Mit declined a manual audit and said
+to use historic data).** All 17 engine-predicted-ineligible rows independently verified (16 genuine TPs +
+the 1 SpaceX FP) ⇒ precision 94% is real, not inflated. The engine calls INELIGIBLE on **0 of 50**
+`applied/` rows Mit actually applied to (zero FPs on real applications); 49 marked `label_provenance=
+"audited"` ⇒ **audited coverage 0% → 28% ≥ 0.20**. `score` still exits 1 because precision 94% < 0.95 — the
+coverage blocker is lifted, the precision blocker is not. **Next action: build the disjunctive
+experience-years fix** (`experience_years:total_years_minimum` over-fires on "N yrs + degree OR M yrs" — a
+satisfied degree-gated path must suppress the pure-experience alternative; blast radius is exactly the 1 FP,
+so the fix → 16/16 = 100% precision → **Gate P5 met**). It touches the digested engine set (re-keys the LLM
+cache), so run it in fresh context with TDD + review + `make check`; optionally pair with a deepseek
+`verdict_cache.json` cross-match (an independent different-model judge located in job-apps) to bank a
+rigorous ineligible-call audit anchor. Also found: a 2nd latent over-fire (boilerplate "N years of
+experience" tenure brags). NOTE (Mit): a skip-folder posting can be there because it EXPIRED, not for
+eligibility — folder labels carry no eligibility signal, only the JD text does. Non-blocking oracle
+follow-ups recorded in D-068.
 **Updated by:** boardwatch (Claude)
 **Repo state at write time:** all nine P0 items (0-8), P1a (the résumé artifact integrity gate —
 PROGRAM.md §3.P1 items 1, 2, 3, 3b, 4, 5), and P1b (item 3c, the Tier-B token-provenance validator, D-033)
