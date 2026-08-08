@@ -12,8 +12,11 @@ is read from the Policy type and any small word lists stay inside function bodie
 
 from __future__ import annotations
 
+import json
+import uuid
 from collections import Counter
-from typing import NoReturn, get_args
+from pathlib import Path
+from typing import Any, NoReturn, get_args
 
 import typer
 from rich.console import Console
@@ -21,6 +24,7 @@ from rich.table import Table
 from sqlalchemy import select
 
 from boardwatch.cli.context import build_context
+from boardwatch.core.settings import Settings
 from boardwatch.eligibility.catalog import FamilySpec, FieldSpec, RulesCatalog, load_rules
 from boardwatch.eligibility.engine import current_evaluations
 from boardwatch.eligibility.extract_llm import extract_and_record
@@ -32,7 +36,14 @@ from boardwatch.eligibility.facts import (
     parse_facts,
     parse_policy,
 )
+from boardwatch.eligibility.oracle import (
+    OracleVerdict,
+    apply_oracle_verdicts,
+    build_label_request,
+    read_worksheet,
+)
 from boardwatch.eligibility.preflight import current_identity, run_eligibility
+from boardwatch.eligibility.scoring import SHIP_AUDIT_COVERAGE_BAR, load_labeled_set, score
 from boardwatch.llm.cache import ResponseCache
 from boardwatch.llm.factory import build_client
 from boardwatch.llm.payload import preview_text
@@ -52,8 +63,18 @@ console = Console()
 eligibility_app = typer.Typer(no_args_is_help=True, help="Eligibility facts and severity policy.")
 facts_app = typer.Typer(invoke_without_command=True, help="Show or set your eligibility facts.")
 policy_app = typer.Typer(invoke_without_command=True, help="Show or set severity per family.")
+label_app = typer.Typer(
+    no_args_is_help=True, help="Oracle-judge labeling handshake: request/apply."
+)
 eligibility_app.add_typer(facts_app, name="facts")
 eligibility_app.add_typer(policy_app, name="policy")
+eligibility_app.add_typer(label_app, name="label")
+
+# Worksheet default: the labeled-set *.jsonl directory the label/score commands read and
+# write. Rooted under the user's own data_dir (not a repo-relative path) so multi-tenancy
+# holds — Mit's own worksheet lives in his gitignored working dir and is passed via
+# --worksheet, never hardcoded here.
+_DEFAULT_WORKSHEET_DIRNAME = "eligibility-labels"
 
 
 def _no_profile() -> NoReturn:
@@ -468,6 +489,152 @@ def abstain_cmd(ctx: typer.Context) -> None:
         )
         failed = True
     if failed:
+        raise typer.Exit(1)
+
+
+def _worksheet_dir(settings: Settings, worksheet: Path | None) -> Path:
+    return worksheet if worksheet is not None else settings.data_dir / _DEFAULT_WORKSHEET_DIRNAME
+
+
+@label_app.command("request")
+def label_request_cmd(
+    ctx: typer.Context,
+    worksheet: Path | None = typer.Option(  # noqa: B008
+        None,
+        "--worksheet",
+        help="Directory of labeled-set *.jsonl worksheets "
+        "(default {data_dir}/eligibility-labels).",
+    ),
+    out: Path | None = typer.Option(  # noqa: B008
+        None,
+        "--out",
+        help="Output path for the label request JSON (default {worksheet}/label_request.json).",
+    ),
+) -> None:
+    """Build an oracle-judge label request from every unlabeled row in the worksheet.
+
+    Reads every `*.jsonl` file in `--worksheet`, selects rows with no `expected_verdict`
+    yet, and writes one JD-blind-of-prior-guess request (`hint` dropped, per
+    `build_label_request`'s independence contract) for the judge to answer.
+    """
+    app_ctx = build_context(ctx.obj)
+    settings = app_ctx.settings
+    catalog = load_rules(settings.config_dir)
+    worksheet_dir = _worksheet_dir(settings, worksheet)
+    rows: list[dict[str, Any]] = []
+    for path in sorted(worksheet_dir.glob("*.jsonl")):
+        rows.extend(read_worksheet(path))
+    request_id = uuid.uuid4().hex
+    request = build_label_request(rows, catalog, request_id=request_id)
+    out_path = out if out is not None else worksheet_dir / "label_request.json"
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    out_path.write_text(json.dumps(request, indent=2), encoding="utf-8")
+    console.print(f"wrote {out_path}")
+    console.print(f"request_id={request_id} · {len(request['items'])} unlabeled")
+
+
+@label_app.command("apply")
+def label_apply_cmd(
+    ctx: typer.Context,
+    verdicts_path: Path = typer.Option(  # noqa: B008
+        ..., "--verdicts", help="Path to the judge's verdicts JSON (a list of verdict objects)."
+    ),
+    worksheet: Path | None = typer.Option(  # noqa: B008
+        None,
+        "--worksheet",
+        help="Directory of labeled-set *.jsonl worksheets "
+        "(default {data_dir}/eligibility-labels).",
+    ),
+) -> None:
+    """Apply oracle verdicts back into every worksheet file, preserving every other column.
+
+    Runs each verdict through the ineligible-gate (`apply_oracle_verdicts`) and rewrites
+    each `*.jsonl` worksheet file in place, one JSON object per line, same order and every
+    pre-existing key preserved (M5). Hard-negative rows (H1, `applied/` prefix) accepted as
+    `ineligible` are surfaced as a warning, not silently applied — Mit actually applied to
+    those postings, so an ineligible verdict is a red flag worth a human look.
+    """
+    app_ctx = build_context(ctx.obj)
+    settings = app_ctx.settings
+    catalog = load_rules(settings.config_dir)
+    worksheet_dir = _worksheet_dir(settings, worksheet)
+    raw_verdicts: list[dict[str, Any]] = json.loads(verdicts_path.read_text(encoding="utf-8"))
+    verdicts = [OracleVerdict(**item) for item in raw_verdicts]
+
+    total_labeled = 0
+    total_downgraded = 0
+    total_overwritten = 0
+    hard_negatives: list[str] = []
+    by_verdict: dict[str, int] = {}
+    for path in sorted(worksheet_dir.glob("*.jsonl")):
+        rows = read_worksheet(path)
+        merged_rows, result = apply_oracle_verdicts(rows, verdicts, catalog)
+        path.write_text("".join(json.dumps(row) + "\n" for row in merged_rows), encoding="utf-8")
+        total_labeled += result.labeled
+        total_downgraded += result.downgraded
+        total_overwritten += result.overwritten
+        hard_negatives.extend(result.hard_negative_ineligible)
+        for verdict_name, count in result.by_verdict.items():
+            by_verdict[verdict_name] = by_verdict.get(verdict_name, 0) + count
+
+    console.print(
+        f"labeled {total_labeled} · downgraded {total_downgraded} · "
+        f"overwritten {total_overwritten}"
+    )
+    if hard_negatives:
+        console.print(
+            f"[yellow]WARNING: hard-negative labels accepted as ineligible: "
+            f"{', '.join(hard_negatives)}[/yellow]"
+        )
+    if by_verdict:
+        console.print(
+            "by_verdict: " + ", ".join(f"{k} {v}" for k, v in sorted(by_verdict.items()))
+        )
+
+
+@eligibility_app.command("score")
+def score_cmd(
+    ctx: typer.Context,
+    worksheet: Path | None = typer.Option(  # noqa: B008
+        None,
+        "--worksheet",
+        help="Directory of labeled-set *.jsonl worksheets "
+        "(default {data_dir}/eligibility-labels).",
+    ),
+) -> None:
+    """Precision report against the human-verified labeled set (Gate P5, PROGRAM.md §3.P5).
+
+    Exits non-zero when the labeled set contains at least one reference INELIGIBLE case
+    and `meets_ship_gate()` fails — the mechanical audit drain (M1): an all-oracle,
+    zero-audit labeled set cannot ship on precision alone.
+    """
+    app_ctx = build_context(ctx.obj)
+    settings = app_ctx.settings
+    catalog = load_rules(settings.config_dir)
+    worksheet_dir = _worksheet_dir(settings, worksheet)
+    cases = load_labeled_set(worksheet_dir)
+    report = score(cases, catalog)
+
+    precision_str = f"{report.precision:.0%}" if report.precision is not None else "undefined"
+    console.print(
+        f"total {report.total} · predicted_ineligible {report.predicted_ineligible} · "
+        f"true_ineligible {report.true_ineligible}"
+    )
+    console.print(f"precision: {precision_str} · meets_gate: {report.meets_gate()}")
+    if report.span_violations:
+        console.print(f"[red]span violations: {', '.join(report.span_violations)}[/red]")
+    if report.false_positives:
+        console.print(
+            "[red]false positives: "
+            + ", ".join(f"{m.label} (expected {m.expected})" for m in report.false_positives)
+            + "[/red]"
+        )
+    console.print(f"audited: {report.audited_coverage:.0%}")
+    if report.audited_coverage < SHIP_AUDIT_COVERAGE_BAR:
+        console.print(
+            "[yellow]NOT integrity-anchored; run the audit before shipping B1-B4[/yellow]"
+        )
+    if report.is_measurable and not report.meets_ship_gate():
         raise typer.Exit(1)
 
 
