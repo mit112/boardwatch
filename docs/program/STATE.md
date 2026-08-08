@@ -1,6 +1,10 @@
 # PROGRAM STATE — read this first
 
-**Last updated:** 2026-08-08 (overnight autonomous run — **P4 items 6 AND 7 both SHIPPED to `main`**:
+**Last updated:** 2026-08-08 (P5 oracle session — **first Gate-P5 number measured: precision 94% (16/17)**,
+D-069; **audited via historic data ⇒ B1–B4 unblocked at 28% coverage**, D-070; two-stage eligibility gate
+agreed for a fresh session, D-071; model-tier benchmark agreed, D-072. All four decisions pushed to `main`.
+**The current standing + next action is the D-069→D-072 block a few paragraphs below** — read that, not this
+line, for what to do next. Earlier-session context, kept for history: **P4 items 6 AND 7 both SHIPPED to `main`**:
 item 6 keyword-coverage `58f032e`/D-061, item 7 persona-registry+de-senioritizer `1988c39`/D-063; both
 diff-reviewed + deepseek-reviewed, `make check` green (3148 passed / 95.23%). **P4 BUILD IS COMPLETE**
 (items 1–7); only Gate P4's blind-craft review remains, which is Mit's. **P5a SHIPPED** (`faf8aa9`, D-064,
