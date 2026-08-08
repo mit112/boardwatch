@@ -21,7 +21,7 @@ from boardwatch.cli.context import build_context
 from boardwatch.core.clock import utcnow
 from boardwatch.core.settings import Settings
 from boardwatch.eligibility.preflight import run_eligibility
-from boardwatch.eligibility.read import current_verdicts
+from boardwatch.eligibility.read import current_gate_verdicts, current_verdicts
 from boardwatch.extract.preflight import run_preflight
 from boardwatch.extract.taxonomy import load_taxonomy
 from boardwatch.rank.explain import why_summary
@@ -145,6 +145,15 @@ def rank_open_postings(
             stats.profile_hash,
             stats.rules_hash,
         )
+        # The agent-lane final gate (§P5, task 1/2): a separate ledger keyed on the same
+        # identity. Read-only here, fail-open by construction — a missing/uncertain/eligible
+        # gate row never changes anything, only a persisted `ineligible` does (below).
+        gate_verdicts = current_gate_verdicts(
+            conn,
+            [cv.posting_version_id for cv in versions.values()],
+            stats.profile_hash,
+            stats.rules_hash,
+        )
         new_ids = _new_posting_ids(conn) if only_new else None
     scored: list[RankedPosting] = []
     hidden_non_swe = 0
@@ -194,7 +203,10 @@ def rank_open_postings(
     hidden = 0
     hidden_below_cutoff = 0
     for posting in scored:
-        if not include_ineligible and posting.verdict == "ineligible":
+        if not include_ineligible and (
+            posting.verdict == "ineligible"
+            or gate_verdicts.get(posting.posting_id) == "ineligible"
+        ):
             hidden += 1
             continue
         if len(visible) < limit:
