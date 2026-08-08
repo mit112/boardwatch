@@ -4,9 +4,18 @@ import re
 from pathlib import Path
 
 from boardwatch.tailor.model import Bullet, Entry, Resume, SkillGroup
-from boardwatch.tailor.render import parse_bullets
 from boardwatch.tailor.render.outcome import CompileOutcome, CompileReason
 from boardwatch.tailor.render.typst import TypstRenderer
+
+# `render.parse_bullets` is now scoped to the LaTeX `\resumeItem{}` firewall (see
+# test_tailor_render_latex.py). These typst-specific tests exercise typst's own
+# `#resume-bullet(...)` escape/extract fidelity, so they use the extractor typst was built
+# against rather than the shared (now LaTeX-only) production function.
+_TYPST_BULLET = re.compile(r'#resume-bullet\("((?:[^"\\]|\\.)*)"\)')
+
+
+def _typst_bullets(source: str) -> list[str]:
+    return [m.group(1).replace('\\"', '"').replace("\\\\", "\\") for m in _TYPST_BULLET.finditer(source)]
 
 
 def R(b1: str = "Shipped JS", b2: str = "Built Python") -> Resume:
@@ -34,7 +43,7 @@ def test_bullet_fidelity_roundtrip_adversarial() -> None:
     adv = 'weird "quote" and \\ backslash and # hash and {brace}'
     r = R(b1=adv)
     src = TypstRenderer().emit(r)
-    assert parse_bullets(src) == [adv, "Built Python"]
+    assert _typst_bullets(src) == [adv, "Built Python"]
 
 
 def test_non_bullet_firewall() -> None:
@@ -85,7 +94,7 @@ def test_parse_bullets_count_excludes_preamble_definition() -> None:
     r = R()
     src = TypstRenderer().emit(r)
     total_bullets = sum(len(e.bullets) for e in r.entries)
-    assert len(parse_bullets(src)) == total_bullets
+    assert len(_typst_bullets(src)) == total_bullets
 
 
 def test_emit_section_order_is_header_education_skills_entries() -> None:

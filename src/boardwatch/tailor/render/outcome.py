@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass
 from enum import StrEnum
 from pathlib import Path
@@ -31,3 +32,6 @@ class CompileOutcome:
                 f"CompileOutcome invariant violated: {self.reason} "
                 f"pdf={self.pdf_path} page_count={self.page_count}"
             )
+
+
+CompileRunner = Callable[[Path, Path], CompileOutcome]
