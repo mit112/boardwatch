@@ -78,6 +78,13 @@ def _validate_template(text: str) -> None:
     for match in _MARKER_RE.finditer(text):
         if match.group(1) not in _ALLOWED_MARKERS:
             raise TemplateArtifactError(f"template contains unrecognized marker {match.group(0)!r}")
+    # SECTIONS is the only load-bearing marker pair: `emit()` injects the résumé body at
+    # %%SECTIONS_START%% and relies on %%SECTIONS_END%% surviving untouched. A template
+    # missing either one would silently emit zero sections instead of failing loudly.
+    if "%%SECTIONS_START%%" not in text or "%%SECTIONS_END%%" not in text:
+        raise TemplateArtifactError(
+            "template is missing required %%SECTIONS_START%%/%%SECTIONS_END%% markers"
+        )
 
 
 def resolve_template(config_dir: Path | None) -> str:

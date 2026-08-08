@@ -165,6 +165,14 @@ def test_validate_template_rejects_unrecognized_marker(tmp_path):
         resolve_template(tmp_path)
 
 
+def test_validate_template_rejects_missing_sections_markers(tmp_path):
+    from boardwatch.tailor.render.latex import TemplateArtifactError, resolve_template
+
+    (tmp_path / "resume_template.tex").write_text("NO MARKERS HERE AT ALL\n")
+    with pytest.raises(TemplateArtifactError):
+        resolve_template(tmp_path)
+
+
 def test_to_pdf_writes_tex_and_deletes_stale_pdf(tmp_path):
     from boardwatch.tailor.render.latex import LatexRenderer
     from boardwatch.tailor.render.outcome import CompileOutcome, CompileReason
