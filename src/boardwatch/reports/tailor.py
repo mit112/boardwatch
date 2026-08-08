@@ -328,7 +328,7 @@ def _plan_tier_a(
             raise NoCurrentVersionError(
                 f"posting {posting_id} is not open (status={prow.status!r})"
             )
-        jd_title = str(prow.title)
+        jd_title = str(prow.title or "")  # NULL/blank title => empty => default persona
         row = conn.execute(
             select(extractions.c.json)
             .select_from(
