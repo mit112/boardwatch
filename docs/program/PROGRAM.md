@@ -387,6 +387,17 @@ count of `INELIGIBLE` is structurally **0** (P2 item 7). The labeled set is scor
 reference policy** shipped alongside it — every family at `blocker` — so the gate measures the *rules*,
 not a user's tolerance. Mit's personal policy is then a separate, unscored instance.
 
+**Gate P5 measures INELIGIBLE precision on modeled-family hard stops only.** The deterministic engine is
+title-blind and fires only on the six catalog families (`work_auth`, `experience_years`, `clearance`,
+`degree`, `contract_not_fte`, `internship`); hard stops in unmodeled families — seniority language,
+location, role-family mismatch — are out of the engine's scope by construction, and the oracle labels
+them `uncertain` rather than force-fitting them into the nearest family.
+
+**The P5b oracle-judge labeling build slices B1–B4 are blocked until the answer key's audited coverage ≥
+`SHIP_AUDIT_COVERAGE_BAR` (default 20%)** — enforced mechanically by `boardwatch eligibility score`'s
+non-zero exit when an ineligible label exists and `meets_ship_gate()` is `False`; the oracle-only
+measurement is provisional until audited.
+
 ### P6 — Liveness and dedup
 
 1. **Posting-identity table** separate from URLs, multiple ranked identity kinds per posting; only exact
