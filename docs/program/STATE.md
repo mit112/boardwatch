@@ -1,14 +1,18 @@
 # PROGRAM STATE — read this first
 
-**Last updated:** 2026-08-08 (P5 disjunctive-fix session — **Gate P5 MET: INELIGIBLE precision 100% (16/16),
-`score` exits 0**, D-073; the disjunctive experience-years over-fire from D-069 is fixed, blast radius
+**Last updated:** 2026-08-08 (D-071b final-eligibility-gate BUILD session — the agent-lane final gate is merged
+to `main` and pushed; see the "D-071b BUILT" block below + D-074; NEXT = the D-072 benchmark. **Gate P5 MET
+still holds: INELIGIBLE precision 100% (16/16), `score` exits 0**, D-073; the disjunctive experience-years
+over-fire from D-069 is fixed, blast radius
 exactly the one SpaceX FP; the D-070 deepseek cross-match was EXECUTED and corroborates the ineligible answer
 key, zero contradictions. Prior-session decisions still stand: D-069 first number (94%), D-070 audit-via-
 historic-data + B1–B4 unblock, D-071 two-stage gate agreed, D-072 model-tier benchmark agreed.
-**Current standing + next action is the D-073 block immediately below.** The NEXT BUILD is the D-071 two-stage
-eligibility gate (recover the title-blind recall the deterministic stage abstains), then the D-072 model-tier
-benchmark — both fresh-context sessions. **UPDATE 2026-08-08 (later session): the D-071 part (b) final gate is now
-fully SPEC'd + PLANNED and review-hardened — ready to execute in a fresh session, no code written yet.** Spec:
+**UPDATE 2026-08-08 (latest session): D-071 part (b) — the agent-lane final eligibility gate — is now BUILT,
+merged to `main`, and pushed (`7f1c4c9`; `make check` green 3606 passed / 95.22%). See the "D-071b BUILT" block
+below and D-074.** The deterministic stage (D-073) plus this gate complete the two-stage design D-071 agreed.
+**NEXT BUILD = the D-072 model-tier benchmark** (reuse the 173-row answer key; it also picks this gate's default
+judge model) — fresh context. Gate P5 is UNCHANGED (still MET, D-073; the gate lane is additive and touches no
+deterministic number). Earlier planning artifacts, now executed — Spec:
 `.superpowers/sdd/p5-eligibility-decides/design-p5-final-gate.md`; plan (5 TDD tasks, real code per step):
 `.superpowers/sdd/p5-eligibility-decides/plan-p5-final-gate.md`. Two independent fresh-context reviews (Opus +
 deepseek) both returned SHIP-WITH-FIXES and converged on the SAME three issues — all resolved in the spec/plan
