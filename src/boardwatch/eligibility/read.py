@@ -9,10 +9,11 @@ export of closed tracked postings needs.
 
 from __future__ import annotations
 
-from sqlalchemy import Connection, select
+from sqlalchemy import Connection, func, select
 
 from boardwatch.eligibility.engine import current_evaluations
-from boardwatch.store.tables import posting_versions
+from boardwatch.eligibility.final_gate import GATE_VERSION_PREFIX
+from boardwatch.store.tables import eligibility_evaluations, eligibility_inputs, posting_versions
 
 
 def current_verdicts(
@@ -46,3 +47,44 @@ def current_verdicts(
         for vid in posting_version_ids
         if vid in version_to_posting
     }
+
+
+def current_gate_verdicts(
+    conn: Connection, posting_version_ids: list[int],
+    profile_hash: str | None, rules_hash: str | None,
+) -> dict[int, str | None]:
+    """posting_id -> the LATEST final-gate verdict for its current version under this identity.
+
+    Scoped to engine_kind='llm' AND engine_version LIKE 'final_gate:%' — so it never picks up the
+    advisory extract_llm lane ('llm:%'), and the deterministic read (engine_kind='deterministic')
+    never picks up either. The gate lane has no unique index; max(id) per posting_version means the
+    most recent apply wins (a re-judge overrides), which is the intended semantics.
+    """
+    if profile_hash is None or rules_hash is None or not posting_version_ids:
+        return {}
+    latest = (
+        select(eligibility_inputs.c.posting_version_id,
+               func.max(eligibility_evaluations.c.id).label("eid"))
+        .join(eligibility_inputs, eligibility_evaluations.c.input_id == eligibility_inputs.c.id)
+        .where(
+            eligibility_inputs.c.posting_version_id.in_(posting_version_ids),
+            eligibility_inputs.c.profile_hash == profile_hash,
+            eligibility_inputs.c.rules_hash == rules_hash,
+            eligibility_evaluations.c.engine_kind == "llm",
+            eligibility_evaluations.c.engine_version.like(f"{GATE_VERSION_PREFIX}%"),
+        )
+        .group_by(eligibility_inputs.c.posting_version_id)
+        .subquery()
+    )
+    rows = conn.execute(
+        select(eligibility_inputs.c.posting_version_id, eligibility_evaluations.c.verdict)
+        .join(latest, eligibility_evaluations.c.id == latest.c.eid)
+        .join(eligibility_inputs, eligibility_evaluations.c.input_id == eligibility_inputs.c.id)
+    ).all()
+    version_rows = conn.execute(
+        select(posting_versions.c.id, posting_versions.c.posting_id)
+        .where(posting_versions.c.id.in_(posting_version_ids))
+    ).all()
+    v2p = {int(r.id): int(r.posting_id) for r in version_rows}
+    return {v2p[int(r.posting_version_id)]: str(r.verdict)
+            for r in rows if int(r.posting_version_id) in v2p}

@@ -452,3 +452,46 @@ def test_llm_audit_label_uses_requirement_text_on_catalog_mismatch(
     assert view.catalog_version_matches is False
     assert view.requirements[0].label == EXPERIENCE_QUOTE  # requirement_text, never rule_id
     assert "None (catalog version" not in view.requirements[0].label
+
+
+def test_load_llm_audit_ignores_final_gate_rows(
+    engine: Engine, catalog_and_policy, cache: ResponseCache
+) -> None:
+    """Seed BOTH an extract_llm-style row ('llm:...') and a final-gate row
+    ('final_gate:...') for the same posting version, gate row written LAST (so an
+    id-desc/limit-1 read with no version scope would pick it). load_llm_audit must
+    still return the advisory (llm:%) row, never the gate row — the two lanes share
+    engine_kind='llm' but must never be conflated (D-071b's IDENTITY-JOIN concern)."""
+    from boardwatch.eligibility import final_gate
+    from boardwatch.eligibility.oracle import OracleVerdict
+
+    catalog, policy = catalog_and_policy
+    pv_id = _seed_posting_version(engine, JD_5YR, slug="acme-llm-vs-gate")
+    body = json.dumps([{"family": "experience_years", "span_quote": EXPERIENCE_QUOTE}])
+
+    with engine.begin() as conn:
+        advisory_eval_id = extract_and_record(
+            conn, posting_version_id=pv_id, jd_text=JD_5YR, facts=Facts(), policy=policy,
+            catalog=catalog, client=FakeClient(body), cache=cache,
+        )
+    assert advisory_eval_id is not None
+
+    verdict = OracleVerdict(
+        label="1", decision="ineligible", reason="experience_years",
+        evidence=EXPERIENCE_QUOTE, confidence="high",
+    )
+    with engine.begin() as conn:
+        gate_eval_id = final_gate.record_gate_verdict(
+            conn, posting_version_id=pv_id, jd_text=JD_5YR, facts=Facts(), policy=policy,
+            catalog=catalog, verdict=verdict,
+        )
+    assert gate_eval_id is not None
+    assert gate_eval_id > advisory_eval_id  # gate row is newer by id
+
+    posting_id = _posting_id_for_version(engine, pv_id)
+    with engine.connect() as conn:
+        view = load_llm_audit(conn, posting_id, catalog)
+    assert view is not None
+    # The advisory lane never writes 'ineligible' (structurally non-blocking); the gate
+    # row does. Getting 'ineligible' back here would mean the scope missed the gate row.
+    assert view.verdict != "ineligible"

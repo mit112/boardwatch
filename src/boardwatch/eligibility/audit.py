@@ -261,6 +261,9 @@ def load_llm_audit(conn: Connection, posting_id: int, catalog: RulesCatalog) -> 
         .where(
             eligibility_inputs.c.posting_version_id == current.posting_version_id,
             eligibility_evaluations.c.engine_kind == "llm",
+            # Scope to the advisory extract_llm lane's 'llm:' prefix so a final-gate row
+            # ('final_gate:...', also engine_kind='llm') is never mislabeled as advisory.
+            eligibility_evaluations.c.engine_version.like("llm:%"),
         )
         .order_by(eligibility_evaluations.c.id.desc())
         .limit(1)
