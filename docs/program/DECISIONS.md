@@ -3017,11 +3017,11 @@ question.
 **Choice.** A persistent, fail-open, additive `engine_kind='llm'` lane, versioned
 `engine_version='final_gate:<POLICY_VERSION>:<PROMPT_VERSION>'` — distinguished from the existing advisory
 `extract_llm` lane (`llm:<PROMPT_VERSION>`, no `final_gate:` prefix) purely by the version string, no new
-column or table. Built as 4 SDD tasks + 1 fix round on `p5-final-gate` (`60d7abb..1270ae9`): (1)
-`eligibility/final_gate.py::record_gate_verdict` + the scoped `eligibility/read.py::current_gate_verdicts` +
-`audit.py`'s disjoint-prefix fix; (2) `eligibility/gate_handshake.py` + `cli/eligibility_cmd.py`'s
-`eligibility gate request`/`gate apply`; (3) `cli/top_cmd.py::rank_open_postings` hides on gate-ineligible
-alongside deterministic-ineligible through one shared `hidden_ineligible` counter.
+column or table. Built via subagent-driven development on `p5-final-gate`, TDD with a review after each
+task: `eligibility/final_gate.py::record_gate_verdict` + the scoped `eligibility/read.py::current_gate_verdicts`
++ `audit.py`'s disjoint-prefix fix; `eligibility/gate_handshake.py` + `cli/eligibility_cmd.py`'s
+`eligibility gate request`/`gate apply`; `cli/top_cmd.py::rank_open_postings` hides on gate-ineligible
+alongside deterministic-ineligible through one shared `hidden_ineligible` counter; then this docs task.
 
 **The two pre-code blockers, and how each was actually verified in the build (not just designed away):**
 
@@ -3054,16 +3054,17 @@ same non-empty guard `run_eligibility` uses so a no-op invocation does not log a
 load-bearing by reverting the fix and watching the new CLI-level test fail exactly as predicted, then
 restoring it.
 
-**Why reusing `engine_kind='llm'` is migration-free, not a shortcut.** `eligibility_evaluations.engine_kind`
-carries no CHECK constraint enumerating its allowed values (only `verdict` does, per session 2's finding) —
-it is a free-text column read by equality/prefix at each call site. The two lanes that matter
-(`extract_llm`'s advisory reads, the deterministic reads) are already disambiguated by `engine_version`
-prefix wherever it counts, not by `engine_kind` alone. Disambiguating the new gate lane the same way — a
-`final_gate:` prefix, scoped in the two readers that needed it (`audit.py`, `read.py`) — required touching
-zero other call sites. A genuinely new `engine_kind` value would only be *forced* by a schema CHECK
-constraint gating that column, which does not exist; adding one anyway would mean a SQLite table rebuild
-(SQLite `ALTER TABLE` cannot add or change a CHECK constraint in place) for no behavioural gain over a
-version-string prefix.
+**Why reusing `engine_kind='llm'` is migration-free, not a shortcut.** `eligibility_evaluations` carries an
+explicit `CheckConstraint("engine_kind IN ('deterministic', 'llm')", name="engine_kind_enum")`
+(`store/tables.py:266`) — `engine_kind` is NOT free-text; only those two values are permitted. Reusing
+`'llm'` for the gate lane is migration-free precisely *because* `'llm'` is already inside that allowed set —
+the gate disambiguates itself from the existing advisory `extract_llm` lane purely via the `engine_version`
+`final_gate:` prefix, scoped in the two readers that needed it (`audit.py`, `read.py`), never by introducing
+a third `engine_kind` value. A genuinely new `engine_kind` (e.g. `'gate'`) would require *altering* that
+CHECK constraint, and SQLite cannot add or modify a table's CHECK constraint in place — Alembic would have
+to `batch_alter_table` (rebuild the table, copy every row, swap it in) to widen the enum. Disambiguating via
+`engine_version` avoids that rebuild entirely, at zero cost: every existing `engine_kind == 'llm'` predicate
+stays correct, unchanged.
 
 **Deferred, not built:** the D-072 model-tier benchmark (which will also pick this gate's default judge
 model); inline `bwd`/daily-driver wiring of `gate request`/`gate apply` into the unattended runner; a paid-API

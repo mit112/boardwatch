@@ -1142,8 +1142,9 @@ over real runs, is the honest measurement of this lane's contribution — there 
 the existing precision/recall table without conflating "judged on the live shortlist" with "judged on the
 held-out key," which is exactly the independence violation the oracle's own design forbids.
 
-**Build verification, not a gate measurement:** 4 SDD tasks + 1 fix round (`60d7abb..1270ae9`), each
-task-reviewed; commit-by-commit test counts are in `.superpowers/sdd/plan-p5-final-gate/task-*-report.md`
-(Task 1: 17 passed; Task 2 pre-fix: 8 passed, post-fix: 11 passed; Task 3: 2 passed, plus 19 passed across
-adjacent suites with no regression). `make generalization` — the docs-only gate for this task — is recorded
-in this session's commit message; the full `make check` gate is Task 5's, not this task's, per the plan.
+**Build verification, not a gate measurement:** built via subagent-driven development on `p5-final-gate`,
+TDD with a review after each task; per-task test counts are in
+`.superpowers/sdd/plan-p5-final-gate/task-*-report.md` (Task 1: 17 passed; Task 2 pre-fix: 8 passed,
+post-fix: 11 passed; Task 3: 2 passed, plus 19 passed across adjacent suites with no regression).
+`make generalization` — the docs-only gate for this task — is recorded in this session's commit message;
+the full `make check` gate is Task 5's, not this task's, per the plan.

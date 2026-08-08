@@ -94,8 +94,9 @@ contradictions) ⇒ the ineligible answer key is corroborated; 4 eligible-side f
 cheap Sonnet-class agent-lane final gate over the shortlist to recover recall: experience 1/23, contract 0/7,
 internship 0/4), then the D-072 benchmark. Both fresh-context. Answer key + oracle outputs stay Mit-local
 and gitignored — keep them out of commits.
-**D-071b BUILT (2026-08-08, later session): the final eligibility gate lane ships.** `p5-final-gate`
-(`60d7abb..1270ae9`, 4 SDD tasks + 1 fix round): `eligibility/final_gate.py::record_gate_verdict` persists an
+**D-071b BUILT (2026-08-08, later session): the final eligibility gate lane ships.** Built on `p5-final-gate`
+via subagent-driven development, TDD with a review after each task:
+`eligibility/final_gate.py::record_gate_verdict` persists an
 agent-lane judge's verdict as a new INELIGIBLE-capable `engine_kind='llm'` /
 `engine_version='final_gate:<POLICY_VERSION>:<PROMPT_VERSION>'` lane, keystone-guarded (an accepted
 ineligible with an unresolvable raw-JD span downgrades to `uncertain`, fail-open);
