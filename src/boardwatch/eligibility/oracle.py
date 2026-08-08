@@ -285,19 +285,17 @@ class ApplyResult:
 def _skip_row(row: dict[str, Any]) -> bool:
     """M4: version-aware idempotency. Never overwrite a human-audited row; never
     re-label a row already stamped by this exact oracle policy+prompt version
-    (idempotent no-op); never overwrite a hand label (a non-null verdict with no
+    (idempotent no-op) — a row with a missing or partial stamp is NOT treated as
+    current (a malformed/unstamped `oracle` row must be re-judged, not silently
+    skipped forever); never overwrite a hand label (a non-null verdict with no
     `label_provenance` at all — i.e. not previously written by this function)."""
     provenance = row.get("label_provenance")
     if provenance == "audited":
         return True
     if (
         provenance == "oracle"
-        # missing key defaults to "matches current" — accept_oracle_verdict always
-        # stamps both fields together, so a real stale row always has BOTH set to
-        # its old values; only an absent field (never previously stamped) is
-        # treated as vacuously current.
-        and row.get("oracle_policy_version", POLICY_VERSION) == POLICY_VERSION
-        and row.get("oracle_prompt_version", PROMPT_VERSION) == PROMPT_VERSION
+        and row.get("oracle_policy_version") == POLICY_VERSION
+        and row.get("oracle_prompt_version") == PROMPT_VERSION
     ):
         return True
     if row.get("expected_verdict") is not None and provenance is None:

@@ -20,6 +20,7 @@ from boardwatch.eligibility.catalog import load_rules
 from boardwatch.eligibility.oracle import (
     JUDGING_POLICY,
     POLICY_VERSION,
+    PROMPT_VERSION,
     OracleVerdict,
     OracleVerdictError,
     accept_oracle_verdict,
@@ -201,10 +202,15 @@ def _row(label, verdict=None, prov=None):
         "hint": "h",
         "company": "C",
         "title": "T",
+        "source": "s",
     }
     if prov:
         r["label_provenance"] = prov
+        # the real writer always stamps both version fields together, so the
+        # fixture must too — a fixture that only stamps one masks the strict
+        # both-fields-must-match comparison in `_skip_row`.
         r["oracle_policy_version"] = "old"
+        r["oracle_prompt_version"] = "old"
     return r
 
 
@@ -215,6 +221,7 @@ def test_apply_merges_and_preserves_columns():
     m = merged[0]
     assert m["expected_verdict"] == "ineligible" and m["label_provenance"] == "oracle"
     assert m["hint"] == "h" and m["company"] == "C" and m["title"] == "T"  # M5 survive
+    assert m["source"] == "s" and m["facts"] == {}  # M5 survive
     assert m["oracle_policy_version"] == POLICY_VERSION
     assert res.labeled == 1 and res.by_verdict["ineligible"] == 1
 
@@ -222,6 +229,7 @@ def test_apply_merges_and_preserves_columns():
 def test_apply_idempotent_skips_current_version():  # M4
     rows = [_row("skip/a", "ineligible", prov="oracle")]
     rows[0]["oracle_policy_version"] = POLICY_VERSION  # already current
+    rows[0]["oracle_prompt_version"] = PROMPT_VERSION  # already current
     v = [OracleVerdict("skip/a", "eligible", None, "", "high")]
     merged, res = apply_oracle_verdicts(rows, v, CAT)
     assert merged[0]["expected_verdict"] == "ineligible"  # untouched
@@ -229,7 +237,7 @@ def test_apply_idempotent_skips_current_version():  # M4
 
 
 def test_apply_overwrites_stale_oracle_version():  # M4
-    rows = [_row("skip/a", "ineligible", prov="oracle")]  # oracle_policy_version="old"
+    rows = [_row("skip/a", "ineligible", prov="oracle")]  # both version fields = "old"
     v = [OracleVerdict("skip/a", "eligible", None, "", "high")]
     merged, res = apply_oracle_verdicts(rows, v, CAT)
     assert merged[0]["expected_verdict"] == "eligible" and res.overwritten == 1
@@ -240,6 +248,17 @@ def test_apply_never_touches_audited():  # M4
     v = [OracleVerdict("skip/a", "eligible", None, "", "high")]
     merged, res = apply_oracle_verdicts(rows, v, CAT)
     assert merged[0]["expected_verdict"] == "ineligible" and res.overwritten == 0
+
+
+def test_apply_never_touches_human_label():  # M4 skip-condition 3
+    # a hand label: non-null expected_verdict, no label_provenance at all (never
+    # previously written by apply_oracle_verdicts) — must be skipped, not overwritten.
+    rows = [_row("skip/a", "ineligible")]
+    v = [OracleVerdict("skip/a", "eligible", None, "", "high")]
+    merged, res = apply_oracle_verdicts(rows, v, CAT)
+    assert merged[0]["expected_verdict"] == "ineligible"  # untouched
+    assert res.overwritten == 0
+    assert res.labeled == 0
 
 
 def test_apply_flags_hard_negative_ineligible():  # H1
