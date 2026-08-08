@@ -7,7 +7,20 @@ key, zero contradictions. Prior-session decisions still stand: D-069 first numbe
 historic-data + B1–B4 unblock, D-071 two-stage gate agreed, D-072 model-tier benchmark agreed.
 **Current standing + next action is the D-073 block immediately below.** The NEXT BUILD is the D-071 two-stage
 eligibility gate (recover the title-blind recall the deterministic stage abstains), then the D-072 model-tier
-benchmark — both fresh-context sessions. Earlier-session context, kept for history: **P4 items 6 AND 7 both SHIPPED to `main`**:
+benchmark — both fresh-context sessions. **UPDATE 2026-08-08 (later session): the D-071 part (b) final gate is now
+fully SPEC'd + PLANNED and review-hardened — ready to execute in a fresh session, no code written yet.** Spec:
+`.superpowers/sdd/p5-eligibility-decides/design-p5-final-gate.md`; plan (5 TDD tasks, real code per step):
+`.superpowers/sdd/p5-eligibility-decides/plan-p5-final-gate.md`. Two independent fresh-context reviews (Opus +
+deepseek) both returned SHIP-WITH-FIXES and converged on the SAME three issues — all resolved in the spec/plan
+BEFORE any code: (1) keystone-span (accept_oracle_verdict can accept an ineligible with EMPTY spans → the gate
+writer downgrades to `uncertain`, fail-open); (2) `load_llm_audit` collision (`show` would mislabel a blocking
+gate verdict as advisory → scope the existing read to `engine_version LIKE 'llm:%'`, the gate to `final_gate:%`);
+(3) identity-join (write MUST use the user's STORED policy, not the all-blocker judging policy, or the ranker
+read silently no-ops — verified `preflight` uses `build_identity`). Approach: a persistent, fail-open, additive
+agent-lane judgment lane (reuse `oracle.py` accept + the `eligibility-judge` skill over the top-N shortlist;
+persist ineligible-with-span as a versioned `engine_kind='llm'` lane; ranker hides gate-ineligibles alongside the
+deterministic lane). Migration-free, model-agnostic (the request/verdicts JSON is the provider boundary). Execute
+via `superpowers:subagent-driven-development`. Full detail: memory `[[p5-final-gate-plan-ready]]`. Earlier-session context, kept for history: **P4 items 6 AND 7 both SHIPPED to `main`**:
 item 6 keyword-coverage `58f032e`/D-061, item 7 persona-registry+de-senioritizer `1988c39`/D-063; both
 diff-reviewed + deepseek-reviewed, `make check` green (3148 passed / 95.23%). **P4 BUILD IS COMPLETE**
 (items 1–7); only Gate P4's blind-craft review remains, which is Mit's. **P5a SHIPPED** (`faf8aa9`, D-064,
