@@ -2752,3 +2752,46 @@ reconciled findings are folded into the design doc's authoritative "Review revis
 the oracle must NOT force-fit) plus mechanical-drain, normalized-provenance, reference-policy-in-request,
 version-idempotency, and raw-dict-merge fixes. No source code written this session (brainstorming
 hard-gate). Next: Mit reviews the (revised) spec → `writing-plans` → build with review gates.
+
+## D-068 — P5b answer-key oracle judge SHIPPED to `main` (agent lane, all 7 tasks)
+
+**Context.** D-067 settled the design (agent-lane oracle + deferred-but-drained audit), two-reviewed
+(Opus + deepseek-flash, both SHIP-WITH-CHANGES, findings folded in). This session executed the plan
+(`plan-p5b-oracle-judge.md`) via subagent-driven development — 7 TDD tasks, a spec+quality review after
+each, and a whole-branch final review — much of it parallelized (independent tasks in git worktrees; the
+long `make check` run controller-side in the background while reviews ran; see memory
+[[optimize-around-long-make-check]]).
+
+**Shipped (merged to `main`, `cdaafab..d322e75`, `make check` green — 3584 passed, generalization OK):**
+- `eligibility/oracle.py` (NEW): `resolve_provenance` (boolean, normalized substring + informativeness,
+  ported from job-apps `judge.py:24-58`, floor calibrated to 3 tokens so terse clearance/citizenship stops
+  survive), `span_of` (best-effort literal offset, tolerates None), `accept_oracle_verdict` (the four-ANDed
+  ineligible-gate: in-catalog reason ∧ high confidence ∧ verified provenance, else **downgrade to
+  uncertain** — fail-open), `JUDGING_POLICY` (multi-tenant, facts-driven, H2 no-force-fit), `read_worksheet`
+  / `build_label_request` (excludes `hint`, ships the reference all-blocker `policy`), `apply_oracle_verdicts`
+  (version-aware idempotency, raw-dict merge preserving columns, `applied/` hard-negative flag).
+- `eligibility/scoring.py`: `label_provenance` on `LabeledCase`, `audited_coverage` on `PrecisionReport`,
+  `meets_ship_gate` + `SHIP_AUDIT_COVERAGE_BAR=0.20` — the MECHANICAL audit drain.
+- `cli/eligibility_cmd.py`: `eligibility label request` / `label apply` / `score` (score exits non-zero
+  when a true ineligible label exists and `not meets_ship_gate()`); shared `_require_worksheet_dir` guard.
+- `.claude/skills/eligibility-judge/SKILL.md` (NEW); `PROGRAM.md` §3.P5 checkable gate line + reframe.
+
+**Reviews.** Each task got a spec+quality review; Task 4 (a version-default that masked a malformed row —
+keystone anti-pattern) and Task 6 (missing-worksheet-dir quiet false-success) each took one fix round +
+scoped re-review. The whole-branch review (opus, fresh context) returned **SHIP-AS-IS**: every H1/H2/M1–M6
+item landed and is tested; all safety properties (fail-open downgrade, non-circularity, mechanical drain,
+closed catalog, idempotency + H1) hold end to end; no Critical/Important cross-cutting defects. All 13
+deferred minors triaged — none must-fix-now.
+
+**Non-blocking follow-ups (recorded, not done):** de-personalize `SKILL.md` (it names Mit — multi-tenancy
+principle, [[boardwatch-program-generalized-vs-personal]]); interpolate the family list in `JUDGING_POLICY`
+prose from the catalog (drift risk; the derived `policy.families`/`is_allowed_reason` stay correct
+regardless); surface an "N unmatched" count in `label apply`; pin the 3-token calibration with a real test.
+**Forward-compat gap (intentional):** the M4 version-bump re-judge isn't reachable end-to-end —
+`build_label_request` selects only null-verdict rows, so a `POLICY_VERSION` bump can't regenerate request
+items for already-labeled oracle rows until a "stale-oracle-version" selection clause is wired
+(acknowledged in `oracle.py`).
+
+**Next.** Run the oracle over the 173-row worksheet (Mit-local: `boardwatch eligibility label request` →
+the `eligibility-judge` skill → `label apply`) → first Gate-P5 measurement via `boardwatch eligibility
+score`. B1–B4 stay blocked until the deferred human sample-audit lifts audited coverage ≥ the bar.

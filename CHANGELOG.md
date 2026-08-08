@@ -8,6 +8,23 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- **P5b answer-key oracle judge — agent lane, no API key** (D-068). An AI oracle produces the Gate-P5
+  answer key (`expected_verdict` ∈ eligible/ineligible/uncertain + spans) through a 3-step CLI handshake
+  driven by the user's own Claude Code — the `eligibility-judge` skill — mirroring the P7b subscription lane:
+  `boardwatch eligibility label request` writes a JD+facts request (excludes the `hint`; ships the reference
+  all-blocker policy) → the skill judges each row → `boardwatch eligibility label apply` re-runs a
+  deterministic provenance + four-ANDed routability gate (`eligibility/oracle.py::accept_oracle_verdict`)
+  that **downgrades any unverified oracle `ineligible` to `uncertain`** (fail-open — a false INELIGIBLE
+  never enters ground truth), merges results back preserving all worksheet columns, and flags any `applied/`
+  hard-negative the oracle called `ineligible`. Non-circular: the oracle reads JD + facts only, never the
+  deterministic engine's verdict; the closed reason catalog is the 6 `rules.yaml` families. `resolve_provenance`
+  is ported from job-apps with the informativeness floor calibrated (3 tokens) so terse clearance/citizenship
+  stops survive. The deferred human audit's drain is **mechanical**, not a printed warning:
+  `PrecisionReport.audited_coverage` + `meets_ship_gate()` + `boardwatch eligibility score`'s non-zero exit
+  block shipping B1–B4 until audited coverage ≥ `SHIP_AUDIT_COVERAGE_BAR` (0.20); `PROGRAM.md` §3.P5 carries
+  the checkable gate line + the "modeled-family hard stops only" reframe. Built as 7 TDD tasks, each
+  task-reviewed, with a whole-branch review (SHIP-AS-IS). `make check` green (3584 passed).
+
 - **P5b B0 scaffolding — the Gate-P5 precision scorer + reference policy** (D-065). `eligibility/scoring.py`
   measures the P5 gate without shipping any verdict-changing rule: `reference_all_blocker_policy(catalog)`
   (a code constant setting every catalog family to `blocker`, per PROGRAM.md:384 — auto-covers future B4

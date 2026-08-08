@@ -1003,3 +1003,24 @@ EAD holder — precision-safe, a real recall gap (a B4 data point).
 **Gate P5 status:** still NOT measurable — no answer key yet. **D-066 pivot (Mit):** the answer key will be
 **AI-oracle-produced + human-audited on a sample** via a **port of job-apps' LLM judge+gate flow**, as its
 own dedicated session (not hand-labeled). B1–B4 remain gated on that answer key.
+
+---
+
+## Session — 2026-08-08 (P5b oracle judge shipped, D-068)
+
+The P5b answer-key oracle judge shipped to `main` (`cdaafab..d322e75`) across 7 TDD tasks, built via
+subagent-driven development with a review after each task + a whole-branch opus review (SHIP-AS-IS). No new
+bundled data file (the oracle + reference policy are code), so no SHIPPED_DATA/inventory change.
+
+| Gate run | Passed | Adds |
+|---|---|---|
+| Task 1 | 3558 | oracle provenance gate + best-effort span |
+| Task 2 | 3567 | accept_oracle_verdict (four-ANDed fail-open gate) |
+| Tasks 3+5 (batched) | 3573 | JUDGING_POLICY/request builder + scorer audit drain |
+| Task 4 (+fix) | 3578 | apply (version-aware merge); strict-version fix |
+| Tasks 6-fix + 7 | 3582 | CLI missing-dir guard + eligibility-judge skill |
+| Final (6+7 combined) | 3584 | whole-branch review = SHIP-AS-IS |
+
+Coverage held ~95.2% throughout; generalization OK at every gate. **The Gate-P5 precision NUMBER is not yet
+measured** — it requires running the oracle over Mit's local 173-row worksheet (a Mit-local step). B1–B4
+remain blocked until audited coverage ≥ SHIP_AUDIT_COVERAGE_BAR (0.20).
