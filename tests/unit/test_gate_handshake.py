@@ -383,3 +383,33 @@ def test_gate_apply_cli_writes_a_non_null_run_id_matching_the_minted_run(
     assert eval_rows
     assert all(row.run_id == minted_run_id for row in eval_rows)
 
+def test_gate_apply_cli_warns_when_verdicts_exceed_top(tmp_path: Path, monkeypatch) -> None:
+    """Minor fix: a verdicts file wider than --top is truncated silently unless warned."""
+    monkeypatch.setenv("BOARDWATCH_CONFIG_DIR", str(tmp_path / "cfg"))
+    monkeypatch.delenv("GITHUB_ACTIONS", raising=False)
+    data_dir = tmp_path / "data"
+    assert _run(data_dir, ["init"], INIT_INPUT).exit_code == 0
+    engine = get_engine(data_dir)
+    with engine.begin() as conn:
+        posting_id, _pv_id = seed_posting_version(conn, body_text="We seek an Eng.", slug="one")
+        posting_id_2, _pv_id_2 = seed_posting_version(
+            conn, body_text="We seek another Eng.", slug="two"
+        )
+
+    verdicts_path = tmp_path / "verdicts.json"
+    verdicts_path.write_text(
+        f'[{{"label": "{posting_id}", "decision": "eligible", "reason": null, '
+        f'"evidence": "", "confidence": "high"}}, '
+        f'{{"label": "{posting_id_2}", "decision": "eligible", "reason": null, '
+        f'"evidence": "", "confidence": "high"}}]',
+        encoding="utf-8",
+    )
+
+    result = _run(
+        data_dir,
+        ["eligibility", "gate", "apply", "--verdicts", str(verdicts_path), "--top", "1"],
+    )
+
+    assert result.exit_code == 0, result.output
+    assert "1 verdicts beyond --top 1 ignored" in result.output
+    assert "judged 1" in result.output

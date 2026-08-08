@@ -699,6 +699,11 @@ def gate_apply_cmd(
     facts = parse_facts(profile_row.eligibility_facts_json)
     policy = parse_policy(profile_row.eligibility_policy_json)
     raw_verdicts: list[dict[str, Any]] = json.loads(verdicts_path.read_text(encoding="utf-8"))
+    truncated = len(raw_verdicts) - top
+    if truncated > 0:
+        console.print(
+            f"[yellow]{truncated} verdicts beyond --top {top} ignored[/yellow]"
+        )
     verdicts = [OracleVerdict(**item) for item in raw_verdicts[:top]]
 
     with app_ctx.engine.connect() as conn:
