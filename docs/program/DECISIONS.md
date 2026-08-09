@@ -3143,3 +3143,72 @@ list. **0** INELIGIBLE verdicts lack a span. Per-rule abstain rate, with `not_ap
 item 7's non-`work_auth` severity assignment (still owner-gated) and the onboarding gatherer that produces
 REAL per-user field content — now a named, addressable build item, PROGRAM.md §3.P2 item 8, which also
 inherits the deferred "three different verdicts" clause. See PROGRAM.md §3.P2 and STATE.md.
+
+---
+
+## D-076 — P2 item 4's final whole-branch review: what it caught, and four rulings it forced
+
+**2026-08-09 · P2 item 4, final review + merge session.** Branch `feat/p2-item4-field-tier` merged to
+`main` as `8edd631`; `make check` green on the merged tree (3636 passed / 95.23% / exit 0), verified by
+tree hash to be the same tree the pre-merge gate ran on.
+
+**Context.** Tasks 1–4 each had a per-task review and came back clean. **Tasks 5 and 6 were batched and
+got no task-level review**, on the reasoning that the pending final review would cover them. Two
+fresh-context reviews ran before merge: a whole-branch code review and a separate docs-claims review.
+
+**What the final review caught that six task-level passes did not.** A **CRITICAL**: `not_applicable` was
+threaded into both report *callers* but into neither funnel *renderer*. A field-tier family therefore
+reached the rate branch with `abstain_rate=None` — `TypeError` in the Markdown renderer, and in the JSON
+a rule reading `never_fired=false / fully_abstaining=false / abstain_rate=null` while silently vanishing
+from the `never_fired` census. Because `pipeline/runner.py` downgrades a funnel-write failure to a printed
+warning, the observable symptom was **not** a crash but a half-written artifact pair (`funnel-<id>.json`
+present, `.md` missing) on the P0 gate artifact. This is `ABSTAIN` folded into a neighbour, in the one
+artifact whose purpose is to prevent that.
+
+**The process lesson, which is the durable part.** The integration test that would have caught it had been
+deferred as a minor with the rationale *"dead-for-bundled; only matters if a field-tier family ships."*
+That rationale was wrong in a way worth naming: **"inert for shipped defaults" is not "unreachable."** All
+six bundled families are `tier: profile`, so no default install could reach the code — but any user
+`rules.yaml` override reclassifying a family to `tier: field` reached it immediately, and that override is
+precisely the multi-tenancy path the feature exists to enable. **Triage a deferred minor by reachability
+under any supported user input, not by whether the shipped defaults exercise it** — and be most suspicious
+when the untested path is the one the feature was built to enable. Corollary, since it is what created the
+gap: batching tasks without a per-task review does not remove risk, it relocates all of it onto the final
+review. Both deferred minors were re-triaged to fix-now and shipped in the same wave.
+
+**The keystone was re-verified adversarially and held.** The reviewer was asked to falsify Task 3's earlier
+clean verdict rather than confirm it, and could not: `field_applicability` is written **default-deny** —
+the three positive cases are explicit and everything else falls through to `abstain` — so `None`, `""`, an
+out-of-vocabulary value, and any future unforeseen value can only abstain. Verified across every caller of
+`evaluate` and both downstream rewrite stages. One residual, recorded as a monitoring gap and not a verdict
+gap: the stage-1 conflict rewrite can overwrite the `missing_profile_field:career_field` *rationale*, though
+never the `UNKNOWN` disposition.
+
+**Four rulings taken.**
+
+1. **`ARTIFACT_VERSION` stays 3.** Both prior bumps (1→2, 2→3) signalled new top-level *sections*, and
+   D-031 sets the precedent for declining a bump on non-structural change. The only in-repo consumer
+   (`cli/verify_cmd.py`) reads four named keys and never the version, so it tolerates additive keys by
+   construction. Recorded caveat: this change does shift the *meaning* of the existing `abstain.never_fired`
+   aggregate, which no default install can observe.
+2. **Declined to enforce `not_applicable ⇒ observed == 0` with an assert.** Three independent mechanisms
+   entail it (`evaluate` drops skip families before detection; counts are scoped to an identity whose hash
+   covers `career_field`; LLM-lane rows carry `rule_id=None`), so an assert would be error handling for an
+   impossible case, which this file's engineering defaults forbid. The entailment is recorded in a comment
+   at the point where widening the report's scope would break it.
+3. **D-075 was edited in place rather than corrected by a successor entry.** Append-only protects the
+   *shipped* record; D-075 had never been on `main`, so a correcting entry would have documented a decision
+   no reader had ever seen. This is the narrow exception, not a general licence: once an entry is on `main`
+   it is immutable.
+4. **`pipeline/runner.py:443-446` left as-is, pending an owner ruling.** Swallowing a funnel-write failure
+   into a printed warning is what converted this `TypeError` into a silent half-written artifact, and it
+   will hide the next renderer bug the same way. It is also plausibly a deliberate fail-open — do not kill
+   a finished run over a report. **OPEN QUESTION for Mit**, not a defect fixed by fiat.
+
+**Also corrected, from the docs review.** `STATE.md`'s phase-status table declared P2/P3/P4/P5 "not
+started" a thousand lines below a header declaring Gate P2 met, and claimed P1a/P1b were unmerged when
+`64ca75c` merged them; the four applicability cases were misnamed and omitted the keystone-relevant
+out-of-vocab abstain; `CHANGELOG.md` and `METRICS.md` — the files this repo makes authoritative for what
+shipped and where gates are checked — had never been updated. All fixed. The fix round then received its
+own scoped re-review per D-021 (a fix inherits none of the reviewed status of what it repairs), which ran
+ten mutations, all caught, and returned no Critical or Important findings.

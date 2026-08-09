@@ -1,7 +1,9 @@
 # PROGRAM STATE — read this first
 
-**Last updated:** 2026-08-08 (P2 item 4 — **the career-field field-tier MECHANISM is merged and shipped;
-Gate P2 is MET AS RECONCILED, D-075**).
+**Last updated:** 2026-08-09 (P2 item 4 — **the career-field field-tier MECHANISM is merged and shipped;
+Gate P2 is MET AS RECONCILED, D-075**). The final whole-branch review and the fix wave it forced are
+recorded in **D-076**, which also carries the four rulings taken at merge and the one **open question** it
+deliberately left to Mit (the funnel-write swallow — see "Open questions").
 
 **What shipped.** The eligibility catalog gained a required per-family `tier`
 (`universal|profile|field`), a flat `applies_to`, and a closed top-level `career_fields` list;
@@ -1095,7 +1097,19 @@ been green at exit 0 on every commit, and the runs before the incident succeeded
 
 ## Open questions
 
-**None.** The run-key question was **ratified by Mit as option (b), pipeline run, on 2026-08-06** — see
+**1. Should `pipeline/runner.py:443-446` keep swallowing a funnel-write failure into a printed warning?**
+Raised by P2 item 4's final review (D-076) and **not** resolved there. It is what turned a renderer
+`TypeError` into a *silent half-written artifact pair* — `funnel-<id>.json` written, `.md` missing, run
+still exit 0 — on the P0 gate artifact. The crash itself is fixed, but the swallow will hide the next
+renderer bug identically. It is also defensible as a deliberate fail-open: do not kill a finished run over
+a report. The fail-safe direction is chosen per gate and these legitimately differ, so this is Mit's call,
+not a defect to fix by fiat. Options: leave it; make it fatal; or keep it non-fatal but surface it in the
+run's `errors` so `verify`/`doctor` can see the artifact is incomplete.
+
+**2. Should any family other than `work_auth` default to `blocker` severity** (e.g. `clearance`)? Carried
+from P2 item 7, owner-gated since D-035. Unchanged by item 4.
+
+The run-key question was **ratified by Mit as option (b), pipeline run, on 2026-08-06** — see
 **D-016**. Do not re-litigate it. Its analysis is kept below because the rejected options carry the reasons.
 
 ### 1. What is a "run"? — RESOLVED 2026-08-06 (D-016): a pipeline run
