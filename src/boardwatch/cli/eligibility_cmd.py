@@ -26,7 +26,7 @@ from sqlalchemy import select
 from boardwatch.cli.context import build_context
 from boardwatch.core.settings import Settings
 from boardwatch.eligibility.catalog import FamilySpec, FieldSpec, RulesCatalog, load_rules
-from boardwatch.eligibility.engine import current_evaluations
+from boardwatch.eligibility.engine import current_evaluations, not_applicable_field_families
 from boardwatch.eligibility.extract_llm import extract_and_record
 from boardwatch.eligibility.facts import (
     Facts,
@@ -435,7 +435,13 @@ def abstain_cmd(ctx: typer.Context) -> None:
         )
         eval_ids = [eval_id for eval_id, _ in evals.values()]
         counts = count_requirement_dispositions(conn, eval_ids)
-    report = build_abstain_report(catalog, counts)
+        profile_row = get_profile(conn)
+    na = (
+        not_applicable_field_families(parse_facts(profile_row.eligibility_facts_json), catalog)
+        if profile_row is not None
+        else frozenset()
+    )
+    report = build_abstain_report(catalog, counts, not_applicable_families=na)
 
     table = Table(title="per-rule abstain rate")
     # Fold rather than ellipsize: at 80 columns rich truncates rule_ids to a common prefix,
@@ -448,7 +454,9 @@ def abstain_cmd(ctx: typer.Context) -> None:
     table.add_column("abstained", justify="right")
     table.add_column("rate", justify="right")
     for rule in report.rules:
-        if rule.never_fired:
+        if rule.not_applicable:
+            rate, style = "not applicable", "dim"
+        elif rule.never_fired:
             # Not "0%" — the rule produced no rows, so there is no rate to report.
             rate, style = "never fired", "yellow"
         elif rule.fully_abstaining:

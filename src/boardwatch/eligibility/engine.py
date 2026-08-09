@@ -126,6 +126,16 @@ def field_applicability(family: FamilySpec, career_field: str | None, catalog: R
     return "abstain"
 
 
+def not_applicable_field_families(facts: Facts, catalog: RulesCatalog) -> frozenset[str]:
+    """Field-tier families that a report must show as `not_applicable` rather than
+    `never_fired` for THIS profile — i.e. those whose career_field applicability is `skip`."""
+    return frozenset(
+        family.id
+        for family in catalog.families
+        if field_applicability(family, facts.career_field, catalog) == "skip"
+    )
+
+
 def evaluate(
     body_text: str, facts: Facts, policy: Policy, catalog: RulesCatalog
 ) -> EvaluationResult:
