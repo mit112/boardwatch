@@ -1,6 +1,12 @@
 # PROGRAM STATE — read this first
 
-**Last updated:** 2026-08-08 (P2 item 4 SESSION — the career-field three-tier taxonomy mechanism ships;
+**Last updated:** 2026-08-08 (P2 item 4 SESSION — the career-field three-tier taxonomy mechanism is **BUILT on
+branch `feat/p2-item4-field-tier` (7 commits `cb75111..9f466c6`, `make check` GREEN 3625 passed / 95.10%;
+per-task reviews clean for tasks 1–4, tasks 5–6 covered by the pending final review). NOT yet merged to `main`
+— the final whole-branch review + merge is the ONLY remaining step, deferred to a fresh session per Mit
+(package prebuilt at `.superpowers/sdd/p2-item4-field-tier/review-cb75111..9f466c6.diff`; dispatch on the most
+capable model, triage the 2 deferred minors in that workspace's `progress.md`, then
+`superpowers:finishing-a-development-branch`). Do NOT re-run tasks 1–6.** Once merged the mechanism ships and
 **Gate P2 is MET-AS-RECONCILED, see D-075.** Catalog schema gained `tier`/`applies_to`/`career_fields`;
 `Facts.career_field` is set, hashed into the verdict cache key, and CLI-surfaced (`eligibility facts set
 career_field`, prompted in both `init` and `profile edit`, shown in `facts` display); the engine gates
