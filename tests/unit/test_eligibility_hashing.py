@@ -5,7 +5,9 @@ content always must."""
 from pathlib import Path
 
 import pytest
+from sqlalchemy import insert, select
 
+from boardwatch.core.clock import utcnow
 from boardwatch.eligibility.catalog import load_rules
 from boardwatch.eligibility.facts import ClearanceFact, Facts, Policy, WorkAuthFact
 from boardwatch.eligibility.hashing import (
@@ -16,6 +18,15 @@ from boardwatch.eligibility.hashing import (
     verify_identity,
 )
 from boardwatch.eligibility.resolve import declared_fields
+from boardwatch.store.db import ensure_schema, get_engine
+from boardwatch.store.eligibility import _get_or_create_input
+from boardwatch.store.tables import (
+    companies,
+    eligibility_inputs,
+    jobs,
+    posting_versions,
+    postings,
+)
 
 
 def test_key_order_never_changes_the_canonical_form() -> None:
@@ -272,6 +283,56 @@ def test_career_field_changes_the_input_fingerprint(tmp_path: Path) -> None:
     b = _identity(tmp_path, facts=FACTS.model_copy(update={"career_field": "data"}))
     assert a.input_fingerprint != b.input_fingerprint
     assert a.profile_hash != b.profile_hash
+
+
+def test_two_career_fields_persist_as_two_distinct_input_rows(tmp_path: Path) -> None:
+    """A moved fingerprint is not the same claim as the LEDGER holding two rows.
+
+    _get_or_create_input dedupes on input_fingerprint ALONE and keeps the FIRST snapshot,
+    so if career_field ever fell out of the hashed payload the second run would silently
+    reuse the first run's audit row: one immutable, un-updatable row attributed to the
+    wrong profile. Asserted through the real insert path, not through digest().
+    """
+    engine = get_engine(tmp_path / "data")
+    ensure_schema(engine)
+    now = utcnow()
+    with engine.begin() as conn:
+        company_id = int(conn.execute(insert(companies).values(
+            name="Acme", provider="greenhouse", slug="acme", source="user", watched=True,
+        )).inserted_primary_key[0])
+        job_id = int(
+            conn.execute(insert(jobs).values(created_at=now)).inserted_primary_key[0]
+        )
+        posting_id = int(conn.execute(insert(postings).values(
+            company_id=company_id, job_id=job_id, provider_posting_id="p-1", title="Eng",
+            normalized_title="eng", first_seen_at=now, last_seen_at=now, status="open",
+            consecutive_missing=0, content_hash="h1", body_text="b",
+        )).inserted_primary_key[0])
+        version_id = int(conn.execute(insert(posting_versions).values(
+            posting_id=posting_id, content_hash="h1", body_text="b", captured_at=now,
+            run_id=None, capture_reason="new",
+        )).inserted_primary_key[0])
+
+    ids: list[int] = []
+    for career_field in ("software", "data"):
+        identity = _identity(
+            tmp_path,
+            posting_version_id=version_id,
+            facts=FACTS.model_copy(update={"career_field": career_field}),
+        )
+        with engine.begin() as conn:
+            ids.append(_get_or_create_input(
+                conn, posting_version_id=version_id,
+                profile_hash=identity.profile_hash,
+                profile_snapshot=identity.profile_snapshot,
+                rules_hash=identity.rules_hash, rules_snapshot=identity.rules_snapshot,
+                input_fingerprint=identity.input_fingerprint,
+            ))
+    assert ids[0] != ids[1]
+    with engine.connect() as conn:
+        rows = conn.execute(select(eligibility_inputs.c.profile_snapshot_json)).all()
+    assert len(rows) == 2
+    assert sorted(r[0]["fields"]["career_field"] for r in rows) == ["data", "software"]
 
 
 def test_the_declared_map_in_this_module_matches_the_real_registry() -> None:

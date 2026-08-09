@@ -216,7 +216,18 @@ def load_rules(config_dir: Path) -> RulesCatalog:
     else:
         if not isinstance(raw_career_fields, list):
             raise CatalogError(f"{origin}: 'career_fields' must be a list")
-        values = [str(v).strip() for v in raw_career_fields]
+        values: list[str] = []
+        for entry in raw_career_fields:
+            # Same silent class as negation_cues and _consumed_cues: an unquoted `no` is a
+            # YAML 1.1 boolean, so str(False) would admit the career field "False", which no
+            # user could ever type to match. A closed vocabulary rejects it instead.
+            if not isinstance(entry, str):
+                raise CatalogError(
+                    f"{origin}: career_fields entry {entry!r} loaded as "
+                    f"{type(entry).__name__}, not a string. QUOTE it: unquoted "
+                    "no/yes/on/off/true/false are YAML booleans"
+                )
+            values.append(entry.strip())
         if any(v == "" for v in values):
             raise CatalogError(f"{origin}: 'career_fields' has a blank entry")
         if len(set(values)) != len(values):
@@ -316,7 +327,16 @@ def _family(
             raise CatalogError(
                 f"{where} is a field-tier family and must declare a non-empty 'applies_to'"
             )
-        applies_to = frozenset(str(v).strip() for v in raw_applies_to)
+        for entry in raw_applies_to:
+            # An unquoted `no` is a YAML 1.1 boolean; str(False) would silently name the
+            # career field "False", which is outside any closed career_fields vocabulary.
+            if not isinstance(entry, str):
+                raise CatalogError(
+                    f"{where}: applies_to entry {entry!r} loaded as {type(entry).__name__}, "
+                    "not a string. QUOTE it: unquoted no/yes/on/off/true/false are YAML "
+                    "booleans"
+                )
+        applies_to = frozenset(entry.strip() for entry in raw_applies_to)
         if "" in applies_to:
             raise CatalogError(f"{where}: 'applies_to' has a blank entry")
     else:

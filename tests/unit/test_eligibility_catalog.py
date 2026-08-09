@@ -374,7 +374,29 @@ def test_applies_to_outside_career_fields_is_rejected(tmp_path: Path) -> None:
 
 def test_career_fields_with_blank_or_duplicate_is_rejected(tmp_path: Path) -> None:
     _write(tmp_path, MINIMAL + "\ncareer_fields: [software, software]\n")
-    with pytest.raises(CatalogError, match="career_fields"):
+    with pytest.raises(CatalogError, match="duplicate entry"):
+        load_rules(tmp_path)
+    _write(tmp_path, MINIMAL + '\ncareer_fields: ["", software]\n')
+    with pytest.raises(CatalogError, match="blank entry"):
+        load_rules(tmp_path)
+
+
+def test_career_fields_with_a_non_string_entry_is_rejected(tmp_path: Path) -> None:
+    """Prototype finding 59's class, in the newest list: an unquoted `no` is a YAML 1.1
+    boolean, so a coercing parser would admit the career field "False" and the user could
+    then never type a value that matches the closed vocabulary."""
+    _write(tmp_path, MINIMAL + "\ncareer_fields: [software, no]\n")
+    with pytest.raises(CatalogError, match="career_fields entry"):
+        load_rules(tmp_path)
+
+
+def test_applies_to_with_a_non_string_entry_is_rejected(tmp_path: Path) -> None:
+    """The same coercion on the other new list. Without the guard the entry becomes
+    "False", which is outside career_fields, so the failure surfaces as a confusing
+    membership error about a value nobody wrote."""
+    body = MINIMAL.replace("tier: profile", "tier: field\n    applies_to: [software, no]")
+    _write(tmp_path, body + "\ncareer_fields: [software]\n")
+    with pytest.raises(CatalogError, match="applies_to entry"):
         load_rules(tmp_path)
 
 
