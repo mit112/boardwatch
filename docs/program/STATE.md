@@ -1,6 +1,23 @@
 # PROGRAM STATE — read this first
 
-**Last updated:** 2026-08-08 (D-071b final-eligibility-gate BUILD session — the agent-lane final gate is merged
+**Last updated:** 2026-08-08 (P2 item 4 SESSION — the career-field three-tier taxonomy mechanism ships;
+**Gate P2 is MET-AS-RECONCILED, see D-075.** Catalog schema gained `tier`/`applies_to`/`career_fields`;
+`Facts.career_field` is set, hashed into the verdict cache key, and CLI-surfaced (`eligibility facts set
+career_field`, prompted in both `init` and `profile edit`, shown in `facts` display); the engine gates
+field-tier families through all four applicability cases (active-and-applicable / active-and-not-applicable
+/ inactive-catalog-narrower / missing-career_field-abstain) with a keystone abstain, and `not_applicable` is
+distinguished from `never_fired` in the report-only abstain view. **The evidence is TEST FIXTURES
+representing gathered career-field content, not a live run** — D-054 forbids authoring field-specific
+taxonomy content ourselves; that is onboarding-gathered per user. Gate P2's original "three DIFFERENT
+verdicts" clause was unsatisfiable under Mit's scope (only `blocker` families move a verdict — `work_auth` is
+the only blocker default, D-035; `career_field` decides nothing without authored field content); D-075
+reconciles it to three *individually correct* verdicts (which may coincide) plus the ≥3-`career_fields`
+mechanism demonstrated via fixtures (active routing, skip, and keystone abstain). **Remaining, explicitly NOT
+done this session:** item 7's non-`work_auth` severity assignment (should `clearance` etc. also default to
+`blocker`?) stays owner-gated; the onboarding gatherer that produces REAL per-user field content is the next
+field-tier phase. Gate P5's standing is UNCHANGED and the prior session's header follows below.**
+
+**Prior session, 2026-08-08 (D-071b final-eligibility-gate BUILD session — the agent-lane final gate is merged
 to `main` and pushed; see the "D-071b BUILT" block below + D-074; NEXT = the D-072 benchmark. **Gate P5 MET
 still holds: INELIGIBLE precision 100% (16/16), `score` exits 0**, D-073; the disjunctive experience-years
 over-fire from D-069 is fixed, blast radius
@@ -157,9 +174,9 @@ Much of P2 was already built (INELIGIBLE spans, the 4-table evidence chain, and 
 exist). **Shipped this session (all merged, reviewed, `make check` green):**
 - **item 2 — `needs_sponsorship` bit** (D-034): orthogonal bit on `WorkAuthFact`, sponsorship-rules only.
 - **item 7 — `work_auth: blocker` by default** (D-035): the other five families stay `preference` (opt-in).
-  **Gate P2 headline is now 2/3 met** — a fresh F-1/OPT profile → decisive INELIGIBLE-with-span on a
-  no-sponsorship JD; a citizen → eligible on the same JD (proven by shipped-default `Policy()` tests). The
-  3rd profile (non-SWE) needs item 4.
+  A fresh F-1/OPT profile → decisive INELIGIBLE-with-span on a no-sponsorship JD; a citizen → eligible on
+  the same JD (proven by shipped-default `Policy()` tests). Non-`work_auth` severity assignment (e.g.
+  should `clearance` also default to `blocker`?) remains owner-gated — not built this session.
 - **item 3 — keystone invariant machine-enforced**: `tests/unit/test_keystone_invariant.py` iterates the
   resolver registry and asserts every family × every pattern (all 33) abstains on empty `Facts()` — a new
   family/pattern that forgets to abstain now fails the gate. (Typed `AbstainReason` enum deferred — ~15
@@ -168,7 +185,11 @@ exist). **Shipped this session (all merged, reviewed, `make check` green):**
   chain exists; and item 6's honesty gap is now closed (D-036) — a typed `VerdictPresentation` renders an
   eligible verdict as *cleared* (all rows met), *mixed* (non-met but non-blocking rows — never claims those
   cleared), or *no rule applied* (zero rows / residue). Presentation-only; verdict/engine unchanged.
-- **item 4 (taxonomy) is the ONLY remaining P2 item — awaits Mit** (see below).
+- **item 4 (taxonomy) SHIPPED** — catalog `tier`/`applies_to`/`career_fields` + `Facts.career_field`,
+  gated engine routing across all four applicability cases, `not_applicable` reporting, and the CLI
+  surfaces (`facts set`, `init`, `profile edit`, `facts` display). **Gate P2 is MET-AS-RECONCILED (D-075)**
+  — see the header above. Not built: the onboarding gatherer that supplies REAL per-user field content
+  (next field-tier phase), and item 7's non-`work_auth` severity assignment (still owner-gated).
 
 **P3 (unattended one-command runner) is now DECOMPOSED and building** —
 `.superpowers/sdd/p3-unattended-runner/design.md`. Grounded exploration found the foundation exists (single
@@ -249,11 +270,11 @@ stance is now documented. **Test half REMAINS:** a real cross-process/cross-OS c
 field is speculative hardening with unclear payoff (schema changes are rare and arrive with value changes
 that already re-key `profile_hash`). Build it only if a concrete need appears.
 
-**STILL AWAITS MIT (the one fail-dangerous decision left):** item 4 — the taxonomy shape:
-a lightweight `applies_when.career_field` family gate + a `career.field` fact (recommended, minimal
-multi-tenancy, unblocks the 3rd Gate-P2 profile) vs the full universal/profile/field 3-way split. Also open
-(lower urgency): should any other family (esp. `clearance`) also default to `blocker`? Prior catalog WIP to
-review first: `.agent/p2-catalog/` (a reviewed oracle `proto.py` + alternate rules snapshots).
+**item 4's taxonomy-shape decision is RESOLVED and SHIPPED** (the lightweight `tier`/`applies_to` family gate
++ `career_field` fact, not the full universal/profile/field 3-way split) — this is no longer open. **STILL
+AWAITS MIT:** should any other family (esp. `clearance`) also default to `blocker`, beyond `work_auth`
+(D-035)? Prior catalog WIP, now superseded by the shipped mechanism: `.agent/p2-catalog/` (a reviewed oracle
+`proto.py` + alternate rules snapshots).
 **Remaining P2a (fail-safe, building autonomously):** item 3 keystone enforcement (a cross-resolver property
 test "empty facts ⇒ every rule abstains" + a typed in-memory abstain reason — NOT a blanket wrapper, which
 would break multi-input alternatives like `degree`; no DB migration), facts `schema_version`, guards.

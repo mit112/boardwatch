@@ -242,11 +242,16 @@ inputs=("total_years_experience",))`. What is missing is *enforcement* and *repo
    (`experience_years`, `clearance`, `degree`, `contract_not_fte`, `internship`) remain `preference` —
    they are false-skip-risky and stay opt-in pending Mit's decision.
 
-**Gate P2:** the same JD evaluated against **three** profiles (F-1 OPT new-grad SWE / US-citizen senior
-SWE / non-SWE field) yields three different and individually correct verdicts; Mit's profile returns a
-decisive **INELIGIBLE with a quoted span** on a JD containing "we are unable to sponsor work visas"
-(today: returns nothing); **0** rules in the catalog lack a declared-field list; **0** INELIGIBLE verdicts
-lack a span; per-rule abstain rate reported for all rules.
+**Gate P2 (reconciled, D-075):** the same JD evaluated against **three** profiles (F-1 OPT new-grad SWE /
+US-citizen senior SWE / non-SWE field) yields three **individually correct** verdicts, which **may coincide**
+on a generic JD — only `work_auth` ships `default_policy: blocker` (D-035), so divergence beyond that one
+family depends on content the field mechanism cannot manufacture by itself; the field-tier mechanism is
+demonstrated across **≥3** `career_fields` via test fixtures representing gathered career-field output, not
+a live run (D-054 forbids authoring field content ourselves) — covering active routing, skip-for-a-valid-
+other-field, and keystone abstain; Mit's profile returns a decisive **INELIGIBLE with a quoted span** on a
+JD containing "we are unable to sponsor work visas" (already met, D-035); **0** rules in the catalog lack a
+declared-field list; **0** INELIGIBLE verdicts lack a span; per-rule abstain rate reported for all rules,
+with `not_applicable` distinguished from `never_fired`.
 
 ### P3 — One command, unattended (live gap closed)
 
