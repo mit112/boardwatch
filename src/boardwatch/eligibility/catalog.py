@@ -37,13 +37,14 @@ import yaml
 
 from boardwatch.eligibility.facts import Policy
 
-CATALOG_REVISION = 1
+CATALOG_REVISION = 2
 
 _SCOPES = frozenset({"sentence", "clause"})
 _REQUIREDNESS = frozenset({"required", "preferred", "bonus"})
 _POLICIES = frozenset({"blocker", "preference", "ignore"})
 _ANSWER_TYPES = frozenset({"bool", "int", "choice", "structured"})
 _FIELD_TYPES = frozenset({"bool", "int", "choice", "choice_set"})
+_TIERS = frozenset({"universal", "profile", "field"})
 
 
 class CatalogError(ValueError):
@@ -118,6 +119,8 @@ class FamilySpec:
     exclusive_groups: tuple[frozenset[str], ...]
     patterns: tuple[PatternSpec, ...]
     superset_relations: tuple[dict[str, str], ...]
+    tier: str
+    applies_to: frozenset[str]
 
     @property
     def ranks(self) -> dict[str, int]:
@@ -135,6 +138,7 @@ class RulesCatalog:
     negation_cues: tuple[str, ...]
     version: str
     source: str  # "override" | "bundled"
+    career_fields: frozenset[str]
 
     def family(self, family_id: str) -> FamilySpec:
         for candidate in self.families:
@@ -206,6 +210,18 @@ def load_rules(config_dir: Path) -> RulesCatalog:
             )
     cues = tuple(raw_cues)
     idioms = _regex_list(document.get("negation_cue_idioms"), origin, "negation_cue_idioms")
+    raw_career_fields = document.get("career_fields")
+    if raw_career_fields is None:
+        career_fields: frozenset[str] = frozenset()
+    else:
+        if not isinstance(raw_career_fields, list):
+            raise CatalogError(f"{origin}: 'career_fields' must be a list")
+        values = [str(v).strip() for v in raw_career_fields]
+        if any(v == "" for v in values):
+            raise CatalogError(f"{origin}: 'career_fields' has a blank entry")
+        if len(set(values)) != len(values):
+            raise CatalogError(f"{origin}: 'career_fields' has a duplicate entry")
+        career_fields = frozenset(values)
 
     families: list[FamilySpec] = []
     seen_families: set[str] = set()
@@ -222,7 +238,14 @@ def load_rules(config_dir: Path) -> RulesCatalog:
         negation_cues=cues,
         version=_version_of(document),
         source=source,
+        career_fields=career_fields,
     )
+    for family in catalog.families:
+        if family.tier == "field" and not family.applies_to <= career_fields:
+            outside = ", ".join(sorted(family.applies_to - career_fields))
+            raise CatalogError(
+                f"{origin}: family {family.id!r} applies_to values not in career_fields: {outside}"
+            )
     _verify_families_are_wired(catalog, origin)
     return catalog
 
@@ -282,6 +305,27 @@ def _family(
     if not label:
         raise CatalogError(f"{where} is missing 'label'")
 
+    tier = str(raw.get("tier", "")).strip()
+    if not tier:
+        raise CatalogError(f"{where} is missing 'tier'")
+    if tier not in _TIERS:
+        raise CatalogError(f"{where} has unknown tier {tier!r}")
+    raw_applies_to = raw.get("applies_to")
+    if tier == "field":
+        if not isinstance(raw_applies_to, list) or not raw_applies_to:
+            raise CatalogError(
+                f"{where} is a field-tier family and must declare a non-empty 'applies_to'"
+            )
+        applies_to = frozenset(str(v).strip() for v in raw_applies_to)
+        if "" in applies_to:
+            raise CatalogError(f"{where}: 'applies_to' has a blank entry")
+    else:
+        if raw_applies_to is not None:
+            raise CatalogError(
+                f"{where}: only a field-tier family may declare 'applies_to', not a {tier!r} one"
+            )
+        applies_to = frozenset()
+
     fields = _fields(raw.get("fields"), where, answer_type)
     vocabulary = raw.get("implies_vocabulary")
     if not isinstance(vocabulary, list) or not vocabulary:
@@ -314,6 +358,7 @@ def _family(
         default_policy=default_policy, question=question, fields=fields,
         implies_vocabulary=declared, exclusive_groups=groups, patterns=tuple(patterns),
         superset_relations=tuple(relations),
+        tier=tier, applies_to=applies_to,
     )
 
 

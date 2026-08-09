@@ -36,6 +36,7 @@ negation_cues: ["not"]
 families:
   - id: degree
     label: Degree
+    tier: profile
     fact: highest_degree
     answer_type: choice
     default_policy: preference
@@ -69,6 +70,7 @@ negation_cue_idioms:
 families:
   - id: degree
     label: Degree
+    tier: profile
     fact: highest_degree
     answer_type: choice
     default_policy: preference
@@ -332,6 +334,56 @@ def test_an_exclusive_implies_value_may_not_appear_in_two_groups(tmp_path: Path)
         load_rules(tmp_path)
 
 
+def test_family_missing_tier_is_rejected(tmp_path: Path) -> None:
+    body = MINIMAL.replace("    tier: profile\n", "")  # drop the tier line
+    _write(tmp_path, body)
+    with pytest.raises(CatalogError, match="tier"):
+        load_rules(tmp_path)
+
+
+def test_family_unknown_tier_is_rejected(tmp_path: Path) -> None:
+    _write(tmp_path, MINIMAL.replace("tier: profile", "tier: galaxy"))
+    with pytest.raises(CatalogError, match="unknown tier"):
+        load_rules(tmp_path)
+
+
+def test_field_tier_family_without_applies_to_is_rejected(tmp_path: Path) -> None:
+    body = MINIMAL.replace("tier: profile", "tier: field")  # field tier, no applies_to
+    _write(tmp_path, body + "\ncareer_fields: [software]\n")
+    with pytest.raises(CatalogError, match="applies_to"):
+        load_rules(tmp_path)
+
+
+def test_non_field_tier_family_with_applies_to_is_rejected(tmp_path: Path) -> None:
+    body = MINIMAL.replace(
+        "tier: profile", "tier: profile\n    applies_to: [software]"
+    )
+    _write(tmp_path, body + "\ncareer_fields: [software]\n")
+    with pytest.raises(CatalogError, match="only a field-tier family"):
+        load_rules(tmp_path)
+
+
+def test_applies_to_outside_career_fields_is_rejected(tmp_path: Path) -> None:
+    body = MINIMAL.replace(
+        "tier: profile", "tier: field\n    applies_to: [nursing]"
+    )
+    _write(tmp_path, body + "\ncareer_fields: [software]\n")
+    with pytest.raises(CatalogError, match="career_fields"):
+        load_rules(tmp_path)
+
+
+def test_career_fields_with_blank_or_duplicate_is_rejected(tmp_path: Path) -> None:
+    _write(tmp_path, MINIMAL + "\ncareer_fields: [software, software]\n")
+    with pytest.raises(CatalogError, match="career_fields"):
+        load_rules(tmp_path)
+
+
+def test_bundled_families_are_all_profile_tier(tmp_path: Path) -> None:
+    catalog = load_rules(tmp_path / "no-override")  # bundled
+    assert {f.tier for f in catalog.families} == {"profile"}
+    assert catalog.career_fields == frozenset({"software"})
+
+
 def test_the_bundled_text_is_readable_without_a_config_dir() -> None:
     assert "families:" in bundled_rules_text()
-    assert CATALOG_REVISION == 1
+    assert CATALOG_REVISION == 2
