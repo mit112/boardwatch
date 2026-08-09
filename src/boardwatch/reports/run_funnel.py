@@ -1197,6 +1197,11 @@ def funnel_to_markdown(funnel: RunFunnel) -> str:
     for rule in funnel.abstain.rules:
         # FIRST, exactly as `eligibility abstain` orders it: a not-applicable rule has zero
         # rows, so every later branch either mislabels it or formats a None rate and raises.
+        # Zero rows is not enforced, it is entailed by the report's scope: `evaluate` drops
+        # skip families before detection, the counts are scoped to an identity whose hash
+        # covers career_field, and LLM-lane rows carry rule_id=None. Widen that scope (a
+        # run-scoped or historical abstain report) and a rule could be both not-applicable
+        # and non-empty, landing in two census buckets and printing over a real rate.
         if rule.not_applicable:
             rate = "not applicable"
         elif rule.never_fired:
