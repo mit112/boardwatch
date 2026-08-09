@@ -112,8 +112,10 @@ EXPECTED_INIT_PROMPTS: tuple[tuple[str, str, str | None], ...] = (
     ("prompt", '"Exclude titles (comma separated, blank for none)"', '""'),
     ("prompt", '"Locations (comma separated, blank for none)"', '""'),
     ("confirm", '"Remote only?"', "False"),
-    # Task 11: the three catalog-driven eligibility prompts. Two prompt call sites plus one
-    # confirm cover every family, so this count stays constant as the catalog grows (D-P2-8).
+    # Task 11: the catalog-driven eligibility prompts. Two prompt call sites plus one confirm
+    # cover every family, so this count stays constant as the catalog grows (D-P2-8); the
+    # `career_field` prompt below is a single catalog-scalar, likewise constant as its
+    # vocabulary grows.
     # The policy default is the NAME family.default_policy, so no user value is pinned here.
     ("confirm", '"Set up eligibility checks now?"', "False"),
     ("prompt", 'f"Your career field [{field_hint}]"', '""'),

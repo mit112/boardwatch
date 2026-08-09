@@ -77,6 +77,8 @@ def init(ctx: typer.Context) -> None:
     # Eligibility is optional and comes AFTER persist_profile: profile.text is NOT NULL, so
     # facts cannot be written before the row exists (§4.6). Exactly TWO prompt call sites plus
     # one confirm drive every family, so R11's pin stays constant as the catalog grows (D-P2-8).
+    # A third prompt sets `career_field`, which is a single catalog-scalar, not per-family — it
+    # is one prompt whatever the size of `career_fields`, so the pin stays constant there too.
     if typer.confirm("Set up eligibility checks now?", default=False):
         rules_catalog = load_rules(app_ctx.settings.config_dir)
         facts, policy = Facts(), Policy()

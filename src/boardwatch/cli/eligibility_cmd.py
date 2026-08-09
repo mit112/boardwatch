@@ -491,6 +491,7 @@ def abstain_cmd(ctx: typer.Context) -> None:
 
     console.print(
         f"{len(report.rules)} rules · {len(report.never_fired)} never fired · "
+        f"{len(report.not_applicable)} not applicable · "
         f"{len(report.fully_abstaining)} fire but never decide · "
         f"{report.total_rows} rows across {len(evals)} evaluations"
     )

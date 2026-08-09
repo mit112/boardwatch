@@ -50,6 +50,11 @@ def _requirement_for_span(span: GroundedSpan, facts: Facts) -> RequirementItem:
     from the span's own quote, compared against `facts.total_years_experience`. Every
     other family is `unknown` with no support, detected but not judged.
     """
+    # Deliberately NOT gated on `field_applicability`: this lane consults no severity policy
+    # either (an `ignore`d family still gets a row here), writes only `engine_kind='llm'` rows
+    # with `rule_id=None`, and cannot reach `ineligible`. So when a real field-tier family
+    # ships, a span under a family the profile's career_field excludes still surfaces here —
+    # as advisory text, never as a verdict. That is the lane separation, not an oversight.
     jd_locator = {"field": "body_text", "span": [span.span[0], span.span[1]]}
     if span.family == _EXPERIENCE_YEARS_FAMILY:
         match = re.search(r"(\d{1,2})\s*\+?\s*(?:years|yrs)", span.quote)

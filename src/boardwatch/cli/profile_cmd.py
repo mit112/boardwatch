@@ -145,7 +145,7 @@ def edit(ctx: typer.Context) -> None:
         resume_max_pages=resume_max_pages,
     )
 
-    # The same three eligibility prompts as init, so the feature is reachable on an existing
+    # The same four eligibility prompts as init, so the feature is reachable on an existing
     # install. Seeded from the stored facts and policy, so a skipped answer keeps the current
     # value rather than clearing it. persist_profile never touches the eligibility columns.
     catalog = load_rules(app_ctx.settings.config_dir)
