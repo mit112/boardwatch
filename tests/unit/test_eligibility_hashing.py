@@ -263,7 +263,15 @@ def test_ranking_only_profile_fields_are_never_hashed(tmp_path: Path) -> None:
     assert set(fields) == {  # type: ignore[arg-type]
         "work_authorization", "total_years_experience", "security_clearance", "highest_degree",
         "employment_type_preference", "internship_preference",
+        "career_field",  # engine-gated (not resolver-declared) — hashed unconditionally, per B1
     }
+
+
+def test_career_field_changes_the_input_fingerprint(tmp_path: Path) -> None:
+    a = _identity(tmp_path, facts=FACTS.model_copy(update={"career_field": "software"}))
+    b = _identity(tmp_path, facts=FACTS.model_copy(update={"career_field": "data"}))
+    assert a.input_fingerprint != b.input_fingerprint
+    assert a.profile_hash != b.profile_hash
 
 
 def test_the_declared_map_in_this_module_matches_the_real_registry() -> None:

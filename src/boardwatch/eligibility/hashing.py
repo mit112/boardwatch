@@ -87,9 +87,13 @@ def build_identity(
     for family_id, severity in materialised.items():
         if severity != "ignore":
             enabled.update(declared_fields.get(family_id, ()))
-    profile_snapshot: dict[str, object] = {
-        "fields": {name: payload.get(name) for name in sorted(enabled)}
-    }
+    fields: dict[str, object] = {name: payload.get(name) for name in sorted(enabled)}
+    # career_field gates field-tier families in the ENGINE, so no resolver declares it and it
+    # would never enter `enabled`. Include it UNCONDITIONALLY: over-inclusion only ever adds
+    # fingerprint sensitivity (safe), and the CATALOG_REVISION 1->2 bump re-keys everyone once
+    # regardless. Omitting it is the stale-verdict class this discipline exists to prevent.
+    fields["career_field"] = payload.get("career_field")
+    profile_snapshot: dict[str, object] = {"fields": fields}
     rules_snapshot: dict[str, object] = {
         "catalog_version": catalog.version,
         "catalog_source": catalog.source,
