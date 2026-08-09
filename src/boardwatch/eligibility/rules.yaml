@@ -1,5 +1,7 @@
 version: 1
 
+career_fields: [software]
+
 # Cues that flip a clause's polarity. A detection is DROPPED when a cue occurs in its
 # unit OUTSIDE the matched span; a pattern that consumes its own negation survives.
 # Contractions are spelled out one by one on purpose. A single "n't" cue is UNREACHABLE:
@@ -67,6 +69,7 @@ negation_cue_idioms:
 families:
   - id: work_auth
     label: Work authorization
+    tier: profile
     fact: work_authorization
     answer_type: structured
     # D-035: work_auth is the sole family whose SHIPPED default is `blocker`, not
@@ -296,6 +299,7 @@ families:
 
   - id: experience_years
     label: Years of experience
+    tier: profile
     fact: total_years_experience
     answer_type: int
     default_policy: preference
@@ -410,6 +414,7 @@ families:
 
   - id: clearance
     label: Security clearance
+    tier: profile
     fact: security_clearance
     answer_type: structured
     default_policy: preference
@@ -628,6 +633,7 @@ families:
 
   - id: degree
     label: Degree
+    tier: profile
     fact: highest_degree
     answer_type: choice
     default_policy: preference
@@ -893,6 +899,7 @@ families:
   # which is a separate design pass (design doc §5.2).
   - id: contract_not_fte
     label: Employment type
+    tier: profile
     fact: employment_type_preference
     answer_type: choice
     default_policy: preference
@@ -1054,6 +1061,7 @@ families:
 
   - id: internship
     label: Internships
+    tier: profile
     fact: internship_preference
     answer_type: choice
     default_policy: preference

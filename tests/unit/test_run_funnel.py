@@ -525,6 +525,48 @@ def test_a_rule_that_never_fired_serialises_as_null_rather_than_zero() -> None:
     assert all(r["never_fired"] is True for r in others)
 
 
+def test_a_field_tier_rule_that_does_not_apply_renders_as_not_applicable() -> None:
+    """A field-tier family skipped for THIS profile's career_field is correctly scoped out —
+    not dead — and the artifact has to say which of the two it is.
+
+    Both halves regressed before this test existed. The Markdown reached the rate branch and
+    formatted a `None` rate, and because `write_run_funnel` writes the JSON first the failure
+    surfaced as a half-written artifact pair rather than a crash. The JSON carried no flag at
+    all, so the rule read as `never_fired: false, abstain_rate: null` — folded into the noise
+    the keystone invariant forbids folding an abstain into.
+    """
+    cat = catalog()
+    skipped = "clearance"
+    report = funnel(
+        abstain=build_abstain_report(cat, {}, not_applicable_families=frozenset({skipped}))
+    )
+    skipped_ids = [p.rule_id for f in cat.families if f.id == skipped for p in f.patterns]
+    assert skipped_ids, "the fixture family declares no rules to scope out"
+
+    body = funnel_to_markdown(report)
+    # Scoped to the skipped family's OWN table rows. The section explains itself in English
+    # and the phrase recurs in its census line and prose, so a bare substring check would
+    # pass on the commentary alone.
+    rows = {
+        line.split("|")[1].strip(): line.rsplit("|", 2)[-2].strip()
+        for line in body.splitlines()
+        if line.startswith("| ") and rule_id_prefix(line, skipped_ids)
+    }
+    assert set(rows) == set(skipped_ids), f"a scoped-out rule went unrendered: {set(rows)}"
+    assert set(rows.values()) == {"not applicable"}, rows
+    # The census must still partition the catalog: not-applicable is in neither of the other
+    # two buckets, so omitting it makes the three numbers stop adding up.
+    census = next(line for line in body.splitlines() if "rules in the catalog" in line)
+    assert f"{len(skipped_ids)} not applicable to this field" in census
+
+    abstain = funnel_to_dict(report)["abstain"]
+    rules = {r["rule_id"]: r for r in abstain["rules"]}  # type: ignore[index]
+    assert all(rules[rule_id]["not_applicable"] is True for rule_id in skipped_ids)
+    assert all(rules[rule_id]["never_fired"] is False for rule_id in skipped_ids)
+    assert abstain["not_applicable"] == len(skipped_ids)  # type: ignore[index]
+    assert abstain["never_fired"] == abstain["rule_count"] - len(skipped_ids)  # type: ignore[index]
+
+
 def test_the_unattributable_population_is_reported_as_its_own_number() -> None:
     """D-019's invariant is only checkable if the artifact states the number every run.
 

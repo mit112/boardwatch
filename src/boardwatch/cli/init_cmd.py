@@ -7,7 +7,7 @@ import typer
 from rich.console import Console
 
 from boardwatch.cli.context import build_context
-from boardwatch.cli.eligibility_cmd import set_fact, set_policy
+from boardwatch.cli.eligibility_cmd import set_career_field, set_fact, set_policy
 from boardwatch.cli.profile_cmd import persist_profile, split_csv
 from boardwatch.core.board_urls import UnknownBoardURL, parse_board_target
 from boardwatch.eligibility.catalog import load_rules
@@ -77,9 +77,22 @@ def init(ctx: typer.Context) -> None:
     # Eligibility is optional and comes AFTER persist_profile: profile.text is NOT NULL, so
     # facts cannot be written before the row exists (§4.6). Exactly TWO prompt call sites plus
     # one confirm drive every family, so R11's pin stays constant as the catalog grows (D-P2-8).
+    # A third prompt sets `career_field`, which is a single catalog-scalar, not per-family — it
+    # is one prompt whatever the size of `career_fields`, so the pin stays constant there too.
     if typer.confirm("Set up eligibility checks now?", default=False):
         rules_catalog = load_rules(app_ctx.settings.config_dir)
         facts, policy = Facts(), Policy()
+        if rules_catalog.career_fields:
+            field_hint = ", ".join(sorted(rules_catalog.career_fields))
+            while True:
+                answer = typer.prompt(f"Your career field [{field_hint}]", default="")
+                if not answer.strip():
+                    break
+                try:
+                    facts = set_career_field(facts, rules_catalog, answer.strip())
+                    break
+                except typer.BadParameter as exc:
+                    console.print(exc.message)
         for family in rules_catalog.families:
             for field_spec in family.fields:
                 # Compose the choice hint outside the f-string: a nested-quote f-string

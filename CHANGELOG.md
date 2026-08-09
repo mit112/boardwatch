@@ -22,6 +22,29 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- **Field-tier eligibility taxonomy — the `career_field` routing mechanism** (P2 item 4, D-075). The
+  eligibility catalog now carries the three-tier vocabulary `CLAUDE.md` asks for as versioned *data*: every
+  family declares a required `tier` (`universal | profile | field`), a field-tier family declares a flat
+  `applies_to` list, and `rules.yaml` declares a closed top-level `career_fields` vocabulary. `CATALOG_REVISION`
+  goes **1 → 2**, so every cached verdict re-keys once on upgrade. `Facts.career_field` is validated against
+  that closed vocabulary and hashed **unconditionally** into `profile_hash` — it is not a resolver input, so
+  `build_identity` hashes it explicitly rather than via `declared_fields`, and a career-field change can never
+  silently reuse a stale verdict. It is settable and visible everywhere a fact should be: `boardwatch
+  eligibility facts set career_field <value>` (rejecting out-of-vocabulary values with the valid list),
+  prompted during `boardwatch init` and `boardwatch profile edit`, and shown in the `eligibility facts`
+  display. `engine.field_applicability` routes each family three ways — **active** (not field-tier, or the
+  profile's field is in `applies_to`), **skip** (the profile's field is a valid *other* catalog field, so the
+  family is genuinely irrelevant and produces no rows), and **abstain** (the field is missing *or*
+  out-of-catalog ⇒ `missing_profile_field:career_field`, the keystone: never a silent clear). The field-abstain
+  branch is evaluated **before** the posting-waive branch, so a JD that would otherwise waive a requirement
+  cannot convert an unresolvable profile into a pass. `not_applicable` is **report-only**: `eligibility
+  abstain` and the run funnel now distinguish a family that is inapplicable to this profile from one that
+  never fired, and no such disposition is ever persisted. All six bundled families ship `tier: profile` and
+  the bundled `career_fields` is `[software]`, so **bundled behaviour is unchanged** apart from the one-time
+  cache re-key; multi-field routing is exercised by test fixtures (controlled catalogs with 2–3 declared
+  fields), not by a live run, because D-054 gathers non-tech field content per user at onboarding rather than
+  authoring it here. `make check` green (3636 passed, coverage 95.23%).
+
 - **Final eligibility gate — a persistent, agent-lane check over the live shortlist** (D-074). A second,
   standing eligibility lane distinct from the one-time P5 answer-key labeling pass: `boardwatch eligibility
   gate request [--top N] [--out]` builds a JD-blind request from the ranked shortlist (the same request

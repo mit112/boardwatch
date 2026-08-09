@@ -1148,3 +1148,32 @@ TDD with a review after each task; per-task test counts are in
 post-fix: 11 passed; Task 3: 2 passed, plus 19 passed across adjacent suites with no regression).
 `make generalization` — the docs-only gate for this task — is recorded in this session's commit message;
 the full `make check` gate is Task 5's, not this task's, per the plan.
+
+---
+
+## Gate P2 — 2026-08-08 · field-tier mechanism (P2 item 4, D-075). **MET AS RECONCILED**
+
+**No live run exercised the field routing.** The bundled catalog declares exactly one career field
+(`career_fields: [software]`) and all six bundled families are `tier: profile`, so on real data
+`field_applicability` returns `active` for every family on every posting — there is no branch for a live run
+to take. Everything below marked *fixture* is measured by constructing a controlled catalog in-process
+(`tests/unit/test_eligibility_engine.py::_field_catalog`, which reclassifies bundled families to `tier: field`
+over a `["software", "data", "design"]` vocabulary, drift-safe because it starts from `bundled_rules_text()`).
+This is deliberate, per D-054: non-tech field content is gathered per user at onboarding, never authored here.
+
+| Gate P2 clause | Value | Source |
+|---|---|---|
+| `career_fields` exercised | **3** (`software`, `data`, `design`) — *fixture* | `test_three_field_active_routing` (each field routes its own family `active`, the other two `skip`) |
+| Applicability cases covered | **4 of 4**, plus a non-field family staying always-active — *fixture* | `test_field_applicability_four_cases`: `active` / `skip` (valid other field) / `abstain` on missing / `abstain` on out-of-vocab |
+| Keystone abstain reason | `missing_profile_field:career_field`, disposition `unknown` — *fixture* | `test_missing_career_field_abstains_not_clears`, `test_out_of_vocab_career_field_abstains_not_clears` |
+| Field-abstain beats posting-waive | held on a genuine collision — *fixture* | `test_field_abstain_wins_a_genuine_collision_with_posting_waive` |
+| **Families** lacking a declared-field list | **0 of 6** | Every catalog family has a registered resolver declaring its `inputs`, enforced both directions by `resolve.verify_registry` and forward by `catalog._verify_families_are_wired`. Note this is per-*family* (6), not per-*rule* (the pattern count is much larger) |
+| INELIGIBLE verdicts lacking a span | **0** | `tests/pipeline/test_ineligible_span_gate.py` — a corpus-wide property over every `ineligible` case in the shared oracle corpus, asserting a blocking row whose span is present, well-ordered and slices a non-empty quote |
+| Decisive INELIGIBLE-with-span on a sponsorship JD | already met (D-035) | `work_auth` is the sole shipped `default_policy: blocker` |
+| Per-rule abstain rate, `not_applicable` ≠ `never_fired` | reported | `boardwatch eligibility abstain` + the run funnel (`not_applicable` is report-only, never persisted) |
+| `make check` | **exit 0 · 3636 passed · coverage 95.23%** | controller-verified on the final tree, after the review fix wave |
+
+**Deferred, not retired:** the original "three profiles → three **different** verdicts" clause. Only
+`work_auth` ships `blocker` severity, so nothing else can move a verdict and `career_field` only routes;
+divergence needs gathered field content that can carry blocker severity. The clause is now a gate clause of
+PROGRAM.md §3.P2 **item 8**, the onboarding gatherer (D-075(a)).

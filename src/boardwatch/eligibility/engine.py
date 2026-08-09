@@ -24,7 +24,7 @@ from pathlib import Path
 
 from sqlalchemy import Connection, select
 
-from boardwatch.eligibility.catalog import RulesCatalog
+from boardwatch.eligibility.catalog import FamilySpec, RulesCatalog
 from boardwatch.eligibility.detect import Detection, detect, jd_locator
 from boardwatch.eligibility.facts import Facts, Policy
 from boardwatch.eligibility.hashing import InputIdentity, verify_identity
@@ -108,13 +108,50 @@ class _Staged:
     support: tuple[SupportItem, ...]
 
 
+def field_applicability(family: FamilySpec, career_field: str | None, catalog: RulesCatalog) -> str:
+    """How a family relates to the profile's career field.
+
+    "active"  — not a field-tier family, or the field is in scope: evaluate normally.
+    "skip"    — field-tier, career_field is a VALID field this family does not apply to: the
+                family is genuinely irrelevant (verdict-equivalent to the user's own `ignore`).
+    "abstain" — field-tier and career_field is MISSING or NOT a catalog value: unresolvable, so
+                the keystone requires ABSTAIN, never a silent clear.
+    """
+    if family.tier != "field":
+        return "active"
+    if career_field in family.applies_to:
+        return "active"
+    if career_field in catalog.career_fields:
+        return "skip"
+    return "abstain"
+
+
+def not_applicable_field_families(facts: Facts, catalog: RulesCatalog) -> frozenset[str]:
+    """Field-tier families that a report must show as `not_applicable` rather than
+    `never_fired` for THIS profile — i.e. those whose career_field applicability is `skip`."""
+    return frozenset(
+        family.id
+        for family in catalog.families
+        if field_applicability(family, facts.career_field, catalog) == "skip"
+    )
+
+
 def evaluate(
     body_text: str, facts: Facts, policy: Policy, catalog: RulesCatalog
 ) -> EvaluationResult:
     severity = catalog.materialised_policy(policy)
+    applicability = {
+        family_id: field_applicability(catalog.family(family_id), facts.career_field, catalog)
+        for family_id in severity
+    }
     enabled = frozenset(
-        family_id for family_id, choice in severity.items() if choice != "ignore"
+        family_id
+        for family_id, choice in severity.items()
+        if choice != "ignore" and applicability[family_id] != "skip"
     )
+    # Field-tier families whose career_field is missing/unresolvable stay enabled so they
+    # DETECT, then every detection abstains (keystone) — never silently cleared.
+    field_abstain = frozenset(fid for fid in enabled if applicability[fid] == "abstain")
     detections = detect(body_text, catalog, enabled_families=enabled)
 
     # ---- per detection: an abstain escape ELSEWHERE in the posting may waive it, so the row
@@ -122,7 +159,11 @@ def evaluate(
     # `eligible` by silence, the worse direction (proto.evaluate, detect.abstained).
     staged: list[_Staged] = []
     for detection in detections:
-        if detection.abstained is not None:
+        if detection.family in field_abstain:
+            staged.append(
+                _Staged(detection, UNKNOWN, "missing_profile_field:career_field", ())
+            )
+        elif detection.abstained is not None:
             staged.append(
                 _Staged(
                     detection,

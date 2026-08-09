@@ -20,7 +20,13 @@ from sqlalchemy import Engine, select
 
 from boardwatch.core.settings import Settings
 from boardwatch.eligibility.catalog import load_rules
-from boardwatch.eligibility.engine import ENGINE_KIND, current_evaluations, engine_version
+from boardwatch.eligibility.engine import (
+    ENGINE_KIND,
+    current_evaluations,
+    engine_version,
+    not_applicable_field_families,
+)
+from boardwatch.eligibility.facts import parse_facts
 from boardwatch.eligibility.preflight import current_identity
 from boardwatch.reports.abstain import AbstainReport, build_abstain_report
 from boardwatch.reports.manifest import config_hash, profile_row_hash
@@ -98,9 +104,12 @@ def collect_run_funnel(
 
     with engine.connect() as conn:
         identity = current_identity(conn, settings)
+        profile_row = get_profile(conn)
         if identity is None:
             corpus = _corpus_without_profile(count_open_postings(conn))
-            abstain: AbstainReport = build_abstain_report(catalog, {})
+            abstain: AbstainReport = build_abstain_report(
+                catalog, {}, not_applicable_families=frozenset()
+            )
         else:
             profile_hash, rules_hash = identity
             corpus = count_corpus(
@@ -118,7 +127,13 @@ def collect_run_funnel(
                 conn, [cv.posting_version_id for cv in versions.values()], *identity
             )
             counts = count_requirement_dispositions(conn, [eid for eid, _ in evals.values()])
-            abstain = build_abstain_report(catalog, counts)
+            # `identity` came from `current_identity`, which only returns non-None when a
+            # profile row exists — so the profile is guaranteed here.
+            assert profile_row is not None
+            na = not_applicable_field_families(
+                parse_facts(profile_row.eligibility_facts_json), catalog
+            )
+            abstain = build_abstain_report(catalog, counts, not_applicable_families=na)
 
         # Per board (P0 item 3). Passed the identity rather than the two hashes so a run with
         # no profile reports every board's `eligible` as 0 without a second code path.
@@ -135,7 +150,6 @@ def collect_run_funnel(
         unattributed = count_unattributed_evaluations(conn)
         provenance = lead_provenance(conn, posting_ids)
         stub_postings = count_stub_postings(conn)
-        profile_row = get_profile(conn)
         row = conn.execute(
             select(runs.c.started_at, runs.c.finished_at, runs.c.status).where(
                 runs.c.id == run_id

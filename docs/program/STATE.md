@@ -1,6 +1,38 @@
 # PROGRAM STATE — read this first
 
-**Last updated:** 2026-08-08 (D-071b final-eligibility-gate BUILD session — the agent-lane final gate is merged
+**Last updated:** 2026-08-08 (P2 item 4 — **the career-field field-tier MECHANISM is merged and shipped;
+Gate P2 is MET AS RECONCILED, D-075**).
+
+**What shipped.** The eligibility catalog gained a required per-family `tier`
+(`universal|profile|field`), a flat `applies_to`, and a closed top-level `career_fields` list;
+`CATALOG_REVISION` went 1→2, so every cached verdict re-keys once. `Facts.career_field` is validated
+against the catalog's `career_fields` and hashed unconditionally into `profile_hash`, and it is surfaced
+by `eligibility facts set career_field`, prompted in both `init` and `profile edit`, and shown in the
+`eligibility facts` display. `engine.field_applicability` routes a field-tier family three ways:
+**active** (in `applies_to`, or the family is not field-tier at all), **skip** (the profile's career
+field is a valid *other* catalog field, so the family is genuinely irrelevant), and **abstain** (career
+field missing OR out-of-catalog ⇒ `missing_profile_field:career_field` — the keystone), with the
+field-abstain branch taking precedence over the posting-waive branch. `not_applicable` is report-only:
+the abstain report distinguishes it from `never_fired`, and it is never persisted as a disposition.
+
+**What that is worth today, stated plainly.** All six bundled families are `tier: profile` and the
+bundled `career_fields` is `[software]`, so bundled behaviour is byte-identical apart from the one-time
+cache re-key. **The evidence for multi-field routing is TEST FIXTURES representing gathered career-field
+content, not a live run** — D-054 forbids us authoring non-tech field content, so a live run can only
+exercise the single-value bundled catalog and would prove nothing about routing. This is a mechanism,
+not a populated taxonomy.
+
+**Explicitly NOT done.**
+- **The onboarding gatherer** that produces REAL per-user field content — the thing that would make the
+  field tier fire for anyone. Now a named build item (PROGRAM.md §3.P2 item 8), owner-gated, needs its
+  own brainstorm. It also inherits the Gate-P2 clause D-075 deferred: "three profiles → three
+  **different** verdicts" is deferred to that phase, not retired.
+- **Item 7's non-`work_auth` severity assignment** (should `clearance` etc. also default to `blocker`?)
+  — still owner-gated. `work_auth` remains the only shipped `blocker` (D-035).
+
+**Gate P5's standing is UNCHANGED** (MET, D-073/D-074). The prior session's header follows below.
+
+**Prior session, 2026-08-08 (D-071b final-eligibility-gate BUILD session — the agent-lane final gate is merged
 to `main` and pushed; see the "D-071b BUILT" block below + D-074; NEXT = the D-072 benchmark. **Gate P5 MET
 still holds: INELIGIBLE precision 100% (16/16), `score` exits 0**, D-073; the disjunctive experience-years
 over-fire from D-069 is fixed, blast radius
@@ -157,9 +189,9 @@ Much of P2 was already built (INELIGIBLE spans, the 4-table evidence chain, and 
 exist). **Shipped this session (all merged, reviewed, `make check` green):**
 - **item 2 — `needs_sponsorship` bit** (D-034): orthogonal bit on `WorkAuthFact`, sponsorship-rules only.
 - **item 7 — `work_auth: blocker` by default** (D-035): the other five families stay `preference` (opt-in).
-  **Gate P2 headline is now 2/3 met** — a fresh F-1/OPT profile → decisive INELIGIBLE-with-span on a
-  no-sponsorship JD; a citizen → eligible on the same JD (proven by shipped-default `Policy()` tests). The
-  3rd profile (non-SWE) needs item 4.
+  A fresh F-1/OPT profile → decisive INELIGIBLE-with-span on a no-sponsorship JD; a citizen → eligible on
+  the same JD (proven by shipped-default `Policy()` tests). Non-`work_auth` severity assignment (e.g.
+  should `clearance` also default to `blocker`?) remains owner-gated — not built this session.
 - **item 3 — keystone invariant machine-enforced**: `tests/unit/test_keystone_invariant.py` iterates the
   resolver registry and asserts every family × every pattern (all 33) abstains on empty `Facts()` — a new
   family/pattern that forgets to abstain now fails the gate. (Typed `AbstainReason` enum deferred — ~15
@@ -168,7 +200,11 @@ exist). **Shipped this session (all merged, reviewed, `make check` green):**
   chain exists; and item 6's honesty gap is now closed (D-036) — a typed `VerdictPresentation` renders an
   eligible verdict as *cleared* (all rows met), *mixed* (non-met but non-blocking rows — never claims those
   cleared), or *no rule applied* (zero rows / residue). Presentation-only; verdict/engine unchanged.
-- **item 4 (taxonomy) is the ONLY remaining P2 item — awaits Mit** (see below).
+- **item 4 (taxonomy) SHIPPED** — catalog `tier`/`applies_to`/`career_fields` + `Facts.career_field`,
+  gated engine routing across all four applicability cases, `not_applicable` reporting, and the CLI
+  surfaces (`facts set`, `init`, `profile edit`, `facts` display). **Gate P2 is MET-AS-RECONCILED (D-075)**
+  — see the header above. Not built: the onboarding gatherer that supplies REAL per-user field content
+  (now PROGRAM.md §3.P2 **item 8**), and item 7's non-`work_auth` severity assignment (still owner-gated).
 
 **P3 (unattended one-command runner) is now DECOMPOSED and building** —
 `.superpowers/sdd/p3-unattended-runner/design.md`. Grounded exploration found the foundation exists (single
@@ -249,11 +285,15 @@ stance is now documented. **Test half REMAINS:** a real cross-process/cross-OS c
 field is speculative hardening with unclear payoff (schema changes are rare and arrive with value changes
 that already re-key `profile_hash`). Build it only if a concrete need appears.
 
-**STILL AWAITS MIT (the one fail-dangerous decision left):** item 4 — the taxonomy shape:
-a lightweight `applies_when.career_field` family gate + a `career.field` fact (recommended, minimal
-multi-tenancy, unblocks the 3rd Gate-P2 profile) vs the full universal/profile/field 3-way split. Also open
-(lower urgency): should any other family (esp. `clearance`) also default to `blocker`? Prior catalog WIP to
-review first: `.agent/p2-catalog/` (a reviewed oracle `proto.py` + alternate rules snapshots).
+**item 4's taxonomy-shape decision is RESOLVED and SHIPPED** — the full three-tier vocabulary
+(`universal|profile|field`) ships in the catalog *schema* as a validated, required per-family `tier`
+alongside `applies_to` and a closed `career_fields` list, plus the `career_field` fact. What did NOT happen
+is any bundled family being *classified* `universal` or `field`: all six ship `tier: profile`. So what
+shipped is a validated **mechanism**, not a populated taxonomy — the split exists and is enforced, but
+nothing yet uses either of its other two tiers. This is no longer open. **STILL
+AWAITS MIT:** should any other family (esp. `clearance`) also default to `blocker`, beyond `work_auth`
+(D-035)? Prior catalog WIP, now superseded by the shipped mechanism: `.agent/p2-catalog/` (a reviewed oracle
+`proto.py` + alternate rules snapshots).
 **Remaining P2a (fail-safe, building autonomously):** item 3 keystone enforcement (a cross-resolver property
 test "empty facts ⇒ every rule abstains" + a typed in-memory abstain reason — NOT a blanket wrapper, which
 would break multi-input alternatives like `degree`; no DB migration), facts `schema_version`, guards.
@@ -704,13 +744,14 @@ changes adopted, none contested.
 (D-046, `2ce8e2d`+`91e0992`, `make check` green) was the **last P3 build item that needs neither Mit's
 domain input nor Docker.** What is left is genuinely gated on things I cannot supply autonomously:
 
-- **P2 item 4 (personas / field-dependent taxonomy) + Gate P2 — RESOLVED by D-054 (Mit, 2026-08-07):**
-  non-tech field content is NOT authored by us (we only have tech expertise) — it is **gathered per-user
-  at onboarding** (the system gathers each user's field-specific eligibility taxonomy / persona /
-  vocabulary as versioned per-user data). So item 4 / P4 item 7 become "ship the field-keyed mechanism +
-  tech seed"; a **NEW onboarding-gatherer build item** (needs its own design) produces non-tech content;
-  **Gate P2 reframes** to validate the mechanism against ≥3 fields whose non-tech taxonomies are gathered
-  (or gathered-output fixtures), not hand-authored. No longer Mit-content-blocked.
+- **P2 item 8 — the onboarding field-taxonomy gatherer. NOT STARTED; the successor to item 4, which is
+  now built (see the header and D-075).** D-054 settled that non-tech field content is **gathered
+  per-user at onboarding** as versioned data, never authored by us; item 4 shipped the mechanism that
+  consumes it, but nothing yet produces it, so the field tier is inert for every real profile. Needs its
+  own brainstorm — scope and design are deliberately unspecified. It must answer one architecture
+  question first: `catalog._verify_families_are_wired` requires every declared family to have both a
+  registered resolver and a matching `Facts` field, so a genuinely new field rule is still *code*, not
+  data. It also owns the Gate-P2 clause D-075 deferred: "three profiles → three **different** verdicts".
 - **P3 item 8 + Gate P3** — Gate P3 = 7 consecutive unattended runs **AND** the two-writer test green.
   **The 7-run half can be accumulated by a PARALLEL Claude Code session (or cron) Mit runs on this machine**
   (owns the daily `bwd` + per-run `verify`/funnel Gate-P3 recording), in parallel with dev here — no
@@ -1001,11 +1042,11 @@ computable but the typed abstain *reason* the keystone invariant wants is not.
 | Phase | Status | Gate met? |
 |---|---|---|
 | P0 Instrumentation | **COMPLETE** (session 9) — all nine items 0-8 done, incl. item 5 (`boardwatch verify`, session 9) | **MET** (session 8, D-030) — three consecutive real-driver runs (5, 6, 7) all reconcile with the scan stage exercised; abstain per rule; why-dropped answerable from the artifact. Item 5 supplements this gate and does not re-anchor it (D-031) |
-| P1 Résumé artifact gate | **FULLY COMPLETE** (session 10) — P1a (session 9) + P1b (session 10, D-033), both on `p1b-tier-b-provenance`, not yet merged to `main` | **MET** (session 9, D-032; P1b D-033 closes item 3c without changing the standing) — deterministic fallback/fatal/drop tests + real-store dogfood both directions (default-config FATAL drop, isolated-copy 100% PDF at correct page count); P1b verified by deterministic unit/lane tests only, no live Tier-B LLM run exercised |
-| P2 Profile + keystone invariant | not started | — |
-| P3 Unattended one command | not started | — |
-| P4 Craft gate | not started | — |
-| P5 Eligibility decides | not started | — |
+| P1 Résumé artifact gate | **FULLY COMPLETE** (session 10) — P1a (session 9) + P1b (session 10, D-033); both merged to `main`. Note the render engine was later replaced: tectonic + the user's real LaTeX template, D-058/D-060 | **MET** (session 9, D-032; P1b D-033 closes item 3c without changing the standing) — deterministic fallback/fatal/drop tests + real-store dogfood both directions (default-config FATAL drop, isolated-copy 100% PDF at correct page count); P1b verified by deterministic unit/lane tests only, no live Tier-B LLM run exercised |
+| P2 Profile + keystone invariant | **BUILD COMPLETE** — items 1–7 shipped (D-034, D-035, D-036, D-075); item 4's field-tier taxonomy shipped as a MECHANISM only, inert for the bundled `[software]` catalog; item 7 is DONE for `work_auth` only — assigning `blocker` to any other family stays owner-gated. Item 8 (onboarding gatherer) is NEW and NOT STARTED | **MET AS RECONCILED** (D-075) — evidence is TEST FIXTURES representing gathered career-field output, not a live run; the original "three DIFFERENT verdicts" clause is **deferred to item 8**, not retired |
+| P3 Unattended one command | **BUILD COMPLETE** for every item needing neither Mit's domain input nor Docker — the run reaper was the last (D-046) | **NOT MET** — both halves outstanding: the 7 consecutive unattended runs (blocked on live config, see below) and the cross-OS two-writer test (needs Docker; the documented-stance half shipped, D-041) |
+| P4 Craft gate | **BUILD COMPLETE** — items 1–7 (D-048, D-049, D-050, D-051, D-053, D-056, D-061, D-063) | **NOT MET** — the blind craft review is the owner's, and has not been run |
+| P5 Eligibility decides | **COMPLETE** — deterministic disjunctive fix (D-073) + the agent-lane final eligibility gate (D-074) | **MET** (D-073) — INELIGIBLE precision **16/16 = 100%** on the 173-row labeled set, 0 span violations, `boardwatch eligibility score` exits 0 |
 | P6 Liveness + dedup | not started | — |
 | 14-day acceptance run | not started | — |
 | P7 Breadth | not started | — |
@@ -1131,7 +1172,13 @@ generalized mechanism, keep Mit's instance local. This applies system wide.**
   discovery. **Nothing is generating Mit's résumés daily right now.** P1 and P3 close a live gap.
 - **The tailoring architecture is already correct.** Typed skeleton, plain-text-only model contract,
   Python-owns-markup, independent entailment judge — all present. Do not rebuild it. (`PROGRAM.md` §5.1.)
-- **`typst` is installed** at `/opt/homebrew/bin/typst`. The old "No PDF" silent-degrade code path
+- **The résumé renderer is `tectonic` compiling Mit's real LaTeX template** (`tailor/render/latex.py`
+  + `render/templates/resume_base.tex`), not Typst — D-058 reversed the Typst choice and D-060 completed
+  the swap, deleting `render/typst.py`. `tectonic` is installed at `/opt/homebrew/bin/tectonic` and
+  `boardwatch doctor` probes for it (`check_tectonic`; a below-floor version warns rather than fails,
+  because tectonic fetches packages on demand). A `typst` binary also happens to be on this machine, but
+  nothing in boardwatch calls it — Typst references elsewhere in this file are historical.
+  The old "No PDF" silent-degrade code path
   (D-006) was **ELIMINATED by P1a** (D-032, §3.P1 — Gate P1 MET): a PDF-less lead can no longer ship
   silently — a missing binary now raises/aborts the run fatal, a compile failure or page-limit overflow
   now falls back to the untailored master or drops the lead outright, and a `resume_tailored` row always

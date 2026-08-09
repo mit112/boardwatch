@@ -181,6 +181,8 @@ The render path exists and is architecturally sound (§6, correction 1). What is
 3b. **DONE.** Packaging, because P1 turns a degrade into a hard failure. `typst` is now installed by a
    Dockerfile layer (pinned to the local 0.15.1 version) and `doctor` probes both presence and version,
    warning loudly on a mismatch (an unpinned typst can silently break the `eval` page-count syntax).
+   **Superseded by D-058/D-060:** the render engine is now tectonic + the user's own LaTeX template, and
+   `render/typst.py` was deleted. The packaging *requirement* stands; the binary it names does not.
    Vendoring still waits for P7.
 3c. **DONE (P1b, D-033).** Tier-B token-provenance validator (see §5.1) — a deterministic allowlist
    (`reword_is_provenanced`, `tailor/rewrite/provenance.py`) vetoes any reword whose content tokens are not
@@ -218,7 +220,18 @@ inputs=("total_years_experience",))`. What is missing is *enforcement* and *repo
 3. **Enforce the invariant:** a rule whose declared field is missing or unresolvable returns
    `ABSTAIN(missing_profile_field:X)` — never ELIGIBLE, never INELIGIBLE.
 4. **Three-tier rule taxonomy** — universal / profile-dependent / field-dependent — as versioned *data*,
-   keyed by `career.field`.
+   keyed by `career_field`. **DONE (D-075) — as a MECHANISM, not a populated taxonomy.** `rules.yaml`
+   gained a required per-family `tier` (`universal|profile|field`), a flat `applies_to`, and a closed
+   top-level `career_fields` list (`CATALOG_REVISION` 1→2, so every cached verdict re-keys once);
+   `Facts.career_field` is validated against that list and hashed unconditionally into `profile_hash`;
+   `engine.field_applicability` routes a field-tier family to **active** (in scope, or not field-tier),
+   **skip** (the profile's career field is a valid *other* field), or **abstain** (career field missing
+   or out-of-catalog ⇒ `missing_profile_field:career_field`, the keystone), with the field-abstain branch
+   taking precedence over the posting-waive branch. `not_applicable` is report-only and never persisted
+   as a disposition. All six bundled families are `tier: profile` and the bundled `career_fields` is
+   `[software]`, so bundled behaviour is unchanged and the routing is exercised by test fixtures only.
+   Non-tech field **content** is deliberately out of scope here — D-054 gathers it per user at
+   onboarding, never authored by us; see item 8.
 5. **INELIGIBLE must carry a quoted span** from the frozen JD. No span ⇒ downgrade to ABSTAIN.
 6. **Evidence chain for ELIGIBLE too** (job-apps spec-1 §6, where it says boardwatch should beat it):
    which rule cleared which requirement, against which profile field, citing which span, and which rules
@@ -228,25 +241,46 @@ inputs=("total_years_experience",))`. What is missing is *enforcement* and *repo
    the existing rows' dispositions (`met_count` vs. total), and `show` renders all three distinctly — never
    claiming a non-`met` row (e.g. a D-035 `preference`-family unmet row) is "cleared" — no schema change,
    stored `verdict` unchanged.
-7. **The severity/policy layer — the actual reason `ineligible` is unreachable.** `facts.py:66`: *"Only
-   `blocker` can yield `ineligible`."* All six families shipped `default_policy: preference`
-   (`rules.yaml:72,290,388,606,871,1032`). Live consequence: **1,713** unmet *required* dispositions,
+7. **The severity/policy layer — the actual reason `ineligible` is unreachable.** `facts.py`: *"Only
+   `blocker` can yield `ineligible`."* All six families shipped `default_policy: preference` in
+   `rules.yaml` (line numbers deliberately omitted — they drift). Live consequence: **1,713** unmet *required* dispositions,
    **1,427** evaluations carrying one and still verdict `eligible`, **0** `ineligible` ever. Mit was
    unaffected only because he set `work_auth: blocker` by hand — **a fresh user with a perfect profile
    got zero ineligible verdicts by default.** That is the multi-tenancy requirement failing at exactly
    the point `CLAUDE.md` forbids. Severity belongs in the published/personal split (§3b): the *mechanism*
    and sane per-field defaults ship; the *assignment* is the user's. **DONE for `work_auth` (session 11,
-   D-035):** `rules.yaml:72` now ships `default_policy: blocker` — the canonical hard stop, most-developed
+   D-035):** the `work_auth` family now ships `default_policy: blocker` — the canonical hard stop, most-developed
    family, keystone-gated (abstains to `uncertain`, never `ineligible`, when the fact is absent). A fresh
    profile now gets a decisive `ineligible` on a genuine work-auth stop. The other five families
    (`experience_years`, `clearance`, `degree`, `contract_not_fte`, `internship`) remain `preference` —
    they are false-skip-risky and stay opt-in pending Mit's decision.
+8. **The onboarding field-taxonomy gatherer — NOT STARTED, owner-gated, needs its own brainstorm.**
+   D-054 settled that non-tech field content (eligibility taxonomy, vocabulary, persona) is **gathered
+   per user at onboarding as versioned data**, never authored by us. Item 4 shipped the mechanism that
+   consumes such content; nothing yet produces it, so the field tier is inert for every real profile.
+   This item exists so that deferral stays addressable rather than becoming a silent drop. Scope,
+   schedule and design are deliberately **not** specified here — they are the brainstorm's output.
+   **The open architecture question it must answer:** `catalog._verify_families_are_wired` requires
+   every declared family to have both a registered resolver and a matching `Facts` field, so a
+   genuinely new field-specific rule is still *code*, not data — which contradicts "ship the taxonomy
+   as versioned data" from `CLAUDE.md`. Until that is resolved, a gathered taxonomy can only re-tier
+   and re-scope families that already exist. **It also owns the Gate-P2 clause D-075 deferred:** the
+   "same JD × three profiles → three *different* verdicts" test, which becomes satisfiable once
+   gathered field content can carry `blocker` severity.
 
-**Gate P2:** the same JD evaluated against **three** profiles (F-1 OPT new-grad SWE / US-citizen senior
-SWE / non-SWE field) yields three different and individually correct verdicts; Mit's profile returns a
-decisive **INELIGIBLE with a quoted span** on a JD containing "we are unable to sponsor work visas"
-(today: returns nothing); **0** rules in the catalog lack a declared-field list; **0** INELIGIBLE verdicts
-lack a span; per-rule abstain rate reported for all rules.
+**Gate P2: MET AS RECONCILED (D-075).** Evidence is TEST FIXTURES representing gathered career-field
+output, not a live run. Clause by clause: the same JD evaluated against **three** profiles (F-1 OPT new-grad SWE /
+US-citizen senior SWE / non-SWE field) yields three **individually correct** verdicts, which **may coincide**
+on a generic JD — only `work_auth` ships `default_policy: blocker` (D-035), so divergence beyond that one
+family depends on content the field mechanism cannot manufacture by itself; the field-tier mechanism is
+demonstrated across **≥3** `career_fields` via test fixtures representing gathered career-field output, not
+a live run (D-054 forbids authoring field content ourselves) — covering active routing, skip-for-a-valid-
+other-field, and keystone abstain; Mit's profile returns a decisive **INELIGIBLE with a quoted span** on a
+JD containing "we are unable to sponsor work visas" (already met, D-035); **0** rules in the catalog lack a
+declared-field list; **0** INELIGIBLE verdicts lack a span; per-rule abstain rate reported for all rules,
+with `not_applicable` distinguished from `never_fired`. The dropped "three **different** verdicts" clause
+is **deferred, not retired** — it is a gate clause of item 8, the onboarding gatherer. Numbers in
+`METRICS.md` §"Gate P2".
 
 ### P3 — One command, unattended (live gap closed)
 
@@ -513,7 +547,9 @@ craft problem's cause is still no page-count gate, no anti-slop guard, no craft 
 architecture rebuild.
 
 **2. The PDF cliff is a silent-degrade defect, not a packaging problem.**
-job-apps prescribes vendoring the Typst binary. `typst` is installed at `/opt/homebrew/bin/typst` and
+job-apps prescribes vendoring the Typst binary. (**Superseded by D-058/D-060** — the engine is now
+tectonic + LaTeX; the vendoring argument below still applies, with `tectonic` as its subject.)
+`typst` is installed at `/opt/homebrew/bin/typst` and
 `reports/tailor.py:104` shells out to it correctly. The actual defect is `tailor_cmd.py:193` printing
 *"source only (no PDF; typst not available or compile failed)"* and continuing — a silent degrade that
 also conflates an environment fault with a lead fault. Fix is a hard gate plus disambiguation. **Shipped —

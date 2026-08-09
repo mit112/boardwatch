@@ -66,6 +66,11 @@ class Facts(BaseModel):
     # vocabulary belongs to the catalog, never to this module (D-P2-4).
     employment_type_preference: str | None = None
     internship_preference: str | None = None
+    # P2 item 4. The profile's career field, gating field-tier families in the engine (never a
+    # resolver input, so it is hashed EXPLICITLY in build_identity, not via declared_fields).
+    # Validated against catalog.career_fields at the engine (authoritative) and the CLI
+    # (friendly), never in this type — the vocabulary belongs to the catalog (D-P2-4).
+    career_field: str | None = None
 
 
 class Policy(BaseModel):

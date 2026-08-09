@@ -191,3 +191,31 @@ def test_valid_dispositions_produce_no_bogus_token_failure() -> None:
 
     assert report.bad_dispositions == ()
     assert report.out_of_catalog_families == ()
+
+
+def test_skip_family_reports_not_applicable_not_never_fired() -> None:
+    import pathlib
+    import tempfile
+
+    import yaml
+
+    from boardwatch.eligibility.catalog import bundled_rules_text, load_rules
+
+    doc = yaml.safe_load(bundled_rules_text())
+    doc["career_fields"] = ["software", "data"]
+    for fam in doc["families"]:
+        if fam["id"] == "internship":
+            fam["tier"] = "field"
+            fam["applies_to"] = ["software"]
+    d = pathlib.Path(tempfile.mkdtemp())
+    (d / "rules.yaml").write_text(yaml.safe_dump(doc), encoding="utf-8")
+    catalog = load_rules(d)
+    # internship is skipped for a "data" profile → zero rows → must be not_applicable, not never_fired
+    na = frozenset({"internship"})
+    report = build_abstain_report(catalog, {}, not_applicable_families=na)
+    internship_rules = [r for r in report.rules if r.family == "internship"]
+    assert internship_rules and all(r.not_applicable for r in internship_rules)
+    assert all(not r.never_fired for r in internship_rules)
+    assert all(r.rule_id in {x.rule_id for x in report.not_applicable} for r in internship_rules)
+    # a genuinely never-fired family is still never_fired
+    assert any(r.never_fired for r in report.rules if r.family != "internship")

@@ -3076,3 +3076,70 @@ build — the gate lane is purely additive over the ranker (a gate `uncertain`/`
 nothing; only a persisted `ineligible` hides a posting, alongside the deterministic lane). Its recall
 contribution is a live-run measurement, not something the answer key can score: the gate only ever runs over
 the ranker's current shortlist, never over the labeled set's off-shortlist rows.
+
+## D-075 — Gate P2 reconciled: three individually-correct verdicts (may coincide); ≥3-field mechanism via fixtures
+
+**2026-08-08 · P2 item 4 build, final task (docs reconciliation). Owner-ratified — Mit approved this
+reconciliation on 2026-08-08.**
+
+**Context.** PROGRAM.md's original Gate P2 text asked for the same JD, evaluated against three profiles
+(F-1 OPT new-grad SWE / US-citizen senior SWE / non-SWE field), to yield "three different and individually
+correct verdicts." That clause is unsatisfiable under Mit's own scope — not a testing gap, a structural one.
+`engine.py`'s roll-up (`blocking()`) only ever moves a verdict off `eligible` when a `blocker`-severity
+family produces a `required`+`unmet` row, and `work_auth` is the ONLY family shipped with
+`default_policy: blocker` (D-035); the other five — including `experience_years`, the senior/new-grad axis —
+ship `preference` and can move nothing unless Mit hand-sets them to `blocker` (item 7's still-open remainder).
+`career_field` itself decides NOTHING on its own: it only gates WHICH field-tier families are even eligible
+to fire for a given profile. Whether a field-tier family's own severity is a blocker is still the same
+`default_policy` mechanism D-035 covers. So a third, genuinely DIFFERENT verdict on a generic fixture JD
+would require a field-tier family that both fires AND is a blocker AND is tripped by that specific JD —
+which needs real field-specific taxonomy CONTENT, and D-054 forbids us from authoring that content: it is
+gathered per-user at onboarding, never authored by us. Demanding "three different verdicts" from the field
+mechanism alone was asking a routing mechanism to do the job of field content it cannot yet have.
+
+**Choice.** Reconcile Gate P2 to four points:
+
+(a) **Three profiles now yield three INDIVIDUALLY CORRECT verdicts, which MAY coincide** on a generic JD —
+"different" is dropped as a hard requirement *of Gate P2*. Divergence depends on blocker-severity content
+that is either D-035's one shipped default (`work_auth`) or Mit's own not-yet-made per-family severity call;
+the field mechanism cannot manufacture divergence by itself without authored content D-054 forbids.
+**"Different" is DEFERRED, not RETIRED, and it has an owner.** The clause is not unsatisfiable in
+principle — only until gathered field content exists. It therefore becomes a gate clause of the
+**onboarding-gatherer phase** (PROGRAM.md §3.P2 item 8), where real gathered field content can carry
+`blocker` severity and the field mechanism can produce divergence on its own. Retiring it outright would
+hand a merely-blocked requirement to nobody, which is how a deferral becomes a drop.
+
+(b) **The field-tier mechanism's evidence is TEST FIXTURES representing gathered career-field output, not a
+live run** against real postings — `tests/unit/test_eligibility_engine.py::test_field_applicability_four_cases`
+and `::test_three_field_active_routing` construct controlled catalogs with 2-3 declared `career_fields` and
+assert routing directly. This is deliberate, not a shortcut: D-054 gathers non-tech field content at
+onboarding, per-user; a live run today can only exercise the bundled single-value `{software}` catalog,
+which would prove nothing about multi-field routing.
+
+(c) **The three-profile individual-correctness evaluation is RETAINED, not dropped.** Only the "must
+diverge" clause is relaxed; each profile's own verdict against the JD must still be independently correct,
+and D-035's `test_shipped_default_yields_different_correct_verdicts_by_profile` continues to hold as the
+concrete two-profile case that DOES diverge today.
+
+(d) **The mechanism is validated across two axes:** the four applicability cases from Task 3
+(`test_field_applicability_four_cases` — active / skip-for-a-valid-other-field / abstain-on-missing /
+abstain-on-out-of-vocab, plus a non-field family staying always-active) AND ≥3-`career_fields` active
+routing (`test_three_field_active_routing` — three distinct catalog fields each route their own family
+active while the other two skip), so the routing logic is proven general rather than proven only for the
+bundled single-value catalog.
+
+**Verified.** All four cases and the ≥3-field routing test pass against the shipped `field_applicability`
+(`engine.py`, Task 3); the keystone-abstain precedence over a genuine posting-waive collision is locked by
+`test_field_abstain_wins_a_genuine_collision_with_posting_waive`; `not_applicable` is distinguished from
+`never_fired` in the abstain report (Task 4, `tests/unit/test_abstain_report.py`). `make check` green at
+each task's IMPLEMENTATION commit on this branch and on the final tree (3636 passed / 95.23%, exit 0). Stated
+precisely, because the build ledger will not support more: Task 3's follow-up test-only fix commit got a
+re-review but no full gate of its own — it was covered by the next task's gate.
+
+**Consequence.** Gate P2's headline — Mit's profile returns a decisive INELIGIBLE-with-span on a
+sponsorship JD — is unchanged and already met (D-035). **0** rules in the catalog lack a declared-field
+list. **0** INELIGIBLE verdicts lack a span. Per-rule abstain rate, with `not_applicable` distinguished from
+`never_fired`, is reported (`eligibility abstain`, Task 4). **Explicitly NOT resolved by this decision:**
+item 7's non-`work_auth` severity assignment (still owner-gated) and the onboarding gatherer that produces
+REAL per-user field content — now a named, addressable build item, PROGRAM.md §3.P2 item 8, which also
+inherits the deferred "three different verdicts" clause. See PROGRAM.md §3.P2 and STATE.md.

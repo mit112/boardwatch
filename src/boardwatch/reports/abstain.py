@@ -52,6 +52,10 @@ class RuleAbstain:
     # and carried anyway so that widening that CHECK cannot make rows disappear from `observed`
     # and quietly shrink every abstain-rate denominator in the report.
     other: int = 0
+    # Report-only: this rule's family is field-tier and does not apply to the CURRENT profile's
+    # career_field, so its zero rows are correct scoping, NOT a monitoring failure. Never a
+    # persisted disposition — the requirement CHECK allows only met|unmet|unknown.
+    not_applicable: bool = False
 
     @property
     def observed(self) -> int:
@@ -72,7 +76,7 @@ class RuleAbstain:
 
     @property
     def never_fired(self) -> bool:
-        return self.observed == 0
+        return self.observed == 0 and not self.not_applicable
 
     @property
     def fully_abstaining(self) -> bool:
@@ -105,6 +109,10 @@ class AbstainReport:
         return tuple(rule for rule in self.rules if rule.fully_abstaining)
 
     @property
+    def not_applicable(self) -> tuple[RuleAbstain, ...]:
+        return tuple(rule for rule in self.rules if rule.not_applicable)
+
+    @property
     def observed_rows(self) -> int:
         return sum(rule.observed for rule in self.rules)
 
@@ -114,12 +122,21 @@ class AbstainReport:
         return self.observed_rows + self.out_of_catalog_rows + self.unattributed
 
 
-def build_abstain_report(catalog: RulesCatalog, counts: DispositionCounts) -> AbstainReport:
+def build_abstain_report(
+    catalog: RulesCatalog,
+    counts: DispositionCounts,
+    not_applicable_families: frozenset[str] = frozenset(),
+) -> AbstainReport:
     """LEFT JOIN observed dispositions onto the catalog enumeration.
 
     `counts` is keyed by (rule_id, disposition) so the caller can hand over a raw GROUP BY
     without having to know which rules the catalog declares — that reconciliation is this
     function's whole job.
+
+    `not_applicable_families` names field-tier families that are correctly SKIPPED for the
+    current profile's career_field (see `engine.not_applicable_field_families`). Their rules
+    report `not_applicable` rather than `never_fired` — zero rows is correct scoping, not a
+    monitoring failure. Defaults to empty so every existing caller is byte-identical.
     """
     declared = {
         pattern.rule_id: family.id
@@ -162,6 +179,7 @@ def build_abstain_report(catalog: RulesCatalog, counts: DispositionCounts) -> Ab
                 for disposition, count in tallies[rule_id].items()
                 if disposition not in ("met", "unmet", "unknown")
             ),
+            not_applicable=family_id in not_applicable_families,
         )
         for rule_id, family_id in declared.items()
     )

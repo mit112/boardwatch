@@ -502,7 +502,7 @@ def test_init_reprompts_on_a_bad_eligibility_answer_instead_of_aborting(env: Pat
             else:
                 elig.append("")  # skip
         elig.append("")  # policy: accept the neutral default
-    preamble = ["3", "acme", "Backend engineer.", "", "", "", "n", "y"]
+    preamble = ["3", "acme", "Backend engineer.", "", "", "", "n", "y", ""]  # skip career field
     result = _run(env, ["init"], "\n".join(preamble + elig) + "\n")
     assert result.exit_code == 0, result.output
     facts, _ = _profile(env)

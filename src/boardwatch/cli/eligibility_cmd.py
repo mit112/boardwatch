@@ -26,7 +26,7 @@ from sqlalchemy import select
 from boardwatch.cli.context import build_context
 from boardwatch.core.settings import Settings
 from boardwatch.eligibility.catalog import FamilySpec, FieldSpec, RulesCatalog, load_rules
-from boardwatch.eligibility.engine import current_evaluations
+from boardwatch.eligibility.engine import current_evaluations, not_applicable_field_families
 from boardwatch.eligibility.extract_llm import extract_and_record
 from boardwatch.eligibility.facts import (
     Facts,
@@ -173,6 +173,18 @@ def set_fact(facts: Facts, catalog: RulesCatalog, dotted: str, value: str) -> Fa
     return Facts.model_validate(data)
 
 
+def set_career_field(facts: Facts, catalog: RulesCatalog, value: str) -> Facts:
+    """Set the profile's career_field, validated against the catalog's closed vocabulary.
+
+    career_field is a non-family scalar, so set_fact (which resolves a family.fact) cannot
+    reach it. Pure and CLI-free apart from the BadParameter it raises for a friendly message.
+    """
+    if value not in catalog.career_fields:
+        valid = ", ".join(sorted(catalog.career_fields)) or "(none declared)"
+        raise typer.BadParameter(f"unknown career_field {value!r}. Valid: {valid}")
+    return facts.model_copy(update={"career_field": value})
+
+
 def set_policy(policy: Policy, catalog: RulesCatalog, family_id: str, choice: str) -> Policy:
     """Apply one family severity to the policy, returning a new Policy. Pure and CLI-free.
 
@@ -219,6 +231,7 @@ def facts_root(ctx: typer.Context) -> None:
                 console.print(f"  {field.name}: {_render_value(value)}")
         else:
             console.print(f"{family.label}: {_render_value(getattr(facts, family.fact))}")
+    console.print(f"Career field: {_render_value(facts.career_field)}")
 
 
 @facts_app.command("set")
@@ -233,7 +246,10 @@ def facts_set(ctx: typer.Context, fact: str, value: str) -> None:
         facts = parse_facts(row.eligibility_facts_json)
         policy = parse_policy(row.eligibility_policy_json)
         try:
-            new_facts = set_fact(facts, catalog, fact, value)
+            if fact == "career_field":
+                new_facts = set_career_field(facts, catalog, value)
+            else:
+                new_facts = set_fact(facts, catalog, fact, value)
         except typer.BadParameter as exc:
             typer.echo(exc.message)
             raise typer.Exit(code=1) from exc
@@ -435,7 +451,13 @@ def abstain_cmd(ctx: typer.Context) -> None:
         )
         eval_ids = [eval_id for eval_id, _ in evals.values()]
         counts = count_requirement_dispositions(conn, eval_ids)
-    report = build_abstain_report(catalog, counts)
+        profile_row = get_profile(conn)
+    na = (
+        not_applicable_field_families(parse_facts(profile_row.eligibility_facts_json), catalog)
+        if profile_row is not None
+        else frozenset()
+    )
+    report = build_abstain_report(catalog, counts, not_applicable_families=na)
 
     table = Table(title="per-rule abstain rate")
     # Fold rather than ellipsize: at 80 columns rich truncates rule_ids to a common prefix,
@@ -448,7 +470,9 @@ def abstain_cmd(ctx: typer.Context) -> None:
     table.add_column("abstained", justify="right")
     table.add_column("rate", justify="right")
     for rule in report.rules:
-        if rule.never_fired:
+        if rule.not_applicable:
+            rate, style = "not applicable", "dim"
+        elif rule.never_fired:
             # Not "0%" — the rule produced no rows, so there is no rate to report.
             rate, style = "never fired", "yellow"
         elif rule.fully_abstaining:
@@ -467,6 +491,7 @@ def abstain_cmd(ctx: typer.Context) -> None:
 
     console.print(
         f"{len(report.rules)} rules · {len(report.never_fired)} never fired · "
+        f"{len(report.not_applicable)} not applicable · "
         f"{len(report.fully_abstaining)} fire but never decide · "
         f"{report.total_rows} rows across {len(evals)} evaluations"
     )

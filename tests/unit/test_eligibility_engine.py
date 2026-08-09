@@ -4,15 +4,17 @@ order-independent any() tests over requirement ROWS."""
 from pathlib import Path
 
 import pytest
+import yaml
 from sqlalchemy import insert, select
 
 from boardwatch.core.clock import utcnow
-from boardwatch.eligibility.catalog import load_rules
+from boardwatch.eligibility.catalog import bundled_rules_text, load_rules
 from boardwatch.eligibility.engine import (
     ENGINE_KIND,
     ENGINE_SEMANTIC,
     engine_version,
     evaluate,
+    field_applicability,
     write_evaluation,
 )
 from boardwatch.eligibility.facts import Facts, Policy, WorkAuthFact
@@ -33,6 +35,58 @@ BLOCK_ALL = Policy(families={
     "work_auth": "blocker", "experience_years": "blocker",
     "clearance": "blocker", "degree": "blocker",
 })
+
+
+def _field_catalog(config_dir, *, assign):  # assign: {family_id: [career_field, ...]}
+    """Bundled catalog with `assign`ed families reclassified to tier:field, drift-safe."""
+    doc = yaml.safe_load(bundled_rules_text())
+    doc["career_fields"] = ["software", "data", "design"]
+    for fam in doc["families"]:
+        if fam["id"] in assign:
+            fam["tier"] = "field"
+            fam["applies_to"] = assign[fam["id"]]
+    config_dir.mkdir(parents=True, exist_ok=True)
+    (config_dir / "rules.yaml").write_text(yaml.safe_dump(doc), encoding="utf-8")
+    return load_rules(config_dir)
+
+
+# A fully-controlled single field-tier family whose pattern matches the string "bachelor".
+_CONTROLLED = """
+version: 1
+negation_cues: ["not"]
+career_fields: [software, data]
+families:
+  - id: degree
+    label: Degree
+    fact: highest_degree
+    tier: field
+    applies_to: [software]
+    answer_type: choice
+    default_policy: preference
+    question: "Highest degree?"
+    fields:
+      - name: highest_degree
+        type: choice
+        choices: [none, bachelor]
+        ranks: {none: 0, bachelor: 3}
+    implies_vocabulary: [degree_required]
+    exclusive_groups: []
+    patterns:
+      - id: bachelor_required
+        requiredness: required
+        implies: degree_required
+        scope: sentence
+        required_rank: 3
+        requirement_text: "A bachelor's degree is required"
+        pattern: "bachelor"
+        abstain_by: ["unless otherwise noted"]
+"""
+
+
+def _controlled_catalog(config_dir):
+    config_dir.mkdir(parents=True, exist_ok=True)
+    (config_dir / "rules.yaml").write_text(_CONTROLLED, encoding="utf-8")
+    return load_rules(config_dir)
 
 
 @pytest.fixture()
@@ -659,3 +713,84 @@ def test_the_derived_version_is_cached_and_the_cache_is_clearable() -> None:
         engine_module.digested_modules = original
         engine_module.engine_version.cache_clear()
     assert engine_module.engine_version() == baseline
+
+
+# ---------------------------------------------------------------- field-tier applicability
+
+def test_field_applicability_four_cases(tmp_path) -> None:
+    cat = _field_catalog(tmp_path, assign={"degree": ["software"]})
+    degree = cat.family("degree")
+    assert field_applicability(degree, "software", cat) == "active"
+    assert field_applicability(degree, "data", cat) == "skip"          # valid other field
+    assert field_applicability(degree, None, cat) == "abstain"         # missing
+    assert field_applicability(degree, "bogus", cat) == "abstain"      # out-of-vocab
+    # a non-field family is always active regardless of career_field
+    assert field_applicability(cat.family("work_auth"), None, cat) == "active"
+
+
+def test_three_field_active_routing(tmp_path) -> None:
+    """Gate P2 evidence: >=3 career_fields each route their own family active, others skip."""
+    cat = _field_catalog(
+        tmp_path,
+        assign={"degree": ["software"], "clearance": ["data"], "internship": ["design"]},
+    )
+    routes = {"software": "degree", "data": "clearance", "design": "internship"}
+    for cf, active in routes.items():
+        states = {fid: field_applicability(cat.family(fid), cf, cat)
+                  for fid in ("degree", "clearance", "internship")}
+        assert states[active] == "active"
+        assert all(states[o] == "skip" for o in states if o != active)
+
+
+def test_active_field_family_produces_rows(tmp_path) -> None:
+    cat = _controlled_catalog(tmp_path)
+    facts = Facts(career_field="software", highest_degree="none")
+    result = evaluate("A bachelor's degree is required.", facts, Policy(), cat)
+    assert any(r.rule_id == "degree:bachelor_required" for r in result.requirements)
+
+
+def test_skip_field_family_produces_zero_rows(tmp_path) -> None:
+    cat = _controlled_catalog(tmp_path)
+    facts = Facts(career_field="data", highest_degree="none")  # valid, other field
+    result = evaluate("A bachelor's degree is required.", facts, Policy(), cat)
+    assert result.requirements == ()
+    assert result.verdict == "eligible"
+
+
+def test_missing_career_field_abstains_not_clears(tmp_path) -> None:
+    cat = _controlled_catalog(tmp_path)
+    facts = Facts(career_field=None, highest_degree="none")
+    result = evaluate("A bachelor's degree is required.", facts, Policy(), cat)
+    row = next(r for r in result.requirements if r.rule_id == "degree:bachelor_required")
+    assert row.disposition == "unknown"
+    assert row.rationale == "missing_profile_field:career_field"
+
+
+def test_out_of_vocab_career_field_abstains_not_clears(tmp_path) -> None:
+    cat = _controlled_catalog(tmp_path)
+    facts = Facts(career_field="bogus", highest_degree="none")
+    result = evaluate("A bachelor's degree is required.", facts, Policy(), cat)
+    row = next(r for r in result.requirements if r.rule_id == "degree:bachelor_required")
+    assert row.disposition == "unknown"
+    assert row.rationale == "missing_profile_field:career_field"
+
+
+def test_field_abstain_wins_a_genuine_collision_with_posting_waive(tmp_path) -> None:
+    """A detection that ALSO carries a posting-waive escape (`detection.abstained` is set,
+    from `_CONTROLLED`'s `abstain_by: ["unless otherwise noted"]` matching the JD) must still
+    report the field-abstain rationale, not the posting-waive one.
+
+    Both branches produce the SAME disposition (`unknown`), so a test that only checks
+    disposition on a NON-colliding detection cannot tell the two branches apart, and a future
+    reorder that checked `detection.abstained` first would silently flip only the rationale
+    string. This constructs the actual collision — the same detection satisfies BOTH
+    conditions at once — and pins that the field-abstain branch, which runs first in
+    `evaluate`, is the one that wins.
+    """
+    cat = _controlled_catalog(tmp_path)
+    body = "A bachelor's degree is required, unless otherwise noted."
+    facts = Facts(career_field=None, highest_degree="none")  # missing -> field-abstain applies
+    result = evaluate(body, facts, Policy(), cat)
+    row = next(r for r in result.requirements if r.rule_id == "degree:bachelor_required")
+    assert row.disposition == "unknown"
+    assert row.rationale == "missing_profile_field:career_field"
