@@ -928,11 +928,17 @@ def funnel_to_dict(funnel: RunFunnel) -> dict[str, object]:
                     "abstain_rate": rule.abstain_rate,
                     "never_fired": rule.never_fired,
                     "fully_abstaining": rule.fully_abstaining,
+                    # Its family is field-tier and does not apply to this profile's
+                    # career_field, so zero rows is correct scoping, not a dead rule. Without
+                    # this key such a rule reads as never_fired=false / abstain_rate=null and
+                    # is indistinguishable from noise.
+                    "not_applicable": rule.not_applicable,
                 }
                 for rule in funnel.abstain.rules
             ],
             "rule_count": len(funnel.abstain.rules),
             "never_fired": len(funnel.abstain.never_fired),
+            "not_applicable": len(funnel.abstain.not_applicable),
             "fully_abstaining": len(funnel.abstain.fully_abstaining),
             "out_of_catalog": list(funnel.abstain.out_of_catalog),
             "out_of_catalog_rows": funnel.abstain.out_of_catalog_rows,
@@ -1170,11 +1176,16 @@ def funnel_to_markdown(funnel: RunFunnel) -> str:
 
     never_fired = funnel.abstain.never_fired
     fully = funnel.abstain.fully_abstaining
+    not_applicable = funnel.abstain.not_applicable
     lines += [
         "",
         "## Per-rule abstain",
         "",
+        # `not applicable` is counted here because it is in NEITHER of the other two buckets:
+        # without it the census stops partitioning the catalog and the missing rules read as
+        # an arithmetic error.
         f"{len(funnel.abstain.rules)} rules in the catalog · {len(never_fired)} never fired · "
+        f"{len(not_applicable)} not applicable to this field · "
         f"{len(fully)} fire but never decide · {funnel.abstain.total_rows} requirement rows",
         "",
         "A rule that has never fired reports `never fired`, **not 0%** — a rate over zero rows "
@@ -1184,7 +1195,11 @@ def funnel_to_markdown(funnel: RunFunnel) -> str:
         "|---|---|---:|---:|---:|---:|---|",
     ]
     for rule in funnel.abstain.rules:
-        if rule.never_fired:
+        # FIRST, exactly as `eligibility abstain` orders it: a not-applicable rule has zero
+        # rows, so every later branch either mislabels it or formats a None rate and raises.
+        if rule.not_applicable:
+            rate = "not applicable"
+        elif rule.never_fired:
             rate = "never fired"
         elif rule.fully_abstaining:
             rate = "**100%**"

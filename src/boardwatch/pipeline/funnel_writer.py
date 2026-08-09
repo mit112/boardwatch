@@ -104,6 +104,7 @@ def collect_run_funnel(
 
     with engine.connect() as conn:
         identity = current_identity(conn, settings)
+        profile_row = get_profile(conn)
         if identity is None:
             corpus = _corpus_without_profile(count_open_postings(conn))
             abstain: AbstainReport = build_abstain_report(
@@ -128,10 +129,9 @@ def collect_run_funnel(
             counts = count_requirement_dispositions(conn, [eid for eid, _ in evals.values()])
             # `identity` came from `current_identity`, which only returns non-None when a
             # profile row exists — so the profile is guaranteed here.
-            profile_row_for_facts = get_profile(conn)
-            assert profile_row_for_facts is not None
+            assert profile_row is not None
             na = not_applicable_field_families(
-                parse_facts(profile_row_for_facts.eligibility_facts_json), catalog
+                parse_facts(profile_row.eligibility_facts_json), catalog
             )
             abstain = build_abstain_report(catalog, counts, not_applicable_families=na)
 
@@ -150,7 +150,6 @@ def collect_run_funnel(
         unattributed = count_unattributed_evaluations(conn)
         provenance = lead_provenance(conn, posting_ids)
         stub_postings = count_stub_postings(conn)
-        profile_row = get_profile(conn)
         row = conn.execute(
             select(runs.c.started_at, runs.c.finished_at, runs.c.status).where(
                 runs.c.id == run_id
