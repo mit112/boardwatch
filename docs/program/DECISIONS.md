@@ -3100,9 +3100,14 @@ mechanism alone was asking a routing mechanism to do the job of field content it
 **Choice.** Reconcile Gate P2 to four points:
 
 (a) **Three profiles now yield three INDIVIDUALLY CORRECT verdicts, which MAY coincide** on a generic JD —
-"different" is dropped as a hard requirement. Divergence depends on blocker-severity content that is either
-D-035's one shipped default (`work_auth`) or Mit's own not-yet-made per-family severity call; the field
-mechanism cannot manufacture divergence by itself without authored content D-054 forbids.
+"different" is dropped as a hard requirement *of Gate P2*. Divergence depends on blocker-severity content
+that is either D-035's one shipped default (`work_auth`) or Mit's own not-yet-made per-family severity call;
+the field mechanism cannot manufacture divergence by itself without authored content D-054 forbids.
+**"Different" is DEFERRED, not RETIRED, and it has an owner.** The clause is not unsatisfiable in
+principle — only until gathered field content exists. It therefore becomes a gate clause of the
+**onboarding-gatherer phase** (PROGRAM.md §3.P2 item 8), where real gathered field content can carry
+`blocker` severity and the field mechanism can produce divergence on its own. Retiring it outright would
+hand a merely-blocked requirement to nobody, which is how a deferral becomes a drop.
 
 (b) **The field-tier mechanism's evidence is TEST FIXTURES representing gathered career-field output, not a
 live run** against real postings — `tests/unit/test_eligibility_engine.py::test_field_applicability_four_cases`
@@ -3127,11 +3132,14 @@ bundled single-value catalog.
 (`engine.py`, Task 3); the keystone-abstain precedence over a genuine posting-waive collision is locked by
 `test_field_abstain_wins_a_genuine_collision_with_posting_waive`; `not_applicable` is distinguished from
 `never_fired` in the abstain report (Task 4, `tests/unit/test_abstain_report.py`). `make check` green at
-each task's commit on this branch.
+each task's IMPLEMENTATION commit on this branch and on the final tree (3636 passed / 95.23%, exit 0). Stated
+precisely, because the build ledger will not support more: Task 3's follow-up test-only fix commit got a
+re-review but no full gate of its own — it was covered by the next task's gate.
 
 **Consequence.** Gate P2's headline — Mit's profile returns a decisive INELIGIBLE-with-span on a
 sponsorship JD — is unchanged and already met (D-035). **0** rules in the catalog lack a declared-field
 list. **0** INELIGIBLE verdicts lack a span. Per-rule abstain rate, with `not_applicable` distinguished from
 `never_fired`, is reported (`eligibility abstain`, Task 4). **Explicitly NOT resolved by this decision:**
 item 7's non-`work_auth` severity assignment (still owner-gated) and the onboarding gatherer that produces
-REAL per-user field content (the next field-tier phase) — see PROGRAM.md §3.P2 and STATE.md.
+REAL per-user field content — now a named, addressable build item, PROGRAM.md §3.P2 item 8, which also
+inherits the deferred "three different verdicts" clause. See PROGRAM.md §3.P2 and STATE.md.
