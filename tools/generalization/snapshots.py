@@ -116,6 +116,7 @@ EXPECTED_INIT_PROMPTS: tuple[tuple[str, str, str | None], ...] = (
     # confirm cover every family, so this count stays constant as the catalog grows (D-P2-8).
     # The policy default is the NAME family.default_policy, so no user value is pinned here.
     ("confirm", '"Set up eligibility checks now?"', "False"),
+    ("prompt", 'f"Your career field [{field_hint}]"', '""'),
     ("prompt", 'f"{family.question} [{field_spec.name}: {choice_hint}]"', '""'),
     ("prompt", 'f"How should {family.label} affect your results?"', "family.default_policy"),
 )

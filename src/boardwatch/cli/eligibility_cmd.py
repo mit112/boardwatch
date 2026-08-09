@@ -173,6 +173,18 @@ def set_fact(facts: Facts, catalog: RulesCatalog, dotted: str, value: str) -> Fa
     return Facts.model_validate(data)
 
 
+def set_career_field(facts: Facts, catalog: RulesCatalog, value: str) -> Facts:
+    """Set the profile's career_field, validated against the catalog's closed vocabulary.
+
+    career_field is a non-family scalar, so set_fact (which resolves a family.fact) cannot
+    reach it. Pure and CLI-free apart from the BadParameter it raises for a friendly message.
+    """
+    if value not in catalog.career_fields:
+        valid = ", ".join(sorted(catalog.career_fields)) or "(none declared)"
+        raise typer.BadParameter(f"unknown career_field {value!r}. Valid: {valid}")
+    return facts.model_copy(update={"career_field": value})
+
+
 def set_policy(policy: Policy, catalog: RulesCatalog, family_id: str, choice: str) -> Policy:
     """Apply one family severity to the policy, returning a new Policy. Pure and CLI-free.
 
@@ -219,6 +231,7 @@ def facts_root(ctx: typer.Context) -> None:
                 console.print(f"  {field.name}: {_render_value(value)}")
         else:
             console.print(f"{family.label}: {_render_value(getattr(facts, family.fact))}")
+    console.print(f"Career field: {_render_value(facts.career_field)}")
 
 
 @facts_app.command("set")
@@ -233,7 +246,10 @@ def facts_set(ctx: typer.Context, fact: str, value: str) -> None:
         facts = parse_facts(row.eligibility_facts_json)
         policy = parse_policy(row.eligibility_policy_json)
         try:
-            new_facts = set_fact(facts, catalog, fact, value)
+            if fact == "career_field":
+                new_facts = set_career_field(facts, catalog, value)
+            else:
+                new_facts = set_fact(facts, catalog, fact, value)
         except typer.BadParameter as exc:
             typer.echo(exc.message)
             raise typer.Exit(code=1) from exc

@@ -91,6 +91,26 @@ def test_setting_a_choice_set_field(env: Path) -> None:
     assert set(facts.security_clearance.accesses) == {"sci", "poly"}
 
 
+def test_set_career_field_accepts_a_catalog_value(tmp_path: Path) -> None:
+    from boardwatch.cli.eligibility_cmd import set_career_field
+    from boardwatch.eligibility.catalog import load_rules
+    from boardwatch.eligibility.facts import Facts
+    catalog = load_rules(tmp_path / "no-override")  # bundled: career_fields == {software}
+    out = set_career_field(Facts(), catalog, "software")
+    assert out.career_field == "software"
+
+
+def test_set_career_field_rejects_out_of_vocab(tmp_path: Path) -> None:
+    import typer
+
+    from boardwatch.cli.eligibility_cmd import set_career_field
+    from boardwatch.eligibility.catalog import load_rules
+    from boardwatch.eligibility.facts import Facts
+    catalog = load_rules(tmp_path / "no-override")
+    with pytest.raises(typer.BadParameter):
+        set_career_field(Facts(), catalog, "nursing")
+
+
 def test_an_unknown_fact_is_rejected_and_lists_the_valid_ones(env: Path) -> None:
     assert _run(env, ["init"], INIT_INPUT).exit_code == 0
     result = _run(env, ["eligibility", "facts", "set", "favourite_colour", "blue"])

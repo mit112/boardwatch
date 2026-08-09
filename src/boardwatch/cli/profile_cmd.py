@@ -12,7 +12,7 @@ from rich.console import Console
 from sqlalchemy import Engine
 
 from boardwatch.cli.context import build_context
-from boardwatch.cli.eligibility_cmd import set_fact, set_policy
+from boardwatch.cli.eligibility_cmd import set_career_field, set_fact, set_policy
 from boardwatch.core.settings import Settings
 from boardwatch.eligibility.catalog import load_rules
 from boardwatch.eligibility.facts import facts_payload, parse_facts, parse_policy
@@ -152,6 +152,17 @@ def edit(ctx: typer.Context) -> None:
     facts = parse_facts(row.eligibility_facts_json)
     policy = parse_policy(row.eligibility_policy_json)
     if typer.confirm("Update eligibility checks?", default=False):
+        if catalog.career_fields:
+            field_hint = ", ".join(sorted(catalog.career_fields))
+            while True:
+                answer = typer.prompt(f"Your career field [{field_hint}]", default="")
+                if not answer.strip():
+                    break
+                try:
+                    facts = set_career_field(facts, catalog, answer.strip())
+                    break
+                except typer.BadParameter as exc:
+                    console.print(exc.message)
         for family in catalog.families:
             for field_spec in family.fields:
                 # Re-prompt on a bad answer rather than aborting the edit and discarding the

@@ -141,6 +141,7 @@ def test_help_smoke(env: Path) -> None:
 _ELIG_INIT = (
     "3\nacme\nBackend engineer: Python, Go.\n\n\n\nn\n"  # companies, profile, filters, remote
     "y\n"                          # set up eligibility now?
+    "\n"                           # career field: skip
     "citizen\nus\n\nblocker\n"     # work_auth: skip needs_sponsorship
     "\n\n"                      # experience_years: skip field, default policy
     "\n\n\n\n\n"                # clearance: skip four fields, default policy
@@ -172,6 +173,22 @@ def test_init_eligibility_path_persists_facts_and_policy(env: Path) -> None:
     assert policy.families["internship"] == "preference"
 
 
+def test_init_career_field_prompt_persists_the_answer(env: Path) -> None:
+    elig_input = _ELIG_INIT.replace(
+        "y\n"          # set up eligibility now?
+        "\n",          # career field: skip
+        "y\n"          # set up eligibility now?
+        "software\n",  # career field: set
+        1,
+    )
+    assert _invoke(env, ["init"], elig_input).exit_code == 0
+    with get_engine(env).connect() as conn:
+        row = get_profile(conn)
+    assert row is not None
+    facts = parse_facts(row.eligibility_facts_json)
+    assert facts.career_field == "software"
+
+
 def test_init_skipping_eligibility_leaves_columns_null(env: Path) -> None:
     skip = "3\nacme\nBackend engineer: Python, Go.\n\n\n\nn\nn\n"  # trailing n: skip eligibility
     assert _invoke(env, ["init"], skip).exit_code == 0
@@ -188,6 +205,7 @@ def test_profile_edit_updates_eligibility(env: Path) -> None:
         "\n\n\n\n\n"                        # keep profile text and all filters
         "\n"                               # keep resume max pages
         "y\n"                              # update eligibility checks?
+        "\n"                               # career field: skip (keeps stored value)
         "permanent_resident\nus\n\n\n"     # work_auth: change status, skip bit, default policy
         "\n\n"                             # experience_years
         "\n\n\n\n\n"                       # clearance
