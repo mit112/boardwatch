@@ -79,6 +79,7 @@ families:
         required_rank: 3
         requirement_text: "A bachelor's degree is required"
         pattern: "bachelor"
+        abstain_by: ["unless otherwise noted"]
 """
 
 
@@ -769,6 +770,27 @@ def test_out_of_vocab_career_field_abstains_not_clears(tmp_path) -> None:
     cat = _controlled_catalog(tmp_path)
     facts = Facts(career_field="bogus", highest_degree="none")
     result = evaluate("A bachelor's degree is required.", facts, Policy(), cat)
+    row = next(r for r in result.requirements if r.rule_id == "degree:bachelor_required")
+    assert row.disposition == "unknown"
+    assert row.rationale == "missing_profile_field:career_field"
+
+
+def test_field_abstain_wins_a_genuine_collision_with_posting_waive(tmp_path) -> None:
+    """A detection that ALSO carries a posting-waive escape (`detection.abstained` is set,
+    from `_CONTROLLED`'s `abstain_by: ["unless otherwise noted"]` matching the JD) must still
+    report the field-abstain rationale, not the posting-waive one.
+
+    Both branches produce the SAME disposition (`unknown`), so a test that only checks
+    disposition on a NON-colliding detection cannot tell the two branches apart, and a future
+    reorder that checked `detection.abstained` first would silently flip only the rationale
+    string. This constructs the actual collision — the same detection satisfies BOTH
+    conditions at once — and pins that the field-abstain branch, which runs first in
+    `evaluate`, is the one that wins.
+    """
+    cat = _controlled_catalog(tmp_path)
+    body = "A bachelor's degree is required, unless otherwise noted."
+    facts = Facts(career_field=None, highest_degree="none")  # missing -> field-abstain applies
+    result = evaluate(body, facts, Policy(), cat)
     row = next(r for r in result.requirements if r.rule_id == "degree:bachelor_required")
     assert row.disposition == "unknown"
     assert row.rationale == "missing_profile_field:career_field"
