@@ -27,6 +27,7 @@ from boardwatch.eligibility.catalog import RulesCatalog, load_rules
 from boardwatch.eligibility.facts import Facts, Policy
 from boardwatch.eligibility.oracle import OracleVerdict
 from boardwatch.store.db import ensure_schema, get_engine
+from boardwatch.store.ledger_queries import load_dispositions, reopen_jobs
 from boardwatch.store.queries import current_posting_versions, save_profile
 from boardwatch.store.tables import companies, jobs, posting_versions, postings
 
@@ -104,6 +105,14 @@ def _write_gate_verdict(
         )
 
 
+
+def _release_ledger(engine: Engine) -> None:
+    """Release every disposition, so a second `rank_open_postings` call sees the ledger state the
+    first one saw. Reopen (rather than DELETE) is the drain's own mechanism."""
+    with engine.begin() as conn:
+        reopen_jobs(conn, sorted(load_dispositions(conn)), now=utcnow())
+
+
 def test_non_ineligible_gate_rows_do_not_change_ranking(tmp_path: Path) -> None:
     """A gate row that is `uncertain` (not `ineligible`) must be purely additive: every
     field of RankedResults is identical before and after it is written (deepseek MAJOR-6:
@@ -121,6 +130,11 @@ def test_non_ineligible_gate_rows_do_not_change_ranking(tmp_path: Path) -> None:
         ),
     )
 
+    # The ranker records a `seen` disposition for every row it surfaces (P6 slice 2), so the
+    # `before` call above changed the ledger. Released here, so this comparison isolates the
+    # gate row: `include_handled=True` would NOT work, because a drained row carries
+    # `handled_as='seen'` and the two results would then differ on that field instead.
+    _release_ledger(engine)
     after: RankedResults = rank_open_postings(engine, settings, limit=10, now=NOW)
     assert after == before
 
@@ -132,7 +146,11 @@ def test_gate_ineligible_hides_a_posting_the_deterministic_engine_did_not(tmp_pa
     must reveal it again."""
     engine = _seed(tmp_path, ["Backend Engineer", "Platform Engineer"])
     settings = _settings(tmp_path)
-    before = rank_open_postings(engine, settings, limit=10, now=NOW)
+    # `include_handled=True` throughout: this test ranks more than once against the same
+    # corpus, and the ranker records a `seen` disposition for the rows it surfaces (P6 slice
+    # 2), so a later call would hide them as already-handled and the comparison would be
+    # between two populations rather than between the two states under test.
+    before = rank_open_postings(engine, settings, limit=10, now=NOW, include_handled=True)
     assert before.hidden_ineligible == 0
     hidden_posting_id = before.visible[0].posting_id
     other_posting_id = before.visible[1].posting_id
@@ -146,10 +164,12 @@ def test_gate_ineligible_hides_a_posting_the_deterministic_engine_did_not(tmp_pa
         ),
     )
 
-    after = rank_open_postings(engine, settings, limit=10, now=NOW)
+    after = rank_open_postings(engine, settings, limit=10, now=NOW, include_handled=True)
     assert [p.posting_id for p in after.visible] == [other_posting_id]
     assert after.hidden_ineligible == 1
     assert after.considered == before.considered == 2
 
-    revealed = rank_open_postings(engine, settings, limit=10, now=NOW, include_ineligible=True)
+    revealed = rank_open_postings(
+        engine, settings, limit=10, now=NOW, include_ineligible=True, include_handled=True
+    )
     assert hidden_posting_id in {p.posting_id for p in revealed.visible}

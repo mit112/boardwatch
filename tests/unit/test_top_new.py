@@ -177,8 +177,10 @@ def test_new_hides_ineligible_before_the_limit(env: Path) -> None:
     assert "Recent Role" not in result.stdout
     assert "hidden as ineligible" in result.stdout
     # Explicit ordering across two visible rows: --include-ineligible shows both in
-    # score order, higher (recent) first, lower (older) second.
-    both = _run(env, ["top", "2", "--new", "--include-ineligible"])
+    # score order, higher (recent) first, lower (older) second. `--include-handled` because the
+    # `top 1 --new` above recorded "Older Role" as `seen` (P6 slice 2), which would otherwise
+    # hide it here and make the ordering assertion vacuous.
+    both = _run(env, ["top", "2", "--new", "--include-ineligible", "--include-handled"])
     assert both.exit_code == 0
     assert "Recent Role" in both.stdout
     assert "Older Role" in both.stdout

@@ -63,8 +63,14 @@ def test_the_drain_shows_every_suppressed_row(seed_dedup, backfill_identities):
     seed = seed_dedup(count=3)
     backfill_identities(seed)
     settings = _settings(seed.data_dir)
-    shown = rank_open_postings(seed.engine, settings, limit=1, include_duplicates=True)
-    hidden = rank_open_postings(seed.engine, settings, limit=1)
+    # `include_handled=True` on BOTH calls isolates the duplicate drain from the ledger. The
+    # first call surfaces the survivor and therefore records it `seen` (P6 slice 2), so without
+    # this the second call would hide it as already handled and the comparison would be between
+    # two different populations rather than between drain-open and drain-closed.
+    shown = rank_open_postings(
+        seed.engine, settings, limit=1, include_duplicates=True, include_handled=True
+    )
+    hidden = rank_open_postings(seed.engine, settings, limit=1, include_handled=True)
     assert hidden.hidden_duplicate == 2, "the group must actually be suppressed"
     assert len(shown.visible) == len(hidden.visible) + hidden.hidden_duplicate
     assert len(shown.visible) > 1, "the drain must be able to exceed the rank limit"
@@ -109,6 +115,7 @@ def test_the_reconciliation_identity_holds_with_the_drain_open(seed_dedup, backf
         + r.hidden_ineligible
         + r.hidden_below_cutoff
         + r.hidden_duplicate
+        + r.hidden_handled
     )
 
 

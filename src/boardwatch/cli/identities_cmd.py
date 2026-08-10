@@ -6,12 +6,16 @@ import typer
 
 from boardwatch.cli.context import build_context
 from boardwatch.core.clock import utcnow
+from boardwatch.core.dedup import resolve_duplicates
 from boardwatch.core.posting_identity import compute_identities
+from boardwatch.core.regroup import plan_regrouping
 from boardwatch.store.identity_queries import (
+    identities_complete,
     load_identities,
     load_identity_inputs,
     write_identities,
 )
+from boardwatch.store.regroup import apply_merges, job_anchors, protected_job_ids
 
 identities_app = typer.Typer(no_args_is_help=True, help="Posting identity maintenance (dedup).")
 
@@ -26,6 +30,57 @@ def backfill(ctx: typer.Context) -> None:
         for row in load_identity_inputs(conn):
             written += write_identities(conn, row.posting_id, compute_identities(row), now=now)
     typer.echo(f"identities: wrote {written} rows")
+
+
+@identities_app.command("regroup")
+def regroup(
+    ctx: typer.Context,
+    dry_run: bool = typer.Option(
+        False, "--dry-run", help="Report what would move without writing anything."
+    ),
+) -> None:
+    """Move every duplicate posting onto its survivor's canonical job (P6 slice 2 §3).
+
+    The corpus-wide counterpart to what the pipeline does over the population it ranked. Safe to
+    re-run: a posting already on the canonical job plans no move, so a second pass writes
+    nothing and appends no event.
+
+    Completeness-gated for a stronger reason than the ranker's (D-090). Survivor election over a
+    partial corpus is backfill-order-dependent, and unlike the read path this writes that
+    order-dependence to disk permanently.
+    """
+    engine = build_context(ctx.obj).engine
+    with engine.begin() as conn:
+        if not identities_complete(conn):
+            typer.echo(
+                "identities: incomplete — regrouping a partial corpus would persist a "
+                "backfill-order-dependent grouping. Run `boardwatch identities backfill` first."
+            )
+            raise typer.Exit(code=1)
+        rows = load_identity_inputs(conn)
+        suppressions = resolve_duplicates(rows, load_identities(conn))
+        member_ids = sorted(
+            {s.posting_id for s in suppressions} | {s.survivor_posting_id for s in suppressions}
+        )
+        plan = plan_regrouping(
+            suppressions,
+            job_anchors(conn, member_ids),
+            protected_job_ids=protected_job_ids(conn),
+        )
+        moved = 0 if dry_run else apply_merges(
+            conn, plan.merges, identity_kind="exact_quad", now=utcnow()
+        )
+    verb = "would move" if dry_run else "moved"
+    count = len(plan.merges) if dry_run else moved
+    typer.echo(
+        f"regroup: {len(suppressions)} suppressed postings, {verb} {count} onto a "
+        f"canonical job, {len(plan.refusals)} group(s) refused"
+    )
+    for refusal in plan.refusals:
+        typer.echo(
+            f"  refused ({refusal.reason}): postings "
+            f"{', '.join(str(p) for p in refusal.member_posting_ids)}"
+        )
 
 
 @identities_app.command("verify")
