@@ -1,9 +1,13 @@
 # PROGRAM STATE — read this first
 
-**Last updated:** 2026-08-10 (post-review fix session). **Active item: P6 Slice 1 — liveness +
-dedup. All nine plan tasks are BUILT on branch `p6-slice1`, the branch has now been REVIEWED by
-three independent reviewers, and the resulting fixes are committed. Still NOT merged to `main`.**
-`main` is unchanged. Merging is Mit's decision.
+**Last updated:** 2026-08-10 (post-review fix session). **P6 Slice 1 is BUILT, REVIEWED, FIXED and
+MERGED to `main` — `main` is `f26c87a` and pushed.** Fast-forwarded, so all 19 commits keep their
+individual history. Merged on Mit's explicit authorization after the three-reviewer whole-branch
+review; `make check` was green on the exact merged tree.
+
+**Next action: P6 Slice 2** (durable ledger + drain + job regrouping, PROGRAM §3.P6 item 4). Before
+building it, note the two live follow-ups below: the live store needs `identities backfill` after the
+`p6.2` version bump, and D-072 (the model-tier benchmark) is still owed from P5.
 
 **`make check` on the fixed branch (`f2f2430`): exit 0** — `generalization: OK`, ruff clean,
 `mypy --strict` clean, 3749 passed / 1 deselected, coverage 95.22%, **4m17s**, in a detached worktree
@@ -34,11 +38,19 @@ precedence in `_elect` — now have one. The three reviewers overlapped on only 
 found something the other two missed entirely; the single most consequential defect (the C++/C#
 title collision) came from the reviewer that also produced the most errors.
 
-**Gate P6 is NOT met, and Slice 1 was designed not to meet it (D-093).** It makes exactly one of
-the gate's four clauses measurable — the funnel's `unique` counter, now a measured number instead
-of `not instrumented`. The other three (7-day duplicate leakage, 0 dead postings reaching the lead
-list, a 20-sample suppression audit) are operational measurements over a running system. The build
-made them measurable; it did not meet them.
+**Gate P6 is NOT met, but its four clauses are no longer all outstanding.** Clause by clause:
+
+| Gate P6 clause | Standing |
+|---|---|
+| Duplicate leakage measured over 7 days, ≤ 5% | **NOT met — measurable now.** The funnel's `unique` is a measured number instead of `not instrumented`. Needs 7 days of runs |
+| **0** dead postings reaching the lead list | **NOT met, not buildable yet** — needs liveness, which is Slice 3 (PROGRAM §3.P6 item 6) |
+| A deliberately-injected hash-collision test proving the wrong job cannot be deduped | **MET** — `test_string_verify_blocks_suppression_when_bodies_diverge` forges `identity_key` equality over divergent bodies, and the group is refused. Two adjacent tests reproduce the real Datadog 5843/5846/5849 shape (one `content_hash`, three requisitions). This is a test, not a measurement, so it is met outright |
+| Suppression audit of 20 sampled suppressions, each confirmed a genuine duplicate or policy skip | **NOT met — but nearly reachable now.** 186 suppressions exist on the copy and the raw-field audit already checked all 147 groups mechanically (8 differ in raw title, all benign punctuation noise). What remains is sampling 20 and confirming each by eye |
+
+**Corrected 2026-08-10:** an earlier version of this block said Slice 1 "makes exactly one of the
+gate's four clauses measurable" and that the other three were operational measurements. Clause 3 is
+not a measurement at all — it is a test, it exists, it is non-vacuous, and it passes. D-093's framing
+("Slice 1 is designed not to meet Gate P6") remains true of the gate as a whole.
 
 **What shipped on the branch.** `posting_identities` (a new table + the `p6_posting_identities`
 migration, which is now the Alembic head); a closed, ranked, versioned identity catalog in which

@@ -3951,3 +3951,35 @@ banning batching pays a large wall-clock cost for a defect that a two-second tes
 before their gate returned. "Never commit on a red gate" is unenforceable when the gate result
 arrives after the commit; the enforceable version is "do not commit a schema change without running
 the schema guards", which is what this ruling installs.
+
+---
+
+## D-100 — P6 Slice 1 merged to `main`; Gate P6 clause 3 is MET, not merely measurable
+
+*2026-08-10, on Mit's explicit authorization after the three-reviewer review.*
+
+**Context.** Slice 1 was built unattended, reviewed by three independent reviewers, and every finding
+fixed (D-095 … D-099). `make check` green at `f2f2430`. Mit authorized the merge.
+
+**Choice.** Fast-forwarded `main` from `1c0747e` to `f26c87a` and pushed. **Fast-forward, not squash**,
+so the 19 commits keep their individual history: each is one logical change, the TDD trail is legible,
+and the review-fix commits stay distinguishable from the original build. Previous phases squashed via
+PR; that collapses a nine-task TDD sequence into one commit and was not worth it here.
+
+**Also recorded: Gate P6's third clause is MET.** The gate asks for "a deliberately-injected
+hash-collision test proving the wrong job cannot be deduped".
+`tests/unit/test_dedup_resolver.py::test_string_verify_blocks_suppression_when_bodies_diverge` forges
+`identity_key` equality across two divergent bodies and asserts the group is refused; two adjacent
+tests reproduce the real Datadog 5843/5846/5849 shape (one `content_hash`, three requisitions, 809
+such groups live of which 727 span a different title or location). That clause is a **test**, not an
+operational measurement, so it is satisfied outright rather than "made measurable".
+
+**Alternatives rejected.** Continuing to report all four clauses as outstanding, per the earlier
+"Slice 1 makes exactly one of four clauses measurable" line. That undersold a clause that is actually
+met and would have left a future session re-building a test that exists. D-093's framing (Slice 1 does
+not meet Gate P6 *as a whole*) is unchanged and still correct.
+
+**Carried forward, not done.** The live store needs `boardwatch identities backfill` after this merge:
+D-096 bumped `IDENTITY_ALGORITHM_VERSION` to `p6.2`, so the existing `p6.1` rows stop being read and
+suppression stays off until the backfill runs. `top` now says so out loud (D-098), which is the only
+reason this is a follow-up rather than a silent regression.
