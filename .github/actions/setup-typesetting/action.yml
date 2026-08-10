@@ -9,7 +9,7 @@ inputs:
   tectonic-version:
     description: >
       Pinned tectonic release. Keep in step with the Dockerfile's TECTONIC_VERSION — they are two
-      sites for one fact, and nothing detects drift between them.
+      sites for one fact, and `tests/unit/test_typesetting_pin.py` fails if they drift apart.
     required: false
     default: "0.17.0"
 
