@@ -1666,6 +1666,21 @@ describe the shipped system?" belongs in the release procedure, not in the chang
 `typst` strings are deliberate: the *Changed* entry explaining the swap, and the persisted meta key
 `typst_pdf_built`, whose legacy name is documented rather than renamed.
 
+**And checking one README claim found a real defect: `config show` did not print every key.**
+`_SCALAR_KEYS` in `cli/config_cmd.py` is a hand-maintained mirror of `Settings`, and it covered **4 of
+10** scalar fields. `show` did not print the other six and `set` rejected them as unknown, so the only
+way to change them was to hand-edit `config.toml` — precisely what P11's settings surface exists to
+avoid. The worst of them is **`seen_ttl_days`**, which P6 ships in this very release as the knob
+governing how long a surfaced lead stays suppressed. Fixed, and **a test now asserts the registry equals
+the scalar `Settings` fields** — which immediately found a sixth (`busy_timeout_ms`) that I had missed
+after listing five by hand.
+
+That is the **third hand-maintained mirror to bite in one session**, after the ranker's drop buckets
+(six sites, three checked) and the funnel's tailor stage. The pattern is worth naming: this repo
+repeatedly pairs a closed catalog with a second list that must agree with it and has no detector.
+`reports/manifest.py` already gets this right with `_assert_exhaustive`; the fix each time is to copy
+that, not to be more careful.
+
 **The README roadmap's "Next" list was fully ticked**, so it promised nothing while looking like a plan —
 the same defect the 0.2.0 release commit fixed once already, which is why it is recorded this time.
 Replaced with the three genuinely-next items, and breadth is stated as **conditional** on the other two
