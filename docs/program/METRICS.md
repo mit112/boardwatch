@@ -1452,3 +1452,96 @@ differ **only** in location list order — `["Pittsburgh, PA", "New York, NY"]` 
 under raw grouping they are two distinct postings. This is the empirical justification for design §2.1's
 sort + case-fold, and it is the mechanism behind the shipped 186 exceeding the raw-grouped 174 — the
 delta is real duplicates, not over-suppression.
+
+---
+
+## Session 2026-08-10 (later) — P6 Slice 2: the durable decision ledger, its drain, and job regrouping
+
+### The gate
+
+| Measurement | Value |
+|---|---|
+| `make check` | **exit 0** |
+| Tests | **3822 passed**, 1 deselected |
+| `generalization` | OK · ruff clean · `mypy --strict` clean (190 files) |
+| Wall time | **4m42s**, detached worktree pinned to `8a70f36` |
+| Schema head after | `p6_job_dispositions` |
+
+A first gate run at `6086e07` came back **exit 2 — 4 failed, 3811 passed**, and was right. All four were one
+class: a caller that ranks twice against the same corpus, now getting a second answer that hides what the
+first surfaced, because the ranker records `seen`. See D-103 for the ruling and the fix.
+
+### The premise, measured on the live store BEFORE the slice
+
+The ledger exists because nothing suppressed an already-built lead, so the top-N never advanced.
+
+| Measurement | Value |
+|---|---|
+| Postings ever tailored | 18 |
+| Tailored in **more than one** run | **6** |
+| Postings tailored in **four** runs each | **5** — 2011, 2012, 10947, 15498, 15499 (runs 5, 6, 7, 9) |
+
+**Caveat, stated so the figure is not oversold:** runs 5–7 and 9 were the Gate-P0 repeat-run evidence over
+one frozen store on one day, not four steady-state days. The *mechanism* is measured; the daily frequency is
+inferred.
+
+### The decision unit, measured
+
+| Measurement | Value |
+|---|---|
+| `postings` | 24,073 |
+| `jobs` | 24,073 |
+| `count(distinct postings.job_id)` | 24,073 |
+| `postings.job_id IS NULL` | **0** |
+| `applications` | **0 rows** |
+| `job_grouping_events` before | **0** |
+| `artifacts` with a non-NULL `job_id` | **0** of 44 |
+
+So `job_id` was exactly an alias for `posting_id`, and no tracking key could be stranded by regrouping today
+— which is what makes the refusal guard latent rather than unreachable (D-104).
+
+### Host classes over the live corpus — why `cross_host` dereference has no population
+
+| Class | Open postings |
+|---|---|
+| `ats` | **15,217** |
+| `unknown` | **8,238** |
+| `aggregator` | **0** |
+
+There is no aggregator posting to dereference. D-082's re-entry path is unchanged; its trigger is P7.
+
+### Regrouping verified on an isolated COPY of the live store — the live store was never written to
+
+| Measurement | Value |
+|---|---|
+| `identities regroup --dry-run` | **186** merges over **147** groups, **0** refused |
+| `identities regroup` (apply) | **186** moved, 0 refused, 0.9 s |
+| Second pass (idempotence) | **0** moved |
+| Jobs anchoring 2+ open postings, by SQL | **147** |
+| Surplus open postings, by SQL | **186** |
+| `job_grouping_events` rows | **186** |
+| Distinct postings moved | **186** |
+| Events where `from_job_id == to_job_id` | **0** |
+| `count(distinct postings.job_id)` | 24,073 → **23,887** (−186 exactly) |
+
+The 147/186 matches D-081/D-101's independently measured groups and surplus rows. The SQL path groups the
+**projection** (`postings.job_id`) while the planner worked from `posting_identities` + `resolve_duplicates`,
+so they are different paths.
+
+**What this agreement does and does not show.** The group count matching an independently measured figure,
+and the exact −186 with zero self-merges, is real evidence that no merge collapsed two groups or moved a
+posting twice. It is **not** evidence that the right postings were grouped — that rests on D-101's by-eye
+audit of 20 sampled suppressions, and this slice adds no new precision evidence.
+
+### Mutation check on the headline claim
+
+Disabling the ranker's ledger check turned **4 of the 6** tests in
+`tests/pipeline/test_ledger_advances_the_queue.py` red, including
+`test_a_second_run_builds_a_DISJOINT_set_of_leads`. The two that survived are a pure unit test of the
+zero-output guard and the filesystem cross-check, whose claims do not depend on suppression.
+
+### Disk
+
+The pre-migration backup `boardwatch.db.pre-p6-backup-20260810` (769 MB) is still in place. Root filesystem
+is at **39%** with 18 GiB free, so the disk pressure that made deleting it worth considering has resolved
+and it was left alone.

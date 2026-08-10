@@ -8,6 +8,124 @@ Format: **context** (what forced a choice) · **choice** · **alternatives rejec
 
 ---
 
+## Index
+
+**Do not read this file end to end.** It is ~80,000 tokens; at 107 entries it is a reference, not a
+briefing. `STATE.md` is the read-first document. Find what you need here, then read just that range —
+`sed -n '<start>,<end>p' docs/program/DECISIONS.md`. Line numbers drift as entries are appended, so
+confirm with `grep -n '^## D-0NN' docs/program/DECISIONS.md` before trusting one.
+
+| # | Line | Decision |
+|---|---|---|
+| D-001 | 129 | Program machinery lives in `docs/program/`, version-controlled |
+| D-002 | 147 | Output-side phases precede input-side phases |
+| D-003 | 165 | The 14-day clock is acceptance-only, never a phase gate |
+| D-004 | 182 | Stub defense: take the metric now, defer the machinery |
+| D-005 | 201 | Do not rebuild the tailoring architecture |
+| D-006 | 223 | The PDF cliff is a silent-degrade defect, not a packaging problem |
+| D-007 | 241 | The work-auth fix is one declared field, not a phase |
+| D-008 | 260 | Retire the P12 pre-registered parity comparison |
+| D-009 | 281 | Applied-suppression belongs in P6, and is smaller than described |
+| D-010 | 299 | Published mechanism vs. personal instance, system wide |
+| D-011 | 325 | Two personas, and `needs_sponsorship` declared per user |
+| D-012 | 345 | Verify rather than assume, as a program rule |
+| D-013 | 367 | Independent review: verdict APPROVE WITH CHANGES, amendments adopted |
+| D-014 | 405 | `main` was red; program docs are subject to the generalization checker |
+| D-015 | 428 | Migration `run_attribution`: nullable, unnamed inline FK, evaluations + artifacts only |
+| D-016 | 464 | `run_id` means a pipeline run, and P0 introduces it |
+| D-017 | 500 | second independent review; STATE's own header was the defect |
+| D-018 | 542 | abstain-rate scope, and the `IN`-clause limit is a repo-wide debt, not this metric's |
+| D-019 | 576 | `run_id` is never NULL on a row written after attribution exists |
+| D-020 | 628 | the scan stage creates the run row; the pipeline finishes it |
+| D-021 | 701 | second review: the exit-code fix had over-corrected into bar metric B5 |
+| D-022 | 756 | the funnel's head is the open-posting corpus, not scan throughput |
+| D-023 | 775 | a stage reports `None` when unmeasured, and says when its balance is bookkeeping |
+| D-024 | 814 | the artifact is written from the `finally`, and never fails the run |
+| D-025 | 832 | mutation testing has two failure modes that both report a false PASS |
+| D-026 | 861 | `assisted` is as unmeasurable as `unique`, and both report `None` |
+| D-027 | 895 | the shortlist stage becomes evidence, by rooting it at what the ranker considered |
+| D-028 | 927 | only one per-source total was worth reconciling, and the first attempt could not fail |
+| D-029 | 984 | `runs.status` is a closed catalog whose DEFAULT carries the meaning |
+| D-030 | 1032 | the run manifest ships two hashes, closing the profile-row gap rather than only noting it |
+| D-031 | 1079 | `boardwatch verify` is a standalone DB↔artifact reconciliation sweep, supplementing Gate P0 rather than re-anchoring it |
+| D-032 | 1183 | P1a ships a hard PDF gate as impure-runner/pure-policy, splits P1b out, and closes D-006's silent degrade |
+| D-033 | 1289 | Tier-B reword provenance: a deterministic allowlist, fail-closed to Tier-A, counted separately from B4 |
+| D-034 | 1375 | `needs_sponsorship` is an orthogonal bit on the work-auth fact, and it only decides sponsorship rules |
+| D-035 | 1412 | `work_auth` ships `default_policy: blocker`; the other five families stay `preference` |
+| D-036 | 1478 | `eligible` with zero fired requirements renders distinctly from `eligible` with cleared ones |
+| D-037 | 1572 | the fatal-vs-non-fatal contract is written, and the outage predicate is one function |
+| D-038 | 1630 | the run-scoped morning artifact, and freshness from run_id + a terminal row + the funnel's own reconciliation |
+| D-039 | 1725 | run-integrity guards: cohort completeness by ID set, zero-output provably-right via run_id attribution, filesystem-truth reusing slice-4 |
+| D-040 | 1828 | LLM transient-error retry-with-backoff, ported from politeness into a shared adapter helper |
+| D-041 | 1907 | the SQLite/WAL concurrency stance is now documented (P3 item 8, doc half) |
+| D-042 | 1929 | the tailor-level idempotence short-circuit is DECLINED (YAGNI); the response cache already covers it |
+| D-043 | 1953 | the scan lock now notifies loudly with the blocking pid; the sidecar is message-only, never a lock authority |
+| D-044 | 1998 | P3 slice 5b: KEEP today's Tier-A downgrade on provider/quota error; decline the "never downgrade" inversion |
+| D-045 | 2027 | P3 slice 2: DECLINE custom stale-reclaim (unsound AND unnecessary); the loud-notify shipped, the reaper stays fresh-context |
+| D-046 | 2054 | P3 slice 2: age-based run REAPER (no schema); this CLOSES the last non-Mit / non-Docker P3 build item |
+| D-047 | 2093 | Proceed with P4 (craft rubric) ahead of Gate P3; Gate P3 is blocked only by Docker+ops, not by any P4 build dependency |
+| D-048 | 2119 | P4 item 1: deterministic overmatch (verbatim-lift + unusual-caps) guard SHIPPED; first P4 slice |
+| D-049 | 2151 | P4 item 2: consolidate the canonical-vocab seed; DECLINE the per-field selector (YAGNI) |
+| D-050 | 2182 | P4 item 3a: banned-register + buzzword-density + verb-diversity craft guards SHIPPED |
+| D-051 | 2217 | P4 item 3b: requirement-echo detector SHIPPED; item 3 COMPLETE |
+| D-052 | 2256 | P4 item 4: DEFER the de-senioritizer into item 7 (don't build inert dead code); do items 5–6 first |
+| D-053 | 2283 | P4 item 5a: per-lead layout gate SHIPPED (bullet length/count, escaping round-trip, template-artifact) |
+| D-054 | 2308 | Personas / field-specific knowledge are GATHERED per-user at onboarding, never authored by us (we ship tech expertise only) |
+| D-055 | 2340 | Opus 5 checkpoint reviews of the session's big pieces (reaper + P4 guard gauntlet); fix-forwards |
+| D-056 | 2373 | P4 item 5b: run-once fatal master-résumé validation at load; item 5 COMPLETE |
+| D-057 | 2399 | Résumé TAILORING is fundamentally wrong; a dedicated fix session precedes Gate 3 (and, recommended, the remaining P4 polish) |
+| D-058 | 2423 | Résumé render engine = tectonic compiling the user's actual LaTeX template (Typst decision reversed) |
+| D-059 | 2466 | Increment-1 plan cleared for execution after a SECOND fresh-context re-review (both REWORK, all folded in) |
+| D-060 | 2513 | Increment 1 (LaTeX render substrate) executed and shipped to `main`; the Typst→tectonic swap is complete |
+| D-061 | 2581 | P4 item 6 (keyword-coverage measurement) shipped to `main` |
+| D-062 | 2615 | Persona (P4 item 7) is a résumé-presentation lens, not an eligibility variant; the de-senioritizer is made live via JD-title stripping |
+| D-063 | 2657 | P4 item 7 (persona registry + live de-senioritizer) shipped to `main`; P4 build complete |
+| D-066 | 2703 | P5 answer-key is AI-oracle + human-audit-a-sample via a job-apps judge port (its own session) |
+| D-065 | 2737 | P5b B0 scaffolding: reference all-blocker policy + precision scorer + labeling worksheet |
+| D-064 | 2786 | P5a: three verdict-SAFE eligibility-integrity slices shipped to `main` |
+| D-067 | 2829 | P5 answer-key oracle judge: agent-lane port + deferred (but drained) human audit |
+| D-068 | 2874 | P5b answer-key oracle judge SHIPPED to `main` (agent lane, all 7 tasks) |
+| D-069 | 2917 | First Gate-P5 measurement: precision 94% (16/17), one FP = a disjunctive-experience over-fire |
+| D-070 | 2959 | Audit via historic data (Mit declined manual audit); B1–B4 unblocked at 28% coverage |
+| D-071 | 3014 | Two-stage eligibility gate agreed for a fresh session; model-agnostic, agent-lane cheap gate |
+| D-072 | 3041 | Model-tier benchmark for the eligibility judge + published guidance (research, next sessions) |
+| D-073 | 3071 | Disjunctive experience-years fix SHIPPED; Gate P5 MET (precision 100%) |
+| D-074 | 3123 | Final eligibility gate lane SHIPPED (persistent, agent-lane, fail-open); Gate P5 unchanged |
+| D-075 | 3198 | Gate P2 reconciled: three individually-correct verdicts (may coincide); ≥3-field mechanism via fixtures |
+| D-076 | 3267 | P2 item 4's final whole-branch review: what it caught, and four rulings it forced |
+| D-077 | 3336 | P6 Slice 1: the design is settled and the plan is written; no code exists yet |
+| D-078 | 3426 | P6 Slice 1: the plan's test fixtures are now real; eleven defects, all found by running code |
+| D-079 | 3515 | P6 Slice 1 annotates only; `postings.job_id` is not mutated |
+| D-080 | 3529 | `content_hash` alone may never suppress |
+| D-081 | 3543 | `exact_quad` is the sole suppressing kind, and its yield is stated honestly |
+| D-082 | 3561 | `cross_host` ships annotate-only, reversing an earlier draft |
+| D-083 | 3582 | No location evidence ⇒ no location-bearing identity, never a `"[]"` sentinel |
+| D-084 | 3597 | Three host classes, not two; matching is exact-or-dot-suffix |
+| D-085 | 3611 | Allowlist URL normalization, not a denylist |
+| D-086 | 3625 | Survivor election never consults score; `posting_id` is a load-bearing tiebreak |
+| D-087 | 3640 | Instrumentation is completeness-gated, not existence-gated |
+| D-088 | 3654 | `assisted` stays `None` in this slice |
+| D-089 | 3669 | Identities are upserted on every observation; a kind that stops being produced is deleted |
+| D-090 | 3686 | The ranker is completeness-gated for reproducibility, not safety |
+| D-091 | 3704 | The recount recomputes in Python, and claims staleness only |
+| D-092 | 3719 | Identities are backfilled by an explicit command, not by the migration |
+| D-093 | 3733 | Slice 1 does NOT meet Gate P6, and makes only one of its four clauses measurable |
+| D-094 | 3747 | P6 Slice 1 BUILT (unattended run): five more plan defects, three of them tests that could not fail |
+| D-095 | 3875 | P6 Slice 1 reviewed by three independent reviewers; fourteen findings fixed, two rejected |
+| D-096 | 3940 | The C++/C# fix folds punctuation into words; it does NOT add a raw-title comparison |
+| D-097 | 3984 | `_verify_quad` rejected nothing on the live corpus; "string-verified" is not precision evidence |
+| D-098 | 4013 | Suppression reports when it is OFF; wiring backfill into the pipeline is Slice 2 |
+| D-099 | 4049 | Gate batching stays allowed; the per-task fast-check set must include the schema guards |
+| D-100 | 4075 | P6 Slice 1 merged to `main`; Gate P6 clause 3 is MET, not merely measurable |
+| D-101 | 4107 | Gate P6 clause 4 is MET: 20/20 sampled suppressions are genuine duplicates |
+| D-102 | 4137 | D-072 (model-tier benchmark) is deferred indefinitely |
+| D-103 | 4159 | P6 Slice 2: the ledger is a current-state row per job, `seen` suppresses on a TTL, and the policy stamp never auto-reopens |
+| D-104 | 4224 | Job regrouping: the survivor's job wins, and a tracked group is refused whole |
+| D-105 | 4267 | Identity writes move into the scan path, closing D-098 — and D-098's cost argument did not apply |
+| D-106 | 4298 | Two consequences the build forced: what earns a permanent `skipped`, and the zero-output guard |
+| D-107 | 4324 | P6 Slice 2 BUILT and verified on real data; `cross_host` dereference deferred by measured absence |
+
+---
 ## D-001 — Program machinery lives in `docs/program/`, version-controlled
 **2026-08-06 · session 1**
 
@@ -4035,3 +4153,217 @@ agent-lane gate is additive (D-074).
 **Alternatives rejected.** Keeping it as a low-priority backlog item. A perpetually-deferred "next
 action" in a read-first document is worse than no entry: it costs every future session the same triage and
 makes the real next action harder to find. Recorded as closed-by-decision instead.
+
+---
+
+## D-103 — P6 Slice 2: the ledger is a current-state row per job, `seen` suppresses on a TTL, and the policy stamp never auto-reopens
+
+*2026-08-10. Design at `.superpowers/sdd/2026-08-10-p6-slice2-ledger/design.md` (gitignored — hence this
+entry). Spec: PROGRAM §3.P6 item 4.*
+
+**One row per job, upserted — not an append-only events table.** The spec asks for *monotonic upserts*, and
+an append-only log cannot be upserted; "monotonic upsert" describes a current-state row. The append-only
+trail exists where it is actually needed: `job_grouping_events` (D-104), the half that mutates a key
+another table reads. Recorded so a later session does not re-derive a `job_disposition_events` table and
+report it as missing.
+
+**Rank is `seen` 0 < `skipped` 1 < `built` 2.** Against a **live** row an upsert may raise or hold, never
+lower. Against a non-live row (expired or reopened) any disposition may be recorded, which is what makes an
+expiry or a reopen mean anything. The one case that reads like a breach and is not: re-recording `seen` on a
+live `seen` row refreshes `expires_at` — monotonicity is over the rank, not the timestamp.
+
+**One liveness predicate, shared by the reader and the writer.** `core.ledger.is_live` is the only
+definition, and `plan_upsert` calls it rather than trusting the caller to pre-filter. A reader that thinks a
+row is expired while the writer thinks it is live both hides a job and refuses to re-decide it — a job that
+can never be surfaced again. Lazy read-time expiry throughout: nothing sweeps, nothing deletes, and the
+drain sets `reopened_at` instead of deleting, so a drained decision is still on record.
+
+**`seen` suppresses for a TTL — ruled by Mit**, from three options put to him with the measured evidence.
+Every job the ranker surfaces as a lead is recorded `seen` with `expires_at = now + seen_ttl_days` (7), so
+the daily queue advances past what was already shown and re-enters after the TTL in case it was missed or
+the JD moved. **The alternatives rejected:** a non-suppressing bookkeeping `seen` (safer and less
+surprising, but it would have had no reader in this slice and the spec's TTL machinery would be exercised
+only by tests), and `seen` written only on an aborted run (narrowest, but it would almost never fire, which
+this program treats as a monitoring failure in itself).
+
+**Measured consequence of that ruling, stated because it is real and reversible.** The ranker is the
+`seen` writer — one writer, so `top` and the pipeline cannot drift on what "surfaced" means — which makes
+`top` mutate suppression state. Two `top` invocations inside the TTL therefore show different rows. The full
+gate quantified the blast radius: **four tests in four modules** broke, every one a caller that ranks twice
+against the same corpus. Each was isolating a different mechanism and now opts out with
+`--include-handled`; one could not, because it asserts full `RankedResults` equality and a drained row
+carries `handled_as='seen'`, so it releases the ledger between calls via the drain's own reopen path. If
+`top`'s behaviour turns out to be surprising in practice, the cheap reversal is to move the `seen` write
+from `rank_open_postings` into the pipeline only; the disjointness guarantee does not depend on it, because
+`built` alone carries that.
+
+**The policy stamp is reused, and a mismatch is reported rather than acted on.** `policy_version` is a
+digest of the run manifest's own five components (`code_fingerprint`, `config_hash`, `profile_row_hash`,
+`profile_facts_hash`, `rules_hash`) — nothing new is hashed, because "what would make us re-decide this" and
+"what makes two runs comparable" are the same question and P0 item 4 already answered it. **A stamp
+mismatch never re-opens a disposition automatically.** Auto-expiry on mismatch would rebuild the entire
+shortlist on any settings tweak — the 465-item-queue failure in a different costume — and an automatic
+re-open cannot be reviewed before it happens. `ledger show --stale` lists them; `ledger reopen --stale`
+releases them. Accepted cost, stated plainly: a `built` lead whose résumé has since been rewritten stays
+suppressed until somebody runs the drain.
+
+**Enforced twice, per CLAUDE.md.** Typed at the write site (`UnknownDisposition`,
+`UnknownDispositionReason`, `MalformedDisposition`) and again as three CHECK constraints, so a direct INSERT
+cannot invent a bucket or store a permanent decision with no stamp. The permanence CHECK states **both
+tiers explicitly**: the obvious biconditional `(disposition IN permanent) = (policy_version IS NOT NULL AND
+expires_at IS NULL)` looks equivalent and is not — it constrains only the permanent side, so a `seen` row
+carrying a policy stamp *and* no TTL satisfies it (0 = 0). The store tests caught that before it shipped.
+
+**Three reasons, not one per ranker filter** (`lead_built`, `unshippable_artifact`, `surfaced`).
+`hidden_hard_filter`, `hidden_non_swe`, `hidden_ineligible`, `hidden_below_cutoff` and `hidden_duplicate`
+are recomputed deterministically every run and already counted in the funnel; persisting them would be
+~20,000 writes a run with no reader.
+
+---
+
+## D-104 — Job regrouping: the survivor's job wins, and a tracked group is refused whole
+
+**Context.** D-079 deferred the projection of dedup onto `postings.job_id` out of Slice 1, because
+`applications.job_id` is the tracking key. This is that projection.
+
+**Why it is worth doing at all**, since read-time suppression already collapses duplicates: that
+suppression is completeness-gated, and D-098 established completeness is the *exceptional* state. Discover
+one new posting and suppression switches off — at which point a duplicate of an already-built job carries no
+disposition of its own and is built again. Regrouping makes the grouping durable in the data, so a
+disposition covers the group whether or not the read-time gate is open. It is also the only thing that makes
+D-081's "one application decision" claim true of the store rather than only of the read path.
+
+**Choice.** The canonical job is the job of the survivor `resolve_duplicates` already elected under D-086
+`(host_class, first_seen_at, posting_id)`. **No second election**, so a regrouping can never disagree with a
+suppression about which row is authoritative.
+
+**The refusal guard, and why it refuses the whole group.** A group is left ungrouped when any
+**non-survivor** member's job carries an `applications` or `artifacts` row.
+`store/run_funnel_queries.py:472` joins `applications.job_id == postings.job_id` and
+`reports/export.py:73` selects `applications.job_id` as its tracked set, so a merged loser job keeps its
+application row and loses every posting pointing at it — **a real applied count silently becoming wrong**,
+this program's worst failure shape. `UNIQUE(job_id, attempt_no)` also means a future "move the application
+too" collides the moment two members each have an attempt 1. Refusing the *whole* group rather than the
+offending member is deliberate: a partially-merged group is a third state nothing downstream understands and
+it makes the outcome iteration-order-dependent. A tracked **survivor** job refuses nothing, since nothing
+moves off it — that is the common good case (you applied via the row dedup already elected).
+
+Measured 2026-08-10: `applications` = 0 rows, and all 44 `artifacts` rows have `job_id IS NULL`
+(`record_artifact`'s two callers in `src/` never pass it). The guard is therefore **latent, not
+unreachable** — the distinction the "dead for bundled ≠ unreachable" lesson turns on — and it ships with
+tests.
+
+**Write order.** `job_grouping_events` INSERT first, `postings.job_id` UPDATE second, one transaction: the
+projection can be rebuilt from the trail, never the reverse. The UPDATE is guarded on `from_job_id`, so a
+plan built against a stale read moves nothing rather than overwriting an anchor somebody else set. Loser
+`jobs` rows are not deleted — `job_grouping_events.from_job_id` is a real FK to them.
+
+**Completeness-gated for a stronger reason than the ranker's** (D-090): survivor election over a partial
+corpus is backfill-order-dependent, and unlike the read path this writes that order-dependence to disk
+permanently.
+
+---
+
+## D-105 — Identity writes move into the scan path, closing D-098 — and D-098's cost argument did not apply
+
+**Context.** D-098: `write_identities` had exactly one caller in `src/`, the manual `identities backfill`.
+Any run that discovered one new posting left it uncovered, `identities_complete()` went False, and
+duplicate suppression silently switched off corpus-wide. Mit ruled the wiring was Slice 2's job.
+
+**Choice.** Identities are computed and upserted **per posting, inside the board's existing transaction**,
+in `scan/apply.py::_apply_listed`.
+
+**D-098 priced this work at "a second corpus-wide `body_text` load beside the one `count_by_source`
+already does". That price belongs to the design D-098 had in mind** — a sweep bolted onto the pipeline —
+and not to this one. `_apply_listed` already holds every field `IdentityInputs` needs, so the cost is
+O(postings this board listed) and no body is loaded that was not already in memory. Recording this because
+D-098 has already had to correct one wrong cost figure in the same paragraph; a deferral justified by a
+number deserves re-checking when the design changes.
+
+**Not wrapped in a try/except.** A failure fails the board's transaction, so a posting and its identity
+commit or vanish together — the D16 property the module is built on. A posting stored without its identity
+is exactly the state that disables suppression.
+
+**The stale-key half needs no extra work.** `_apply_listed` calls the writer on every positive
+observation, which is the same trigger that refreshes title and locations, and `write_identities`' contract
+is already upsert-and-delete (D-089). A retitle with an unchanged body moves the key with no revision, and
+the test asserts exactly that: the stored `exact_quad` changes while `posting_versions` gains no `revised`
+row.
+
+`identities backfill` remains, for the pre-existing corpus and after an `IDENTITY_ALGORITHM_VERSION` bump.
+What changed is that it is no longer the only writer.
+
+---
+
+## D-106 — Two consequences the build forced: what earns a permanent `skipped`, and the zero-output guard
+
+**Only a deterministic refusal earns `skipped`.** `LeadArtifactError` — the résumé gate refusing a
+shippable artifact — is deterministic: the same résumé against the same JD under the same settings refuses
+identically, so re-attempting it every run costs a render and produces the same answer. The generic
+`except Exception` branch in the tailor loop deliberately does **not** write a disposition: an unclassified
+failure may be transient (a provider blip, an interrupted render), and a permanent disposition on a
+transient fault silently deletes a real lead. This is the precision-over-recall direction the phase has
+applied throughout: a leaked duplicate is counted and recoverable, a suppressed real lead is neither.
+
+**The zero-output guard had to learn about the ledger, and this is a widening the ledger forces rather
+than a weakening.** `_zero_output_guard` held that 0 leads is provably right iff
+`eligible_judged_this_run == 0`. Under the ledger a run can judge genuinely new eligible postings and still
+produce 0 leads because every candidate carries a live disposition — an honest empty day with a reason it
+can name. Without a `hidden_handled` clause the daily driver's exit status would be **1 every day** once the
+queue is caught up, which is precisely the signal destruction `PipelineSummary`'s own docstring exists to
+prevent. New condition: fire iff `eligible_judged_this_run > 0 **and** hidden_handled == 0`. A run with no
+handled candidates still cannot explain itself and still fires; **both directions are tested**, because
+weakening a guard without a test that it still fires is how a guard becomes decoration.
+
+**`hidden_handled` is not gated on identity completeness**, unlike `hidden_duplicate`. A stored disposition
+records a decision this program already made, so it governs whether or not dedup happens to be running that
+minute. Consequently `hidden_handled == 0` means zero, with none of `hidden_duplicate`'s ambiguity.
+
+---
+
+## D-107 — P6 Slice 2 BUILT and verified on real data; `cross_host` dereference deferred by measured absence
+
+*2026-08-10.*
+
+**What shipped.** `job_dispositions` + the `p6_job_dispositions` migration (now the Alembic head);
+`core/ledger.py` (closed catalogs, `is_live`, `plan_upsert`); `store/ledger_queries.py` (monotonic upsert,
+lazy-expiring reads, stale detection, reopen); `core/regroup.py` + `store/regroup.py` (pure planner, refusal
+guard, trail-then-projection writer); identity writes in `scan/apply.py`; `seen_ttl_days`;
+`pipeline/policy.py`'s `run_policy_version`; the ranker's `hidden_handled` bucket, `--include-handled` drain
+and `seen` write; the pipeline's `built`/`skipped` writes and regrouping call; `boardwatch ledger
+show|reopen`; `boardwatch identities regroup [--dry-run]`; and `hidden_handled` in the funnel's shortlist
+stage and reconciliation identity.
+
+**The headline claim is falsifiable and was falsified before the fix.** Measured on the live store: postings
+2011, 2012, 10947, 15498 and 15499 each carry a `resume_tailored` artifact from **four separate runs**
+(5, 6, 7, 9); 6 of the 18 postings ever tailored were tailored more than once, because nothing suppressed an
+already-built lead. `test_a_second_run_builds_a_DISJOINT_set_of_leads` asserts the opposite end to end.
+**Mutation-checked:** disabling the ranker's ledger check turns 4 of that module's 6 tests red, including
+this one. Caveat kept: runs 5–7 and 9 were the Gate-P0 repeat-run evidence over one store on one day, so the
+*mechanism* is measured and the daily frequency is inferred.
+
+**Verified on an isolated COPY of the live store; the live store was never written to.**
+`identities regroup` planned **186 merges across 147 groups, 0 refusals**, matching D-081/D-101's
+147 groups / 186 surplus rows exactly. After applying: SQL grouping over `postings.job_id` — the
+projection, whereas the planner worked from `posting_identities` + `resolve_duplicates` — reports **147 jobs
+anchoring 2+ open postings, 186 surplus open postings, 186 events, 186 distinct postings moved, 0
+self-merges**, and `count(distinct job_id)` fell 24,073 → 23,887, exactly 186. A second pass moved **0**
+(idempotence). What that agreement does and does not show: the group *count* matching an independently
+measured figure, and the exact −186 with zero self-merges, is real evidence that no merge collapsed two
+groups or moved a posting twice; it is **not** evidence that the right postings were grouped, which rests on
+D-101's by-eye audit.
+
+**`cross_host` dereference is deferred by measured absence, not by judgement.** D-077 filed it under Slice
+2 and D-082 left it as "the Slice 2 design question". Measured 2026-08-10 over 23,455 open postings:
+**15,217 `ats`, 8,238 `unknown`, 0 `aggregator`.** There is no aggregator posting in the corpus to
+dereference, so the work has no population and no test that could fail for the right reason. D-082's
+re-entry path is unchanged and still correct; its trigger is an aggregator lane, which is P7, and breadth is
+last.
+
+**Gate P6 is still NOT met, and this slice was not designed to meet it.** It moves the 7-day-leakage clause
+from *unmeasurable in practice* to *measurable*, because D-105 stops a single newly-discovered posting from
+silently disabling suppression — without which `unique` was `None` on essentially every real run. Clauses 3
+and 4 remain MET (D-100, D-101). Zero-dead-postings still needs liveness, which is Slice 3 (items 5 and 6).
+
+**Not done, deliberately.** Slice 3's applied-state suppression and liveness. Note that item 5 has no live
+population either: `applications` = 0 rows.

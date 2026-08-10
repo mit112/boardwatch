@@ -6,6 +6,52 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- **Durable decision ledger, its drain, and job regrouping — P6 Slice 2** (D-103 … D-107). A new
+  `job_dispositions` table (migration `p6_job_dispositions`, now the Alembic head) records **one row per
+  job**, upserted monotonically along `seen` < `skipped` < `built`. `built`/`skipped` are permanent and
+  carry a **policy-version stamp**; `seen` is TTL'd by the new `seen_ttl_days` setting (default 7). Expiry
+  is **lazy and read-time** — nothing sweeps the table and nothing deletes from it, including the drain,
+  which sets `reopened_at` so a drained decision stays on record. One liveness predicate is shared by the
+  reader and the writer, because a reader/writer disagreement would both hide a job and refuse to
+  re-decide it. Three CHECK constraints repeat the closed catalogs and the permanence contract at the
+  store, so a direct INSERT cannot invent a bucket or store a permanent decision with no stamp.
+  **What this fixes, measured:** postings 2011, 2012, 10947, 15498 and 15499 each carried a tailored
+  résumé from **four separate runs**, because nothing suppressed an already-built lead and the top-N never
+  advanced. `boardwatch top` gains a `hidden_handled` bucket and an `--include-handled` drain; the funnel's
+  shortlist stage reports the new bucket and its reconciliation identity includes it.
+- **Job regrouping** — duplicate postings are now projected onto one canonical job
+  (`boardwatch identities regroup [--dry-run]`, and automatically over the population each pipeline run
+  ranked). The canonical job is the job of the survivor `resolve_duplicates` already elected, so there is no
+  second election. `job_grouping_events` is written **before** the `postings.job_id` projection, because the
+  projection can be rebuilt from the trail and not the reverse. A group is refused **whole** when any
+  non-survivor member's job carries an `applications` or `artifacts` row — `run_funnel_queries` and
+  `reports/export` both reach applications through `applications.job_id == postings.job_id`, so merging such
+  a job would silently make a real applied count wrong. Verified on an isolated copy of the live store: 186
+  merges over 147 groups, 0 refused, idempotent on a second pass, and `count(distinct job_id)` fell by
+  exactly 186 with zero self-merges.
+- **`boardwatch ledger show|reopen`** — the ledger's drain. `show` lists what is being suppressed and why
+  (`--stale` for permanent decisions whose policy stamp has moved, `--expired` to include rows that no
+  longer govern); `reopen --job N` / `reopen --stale` releases them. A stamp mismatch is never released
+  automatically: auto-expiry on mismatch would rebuild the whole shortlist on any settings tweak.
+
+### Fixed
+
+- **Duplicate suppression no longer switches itself off when a scan discovers a posting** (D-105, closing
+  D-098). `write_identities` had exactly one caller in `src/` — the manual `boardwatch identities backfill`
+  — so any run that discovered one new posting left it uncovered, `identities_complete()` went False, and
+  suppression silently stopped corpus-wide, making `hidden_duplicate == 0` mean "not measured" on
+  essentially every real run. Identities are now written **per posting inside the board's existing scan
+  transaction**, so a posting and its identity commit or vanish together and the cost is O(postings this
+  board listed) rather than a second corpus-wide `body_text` load. A retitle with an unchanged body — which
+  moves an identity key without producing a revision — is covered by the same call.
+- **The zero-output guard no longer calls a caught-up queue a failure.** A run can judge genuinely new
+  eligible postings and still produce 0 leads because every candidate is already `built`; the guard now
+  fires only when `eligible_judged_this_run > 0` **and** nothing was suppressed as handled. Without this the
+  daily driver's exit status would have been 1 every day once the queue caught up, destroying the signal the
+  run ledger exists to carry. A run with no handled candidates still cannot explain itself and still fires.
+
 ### Fixed
 
 - **Disjunctive experience-years over-fire — Gate P5 MET at 100% precision** (D-073). The `experience_years`
