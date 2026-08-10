@@ -29,6 +29,12 @@ from dataclasses import dataclass
 
 from sqlalchemy import Connection, Select, case, func, literal, select, tuple_
 
+from boardwatch.core.dedup import resolve_duplicates
+from boardwatch.store.identity_queries import (
+    identities_complete,
+    load_identities,
+    load_identity_inputs,
+)
 from boardwatch.store.tables import (
     applications,
     artifacts,
@@ -346,12 +352,26 @@ class SourceOutcome:
     D-022: a board that answered 304 listed nothing this run and would show a denominator of
     zero while still owning hundreds of open postings the funnel judged.
 
-    **`unique` and `assisted` are `None`, never 0.** Both are dedup-attribution quantities —
-    `assisted` credits a source that arrived second for a posting another source won. Postings
-    are 1:1 with jobs here and each belongs to exactly one company, so there is no second source
-    to credit and neither is measurable until P6 lands dedup. Reporting 0 would assert "no
-    source ever arrived second", which is the naive attribution job-apps records as having
-    nearly cost it a working adapter.
+    Both are dedup-attribution quantities. `unique` counts this source's surviving open
+    postings; `assisted` counts its suppressed postings whose survivor belongs to a
+    *different* company_id — it credits a source that arrived second for a posting another
+    source won. They are deliberately NOT a partition: a posting suppressed in favour of a
+    survivor from the same source is counted in neither, and `unique + assisted ==
+    open_postings` is not an invariant — do not "fix" it into one.
+
+    **`unique` is measured only when identities are COMPLETE.** Every open posting must
+    carry a row at the current IDENTITY_ALGORITHM_VERSION. A number computed over a partial
+    backfill is not a measurement, and an existence check (`if identities:`) cannot tell the
+    two apart. A version bump therefore degrades `unique` to None until a re-backfill, which
+    is the honest report.
+
+    **`assisted` is not instrumented at all, and reports None — never 0.** The only kind
+    permitted to suppress is `exact_quad`, which is keyed on company_id; sources ARE
+    company_id, so no suppression this build can produce crosses a source boundary. There is
+    no mechanism that could count one. Reporting 0 would assert "we looked and no source
+    arrived second" — the naive attribution D-022/D-023 record as having nearly cost
+    job-apps a working adapter. It becomes measurable when an aggregator posting can be
+    dereferenced to exact requisition evidence.
     """
 
     provider: str
@@ -378,9 +398,9 @@ def count_by_source(
     run_id: int,
     posting_ids: list[int],
 ) -> tuple[SourceOutcome, ...]:
-    """Per-board outcomes, as four independent sweeps merged on company id.
+    """Per-board outcomes, as five independent sweeps merged on company id.
 
-    Four sweeps rather than one joined query because `artifacts` and `applications` are both
+    Separate sweeps rather than one joined query because `artifacts` and `applications` are both
     many-per-posting in principle: folding them into a single GROUP BY would fan out and
     multiply the open-posting denominator by rows that have nothing to do with it.
 
@@ -458,6 +478,20 @@ def count_by_source(
             ).all()
         }
 
+    # Fifth sweep: survivor attribution (design §6.1). Gated on completeness, not on
+    # existence: a number computed over a partial backfill is not a measurement, and
+    # `if identities:` cannot tell the two apart. A version bump empties the current-version
+    # rows, closes this gate, and degrades `unique` to None — which is the honest report.
+    unique_by_company: dict[int, int] = {}
+    complete = identities_complete(conn)
+    if complete:
+        identity_rows = load_identity_inputs(conn)
+        identities = load_identities(conn, [r.posting_id for r in identity_rows])
+        suppressed = {s.posting_id for s in resolve_duplicates(identity_rows, identities)}
+        for row in identity_rows:
+            if row.posting_id not in suppressed:
+                unique_by_company[row.company_id] = unique_by_company.get(row.company_id, 0) + 1
+
     # A board with no open postings can still own a lead, if its posting closed mid-run. Keyed
     # off the union rather than off open_postings alone so a lead can never vanish from the
     # table — a missing lead reads as a smaller funnel, the one thing this artifact must not do.
@@ -467,6 +501,8 @@ def count_by_source(
         | set(leads_by_company)
         | set(applied_by_company)
     )
+    # A board whose every posting was suppressed still appears, with unique=0.
+    company_ids |= set(unique_by_company)
     if not company_ids:
         return ()
     meta = {
@@ -490,6 +526,11 @@ def count_by_source(
             eligible=int(eligible_by_company.get(company_id, 0)),
             leads=int(leads_by_company.get(company_id, 0)),
             applied=int(applied_by_company.get(company_id, 0)),
+            unique=unique_by_company.get(company_id, 0) if complete else None,
+            # `assisted` stays not-instrumented: no suppressing kind in this slice can cross
+            # a source boundary, so 0 would be a structural zero dressed as a measurement.
+            # See the SourceOutcome docstring and design §6.2 before changing this.
+            assisted=None,
         )
         for company_id in company_ids
     ]
