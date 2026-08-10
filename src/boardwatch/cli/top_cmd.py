@@ -514,6 +514,62 @@ def _verdict_token(verdict: str | None) -> str:
     }.get(verdict or "", "-")
 
 
+def _print_hidden_notices(
+    target: Console,
+    results: RankedResults,
+    *,
+    include_ineligible: bool,
+    include_non_swe: bool,
+    include_duplicates: bool,
+    include_handled: bool,
+    include_applied: bool,
+) -> None:
+    """Name every bucket that removed rows, and its drain.
+
+    Extracted so the empty-result path can print them too. It used to return before reaching
+    them, which hid a bucket exactly when its notice was the *only* thing left to say: a run
+    whose single eligible posting was already applied to printed "no open postings match your
+    filters" — an assertion that the corpus is empty — and never mentioned the posting, the
+    suppression, or `--include-applied`. A quarantine whose drain is unmentioned is a leak
+    (CLAUDE.md), and the JSON path already got this right.
+    """
+    if results.hidden_ineligible and not include_ineligible:
+        target.print(
+            f'{results.hidden_ineligible} hidden as ineligible. "no flags" means no catalogued '
+            "disqualifier was detected, not that you qualify.",
+            markup=False,
+        )
+    if results.hidden_non_swe and not include_non_swe:
+        target.print(
+            f"{results.hidden_non_swe} hidden as non-software roles — see them with "
+            "--include-non-swe, each with the title text that vetoed it.",
+            markup=False,
+        )
+    if results.hidden_duplicate and not include_duplicates:
+        target.print(
+            f"{results.hidden_duplicate} hidden as duplicates — see them with "
+            "--include-duplicates, each naming the posting it duplicates.",
+            markup=False,
+        )
+    if results.hidden_handled and not include_handled:
+        # Printed because the queue advancing is otherwise indistinguishable from the corpus
+        # shrinking: a job you were shown yesterday is simply absent today, with no visible
+        # reason. `seen` rows lapse on their own; `built`/`skipped` need `ledger reopen`.
+        target.print(
+            f"{results.hidden_handled} hidden as already handled (built, skipped, or surfaced "
+            "recently) — see them with --include-handled, each naming its disposition.",
+            markup=False,
+        )
+    if results.hidden_applied and not include_applied:
+        # Named separately from `hidden_handled` because the drain is different: this bucket is
+        # not released by `ledger reopen` or by any TTL, only by `track status <id> withdrawn`.
+        target.print(
+            f"{results.hidden_applied} hidden as already applied to — see them with "
+            "--include-applied, each naming its application status.",
+            markup=False,
+        )
+
+
 def _new_posting_ids(conn: Connection) -> set[int]:
     """Posting ids with a `new` event past the digest cursor (D18).
 
@@ -638,6 +694,17 @@ def top(
             output_console.print("nothing new since your last digest")
         else:
             output_console.print("no open postings match your filters")
+        # Still say what was hidden. Reaching here does NOT mean nothing was suppressed — the
+        # duplicate, handled and applied buckets can each have emptied the list on their own.
+        _print_hidden_notices(
+            output_console,
+            results,
+            include_ineligible=include_ineligible,
+            include_non_swe=include_non_swe,
+            include_duplicates=include_duplicates,
+            include_handled=include_handled,
+            include_applied=include_applied,
+        )
         return
     table = Table(show_header=True, header_style="bold")
     table.add_column("#", style="dim")
@@ -653,38 +720,12 @@ def top(
             _why_cell(p),
         )
     console.print(table)
-    if results.hidden_ineligible and not include_ineligible:
-        console.print(
-            f'{results.hidden_ineligible} hidden as ineligible. "no flags" means no catalogued '
-            "disqualifier was detected, not that you qualify.",
-            markup=False,
-        )
-    if results.hidden_non_swe and not include_non_swe:
-        console.print(
-            f"{results.hidden_non_swe} hidden as non-software roles — see them with "
-            "--include-non-swe, each with the title text that vetoed it.",
-            markup=False,
-        )
-    if results.hidden_duplicate and not include_duplicates:
-        console.print(
-            f"{results.hidden_duplicate} hidden as duplicates — see them with "
-            "--include-duplicates, each naming the posting it duplicates.",
-            markup=False,
-        )
-    if results.hidden_handled and not include_handled:
-        # Printed because the queue advancing is otherwise indistinguishable from the corpus
-        # shrinking: a job you were shown yesterday is simply absent today, with no visible
-        # reason. `seen` rows lapse on their own; `built`/`skipped` need `ledger reopen`.
-        console.print(
-            f"{results.hidden_handled} hidden as already handled (built, skipped, or surfaced "
-            "recently) — see them with --include-handled, each naming its disposition.",
-            markup=False,
-        )
-    if results.hidden_applied and not include_applied:
-        # Named separately from `hidden_handled` because the drain is different: this bucket is
-        # not released by `ledger reopen` or by any TTL, only by `track status <id> withdrawn`.
-        console.print(
-            f"{results.hidden_applied} hidden as already applied to — see them with "
-            "--include-applied, each naming its application status.",
-            markup=False,
-        )
+    _print_hidden_notices(
+        console,
+        results,
+        include_ineligible=include_ineligible,
+        include_non_swe=include_non_swe,
+        include_duplicates=include_duplicates,
+        include_handled=include_handled,
+        include_applied=include_applied,
+    )

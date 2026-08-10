@@ -100,6 +100,48 @@ def _apply(data_dir: Path, job_id: int, status: str) -> int:
         return create_application(conn, job_id=job_id, status=status)  # type: ignore[arg-type]
 
 
+def _top_output(data_dir: Path, *args: str) -> str:
+    from typer.testing import CliRunner
+
+    from boardwatch.cli.app import app
+
+    result = CliRunner().invoke(app, ["--data-dir", str(data_dir), "top", *args])
+    assert result.exit_code == 0, result.stdout
+    return result.stdout
+
+
+def test_the_notice_survives_an_EMPTY_result(env: Path) -> None:  # noqa: N802
+    """Suppression that empties the list is the case the operator most needs explained, and the
+    one the human path used to drop: it printed "no open postings match your filters" — a claim
+    that the corpus is empty — and returned before any notice, so the posting, its suppression
+    and `--include-applied` were all invisible. The JSON path already printed it."""
+    seeded = _ready(env, 1)
+    _apply(env, seeded[0][1], "applied")
+
+    out = _top_output(env, "1", "--no-record")
+
+    assert "1 hidden as already applied to" in out
+    assert "--include-applied" in out
+
+
+def test_the_ledger_notice_survives_an_EMPTY_result_too(env: Path) -> None:  # noqa: N802
+    """The same defect covered `hidden_duplicate` and `hidden_handled`, which Codex's report did
+    not name — the early return tested only `visible`, `hidden_ineligible` and `hidden_non_swe`.
+    Fixing the reported bucket alone would have left two silent drains behind."""
+    seeded = _ready(env, 1)
+    engine = get_engine(env)
+    with engine.begin() as conn:
+        record_disposition(
+            conn, seeded[0][1], disposition="built", reason="lead_built",
+            policy_version="pv-1", now=utcnow(),
+        )
+
+    out = _top_output(env, "1", "--no-record")
+
+    assert "1 hidden as already handled" in out
+    assert "--include-handled" in out
+
+
 def test_a_job_already_applied_to_is_not_served_again(env: Path) -> None:
     """The headline claim. It fails without the filter: the posting is otherwise a clean lead."""
     seeded = _ready(env, 2)
