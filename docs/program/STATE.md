@@ -41,7 +41,9 @@ at `d6291ba`: 3837 passed, coverage 95.08%, 4m49s, in a detached worktree pinned
 fresh-context reviews (code, docs) found ten defects between them; all are fixed. **That review covered only
 D-109's own commits** — the Slice 2 review below is still owed.
 
-**Next action: P6 Slice 3** — applied-state suppression (`PROGRAM.md` §3.P6 item 5) and liveness (item 6).
+**Next action: the owed Slice 2 review of `origin/main..main`** — Mit started it on 2026-08-10. Nothing is
+pushed until it lands, and it now covers D-109's five commits as well as Slice 2's and D-108's. **Then P6
+Slice 3** — applied-state suppression (`PROGRAM.md` §3.P6 item 5) and liveness (item 6).
 Liveness is what the remaining "0 dead postings" gate clause needs. Two things to know before planning it:
 item 5 has **no live population** (`applications` = 0 rows), and item 6's is tiny — 3 open postings contain a
 closed phrase, 0 are stale beyond 30 days. Size the slice to that reality rather than to the spec's ambition.
