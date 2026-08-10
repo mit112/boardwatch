@@ -25,6 +25,11 @@ jobs:
       - uses: astral-sh/setup-uv@v5
         with:
           python-version: ${{ matrix.python }}
+      # The résumé PDF gate (P1a) shells tectonic and pdfinfo, so without these the suite does not
+      # merely lose coverage — 33 tests fail. Installed on every OS in the matrix rather than
+      # skipped where the binaries are missing: a skipped gate reports green while verifying
+      # nothing, which is the failure mode this program exists to make impossible.
+      - uses: ./.github/actions/setup-typesetting
       - run: uv sync --frozen
       - run: uv run ruff check .
       - run: uv run mypy --strict src tools

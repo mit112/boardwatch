@@ -21,6 +21,9 @@ jobs:
       - uses: astral-sh/setup-uv@v5
         with:
           python-version: "3.12"
+      # `make check` runs the résumé PDF gate, which shells tectonic and pdfinfo. Their absence is
+      # what failed the 0.3.0 build (D-112) — correctly, since the publish jobs then skipped.
+      - uses: ./.github/actions/setup-typesetting
       - run: uv sync --frozen
       # The strongest gate belongs on the most irreversible action. `make check` is the same
       # generalization + ruff + mypy --strict + pytest gate main runs; `pytest -q` alone let a

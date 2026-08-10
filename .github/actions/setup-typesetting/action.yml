@@ -1,0 +1,106 @@
+name: setup typesetting
+description: >
+  Install tectonic and poppler's pdfinfo on any of the three runner OSes. The résumé PDF gate (P1a)
+  shells both, so a runner without them fails 33 tests — which is exactly what happened to the 0.3.0
+  release build (D-112). One composite action rather than three copied blocks, because the version
+  pin has to move in one place.
+
+inputs:
+  tectonic-version:
+    description: >
+      Pinned tectonic release. Keep in step with the Dockerfile's TECTONIC_VERSION — they are two
+      sites for one fact, and nothing detects drift between them.
+    required: false
+    default: "0.17.0"
+
+runs:
+  using: composite
+  steps:
+    # Tectonic fetches LaTeX packages on demand, so the first compile on a cold runner downloads a
+    # bundle. `TECTONIC_CACHE_DIR` is honoured by 0.17.0 and collapses three per-OS cache locations
+    # (which tectonic's own docs get wrong for at least two of them) into one path this cache step
+    # and every later step can name.
+    - shell: bash
+      run: echo "TECTONIC_CACHE_DIR=${{ github.workspace }}/.tectonic-cache" >> "$GITHUB_ENV"
+
+    - uses: actions/cache@v4
+      with:
+        path: ${{ github.workspace }}/.tectonic-cache
+        key: tectonic-${{ inputs.tectonic-version }}-${{ runner.os }}-v1
+
+    - name: linux — poppler from apt, tectonic from the pinned release
+      if: runner.os == 'Linux'
+      shell: bash
+      run: |
+        set -euxo pipefail
+        sudo apt-get update
+        sudo apt-get install -y --no-install-recommends poppler-utils
+        # musl, NOT gnu: the gnu build is dynamically linked and libgraphite2.so.3 is absent from
+        # the runner image, so it installs cleanly and then fails to start.
+        case "$(uname -m)" in
+          x86_64) target=x86_64-unknown-linux-musl ;;
+          aarch64) target=aarch64-unknown-linux-musl ;;
+          *) echo "unsupported arch $(uname -m)" >&2; exit 1 ;;
+        esac
+        mkdir -p "$HOME/.local/bin"
+        curl -fsSL -o /tmp/tectonic.tar.gz \
+          "https://github.com/tectonic-typesetting/tectonic/releases/download/tectonic%40${{ inputs.tectonic-version }}/tectonic-${{ inputs.tectonic-version }}-${target}.tar.gz"
+        tar -xzf /tmp/tectonic.tar.gz -C "$HOME/.local/bin"
+        chmod +x "$HOME/.local/bin/tectonic"
+        echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+
+    - name: macos — poppler from brew, tectonic from the pinned release
+      if: runner.os == 'macOS'
+      shell: bash
+      run: |
+        set -euxo pipefail
+        brew install poppler
+        # Homebrew's tectonic is 0.17.0 today and is not a pin; the release tarball is. The macOS
+        # binary links only against system frameworks, so it needs nothing else installed.
+        case "$(uname -m)" in
+          arm64) target=aarch64-apple-darwin ;;
+          x86_64) target=x86_64-apple-darwin ;;
+          *) echo "unsupported arch $(uname -m)" >&2; exit 1 ;;
+        esac
+        mkdir -p "$HOME/.local/bin"
+        curl -fsSL -o /tmp/tectonic.tar.gz \
+          "https://github.com/tectonic-typesetting/tectonic/releases/download/tectonic%40${{ inputs.tectonic-version }}/tectonic-${{ inputs.tectonic-version }}-${target}.tar.gz"
+        tar -xzf /tmp/tectonic.tar.gz -C "$HOME/.local/bin"
+        chmod +x "$HOME/.local/bin/tectonic"
+        echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+
+    - name: windows — tectonic and poppler from pinned release zips
+      if: runner.os == 'Windows'
+      shell: pwsh
+      run: |
+        $ErrorActionPreference = "Stop"
+        New-Item -ItemType Directory -Force -Path "$env:RUNNER_TEMP\bin" | Out-Null
+        Invoke-WebRequest -Uri "https://github.com/tectonic-typesetting/tectonic/releases/download/tectonic%40${{ inputs.tectonic-version }}/tectonic-${{ inputs.tectonic-version }}-x86_64-pc-windows-msvc.zip" -OutFile "$env:RUNNER_TEMP\tectonic.zip"
+        Expand-Archive "$env:RUNNER_TEMP\tectonic.zip" -DestinationPath "$env:RUNNER_TEMP\bin" -Force
+
+        # Chocolatey's `poppler` package ships the SOURCE tarball — no .exe at all — so it cannot
+        # put pdfinfo on PATH. These prebuilt binaries are the only working route.
+        Invoke-WebRequest -Uri "https://github.com/oschwartz10612/poppler-windows/releases/download/v26.02.0-0/Release-26.02.0-0.zip" -OutFile "$env:RUNNER_TEMP\poppler.zip"
+        Expand-Archive "$env:RUNNER_TEMP\poppler.zip" -DestinationPath "$env:RUNNER_TEMP\poppler" -Force
+        # The release tag and the directory inside it do not match (v26.02.0-0 vs poppler-26.02.0),
+        # so the path is globbed rather than derived from the tag.
+        $bin = (Get-ChildItem -Path "$env:RUNNER_TEMP\poppler" -Filter "Library" -Directory -Recurse |
+                Select-Object -First 1).FullName + "\bin"
+        if (-not (Test-Path "$bin\pdfinfo.exe")) { throw "pdfinfo.exe not found under $bin" }
+
+        "$env:RUNNER_TEMP\bin" | Out-File -Append -Encoding utf8 $env:GITHUB_PATH
+        $bin                   | Out-File -Append -Encoding utf8 $env:GITHUB_PATH
+
+    # Both binaries are proved to RUN, not merely to exist, and the bundle is warmed by an actual
+    # compile — the same thing the Dockerfile does. Without this, a broken install surfaces as 33
+    # confusing test failures deep in the suite instead of one red step that names the cause.
+    - name: prove both binaries work and warm the bundle
+      shell: bash
+      run: |
+        set -euxo pipefail
+        tectonic --version
+        pdfinfo -v
+        printf '\\documentclass{article}\\begin{document}x\\end{document}' > warmup.tex
+        tectonic warmup.tex
+        pdfinfo warmup.pdf | grep -q '^Pages:'
+        rm -f warmup.tex warmup.pdf
