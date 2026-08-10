@@ -3212,3 +3212,93 @@ out-of-vocab abstain; `CHANGELOG.md` and `METRICS.md` — the files this repo ma
 shipped and where gates are checked — had never been updated. All fixed. The fix round then received its
 own scoped re-review per D-021 (a fix inherits none of the reviewed status of what it repairs), which ran
 ten mutations, all caught, and returned no Critical or Important findings.
+
+---
+
+## D-077 — P6 Slice 1: the design is settled and the plan is written; no code exists yet
+
+**2026-08-09/10 · P6 Liveness + dedup, design + planning session. Stopped at Mit's request before
+execution.** Repo unchanged except this file and `STATE.md`. The spec and the 9-task TDD plan live at
+`.superpowers/sdd/2026-08-09-p6-liveness-dedup/` (gitignored — hence this entry, which is the durable
+record of what was decided); `HANDOFF.md` there states where to resume.
+
+**Scope.** P6 is split into three slices. **Slice 1** = PROGRAM items 1–3 (posting-identity table,
+allowlist URL normalization, cross-host identity) plus the funnel's measured `unique` counter.
+**Slice 2** = item 4's durable ledger with its drain, job regrouping, and cross-host dereference.
+**Slice 3** = item 5 (applied-state suppression) and item 6 (liveness). Slice 1 **does not meet Gate
+P6** and makes only one of its four clauses measurable; that is stated in the spec rather than
+discovered later.
+
+**The decisions, so they are never re-litigated.** Section references are to `design.md`.
+
+- Slice 1 **annotates only**; `postings.job_id` is not mutated until Slice 2, because
+  `applications.job_id` is the tracking key (§1.3).
+- **`content_hash` alone may never suppress.** The live corpus contains 727 groups it would wrongly
+  collapse (§2).
+- **`exact_quad` is the sole suppressing kind**, and what it suppresses is stated honestly: 131 groups
+  / 168 surplus rows / 0.72% of the live population, and the sampled groups are
+  same-role-different-requisition pairs with byte-identical descriptions, not re-postings. The claim
+  defended is "one application decision", not "the same requisition" (§2).
+- **`cross_host` ships annotate-only** (`suppresses=False`), reversing an earlier draft that had
+  assumed otherwise: an unanswered flag is not consent, `core/identity.py:3` already records that
+  cross-ID heuristics may only annotate, PROGRAM item 1 says only exact identities may suppress, and a
+  concrete false-suppression counterexample exists. Re-entry path: it becomes suppressible once an
+  aggregator can be dereferenced to exact requisition evidence (§3.1).
+- **A posting with no location evidence emits no location-bearing identity at all** —
+  `normalized_locations` returns `None`, never `"[]"`. A `"[]"` sentinel is a silent collapse that
+  neither string-verify nor the recount can detect, because both sides compare equal. Measured cost: 7
+  rows of 23,455 (§2.1).
+- Three host classes, not two. `unknown` is the default and never suppresses; host matching is
+  exact-or-dot-suffix, **never substring** (§3).
+- **Allowlist** URL normalization, not a denylist — direction chosen by which failure is detectable
+  (§4.1), plus string-verify on hash hit (§4.2).
+- **Survivor election never consults score.** `posting_id` is a load-bearing tiebreak because
+  `first_seen_at` is second-resolution (§5.1). The drain (`--include-duplicates`) ships in the same
+  change as the quarantine, per the standing invariant (§5.2).
+- **Instrumentation is completeness-gated, not existence-gated:** `unique` is `None` unless *every*
+  open posting has a current-version identity (§2.2). The ranker is completeness-gated too, but for a
+  different reason — partial coverage cannot over-suppress, since an uncovered posting joins no group;
+  it is that survivor election over a subset is backfill-order-dependent, and Gate P6 requires
+  re-deriving 20 sampled suppressions from the data.
+- **`assisted` stays `None` in this slice.** Nothing here can produce a non-zero value, and reporting
+  the structurally-true `0` would assert a measurement that was never taken (§6.2) — the D-022/D-023
+  rule.
+- Identities are recomputed on **every observation** and upserted when any key component changed,
+  because `scan/apply.py:153-170` refreshes title/locations *outside* the `content_hash` revision gate
+  at `:124` (§2.3). A kind that stops being produced is **deleted**, not orphaned — an abandoned
+  `exact_quad` row would keep suppressing for a posting that no longer earns one.
+- The recount recomputes normalizers in Python rather than re-grouping the same table (§6.3), per
+  D-028 — and its claim is narrowed to **staleness**, not normalizer correctness, since both paths
+  share the normalizers.
+- Identities are backfilled by an **explicit command, not by the migration** (§7).
+
+**Three defects were found in the plan by running its code against the engine, not by reading it.**
+Two are fixed in `plan.md`; the third is open and is the next action.
+
+1. **FIXED — the one that would have disabled dedup silently.** `IdentityInputs.locations` was typed
+   `str | None` and `normalized_locations` called `json.loads` on it. But `postings.locations_json` is
+   a SQLAlchemy `JSON` column (`store/tables.py:67`), so a SELECT returns a *deserialized list*.
+   `str(['Dublin','Madrid'])` is a Python repr, not JSON: the parse raises, the `except` swallows it,
+   the function returns `None`, no `exact_quad` is ever emitted, and **dedup suppresses nothing,
+   forever, with the entire suite green** — because the unit tests hand it a valid JSON string. Fixed
+   by typing the field as what the column yields, moving the sole "is this really a list?" judgement to
+   the loader boundary (`load_identity_inputs`), deleting the parse, and adding a round-trip test that
+   goes red under the original shape. This is the CLAUDE.md fixture rule and D-028 applied to a *type*
+   rather than a number.
+2. **FIXED — a closed connection.** The dedup block reused `rank_open_postings`'s `conn`, whose `with`
+   opens at `cli/top_cmd.py:113` and **closes at `:157`**; scoring and the visible/hidden loop both run
+   with no connection open, so it would have raised `ResourceClosedError` on the first real run. It now
+   opens its own, and passes `eligible_ids` so it does not pull 23,455 `body_text` rows to deduplicate
+   a few thousand leads.
+3. **OPEN — every pytest fixture Tasks 6/7/8 name is invented.** `tests/unit/conftest.py` defines
+   exactly one fixture (`seeded_events`); the plan names twelve others. The plan fails at *collection*
+   as written. Fix by authoring them on the repo's real idiom in `tests/unit/test_top_accounting.py`
+   (`env` fixture + module-level `_seed`/`_settings` helpers), then re-running the plan's Self-Review.
+
+**Both external plan reviews were abandoned without a verdict, and the reason is reusable.** deepseek
+v4 flash spent its tail reading *alembic's own source* in the uv cache and its harness logged that it
+was repeating work without new evidence; gpt-5.6-sol produced no verdict across two attempts (8.5k and
+8.3k lines of repo trawling). The brief asked for six attack categories at once over eight files —
+**that breadth is what sent both unbounded.** Give a plan reviewer one attack category per dispatch.
+Note what did work: all three real defects came from the cheap thing — reading the engine and running
+it — not from the reviewers.

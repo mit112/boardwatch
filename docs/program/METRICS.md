@@ -1177,3 +1177,29 @@ This is deliberate, per D-054: non-tech field content is gathered per user at on
 `work_auth` ships `blocker` severity, so nothing else can move a verdict and `career_field` only routes;
 divergence needs gathered field content that can carry blocker severity. The clause is now a gate clause of
 PROGRAM.md §3.P2 **item 8**, the onboarding gatherer (D-075(a)).
+
+---
+
+## Session — 2026-08-09/10 · P6 Slice 1 design + plan. **No build, no gate movement.**
+
+Nothing shipped. These are the live-corpus measurements taken while designing P6, recorded here
+because they are the **pre-registered baseline** Gate P6's "duplicate leakage ≤ 5%" clause will be
+judged against, and because two of them are the evidence for decisions in D-077.
+
+Corpus: the live store, **23,455 open postings**.
+
+| Measurement | Value | What it decided |
+|---|---|---|
+| Groups `content_hash` alone would collapse | **727** | Why `content_hash` may never suppress on its own (D-077) |
+| Groups `exact_quad` collapses | **131** | The sole suppressing kind |
+| Surplus rows `exact_quad` removes | **168** (0.72% of open postings) | The honest size of Slice 1's dedup effect |
+| Open postings with **no** location evidence | **7** of 23,455 | Cost of emitting no location-bearing identity rather than a `"[]"` sentinel |
+
+**Gate P6: not met, and not approached.** Slice 1 makes exactly one of its four clauses measurable
+(duplicate leakage, via the funnel's `unique` counter). The other three — 0 dead postings reaching the
+lead list, the injected hash-collision test, and the 20-suppression audit — belong to Slice 1's own
+test set and Slices 2–3. Gate P6 is checked here when there is a 7-day window to check.
+
+**Sampling note, so the 131 is not read as stronger than it is.** The sampled `exact_quad` groups are
+same-role-different-requisition pairs with byte-identical descriptions — *not* verified re-postings of
+one requisition. The defended claim is "one application decision", not "the same job".
