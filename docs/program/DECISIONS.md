@@ -27,6 +27,11 @@ Line numbers drift as entries are appended. Confirm one before trusting it:
 grep -n '^## D-0NN' docs/program/DECISIONS.md docs/program/DECISIONS-ARCHIVE.md
 ```
 
+**After appending an entry, add its index row and then re-run the regenerator** —
+`uv run python .agent/tools/reindex_program_docs.py`. It reads every heading's current position and
+rewrites the line numbers in place, so it corrects drift no matter how far it has gone, and is a no-op when
+the index is already right. It is gitignored working material; see `STATE.md`'s carried gaps.
+
 | # | File | Line | Decision |
 |---|---|---|---|
 | D-001 | DECISIONS-ARCHIVE.md | 15 | Program machinery lives in `docs/program/`, version-controlled |
@@ -105,38 +110,38 @@ grep -n '^## D-0NN' docs/program/DECISIONS.md docs/program/DECISIONS-ARCHIVE.md
 | D-074 | DECISIONS-ARCHIVE.md | 3009 | Final eligibility gate lane SHIPPED (persistent, agent-lane, fail-open); Gate P5 unchanged |
 | D-075 | DECISIONS-ARCHIVE.md | 3084 | Gate P2 reconciled: three individually-correct verdicts (may coincide); ≥3-field mechanism via fixtures |
 | D-076 | DECISIONS-ARCHIVE.md | 3153 | P2 item 4's final whole-branch review: what it caught, and four rulings it forced |
-| D-077 | DECISIONS.md | 143 | P6 Slice 1: the design is settled and the plan is written; no code exists yet |
-| D-078 | DECISIONS.md | 233 | P6 Slice 1: the plan's test fixtures are now real; eleven defects, all found by running code |
-| D-079 | DECISIONS.md | 322 | P6 Slice 1 annotates only; `postings.job_id` is not mutated |
-| D-080 | DECISIONS.md | 336 | `content_hash` alone may never suppress |
-| D-081 | DECISIONS.md | 350 | `exact_quad` is the sole suppressing kind, and its yield is stated honestly |
-| D-082 | DECISIONS.md | 368 | `cross_host` ships annotate-only, reversing an earlier draft |
-| D-083 | DECISIONS.md | 389 | No location evidence ⇒ no location-bearing identity, never a `"[]"` sentinel |
-| D-084 | DECISIONS.md | 404 | Three host classes, not two; matching is exact-or-dot-suffix |
-| D-085 | DECISIONS.md | 418 | Allowlist URL normalization, not a denylist |
-| D-086 | DECISIONS.md | 432 | Survivor election never consults score; `posting_id` is a load-bearing tiebreak |
-| D-087 | DECISIONS.md | 447 | Instrumentation is completeness-gated, not existence-gated |
-| D-088 | DECISIONS.md | 461 | `assisted` stays `None` in this slice |
-| D-089 | DECISIONS.md | 476 | Identities are upserted on every observation; a kind that stops being produced is deleted |
-| D-090 | DECISIONS.md | 493 | The ranker is completeness-gated for reproducibility, not safety |
-| D-091 | DECISIONS.md | 511 | The recount recomputes in Python, and claims staleness only |
-| D-092 | DECISIONS.md | 526 | Identities are backfilled by an explicit command, not by the migration |
-| D-093 | DECISIONS.md | 540 | Slice 1 does NOT meet Gate P6, and makes only one of its four clauses measurable |
-| D-094 | DECISIONS.md | 554 | P6 Slice 1 BUILT (unattended run): five more plan defects, three of them tests that could not fail |
-| D-095 | DECISIONS.md | 682 | P6 Slice 1 reviewed by three independent reviewers; fourteen findings fixed, two rejected |
-| D-096 | DECISIONS.md | 747 | The C++/C# fix folds punctuation into words; it does NOT add a raw-title comparison |
-| D-097 | DECISIONS.md | 791 | `_verify_quad` rejected nothing on the live corpus; "string-verified" is not precision evidence |
-| D-098 | DECISIONS.md | 820 | Suppression reports when it is OFF; wiring backfill into the pipeline is Slice 2 |
-| D-099 | DECISIONS.md | 856 | Gate batching stays allowed; the per-task fast-check set must include the schema guards |
-| D-100 | DECISIONS.md | 882 | P6 Slice 1 merged to `main`; Gate P6 clause 3 is MET, not merely measurable |
-| D-101 | DECISIONS.md | 914 | Gate P6 clause 4 is MET: 20/20 sampled suppressions are genuine duplicates |
-| D-102 | DECISIONS.md | 944 | D-072 (model-tier benchmark) is deferred indefinitely |
-| D-103 | DECISIONS.md | 966 | P6 Slice 2: the ledger is a current-state row per job, `seen` suppresses on a TTL, and the policy stamp never auto-reopens |
-| D-104 | DECISIONS.md | 1031 | Job regrouping: the survivor's job wins, and a tracked group is refused whole |
-| D-105 | DECISIONS.md | 1074 | Identity writes move into the scan path, closing D-098 — and D-098's cost argument did not apply |
-| D-106 | DECISIONS.md | 1105 | Two consequences the build forced: what earns a permanent `skipped`, and the zero-output guard |
-| D-107 | DECISIONS.md | 1131 | P6 Slice 2 BUILT and verified on real data; `cross_host` dereference deferred by measured absence |
-| D-108 | DECISIONS.md | 1180 | The decision log and the metrics log are archive-split; the reading protocol moves into the index |
+| D-077 | DECISIONS.md | 148 | P6 Slice 1: the design is settled and the plan is written; no code exists yet |
+| D-078 | DECISIONS.md | 238 | P6 Slice 1: the plan's test fixtures are now real; eleven defects, all found by running code |
+| D-079 | DECISIONS.md | 327 | P6 Slice 1 annotates only; `postings.job_id` is not mutated |
+| D-080 | DECISIONS.md | 341 | `content_hash` alone may never suppress |
+| D-081 | DECISIONS.md | 355 | `exact_quad` is the sole suppressing kind, and its yield is stated honestly |
+| D-082 | DECISIONS.md | 373 | `cross_host` ships annotate-only, reversing an earlier draft |
+| D-083 | DECISIONS.md | 394 | No location evidence ⇒ no location-bearing identity, never a `"[]"` sentinel |
+| D-084 | DECISIONS.md | 409 | Three host classes, not two; matching is exact-or-dot-suffix |
+| D-085 | DECISIONS.md | 423 | Allowlist URL normalization, not a denylist |
+| D-086 | DECISIONS.md | 437 | Survivor election never consults score; `posting_id` is a load-bearing tiebreak |
+| D-087 | DECISIONS.md | 452 | Instrumentation is completeness-gated, not existence-gated |
+| D-088 | DECISIONS.md | 466 | `assisted` stays `None` in this slice |
+| D-089 | DECISIONS.md | 481 | Identities are upserted on every observation; a kind that stops being produced is deleted |
+| D-090 | DECISIONS.md | 498 | The ranker is completeness-gated for reproducibility, not safety |
+| D-091 | DECISIONS.md | 516 | The recount recomputes in Python, and claims staleness only |
+| D-092 | DECISIONS.md | 531 | Identities are backfilled by an explicit command, not by the migration |
+| D-093 | DECISIONS.md | 545 | Slice 1 does NOT meet Gate P6, and makes only one of its four clauses measurable |
+| D-094 | DECISIONS.md | 559 | P6 Slice 1 BUILT (unattended run): five more plan defects, three of them tests that could not fail |
+| D-095 | DECISIONS.md | 687 | P6 Slice 1 reviewed by three independent reviewers; fourteen findings fixed, two rejected |
+| D-096 | DECISIONS.md | 752 | The C++/C# fix folds punctuation into words; it does NOT add a raw-title comparison |
+| D-097 | DECISIONS.md | 796 | `_verify_quad` rejected nothing on the live corpus; "string-verified" is not precision evidence |
+| D-098 | DECISIONS.md | 825 | Suppression reports when it is OFF; wiring backfill into the pipeline is Slice 2 |
+| D-099 | DECISIONS.md | 861 | Gate batching stays allowed; the per-task fast-check set must include the schema guards |
+| D-100 | DECISIONS.md | 887 | P6 Slice 1 merged to `main`; Gate P6 clause 3 is MET, not merely measurable |
+| D-101 | DECISIONS.md | 919 | Gate P6 clause 4 is MET: 20/20 sampled suppressions are genuine duplicates |
+| D-102 | DECISIONS.md | 949 | D-072 (model-tier benchmark) is deferred indefinitely |
+| D-103 | DECISIONS.md | 971 | P6 Slice 2: the ledger is a current-state row per job, `seen` suppresses on a TTL, and the policy stamp never auto-reopens |
+| D-104 | DECISIONS.md | 1036 | Job regrouping: the survivor's job wins, and a tracked group is refused whole |
+| D-105 | DECISIONS.md | 1079 | Identity writes move into the scan path, closing D-098 — and D-098's cost argument did not apply |
+| D-106 | DECISIONS.md | 1110 | Two consequences the build forced: what earns a permanent `skipped`, and the zero-output guard |
+| D-107 | DECISIONS.md | 1136 | P6 Slice 2 BUILT and verified on real data; `cross_host` dereference deferred by measured absence |
+| D-108 | DECISIONS.md | 1185 | The decision log and the metrics log are archive-split; the reading protocol moves into the index |
 
 ---
 

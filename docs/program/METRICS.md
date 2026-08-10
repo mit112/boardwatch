@@ -25,6 +25,10 @@ Line numbers drift as sections are appended. Confirm one before trusting it:
 grep -n '^## ' docs/program/METRICS.md docs/program/METRICS-ARCHIVE.md
 ```
 
+**After appending a section, add its index row and then re-run the regenerator** —
+`uv run python .agent/tools/reindex_program_docs.py`, which rewrites both files' line numbers from the
+headings themselves and is a no-op when they are already right.
+
 | File | Line | Section |
 |---|---|---|
 | METRICS-ARCHIVE.md | 14 | Baseline — 2026-08-06, before any program work |
@@ -50,12 +54,12 @@ grep -n '^## ' docs/program/METRICS.md docs/program/METRICS-ARCHIVE.md
 | METRICS-ARCHIVE.md | 1047 | Session — 2026-08-08 (P5 run #2 — disjunctive fix, Gate P5 MET at 100%; D-073) |
 | METRICS-ARCHIVE.md | 1084 | Session — 2026-08-08 (D-071b final eligibility gate build — no answer-key number changes) |
 | METRICS-ARCHIVE.md | 1120 | Gate P2 — 2026-08-08 · field-tier mechanism (P2 item 4, D-075). **MET AS RECONCILED** |
-| METRICS.md | 62 | Run log |
-| METRICS.md | 90 | Acceptance run |
-| METRICS.md | 101 | Session — 2026-08-09/10 · P6 Slice 1 design + plan. **No build, no gate movement.** |
-| METRICS.md | 127 | Session — 2026-08-10 · P6 Slice 1 BUILT (unattended run). Branch `p6-slice1`, not merged. |
-| METRICS.md | 337 | 2026-08-10 — P6 Slice 1 on the LIVE store (first real backfill) + Gate P6 clause 4 |
-| METRICS.md | 376 | Session 2026-08-10 (later) — P6 Slice 2: the durable decision ledger, its drain, and job regrouping |
+| METRICS.md | 66 | Run log |
+| METRICS.md | 94 | Acceptance run |
+| METRICS.md | 105 | Session — 2026-08-09/10 · P6 Slice 1 design + plan. **No build, no gate movement.** |
+| METRICS.md | 131 | Session — 2026-08-10 · P6 Slice 1 BUILT (unattended run). Branch `p6-slice1`, not merged. |
+| METRICS.md | 341 | 2026-08-10 — P6 Slice 1 on the LIVE store (first real backfill) + Gate P6 clause 4 |
+| METRICS.md | 380 | Session 2026-08-10 (later) — P6 Slice 2: the durable decision ledger, its drain, and job regrouping |
 
 ---
 
