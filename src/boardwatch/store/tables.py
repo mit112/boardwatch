@@ -24,6 +24,8 @@ from sqlalchemy import (
     text,
 )
 
+from boardwatch.core.identity_kinds import IDENTITY_KIND_NAMES
+
 # Convention: naming convention is set at the MetaData level so Alembic
 # autogenerate produces stable, predictable constraint names.
 metadata = MetaData(
@@ -379,4 +381,23 @@ artifact_derivations = Table(
     Column("parent_artifact_id", Integer, ForeignKey("artifacts.id"), primary_key=True),
     Column("relation", Text, primary_key=True),
     Column("created_at", DateTime, nullable=False),
+)
+
+# The kind catalog is closed: an out-of-catalog value is a failure, never a new bucket.
+# Enforced twice on purpose — a typed UnknownIdentityKind at the computation site, and
+# this CHECK at the store, so a direct INSERT cannot invent one either.
+_IDENTITY_KIND_LIST = ", ".join(f"'{name}'" for name in IDENTITY_KIND_NAMES)
+
+posting_identities = Table(
+    "posting_identities",
+    metadata,
+    Column("id", Integer, primary_key=True),
+    Column("posting_id", Integer, ForeignKey("postings.id"), nullable=False),
+    Column("kind", Text, nullable=False),
+    Column("identity_key", Text, nullable=False),
+    Column("algorithm_version", Text, nullable=False),
+    Column("created_at", DateTime, nullable=False),
+    UniqueConstraint("posting_id", "kind", "algorithm_version"),
+    CheckConstraint(f"kind IN ({_IDENTITY_KIND_LIST})", name="identity_kind_enum"),
+    Index("ix_posting_identities_key", "kind", "identity_key"),
 )
