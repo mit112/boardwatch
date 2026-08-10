@@ -1656,6 +1656,32 @@ What survives the correction is the verification rule, which was right for a dif
 **verify a release on PyPI, GHCR and the Releases page — never in the Actions tab**, and never read a
 silent or still-running workflow as a successful publish. Check `status`, not mere presence.
 
+**And the release then FAILED, which is the most useful thing this session produced.** Run `31412535583`
+died in `build + smoke test` with **33 failures**, every one `tectonic binary not found on PATH` or
+`_pdf_page_count` returning None (it shells `pdfinfo`). The three publish jobs were correctly **skipped**,
+so nothing uploaded and no PyPI version is burned — the gate on the most irreversible action did exactly
+its job.
+
+**The cause is a three-day-old hole that only a working runner could reveal.** Tectonic became a hard
+dependency in D-058/D-060 (`e9c0393`, 2026-08-07), *after* v0.2.0 was tagged on 2026-08-04. The
+`Dockerfile` installs `tectonic@0.17.0` and `poppler-utils`; **no workflow installs either**. It stayed
+invisible because CI was not acquiring runners, so `make check` on a machine where Mit has tectonic
+installed was the only thing ever run. `ci.yml` runs on `5f0150d` and `101bc67` — both predating this
+session — fail identically, which is the proof it is not a Slice 3 regression.
+
+**The standing lesson, sharpened.** "The local gate is the only authority" was recorded as a temporary
+inconvenience of the runner outage. It was also *hiding a real defect for three days*: an
+environment-dependency gap is precisely the class a local gate cannot catch, because the local
+environment is the thing that differs. When CI is dark, the risk is not just "less signal" — it is that
+the missing signal is systematically the environment-shaped kind.
+
+**Not fixed here, deliberately, because it is a scope decision and not a typo.** `ci.yml` runs a 3-OS
+matrix (ubuntu/macos/windows × py3.11–3.13) and tectonic + poppler on Windows is awkward. The options are
+(a) install on all three, (b) install in `release.yml` and an ubuntu-only test lane, or (c) skip the
+tectonic-dependent tests when the binary is absent. **(c) must not be taken by default**: it would leave
+CI green while silently no longer verifying P1a's hard résumé gate, which is the exact "a check that does
+not run must report *not measured*, never pass" rule this program is built on.
+
 **Cutting the release is what surfaced that the user-facing docs still described Typst.** D-058/D-060
 replaced Typst with tectonic eleven decisions ago, and the program docs were updated — but `README.md`
 still told users the renderer "shells out to a local Typst install if present", offered a `--format typst`
