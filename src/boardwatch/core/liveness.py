@@ -132,11 +132,11 @@ def verdict_for_failure(posting_id: int, status_code: int | None, detail: str) -
     `FetchFailure` for every non-200, so a 404 arrives here rather than through
     `verdict_for_status`, and reading only the happy path would make the probe find nothing."""
     if status_code is not None and status_code in GONE_STATUSES:
+        # The caller's detail is kept, not replaced by a bare "HTTP 404": the `FetchFailure`
+        # message carries the URL, and withholding a lead is the one outcome whose reason
+        # somebody will want to check by hand.
         return Liveness(
-            posting_id=posting_id,
-            verdict="dead",
-            signal="refetch_gone",
-            detail=f"HTTP {status_code}",
+            posting_id=posting_id, verdict="dead", signal="refetch_gone", detail=detail
         )
     return Liveness(
         posting_id=posting_id, verdict="unknown", signal="refetch_error", detail=detail

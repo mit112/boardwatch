@@ -142,6 +142,8 @@ def test_an_unknown_outcome_still_reaches_the_lead_list(env: Path, tmp_path: Pat
     assert {lead.posting_id for lead in summary.tailored} == set(ids)
     assert summary.dead_lead_ids == []
     assert summary.liveness_unknown == 1
+    assert summary.liveness_dead == 0  # `unknown` must not be quietly counted as dead
+    assert summary.liveness_checked == 2
 
 
 def test_a_dead_posting_is_not_closed_in_the_store(env: Path, tmp_path: Path) -> None:

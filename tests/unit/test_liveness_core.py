@@ -44,6 +44,8 @@ def test_a_gone_status_arriving_as_a_FAILURE_still_withholds() -> None:  # noqa:
     result = verdict_for_failure(7, 404, "HTTP 404 for https://x.test/j/1")
     assert result.verdict == "dead"
     assert result.signal == "refetch_gone"
+    # The URL survives: withholding a lead is the one outcome somebody will check by hand.
+    assert result.detail == "HTTP 404 for https://x.test/j/1"
 
 
 @pytest.mark.parametrize(
