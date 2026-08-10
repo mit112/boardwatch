@@ -602,7 +602,9 @@ def run_tailor(
                 raise LeadArtifactError(
                     f"posting {posting_id}: no shippable résumé PDF "
                     f"(tailored={tailored_gate.reason.value}, "
-                    f"untailored={untailored_gate.reason.value}); log: {failed_log_path}"
+                    f"untailored={untailored_gate.reason.value}); log: {failed_log_path}",
+                    tailored=tailored_gate.reason,
+                    untailored=untailored_gate.reason,
                 )
 
         assert chosen_gate.pdf_path is not None  # shippable => evaluate_compile's OK branch

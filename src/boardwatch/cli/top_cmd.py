@@ -127,6 +127,10 @@ class RankedResults:
     # canonical jobs without recomputing dedup over the corpus a second time. Empty when
     # identities are incomplete, which is the same condition that leaves `hidden_duplicate` at 0.
     suppressions: tuple[Suppression, ...] = ()
+    # The canonical jobs this call put in front of the user, in rank order. Populated whether or
+    # not the `seen` write actually happened, so a caller that ranked with `record_surfaced=False`
+    # can record the decision at the point it genuinely takes one (the pipeline, after tailoring).
+    surfaced_job_ids: tuple[int, ...] = ()
 
 
 def rank_open_postings(
@@ -142,7 +146,17 @@ def rank_open_postings(
     only_new: bool = False,
     output_console: Console = console,
     run_id: int | None = None,
+    record_surfaced: bool = True,
 ) -> RankedResults:
+    """Rank the open corpus. `record_surfaced=False` ranks WITHOUT consuming the queue.
+
+    The `seen` write makes ranking a mutation (D-103, Mit's ruling), which is right for a caller
+    that *delivers* a lead to somebody and wrong for one that merely needs the population.
+    Delivering callers leave the default; `eligibility gate request` (which judges the shortlist
+    and hands it back) and the pipeline (which records its own dispositions after the tailor loop,
+    so a crash cannot suppress a lead it never built) pass False. `surfaced_job_ids` is populated
+    either way, so a caller that opts out can still record the decision once it has one.
+    """
     run_preflight(engine, settings, output_console)
     stats = run_eligibility(
         engine, settings, output_console, run_id=run_id
@@ -335,8 +349,10 @@ def rank_open_postings(
             # only by rank, which is a different reason from every other bucket and the one
             # the funnel could not name before P0 item 3.
             hidden_below_cutoff += 1
-    _record_surfaced(engine, settings, surfaced_job_ids, now=now, run_id=run_id)
+    if record_surfaced:
+        _record_surfaced(engine, settings, surfaced_job_ids, now=now, run_id=run_id)
     return RankedResults(
+        surfaced_job_ids=tuple(surfaced_job_ids),
         visible=visible,
         hidden_ineligible=hidden,
         hidden_non_swe=hidden_non_swe,
@@ -486,6 +502,12 @@ def top(
     new: bool = typer.Option(
         False, "--new", help="Only postings first seen since your last digest."
     ),
+    no_record: bool = typer.Option(
+        False,
+        "--no-record",
+        help="Rank without marking anything `seen`, so this call does not advance the queue. "
+        "Use it for a second look, or for a script that ranks once to display and again to act.",
+    ),
     json_output: bool = typer.Option(False, "--json", help="Output ranked postings as JSON."),
 ) -> None:
     """Rank open postings against your profile (on-demand, §3.6)."""
@@ -502,10 +524,20 @@ def top(
             include_handled=include_handled,
             only_new=new,
             output_console=output_console,
+            record_surfaced=not no_record,
         )
     except NoProfileError:
         output_console.print("no profile yet — run `boardwatch init` first")
         raise typer.Exit(code=1) from None
+    if json_output and results.hidden_handled and not include_handled:
+        # Printed to stderr, BEFORE the JSON, and before the early return below: a script whose
+        # ranked array came back empty because the queue was already advanced would otherwise get
+        # `[]` with no reason at all, which is indistinguishable from "no matches exist".
+        output_console.print(
+            f"{results.hidden_handled} hidden as already handled (built, skipped, or surfaced "
+            "recently) — re-run with --include-handled to see them.",
+            markup=False,
+        )
     if json_output:
         console.print_json(
             json.dumps(

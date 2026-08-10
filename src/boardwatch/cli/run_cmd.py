@@ -25,10 +25,16 @@ def _shortlist_line(summary: PipelineSummary) -> str:
     if summary.shortlist is None:
         return "ranker did not run"
     counts = summary.shortlist
+    # `hidden_handled` is named here and not only in the funnel artifact: it is the bucket that
+    # explains a legitimately empty day, and `_zero_output_guard` was widened to stop fataling on
+    # it. A widened guard whose bucket is absent from the operator's one-line summary prints
+    # "0 shortlisted of 400 considered (0, 0, 0, 0)" and exits 0 — counts that visibly fail to
+    # reconcile, which is the silent empty day in a new costume.
     return (
         f"{counts.shortlisted} shortlisted of {counts.considered} considered "
         f"({counts.hidden_ineligible} ineligible, {counts.hidden_non_swe} non-SWE, "
-        f"{counts.hidden_duplicate} duplicate, {counts.hidden_below_cutoff} below cutoff)"
+        f"{counts.hidden_duplicate} duplicate, {counts.hidden_handled} already handled, "
+        f"{counts.hidden_below_cutoff} below cutoff)"
     )
 
 

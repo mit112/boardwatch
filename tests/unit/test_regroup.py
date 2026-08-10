@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 
 import pytest
@@ -12,6 +12,11 @@ from boardwatch.core.dedup import Suppression
 from boardwatch.core.regroup import REGROUP_REFUSALS, JobMerge, plan_regrouping
 from boardwatch.store import tables
 from boardwatch.store.db import ensure_schema, get_engine
+from boardwatch.store.ledger_queries import (
+    live_dispositions,
+    load_dispositions,
+    record_disposition,
+)
 from boardwatch.store.regroup import apply_merges, job_anchors, protected_job_ids
 
 NOW = datetime(2026, 8, 10, 12, 0, 0)
@@ -200,6 +205,11 @@ def test_apply_merges_will_not_move_a_posting_whose_anchor_already_changed(
     assert moved == 0
     with engine.connect() as conn:
         assert job_anchors(conn, [loser])[loser] == _old_job  # untouched
+        # And no trail entry: `job_grouping_events` is the documented undo path, and D-104 rests
+        # the write order on "the projection can be rebuilt from the trail, never the reverse".
+        # An event whose guarded UPDATE matched 0 rows breaks precisely that — rebuilding would
+        # move a posting nobody moved.
+        assert conn.execute(select(tables.job_grouping_events)).all() == []
 
 
 def test_protected_job_ids_reports_jobs_carrying_an_application(engine: Engine) -> None:
@@ -234,3 +244,75 @@ def test_protected_job_ids_is_empty_on_a_store_with_no_tracking(engine: Engine) 
     _seed(engine, 2)
     with engine.connect() as conn:
         assert protected_job_ids(conn) == frozenset()
+
+
+# ------------------------------------------- the review's two store-level regressions (D-110)
+
+
+def test_a_merge_carries_the_losers_live_disposition_onto_the_canonical_job(
+    engine: Engine,
+) -> None:
+    """CLAIM: regrouping must not un-suppress an already-handled group.
+
+    A decision is keyed on a job. Moving the postings off that job onto the survivor's leaves a
+    `built` row governing a job nothing anchors, while the canonical job carries nothing — so the
+    lead the program already built is surfaced and tailored again, which is the defect this slice
+    exists to remove. The decision must travel with the postings, and the emptied row must be
+    released rather than left live forever with no re-entry path.
+    """
+    (survivor, canonical), (loser, old_job) = _seed(engine, 2)
+    with engine.begin() as conn:
+        assert record_disposition(
+            conn, old_job, disposition="built", reason="lead_built",
+            policy_version="pol-1", now=NOW,
+        )
+    with engine.begin() as conn:
+        moved = apply_merges(
+            conn,
+            [JobMerge(posting_id=loser, from_job_id=old_job, to_job_id=canonical)],
+            identity_kind="exact_quad",
+            now=NOW,
+        )
+    assert moved == 1
+    with engine.connect() as conn:
+        live = live_dispositions(conn, now=NOW)
+        stored = load_dispositions(conn)
+    # The canonical job — the one both postings now anchor — governs.
+    assert canonical in live
+    assert live[canonical].disposition == "built"
+    assert live[canonical].policy_version == "pol-1"
+    # The emptied job no longer governs, but its row survives for the audit trail.
+    assert old_job not in live
+    assert old_job in stored
+    assert stored[old_job].reopened_at == NOW
+
+
+def test_a_merge_does_not_lower_a_disposition_the_canonical_job_already_carries(
+    engine: Engine,
+) -> None:
+    """CLAIM: carrying is monotonic, so the strongest decision in the group wins.
+
+    Written because carrying a `seen` row onto a job already `built` would be a downgrade, and the
+    ledger's whole contract is that a permanent decision is never lowered by a weaker one.
+    """
+    (survivor, canonical), (loser, old_job) = _seed(engine, 2)
+    with engine.begin() as conn:
+        record_disposition(
+            conn, canonical, disposition="built", reason="lead_built",
+            policy_version="pol-1", now=NOW,
+        )
+        record_disposition(
+            conn, old_job, disposition="seen", reason="surfaced",
+            expires_at=NOW + timedelta(days=7), now=NOW,
+        )
+    with engine.begin() as conn:
+        apply_merges(
+            conn,
+            [JobMerge(posting_id=loser, from_job_id=old_job, to_job_id=canonical)],
+            identity_kind="exact_quad",
+            now=NOW,
+        )
+    with engine.connect() as conn:
+        live = live_dispositions(conn, now=NOW)
+    assert live[canonical].disposition == "built"  # not lowered to `seen`
+    assert live[canonical].expires_at is None

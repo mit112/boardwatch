@@ -675,7 +675,13 @@ def gate_request_cmd(
         _no_profile()
     facts = parse_facts(profile_row.eligibility_facts_json)
     try:
-        results = rank_open_postings(app_ctx.engine, settings, limit=top)
+        # `record_surfaced=False`: the request judges the shortlist and hands it straight back,
+        # so it must not advance the queue. Consuming here suppressed every posting the gate had
+        # just asked about, and the `boardwatch run` this handshake exists to feed then shortlisted
+        # nothing for the whole `seen` TTL — the verdicts never reached an artifact.
+        results = rank_open_postings(
+            app_ctx.engine, settings, limit=top, record_surfaced=False
+        )
     except NoProfileError:
         _no_profile()
     with app_ctx.engine.connect() as conn:

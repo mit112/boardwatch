@@ -19,9 +19,18 @@ from boardwatch.cli.top_cmd import rank_open_postings
 from boardwatch.core.clock import utcnow
 from boardwatch.core.settings import load_settings
 from boardwatch.pipeline.runner import _zero_output_guard, run_pipeline
+from boardwatch.reports.resume_gate import (
+    GateReason,
+    LeadArtifactError,
+    RenderToolMissingError,
+)
 from boardwatch.store import tables
 from boardwatch.store.db import ensure_schema, get_engine
-from boardwatch.store.ledger_queries import live_dispositions, reopen_jobs
+from boardwatch.store.ledger_queries import (
+    live_dispositions,
+    load_dispositions,
+    reopen_jobs,
+)
 
 runner_input = "3\nacme\nBackend engineer: Python, Go, PostgreSQL.\n\n\n\nn\nn\n"
 BODY = "We are hiring a backend engineer to work on Python and PostgreSQL services."
@@ -233,3 +242,124 @@ def test_a_seen_row_lapses_on_its_own_and_the_job_re_enters(env: Path, tmp_path:
     )
     assert len(past_ttl.visible) == 2
     assert past_ttl.hidden_handled == 0
+
+
+# ------------- the review's caller-side regressions (D-110): who may consume the queue
+
+
+def test_a_fatal_tailor_stage_suppresses_nothing(
+    env: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """CLAIM: a run that never got as far as presenting a lead must leave the queue untouched.
+
+    The ranker used to write `seen` for the whole shortlist before the tailor loop ran, putting the
+    suppression on the wrong side of the render. A missing `tectonic`, an invalid persona or a
+    Ctrl-C between the two then hid every shortlisted lead for the TTL with nothing built — and the
+    documented retry re-ranked into an empty shortlist and reported an honest empty day. The
+    disposition is now written after the loop, and the `seen` tier is skipped on a fatal.
+    """
+    _ready(env, 3)
+
+    def _no_renderer(*_args: object, **_kwargs: object) -> None:
+        raise RenderToolMissingError("tectonic not found")
+
+    # Injected rather than assumed: `tectonic` IS installed on this machine, so relying on the
+    # environment to produce the fatal would make this test pass for the wrong reason on one box
+    # and not at all on another.
+    monkeypatch.setattr("boardwatch.pipeline.runner.run_tailor", _no_renderer)
+    summary = _pipeline(env, tmp_path / "out", 3)
+    assert summary.fatal is not None
+    assert summary.tailored == []
+    with get_engine(env).connect() as conn:
+        assert live_dispositions(conn, now=utcnow()) == {}
+
+
+def test_gate_request_does_not_advance_the_queue(env: Path, tmp_path: Path) -> None:
+    """CLAIM: `eligibility gate request` judges the shortlist and must not consume it.
+
+    It ranks with the pipeline's own shortlist size so the gate judges exactly what a run tailors.
+    While it consumed the queue, the `boardwatch run` this handshake exists to feed shortlisted
+    nothing for the whole `seen` TTL, so the verdicts never reached an artifact — the handshake
+    silently defeated itself.
+    """
+    from typer.testing import CliRunner
+
+    from boardwatch.cli.app import app
+
+    _ready(env, 3)
+    cli = CliRunner()
+    out = tmp_path / "gate_request.json"
+    result = cli.invoke(
+        app, ["--data-dir", str(env), "eligibility", "gate", "request", "--top", "3",
+              "--out", str(out)]
+    )
+    assert result.exit_code == 0, result.output
+    assert out.exists()
+    with get_engine(env).connect() as conn:
+        assert live_dispositions(conn, now=utcnow()) == {}
+
+
+def test_top_can_rank_without_consuming_the_queue(env: Path, tmp_path: Path) -> None:
+    """CLAIM: `--no-record` ranks the same rows twice.
+
+    The escape hatch a script needs when it ranks once to display and again to act — without it the
+    daily driver's display call suppressed the very rows its build call was about to ask for, and
+    it built nothing for seven days.
+    """
+    _ready(env, 3)
+    engine = get_engine(env)
+    settings = load_settings(data_dir=env)
+    first = rank_open_postings(
+        engine, settings, limit=3, output_console=Console(quiet=True), record_surfaced=False
+    )
+    second = rank_open_postings(
+        engine, settings, limit=3, output_console=Console(quiet=True), record_surfaced=False
+    )
+    assert [p.posting_id for p in first.visible] == [p.posting_id for p in second.visible]
+    assert first.surfaced_job_ids == second.surfaced_job_ids != ()
+    assert second.hidden_handled == 0
+    with engine.connect() as conn:
+        assert live_dispositions(conn, now=utcnow()) == {}
+
+
+@pytest.mark.parametrize(
+    ("reason", "expect_skipped"),
+    [
+        (GateReason.COMPILE_FAILED, False),
+        (GateReason.BINARY_MISSING, False),
+        (GateReason.PAGE_LIMIT_EXCEEDED, True),
+    ],
+)
+def test_only_a_deterministic_refusal_earns_a_permanent_skipped(
+    env: Path,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    reason: GateReason,
+    expect_skipped: bool,
+) -> None:
+    """CLAIM: an environmental render failure must never bury a lead permanently.
+
+    D-106 justified the permanent `skipped` with "the same résumé against the same JD under the
+    same settings refuses identically". That is true of `PAGE_LIMIT_EXCEEDED` and false of a
+    non-zero `tectonic` exit — cold support-file cache with no network, disk full, OOM, killed
+    subprocess — which `evaluate_compile` maps to `shippable=False` exactly like the page limit.
+    A day where the renderer could not fetch its bundle therefore deleted the whole shortlist
+    forever, and the `--stale` drain cannot bring those back because no policy-stamp component
+    covers the résumé or its page limit.
+    """
+    _ready(env, 1)
+
+    def _refuse(*_args: object, **_kwargs: object) -> None:
+        raise LeadArtifactError("no shippable PDF", tailored=reason, untailored=reason)
+
+    monkeypatch.setattr("boardwatch.pipeline.runner.run_tailor", _refuse)
+    summary = _pipeline(env, tmp_path / "out", 1)
+    # The run IS fatal here ("every lead failed to tailor"), which is the pre-existing guard doing
+    # its job on a one-posting corpus and is not what this test is about. The permanent tier is
+    # written regardless of the fatal, because a refusal names work that actually happened; only
+    # the `seen` tier is gated on the stage completing.
+    assert summary.tailor_failed == 1
+    with get_engine(env).connect() as conn:
+        stored = load_dispositions(conn)
+    skipped = [row.disposition for row in stored.values() if row.disposition == "skipped"]
+    assert bool(skipped) is expect_skipped, stored

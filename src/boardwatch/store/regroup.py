@@ -14,7 +14,9 @@ from sqlalchemy import insert, select, update
 from sqlalchemy.engine import Connection
 
 from boardwatch.core.identity_kinds import IDENTITY_ALGORITHM_VERSION
+from boardwatch.core.ledger import is_live
 from boardwatch.core.regroup import JobMerge
+from boardwatch.store.ledger_queries import load_dispositions, record_disposition, reopen_jobs
 from boardwatch.store.tables import applications, artifacts, job_grouping_events, postings
 
 
@@ -68,6 +70,22 @@ def apply_merges(
     """
     if not merges:
         return 0
+    # Only merges whose anchor still reads what the plan was built against. Re-checked HERE, in
+    # the writing transaction, because the trail is the documented undo path: an event for an
+    # UPDATE that then matches 0 rows claims a move that never happened, and rebuilding the
+    # projection from a trail like that would move a posting nobody moved. The guard on the UPDATE
+    # below still stands — this narrows what gets a trail entry, it does not replace the guard.
+    current = {
+        int(row.id): row.job_id
+        for row in conn.execute(
+            select(postings.c.id, postings.c.job_id).where(
+                postings.c.id.in_([merge.posting_id for merge in merges])
+            )
+        ).all()
+    }
+    live = [merge for merge in merges if current.get(merge.posting_id) == merge.from_job_id]
+    if not live:
+        return 0
     conn.execute(
         insert(job_grouping_events),
         [
@@ -83,15 +101,55 @@ def apply_merges(
                 },
                 "created_at": now,
             }
-            for merge in merges
+            for merge in live
         ],
     )
     moved = 0
-    for merge in merges:
+    for merge in live:
         result = conn.execute(
             update(postings)
             .where(postings.c.id == merge.posting_id, postings.c.job_id == merge.from_job_id)
             .values(job_id=merge.to_job_id)
         )
         moved += int(result.rowcount)
+    _carry_dispositions(conn, live, now=now)
     return moved
+
+
+def _carry_dispositions(conn: Connection, merges: Sequence[JobMerge], *, now: datetime) -> None:
+    """Move each emptied job's ledger decision onto the canonical job, then release the original.
+
+    Without this a merge silently un-suppresses an already-handled group. The decision is keyed on
+    a job; regrouping moves the postings off that job onto the survivor's, so a `built` row is left
+    governing a job nothing anchors while the canonical job carries nothing — and the lead the
+    program already built is surfaced and tailored a second time. That is the exact defect this
+    slice exists to remove, reintroduced through the projection it added.
+
+    `record_disposition` is monotonic, so carrying is safe in both directions: the strongest
+    decision among the group's members wins and a canonical job already `built` is left alone.
+    The source row is then `reopened_at`-stamped rather than deleted — the same drain the ledger
+    uses everywhere else — so it stops governing without erasing that it ever did. A live row on a
+    job that anchors no postings would be a quarantine with no re-entry path, which CLAUDE.md
+    forbids outright.
+    """
+    from_jobs = {merge.from_job_id for merge in merges}
+    to_by_from = {merge.from_job_id: merge.to_job_id for merge in merges}
+    carried = load_dispositions(conn, sorted(from_jobs))
+    released: list[int] = []
+    for from_job, row in carried.items():
+        if not is_live(expires_at=row.expires_at, reopened_at=row.reopened_at, now=now):
+            continue
+        to_job = to_by_from[from_job]
+        if to_job == from_job:
+            continue
+        record_disposition(
+            conn,
+            to_job,
+            disposition=row.disposition,
+            reason=row.reason,
+            policy_version=row.policy_version,
+            expires_at=row.expires_at,
+            now=now,
+        )
+        released.append(from_job)
+    reopen_jobs(conn, released, now=now)

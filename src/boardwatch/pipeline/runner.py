@@ -194,36 +194,70 @@ def _zero_output_guard(eligible_judged_this_run: int, hidden_handled: int = 0) -
     return None
 
 
-def _record_permanent_dispositions(
-    engine: Engine, settings: Settings, summary: PipelineSummary, run_id: int
+def _record_shortlist_dispositions(
+    engine: Engine,
+    settings: Settings,
+    summary: PipelineSummary,
+    run_id: int,
+    *,
+    surfaced_job_ids: Sequence[int],
+    stage_completed: bool,
 ) -> None:
-    """Record `built` for every tailored lead and `skipped` for every deterministic refusal.
+    """Record every disposition this run earned, AFTER the tailor loop has run.
 
-    Keyed on the posting's CANONICAL job, which `_regroup` has already settled this run, so a
-    disposition recorded here covers the whole duplicate group rather than one member of it.
+    Three tiers, all keyed on the posting's CANONICAL job — which `_regroup` has already settled
+    this run, so a disposition covers the whole duplicate group rather than one member of it:
 
-    Monotonic, so a lead the ranker already marked `seen` is raised to `built` and a job already
-    `built` is left alone.
+    - `built` for every tailored lead;
+    - `skipped` for a refusal that is genuinely deterministic (see
+      `LeadArtifactError.is_deterministic`);
+    - `seen` for the rest of the shortlist, so tomorrow's run advances past what this one worked
+      through.
+
+    `stage_completed` gates the `seen` tier only. A stage that ended in a fatal never presented
+    these jobs as anything, so suppressing them would hide leads on the strength of a crash; the
+    permanent tiers stand either way, because each names work that actually happened.
+
+    Monotonic throughout: `seen` cannot lower a job already `built`, and `record_disposition`
+    writes nothing rather than downgrading.
     """
     posting_ids = [lead.posting_id for lead in summary.tailored] + summary.unshippable_ids
-    if not posting_ids:
+    if not posting_ids and not (stage_completed and surfaced_job_ids):
         return
     built_ids = {lead.posting_id for lead in summary.tailored}
+    now = utcnow()
     with engine.begin() as conn:
         stamp = run_policy_version(conn, settings)
         anchors = job_anchors(conn, posting_ids)
+        decided_jobs: set[int] = set()
         for posting_id in posting_ids:
             job_id = anchors.get(posting_id)
             if job_id is None:
                 continue  # no anchor to key on; `postings.job_id` is NOT NULL by trigger
             is_built = posting_id in built_ids
+            decided_jobs.add(job_id)
             record_disposition(
                 conn,
                 job_id,
                 disposition="built" if is_built else "skipped",
                 reason="lead_built" if is_built else "unshippable_artifact",
                 policy_version=stamp,
-                now=utcnow(),
+                now=now,
+                run_id=run_id,
+            )
+        if not stage_completed:
+            return
+        expires_at = now + timedelta(days=settings.seen_ttl_days)
+        for job_id in surfaced_job_ids:
+            if job_id in decided_jobs:
+                continue  # already carries this run's permanent decision
+            record_disposition(
+                conn,
+                job_id,
+                disposition="seen",
+                reason="surfaced",
+                expires_at=expires_at,
+                now=now,
                 run_id=run_id,
             )
 
@@ -343,7 +377,18 @@ def run_pipeline(
         console.print("[bold]eligibility[/bold]")
         try:
             ranked = rank_open_postings(
-                engine, settings, limit=top_n, output_console=console, run_id=run_id
+                engine,
+                settings,
+                limit=top_n,
+                output_console=console,
+                run_id=run_id,
+                # The pipeline records its own dispositions AFTER the tailor loop
+                # (`_record_shortlist_dispositions`). Letting the ranker write `seen` here put the
+                # suppression on the wrong side of the render: a missing `tectonic`, an invalid
+                # persona or a Ctrl-C between ranking and tailoring left the whole shortlist
+                # suppressed for the TTL with nothing built, and the retry re-ranked into an empty
+                # shortlist. Deciding after the loop is what makes the comment below true.
+                record_surfaced=False,
             )
         except NoProfileError:
             # Not a crash: a fresh install has no profile yet. The run is real and produced
@@ -423,13 +468,15 @@ def run_pipeline(
                 _remove_if_empty(dest)
                 summary.tailor_failed += 1
                 summary.tailor_failed_ids.append(posting.posting_id)
-                # The résumé gate refused a shippable artifact for this posting, and it is a
-                # DETERMINISTIC refusal — the same résumé against the same JD under the same
-                # settings refuses identically — so it earns a permanent `skipped`. The generic
-                # `except` below deliberately does not: an unclassified failure may be transient
-                # (a provider blip, an interrupted render), and a permanent disposition on a
-                # transient fault silently deletes a real lead.
-                summary.unshippable_ids.append(posting.posting_id)
+                # A permanent `skipped` only for a refusal the RÉSUMÉ earned. `is_deterministic`
+                # asks the exception, which carries both gate reasons as data (CLAUDE.md forbids
+                # recovering that by string-matching the message): too many pages repeats
+                # identically and is worth not re-rendering, whereas a non-zero `tectonic` exit is
+                # environmental and burying the lead for it would delete a real opportunity that
+                # tomorrow's run would have built. The generic `except` below records nothing for
+                # the same reason.
+                if exc.is_deterministic:
+                    summary.unshippable_ids.append(posting.posting_id)
                 message = f"tailor: posting {posting.posting_id}: {exc}"
                 stage_errors.append(message)
                 summary.errors.append(message)
@@ -460,11 +507,19 @@ def run_pipeline(
                 )
             )
 
-        # P6 slice 2 §5.3 — the permanent half of the ledger. Written AFTER the loop, so `built`
-        # is only ever recorded for a lead whose artifact already exists: a crash between the
-        # render and this write leaves the job undisposed, which over-shows it next run. That is
-        # the safe direction; the opposite would suppress a job with no deliverable.
-        _record_permanent_dispositions(engine, settings, summary, run_id)
+        # P6 slice 2 §5.3 — the whole ledger write, AFTER the loop, so every disposition names
+        # work that actually happened: `built` only for a lead whose artifact already exists, and
+        # `seen` only when the stage got far enough to have presented the shortlist at all. A
+        # crash between ranking and here leaves the job undisposed, which over-shows it next run.
+        # That is the safe direction; the opposite would suppress a job with no deliverable.
+        _record_shortlist_dispositions(
+            engine,
+            settings,
+            summary,
+            run_id,
+            surfaced_job_ids=ranked.surfaced_job_ids,
+            stage_completed=summary.fatal is None,
+        )
 
         # Every lead the ranker produced failed to render. Not "zero was provably right" —
         # zero was produced from a non-empty shortlist, which is a broken résumé path

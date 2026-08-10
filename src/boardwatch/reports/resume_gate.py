@@ -30,7 +30,32 @@ class RenderToolMissingError(RuntimeError):
 
 class LeadArtifactError(RuntimeError):
     """A lead has no shippable PDF after the untailored-master fallback. Per-lead: the pipeline
-    drops the lead (its existing non-fatal accounting), the CLI exits non-zero."""
+    drops the lead (its existing non-fatal accounting), the CLI exits non-zero.
+
+    Carries the two gate reasons that produced it, typed at the raise site. The pipeline has to
+    tell a *deterministic* refusal (the résumé is too long for the page limit — same inputs, same
+    answer, so re-rendering it every run is waste) from an *environmental* one (a non-zero
+    `tectonic` exit: cold support-file cache with no network, disk full, OOM, killed subprocess),
+    because only the first may earn a permanent `skipped` disposition. CLAUDE.md forbids
+    recovering that distinction by string-matching the message, so it travels as data.
+    """
+
+    def __init__(self, message: str, *, tailored: GateReason, untailored: GateReason) -> None:
+        super().__init__(message)
+        self.tailored = tailored
+        self.untailored = untailored
+
+    @property
+    def is_deterministic(self) -> bool:
+        """Whether BOTH attempts failed for a reason that will repeat identically.
+
+        Both, not either: if the fallback failed only because the renderer was unavailable, the
+        lead is not refused on its merits and must be retried, not buried.
+        """
+        return (
+            self.tailored in DETERMINISTIC_GATE_REFUSALS
+            and self.untailored in DETERMINISTIC_GATE_REFUSALS
+        )
 
 
 class ResumeValidationError(RuntimeError):
@@ -52,6 +77,30 @@ class GateReason(StrEnum):
     # master-authoring instance of that check rather than duplicated.
     CONTACT_BLOCK_MISSING_NAME = "contact_block_missing_name"
     CONTACT_BLOCK_INVALID_EMAIL = "contact_block_invalid_email"
+
+
+# Closed catalog: the refusals that are a property of the RÉSUMÉ, not of the machine that
+# rendered it. Every one of these repeats identically given the same résumé, JD and settings, so a
+# permanent `skipped` disposition against them is a saved render rather than a lost lead.
+#
+# `BINARY_MISSING` and `COMPILE_FAILED` are deliberately absent, and that absence is the whole
+# point of the catalog: a non-zero `tectonic` exit is environmental (cold support-file cache with
+# no network, disk full, OOM, killed subprocess), so burying the lead permanently would delete a
+# real opportunity on the strength of a bad afternoon. `OK` is not a refusal.
+#
+# Out-of-catalog is a failure, never a new bucket: a GateReason added without being classified
+# here is treated as environmental (retry), which is the fail-open direction for a real lead.
+DETERMINISTIC_GATE_REFUSALS: frozenset[GateReason] = frozenset(
+    {
+        GateReason.PAGE_LIMIT_EXCEEDED,
+        GateReason.BULLET_TOO_LONG,
+        GateReason.TOO_MANY_BULLETS,
+        GateReason.ESCAPING_MISMATCH,
+        GateReason.TEMPLATE_ARTIFACT,
+        GateReason.CONTACT_BLOCK_MISSING_NAME,
+        GateReason.CONTACT_BLOCK_INVALID_EMAIL,
+    }
+)
 
 
 @dataclass(frozen=True)
