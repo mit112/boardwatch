@@ -22,6 +22,46 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- **Duplicate-posting suppression — P6 Slice 1, the identity and suppression half** (D-077 … D-101). A new
+  `posting_identities` table (migration `p6_posting_identities`, now the Alembic head) stores multiple ranked
+  identities per posting, computed from a **closed, ranked, versioned catalog** in which `exact_quad`
+  (company + normalized title + normalized locations + `content_hash`) is the **sole suppressing kind**.
+  `content_hash` alone may never suppress — 809 such groups exist live and 727 of them span a different title
+  or location, so a hash-keyed dedup demonstrably collapses different jobs (D-081). `cross_host` is computed
+  and stored but **annotate-only** (D-083): it may not suppress until it can dereference an aggregator posting
+  to exact requisition evidence. A posting with no location evidence emits **no** location-bearing identity
+  rather than an `"[]"` sentinel, because the sentinel makes every location-less posting equal on that
+  component and neither the string-verify nor the recount can catch it. Suppression is resolved by a pure
+  function with no DB, clock or I/O: it groups by stored identity key, **re-compares the underlying strings**
+  before acting on a hash equality, and elects a survivor by `(host_class, earliest first_seen_at, lowest
+  posting_id)` — **never by score**, since a survivor that moves between runs makes the 7-day duplicate-leakage
+  measurement Gate P6 requires meaningless (D-086). `normalize_url` is an **allowlist**, not a denylist
+  (D-080): an unlearned tracking param merges two postings, which the string-verify catches, whereas an
+  unlearned identity param silently splits one posting into two.
+
+  New commands `boardwatch identities backfill` and `boardwatch identities verify`. The backfill is explicit
+  and idempotent, never a side effect of `alembic upgrade` (D-092), so it can be re-run after an algorithm
+  bump. `verify` recounts through a genuinely different path — stored rows against freshly recomputed ones —
+  and exits 1 on stale **or** missing identities, because "nothing is deduped because nothing was backfilled"
+  is not a healthy subsystem.
+
+  `boardwatch top` hides duplicates, threads a new `hidden_duplicate` counter into the funnel's reconciliation
+  identity, and ships the drain in the same change as the quarantine: `--include-duplicates` surfaces every
+  suppressed row, each naming the posting it duplicates. Drained rows do **not** consume `limit` slots — a
+  drain bounded by the rank cutoff reaches only the suppressed rows that would also have ranked, which is not
+  a re-entry path for the bucket. Suppression and the funnel's per-source `unique` are both **completeness-
+  gated**: until every open posting carries a current-version identity, nothing is suppressed and `unique`
+  reports `None` rather than a partial number (D-088). Because nothing in the automated path writes identities
+  yet, `top` now states out loud when suppression is off and which command fixes it, so `0 duplicates` is
+  distinguishable from "never measured" (D-098). `assisted` stays not-instrumented on purpose: no suppressing
+  kind in this slice can cross a source boundary, so `0` would be a structural zero dressed as a measurement.
+
+  Measured on the live 23,455-posting corpus: **147 groups / 186 surplus rows / 0.79%**, all `exact_quad`,
+  re-derived independently by grouping the stored keys in SQL. **20 of 20 sampled suppressions audited as
+  genuine duplicates, zero false positives** (D-101) — same company, same title, same location, distinct
+  requisition id. Gate P6 is **not** met and Slice 1 was designed not to meet it (D-093); two of its four
+  clauses now are, and the remaining two need a running system and liveness rather than more building.
+
 - **Field-tier eligibility taxonomy — the `career_field` routing mechanism** (P2 item 4, D-075). The
   eligibility catalog now carries the three-tier vocabulary `CLAUDE.md` asks for as versioned *data*: every
   family declares a required `tier` (`universal | profile | field`), a field-tier family declares a flat
