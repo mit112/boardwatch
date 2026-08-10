@@ -240,7 +240,7 @@ mapped; on the 58 ineligible rows every historic verdict agrees (deepseek 7/7, e
 contradictions) ⇒ the ineligible answer key is corroborated; 4 eligible-side flags routed to a future judge.
 **Next build = the D-071 two-stage gate** (deterministic precision-first stage — now done — feeding a
 cheap Sonnet-class agent-lane final gate over the shortlist to recover recall: experience 1/23, contract 0/7,
-internship 0/4), then the D-072 benchmark. Both fresh-context. Answer key + oracle outputs stay Mit-local
+internship 0/4), ~~then the D-072 benchmark~~ (**D-072 DEFERRED INDEFINITELY, D-102**). Answer key + oracle outputs stay Mit-local
 and gitignored — keep them out of commits.
 **D-071b BUILT (2026-08-08, later session): the final eligibility gate lane ships.** Built on `p5-final-gate`
 via subagent-driven development, TDD with a review after each task:
