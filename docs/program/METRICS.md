@@ -54,18 +54,19 @@ reports drift without writing, and `make check` depends on it (D-109).
 | METRICS-ARCHIVE.md | 1047 | Session — 2026-08-08 (P5 run #2 — disjunctive fix, Gate P5 MET at 100%; D-073) |
 | METRICS-ARCHIVE.md | 1084 | Session — 2026-08-08 (D-071b final eligibility gate build — no answer-key number changes) |
 | METRICS-ARCHIVE.md | 1120 | Gate P2 — 2026-08-08 · field-tier mechanism (P2 item 4, D-075). **MET AS RECONCILED** |
-| METRICS.md | 72 | Run log |
-| METRICS.md | 100 | Acceptance run |
-| METRICS.md | 111 | Session — 2026-08-09/10 · P6 Slice 1 design + plan. **No build, no gate movement.** |
-| METRICS.md | 137 | Session — 2026-08-10 · P6 Slice 1 BUILT (unattended run). Branch `p6-slice1`, not merged. |
-| METRICS.md | 347 | 2026-08-10 — P6 Slice 1 on the LIVE store (first real backfill) + Gate P6 clause 4 |
-| METRICS.md | 386 | Session 2026-08-10 (later) — P6 Slice 2: the durable decision ledger, its drain, and job regrouping |
-| METRICS.md | 479 | Session — 2026-08-10 (later) · D-109, the program-index gate. No phase gate moved. |
-| METRICS.md | 520 | Session — 2026-08-10 (later still) · The P6 Slice 2 review (D-110). No phase gate moved. |
-| METRICS.md | 610 | Session — 2026-08-10 (later still ×2) · P6 Slice 3, items 5 and 6 (D-111). Gate P6 unchanged: still 2 of 4. |
-| METRICS.md | 723 | Session — 2026-08-10 (later still ×3) · 0.3.0 cut and tagged (D-112). No phase gate moved. |
-| METRICS.md | 774 | Session — 2026-08-10 (later still ×4) · The Slice 3 external review (D-113) + the CI dependency fix (D-114). No phase gate moved. |
-| METRICS.md | 894 | Session — 2026-08-10 (later still ×5) · Gate A career-profile bundle, slices T1–T9 (D-115). No phase gate moved. |
+| METRICS.md | 73 | Run log |
+| METRICS.md | 101 | Acceptance run |
+| METRICS.md | 112 | Session — 2026-08-09/10 · P6 Slice 1 design + plan. **No build, no gate movement.** |
+| METRICS.md | 138 | Session — 2026-08-10 · P6 Slice 1 BUILT (unattended run). Branch `p6-slice1`, not merged. |
+| METRICS.md | 348 | 2026-08-10 — P6 Slice 1 on the LIVE store (first real backfill) + Gate P6 clause 4 |
+| METRICS.md | 387 | Session 2026-08-10 (later) — P6 Slice 2: the durable decision ledger, its drain, and job regrouping |
+| METRICS.md | 480 | Session — 2026-08-10 (later) · D-109, the program-index gate. No phase gate moved. |
+| METRICS.md | 521 | Session — 2026-08-10 (later still) · The P6 Slice 2 review (D-110). No phase gate moved. |
+| METRICS.md | 611 | Session — 2026-08-10 (later still ×2) · P6 Slice 3, items 5 and 6 (D-111). Gate P6 unchanged: still 2 of 4. |
+| METRICS.md | 724 | Session — 2026-08-10 (later still ×3) · 0.3.0 cut and tagged (D-112). No phase gate moved. |
+| METRICS.md | 775 | Session — 2026-08-10 (later still ×4) · The Slice 3 external review (D-113) + the CI dependency fix (D-114). No phase gate moved. |
+| METRICS.md | 895 | Session — 2026-08-10 (later still ×5) · Gate A career-profile bundle, slices T1–T9 (D-115). No phase gate moved. |
+| METRICS.md | 984 | Session — 2026-08-10 (later still ×6) · The held commits are PUSHED; CI's first honest read (D-116, D-117). No phase gate moved. |
 
 ---
 
@@ -977,3 +978,75 @@ of the fixture string, so the literal never exists on disk.
   check is covered only by constructed cases. A test asserts the absence so the gap cannot silently
   close or widen. Fixing it moves `evidence_set_digest` and every digest pinned against it.
 - **13 commits unpushed** on `main` at session end — 9 from this track, 4 from the concurrent P6 session.
+
+---
+
+## Session — 2026-08-10 (later still ×6) · The held commits are PUSHED; CI's first honest read (D-116, D-117). No phase gate moved.
+
+The session's whole job was to unblock a push that had been held because two writers' commits were
+interleaved and one writer's tree was red in a clean checkout. It also produced the first CI run in this
+project's history that could be believed, and that run immediately found something no local check covers.
+
+### The push blocker, resolved by measurement rather than by argument
+
+| Question | How it was answered | Answer |
+|---|---|---|
+| Is the concurrent writer's tree self-contained? | `git ls-tree -r HEAD` for `profile_bundle/secret_scan.py` | **Yes** — tracked, landed in `fa532a8` |
+| Does it survive a clean checkout? | `make check` in a **detached worktree** at `bed9b64`, so untracked files on disk cannot mask a gap | **exit 0** · 4,764 passed · 95.20% · 375 s |
+| Is the docs-only tip safe too? | `make generalization index-check` in a second detached worktree at `1cdcd66` | **exit 0** |
+| Independent corroboration | The peer session's own run, reported separately | 4,764 / 95.20% — **agrees exactly** |
+
+`pytest` *collection* succeeding is the specific evidence, since the red tree was red at import time. The
+two figures matching is the second path: the peer's run and mine shared no state.
+
+**Pushed `cefd13e..1cdcd66`** — 15 commits, 5 P6/release and 10 Gate A.
+
+### What CI found that nothing local did
+
+| Job | On `cefd13e` (before) | Cause | Standing |
+|---|---|---|---|
+| `test` ubuntu ×3, macOS ×3 | **green** | — | tectonic/poppler fix confirmed: **33 → 0** |
+| `test` windows ×3 | **red** — 1 failed, 3,922 passed | program-index gate decoded logs as cp1252, reported **all 114 rows** headless | fixed by `861ea74`, now pushed |
+| `gitleaks` | green on `cefd13e`, **red on `1cdcd66`** | 2 synthetic Gate A fixtures written as literals | fixed by assembling at runtime (D-117) |
+
+**`gitleaks`, `perf` and `generalization` are CI jobs that `make check` does not run**, and `gitleaks` is not
+installed by any project tooling. A green `make check` is therefore not a green CI. This is the first time
+that gap has cost anything.
+
+### The gitleaks fix, verified in both directions
+
+| Scan | Before | After |
+|---|---|---|
+| `gitleaks git --log-opts=cefd13e..HEAD` | **2 leaks** | **0** |
+| `gitleaks dir .` (working tree) | 2 leaks | **no leaks found** |
+| `gitleaks dir .` after clearing `__pycache__`/`.pytest_cache` | 3 leaks (1 stale `.pyc`, 2 `.pytest_cache`) | **no leaks found** — all three were gitignored, so CI never saw them |
+| `tests/profile_bundle/test_profile_bundle_secret_scan.py` | 40 passed | **40 passed** — behaviour unchanged |
+
+The `.gitleaksignore` was confirmed to **fire**, not assumed: the same commit range read 2 before the file
+existed and 0 after.
+
+### The new drift detector, confirmed by mutation
+
+| Check | Result |
+|---|---|
+| `tests/unit/test_typesetting_pin.py` as-is | 1 passed |
+| Same test with `Dockerfile`'s `ARG TECTONIC_VERSION` mutated to `0.18.0` | **1 failed** — the detector fires |
+| `Dockerfile` restored | pin back at `0.17.0` |
+
+### Final gates
+
+| Tree | Command | Exit | Tests | Coverage |
+|---|---|---|---|---|
+| `bed9b64`, detached worktree | `make check` | **0** | 4,764 passed, 1 deselected | 95.20% |
+| `1cdcd66`, detached worktree | `make generalization index-check` | **0** | — | — |
+| `738d7df`, detached worktree | `make check` | **0** | 4,765 passed, 1 deselected | 95.20% |
+
+### Carried gaps, stated
+
+- **Gate A is gate-green but NOT reviewed.** Its commits being on `origin/main` is not sign-off, and the
+  independent review is still owed before Gate B may start.
+- **The 0.3.0 re-tag has not been executed.** Mit's decision is taken (move `v0.3.0`, D-117) and the
+  CHANGELOG is folded, but the tag moves only once `ci.yml` is green on all three OSes on the commit it
+  will name.
+- **No local pre-push check for the three CI-only jobs.** `gitleaks git --log-opts=origin/main..HEAD` is
+  the cheap mitigation and was not wired in.

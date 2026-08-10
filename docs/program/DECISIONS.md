@@ -110,45 +110,47 @@ and is a no-op when the index is already right. `make index-check` reports drift
 | D-074 | DECISIONS-ARCHIVE.md | 3009 | Final eligibility gate lane SHIPPED (persistent, agent-lane, fail-open); Gate P5 unchanged |
 | D-075 | DECISIONS-ARCHIVE.md | 3084 | Gate P2 reconciled: three individually-correct verdicts (may coincide); ≥3-field mechanism via fixtures |
 | D-076 | DECISIONS-ARCHIVE.md | 3153 | P2 item 4's final whole-branch review: what it caught, and four rulings it forced |
-| D-077 | DECISIONS.md | 155 | P6 Slice 1: the design is settled and the plan is written; no code exists yet |
-| D-078 | DECISIONS.md | 245 | P6 Slice 1: the plan's test fixtures are now real; eleven defects, all found by running code |
-| D-079 | DECISIONS.md | 334 | P6 Slice 1 annotates only; `postings.job_id` is not mutated |
-| D-080 | DECISIONS.md | 348 | `content_hash` alone may never suppress |
-| D-081 | DECISIONS.md | 362 | `exact_quad` is the sole suppressing kind, and its yield is stated honestly |
-| D-082 | DECISIONS.md | 380 | `cross_host` ships annotate-only, reversing an earlier draft |
-| D-083 | DECISIONS.md | 401 | No location evidence ⇒ no location-bearing identity, never a `"[]"` sentinel |
-| D-084 | DECISIONS.md | 416 | Three host classes, not two; matching is exact-or-dot-suffix |
-| D-085 | DECISIONS.md | 430 | Allowlist URL normalization, not a denylist |
-| D-086 | DECISIONS.md | 444 | Survivor election never consults score; `posting_id` is a load-bearing tiebreak |
-| D-087 | DECISIONS.md | 459 | Instrumentation is completeness-gated, not existence-gated |
-| D-088 | DECISIONS.md | 473 | `assisted` stays `None` in this slice |
-| D-089 | DECISIONS.md | 488 | Identities are upserted on every observation; a kind that stops being produced is deleted |
-| D-090 | DECISIONS.md | 505 | The ranker is completeness-gated for reproducibility, not safety |
-| D-091 | DECISIONS.md | 523 | The recount recomputes in Python, and claims staleness only |
-| D-092 | DECISIONS.md | 538 | Identities are backfilled by an explicit command, not by the migration |
-| D-093 | DECISIONS.md | 552 | Slice 1 does NOT meet Gate P6, and makes only one of its four clauses measurable |
-| D-094 | DECISIONS.md | 566 | P6 Slice 1 BUILT (unattended run): five more plan defects, three of them tests that could not fail |
-| D-095 | DECISIONS.md | 694 | P6 Slice 1 reviewed by three independent reviewers; fourteen findings fixed, two rejected |
-| D-096 | DECISIONS.md | 759 | The C++/C# fix folds punctuation into words; it does NOT add a raw-title comparison |
-| D-097 | DECISIONS.md | 803 | `_verify_quad` rejected nothing on the live corpus; "string-verified" is not precision evidence |
-| D-098 | DECISIONS.md | 832 | Suppression reports when it is OFF; wiring backfill into the pipeline is Slice 2 |
-| D-099 | DECISIONS.md | 868 | Gate batching stays allowed; the per-task fast-check set must include the schema guards |
-| D-100 | DECISIONS.md | 894 | P6 Slice 1 merged to `main`; Gate P6 clause 3 is MET, not merely measurable |
-| D-101 | DECISIONS.md | 926 | Gate P6 clause 4 is MET: 20/20 sampled suppressions are genuine duplicates |
-| D-102 | DECISIONS.md | 956 | D-072 (model-tier benchmark) is deferred indefinitely |
-| D-103 | DECISIONS.md | 978 | P6 Slice 2: the ledger is a current-state row per job, `seen` suppresses on a TTL, and the policy stamp never auto-reopens |
-| D-104 | DECISIONS.md | 1050 | Job regrouping: the survivor's job wins, and a tracked group is refused whole |
-| D-105 | DECISIONS.md | 1093 | Identity writes move into the scan path, closing D-098 — and D-098's cost argument did not apply |
-| D-106 | DECISIONS.md | 1124 | Two consequences the build forced: what earns a permanent `skipped`, and the zero-output guard |
-| D-107 | DECISIONS.md | 1150 | P6 Slice 2 BUILT and verified on real data; `cross_host` dereference deferred by measured absence |
-| D-108 | DECISIONS.md | 1199 | The decision log and the metrics log are archive-split; the reading protocol moves into the index |
-| D-109 | DECISIONS.md | 1258 | Index drift fails the gate, and the fixer lives in `tools/` |
-| D-110 | DECISIONS.md | 1336 | The Slice 2 review: only a caller that delivers a lead may consume the queue |
-| D-111 | DECISIONS.md | 1453 | P6 Slice 3: applied-state suppression, and liveness sized to what the corpus actually is |
-| D-112 | DECISIONS.md | 1622 | 0.3.0 is cut, the changelog gets ONE triple, and the tag is the owner's to push |
-| D-113 | DECISIONS.md | 1726 | The Slice 3 external review: a followed redirect can forge a gone-status |
-| D-114 | DECISIONS.md | 1814 | CI installs tectonic and pdfinfo on all three OSes; skipping the gate was refused |
-| D-115 | DECISIONS.md | 1882 | Gate A of the career-profile bundle: 9 of 19 slices, and a rule for checks that cannot fire |
+| D-077 | DECISIONS.md | 157 | P6 Slice 1: the design is settled and the plan is written; no code exists yet |
+| D-078 | DECISIONS.md | 247 | P6 Slice 1: the plan's test fixtures are now real; eleven defects, all found by running code |
+| D-079 | DECISIONS.md | 336 | P6 Slice 1 annotates only; `postings.job_id` is not mutated |
+| D-080 | DECISIONS.md | 350 | `content_hash` alone may never suppress |
+| D-081 | DECISIONS.md | 364 | `exact_quad` is the sole suppressing kind, and its yield is stated honestly |
+| D-082 | DECISIONS.md | 382 | `cross_host` ships annotate-only, reversing an earlier draft |
+| D-083 | DECISIONS.md | 403 | No location evidence ⇒ no location-bearing identity, never a `"[]"` sentinel |
+| D-084 | DECISIONS.md | 418 | Three host classes, not two; matching is exact-or-dot-suffix |
+| D-085 | DECISIONS.md | 432 | Allowlist URL normalization, not a denylist |
+| D-086 | DECISIONS.md | 446 | Survivor election never consults score; `posting_id` is a load-bearing tiebreak |
+| D-087 | DECISIONS.md | 461 | Instrumentation is completeness-gated, not existence-gated |
+| D-088 | DECISIONS.md | 475 | `assisted` stays `None` in this slice |
+| D-089 | DECISIONS.md | 490 | Identities are upserted on every observation; a kind that stops being produced is deleted |
+| D-090 | DECISIONS.md | 507 | The ranker is completeness-gated for reproducibility, not safety |
+| D-091 | DECISIONS.md | 525 | The recount recomputes in Python, and claims staleness only |
+| D-092 | DECISIONS.md | 540 | Identities are backfilled by an explicit command, not by the migration |
+| D-093 | DECISIONS.md | 554 | Slice 1 does NOT meet Gate P6, and makes only one of its four clauses measurable |
+| D-094 | DECISIONS.md | 568 | P6 Slice 1 BUILT (unattended run): five more plan defects, three of them tests that could not fail |
+| D-095 | DECISIONS.md | 696 | P6 Slice 1 reviewed by three independent reviewers; fourteen findings fixed, two rejected |
+| D-096 | DECISIONS.md | 761 | The C++/C# fix folds punctuation into words; it does NOT add a raw-title comparison |
+| D-097 | DECISIONS.md | 805 | `_verify_quad` rejected nothing on the live corpus; "string-verified" is not precision evidence |
+| D-098 | DECISIONS.md | 834 | Suppression reports when it is OFF; wiring backfill into the pipeline is Slice 2 |
+| D-099 | DECISIONS.md | 870 | Gate batching stays allowed; the per-task fast-check set must include the schema guards |
+| D-100 | DECISIONS.md | 896 | P6 Slice 1 merged to `main`; Gate P6 clause 3 is MET, not merely measurable |
+| D-101 | DECISIONS.md | 928 | Gate P6 clause 4 is MET: 20/20 sampled suppressions are genuine duplicates |
+| D-102 | DECISIONS.md | 958 | D-072 (model-tier benchmark) is deferred indefinitely |
+| D-103 | DECISIONS.md | 980 | P6 Slice 2: the ledger is a current-state row per job, `seen` suppresses on a TTL, and the policy stamp never auto-reopens |
+| D-104 | DECISIONS.md | 1052 | Job regrouping: the survivor's job wins, and a tracked group is refused whole |
+| D-105 | DECISIONS.md | 1095 | Identity writes move into the scan path, closing D-098 — and D-098's cost argument did not apply |
+| D-106 | DECISIONS.md | 1126 | Two consequences the build forced: what earns a permanent `skipped`, and the zero-output guard |
+| D-107 | DECISIONS.md | 1152 | P6 Slice 2 BUILT and verified on real data; `cross_host` dereference deferred by measured absence |
+| D-108 | DECISIONS.md | 1201 | The decision log and the metrics log are archive-split; the reading protocol moves into the index |
+| D-109 | DECISIONS.md | 1260 | Index drift fails the gate, and the fixer lives in `tools/` |
+| D-110 | DECISIONS.md | 1338 | The Slice 2 review: only a caller that delivers a lead may consume the queue |
+| D-111 | DECISIONS.md | 1455 | P6 Slice 3: applied-state suppression, and liveness sized to what the corpus actually is |
+| D-112 | DECISIONS.md | 1624 | 0.3.0 is cut, the changelog gets ONE triple, and the tag is the owner's to push |
+| D-113 | DECISIONS.md | 1728 | The Slice 3 external review: a followed redirect can forge a gone-status |
+| D-114 | DECISIONS.md | 1816 | CI installs tectonic and pdfinfo on all three OSes; skipping the gate was refused |
+| D-115 | DECISIONS.md | 1884 | Gate A of the career-profile bundle: 9 of 19 slices, and a rule for checks that cannot fire |
+| D-116 | DECISIONS.md | 1966 | A docs-only commit owes the two fast gates, not the full suite; the tectonic pin gets a detector |
+| D-117 | DECISIONS.md | 2013 | 0.3.0's tag moves rather than 0.3.1 being cut; gitleaks fixed by cleaning bytes, not allowlisting |
 
 ---
 
@@ -1958,3 +1960,100 @@ identities behind BEFORE UPDATE/DELETE triggers, and a characterization test now
 accidental merging. Adding a redaction to the packaged example to close a fixture gap — it would move
 `evidence_set_digest` and every digest pinned against it, so it is left for a deliberate fixture change
 and the gap is asserted, not hidden.
+
+---
+
+## D-116 — A docs-only commit owes the two fast gates, not the full suite; and the tectonic pin gets a detector
+
+*2026-08-10. Open question 3 in `STATE.md`, taken by Mit. Closes the standing contradiction between D-014
+and three months of practice, and records a mirror-site fix taken in the same session.*
+
+**The contradiction.** D-014 ruled that every commit owes a full `make check`. Practice has been
+`make generalization index-check` — 1.3 s against roughly 6 minutes — and nobody re-litigated it, so the
+written rule and the followed rule diverged silently. D-109 chose an index design that is correct either
+way rather than resolve it, which kept the question alive without cost until this session relied on the
+relaxed form to publish `1cdcd66`. **Mit's ruling: ratify the practice and amend D-014.**
+
+**The rule.** A diff touching **only `*.md`** owes `make generalization index-check`. Any diff touching
+`src/`, `tests/`, `tools/`, `pyproject.toml`, `uv.lock`, a migration, or anything under `.github/` owes the
+full `make check`. The boundary is the file extension, deliberately — a rule that requires judgement about
+whether a change is "really" documentation is a rule that gets argued with at the moment it is least
+convenient.
+
+**Why those two targets are sufficient, and not merely cheap.** They are the only checks a markdown-only
+diff can break. `generalization` scans repo *bytes*, so a home path or a real address pasted into prose is
+exactly what it exists to catch — and prose is where that happens, not code. `index-check` runs the same
+checker as `tests/unit/test_program_index.py::test_the_real_program_indexes_are_current`, so the one test in
+the suite that reads the real `docs/program/` files is already covered by it. ruff does not lint markdown,
+mypy does not type it, and no other test opens it. The relaxation is therefore *coverage-preserving* rather
+than a tolerated risk — which is the only ground this program accepts for making a gate cheaper.
+
+**What would falsify this.** A new test that reads a `docs/` file and is not the program-index checker. If
+one is ever added, this decision is void and the full gate returns; the fast set is defined by what the
+suite actually reads, not by a preference for speed.
+
+**Separately: the tectonic version pin now has a drift detector.** `Dockerfile`'s `ARG TECTONIC_VERSION`
+and `.github/actions/setup-typesetting`'s `tectonic-version` input default are two sites for one fact, each
+building a release-tarball URL from it (D-114). The action's own comment admitted "nothing detects drift
+between them" — a hand-maintained mirror that documents its own absence of a check, which is the fourth
+such mirror this program has been bitten by. `tests/unit/test_typesetting_pin.py` parses both and fails if
+they disagree; it was confirmed to fail by mutating the `Dockerfile` pin to `0.18.0`, not merely observed to
+pass. Divergence here is benign while both versions happen to work, which is precisely why it would have
+been found late.
+
+**Alternatives rejected.** Deriving the action's default *from* the Dockerfile at runtime — a composite
+action cannot read a file before its inputs are resolved, and a shell step that parses the Dockerfile trades
+a detectable mirror for an undetectable coupling. Deleting the Dockerfile's `ARG` and passing the version in
+from the workflow — it must stay buildable standalone. Asserting on the version in the action's *prose*
+comments as well: a stale comment is a real defect but pinning prose to a literal makes every wording change
+a test failure.
+
+---
+
+## D-117 — 0.3.0's tag MOVES rather than 0.3.1 being cut; and gitleaks was fixed by cleaning bytes, not by allowlisting
+
+*2026-08-10. The release-form question D-112 left open and D-114 deferred until the fix was verified,
+taken by Mit once it was. Also records the first time `gitleaks` went red on `main`, found by pushing.*
+
+**Mit chose to move `v0.3.0`, not to cut `v0.3.1`.** The tag is deleted on `origin` and locally and
+re-created on a commit that contains the CI fix. The reasoning that decided it: **nothing was ever
+published for 0.3.0** — PyPI 404s, no GHCR image, no GitHub Release, all three publish jobs correctly
+skipped — so the tag has no consumers and immutability protects nobody. Against that, cutting 0.3.1 would
+burn a version number on a build-infrastructure bug and leave two permanent artifacts of it: a tag pointing
+at a commit that never built, and a `## [0.3.0]` changelog section that never shipped. The `[Unreleased]`
+entries fold into the existing `## [0.3.0] - 2026-08-10` section, which is now the only one.
+
+**The precondition is unchanged and is not a formality.** `v0.3.0` named `426f45c`, whose tree has no
+`.github/actions/setup-typesetting` at all (`git ls-tree -r v0.3.0 --name-only -- .github/actions` is
+empty), so deleting and re-pushing the tag *where it already pointed* would have re-run the identical
+33-test failure with more confidence behind it. The tag must land on a commit containing the fix, and
+`ci.yml` must be green on all three OSes first.
+
+**What pushing actually revealed, which reading the diff had not.** `ci.yml` on `cefd13e` was red on all
+three Windows jobs — `1 failed, 3922 passed`, the failure being the program-index gate decoding its logs as
+cp1252 and reporting all 114 rows as headless. That was already fixed locally and unpushed, which is the
+whole reason the held commits mattered. But the push also turned **`gitleaks` red for the first time in the
+project's history**, and nothing local had predicted it: the Gate A commits put two synthetic fixtures on
+disk as literals — a PEM header whose body is the word `filler`, and a 40-character token typed by hand for
+a test asserting that ruleset v1 has *no* entropy heuristic and therefore matches nothing.
+
+**Fixed by assembling both at runtime, which is the rule this repo already had.** D-115 had just paid for
+the same lesson against the generalization checker and stated it: the rule protects the repo's **bytes** —
+git history, a `grep` over a clone, the published wheel — so the fix is to keep the literal off disk, not to
+teach the scanner to forgive it. The same file was *already* following the pattern for its AWS fixtures
+(`"AKIA" + "A" * 16`); it simply had not been applied to these two. Confirmed by `gitleaks dir` going from
+2 findings to **no leaks found**.
+
+**`.gitleaksignore` covers only what history already contains, pinned by fingerprint.** A fingerprint is
+`commit:file:rule:line`, so each entry excuses exactly one blob in one commit. A rule-level or path-level
+allowlist was rejected for the reason D-115 gives: it would stop this repository's own secret-scanning
+fixtures from ever being caught again, permanently, which is the `HOME_PATH_EXCEPTIONS` mistake with a
+different file name. Verified to fire rather than assumed — the same commit range scanned 2 findings before
+the file existed and 0 after.
+
+**A process note worth keeping.** `ci.yml` runs `gitleaks`, `perf` and `generalization` as separate jobs;
+`make check` runs none of them, and `gitleaks` is not installed by any project tooling. So **a green
+`make check` is not a green CI**, which is a narrower claim than "`make check` is the only gate" and does
+not contradict it: `make check` remains the only gate for *this repo's own correctness*, while three CI jobs
+check properties the local gate has never covered. The cheap mitigation, not yet taken, is to run
+`gitleaks git --log-opts=origin/main..HEAD` before a push.

@@ -4,35 +4,6 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
-
-> 0.3.0 was tagged but its build failed and **nothing was published**, so these entries sit here rather
-> than in 0.3.0 until the re-release form is decided. If `v0.3.0` is re-tagged they fold into that
-> section; if 0.3.1 is cut, this section becomes it.
-
-### Fixed
-
-- **A posting whose URL redirects to a dead page is no longer withheld as gone** (D-113). The fetcher
-  follows redirects, so a `302 → 404` chain reported a bare 404 and the liveness probe read it as the
-  posting itself being gone — which would have hidden every live requisition of an employer whose old
-  ATS links point at a new host with a dead deep-link path. Only a gone-status from the URL actually
-  asked about withholds a lead now; a redirected one is served, under its own signal so it stays
-  countable. Relatedly, a `Liveness` verdict its signal does not sanction can no longer be constructed
-  at all.
-
-- **`top` no longer hides why the list is empty** (D-113). When suppression removed everything, the
-  human-readable output printed "no open postings match your filters" — a claim that the corpus is
-  empty — and returned before naming what was hidden or how to see it. The duplicate, handled and
-  applied notices, each of which names its own drain, now print on that path too. The `--json` path had
-  the opposite half of the same defect — it printed before returning but named only two of the five
-  buckets — and now shares one code path with the human one.
-
-- **`boardwatch doctor` now probes for `pdfinfo`, not only `tectonic`.** poppler is as hard a dependency
-  as tectonic — without it the page-count gate cannot answer and every lead is refused — but nothing
-  checked for it, so a user with tectonic and no poppler got an empty run every morning and a `doctor`
-  that reported healthy. `doctor` exits non-zero if either binary is missing, and the README now names
-  both as prerequisites.
-
 ## [0.3.0] - 2026-08-10
 
 ### Added
@@ -764,6 +735,27 @@ All notable changes to this project are documented here. The format follows
   eligibility tables remain append-only.
 
 ### Fixed
+
+- **A posting whose URL redirects to a dead page is no longer withheld as gone** (D-113). The fetcher
+  follows redirects, so a `302 → 404` chain reported a bare 404 and the liveness probe read it as the
+  posting itself being gone — which would have hidden every live requisition of an employer whose old
+  ATS links point at a new host with a dead deep-link path. Only a gone-status from the URL actually
+  asked about withholds a lead now; a redirected one is served, under its own signal so it stays
+  countable. Relatedly, a `Liveness` verdict its signal does not sanction can no longer be constructed
+  at all.
+
+- **`top` no longer hides why the list is empty** (D-113). When suppression removed everything, the
+  human-readable output printed "no open postings match your filters" — a claim that the corpus is
+  empty — and returned before naming what was hidden or how to see it. The duplicate, handled and
+  applied notices, each of which names its own drain, now print on that path too. The `--json` path had
+  the opposite half of the same defect — it printed before returning but named only two of the five
+  buckets — and now shares one code path with the human one.
+
+- **`boardwatch doctor` now probes for `pdfinfo`, not only `tectonic`.** poppler is as hard a dependency
+  as tectonic — without it the page-count gate cannot answer and every lead is refused — but nothing
+  checked for it, so a user with tectonic and no poppler got an empty run every morning and a `doctor`
+  that reported healthy. `doctor` exits non-zero if either binary is missing, and the README now names
+  both as prerequisites.
 
 - **`config show` and `config set` now reach every setting.** Six of the ten scalar settings —
   including `seen_ttl_days`, which governs how long a lead you were shown stays out of the shortlist —
