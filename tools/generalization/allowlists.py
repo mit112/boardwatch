@@ -95,6 +95,15 @@ SHIPPED_DATA: dict[str, DataEntry] = {
         reason="The one public starter registry of company job boards. Schema-validated, "
         "health-verified in CI, tags limited to ALLOWED_REGISTRY_TAGS",
     ),
+    "src/boardwatch/profile_bundle/resources/career-profile.schema.json": DataEntry(
+        kind="template",
+        reason="JSON Schema generated from the career-profile bundle's typed models, shipped so an "
+        "authoring person or agent can read the contract without running the code (Gate A design "
+        "§19). Describes record SHAPES only — no person, organisation, metric or claim value. A "
+        "parity test asserts the committed bytes equal schema.schema_json() exactly, so this pin "
+        "and that test together stop the shipped contract from drifting from the models.",
+        pin="sha256:eeaab7640eb8f2716c4c80c9423600184680187b78a6795694577b47e90c38e4",
+    ),
     "src/boardwatch/store/migrations/script.py.mako": DataEntry(
         kind="template",
         reason="Alembic migration template",

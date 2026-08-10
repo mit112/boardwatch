@@ -100,8 +100,10 @@ YearMonth = Annotated[str, StringConstraints(pattern=r"^[0-9]{4}-(?:0[1-9]|1[0-2
 #: A decimal is carried as a string (§10.1) so no float ever enters an identity computation.
 DecimalString = Annotated[str, StringConstraints(pattern=r"^-?(?:0|[1-9][0-9]*)(?:\.[0-9]+)?$")]
 
-#: `http`/`https` only. `mailto:` is both a contact channel in disguise and a shape the
-#: repository's generalization scan treats as a personal profile URL.
+#: `http`/`https` only, anchored, so every other scheme is refused. A mail-scheme URL in particular
+#: is a contact channel wearing an `entity.url`'s clothes — contacts are typed records on the person
+#: entity (§9) and have their own surface policy — and the repository's generalization scan treats
+#: that shape as a personal profile URL, so it must never appear in tracked example data either.
 HttpUrl = Annotated[str, StringConstraints(pattern=r"^https?://[^\s<>\"]+$", max_length=2048)]
 
 NonBlankStr = Annotated[str, StringConstraints(min_length=1, pattern=r"\S")]

@@ -1,0 +1,4869 @@
+{
+  "$defs": {
+    "Actor": {
+      "description": "Who performed a change (§17). `authorized_by` is DERIVED from the matching approval stamp,\nnever trusted from the YAML, so an `importer` actor cannot authorise its own promotion.",
+      "enum": [
+        "owner",
+        "agent",
+        "importer"
+      ],
+      "title": "Actor",
+      "type": "string"
+    },
+    "AffiliationEntity": {
+      "additionalProperties": false,
+      "properties": {
+        "aliases": {
+          "default": [],
+          "items": {
+            "minLength": 1,
+            "pattern": "\\S",
+            "type": "string"
+          },
+          "title": "Aliases",
+          "type": "array"
+        },
+        "created_at": {
+          "format": "date",
+          "title": "Created At",
+          "type": "string"
+        },
+        "display_name": {
+          "minLength": 1,
+          "pattern": "\\S",
+          "title": "Display Name",
+          "type": "string"
+        },
+        "entity_id": {
+          "pattern": "^(?:affiliation)\\.[a-z0-9]+(?:[._-][a-z0-9]+)*$",
+          "title": "Entity Id",
+          "type": "string"
+        },
+        "entity_type": {
+          "const": "affiliation",
+          "title": "Entity Type",
+          "type": "string"
+        },
+        "reviewed_at": {
+          "format": "date",
+          "title": "Reviewed At",
+          "type": "string"
+        },
+        "status": {
+          "$ref": "#/$defs/AffiliationStatus"
+        }
+      },
+      "required": [
+        "display_name",
+        "created_at",
+        "reviewed_at",
+        "entity_id",
+        "entity_type",
+        "status"
+      ],
+      "title": "AffiliationEntity",
+      "type": "object"
+    },
+    "AffiliationStatus": {
+      "enum": [
+        "planned",
+        "active",
+        "past"
+      ],
+      "title": "AffiliationStatus",
+      "type": "string"
+    },
+    "AffiliationsDocument": {
+      "additionalProperties": false,
+      "properties": {
+        "entities": {
+          "items": {
+            "$ref": "#/$defs/AffiliationEntity"
+          },
+          "title": "Entities",
+          "type": "array"
+        },
+        "facts": {
+          "items": {
+            "$ref": "#/$defs/FactRecord"
+          },
+          "title": "Facts",
+          "type": "array"
+        }
+      },
+      "required": [
+        "facts",
+        "entities"
+      ],
+      "title": "AffiliationsDocument",
+      "type": "object"
+    },
+    "ApprovalAction": {
+      "description": "The closed sub-approval catalog (§13). Each action has one legal target record kind.",
+      "enum": [
+        "confirm_fact",
+        "confirm_contact",
+        "approve_evidence_sufficiency",
+        "approve_claim",
+        "approve_metric_surfaces",
+        "approve_source_scope",
+        "approve_source_record_exclusion",
+        "authorize_conflict_ruling"
+      ],
+      "title": "ApprovalAction",
+      "type": "string"
+    },
+    "ApprovalEntry": {
+      "additionalProperties": false,
+      "description": "One owner decision inside the revision's single stamp (§13).\n\n`target_content_digest` is the canonical digest of the target record BEFORE any approval\nmetadata is attached, which is what makes the binding acyclic and what makes a post-approval\nedit detectable.",
+      "properties": {
+        "action": {
+          "$ref": "#/$defs/ApprovalAction"
+        },
+        "approval_id": {
+          "pattern": "^(?:approval)\\.[a-z0-9]+(?:[._-][a-z0-9]+)*$",
+          "title": "Approval Id",
+          "type": "string"
+        },
+        "resulting_state": {
+          "minLength": 1,
+          "pattern": "\\S",
+          "title": "Resulting State",
+          "type": "string"
+        },
+        "target_content_digest": {
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "title": "Target Content Digest",
+          "type": "string"
+        },
+        "target_record_id": {
+          "pattern": "^(?:approval\\-stamp|source\\-record|certification|presentation|publication|affiliation|employment|candidate|education|relation|evidence|conflict|approval|profile|project|contact|source|person|course|patent|metric|ruling|change|award|skill|claim|fact)\\.[a-z0-9]+(?:[._-][a-z0-9]+)*$",
+          "title": "Target Record Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "approval_id",
+        "action",
+        "target_record_id",
+        "target_content_digest",
+        "resulting_state"
+      ],
+      "title": "ApprovalEntry",
+      "type": "object"
+    },
+    "ApprovalLedger": {
+      "additionalProperties": false,
+      "description": "`history/approvals.yaml`. One stamp per promoted revision, in promotion order.",
+      "properties": {
+        "approvals": {
+          "items": {
+            "$ref": "#/$defs/ApprovalStamp"
+          },
+          "title": "Approvals",
+          "type": "array"
+        }
+      },
+      "required": [
+        "approvals"
+      ],
+      "title": "ApprovalLedger",
+      "type": "object"
+    },
+    "ApprovalStamp": {
+      "additionalProperties": false,
+      "description": "One promoted revision appends exactly one stamp, which may carry any number of entries (§13).\n\n`entries` may be empty: the stamp itself authorizes the candidate revision, so a revision whose\ndiff triggers no sub-approval needs none. An empty list is therefore a legitimate state, not a\nmissing approval.",
+      "properties": {
+        "approval_stamp_id": {
+          "pattern": "^(?:approval\\-stamp)\\.[a-z0-9]+(?:[._-][a-z0-9]+)*$",
+          "title": "Approval Stamp Id",
+          "type": "string"
+        },
+        "approved_at": {
+          "format": "date-time",
+          "title": "Approved At",
+          "type": "string"
+        },
+        "approved_via": {
+          "$ref": "#/$defs/ApprovedVia"
+        },
+        "candidate_content_digest": {
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "title": "Candidate Content Digest",
+          "type": "string"
+        },
+        "entries": {
+          "items": {
+            "$ref": "#/$defs/ApprovalEntry"
+          },
+          "title": "Entries",
+          "type": "array"
+        }
+      },
+      "required": [
+        "approval_stamp_id",
+        "candidate_content_digest",
+        "approved_at",
+        "approved_via",
+        "entries"
+      ],
+      "title": "ApprovalStamp",
+      "type": "object"
+    },
+    "ApprovedVia": {
+      "description": "How the owner confirmed. One member today, and it is the seam: adding a second is a visible\nschema decision rather than a free-text string a caller can invent.",
+      "enum": [
+        "controlling_terminal"
+      ],
+      "title": "ApprovedVia",
+      "type": "string"
+    },
+    "AssertionAuthorizationBranch": {
+      "additionalProperties": false,
+      "description": "One complete authorization route for a tag (§15).\n\nExactly the four fields the design declares, all required. Within one branch every non-empty\nconstraint is ANDed; items inside either list are alternatives. At least one constraint must be\nset, or the branch would authorize the tag unconditionally — which is how `production` would\nbecome claimable about a merely `completed` project.",
+      "properties": {
+        "require_same_subject_metric": {
+          "title": "Require Same Subject Metric",
+          "type": "boolean"
+        },
+        "required_fact_predicates": {
+          "items": {
+            "pattern": "^[a-z][a-z0-9_]*(?:\\.[a-z][a-z0-9_]*)+$",
+            "type": "string"
+          },
+          "title": "Required Fact Predicates",
+          "type": "array"
+        },
+        "required_fact_value": {
+          "anyOf": [
+            {
+              "discriminator": {
+                "mapping": {
+                  "boolean": "#/$defs/BooleanValue",
+                  "date": "#/$defs/DateValue",
+                  "date_range": "#/$defs/DateRangeValue",
+                  "decimal": "#/$defs/DecimalValue",
+                  "integer": "#/$defs/IntegerValue",
+                  "skill_ref": "#/$defs/SkillRefValue",
+                  "string": "#/$defs/StringValue",
+                  "string_list": "#/$defs/StringListValue",
+                  "url": "#/$defs/UrlValue",
+                  "year_month": "#/$defs/YearMonthValue"
+                },
+                "propertyName": "type"
+              },
+              "oneOf": [
+                {
+                  "$ref": "#/$defs/StringValue"
+                },
+                {
+                  "$ref": "#/$defs/IntegerValue"
+                },
+                {
+                  "$ref": "#/$defs/DecimalValue"
+                },
+                {
+                  "$ref": "#/$defs/BooleanValue"
+                },
+                {
+                  "$ref": "#/$defs/DateValue"
+                },
+                {
+                  "$ref": "#/$defs/YearMonthValue"
+                },
+                {
+                  "$ref": "#/$defs/DateRangeValue"
+                },
+                {
+                  "$ref": "#/$defs/UrlValue"
+                },
+                {
+                  "$ref": "#/$defs/StringListValue"
+                },
+                {
+                  "$ref": "#/$defs/SkillRefValue"
+                }
+              ]
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Required Fact Value"
+        },
+        "subject_statuses": {
+          "items": {
+            "pattern": "^[a-z][a-z0-9_]*$",
+            "type": "string"
+          },
+          "title": "Subject Statuses",
+          "type": "array"
+        }
+      },
+      "required": [
+        "subject_statuses",
+        "required_fact_predicates",
+        "required_fact_value",
+        "require_same_subject_metric"
+      ],
+      "title": "AssertionAuthorizationBranch",
+      "type": "object"
+    },
+    "AssertionTagCatalog": {
+      "additionalProperties": false,
+      "properties": {
+        "assertion_tags": {
+          "items": {
+            "$ref": "#/$defs/AssertionTagSpec"
+          },
+          "title": "Assertion Tags",
+          "type": "array"
+        },
+        "assertion_tags_version": {
+          "exclusiveMinimum": 0,
+          "title": "Assertion Tags Version",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "assertion_tags_version",
+        "assertion_tags"
+      ],
+      "title": "AssertionTagCatalog",
+      "type": "object"
+    },
+    "AssertionTagSpec": {
+      "additionalProperties": false,
+      "description": "Exactly the four columns §15 declares.",
+      "properties": {
+        "authorization_any_of": {
+          "items": {
+            "$ref": "#/$defs/AssertionAuthorizationBranch"
+          },
+          "minItems": 1,
+          "title": "Authorization Any Of",
+          "type": "array"
+        },
+        "high_risk": {
+          "title": "High Risk",
+          "type": "boolean"
+        },
+        "legal_subject_kinds": {
+          "items": {
+            "$ref": "#/$defs/EntityKind"
+          },
+          "minItems": 1,
+          "title": "Legal Subject Kinds",
+          "type": "array"
+        },
+        "tag_id": {
+          "pattern": "^[a-z][a-z0-9_]*$",
+          "title": "Tag Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "tag_id",
+        "high_risk",
+        "legal_subject_kinds",
+        "authorization_any_of"
+      ],
+      "title": "AssertionTagSpec",
+      "type": "object"
+    },
+    "AwardEntity": {
+      "additionalProperties": false,
+      "properties": {
+        "aliases": {
+          "default": [],
+          "items": {
+            "minLength": 1,
+            "pattern": "\\S",
+            "type": "string"
+          },
+          "title": "Aliases",
+          "type": "array"
+        },
+        "created_at": {
+          "format": "date",
+          "title": "Created At",
+          "type": "string"
+        },
+        "display_name": {
+          "minLength": 1,
+          "pattern": "\\S",
+          "title": "Display Name",
+          "type": "string"
+        },
+        "entity_id": {
+          "pattern": "^(?:award)\\.[a-z0-9]+(?:[._-][a-z0-9]+)*$",
+          "title": "Entity Id",
+          "type": "string"
+        },
+        "entity_type": {
+          "const": "award",
+          "title": "Entity Type",
+          "type": "string"
+        },
+        "reviewed_at": {
+          "format": "date",
+          "title": "Reviewed At",
+          "type": "string"
+        },
+        "status": {
+          "$ref": "#/$defs/AwardStatus"
+        }
+      },
+      "required": [
+        "display_name",
+        "created_at",
+        "reviewed_at",
+        "entity_id",
+        "entity_type",
+        "status"
+      ],
+      "title": "AwardEntity",
+      "type": "object"
+    },
+    "AwardStatus": {
+      "enum": [
+        "nominated",
+        "awarded"
+      ],
+      "title": "AwardStatus",
+      "type": "string"
+    },
+    "AwardsDocument": {
+      "additionalProperties": false,
+      "properties": {
+        "entities": {
+          "items": {
+            "$ref": "#/$defs/AwardEntity"
+          },
+          "title": "Entities",
+          "type": "array"
+        },
+        "facts": {
+          "items": {
+            "$ref": "#/$defs/FactRecord"
+          },
+          "title": "Facts",
+          "type": "array"
+        }
+      },
+      "required": [
+        "facts",
+        "entities"
+      ],
+      "title": "AwardsDocument",
+      "type": "object"
+    },
+    "BlobCapture": {
+      "additionalProperties": false,
+      "description": "A larger capture stored once under `blobs/sha256/`.\n\n`sha256` is the bare raw-byte digest of the POST-redaction bytes. The filesystem path is never\nan identity input, which is what lets a bundle be relocated for encrypted backup.",
+      "properties": {
+        "kind": {
+          "const": "blob",
+          "title": "Kind",
+          "type": "string"
+        },
+        "media_type": {
+          "$ref": "#/$defs/CaptureMediaType"
+        },
+        "sha256": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Sha256",
+          "type": "string"
+        }
+      },
+      "required": [
+        "kind",
+        "sha256",
+        "media_type"
+      ],
+      "title": "BlobCapture",
+      "type": "object"
+    },
+    "BooleanValue": {
+      "additionalProperties": false,
+      "properties": {
+        "type": {
+          "const": "boolean",
+          "title": "Type",
+          "type": "string"
+        },
+        "value": {
+          "title": "Value",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "type",
+        "value"
+      ],
+      "title": "BooleanValue",
+      "type": "object"
+    },
+    "BulletCandidatesDocument": {
+      "additionalProperties": false,
+      "description": "`claims/bullet-candidates.yaml`: responsibility, accomplishment, project_summary.",
+      "properties": {
+        "claims": {
+          "items": {
+            "$ref": "#/$defs/ClaimRecord"
+          },
+          "title": "Claims",
+          "type": "array"
+        }
+      },
+      "required": [
+        "claims"
+      ],
+      "title": "BulletCandidatesDocument",
+      "type": "object"
+    },
+    "CandidateOccurrence": {
+      "additionalProperties": false,
+      "description": "One (source snapshot, normalised record bytes) sighting of a candidate value.\n\nRe-enumerating changed source bytes at the same locator APPENDS an occurrence rather than\nreplacing prior lineage, so the history of where a value was seen survives a source edit.",
+      "properties": {
+        "record_content_digest": {
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "title": "Record Content Digest",
+          "type": "string"
+        },
+        "source_content_digest": {
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "title": "Source Content Digest",
+          "type": "string"
+        }
+      },
+      "required": [
+        "source_content_digest",
+        "record_content_digest"
+      ],
+      "title": "CandidateOccurrence",
+      "type": "object"
+    },
+    "CandidatePackage": {
+      "additionalProperties": false,
+      "description": "`imports/candidates.yaml`.",
+      "properties": {
+        "candidates": {
+          "items": {
+            "$ref": "#/$defs/CandidateRecord"
+          },
+          "title": "Candidates",
+          "type": "array"
+        },
+        "candidates_version": {
+          "exclusiveMinimum": 0,
+          "title": "Candidates Version",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "candidates_version",
+        "candidates"
+      ],
+      "title": "CandidatePackage",
+      "type": "object"
+    },
+    "CandidateRecord": {
+      "additionalProperties": false,
+      "description": "One typed candidate assertion with its append-only occurrences (§18).",
+      "properties": {
+        "candidate_id": {
+          "pattern": "^(?:candidate)\\.[a-z0-9]+(?:[._-][a-z0-9]+)*$",
+          "title": "Candidate Id",
+          "type": "string"
+        },
+        "canonicalized_typed_value": {
+          "discriminator": {
+            "mapping": {
+              "boolean": "#/$defs/BooleanValue",
+              "date": "#/$defs/DateValue",
+              "date_range": "#/$defs/DateRangeValue",
+              "decimal": "#/$defs/DecimalValue",
+              "integer": "#/$defs/IntegerValue",
+              "skill_ref": "#/$defs/SkillRefValue",
+              "string": "#/$defs/StringValue",
+              "string_list": "#/$defs/StringListValue",
+              "url": "#/$defs/UrlValue",
+              "year_month": "#/$defs/YearMonthValue"
+            },
+            "propertyName": "type"
+          },
+          "oneOf": [
+            {
+              "$ref": "#/$defs/StringValue"
+            },
+            {
+              "$ref": "#/$defs/IntegerValue"
+            },
+            {
+              "$ref": "#/$defs/DecimalValue"
+            },
+            {
+              "$ref": "#/$defs/BooleanValue"
+            },
+            {
+              "$ref": "#/$defs/DateValue"
+            },
+            {
+              "$ref": "#/$defs/YearMonthValue"
+            },
+            {
+              "$ref": "#/$defs/DateRangeValue"
+            },
+            {
+              "$ref": "#/$defs/UrlValue"
+            },
+            {
+              "$ref": "#/$defs/StringListValue"
+            },
+            {
+              "$ref": "#/$defs/SkillRefValue"
+            }
+          ],
+          "title": "Canonicalized Typed Value"
+        },
+        "occurrences": {
+          "items": {
+            "$ref": "#/$defs/CandidateOccurrence"
+          },
+          "minItems": 1,
+          "title": "Occurrences",
+          "type": "array"
+        },
+        "original_display_value": {
+          "minLength": 1,
+          "pattern": "\\S",
+          "title": "Original Display Value",
+          "type": "string"
+        },
+        "predicate": {
+          "pattern": "^[a-z][a-z0-9_]*(?:\\.[a-z][a-z0-9_]*)+$",
+          "title": "Predicate",
+          "type": "string"
+        },
+        "source_record_id": {
+          "pattern": "^(?:source\\-record)\\.[a-z0-9]+(?:[._-][a-z0-9]+)*$",
+          "title": "Source Record Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "candidate_id",
+        "source_record_id",
+        "predicate",
+        "canonicalized_typed_value",
+        "original_display_value",
+        "occurrences"
+      ],
+      "title": "CandidateRecord",
+      "type": "object"
+    },
+    "CaptureMediaType": {
+      "description": "The initial capture media allowlist (§12.2). Closed — no other media is accepted.\n\nIt lives with the record shape it constrains rather than with the scanner that reads it, so the\nmodels package stays importable without the scanner and there is no import cycle between them.\nOther media require a later reviewed design, because \"scan it as UTF-8 text\" is the only\ninspection this phase implements.",
+      "enum": [
+        "text/plain",
+        "text/markdown",
+        "application/json",
+        "text/csv"
+      ],
+      "title": "CaptureMediaType",
+      "type": "string"
+    },
+    "Cardinality": {
+      "description": "How many EFFECTIVE facts a subject may carry for this predicate (§10.4).",
+      "enum": [
+        "one",
+        "many"
+      ],
+      "title": "Cardinality",
+      "type": "string"
+    },
+    "CaveatSeverity": {
+      "description": "A `context_required` caveat must travel with any later projection of the figure; a\n`disqualifying` one makes the metric ineligible until a new metric supersedes it (§11).",
+      "enum": [
+        "informational",
+        "context_required",
+        "disqualifying"
+      ],
+      "title": "CaveatSeverity",
+      "type": "string"
+    },
+    "CertificationEntity": {
+      "additionalProperties": false,
+      "properties": {
+        "aliases": {
+          "default": [],
+          "items": {
+            "minLength": 1,
+            "pattern": "\\S",
+            "type": "string"
+          },
+          "title": "Aliases",
+          "type": "array"
+        },
+        "created_at": {
+          "format": "date",
+          "title": "Created At",
+          "type": "string"
+        },
+        "display_name": {
+          "minLength": 1,
+          "pattern": "\\S",
+          "title": "Display Name",
+          "type": "string"
+        },
+        "entity_id": {
+          "pattern": "^(?:certification)\\.[a-z0-9]+(?:[._-][a-z0-9]+)*$",
+          "title": "Entity Id",
+          "type": "string"
+        },
+        "entity_type": {
+          "const": "certification",
+          "title": "Entity Type",
+          "type": "string"
+        },
+        "reviewed_at": {
+          "format": "date",
+          "title": "Reviewed At",
+          "type": "string"
+        },
+        "status": {
+          "$ref": "#/$defs/CertificationStatus"
+        }
+      },
+      "required": [
+        "display_name",
+        "created_at",
+        "reviewed_at",
+        "entity_id",
+        "entity_type",
+        "status"
+      ],
+      "title": "CertificationEntity",
+      "type": "object"
+    },
+    "CertificationStatus": {
+      "enum": [
+        "active",
+        "expired",
+        "revoked"
+      ],
+      "title": "CertificationStatus",
+      "type": "string"
+    },
+    "CertificationsDocument": {
+      "additionalProperties": false,
+      "properties": {
+        "entities": {
+          "items": {
+            "$ref": "#/$defs/CertificationEntity"
+          },
+          "title": "Entities",
+          "type": "array"
+        },
+        "facts": {
+          "items": {
+            "$ref": "#/$defs/FactRecord"
+          },
+          "title": "Facts",
+          "type": "array"
+        }
+      },
+      "required": [
+        "facts",
+        "entities"
+      ],
+      "title": "CertificationsDocument",
+      "type": "object"
+    },
+    "ChangeLedger": {
+      "additionalProperties": false,
+      "description": "`history/changes.yaml`. Append-only, and contiguous from revision 1.\n\nA gap would make \"change-ledger length equals the revision number\" unenforceable, which is the\ncheap check that catches a rewritten history without recomputing every ancestor.",
+      "properties": {
+        "changes": {
+          "items": {
+            "$ref": "#/$defs/ChangeRecord"
+          },
+          "title": "Changes",
+          "type": "array"
+        }
+      },
+      "required": [
+        "changes"
+      ],
+      "title": "ChangeLedger",
+      "type": "object"
+    },
+    "ChangeRecord": {
+      "additionalProperties": false,
+      "description": "One promoted revision's change record (§17).\n\nThe resulting bundle digest deliberately lives only in the manifest: putting it here would make\nthe change record contain a hash of a document containing the change record.\n\n`changed_record_ids` is derived by the authoring CLI from the validated draft diff rather than\ntrusted from a manually authored list, which is why nothing downstream treats it as authority\nfor what actually changed — the record digests do.",
+      "properties": {
+        "actor": {
+          "$ref": "#/$defs/Actor"
+        },
+        "authorized_by": {
+          "$ref": "#/$defs/Actor"
+        },
+        "change_id": {
+          "pattern": "^(?:change)\\.[a-z0-9]+(?:[._-][a-z0-9]+)*$",
+          "title": "Change Id",
+          "type": "string"
+        },
+        "changed_record_ids": {
+          "items": {
+            "pattern": "^(?:approval\\-stamp|source\\-record|certification|presentation|publication|affiliation|employment|candidate|education|relation|evidence|conflict|approval|profile|project|contact|source|person|course|patent|metric|ruling|change|award|skill|claim|fact)\\.[a-z0-9]+(?:[._-][a-z0-9]+)*$",
+            "type": "string"
+          },
+          "title": "Changed Record Ids",
+          "type": "array"
+        },
+        "created_at": {
+          "format": "date-time",
+          "title": "Created At",
+          "type": "string"
+        },
+        "parent_bundle_digest": {
+          "anyOf": [
+            {
+              "pattern": "^sha256:[0-9a-f]{64}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Parent Bundle Digest"
+        },
+        "revision": {
+          "exclusiveMinimum": 0,
+          "title": "Revision",
+          "type": "integer"
+        },
+        "summary": {
+          "minLength": 1,
+          "pattern": "\\S",
+          "title": "Summary",
+          "type": "string"
+        }
+      },
+      "required": [
+        "change_id",
+        "revision",
+        "parent_bundle_digest",
+        "actor",
+        "authorized_by",
+        "summary",
+        "changed_record_ids",
+        "created_at"
+      ],
+      "title": "ChangeRecord",
+      "type": "object"
+    },
+    "ClaimRecord": {
+      "additionalProperties": false,
+      "description": "One approved-or-proposed wording (§15).\n\n`required_fact_ids` may be empty at parse time: \"an approved claim must reference at least one\nfact\" is status-dependent, so enforcing it intrinsically would make a `draft` claim\nunrepresentable while the owner is still assembling its support.\n\nEvery required record is *conjunctive* support for the complete wording, which is why §10.3\nmakes claim surfaces a subset of the INTERSECTION of all required facts' and metrics' surfaces\nrather than the union.",
+      "properties": {
+        "allowed_surfaces": {
+          "items": {
+            "$ref": "#/$defs/Surface"
+          },
+          "title": "Allowed Surfaces",
+          "type": "array"
+        },
+        "assertion_tags": {
+          "items": {
+            "pattern": "^[a-z][a-z0-9_]*$",
+            "type": "string"
+          },
+          "title": "Assertion Tags",
+          "type": "array"
+        },
+        "claim_id": {
+          "pattern": "^(?:claim)\\.[a-z0-9]+(?:[._-][a-z0-9]+)*$",
+          "title": "Claim Id",
+          "type": "string"
+        },
+        "claim_type": {
+          "$ref": "#/$defs/ClaimType"
+        },
+        "metric_mentions": {
+          "items": {
+            "$ref": "#/$defs/MetricMention"
+          },
+          "title": "Metric Mentions",
+          "type": "array"
+        },
+        "required_fact_ids": {
+          "items": {
+            "pattern": "^(?:fact)\\.[a-z0-9]+(?:[._-][a-z0-9]+)*$",
+            "type": "string"
+          },
+          "title": "Required Fact Ids",
+          "type": "array"
+        },
+        "required_metric_ids": {
+          "items": {
+            "pattern": "^(?:metric)\\.[a-z0-9]+(?:[._-][a-z0-9]+)*$",
+            "type": "string"
+          },
+          "title": "Required Metric Ids",
+          "type": "array"
+        },
+        "reviewed_at": {
+          "format": "date",
+          "title": "Reviewed At",
+          "type": "string"
+        },
+        "status": {
+          "$ref": "#/$defs/ClaimStatus"
+        },
+        "subject_id": {
+          "pattern": "^(?:certification|presentation|publication|affiliation|employment|education|project|person|course|patent|award)\\.[a-z0-9]+(?:[._-][a-z0-9]+)*$",
+          "title": "Subject Id",
+          "type": "string"
+        },
+        "text": {
+          "minLength": 1,
+          "pattern": "\\S",
+          "title": "Text",
+          "type": "string"
+        }
+      },
+      "required": [
+        "claim_id",
+        "subject_id",
+        "claim_type",
+        "text",
+        "required_fact_ids",
+        "required_metric_ids",
+        "metric_mentions",
+        "status",
+        "allowed_surfaces",
+        "assertion_tags",
+        "reviewed_at"
+      ],
+      "title": "ClaimRecord",
+      "type": "object"
+    },
+    "ClaimStatus": {
+      "enum": [
+        "draft",
+        "approved",
+        "rejected",
+        "superseded"
+      ],
+      "title": "ClaimStatus",
+      "type": "string"
+    },
+    "ClaimType": {
+      "description": "The closed initial claim-type catalog (§15).\n\nThe first three live in `claims/bullet-candidates.yaml`; `professional_summary` lives only in\n`claims/summary-candidates.yaml`. A type in the wrong file is a hard validation failure, which\nis what stops a summary from being selected as a bullet.",
+      "enum": [
+        "responsibility",
+        "accomplishment",
+        "project_summary",
+        "professional_summary"
+      ],
+      "title": "ClaimType",
+      "type": "string"
+    },
+    "CompleteFileScope": {
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "const": "complete_file",
+          "title": "Kind",
+          "type": "string"
+        }
+      },
+      "required": [
+        "kind"
+      ],
+      "title": "CompleteFileScope",
+      "type": "object"
+    },
+    "ConflictGroups": {
+      "additionalProperties": false,
+      "description": "`conflicts/groups.yaml`.",
+      "properties": {
+        "conflicts": {
+          "items": {
+            "$ref": "#/$defs/ConflictRecord"
+          },
+          "title": "Conflicts",
+          "type": "array"
+        }
+      },
+      "required": [
+        "conflicts"
+      ],
+      "title": "ConflictGroups",
+      "type": "object"
+    },
+    "ConflictRecord": {
+      "additionalProperties": false,
+      "description": "One group of competing otherwise-effective values for one subject and predicate (§13).\n\nAt least two candidates: a \"conflict\" with one candidate has nothing to choose between, and\nadmitting it would let a fact be parked in a permanently unresolved group to dodge cardinality.",
+      "properties": {
+        "active_ruling_id": {
+          "anyOf": [
+            {
+              "pattern": "^(?:ruling)\\.[a-z0-9]+(?:[._-][a-z0-9]+)*$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Active Ruling Id"
+        },
+        "candidate_fact_ids": {
+          "items": {
+            "pattern": "^(?:fact)\\.[a-z0-9]+(?:[._-][a-z0-9]+)*$",
+            "type": "string"
+          },
+          "minItems": 2,
+          "title": "Candidate Fact Ids",
+          "type": "array"
+        },
+        "conflict_id": {
+          "pattern": "^(?:conflict)\\.[a-z0-9]+(?:[._-][a-z0-9]+)*$",
+          "title": "Conflict Id",
+          "type": "string"
+        },
+        "opened_at": {
+          "format": "date",
+          "title": "Opened At",
+          "type": "string"
+        },
+        "predicate": {
+          "pattern": "^[a-z][a-z0-9_]*(?:\\.[a-z][a-z0-9_]*)+$",
+          "title": "Predicate",
+          "type": "string"
+        },
+        "state": {
+          "$ref": "#/$defs/ConflictState"
+        },
+        "subject_id": {
+          "pattern": "^(?:certification|presentation|publication|affiliation|employment|education|project|person|course|patent|award)\\.[a-z0-9]+(?:[._-][a-z0-9]+)*$",
+          "title": "Subject Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "conflict_id",
+        "subject_id",
+        "predicate",
+        "state",
+        "candidate_fact_ids",
+        "active_ruling_id",
+        "opened_at"
+      ],
+      "title": "ConflictRecord",
+      "type": "object"
+    },
+    "ConflictRulings": {
+      "additionalProperties": false,
+      "description": "`conflicts/rulings.yaml`. Append-only: promotion requires the parent sequence as a prefix.",
+      "properties": {
+        "rulings": {
+          "items": {
+            "$ref": "#/$defs/RulingRecord"
+          },
+          "title": "Rulings",
+          "type": "array"
+        }
+      },
+      "required": [
+        "rulings"
+      ],
+      "title": "ConflictRulings",
+      "type": "object"
+    },
+    "ConflictState": {
+      "description": "`reopened` exists because new evidence must be able to reopen a settled group without\ndeleting the ruling that settled it (§13).",
+      "enum": [
+        "unresolved",
+        "resolved",
+        "reopened"
+      ],
+      "title": "ConflictState",
+      "type": "string"
+    },
+    "ContactChannelType": {
+      "description": "The closed initial channel types (§9).",
+      "enum": [
+        "email",
+        "phone",
+        "profile_url",
+        "location"
+      ],
+      "title": "ContactChannelType",
+      "type": "string"
+    },
+    "ContactRecord": {
+      "additionalProperties": false,
+      "description": "One typed contact channel on the single `person` entity (§9).\n\nContact values and their surfaces require a `confirm_contact` sub-approval in the revision's\napproval stamp; a `verification_state` of `owner_confirmed` in the YAML alone establishes\nnothing.",
+      "properties": {
+        "allowed_surfaces": {
+          "items": {
+            "$ref": "#/$defs/Surface"
+          },
+          "title": "Allowed Surfaces",
+          "type": "array"
+        },
+        "channel_type": {
+          "$ref": "#/$defs/ContactChannelType"
+        },
+        "contact_id": {
+          "pattern": "^(?:contact)\\.[a-z0-9]+(?:[._-][a-z0-9]+)*$",
+          "title": "Contact Id",
+          "type": "string"
+        },
+        "person_id": {
+          "pattern": "^(?:person)\\.[a-z0-9]+(?:[._-][a-z0-9]+)*$",
+          "title": "Person Id",
+          "type": "string"
+        },
+        "value": {
+          "minLength": 1,
+          "pattern": "\\S",
+          "title": "Value",
+          "type": "string"
+        },
+        "verification_state": {
+          "$ref": "#/$defs/VerificationState"
+        }
+      },
+      "required": [
+        "contact_id",
+        "person_id",
+        "channel_type",
+        "value",
+        "allowed_surfaces",
+        "verification_state"
+      ],
+      "title": "ContactRecord",
+      "type": "object"
+    },
+    "CourseEntity": {
+      "additionalProperties": false,
+      "properties": {
+        "aliases": {
+          "default": [],
+          "items": {
+            "minLength": 1,
+            "pattern": "\\S",
+            "type": "string"
+          },
+          "title": "Aliases",
+          "type": "array"
+        },
+        "created_at": {
+          "format": "date",
+          "title": "Created At",
+          "type": "string"
+        },
+        "display_name": {
+          "minLength": 1,
+          "pattern": "\\S",
+          "title": "Display Name",
+          "type": "string"
+        },
+        "entity_id": {
+          "pattern": "^(?:course)\\.[a-z0-9]+(?:[._-][a-z0-9]+)*$",
+          "title": "Entity Id",
+          "type": "string"
+        },
+        "entity_type": {
+          "const": "course",
+          "title": "Entity Type",
+          "type": "string"
+        },
+        "reviewed_at": {
+          "format": "date",
+          "title": "Reviewed At",
+          "type": "string"
+        },
+        "status": {
+          "$ref": "#/$defs/CourseStatus"
+        }
+      },
+      "required": [
+        "display_name",
+        "created_at",
+        "reviewed_at",
+        "entity_id",
+        "entity_type",
+        "status"
+      ],
+      "title": "CourseEntity",
+      "type": "object"
+    },
+    "CourseStatus": {
+      "enum": [
+        "planned",
+        "in_progress",
+        "completed",
+        "withdrawn"
+      ],
+      "title": "CourseStatus",
+      "type": "string"
+    },
+    "CoursesDocument": {
+      "additionalProperties": false,
+      "properties": {
+        "entities": {
+          "items": {
+            "$ref": "#/$defs/CourseEntity"
+          },
+          "title": "Entities",
+          "type": "array"
+        },
+        "facts": {
+          "items": {
+            "$ref": "#/$defs/FactRecord"
+          },
+          "title": "Facts",
+          "type": "array"
+        }
+      },
+      "required": [
+        "facts",
+        "entities"
+      ],
+      "title": "CoursesDocument",
+      "type": "object"
+    },
+    "DateRangeValue": {
+      "additionalProperties": false,
+      "description": "A closed range, or an open one with `end: null`.\n\nOrdering is not enforced here. §10.4 declares \"start <= end\" as `employment.date_range`'s and\n`affiliation.date_range`'s exclusivity rule, so enforcing it intrinsically would apply it to\npredicates whose catalog row does not ask for it.",
+      "properties": {
+        "end": {
+          "anyOf": [
+            {
+              "format": "date",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "End"
+        },
+        "start": {
+          "format": "date",
+          "title": "Start",
+          "type": "string"
+        },
+        "type": {
+          "const": "date_range",
+          "title": "Type",
+          "type": "string"
+        }
+      },
+      "required": [
+        "type",
+        "start",
+        "end"
+      ],
+      "title": "DateRangeValue",
+      "type": "object"
+    },
+    "DateValue": {
+      "additionalProperties": false,
+      "properties": {
+        "type": {
+          "const": "date",
+          "title": "Type",
+          "type": "string"
+        },
+        "value": {
+          "format": "date",
+          "title": "Value",
+          "type": "string"
+        }
+      },
+      "required": [
+        "type",
+        "value"
+      ],
+      "title": "DateValue",
+      "type": "object"
+    },
+    "DecimalValue": {
+      "additionalProperties": false,
+      "properties": {
+        "type": {
+          "const": "decimal",
+          "title": "Type",
+          "type": "string"
+        },
+        "value": {
+          "pattern": "^-?(?:0|[1-9][0-9]*)(?:\\.[0-9]+)?$",
+          "title": "Value",
+          "type": "string"
+        }
+      },
+      "required": [
+        "type",
+        "value"
+      ],
+      "title": "DecimalValue",
+      "type": "object"
+    },
+    "Disposition": {
+      "description": "Every enumerated record gets exactly one (§18). `review_required` is a Gate B blocker:\nan undispositioned record is the \"unexplained record\" the gate requires to be zero.",
+      "enum": [
+        "imported",
+        "excluded",
+        "review_required"
+      ],
+      "title": "Disposition",
+      "type": "string"
+    },
+    "DraftManifest": {
+      "additionalProperties": false,
+      "description": "A writable draft. Has no `revision`, `created_at`, or `created_by` — promotion derives them.\n\n`draft_of_revision` and `parent_bundle_digest` are null together for the revision-1 draft `init`\ncreates, and non-null together for every `checkout`. A half-set pair would make \"is this\nparentless?\" answerable two ways.",
+      "properties": {
+        "approval_stamp_id": {
+          "const": "",
+          "title": "Approval Stamp Id",
+          "type": "string"
+        },
+        "approved_candidate_digest": {
+          "const": "",
+          "title": "Approved Candidate Digest",
+          "type": "string"
+        },
+        "assertion_tag_catalog_version": {
+          "exclusiveMinimum": 0,
+          "title": "Assertion Tag Catalog Version",
+          "type": "integer"
+        },
+        "bundle_digest": {
+          "const": "",
+          "title": "Bundle Digest",
+          "type": "string"
+        },
+        "change_id": {
+          "const": "",
+          "title": "Change Id",
+          "type": "string"
+        },
+        "draft_of_revision": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Draft Of Revision"
+        },
+        "evidence_set_digest": {
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "title": "Evidence Set Digest",
+          "type": "string"
+        },
+        "parent_bundle_digest": {
+          "anyOf": [
+            {
+              "pattern": "^sha256:[0-9a-f]{64}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Parent Bundle Digest"
+        },
+        "predicate_catalog_version": {
+          "exclusiveMinimum": 0,
+          "title": "Predicate Catalog Version",
+          "type": "integer"
+        },
+        "profile_id": {
+          "pattern": "^(?:profile)\\.[a-z0-9]+(?:[._-][a-z0-9]+)*$",
+          "title": "Profile Id",
+          "type": "string"
+        },
+        "relation_catalog_version": {
+          "exclusiveMinimum": 0,
+          "title": "Relation Catalog Version",
+          "type": "integer"
+        },
+        "schema_version": {
+          "exclusiveMinimum": 0,
+          "title": "Schema Version",
+          "type": "integer"
+        },
+        "secret_scan_ruleset_version": {
+          "exclusiveMinimum": 0,
+          "title": "Secret Scan Ruleset Version",
+          "type": "integer"
+        },
+        "skill_category_catalog_version": {
+          "exclusiveMinimum": 0,
+          "title": "Skill Category Catalog Version",
+          "type": "integer"
+        },
+        "state": {
+          "const": "draft",
+          "title": "State",
+          "type": "string"
+        },
+        "unit_catalog_version": {
+          "exclusiveMinimum": 0,
+          "title": "Unit Catalog Version",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "schema_version",
+        "profile_id",
+        "evidence_set_digest",
+        "predicate_catalog_version",
+        "unit_catalog_version",
+        "relation_catalog_version",
+        "skill_category_catalog_version",
+        "assertion_tag_catalog_version",
+        "secret_scan_ruleset_version",
+        "state",
+        "draft_of_revision",
+        "parent_bundle_digest",
+        "bundle_digest",
+        "approved_candidate_digest",
+        "approval_stamp_id",
+        "change_id"
+      ],
+      "title": "DraftManifest",
+      "type": "object"
+    },
+    "EducationDocument": {
+      "additionalProperties": false,
+      "properties": {
+        "entities": {
+          "items": {
+            "$ref": "#/$defs/EducationEntity"
+          },
+          "title": "Entities",
+          "type": "array"
+        },
+        "facts": {
+          "items": {
+            "$ref": "#/$defs/FactRecord"
+          },
+          "title": "Facts",
+          "type": "array"
+        }
+      },
+      "required": [
+        "facts",
+        "entities"
+      ],
+      "title": "EducationDocument",
+      "type": "object"
+    },
+    "EducationEntity": {
+      "additionalProperties": false,
+      "properties": {
+        "aliases": {
+          "default": [],
+          "items": {
+            "minLength": 1,
+            "pattern": "\\S",
+            "type": "string"
+          },
+          "title": "Aliases",
+          "type": "array"
+        },
+        "created_at": {
+          "format": "date",
+          "title": "Created At",
+          "type": "string"
+        },
+        "display_name": {
+          "minLength": 1,
+          "pattern": "\\S",
+          "title": "Display Name",
+          "type": "string"
+        },
+        "entity_id": {
+          "pattern": "^(?:education)\\.[a-z0-9]+(?:[._-][a-z0-9]+)*$",
+          "title": "Entity Id",
+          "type": "string"
+        },
+        "entity_type": {
+          "const": "education",
+          "title": "Entity Type",
+          "type": "string"
+        },
+        "reviewed_at": {
+          "format": "date",
+          "title": "Reviewed At",
+          "type": "string"
+        },
+        "status": {
+          "$ref": "#/$defs/EducationStatus"
+        }
+      },
+      "required": [
+        "display_name",
+        "created_at",
+        "reviewed_at",
+        "entity_id",
+        "entity_type",
+        "status"
+      ],
+      "title": "EducationEntity",
+      "type": "object"
+    },
+    "EducationStatus": {
+      "enum": [
+        "in_progress",
+        "completed",
+        "withdrawn"
+      ],
+      "title": "EducationStatus",
+      "type": "string"
+    },
+    "EmploymentEntity": {
+      "additionalProperties": false,
+      "properties": {
+        "aliases": {
+          "default": [],
+          "items": {
+            "minLength": 1,
+            "pattern": "\\S",
+            "type": "string"
+          },
+          "title": "Aliases",
+          "type": "array"
+        },
+        "created_at": {
+          "format": "date",
+          "title": "Created At",
+          "type": "string"
+        },
+        "display_name": {
+          "minLength": 1,
+          "pattern": "\\S",
+          "title": "Display Name",
+          "type": "string"
+        },
+        "entity_id": {
+          "pattern": "^(?:employment)\\.[a-z0-9]+(?:[._-][a-z0-9]+)*$",
+          "title": "Entity Id",
+          "type": "string"
+        },
+        "entity_type": {
+          "const": "employment",
+          "title": "Entity Type",
+          "type": "string"
+        },
+        "reviewed_at": {
+          "format": "date",
+          "title": "Reviewed At",
+          "type": "string"
+        },
+        "status": {
+          "$ref": "#/$defs/EmploymentStatus"
+        }
+      },
+      "required": [
+        "display_name",
+        "created_at",
+        "reviewed_at",
+        "entity_id",
+        "entity_type",
+        "status"
+      ],
+      "title": "EmploymentEntity",
+      "type": "object"
+    },
+    "EmploymentFactsDocument": {
+      "additionalProperties": false,
+      "description": "`facts/experience/<employment-id>.yaml`: exactly one employment entity and its facts.",
+      "properties": {
+        "entity": {
+          "$ref": "#/$defs/EmploymentEntity"
+        },
+        "facts": {
+          "items": {
+            "$ref": "#/$defs/FactRecord"
+          },
+          "title": "Facts",
+          "type": "array"
+        }
+      },
+      "required": [
+        "facts",
+        "entity"
+      ],
+      "title": "EmploymentFactsDocument",
+      "type": "object"
+    },
+    "EmploymentStatus": {
+      "enum": [
+        "planned",
+        "offer_only",
+        "active",
+        "completed"
+      ],
+      "title": "EmploymentStatus",
+      "type": "string"
+    },
+    "EntityKind": {
+      "description": "The closed initial entity catalog (design §9).",
+      "enum": [
+        "person",
+        "education",
+        "employment",
+        "project",
+        "publication",
+        "award",
+        "certification",
+        "affiliation",
+        "course",
+        "presentation",
+        "patent"
+      ],
+      "title": "EntityKind",
+      "type": "string"
+    },
+    "EvidenceAlternative": {
+      "additionalProperties": false,
+      "description": "One independently sufficient way to meet a predicate's minimum evidence standard.\n\n§10.4: \"Each listed minimum evidence class is independently sufficient unless the entry lists a\ncombination.\" An alternative is therefore a set of classes that must ALL be present, and a\npredicate lists one alternative per acceptable route.",
+      "properties": {
+        "classes": {
+          "items": {
+            "$ref": "#/$defs/EvidenceClass"
+          },
+          "minItems": 1,
+          "title": "Classes",
+          "type": "array"
+        }
+      },
+      "required": [
+        "classes"
+      ],
+      "title": "EvidenceAlternative",
+      "type": "object"
+    },
+    "EvidenceClass": {
+      "description": "The closed evidence-class catalog (§12).",
+      "enum": [
+        "public_record",
+        "private_document",
+        "repository_artifact",
+        "measured_result",
+        "owner_attestation",
+        "secondary_summary"
+      ],
+      "title": "EvidenceClass",
+      "type": "string"
+    },
+    "EvidenceRecordsDocument": {
+      "additionalProperties": false,
+      "description": "`evidence/records.yaml`. §7 step 2 reads evidence records ONLY from here, which is what makes\nthe evidence-set digest a function of one document plus the blob bytes it names.",
+      "properties": {
+        "evidence": {
+          "items": {
+            "discriminator": {
+              "mapping": {
+                "measured_result": "#/$defs/MeasuredResultEvidence",
+                "owner_attestation": "#/$defs/OwnerAttestationEvidence",
+                "private_document": "#/$defs/PrivateDocumentEvidence",
+                "public_record": "#/$defs/PublicRecordEvidence",
+                "repository_artifact": "#/$defs/RepositoryArtifactEvidence",
+                "secondary_summary": "#/$defs/SecondarySummaryEvidence"
+              },
+              "propertyName": "evidence_class"
+            },
+            "oneOf": [
+              {
+                "$ref": "#/$defs/PublicRecordEvidence"
+              },
+              {
+                "$ref": "#/$defs/PrivateDocumentEvidence"
+              },
+              {
+                "$ref": "#/$defs/RepositoryArtifactEvidence"
+              },
+              {
+                "$ref": "#/$defs/MeasuredResultEvidence"
+              },
+              {
+                "$ref": "#/$defs/OwnerAttestationEvidence"
+              },
+              {
+                "$ref": "#/$defs/SecondarySummaryEvidence"
+              }
+            ]
+          },
+          "title": "Evidence",
+          "type": "array"
+        }
+      },
+      "required": [
+        "evidence"
+      ],
+      "title": "EvidenceRecordsDocument",
+      "type": "object"
+    },
+    "ExclusionLedger": {
+      "additionalProperties": false,
+      "description": "`imports/exclusions.yaml`.",
+      "properties": {
+        "exclusions": {
+          "items": {
+            "$ref": "#/$defs/ExclusionRecord"
+          },
+          "title": "Exclusions",
+          "type": "array"
+        },
+        "exclusions_version": {
+          "exclusiveMinimum": 0,
+          "title": "Exclusions Version",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "exclusions_version",
+        "exclusions"
+      ],
+      "title": "ExclusionLedger",
+      "type": "object"
+    },
+    "ExclusionReason": {
+      "description": "The closed exclusion reasons (§18).",
+      "enum": [
+        "duplicate",
+        "administrative_noise",
+        "non_professional",
+        "prohibited_sensitive",
+        "superseded_source",
+        "no_candidate_assertion",
+        "owner_excluded"
+      ],
+      "title": "ExclusionReason",
+      "type": "string"
+    },
+    "ExclusionRecord": {
+      "additionalProperties": false,
+      "description": "One excluded source record and why (§18). Every exclusion requires a rationale.\n\n`owner_excluded` additionally requires an `approve_source_record_exclusion` sub-approval bound\nto the excluded record's target-content digest — a graph check, since it needs the stamp.",
+      "properties": {
+        "rationale": {
+          "minLength": 1,
+          "pattern": "\\S",
+          "title": "Rationale",
+          "type": "string"
+        },
+        "reason": {
+          "$ref": "#/$defs/ExclusionReason"
+        },
+        "source_record_id": {
+          "pattern": "^(?:source\\-record)\\.[a-z0-9]+(?:[._-][a-z0-9]+)*$",
+          "title": "Source Record Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "source_record_id",
+        "reason",
+        "rationale"
+      ],
+      "title": "ExclusionRecord",
+      "type": "object"
+    },
+    "ExclusivitySpec": {
+      "description": "The closed exclusivity rules the design's catalog actually uses (§10.4).\n\n`NONE` is an explicit rule rather than an omission. `ONE_EFFECTIVE_RANGE_ORDERED` carries both\nhalves of the design's \"one effective range; start <= end\" cell, because splitting them would\nlet a row ask for the ordering without the uniqueness or the reverse.",
+      "enum": [
+        "none",
+        "one_effective_value",
+        "one_effective_set",
+        "one_effective_range_ordered"
+      ],
+      "title": "ExclusivitySpec",
+      "type": "string"
+    },
+    "ExpiryBehaviour": {
+      "enum": [
+        "never",
+        "block_active_use_after_value_date"
+      ],
+      "title": "ExpiryBehaviour",
+      "type": "string"
+    },
+    "ExpirySpec": {
+      "additionalProperties": false,
+      "description": "The design's \"Expiry; review\" cell, both halves explicit.\n\n`review_interval_days: null` is the design's `null` review column — no fixed interval — and is\na required key so \"we decided there is no interval\" appears in the diff.",
+      "properties": {
+        "behaviour": {
+          "$ref": "#/$defs/ExpiryBehaviour"
+        },
+        "review_interval_days": {
+          "anyOf": [
+            {
+              "exclusiveMinimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Review Interval Days"
+        }
+      },
+      "required": [
+        "behaviour",
+        "review_interval_days"
+      ],
+      "title": "ExpirySpec",
+      "type": "object"
+    },
+    "FactRecord": {
+      "additionalProperties": false,
+      "description": "One atomic assertion (§10).\n\n`supersedes_fact_ids` is an edge, not a mutation: a corrected fact gets a NEW `fact_id` and the\nsuperseded record stays immutable, so history is derivable rather than overwritten. That is\nalso why a correction cannot break cardinality — cardinality counts effective facts only.",
+      "properties": {
+        "allowed_surfaces": {
+          "items": {
+            "$ref": "#/$defs/Surface"
+          },
+          "title": "Allowed Surfaces",
+          "type": "array"
+        },
+        "conflict_group_id": {
+          "anyOf": [
+            {
+              "pattern": "^(?:conflict)\\.[a-z0-9]+(?:[._-][a-z0-9]+)*$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Conflict Group Id"
+        },
+        "evidence_ids": {
+          "items": {
+            "pattern": "^(?:evidence)\\.[a-z0-9]+(?:[._-][a-z0-9]+)*$",
+            "type": "string"
+          },
+          "title": "Evidence Ids",
+          "type": "array"
+        },
+        "expires_at": {
+          "anyOf": [
+            {
+              "format": "date",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Expires At"
+        },
+        "fact_id": {
+          "pattern": "^(?:fact)\\.[a-z0-9]+(?:[._-][a-z0-9]+)*$",
+          "title": "Fact Id",
+          "type": "string"
+        },
+        "import_lineage": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ImportLineage"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "notes": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Notes"
+        },
+        "predicate": {
+          "pattern": "^[a-z][a-z0-9_]*(?:\\.[a-z][a-z0-9_]*)+$",
+          "title": "Predicate",
+          "type": "string"
+        },
+        "reviewed_at": {
+          "format": "date",
+          "title": "Reviewed At",
+          "type": "string"
+        },
+        "subject_id": {
+          "pattern": "^(?:certification|presentation|publication|affiliation|employment|education|project|person|course|patent|award)\\.[a-z0-9]+(?:[._-][a-z0-9]+)*$",
+          "title": "Subject Id",
+          "type": "string"
+        },
+        "supersedes_fact_ids": {
+          "items": {
+            "pattern": "^(?:fact)\\.[a-z0-9]+(?:[._-][a-z0-9]+)*$",
+            "type": "string"
+          },
+          "title": "Supersedes Fact Ids",
+          "type": "array"
+        },
+        "usage_context": {
+          "$ref": "#/$defs/UsageContext"
+        },
+        "value": {
+          "discriminator": {
+            "mapping": {
+              "boolean": "#/$defs/BooleanValue",
+              "date": "#/$defs/DateValue",
+              "date_range": "#/$defs/DateRangeValue",
+              "decimal": "#/$defs/DecimalValue",
+              "integer": "#/$defs/IntegerValue",
+              "skill_ref": "#/$defs/SkillRefValue",
+              "string": "#/$defs/StringValue",
+              "string_list": "#/$defs/StringListValue",
+              "url": "#/$defs/UrlValue",
+              "year_month": "#/$defs/YearMonthValue"
+            },
+            "propertyName": "type"
+          },
+          "oneOf": [
+            {
+              "$ref": "#/$defs/StringValue"
+            },
+            {
+              "$ref": "#/$defs/IntegerValue"
+            },
+            {
+              "$ref": "#/$defs/DecimalValue"
+            },
+            {
+              "$ref": "#/$defs/BooleanValue"
+            },
+            {
+              "$ref": "#/$defs/DateValue"
+            },
+            {
+              "$ref": "#/$defs/YearMonthValue"
+            },
+            {
+              "$ref": "#/$defs/DateRangeValue"
+            },
+            {
+              "$ref": "#/$defs/UrlValue"
+            },
+            {
+              "$ref": "#/$defs/StringListValue"
+            },
+            {
+              "$ref": "#/$defs/SkillRefValue"
+            }
+          ],
+          "title": "Value"
+        },
+        "verification_basis": {
+          "$ref": "#/$defs/VerificationBasis"
+        },
+        "verification_state": {
+          "$ref": "#/$defs/VerificationState"
+        }
+      },
+      "required": [
+        "fact_id",
+        "subject_id",
+        "predicate",
+        "value",
+        "verification_state",
+        "verification_basis",
+        "usage_context",
+        "evidence_ids",
+        "allowed_surfaces",
+        "conflict_group_id",
+        "reviewed_at",
+        "expires_at",
+        "supersedes_fact_ids",
+        "import_lineage",
+        "notes"
+      ],
+      "title": "FactRecord",
+      "type": "object"
+    },
+    "FactValueKind": {
+      "description": "The closed initial value union (§10.1). A new kind bumps `schema_version`.",
+      "enum": [
+        "string",
+        "integer",
+        "decimal",
+        "boolean",
+        "date",
+        "year_month",
+        "date_range",
+        "url",
+        "string_list",
+        "skill_ref"
+      ],
+      "title": "FactValueKind",
+      "type": "string"
+    },
+    "GatedFactsDocument": {
+      "additionalProperties": false,
+      "description": "`application/gated-facts.yaml` (§16).\n\nProfessional facts that may be needed for an application but must never reach a résumé or a\npublic artefact. The surface restriction is intrinsic to the file: a record here declaring\n`resume` would be an application-only fact widening itself — the exact leak §10.3's graph\ninvariants exist to prevent — and the file-level check catches it before any graph is built.",
+      "properties": {
+        "facts": {
+          "items": {
+            "$ref": "#/$defs/FactRecord"
+          },
+          "title": "Facts",
+          "type": "array"
+        }
+      },
+      "required": [
+        "facts"
+      ],
+      "title": "GatedFactsDocument",
+      "type": "object"
+    },
+    "IdentityDocument": {
+      "additionalProperties": false,
+      "description": "`facts/identity.yaml`: the one person entity, its contact channels, and its facts.",
+      "properties": {
+        "contacts": {
+          "items": {
+            "$ref": "#/$defs/ContactRecord"
+          },
+          "title": "Contacts",
+          "type": "array"
+        },
+        "facts": {
+          "items": {
+            "$ref": "#/$defs/FactRecord"
+          },
+          "title": "Facts",
+          "type": "array"
+        },
+        "person": {
+          "$ref": "#/$defs/PersonEntity"
+        }
+      },
+      "required": [
+        "facts",
+        "person",
+        "contacts"
+      ],
+      "title": "IdentityDocument",
+      "type": "object"
+    },
+    "ImportLineage": {
+      "additionalProperties": false,
+      "description": "Where an imported fact came from. Provenance only: §18 makes upstream sources historical\nafter baseline promotion, and nothing downstream may resolve `source_locator` to read them.",
+      "properties": {
+        "source_content_digest": {
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "title": "Source Content Digest",
+          "type": "string"
+        },
+        "source_id": {
+          "pattern": "^(?:source)\\.[a-z0-9]+(?:[._-][a-z0-9]+)*$",
+          "title": "Source Id",
+          "type": "string"
+        },
+        "source_locator": {
+          "minLength": 1,
+          "pattern": "\\S",
+          "title": "Source Locator",
+          "type": "string"
+        }
+      },
+      "required": [
+        "source_id",
+        "source_locator",
+        "source_content_digest"
+      ],
+      "title": "ImportLineage",
+      "type": "object"
+    },
+    "InlineCapture": {
+      "additionalProperties": false,
+      "description": "A small capture stored directly in `evidence/records.yaml`.\n\nInline text contributes to identity through the normalised evidence document and has no\nseparate blob leaf, so two records quoting the same excerpt do not deduplicate.",
+      "properties": {
+        "kind": {
+          "const": "inline",
+          "title": "Kind",
+          "type": "string"
+        },
+        "media_type": {
+          "$ref": "#/$defs/CaptureMediaType"
+        },
+        "text": {
+          "minLength": 1,
+          "pattern": "\\S",
+          "title": "Text",
+          "type": "string"
+        }
+      },
+      "required": [
+        "kind",
+        "text",
+        "media_type"
+      ],
+      "title": "InlineCapture",
+      "type": "object"
+    },
+    "IntegerValue": {
+      "additionalProperties": false,
+      "properties": {
+        "type": {
+          "const": "integer",
+          "title": "Type",
+          "type": "string"
+        },
+        "value": {
+          "title": "Value",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "type",
+        "value"
+      ],
+      "title": "IntegerValue",
+      "type": "object"
+    },
+    "LocalSourcesSidecar": {
+      "description": "Logical source ID -> machine-local absolute root. Nothing else is representable.",
+      "patternProperties": {
+        "^(?:source)\\.[a-z0-9]+(?:[._-][a-z0-9]+)*$": {
+          "minLength": 2,
+          "pattern": "^(?:/[^\\x00]*|[A-Za-z]:[\\\\/][^\\x00]*)$",
+          "type": "string"
+        }
+      },
+      "title": "LocalSourcesSidecar",
+      "type": "object"
+    },
+    "Locator": {
+      "additionalProperties": false,
+      "description": "Where inside the origin the capture came from.\n\nThe design declares no closed locator-kind catalog, so `kind` is an open lowercase token rather\nthan an invented enum: a fabricated catalog would reject legitimate authoring (a page range, a\nheading path, a cell reference) with no design authority behind the refusal.",
+      "properties": {
+        "kind": {
+          "pattern": "^[a-z][a-z0-9_]*$",
+          "title": "Kind",
+          "type": "string"
+        },
+        "value": {
+          "minLength": 1,
+          "pattern": "\\S",
+          "title": "Value",
+          "type": "string"
+        }
+      },
+      "required": [
+        "kind",
+        "value"
+      ],
+      "title": "Locator",
+      "type": "object"
+    },
+    "MeasuredResultEvidence": {
+      "additionalProperties": false,
+      "properties": {
+        "capture": {
+          "discriminator": {
+            "mapping": {
+              "blob": "#/$defs/BlobCapture",
+              "inline": "#/$defs/InlineCapture"
+            },
+            "propertyName": "kind"
+          },
+          "oneOf": [
+            {
+              "$ref": "#/$defs/InlineCapture"
+            },
+            {
+              "$ref": "#/$defs/BlobCapture"
+            }
+          ],
+          "title": "Capture"
+        },
+        "captured_at": {
+          "format": "date-time",
+          "title": "Captured At",
+          "type": "string"
+        },
+        "contextualizes_record_ids": {
+          "items": {
+            "pattern": "^(?:approval\\-stamp|source\\-record|certification|presentation|publication|affiliation|employment|candidate|education|relation|evidence|conflict|approval|profile|project|contact|source|person|course|patent|metric|ruling|change|award|skill|claim|fact)\\.[a-z0-9]+(?:[._-][a-z0-9]+)*$",
+            "type": "string"
+          },
+          "title": "Contextualizes Record Ids",
+          "type": "array"
+        },
+        "contradicts_record_ids": {
+          "items": {
+            "pattern": "^(?:approval\\-stamp|source\\-record|certification|presentation|publication|affiliation|employment|candidate|education|relation|evidence|conflict|approval|profile|project|contact|source|person|course|patent|metric|ruling|change|award|skill|claim|fact)\\.[a-z0-9]+(?:[._-][a-z0-9]+)*$",
+            "type": "string"
+          },
+          "title": "Contradicts Record Ids",
+          "type": "array"
+        },
+        "evidence_class": {
+          "const": "measured_result",
+          "title": "Evidence Class",
+          "type": "string"
+        },
+        "evidence_id": {
+          "pattern": "^(?:evidence)\\.[a-z0-9]+(?:[._-][a-z0-9]+)*$",
+          "title": "Evidence Id",
+          "type": "string"
+        },
+        "redactions": {
+          "items": {
+            "$ref": "#/$defs/Redaction"
+          },
+          "title": "Redactions",
+          "type": "array"
+        },
+        "reviewed_at": {
+          "format": "date",
+          "title": "Reviewed At",
+          "type": "string"
+        },
+        "sufficiency_review": {
+          "$ref": "#/$defs/SufficiencyReview"
+        },
+        "supports_record_ids": {
+          "items": {
+            "pattern": "^(?:approval\\-stamp|source\\-record|certification|presentation|publication|affiliation|employment|candidate|education|relation|evidence|conflict|approval|profile|project|contact|source|person|course|patent|metric|ruling|change|award|skill|claim|fact)\\.[a-z0-9]+(?:[._-][a-z0-9]+)*$",
+            "type": "string"
+          },
+          "title": "Supports Record Ids",
+          "type": "array"
+        },
+        "title": {
+          "minLength": 1,
+          "pattern": "\\S",
+          "title": "Title",
+          "type": "string"
+        }
+      },
+      "required": [
+        "evidence_id",
+        "title",
+        "capture",
+        "captured_at",
+        "reviewed_at",
+        "sufficiency_review",
+        "redactions",
+        "supports_record_ids",
+        "contradicts_record_ids",
+        "contextualizes_record_ids",
+        "evidence_class"
+      ],
+      "title": "MeasuredResultEvidence",
+      "type": "object"
+    },
+    "MetricCaveat": {
+      "additionalProperties": false,
+      "description": "A typed caveat. Severity is enforced; the text is for the human reading the projection.",
+      "properties": {
+        "severity": {
+          "$ref": "#/$defs/CaveatSeverity"
+        },
+        "text": {
+          "minLength": 1,
+          "pattern": "\\S",
+          "title": "Text",
+          "type": "string"
+        }
+      },
+      "required": [
+        "severity",
+        "text"
+      ],
+      "title": "MetricCaveat",
+      "type": "object"
+    },
+    "MetricKind": {
+      "description": "The closed initial `metric_kind` catalog (§11).",
+      "enum": [
+        "count",
+        "duration",
+        "rate",
+        "throughput",
+        "latency",
+        "percentage",
+        "currency",
+        "size",
+        "rank",
+        "score"
+      ],
+      "title": "MetricKind",
+      "type": "string"
+    },
+    "MetricMention": {
+      "additionalProperties": false,
+      "properties": {
+        "metric_id": {
+          "pattern": "^(?:metric)\\.[a-z0-9]+(?:[._-][a-z0-9]+)*$",
+          "title": "Metric Id",
+          "type": "string"
+        },
+        "rendering": {
+          "$ref": "#/$defs/MetricRendering"
+        }
+      },
+      "required": [
+        "metric_id",
+        "rendering"
+      ],
+      "title": "MetricMention",
+      "type": "object"
+    },
+    "MetricQualifier": {
+      "description": "How exactly the number should be read (§11).",
+      "enum": [
+        "exact",
+        "approximate",
+        "at_least",
+        "more_than",
+        "at_most",
+        "range"
+      ],
+      "title": "MetricQualifier",
+      "type": "string"
+    },
+    "MetricRecord": {
+      "additionalProperties": false,
+      "description": "One measured claim about one subject (§11).\n\n`allowed_phrasings` is non-empty by contract — §11 requires \"at least one allowed phrasing\"\nbefore a metric can be considered for a future résumé — and `evidence_ids` is non-empty because\na metric with no evidence is a number somebody remembered.\n\n`protected_tokens` may be empty: §15 cross-checks \"any rendered protected metric tokens\", so a\nmetric that declares none simply has nothing to preserve. It is a required key rather than a\ndefaulted one, so \"we decided there are none\" is visible in the diff.",
+      "properties": {
+        "allowed_phrasings": {
+          "items": {
+            "minLength": 1,
+            "pattern": "\\S",
+            "type": "string"
+          },
+          "minItems": 1,
+          "title": "Allowed Phrasings",
+          "type": "array"
+        },
+        "allowed_surfaces": {
+          "items": {
+            "$ref": "#/$defs/Surface"
+          },
+          "title": "Allowed Surfaces",
+          "type": "array"
+        },
+        "caveats": {
+          "items": {
+            "$ref": "#/$defs/MetricCaveat"
+          },
+          "title": "Caveats",
+          "type": "array"
+        },
+        "display_value": {
+          "minLength": 1,
+          "pattern": "\\S",
+          "title": "Display Value",
+          "type": "string"
+        },
+        "evidence_ids": {
+          "items": {
+            "pattern": "^(?:evidence)\\.[a-z0-9]+(?:[._-][a-z0-9]+)*$",
+            "type": "string"
+          },
+          "minItems": 1,
+          "title": "Evidence Ids",
+          "type": "array"
+        },
+        "forbidden_phrasings": {
+          "items": {
+            "minLength": 1,
+            "pattern": "\\S",
+            "type": "string"
+          },
+          "title": "Forbidden Phrasings",
+          "type": "array"
+        },
+        "measurement_context": {
+          "minLength": 1,
+          "pattern": "\\S",
+          "title": "Measurement Context",
+          "type": "string"
+        },
+        "measurement_method": {
+          "minLength": 1,
+          "pattern": "\\S",
+          "title": "Measurement Method",
+          "type": "string"
+        },
+        "metric_id": {
+          "pattern": "^(?:metric)\\.[a-z0-9]+(?:[._-][a-z0-9]+)*$",
+          "title": "Metric Id",
+          "type": "string"
+        },
+        "metric_kind": {
+          "$ref": "#/$defs/MetricKind"
+        },
+        "protected_tokens": {
+          "items": {
+            "minLength": 1,
+            "pattern": "\\S",
+            "type": "string"
+          },
+          "title": "Protected Tokens",
+          "type": "array"
+        },
+        "reviewed_at": {
+          "format": "date",
+          "title": "Reviewed At",
+          "type": "string"
+        },
+        "subject_id": {
+          "pattern": "^(?:certification|presentation|publication|affiliation|employment|education|project|person|course|patent|award)\\.[a-z0-9]+(?:[._-][a-z0-9]+)*$",
+          "title": "Subject Id",
+          "type": "string"
+        },
+        "value": {
+          "$ref": "#/$defs/MetricValue"
+        },
+        "verification_state": {
+          "$ref": "#/$defs/VerificationState"
+        }
+      },
+      "required": [
+        "metric_id",
+        "subject_id",
+        "metric_kind",
+        "value",
+        "display_value",
+        "measurement_context",
+        "measurement_method",
+        "evidence_ids",
+        "verification_state",
+        "allowed_surfaces",
+        "allowed_phrasings",
+        "forbidden_phrasings",
+        "protected_tokens",
+        "caveats",
+        "reviewed_at"
+      ],
+      "title": "MetricRecord",
+      "type": "object"
+    },
+    "MetricRecordsDocument": {
+      "additionalProperties": false,
+      "properties": {
+        "metrics": {
+          "items": {
+            "$ref": "#/$defs/MetricRecord"
+          },
+          "title": "Metrics",
+          "type": "array"
+        }
+      },
+      "required": [
+        "metrics"
+      ],
+      "title": "MetricRecordsDocument",
+      "type": "object"
+    },
+    "MetricRendering": {
+      "description": "How a referenced metric appears in the claim text.\n\n§15 names `qualitative_only` explicitly and requires it for \"a referenced metric omitted from\nthe text\". A metric whose figure DOES appear needs a value too, and `rendered` is that value:\nthe enum must have two members or the distinction the design draws is unrepresentable. The\ninference is recorded here rather than buried, because a third rendering would be a schema bump.",
+      "enum": [
+        "rendered",
+        "qualitative_only"
+      ],
+      "title": "MetricRendering",
+      "type": "string"
+    },
+    "MetricValue": {
+      "additionalProperties": false,
+      "description": "The number, its unit key, and its qualifier.\n\n`number` is a decimal string, never a float: `0.1` has no exact binary form, so two writers\ncould serialise the same measurement differently and the bundle digest would disagree.\n`unit` is a key into the revision-owned `policy/units.yaml`; closure is checked semantically.",
+      "properties": {
+        "number": {
+          "pattern": "^-?(?:0|[1-9][0-9]*)(?:\\.[0-9]+)?$",
+          "title": "Number",
+          "type": "string"
+        },
+        "qualifier": {
+          "$ref": "#/$defs/MetricQualifier"
+        },
+        "unit": {
+          "pattern": "^[a-z][a-z0-9_]*$",
+          "title": "Unit",
+          "type": "string"
+        }
+      },
+      "required": [
+        "number",
+        "unit",
+        "qualifier"
+      ],
+      "title": "MetricValue",
+      "type": "object"
+    },
+    "OwnerAttestationAuthority": {
+      "description": "What state, if any, owner attestation alone may establish (§10.4).\n\nEvery initial predicate that admits owner attestation uses `owner_confirmed`, never `verified`.\n`VERIFIED` exists because the design declares the catalog as\n`none | verified | owner_confirmed`; a test asserts no shipped row uses it.",
+      "enum": [
+        "none",
+        "verified",
+        "owner_confirmed"
+      ],
+      "title": "OwnerAttestationAuthority",
+      "type": "string"
+    },
+    "OwnerAttestationEvidence": {
+      "additionalProperties": false,
+      "description": "An owner attestation needs `attested_at` and at least one supported fact.\n\nThat the supported fact is `owner_confirmed` and carries a `confirm_fact` sub-approval is a\ngraph property, checked in semantic validation: it needs the fact record and the stamp.",
+      "properties": {
+        "attested_at": {
+          "format": "date",
+          "title": "Attested At",
+          "type": "string"
+        },
+        "capture": {
+          "discriminator": {
+            "mapping": {
+              "blob": "#/$defs/BlobCapture",
+              "inline": "#/$defs/InlineCapture"
+            },
+            "propertyName": "kind"
+          },
+          "oneOf": [
+            {
+              "$ref": "#/$defs/InlineCapture"
+            },
+            {
+              "$ref": "#/$defs/BlobCapture"
+            }
+          ],
+          "title": "Capture"
+        },
+        "captured_at": {
+          "format": "date-time",
+          "title": "Captured At",
+          "type": "string"
+        },
+        "contextualizes_record_ids": {
+          "items": {
+            "pattern": "^(?:approval\\-stamp|source\\-record|certification|presentation|publication|affiliation|employment|candidate|education|relation|evidence|conflict|approval|profile|project|contact|source|person|course|patent|metric|ruling|change|award|skill|claim|fact)\\.[a-z0-9]+(?:[._-][a-z0-9]+)*$",
+            "type": "string"
+          },
+          "title": "Contextualizes Record Ids",
+          "type": "array"
+        },
+        "contradicts_record_ids": {
+          "items": {
+            "pattern": "^(?:approval\\-stamp|source\\-record|certification|presentation|publication|affiliation|employment|candidate|education|relation|evidence|conflict|approval|profile|project|contact|source|person|course|patent|metric|ruling|change|award|skill|claim|fact)\\.[a-z0-9]+(?:[._-][a-z0-9]+)*$",
+            "type": "string"
+          },
+          "title": "Contradicts Record Ids",
+          "type": "array"
+        },
+        "evidence_class": {
+          "const": "owner_attestation",
+          "title": "Evidence Class",
+          "type": "string"
+        },
+        "evidence_id": {
+          "pattern": "^(?:evidence)\\.[a-z0-9]+(?:[._-][a-z0-9]+)*$",
+          "title": "Evidence Id",
+          "type": "string"
+        },
+        "redactions": {
+          "items": {
+            "$ref": "#/$defs/Redaction"
+          },
+          "title": "Redactions",
+          "type": "array"
+        },
+        "reviewed_at": {
+          "format": "date",
+          "title": "Reviewed At",
+          "type": "string"
+        },
+        "sufficiency_review": {
+          "$ref": "#/$defs/SufficiencyReview"
+        },
+        "supports_record_ids": {
+          "items": {
+            "pattern": "^(?:approval\\-stamp|source\\-record|certification|presentation|publication|affiliation|employment|candidate|education|relation|evidence|conflict|approval|profile|project|contact|source|person|course|patent|metric|ruling|change|award|skill|claim|fact)\\.[a-z0-9]+(?:[._-][a-z0-9]+)*$",
+            "type": "string"
+          },
+          "title": "Supports Record Ids",
+          "type": "array"
+        },
+        "title": {
+          "minLength": 1,
+          "pattern": "\\S",
+          "title": "Title",
+          "type": "string"
+        }
+      },
+      "required": [
+        "evidence_id",
+        "title",
+        "capture",
+        "captured_at",
+        "reviewed_at",
+        "sufficiency_review",
+        "redactions",
+        "supports_record_ids",
+        "contradicts_record_ids",
+        "contextualizes_record_ids",
+        "evidence_class",
+        "attested_at"
+      ],
+      "title": "OwnerAttestationEvidence",
+      "type": "object"
+    },
+    "PatentEntity": {
+      "additionalProperties": false,
+      "properties": {
+        "aliases": {
+          "default": [],
+          "items": {
+            "minLength": 1,
+            "pattern": "\\S",
+            "type": "string"
+          },
+          "title": "Aliases",
+          "type": "array"
+        },
+        "created_at": {
+          "format": "date",
+          "title": "Created At",
+          "type": "string"
+        },
+        "display_name": {
+          "minLength": 1,
+          "pattern": "\\S",
+          "title": "Display Name",
+          "type": "string"
+        },
+        "entity_id": {
+          "pattern": "^(?:patent)\\.[a-z0-9]+(?:[._-][a-z0-9]+)*$",
+          "title": "Entity Id",
+          "type": "string"
+        },
+        "entity_type": {
+          "const": "patent",
+          "title": "Entity Type",
+          "type": "string"
+        },
+        "reviewed_at": {
+          "format": "date",
+          "title": "Reviewed At",
+          "type": "string"
+        },
+        "status": {
+          "$ref": "#/$defs/PatentStatus"
+        }
+      },
+      "required": [
+        "display_name",
+        "created_at",
+        "reviewed_at",
+        "entity_id",
+        "entity_type",
+        "status"
+      ],
+      "title": "PatentEntity",
+      "type": "object"
+    },
+    "PatentStatus": {
+      "enum": [
+        "draft",
+        "filed",
+        "published",
+        "granted",
+        "abandoned"
+      ],
+      "title": "PatentStatus",
+      "type": "string"
+    },
+    "PatentsDocument": {
+      "additionalProperties": false,
+      "properties": {
+        "entities": {
+          "items": {
+            "$ref": "#/$defs/PatentEntity"
+          },
+          "title": "Entities",
+          "type": "array"
+        },
+        "facts": {
+          "items": {
+            "$ref": "#/$defs/FactRecord"
+          },
+          "title": "Facts",
+          "type": "array"
+        }
+      },
+      "required": [
+        "facts",
+        "entities"
+      ],
+      "title": "PatentsDocument",
+      "type": "object"
+    },
+    "PersonEntity": {
+      "additionalProperties": false,
+      "properties": {
+        "aliases": {
+          "default": [],
+          "items": {
+            "minLength": 1,
+            "pattern": "\\S",
+            "type": "string"
+          },
+          "title": "Aliases",
+          "type": "array"
+        },
+        "created_at": {
+          "format": "date",
+          "title": "Created At",
+          "type": "string"
+        },
+        "display_name": {
+          "minLength": 1,
+          "pattern": "\\S",
+          "title": "Display Name",
+          "type": "string"
+        },
+        "entity_id": {
+          "pattern": "^(?:person)\\.[a-z0-9]+(?:[._-][a-z0-9]+)*$",
+          "title": "Entity Id",
+          "type": "string"
+        },
+        "entity_type": {
+          "const": "person",
+          "title": "Entity Type",
+          "type": "string"
+        },
+        "reviewed_at": {
+          "format": "date",
+          "title": "Reviewed At",
+          "type": "string"
+        }
+      },
+      "required": [
+        "display_name",
+        "created_at",
+        "reviewed_at",
+        "entity_id",
+        "entity_type"
+      ],
+      "title": "PersonEntity",
+      "type": "object"
+    },
+    "PortableOrigin": {
+      "additionalProperties": false,
+      "description": "A public record's origin, expressed portably.\n\nOne `reference` field rather than a url/citation pair: §12 requires the origin be *portable*,\nand validation rejects absolute personal paths in it. Two optional fields would let a record\nsatisfy the contract with neither filled in.",
+      "properties": {
+        "kind": {
+          "pattern": "^[a-z][a-z0-9_]*$",
+          "title": "Kind",
+          "type": "string"
+        },
+        "reference": {
+          "minLength": 1,
+          "pattern": "\\S",
+          "title": "Reference",
+          "type": "string"
+        }
+      },
+      "required": [
+        "kind",
+        "reference"
+      ],
+      "title": "PortableOrigin",
+      "type": "object"
+    },
+    "PredicateCatalog": {
+      "additionalProperties": false,
+      "description": "`policy/predicates.yaml`.\n\nThe document version and every entry's `catalog_version` must agree: §10.1 puts the version on\nthe entry, and the manifest carries `predicate_catalog_version`. Three copies of one number is\nonly safe if disagreement is an error, so it is.",
+      "properties": {
+        "predicates": {
+          "items": {
+            "$ref": "#/$defs/PredicateSpec"
+          },
+          "title": "Predicates",
+          "type": "array"
+        },
+        "predicates_version": {
+          "exclusiveMinimum": 0,
+          "title": "Predicates Version",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "predicates_version",
+        "predicates"
+      ],
+      "title": "PredicateCatalog",
+      "type": "object"
+    },
+    "PredicateSpec": {
+      "additionalProperties": false,
+      "description": "One predicate contract (§10.1, §10.4). No field has a parser default.\n\n`legal_string_values` carries the design's one enumerated value cell:\n`deployment.environment`'s value type is \"string enum: development, staging, production\".\nRepresenting it as data is what makes that enum enforceable instead of decorative — §21 lists\nan unknown enum as a hard failure, and §15's `production` tag authorization requires the value\nto be exactly `production`. An empty tuple means \"unconstrained beyond the value type\", and\nevery row must state it explicitly.",
+      "properties": {
+        "cardinality": {
+          "$ref": "#/$defs/Cardinality"
+        },
+        "catalog_version": {
+          "exclusiveMinimum": 0,
+          "title": "Catalog Version",
+          "type": "integer"
+        },
+        "exclusivity": {
+          "$ref": "#/$defs/ExclusivitySpec"
+        },
+        "expiry": {
+          "$ref": "#/$defs/ExpirySpec"
+        },
+        "legal_string_values": {
+          "items": {
+            "minLength": 1,
+            "pattern": "\\S",
+            "type": "string"
+          },
+          "title": "Legal String Values",
+          "type": "array"
+        },
+        "legal_subject_kinds": {
+          "items": {
+            "$ref": "#/$defs/EntityKind"
+          },
+          "minItems": 1,
+          "title": "Legal Subject Kinds",
+          "type": "array"
+        },
+        "legal_surfaces": {
+          "items": {
+            "$ref": "#/$defs/Surface"
+          },
+          "title": "Legal Surfaces",
+          "type": "array"
+        },
+        "legal_usage_contexts": {
+          "items": {
+            "$ref": "#/$defs/UsageContext"
+          },
+          "minItems": 1,
+          "title": "Legal Usage Contexts",
+          "type": "array"
+        },
+        "legal_value_types": {
+          "items": {
+            "$ref": "#/$defs/FactValueKind"
+          },
+          "minItems": 1,
+          "title": "Legal Value Types",
+          "type": "array"
+        },
+        "legal_verification_bases": {
+          "items": {
+            "$ref": "#/$defs/VerificationBasis"
+          },
+          "minItems": 1,
+          "title": "Legal Verification Bases",
+          "type": "array"
+        },
+        "may_ground_skill": {
+          "title": "May Ground Skill",
+          "type": "boolean"
+        },
+        "minimum_evidence": {
+          "items": {
+            "$ref": "#/$defs/EvidenceAlternative"
+          },
+          "minItems": 1,
+          "title": "Minimum Evidence",
+          "type": "array"
+        },
+        "owner_attestation_authority": {
+          "$ref": "#/$defs/OwnerAttestationAuthority"
+        },
+        "predicate_id": {
+          "pattern": "^[a-z][a-z0-9_]*(?:\\.[a-z][a-z0-9_]*)+$",
+          "title": "Predicate Id",
+          "type": "string"
+        },
+        "surface_policy": {
+          "$ref": "#/$defs/SurfacePolicy"
+        }
+      },
+      "required": [
+        "predicate_id",
+        "catalog_version",
+        "legal_subject_kinds",
+        "legal_value_types",
+        "legal_string_values",
+        "cardinality",
+        "exclusivity",
+        "minimum_evidence",
+        "legal_verification_bases",
+        "owner_attestation_authority",
+        "legal_surfaces",
+        "surface_policy",
+        "legal_usage_contexts",
+        "expiry",
+        "may_ground_skill"
+      ],
+      "title": "PredicateSpec",
+      "type": "object"
+    },
+    "PresentationEntity": {
+      "additionalProperties": false,
+      "properties": {
+        "aliases": {
+          "default": [],
+          "items": {
+            "minLength": 1,
+            "pattern": "\\S",
+            "type": "string"
+          },
+          "title": "Aliases",
+          "type": "array"
+        },
+        "created_at": {
+          "format": "date",
+          "title": "Created At",
+          "type": "string"
+        },
+        "display_name": {
+          "minLength": 1,
+          "pattern": "\\S",
+          "title": "Display Name",
+          "type": "string"
+        },
+        "entity_id": {
+          "pattern": "^(?:presentation)\\.[a-z0-9]+(?:[._-][a-z0-9]+)*$",
+          "title": "Entity Id",
+          "type": "string"
+        },
+        "entity_type": {
+          "const": "presentation",
+          "title": "Entity Type",
+          "type": "string"
+        },
+        "reviewed_at": {
+          "format": "date",
+          "title": "Reviewed At",
+          "type": "string"
+        },
+        "status": {
+          "$ref": "#/$defs/PresentationStatus"
+        }
+      },
+      "required": [
+        "display_name",
+        "created_at",
+        "reviewed_at",
+        "entity_id",
+        "entity_type",
+        "status"
+      ],
+      "title": "PresentationEntity",
+      "type": "object"
+    },
+    "PresentationStatus": {
+      "enum": [
+        "proposed",
+        "accepted",
+        "delivered",
+        "cancelled"
+      ],
+      "title": "PresentationStatus",
+      "type": "string"
+    },
+    "PresentationsDocument": {
+      "additionalProperties": false,
+      "properties": {
+        "entities": {
+          "items": {
+            "$ref": "#/$defs/PresentationEntity"
+          },
+          "title": "Entities",
+          "type": "array"
+        },
+        "facts": {
+          "items": {
+            "$ref": "#/$defs/FactRecord"
+          },
+          "title": "Facts",
+          "type": "array"
+        }
+      },
+      "required": [
+        "facts",
+        "entities"
+      ],
+      "title": "PresentationsDocument",
+      "type": "object"
+    },
+    "PrivateDocumentEvidence": {
+      "additionalProperties": false,
+      "properties": {
+        "capture": {
+          "discriminator": {
+            "mapping": {
+              "blob": "#/$defs/BlobCapture",
+              "inline": "#/$defs/InlineCapture"
+            },
+            "propertyName": "kind"
+          },
+          "oneOf": [
+            {
+              "$ref": "#/$defs/InlineCapture"
+            },
+            {
+              "$ref": "#/$defs/BlobCapture"
+            }
+          ],
+          "title": "Capture"
+        },
+        "captured_at": {
+          "format": "date-time",
+          "title": "Captured At",
+          "type": "string"
+        },
+        "contextualizes_record_ids": {
+          "items": {
+            "pattern": "^(?:approval\\-stamp|source\\-record|certification|presentation|publication|affiliation|employment|candidate|education|relation|evidence|conflict|approval|profile|project|contact|source|person|course|patent|metric|ruling|change|award|skill|claim|fact)\\.[a-z0-9]+(?:[._-][a-z0-9]+)*$",
+            "type": "string"
+          },
+          "title": "Contextualizes Record Ids",
+          "type": "array"
+        },
+        "contradicts_record_ids": {
+          "items": {
+            "pattern": "^(?:approval\\-stamp|source\\-record|certification|presentation|publication|affiliation|employment|candidate|education|relation|evidence|conflict|approval|profile|project|contact|source|person|course|patent|metric|ruling|change|award|skill|claim|fact)\\.[a-z0-9]+(?:[._-][a-z0-9]+)*$",
+            "type": "string"
+          },
+          "title": "Contradicts Record Ids",
+          "type": "array"
+        },
+        "evidence_class": {
+          "const": "private_document",
+          "title": "Evidence Class",
+          "type": "string"
+        },
+        "evidence_id": {
+          "pattern": "^(?:evidence)\\.[a-z0-9]+(?:[._-][a-z0-9]+)*$",
+          "title": "Evidence Id",
+          "type": "string"
+        },
+        "locator": {
+          "$ref": "#/$defs/Locator"
+        },
+        "redactions": {
+          "items": {
+            "$ref": "#/$defs/Redaction"
+          },
+          "title": "Redactions",
+          "type": "array"
+        },
+        "reviewed_at": {
+          "format": "date",
+          "title": "Reviewed At",
+          "type": "string"
+        },
+        "source_id": {
+          "pattern": "^(?:source)\\.[a-z0-9]+(?:[._-][a-z0-9]+)*$",
+          "title": "Source Id",
+          "type": "string"
+        },
+        "sufficiency_review": {
+          "$ref": "#/$defs/SufficiencyReview"
+        },
+        "supports_record_ids": {
+          "items": {
+            "pattern": "^(?:approval\\-stamp|source\\-record|certification|presentation|publication|affiliation|employment|candidate|education|relation|evidence|conflict|approval|profile|project|contact|source|person|course|patent|metric|ruling|change|award|skill|claim|fact)\\.[a-z0-9]+(?:[._-][a-z0-9]+)*$",
+            "type": "string"
+          },
+          "title": "Supports Record Ids",
+          "type": "array"
+        },
+        "title": {
+          "minLength": 1,
+          "pattern": "\\S",
+          "title": "Title",
+          "type": "string"
+        }
+      },
+      "required": [
+        "evidence_id",
+        "title",
+        "capture",
+        "captured_at",
+        "reviewed_at",
+        "sufficiency_review",
+        "redactions",
+        "supports_record_ids",
+        "contradicts_record_ids",
+        "contextualizes_record_ids",
+        "evidence_class",
+        "source_id",
+        "locator"
+      ],
+      "title": "PrivateDocumentEvidence",
+      "type": "object"
+    },
+    "ProjectEntity": {
+      "additionalProperties": false,
+      "properties": {
+        "aliases": {
+          "default": [],
+          "items": {
+            "minLength": 1,
+            "pattern": "\\S",
+            "type": "string"
+          },
+          "title": "Aliases",
+          "type": "array"
+        },
+        "created_at": {
+          "format": "date",
+          "title": "Created At",
+          "type": "string"
+        },
+        "display_name": {
+          "minLength": 1,
+          "pattern": "\\S",
+          "title": "Display Name",
+          "type": "string"
+        },
+        "entity_id": {
+          "pattern": "^(?:project)\\.[a-z0-9]+(?:[._-][a-z0-9]+)*$",
+          "title": "Entity Id",
+          "type": "string"
+        },
+        "entity_type": {
+          "const": "project",
+          "title": "Entity Type",
+          "type": "string"
+        },
+        "reviewed_at": {
+          "format": "date",
+          "title": "Reviewed At",
+          "type": "string"
+        },
+        "status": {
+          "$ref": "#/$defs/ProjectStatus"
+        }
+      },
+      "required": [
+        "display_name",
+        "created_at",
+        "reviewed_at",
+        "entity_id",
+        "entity_type",
+        "status"
+      ],
+      "title": "ProjectEntity",
+      "type": "object"
+    },
+    "ProjectFactsDocument": {
+      "additionalProperties": false,
+      "description": "`facts/projects/<project-id>.yaml`: exactly one project entity and its facts.",
+      "properties": {
+        "entity": {
+          "$ref": "#/$defs/ProjectEntity"
+        },
+        "facts": {
+          "items": {
+            "$ref": "#/$defs/FactRecord"
+          },
+          "title": "Facts",
+          "type": "array"
+        }
+      },
+      "required": [
+        "facts",
+        "entity"
+      ],
+      "title": "ProjectFactsDocument",
+      "type": "object"
+    },
+    "ProjectStatus": {
+      "enum": [
+        "concept",
+        "prototype",
+        "active_development",
+        "completed",
+        "shipped_private",
+        "shipped_open_source",
+        "live_public",
+        "sunset"
+      ],
+      "title": "ProjectStatus",
+      "type": "string"
+    },
+    "PublicRecordEvidence": {
+      "additionalProperties": false,
+      "properties": {
+        "capture": {
+          "discriminator": {
+            "mapping": {
+              "blob": "#/$defs/BlobCapture",
+              "inline": "#/$defs/InlineCapture"
+            },
+            "propertyName": "kind"
+          },
+          "oneOf": [
+            {
+              "$ref": "#/$defs/InlineCapture"
+            },
+            {
+              "$ref": "#/$defs/BlobCapture"
+            }
+          ],
+          "title": "Capture"
+        },
+        "captured_at": {
+          "format": "date-time",
+          "title": "Captured At",
+          "type": "string"
+        },
+        "contextualizes_record_ids": {
+          "items": {
+            "pattern": "^(?:approval\\-stamp|source\\-record|certification|presentation|publication|affiliation|employment|candidate|education|relation|evidence|conflict|approval|profile|project|contact|source|person|course|patent|metric|ruling|change|award|skill|claim|fact)\\.[a-z0-9]+(?:[._-][a-z0-9]+)*$",
+            "type": "string"
+          },
+          "title": "Contextualizes Record Ids",
+          "type": "array"
+        },
+        "contradicts_record_ids": {
+          "items": {
+            "pattern": "^(?:approval\\-stamp|source\\-record|certification|presentation|publication|affiliation|employment|candidate|education|relation|evidence|conflict|approval|profile|project|contact|source|person|course|patent|metric|ruling|change|award|skill|claim|fact)\\.[a-z0-9]+(?:[._-][a-z0-9]+)*$",
+            "type": "string"
+          },
+          "title": "Contradicts Record Ids",
+          "type": "array"
+        },
+        "evidence_class": {
+          "const": "public_record",
+          "title": "Evidence Class",
+          "type": "string"
+        },
+        "evidence_id": {
+          "pattern": "^(?:evidence)\\.[a-z0-9]+(?:[._-][a-z0-9]+)*$",
+          "title": "Evidence Id",
+          "type": "string"
+        },
+        "locator": {
+          "$ref": "#/$defs/Locator"
+        },
+        "origin": {
+          "$ref": "#/$defs/PortableOrigin"
+        },
+        "redactions": {
+          "items": {
+            "$ref": "#/$defs/Redaction"
+          },
+          "title": "Redactions",
+          "type": "array"
+        },
+        "reviewed_at": {
+          "format": "date",
+          "title": "Reviewed At",
+          "type": "string"
+        },
+        "sufficiency_review": {
+          "$ref": "#/$defs/SufficiencyReview"
+        },
+        "supports_record_ids": {
+          "items": {
+            "pattern": "^(?:approval\\-stamp|source\\-record|certification|presentation|publication|affiliation|employment|candidate|education|relation|evidence|conflict|approval|profile|project|contact|source|person|course|patent|metric|ruling|change|award|skill|claim|fact)\\.[a-z0-9]+(?:[._-][a-z0-9]+)*$",
+            "type": "string"
+          },
+          "title": "Supports Record Ids",
+          "type": "array"
+        },
+        "title": {
+          "minLength": 1,
+          "pattern": "\\S",
+          "title": "Title",
+          "type": "string"
+        }
+      },
+      "required": [
+        "evidence_id",
+        "title",
+        "capture",
+        "captured_at",
+        "reviewed_at",
+        "sufficiency_review",
+        "redactions",
+        "supports_record_ids",
+        "contradicts_record_ids",
+        "contextualizes_record_ids",
+        "evidence_class",
+        "origin",
+        "locator"
+      ],
+      "title": "PublicRecordEvidence",
+      "type": "object"
+    },
+    "PublicationEntity": {
+      "additionalProperties": false,
+      "properties": {
+        "aliases": {
+          "default": [],
+          "items": {
+            "minLength": 1,
+            "pattern": "\\S",
+            "type": "string"
+          },
+          "title": "Aliases",
+          "type": "array"
+        },
+        "created_at": {
+          "format": "date",
+          "title": "Created At",
+          "type": "string"
+        },
+        "display_name": {
+          "minLength": 1,
+          "pattern": "\\S",
+          "title": "Display Name",
+          "type": "string"
+        },
+        "entity_id": {
+          "pattern": "^(?:publication)\\.[a-z0-9]+(?:[._-][a-z0-9]+)*$",
+          "title": "Entity Id",
+          "type": "string"
+        },
+        "entity_type": {
+          "const": "publication",
+          "title": "Entity Type",
+          "type": "string"
+        },
+        "reviewed_at": {
+          "format": "date",
+          "title": "Reviewed At",
+          "type": "string"
+        },
+        "status": {
+          "$ref": "#/$defs/PublicationStatus"
+        }
+      },
+      "required": [
+        "display_name",
+        "created_at",
+        "reviewed_at",
+        "entity_id",
+        "entity_type",
+        "status"
+      ],
+      "title": "PublicationEntity",
+      "type": "object"
+    },
+    "PublicationStatus": {
+      "enum": [
+        "draft",
+        "submitted",
+        "accepted",
+        "published"
+      ],
+      "title": "PublicationStatus",
+      "type": "string"
+    },
+    "PublicationsDocument": {
+      "additionalProperties": false,
+      "properties": {
+        "entities": {
+          "items": {
+            "$ref": "#/$defs/PublicationEntity"
+          },
+          "title": "Entities",
+          "type": "array"
+        },
+        "facts": {
+          "items": {
+            "$ref": "#/$defs/FactRecord"
+          },
+          "title": "Facts",
+          "type": "array"
+        }
+      },
+      "required": [
+        "facts",
+        "entities"
+      ],
+      "title": "PublicationsDocument",
+      "type": "object"
+    },
+    "Redaction": {
+      "additionalProperties": false,
+      "description": "One removed region over the UTF-8 bytes of the stored post-redaction capture (§12.2).\n\nHalf-open `[start, end)`. The range must contain exactly the ASCII marker\n`[REDACTED:<reason>]`, so the validator can verify every recorded redaction against retained\nbytes without ever storing what was removed. Multiple removed regions therefore need multiple\nmarkers and multiple entries.",
+      "properties": {
+        "end": {
+          "minimum": 1,
+          "title": "End",
+          "type": "integer"
+        },
+        "reason": {
+          "$ref": "#/$defs/RedactionReason"
+        },
+        "start": {
+          "minimum": 0,
+          "title": "Start",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "start",
+        "end",
+        "reason"
+      ],
+      "title": "Redaction",
+      "type": "object"
+    },
+    "RedactionReason": {
+      "description": "The closed redaction reasons (§12.2).",
+      "enum": [
+        "credential",
+        "unrelated_personal",
+        "demographic",
+        "health",
+        "financial",
+        "third_party_private",
+        "personal_path"
+      ],
+      "title": "RedactionReason",
+      "type": "string"
+    },
+    "RelationCatalog": {
+      "additionalProperties": false,
+      "properties": {
+        "relations": {
+          "items": {
+            "$ref": "#/$defs/RelationSpec"
+          },
+          "title": "Relations",
+          "type": "array"
+        },
+        "relations_version": {
+          "exclusiveMinimum": 0,
+          "title": "Relations Version",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "relations_version",
+        "relations"
+      ],
+      "title": "RelationCatalog",
+      "type": "object"
+    },
+    "RelationRecord": {
+      "additionalProperties": false,
+      "description": "One typed edge between two entities.\n\n`relation_type` is a catalog key, not a code enum: §9 puts the relation catalog in\n`policy/relations.yaml` as versioned revision data, and the legal source/target entity kinds\nare declared there. Semantic validation checks this record against that catalog.",
+      "properties": {
+        "relation_id": {
+          "pattern": "^(?:relation)\\.[a-z0-9]+(?:[._-][a-z0-9]+)*$",
+          "title": "Relation Id",
+          "type": "string"
+        },
+        "relation_type": {
+          "pattern": "^[a-z0-9]+(?:[._-][a-z0-9]+)*$",
+          "title": "Relation Type",
+          "type": "string"
+        },
+        "source_id": {
+          "pattern": "^(?:certification|presentation|publication|affiliation|employment|education|project|person|course|patent|award)\\.[a-z0-9]+(?:[._-][a-z0-9]+)*$",
+          "title": "Source Id",
+          "type": "string"
+        },
+        "target_id": {
+          "pattern": "^(?:certification|presentation|publication|affiliation|employment|education|project|person|course|patent|award)\\.[a-z0-9]+(?:[._-][a-z0-9]+)*$",
+          "title": "Target Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "relation_id",
+        "relation_type",
+        "source_id",
+        "target_id"
+      ],
+      "title": "RelationRecord",
+      "type": "object"
+    },
+    "RelationRecordsDocument": {
+      "additionalProperties": false,
+      "properties": {
+        "relations": {
+          "items": {
+            "$ref": "#/$defs/RelationRecord"
+          },
+          "title": "Relations",
+          "type": "array"
+        }
+      },
+      "required": [
+        "relations"
+      ],
+      "title": "RelationRecordsDocument",
+      "type": "object"
+    },
+    "RelationSpec": {
+      "additionalProperties": false,
+      "description": "One relation type and the entity kinds its endpoints may name (§9).",
+      "properties": {
+        "legal_source_kinds": {
+          "items": {
+            "$ref": "#/$defs/EntityKind"
+          },
+          "minItems": 1,
+          "title": "Legal Source Kinds",
+          "type": "array"
+        },
+        "legal_target_kinds": {
+          "items": {
+            "$ref": "#/$defs/EntityKind"
+          },
+          "minItems": 1,
+          "title": "Legal Target Kinds",
+          "type": "array"
+        },
+        "relation_type": {
+          "pattern": "^[a-z0-9]+(?:[._-][a-z0-9]+)*$",
+          "title": "Relation Type",
+          "type": "string"
+        }
+      },
+      "required": [
+        "relation_type",
+        "legal_source_kinds",
+        "legal_target_kinds"
+      ],
+      "title": "RelationSpec",
+      "type": "object"
+    },
+    "RepositoryArtifactEvidence": {
+      "additionalProperties": false,
+      "description": "A repository artifact needs the FULL commit, not an abbreviated one.\n\nAn abbreviation is ambiguous across a repository's lifetime, so it cannot identify the bytes\nthe capture was taken from — which is the only thing that makes the capture re-checkable.",
+      "properties": {
+        "capture": {
+          "discriminator": {
+            "mapping": {
+              "blob": "#/$defs/BlobCapture",
+              "inline": "#/$defs/InlineCapture"
+            },
+            "propertyName": "kind"
+          },
+          "oneOf": [
+            {
+              "$ref": "#/$defs/InlineCapture"
+            },
+            {
+              "$ref": "#/$defs/BlobCapture"
+            }
+          ],
+          "title": "Capture"
+        },
+        "captured_at": {
+          "format": "date-time",
+          "title": "Captured At",
+          "type": "string"
+        },
+        "contextualizes_record_ids": {
+          "items": {
+            "pattern": "^(?:approval\\-stamp|source\\-record|certification|presentation|publication|affiliation|employment|candidate|education|relation|evidence|conflict|approval|profile|project|contact|source|person|course|patent|metric|ruling|change|award|skill|claim|fact)\\.[a-z0-9]+(?:[._-][a-z0-9]+)*$",
+            "type": "string"
+          },
+          "title": "Contextualizes Record Ids",
+          "type": "array"
+        },
+        "contradicts_record_ids": {
+          "items": {
+            "pattern": "^(?:approval\\-stamp|source\\-record|certification|presentation|publication|affiliation|employment|candidate|education|relation|evidence|conflict|approval|profile|project|contact|source|person|course|patent|metric|ruling|change|award|skill|claim|fact)\\.[a-z0-9]+(?:[._-][a-z0-9]+)*$",
+            "type": "string"
+          },
+          "title": "Contradicts Record Ids",
+          "type": "array"
+        },
+        "evidence_class": {
+          "const": "repository_artifact",
+          "title": "Evidence Class",
+          "type": "string"
+        },
+        "evidence_id": {
+          "pattern": "^(?:evidence)\\.[a-z0-9]+(?:[._-][a-z0-9]+)*$",
+          "title": "Evidence Id",
+          "type": "string"
+        },
+        "path": {
+          "minLength": 1,
+          "pattern": "\\S",
+          "title": "Path",
+          "type": "string"
+        },
+        "redactions": {
+          "items": {
+            "$ref": "#/$defs/Redaction"
+          },
+          "title": "Redactions",
+          "type": "array"
+        },
+        "repository_commit": {
+          "pattern": "^[0-9a-f]{40}$",
+          "title": "Repository Commit",
+          "type": "string"
+        },
+        "reviewed_at": {
+          "format": "date",
+          "title": "Reviewed At",
+          "type": "string"
+        },
+        "source_id": {
+          "pattern": "^(?:source)\\.[a-z0-9]+(?:[._-][a-z0-9]+)*$",
+          "title": "Source Id",
+          "type": "string"
+        },
+        "sufficiency_review": {
+          "$ref": "#/$defs/SufficiencyReview"
+        },
+        "supports_record_ids": {
+          "items": {
+            "pattern": "^(?:approval\\-stamp|source\\-record|certification|presentation|publication|affiliation|employment|candidate|education|relation|evidence|conflict|approval|profile|project|contact|source|person|course|patent|metric|ruling|change|award|skill|claim|fact)\\.[a-z0-9]+(?:[._-][a-z0-9]+)*$",
+            "type": "string"
+          },
+          "title": "Supports Record Ids",
+          "type": "array"
+        },
+        "title": {
+          "minLength": 1,
+          "pattern": "\\S",
+          "title": "Title",
+          "type": "string"
+        }
+      },
+      "required": [
+        "evidence_id",
+        "title",
+        "capture",
+        "captured_at",
+        "reviewed_at",
+        "sufficiency_review",
+        "redactions",
+        "supports_record_ids",
+        "contradicts_record_ids",
+        "contextualizes_record_ids",
+        "evidence_class",
+        "source_id",
+        "path",
+        "repository_commit"
+      ],
+      "title": "RepositoryArtifactEvidence",
+      "type": "object"
+    },
+    "RevisionManifest": {
+      "additionalProperties": false,
+      "description": "One immutable promoted revision (§7).\n\n`parent_bundle_digest` is required after revision 1, which is what makes local history explicit\nwithout depending on Git. Revision directories are named by `bundle_digest`; the revision NUMBER\nnever appears in a directory name, so two torn attempts at the same content cannot reserve two\nnumbered slots.",
+      "properties": {
+        "approval_stamp_id": {
+          "pattern": "^(?:approval\\-stamp)\\.[a-z0-9]+(?:[._-][a-z0-9]+)*$",
+          "title": "Approval Stamp Id",
+          "type": "string"
+        },
+        "approved_candidate_digest": {
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "title": "Approved Candidate Digest",
+          "type": "string"
+        },
+        "assertion_tag_catalog_version": {
+          "exclusiveMinimum": 0,
+          "title": "Assertion Tag Catalog Version",
+          "type": "integer"
+        },
+        "bundle_digest": {
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "title": "Bundle Digest",
+          "type": "string"
+        },
+        "change_id": {
+          "pattern": "^(?:change)\\.[a-z0-9]+(?:[._-][a-z0-9]+)*$",
+          "title": "Change Id",
+          "type": "string"
+        },
+        "created_at": {
+          "format": "date-time",
+          "title": "Created At",
+          "type": "string"
+        },
+        "created_by": {
+          "$ref": "#/$defs/Actor"
+        },
+        "evidence_set_digest": {
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "title": "Evidence Set Digest",
+          "type": "string"
+        },
+        "parent_bundle_digest": {
+          "anyOf": [
+            {
+              "pattern": "^sha256:[0-9a-f]{64}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Parent Bundle Digest"
+        },
+        "predicate_catalog_version": {
+          "exclusiveMinimum": 0,
+          "title": "Predicate Catalog Version",
+          "type": "integer"
+        },
+        "profile_id": {
+          "pattern": "^(?:profile)\\.[a-z0-9]+(?:[._-][a-z0-9]+)*$",
+          "title": "Profile Id",
+          "type": "string"
+        },
+        "relation_catalog_version": {
+          "exclusiveMinimum": 0,
+          "title": "Relation Catalog Version",
+          "type": "integer"
+        },
+        "revision": {
+          "exclusiveMinimum": 0,
+          "title": "Revision",
+          "type": "integer"
+        },
+        "schema_version": {
+          "exclusiveMinimum": 0,
+          "title": "Schema Version",
+          "type": "integer"
+        },
+        "secret_scan_ruleset_version": {
+          "exclusiveMinimum": 0,
+          "title": "Secret Scan Ruleset Version",
+          "type": "integer"
+        },
+        "skill_category_catalog_version": {
+          "exclusiveMinimum": 0,
+          "title": "Skill Category Catalog Version",
+          "type": "integer"
+        },
+        "state": {
+          "const": "revision",
+          "title": "State",
+          "type": "string"
+        },
+        "unit_catalog_version": {
+          "exclusiveMinimum": 0,
+          "title": "Unit Catalog Version",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "schema_version",
+        "profile_id",
+        "evidence_set_digest",
+        "predicate_catalog_version",
+        "unit_catalog_version",
+        "relation_catalog_version",
+        "skill_category_catalog_version",
+        "assertion_tag_catalog_version",
+        "secret_scan_ruleset_version",
+        "state",
+        "revision",
+        "parent_bundle_digest",
+        "bundle_digest",
+        "created_at",
+        "created_by",
+        "change_id",
+        "approved_candidate_digest",
+        "approval_stamp_id"
+      ],
+      "title": "RevisionManifest",
+      "type": "object"
+    },
+    "RulingDecision": {
+      "enum": [
+        "select_candidate",
+        "replace_all",
+        "keep_unresolved",
+        "not_applicable"
+      ],
+      "title": "RulingDecision",
+      "type": "string"
+    },
+    "RulingRecord": {
+      "additionalProperties": false,
+      "description": "One append-only owner decision about a conflict (§13).\n\n`select_candidate` names the winner; every other decision must not, because a `keep_unresolved`\nor `not_applicable` ruling that also selected a fact would make the group both undecided and\ndecided.",
+      "properties": {
+        "conflict_id": {
+          "pattern": "^(?:conflict)\\.[a-z0-9]+(?:[._-][a-z0-9]+)*$",
+          "title": "Conflict Id",
+          "type": "string"
+        },
+        "decided_at": {
+          "format": "date",
+          "title": "Decided At",
+          "type": "string"
+        },
+        "decision": {
+          "$ref": "#/$defs/RulingDecision"
+        },
+        "owner_evidence_id": {
+          "pattern": "^(?:evidence)\\.[a-z0-9]+(?:[._-][a-z0-9]+)*$",
+          "title": "Owner Evidence Id",
+          "type": "string"
+        },
+        "rationale": {
+          "minLength": 1,
+          "pattern": "\\S",
+          "title": "Rationale",
+          "type": "string"
+        },
+        "rejected_fact_ids": {
+          "items": {
+            "pattern": "^(?:fact)\\.[a-z0-9]+(?:[._-][a-z0-9]+)*$",
+            "type": "string"
+          },
+          "title": "Rejected Fact Ids",
+          "type": "array"
+        },
+        "ruling_id": {
+          "pattern": "^(?:ruling)\\.[a-z0-9]+(?:[._-][a-z0-9]+)*$",
+          "title": "Ruling Id",
+          "type": "string"
+        },
+        "selected_fact_id": {
+          "anyOf": [
+            {
+              "pattern": "^(?:fact)\\.[a-z0-9]+(?:[._-][a-z0-9]+)*$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Selected Fact Id"
+        }
+      },
+      "required": [
+        "ruling_id",
+        "conflict_id",
+        "decision",
+        "selected_fact_id",
+        "rejected_fact_ids",
+        "rationale",
+        "owner_evidence_id",
+        "decided_at"
+      ],
+      "title": "RulingRecord",
+      "type": "object"
+    },
+    "SecondarySummaryEvidence": {
+      "additionalProperties": false,
+      "description": "Import evidence, not final verification.\n\n`authoritative` is `Literal[False]`: §12 makes a secondary summary non-authoritative unless a\npredicate contract explicitly permits it, so a `true` here would be a contradiction in terms\nrather than a stronger claim.",
+      "properties": {
+        "authoritative": {
+          "const": false,
+          "title": "Authoritative",
+          "type": "boolean"
+        },
+        "capture": {
+          "discriminator": {
+            "mapping": {
+              "blob": "#/$defs/BlobCapture",
+              "inline": "#/$defs/InlineCapture"
+            },
+            "propertyName": "kind"
+          },
+          "oneOf": [
+            {
+              "$ref": "#/$defs/InlineCapture"
+            },
+            {
+              "$ref": "#/$defs/BlobCapture"
+            }
+          ],
+          "title": "Capture"
+        },
+        "captured_at": {
+          "format": "date-time",
+          "title": "Captured At",
+          "type": "string"
+        },
+        "contextualizes_record_ids": {
+          "items": {
+            "pattern": "^(?:approval\\-stamp|source\\-record|certification|presentation|publication|affiliation|employment|candidate|education|relation|evidence|conflict|approval|profile|project|contact|source|person|course|patent|metric|ruling|change|award|skill|claim|fact)\\.[a-z0-9]+(?:[._-][a-z0-9]+)*$",
+            "type": "string"
+          },
+          "title": "Contextualizes Record Ids",
+          "type": "array"
+        },
+        "contradicts_record_ids": {
+          "items": {
+            "pattern": "^(?:approval\\-stamp|source\\-record|certification|presentation|publication|affiliation|employment|candidate|education|relation|evidence|conflict|approval|profile|project|contact|source|person|course|patent|metric|ruling|change|award|skill|claim|fact)\\.[a-z0-9]+(?:[._-][a-z0-9]+)*$",
+            "type": "string"
+          },
+          "title": "Contradicts Record Ids",
+          "type": "array"
+        },
+        "evidence_class": {
+          "const": "secondary_summary",
+          "title": "Evidence Class",
+          "type": "string"
+        },
+        "evidence_id": {
+          "pattern": "^(?:evidence)\\.[a-z0-9]+(?:[._-][a-z0-9]+)*$",
+          "title": "Evidence Id",
+          "type": "string"
+        },
+        "locator": {
+          "$ref": "#/$defs/Locator"
+        },
+        "redactions": {
+          "items": {
+            "$ref": "#/$defs/Redaction"
+          },
+          "title": "Redactions",
+          "type": "array"
+        },
+        "reviewed_at": {
+          "format": "date",
+          "title": "Reviewed At",
+          "type": "string"
+        },
+        "source_id": {
+          "pattern": "^(?:source)\\.[a-z0-9]+(?:[._-][a-z0-9]+)*$",
+          "title": "Source Id",
+          "type": "string"
+        },
+        "sufficiency_review": {
+          "$ref": "#/$defs/SufficiencyReview"
+        },
+        "supports_record_ids": {
+          "items": {
+            "pattern": "^(?:approval\\-stamp|source\\-record|certification|presentation|publication|affiliation|employment|candidate|education|relation|evidence|conflict|approval|profile|project|contact|source|person|course|patent|metric|ruling|change|award|skill|claim|fact)\\.[a-z0-9]+(?:[._-][a-z0-9]+)*$",
+            "type": "string"
+          },
+          "title": "Supports Record Ids",
+          "type": "array"
+        },
+        "title": {
+          "minLength": 1,
+          "pattern": "\\S",
+          "title": "Title",
+          "type": "string"
+        }
+      },
+      "required": [
+        "evidence_id",
+        "title",
+        "capture",
+        "captured_at",
+        "reviewed_at",
+        "sufficiency_review",
+        "redactions",
+        "supports_record_ids",
+        "contradicts_record_ids",
+        "contextualizes_record_ids",
+        "evidence_class",
+        "source_id",
+        "locator",
+        "authoritative"
+      ],
+      "title": "SecondarySummaryEvidence",
+      "type": "object"
+    },
+    "SecretRule": {
+      "additionalProperties": false,
+      "description": "One named detection rule: exactly `rule_id`, `pattern`, and `flags` (§12.2).\n\n`pattern` is compiled at construction time so an unparseable regex is rejected where it is\nauthored, rather than surfacing later as an opaque `re.error` from inside a scan — which would\nmake a capture unscannable while looking like a clean one.",
+      "properties": {
+        "flags": {
+          "items": {
+            "$ref": "#/$defs/SecretScanFlag"
+          },
+          "title": "Flags",
+          "type": "array"
+        },
+        "pattern": {
+          "minLength": 1,
+          "pattern": "\\S",
+          "title": "Pattern",
+          "type": "string"
+        },
+        "rule_id": {
+          "pattern": "^[a-z][a-z0-9]*(?:[-_][a-z0-9]+)*$",
+          "title": "Rule Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "rule_id",
+        "pattern",
+        "flags"
+      ],
+      "title": "SecretRule",
+      "type": "object"
+    },
+    "SecretRuleset": {
+      "additionalProperties": false,
+      "description": "`policy/secret-scan.yaml`: `ruleset_version` plus `rules`, and nothing else (§12.2).\n\nThe row shape lives here with the other catalogs; the built-in v1 registry and the scanning\nitself live in `secret_scan`, which is where the rules are applied.",
+      "properties": {
+        "rules": {
+          "items": {
+            "$ref": "#/$defs/SecretRule"
+          },
+          "title": "Rules",
+          "type": "array"
+        },
+        "ruleset_version": {
+          "exclusiveMinimum": 0,
+          "title": "Ruleset Version",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "ruleset_version",
+        "rules"
+      ],
+      "title": "SecretRuleset",
+      "type": "object"
+    },
+    "SecretScanFlag": {
+      "description": "The closed set of `re` behaviours a rule may opt into (§12.2). Nothing else parses.",
+      "enum": [
+        "ignore_case",
+        "multiline"
+      ],
+      "title": "SecretScanFlag",
+      "type": "string"
+    },
+    "SelectedSectionsScope": {
+      "additionalProperties": false,
+      "description": "A repository-Markdown source's approved scope.\n\n`locators` is a non-empty, order-preserving list of normalised heading paths. Order is preserved\nbecause widening or reordering the approved scope changes the `approve_source_scope` target\ndigest, which is the whole point: a scope change must cost a new owner approval.",
+      "properties": {
+        "kind": {
+          "const": "selected_sections",
+          "title": "Kind",
+          "type": "string"
+        },
+        "locators": {
+          "items": {
+            "minLength": 1,
+            "pattern": "\\S",
+            "type": "string"
+          },
+          "minItems": 1,
+          "title": "Locators",
+          "type": "array"
+        }
+      },
+      "required": [
+        "kind",
+        "locators"
+      ],
+      "title": "SelectedSectionsScope",
+      "type": "object"
+    },
+    "SkillCategoryCatalog": {
+      "additionalProperties": false,
+      "description": "`policy/skill-categories.yaml`: field-dependent taxonomy, never a code vocabulary (§10.4).\n\n`career_field` is part of the catalog so a bundle states which field its categories belong to.\nGate A uses a synthetic catalog; Gate B gathers the private one for the user's declared field.",
+      "properties": {
+        "career_field": {
+          "pattern": "^[a-z0-9]+(?:[._-][a-z0-9]+)*$",
+          "title": "Career Field",
+          "type": "string"
+        },
+        "catalog_version": {
+          "exclusiveMinimum": 0,
+          "title": "Catalog Version",
+          "type": "integer"
+        },
+        "categories": {
+          "items": {
+            "$ref": "#/$defs/SkillCategorySpec"
+          },
+          "title": "Categories",
+          "type": "array"
+        }
+      },
+      "required": [
+        "catalog_version",
+        "career_field",
+        "categories"
+      ],
+      "title": "SkillCategoryCatalog",
+      "type": "object"
+    },
+    "SkillCategorySpec": {
+      "additionalProperties": false,
+      "description": "One skill category. `parent_category_id` is optional per §10.4 and defaults to `null`.",
+      "properties": {
+        "aliases": {
+          "items": {
+            "minLength": 1,
+            "pattern": "\\S",
+            "type": "string"
+          },
+          "title": "Aliases",
+          "type": "array"
+        },
+        "category_id": {
+          "pattern": "^[a-z0-9]+(?:[._-][a-z0-9]+)*$",
+          "title": "Category Id",
+          "type": "string"
+        },
+        "display_name": {
+          "minLength": 1,
+          "pattern": "\\S",
+          "title": "Display Name",
+          "type": "string"
+        },
+        "parent_category_id": {
+          "anyOf": [
+            {
+              "pattern": "^[a-z0-9]+(?:[._-][a-z0-9]+)*$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Parent Category Id"
+        }
+      },
+      "required": [
+        "category_id",
+        "display_name",
+        "aliases"
+      ],
+      "title": "SkillCategorySpec",
+      "type": "object"
+    },
+    "SkillInventoryDocument": {
+      "additionalProperties": false,
+      "properties": {
+        "skills": {
+          "items": {
+            "$ref": "#/$defs/SkillRecord"
+          },
+          "title": "Skills",
+          "type": "array"
+        }
+      },
+      "required": [
+        "skills"
+      ],
+      "title": "SkillInventoryDocument",
+      "type": "object"
+    },
+    "SkillRecord": {
+      "additionalProperties": false,
+      "description": "One canonical capability.\n\n`category` is a key into the revision-owned `policy/skill-categories.yaml` catalog, never a\ncode-defined software vocabulary: §10.4 makes categories field-dependent data so the mechanism\nfits a user whose career has nothing to do with software.\n\n`allowed_surfaces` must be a subset of the union of its eligible supporting facts' surfaces\n(§10.3). That is a graph invariant checked in semantic validation, because it needs the facts.",
+      "properties": {
+        "aliases": {
+          "default": [],
+          "items": {
+            "minLength": 1,
+            "pattern": "\\S",
+            "type": "string"
+          },
+          "title": "Aliases",
+          "type": "array"
+        },
+        "allowed_surfaces": {
+          "items": {
+            "$ref": "#/$defs/Surface"
+          },
+          "title": "Allowed Surfaces",
+          "type": "array"
+        },
+        "canonical_name": {
+          "minLength": 1,
+          "pattern": "\\S",
+          "title": "Canonical Name",
+          "type": "string"
+        },
+        "category": {
+          "pattern": "^[a-z0-9]+(?:[._-][a-z0-9]+)*$",
+          "title": "Category",
+          "type": "string"
+        },
+        "skill_id": {
+          "pattern": "^(?:skill)\\.[a-z0-9]+(?:[._-][a-z0-9]+)*$",
+          "title": "Skill Id",
+          "type": "string"
+        },
+        "supporting_fact_ids": {
+          "items": {
+            "pattern": "^(?:fact)\\.[a-z0-9]+(?:[._-][a-z0-9]+)*$",
+            "type": "string"
+          },
+          "minItems": 1,
+          "title": "Supporting Fact Ids",
+          "type": "array"
+        },
+        "verification_state": {
+          "$ref": "#/$defs/VerificationState"
+        }
+      },
+      "required": [
+        "skill_id",
+        "canonical_name",
+        "category",
+        "supporting_fact_ids",
+        "verification_state",
+        "allowed_surfaces"
+      ],
+      "title": "SkillRecord",
+      "type": "object"
+    },
+    "SkillRefValue": {
+      "additionalProperties": false,
+      "properties": {
+        "skill_id": {
+          "pattern": "^(?:skill)\\.[a-z0-9]+(?:[._-][a-z0-9]+)*$",
+          "title": "Skill Id",
+          "type": "string"
+        },
+        "type": {
+          "const": "skill_ref",
+          "title": "Type",
+          "type": "string"
+        }
+      },
+      "required": [
+        "type",
+        "skill_id"
+      ],
+      "title": "SkillRefValue",
+      "type": "object"
+    },
+    "SourceCatalog": {
+      "additionalProperties": false,
+      "properties": {
+        "sources": {
+          "items": {
+            "$ref": "#/$defs/SourceSpec"
+          },
+          "title": "Sources",
+          "type": "array"
+        },
+        "sources_version": {
+          "exclusiveMinimum": 0,
+          "title": "Sources Version",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "sources_version",
+        "sources"
+      ],
+      "title": "SourceCatalog",
+      "type": "object"
+    },
+    "SourceKind": {
+      "description": "The closed source-kind catalog (§18). Each pairs with exactly one approved enumerator.",
+      "enum": [
+        "boardwatch_resume",
+        "markdown_document",
+        "structured_objects",
+        "repository_markdown"
+      ],
+      "title": "SourceKind",
+      "type": "string"
+    },
+    "SourceLedger": {
+      "additionalProperties": false,
+      "description": "`imports/source-ledger.yaml`.",
+      "properties": {
+        "ledger_version": {
+          "exclusiveMinimum": 0,
+          "title": "Ledger Version",
+          "type": "integer"
+        },
+        "records": {
+          "items": {
+            "$ref": "#/$defs/SourceLedgerRecord"
+          },
+          "title": "Records",
+          "type": "array"
+        },
+        "sources": {
+          "items": {
+            "$ref": "#/$defs/SourceLedgerSource"
+          },
+          "title": "Sources",
+          "type": "array"
+        }
+      },
+      "required": [
+        "ledger_version",
+        "sources",
+        "records"
+      ],
+      "title": "SourceLedger",
+      "type": "object"
+    },
+    "SourceLedgerRecord": {
+      "additionalProperties": false,
+      "description": "One deterministically enumerated source record — one unit of the Gate B denominator.",
+      "properties": {
+        "candidate_ids": {
+          "items": {
+            "pattern": "^(?:candidate)\\.[a-z0-9]+(?:[._-][a-z0-9]+)*$",
+            "type": "string"
+          },
+          "title": "Candidate Ids",
+          "type": "array"
+        },
+        "disposition": {
+          "$ref": "#/$defs/Disposition"
+        },
+        "normalized_locator": {
+          "minLength": 1,
+          "pattern": "\\S",
+          "title": "Normalized Locator",
+          "type": "string"
+        },
+        "source_id": {
+          "pattern": "^(?:source)\\.[a-z0-9]+(?:[._-][a-z0-9]+)*$",
+          "title": "Source Id",
+          "type": "string"
+        },
+        "source_record_id": {
+          "pattern": "^(?:source\\-record)\\.[a-z0-9]+(?:[._-][a-z0-9]+)*$",
+          "title": "Source Record Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "source_record_id",
+        "source_id",
+        "normalized_locator",
+        "disposition",
+        "candidate_ids"
+      ],
+      "title": "SourceLedgerRecord",
+      "type": "object"
+    },
+    "SourceLedgerSource": {
+      "additionalProperties": false,
+      "description": "One enumerated source's ledger entry (§18).\n\nOwns only enumeration, scope, digest, and record state. `source_kind` and `portable_locator`\nlive in `policy/sources.yaml` and are deliberately not repeated here — two homes for one field\nis two chances to disagree.",
+      "properties": {
+        "approved_scope": {
+          "discriminator": {
+            "mapping": {
+              "complete_file": "#/$defs/CompleteFileScope",
+              "selected_sections": "#/$defs/SelectedSectionsScope"
+            },
+            "propertyName": "kind"
+          },
+          "oneOf": [
+            {
+              "$ref": "#/$defs/CompleteFileScope"
+            },
+            {
+              "$ref": "#/$defs/SelectedSectionsScope"
+            }
+          ],
+          "title": "Approved Scope"
+        },
+        "enumerator_id": {
+          "pattern": "^[a-z][a-z0-9]*(?:[-_][a-z0-9]+)*$",
+          "title": "Enumerator Id",
+          "type": "string"
+        },
+        "enumerator_version": {
+          "exclusiveMinimum": 0,
+          "title": "Enumerator Version",
+          "type": "integer"
+        },
+        "source_content_digest": {
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "title": "Source Content Digest",
+          "type": "string"
+        },
+        "source_id": {
+          "pattern": "^(?:source)\\.[a-z0-9]+(?:[._-][a-z0-9]+)*$",
+          "title": "Source Id",
+          "type": "string"
+        },
+        "source_record_ids": {
+          "items": {
+            "pattern": "^(?:source\\-record)\\.[a-z0-9]+(?:[._-][a-z0-9]+)*$",
+            "type": "string"
+          },
+          "title": "Source Record Ids",
+          "type": "array"
+        }
+      },
+      "required": [
+        "source_id",
+        "enumerator_id",
+        "enumerator_version",
+        "source_content_digest",
+        "approved_scope",
+        "source_record_ids"
+      ],
+      "title": "SourceLedgerSource",
+      "type": "object"
+    },
+    "SourceSpec": {
+      "additionalProperties": false,
+      "description": "Portable source metadata only (§6, §18).\n\n`policy/sources.yaml` is authoritative for `source_kind` and `portable_locator`;\n`imports/source-ledger.yaml` owns enumeration, scope, digests, and dispositions. The two\ndocuments may not repeat the same metadata fields, so there is no `enumerator_id` here.\n\nAbsolute machine-local roots live only in the non-revisioned root `local-sources.yaml`, which\nis why `portable_locator` is relative and validation rejects a home path inside it.",
+      "properties": {
+        "portable_locator": {
+          "minLength": 1,
+          "pattern": "\\S",
+          "title": "Portable Locator",
+          "type": "string"
+        },
+        "source_id": {
+          "pattern": "^(?:source)\\.[a-z0-9]+(?:[._-][a-z0-9]+)*$",
+          "title": "Source Id",
+          "type": "string"
+        },
+        "source_kind": {
+          "$ref": "#/$defs/SourceKind"
+        }
+      },
+      "required": [
+        "source_id",
+        "source_kind",
+        "portable_locator"
+      ],
+      "title": "SourceSpec",
+      "type": "object"
+    },
+    "StringListValue": {
+      "additionalProperties": false,
+      "description": "An ordered list. §18 sorts *set-like* candidate lists by canonical identity; a value that is\ngenuinely a sequence keeps its order, so `values` rejects duplicates without reordering.",
+      "properties": {
+        "type": {
+          "const": "string_list",
+          "title": "Type",
+          "type": "string"
+        },
+        "values": {
+          "items": {
+            "minLength": 1,
+            "pattern": "\\S",
+            "type": "string"
+          },
+          "minItems": 1,
+          "title": "Values",
+          "type": "array"
+        }
+      },
+      "required": [
+        "type",
+        "values"
+      ],
+      "title": "StringListValue",
+      "type": "object"
+    },
+    "StringValue": {
+      "additionalProperties": false,
+      "properties": {
+        "type": {
+          "const": "string",
+          "title": "Type",
+          "type": "string"
+        },
+        "value": {
+          "minLength": 1,
+          "pattern": "\\S",
+          "title": "Value",
+          "type": "string"
+        }
+      },
+      "required": [
+        "type",
+        "value"
+      ],
+      "title": "StringValue",
+      "type": "object"
+    },
+    "SufficiencyReview": {
+      "additionalProperties": false,
+      "properties": {
+        "state": {
+          "$ref": "#/$defs/SufficiencyState"
+        }
+      },
+      "required": [
+        "state"
+      ],
+      "title": "SufficiencyReview",
+      "type": "object"
+    },
+    "SufficiencyState": {
+      "description": "Whether an owner has reviewed the capture for sufficiency (§12).\n\n`owner_approved` must match an approval-stamp sub-entry bound to this record's target-content\ndigest. The record embeds no approval ID, which is what keeps that binding acyclic.",
+      "enum": [
+        "unreviewed",
+        "owner_approved"
+      ],
+      "title": "SufficiencyState",
+      "type": "string"
+    },
+    "SummaryCandidatesDocument": {
+      "additionalProperties": false,
+      "description": "`claims/summary-candidates.yaml`: professional_summary only.",
+      "properties": {
+        "claims": {
+          "items": {
+            "$ref": "#/$defs/ClaimRecord"
+          },
+          "title": "Claims",
+          "type": "array"
+        }
+      },
+      "required": [
+        "claims"
+      ],
+      "title": "SummaryCandidatesDocument",
+      "type": "object"
+    },
+    "Surface": {
+      "description": "Where a record may be projected. Internal storage is implicit and is not a surface.",
+      "enum": [
+        "resume",
+        "public",
+        "application"
+      ],
+      "title": "Surface",
+      "type": "string"
+    },
+    "SurfacePolicy": {
+      "description": "`application_only` forbids `resume` and `public` even if a future catalog edit accidentally\nwidens `legal_surfaces` (§10.4). It is a second, independent latch on the same door.",
+      "enum": [
+        "standard",
+        "application_only"
+      ],
+      "title": "SurfacePolicy",
+      "type": "string"
+    },
+    "UnitCatalog": {
+      "additionalProperties": false,
+      "description": "`policy/units.yaml`. Gate A ships no universal built-in unit vocabulary (§11).",
+      "properties": {
+        "units": {
+          "items": {
+            "$ref": "#/$defs/UnitSpec"
+          },
+          "title": "Units",
+          "type": "array"
+        },
+        "units_version": {
+          "exclusiveMinimum": 0,
+          "title": "Units Version",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "units_version",
+        "units"
+      ],
+      "title": "UnitCatalog",
+      "type": "object"
+    },
+    "UnitSpec": {
+      "additionalProperties": false,
+      "description": "Exactly the five columns §11 declares. Nothing else is a unit's business.\n\nThe catalog defines no conversions, implicit aliases, or dimensional inference: validation does\nexact ID/alias lookup only, so `120 ms` can never be silently compared with `0.12 s`.",
+      "properties": {
+        "aliases": {
+          "items": {
+            "pattern": "^[a-z][a-z0-9_]*$",
+            "type": "string"
+          },
+          "title": "Aliases",
+          "type": "array"
+        },
+        "allowed_metric_kinds": {
+          "items": {
+            "$ref": "#/$defs/MetricKind"
+          },
+          "minItems": 1,
+          "title": "Allowed Metric Kinds",
+          "type": "array"
+        },
+        "display_name": {
+          "minLength": 1,
+          "pattern": "\\S",
+          "title": "Display Name",
+          "type": "string"
+        },
+        "symbol": {
+          "minLength": 1,
+          "pattern": "\\S",
+          "title": "Symbol",
+          "type": "string"
+        },
+        "unit_id": {
+          "pattern": "^[a-z][a-z0-9_]*$",
+          "title": "Unit Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "unit_id",
+        "display_name",
+        "symbol",
+        "aliases",
+        "allowed_metric_kinds"
+      ],
+      "title": "UnitSpec",
+      "type": "object"
+    },
+    "UrlValue": {
+      "additionalProperties": false,
+      "properties": {
+        "type": {
+          "const": "url",
+          "title": "Type",
+          "type": "string"
+        },
+        "value": {
+          "maxLength": 2048,
+          "pattern": "^https?://[^\\s<>\\\"]+$",
+          "title": "Value",
+          "type": "string"
+        }
+      },
+      "required": [
+        "type",
+        "value"
+      ],
+      "title": "UrlValue",
+      "type": "object"
+    },
+    "UsageContext": {
+      "description": "How the subject used or encountered the material (§10.1).\n\nContext does not change evidence strength. `incidental` can never ground a verified skill.",
+      "enum": [
+        "professional",
+        "academic",
+        "personal_project",
+        "contribution",
+        "publication",
+        "volunteer",
+        "incidental"
+      ],
+      "title": "UsageContext",
+      "type": "string"
+    },
+    "VerificationBasis": {
+      "description": "How the assertion was established (§10.2).",
+      "enum": [
+        "public_record_verified",
+        "private_document_verified",
+        "repository_verified",
+        "measured",
+        "owner_attested",
+        "secondary_only",
+        "multiple_sources"
+      ],
+      "title": "VerificationBasis",
+      "type": "string"
+    },
+    "VerificationState": {
+      "description": "The closed fact-state catalog (§10.2).\n\n`owner_confirmed` is not a weaker synonym for `verified`: predicate contracts say when owner\nattestation is the appropriate authority, and it can never prove a repository implementation,\na publication, or a measured result.",
+      "enum": [
+        "verified",
+        "owner_confirmed",
+        "unresolved",
+        "stale",
+        "rejected",
+        "superseded"
+      ],
+      "title": "VerificationState",
+      "type": "string"
+    },
+    "YearMonthValue": {
+      "additionalProperties": false,
+      "properties": {
+        "type": {
+          "const": "year_month",
+          "title": "Type",
+          "type": "string"
+        },
+        "value": {
+          "pattern": "^[0-9]{4}-(?:0[1-9]|1[0-2])$",
+          "title": "Value",
+          "type": "string"
+        }
+      },
+      "required": [
+        "type",
+        "value"
+      ],
+      "title": "YearMonthValue",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "description": "A synthetic root whose only purpose is to pull every document model into one `$defs` block.\n\nNothing constructs it. The alternative — one schema file per document — would give an authoring\nagent thirty-three files to fetch and no single place to see the whole contract.",
+  "properties": {
+    "affiliations": {
+      "$ref": "#/$defs/AffiliationsDocument"
+    },
+    "approval_ledger": {
+      "$ref": "#/$defs/ApprovalLedger"
+    },
+    "assertion_tag_catalog": {
+      "$ref": "#/$defs/AssertionTagCatalog"
+    },
+    "awards": {
+      "$ref": "#/$defs/AwardsDocument"
+    },
+    "bullet_candidates": {
+      "$ref": "#/$defs/BulletCandidatesDocument"
+    },
+    "certifications": {
+      "$ref": "#/$defs/CertificationsDocument"
+    },
+    "change_ledger": {
+      "$ref": "#/$defs/ChangeLedger"
+    },
+    "conflict_groups": {
+      "$ref": "#/$defs/ConflictGroups"
+    },
+    "conflict_rulings": {
+      "$ref": "#/$defs/ConflictRulings"
+    },
+    "courses": {
+      "$ref": "#/$defs/CoursesDocument"
+    },
+    "draft_manifest": {
+      "$ref": "#/$defs/DraftManifest"
+    },
+    "education": {
+      "$ref": "#/$defs/EducationDocument"
+    },
+    "employment_facts": {
+      "$ref": "#/$defs/EmploymentFactsDocument"
+    },
+    "evidence_records": {
+      "$ref": "#/$defs/EvidenceRecordsDocument"
+    },
+    "gated_facts": {
+      "$ref": "#/$defs/GatedFactsDocument"
+    },
+    "identity": {
+      "$ref": "#/$defs/IdentityDocument"
+    },
+    "import_candidates": {
+      "$ref": "#/$defs/CandidatePackage"
+    },
+    "import_exclusions": {
+      "$ref": "#/$defs/ExclusionLedger"
+    },
+    "local_sources_sidecar": {
+      "$ref": "#/$defs/LocalSourcesSidecar"
+    },
+    "metric_records": {
+      "$ref": "#/$defs/MetricRecordsDocument"
+    },
+    "patents": {
+      "$ref": "#/$defs/PatentsDocument"
+    },
+    "predicate_catalog": {
+      "$ref": "#/$defs/PredicateCatalog"
+    },
+    "presentations": {
+      "$ref": "#/$defs/PresentationsDocument"
+    },
+    "project_facts": {
+      "$ref": "#/$defs/ProjectFactsDocument"
+    },
+    "publications": {
+      "$ref": "#/$defs/PublicationsDocument"
+    },
+    "relation_catalog": {
+      "$ref": "#/$defs/RelationCatalog"
+    },
+    "relation_records": {
+      "$ref": "#/$defs/RelationRecordsDocument"
+    },
+    "revision_manifest": {
+      "$ref": "#/$defs/RevisionManifest"
+    },
+    "secret_scan_ruleset": {
+      "$ref": "#/$defs/SecretRuleset"
+    },
+    "skill_category_catalog": {
+      "$ref": "#/$defs/SkillCategoryCatalog"
+    },
+    "skill_inventory": {
+      "$ref": "#/$defs/SkillInventoryDocument"
+    },
+    "source_catalog": {
+      "$ref": "#/$defs/SourceCatalog"
+    },
+    "source_ledger": {
+      "$ref": "#/$defs/SourceLedger"
+    },
+    "summary_candidates": {
+      "$ref": "#/$defs/SummaryCandidatesDocument"
+    },
+    "unit_catalog": {
+      "$ref": "#/$defs/UnitCatalog"
+    }
+  },
+  "required": [
+    "draft_manifest",
+    "revision_manifest",
+    "identity",
+    "education",
+    "employment_facts",
+    "project_facts",
+    "publications",
+    "awards",
+    "certifications",
+    "affiliations",
+    "courses",
+    "presentations",
+    "patents",
+    "bullet_candidates",
+    "summary_candidates",
+    "skill_inventory",
+    "metric_records",
+    "evidence_records",
+    "conflict_groups",
+    "conflict_rulings",
+    "predicate_catalog",
+    "unit_catalog",
+    "relation_catalog",
+    "source_catalog",
+    "skill_category_catalog",
+    "assertion_tag_catalog",
+    "secret_scan_ruleset",
+    "relation_records",
+    "source_ledger",
+    "import_candidates",
+    "import_exclusions",
+    "gated_facts",
+    "change_ledger",
+    "approval_ledger",
+    "local_sources_sidecar"
+  ],
+  "title": "boardwatch career-profile bundle",
+  "type": "object",
+  "x-bundle-schema-version": 1
+}

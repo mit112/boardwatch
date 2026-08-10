@@ -154,13 +154,18 @@ def test_date_range_requires_an_explicit_end_key() -> None:
 @pytest.mark.parametrize(
     "bad",
     [
-        "mailto:candidate@example.com",
         "ftp://example.com/x",
         "example.com/x",
         "javascript:alert(1)",
+        "data:text/plain,x",
+        "HTTPS://example.com/x",
+        " https://example.com/x",
     ],
 )
 def test_url_value_accepts_only_http_and_https(bad: str) -> None:
+    """A mail-scheme URL is refused by the same anchor. It is not written out as a literal here:
+    the repository's generalization scan treats that shape as a personal profile URL in any tracked
+    file, and design §22 forbids it in fixtures for exactly that reason."""
     with pytest.raises(ValidationError):
         VALUE_ADAPTER.validate_python({"type": "url", "value": bad})
 
