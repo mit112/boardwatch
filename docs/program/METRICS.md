@@ -806,7 +806,16 @@ checked.
 |---|---|---|
 | `70004b7` | the three review fixes | exit 0 · 3,918 passed · 95.10% · 298.84 s |
 | `f713ce6` | + docs (D-113, D-114, STATE, METRICS, CHANGELOG) | exit 0 · 3,918 passed · 95.10% · 300.85 s |
-| `f0a0f54` | + the second review round's fixes | exit 0 · **3,923 passed** · **95.12%** · 302.97 s |
+| `f0a0f54` | + the second review round's fixes | exit 0 · 3,923 passed · 95.12% · 302.97 s |
+| `861ea74`+`a729609` cherry-picked onto `cefd13e` | + the Windows encoding fix, **in isolation** | exit 0 · **3,924 passed** · **95.12%** · 293.03 s |
+
+The last row is gated in isolation on purpose. A **concurrent session** was committing `profile_bundle`
+work into the same clone, and the combined tree is **red**: `test_the_secret_scan_document_records_the_
+builtin_v1_rows` imports `boardwatch.profile_bundle.secret_scan`, which exists only as an *untracked*
+working-tree file. Those commits therefore pass on this machine and fail in any clean checkout — which is
+what a detached worktree pinned to a commit exists to reveal, and what a `make check` run in the main tree
+structurally cannot. Not this session's code and not this session's to fix; recorded so the next reader
+does not attribute the red gate to D-113/D-114.
 
 3,911 at `0834f81` → 3,923: **12 new tests** — 2 core-liveness redirect cases, 1 catalog-coherence case,
 2 real-`Fetcher` redirect cases, 3 CLI notice cases (human empty-result ×2, JSON path ×1), 2 liveness
