@@ -1203,3 +1203,67 @@ test set and Slices 2–3. Gate P6 is checked here when there is a 7-day window 
 **Sampling note, so the 131 is not read as stronger than it is.** The sampled `exact_quad` groups are
 same-role-different-requisition pairs with byte-identical descriptions — *not* verified re-postings of
 one requisition. The defended claim is "one application decision", not "the same job".
+
+---
+
+## Session — 2026-08-10 · P6 Slice 1 BUILT (unattended run). Branch `p6-slice1`, not merged.
+
+All nine plan tasks executed. `make check` result and the branch's standing are in `STATE.md`;
+these are the measured numbers.
+
+### Live-corpus dedup, measured on an isolated COPY of the store
+
+The live store was never written to. `boardwatch.db` was copied to `/tmp/bw-smoke-copy` and every
+command below ran with `--data-dir` pointed at the copy (P1a's dogfood pattern).
+
+| Measurement | Value |
+|---|---|
+| Open postings | **23,455** |
+| Identity rows written by `identities backfill` | **117,254** |
+| `identities verify` | **exit 0** — 23,455 postings verified |
+| `identities_complete` | **True** |
+| Groups `exact_quad` collapses | **147** |
+| Surplus rows `exact_quad` removes | **186** (**0.79%** of open postings) |
+| Kinds appearing in any suppression | `exact_quad` only |
+| Suppressions failing an INDEPENDENT four-field recheck | **0 of 186** |
+| A survivor that was itself suppressed | **none** |
+
+### The figure moved from the pre-registered baseline, and why
+
+The 2026-08-09 baseline (previous session, above) pre-registered **131 groups / 168 surplus /
+0.72%**. The shipped implementation measures **147 / 186 / 0.79%** — *more* suppression. This was
+investigated before the code was committed, because a dedup number moving the wrong way is exactly
+what the smoke step exists to catch.
+
+**Cause: the baseline grouped locations RAW; the shipped code normalizes them.** Re-running the
+grouping over the same corpus with raw `locations_json` reproduces **136 groups / 174 surplus /
+0.74%** — matching the design's own *unguarded* baseline of 135/173/0.74% to within one group.
+Normalizing locations (sort + case-fold + whitespace-collapse, per design §2.1) merges a further
+**11 groups / 12 rows**: pairs whose location lists differ only in order or spelling case. Measured
+directly: **12 of the 186** suppressions have raw location lists that are not equal.
+
+Not a cause: title normalization. **0 of 186** suppressions have a stored `normalized_title` that
+disagrees with `normalize_title(title)`.
+
+**Precision is intact and was checked through a second path.** Every one of the 186 suppressions was
+re-verified outside `_verify_quad`, comparing company_id, normalized title, normalized locations and
+normalized body independently — **0 failures**. Sampled groups are same-role-different-requisition
+pairs: identical titles, identical locations, distinct `provider_posting_id`.
+
+### `assisted`
+
+**Not instrumented — reports `None`, not 0.** `exact_quad` is keyed on `company_id` and sources *are*
+`company_id`, so no suppression this slice can produce crosses a source boundary; there is no
+mechanism that could count one. Reporting `0` would assert a measurement that was never taken
+(D-088, and the D-022/D-023 rule). It becomes measurable when an aggregator posting can be
+dereferenced to exact requisition evidence.
+
+### NOT measured — so Gate P6 cannot be read as met
+
+**Gate P6 is NOT met.** Slice 1 makes exactly one of its four clauses measurable. Still unmeasured:
+
+- **7-day duplicate leakage** — needs a 7-day window of real runs. Operational, Mit-side.
+- **Dead postings reaching the lead list** — liveness is Slice 3; nothing here measures it.
+- **The 20-sample suppression audit** — needs a human to re-derive 20 suppressions from the data.
+
+The build made these measurable; it did not meet them.

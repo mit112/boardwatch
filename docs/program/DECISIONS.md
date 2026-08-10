@@ -3391,3 +3391,329 @@ implementation — those modules do not exist; that is TDD's job, and the plan s
 
 **Both external plan reviewers remain abandoned with no verdict** (D-077 has the detail). Not
 re-dispatched, per that entry's own rule: one attack category per dispatch, or not at all.
+
+---
+
+## D-079 — P6 Slice 1 annotates only; `postings.job_id` is not mutated
+
+**Context.** Dedup could either project its result onto `postings.job_id` (regrouping postings under
+one canonical job) or record it beside the data and let readers apply it.
+
+**Choice.** Slice 1 **annotates only.** Identities are stored in a new `posting_identities` table and
+suppression is resolved at *read* time; `postings.job_id` is untouched. Design §1.3.
+
+**Alternatives rejected.** Mutating `job_id` in this slice. `applications.job_id` is the tracking key,
+so regrouping a posting silently rewrites which job a recorded application belongs to. Job regrouping
+and the `applications.job_id` migration are Slice 2's, designed together with their drain.
+
+---
+
+## D-080 — `content_hash` alone may never suppress
+
+**Context.** A shared `content_hash` is the cheapest possible duplicate signal and the obvious first
+thing to key dedup on.
+
+**Choice.** `content_hash_only` is computed and stored as an annotate-only kind. It may never suppress.
+
+**Alternatives rejected.** Hash-keyed dedup. Measured on the live corpus: 809 hash-collision groups, of
+which **727 span a different title or location** — the Datadog 5843/5846/5849 shape, where one
+description text is reused across genuinely different requisitions. Suppressing on the bare hash
+collapses different jobs, which is the unrecoverable direction.
+
+---
+
+## D-081 — `exact_quad` is the sole suppressing kind, and its yield is stated honestly
+
+**Context.** Five identity kinds are computed. Which of them may remove a posting from the lead list?
+
+**Choice.** **`exact_quad`** — `(company_id, normalized_title, normalized_locations, content_hash)` —
+and nothing else. On the live corpus this suppresses **147 groups / 186 surplus rows / 0.79%** of
+23,455 open postings (measured 2026-08-10; see D-094 for why this differs from the design's
+pre-registered 131/168/0.72%).
+
+**What is claimed, precisely.** The sampled groups are same-role-different-requisition pairs with
+byte-identical descriptions, **not** re-postings. The claim defended is "these represent **one
+application decision**", not "these are the same requisition". Design §2.
+
+**Alternatives rejected.** Adding a second suppressing kind for reach. Precision over recall: a leaked
+duplicate is counted and recoverable, a suppressed real lead is neither.
+
+---
+
+## D-082 — `cross_host` ships annotate-only, reversing an earlier draft
+
+**Context.** An earlier draft assumed `cross_host` (same normalized company + title + locations across
+an ATS and an aggregator) would suppress, on the strength of an unanswered design flag.
+
+**Choice.** `cross_host` ships with `suppresses=False`. It is computed, stored, and its survivor
+election is written and directly tested — but it is unreachable from `resolve_duplicates`.
+
+**Alternatives rejected.** Shipping it as a suppressor. Four reasons, any one sufficient: an unanswered
+flag is not consent; `core/identity.py:3` already records that cross-ID heuristics may only annotate;
+PROGRAM P6 item 1 restricts suppression to *exact* identities and `cross_host` carries neither
+`company_id` nor `content_hash`; and a concrete counterexample exists (Acme Greenhouse req ENG-241 vs
+LinkedIn req ENG-319 — same company, title and location, different jobs, and string-verify cannot tell
+them apart because it re-compares the same three weak fields).
+
+**Re-entry path.** It becomes suppressible once an aggregator posting can be dereferenced to exact
+requisition evidence. The election logic already ships and is proven, so enabling it is one boolean.
+Design §3.1.
+
+---
+
+## D-083 — No location evidence ⇒ no location-bearing identity, never a `"[]"` sentinel
+
+**Context.** `normalized_locations` needs a representation for a posting that carries no locations.
+
+**Choice.** It returns **`None`**, and the caller emits no location-bearing identity at all — so
+`exact_quad`, `cross_host` and `company_title_location` are simply absent for that posting.
+
+**Alternatives rejected.** An `"[]"` sentinel. It makes every location-less posting compare **equal** to
+every other one on that component, and the resulting false suppression is undetectable downstream:
+string-verify re-compares the same two `"[]"` values and passes, and the §6.3 recount recomputes the
+same `"[]"` and agrees. Both guards would agree on the wrong answer. Measured cost of the safe
+direction: 7 rows of 23,455. Design §2.1.
+
+---
+
+## D-084 — Three host classes, not two; matching is exact-or-dot-suffix
+
+**Context.** Survivor election across hosts needs to know which URL is authoritative.
+
+**Choice.** Three classes — `ats`, `aggregator`, `unknown` — with `unknown` as the default. `unknown` is
+never elected and never dropped. Host matching is `host == known or host.endswith("." + known)`.
+
+**Alternatives rejected.** (a) A binary ATS/aggregator split: it classifies a company's own careers site
+as "not ATS" and would drop the company's own page in favour of a job board. (b) Substring matching:
+`greenhouse.io.evil.example` and `notgreenhouse.io` would both read as ATS and could win election.
+Design §3.
+
+---
+
+## D-085 — Allowlist URL normalization, not a denylist
+
+**Context.** `normalize_url` must strip tracking parameters while keeping identity-bearing ones
+(`gh_jid` is load-bearing in real posting URLs).
+
+**Choice.** An **allowlist** of identity params; everything else is dropped.
+
+**Alternatives rejected.** A denylist of tracking params. The direction was chosen by *which failure is
+detectable*: a denylist that has not yet learned a new tracking param silently **splits** one posting
+into two, which nothing catches; an allowlist that has not learned a new identity param **merges** two
+postings, which string-verify then catches. Merge-then-verify is the recoverable failure. Design §4.1.
+
+---
+
+## D-086 — Survivor election never consults score; `posting_id` is a load-bearing tiebreak
+
+**Context.** When a group of duplicates is found, one row survives.
+
+**Choice.** Election is `(host_class, earliest first_seen_at, lowest posting_id)`. Score is never a
+tiebreaker.
+
+**Alternatives rejected.** Electing the highest-scoring row. Scores move whenever the profile, taxonomy
+or ranker changes, so the survivor's identity would change between runs — and Gate P6 requires
+measuring duplicate leakage across a 7-day window, which a moving survivor makes meaningless.
+`posting_id` is not decoration: `first_seen_at` is second-resolution and a single board's postings are
+inserted in one pass, so ties are routine. Design §5.1.
+
+---
+
+## D-087 — Instrumentation is completeness-gated, not existence-gated
+
+**Context.** The funnel's `unique` counter reads stored identities. When may it report a number?
+
+**Choice.** Only when **every** open posting carries a row at the current
+`IDENTITY_ALGORITHM_VERSION`. Otherwise `None`. An algorithm-version bump therefore degrades `unique`
+to `None` until a re-backfill.
+
+**Alternatives rejected.** `if identities:`. A single backfilled posting in a 23,455-posting corpus is
+indistinguishable from a complete one under a truthiness check, and the number that falls out would be
+printed in the same column as a real measurement. Design §2.2.
+
+---
+
+## D-088 — `assisted` stays `None` in this slice
+
+**Context.** `SourceOutcome.assisted` credits a source that arrived second for a posting another source
+won. With dedup now live, it is tempting to report it.
+
+**Choice.** `assisted` reports **`None`**, even on a complete corpus with live suppressions.
+
+**Alternatives rejected.** Reporting `0`. `exact_quad` is keyed on `company_id` and sources *are*
+`company_id`, so no suppression this slice can produce crosses a source boundary — `assisted` is
+structurally incapable of being non-zero. `0` would assert "we looked and no source arrived second";
+the honest statement is "no mechanism exists that could have counted one". This is the D-022/D-023 rule,
+which this program has already been bitten by twice. Design §6.2.
+
+---
+
+## D-089 — Identities are upserted on every observation; a kind that stops being produced is deleted
+
+**Context.** `scan/apply.py` refreshes a posting's title and locations on *every* observation
+(`_mutable_fields`, "regardless of content_hash") while gating a *revision* on `content_hash` alone. So
+a retitle with an unchanged body moves an identity key without producing a revision.
+
+**Choice.** `write_identities` makes a posting's current-version rows match the computed set **exactly**
+— inserting, updating **and deleting**.
+
+**Alternatives rejected.** Insert-if-absent. It leaves the superseded key stored forever, which makes
+`identities verify` permanently red on a legitimate update — and a permanently-red check is a discarded
+check. Deletion is part of the same contract: losing location evidence drops three kinds (D-083), and an
+orphaned `exact_quad` row would keep suppressing on behalf of a posting that no longer earns one.
+Design §2.3.
+
+---
+
+## D-090 — The ranker is completeness-gated for reproducibility, not safety
+
+**Context.** The ranker skips suppression entirely unless identities are complete. It would be easy to
+justify this as a safety measure; that justification would be wrong, and worth stating so it is not
+repeated.
+
+**Choice.** Gate the ranker on completeness, and record that the reason is **reproducibility**.
+
+**Why not safety.** Partial coverage cannot over-suppress: a posting with no identity row joins no
+group and is never suppressed. The worst a partial view does is elect a survivor from the covered
+subset while the true survivor sits uncovered and stays visible anyway — which over-shows, the
+acceptable direction. The real reason is that *which* rows get suppressed mid-backfill depends on
+backfill order, and Gate P6 requires re-deriving 20 sampled suppressions from the data. A suppression
+whose survivor election did not see all the candidates cannot be re-derived. The cost of the gate is one
+command.
+
+---
+
+## D-091 — The recount recomputes in Python, and claims staleness only
+
+**Context.** `identities verify` is the D-028 "count the deliverable through a different path" check.
+
+**Choice.** Path A reads stored `posting_identities` rows; Path B **recomputes** them from `postings` in
+Python. It lives in `identities verify`, not in `boardwatch verify` (which is run-artifact scoped), and
+exits 1 on missing identities as well as stale ones.
+
+**What it does NOT claim.** It is a staleness and consistency check, **not** proof that the normalizers
+are correct — both paths call the same `normalize_title` / `normalized_locations`. Re-grouping the same
+table a second way would have been the D-028 tautology this program has already shipped and deleted
+once. Design §6.3.
+
+---
+
+## D-092 — Identities are backfilled by an explicit command, not by the migration
+
+**Context.** The `p6_posting_identities` migration could populate the table as it creates it.
+
+**Choice.** The migration creates the table and **does not backfill**. `boardwatch identities backfill`
+is a separate, re-runnable command.
+
+**Alternatives rejected.** Backfilling inside `upgrade()`. Recomputing identities for a 23k-row corpus
+is not a side effect anyone wants from `alembic upgrade`, and it could not be re-run after an
+`IDENTITY_ALGORITHM_VERSION` bump. Until the command is run the funnel honestly reports `not
+instrumented` rather than a partial number. Design §7.
+
+---
+
+## D-093 — Slice 1 does NOT meet Gate P6, and makes only one of its four clauses measurable
+
+**Context.** It would be easy to read "dedup shipped" as "Gate P6 met".
+
+**Choice.** State plainly, in the spec and in `STATE.md`, that Slice 1 does not meet Gate P6.
+
+**What it does.** It makes the funnel's `unique` counter a measured number instead of `not
+instrumented` — one clause. The other three are operational measurements over a running system: 7-day
+duplicate leakage, zero dead postings reaching the lead list, and a 20-sample suppression audit. The
+build made them measurable; it did not meet them. Slice 2 is the durable ledger + drain + job
+regrouping; Slice 3 is applied-state suppression + liveness. Design §0.
+
+---
+
+## D-094 — P6 Slice 1 BUILT (unattended run): four more plan defects, three of them tests that could not fail
+
+**2026-08-10, unattended launchd run starting 03:10. All nine plan tasks executed on branch
+`p6-slice1`. NOT merged, NOT reviewed.** `main` is untouched. Execution mode was inline
+(`superpowers:executing-plans`), decided in advance: subagent-driven development is the better mode
+when a human reviews between tasks, and there was no human.
+
+**Constraints honoured, all three:** branch-only (no merge, no PR, no force-push); every live-data
+step against a **copy** of the store (`/tmp/bw-smoke-copy`), with the live store never written to;
+and no speculative fan-out, no D-072 benchmark, no re-dispatched plan review.
+
+### The plan was executable, and the fixtures held
+
+D-078's claim that the seeding was verified against the real schema held up: `seed_dedup` was
+re-run before the table existed and produced exactly what it promised — `locations_json` reading
+back as a Python `list`, one shared `content_hash` with distinct `provider_posting_id`, and
+`first_seen_at` **inverted** against `posting_id` order. The three ranker preconditions Task 7
+asserts also held. Every mutation check the plan specified was run in isolation with a cleared
+`__pycache__` (D-025), and all of them were caught by the *named* test — except the four below.
+
+### Four defects, found by running the plan's own code
+
+1. **Task 3's separator test could not fail.** It shifted a word between `title` and `locations`
+   to prove `_SEP` prevents `("ab","c")` and `("a","bc")` colliding. But `normalized_locations`
+   emits `json.dumps`, so the locations component always arrives wrapped in `["..."]` and
+   delimits itself; the two keys stayed distinct with `_SEP = ""`. **The only boundary where two
+   *bare* components meet is company_id↔title.** Retargeted there (company 10 + title `"1data"`
+   vs company 101 + title `"data"`, both concatenating to `"101data"`); it now goes red under the
+   mutation.
+
+2. **Task 4's `test_no_suppression_anywhere_ever_carries_the_cross_host_kind` could not fail.**
+   Its two `_p(3)`/`_p(4)` rows shared the cross pair's normalized company, title and location, so
+   all three unsuppressed rows landed in **one** `cross_host` group with two ATS members — which
+   `elect_cross_host_survivor` correctly declines as ambiguous. The test therefore stayed green
+   with `cross_host.suppresses` flipped to `True`, i.e. green against the one mutation it exists
+   to catch. Fixed by giving the exact_quad pair a different company name and title, and by adding
+   `assert result` — `all()` over an empty tuple is vacuously true, a second way the same test
+   could have passed for nothing.
+
+3. **Task 4's posting_id-tiebreak test could not isolate what it claimed.** Its docstring said
+   that without the tiebreak "the survivor depends on dict ordering". It does not:
+   `resolve_duplicates` groups over `sorted(by_id.items())`, so members always reach `_elect` in
+   posting-id order and `min` returns the lowest id on a tie regardless. Dropping the `posting_id`
+   term left the whole suite green. Fixed by adding
+   `test_elect_breaks_a_first_seen_tie_by_lowest_posting_id`, which calls `_elect` directly with
+   members deliberately out of order, and by correcting the misleading docstring rather than
+   leaving it to mislead the next reader.
+
+4. **Task 4's `_cross` helper passed `provider_posting_id` twice** — once positionally in its
+   defaults and once through `**over`, which the ENG-241 test overrides — a `TypeError` at run
+   time. Fixed by merging `over` into a dict so the override wins.
+
+Also: one *mutation* in this session's own Task 6 checklist was mis-specified by the implementer
+(removing the `posting_ids=[]` early return is compensated by `.in_([])`, so nothing changed).
+Corrected to also make the filter truthiness-based, at which point the test went red as intended.
+**A mutation that survives is not automatically a bad test — check the mutation expresses the
+claim first.** And `Sequence` was deferred out of the Task 5 conftest import block to Task 6,
+where it is first used, because ruff's F401 would otherwise have failed the Task 5 commit.
+
+### What was measured, and the number that moved
+
+On the copy: **23,455** open postings, **117,254** identity rows, `identities verify` **exit 0**,
+`identities_complete` **True**, and **147 groups / 186 surplus rows / 0.79%** suppressed — all
+`exact_quad`, no survivor itself suppressed.
+
+**That is more than the pre-registered 131/168/0.72% baseline, and the cause was found before
+committing** rather than explained away after. Re-running the grouping over the same corpus with
+**raw** `locations_json` reproduces **136/174/0.74%**, matching the design's own *unguarded*
+baseline (135/173/0.74%) to within one group. The delta is location **normalization** — sort,
+case-fold, whitespace-collapse, exactly what design §2.1 specifies — which merges a further 11
+groups / 12 rows; measured directly, **12 of the 186** suppressions have raw location lists that
+differ. Title normalization contributes nothing: 0 of 186 have a stored `normalized_title`
+disagreeing with `normalize_title(title)`.
+
+**Precision was re-checked through a second path**, comparing company_id, normalized title,
+normalized locations and normalized body outside `_verify_quad`: **0 of 186 failures**. Sampled
+groups are same-role-different-requisition pairs — identical titles, identical locations, distinct
+`provider_posting_id`. And the funnel's per-source `unique` reconciles independently:
+sum(open) − sum(unique) = **186** across 118 sources, equal to the resolver's own count, with
+`assisted` `None` on all 118.
+
+### Not finished
+
+The `boardwatch top --top 20` half of Task 8's live smoke did not complete — it ran >40 minutes
+against the 23,455-posting copy (it pays for `run_preflight` + `run_eligibility` over the whole
+corpus) and was still running at close. **This is cosmetic:** the corpus-wide figure it exists to
+sanity-check was obtained two other ways, and the plan itself notes that a top-20 usually shows 0
+duplicates and so cannot distinguish working dedup from inert dedup. Recorded as skipped rather
+than quietly dropped.
+
+**Gate P6 remains NOT met** (D-093), and no clause of it was claimed.

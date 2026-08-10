@@ -1,10 +1,40 @@
 # PROGRAM STATE — read this first
 
-**Last updated:** 2026-08-10. **Active item: P6 Slice 1 — liveness + dedup. Planning is COMPLETE
-and no code exists; the next action is to execute Task 1 of the plan.** See "Next action" below,
-and D-077 (the settled design) + D-078 (the plan made executable, and the eleven defects found in
-it). Everything under P6 is planning only — nothing in this file's "what shipped" sections has
-changed since the P2 header that follows.
+**Last updated:** 2026-08-10 (unattended overnight run). **Active item: P6 Slice 1 — liveness +
+dedup. All nine plan tasks are BUILT and committed on branch `p6-slice1`. NOT merged to `main`,
+and NOT reviewed.** `main` is unchanged. The branch is the deliverable; merging it is Mit's
+decision, because nothing was reviewed at 3am and the standing merge permission is conditional on
+review.
+
+**Gate P6 is NOT met, and Slice 1 was designed not to meet it (D-093).** It makes exactly one of
+the gate's four clauses measurable — the funnel's `unique` counter, now a measured number instead
+of `not instrumented`. The other three (7-day duplicate leakage, 0 dead postings reaching the lead
+list, a 20-sample suppression audit) are operational measurements over a running system. The build
+made them measurable; it did not meet them.
+
+**What shipped on the branch.** `posting_identities` (a new table + the `p6_posting_identities`
+migration, which is now the Alembic head); a closed, ranked, versioned identity catalog in which
+**`exact_quad` is the sole suppressing kind**; `normalize_url` (allowlist); three-class host
+classification; the pure suppression resolver with string-verify and score-free survivor election;
+`boardwatch identities backfill|verify`; ranker suppression with the `--include-duplicates` drain
+and a new `hidden_duplicate` counter threaded into the reconciliation identity and the funnel; and
+the funnel's measured per-source `unique` (with `assisted` deliberately still `None`).
+
+**Measured on an isolated COPY of the live store — the live store was never written to.** 23,455
+open postings, 117,254 identity rows, `identities verify` exit 0, **147 groups / 186 surplus rows /
+0.79%** suppressed, all `exact_quad`. Per-source `unique` reconciles through a second path:
+sum(open) − sum(unique) = 186 across 118 sources, equal to the resolver's own count. **The figure
+moved from the pre-registered 131/168/0.72% baseline and the cause was found before committing:**
+the baseline grouped locations raw, the shipped code normalizes them (design §2.1). Re-grouping raw
+reproduces 136/174/0.74%, matching the design's own unguarded baseline. Precision was re-checked
+through an independent four-field comparison: **0 of 186 failures**. Full investigation in
+`METRICS.md`.
+
+**Fifteen design decisions are now individual entries, D-079 … D-093** (summarized in D-077 until
+now). **D-094** records the build itself, including four defects found *in the plan* by running its
+code — three of them tests that could not fail for the claim they made.
+
+Everything below this block predates P6 and is unchanged.
 
 **Prior header, 2026-08-09** (P2 item 4 — **the career-field field-tier MECHANISM is merged and shipped;
 Gate P2 is MET AS RECONCILED, D-075**). The final whole-branch review and the fix wave it forced are
@@ -748,24 +778,28 @@ changes adopted, none contested.
 
 ## Next action
 
-**P6 Slice 1 is the active item — PLANNING IS COMPLETE, nothing built (2026-08-10, planning
-session 2). The next action is to execute Task 1.**
+**P6 Slice 1 is BUILT on branch `p6-slice1` — all nine tasks, committed, `main` untouched. The
+next action is a fresh-context whole-branch review, then Mit's merge decision.**
 
-> **An UNATTENDED run of this plan was scheduled for 03:10 on 2026-08-10** (launchd agent
-> `com.mitsheth.boardwatch-p6`; runner `~/.claude/scheduled/p6-slice1-run.sh`, prompt
-> `~/.claude/scheduled/p6-slice1-prompt.md`, logs `~/.claude/scheduled/logs/`). **If you are that
-> run, ignore this box and execute the plan.** If you are a later session: check
-> `~/.claude/scheduled/logs/p6-status-*.md` and `git log --oneline main..p6-slice1` BEFORE
-> starting anything, or you risk redoing work that already exists.
+> **The unattended run scheduled for 03:10 on 2026-08-10 EXECUTED and completed all nine tasks**
+> (launchd agent `com.mitsheth.boardwatch-p6`; status file
+> `~/.claude/scheduled/logs/p6-status-2026-08-10.md`). It honoured all three constraints: branch
+> only (no merge, no PR, no force-push), copy-only for every live-data step, and it never wrote to
+> the live store.
 >
-> Three constraints were imposed on that run and they bound what you can assume about its output:
-> it works on branch **`p6-slice1`** and is forbidden to merge to `main` or open a PR; it may only
-> touch a **copy** of the store, never the live data dir; and **nothing it produced has been
-> reviewed by anyone.** Treat its commits as unreviewed work in progress. Per standing practice a
-> checkpoint this size wants a fresh-context whole-branch Opus 5 review before merging — the P2
-> item 4 review caught a CRITICAL that every per-task review had missed. The run may also have
-> stopped part-way (nine tasks × a 5–17 min `make check`, started at 98% of the 5h quota window);
-> a partial result is the expected case, not a failure.
+> **Nothing on that branch has been reviewed by anyone.** Treat every commit as unreviewed work in
+> progress. Per standing practice a checkpoint this size wants a fresh-context whole-branch Opus 5
+> review before merging — the P2 item 4 review caught a CRITICAL that every per-task review had
+> missed. Read `git log --oneline main..p6-slice1` and the status file before starting anything.
+>
+> **The one thing the run did not finish:** the `boardwatch top --top 20` half of Task 8's live
+> smoke. It ran >40 min against a 23,455-posting copy (it pays for `run_preflight` +
+> `run_eligibility` over the whole corpus) and was still going. This is a *cosmetic* gap — the
+> corpus-wide measurement it exists to sanity-check was taken two other ways, both recorded in
+> `METRICS.md`: the resolver's own 186 surplus rows, and the funnel's per-source `unique`
+> reconciling to the same 186 across 118 sources. The plan itself notes a top-20 usually shows 0
+> duplicates and is therefore the *least* informative of the three. Re-run it if you want the
+> display path exercised end to end.
 
 The design and the 9-task TDD plan live at
 `.superpowers/sdd/2026-08-09-p6-liveness-dedup/` (gitignored), with `HANDOFF.md` there stating
@@ -775,7 +809,12 @@ cross-host identity as annotate-only) and the measured `unique` counter; it does
 Gate P6 on its own — it makes one of the gate's four clauses measurable, and the plan says so
 rather than leaving it to be discovered.
 
-**Eleven defects have been found in the plan across the two planning sessions, and every one came
+**Execution found four MORE plan defects, again by running the code rather than reading it** —
+bringing the total to fifteen across three sessions. Three of the four were *tests that could not
+fail for the claim they made*, the exact class this program keeps rediscovering (D-020, D-025).
+Details in **D-094**. Every one is fixed on the branch.
+
+**Eleven defects were found in the plan across the two planning sessions, and every one came
 from writing the code and running it — none from review.** All are fixed. The three worst:
 a `JSON`-column type error that would have made dedup silently suppress nothing forever with the
 whole suite green; a connection `rank_open_postings` has already closed; and sixteen invented
@@ -792,8 +831,8 @@ re-run Self-Review.
 given a six-category brief over eight files and neither produced a verdict. One attack category
 per dispatch, or none.
 
-`docs/program/DECISIONS.md` still owes the 15 decisions from the spec's §10 as individual entries
-before P6 lands — that is the plan's Task 9; D-077 records them in summary in the meantime.
+`docs/program/DECISIONS.md`'s debt for the 15 spec-§10 decisions is **PAID** — they are now
+**D-079 … D-093**, one entry each. D-094 records the build.
 
 **P0, P1, P2-core, and P3-build are all complete (session 10, 2026-08-07).** The run reaper merged
 (D-046, `2ce8e2d`+`91e0992`, `make check` green) was the **last P3 build item that needs neither Mit's
