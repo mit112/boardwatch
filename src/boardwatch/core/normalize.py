@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import hashlib
 import re
+from urllib.parse import parse_qsl, urlsplit, urlunsplit
 
 _NON_ALNUM_SPACE = re.compile(r"[^a-z0-9 ]")
 _COMPANY_SUFFIXES = re.compile(r"\b(inc|llc|corp|co|ltd|technologies|technology|labs)\b")
@@ -41,3 +42,40 @@ def normalize_body(text: str) -> str:
 
 def content_hash(body_text: str) -> str:
     return hashlib.sha256(normalize_body(body_text).encode("utf-8")).hexdigest()
+
+
+# Allowlist, not denylist (design §4.1). Compared case-insensitively; anything not
+# listed is dropped, including every utm_*, gh_src, ref and whatever is invented next.
+_URL_PARAM_ALLOWLIST = frozenset(
+    {"gh_jid", "jid", "id", "jobid", "req_id", "requisitionid", "posting_id", "lever_id"}
+)
+_DUP_SLASH = re.compile(r"/{2,}")
+
+
+def normalize_url(url: str) -> str:
+    """Canonical URL for host classification and survivor election.
+
+    Not part of any identity key in P6 slice 1 — identity keys are built from company,
+    title, locations and content hash. This exists so two spellings of the same posting
+    URL classify and elect identically, and so slice 2's ledger has a stable key.
+    """
+    raw = url.strip()
+    try:
+        parts = urlsplit(raw)
+    except ValueError:
+        return raw
+    if not parts.netloc:
+        return raw
+    host = parts.hostname or ""
+    if host.startswith("www."):
+        host = host[4:]
+    path = _DUP_SLASH.sub("/", parts.path)
+    if len(path) > 1 and path.endswith("/"):
+        path = path[:-1]
+    kept = [
+        f"{name}={value}"
+        for name, value in parse_qsl(parts.query, keep_blank_values=True)
+        if name.lower() in _URL_PARAM_ALLOWLIST
+    ]
+    # sorted() so param order is not identity.
+    return urlunsplit(("https", host, path, "&".join(sorted(kept)), ""))
