@@ -40,12 +40,16 @@ def main(argv: list[str] | None = None) -> int:
             print(f"program-index: FAILED, {exc}", file=sys.stderr)
             return 2
 
-        for error in result.errors:
-            print(f"  {error}", file=sys.stderr)
-        unrepairable = unrepairable or bool(result.errors)
+        if result.errors:
+            unrepairable = True
+            print(f"{spec.live}: {len(result.errors)} problem(s) a human must fix", file=sys.stderr)
+            for error in result.errors:
+                print(f"  {error}", file=sys.stderr)
 
         if not result.drifts:
-            print(f"{spec.live}: index is current")
+            # Never call an index current on a run that just reported a problem in it.
+            if not result.errors:
+                print(f"{spec.live}: index is current")
             continue
         drifted = True
         stream = sys.stderr if args.check else sys.stdout

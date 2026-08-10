@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pytest
+
 from tools.program_index.__main__ import DOCS, main
 from tools.program_index.index import SPECS, reindex
 
@@ -106,12 +108,50 @@ def test_a_row_naming_a_heading_that_does_not_exist_is_reported() -> None:
     assert any("D-009" in error and "no heading" in error for error in result.errors)
 
 
-def test_a_repeated_heading_is_ambiguous_and_is_reported() -> None:
+def test_a_repeated_heading_is_never_used_to_rewrite_a_row() -> None:
+    """Ambiguity must resolve to nothing, not to whichever copy came first."""
     live = DECISIONS_LIVE + "\n## D-002 — A live one, again\n"
 
     result = reindex(DECISIONS_SPEC, live, DECISIONS_ARCHIVE)
 
     assert any("duplicate heading 'D-002'" in error for error in result.errors)
+    assert any("has no heading" in error for error in result.errors)
+    assert result.drifts == ()
+    assert "| D-002 | DECISIONS.md | 99 | A live one |" in result.text
+
+
+def test_a_row_quoted_inside_a_code_fence_is_prose_not_an_index_row() -> None:
+    """These logs illustrate their own format, so a fence-blind scan would edit the example."""
+    live = DECISIONS_LIVE + (
+        "\n## D-003 — An entry that shows the format\n\n"
+        "```\n| D-042 | DECISIONS-ARCHIVE.md | 999 | An example row |\n```\n"
+    )
+
+    result = reindex(DECISIONS_SPEC, live, DECISIONS_ARCHIVE)
+
+    assert "| D-042 | DECISIONS-ARCHIVE.md | 999 | An example row |" in result.text
+    assert all("D-042" not in error for error in result.errors)
+    assert [d.key for d in result.drifts] == ["D-002"]
+
+
+def test_a_heading_quoted_inside_a_code_fence_is_not_a_heading() -> None:
+    """`METRICS.md` tells the reader to grep for '^## '; quoting that output must be safe."""
+    live = METRICS_LIVE + "\n```\n## Run log\n```\n"
+
+    result = reindex(METRICS_SPEC, live, METRICS_ARCHIVE)
+
+    assert result.errors == ()
+    assert [(d.key, d.new) for d in result.drifts] == [("Run log", 12)]
+
+
+def test_a_stray_row_below_the_index_does_not_disable_the_missing_row_check() -> None:
+    """The index is the first unbroken run of rows; anything later is prose."""
+    live = DECISIONS_LIVE + "\n## D-003 — Never indexed\n\n| D-042 | DECISIONS.md | 5 | stray |\n"
+
+    result = reindex(DECISIONS_SPEC, live, DECISIONS_ARCHIVE)
+
+    assert any("D-003" in error and "no index row" in error for error in result.errors)
+    assert all("D-042" not in error for error in result.errors)
 
 
 def test_check_mode_fails_on_drift_and_writes_nothing(tmp_path: Path) -> None:
@@ -135,6 +175,20 @@ def test_the_fixer_still_fails_when_something_it_cannot_repair_remains(tmp_path:
     (tmp_path / "DECISIONS.md").write_text(DECISIONS_LIVE + "\n## D-003 — Never indexed\n")
 
     assert main(["--docs", str(tmp_path)]) == 1
+
+
+def test_a_file_with_a_problem_is_never_called_current(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    _seed(tmp_path)
+    (tmp_path / "DECISIONS.md").write_text(
+        DECISIONS_LIVE.replace("| 99 |", "| 10 |") + "\n## D-003 — Never indexed\n"
+    )
+
+    assert main(["--check", "--docs", str(tmp_path)]) == 1
+    captured = capsys.readouterr()
+    assert "DECISIONS.md: index is current" not in captured.out
+    assert "no index row" in captured.err
 
 
 def test_an_unreadable_docs_directory_is_a_broken_check_not_a_clean_one(tmp_path: Path) -> None:

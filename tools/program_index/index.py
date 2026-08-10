@@ -12,6 +12,13 @@ however far the index has drifted, and reports no drift when the index is alread
 Two conditions it reports but will not repair, because repairing them means inventing
 text a human owes: a heading with no index row, and an index row naming a heading that
 does not exist.
+
+**Fenced code blocks are not read.** These logs quote their own index rows and their own
+`grep -n '^## '` output inside fences, so a fence-blind scan would rewrite an illustrative
+row as if it were real and invent phantom duplicate headings. **The index is the first
+unbroken run of index rows**, so a row-shaped line further down is prose, not an index
+entry — anchoring to the last row-shaped line anywhere let one stray line switch off the
+missing-row check for everything above it.
 """
 
 from __future__ import annotations
@@ -76,20 +83,53 @@ SPECS: tuple[IndexSpec, ...] = (
 )
 
 
-def _headings(text: str, pattern: re.Pattern[str]) -> tuple[dict[str, int], list[str]]:
-    """{heading key: 1-based line}. A repeated key is ambiguous, so it is an error."""
-    found: dict[str, int] = {}
-    problems: list[str] = []
+_FENCE = re.compile(r"^\s{0,3}(?:```|~~~)")
+
+
+def _prose_lines(text: str) -> list[tuple[int, str]]:
+    """(1-based line number, line) for every line outside a fenced code block."""
+    outside: list[tuple[int, str]] = []
+    fenced = False
     for number, line in enumerate(text.split("\n"), start=1):
+        if _FENCE.match(line):
+            fenced = not fenced
+            continue
+        if not fenced:
+            outside.append((number, line))
+    return outside
+
+
+def _headings(text: str, pattern: re.Pattern[str]) -> tuple[dict[str, int], list[str]]:
+    """{heading key: 1-based line}. A repeated key is ambiguous, so it resolves to nothing.
+
+    Dropping the key rather than keeping the first occurrence means a row pointing at it
+    reports "no heading" instead of being rewritten to a line nobody chose.
+    """
+    seen: dict[str, list[int]] = {}
+    for number, line in _prose_lines(text):
         match = pattern.match(line)
+        if match is not None:
+            seen.setdefault(match.group("key"), []).append(number)
+    found = {key: numbers[0] for key, numbers in seen.items() if len(numbers) == 1}
+    problems = [
+        f"duplicate heading {key!r} at lines {', '.join(str(n) for n in numbers)}"
+        for key, numbers in seen.items()
+        if len(numbers) > 1
+    ]
+    return found, problems
+
+
+def _index_block(spec: IndexSpec, live_text: str) -> list[tuple[int, re.Match[str]]]:
+    """The first unbroken run of index rows. Row-shaped lines after it are prose."""
+    block: list[tuple[int, re.Match[str]]] = []
+    for number, line in _prose_lines(live_text):
+        match = spec.row.match(line)
         if match is None:
             continue
-        key = match.group("key")
-        if key in found:
-            problems.append(f"duplicate heading {key!r} at lines {found[key]} and {number}")
-            continue
-        found[key] = number
-    return found, problems
+        if block and number != block[-1][0] + 1:
+            break
+        block.append((number, match))
+    return block
 
 
 def reindex(spec: IndexSpec, live_text: str, archive_text: str) -> Result:
@@ -103,12 +143,9 @@ def reindex(spec: IndexSpec, live_text: str, archive_text: str) -> Result:
     lines = live_text.split("\n")
     drifts: list[Drift] = []
     indexed: set[tuple[str, str]] = set()
-    index_ends_at = 0
-    for offset, line in enumerate(lines):
-        match = spec.row.match(line)
-        if match is None:
-            continue
-        index_ends_at = offset + 1
+    block = _index_block(spec, live_text)
+    index_ends_at = block[-1][0] if block else 0
+    for number, match in block:
         name, key = match.group("file"), match.group("key")
         indexed.add((name, key))
         real = positions[name].get(key)
@@ -118,7 +155,8 @@ def reindex(spec: IndexSpec, live_text: str, archive_text: str) -> Result:
         if int(match.group("num")) != real:
             start, end = match.span("num")
             drifts.append(Drift(file=name, key=key, old=int(match.group("num")), new=real))
-            lines[offset] = line[:start] + str(real) + line[end:]
+            line = lines[number - 1]
+            lines[number - 1] = line[:start] + str(real) + line[end:]
 
     # The index's own heading sits above the index; only content below it owes a row.
     for name in (spec.live, spec.archive):
