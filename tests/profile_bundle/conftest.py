@@ -16,11 +16,20 @@ import hashlib
 import shutil
 from dataclasses import dataclass
 from importlib import resources
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 
 import pytest
+from pydantic import TypeAdapter
 
+from boardwatch.profile_bundle.canonical import MappingBlobReader
+from boardwatch.profile_bundle.layout import DocumentKind, discover_source_files
+from boardwatch.profile_bundle.models.documents import BundleDocuments, DocumentModel
+from boardwatch.profile_bundle.models.manifests import BundleManifest as BundleManifestUnion
 from boardwatch.profile_bundle.paths import blob_path, blobs_dir, draft_root, drafts_dir
+from boardwatch.profile_bundle.schema import model_for_kind
+from boardwatch.profile_bundle.yaml_loader import load_yaml_bytes
+
+_MANIFEST_ADAPTER = TypeAdapter(BundleManifestUnion)
 
 EXAMPLE_PACKAGE = "boardwatch.profile_bundle"
 EXAMPLE_RELATIVE = "examples/comprehensive"
@@ -108,3 +117,24 @@ def synthetic_bundle(tmp_path: Path) -> SyntheticBundle:
     root.mkdir()
     drafts_dir(root).mkdir()
     return materialise(root)
+
+
+def parse_documents(root: Path, *, final_revision: bool = False) -> BundleDocuments:
+    """Parse one logical tree into `BundleDocuments`."""
+    found = discover_source_files(root, final_revision=final_revision)
+    by_path: dict[PurePosixPath, DocumentModel] = {}
+    manifest: BundleManifestUnion | None = None
+    for entry in found:
+        parsed = load_yaml_bytes(entry.abspath.read_bytes(), logical_path=entry.logical_path)
+        if entry.kind is DocumentKind.MANIFEST:
+            manifest = _MANIFEST_ADAPTER.validate_python(parsed)
+        else:
+            by_path[entry.logical_path] = model_for_kind(entry.kind).model_validate(parsed)
+    if manifest is None:
+        raise AssertionError(f"{root} has no manifest.yaml")
+    return BundleDocuments(manifest=manifest, by_path=by_path)
+
+
+def blob_reader() -> MappingBlobReader:
+    """A reader over the one blob the example names, for identity computations in tests."""
+    return MappingBlobReader({BLOB_SHA256: BLOB_BYTES})
