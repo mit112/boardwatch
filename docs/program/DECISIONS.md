@@ -1850,7 +1850,27 @@ a PDF, which is the thing 33 tests depend on. Compiling proves the deliverable t
 than the one that produced it, and it converts a broken install from 33 puzzling failures deep in the
 suite into one red step that names the cause.
 
-**What this does NOT prove.** Nothing here has run on a real GitHub runner. Asset layouts, checksums and
+**It has now run, and option (a) is validated on all three OSes.** Run `31421520836` on `cefd13e`:
+ubuntu ×3 and macOS ×3 fully green, and on Windows ×3 the install step **succeeded** — 3,922 tests
+passed there, including every tectonic and `pdfinfo` test. The 33 failures are gone everywhere. The
+research that preceded it earned its keep twice: the musl-over-gnu choice on Linux and the refusal of
+Chocolatey's executable-free `poppler` were both discovered by running things, not by reading asset names.
+
+**And clearing it revealed the next failure, which is the point of a gate that had been dark.** Windows
+failed one test — `test_the_real_program_indexes_are_current` — reporting all 114 index rows as having no
+heading. The index was fine. `read_text()` with no encoding uses the locale's, cp1252 on that runner, and
+decision headings are matched on `## D-113 — `; the em-dash decoded to mojibake so nothing matched. A
+decoder fault wearing a corrupt-index message. Fixed with explicit `encoding="utf-8"` on both reads and
+`newline="\n"` on the write, and pinned by running the tool under `-X warn_default_encoding -W
+error::EncodingWarning` — which catches any unencoded access added later, on any platform, rather than
+today's two call sites.
+
+This is the environment-shaped defect class exactly as predicted in D-112: **three days of a dark CI hid
+the tectonic gap, and the tectonic gap in turn hid this one.** A local gate cannot find either, because
+the local environment is the thing that differs. Two layers deep is worth noticing — clearing one
+environment failure does not mean the next signal is clean, it means the next one is finally visible.
+
+**What the first push did NOT prove.** Asset layouts, checksums and
 the Linux and macOS binaries were verified locally; the Windows commands are constructed from a verified
 zip layout, not from a green run. **The first push is the experiment**, and the release must not be
 re-tagged until `ci.yml` is green on all three OSes — re-tagging on the strength of a plausible-looking

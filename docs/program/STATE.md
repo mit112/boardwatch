@@ -56,9 +56,11 @@ P3 slice 5, both owner-gated and both wanting their own context window. Slice 3'
 **0.3.0 is cut and TAGGED (`v0.3.0` → `426f45c`) but the release build FAILED and nothing published.**
 33 tests died on the runner because no workflow installed `tectonic`/`poppler-utils`, a gap that predated
 that session by three days. Nothing is burned — PyPI still 404s for 0.3.0, so the version is free.
-**The cause is now fixed (D-114): both binaries are installed on all three runner OSes via a composite
-action.** That fix has never run on a real runner, so the next step is to push and read the result —
-and **not to re-tag until `ci.yml` is green on all three**. Cutting the release is also what surfaced that
+**The cause is fixed and PROVEN on all three runner OSes (D-114):** run `31421520836` shows ubuntu and
+macOS fully green and Windows passing 3,922 tests, so the 33 failures are gone everywhere. Clearing it
+exposed one further Windows-only defect — the program-index gate decoded its logs as cp1252 and reported
+all 114 rows as headless — which is fixed in the same range and pinned by an `EncodingWarning` test.
+**Confirm `ci.yml` is green on all three before re-tagging.** Cutting the release is also what surfaced that
 `README.md` and `docs/configuration.md` still described **Typst** and that `config show` reached only 4 of
 10 settings, `seen_ttl_days` among them (D-112).
 

@@ -855,7 +855,24 @@ Run on the fix itself, in fresh context, one code and one docs-only.
 D-031 set the precedent for declining one on an additive key. The convention was found by grepping the
 archive, not remembered.
 
-**Not yet measured: anything on a real runner.** What *was* executed locally, on arm64 macOS, is the whole
+### First real runner result — `ci.yml` run 31421520836 on `cefd13e`
+
+| Lane | Result |
+|---|---|
+| test × ubuntu-latest × py3.11/3.12/3.13 | **success** ×3 |
+| test × macos-latest × py3.11/3.12/3.13 | **success** ×3 |
+| test × windows-latest × py3.11/3.12/3.13 | **1 failed, 3,922 passed** ×3 — the install worked; the failure is unrelated |
+| gitleaks · perf · generalization | success |
+
+**33 → 0 tectonic/`pdfinfo` failures on all three OSes.** The single Windows failure is
+`test_the_real_program_indexes_are_current`: `read_text()` with no encoding decoded the logs as cp1252,
+mangling the em-dash the decision-heading regex matches, so all **114** index rows reported "no heading".
+Pre-existing, and previously unreachable — the suite died at tectonic before getting there. Fixed, plus a
+tenth mutation (the encoding argument removed) CAUGHT by a new `EncodingWarning`-as-error test.
+
+**Ten mutations this session, ten caught.**
+
+**Not yet measured on a runner:** What *was* executed locally, on arm64 macOS, is the whole
 macOS branch end to end — pinned URL, flat archive layout, `TECTONIC_CACHE_DIR` honoured (41 MB written
 there and nowhere else), warm-up compile, and `pdfinfo` reading `Pages: 1` back. The Linux binary was run
 in a container; asset checksums are verified for all five targets. **The Windows commands are constructed
