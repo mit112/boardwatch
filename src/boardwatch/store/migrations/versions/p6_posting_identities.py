@@ -34,10 +34,20 @@ def upgrade() -> None:
         sa.ForeignKeyConstraint(
             ["posting_id"], ["postings.id"], name=op.f("fk_posting_identities_posting_id_postings")
         ),
+        # Both names are the FULL convention-rendered form, matching the repo's other
+        # migrations (p0_applications.py, 8df3b3809bba_schema_v1.py). tables.py declares these
+        # constraints unnamed and lets metadata's naming_convention render them, so anything
+        # else here makes `test_migrations_match_metadata` see permanent drift between the
+        # migrated DB and the metadata.
         sa.UniqueConstraint(
-            "posting_id", "kind", "algorithm_version", name=op.f("uq_posting_identities_posting")
+            "posting_id",
+            "kind",
+            "algorithm_version",
+            name=op.f("uq_posting_identities_posting_id_kind_algorithm_version"),
         ),
-        sa.CheckConstraint(f"kind IN ({_KIND_LIST})", name="identity_kind_enum"),
+        sa.CheckConstraint(
+            f"kind IN ({_KIND_LIST})", name=op.f("ck_posting_identities_identity_kind_enum")
+        ),
     )
     op.create_index(
         "ix_posting_identities_key", "posting_identities", ["kind", "identity_key"], unique=False
