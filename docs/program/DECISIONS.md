@@ -110,40 +110,41 @@ and is a no-op when the index is already right. `make index-check` reports drift
 | D-074 | DECISIONS-ARCHIVE.md | 3009 | Final eligibility gate lane SHIPPED (persistent, agent-lane, fail-open); Gate P5 unchanged |
 | D-075 | DECISIONS-ARCHIVE.md | 3084 | Gate P2 reconciled: three individually-correct verdicts (may coincide); ≥3-field mechanism via fixtures |
 | D-076 | DECISIONS-ARCHIVE.md | 3153 | P2 item 4's final whole-branch review: what it caught, and four rulings it forced |
-| D-077 | DECISIONS.md | 150 | P6 Slice 1: the design is settled and the plan is written; no code exists yet |
-| D-078 | DECISIONS.md | 240 | P6 Slice 1: the plan's test fixtures are now real; eleven defects, all found by running code |
-| D-079 | DECISIONS.md | 329 | P6 Slice 1 annotates only; `postings.job_id` is not mutated |
-| D-080 | DECISIONS.md | 343 | `content_hash` alone may never suppress |
-| D-081 | DECISIONS.md | 357 | `exact_quad` is the sole suppressing kind, and its yield is stated honestly |
-| D-082 | DECISIONS.md | 375 | `cross_host` ships annotate-only, reversing an earlier draft |
-| D-083 | DECISIONS.md | 396 | No location evidence ⇒ no location-bearing identity, never a `"[]"` sentinel |
-| D-084 | DECISIONS.md | 411 | Three host classes, not two; matching is exact-or-dot-suffix |
-| D-085 | DECISIONS.md | 425 | Allowlist URL normalization, not a denylist |
-| D-086 | DECISIONS.md | 439 | Survivor election never consults score; `posting_id` is a load-bearing tiebreak |
-| D-087 | DECISIONS.md | 454 | Instrumentation is completeness-gated, not existence-gated |
-| D-088 | DECISIONS.md | 468 | `assisted` stays `None` in this slice |
-| D-089 | DECISIONS.md | 483 | Identities are upserted on every observation; a kind that stops being produced is deleted |
-| D-090 | DECISIONS.md | 500 | The ranker is completeness-gated for reproducibility, not safety |
-| D-091 | DECISIONS.md | 518 | The recount recomputes in Python, and claims staleness only |
-| D-092 | DECISIONS.md | 533 | Identities are backfilled by an explicit command, not by the migration |
-| D-093 | DECISIONS.md | 547 | Slice 1 does NOT meet Gate P6, and makes only one of its four clauses measurable |
-| D-094 | DECISIONS.md | 561 | P6 Slice 1 BUILT (unattended run): five more plan defects, three of them tests that could not fail |
-| D-095 | DECISIONS.md | 689 | P6 Slice 1 reviewed by three independent reviewers; fourteen findings fixed, two rejected |
-| D-096 | DECISIONS.md | 754 | The C++/C# fix folds punctuation into words; it does NOT add a raw-title comparison |
-| D-097 | DECISIONS.md | 798 | `_verify_quad` rejected nothing on the live corpus; "string-verified" is not precision evidence |
-| D-098 | DECISIONS.md | 827 | Suppression reports when it is OFF; wiring backfill into the pipeline is Slice 2 |
-| D-099 | DECISIONS.md | 863 | Gate batching stays allowed; the per-task fast-check set must include the schema guards |
-| D-100 | DECISIONS.md | 889 | P6 Slice 1 merged to `main`; Gate P6 clause 3 is MET, not merely measurable |
-| D-101 | DECISIONS.md | 921 | Gate P6 clause 4 is MET: 20/20 sampled suppressions are genuine duplicates |
-| D-102 | DECISIONS.md | 951 | D-072 (model-tier benchmark) is deferred indefinitely |
-| D-103 | DECISIONS.md | 973 | P6 Slice 2: the ledger is a current-state row per job, `seen` suppresses on a TTL, and the policy stamp never auto-reopens |
-| D-104 | DECISIONS.md | 1045 | Job regrouping: the survivor's job wins, and a tracked group is refused whole |
-| D-105 | DECISIONS.md | 1088 | Identity writes move into the scan path, closing D-098 — and D-098's cost argument did not apply |
-| D-106 | DECISIONS.md | 1119 | Two consequences the build forced: what earns a permanent `skipped`, and the zero-output guard |
-| D-107 | DECISIONS.md | 1145 | P6 Slice 2 BUILT and verified on real data; `cross_host` dereference deferred by measured absence |
-| D-108 | DECISIONS.md | 1194 | The decision log and the metrics log are archive-split; the reading protocol moves into the index |
-| D-109 | DECISIONS.md | 1253 | Index drift fails the gate, and the fixer lives in `tools/` |
-| D-110 | DECISIONS.md | 1331 | The Slice 2 review: only a caller that delivers a lead may consume the queue |
+| D-077 | DECISIONS.md | 151 | P6 Slice 1: the design is settled and the plan is written; no code exists yet |
+| D-078 | DECISIONS.md | 241 | P6 Slice 1: the plan's test fixtures are now real; eleven defects, all found by running code |
+| D-079 | DECISIONS.md | 330 | P6 Slice 1 annotates only; `postings.job_id` is not mutated |
+| D-080 | DECISIONS.md | 344 | `content_hash` alone may never suppress |
+| D-081 | DECISIONS.md | 358 | `exact_quad` is the sole suppressing kind, and its yield is stated honestly |
+| D-082 | DECISIONS.md | 376 | `cross_host` ships annotate-only, reversing an earlier draft |
+| D-083 | DECISIONS.md | 397 | No location evidence ⇒ no location-bearing identity, never a `"[]"` sentinel |
+| D-084 | DECISIONS.md | 412 | Three host classes, not two; matching is exact-or-dot-suffix |
+| D-085 | DECISIONS.md | 426 | Allowlist URL normalization, not a denylist |
+| D-086 | DECISIONS.md | 440 | Survivor election never consults score; `posting_id` is a load-bearing tiebreak |
+| D-087 | DECISIONS.md | 455 | Instrumentation is completeness-gated, not existence-gated |
+| D-088 | DECISIONS.md | 469 | `assisted` stays `None` in this slice |
+| D-089 | DECISIONS.md | 484 | Identities are upserted on every observation; a kind that stops being produced is deleted |
+| D-090 | DECISIONS.md | 501 | The ranker is completeness-gated for reproducibility, not safety |
+| D-091 | DECISIONS.md | 519 | The recount recomputes in Python, and claims staleness only |
+| D-092 | DECISIONS.md | 534 | Identities are backfilled by an explicit command, not by the migration |
+| D-093 | DECISIONS.md | 548 | Slice 1 does NOT meet Gate P6, and makes only one of its four clauses measurable |
+| D-094 | DECISIONS.md | 562 | P6 Slice 1 BUILT (unattended run): five more plan defects, three of them tests that could not fail |
+| D-095 | DECISIONS.md | 690 | P6 Slice 1 reviewed by three independent reviewers; fourteen findings fixed, two rejected |
+| D-096 | DECISIONS.md | 755 | The C++/C# fix folds punctuation into words; it does NOT add a raw-title comparison |
+| D-097 | DECISIONS.md | 799 | `_verify_quad` rejected nothing on the live corpus; "string-verified" is not precision evidence |
+| D-098 | DECISIONS.md | 828 | Suppression reports when it is OFF; wiring backfill into the pipeline is Slice 2 |
+| D-099 | DECISIONS.md | 864 | Gate batching stays allowed; the per-task fast-check set must include the schema guards |
+| D-100 | DECISIONS.md | 890 | P6 Slice 1 merged to `main`; Gate P6 clause 3 is MET, not merely measurable |
+| D-101 | DECISIONS.md | 922 | Gate P6 clause 4 is MET: 20/20 sampled suppressions are genuine duplicates |
+| D-102 | DECISIONS.md | 952 | D-072 (model-tier benchmark) is deferred indefinitely |
+| D-103 | DECISIONS.md | 974 | P6 Slice 2: the ledger is a current-state row per job, `seen` suppresses on a TTL, and the policy stamp never auto-reopens |
+| D-104 | DECISIONS.md | 1046 | Job regrouping: the survivor's job wins, and a tracked group is refused whole |
+| D-105 | DECISIONS.md | 1089 | Identity writes move into the scan path, closing D-098 — and D-098's cost argument did not apply |
+| D-106 | DECISIONS.md | 1120 | Two consequences the build forced: what earns a permanent `skipped`, and the zero-output guard |
+| D-107 | DECISIONS.md | 1146 | P6 Slice 2 BUILT and verified on real data; `cross_host` dereference deferred by measured absence |
+| D-108 | DECISIONS.md | 1195 | The decision log and the metrics log are archive-split; the reading protocol moves into the index |
+| D-109 | DECISIONS.md | 1254 | Index drift fails the gate, and the fixer lives in `tools/` |
+| D-110 | DECISIONS.md | 1332 | The Slice 2 review: only a caller that delivers a lead may consume the queue |
+| D-111 | DECISIONS.md | 1449 | P6 Slice 3: applied-state suppression, and liveness sized to what the corpus actually is |
 
 ---
 
@@ -1442,3 +1443,125 @@ already recorded — and re-applied them. **Commit before mutating; the note is 
 
 **Not resolved here, still Mit's:** the funnel-write swallow, and whether any family beyond `work_auth`
 defaults to `blocker`. Untouched deliberately.
+
+---
+
+## D-111 — P6 Slice 3: applied-state suppression, and liveness sized to what the corpus actually is
+
+*2026-08-10. `PROGRAM.md` §3.P6 items 5 and 6, the last two items of P6's build. Both were measured
+against the live store before being designed, and one of the two shipped smaller than the spec because
+the measurement falsified the spec's premise.*
+
+**Item 5 — applied-state suppression — is a mechanism with no live population, and that is recorded
+rather than hidden.** `applications` and `application_events` are both 0 rows; `track` has never been
+used. So the tests are the evidence for this item, and they are written against the boundary that
+decides it rather than the happy path.
+
+The ranker gains a `hidden_applied` bucket, read straight from `applications` and keyed on the canonical
+job, exactly as `protected_job_ids` already reads it for regrouping. **Not mirrored into a ledger
+disposition:** an application is the operator's own record, taken outside the program, and giving one
+fact two homes creates a pair that can disagree — with only one of them carrying a drain the operator
+knows about.
+
+**The suppressing set is `APPLIED_STATUSES`, reused rather than re-declared**, and moved to
+`store/applications.py` beside `ApplicationStatus` so the catalog has one home. The two callers ask the
+same question: the funnel counts these as conversions, the ranker suppresses them, and a status that
+should not count as a conversion is exactly one that should not suppress a lead. `interested` therefore
+does not suppress — it is `track add`'s default, so suppressing it would mean *tracking a lead hid it* —
+and neither does `withdrawn`, which is what makes `track status <id> withdrawn` the drain, on both sides
+of the gate as the standing invariant requires.
+
+**Applied is checked BEFORE the ledger.** A job that is both applied-to and `built` is counted as
+applied. Not cosmetic: `ledger reopen --job` releases the ledger row and nothing releases the
+application, so the funnel reports the count that survives the drain a reader is deciding whether to run.
+
+**Item 6 — liveness — ships the re-fetch and NOT the closed-phrase catalog, because the corpus
+falsified it.** PROGRAM item 6 names "a saved body containing a closed phrase" as the AUTHORITATIVE
+signal. That premise is inherited from job-apps, which scraped HTML pages. boardwatch reads structured
+ATS APIs, and every provider builds `body_text` from the payload's description field alone (greenhouse
+`content`, ashby `descriptionHtml`, workable/workday `description`/`jobDescription`, lever's assembled
+sections, smartrecruiters `_body_text`). Page chrome — the "no longer accepting applications" banner —
+is **structurally incapable** of reaching that column.
+
+Corroborated by measurement, not left as an argument. A nine-phrase candidate catalog run against the
+live store matched **11 of 23,455** open postings and **all 11 were false positives**: two Workday
+boilerplate conditionals ("If the job posting is no longer available then all roles have been filled"),
+one location restriction ("we are not accepting applications of candidates outside of New York"), and
+eight job descriptions for roles that process purchase requisitions. A high-precision catalog would match
+**0** rows. So the choice was between shipping a catalog that suppresses 11 live leads to catch none, and
+shipping one with no population at all; both fail CLAUDE.md, and the reasoning plus the re-derivation
+query live in `core/liveness.py`'s docstring where the next session will find them.
+
+The earlier "3 open postings contain a closed phrase" figure is **superseded**, not merely
+unreproducible: it was recorded without its catalog, and the number that matters was never its size but
+its precision.
+
+**Where the authoritative signal genuinely exists, it already runs.** `providers/smartrecruiters.py`
+drops a posting whose detail payload says `active is False`. That is what "authoritative" looks like on
+an API corpus, and it needed nothing built.
+
+**What ships: a re-fetch at the lead list, 404/410 only.** `core/liveness.py` holds the pure decision and
+its two closed catalogs; `pipeline/liveness.py` probes through the existing politeness `Fetcher`
+(identifying UA, per-host pacing, host locks) with `retry_attempts=1`, because a retry buys nothing when
+the unknown answer is already safe. The stage sits between the ranker and the tailor loop — the last
+point at which a posting is still only a candidate, and the point Gate P6's clause is about.
+
+**Fail-open is the design, and 403 is why.** A 12-URL probe on 2026-08-10: `pinterestcareers.com`
+answered **403** to an unfamiliar user agent for a perfectly live posting, so reading 403 as gone would
+silently blacklist whole employers. Only an explicit gone-status withholds; timeout, 403, 5xx, redirect
+and a NULL URL are all served. The cost of a dead lead is one wasted résumé; the cost of a withheld live
+one is a job nobody can know they missed.
+
+**Recall is low and that is stated rather than discovered.** Of 8 already-closed postings, only **1**
+answered 404 — Workday and Ashby serve 200 for a requisition dropped from the listing. The probe is a
+supplement to the scanner's board-absence rule (`CLOSE_AFTER_MISSES = 2`), never a replacement: **0**
+open postings are stale beyond even 7 days, which is direct evidence that rule already works. What the
+probe covers is the window between a requisition closing and the next complete scan — the 216 open
+postings sitting at `consecutive_missing = 1`. The same probe did find a genuinely dead OPEN posting
+(`jobs.lever.co/palantir/…`), which is the case the window is about.
+
+**Liveness is never cached, and "never" includes `postings.status`.** A `dead` result withholds the lead
+from that run only. Writing the status would let one 404 from a flaky CDN retire a live requisition
+permanently — and irreversibly, because a closed posting stops being ranked and so stops being probed.
+That is a quarantine with no drain, which CLAUDE.md forbids outright. The scanner reopens on its own; the
+probe must not compete with it.
+
+**Three seams handled here rather than found by the next review.** A withheld posting is (1) dropped from
+`surfaced_job_ids`, because it was delivered to nobody and must not consume the queue — the D-110 rule
+applied to a new filter; (2) subtracted before the "every lead failed to tailor" fatal, which would
+otherwise report a dead board as a broken résumé path; and (3) removed from `_cohort_guard`'s cohort
+rather than added to its accounted set, because it is a **third** terminal state and folding it into
+either "lead" or "render failure" makes one of those counts a lie. `_zero_output_guard` gains a
+`dead_leads` clause for the same reason it gained `hidden_handled` (D-105): liveness working perfectly
+must not read as the silent empty day it exists to prevent. The widening stays narrow — a run with
+nothing handled and nothing dead still cannot explain itself, and still fires.
+
+**The prober is injected, and `None` means UNMEASURED.** The funnel emits nulls and
+`instrumented: false`, never `0 dead` — the D-022/D-023 rule. `run_pipeline` therefore does no network
+I/O of its own and `run_cmd` decides; `run --no-check-liveness` is the operator's opt-out. `unknown` is
+reported beside `dead` rather than folded into `alive`, because a run whose probe learned nothing looks
+identical to a healthy one if you read only `dead`. Artifact version **4**.
+
+**Alternative rejected: probing in `rank_open_postings`.** It would put network I/O in a path that is
+pure DB by design and is called by `top` and by `eligibility gate request`, neither of which delivers a
+lead — the same category error D-110 corrected for the `seen` write. It would also probe the whole
+shortlist on every interactive `top`.
+
+**Alternative rejected: a new `Settings` field for the probe.** A settings field would have to be
+classified in `reports/manifest.py` and pinned in `snapshots.py`, and if classified config-relevant it
+would move `config_hash` and stale every permanent disposition. Injecting the prober costs none of that,
+and the CLI flag covers the only case an operator has.
+
+**Mutation-checked, not assumed.** Widening `GONE_STATUSES` to include 403, dropping the gone-status
+branch from the `FetchFailure` path (which is the path that actually runs, since `Fetcher` raises for
+every non-200), leaving a withheld lead in `surfaced_job_ids`, and writing `status='closed'` on a dead
+probe each turn the corresponding test red. On the item 5 side: disabling the lookup, widening
+`APPLIED_STATUSES` to include `interested`/`withdrawn`, moving the applied check after the ledger, and
+dropping the funnel `Drop` all turn a test red.
+
+**Gate P6 is unchanged by this entry on its own.** The "0 dead postings reaching the lead list" clause is
+now *buildable* and *measurable*, which it was not; meeting it needs a real run whose leads are probed.
+Duplicate leakage still needs its 7 days.
+
+**Not resolved here, still Mit's:** the funnel-write swallow, whether any family beyond `work_auth`
+defaults to `blocker`, and whether docs-only commits owe a full `make check`.

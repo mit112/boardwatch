@@ -8,6 +8,27 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- **Applied-state suppression** — a job you have already applied to is never served as a lead again
+  (P6 item 5, D-111). The ranker reads `applications` directly, keyed on the canonical job so the
+  suppression survives the posting being revised, closed or regrouped. The suppressing set is
+  `APPLIED_STATUSES` (`applied`, `interviewing`, `offer`, `rejected`), reused from the funnel's conversion
+  count rather than re-declared: `interested` does not suppress, because it is `track add`'s default and
+  suppressing it would mean tracking a lead hid it. `boardwatch top --include-applied` is the drain, and
+  `track status <id> withdrawn` releases the job at the source. Reported as `hidden_applied` in the funnel
+  and in the run summary line. **No live population yet** — `applications` is 0 rows because `track` has
+  never been used, so this ships as a mechanism with tests as its evidence.
+
+- **Liveness at the lead list** — each shortlisted posting is re-fetched immediately before its résumé is
+  built, and one answering **404/410** is withheld from that run (P6 item 6, D-111). Everything else —
+  timeout, 403, 5xx, redirect, missing URL — is served: the cost of a dead lead is one wasted résumé, and
+  the cost of withholding a live one is a job nobody can know they missed. Measured 2026-08-10, a live
+  Pinterest posting answers 403 to an unfamiliar user agent, which is why that is not a gone-status.
+  **Nothing is cached and nothing is written** — a withheld posting stays `open`, because
+  `postings.status` belongs to the scanner's board-absence rule and one 404 from a flaky CDN must not
+  retire a real requisition permanently. `boardwatch run --no-check-liveness` opts out, and an unprobed
+  run reports liveness as *unmeasured* rather than as zero dead. The funnel artifact gains a top-level
+  `liveness` block (**artifact version 4**).
+
 - **`boardwatch top --no-record`** — rank without marking anything `seen`, so the call does not advance the
   queue (D-110). The write-side counterpart to `--include-handled`: needed by any script that ranks once to
   display and again to act, and by anyone taking a second look at a shortlist they just saw.
@@ -53,6 +74,14 @@ All notable changes to this project are documented here. The format follows
   automatically: auto-expiry on mismatch would rebuild the whole shortlist on any settings tweak.
 
 ### Fixed
+
+- **A day whose whole shortlist turned out to be dead is reported as an honest empty day, not a broken
+  résumé path** (D-111). Liveness withholding every lead would otherwise have tripped both the
+  "every lead failed to tailor" fatal, which counted a withheld posting as a render failure, and the
+  zero-output guard, which could not explain a run that judged new eligible postings and produced nothing.
+  A withheld posting is also removed from the cohort guard's set rather than added to its accounted set —
+  it is a third terminal state, neither a lead nor a render failure — and is dropped from
+  `surfaced_job_ids`, so a lead delivered to nobody cannot consume the `seen` queue.
 
 - **Only a caller that DELIVERS a lead consumes the queue** (D-110, from the Slice 2 review). The `seen`
   write had been applied to every `rank_open_postings` call, and three of the four production callers deliver

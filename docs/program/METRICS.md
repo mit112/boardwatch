@@ -54,14 +54,15 @@ reports drift without writing, and `make check` depends on it (D-109).
 | METRICS-ARCHIVE.md | 1047 | Session — 2026-08-08 (P5 run #2 — disjunctive fix, Gate P5 MET at 100%; D-073) |
 | METRICS-ARCHIVE.md | 1084 | Session — 2026-08-08 (D-071b final eligibility gate build — no answer-key number changes) |
 | METRICS-ARCHIVE.md | 1120 | Gate P2 — 2026-08-08 · field-tier mechanism (P2 item 4, D-075). **MET AS RECONCILED** |
-| METRICS.md | 68 | Run log |
-| METRICS.md | 96 | Acceptance run |
-| METRICS.md | 107 | Session — 2026-08-09/10 · P6 Slice 1 design + plan. **No build, no gate movement.** |
-| METRICS.md | 133 | Session — 2026-08-10 · P6 Slice 1 BUILT (unattended run). Branch `p6-slice1`, not merged. |
-| METRICS.md | 343 | 2026-08-10 — P6 Slice 1 on the LIVE store (first real backfill) + Gate P6 clause 4 |
-| METRICS.md | 382 | Session 2026-08-10 (later) — P6 Slice 2: the durable decision ledger, its drain, and job regrouping |
-| METRICS.md | 475 | Session — 2026-08-10 (later) · D-109, the program-index gate. No phase gate moved. |
-| METRICS.md | 516 | Session — 2026-08-10 (later still) · The P6 Slice 2 review (D-110). No phase gate moved. |
+| METRICS.md | 69 | Run log |
+| METRICS.md | 97 | Acceptance run |
+| METRICS.md | 108 | Session — 2026-08-09/10 · P6 Slice 1 design + plan. **No build, no gate movement.** |
+| METRICS.md | 134 | Session — 2026-08-10 · P6 Slice 1 BUILT (unattended run). Branch `p6-slice1`, not merged. |
+| METRICS.md | 344 | 2026-08-10 — P6 Slice 1 on the LIVE store (first real backfill) + Gate P6 clause 4 |
+| METRICS.md | 383 | Session 2026-08-10 (later) — P6 Slice 2: the durable decision ledger, its drain, and job regrouping |
+| METRICS.md | 476 | Session — 2026-08-10 (later) · D-109, the program-index gate. No phase gate moved. |
+| METRICS.md | 517 | Session — 2026-08-10 (later still) · The P6 Slice 2 review (D-110). No phase gate moved. |
+| METRICS.md | 607 | Session — 2026-08-10 (later still ×2) · P6 Slice 3, items 5 and 6 (D-111). Gate P6 unchanged: still 2 of 4. |
 
 ---
 
@@ -600,3 +601,81 @@ SHA-1 `adcca125…`, identical D-number sets, nothing lost or duplicated.
 `max_tokens` as `reasoning_tokens` twice — 8,000 then 32,000 — emitting an empty `content` both times.
 Recorded so the next session does not spend the same time on them; per Mit, hand him a review prompt to run
 manually instead.
+
+---
+
+## Session — 2026-08-10 (later still ×2) · P6 Slice 3, items 5 and 6 (D-111). Gate P6 unchanged: still 2 of 4.
+
+**Gate.** `make check` in a detached worktree pinned to the slice commit. Baseline on `5f0150d` before any
+edit: **exit 0, 3845 passed, 95.06%** — so main was green and anything red afterwards was this session's.
+
+### Applied-state suppression (item 5) — the population, measured read-only
+
+| Table | Rows | Consequence |
+|---|---|---|
+| `applications` | **0** | No live population. The tests are the evidence for this item, not a run |
+| `application_events` | **0** | `track` has never been used, on any store |
+
+Suppressing set = `APPLIED_STATUSES` = `applied`, `interviewing`, `offer`, `rejected`. `interested` and
+`withdrawn` deliberately outside it; `withdrawn` is the drain.
+
+### Liveness (item 6) — every number below is re-derivable from the live store read-only
+
+| Measure | Value | What it means |
+|---|---|---|
+| `postings` open / closed | **23,455** / 618 | |
+| Open postings stale > 30 d | **0** | And > 7 d is also **0**. The scanner's `CLOSE_AFTER_MISSES = 2` already works |
+| Oldest open `last_seen_at` | 5 days | Max `last_seen_at` corpus-wide is `2026-08-07 04:17` |
+| Open at `consecutive_missing = 1` | **216** | The real population for this check: seen, then absent once |
+| Open postings with a NULL/blank URL | **0** | The nullable-URL path is latent, not unreachable |
+| Open postings with an empty body | 17 | |
+
+**The closed-phrase catalog, measured and rejected.** Nine candidate phrases against `body_text` of open
+postings:
+
+| Phrase | Matches | Genuine |
+|---|---|---|
+| `no longer available` | 2 | **0** — Workday boilerplate: *"If the job posting is no longer available then all roles have been filled"* |
+| `requisition … closed` | 8 | **0** — eight JDs for roles that process purchase requisitions |
+| `not accepting applications` | 1 | **0** — *"not accepting applications of candidates outside of New York"*, a location restriction |
+| `no longer accepting` · `has been filled` · `position is closed` · `applications are closed` · `has expired` · `no longer open` | 0 each | — |
+| **Total** | **11 of 23,455** | **0** |
+
+Precision **0/11**. A high-precision catalog matches **0** rows. This supersedes the earlier
+"3 open postings contain a closed phrase" figure, which was recorded without its catalog — and the number
+that mattered was never its size but its precision. Structural reason in D-111: every provider builds
+`body_text` from the payload's description field alone, so page chrome cannot reach that column.
+
+**The 404 signal, probed live (12 URLs, 2026-08-10, ~2 s apart).** Small and reported as such.
+
+| Cohort | n | 404 | 200 | 403 |
+|---|---|---|---|---|
+| Already-closed postings | 8 | **1** | 7 | 0 |
+| Open, `consecutive_missing = 1` | 4 | **1** | 2 | 1 |
+
+Two findings, both load-bearing. **Recall is low** — 7 of 8 known-dead Workday/Ashby URLs still answer 200,
+so the probe supplements the scanner and never replaces it. **Fail-open is not hypothetical** —
+`pinterestcareers.com` answered **403** for a live posting, so reading 403 as gone would silently blacklist
+whole employers. The probe did find a genuinely dead **open** posting (`jobs.lever.co/palantir/…`,
+`consecutive_missing = 1`), which is exactly the between-scans window it exists for.
+
+### Mutation checks — 8, all caught by the intended test
+
+| Mutation | Caught by |
+|---|---|
+| `applied_job_ids` returns `{}` | 9 of 12 applied-suppression tests |
+| `APPLIED_STATUSES` widened with `interested`/`withdrawn` | the two boundary tests + the drain test |
+| applied checked *after* the ledger | `…outranks_a_live_ledger_disposition` |
+| funnel `Drop` for `hidden_applied` deleted | the shortlist-reconciliation test |
+| `GONE_STATUSES` widened with 403 | 3 core tests incl. the catalog pin |
+| gone-branch dropped from the `FetchFailure` path (**the path that actually runs**) | `…arriving_as_a_FAILURE_still_withholds` |
+| withheld lead left in `surfaced_job_ids` | `…is_not_recorded_seen` |
+| dead probe writes `status='closed'` | `…is_not_closed_in_the_store` |
+
+### Standing corrections
+
+- The live store is **still not regrouped**: `alembic_version` = `p6_posting_identities`, no
+  `job_dispositions` table, `postings` = 24,073 and `count(distinct job_id)` = **24,073**, exactly 1:1.
+  Re-verified read-only this session. A regrouped store would read 23,887.
+- `PROGRAM.md` §3.P6 item 5 cites "§6, correction 3", but §6 is now *Program machinery* and carries no
+  numbered corrections. The cross-reference is stale; the item text stands on its own.

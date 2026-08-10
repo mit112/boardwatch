@@ -8,62 +8,66 @@
 > `DECISIONS.md` and `METRICS.md` each carry an **index spanning themselves and a closed archive**
 > (`*-ARCHIVE.md`, D-108). Read the index, then the one range you need — never the whole file.
 
-**This file states only what is true now.** It carries no commit sha and no commit count on purpose — both
-go stale inside a single session, and a cold session following the ritual hits the disagreement on its first
-check (D-017). `git log --oneline -1` is the authority.
-
-**Rewrite this file, never prepend to it.** It reached 1,386 lines by stacking superseded headers and
-per-session retrospectives — history, which belongs in `DECISIONS.md` / `CHANGELOG.md` / `METRICS.md`. Git
-has every previous version.
+**This file states only what is true now**, and carries no commit sha or commit count on purpose — both go
+stale inside a single session (D-017). `git log --oneline -1` is the authority. **Rewrite it, never prepend
+to it**: it reached 1,386 lines by stacking superseded headers and per-session retrospectives, which belong
+in `DECISIONS.md` / `CHANGELOG.md` / `METRICS.md`. Keep it near 170 lines. Git has every previous version.
 
 ---
 
 ## Current standing
 
-**P6 Slice 2 is BUILT, REVIEWED and PUSHED** — the durable decision ledger, its drain, and job regrouping
-(`PROGRAM.md` §3.P6 item 4). Decisions **D-103 … D-107**; the review is **D-110**. Schema head is
-**`p6_job_dispositions`**.
+**P6's BUILD IS COMPLETE — Slice 3 shipped, so items 1–6 all exist.** Slice 3 is applied-state suppression
+(item 5) and liveness (item 6), recorded as **D-111**. Slices 1 and 2 were built, reviewed and pushed before
+it (D-095, D-103 … D-107, review **D-110**). Schema head is **`p6_job_dispositions`** and Slice 3 adds no
+migration.
 
-**The owed review is DONE, its findings are fixed, and everything is PUSHED** — `main` is at `origin/main`
-(`git rev-list --count origin/main..main` is the authority and should read 0). Four reviewers over
-`origin/main..main`, covering Slice 2, D-108 and D-109: **two BLOCKERs and five MAJORs, all real, all fixed and
-re-gated.** **Read D-110 before touching the ledger** — it holds the findings, the two deliberately left
-unfixed, and why. The push reported `Bypassed rule violations: 6 of 6 required status checks are expected`,
-which is the known runner-acquisition failure, not a repo problem.
+**Read D-110 before touching the ledger and D-111 before touching liveness.** D-110 holds the Slice 2
+review's findings, the two deliberately left unfixed, and why. D-111 holds Slice 3's design and — more
+importantly — the measurements that shaped it.
 
-**Still Mit's call: cutting 0.3.0.** Its recommended precondition, the review landing, is now met.
+**Slice 3, in one paragraph.** The ranker gained a `hidden_applied` bucket read straight from
+`applications` (not mirrored into a ledger disposition — one fact, one home), drained by
+`top --include-applied` and released at the source by `track status <id> withdrawn`. Liveness re-fetches
+each shortlisted posting immediately before its résumé is built and withholds one answering **404/410**;
+everything else is served. The funnel artifact is now **version 4** (top-level `liveness` block).
 
-**Next action: P6 Slice 3** — applied-state suppression (`PROGRAM.md` §3.P6 item 5) and liveness (item 6).
-Liveness is what the remaining "0 dead postings" gate clause needs. Two things to know before planning it:
-item 5 has **no live population** (`applications` = 0 rows), and item 6's is tiny — 0 open postings are stale
-beyond 30 days, and a "3 open postings contain a closed phrase" figure is *indicative only*: no closed-phrase
-catalog exists in the repo, so it cannot be re-derived. Size the slice to that reality rather than to the
-spec's ambition.
+**The closed-phrase catalog was NOT shipped, deliberately, and this is not an omission to correct.**
+`PROGRAM.md` item 6 calls it the authoritative signal, inheriting that from job-apps, which scraped HTML.
+Every boardwatch provider builds `body_text` from the payload's description field alone, so page chrome
+cannot reach that column. Measured: a nine-phrase catalog matched **11 of 23,455** open postings and **all
+11 were false positives**. A high-precision catalog matches **0**. The reasoning and the re-derivation
+query are in `core/liveness.py`'s docstring; the numbers are in `METRICS.md`. The older "3 open postings
+contain a closed phrase" figure is **superseded** — it was recorded without its catalog.
 
-**One review fix does not ship.** `bwd` lives in `.agent/bin/bw-daily`, which is gitignored, so its
+**Slice 3 is NOT yet reviewed in fresh context.** That is the next action. It is gate-green and
+mutation-checked (8 mutations, all caught), but the Slice 2 review found two BLOCKERs and five MAJORs in
+code that felt finished, so treat this the same way.
+
+**Still Mit's call: cutting 0.3.0.** Its recommended precondition, the Slice 2 review, was met before this
+session.
+
+**One earlier review fix does not ship.** `bwd` lives in `.agent/bin/bw-daily`, which is gitignored, so its
 `top --no-record` fix is local to this machine. The *defect* was in shipped behaviour and the shipped fix is
 the `--no-record` flag itself; a fresh clone's `bwd` will need the same one-line edit.
 
 **The live store has NOT had Slice 2 applied to it.** It is migrated and backfilled for Slice 1 (head
-`p6_posting_identities`, 117,254 identity rows at `p6.2`, `identities verify` exit 0, 147 groups / 186
-surplus rows / 0.79%). Slice 2 was verified on an **isolated copy**, which is why the live figures below are
-Slice 1's. Running `boardwatch identities regroup` against the live store is a deliberate, still-unrun step:
-it moves 186 postings onto 147 canonical jobs. **Mit declined it on 2026-08-10** — not blocked, just not now.
+`p6_posting_identities`, 117,254 identity rows, `identities verify` exit 0, 147 groups / 186 surplus rows /
+0.79%). Slice 2 was verified on an **isolated copy**. Running `boardwatch identities regroup` against the
+live store is a deliberate, still-unrun step that would move 186 postings onto 147 canonical jobs;
+**Mit declined it on 2026-08-10** — not blocked, just not now. It would need the `p6_job_dispositions`
+migration first, or there are no dispositions to carry.
 
-**Re-verified read-only 2026-08-10:** head `p6_posting_identities`, **no `job_dispositions` table**,
-`job_grouping_events` **0 rows**, `postings` 24,073 and `count(distinct job_id)` **24,073 — still exactly
-1:1**. That last number is the cheap proof, since a regrouped store would read **23,887**. Two things get
-misremembered as "we already did the live store": the Slice 1 backfill (which genuinely did write those
-117,254 rows here) and the regroup's **idempotence** check, which ran on the copy. The live store also needs
-the `p6_job_dispositions` migration before a regroup there could carry any decision. The 769 MB
-`boardwatch.db.pre-p6-backup-20260810` is still beside it.
+**Re-verified read-only 2026-08-10 (third time):** head `p6_posting_identities`, **no `job_dispositions`
+table**, `postings` 24,073 and `count(distinct job_id)` **24,073 — still exactly 1:1**. That is the cheap
+proof, since a regrouped store would read **23,887**. Two things get misremembered as "we already did the
+live store": the Slice 1 backfill (which genuinely did write those rows here) and the regroup's
+**idempotence** check, which ran on the copy. The 769 MB backup is still beside it; disk is fine.
 
-**What was NOT demonstrated on real data:** the ledger's own end-to-end behaviour. A `boardwatch top 5`
-against the 23,455-posting copy ran past 20 minutes without finishing and was stopped — it pays for
-`run_preflight` + `run_eligibility` over the whole corpus, the same reason Slice 1's live top-20 smoke never
-completed either. The queue-advance behaviour is proven by
-`tests/pipeline/test_ledger_advances_the_queue.py` (mutation-checked) and the *regrouping* half was verified
-on the real copy; the display path at corpus scale was not. Re-run it if you want that exercised.
+**What has NOT been demonstrated on real data:** the ledger's end-to-end behaviour and the liveness probe
+against real leads. A `boardwatch top 5` against the 23,455-posting copy ran past 20 minutes without
+finishing and was stopped — it pays for `run_preflight` + `run_eligibility` over the whole corpus. Both are
+covered by mutation-checked tests; neither has been exercised at corpus scale.
 
 ---
 
@@ -77,7 +81,7 @@ on the real copy; the display path at corpus scale was not. Re-run it if you wan
 | P3 Unattended one command | **COMPLETE** for everything needing neither Mit's domain input nor Docker | **NOT MET** — 7 consecutive unattended runs, plus the cross-OS two-writer test. Slice 5 remains |
 | P4 Craft gate | **COMPLETE** — items 1–7 | **NOT MET** — the blind craft review is the owner's, and has not been run |
 | P5 Eligibility decides | **COMPLETE** — D-073 + D-074 | **MET** — INELIGIBLE precision 16/16, 0 span violations, `eligibility score` exits 0 |
-| P6 Liveness + dedup | **Slices 1 and 2 both merged, reviewed and pushed** (Slice 2's review is D-110). Slice 3 (items 5, 6) not started | **NOT MET — 2 of 4 clauses met**, below |
+| P6 Liveness + dedup | **BUILD COMPLETE — all six items.** Slices 1 and 2 merged, reviewed and pushed (review D-110); Slice 3 (items 5, 6) built and gate-green, **review still owed** (D-111) | **NOT MET — 2 of 4 clauses met**, below |
 | 14-day acceptance | not started | — |
 | P7 Breadth | not started | — |
 
@@ -86,7 +90,7 @@ on the real copy; the display path at corpus scale was not. Re-run it if you wan
 | Clause | Standing |
 |---|---|
 | Duplicate leakage measured over 7 days, ≤ 5% | **NOT met — now genuinely measurable.** Slice 1 made `unique` a number; Slice 2 (D-105) stopped a single newly-discovered posting from silently disabling suppression, without which it was `None` on essentially every real run. Needs 7 days of runs — and note D-110 changed which callers advance the queue, so a 7-day window started before it is not comparable with one started after |
-| **0** dead postings reaching the lead list | **NOT met, not buildable yet** — needs liveness, which is Slice 3 |
+| **0** dead postings reaching the lead list | **NOT met — but now buildable and measurable**, which it was not before Slice 3 (D-111). The check exists and runs on every `boardwatch run`; meeting the clause needs a real run whose leads are probed. Note the probe's recall is low by design — 7 of 8 known-dead Workday/Ashby URLs still answer 200 — so it supplements the scanner's `CLOSE_AFTER_MISSES = 2` rule and never replaces it |
 | A deliberately-injected hash-collision test | **MET** (D-100) — `test_string_verify_blocks_suppression_when_bodies_diverge` forges `identity_key` equality over divergent bodies and the group is refused. A test, not a measurement, so met outright |
 | Audit of 20 sampled suppressions | **MET** (D-101) — 20/20 genuine, zero false positives, 13 employers, sampled deterministically so it can be re-run. Slice 2 adds **no new precision evidence** |
 
@@ -94,16 +98,17 @@ on the real copy; the display path at corpus scale was not. Re-run it if you wan
 
 ## Open questions — Mit's, not to be resolved by fiat
 
-**1. Should `pipeline/runner.py` keep swallowing a funnel-write failure into a printed warning?** Raised by
-D-076 and deliberately left open. It once turned a renderer `TypeError` into a silent half-written artifact
-pair — `funnel-<id>.json` written, `.md` missing, run still exit 0. The crash is fixed; the swallow will hide
-the next renderer bug identically. It is also defensible as a fail-open — do not kill a finished run over a
-report — and CLAUDE.md says the fail-safe direction is chosen per gate and these legitimately differ.
-Options: leave it; make it fatal; keep it non-fatal but surface it in the run's `errors` so `verify`/`doctor`
-can see the artifact is incomplete.
+**1. Should `pipeline/runner.py` keep swallowing a funnel-write failure into a printed warning?** (D-076.)
+It once turned a renderer `TypeError` into a silent half-written artifact pair — `.json` written, `.md`
+missing, run still exit 0. The crash is fixed; the swallow will hide the next renderer bug identically. Also
+defensible as a fail-open. Options: leave it; make it fatal; keep it non-fatal but surface it in the run's
+`errors` so `verify`/`doctor` can see the artifact is incomplete.
 
 **2. Should any family other than `work_auth` default to `blocker` severity** (e.g. `clearance`)? Owner-gated
 since D-035, unchanged by everything since.
+
+**3. Do docs-only commits owe a full `make check`?** D-014 says yes; practice has been
+`make generalization && make index-check`. D-109 chose a design correct either way rather than resolving it.
 
 ---
 
@@ -113,7 +118,7 @@ since D-035, unchanged by everything since.
 |---|---|---|
 | **Three `resume.yaml` bullets exceed the 220-char layout gate** | Forces an untailored-master degrade on every posting. The file also lacks Knowledge Forge, has stale `skill_groups`, and an empty extracurricular block. **Mit pins `resume_max_pages=1` — do not advise setting it to 2.** | Mit (content) |
 | **P2 item 8 — the onboarding gatherer** | The thing that would make the field tier fire for anyone. D-054 forbids us authoring non-tech field content, so it must be gathered per user. Needs its own brainstorm | owner-gated |
-| **`CHANGELOG.md`'s `[Unreleased]` has never been cut to a release** | It carries 14 duplicated subsections (`Added` ×5, `Fixed` ×4, `Changed` ×5) because sessions appended a fresh triple instead of merging; D-110's own entries went into the existing subsections rather than adding a 15th. Exact line counts are deliberately not recorded here — they went stale inside one session last time. Last release v0.2.0 (2026-08-04); `pyproject.toml` still says `0.2.0`. **The Slice 2 review has now landed (D-110), so the recommended precondition for cutting 0.3.0 is met** — merge the duplicate subsections in the same pass | Mit (release) |
+| **`CHANGELOG.md`'s `[Unreleased]` has never been cut to a release** | It carries 14 duplicated subsections (`Added` ×5, `Fixed` ×4, `Changed` ×5) because sessions appended a fresh triple instead of merging; D-110's and D-111's entries went into the existing subsections rather than adding a 15th. Last release v0.2.0 (2026-08-04); `pyproject.toml` still says `0.2.0`. **The precondition for cutting 0.3.0 is met** — merge the duplicate subsections in the same pass | Mit (release) |
 | **P3 Slice 5 — LLM economics** | Substantial and design-heavy; use a fresh context window | P3 |
 | **P3 item 8 — cross-OS two-writer WAL test** | A same-OS test proves nothing; needs a Docker-Linux-container + macOS-host harness. The documented-stance half shipped (D-041) | P3 |
 | **A `SIGKILL`ed run leaves a dangling `runs` row** | `try/finally` covers exceptions and Ctrl-C, not SIGKILL. Largely drained by the age-based reaper (D-046); a heartbeat-column reaper is the deferred correct fix | P3 |
@@ -127,6 +132,23 @@ since D-035, unchanged by everything since.
   `record_surfaced`; `eligibility gate request` and the pipeline pass `False`, and `top --no-record` is the
   operator's opt-out. The pipeline writes all three ledger tiers *after* the tailor loop and gates the `seen`
   tier on the stage completing. Do not move the `seen` write back into the ranker's unconditional path.
+- **Liveness is never cached, and "never" includes `postings.status`** (D-111). A `dead` probe withholds the
+  lead from that run only. Writing the status would let one 404 from a flaky CDN retire a live requisition
+  **irreversibly** — a closed posting stops being ranked and so stops being probed. That column belongs to
+  the scanner's `CLOSE_AFTER_MISSES = 2` rule, which measurably works: 0 open postings are stale beyond 7 days.
+- **Only 404/410 withholds a lead; everything else is served** (D-111). Timeout, 403, 5xx, redirect and a
+  NULL URL are all `unknown`. 403 is not hypothetical — a live Pinterest posting answers 403 to an
+  unfamiliar user agent, so treating it as gone would silently blacklist whole employers.
+- **An unprobed run reports liveness as UNMEASURED, never 0 dead** (D-111). `run_pipeline` takes an injected
+  prober and does no network I/O of its own; `run --no-check-liveness` opts out.
+- **Applied state is read from `applications`, never mirrored into the ledger** (D-111). `interested` does
+  not suppress (it is `track add`'s default) and neither does `withdrawn`, which is the drain. Checked
+  *before* the ledger, so a job that is both applied-to and `built` reports the applied reason — `ledger
+  reopen` releases the ledger row and nothing releases an application.
+- **A new ranker drop bucket must be mirrored in THREE hand-maintained places** — `RankedResults`
+  (`cli/top_cmd.py`), `ShortlistCounts` and the funnel `Drop` list (both `reports/run_funnel.py`). Nothing
+  enforces this statically; a miss shows up as the shortlist stage's `reconciled` identity going False,
+  because `entered` is measured independently of the drops.
 - **Only a deterministic refusal earns a permanent `skipped`** (D-110). `LeadArtifactError` carries both gate
   reasons as data and `DETERMINISTIC_GATE_REFUSALS` is the closed catalog; a non-zero `tectonic` exit is
   environmental and must be retried, never buried. Out-of-catalog is treated as environmental.
@@ -136,14 +158,13 @@ since D-035, unchanged by everything since.
   `ledger reopen --stale` will not release it — `ledger reopen --job <id>` is the only path. Do not repeat
   D-103's claim that such a lead "stays suppressed until somebody runs the drain".
 - **Regrouping carries the ledger decision with the postings** (`_carry_dispositions`) and releases the
-  emptied row. A merge that moved postings without moving the decision re-tailored an already-built lead
-  (D-110). `protected_job_ids` cannot catch this: `artifacts.job_id` is NULL on all 44 live rows.
+  emptied row (D-110). `protected_job_ids` cannot catch a merge that leaves it behind: `artifacts.job_id` is
+  NULL on all 44 live rows.
 - **The DB checks the reason catalog FLAT, as a union.** `core.ledger.validate` is what rejects pairing
-  `built` with `surfaced`; the CHECK constraint does not. "Enforced twice" holds for inventing a bucket, not
-  for mispairing (D-110).
-- **`AGENTS.md` records no phase standing, test count or coverage figure, on purpose.** It asserted "P6 and
-  P7 have not started" in the same commit range that shipped two P6 slices. This file is the only source of
-  standing.
+  `built` with `surfaced`; the CHECK constraint does not (D-110).
+- **`AGENTS.md` records no phase standing, test count or coverage figure, on purpose** — it once asserted
+  "P6 and P7 have not started" in the commit range that shipped two P6 slices. This file is the only source
+  of standing.
 - **`make check` is the only gate.** pytest + ruff + mypy green is *not* green — the generalization checker
   only runs under `make check`. Run it in a detached worktree pinned to a commit
   (`git worktree add --detach /tmp/bw-gate <sha>`) so editing the main tree cannot corrupt a run in flight,
@@ -167,22 +188,23 @@ since D-035, unchanged by everything since.
   metadata, not history); `test_migrations_match_metadata` holds the two in agreement. Name constraints with
   `op.f()` or that test sees permanent drift.
 - **The résumé renderer is `tectonic`** compiling Mit's real LaTeX template (`tailor/render/latex.py` +
-  `render/templates/resume_base.tex`), not Typst — D-058 reversed the Typst choice and D-060 completed the
-  swap. `doctor` probes for it. A `typst` binary happens to be on this machine; nothing in boardwatch calls it.
+  `render/templates/resume_base.tex`), **not Typst** — D-058 reversed that and D-060 completed the swap. A
+  `typst` binary happens to be on this machine; nothing calls it.
 - **The tailoring architecture is already correct** — typed skeleton, plain-text-only model contract,
   Python-owns-markup, independent entailment judge. Do not rebuild it (`PROGRAM.md` §5.1).
 - **`track` has never been used** — `applications` and `application_events` are both 0 rows. That is why P6
-  item 5 has no live population, and why regrouping's tracked-job refusal is *latent* rather than unreachable
-  (D-104).
+  item 5 ships as a mechanism with tests as its evidence, and why regrouping's tracked-job refusal is
+  *latent* rather than unreachable (D-104).
+- **`PROGRAM.md` §3.P6 item 5 cites "§6, correction 3", which no longer exists** — §6 is now *Program
+  machinery* and carries no numbered corrections. A stale cross-reference; the item text stands alone.
 - **`jobs` and `postings` are both 24,073, exactly 1:1** on the live store, because regrouping has not been
   applied there yet.
-- **`hidden_duplicate == 0` is ambiguous; `hidden_handled == 0` is not.** The first can mean "dedup never
-  ran"; the second is never completeness-gated, because a stored disposition records a decision already
-  taken (D-106).
+- **`hidden_duplicate == 0` is ambiguous; `hidden_handled == 0` and `hidden_applied == 0` are not.** The
+  first can mean "dedup never ran"; the others are never completeness-gated, because a stored disposition
+  and an application each record a decision already taken (D-106, D-111).
 - **`_verify_quad` has never fired** (D-097). It re-runs the key's own normalizers, so it guards a SHA-256
   collision and staleness but not normalizer lossiness. **Never cite "string-verified" as precision evidence.**
-- **D-072, the model-tier benchmark, is DEFERRED INDEFINITELY** (D-102). Not an owed item, not a next action,
-  not blocking anything.
+- **D-072, the model-tier benchmark, is DEFERRED INDEFINITELY** (D-102) — not owed, not blocking.
 - **`.agent/` and `.superpowers/` are gitignored** working material, not a source of truth for released
   behaviour. `CHANGELOG.md` is authoritative for what shipped.
 - **Live urgency.** `STAGE1_ONLY=1` is active in job-apps' launchd plist; its 08:30 run stops after
@@ -192,18 +214,16 @@ since D-035, unchanged by everything since.
 
 ## Process lessons this program paid real time for
 
-- **A truncated grep is not a negative result.** One false claim survived four separate "finished" retraction
-  passes and lived in six places; the pass that missed it piped grep through `head -30`.
-- **A retraction commit reintroduces the defect class it cures**, so it needs its own review. Dispatch a
-  **separate** docs-only reviewer for documentation written about already-reviewed code — they keep finding
-  blockers in it.
+- **A failed command is not a negative result, and a truncated grep is not one either.** One false claim
+  survived four "finished" retraction passes and lived in six places; the pass that missed it piped grep
+  through `head -30`. Confirm a check actually ran before reading its silence as evidence.
+- **Dispatch a SEPARATE docs-only reviewer** for documentation written about already-reviewed code — they
+  keep finding blockers in it. A retraction commit reintroduces the defect class it cures.
 - **Derive a test's mutation from its stated CLAIM, not from the implementation.** Commit before
   mutation-testing (`git checkout` discards uncommitted fixes) and clear `__pycache__` first, because stale
   bytecode fakes a CAUGHT.
 - **A component's self-report is not verification.** Count the deliverable through a different path than the
-  one that produced it — and re-grouping the same table a second way is *not* a different path (D-028).
-- **A failed command is not a negative result.** Confirm a check actually ran before reading its silence as
-  evidence.
-- **A deferral justified by a number deserves re-checking when the design changes.** D-098 priced wiring the
-  identity backfill into the pipeline using the wrong subsystem's figures, and the price turned out not to
-  apply to the design that shipped (D-105).
+  one that produced it — re-grouping the same table a second way is *not* a different path (D-028).
+- **Measure the spec's premise before building it.** D-098 priced a deferral with the wrong subsystem's
+  figures (D-105); D-111 found PROGRAM item 6's authoritative signal was 0-for-11 on the real corpus and
+  structurally impossible to reach. A spec written against a different codebase's data is a hypothesis.
