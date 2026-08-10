@@ -3302,3 +3302,92 @@ was repeating work without new evidence; gpt-5.6-sol produced no verdict across 
 **that breadth is what sent both unbounded.** Give a plan reviewer one attack category per dispatch.
 Note what did work: all three real defects came from the cheap thing — reading the engine and running
 it — not from the reviewers.
+
+---
+
+## D-078 — P6 Slice 1: the plan's test fixtures are now real; eleven defects, all found by running code
+
+**2026-08-10 · P6 Slice 1, planning session 2. Planning is COMPLETE; still no P6 code.** The plan
+and spec stay at `.superpowers/sdd/2026-08-09-p6-liveness-dedup/` (gitignored), which is why this
+entry exists. D-077 records the design; this records the plan being made executable.
+
+**The open defect from D-077 is closed, and it was bigger than D-077 stated.** Every pytest fixture
+Tasks 5–8 named was invented — **sixteen**, not the twelve counted before, and the defect reached
+**Task 5**, not just 6/7/8. `tests/unit/conftest.py` defines exactly one fixture (`seeded_events`).
+
+**What replaced them.** Two fixtures the plan authors as real code, not as an instruction to the
+implementer to go find equivalents:
+
+- `tests/conftest.py` (**new**, Task 5 Step 1) — `DedupSeed` + `dedup_env` + a `seed_dedup`
+  factory (`count=N`, `identical=True/False`, `body=...`).
+- `backfill_identities` (Task 6 Step 1), appended to the same file once `identity_queries` exists.
+
+Three placement decisions, each forced by something measured rather than assumed:
+
+- **Root `tests/conftest.py`, not `tests/unit/`.** Task 6's CLI test belongs in `tests/cli/`, which
+  cannot see a unit-scoped conftest. Verified empirically that a root conftest resolves for both
+  directories and coexists with the existing unit conftest.
+- **`backfill_identities` imports inside the function body.** A root conftest is imported for every
+  test in the repo, so a module-level `from boardwatch.store.identity_queries import …` would break
+  collection repo-wide at the Task 5 commit and at every bisect point between Tasks 5 and 6.
+- **A conftest factory, not a `tests/unit/_dedup_seed.py` module.** The repo already solved this:
+  `seeded_events` is a factory fixture used by six modules. Reuse beats a new import mechanism whose
+  `sys.path` behaviour depends on pytest's import mode.
+
+**Eight further defects, found while authoring the fixtures.** None came from reading the plan.
+
+1. `tests/integration/` **does not exist** (the tree is `cli/contract/fixtures/generalization/perf/
+   pipeline/unit`). The CLI test moved to `tests/cli/`.
+2. Task 5's own `seeded_posting_id` omitted three NOT NULL columns — `normalized_title`,
+   `content_hash`, `body_text`. That is an `IntegrityError` at *runtime*, so D-077's "fails at
+   collection" summary understated the blast radius.
+3. **`tests/unit/test_schema_head.py` pins the Alembic head** and its docstring requires a new
+   migration to state the new head rather than inherit it. Task 5 would have turned `make check` red
+   with nothing in the plan explaining why. Now an explicit step. `p1_resume_max_pages` confirmed as
+   the current head, so the migration's `down_revision` was right.
+4. **Neither `python` nor `boardwatch` is on PATH** (`which python` → not found). Eleven
+   `python -m pytest` lines, four `boardwatch` lines and one `python -m alembic` line would all have
+   failed. All now `uv run`. The alembic line also carried a literal `<the repo's alembic.ini>`
+   placeholder; replaced by `schema_revision()`, which the repo already has and which raises on a
+   forked chain — so there is no `alembic` CLI step at all.
+5. **The "two identical postings, one ineligible" fixture was unbuildable.** Eligibility reads the
+   JD body, so making exactly one of a duplicate pair ineligible requires them to share a
+   `content_hash` while their bodies differ — a state production cannot reach, since the hash is
+   derived from the body. Reshaped to two identical postings that are *both* ineligible
+   (`hidden_ineligible == 2, hidden_duplicate == 0`). The dedup-before-eligibility mutation still
+   goes red — it would read 1 and 1 — and the fixture stops lying about a production invariant.
+6. **A survivor-election test would have passed for the wrong reason.** With `first_seen_at`
+   ascending in posting-id order, an election that ignores `first_seen_at` and sorts by `posting_id`
+   elects the *same* row, so the mutation could never go red. The seed now inverts the two orderings
+   deliberately (`posting_ids[-1]` is earliest-seen, `posting_ids[0]` has the lowest id). This is
+   the D-020 lesson again: derive the mutation from the claim, then check the fixture can express it.
+7. Task 8 named a nonexistent call site (`test_run_funnel.py`) for `count_by_source`'s arguments —
+   they are in `test_run_funnel_queries.py::_by_source` — and no invented fixture created the `runs`
+   row that function requires. The `_ARGS` placeholder is gone.
+8. Tasks 7 and 8 named the same fixture two ways (`..._without_backfill` / `..._no_backfill`).
+
+Also corrected: three `...` placeholders in the CLI module (the prior Self-Review said two, in the
+wrong step) are now real code, `build_context(ctx.obj).engine` / `utcnow()`, copied from
+`track_cmd.py:53`; the File Structure note claimed "Tasks 1–5 are pure … Task 3 adds the schema",
+both halves wrong; and the live-smoke step now says to run the ~23k-posting backfill against a
+**copy** of the store first, and to confirm the corpus-wide count — a top-20 showing zero
+duplicates is equally consistent with dedup working and with dedup being inert.
+
+**The Self-Review was re-run and had itself gone stale.** It still described
+`normalized_locations` as `str | None -> str | None` — the shape D-077's JSON-column defect had
+left behind — after the signature had been fixed to `list[str] | None -> str | None`. A plan's
+self-review is a document like any other and rots the same way (D-017, and the "review the docs you
+write" lesson).
+
+**The method, stated because it keeps paying.** All eleven defects across both sessions came from
+writing the fixture code and executing it against the real schema and the real ranker — not from
+review. This session ran the seed helper against a live migrated DB (every NOT NULL column,
+`locations_json` returning a real `list`, identical hashes with distinct `provider_posting_id`,
+inverted `first_seen_at` ordering) and then ran `rank_open_postings` to confirm the three states
+Task 7's tests assert: an identical pair is both-visible *today* (so `hidden_duplicate == 1` will be
+a real change and not some pre-existing filter's work), the degree recipe yields
+`hidden_ineligible == 2`, and the distinct pair is a genuine control. What is **not** verified is any
+implementation — those modules do not exist; that is TDD's job, and the plan says so.
+
+**Both external plan reviewers remain abandoned with no verdict** (D-077 has the detail). Not
+re-dispatched, per that entry's own rule: one attack category per dispatch, or not at all.

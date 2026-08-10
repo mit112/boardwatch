@@ -1,6 +1,12 @@
 # PROGRAM STATE — read this first
 
-**Last updated:** 2026-08-09 (P2 item 4 — **the career-field field-tier MECHANISM is merged and shipped;
+**Last updated:** 2026-08-10. **Active item: P6 Slice 1 — liveness + dedup. Planning is COMPLETE
+and no code exists; the next action is to execute Task 1 of the plan.** See "Next action" below,
+and D-077 (the settled design) + D-078 (the plan made executable, and the eleven defects found in
+it). Everything under P6 is planning only — nothing in this file's "what shipped" sections has
+changed since the P2 header that follows.
+
+**Prior header, 2026-08-09** (P2 item 4 — **the career-field field-tier MECHANISM is merged and shipped;
 Gate P2 is MET AS RECONCILED, D-075**). The final whole-branch review and the fix wave it forced are
 recorded in **D-076**, which also carries the four rulings taken at merge and the one **open question** it
 deliberately left to Mit (the funnel-write swallow — see "Open questions").
@@ -742,19 +748,34 @@ changes adopted, none contested.
 
 ## Next action
 
-**P6 Slice 1 is the active item — spec + plan written, nothing built (session 2026-08-09/10, stopped
-at Mit's request).** The design and the 9-task TDD plan live at
+**P6 Slice 1 is the active item — PLANNING IS COMPLETE, nothing built (2026-08-10, planning
+session 2). The next action is to execute Task 1.** The design and the 9-task TDD plan live at
 `.superpowers/sdd/2026-08-09-p6-liveness-dedup/` (gitignored), with `HANDOFF.md` there stating
-exactly where to resume. Slice 1 covers P6 items 1–3 (posting-identity table, allowlist URL
-normalization, cross-host identity as annotate-only) and the measured `unique` counter; it does
-**not** meet Gate P6 on its own. Three defects were found by running the plan's code against the
-engine rather than reading it — the two dangerous ones are fixed in the plan (a `JSON`-column type
-error that would have made dedup silently suppress nothing forever while every test stayed green,
-and a use of a connection that `rank_open_postings` has already closed); the open one is that every
-pytest fixture Tasks 6/7/8 name is invented and the plan would fail at collection. Fix that first.
-Both external reviewers (deepseek v4 flash, gpt-5.6-sol) were stopped without producing a verdict;
-their briefs were too broad. `docs/program/DECISIONS.md` still owes the 15 decisions from the
-spec's §10 before P6 lands.
+exactly where to resume; the durable records are **D-077** (design) and **D-078** (the plan made
+executable). Slice 1 covers P6 items 1–3 (posting-identity table, allowlist URL normalization,
+cross-host identity as annotate-only) and the measured `unique` counter; it does **not** meet
+Gate P6 on its own — it makes one of the gate's four clauses measurable, and the plan says so
+rather than leaving it to be discovered.
+
+**Eleven defects have been found in the plan across the two planning sessions, and every one came
+from writing the code and running it — none from review.** All are fixed. The three worst:
+a `JSON`-column type error that would have made dedup silently suppress nothing forever with the
+whole suite green; a connection `rank_open_postings` has already closed; and sixteen invented
+pytest fixtures that made the plan fail at collection. The fixture rework surfaced eight more,
+including a pinned Alembic-head test that would have turned `make check` red with no explanation,
+a `tests/integration/` directory that does not exist, an ineligible-pair fixture that required a
+state production cannot reach, and a survivor-election test that could not have failed. **The
+seeding and the three ranker preconditions Task 7 asserts were executed against the real schema
+and the real ranker before the plan was finalised**; the implementation itself is unverified by
+construction, since none of its modules exist yet. Full list in D-078 and in the plan's own
+re-run Self-Review.
+
+**Do not re-dispatch a broad external plan review.** deepseek v4 flash and gpt-5.6-sol were each
+given a six-category brief over eight files and neither produced a verdict. One attack category
+per dispatch, or none.
+
+`docs/program/DECISIONS.md` still owes the 15 decisions from the spec's §10 as individual entries
+before P6 lands — that is the plan's Task 9; D-077 records them in summary in the meantime.
 
 **P0, P1, P2-core, and P3-build are all complete (session 10, 2026-08-07).** The run reaper merged
 (D-046, `2ce8e2d`+`91e0992`, `make check` green) was the **last P3 build item that needs neither Mit's
@@ -1063,7 +1084,7 @@ computable but the typed abstain *reason* the keystone invariant wants is not.
 | P3 Unattended one command | **BUILD COMPLETE** for every item needing neither Mit's domain input nor Docker — the run reaper was the last (D-046) | **NOT MET** — both halves outstanding: the 7 consecutive unattended runs (blocked on live config, see below) and the cross-OS two-writer test (needs Docker; the documented-stance half shipped, D-041) |
 | P4 Craft gate | **BUILD COMPLETE** — items 1–7 (D-048, D-049, D-050, D-051, D-053, D-056, D-061, D-063) | **NOT MET** — the blind craft review is the owner's, and has not been run |
 | P5 Eligibility decides | **COMPLETE** — deterministic disjunctive fix (D-073) + the agent-lane final eligibility gate (D-074) | **MET** (D-073) — INELIGIBLE precision **16/16 = 100%** on the 173-row labeled set, 0 span violations, `boardwatch eligibility score` exits 0 |
-| P6 Liveness + dedup | spec + Slice-1 plan written, **no code** | — |
+| P6 Liveness + dedup | **Slice-1 planning COMPLETE, no code** — spec + 9-task TDD plan executable (D-077 design, D-078 fixture rework); eleven plan defects found and fixed, all by running code rather than by review. Next action = execute Task 1 | **NOT MET, and Slice 1 is not designed to meet it** — it makes one of the gate's four clauses (`unique`) measurable; duplicate leakage, dead postings and the 20-sample suppression audit are operational measurements over a running system |
 | 14-day acceptance run | not started | — |
 | P7 Breadth | not started | — |
 
