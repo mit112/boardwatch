@@ -35,10 +35,11 @@ confident *and* reviewed; only the first holds.
 
 Schema head is **`p6_job_dispositions`**.
 
-**Committed after that gate run, and not yet gated at HEAD: `tools/program_index` + `make reindex` /
-`make index-check`** (D-109), which keeps the `DECISIONS`/`METRICS` spanning indexes true and fails `check`
-when they are stale. `make check` was **exit 0 at the first of its three commits**; the two since — a
-five-defect review fix and this documentation — have not been through it. Run it before pushing.
+**Also shipped: `tools/program_index` + `make reindex` / `make index-check`** (D-109), which keeps the
+`DECISIONS`/`METRICS` spanning indexes true and fails `check` when they are stale. `make check` **exit 0**
+at `d6291ba`: 3837 passed, coverage 95.08%, 4m49s, in a detached worktree pinned to the commit. Two
+fresh-context reviews (code, docs) found ten defects between them; all are fixed. **That review covered only
+D-109's own commits** — the Slice 2 review below is still owed.
 
 **Next action: P6 Slice 3** — applied-state suppression (`PROGRAM.md` §3.P6 item 5) and liveness (item 6).
 Liveness is what the remaining "0 dead postings" gate clause needs. Two things to know before planning it:

@@ -479,7 +479,7 @@ evidence for D-109 and are otherwise unverifiable after the fact.
 | Measure | Value |
 |---|---|
 | `make check` at `6064119` (tool + first docs commit) | **exit 0**, in a detached worktree pinned to the commit |
-| `make check` at HEAD | **not run** — two later commits are ungated |
+| `make check` at `d6291ba` (after the review fixes) | **exit 0** — 3837 passed, 1 deselected, coverage 95.08%, 4m49s |
 | `make index-check`, warm | 0.05 s (0.20 s cold) |
 | `make generalization && make index-check` | 1.26 s |
 | Index rows shifted by appending D-109's own row | 32 of 33 DECISIONS rows (the 33rd was the new row itself); 0 METRICS rows |
