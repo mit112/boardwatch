@@ -45,6 +45,51 @@ def _stale_row(engine, posting_id: int) -> None:
         )
 
 
+def test_load_identities_distinguishes_all_from_none(seed_dedup):
+    """`None` means every posting; `[]` means none. They must not collapse.
+
+    The distinction exists because both `identities verify` and the funnel's `unique` sweep
+    need "all" and cannot pass an id list: SQLite caps bound parameters at 32766 (measured on
+    3.45.1 — 23,455 succeed, 32,767 raise) and the live corpus is already 23,455, so an IN
+    list made the verification path itself the thing that fails as breadth grows. Collapsing
+    `[]` into "all" would be worse than the cliff: the ranker passes the eligible ids, so an
+    empty shortlist would silently dedup against the whole corpus.
+    """
+    seed = seed_dedup(count=2)
+    with seed.engine.begin() as conn:
+        for row in load_identity_inputs(conn):
+            write_identities(conn, row.posting_id, compute_identities(row), now=seed.now)
+    with seed.engine.connect() as conn:
+        every = load_identities(conn)
+        named = load_identities(conn, [seed.posting_ids[0]])
+        assert load_identities(conn, []) == {}
+    assert set(every) == set(seed.posting_ids)
+    assert set(named) == {seed.posting_ids[0]}
+
+
+def test_non_string_location_elements_are_not_location_evidence(seed_dedup):
+    """JSON `[null]` must not become the location component `["none"]`.
+
+    The loader used `str(x)`, which turned an explicit absence into a truthy string, so two
+    postings whose provider emitted `[null]` could suppress each other on "evidence" neither
+    one has — contradicting D-083, which says a posting with no location evidence emits no
+    location-bearing identity at all.
+    """
+    seed = seed_dedup(count=1)
+    with seed.engine.begin() as conn:
+        conn.execute(
+            update(postings)
+            .where(postings.c.id == seed.posting_ids[0])
+            .values(locations_json=[None])
+        )
+    with seed.engine.connect() as conn:
+        row = next(r for r in load_identity_inputs(conn) if r.posting_id == seed.posting_ids[0])
+    assert row.locations == []
+    kinds = {i.kind for i in compute_identities(row)}
+    assert "exact_quad" not in kinds
+    assert kinds == {"exact_provider", "content_hash_only"}
+
+
 def test_write_is_idempotent(seed_dedup):
     seed = seed_dedup()
     with seed.engine.begin() as conn:
