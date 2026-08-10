@@ -7,9 +7,10 @@ three independent reviewers, and the resulting fixes are committed. Still NOT me
 
 **`make check` on the fixed branch (`f2f2430`): exit 0** — `generalization: OK`, ruff clean,
 `mypy --strict` clean, 3749 passed / 1 deselected, coverage 95.22%, **4m17s**, in a detached worktree
-pinned to the commit. (The 18m47s and 16m07s recorded for the overnight runs were cold: each created
-its venv from scratch and ran against a cold filesystem cache. Same four stages, same machine — the
-difference is warm caches, not a smaller gate. Full-run rows are in `METRICS.md`.)
+pinned to the commit. (The overnight runs recorded 18m47s and 16m07s. The gate is not smaller — this
+run executed *more* tests, 3749 against 3733 — and the likely cause is a warm venv and filesystem
+cache, since each overnight run built its venv from scratch. That cause is inferred, not measured: no
+A/B was run. Full-run rows are in `METRICS.md`.)
 
 **The first post-fix gate run was RED and was right, twice.** `tests/unit/test_normalize.py` had
 *already pinned the C++/C collision as an ACCEPTED caveat* — retired deliberately and re-ratified in
@@ -25,10 +26,11 @@ REWORK / REWORK / SHIP-WITH-FIXES. Every finding was checked against the code be
 on, and **two were rejected as factually wrong** — DeepSeek claimed `normalize_body` strips
 non-ASCII (it confused it with `normalize_company`; measured, `["Remote","远程"]` keeps both), and
 GPT claimed the survivor election contradicts a stated earliest-seen rule (D-086 explicitly ratifies
-`(host_class, first_seen_at, posting_id)`). Seven findings were real and are fixed (D-095). Nine
+`(host_class, first_seen_at, posting_id)`). **Fourteen** findings were real and are fixed; with the two
+rejected that is sixteen raised in total, enumerated with per-reviewer attribution in D-095. Nine
 tests could not fail for the claim they made; all nine are fixed and mutation-checked, and the two
 key components that had **no** test at all — `company_id` in the `exact_quad` key, and `host_class`
-precedence in `_elect` — now have one. The three reviewers overlapped on only one finding, and each
+precedence in `_elect` — now have one. The three reviewers overlapped on only **two** findings, and each
 found something the other two missed entirely; the single most consequential defect (the C++/C#
 title collision) came from the reviewer that also produced the most errors.
 
@@ -832,7 +834,7 @@ changes adopted, none contested.
 **P6 Slice 1 is BUILT, REVIEWED and FIXED on branch `p6-slice1`; `make check` is green at `f2f2430`;
 `main` is untouched. The next action is Mit's merge decision — nothing else is outstanding.**
 
-> **The whole-branch review is DONE (D-095).** Three independent reviewers, twelve findings, all fixed
+> **The whole-branch review is DONE (D-095).** Three independent reviewers, sixteen findings raised — fourteen fixed, two rejected as factually wrong; all
 > or explicitly rejected; nine vacuous tests repaired and mutation-checked. Do **not** re-run it. The
 > blockquote below is the pre-review standing and is kept only as the record of what the overnight run
 > handed over — every "unreviewed" and "next action" statement in it is **superseded**.
@@ -846,7 +848,9 @@ changes adopted, none contested.
 > ~~**Nothing on that branch has been reviewed by anyone.** Treat every commit as unreviewed work in
 > progress. Per standing practice a checkpoint this size wants a fresh-context whole-branch Opus 5
 > review before merging.~~ **SUPERSEDED 2026-08-10 — the review happened; see D-095.** The standing
-> practice was right: it caught two blockers and five majors, exactly as the P2 item 4 review did.
+> practice was right: it caught fourteen real defects, exactly as the P2 item 4 review did. (No
+> blocker/major tally is given: the three reviewers used their own severity scales and two of them
+> mis-rated findings I had to re-triage against the code, so an aggregate count would be invented.)
 >
 > **The one thing the run did not finish:** the `boardwatch top --top 20` half of Task 8's live
 > smoke. It ran >40 min against a 23,455-posting copy (it pays for `run_preflight` +
@@ -1203,7 +1207,7 @@ computable but the typed abstain *reason* the keystone invariant wants is not.
 | P3 Unattended one command | **BUILD COMPLETE** for every item needing neither Mit's domain input nor Docker — the run reaper was the last (D-046) | **NOT MET** — both halves outstanding: the 7 consecutive unattended runs (blocked on live config, see below) and the cross-OS two-writer test (needs Docker; the documented-stance half shipped, D-041) |
 | P4 Craft gate | **BUILD COMPLETE** — items 1–7 (D-048, D-049, D-050, D-051, D-053, D-056, D-061, D-063) | **NOT MET** — the blind craft review is the owner's, and has not been run |
 | P5 Eligibility decides | **COMPLETE** — deterministic disjunctive fix (D-073) + the agent-lane final eligibility gate (D-074) | **MET** (D-073) — INELIGIBLE precision **16/16 = 100%** on the 173-row labeled set, 0 span violations, `boardwatch eligibility score` exits 0 |
-| P6 Liveness + dedup | **Slice 1 BUILT, REVIEWED and FIXED on `p6-slice1`, unmerged** — nine tasks built unattended (D-094), then three-reviewer whole-branch review with twelve findings fixed (D-095, D-096, D-097, D-098, D-099); `make check` green at `f2f2430`. Next action = Mit's merge decision. Slices 2 and 3 not started | **NOT MET, and Slice 1 is not designed to meet it** — it makes one of the gate's four clauses (`unique`) measurable; duplicate leakage, dead postings and the 20-sample suppression audit are operational measurements over a running system |
+| P6 Liveness + dedup | **Slice 1 BUILT, REVIEWED and FIXED on `p6-slice1`, unmerged** — nine tasks built unattended (D-094), then three-reviewer whole-branch review with fourteen findings fixed and two rejected (D-095, D-096, D-097, D-098, D-099); `make check` green at `f2f2430`. Next action = Mit's merge decision. Slices 2 and 3 not started | **NOT MET, and Slice 1 is not designed to meet it** — it makes one of the gate's four clauses (`unique`) measurable; duplicate leakage, dead postings and the 20-sample suppression audit are operational measurements over a running system |
 | 14-day acceptance run | not started | — |
 | P7 Breadth | not started | — |
 

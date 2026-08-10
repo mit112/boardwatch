@@ -3754,7 +3754,7 @@ than quietly dropped.
 
 ---
 
-## D-095 — P6 Slice 1 reviewed by three independent reviewers; twelve findings fixed, two rejected
+## D-095 — P6 Slice 1 reviewed by three independent reviewers; fourteen findings fixed, two rejected
 
 *2026-08-10, post-overnight-build fix session.*
 
@@ -3771,7 +3771,9 @@ against the code before being acted on.
 **Was the third lane worth it?** Yes, and not for the reason expected. **Corrected 2026-08-10 after a
 docs review:** an earlier version of this entry said "seven findings" and "the reviewers overlapped on
 exactly one finding". Both were wrong, and the second was load-bearing for this entry's own
-conclusion. The full enumeration, twelve findings with an attribution each:
+conclusion. The full enumeration — **fourteen** findings fixed, each with an attribution (a second
+docs review caught that the corrected entry still miscounted its own table, 12 against 14 rows; the
+count is now stated as the row count and nothing else):
 
 | Finding | Found by | Fixed in |
 |---|---|---|
@@ -3918,9 +3920,11 @@ work where that load can be paid once rather than twice.
 **Cost corrected 2026-08-10.** An earlier draft justified this deferral with "it adds the measured
 471 MB peak RSS / 9.4 s to every run". Those figures belong to `count_by_source`'s survivor sweep,
 which **already runs on every run**, so wiring in the backfill cannot add them. The backfill's own
-measured cost is **41 s** cold (METRICS.md), and 10.3 s on a warm copy in the fix session. Citing the
+measured cost is **41 s** cold (METRICS.md). Citing the
 wrong subsystem's number — ~4× too small — in the sentence that rules the work out until Slice 2 is
-precisely the kind of unchallengeable-looking figure this log exists to prevent.
+precisely the kind of unchallengeable-looking figure this log exists to prevent. (A "10.3 s on a warm
+copy" figure was also cited here and has been removed: it was measured in the fix session but never
+recorded in METRICS.md, so it could not be checked from the file that owns per-run numbers.)
 
 ---
 

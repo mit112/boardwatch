@@ -1257,11 +1257,19 @@ Normalizing locations (sort + case-fold + whitespace-collapse, per design §2.1)
 directly: **12 of the 186** suppressions have raw location lists that are not equal.
 
 Not a cause: title normalization. **0 of 186** suppressions have a stored `normalized_title` that
-disagrees with `normalize_title(title)`. **Measured against the `p6.1` normalizer and now stale:**
-D-096 changed `normalize_title` to fold `+` and `#` to words, while the stored `normalized_title`
-column is a plain `casefold()`, so the two disagree for every title containing those characters. The
-figure still holds for these 186 (none of them contains `+` or `#` — the same measurement that made
-D-096 safe), but do not generalize it past this set.
+disagrees with `normalize_title(title)`.
+
+**What that check actually measures — corrected 2026-08-10.** `scan/apply.py:157` writes
+`normalized_title` as `normalize_title(raw.title)`, i.e. the *same function* the comparison calls. So
+this is a **staleness detector, not a normalization check**: it can only disagree when a row was
+written by an older `normalize_title` than the one running now. Read as "no row here predates the
+current normalizer", it is a real result; read as "normalization is correct", it is `X == X`.
+
+An earlier version of this correction claimed the column is "a plain `casefold()`" and therefore
+disagrees for every `+`/`#` title. That was wrong — `casefold()` appears in a *test helper*
+(`tests/unit/test_identity_queries.py`), not in production. D-096's normalizer change does make
+pre-change rows with `+`/`#` disagree until the next scan upsert rewrites them, which is exactly the
+staleness this check is good for; it is not a permanent schema-level divergence.
 
 **RETRACTED 2026-08-10 — this was not a second path.** The original claim read, in full:
 *"**Precision is intact and was checked through a second path.** Every one of the 186 suppressions was
@@ -1306,14 +1314,24 @@ disagree with the Python path — and the interesting result is where it does an
 | A survivor that was itself suppressed | **none** |
 | `identities verify` | **exit 0** — 23,455 verified |
 | `p6.1` rows still present beside `p6.2` | **117,254 each** |
-| `make check` at `f2f2430` (warm venv + cache) | **exit 0** — 3749 passed, 95.22%, **4m17s** |
 
 The equal `p6.1`/`p6.2` row counts carry a second fact worth stating, since this is the only place it
-is measured: the `[null]`-locations loader fix drops three location-bearing kinds per affected posting,
-so identical totals also mean **zero** open postings have `locations_json = [null]` in this corpus. The
-fix is a guard against a shape the corpus does not currently contain, not a correction to these numbers.
-The `4m17s` gate is the same four stages as the overnight 16m07s — the difference is a warm venv and
-filesystem cache, not a smaller run.
+is measured: the `[null]`-locations loader fix drops the three location-bearing kinds for an affected
+posting, so a single `locations_json = [null]` row would cost 3 identities at `p6.2` and the totals
+could not stay equal — no `p6.2` change adds rows to compensate. So identical totals also mean **zero**
+open postings have `locations_json = [null]` in this corpus, on the premise (true here) that the `p6.1`
+rows were written by the pre-fix loader. The fix guards a shape the corpus does not currently contain;
+it is not a correction to these numbers.
+
+### `make check` — fix session
+
+| Run | Result |
+|---|---|
+| `f2f2430`, detached worktree | **exit 0** — `generalization: OK`, ruff clean, `mypy --strict` clean, 3749 passed / 1 deselected, 95.22%, **4m17s** |
+| first post-fix run (`ae83743`) | **exit 2 — RED**, 2 failed: the pinned C++/C caveat (D-096) and the version-bump test's hard-coded `"p6.2"` |
+
+The 4m17s is not a smaller gate than the overnight 16m07s — it ran *more* tests (3749 vs 3733). Warm
+venv and filesystem cache is the likely cause; that is inferred, not measured.
 
 **The two paths agree at 186 — and that agreement is itself the finding.** SQL surplus equals the
 resolver's surplus, which means `_verify_quad` rejected **zero** members across the entire corpus.
