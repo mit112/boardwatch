@@ -5,9 +5,17 @@ MERGED to `main` — `main` is `f26c87a` and pushed.** Fast-forwarded, so all 19
 individual history. Merged on Mit's explicit authorization after the three-reviewer whole-branch
 review; `make check` was green on the exact merged tree.
 
-**Next action: P6 Slice 2** (durable ledger + drain + job regrouping, PROGRAM §3.P6 item 4). Before
-building it, note the two live follow-ups below: the live store needs `identities backfill` after the
-`p6.2` version bump, and D-072 (the model-tier benchmark) is still owed from P5.
+**The live store is backfilled and dedup is RUNNING on real data** — schema head
+`p6_posting_identities`, 117,254 identity rows at `p6.2`, `identities verify` exit 0, **147 groups /
+186 surplus rows / 0.79%**, reproducing the isolated copy's figures exactly. Backup at
+`boardwatch.db.pre-p6-backup-20260810`.
+
+**Next action: P6 Slice 2** — the durable ledger over decisions, its drain, and job regrouping
+(PROGRAM §3.P6 item 4). Slice 3 is items 5 and 6 (applied-state suppression + liveness), and liveness
+is what the remaining "0 dead postings" gate clause needs.
+
+**D-072 (the model-tier benchmark) is DEFERRED INDEFINITELY** by Mit, 2026-08-10 — see D-102. It is no
+longer an owed item; do not carry it forward as one and do not treat it as blocking anything.
 
 **`make check` on the fixed branch (`f2f2430`): exit 0** — `generalization: OK`, ruff clean,
 `mypy --strict` clean, 3749 passed / 1 deselected, coverage 95.22%, **4m17s**, in a detached worktree
@@ -38,14 +46,15 @@ precedence in `_elect` — now have one. The three reviewers overlapped on only 
 found something the other two missed entirely; the single most consequential defect (the C++/C#
 title collision) came from the reviewer that also produced the most errors.
 
-**Gate P6 is NOT met, but its four clauses are no longer all outstanding.** Clause by clause:
+**Gate P6 is NOT met, but TWO of its four clauses now are.** The two that remain both need a running
+system, not more building: 7 days of runs, and liveness (Slice 3). Clause by clause:
 
 | Gate P6 clause | Standing |
 |---|---|
 | Duplicate leakage measured over 7 days, ≤ 5% | **NOT met — measurable now.** The funnel's `unique` is a measured number instead of `not instrumented`. Needs 7 days of runs |
 | **0** dead postings reaching the lead list | **NOT met, not buildable yet** — needs liveness, which is Slice 3 (PROGRAM §3.P6 item 6) |
 | A deliberately-injected hash-collision test proving the wrong job cannot be deduped | **MET** — `test_string_verify_blocks_suppression_when_bodies_diverge` forges `identity_key` equality over divergent bodies, and the group is refused. Two adjacent tests reproduce the real Datadog 5843/5846/5849 shape (one `content_hash`, three requisitions). This is a test, not a measurement, so it is met outright |
-| Suppression audit of 20 sampled suppressions, each confirmed a genuine duplicate or policy skip | **NOT met — but nearly reachable now.** 186 suppressions exist on the copy and the raw-field audit already checked all 147 groups mechanically (8 differ in raw title, all benign punctuation noise). What remains is sampling 20 and confirming each by eye |
+| Suppression audit of 20 sampled suppressions, each confirmed a genuine duplicate or policy skip | **MET 2026-08-10 — 20/20 genuine, zero false positives.** Sampled deterministically from the LIVE store and read by eye: every group is same-company, same-title, same-location, distinct `provider_posting_id`, across 13 employers. Detail in `METRICS.md` |
 
 **Corrected 2026-08-10:** an earlier version of this block said Slice 1 "makes exactly one of the
 gate's four clauses measurable" and that the other three were operational measurements. Clause 3 is
@@ -136,7 +145,7 @@ not a populated taxonomy.
 **Gate P5's standing is UNCHANGED** (MET, D-073/D-074). The prior session's header follows below.
 
 **Prior session, 2026-08-08 (D-071b final-eligibility-gate BUILD session — the agent-lane final gate is merged
-to `main` and pushed; see the "D-071b BUILT" block below + D-074; NEXT = the D-072 benchmark. **Gate P5 MET
+to `main` and pushed; see the "D-071b BUILT" block below + D-074; ~~NEXT = the D-072 benchmark~~ (**D-072 is DEFERRED INDEFINITELY, D-102 — not a next action**). **Gate P5 MET
 still holds: INELIGIBLE precision 100% (16/16), `score` exits 0**, D-073; the disjunctive experience-years
 over-fire from D-069 is fixed, blast radius
 exactly the one SpaceX FP; the D-070 deepseek cross-match was EXECUTED and corroborates the ineligible answer
@@ -145,7 +154,7 @@ historic-data + B1–B4 unblock, D-071 two-stage gate agreed, D-072 model-tier b
 **UPDATE 2026-08-08 (latest session): D-071 part (b) — the agent-lane final eligibility gate — is now BUILT,
 merged to `main`, and pushed (`7f1c4c9`; `make check` green 3606 passed / 95.22%). See the "D-071b BUILT" block
 below and D-074.** The deterministic stage (D-073) plus this gate complete the two-stage design D-071 agreed.
-**NEXT BUILD = the D-072 model-tier benchmark** (reuse the 173-row answer key; it also picks this gate's default
+~~**NEXT BUILD = the D-072 model-tier benchmark**~~ — **DEFERRED INDEFINITELY (D-102); do not treat this as a next action.** (reuse the 173-row answer key; it also picks this gate's default
 judge model) — fresh context. Gate P5 is UNCHANGED (still MET, D-073; the gate lane is additive and touches no
 deterministic number). Earlier planning artifacts, now executed — Spec:
 `.superpowers/sdd/p5-eligibility-decides/design-p5-final-gate.md`; plan (5 TDD tasks, real code per step):
@@ -256,7 +265,7 @@ correctly — fixed by minting via `ensure_run`, mirroring `eligibility extract`
 P5 is UNCHANGED and still MET** — this lane is additive over the ranker only; it changes no deterministic
 verdict and no precision/recall number on the 173-row answer key. Full record: **D-074**. Spec/plan:
 `.superpowers/sdd/p5-eligibility-decides/design-p5-final-gate.md` /
-`.superpowers/sdd/p5-eligibility-decides/plan-p5-final-gate.md`. **NEXT = the D-072 model-tier benchmark**
+`.superpowers/sdd/p5-eligibility-decides/plan-p5-final-gate.md`. ~~**NEXT = the D-072 model-tier benchmark**~~ (**DEFERRED INDEFINITELY, D-102**)
 (fresh context), which also picks this gate's default judge model; inline `bwd` wiring and a paid-API judge
 are deferred, not built.
 **Updated by:** boardwatch (Claude)

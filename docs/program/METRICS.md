@@ -1415,3 +1415,40 @@ dereferenced to exact requisition evidence.
 - **The 20-sample suppression audit** — needs a human to re-derive 20 suppressions from the data.
 
 The build made these measurable; it did not meet them.
+
+## 2026-08-10 — P6 Slice 1 on the LIVE store (first real backfill) + Gate P6 clause 4
+
+Merged Slice 1, then migrated and backfilled the **live** store (`~/Library/Application
+Support/boardwatch`). Backed up to `boardwatch.db.pre-p6-backup-20260810` first; the WAL was 0 bytes,
+so the copy is complete. `cli/context.py` calls `ensure_schema` on every command, so the migration
+applied as part of the backfill — one pending revision, an additive `CREATE TABLE`.
+
+| Measurement | Value |
+|---|---|
+| Schema head after | `p6_posting_identities` |
+| Algorithm versions present | `p6.2` only (the live store never held `p6.1`) |
+| Open postings | **23,455** |
+| Identity rows written | **117,254** |
+| `identities backfill` wall time | **12.4 s** |
+| `identities verify` | **exit 0** — 23,455 verified |
+| Groups `exact_quad` collapses (SQL, independent of the resolver) | **147** |
+| Surplus rows removed | **186** (**0.79%**) |
+
+**The live figures reproduce the copy's exactly** (147/186/0.79%), which is the outcome the isolated-copy
+methodology was for: the copy was a faithful stand-in, and the numbers were not an artifact of it.
+
+### Gate P6 clause 4 — 20-sample suppression audit: **MET, 20/20 genuine**
+
+Sampled deterministically (every 7th group ordered by `identity_key`, first 20 — reproducible, not
+random) and read by eye. **All 20 groups are same-company, same-title, same-location, distinct
+`provider_posting_id`** — same-role-different-requisition, which is precisely what `exact_quad` targets.
+**Zero false positives.** Spread across 13 employers and both software and non-software roles (Cisco,
+Broadcom ×3, Capital One ×4, Verizon ×2, T-Mobile, Twilio, Duolingo, Target, Workday, Citi, Chewy, GE
+HealthCare, UT Austin), so the result is not an artifact of one board's ID scheme.
+
+**One group is worth recording on its own.** Duolingo `6469`/`6470`, "Software Engineer II, Android",
+differ **only** in location list order — `["Pittsburgh, PA", "New York, NY"]` against
+`["New York, NY", "Pittsburgh, PA"]`. Nothing but the sort in `normalized_locations` catches that pair;
+under raw grouping they are two distinct postings. This is the empirical justification for design §2.1's
+sort + case-fold, and it is the mechanism behind the shipped 186 exceeding the raw-grouped 174 — the
+delta is real duplicates, not over-suppression.

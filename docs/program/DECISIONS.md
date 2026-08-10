@@ -3983,3 +3983,55 @@ not meet Gate P6 *as a whole*) is unchanged and still correct.
 D-096 bumped `IDENTITY_ALGORITHM_VERSION` to `p6.2`, so the existing `p6.1` rows stop being read and
 suppression stays off until the backfill runs. `top` now says so out loud (D-098), which is the only
 reason this is a follow-up rather than a silent regression.
+
+---
+
+## D-101 — Gate P6 clause 4 is MET: 20/20 sampled suppressions are genuine duplicates
+
+*2026-08-10, on the live store immediately after its first backfill.*
+
+**Context.** Gate P6 requires "a suppression audit of 20 sampled suppressions confirming each was a
+genuine duplicate or policy skip". Until the live store was backfilled there was nothing real to sample.
+
+**Choice.** Sampled **deterministically** — every 7th group ordered by `identity_key`, first 20 — rather
+than randomly, so the sample is reproducible and a future re-run audits the same groups. Read all 20 by
+eye. **All 20 are same-company, same-title, same-location, distinct `provider_posting_id`.** Zero false
+positives. Spread over 13 employers and both software and non-software roles, so it is not an artifact of
+one board's requisition scheme.
+
+**The one group that earns its own line.** Duolingo `6469`/`6470` ("Software Engineer II, Android")
+differ **only** in location list order: `["Pittsburgh, PA", "New York, NY"]` against
+`["New York, NY", "Pittsburgh, PA"]`. Only the sort in `normalized_locations` catches it. This is the
+empirical justification for design §2.1's sort + case-fold, and it explains the shipped 186 exceeding the
+raw-grouped 174: **the delta is real duplicates, not over-suppression.** The pre-registered baseline
+looked "safer" only because it was blind to this class.
+
+**Alternatives rejected.** A random sample. Reproducibility matters more than statistical purity for an
+audit that a later session may need to re-run against a changed algorithm version — and with 147 groups
+and a uniform failure mode, a systematic sample is no weaker here.
+
+**Gate P6 now stands at two of four clauses met** (this one and the injected hash-collision test, D-100).
+The remaining two — 7-day duplicate leakage ≤ 5%, and 0 dead postings reaching the lead list — need a
+running system and liveness (Slice 3) respectively. Neither is a build gap in Slice 1.
+
+---
+
+## D-102 — D-072 (model-tier benchmark) is deferred indefinitely
+
+*2026-08-10, ruled by Mit.*
+
+**Context.** D-072 agreed a benchmark to compare model tiers on the 173-row eligibility answer key, which
+would also have picked the final gate's default judge model. It has been carried as an owed next-action
+since 2026-08-08 across several sessions.
+
+**Choice.** **Deferred indefinitely.** It is no longer an owed item and must not be carried forward as
+one, listed as a next action, or treated as blocking any phase.
+
+**Consequences, stated so nobody re-derives them as blockers.** The final eligibility gate keeps whatever
+default judge model it currently ships with, chosen without benchmark evidence; that is now an accepted
+condition rather than a gap. Gate P5 is unaffected — it is MET on the deterministic engine (D-073) and the
+agent-lane gate is additive (D-074).
+
+**Alternatives rejected.** Keeping it as a low-priority backlog item. A perpetually-deferred "next
+action" in a read-first document is worse than no entry: it costs every future session the same triage and
+makes the real next action harder to find. Recorded as closed-by-decision instead.
