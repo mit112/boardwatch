@@ -29,8 +29,10 @@ importantly — the measurements that shaped it.
 **Slice 3, in one paragraph.** The ranker gained a `hidden_applied` bucket read straight from
 `applications` (not mirrored into a ledger disposition — one fact, one home), drained by
 `top --include-applied` and released by `track status <id> withdrawn`. Liveness re-fetches each
-shortlisted posting immediately before its résumé is built and withholds one answering **404/410**;
-everything else is served. Funnel artifact is now **version 4**.
+shortlisted posting immediately before its résumé is built and withholds one answering **404/410 at the
+URL asked about** (D-113 narrowed this: a 404 reached through a redirect is served, and counted);
+everything else is served. Funnel artifact is still **version 4** — the redirect counter is an additive
+key, and every bump so far has signalled a new top-level section.
 
 **The closed-phrase catalog was NOT shipped, deliberately — not an omission to correct.** `PROGRAM.md`
 item 6 calls it the authoritative signal, inheriting that from job-apps, which scraped HTML. Providers
@@ -48,7 +50,8 @@ owed.
 **Next action: P6 has nothing left to BUILD — its last two gate clauses need the system RUN.** Duplicate
 leakage needs 7 days of runs (and the window must start after D-110, which changed which callers advance
 the queue), and "0 dead postings" needs a real run whose leads are actually probed. Neither is a coding
-task. So the useful work is, in order: (1) get CI green on all three OSes and re-release 0.3.0 (below);
+task. So the useful work is, in order: (1) unblock and push the 4 held commits, confirm `ci.yml` green, then
+re-release 0.3.0 (below — CI itself is already proven green on all three OSes);
 (2) start accumulating real daily runs, which is gated on Mit's `resume.yaml` fix below; (3) P2 item 8 or
 P3 slice 5, both owner-gated and both wanting their own context window. Slice 3's second-opinion review is
 **done** — do not re-run it from `.agent/review-prompt-p6-slice3.md`.
@@ -138,7 +141,7 @@ since D-035, unchanged by everything since.
 | **0.3.0 did NOT publish, and the re-release form is undecided** | Tag `v0.3.0` → `426f45c` is pushed, but run `31412535583` failed in `build + smoke test` and all three publish jobs (**PyPI, GHCR, GitHub Release**) were correctly **skipped**. PyPI still 404s for 0.3.0, so **no version is burned**. The cause is fixed (row below); what remains is Mit's choice between deleting and re-pushing `v0.3.0` and cutting `v0.3.1`. He deferred it until the fix is verified. **Either way the tag must land on a commit that CONTAINS the CI fix** — `v0.3.0` currently names `426f45c`, which has no `.github/actions/setup-typesetting`, so re-pushing it unmoved re-runs the identical failure. The new CHANGELOG entries sit under `[Unreleased]` and fold into whichever section that choice creates | Mit (release) |
 | **The tectonic/poppler gap is FIXED but has never run on a runner** | `.github/actions/setup-typesetting` installs both on ubuntu, macOS and Windows, and is used by `ci.yml`'s matrix job and `release.yml`'s build job (D-114). Asset layouts and the Linux/macOS binaries were verified locally; **the Windows path is constructed from a verified zip layout, not from a green run**. The first push is the experiment. **Do not re-tag until `ci.yml` is green on all three OSes** — re-tagging on the strength of a plausible YAML diff is the same mistake that produced the failed build, with more confidence behind it | verify |
 | **CI IS acquiring runners again** | The old "never acquires" failure has **resolved** — `ci.yml` and `release.yml` both ran on 2026-08-10, and `release.yml` picked up a runner in seconds. CI is a signal worth reading again. Do not generalise one workflow's failure to the whole account | GitHub |
-| **3 commits are UNPUSHED, blocked behind another writer** | `861ea74`, `a729609`, `eef6127` gate green **in isolation** on `origin/main` (exit 0, 3,924 passed, 95.12%). They sit on top of 7 `profile_bundle` commits from a **concurrent session** in the same clone, whose tree is **red**: a committed test imports `boardwatch.profile_bundle.secret_scan`, which exists only as an untracked file, so those commits pass here and fail in a clean checkout. Pushing would publish someone else's in-flight work and a red `main`. Not ours to fix — hand it back | Mit |
+| **4 commits are UNPUSHED, interleaved with another writer's** | `861ea74`, `a729609`, `eef6127`, `0eeef82` gate green **in isolation** cherry-picked onto `origin/main` (exit 0, 3,924 passed, 95.12%). A **concurrent session** is committing `profile_bundle` work into the same clone — its commits sit both below *and* above ours and the count keeps growing, so do not assume a position in the log. Its tree is **red**: a committed test imports `boardwatch.profile_bundle.secret_scan`, which exists only as an untracked file, so those commits pass on this machine and fail in a clean checkout. Pushing publishes someone else's in-flight work and a red `main`. Not ours to fix — hand the finding back | Mit |
 | **P3 Slice 5 — LLM economics** | Substantial and design-heavy; use a fresh context window | P3 |
 | **P3 item 8 — cross-OS two-writer WAL test** | A same-OS test proves nothing; needs a Docker-Linux-container + macOS-host harness. The documented-stance half shipped (D-041) | P3 |
 | **A `SIGKILL`ed run leaves a dangling `runs` row** | `try/finally` covers exceptions and Ctrl-C, not SIGKILL. Largely drained by the age-based reaper (D-046); a heartbeat-column reaper is the deferred correct fix | P3 |
