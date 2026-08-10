@@ -31,8 +31,11 @@ through an independent four-field comparison: **0 of 186 failures**. Full invest
 `METRICS.md`.
 
 **Fifteen design decisions are now individual entries, D-079 … D-093** (summarized in D-077 until
-now). **D-094** records the build itself, including four defects found *in the plan* by running its
-code — three of them tests that could not fail for the claim they made.
+now). **D-094** records the build itself, including **five** defects found *in the plan* — four by
+running its code (three of them tests that could not fail for the claim they made) and one that
+**only the full `make check` could see**: the migration hard-coded a UNIQUE-constraint name that
+disagreed with the one `tables.py`'s naming convention renders, so `test_migrations_match_metadata`
+saw permanent drift. The first full-branch gate run was RED on it; it is fixed and re-run.
 
 Everything below this block predates P6 and is unchanged.
 
@@ -809,8 +812,8 @@ cross-host identity as annotate-only) and the measured `unique` counter; it does
 Gate P6 on its own — it makes one of the gate's four clauses measurable, and the plan says so
 rather than leaving it to be discovered.
 
-**Execution found four MORE plan defects, again by running the code rather than reading it** —
-bringing the total to fifteen across three sessions. Three of the four were *tests that could not
+**Execution found five MORE plan defects** — four by running the code rather than reading it, and
+one that only `make check` could see — bringing the total to sixteen across three sessions. Three of the four were *tests that could not
 fail for the claim they made*, the exact class this program keeps rediscovering (D-020, D-025).
 Details in **D-094**. Every one is fixed on the branch.
 

@@ -3626,7 +3626,7 @@ regrouping; Slice 3 is applied-state suppression + liveness. Design §0.
 
 ---
 
-## D-094 — P6 Slice 1 BUILT (unattended run): four more plan defects, three of them tests that could not fail
+## D-094 — P6 Slice 1 BUILT (unattended run): five more plan defects, three of them tests that could not fail
 
 **2026-08-10, unattended launchd run starting 03:10. All nine plan tasks executed on branch
 `p6-slice1`. NOT merged, NOT reviewed.** `main` is untouched. Execution mode was inline
@@ -3645,6 +3645,30 @@ back as a Python `list`, one shared `content_hash` with distinct `provider_posti
 `first_seen_at` **inverted** against `posting_id` order. The three ranker preconditions Task 7
 asserts also held. Every mutation check the plan specified was run in isolation with a cleared
 `__pycache__` (D-025), and all of them were caught by the *named* test — except the four below.
+
+### A fifth defect, found by `make check` — and the reason the gate is the gate
+
+**The first full-branch gate run came back RED: `test_migrations_match_metadata` failed**, and it
+was right to. `tables.py` declares `posting_identities`' UNIQUE constraint **unnamed**, letting
+`metadata.naming_convention` render it as
+`uq_posting_identities_posting_id_kind_algorithm_version`. The plan's migration text hard-codes
+`name=op.f("uq_posting_identities_posting")`. The two disagree, so alembic's `compare_metadata`
+saw permanent drift between the migrated database and the metadata — a defect that would have
+poisoned every future autogenerate diff, not just this one test.
+
+Fixed by writing both constraint names in their full convention-rendered form
+(`uq_posting_identities_posting_id_kind_algorithm_version`,
+`ck_posting_identities_identity_kind_enum`), which is what `p0_applications.py` and
+`8df3b3809bba_schema_v1.py` already do. The CHECK name was wrong the same way and did *not* fail
+the test — alembic does not reflect SQLite CHECK constraints — so it was corrected on the same
+reasoning rather than left because nothing complained. Mutation-confirmed: restoring the old name
+turns `test_migrations_match_metadata` red on its own.
+
+**Why this one matters out of proportion to its size.** Every other defect this session was caught
+by running code during TDD. This one was invisible to all of it: the migration applied cleanly, the
+table worked, all five schema tests passed, the 23,455-posting backfill ran, and `identities
+verify` exited 0. Only the full gate saw it. That is the whole argument for `make check` being the
+only gate, and for never reporting a result before it has run.
 
 ### Four defects, found by running the plan's own code
 

@@ -1211,6 +1211,20 @@ one requisition. The defended claim is "one application decision", not "the same
 All nine plan tasks executed. `make check` result and the branch's standing are in `STATE.md`;
 these are the measured numbers.
 
+### `make check`
+
+| Run | Covers | Result |
+|---|---|---|
+| after Task 4 (`bca78bd`) | Tasks 1-4 | **exit 0** — 3703 passed, coverage 95.19%, `generalization: OK`, 18m47s |
+| first full-branch (`b1d2364`) | Tasks 5-8 | **exit 2 — RED.** `test_migrations_match_metadata` failed: the migration's UNIQUE-constraint name disagreed with the one `tables.py`'s naming convention renders. Real defect, fixed in `3646c27`. |
+| re-run (`3646c27`) | whole branch | see `STATE.md` |
+
+Both were run in a detached worktree pinned to the commit, capturing the real exit code, never
+piped through `head`/`tail`. **The red run is recorded rather than overwritten**: it is the
+session's best evidence that the gate catches what TDD did not — the migration applied cleanly, all
+five schema tests passed, a 23,455-posting backfill ran and `identities verify` exited 0, and only
+`make check` saw the drift.
+
 ### Live-corpus dedup, measured on an isolated COPY of the store
 
 The live store was never written to. `boardwatch.db` was copied to `/tmp/bw-smoke-copy` and every
