@@ -110,39 +110,40 @@ and is a no-op when the index is already right. `make index-check` reports drift
 | D-074 | DECISIONS-ARCHIVE.md | 3009 | Final eligibility gate lane SHIPPED (persistent, agent-lane, fail-open); Gate P5 unchanged |
 | D-075 | DECISIONS-ARCHIVE.md | 3084 | Gate P2 reconciled: three individually-correct verdicts (may coincide); ≥3-field mechanism via fixtures |
 | D-076 | DECISIONS-ARCHIVE.md | 3153 | P2 item 4's final whole-branch review: what it caught, and four rulings it forced |
-| D-077 | DECISIONS.md | 149 | P6 Slice 1: the design is settled and the plan is written; no code exists yet |
-| D-078 | DECISIONS.md | 239 | P6 Slice 1: the plan's test fixtures are now real; eleven defects, all found by running code |
-| D-079 | DECISIONS.md | 328 | P6 Slice 1 annotates only; `postings.job_id` is not mutated |
-| D-080 | DECISIONS.md | 342 | `content_hash` alone may never suppress |
-| D-081 | DECISIONS.md | 356 | `exact_quad` is the sole suppressing kind, and its yield is stated honestly |
-| D-082 | DECISIONS.md | 374 | `cross_host` ships annotate-only, reversing an earlier draft |
-| D-083 | DECISIONS.md | 395 | No location evidence ⇒ no location-bearing identity, never a `"[]"` sentinel |
-| D-084 | DECISIONS.md | 410 | Three host classes, not two; matching is exact-or-dot-suffix |
-| D-085 | DECISIONS.md | 424 | Allowlist URL normalization, not a denylist |
-| D-086 | DECISIONS.md | 438 | Survivor election never consults score; `posting_id` is a load-bearing tiebreak |
-| D-087 | DECISIONS.md | 453 | Instrumentation is completeness-gated, not existence-gated |
-| D-088 | DECISIONS.md | 467 | `assisted` stays `None` in this slice |
-| D-089 | DECISIONS.md | 482 | Identities are upserted on every observation; a kind that stops being produced is deleted |
-| D-090 | DECISIONS.md | 499 | The ranker is completeness-gated for reproducibility, not safety |
-| D-091 | DECISIONS.md | 517 | The recount recomputes in Python, and claims staleness only |
-| D-092 | DECISIONS.md | 532 | Identities are backfilled by an explicit command, not by the migration |
-| D-093 | DECISIONS.md | 546 | Slice 1 does NOT meet Gate P6, and makes only one of its four clauses measurable |
-| D-094 | DECISIONS.md | 560 | P6 Slice 1 BUILT (unattended run): five more plan defects, three of them tests that could not fail |
-| D-095 | DECISIONS.md | 688 | P6 Slice 1 reviewed by three independent reviewers; fourteen findings fixed, two rejected |
-| D-096 | DECISIONS.md | 753 | The C++/C# fix folds punctuation into words; it does NOT add a raw-title comparison |
-| D-097 | DECISIONS.md | 797 | `_verify_quad` rejected nothing on the live corpus; "string-verified" is not precision evidence |
-| D-098 | DECISIONS.md | 826 | Suppression reports when it is OFF; wiring backfill into the pipeline is Slice 2 |
-| D-099 | DECISIONS.md | 862 | Gate batching stays allowed; the per-task fast-check set must include the schema guards |
-| D-100 | DECISIONS.md | 888 | P6 Slice 1 merged to `main`; Gate P6 clause 3 is MET, not merely measurable |
-| D-101 | DECISIONS.md | 920 | Gate P6 clause 4 is MET: 20/20 sampled suppressions are genuine duplicates |
-| D-102 | DECISIONS.md | 950 | D-072 (model-tier benchmark) is deferred indefinitely |
-| D-103 | DECISIONS.md | 972 | P6 Slice 2: the ledger is a current-state row per job, `seen` suppresses on a TTL, and the policy stamp never auto-reopens |
-| D-104 | DECISIONS.md | 1037 | Job regrouping: the survivor's job wins, and a tracked group is refused whole |
-| D-105 | DECISIONS.md | 1080 | Identity writes move into the scan path, closing D-098 — and D-098's cost argument did not apply |
-| D-106 | DECISIONS.md | 1111 | Two consequences the build forced: what earns a permanent `skipped`, and the zero-output guard |
-| D-107 | DECISIONS.md | 1137 | P6 Slice 2 BUILT and verified on real data; `cross_host` dereference deferred by measured absence |
-| D-108 | DECISIONS.md | 1186 | The decision log and the metrics log are archive-split; the reading protocol moves into the index |
-| D-109 | DECISIONS.md | 1245 | Index drift fails the gate; the regenerator ships as `tools/program_index` |
+| D-077 | DECISIONS.md | 150 | P6 Slice 1: the design is settled and the plan is written; no code exists yet |
+| D-078 | DECISIONS.md | 240 | P6 Slice 1: the plan's test fixtures are now real; eleven defects, all found by running code |
+| D-079 | DECISIONS.md | 329 | P6 Slice 1 annotates only; `postings.job_id` is not mutated |
+| D-080 | DECISIONS.md | 343 | `content_hash` alone may never suppress |
+| D-081 | DECISIONS.md | 357 | `exact_quad` is the sole suppressing kind, and its yield is stated honestly |
+| D-082 | DECISIONS.md | 375 | `cross_host` ships annotate-only, reversing an earlier draft |
+| D-083 | DECISIONS.md | 396 | No location evidence ⇒ no location-bearing identity, never a `"[]"` sentinel |
+| D-084 | DECISIONS.md | 411 | Three host classes, not two; matching is exact-or-dot-suffix |
+| D-085 | DECISIONS.md | 425 | Allowlist URL normalization, not a denylist |
+| D-086 | DECISIONS.md | 439 | Survivor election never consults score; `posting_id` is a load-bearing tiebreak |
+| D-087 | DECISIONS.md | 454 | Instrumentation is completeness-gated, not existence-gated |
+| D-088 | DECISIONS.md | 468 | `assisted` stays `None` in this slice |
+| D-089 | DECISIONS.md | 483 | Identities are upserted on every observation; a kind that stops being produced is deleted |
+| D-090 | DECISIONS.md | 500 | The ranker is completeness-gated for reproducibility, not safety |
+| D-091 | DECISIONS.md | 518 | The recount recomputes in Python, and claims staleness only |
+| D-092 | DECISIONS.md | 533 | Identities are backfilled by an explicit command, not by the migration |
+| D-093 | DECISIONS.md | 547 | Slice 1 does NOT meet Gate P6, and makes only one of its four clauses measurable |
+| D-094 | DECISIONS.md | 561 | P6 Slice 1 BUILT (unattended run): five more plan defects, three of them tests that could not fail |
+| D-095 | DECISIONS.md | 689 | P6 Slice 1 reviewed by three independent reviewers; fourteen findings fixed, two rejected |
+| D-096 | DECISIONS.md | 754 | The C++/C# fix folds punctuation into words; it does NOT add a raw-title comparison |
+| D-097 | DECISIONS.md | 798 | `_verify_quad` rejected nothing on the live corpus; "string-verified" is not precision evidence |
+| D-098 | DECISIONS.md | 827 | Suppression reports when it is OFF; wiring backfill into the pipeline is Slice 2 |
+| D-099 | DECISIONS.md | 863 | Gate batching stays allowed; the per-task fast-check set must include the schema guards |
+| D-100 | DECISIONS.md | 889 | P6 Slice 1 merged to `main`; Gate P6 clause 3 is MET, not merely measurable |
+| D-101 | DECISIONS.md | 921 | Gate P6 clause 4 is MET: 20/20 sampled suppressions are genuine duplicates |
+| D-102 | DECISIONS.md | 951 | D-072 (model-tier benchmark) is deferred indefinitely |
+| D-103 | DECISIONS.md | 973 | P6 Slice 2: the ledger is a current-state row per job, `seen` suppresses on a TTL, and the policy stamp never auto-reopens |
+| D-104 | DECISIONS.md | 1045 | Job regrouping: the survivor's job wins, and a tracked group is refused whole |
+| D-105 | DECISIONS.md | 1088 | Identity writes move into the scan path, closing D-098 — and D-098's cost argument did not apply |
+| D-106 | DECISIONS.md | 1119 | Two consequences the build forced: what earns a permanent `skipped`, and the zero-output guard |
+| D-107 | DECISIONS.md | 1145 | P6 Slice 2 BUILT and verified on real data; `cross_host` dereference deferred by measured absence |
+| D-108 | DECISIONS.md | 1194 | The decision log and the metrics log are archive-split; the reading protocol moves into the index |
+| D-109 | DECISIONS.md | 1253 | Index drift fails the gate, and the fixer lives in `tools/` |
+| D-110 | DECISIONS.md | 1331 | The Slice 2 review: only a caller that delivers a lead may consume the queue |
 
 ---
 
@@ -1002,7 +1003,7 @@ this program treats as a monitoring failure in itself).
 **Measured consequence of that ruling, stated because it is real and reversible.** The ranker is the
 `seen` writer — one writer, so `top` and the pipeline cannot drift on what "surfaced" means — which makes
 `top` mutate suppression state. Two `top` invocations inside the TTL therefore show different rows. The full
-gate quantified the blast radius: **four tests in four modules** broke, every one a caller that ranks twice
+gate quantified the blast radius: **four tests in three modules** broke, every one a caller that ranks twice
 against the same corpus. Each was isolating a different mechanism and now opts out with
 `--include-handled`; one could not, because it asserts full `RankedResults` equality and a drained row
 carries `handled_as='seen'`, so it releases the ledger between calls via the drain's own reopen path. If
@@ -1023,9 +1024,16 @@ suppressed until somebody runs the drain.
 **Enforced twice, per CLAUDE.md.** Typed at the write site (`UnknownDisposition`,
 `UnknownDispositionReason`, `MalformedDisposition`) and again as three CHECK constraints, so a direct INSERT
 cannot invent a bucket or store a permanent decision with no stamp. The permanence CHECK states **both
-tiers explicitly**: the obvious biconditional `(disposition IN permanent) = (policy_version IS NOT NULL AND
-expires_at IS NULL)` looks equivalent and is not — it constrains only the permanent side, so a `seen` row
-carrying a policy stamp *and* no TTL satisfies it (0 = 0). The store tests caught that before it shipped.
+tiers explicitly**, because the obvious biconditional `(disposition IN permanent) = (policy_version IS NOT NULL AND expires_at IS NULL)` looks equivalent and is not. It admits two shapes, and both are worse than they look: `(seen, NULL, NULL)` — a `seen` row with no TTL, i.e. **permanent suppression that no expiry will ever lapse and that `stale_dispositions` cannot list, because that read keys on a non-NULL `policy_version`** — and `(seen, stamp, TTL)`. The store tests caught
+that before it shipped.
+
+**Corrected 2026-08-10 by the Slice 2 review.** This paragraph originally named the admitted shape as "a
+`seen` row carrying a policy stamp *and* no TTL … (0 = 0)". That shape is **rejected** by the naive form —
+LHS 0, RHS `(1 AND 1)` = 1, so `0 = 1` fails — as a truth table run against a real naive-CHECK table
+confirms. The shipped constraint was correct all along; only the reasoning was wrong, and it was wrong in a
+sentence whose whole job is to stop a later session from "simplifying" the CHECK back. Recorded rather than
+silently edited, because an unchallengeable-looking justification for a correct decision is exactly what
+this log exists to make checkable.
 
 **Three reasons, not one per ranker filter** (`lead_built`, `unshippable_artifact`, `surfaced`).
 `hidden_hard_filter`, `hidden_non_swe`, `hidden_ineligible`, `hidden_below_cutoff` and `hidden_duplicate`
@@ -1062,7 +1070,7 @@ it makes the outcome iteration-order-dependent. A tracked **survivor** job refus
 moves off it — that is the common good case (you applied via the row dedup already elected).
 
 Measured 2026-08-10: `applications` = 0 rows, and all 44 `artifacts` rows have `job_id IS NULL`
-(`record_artifact`'s two callers in `src/` never pass it). The guard is therefore **latent, not
+(`record_artifact`'s three call sites in `src/` never pass it). The guard is therefore **latent, not
 unreachable** — the distinction the "dead for bundled ≠ unreachable" lesson turns on — and it ships with
 tests.
 
@@ -1197,7 +1205,7 @@ but did not make it smaller.
 **Choice.** Split each log into a live file and a closed archive, at the boundary where the program's
 current work begins.
 
-- `DECISIONS.md` keeps **D-077 … D-107** (P6 onward) — 1,175 lines. **D-001 … D-076** move to
+- `DECISIONS.md` keeps **D-077 … D-107** (P6 onward) — 1,235 lines. **D-001 … D-076** move to
   `DECISIONS-ARCHIVE.md` — 3,221 lines.
 - `METRICS.md` keeps the **live** tables and the P6-era session records — 465 lines. The baseline, the
   superseded per-rule abstain table, and every session record from P0 through Gate P2 move to
@@ -1219,7 +1227,7 @@ archive-split is the only structural change permitted to it. This entry is the r
 **Proved, not asserted.** For each file, the halves were concatenated back into the original order and
 diffed: `DECISIONS` 322,260 bytes, SHA-1 `472dec65…` both sides; `METRICS` 96,063 bytes, SHA-1 `adcca125…`
 both sides. Entry counts reconcile — 76 + 31 = 107, and 23 + 6 = 29 sections. Every generated line number was
-then read back with `sed` and checked against the heading it claimed to point at: 107/107 and 29/29 correct,
+then read back with `sed` and checked against the heading it claimed to point at: 108/108 and 29/29 correct,
 zero mismatches. The check matters because the index this replaces was itself generated once with the
 positions of the pre-index file, leaving all 107 rows off by 118 — a generated number nobody checked is
 exactly the kind of unchallengeable-looking figure this repo has been bitten by.
@@ -1317,3 +1325,120 @@ explain itself.
 
 **Consequence.** `STATE.md`'s carried-gap row for this is closed. `.agent/tools/reindex_program_docs.py` is
 deleted, so there is one copy rather than two that can diverge.
+
+---
+
+## D-110 — The Slice 2 review: only a caller that delivers a lead may consume the queue
+
+*2026-08-10. The owed fresh-context review of `origin/main..main` (Slice 2, D-108 and D-109), run before
+anything was pushed. Four independent reviewers — a diff reviewer, a docs-only reviewer, a ranker-callers
+tracer and a schema/hot-path auditor — plus this session's own reading. Every finding was checked against the
+code before being acted on.*
+
+**The root cause, stated once.** D-103 records Mit's ruling that a surfaced lead is recorded `seen` and
+suppresses for a TTL. That ruling was implemented by making **every** `rank_open_postings` call consume the
+queue — and three of the four production callers deliver nothing to anybody. The ruling is not being
+re-litigated; it is being applied to the act of *delivering a lead* rather than to the act of ranking.
+`rank_open_postings` gains `record_surfaced` (default unchanged, so a caller that forgets is still the noisy
+direction) and now always reports `surfaced_job_ids`, so a caller that opts out can record the decision at
+the point it genuinely takes one.
+
+**Three callers were consuming a queue they had no business consuming.**
+
+- `eligibility gate request` suppressed the whole shortlist it had just built for judging. The skill doc's
+  stated next step is `boardwatch run`, which then shortlisted **0** for the whole TTL, so the verdicts never
+  reached an artifact. The handshake silently defeated itself, and the widened zero-output guard reported no
+  fatal. Now `record_surfaced=False`.
+- The pipeline wrote `seen` **before** the tailor loop, putting the suppression on the wrong side of the
+  render. A missing `tectonic`, an invalid persona or a Ctrl-C between the two hid every shortlisted lead for
+  seven days with nothing built, and the unattended runner's documented retry re-ranked into an empty
+  shortlist and called it an honest empty day. `runner.py`'s own comment asserted the opposite — "a crash
+  between the render and this write leaves the job undisposed, which over-shows it next run. That is the safe
+  direction" — which was false the moment the ranker became the writer. All three tiers are now written after
+  the loop by `_record_shortlist_dispositions`, and the `seen` tier is gated on the stage completing. The
+  permanent tiers are not, because each names work that actually happened.
+- `bwd` ranks twice a day — once to display, once as `--json` to drive the build — so the display call
+  suppressed the rows the build call was about to request. It printed "nothing new to build" and built **zero
+  folders**, every day for seven days. `top --no-record` is the operator-facing escape hatch and `bw-daily`
+  uses it for the display call. (`.agent/` is gitignored, so that edit ships with nothing; it is recorded
+  here because the *defect* was in shipped behaviour.)
+
+**A transient render failure was permanently deleting real leads.** D-106 justified the permanent `skipped`
+with "the same résumé against the same JD under the same settings refuses identically". That is true of
+`PAGE_LIMIT_EXCEEDED` and false of `COMPILE_FAILED` and `BINARY_MISSING`, which `evaluate_compile` maps to
+`shippable=False` *identically* to the page limit. A non-zero `tectonic` exit — cold support-file cache with
+no network, disk full, OOM, killed subprocess — therefore buried every lead on the shortlist forever. Two
+things made it unrecoverable rather than merely wrong: the drain cannot find these rows, because **no
+`policy_version` component covers the résumé or `resume_max_pages`** (the stamp is the run manifest's five
+fields, and `profile_row_hash` hashes only the five columns the *ranker* reads), so D-103's stated accepted
+cost — "stays suppressed until somebody runs the drain" — was false; and `LeadArtifactError` carried only a
+formatted message, which CLAUDE.md forbids classifying by string-matching. Fixed by typing both gate reasons
+onto the exception at the raise site and gating the disposition on a closed
+`DETERMINISTIC_GATE_REFUSALS` catalog. Out-of-catalog is treated as environmental — the fail-open direction
+for a real lead.
+
+**Regrouping was reintroducing the very defect this slice removes.** A disposition is keyed on a job.
+Regrouping moves postings *off* a job onto the survivor's, and nothing moved the decision, so a `built` row
+was left governing a job nothing anchors while the canonical job carried nothing — and the already-built lead
+was surfaced and tailored again. Reproduced in an isolated store before the fix and after. `protected_job_ids`
+could not catch it: it checks `applications` and `artifacts`, and `artifacts.job_id` is NULL on all 44 live
+rows. `apply_merges` now carries the decision forward through the monotonic upsert (so the strongest decision
+in the group wins and a canonical job already `built` is untouched) and stamps the emptied row `reopened_at`
+rather than leaving a live row on a job with no postings — a quarantine with no re-entry path, which CLAUDE.md
+forbids outright.
+
+**Alternative rejected:** refusing the merge whenever a member carries a disposition, mirroring the
+`tracked_job` guard. Rejected because it would permanently refuse exactly the groups the projection exists to
+fix (D-104's motivation is a duplicate of an *already-built* job), whereas a disposition — unlike an
+`applications` row — has no `UNIQUE(job_id, attempt_no)` to collide and corrupts no applied count.
+
+**One reviewer argued this was unreachable and was half right.** The argument: `exact_quad` is keyed on
+`company_id`, a company's postings share a host, so survivor election reduces to earliest `first_seen_at` —
+which is the member most likely to hold the disposition, and it survives. That holds for the common case and
+breaks on a reopen: a posting that was closed when its duplicate was built re-opens, wins election on the
+earlier `first_seen_at`, and the built member becomes the loser. The fix is taken regardless, because the
+stranded live row is a leak in *both* directions.
+
+**Two display defects that turn a legitimately empty day back into a silent one.** `_shortlist_line` omitted
+`hidden_handled` while `_zero_output_guard` had been widened to stop fataling on it, so the operator's one-line
+summary read "0 shortlisted of 400 considered (0, 0, 0, 0)" and exited 0 — counts that visibly fail to
+reconcile. And `top --json` returned before every notice, so a script got `[]` with no reason at all. Both
+named now; the funnel artifact already carried the bucket, which is why this survived to a review.
+
+**D-103's own justification for the permanence CHECK was wrong, in three places.** It claimed the naive
+biconditional `(disposition IN permanent) = (policy_version IS NOT NULL AND expires_at IS NULL)` admits "a
+`seen` row carrying a policy stamp and no TTL (0 = 0)". A truth table run against a real naive-CHECK table
+shows that shape is **rejected** (LHS 0, RHS `1 AND 1` = 1). What it actually admits is `(seen, NULL, NULL)` —
+a `seen` row with no TTL, which suppresses **forever** and which `stale_dispositions` cannot even list,
+because that read keys on a non-NULL `policy_version` — and `(seen, stamp, TTL)`. The shipped constraint was
+correct all along and rejects all 12 malformed shapes on both an Alembic-migrated and a `create_all` database,
+verified by raw `INSERT`. Only the reasoning was wrong, and it was wrong in the sentence whose job is to stop
+a later session from simplifying the CHECK back. Corrected in `DECISIONS.md`, `tables.py` and the migration's
+prose (the frozen SQL literals are untouched — correcting a comment changes no history).
+
+**Also enforced flat, and now said so:** the DB checks the reason catalog as a *union*, so a direct `INSERT`
+can pair `built` with `surfaced`. `core.ledger.validate` rejects it and no code path bypasses that, so
+"enforced twice" holds for inventing a bucket and not for mispairing. Left as-is rather than tightened, which
+would cost a migration for a hole no caller can reach.
+
+**Accepted without change, with the reason recorded.** `record_disposition` is a read-modify-write with no
+lock, so two simultaneous processes can race; SQLite/WAL rolls one back rather than silently losing an update,
+and single-writer is the program's standing assumption (P3 item 8 owns the two-writer question).
+`reopen_jobs` passes an unbounded `IN` list where `load_dispositions` documents the 32,766-parameter cap — 
+unreachable at 24,073 jobs, and worth knowing before the corpus grows. `NoResultFound` from the new
+per-board company-name query would abort the whole scan rather than one board, but nothing in `src/` deletes a
+company.
+
+**Three tests were passing for the wrong reason** and are reconciled: two ranked twice and had their
+assertions satisfied by the ledger hiding a row rather than by the mechanism under test (one of them
+explicitly comments "same three postings both times", which had become false), and the perf benchmark ranked
+seven times, measuring a mutating sliding window plus 10 ledger writes per iteration inside the measured
+region. All three now rank with `record_surfaced=False`.
+
+**Mutation-checked, not assumed.** Ignoring the fatal in the `seen` gate, restoring `gate request`'s consume,
+and recording `skipped` for every `LeadArtifactError` each turn the corresponding new test red. Also: this
+session lost four uncommitted `runner.py` fixes to a `git checkout` during mutation testing — the exact trap
+already recorded — and re-applied them. **Commit before mutating; the note is there because it keeps happening.**
+
+**Not resolved here, still Mit's:** the funnel-write swallow, and whether any family beyond `work_auth`
+defaults to `blocker`. Untouched deliberately.

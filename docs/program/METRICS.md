@@ -502,7 +502,10 @@ Committed before mutating and `__pycache__` cleared each time (both have faked a
 
 **Review yield.** One code reviewer, one docs-only reviewer, both fresh-context. Code: 5 defects, all real,
 all fixed. Docs: 4 MAJOR + 5 MINOR, of which the load-bearing one was that D-109's argument rested on a
-docs-only `make check` exemption that **D-014 explicitly denies** — see D-109. The docs reviewer also found
+docs-only `make check` exemption the repo does not actually grant. Stated precisely, because D-109 itself
+declines to resolve it: D-014 is about program docs being subject to the generalization checker, and reading
+it as "no docs-only exemption" is D-109's inference, not D-014's stated choice. **The repo contradicts itself
+here and neither entry resolves it** — that is Mit's call, still open. The docs reviewer also found
 three files enumerating `make check`'s contents that had gone stale (`CONTRIBUTING.md`, `AGENTS.md`,
 `.github/PULL_REQUEST_TEMPLATE.md`), which is the fourth time a claim in this repo has needed fixing in more
 places than the change that invalidated it touched.

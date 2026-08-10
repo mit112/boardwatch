@@ -8,6 +8,10 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- **`boardwatch top --no-record`** — rank without marking anything `seen`, so the call does not advance the
+  queue (D-110). The write-side counterpart to `--include-handled`: needed by any script that ranks once to
+  display and again to act, and by anyone taking a second look at a shortlist they just saw.
+
 - **`make reindex` and `make index-check`, backed by `tools/program_index`** (D-109). The spanning indexes
   that open `docs/program/DECISIONS.md` and `METRICS.md` carry generated line numbers that drift on *any*
   edit above a heading, not only on an append — one commit editing two preamble paragraphs moved 38 rows.
@@ -50,6 +54,33 @@ All notable changes to this project are documented here. The format follows
 
 ### Fixed
 
+- **Only a caller that DELIVERS a lead consumes the queue** (D-110, from the Slice 2 review). The `seen`
+  write had been applied to every `rank_open_postings` call, and three of the four production callers deliver
+  nothing: `eligibility gate request` suppressed the shortlist it had just built for judging, so the
+  `boardwatch run` the handshake exists to feed shortlisted **0** for the whole TTL and the verdicts never
+  reached an artifact; the pipeline wrote `seen` *before* the tailor loop, so a missing `tectonic`, an invalid
+  persona or a Ctrl-C hid every shortlisted lead for seven days with nothing built, and the documented retry
+  re-ranked into an empty shortlist; and `bwd`, which ranks twice a day, suppressed the rows its own build
+  call was about to request and built zero folders while printing "nothing new to build".
+- **A transient render failure no longer deletes a lead permanently** (D-110). A non-zero `tectonic` exit
+  (cold support-file cache with no network, disk full, OOM) maps to `shippable=False` exactly like the page
+  limit, so it earned a permanent `skipped` — and no `policy_version` component covers the résumé or
+  `resume_max_pages`, so `ledger reopen --stale` could not bring those leads back either. `LeadArtifactError`
+  now carries both gate reasons as data and only the closed `DETERMINISTIC_GATE_REFUSALS` catalog earns a
+  permanent disposition; anything else is retried.
+- **Regrouping carries the ledger decision onto the canonical job** (D-110). Moving postings off a job left
+  its `built` row governing a job nothing anchors while the canonical job carried nothing, so the
+  already-built lead was surfaced and tailored again — the exact defect Slice 2 exists to remove, arriving
+  through the projection Slice 2 added. The decision is carried forward monotonically and the emptied row is
+  released, so no live row is left with no re-entry path.
+- **`job_grouping_events` records only moves that happened** (D-110). A plan built against a stale read
+  appended a trail entry whose guarded `UPDATE` then matched 0 rows, so the table D-104 names the undo path
+  could not in fact rebuild the projection.
+- **The run summary names `hidden_handled`** (D-110). `_zero_output_guard` had been widened to stop fataling
+  on an already-handled shortlist, but the operator's one-line summary omitted the bucket, printing
+  "0 shortlisted of 400 considered (0, 0, 0, 0)" and exiting 0. `top --json` now reports the bucket on stderr
+  before returning, so a script no longer receives `[]` with no reason.
+
 - **Duplicate suppression no longer switches itself off when a scan discovers a posting** (D-105, closing
   D-098). `write_identities` had exactly one caller in `src/` — the manual `boardwatch identities backfill`
   — so any run that discovered one new posting left it uncovered, `identities_complete()` went False, and
@@ -66,8 +97,13 @@ All notable changes to this project are documented here. The format follows
 
 ### Changed
 
+- **`config_hash` moves**, because `seen_ttl_days` was added to `_CONFIG_RELEVANT` (P6 Slice 2). It is a P0
+  artifact-v3 field and an input to the ledger's `policy_version`, so a run manifest written before this
+  change is no longer hash-comparable with one written after. Recorded here because the changelog is
+  authoritative for what shipped and a moved identity hash is not an implementation detail.
+
 - **The decision log and the metrics log are archive-split** (D-108). `DECISIONS.md` keeps D-077 onward
-  (4,369 → 1,234 lines); D-001 … D-076 move verbatim to `DECISIONS-ARCHIVE.md`. `METRICS.md` keeps the live
+  (4,369 → 1,235 lines); D-001 … D-076 move verbatim to `DECISIONS-ARCHIVE.md`. `METRICS.md` keeps the live
   run-log and acceptance tables plus the P6-era records (1,547 → 465 lines); the baseline, the superseded
   abstain table, and the P0–P5 session records move to `METRICS-ARCHIVE.md`. Each live file now opens with
   an **index spanning both of its files** — file, line, title — and the "read the range, not the file"

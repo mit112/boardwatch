@@ -127,14 +127,24 @@ def test_incomplete_identities_are_reported_not_silently_zero(seed_dedup, backfi
     an uninstrumented run as a clean one.
     """
     seed = seed_dedup(count=2)
-    before = rank_open_postings(seed.engine, _settings(seed.data_dir), limit=10)
+    # `record_surfaced=False` on both calls: the claim is about the DEDUP gate opening, and while
+    # the ranker consumed the queue the second call's `hidden_duplicate == 1` was asserted over a
+    # shortlist with nothing visible left in it — true only because the dedup check happens to
+    # precede the ledger check in the loop.
+    before = rank_open_postings(
+        seed.engine, _settings(seed.data_dir), limit=10, record_surfaced=False
+    )
     assert before.identities_are_complete is False
     assert before.hidden_duplicate == 0
 
     backfill_identities(seed)
-    after = rank_open_postings(seed.engine, _settings(seed.data_dir), limit=10)
+    after = rank_open_postings(
+        seed.engine, _settings(seed.data_dir), limit=10, record_surfaced=False
+    )
     assert after.identities_are_complete is True
     assert after.hidden_duplicate == 1
+    assert after.hidden_handled == 0, "the first call must not have advanced the queue"
+    assert after.visible, "the dedup claim must be asserted over a non-empty shortlist"
 
 
 def test_a_partial_backfill_reports_incomplete(seed_dedup, backfill_identities):

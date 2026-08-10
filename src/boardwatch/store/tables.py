@@ -419,9 +419,9 @@ job_dispositions = Table(
     Column("job_id", Integer, ForeignKey("jobs.id"), primary_key=True),
     Column("disposition", Text, nullable=False),
     Column("reason", Text, nullable=False),
-    # NOT NULL exactly for the permanent tier; NULL exactly for `seen`. The two CHECKs below are
-    # the spec's "built/skipped permanent and seen TTL'd" plus "a policy-version stamp on
-    # permanent dispositions", expressed where a caller cannot forget them.
+    # NOT NULL exactly for the permanent tier; NULL exactly for `seen`. Of the three CHECKs below,
+    # the permanence one is the spec's "built/skipped permanent and seen TTL'd" plus "a
+    # policy-version stamp on permanent dispositions", expressed where a caller cannot forget it.
     Column("policy_version", Text, nullable=True),
     Column("expires_at", DateTime, nullable=True),
     # Set by the drain instead of deleting the row, so draining a bucket does not erase it.
@@ -433,8 +433,10 @@ job_dispositions = Table(
     CheckConstraint(f"reason IN ({_REASON_LIST})", name="disposition_reason_enum"),
     # Both tiers stated explicitly. A single biconditional
     # `(disposition IN permanent) = (policy_version IS NOT NULL AND expires_at IS NULL)` looks
-    # equivalent and is not: it constrains only the permanent side, so a `seen` row carrying a
-    # policy stamp AND no TTL satisfies it (0 = 0). Caught by the store tests before it shipped.
+    # equivalent and is not: it admits `(seen, NULL, NULL)` — a `seen` row with NO TTL, which
+    # suppresses forever and which `stale_dispositions` cannot even list, because that read keys on
+    # a non-NULL policy_version — and `(seen, stamp, TTL)`. Do not "simplify" this back; the store
+    # tests will catch it, but the reason is not obvious from the predicate.
     CheckConstraint(
         f"(disposition IN ({_PERMANENT_LIST})"
         " AND policy_version IS NOT NULL AND expires_at IS NULL)"

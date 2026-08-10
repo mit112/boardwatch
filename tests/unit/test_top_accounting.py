@@ -166,8 +166,16 @@ def test_raising_the_limit_moves_postings_out_of_the_cutoff_bucket(env: Path) ->
     engine = _seed(env, ["Backend Engineer", "Platform Engineer", "Systems Engineer"])
     settings = _settings(env)
     # Same three postings both times, so only `limit` differs between the two counts.
-    assert rank_open_postings(engine, settings, limit=1).hidden_below_cutoff == 2
-    assert rank_open_postings(engine, settings, limit=3).hidden_below_cutoff == 0
+    # `record_surfaced=False` is what keeps that comment TRUE: while the ranker consumed the queue
+    # on every call, the second call's `hidden_below_cutoff == 0` held because the third posting was
+    # hidden as already-handled, not because the limit rose — so the mutation this test exists to
+    # catch (hard-coding the counter) would have survived it.
+    assert rank_open_postings(
+        engine, settings, limit=1, record_surfaced=False
+    ).hidden_below_cutoff == 2
+    assert rank_open_postings(
+        engine, settings, limit=3, record_surfaced=False
+    ).hidden_below_cutoff == 0
 
 
 def test_postings_narrowed_away_by_only_new_are_counted(env: Path) -> None:

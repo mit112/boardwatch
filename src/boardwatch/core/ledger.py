@@ -26,7 +26,9 @@ from datetime import datetime
 DISPOSITIONS: tuple[str, ...] = ("seen", "skipped", "built")
 
 # `built`/`skipped` are permanent and carry a policy stamp; `seen` is TTL'd and carries none.
-# The store repeats this as two CHECK constraints, so a direct INSERT cannot violate it either.
+# The store repeats this as a CHECK constraint (one of three on the table), so a direct INSERT
+# cannot violate it either. Note the DB checks the reason catalog FLAT, as a union: pairing a reason
+# with the wrong disposition is caught here in Python and not by the constraint.
 PERMANENT_DISPOSITIONS = frozenset({"skipped", "built"})
 
 # Closed reason catalog, per disposition. Deliberately three reasons and not one per ranker

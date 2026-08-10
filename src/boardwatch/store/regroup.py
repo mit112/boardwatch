@@ -26,9 +26,10 @@ def protected_job_ids(conn: Connection) -> frozenset[int]:
     `applications` is the tracking key (D-079) and `UNIQUE(job_id, attempt_no)` means two
     merged members with an attempt 1 each could never share a job anyway. `artifacts.job_id` is
     included because it is a real FK that `list_artifacts(job_id=...)` reads; measured
-    2026-08-10 it is NULL on all 44 live rows (`record_artifact`'s two callers in `src/` never
-    pass it), so this clause is latent — but latent is not unreachable, and the guard costs one
-    OR.
+    2026-08-10 it is NULL on all 44 live rows (`record_artifact`'s three call sites in `src/`
+    never pass it), and no setting or config path reaches that argument — so unlike the
+    `applications` half (which `boardwatch track` reaches today) this clause needs a code change to
+    fire. It is kept because the guard costs one OR, not because it is currently latent.
     """
     rows = conn.execute(
         select(applications.c.job_id).union(
@@ -61,12 +62,17 @@ def apply_merges(
     identity_kind: str,
     now: datetime,
 ) -> int:
-    """Record each merge in the append-only trail, then move the projection. Returns rows moved.
+    """Record each merge in the trail, move the projection, carry the ledger. Returns rows moved.
 
     The event is written first on purpose: if the transaction fails between the two statements
     nothing is committed at all, and if a future change ever separates them the trail is the
     half that exists. `postings.job_id` is a projection and can be rebuilt from the trail; the
-    trail cannot be rebuilt from the projection.
+    trail cannot be rebuilt from the projection — which is why only merges that actually move a
+    row get an event (see below), since a trail full of moves that never happened cannot rebuild
+    anything.
+
+    `_carry_dispositions` runs last, inside the same transaction: the postings and the decision
+    that governs them move together or not at all.
     """
     if not merges:
         return 0

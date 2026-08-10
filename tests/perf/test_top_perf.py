@@ -85,13 +85,19 @@ def test_top_path_median_under_one_second(tmp_path: Path) -> None:
             )
         )
 
+    # `record_surfaced=False` throughout: the benchmark has to measure the same read seven times.
+    # While the ranker consumed the queue, each iteration ranked a fresh 10-row window (handled
+    # climbing 0, 10, 20, ...) and paid for 10 ledger writes inside the measured region, and the
+    # `visible == 10` assertion held only because the fixture has 10,000 eligible postings.
     for _ in range(2):  # warm-ups
-        rank_open_postings(engine, settings, now=now, limit=10)
+        rank_open_postings(engine, settings, now=now, limit=10, record_surfaced=False)
 
     timings: list[float] = []
     for _ in range(5):
         start = time.perf_counter()
-        result = rank_open_postings(engine, settings, now=now, limit=10)
+        result = rank_open_postings(
+            engine, settings, now=now, limit=10, record_surfaced=False
+        )
         timings.append(time.perf_counter() - start)
         assert len(result.visible) == 10
     print(f"top-path timings (s): {[round(t, 3) for t in timings]}")

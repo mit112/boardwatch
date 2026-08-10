@@ -65,8 +65,11 @@ def upgrade() -> None:
         ),
         # The permanence contract, both tiers stated explicitly. A single biconditional
         # `(disposition IN permanent) = (policy_version IS NOT NULL AND expires_at IS NULL)`
-        # looks equivalent and is not: it constrains only the permanent side, so a `seen` row
-        # carrying a policy stamp AND no TTL satisfies it (0 = 0).
+        # looks equivalent and is not: it admits `(seen, NULL, NULL)` — a `seen` row with NO TTL,
+        # which suppresses forever and which the `--stale` read cannot list, since that read keys
+        # on a non-NULL policy_version — and `(seen, stamp, TTL)`. The SQL below is FROZEN; this
+        # comment was corrected on 2026-08-10 after the Slice 2 review found it named a shape the
+        # naive form already rejects. Correcting prose changes no history; the literals above do.
         sa.CheckConstraint(
             f"(disposition IN ({_PERMANENT_LIST})"
             " AND policy_version IS NOT NULL AND expires_at IS NULL)"

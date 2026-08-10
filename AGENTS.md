@@ -16,16 +16,18 @@ in `docs/program/METRICS.md`; do not turn this file into a second changelog.
 5. Before ending, update `STATE.md` and `METRICS.md`; append to `DECISIONS.md` for architectural
    choices or owner rulings.
 
-## Current standing to re-verify
+## Current standing
 
-The 2026-08-09 baseline is: before this setup, `main` had no pre-existing modifications; `make check`
-passed with generalization OK, Ruff clean, mypy clean, 3,636 tests passed, 1 deselected, and 95.23%
-coverage. The only current working-tree addition is this intentional `AGENTS.md`. P0 and P1 are
-complete; P2 is met-as-reconciled as a field-tier mechanism, with real per-user field content and the onboarding
-gatherer still outstanding; P3 is implemented for the non-owner/non-Docker slices but its operational
-gate is unmet; P4's build is complete but its blind craft review is owner work; P5 is met at 16/16
-INELIGIBLE precision; P6 and P7 have not started. Re-check `STATE.md` before relying on any of these
-numbers.
+**This file deliberately records NO phase standing, test count, coverage figure or working-tree
+description.** `docs/program/STATE.md` is the single source of truth for all of it, and
+`git log --oneline -1` / `git status` are the authority on the tree.
+
+An earlier version of this section pinned a 2026-08-09 baseline (a test count, a coverage
+percentage, "the only working-tree addition is this `AGENTS.md`") and asserted "P6 and P7 have not
+started". Every one of those went stale, and the P6 claim was false by the time the same commit
+range that edited this file had shipped two P6 slices — a session-start instruction file confidently
+misdirecting the session it is meant to orient. A "re-check STATE.md" hedge does not redeem a
+directly false claim: whoever reads it has already been told the wrong thing. Read `STATE.md`.
 
 The two explicit owner questions currently recorded in `STATE.md` are:
 
