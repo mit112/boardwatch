@@ -606,8 +606,16 @@ manually instead.
 
 ## Session — 2026-08-10 (later still ×2) · P6 Slice 3, items 5 and 6 (D-111). Gate P6 unchanged: still 2 of 4.
 
-**Gate.** `make check` in a detached worktree pinned to the slice commit. Baseline on `5f0150d` before any
-edit: **exit 0, 3845 passed, 95.06%** — so main was green and anything red afterwards was this session's.
+**Gate.** `make check` in a detached worktree pinned to a commit, three times.
+
+| Run | Commit | Exit | Passed | Coverage |
+|---|---|---|---|---|
+| Baseline, before any edit | `5f0150d` | **0** | 3,845 | 95.06% |
+| Build complete, pre-review | slice head | **0** | 3,890 | 95.03% |
+| After the review's fixes | `1ab3a48` | **0** | **3,908** | **95.07%** |
+
+The baseline matters: main was green first, so anything red afterwards was this session's.
+**+63 tests over the session**, 45 from the build and 18 from the review's fixes.
 
 ### Applied-state suppression (item 5) — the population, measured read-only
 
@@ -665,7 +673,7 @@ so the probe supplements the scanner and never replaces it. **Fail-open is not h
 whole employers. The probe did find a genuinely dead **open** posting (`jobs.lever.co/palantir/…`,
 `consecutive_missing = 1`), which is exactly the between-scans window it exists for.
 
-### Mutation checks — 8, all caught by the intended test
+### Mutation checks — 10, all caught by the intended test
 
 | Mutation | Caught by |
 |---|---|
@@ -677,6 +685,8 @@ whole employers. The probe did find a genuinely dead **open** posting (`jobs.lev
 | gone-branch dropped from the `FetchFailure` path (**the path that actually runs**) | `…arriving_as_a_FAILURE_still_withholds` |
 | withheld lead left in `surfaced_job_ids` | `…is_not_recorded_seen` |
 | dead probe writes `status='closed'` | `…is_not_closed_in_the_store` |
+| `hidden_applied` dropped from `_shortlist_line` | `…summary_line_names_both_new_buckets` — the site **nothing else checks** |
+| `--check-liveness` default flipped to False | `…run_COMMAND_actually_wires_a_prober_in` |
 
 ### The review — 3 reviewers, 2 BLOCKERs, both found by RUNNING the code
 
@@ -689,8 +699,8 @@ whole employers. The probe did find a genuinely dead **open** posting (`jobs.lev
 Both BLOCKERs were invisible to reading: the funnel's tailor stage silently stopped reconciling whenever a
 lead was withheld (breaking **Gate P0**, not P6), and `build_prober` — the entire production probe path —
 had no test, so a change breaking `FetchFailure.status_code` would have disabled the probe permanently
-with the suite green. **Mutations after the fixes: 6 more, all caught** (removing the tailor drop, dropping
-the `hidden_applied` guard clause, and the four re-run from the build round).
+with the suite green. Both fixes were mutation-checked, and so were the two sites the review showed were
+covered by nothing — see the table above.
 
 **The `git checkout` trap fired again.** Two review fixes were written, then mutation-tested, and the
 `git checkout` that reverts each mutation destroyed them. "Commit before mutation-testing" was followed
