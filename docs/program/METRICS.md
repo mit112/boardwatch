@@ -800,11 +800,30 @@ Each derived from the test's stated claim, run after committing, with `__pycache
 that proves the plumbing between two modules, and it is the half a reader would have assumed rather than
 checked.
 
-### Gate run
+### Gate runs — three, each pinned to a commit, so no commit is gated by a run that predates it
 
-`make check` in a detached worktree pinned to `70004b7`: **exit 0, 3,918 passed, 1 deselected, coverage
-95.10%, 298.84 s.** Up from 3,911 at `0834f81` — 7 new tests (2 core-liveness redirect cases, 1 catalog
-coherence case, 2 real-`Fetcher` redirect cases, 2 CLI empty-result notice cases).
+| Commit | Covers | Result |
+|---|---|---|
+| `70004b7` | the three review fixes | exit 0 · 3,918 passed · 95.10% · 298.84 s |
+| `f713ce6` | + docs (D-113, D-114, STATE, METRICS, CHANGELOG) | exit 0 · 3,918 passed · 95.10% · 300.85 s |
+| `f0a0f54` | + the second review round's fixes | exit 0 · **3,923 passed** · **95.12%** · 302.97 s |
+
+3,911 at `0834f81` → 3,923: **12 new tests** — 2 core-liveness redirect cases, 1 catalog-coherence case,
+2 real-`Fetcher` redirect cases, 3 CLI notice cases (human empty-result ×2, JSON path ×1), 2 liveness
+counter cases (summary + artifact), 2 `pdfinfo` probe cases. The workflow YAML is covered by none of
+them — `make check` does not read `.github/`, which is the entire reason the 0.3.0 build failed.
+
+### Mutation checks, round 2 — 5, all CAUGHT
+
+| # | Mutation | Result |
+|---|---|---|
+| 5 | `gone_after_redirect` counter always 0 | CAUGHT (2 failed) |
+| 6 | Counter computed but never passed to the funnel | CAUGHT (1 failed) |
+| 7 | Redirect count subtracted from `alive` (folded into the partition) | CAUGHT (1 failed) |
+| 8 | `pdfinfo` probe always reports present | CAUGHT (1 failed) |
+| 9 | JSON path prints no notices | CAUGHT (1 failed) |
+
+**Nine mutations this session, nine caught.**
 
 ### The CI dependency gap, closed
 
