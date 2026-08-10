@@ -817,6 +817,9 @@ coherence case, 2 real-`Fetcher` redirect cases, 2 CLI empty-result notice cases
 | Chocolatey `poppler` executables shipped | **0** (891 files, all source) |
 | Tectonic bundle cache after one trivial compile | 42 MB |
 
-**Not yet measured: anything on a real runner.** Asset layouts, checksums and the Linux and macOS binaries
-were verified locally; the Windows commands are constructed from a verified zip layout. The push is the
-experiment.
+**Not yet measured: anything on a real runner.** What *was* executed locally, on arm64 macOS, is the whole
+macOS branch end to end — pinned URL, flat archive layout, `TECTONIC_CACHE_DIR` honoured (41 MB written
+there and nowhere else), warm-up compile, and `pdfinfo` reading `Pages: 1` back. The Linux binary was run
+in a container; asset checksums are verified for all five targets. **The Windows commands are constructed
+from a verified zip layout and have never been run.** The push is the experiment, and Windows is the part
+of it that can genuinely fail.
