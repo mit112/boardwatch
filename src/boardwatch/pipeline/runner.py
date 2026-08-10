@@ -270,6 +270,7 @@ def run_pipeline(
             hidden_ineligible=ranked.hidden_ineligible,
             hidden_below_cutoff=ranked.hidden_below_cutoff,
             skipped_not_new=ranked.skipped_not_new,
+            hidden_duplicate=ranked.hidden_duplicate,
         )
 
         console.print("[bold]tailor[/bold]")

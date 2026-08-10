@@ -9,7 +9,7 @@ in-process top path the perf smoke benchmarks (§6.3-7).
 from __future__ import annotations
 
 import json
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import datetime
 
 import typer
@@ -19,6 +19,7 @@ from sqlalchemy import Connection, Engine, select
 
 from boardwatch.cli.context import build_context
 from boardwatch.core.clock import utcnow
+from boardwatch.core.dedup import Suppression, resolve_duplicates
 from boardwatch.core.settings import Settings
 from boardwatch.eligibility.preflight import run_eligibility
 from boardwatch.eligibility.read import current_gate_verdicts, current_verdicts
@@ -33,6 +34,11 @@ from boardwatch.rank.heuristic import (
 )
 from boardwatch.rank.role_gate import RoleVerdict, role_verdict
 from boardwatch.store.app_state import get_digest_cursor
+from boardwatch.store.identity_queries import (
+    identities_complete,
+    load_identities,
+    load_identity_inputs,
+)
 from boardwatch.store.queries import current_posting_versions, get_profile
 from boardwatch.store.tables import companies, extractions, posting_events, postings
 
@@ -53,15 +59,19 @@ class RankedPosting:
     verdict: str | None = None  # the current profile's eligibility verdict, None if unevaluated
     role: RoleVerdict = "uncertain"  # title role gate; "not_swe" is hidden unless asked for
     role_reason: str = ""
+    # The survivor this posting was suppressed in favour of. Set only when the row is
+    # surfaced by the `--include-duplicates` drain; a normally-visible posting has None.
+    duplicate_of: int | None = None
 
 
 @dataclass(frozen=True)
 class RankedResults:
     """The shortlist plus every count needed to account for the postings considered.
 
-    `considered` and the five drop counts exist so the funnel's shortlist stage can reconcile:
+    `considered` and the six drop counts exist so the funnel's shortlist stage can reconcile:
     `considered == len(visible) + skipped_not_new + hidden_hard_filter + hidden_non_swe +
-    hidden_ineligible + hidden_below_cutoff`. Each is its own counter, incremented where the
+    hidden_ineligible + hidden_below_cutoff + hidden_duplicate`. Each is its own counter,
+    incremented where the
     posting actually leaves, never a remainder computed by subtraction — a remainder cannot
     catch a `continue` that forgot to count, which is the only way this identity realistically
     breaks (P0 item 3).
@@ -90,6 +100,10 @@ class RankedResults:
     # Narrowed away by `--new`. A scoping choice rather than a rejection, kept as its own
     # bucket so the identity holds for `top --new` too instead of only for the pipeline.
     skipped_not_new: int = 0
+    # Suppressed as a provable duplicate of a surviving posting (P6 slice 1). Only
+    # `exact_quad` can land a posting here, and only when identities are COMPLETE — a
+    # partial backfill suppresses nothing. Drained by `--include-duplicates`.
+    hidden_duplicate: int = 0
 
 
 def rank_open_postings(
@@ -100,6 +114,7 @@ def rank_open_postings(
     limit: int = 10,
     include_ineligible: bool = False,
     include_non_swe: bool = False,
+    include_duplicates: bool = False,
     only_new: bool = False,
     output_console: Console = console,
     run_id: int | None = None,
@@ -202,6 +217,11 @@ def rank_open_postings(
     visible: list[RankedPosting] = []
     hidden = 0
     hidden_below_cutoff = 0
+    hidden_duplicate = 0
+    # Dedup runs last, over the post-eligibility population (design §1.4): the survivor is
+    # elected among postings that would otherwise have been visible, so a group can never be
+    # annihilated by electing a survivor an upstream filter had already hidden.
+    eligible: list[RankedPosting] = []
     for posting in scored:
         if not include_ineligible and (
             posting.verdict == "ineligible"
@@ -209,6 +229,45 @@ def rank_open_postings(
         ):
             hidden += 1
             continue
+        eligible.append(posting)
+
+    # A second connection, deliberately. The function's existing `with engine.connect()`
+    # block closes at `new_ids = ...`, well before scoring; every later line here runs with
+    # no connection open, so reusing that `conn` raises ResourceClosedError. And the data
+    # this needs cannot be prefetched inside the first block, because it is keyed on
+    # `eligible`, which does not exist until scoring and the eligibility filter have run.
+    #
+    # The completeness gate: a partial backfill suppresses nothing. Not because partial
+    # coverage is unsafe (an uncovered posting joins no group and is never suppressed) but
+    # because survivor election over a subset is backfill-order-dependent, and Gate P6 has
+    # to re-derive 20 sampled suppressions from the data.
+    suppressions: dict[int, Suppression] = {}
+    eligible_ids = [p.posting_id for p in eligible]
+    with engine.connect() as dedup_conn:
+        # Completeness is evaluated over ALL open postings, not just the eligible ones — it
+        # is a property of the backfill, not of this query.
+        if identities_complete(dedup_conn):
+            identities = load_identities(dedup_conn, eligible_ids)
+            # Bounded by eligible_ids on purpose: body_text is the largest column in the
+            # schema, and the unfiltered call would pull every open posting's body into
+            # memory to deduplicate a few thousand leads.
+            inputs_by_id = {
+                row.posting_id: row for row in load_identity_inputs(dedup_conn, eligible_ids)
+            }
+            suppressions = {
+                s.posting_id: s
+                for s in resolve_duplicates(
+                    [inputs_by_id[i] for i in eligible_ids if i in inputs_by_id], identities
+                )
+            }
+
+    for posting in eligible:
+        suppression = suppressions.get(posting.posting_id)
+        if suppression is not None and not include_duplicates:
+            hidden_duplicate += 1
+            continue
+        if suppression is not None:
+            posting = replace(posting, duplicate_of=suppression.survivor_posting_id)
         if len(visible) < limit:
             visible.append(posting)
         else:
@@ -224,6 +283,7 @@ def rank_open_postings(
         hidden_hard_filter=hidden_hard_filter,
         hidden_below_cutoff=hidden_below_cutoff,
         skipped_not_new=skipped_not_new,
+        hidden_duplicate=hidden_duplicate,
     )
 
 
@@ -300,6 +360,9 @@ def top(
     include_non_swe: bool = typer.Option(
         False, "--include-non-swe", help="Show postings the title role gate reads as non-software."
     ),
+    include_duplicates: bool = typer.Option(
+        False, "--include-duplicates", help="Show postings suppressed as duplicates."
+    ),
     new: bool = typer.Option(
         False, "--new", help="Only postings first seen since your last digest."
     ),
@@ -315,6 +378,7 @@ def top(
             limit=n,
             include_ineligible=include_ineligible,
             include_non_swe=include_non_swe,
+            include_duplicates=include_duplicates,
             only_new=new,
             output_console=output_console,
         )
@@ -332,6 +396,7 @@ def top(
                         "score": p.score.total,
                         "why": p.why,
                         "role": p.role,
+                        "duplicate_of": p.duplicate_of,
                     }
                     for p in results.visible
                 ]
@@ -354,7 +419,10 @@ def top(
     for p in results.visible:
         table.add_row(
             str(p.posting_id), p.title, p.company,
-            f"{p.score.total:.2f}", _verdict_token(p.verdict), p.why,
+            f"{p.score.total:.2f}", _verdict_token(p.verdict),
+            # A drained duplicate names its survivor inline, so a row surfaced by
+            # --include-duplicates is never mistaken for an ordinary lead.
+            f"{p.why} · duplicate of {p.duplicate_of}" if p.duplicate_of is not None else p.why,
         )
     console.print(table)
     if results.hidden_ineligible and not include_ineligible:
@@ -367,5 +435,11 @@ def top(
         console.print(
             f"{results.hidden_non_swe} hidden as non-software roles — see them with "
             "--include-non-swe, each with the title text that vetoed it.",
+            markup=False,
+        )
+    if results.hidden_duplicate and not include_duplicates:
+        console.print(
+            f"{results.hidden_duplicate} hidden as duplicates — see them with "
+            "--include-duplicates, each naming the posting it duplicates.",
             markup=False,
         )

@@ -194,6 +194,10 @@ class ShortlistCounts:
     hidden_ineligible: int = 0
     hidden_below_cutoff: int = 0
     skipped_not_new: int = 0
+    # P6 slice 1. Only `exact_quad` reaches this counter, and only when identities are
+    # complete — a partial backfill suppresses nothing, so 0 here can mean either "no
+    # duplicates" or "not backfilled". `unique` in the per-source table distinguishes them.
+    hidden_duplicate: int = 0
 
 
 @dataclass(frozen=True)
@@ -586,6 +590,11 @@ def build_run_funnel(
                 Drop(reason="hidden_non_swe", count=shortlist.hidden_non_swe,
                      note="title role gate"),
                 Drop(reason="hidden_ineligible", count=shortlist.hidden_ineligible),
+                Drop(
+                    reason="hidden_duplicate",
+                    count=shortlist.hidden_duplicate,
+                    note="provable exact_quad duplicate; drain with `top --include-duplicates`",
+                ),
                 Drop(
                     reason="capped_by_top_n",
                     count=shortlist.hidden_below_cutoff,

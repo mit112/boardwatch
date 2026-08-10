@@ -93,6 +93,7 @@ def funnel(
     hidden_hard_filter: int = 0,
     hidden_below_cutoff: int = 0,
     skipped_not_new: int = 0,
+    hidden_duplicate: int = 0,
     considered: int | None = None,
     tailor_failed: int = 0,
     artifacts: TailoredArtifactCounts | None = None,
@@ -119,6 +120,7 @@ def funnel(
         considered = (
             shortlisted + hidden_ineligible + hidden_non_swe
             + hidden_hard_filter + hidden_below_cutoff + skipped_not_new
+            + hidden_duplicate
         )
     counts = counts or corpus()
     tailored_artifacts = artifacts or TailoredArtifactCounts(
@@ -158,6 +160,7 @@ def funnel(
             hidden_ineligible=hidden_ineligible,
             hidden_below_cutoff=hidden_below_cutoff,
             skipped_not_new=skipped_not_new,
+            hidden_duplicate=hidden_duplicate,
         ) if ranker_ran else None,
         leads=leads,
         tailor_failed=tailor_failed,
