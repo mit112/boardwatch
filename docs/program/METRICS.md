@@ -624,8 +624,8 @@ Suppressing set = `APPLIED_STATUSES` = `applied`, `interviewing`, `offer`, `reje
 | Measure | Value | What it means |
 |---|---|---|
 | `postings` open / closed | **23,455** / 618 | |
-| Open postings stale > 30 d | **0** | And > 7 d is also **0**. The scanner's `CLOSE_AFTER_MISSES = 2` already works |
-| Oldest open `last_seen_at` | 5 days | Max `last_seen_at` corpus-wide is `2026-08-07 04:17` |
+| Open postings stale > 30 d | **0** | And > 7 d is also **0** — but see the caveat below; this is weaker evidence than it looks |
+| Oldest open `last_seen_at` | **6.1 days** | `min(last_seen_at)` on an open row is `2026-08-04 06:47`, measured at ~10:13 on 08-10. An earlier draft said "5 days" — it floored against midnight rather than the measurement time |
 | Open at `consecutive_missing = 1` | **216** | The real population for this check: seen, then absent once |
 | Open postings with a NULL/blank URL | **0** | The nullable-URL path is latent, not unreachable |
 | Open postings with an empty body | 17 | |
@@ -640,6 +640,12 @@ postings:
 | `not accepting applications` | 1 | **0** — *"not accepting applications of candidates outside of New York"*, a location restriction |
 | `no longer accepting` · `has been filled` · `position is closed` · `applications are closed` · `has expired` · `no longer open` | 0 each | — |
 | **Total** | **11 of 23,455** | **0** |
+
+**Caveat on the staleness figure, added by the docs review.** "0 open postings stale beyond 7 days" is
+*not* direct evidence that `CLOSE_AFTER_MISSES = 2` fires. Corpus-wide `max(last_seen_at)` is
+`2026-08-07 04:17` and the open range is `08-04 … 08-07`, so maximum observable staleness is bounded at
+~6 days by **scan recency alone**. The actual evidence the rule fires is the **618 `closed` rows**. The
+conclusion — staleness is not the leak, so Slice 3 should not re-implement it — is unchanged.
 
 Precision **0/11**. A high-precision catalog matches **0** rows. This supersedes the earlier
 "3 open postings contain a closed phrase" figure, which was recorded without its catalog — and the number
@@ -671,6 +677,25 @@ whole employers. The probe did find a genuinely dead **open** posting (`jobs.lev
 | gone-branch dropped from the `FetchFailure` path (**the path that actually runs**) | `…arriving_as_a_FAILURE_still_withholds` |
 | withheld lead left in `surfaced_job_ids` | `…is_not_recorded_seen` |
 | dead probe writes `status='closed'` | `…is_not_closed_in_the_store` |
+
+### The review — 3 reviewers, 2 BLOCKERs, both found by RUNNING the code
+
+| Reviewer | Raised | Real | Wrong / rejected |
+|---|---|---|---|
+| diff (whole slice) | 1 BLOCKER + 1 MAJOR + 3 MINOR | all 5 | 0 — and it *executed* the pipeline to prove the BLOCKER |
+| test-quality auditor | 3 MAJOR + 3 MEDIUM + 4 MINOR | all | 0; it mutation-tested every claim it made |
+| docs-only | 2 BLOCKER + 5 MAJOR + 2 MINOR | all | 0 — it re-derived every live number independently and they matched |
+
+Both BLOCKERs were invisible to reading: the funnel's tailor stage silently stopped reconciling whenever a
+lead was withheld (breaking **Gate P0**, not P6), and `build_prober` — the entire production probe path —
+had no test, so a change breaking `FetchFailure.status_code` would have disabled the probe permanently
+with the suite green. **Mutations after the fixes: 6 more, all caught** (removing the tailor drop, dropping
+the `hidden_applied` guard clause, and the four re-run from the build round).
+
+**The `git checkout` trap fired again.** Two review fixes were written, then mutation-tested, and the
+`git checkout` that reverts each mutation destroyed them. "Commit before mutation-testing" was followed
+for the first round and was too narrow: the rule is **commit before every mutation round**. Caught
+immediately by a red suite.
 
 ### Standing corrections
 

@@ -14,7 +14,9 @@ All notable changes to this project are documented here. The format follows
   `APPLIED_STATUSES` (`applied`, `interviewing`, `offer`, `rejected`), reused from the funnel's conversion
   count rather than re-declared: `interested` does not suppress, because it is `track add`'s default and
   suppressing it would mean tracking a lead hid it. `boardwatch top --include-applied` is the drain, and
-  `track status <id> withdrawn` releases the job at the source. Reported as `hidden_applied` in the funnel
+  `track status <id> withdrawn` releases the job — note this means withdrawing the attempt that was
+  *submitted*; `track add --new-attempt` writes an `interested` row and does **not** release an earlier
+  submission. Reported as `hidden_applied` in the funnel
   and in the run summary line. **No live population yet** — `applications` is 0 rows because `track` has
   never been used, so this ships as a mechanism with tests as its evidence.
 
@@ -75,6 +77,15 @@ All notable changes to this project are documented here. The format follows
 
 ### Fixed
 
+- **The funnel artifact keeps reconciling when liveness withholds a lead** (D-111, from the Slice 3
+  review). The tailor stage entered at `shortlisted` and advanced at `tailored` with `tailor_failed` as
+  its only drop, so a withheld lead left a gap in a stage that is deliberately not `derived` — meaning any
+  run where liveness did its job emitted an artifact stamped DOES NOT RECONCILE, breaking Gate P0's
+  "three consecutive runs that reconcile to 100%" clause. The stage now carries a `withheld_not_live` drop.
+- **A day where every candidate was already applied to no longer fails the run** (D-111). Applied state is
+  checked ahead of the ledger, so those candidates left `hidden_handled` — the bucket the zero-output guard
+  reads — and landed in `hidden_applied`, which it did not, re-arming the guard on exactly the
+  steady-state day the `hidden_handled` clause was added to disarm.
 - **A day whose whole shortlist turned out to be dead is reported as an honest empty day, not a broken
   résumé path** (D-111). Liveness withholding every lead would otherwise have tripped both the
   "every lead failed to tailor" fatal, which counted a withheld posting as a render failure, and the

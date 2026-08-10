@@ -145,10 +145,12 @@ since D-035, unchanged by everything since.
   not suppress (it is `track add`'s default) and neither does `withdrawn`, which is the drain. Checked
   *before* the ledger, so a job that is both applied-to and `built` reports the applied reason — `ledger
   reopen` releases the ledger row and nothing releases an application.
-- **A new ranker drop bucket must be mirrored in THREE hand-maintained places** — `RankedResults`
-  (`cli/top_cmd.py`), `ShortlistCounts` and the funnel `Drop` list (both `reports/run_funnel.py`). Nothing
-  enforces this statically; a miss shows up as the shortlist stage's `reconciled` identity going False,
-  because `entered` is measured independently of the drops.
+- **A new ranker drop bucket has SIX hand-maintained mirror sites and only three are checked** (D-111,
+  after two reviews corrected the count upward). `RankedResults` + its increment site; `runner.py`'s
+  mapping into `ShortlistCounts`; `ShortlistCounts` and the shortlist `Drop` list; a **tailor**-stage
+  `Drop` if the bucket removes postings after ranking; `_zero_output_guard` if it can explain an empty
+  day; and `_shortlist_line`. The stage `reconciled` identities catch the middle ones at runtime.
+  **Nothing catches `_shortlist_line`** — the full list is in `RankedResults`'s docstring.
 - **Only a deterministic refusal earns a permanent `skipped`** (D-110). `LeadArtifactError` carries both gate
   reasons as data and `DETERMINISTIC_GATE_REFUSALS` is the closed catalog; a non-zero `tectonic` exit is
   environmental and must be retried, never buried. Out-of-catalog is treated as environmental.
@@ -160,8 +162,6 @@ since D-035, unchanged by everything since.
 - **Regrouping carries the ledger decision with the postings** (`_carry_dispositions`) and releases the
   emptied row (D-110). `protected_job_ids` cannot catch a merge that leaves it behind: `artifacts.job_id` is
   NULL on all 44 live rows.
-- **The DB checks the reason catalog FLAT, as a union.** `core.ledger.validate` is what rejects pairing
-  `built` with `surfaced`; the CHECK constraint does not (D-110).
 - **`AGENTS.md` records no phase standing, test count or coverage figure, on purpose** — it once asserted
   "P6 and P7 have not started" in the commit range that shipped two P6 slices. This file is the only source
   of standing.
@@ -187,23 +187,17 @@ since D-035, unchanged by everything since.
   retroactively and diverges a fresh database from an already-migrated one. `tables.py` may import it (that is
   metadata, not history); `test_migrations_match_metadata` holds the two in agreement. Name constraints with
   `op.f()` or that test sees permanent drift.
-- **The résumé renderer is `tectonic`** compiling Mit's real LaTeX template (`tailor/render/latex.py` +
-  `render/templates/resume_base.tex`), **not Typst** — D-058 reversed that and D-060 completed the swap. A
-  `typst` binary happens to be on this machine; nothing calls it.
-- **The tailoring architecture is already correct** — typed skeleton, plain-text-only model contract,
-  Python-owns-markup, independent entailment judge. Do not rebuild it (`PROGRAM.md` §5.1).
+- **The résumé renderer is `tectonic`** compiling Mit's real LaTeX template, **not Typst** (D-058/D-060).
+  A `typst` binary is on this machine; nothing calls it. The tailoring architecture is already correct —
+  do not rebuild it (`PROGRAM.md` §5.1).
 - **`track` has never been used** — `applications` and `application_events` are both 0 rows. That is why P6
   item 5 ships as a mechanism with tests as its evidence, and why regrouping's tracked-job refusal is
   *latent* rather than unreachable (D-104).
-- **`PROGRAM.md` §3.P6 item 5 cites "§6, correction 3", which no longer exists** — §6 is now *Program
-  machinery* and carries no numbered corrections. A stale cross-reference; the item text stands alone.
-- **`jobs` and `postings` are both 24,073, exactly 1:1** on the live store, because regrouping has not been
-  applied there yet.
 - **`hidden_duplicate == 0` is ambiguous; `hidden_handled == 0` and `hidden_applied == 0` are not.** The
   first can mean "dedup never ran"; the others are never completeness-gated, because a stored disposition
   and an application each record a decision already taken (D-106, D-111).
-- **`_verify_quad` has never fired** (D-097). It re-runs the key's own normalizers, so it guards a SHA-256
-  collision and staleness but not normalizer lossiness. **Never cite "string-verified" as precision evidence.**
+- **`_verify_quad` has never fired** (D-097). It guards a SHA-256 collision and staleness but not
+  normalizer lossiness. **Never cite "string-verified" as precision evidence.**
 - **D-072, the model-tier benchmark, is DEFERRED INDEFINITELY** (D-102) — not owed, not blocking.
 - **`.agent/` and `.superpowers/` are gitignored** working material, not a source of truth for released
   behaviour. `CHANGELOG.md` is authoritative for what shipped.
@@ -214,16 +208,18 @@ since D-035, unchanged by everything since.
 
 ## Process lessons this program paid real time for
 
-- **A failed command is not a negative result, and a truncated grep is not one either.** One false claim
-  survived four "finished" retraction passes and lived in six places; the pass that missed it piped grep
-  through `head -30`. Confirm a check actually ran before reading its silence as evidence.
-- **Dispatch a SEPARATE docs-only reviewer** for documentation written about already-reviewed code — they
-  keep finding blockers in it. A retraction commit reintroduces the defect class it cures.
-- **Derive a test's mutation from its stated CLAIM, not from the implementation.** Commit before
-  mutation-testing (`git checkout` discards uncommitted fixes) and clear `__pycache__` first, because stale
-  bytecode fakes a CAUGHT.
-- **A component's self-report is not verification.** Count the deliverable through a different path than the
-  one that produced it — re-grouping the same table a second way is *not* a different path (D-028).
+Only what `CLAUDE.md` does not already say. Everything general — a failed command is not a negative
+result, a self-report is not verification — lives there.
+
+- **Commit before EVERY mutation round, not once before you start.** The `git checkout` that reverts each
+  mutation destroys any uncommitted edit, including a fix written five minutes earlier. This has now fired
+  three times; the narrower phrasing is what let it fire the third (D-111). Clear `__pycache__` too —
+  stale bytecode fakes both a CAUGHT and a spurious failure. Derive the mutation from the test's stated
+  CLAIM, never from the implementation.
+- **Reviewers that RUN the code find what reviewers that read it cannot.** Both of D-111's BLOCKERs were
+  invisible to reading and obvious to one pipeline execution. Dispatch a **separate** docs-only reviewer
+  as well — they keep finding blockers in documentation written about already-reviewed code.
 - **Measure the spec's premise before building it.** D-098 priced a deferral with the wrong subsystem's
   figures (D-105); D-111 found PROGRAM item 6's authoritative signal was 0-for-11 on the real corpus and
-  structurally impossible to reach. A spec written against a different codebase's data is a hypothesis.
+  structurally unable to reach the column it reads. A spec written against a different codebase's data is
+  a hypothesis, not a requirement.

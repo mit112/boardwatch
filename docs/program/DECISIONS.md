@@ -1478,10 +1478,14 @@ application, so the funnel reports the count that survives the drain a reader is
 **Item 6 — liveness — ships the re-fetch and NOT the closed-phrase catalog, because the corpus
 falsified it.** PROGRAM item 6 names "a saved body containing a closed phrase" as the AUTHORITATIVE
 signal. That premise is inherited from job-apps, which scraped HTML pages. boardwatch reads structured
-ATS APIs, and every provider builds `body_text` from the payload's description field alone (greenhouse
-`content`, ashby `descriptionHtml`, workable/workday `description`/`jobDescription`, lever's assembled
-sections, smartrecruiters `_body_text`). Page chrome — the "no longer accepting applications" banner —
-is **structurally incapable** of reaching that column.
+ATS APIs, and every provider assembles `body_text` **only from employer-authored description fields of
+a JSON payload** — one field for greenhouse, ashby, workable and workday; two joined for lever
+(`descriptionPlain` + `additionalPlain`); three for smartrecruiters (`jobDescription`, `qualifications`,
+`additionalInformation`). No provider ever sees the rendered careers page, so page chrome — the "no
+longer accepting applications" banner a scraper would read — is **structurally incapable** of reaching
+that column. (An earlier draft of this entry said "the description field alone", which the docs review
+falsified on lever and smartrecruiters; the conclusion is unchanged because what matters is *payload
+field, never page chrome*, not the field count.)
 
 Corroborated by measurement, not left as an argument. A nine-phrase candidate catalog run against the
 live store matched **11 of 23,455** open postings and **all 11 were false positives**: two Workday
@@ -1496,9 +1500,13 @@ The earlier "3 open postings contain a closed phrase" figure is **superseded**, 
 unreproducible: it was recorded without its catalog, and the number that matters was never its size but
 its precision.
 
-**Where the authoritative signal genuinely exists, it already runs.** `providers/smartrecruiters.py`
-drops a posting whose detail payload says `active is False`. That is what "authoritative" looks like on
-an API corpus, and it needed nothing built.
+**One provider does expose a native liveness flag, and it is NOT coverage for this gate.**
+`providers/smartrecruiters.py` drops a posting whose detail payload says `active is False`. That is what
+"authoritative" would look like on an API corpus — but it fetches detail payloads only for postings **not
+already in the store**, and only within `detail_fetch_budget`, so for the entire population liveness is
+about (postings already stored and being ranked) the flag is never re-read. A first-discovery filter on
+1 of 6 providers. An earlier draft of this entry cited it as though the authoritative signal were already
+covered; the docs review corrected that.
 
 **What ships: a re-fetch at the lead list, 404/410 only.** `core/liveness.py` holds the pure decision and
 its two closed catalogs; `pipeline/liveness.py` probes through the existing politeness `Fetcher`
@@ -1526,7 +1534,8 @@ permanently — and irreversibly, because a closed posting stops being ranked an
 That is a quarantine with no drain, which CLAUDE.md forbids outright. The scanner reopens on its own; the
 probe must not compete with it.
 
-**Three seams handled here rather than found by the next review.** A withheld posting is (1) dropped from
+**Three seams handled during the build — and the review found two more, so the "handled rather than
+found" framing was wrong and is corrected here rather than left standing.** A withheld posting is (1) dropped from
 `surfaced_job_ids`, because it was delivered to nobody and must not consume the queue — the D-110 rule
 applied to a new filter; (2) subtracted before the "every lead failed to tailor" fatal, which would
 otherwise report a dead board as a broken résumé path; and (3) removed from `_cohort_guard`'s cohort
@@ -1537,8 +1546,11 @@ must not read as the silent empty day it exists to prevent. The widening stays n
 nothing handled and nothing dead still cannot explain itself, and still fires.
 
 **The prober is injected, and `None` means UNMEASURED.** The funnel emits nulls and
-`instrumented: false`, never `0 dead` — the D-022/D-023 rule. `run_pipeline` therefore does no network
-I/O of its own and `run_cmd` decides; `run --no-check-liveness` is the operator's opt-out. `unknown` is
+`instrumented: false`, never `0 dead` — the D-022/D-023 rule. Injecting it makes *which URLs get probed*
+the caller's decision; `run --no-check-liveness` is the operator's opt-out. It does **not** make the
+pipeline offline — the scan stage fetches every configured board and is by far its largest network
+consumer, so `--no-scan` is the offline switch, not this. (An earlier draft claimed `run_pipeline` "does
+no network I/O of its own"; the docs review falsified it.) `unknown` is
 reported beside `dead` rather than folded into `alive`, because a run whose probe learned nothing looks
 identical to a healthy one if you read only `dead`. Artifact version **4**.
 
@@ -1558,6 +1570,41 @@ every non-200), leaving a withheld lead in `surfaced_job_ids`, and writing `stat
 probe each turn the corresponding test red. On the item 5 side: disabling the lookup, widening
 `APPLIED_STATUSES` to include `interested`/`withdrawn`, moving the applied check after the ledger, and
 dropping the funnel `Drop` all turn a test red.
+
+**The review, and what it caught.** Three in-session reviewers — a diff reviewer, a test-quality auditor
+and a docs-only reviewer. **Two BLOCKERs, both found by RUNNING the code rather than reading it**, which is
+the transferable lesson.
+
+1. **The funnel stopped reconciling whenever liveness did its job.** The tailor stage enters at
+   `shortlist.shortlisted`, advances at `tailored`, and its only drop was `tailor_failed`. A withheld lead
+   left a gap in a stage that is deliberately not `derived`, so any run that withheld anything emitted an
+   artifact stamped DOES NOT RECONCILE — the feature working correctly would have broken **Gate P0's**
+   "three consecutive runs that reconcile to 100%" clause. Fixed with a `withheld_not_live` drop. The
+   lesson generalises: a filter added *after* ranking has to be mirrored into the funnel stage it removes
+   rows from, not only into the stage that produced them.
+2. **An all-applied day re-armed the zero-output guard**, above. A regression this slice introduced, not a
+   pre-existing gap.
+3. **`build_prober` — the whole production probe path — had no test.** Every other liveness test injects a
+   fake, so the URL was unasserted and, worse, anything that stopped `FetchFailure.status_code` arriving as
+   an `int` would have made `status_code in GONE_STATUSES` permanently False: the probe finds nothing,
+   forever, with the suite green. That is this repo's silent-None class. Now driven through respx against a
+   real `Fetcher`, asserting the URL, the no-retry claim, and 404/403/500/transport-error handling.
+4. **`run --check-liveness`'s wiring had no test**, so flipping its default would have shipped liveness dead
+   on arrival. Likewise `_shortlist_line`, the operator's one-line summary, which had never had one.
+5. **A new drop bucket has SIX hand-maintained mirror sites, not three** — two successive reviews corrected
+   that number upward. Only three are checked by anything; `_shortlist_line` is checked by nothing, and is
+   now covered by a test instead.
+6. **Four documentation claims were false and are corrected in place** rather than quietly edited: the
+   provider `body_text` absolute, the SmartRecruiters coverage claim, "`run_pipeline` does no network I/O
+   of its own", and a `runner.py` comment asserting the zero-output guard is only reachable when
+   `shortlisted == 0` — which this slice itself made false.
+
+**The `git checkout` trap fired again, and the recorded lesson was too narrow.** "Commit before
+mutation-testing" was followed for the first round; the review fixes were then written, mutation-tested,
+and two of them were destroyed by the `git checkout` that reverts each mutation. The rule is not "commit
+before you start mutating" but **"commit before every mutation round"** — any uncommitted edit is in the
+blast radius, including one written five minutes earlier. Caught because the suite went red immediately
+afterwards; had the fixes been less well covered it would have shipped a reverted fix under a green gate.
 
 **Gate P6 is unchanged by this entry on its own.** The "0 dead postings reaching the lead list" clause is
 now *buildable* and *measurable*, which it was not; meeting it needs a real run whose leads are probed.
