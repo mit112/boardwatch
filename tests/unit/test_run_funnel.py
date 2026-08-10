@@ -427,7 +427,8 @@ def test_an_unprobed_liveness_check_reports_unmeasured_rather_than_zero_dead() -
     payload = funnel_to_dict(report)
 
     assert payload["liveness"] == {
-        "instrumented": False, "checked": None, "dead": None, "unknown": None, "alive": None
+        "instrumented": False, "checked": None, "dead": None, "unknown": None, "alive": None,
+        "gone_after_redirect": None,
     }
     section = funnel_to_markdown(report).split("## Liveness")[1].split("##")[0]
     assert "not instrumented" in section
@@ -437,15 +438,20 @@ def test_an_unprobed_liveness_check_reports_unmeasured_rather_than_zero_dead() -
 def test_a_probed_liveness_check_reports_dead_and_unknown_separately() -> None:
     """`unknown` is next to `dead` and not folded into `alive`: a run where the probe learned
     nothing looks identical to a healthy one if you read only `dead`."""
-    report = funnel(liveness=LivenessCheck(checked=10, dead=2, unknown=3))
+    report = funnel(liveness=LivenessCheck(checked=10, dead=2, unknown=3, gone_after_redirect=1))
     payload = funnel_to_dict(report)
 
+    # `gone_after_redirect` is a SUBSET of `unknown` — `alive` still subtracts only dead+unknown,
+    # so 10-2-3 is 5 and not 4. Adding it to the partition is the tempting mistake here.
     assert payload["liveness"] == {
-        "instrumented": True, "checked": 10, "dead": 2, "unknown": 3, "alive": 5
+        "instrumented": True, "checked": 10, "dead": 2, "unknown": 3, "alive": 5,
+        "gone_after_redirect": 1,
     }
     section = funnel_to_markdown(report).split("## Liveness")[1].split("##")[0]
     assert "2 withheld as gone" in section
     assert "3 unknown (served)" in section
+    assert "1 were gone-after-redirect" in section
+    assert "disarmed" in section
 
 
 def test_a_posting_the_ranker_loses_breaks_the_shortlist_stage_instead_of_hiding() -> None:

@@ -58,7 +58,10 @@ from boardwatch.tailor.coverage import CoverageReport
 # How many distinct missing requirement terms the coverage summary lists, most-frequent first.
 _TOP_MISSING = 10
 
-ARTIFACT_VERSION = 4  # v4 adds the top-level `liveness` block (P6 item 6)
+# v4 added the top-level `liveness` block (P6 item 6). It stays 4 through D-113's additive
+# `liveness.gone_after_redirect` key: every bump so far has signalled a new top-level SECTION, and
+# D-031 set the precedent for declining one on a non-structural change.
+ARTIFACT_VERSION = 4
 
 # The stored verdict that carries the keystone invariant's ABSTAIN. Named here once so the
 # rename is visible rather than scattered through the renderers as a string literal.
@@ -265,11 +268,18 @@ class LivenessCheck:
     number that says how much of the check is actually working: a run where every posting came
     back `unknown` has a fail-open probe telling you nothing, and looks identical to a healthy
     run if you only read `dead`.
+
+    `gone_after_redirect` is a **subset of `unknown`**, not a fourth partition member — `alive`
+    still subtracts only `dead` and `unknown`. It is emitted because it is the one bucket that
+    can disarm the check without any other number moving: if an ATS begins fronting expired
+    requisitions with `301 → 404`, every genuine gone posting is forgiven, `dead` sits at 0
+    forever, and the run looks exactly like one where every probe timed out.
     """
 
     checked: int | None
     dead: int | None
     unknown: int | None
+    gone_after_redirect: int | None = None
 
     @property
     def instrumented(self) -> bool:
@@ -915,6 +925,8 @@ def funnel_to_dict(funnel: RunFunnel) -> dict[str, object]:
             "dead": funnel.liveness.dead,
             "unknown": funnel.liveness.unknown,
             "alive": funnel.liveness.alive,
+            # A subset of `unknown`; do not add it to the others when reconciling.
+            "gone_after_redirect": funnel.liveness.gone_after_redirect,
         },
         "stub_rate": {
             "open_postings": funnel.stub_rate.open_postings,
@@ -1335,13 +1347,18 @@ def funnel_to_markdown(funnel: RunFunnel) -> str:
             "same as no dead postings"
             if not live.instrumented
             else f"{live.checked} leads re-fetched · {live.dead} withheld as gone · "
-            f"{live.unknown} unknown (served)"
+            f"{live.unknown} unknown (served), of which "
+            f"{live.gone_after_redirect if live.gone_after_redirect is not None else '—'} "
+            "were gone-after-redirect"
         ),
         "",
         "*Liveness is never cached and never writes to the store: a `dead` result withholds the "
         "lead from this run only, and `postings.status` stays the scanner's. Only an explicit "
-        "404/410 withholds; every other outcome — timeout, 403, 5xx, no URL — is served, "
-        "because missing a real job costs more than one wasted résumé.*",
+        "404/410 withholds, and only from the URL asked about; every other outcome — timeout, "
+        "403, 5xx, no URL, and a 404 reached through a redirect — is served, because missing a "
+        "real job costs more than one wasted résumé. A gone-after-redirect count that climbs "
+        "while `withheld as gone` stays at 0 means the detector has been disarmed, not that the "
+        "corpus is healthy.*",
         "",
         "## Stub rate",
         "",

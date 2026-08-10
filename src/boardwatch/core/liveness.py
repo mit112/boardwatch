@@ -154,6 +154,20 @@ class Liveness:
         """Whether this result keeps the lead off the list. Exactly one verdict does."""
         return self.verdict == "dead"
 
+    @property
+    def gone_but_redirected(self) -> bool:
+        """A gone-status that was forgiven because a redirect reached it.
+
+        Exposed as a property so the runner counts it through the catalog rather than by
+        comparing a signal string at the call site, and counted at all because otherwise this
+        bucket disarms the gate silently: if an ATS starts fronting expired requisitions with
+        `301 → 404`, every genuine gone posting reclassifies to `unknown`, `dead` goes to 0
+        permanently, and the run reports "N checked, 0 gone, N unknown" — byte-identical to a run
+        where every probe timed out. `0 dead` would read as the gate clause being MET while the
+        detector was fully disarmed. A number that moves is the difference.
+        """
+        return self.signal == "refetch_gone_after_redirect"
+
 
 def verdict_for_status(posting_id: int, status_code: int) -> Liveness:
     """Classify a completed re-fetch. `GONE_STATUSES` is the only path to `dead`."""

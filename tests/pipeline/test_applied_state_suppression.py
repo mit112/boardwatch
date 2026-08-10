@@ -8,6 +8,7 @@ decides it — which statuses count as "applied" — rather than against the hap
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 import pytest
@@ -140,6 +141,28 @@ def test_the_ledger_notice_survives_an_EMPTY_result_too(env: Path) -> None:  # n
 
     assert "1 hidden as already handled" in out
     assert "--include-handled" in out
+
+
+def test_the_JSON_path_names_every_bucket_too(env: Path) -> None:  # noqa: N802
+    """The JSON path printed only the handled and applied notices, so a script whose array was
+    emptied by duplicate suppression got `[]` with no reason and no drain — the same leak the
+    human path had, reached by a different route. Both paths now use one helper."""
+    from typer.testing import CliRunner
+
+    from boardwatch.cli.app import app
+
+    seeded = _ready(env, 1)
+    _apply(env, seeded[0][1], "applied")
+
+    result = CliRunner().invoke(
+        app, ["--data-dir", str(env), "top", "1", "--json", "--no-record"]
+    )
+
+    assert result.exit_code == 0
+    assert "hidden as already applied to" in result.stderr
+    assert "--include-applied" in result.stderr
+    # The array itself stays clean on stdout — the reason goes to stderr, never into the JSON.
+    assert json.loads(result.stdout) == []
 
 
 def test_a_job_already_applied_to_is_not_served_again(env: Path) -> None:

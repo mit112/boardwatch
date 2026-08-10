@@ -66,6 +66,17 @@ pointing it at boards you don't own.
 
 ## Quickstart (≈2 minutes to your first shortlist)
 
+**Prerequisites.** Scanning and ranking need nothing beyond the install. Building résumé PDFs
+additionally needs two binaries on `PATH` — [tectonic](https://tectonic-typesetting.github.io/)
+and poppler's `pdfinfo`:
+
+```bash
+brew install tectonic poppler                       # macOS
+sudo apt-get install poppler-utils                  # Debian/Ubuntu (tectonic: see its docs)
+```
+
+`boardwatch doctor` reports whether both are present. The Docker image bundles them.
+
 ### pipx (recommended)
 
 ```bash
@@ -446,7 +457,10 @@ résumé** — `tailor` reads only what you author in `resume.yaml`.
 override at `{config_dir}/resume_template.tex`. A lead without a shippable PDF is refused
 rather than delivered as rendered source: a missing `tectonic` on `PATH` fails the run
 loudly, and a résumé that compiles to more pages than `resume_max_pages` (default 1) is
-rejected. `boardwatch doctor` probes for the binary. Output lands at
+rejected. **Two binaries are required, not one** — `tectonic` to compile and poppler's
+`pdfinfo` to count the pages; without `pdfinfo` the page-count gate cannot answer and every
+lead is refused. `boardwatch doctor` probes for both and exits non-zero if either is
+missing. Output lands at
 `{data_dir}/tailored/tailored-<posting-id>.{tex,pdf}` — a deterministic path, so
 **re-running `tailor run` for the same posting overwrites that file** even though each run
 is recorded as its own artifact in the database; the file on disk always reflects your most

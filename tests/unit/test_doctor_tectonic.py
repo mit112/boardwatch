@@ -23,3 +23,16 @@ def test_check_tectonic_ok(monkeypatch):
     )
     c = doctor_cmd.check_tectonic()
     assert c.available is True and c.failed is False and c.version == "0.17.0"
+
+
+def test_check_pdfinfo_missing_is_a_failure(monkeypatch):
+    """A hard dependency wearing a soft failure: without `pdfinfo`, `_pdf_page_count` returns
+    None and every lead degrades to COMPILE_FAILED — an empty run every morning, which `doctor`
+    used to call healthy because it probed only tectonic."""
+    monkeypatch.setattr(doctor_cmd.shutil, "which", lambda _: None)
+    assert doctor_cmd.check_pdfinfo() is False
+
+
+def test_check_pdfinfo_present(monkeypatch):
+    monkeypatch.setattr(doctor_cmd.shutil, "which", lambda _: "/opt/homebrew/bin/pdfinfo")
+    assert doctor_cmd.check_pdfinfo() is True

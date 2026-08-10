@@ -96,7 +96,7 @@ covered by mutation-checked tests; neither has been exercised at corpus scale.
 | P3 Unattended one command | **COMPLETE** for everything needing neither Mit's domain input nor Docker | **NOT MET** — 7 consecutive unattended runs, plus the cross-OS two-writer test. Slice 5 remains |
 | P4 Craft gate | **COMPLETE** — items 1–7 | **NOT MET** — the blind craft review is the owner's, and has not been run |
 | P5 Eligibility decides | **COMPLETE** — D-073 + D-074 | **MET** — INELIGIBLE precision 16/16, 0 span violations, `eligibility score` exits 0 |
-| P6 Liveness + dedup | **BUILD COMPLETE — all six items.** Slices 1 and 2 merged, reviewed and pushed (review D-110); Slice 3 (items 5, 6) built, reviewed in-session and gate-green (D-111) | **NOT MET — 2 of 4 clauses met**, below |
+| P6 Liveness + dedup | **BUILD COMPLETE — all six items.** Slices 1 and 2 merged, reviewed and pushed (review D-110); Slice 3 (items 5, 6) built, reviewed twice and gate-green (D-111, D-113) | **NOT MET — 2 of 4 clauses met**, below |
 | 14-day acceptance | not started | — |
 | P7 Breadth | not started | — |
 
@@ -133,7 +133,7 @@ since D-035, unchanged by everything since.
 |---|---|---|
 | **Three `resume.yaml` bullets exceed the 220-char layout gate** | Forces an untailored-master degrade on every posting. The file also lacks Knowledge Forge, has stale `skill_groups`, and an empty extracurricular block. **Mit pins `resume_max_pages=1` — do not advise setting it to 2.** | Mit (content) |
 | **P2 item 8 — the onboarding gatherer** | The thing that would make the field tier fire for anyone. D-054 forbids us authoring non-tech field content, so it must be gathered per user. Needs its own brainstorm | owner-gated |
-| **0.3.0 did NOT publish, and the re-release form is undecided** | Tag `v0.3.0` → `426f45c` is pushed, but run `31412535583` failed in `build + smoke test` and all three publish jobs (**PyPI, GHCR, GitHub Release**) were correctly **skipped**. PyPI still 404s for 0.3.0, so **no version is burned**. The cause is fixed (row below); what remains is Mit's choice between deleting and re-pushing `v0.3.0` and cutting `v0.3.1`. He deferred it until the fix is verified. The new CHANGELOG entries sit under `[Unreleased]` and fold into whichever section that choice creates | Mit (release) |
+| **0.3.0 did NOT publish, and the re-release form is undecided** | Tag `v0.3.0` → `426f45c` is pushed, but run `31412535583` failed in `build + smoke test` and all three publish jobs (**PyPI, GHCR, GitHub Release**) were correctly **skipped**. PyPI still 404s for 0.3.0, so **no version is burned**. The cause is fixed (row below); what remains is Mit's choice between deleting and re-pushing `v0.3.0` and cutting `v0.3.1`. He deferred it until the fix is verified. **Either way the tag must land on a commit that CONTAINS the CI fix** — `v0.3.0` currently names `426f45c`, which has no `.github/actions/setup-typesetting`, so re-pushing it unmoved re-runs the identical failure. The new CHANGELOG entries sit under `[Unreleased]` and fold into whichever section that choice creates | Mit (release) |
 | **The tectonic/poppler gap is FIXED but has never run on a runner** | `.github/actions/setup-typesetting` installs both on ubuntu, macOS and Windows, and is used by `ci.yml`'s matrix job and `release.yml`'s build job (D-114). Asset layouts and the Linux/macOS binaries were verified locally; **the Windows path is constructed from a verified zip layout, not from a green run**. The first push is the experiment. **Do not re-tag until `ci.yml` is green on all three OSes** — re-tagging on the strength of a plausible YAML diff is the same mistake that produced the failed build, with more confidence behind it | verify |
 | **CI IS acquiring runners again** | The old "never acquires" failure has **resolved** — `ci.yml` and `release.yml` both ran on 2026-08-10, and `release.yml` picked up a runner in seconds. CI is a signal worth reading again. Do not generalise one workflow's failure to the whole account | GitHub |
 | **P3 Slice 5 — LLM economics** | Substantial and design-heavy; use a fresh context window | P3 |
@@ -152,14 +152,17 @@ since D-035, unchanged by everything since.
   lead from that run only. Writing the status would let one 404 from a flaky CDN retire a live requisition
   **irreversibly** — a closed posting stops being ranked and so stops being probed. That column belongs to
   the scanner's `CLOSE_AFTER_MISSES = 2` rule, which measurably works: 0 open postings are stale beyond 7 days.
-- **Only 404/410 withholds a lead; everything else is served** (D-111). Timeout, 403, 5xx, redirect and a
-  NULL URL are all `unknown`. 403 is not hypothetical — a live Pinterest posting answers 403 to an
+- **Only 404/410 withholds a lead, and only from the URL asked about; everything else is served**
+  (D-111, narrowed by D-113). Timeout, 403, 5xx, a redirect, and a NULL URL are all `unknown`. 403 is not hypothetical — a live Pinterest posting answers 403 to an
   unfamiliar user agent, so treating it as gone would silently blacklist whole employers.
 - **"Gone" means the URL asked about said so, not somewhere it was redirected to** (D-113). `Fetcher` sets
   `follow_redirects=True`, so a `302 → 404` chain arrives as a bare 404; `FetchFailure.redirected` is what
-  distinguishes them, and a redirected gone-status is `unknown` under `refetch_gone_after_redirect`. Every
-  liveness test but one injects a fake prober that cannot redirect, so **only the real-`Fetcher` test
-  covers this** — do not delete it as a duplicate.
+  distinguishes them, and a redirected gone-status is `unknown` under `refetch_gone_after_redirect`.
+  The count is a **subset of `unknown`** and is emitted on the run line and in the artifact: a
+  gone-after-redirect count that climbs while `dead` stays 0 is the detector being disarmed, not a
+  healthy corpus. `tests/unit/test_liveness_prober.py` is the only module driving the real `Fetcher`
+  (the pipeline suite's probers are fakes, which cannot redirect), so the two redirect cases there are
+  the only coverage of this — do not delete them as duplicates of the core-module tests.
 - **A `Liveness` verdict must be the one its signal carries** (D-113). `SIGNAL_VERDICTS` is total and
   `__post_init__` enforces it, so `dead` is reachable through `refetch_gone` and nothing else. Constructing
   a contradictory pair raises `ContradictoryLiveness` rather than silently withholding a posting.

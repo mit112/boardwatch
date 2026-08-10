@@ -155,6 +155,11 @@ class PipelineSummary:
     liveness_checked: int | None = None
     liveness_dead: int | None = None
     liveness_unknown: int | None = None
+    # A SUBSET of `liveness_unknown`, not a fourth partition member: these were gone-statuses
+    # forgiven for arriving through a redirect. Counted separately because a rise here with
+    # `liveness_dead` at 0 is the signature of the detector being disarmed rather than of a
+    # healthy corpus.
+    liveness_gone_after_redirect: int | None = None
     # The postings withheld as gone, kept by ID rather than by count so the cohort guard can
     # reconcile SETS. They are not tailor failures and not leads; they never entered the loop.
     dead_lead_ids: list[int] = field(default_factory=list)
@@ -483,6 +488,9 @@ def run_pipeline(
             summary.liveness_unknown = sum(
                 1 for r in results.values() if r.verdict == "unknown"
             )
+            summary.liveness_gone_after_redirect = sum(
+                1 for r in results.values() if r.gone_but_redirected
+            )
             dead_ids = {pid for pid, r in results.items() if r.withholds}
             if dead_ids:
                 summary.dead_lead_ids.extend(sorted(dead_ids))
@@ -497,9 +505,14 @@ def run_pipeline(
                 # may simply have been behind a broken CDN. Same reasoning as the stage gate.
                 with engine.connect() as anchor_conn:
                     dead_job_ids = set(job_anchors(anchor_conn, sorted(dead_ids)).values())
+            redirected_note = (
+                f", {summary.liveness_gone_after_redirect} of them gone-after-redirect"
+                if summary.liveness_gone_after_redirect
+                else ""
+            )
             console.print(
                 f"liveness: {summary.liveness_checked} checked, {summary.liveness_dead} gone, "
-                f"{summary.liveness_unknown} unknown (unknown is served)"
+                f"{summary.liveness_unknown} unknown (unknown is served){redirected_note}"
             )
 
         console.print("[bold]tailor[/bold]")
@@ -749,6 +762,7 @@ def _emit_funnel(
             checked=summary.liveness_checked,
             dead=summary.liveness_dead,
             unknown=summary.liveness_unknown,
+            gone_after_redirect=summary.liveness_gone_after_redirect,
         ),
         tailored=[
             (lead.posting_id, lead.company, lead.title, lead.out_dir, lead.pdf_built)

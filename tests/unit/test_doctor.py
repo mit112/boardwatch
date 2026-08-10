@@ -28,6 +28,7 @@ def _tectonic_present(monkeypatch):
             available=True, version="0.17.0", failed=False, warning=None, detail="tectonic 0.17.0"
         ),
     )
+    monkeypatch.setattr(doctor_cmd, "check_pdfinfo", lambda: True)
 
 
 class FakeProvider:

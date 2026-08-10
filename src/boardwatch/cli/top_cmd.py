@@ -531,7 +531,9 @@ def _print_hidden_notices(
     whose single eligible posting was already applied to printed "no open postings match your
     filters" — an assertion that the corpus is empty — and never mentioned the posting, the
     suppression, or `--include-applied`. A quarantine whose drain is unmentioned is a leak
-    (CLAUDE.md), and the JSON path already got this right.
+    (CLAUDE.md). The JSON path had the opposite half of the same defect — it printed before its
+    early return but named only the handled and applied buckets — so both paths call this now,
+    and a bucket added here reaches both.
     """
     if results.hidden_ineligible and not include_ineligible:
         target.print(
@@ -639,25 +641,21 @@ def top(
     except NoProfileError:
         output_console.print("no profile yet — run `boardwatch init` first")
         raise typer.Exit(code=1) from None
-    if json_output and results.hidden_handled and not include_handled:
-        # Printed to stderr, BEFORE the JSON, and before the early return below: a script whose
-        # ranked array came back empty because the queue was already advanced would otherwise get
-        # `[]` with no reason at all, which is indistinguishable from "no matches exist".
-        output_console.print(
-            f"{results.hidden_handled} hidden as already handled (built, skipped, or surfaced "
-            "recently) — re-run with --include-handled to see them.",
-            markup=False,
-        )
-    if json_output and results.hidden_applied and not include_applied:
-        # Same reason as the notice above, and it needs saying separately: "you already applied"
-        # is not something `--include-handled` will ever explain, so a script told only about the
-        # ledger would be told the wrong thing about why its array is short.
-        output_console.print(
-            f"{results.hidden_applied} hidden as already applied to — re-run with "
-            "--include-applied to see them.",
-            markup=False,
-        )
     if json_output:
+        # Printed to stderr, BEFORE the JSON: a script whose ranked array came back empty would
+        # otherwise get `[]` with no reason at all, which is indistinguishable from "no matches
+        # exist". This used to name only the handled and applied buckets, so a script whose array
+        # was emptied by duplicate suppression was told nothing — the same leak the human path
+        # had, reached by a different route. Every bucket names its own drain, on both paths.
+        _print_hidden_notices(
+            output_console,
+            results,
+            include_ineligible=include_ineligible,
+            include_non_swe=include_non_swe,
+            include_duplicates=include_duplicates,
+            include_handled=include_handled,
+            include_applied=include_applied,
+        )
         console.print_json(
             json.dumps(
                 [

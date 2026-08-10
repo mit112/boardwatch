@@ -19,6 +19,7 @@ real one from `run_cmd`.
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 import pytest
@@ -95,10 +96,18 @@ def _ready(data_dir: Path, count: int, *, urls: dict[int, str | None] | None = N
     return ids
 
 
-def _prober(dead: set[int] = frozenset(), unknown: set[int] = frozenset()):  # type: ignore[assignment]
+def _prober(  # type: ignore[assignment]
+    dead: set[int] = frozenset(),
+    unknown: set[int] = frozenset(),
+    redirected_gone: set[int] = frozenset(),
+):
     def probe(posting_id: int, url: str) -> Liveness:
         if posting_id in dead:
             return Liveness(posting_id, "dead", "refetch_gone", "HTTP 404")
+        if posting_id in redirected_gone:
+            return Liveness(
+                posting_id, "unknown", "refetch_gone_after_redirect", "HTTP 404 after 302"
+            )
         if posting_id in unknown:
             return Liveness(posting_id, "unknown", "refetch_error", "ConnectTimeout")
         return Liveness(posting_id, "alive", "refetch_ok", "HTTP 200")
@@ -117,6 +126,40 @@ def _pipeline(data_dir: Path, out_root: Path, top_n: int, prober=None):  # type:
         top_n=top_n,
         liveness_prober=prober,
     )
+
+
+def test_a_gone_after_redirect_result_is_SERVED_and_COUNTED(env: Path, tmp_path: Path) -> None:  # noqa: N802
+    """Served is only half the requirement; counted is the other half.
+
+    Forgiving a redirected gone-status is the right call (D-113) and it is also the one bucket
+    that can disarm this gate with no other number moving. If an ATS starts fronting expired
+    requisitions with `301 → 404`, every genuine gone posting lands here, `liveness_dead` sits at
+    0 forever, and the run reports "N checked, 0 gone, N unknown" — identical to a run where
+    every probe timed out. Gate P6's "0 dead postings" clause would read as MET while nothing
+    was being detected. A separate counter is what makes that visible.
+    """
+    ids = _ready(env, 2)
+    summary = _pipeline(env, tmp_path / "apps", top_n=2, prober=_prober(redirected_gone={ids[0]}))
+
+    assert summary.fatal is None, summary.errors
+    assert [lead.posting_id for lead in summary.tailored] == ids  # served, both of them
+    assert summary.dead_lead_ids == []
+    assert summary.liveness_dead == 0
+    assert summary.liveness_gone_after_redirect == 1
+    # A subset of `unknown`, never a fourth partition member — `alive` subtracts only the two.
+    assert summary.liveness_unknown == 1
+
+
+def test_the_artifact_carries_the_gone_after_redirect_count(env: Path, tmp_path: Path) -> None:
+    """The counter has to survive into the artifact, which is where the gate is read from. A
+    field on `RunSummary` that never reaches the funnel is a number nobody sees."""
+    ids = _ready(env, 2)
+    out_root = tmp_path / "apps"
+    summary = _pipeline(env, out_root, top_n=2, prober=_prober(redirected_gone={ids[0]}))
+
+    payload = json.loads(summary.funnel.json_path.read_text(encoding="utf-8"))
+    assert payload["liveness"]["gone_after_redirect"] == 1
+    assert payload["liveness"]["dead"] == 0
 
 
 def test_a_dead_posting_never_reaches_the_lead_list(env: Path, tmp_path: Path) -> None:

@@ -76,6 +76,18 @@ def check_tectonic() -> TectonicCheck:
     )
 
 
+def check_pdfinfo() -> bool:
+    """Is poppler's `pdfinfo` on PATH? Missing is an actionable failure, same as tectonic.
+
+    Probed because it is a hard dependency wearing a soft failure. `_pdf_page_count`
+    (`reports/tailor.py`) returns `None` when the binary is absent, and `_default_runner` turns a
+    `None` page count into `COMPILE_FAILED` for **every** lead — so a user with tectonic but no
+    poppler gets an empty run every morning, with `doctor` reporting healthy. That is a check
+    silently not running, reported as a pass.
+    """
+    return shutil.which("pdfinfo") is not None
+
+
 def _db_revision(conn: Connection) -> str | None:
     """The DB's applied Alembic revision, or None if the DB is unversioned/uninitialized."""
     try:
@@ -193,5 +205,20 @@ def doctor(ctx: typer.Context, offline: bool = typer.Option(False, "--offline"))
     elif tectonic_check.warning:
         console.print(f"[yellow]{tectonic_check.warning}[/yellow]")
 
-    failed = report.actionable or not integrity_ok or not schema_ok or tectonic_check.failed
+    pdfinfo_ok = check_pdfinfo()
+    console.print(f"pdfinfo (poppler): {'found' if pdfinfo_ok else 'NOT FOUND'}")
+    if not pdfinfo_ok:
+        console.print(
+            "[red]pdfinfo not found on PATH; install poppler (`brew install poppler` / "
+            "`apt-get install poppler-utils`) — without it every résumé fails its page-count "
+            "gate and no leads are built[/red]"
+        )
+
+    failed = (
+        report.actionable
+        or not integrity_ok
+        or not schema_ok
+        or tectonic_check.failed
+        or not pdfinfo_ok
+    )
     raise typer.Exit(code=1 if failed else 0)

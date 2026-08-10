@@ -147,7 +147,7 @@ and is a no-op when the index is already right. `make index-check` reports drift
 | D-111 | DECISIONS.md | 1452 | P6 Slice 3: applied-state suppression, and liveness sized to what the corpus actually is |
 | D-112 | DECISIONS.md | 1621 | 0.3.0 is cut, the changelog gets ONE triple, and the tag is the owner's to push |
 | D-113 | DECISIONS.md | 1725 | The Slice 3 external review: a followed redirect can forge a gone-status |
-| D-114 | DECISIONS.md | 1788 | CI installs tectonic and pdfinfo on all three OSes; skipping the gate was refused |
+| D-114 | DECISIONS.md | 1813 | CI installs tectonic and pdfinfo on all three OSes; skipping the gate was refused |
 
 ---
 
@@ -1739,7 +1739,8 @@ new host whose deep-link path 404s while the requisition is live at a new URL. E
 employer's leads disappears, and the 404 in the detail string looks conclusive to whoever checks.
 
 **Fixed by carrying the fact, not by guessing at it.** `FetchFailure` gained `redirected`, set from
-`response.history` at the one site that raises for a non-200; the probe forwards it; and a gone-status
+`response.history` at the only raise site that can carry a gone-status (the retry-exhausted raise carries
+only 429/5xx, and the two transport paths carry no status at all); the probe forwards it; and a gone-status
 that arrives redirected is `unknown` under its own signal, **`refetch_gone_after_redirect`**. A separate
 signal rather than folding it into `refetch_error` — the two answer different questions, and a bucket
 that cannot be counted cannot be audited. The parameter is keyword-only and defaults to `False`, so a
@@ -1769,8 +1770,13 @@ before the notices, which all sit after the table. Codex named the applied bucke
 swallowed **`hidden_duplicate` and `hidden_handled` identically**, so fixing only what was reported would
 have left two silent drains. Suppression that empties the list is precisely when the operator needs the
 reason, and what they got instead asserts the corpus is empty. The notices are now extracted and called
-from both exits. Worth noting the JSON path had this right already — the two paths diverged because each
-was fixed once, separately.
+from both exits.
+
+**And the `--json` path was NOT already correct, which this entry originally claimed.** It printed its
+notices *before* returning — the half the human path got wrong — but named only the handled and applied
+buckets, so a script whose array was emptied by duplicate suppression got `[]` with no reason and no
+drain. Two paths, opposite halves of one defect, each fixed once and separately. Both now call the same
+helper, so a bucket added in one place reaches both.
 
 **The reusable shape of all three: a rule stated in one module, enforced nowhere.** Fail-open lived in a
 docstring while `follow_redirects` lived in another file; the verdict/signal pairing lived in a comment
@@ -1778,10 +1784,29 @@ while validation checked the fields apart; the drain contract lived in `CLAUDE.m
 decided it. Each fix moves the rule into something that fails — a forwarded flag, a total mapping, a
 single call site.
 
+**One limitation, measured and accepted.** The rule keys off "a redirect happened", not "a *different
+resource* answered", because `response.history` is what the client exposes. So an `http→https`,
+trailing-slash or `www.` canonicalization also forgives a 404 that was authoritative. Measured against the
+live corpus (24,073 postings) there is **no host today that both redirects and 404s**: `jobs.lever.co`
+(655 open) 404s directly and still withholds, `boards.greenhouse.io` (673 open) redirects but answers 200
+for dead requisitions, workday and ashby answer 200. So this is a latent coverage loss with no instance,
+and it errs in the direction this gate has chosen. Comparing the final URL to the requested one modulo
+scheme/host/slash would close it and is not worth the machinery until a counter says otherwise — which is
+now possible, because there is a counter.
+
 **Verification.** Four mutations, one per claim, each derived from the test's stated claim and run after
 committing ([[mutation-testing-lies-two-ways]]): the redirect rule ignored, `redirected` never set by the
 Fetcher, the coherence check disabled, and the empty-result notice call deleted. All four CAUGHT. The
 second is the one that matters — it is the only one that proves the plumbing rather than the decision.
+
+**Then two in-session reviewers, run on the fix itself, found three more things** — which is the argument
+for reviewing a review's fixes. Both independently flagged that the new signal was counted nowhere (fixed
+above). The code reviewer additionally reproduced, by building a real sdist, that the CI action's first
+form wrote tectonic's ~43 MB bundle cache **inside the workspace**, where `release.yml`'s `uv build` would
+have swept it into the published source distribution — irreversible on PyPI, and caught only because a
+reviewer built the artifact instead of reading the YAML. The docs reviewer found that re-pushing `v0.3.0`
+unmoved would re-run the identical failure, since that tag names a commit without the fix, and that
+`doctor` probed for `tectonic` while `pdfinfo` — equally fatal, and silently so — went unchecked.
 
 ---
 
@@ -1808,9 +1833,10 @@ no detector. Benign if they drift (both versions work) and called out in the act
 sees it.
 
 **Four things were verified rather than assumed, and three of the four contradicted the obvious guess.**
-The Linux **gnu** build is dynamically linked against `libgraphite2.so.3`, which is absent from a stock
-runner image — it installs cleanly and then will not start; the **musl** asset runs on a bare container
-with no extra packages. Chocolatey's `poppler` package ships the poppler **source tarball**, 891 files
+The Linux **gnu** build is dynamically linked against `libgraphite2.so.3` and would not start on a bare
+`ubuntu:24.04` container; the **musl** asset ran there with no extra packages. Stated precisely because
+the runner image's package set was never enumerated — the gnu build might well work there. musl makes
+the question moot, which is why it was chosen over answering it. Chocolatey's `poppler` package ships the poppler **source tarball**, 891 files
 with zero executables, so it cannot put `pdfinfo` on PATH at all; Windows takes prebuilt binaries from a
 pinned `poppler-windows` release instead. That release's tag (`v26.02.0-0`) and the directory inside its
 zip (`poppler-26.02.0`) **do not match**, so the bin path is globbed rather than derived by string

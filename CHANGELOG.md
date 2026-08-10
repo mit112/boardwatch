@@ -23,13 +23,15 @@ All notable changes to this project are documented here. The format follows
 - **`top` no longer hides why the list is empty** (D-113). When suppression removed everything, the
   human-readable output printed "no open postings match your filters" — a claim that the corpus is
   empty — and returned before naming what was hidden or how to see it. The duplicate, handled and
-  applied notices, each of which names its own drain, now print on that path too. The `--json` path was
-  already correct.
+  applied notices, each of which names its own drain, now print on that path too. The `--json` path had
+  the opposite half of the same defect — it printed before returning but named only two of the five
+  buckets — and now shares one code path with the human one.
 
-- **CI installs `tectonic` and `pdfinfo`** (D-114). Both became hard dependencies of the résumé PDF gate
-  after 0.2.0 shipped, and no workflow ever installed them, so 33 tests failed on every runner — which
-  is what stopped the 0.3.0 release build from publishing. They are now installed on all three runner
-  OSes rather than the tests being skipped where the binaries are missing.
+- **`boardwatch doctor` now probes for `pdfinfo`, not only `tectonic`.** poppler is as hard a dependency
+  as tectonic — without it the page-count gate cannot answer and every lead is refused — but nothing
+  checked for it, so a user with tectonic and no poppler got an empty run every morning and a `doctor`
+  that reported healthy. `doctor` exits non-zero if either binary is missing, and the README now names
+  both as prerequisites.
 
 ## [0.3.0] - 2026-08-10
 

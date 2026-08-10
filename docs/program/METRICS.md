@@ -817,6 +817,25 @@ coherence case, 2 real-`Fetcher` redirect cases, 2 CLI empty-result notice cases
 | Chocolatey `poppler` executables shipped | **0** (891 files, all source) |
 | Tectonic bundle cache after one trivial compile | 42 MB |
 
+### The review OF the review — 2 in-session reviewers, 5 more findings
+
+Run on the fix itself, in fresh context, one code and one docs-only.
+
+| Severity | Finding | Standing |
+|---|---|---|
+| BLOCKER | The CI action wrote tectonic's ~43 MB bundle cache inside the workspace, where `release.yml`'s `uv build` sweeps it into the published sdist | **Fixed** before the review landed (cache + warm-up moved to `RUNNER_TEMP`); the reviewer reproduced it by building a real sdist and finding `.tectonic-cache/` inside |
+| MAJOR ×2 | `refetch_gone_after_redirect` was emitted and consumed by nothing — `grep -rn '\.signal' src` found no reader outside its own module | **Fixed.** Counted as a subset of `unknown`, on the run line and in the artifact. Both reviewers found this independently |
+| MAJOR | Re-pushing `v0.3.0` unmoved re-runs the identical failure — that tag names `426f45c`, which has no `setup-typesetting` | **Fixed in STATE**, which now says the tag must land on a commit containing the fix |
+| MAJOR | `doctor` probed `tectonic` and not `pdfinfo`, though a missing `pdfinfo` refuses **every** lead | **Fixed.** `check_pdfinfo` added, contributes to doctor's exit code, README names both prerequisites |
+| MAJOR ×2 | Two false claims in the new docs: "the `--json` path was already correct" (it named 2 of 5 buckets) and "every liveness test but one injects a fake prober" (an entire 10-test module drives the real `Fetcher`) | **Both corrected**; the JSON path was also fixed rather than only re-described |
+| MINOR | `RUN_CONTRACT.md` still named `TypstUnavailableError`, a class that does not exist | **Fixed** → `RenderToolMissingError`. D-112's claim that the Typst retraction "swept `docs/program/`" was false |
+| MINOR | The redirect rule keys off "a redirect happened", so `http→https` and trailing-slash canonicalization also forgive an authoritative 404 | **Accepted, measured.** No host in the live 24,073 both redirects and 404s; fail-open direction; now observable through the new counter |
+
+**The reviewers disagreed with the author on one point and were right:** `ARTIFACT_VERSION` was bumped
+4→5 for the new key and then **reverted to 4** — every prior bump signalled a new top-level *section*, and
+D-031 set the precedent for declining one on an additive key. The convention was found by grepping the
+archive, not remembered.
+
 **Not yet measured: anything on a real runner.** What *was* executed locally, on arm64 macOS, is the whole
 macOS branch end to end — pinned URL, flat archive layout, `TECTONIC_CACHE_DIR` honoured (41 MB written
 there and nowhere else), warm-up compile, and `pdfinfo` reading `Pages: 1` back. The Linux binary was run
