@@ -1217,7 +1217,7 @@ these are the measured numbers.
 |---|---|---|
 | after Task 4 (`bca78bd`) | Tasks 1-4 | **exit 0** — 3703 passed, coverage 95.19%, `generalization: OK`, 18m47s |
 | first full-branch (`b1d2364`) | Tasks 5-8 | **exit 2 — RED.** `test_migrations_match_metadata` failed: the migration's UNIQUE-constraint name disagreed with the one `tables.py`'s naming convention renders. Real defect, fixed in `3646c27`. |
-| re-run (`3646c27`) | whole branch | see `STATE.md` |
+| re-run (`3646c27`) | whole branch | **exit 0** — 3733 passed, 1 deselected, coverage 95.20%, `generalization: OK`, 16m07s |
 
 Both were run in a detached worktree pinned to the commit, capturing the real exit code, never
 piped through `head`/`tail`. **The red run is recorded rather than overwritten**: it is the

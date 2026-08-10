@@ -35,7 +35,7 @@ now). **D-094** records the build itself, including **five** defects found *in t
 running its code (three of them tests that could not fail for the claim they made) and one that
 **only the full `make check` could see**: the migration hard-coded a UNIQUE-constraint name that
 disagreed with the one `tables.py`'s naming convention renders, so `test_migrations_match_metadata`
-saw permanent drift. The first full-branch gate run was RED on it; it is fixed and re-run.
+saw permanent drift. The first full-branch gate run was RED on it; it is fixed (`3646c27`) and the re-run is **green: `make check` exit 0, 3733 passed, 1 deselected, coverage 95.20%, `generalization: OK`**.
 
 Everything below this block predates P6 and is unchanged.
 
