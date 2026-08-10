@@ -30,7 +30,7 @@ from datetime import UTC, datetime
 from enum import StrEnum
 from typing import Annotated, Any, Final
 
-from pydantic import BaseModel, BeforeValidator, ConfigDict, StringConstraints
+from pydantic import AfterValidator, BaseModel, BeforeValidator, ConfigDict, StringConstraints
 
 # --------------------------------------------------------------------------------------
 # Strict base
@@ -121,20 +121,22 @@ PredicateId = Annotated[
 CatalogTokenId = Annotated[str, StringConstraints(pattern=r"^[a-z0-9]+(?:[._-][a-z0-9]+)*$")]
 
 
-def _require_utc(value: Any) -> Any:
+def _require_utc(value: datetime) -> datetime:
     """Normalise an aware timestamp to UTC; refuse a naive one.
 
     A naive timestamp has no single ISO 8601 rendering, so two bundles with identical logical
     content could hash differently depending on the writer's locale.
+
+    This is an *After* validator on purpose. As a `BeforeValidator` it received the authored string
+    rather than a `datetime`, so `2026-08-10T12:00:00` fell through untouched and Pydantic then
+    produced a naive datetime — the exact input it exists to refuse.
     """
-    if isinstance(value, datetime):
-        if value.tzinfo is None:
-            raise ValueError("timestamp must carry an explicit UTC offset")
-        return value.astimezone(UTC)
-    return value
+    if value.tzinfo is None:
+        raise ValueError("timestamp must carry an explicit UTC offset")
+    return value.astimezone(UTC)
 
 
-UtcTimestamp = Annotated[datetime, BeforeValidator(_require_utc)]
+UtcTimestamp = Annotated[datetime, AfterValidator(_require_utc)]
 
 
 # --------------------------------------------------------------------------------------
