@@ -1,0 +1,5 @@
+exclusions_version: 1
+exclusions:
+- source_record_id: source-record.bcf308bbe38a6812f15001d11e7800cda911cba8a1a47da6fca31a5e60e7a9e5
+  reason: administrative_noise
+  rationale: A navigation bullet with no professional assertion in it.

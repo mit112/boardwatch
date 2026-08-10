@@ -1,0 +1,222 @@
+evidence:
+- evidence_id: evidence.packet-pantry.benchmark.001
+  title: Packet Pantry local throughput baseline
+  capture:
+    kind: blob
+    sha256: 21e4321f83a756b29acda64ccccb7c54709c0c05cfb78d557dc8c20ef3edf2c5
+    media_type: text/markdown
+  captured_at: '2026-08-10T12:00:00Z'
+  reviewed_at: '2026-08-10'
+  sufficiency_review:
+    state: owner_approved
+  redactions: []
+  supports_record_ids:
+  - metric.packet-pantry.throughput.001
+  contradicts_record_ids: []
+  contextualizes_record_ids: []
+  evidence_class: measured_result
+- evidence_id: evidence.packet-pantry.latency.001
+  title: Packet Pantry median latency reading
+  capture:
+    kind: inline
+    text: Median request latency measured at 18 ms across the same five minute run.
+    media_type: text/plain
+  captured_at: '2026-08-10T12:00:00Z'
+  reviewed_at: '2026-08-10'
+  sufficiency_review:
+    state: owner_approved
+  redactions: []
+  supports_record_ids:
+  - metric.packet-pantry.latency.001
+  contradicts_record_ids: []
+  contextualizes_record_ids: []
+  evidence_class: measured_result
+- evidence_id: evidence.packet-pantry.legacy-score.001
+  title: Retired scorecard reading
+  capture:
+    kind: inline
+    text: Retired scorecard recorded 72 pts before the methodology was withdrawn.
+    media_type: text/plain
+  captured_at: '2026-08-10T12:00:00Z'
+  reviewed_at: '2026-08-10'
+  sufficiency_review:
+    state: unreviewed
+  redactions: []
+  supports_record_ids:
+  - metric.packet-pantry.legacy-score.001
+  contradicts_record_ids: []
+  contextualizes_record_ids: []
+  evidence_class: measured_result
+- evidence_id: evidence.packet-pantry.manifest.001
+  title: Packet Pantry repository manifest excerpt
+  capture:
+    kind: inline
+    text: 'Build manifest excerpt naming the language, the deployment target and the
+
+      public read endpoint, plus the ingestion module the contribution describes.'
+    media_type: text/markdown
+  captured_at: '2026-08-10T12:00:00Z'
+  reviewed_at: '2026-08-10'
+  sufficiency_review:
+    state: owner_approved
+  redactions: []
+  supports_record_ids:
+  - fact.packet-pantry.contribution.001
+  - fact.packet-pantry.deployment.001
+  - fact.packet-pantry.url.001
+  - fact.packet-pantry.language.001
+  - fact.packet-pantry.legacy-language.001
+  contradicts_record_ids: []
+  contextualizes_record_ids: []
+  evidence_class: repository_artifact
+  source_id: source.synthetic-repository
+  path: docs/baseline.md
+  repository_commit: 0123456789abcdef0123456789abcdef01234567
+- evidence_id: evidence.example.transcript.001
+  title: Example University record excerpt
+  capture:
+    kind: inline
+    text: 'Institution, credential, field, enrolment window and result, plus the course
+
+      row and the Example Labs employment dates the private record confirms.'
+    media_type: text/plain
+  captured_at: '2026-08-10T12:00:00Z'
+  reviewed_at: '2026-08-10'
+  sufficiency_review:
+    state: owner_approved
+  redactions: []
+  supports_record_ids:
+  - fact.example-university.institution.001
+  - fact.example-university.credential.001
+  - fact.example-university.field.001
+  - fact.example-university.start.001
+  - fact.example-university.end.001
+  - fact.example-university.result.001
+  - fact.example-labs.organization.001
+  - fact.example-course.title.001
+  - fact.example-course.result.001
+  contradicts_record_ids: []
+  contextualizes_record_ids: []
+  evidence_class: private_document
+  source_id: source.synthetic-private-record
+  locator:
+    kind: section
+    value: Award and enrolment summary
+- evidence_id: evidence.example.public-record.001
+  title: Example public register excerpt
+  capture:
+    kind: inline
+    text: 'Public register excerpt covering the workshop paper, the prize, the
+
+      certification window, the meetup talk and the granted filing.'
+    media_type: text/plain
+  captured_at: '2026-08-10T12:00:00Z'
+  reviewed_at: '2026-08-10'
+  sufficiency_review:
+    state: owner_approved
+  redactions: []
+  supports_record_ids:
+  - fact.example-paper.title.001
+  - fact.example-paper.venue.001
+  - fact.example-paper.date.001
+  - fact.example-prize.name.001
+  - fact.example-prize.issuer.001
+  - fact.example-prize.date.001
+  - fact.example-credential.name.001
+  - fact.example-credential.issuer.001
+  - fact.example-credential.issued.001
+  - fact.example-credential.expiry.001
+  - fact.example-talk.title.001
+  - fact.example-talk.date.001
+  - fact.example-talk.venue.001
+  - fact.example-filing.title.001
+  - fact.example-filing.filed.001
+  - fact.example-filing.granted.001
+  contradicts_record_ids: []
+  contextualizes_record_ids: []
+  evidence_class: public_record
+  origin:
+    kind: public_register
+    reference: Example Public Register, 2026 annual listing
+  locator:
+    kind: section
+    value: 2026 listings
+- evidence_id: evidence.example.owner-attestation.001
+  title: Owner attestation for intended wording and private history
+  capture:
+    kind: inline
+    text: 'The owner attests to the professional name and headline, the Example Labs
+
+      title, dates, responsibility, accomplishment, team size and location, the
+
+      project summary and start-date candidates, and the volunteer affiliation.'
+    media_type: text/plain
+  captured_at: '2026-08-10T12:00:00Z'
+  reviewed_at: '2026-08-10'
+  sufficiency_review:
+    state: owner_approved
+  redactions: []
+  supports_record_ids:
+  - fact.example.name.001
+  - fact.example.headline.001
+  - fact.example-labs.title.001
+  - fact.example-labs.dates.001
+  - fact.example-labs.responsibility.001
+  - fact.example-labs.accomplishment.001
+  - fact.example-labs.team-size.001
+  - fact.example-labs.location.001
+  - fact.packet-pantry.summary.001
+  - fact.packet-pantry.summary.002
+  - fact.packet-pantry.start-date.001
+  - fact.packet-pantry.end-date.001
+  - fact.packet-pantry.end-date.002
+  - fact.example-society.role.001
+  - fact.example-society.dates.001
+  - fact.example.sponsorship.001
+  - fact.example.regions.001
+  contradicts_record_ids: []
+  contextualizes_record_ids: []
+  evidence_class: owner_attestation
+  attested_at: '2026-08-10'
+- evidence_id: evidence.packet-pantry.owner-ruling.001
+  title: Owner ruling on the Packet Pantry start date
+  capture:
+    kind: inline
+    text: 'The earlier date was ideation; implementation began in the later month.
+
+      Recorded so the ruling can be reviewed without the original notes.'
+    media_type: text/plain
+  captured_at: '2026-08-10T12:00:00Z'
+  reviewed_at: '2026-08-10'
+  sufficiency_review:
+    state: owner_approved
+  redactions: []
+  supports_record_ids:
+  - fact.packet-pantry.start-date.002
+  contradicts_record_ids: []
+  contextualizes_record_ids: []
+  evidence_class: owner_attestation
+  attested_at: '2026-08-10'
+- evidence_id: evidence.example.legacy-summary.001
+  title: Legacy notes summary of the prototype stack
+  capture:
+    kind: inline
+    text: 'Second-hand summary of the prototype''s build files. Import evidence only; it
+
+      cannot verify the technology on its own.'
+    media_type: text/plain
+  captured_at: '2026-08-10T12:00:00Z'
+  reviewed_at: '2026-08-10'
+  sufficiency_review:
+    state: unreviewed
+  redactions: []
+  supports_record_ids: []
+  contradicts_record_ids: []
+  contextualizes_record_ids:
+  - fact.packet-pantry.legacy-language.001
+  evidence_class: secondary_summary
+  source_id: source.synthetic-notes
+  locator:
+    kind: section
+    value: Prototype stack
+  authoritative: false

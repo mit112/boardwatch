@@ -9,6 +9,7 @@ from tools.generalization import allowlists as al
 from tools.generalization.allowlists import DataEntry
 from tools.generalization.discovery import Repo, RepoFile, discover
 from tools.generalization.inventory import (
+    UNPINNED_PATHS,
     _data_literals,
     _registry_rows,
     _registry_tags,
@@ -50,7 +51,24 @@ def test_scope_covers_data_files_repo_wide() -> None:
     assert "src/boardwatch/tailor/register.yaml" in scope
     assert "src/boardwatch/tailor/personas.yaml" in scope
     assert "src/boardwatch/profile_bundle/resources/career-profile.schema.json" in scope
-    assert len(scope) == 41
+    assert "src/boardwatch/profile_bundle/examples/comprehensive/manifest.yaml" in scope
+    assert len(scope) == 74
+
+
+def test_every_bundle_example_file_is_pinned_and_synthetic() -> None:
+    """The example is 33 files of one artifact, so a bulk-added table row could hide an unpinned or
+    non-synthetic addition. Both properties are asserted over whatever is actually in scope."""
+    prefix = "src/boardwatch/profile_bundle/examples/"
+    scope = {path for path in inventory_scope(discover(REPO_ROOT)) if path.startswith(prefix)}
+    assert len(scope) == 33
+    for path in sorted(scope):
+        entry = al.SHIPPED_DATA[path]
+        assert entry.kind == "fixture", path
+        assert entry.provenance == "synthetic", path
+        assert entry.source, path
+        assert entry.reason.strip(), path
+        assert entry.pin.startswith("sha256:"), path
+        assert path not in UNPINNED_PATHS, path
 
 
 def test_scope_excludes_tooling_config_and_workflows() -> None:

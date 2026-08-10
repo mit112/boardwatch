@@ -1,0 +1,11 @@
+sources_version: 1
+sources:
+- source_id: source.synthetic-notes
+  source_kind: markdown_document
+  portable_locator: notes/synthetic-project-notes.md
+- source_id: source.synthetic-repository
+  source_kind: repository_markdown
+  portable_locator: packet-pantry/README.md
+- source_id: source.synthetic-private-record
+  source_kind: structured_objects
+  portable_locator: records/synthetic-private-record.json

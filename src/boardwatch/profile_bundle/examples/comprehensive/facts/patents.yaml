@@ -1,0 +1,72 @@
+entities:
+- entity_id: patent.example-filing
+  entity_type: patent
+  display_name: Idempotent ingestion filing
+  aliases: []
+  created_at: '2026-08-10'
+  reviewed_at: '2026-08-10'
+  status: granted
+facts:
+- fact_id: fact.example-filing.title.001
+  subject_id: patent.example-filing
+  predicate: patent.title
+  value:
+    type: string
+    value: Idempotent ingestion of duplicate records
+  verification_state: verified
+  verification_basis: public_record_verified
+  usage_context: professional
+  evidence_ids:
+  - evidence.example.public-record.001
+  allowed_surfaces:
+  - resume
+  - public
+  - application
+  conflict_group_id: null
+  reviewed_at: '2026-08-10'
+  expires_at: null
+  supersedes_fact_ids: []
+  import_lineage: null
+  notes: null
+- fact_id: fact.example-filing.filed.001
+  subject_id: patent.example-filing
+  predicate: patent.filing_date
+  value:
+    type: date
+    value: '2025-11-03'
+  verification_state: verified
+  verification_basis: public_record_verified
+  usage_context: professional
+  evidence_ids:
+  - evidence.example.public-record.001
+  allowed_surfaces:
+  - resume
+  - public
+  - application
+  conflict_group_id: null
+  reviewed_at: '2026-08-10'
+  expires_at: null
+  supersedes_fact_ids: []
+  import_lineage: null
+  notes: null
+- fact_id: fact.example-filing.granted.001
+  subject_id: patent.example-filing
+  predicate: patent.grant_date
+  value:
+    type: date
+    value: '2026-06-30'
+  verification_state: verified
+  verification_basis: public_record_verified
+  usage_context: professional
+  evidence_ids:
+  - evidence.example.public-record.001
+  allowed_surfaces:
+  - resume
+  - public
+  - application
+  conflict_group_id: null
+  reviewed_at: '2026-08-10'
+  expires_at: null
+  supersedes_fact_ids: []
+  import_lineage: null
+  notes: null

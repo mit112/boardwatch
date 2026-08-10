@@ -1,0 +1,81 @@
+metrics:
+- metric_id: metric.packet-pantry.throughput.001
+  subject_id: project.packet-pantry
+  metric_kind: throughput
+  value:
+    number: '120'
+    unit: items_per_second
+    qualifier: approximate
+  display_value: ~120 items/s
+  measurement_context: Single-node local benchmark with one producer
+  measurement_method: Committed load profile run for five minutes
+  evidence_ids:
+  - evidence.packet-pantry.benchmark.001
+  verification_state: verified
+  allowed_surfaces:
+  - resume
+  - public
+  allowed_phrasings:
+  - sustained approximately 120 items/s
+  - sustained ~120 items/s
+  forbidden_phrasings:
+  - handled thousands of items per second
+  protected_tokens:
+  - '120'
+  - items/s
+  caveats:
+  - severity: context_required
+    text: Do not generalize this local result to production hardware.
+  reviewed_at: '2026-08-10'
+- metric_id: metric.packet-pantry.latency.001
+  subject_id: project.packet-pantry
+  metric_kind: latency
+  value:
+    number: '18'
+    unit: milliseconds
+    qualifier: at_most
+  display_value: under 18 ms at the median
+  measurement_context: Median of the same single-node benchmark
+  measurement_method: Recorded per-request timings from the committed load profile
+  evidence_ids:
+  - evidence.packet-pantry.latency.001
+  verification_state: verified
+  allowed_surfaces:
+  - resume
+  - public
+  allowed_phrasings:
+  - median request latency under 18 ms
+  forbidden_phrasings:
+  - sub-millisecond latency
+  protected_tokens:
+  - '18'
+  - ms
+  caveats:
+  - severity: informational
+    text: Measured on one node, not a cluster.
+  reviewed_at: '2026-08-10'
+- metric_id: metric.packet-pantry.legacy-score.001
+  subject_id: project.packet-pantry
+  metric_kind: score
+  value:
+    number: '72'
+    unit: points
+    qualifier: exact
+  display_value: 72 pts on the retired scorecard
+  measurement_context: Retired internal scorecard from the prototype era
+  measurement_method: Scorecard spreadsheet, methodology since replaced
+  evidence_ids:
+  - evidence.packet-pantry.legacy-score.001
+  verification_state: verified
+  allowed_surfaces: []
+  allowed_phrasings:
+  - scored 72 pts on the retired scorecard
+  forbidden_phrasings:
+  - top-rated service
+  protected_tokens:
+  - '72'
+  - pts
+  caveats:
+  - severity: disqualifying
+    text: The scorecard methodology was withdrawn; supersede before any use.
+  reviewed_at: '2026-08-10'

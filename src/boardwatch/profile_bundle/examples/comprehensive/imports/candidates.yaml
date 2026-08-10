@@ -1,0 +1,22 @@
+candidates_version: 1
+candidates:
+- candidate_id: candidate.0ce5a9c4286566ccc3495c832ceb6a2b640bafc4a140e340731a2f8cfada71ed
+  source_record_id: source-record.944c2949212afd453c6df1f836e3b3f7e8c959c800032f03ac3dfdb18c850725
+  predicate: technology.used
+  canonicalized_typed_value:
+    type: skill_ref
+    skill_id: skill.example-language
+  original_display_value: Example Language
+  occurrences:
+  - source_content_digest: sha256:c7b14820da0f2b4d7e78e45e2fa0614008dc9667ed186ec85fcc6a1353287ecd
+    record_content_digest: sha256:7a0711e4bb099e07505bb779ffc9aec215aae24cf3b1c2453ff6eeb4c2632f5b
+- candidate_id: candidate.ff1a028b491c3395ad8789bc76620a33c31676a10519819f409b4a711045c7ed
+  source_record_id: source-record.f7bb1af73e34542d9fc04ee6df27f92872ffab8b7d46dc0bc9bedc9d16c6db45
+  predicate: project.contribution
+  canonicalized_typed_value:
+    type: string
+    value: Designed and implemented the retry-safe ingestion path
+  original_display_value: Designed  and implemented the retry-safe ingestion path
+  occurrences:
+  - source_content_digest: sha256:72a25a02d0398b054dac344095dbbe245e853efe8f7646445681ddc54a9495d9
+    record_content_digest: sha256:68968f6f41a49aaaec022832a127cb3d4946957a8c4bb98a70a44ce253e5dbd6

@@ -1,0 +1,27 @@
+relations_version: 1
+relations:
+- relation_type: project_at_employment
+  legal_source_kinds:
+  - project
+  legal_target_kinds:
+  - employment
+- relation_type: course_at_education
+  legal_source_kinds:
+  - course
+  legal_target_kinds:
+  - education
+- relation_type: presentation_for_project
+  legal_source_kinds:
+  - presentation
+  legal_target_kinds:
+  - project
+- relation_type: publication_about_project
+  legal_source_kinds:
+  - publication
+  legal_target_kinds:
+  - project
+- relation_type: patent_for_project
+  legal_source_kinds:
+  - patent
+  legal_target_kinds:
+  - project

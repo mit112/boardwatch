@@ -1,0 +1,12 @@
+catalog_version: 1
+career_field: example-field
+categories:
+- category_id: technique
+  display_name: Techniques
+  parent_category_id: null
+  aliases: []
+- category_id: programming-language
+  display_name: Programming languages
+  parent_category_id: technique
+  aliases:
+  - language

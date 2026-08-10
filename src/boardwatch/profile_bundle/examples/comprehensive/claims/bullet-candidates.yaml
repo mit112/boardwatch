@@ -1,0 +1,64 @@
+claims:
+- claim_id: claim.packet-pantry.backend.001
+  subject_id: project.packet-pantry
+  claim_type: accomplishment
+  text: Built a retry-safe ingestion path and measured its sustained local throughput.
+  required_fact_ids:
+  - fact.packet-pantry.contribution.001
+  required_metric_ids:
+  - metric.packet-pantry.throughput.001
+  metric_mentions:
+  - metric_id: metric.packet-pantry.throughput.001
+    rendering: qualitative_only
+  status: approved
+  allowed_surfaces:
+  - resume
+  assertion_tags:
+  - built
+  - measured
+  reviewed_at: '2026-08-10'
+- claim_id: claim.packet-pantry.overview.001
+  subject_id: project.packet-pantry
+  claim_type: project_summary
+  text: A live pantry inventory service running in production with a public read API.
+  required_fact_ids:
+  - fact.packet-pantry.summary.002
+  - fact.packet-pantry.deployment.001
+  - fact.packet-pantry.url.001
+  required_metric_ids: []
+  metric_mentions: []
+  status: approved
+  allowed_surfaces:
+  - resume
+  - public
+  assertion_tags:
+  - live
+  - production
+  - shipped
+  reviewed_at: '2026-08-10'
+- claim_id: claim.example-labs.ownership.001
+  subject_id: employment.example-labs
+  claim_type: responsibility
+  text: Led the ingestion service and its on-call rotation.
+  required_fact_ids:
+  - fact.example-labs.responsibility.001
+  required_metric_ids: []
+  metric_mentions: []
+  status: approved
+  allowed_surfaces:
+  - resume
+  - public
+  assertion_tags:
+  - led
+  reviewed_at: '2026-08-10'
+- claim_id: claim.packet-pantry.draft.001
+  subject_id: project.packet-pantry
+  claim_type: accomplishment
+  text: Designed the ingestion path around an idempotency key.
+  required_fact_ids: []
+  required_metric_ids: []
+  metric_mentions: []
+  status: draft
+  allowed_surfaces: []
+  assertion_tags: []
+  reviewed_at: '2026-08-10'

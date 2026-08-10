@@ -1,0 +1,41 @@
+facts:
+- fact_id: fact.example.sponsorship.001
+  subject_id: person.example-candidate
+  predicate: application.requires_sponsorship
+  value:
+    type: boolean
+    value: true
+  verification_state: owner_confirmed
+  verification_basis: owner_attested
+  usage_context: professional
+  evidence_ids:
+  - evidence.example.owner-attestation.001
+  allowed_surfaces:
+  - application
+  conflict_group_id: null
+  reviewed_at: '2026-08-10'
+  expires_at: null
+  supersedes_fact_ids: []
+  import_lineage: null
+  notes: null
+- fact_id: fact.example.regions.001
+  subject_id: person.example-candidate
+  predicate: application.authorized_regions
+  value:
+    type: string_list
+    values:
+    - EXAMPLE-REGION-A
+    - EXAMPLE-REGION-B
+  verification_state: owner_confirmed
+  verification_basis: owner_attested
+  usage_context: professional
+  evidence_ids:
+  - evidence.example.owner-attestation.001
+  allowed_surfaces:
+  - application
+  conflict_group_id: null
+  reviewed_at: '2026-08-10'
+  expires_at: null
+  supersedes_fact_ids: []
+  import_lineage: null
+  notes: null

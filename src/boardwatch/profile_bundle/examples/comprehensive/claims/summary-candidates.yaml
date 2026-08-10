@@ -1,0 +1,16 @@
+claims:
+- claim_id: claim.example.summary.001
+  subject_id: person.example-candidate
+  claim_type: professional_summary
+  text: Engineer who builds small, well-instrumented services and measures them.
+  required_fact_ids:
+  - fact.example.headline.001
+  required_metric_ids: []
+  metric_mentions: []
+  status: approved
+  allowed_surfaces:
+  - resume
+  - public
+  - application
+  assertion_tags: []
+  reviewed_at: '2026-08-10'

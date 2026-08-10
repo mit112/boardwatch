@@ -1,0 +1,19 @@
+conflicts:
+- conflict_id: conflict.packet-pantry.end-date
+  subject_id: project.packet-pantry
+  predicate: project.end_date
+  state: unresolved
+  candidate_fact_ids:
+  - fact.packet-pantry.end-date.001
+  - fact.packet-pantry.end-date.002
+  active_ruling_id: null
+  opened_at: '2026-08-10'
+- conflict_id: conflict.packet-pantry.start-date
+  subject_id: project.packet-pantry
+  predicate: project.start_date
+  state: resolved
+  candidate_fact_ids:
+  - fact.packet-pantry.start-date.001
+  - fact.packet-pantry.start-date.002
+  active_ruling_id: ruling.packet-pantry.start-date.001
+  opened_at: '2026-08-10'

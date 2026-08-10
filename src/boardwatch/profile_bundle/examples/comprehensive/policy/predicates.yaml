@@ -1,0 +1,1240 @@
+predicates_version: 1
+predicates:
+- predicate_id: person.professional_name
+  catalog_version: 1
+  legal_subject_kinds:
+  - person
+  legal_value_types:
+  - string
+  legal_string_values: []
+  cardinality: one
+  exclusivity: none
+  minimum_evidence:
+  - classes:
+    - owner_attestation
+  legal_verification_bases:
+  - owner_attested
+  owner_attestation_authority: owner_confirmed
+  legal_surfaces:
+  - resume
+  - public
+  - application
+  surface_policy: standard
+  legal_usage_contexts:
+  - professional
+  expiry:
+    behaviour: never
+    review_interval_days: null
+  may_ground_skill: false
+- predicate_id: person.professional_headline
+  catalog_version: 1
+  legal_subject_kinds:
+  - person
+  legal_value_types:
+  - string
+  legal_string_values: []
+  cardinality: one
+  exclusivity: none
+  minimum_evidence:
+  - classes:
+    - owner_attestation
+  legal_verification_bases:
+  - owner_attested
+  owner_attestation_authority: owner_confirmed
+  legal_surfaces:
+  - resume
+  - public
+  - application
+  surface_policy: standard
+  legal_usage_contexts:
+  - professional
+  expiry:
+    behaviour: never
+    review_interval_days: null
+  may_ground_skill: false
+- predicate_id: education.institution
+  catalog_version: 1
+  legal_subject_kinds:
+  - education
+  legal_value_types:
+  - string
+  legal_string_values: []
+  cardinality: one
+  exclusivity: none
+  minimum_evidence:
+  - classes:
+    - private_document
+  legal_verification_bases:
+  - private_document_verified
+  owner_attestation_authority: none
+  legal_surfaces:
+  - resume
+  - public
+  - application
+  surface_policy: standard
+  legal_usage_contexts:
+  - academic
+  expiry:
+    behaviour: never
+    review_interval_days: null
+  may_ground_skill: false
+- predicate_id: education.credential
+  catalog_version: 1
+  legal_subject_kinds:
+  - education
+  legal_value_types:
+  - string
+  legal_string_values: []
+  cardinality: many
+  exclusivity: none
+  minimum_evidence:
+  - classes:
+    - private_document
+  legal_verification_bases:
+  - private_document_verified
+  owner_attestation_authority: none
+  legal_surfaces:
+  - resume
+  - public
+  - application
+  surface_policy: standard
+  legal_usage_contexts:
+  - academic
+  expiry:
+    behaviour: never
+    review_interval_days: null
+  may_ground_skill: false
+- predicate_id: education.field
+  catalog_version: 1
+  legal_subject_kinds:
+  - education
+  legal_value_types:
+  - string
+  legal_string_values: []
+  cardinality: many
+  exclusivity: none
+  minimum_evidence:
+  - classes:
+    - private_document
+  legal_verification_bases:
+  - private_document_verified
+  owner_attestation_authority: none
+  legal_surfaces:
+  - resume
+  - public
+  - application
+  surface_policy: standard
+  legal_usage_contexts:
+  - academic
+  expiry:
+    behaviour: never
+    review_interval_days: null
+  may_ground_skill: false
+- predicate_id: education.start_date
+  catalog_version: 1
+  legal_subject_kinds:
+  - education
+  legal_value_types:
+  - year_month
+  legal_string_values: []
+  cardinality: one
+  exclusivity: none
+  minimum_evidence:
+  - classes:
+    - private_document
+  legal_verification_bases:
+  - private_document_verified
+  owner_attestation_authority: none
+  legal_surfaces:
+  - resume
+  - public
+  - application
+  surface_policy: standard
+  legal_usage_contexts:
+  - academic
+  expiry:
+    behaviour: never
+    review_interval_days: null
+  may_ground_skill: false
+- predicate_id: education.end_date
+  catalog_version: 1
+  legal_subject_kinds:
+  - education
+  legal_value_types:
+  - year_month
+  legal_string_values: []
+  cardinality: one
+  exclusivity: none
+  minimum_evidence:
+  - classes:
+    - private_document
+  legal_verification_bases:
+  - private_document_verified
+  owner_attestation_authority: none
+  legal_surfaces:
+  - resume
+  - public
+  - application
+  surface_policy: standard
+  legal_usage_contexts:
+  - academic
+  expiry:
+    behaviour: never
+    review_interval_days: null
+  may_ground_skill: false
+- predicate_id: education.result
+  catalog_version: 1
+  legal_subject_kinds:
+  - education
+  - course
+  legal_value_types:
+  - decimal
+  - string
+  legal_string_values: []
+  cardinality: many
+  exclusivity: none
+  minimum_evidence:
+  - classes:
+    - private_document
+  legal_verification_bases:
+  - private_document_verified
+  owner_attestation_authority: none
+  legal_surfaces:
+  - resume
+  - application
+  surface_policy: standard
+  legal_usage_contexts:
+  - academic
+  - professional
+  expiry:
+    behaviour: never
+    review_interval_days: null
+  may_ground_skill: false
+- predicate_id: employment.organization
+  catalog_version: 1
+  legal_subject_kinds:
+  - employment
+  legal_value_types:
+  - string
+  legal_string_values: []
+  cardinality: one
+  exclusivity: none
+  minimum_evidence:
+  - classes:
+    - private_document
+  legal_verification_bases:
+  - private_document_verified
+  owner_attestation_authority: none
+  legal_surfaces:
+  - resume
+  - public
+  - application
+  surface_policy: standard
+  legal_usage_contexts:
+  - professional
+  expiry:
+    behaviour: never
+    review_interval_days: null
+  may_ground_skill: false
+- predicate_id: employment.title
+  catalog_version: 1
+  legal_subject_kinds:
+  - employment
+  legal_value_types:
+  - string
+  legal_string_values: []
+  cardinality: many
+  exclusivity: none
+  minimum_evidence:
+  - classes:
+    - private_document
+  - classes:
+    - owner_attestation
+  legal_verification_bases:
+  - private_document_verified
+  - owner_attested
+  owner_attestation_authority: owner_confirmed
+  legal_surfaces:
+  - resume
+  - public
+  - application
+  surface_policy: standard
+  legal_usage_contexts:
+  - professional
+  expiry:
+    behaviour: never
+    review_interval_days: null
+  may_ground_skill: false
+- predicate_id: employment.date_range
+  catalog_version: 1
+  legal_subject_kinds:
+  - employment
+  legal_value_types:
+  - date_range
+  legal_string_values: []
+  cardinality: one
+  exclusivity: one_effective_range_ordered
+  minimum_evidence:
+  - classes:
+    - private_document
+  - classes:
+    - owner_attestation
+  legal_verification_bases:
+  - private_document_verified
+  - owner_attested
+  owner_attestation_authority: owner_confirmed
+  legal_surfaces:
+  - resume
+  - public
+  - application
+  surface_policy: standard
+  legal_usage_contexts:
+  - professional
+  expiry:
+    behaviour: never
+    review_interval_days: null
+  may_ground_skill: false
+- predicate_id: employment.responsibility
+  catalog_version: 1
+  legal_subject_kinds:
+  - employment
+  legal_value_types:
+  - string
+  legal_string_values: []
+  cardinality: many
+  exclusivity: none
+  minimum_evidence:
+  - classes:
+    - owner_attestation
+  legal_verification_bases:
+  - owner_attested
+  owner_attestation_authority: owner_confirmed
+  legal_surfaces:
+  - resume
+  - public
+  - application
+  surface_policy: standard
+  legal_usage_contexts:
+  - professional
+  expiry:
+    behaviour: never
+    review_interval_days: null
+  may_ground_skill: false
+- predicate_id: employment.accomplishment
+  catalog_version: 1
+  legal_subject_kinds:
+  - employment
+  legal_value_types:
+  - string
+  legal_string_values: []
+  cardinality: many
+  exclusivity: none
+  minimum_evidence:
+  - classes:
+    - owner_attestation
+  legal_verification_bases:
+  - owner_attested
+  owner_attestation_authority: owner_confirmed
+  legal_surfaces:
+  - resume
+  - public
+  - application
+  surface_policy: standard
+  legal_usage_contexts:
+  - professional
+  expiry:
+    behaviour: never
+    review_interval_days: null
+  may_ground_skill: false
+- predicate_id: employment.team_size
+  catalog_version: 1
+  legal_subject_kinds:
+  - employment
+  legal_value_types:
+  - integer
+  legal_string_values: []
+  cardinality: one
+  exclusivity: none
+  minimum_evidence:
+  - classes:
+    - private_document
+  - classes:
+    - owner_attestation
+  legal_verification_bases:
+  - private_document_verified
+  - owner_attested
+  owner_attestation_authority: owner_confirmed
+  legal_surfaces:
+  - resume
+  - public
+  - application
+  surface_policy: standard
+  legal_usage_contexts:
+  - professional
+  expiry:
+    behaviour: never
+    review_interval_days: null
+  may_ground_skill: false
+- predicate_id: project.summary
+  catalog_version: 1
+  legal_subject_kinds:
+  - project
+  legal_value_types:
+  - string
+  legal_string_values: []
+  cardinality: one
+  exclusivity: none
+  minimum_evidence:
+  - classes:
+    - owner_attestation
+  legal_verification_bases:
+  - owner_attested
+  owner_attestation_authority: owner_confirmed
+  legal_surfaces:
+  - resume
+  - public
+  - application
+  surface_policy: standard
+  legal_usage_contexts:
+  - professional
+  - academic
+  - personal_project
+  - contribution
+  - volunteer
+  expiry:
+    behaviour: never
+    review_interval_days: null
+  may_ground_skill: false
+- predicate_id: project.start_date
+  catalog_version: 1
+  legal_subject_kinds:
+  - project
+  legal_value_types:
+  - year_month
+  legal_string_values: []
+  cardinality: one
+  exclusivity: none
+  minimum_evidence:
+  - classes:
+    - repository_artifact
+  - classes:
+    - owner_attestation
+  legal_verification_bases:
+  - repository_verified
+  - owner_attested
+  owner_attestation_authority: owner_confirmed
+  legal_surfaces:
+  - resume
+  - public
+  - application
+  surface_policy: standard
+  legal_usage_contexts:
+  - professional
+  - academic
+  - personal_project
+  - contribution
+  - volunteer
+  expiry:
+    behaviour: never
+    review_interval_days: null
+  may_ground_skill: false
+- predicate_id: project.end_date
+  catalog_version: 1
+  legal_subject_kinds:
+  - project
+  legal_value_types:
+  - year_month
+  legal_string_values: []
+  cardinality: one
+  exclusivity: none
+  minimum_evidence:
+  - classes:
+    - repository_artifact
+  - classes:
+    - owner_attestation
+  legal_verification_bases:
+  - repository_verified
+  - owner_attested
+  owner_attestation_authority: owner_confirmed
+  legal_surfaces:
+  - resume
+  - public
+  - application
+  surface_policy: standard
+  legal_usage_contexts:
+  - professional
+  - academic
+  - personal_project
+  - contribution
+  - volunteer
+  expiry:
+    behaviour: never
+    review_interval_days: null
+  may_ground_skill: false
+- predicate_id: project.contribution
+  catalog_version: 1
+  legal_subject_kinds:
+  - project
+  legal_value_types:
+  - string
+  legal_string_values: []
+  cardinality: many
+  exclusivity: none
+  minimum_evidence:
+  - classes:
+    - repository_artifact
+  legal_verification_bases:
+  - repository_verified
+  owner_attestation_authority: none
+  legal_surfaces:
+  - resume
+  - public
+  - application
+  surface_policy: standard
+  legal_usage_contexts:
+  - professional
+  - academic
+  - personal_project
+  - contribution
+  - volunteer
+  expiry:
+    behaviour: never
+    review_interval_days: null
+  may_ground_skill: false
+- predicate_id: deployment.environment
+  catalog_version: 1
+  legal_subject_kinds:
+  - project
+  - employment
+  legal_value_types:
+  - string
+  legal_string_values:
+  - development
+  - staging
+  - production
+  cardinality: many
+  exclusivity: none
+  minimum_evidence:
+  - classes:
+    - repository_artifact
+  - classes:
+    - private_document
+  legal_verification_bases:
+  - repository_verified
+  - private_document_verified
+  owner_attestation_authority: none
+  legal_surfaces:
+  - resume
+  - public
+  - application
+  surface_policy: standard
+  legal_usage_contexts:
+  - professional
+  - personal_project
+  - contribution
+  - volunteer
+  expiry:
+    behaviour: never
+    review_interval_days: null
+  may_ground_skill: false
+- predicate_id: technology.used
+  catalog_version: 1
+  legal_subject_kinds:
+  - education
+  - employment
+  - project
+  - course
+  - publication
+  legal_value_types:
+  - skill_ref
+  legal_string_values: []
+  cardinality: many
+  exclusivity: none
+  minimum_evidence:
+  - classes:
+    - repository_artifact
+  - classes:
+    - private_document
+  - classes:
+    - owner_attestation
+  legal_verification_bases:
+  - repository_verified
+  - private_document_verified
+  - owner_attested
+  owner_attestation_authority: owner_confirmed
+  legal_surfaces:
+  - resume
+  - public
+  - application
+  surface_policy: standard
+  legal_usage_contexts:
+  - professional
+  - academic
+  - personal_project
+  - contribution
+  - publication
+  - volunteer
+  expiry:
+    behaviour: never
+    review_interval_days: null
+  may_ground_skill: true
+- predicate_id: publication.title
+  catalog_version: 1
+  legal_subject_kinds:
+  - publication
+  legal_value_types:
+  - string
+  legal_string_values: []
+  cardinality: one
+  exclusivity: none
+  minimum_evidence:
+  - classes:
+    - public_record
+  - classes:
+    - private_document
+  legal_verification_bases:
+  - public_record_verified
+  - private_document_verified
+  owner_attestation_authority: none
+  legal_surfaces:
+  - resume
+  - public
+  - application
+  surface_policy: standard
+  legal_usage_contexts:
+  - publication
+  - academic
+  - professional
+  - contribution
+  expiry:
+    behaviour: never
+    review_interval_days: null
+  may_ground_skill: false
+- predicate_id: publication.venue
+  catalog_version: 1
+  legal_subject_kinds:
+  - publication
+  legal_value_types:
+  - string
+  legal_string_values: []
+  cardinality: one
+  exclusivity: none
+  minimum_evidence:
+  - classes:
+    - public_record
+  - classes:
+    - private_document
+  legal_verification_bases:
+  - public_record_verified
+  - private_document_verified
+  owner_attestation_authority: none
+  legal_surfaces:
+  - resume
+  - public
+  - application
+  surface_policy: standard
+  legal_usage_contexts:
+  - publication
+  - academic
+  - professional
+  - contribution
+  expiry:
+    behaviour: never
+    review_interval_days: null
+  may_ground_skill: false
+- predicate_id: publication.date
+  catalog_version: 1
+  legal_subject_kinds:
+  - publication
+  legal_value_types:
+  - date
+  legal_string_values: []
+  cardinality: one
+  exclusivity: none
+  minimum_evidence:
+  - classes:
+    - public_record
+  - classes:
+    - private_document
+  legal_verification_bases:
+  - public_record_verified
+  - private_document_verified
+  owner_attestation_authority: none
+  legal_surfaces:
+  - resume
+  - public
+  - application
+  surface_policy: standard
+  legal_usage_contexts:
+  - publication
+  - academic
+  - professional
+  - contribution
+  expiry:
+    behaviour: never
+    review_interval_days: null
+  may_ground_skill: false
+- predicate_id: entity.location
+  catalog_version: 1
+  legal_subject_kinds:
+  - education
+  - employment
+  - project
+  - presentation
+  - affiliation
+  legal_value_types:
+  - string
+  legal_string_values: []
+  cardinality: many
+  exclusivity: none
+  minimum_evidence:
+  - classes:
+    - private_document
+  - classes:
+    - owner_attestation
+  legal_verification_bases:
+  - private_document_verified
+  - owner_attested
+  owner_attestation_authority: owner_confirmed
+  legal_surfaces:
+  - resume
+  - public
+  - application
+  surface_policy: standard
+  legal_usage_contexts:
+  - professional
+  - academic
+  - personal_project
+  - contribution
+  - publication
+  - volunteer
+  expiry:
+    behaviour: never
+    review_interval_days: null
+  may_ground_skill: false
+- predicate_id: entity.url
+  catalog_version: 1
+  legal_subject_kinds:
+  - project
+  - publication
+  - patent
+  - presentation
+  - certification
+  - affiliation
+  legal_value_types:
+  - url
+  legal_string_values: []
+  cardinality: many
+  exclusivity: none
+  minimum_evidence:
+  - classes:
+    - public_record
+  - classes:
+    - repository_artifact
+  legal_verification_bases:
+  - public_record_verified
+  - repository_verified
+  owner_attestation_authority: none
+  legal_surfaces:
+  - resume
+  - public
+  - application
+  surface_policy: standard
+  legal_usage_contexts:
+  - professional
+  - academic
+  - personal_project
+  - contribution
+  - publication
+  - volunteer
+  expiry:
+    behaviour: never
+    review_interval_days: null
+  may_ground_skill: false
+- predicate_id: recognition.name
+  catalog_version: 1
+  legal_subject_kinds:
+  - award
+  - certification
+  legal_value_types:
+  - string
+  legal_string_values: []
+  cardinality: one
+  exclusivity: none
+  minimum_evidence:
+  - classes:
+    - public_record
+  - classes:
+    - private_document
+  legal_verification_bases:
+  - public_record_verified
+  - private_document_verified
+  owner_attestation_authority: none
+  legal_surfaces:
+  - resume
+  - public
+  - application
+  surface_policy: standard
+  legal_usage_contexts:
+  - professional
+  - academic
+  - contribution
+  - volunteer
+  expiry:
+    behaviour: never
+    review_interval_days: null
+  may_ground_skill: false
+- predicate_id: recognition.issuer
+  catalog_version: 1
+  legal_subject_kinds:
+  - award
+  - certification
+  legal_value_types:
+  - string
+  legal_string_values: []
+  cardinality: one
+  exclusivity: none
+  minimum_evidence:
+  - classes:
+    - public_record
+  - classes:
+    - private_document
+  legal_verification_bases:
+  - public_record_verified
+  - private_document_verified
+  owner_attestation_authority: none
+  legal_surfaces:
+  - resume
+  - public
+  - application
+  surface_policy: standard
+  legal_usage_contexts:
+  - professional
+  - academic
+  - contribution
+  - volunteer
+  expiry:
+    behaviour: never
+    review_interval_days: null
+  may_ground_skill: false
+- predicate_id: award.date
+  catalog_version: 1
+  legal_subject_kinds:
+  - award
+  legal_value_types:
+  - date
+  legal_string_values: []
+  cardinality: one
+  exclusivity: none
+  minimum_evidence:
+  - classes:
+    - public_record
+  - classes:
+    - private_document
+  legal_verification_bases:
+  - public_record_verified
+  - private_document_verified
+  owner_attestation_authority: none
+  legal_surfaces:
+  - resume
+  - public
+  - application
+  surface_policy: standard
+  legal_usage_contexts:
+  - professional
+  - academic
+  - contribution
+  - volunteer
+  expiry:
+    behaviour: never
+    review_interval_days: null
+  may_ground_skill: false
+- predicate_id: certification.issue_date
+  catalog_version: 1
+  legal_subject_kinds:
+  - certification
+  legal_value_types:
+  - date
+  legal_string_values: []
+  cardinality: one
+  exclusivity: none
+  minimum_evidence:
+  - classes:
+    - public_record
+  - classes:
+    - private_document
+  legal_verification_bases:
+  - public_record_verified
+  - private_document_verified
+  owner_attestation_authority: none
+  legal_surfaces:
+  - resume
+  - public
+  - application
+  surface_policy: standard
+  legal_usage_contexts:
+  - professional
+  - academic
+  expiry:
+    behaviour: never
+    review_interval_days: null
+  may_ground_skill: false
+- predicate_id: certification.expiry
+  catalog_version: 1
+  legal_subject_kinds:
+  - certification
+  legal_value_types:
+  - date
+  legal_string_values: []
+  cardinality: one
+  exclusivity: one_effective_value
+  minimum_evidence:
+  - classes:
+    - public_record
+  - classes:
+    - private_document
+  legal_verification_bases:
+  - public_record_verified
+  - private_document_verified
+  owner_attestation_authority: none
+  legal_surfaces:
+  - resume
+  - public
+  - application
+  surface_policy: standard
+  legal_usage_contexts:
+  - professional
+  - academic
+  expiry:
+    behaviour: block_active_use_after_value_date
+    review_interval_days: null
+  may_ground_skill: false
+- predicate_id: affiliation.role
+  catalog_version: 1
+  legal_subject_kinds:
+  - affiliation
+  legal_value_types:
+  - string
+  legal_string_values: []
+  cardinality: many
+  exclusivity: none
+  minimum_evidence:
+  - classes:
+    - private_document
+  - classes:
+    - owner_attestation
+  legal_verification_bases:
+  - private_document_verified
+  - owner_attested
+  owner_attestation_authority: owner_confirmed
+  legal_surfaces:
+  - resume
+  - public
+  - application
+  surface_policy: standard
+  legal_usage_contexts:
+  - professional
+  - academic
+  - volunteer
+  expiry:
+    behaviour: never
+    review_interval_days: null
+  may_ground_skill: false
+- predicate_id: affiliation.date_range
+  catalog_version: 1
+  legal_subject_kinds:
+  - affiliation
+  legal_value_types:
+  - date_range
+  legal_string_values: []
+  cardinality: one
+  exclusivity: one_effective_range_ordered
+  minimum_evidence:
+  - classes:
+    - private_document
+  - classes:
+    - owner_attestation
+  legal_verification_bases:
+  - private_document_verified
+  - owner_attested
+  owner_attestation_authority: owner_confirmed
+  legal_surfaces:
+  - resume
+  - public
+  - application
+  surface_policy: standard
+  legal_usage_contexts:
+  - professional
+  - academic
+  - volunteer
+  expiry:
+    behaviour: never
+    review_interval_days: null
+  may_ground_skill: false
+- predicate_id: course.title
+  catalog_version: 1
+  legal_subject_kinds:
+  - course
+  legal_value_types:
+  - string
+  legal_string_values: []
+  cardinality: one
+  exclusivity: none
+  minimum_evidence:
+  - classes:
+    - private_document
+  legal_verification_bases:
+  - private_document_verified
+  owner_attestation_authority: none
+  legal_surfaces:
+  - resume
+  - public
+  - application
+  surface_policy: standard
+  legal_usage_contexts:
+  - academic
+  - professional
+  expiry:
+    behaviour: never
+    review_interval_days: null
+  may_ground_skill: false
+- predicate_id: presentation.title
+  catalog_version: 1
+  legal_subject_kinds:
+  - presentation
+  legal_value_types:
+  - string
+  legal_string_values: []
+  cardinality: one
+  exclusivity: none
+  minimum_evidence:
+  - classes:
+    - public_record
+  - classes:
+    - private_document
+  legal_verification_bases:
+  - public_record_verified
+  - private_document_verified
+  owner_attestation_authority: none
+  legal_surfaces:
+  - resume
+  - public
+  - application
+  surface_policy: standard
+  legal_usage_contexts:
+  - professional
+  - academic
+  - publication
+  - volunteer
+  expiry:
+    behaviour: never
+    review_interval_days: null
+  may_ground_skill: false
+- predicate_id: presentation.date
+  catalog_version: 1
+  legal_subject_kinds:
+  - presentation
+  legal_value_types:
+  - date
+  legal_string_values: []
+  cardinality: one
+  exclusivity: none
+  minimum_evidence:
+  - classes:
+    - public_record
+  - classes:
+    - private_document
+  legal_verification_bases:
+  - public_record_verified
+  - private_document_verified
+  owner_attestation_authority: none
+  legal_surfaces:
+  - resume
+  - public
+  - application
+  surface_policy: standard
+  legal_usage_contexts:
+  - professional
+  - academic
+  - publication
+  - volunteer
+  expiry:
+    behaviour: never
+    review_interval_days: null
+  may_ground_skill: false
+- predicate_id: presentation.venue
+  catalog_version: 1
+  legal_subject_kinds:
+  - presentation
+  legal_value_types:
+  - string
+  legal_string_values: []
+  cardinality: one
+  exclusivity: none
+  minimum_evidence:
+  - classes:
+    - public_record
+  - classes:
+    - private_document
+  legal_verification_bases:
+  - public_record_verified
+  - private_document_verified
+  owner_attestation_authority: none
+  legal_surfaces:
+  - resume
+  - public
+  - application
+  surface_policy: standard
+  legal_usage_contexts:
+  - professional
+  - academic
+  - publication
+  - volunteer
+  expiry:
+    behaviour: never
+    review_interval_days: null
+  may_ground_skill: false
+- predicate_id: patent.title
+  catalog_version: 1
+  legal_subject_kinds:
+  - patent
+  legal_value_types:
+  - string
+  legal_string_values: []
+  cardinality: one
+  exclusivity: none
+  minimum_evidence:
+  - classes:
+    - public_record
+  - classes:
+    - private_document
+  legal_verification_bases:
+  - public_record_verified
+  - private_document_verified
+  owner_attestation_authority: none
+  legal_surfaces:
+  - resume
+  - public
+  - application
+  surface_policy: standard
+  legal_usage_contexts:
+  - professional
+  - academic
+  - personal_project
+  - contribution
+  expiry:
+    behaviour: never
+    review_interval_days: null
+  may_ground_skill: false
+- predicate_id: patent.filing_date
+  catalog_version: 1
+  legal_subject_kinds:
+  - patent
+  legal_value_types:
+  - date
+  legal_string_values: []
+  cardinality: one
+  exclusivity: none
+  minimum_evidence:
+  - classes:
+    - public_record
+  - classes:
+    - private_document
+  legal_verification_bases:
+  - public_record_verified
+  - private_document_verified
+  owner_attestation_authority: none
+  legal_surfaces:
+  - resume
+  - public
+  - application
+  surface_policy: standard
+  legal_usage_contexts:
+  - professional
+  - academic
+  - personal_project
+  - contribution
+  expiry:
+    behaviour: never
+    review_interval_days: null
+  may_ground_skill: false
+- predicate_id: patent.grant_date
+  catalog_version: 1
+  legal_subject_kinds:
+  - patent
+  legal_value_types:
+  - date
+  legal_string_values: []
+  cardinality: one
+  exclusivity: none
+  minimum_evidence:
+  - classes:
+    - public_record
+  - classes:
+    - private_document
+  legal_verification_bases:
+  - public_record_verified
+  - private_document_verified
+  owner_attestation_authority: none
+  legal_surfaces:
+  - resume
+  - public
+  - application
+  surface_policy: standard
+  legal_usage_contexts:
+  - professional
+  - academic
+  - personal_project
+  - contribution
+  expiry:
+    behaviour: never
+    review_interval_days: null
+  may_ground_skill: false
+- predicate_id: application.requires_sponsorship
+  catalog_version: 1
+  legal_subject_kinds:
+  - person
+  legal_value_types:
+  - boolean
+  legal_string_values: []
+  cardinality: one
+  exclusivity: one_effective_value
+  minimum_evidence:
+  - classes:
+    - owner_attestation
+  legal_verification_bases:
+  - owner_attested
+  owner_attestation_authority: owner_confirmed
+  legal_surfaces:
+  - application
+  surface_policy: application_only
+  legal_usage_contexts:
+  - professional
+  expiry:
+    behaviour: never
+    review_interval_days: 90
+  may_ground_skill: false
+- predicate_id: application.authorized_regions
+  catalog_version: 1
+  legal_subject_kinds:
+  - person
+  legal_value_types:
+  - string_list
+  legal_string_values: []
+  cardinality: one
+  exclusivity: one_effective_set
+  minimum_evidence:
+  - classes:
+    - owner_attestation
+  legal_verification_bases:
+  - owner_attested
+  owner_attestation_authority: owner_confirmed
+  legal_surfaces:
+  - application
+  surface_policy: application_only
+  legal_usage_contexts:
+  - professional
+  expiry:
+    behaviour: never
+    review_interval_days: 90
+  may_ground_skill: false

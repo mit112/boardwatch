@@ -1,0 +1,16 @@
+schema_version: 1
+state: draft
+profile_id: profile.example-candidate
+draft_of_revision: null
+parent_bundle_digest: null
+bundle_digest: ''
+evidence_set_digest: sha256:bb92aef8ff2d82c0178482ab5fa4c24975e6f3ab8251f3e6d939e14d3bcffde0
+approved_candidate_digest: ''
+approval_stamp_id: ''
+change_id: ''
+predicate_catalog_version: 1
+unit_catalog_version: 1
+relation_catalog_version: 1
+skill_category_catalog_version: 1
+assertion_tag_catalog_version: 1
+secret_scan_ruleset_version: 1

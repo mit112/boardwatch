@@ -1,0 +1,13 @@
+skills:
+- skill_id: skill.example-language
+  canonical_name: Example Language
+  aliases:
+  - example-lang
+  category: programming-language
+  supporting_fact_ids:
+  - fact.packet-pantry.language.001
+  - fact.packet-pantry.legacy-language.001
+  verification_state: verified
+  allowed_surfaces:
+  - resume
+  - public

@@ -1,0 +1,21 @@
+relations:
+- relation_id: relation.packet-pantry.at-example-labs
+  relation_type: project_at_employment
+  source_id: project.packet-pantry
+  target_id: employment.example-labs
+- relation_id: relation.example-course.at-example-university
+  relation_type: course_at_education
+  source_id: course.example-distributed-systems
+  target_id: education.example-university
+- relation_id: relation.example-talk.for-packet-pantry
+  relation_type: presentation_for_project
+  source_id: presentation.example-talk
+  target_id: project.packet-pantry
+- relation_id: relation.example-paper.about-packet-pantry
+  relation_type: publication_about_project
+  source_id: publication.example-paper
+  target_id: project.packet-pantry
+- relation_id: relation.example-filing.for-packet-pantry
+  relation_type: patent_for_project
+  source_id: patent.example-filing
+  target_id: project.packet-pantry

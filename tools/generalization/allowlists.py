@@ -288,6 +288,105 @@ SHIPPED_DATA: dict[str, DataEntry] = {
     ),
 }
 
+
+# The comprehensive synthetic bundle example (Gate A design sections 19 and 22). One pin per
+# document, each on its own line so an edit to any single file is visible in the diff, but sharing
+# one reason and one path root because these are 33 documents of ONE artifact rather than 33
+# independent decisions. Every value in it is invented -- Example Candidate, Example Labs, Example
+# University, Packet Pantry, an example.com contact -- and it ships as package data so a person or
+# an authoring agent has a complete, valid bundle to read alongside the generated JSON Schema. It
+# is also the fixture every Gate A model, layout, identity, validation, promotion and CLI test runs
+# against, which is why it is pinned: a silent edit would move the digests those tests assert.
+_BUNDLE_EXAMPLE_ROOT = "src/boardwatch/profile_bundle/examples/comprehensive"
+
+_BUNDLE_EXAMPLE_REASON = (
+    "One document of the comprehensive synthetic career-profile bundle example: fully invented "
+    "values, shipped as package data as the readable companion to the generated JSON Schema, and "
+    "used as the fixture for every Gate A validation and promotion test."
+)
+
+_BUNDLE_EXAMPLE_PINS: dict[str, str] = {
+    "application/gated-facts.yaml":
+        "sha256:dfa4d4074248e9ddf14e2bd8e89a22349a873a7e9972c1668a39be07420d7482",
+    "claims/bullet-candidates.yaml":
+        "sha256:f36df58c49251558f7abd1bc03607fc35bc2792fbf2e386bf0c2f396c7ac2af9",
+    "claims/summary-candidates.yaml":
+        "sha256:7b29c304a26e69b539a32dc32841ad8a0b672f86aabe98d2ea71724b04bca6ea",
+    "conflicts/groups.yaml":
+        "sha256:c1af2b5b9f3cad187b4a70be56fd93905a0eb463ceb92a2044bb1e3a825e611a",
+    "conflicts/rulings.yaml":
+        "sha256:c9679bd12c8cead852bdafbb4f164c2771d5867d4606f9425b5c9b5186d04345",
+    "evidence/records.yaml":
+        "sha256:95d3e5fcc770f710c291ba6157520b33cda576e1836511523a27effa0fe6fd66",
+    "facts/affiliations.yaml":
+        "sha256:761319ddc42e8bf9316f51ccb71b6f2033e3248224cde3b76ca5fbf0ac300618",
+    "facts/awards.yaml":
+        "sha256:1cc2a9e7dbcfe40fd13cf39c4917824124ded6604b7a6cfb58984814db9f3de8",
+    "facts/certifications.yaml":
+        "sha256:ff2548790d99ecce875db0100509d4a74b874f2b3ac3fc16ec5ee79f254c5167",
+    "facts/courses.yaml":
+        "sha256:43f7a13e37cf2c5274427ab78b20016c1a3729965aa1cccd7ef9471bda957d18",
+    "facts/education.yaml":
+        "sha256:3d8349de2c6762a239cb17958add318210c3db554290bde26dd5d202d1ea46a6",
+    "facts/experience/employment.example-labs.yaml":
+        "sha256:7a3acb072dbf7a6a8173ba2da50dd92e86105ae4da7f1096a0c6630c448c21be",
+    "facts/identity.yaml":
+        "sha256:d2ef2e1a2de2fa56387e5d49f06f29535a7d5eead45a12b0c51c51f4b4d4ee1d",
+    "facts/patents.yaml":
+        "sha256:ca720fa926db6fabaecdec0a1a0b38c0066f99439b1f4776744cea8a6bf99c57",
+    "facts/presentations.yaml":
+        "sha256:e684690e2f3a93d08aa5f744c38bcd519e839c19cccf2434cbfeb4ae7be8ba99",
+    "facts/projects/project.packet-pantry.yaml":
+        "sha256:25316d0af4e683d44475c4ee6efe0e80d006857306425187256bc41230a5e8c9",
+    "facts/publications.yaml":
+        "sha256:9992e6009ac516e41027882ea7127d040b7bd1c6cf55bfc102284f7298744d1c",
+    "history/approvals.yaml":
+        "sha256:45d72b74246e2e65aadab40d58f14a68064c041901b45605f7849fb5260f301e",
+    "history/changes.yaml":
+        "sha256:7ab038d67defb45a80bf8ca9dbfceea24b3c1b1f06d2bafe5f08c06b0344d770",
+    "imports/candidates.yaml":
+        "sha256:72441cc66ff2abad028751d89edeeef3f52772075c9bb1542efd020828d7f5dd",
+    "imports/exclusions.yaml":
+        "sha256:9b9af24f0e1361ea69c81d79de39d971828d9e9a49a145bcbd6c1160ba714bad",
+    "imports/source-ledger.yaml":
+        "sha256:54944a319fcae78bb170d9ba7bdb04aaa0972038f57499f6b6aa1acc0ea1c450",
+    "manifest.yaml":
+        "sha256:8eb558c71706ca78f33d4ff44666a1edc984ed4df7dec0a36c060f0e9e7263ea",
+    "metrics/records.yaml":
+        "sha256:d72ee37cbc6bb7ec38a4caa0e8a6d94b565bdf2747f2ac2e6e14536daa4d670d",
+    "policy/assertion-tags.yaml":
+        "sha256:7b6611700c8b75f6ecd603170e994cf24b4fa9decce3b19de2074cf50cbc35a7",
+    "policy/predicates.yaml":
+        "sha256:bbae76d1f85baae28e5ffecfb343becb2525a0a7aa72e31d391b1124fb399cc7",
+    "policy/relations.yaml":
+        "sha256:ccc7d7adf02df6b746e130624ef94ddacd8dbcc38c1d051d718d03e790ced9bd",
+    "policy/secret-scan.yaml":
+        "sha256:7b890d737ac91fbe8c4c4230025c273b0e64ad4eabe9d64072166a263f19a5e7",
+    "policy/skill-categories.yaml":
+        "sha256:718c17258356a9e3d62a61ba739fb668c22d9600834271b78fec3e701649301f",
+    "policy/sources.yaml":
+        "sha256:783170039199ba516d91c8f9b90963dc94142dd621bb1aae1e3096f66cc56787",
+    "policy/units.yaml":
+        "sha256:c65149400c55dcdf4061407d90842a5aa4adfd31cd4a826c8871a93a358179f7",
+    "relations/records.yaml":
+        "sha256:4fd9acf24620dd9c55ce1517c67f9c63234b26459db80a8f8dcd7d15eaddbf16",
+    "skills/inventory.yaml":
+        "sha256:a3d91788d0a25605607c5a4f18fbec87526b177b0da744e37a14ea3867d3f108",
+}
+
+SHIPPED_DATA.update(
+    {
+        f"{_BUNDLE_EXAMPLE_ROOT}/{relative}": DataEntry(
+            kind="fixture",
+            reason=_BUNDLE_EXAMPLE_REASON,
+            provenance="synthetic",
+            source="generated for Gate A model and validation tests",
+            pin=pin,
+        )
+        for relative, pin in _BUNDLE_EXAMPLE_PINS.items()
+    }
+)
+
 # The designation "the company registry" is bound to a literal path, not to a label a
 # contributor picks, so a second bulk list cannot inherit the designation by relabelling.
 # A second list CAN still be admitted under a different kind (a pinned first-party "corpus",

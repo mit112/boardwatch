@@ -1,0 +1,150 @@
+assertion_tags_version: 1
+assertion_tags:
+- tag_id: shipped
+  high_risk: true
+  legal_subject_kinds:
+  - project
+  authorization_any_of:
+  - subject_statuses:
+    - shipped_private
+    - shipped_open_source
+    - live_public
+    - sunset
+    required_fact_predicates: []
+    required_fact_value: null
+    require_same_subject_metric: false
+- tag_id: live
+  high_risk: true
+  legal_subject_kinds:
+  - project
+  authorization_any_of:
+  - subject_statuses:
+    - live_public
+    required_fact_predicates:
+    - entity.url
+    required_fact_value: null
+    require_same_subject_metric: false
+- tag_id: production
+  high_risk: true
+  legal_subject_kinds:
+  - project
+  authorization_any_of:
+  - subject_statuses: []
+    required_fact_predicates:
+    - deployment.environment
+    required_fact_value:
+      type: string
+      value: production
+    require_same_subject_metric: false
+- tag_id: published
+  high_risk: true
+  legal_subject_kinds:
+  - publication
+  authorization_any_of:
+  - subject_statuses:
+    - published
+    required_fact_predicates:
+    - publication.date
+    required_fact_value: null
+    require_same_subject_metric: false
+- tag_id: granted
+  high_risk: true
+  legal_subject_kinds:
+  - patent
+  authorization_any_of:
+  - subject_statuses:
+    - granted
+    required_fact_predicates:
+    - patent.grant_date
+    required_fact_value: null
+    require_same_subject_metric: false
+- tag_id: awarded
+  high_risk: true
+  legal_subject_kinds:
+  - award
+  authorization_any_of:
+  - subject_statuses:
+    - awarded
+    required_fact_predicates:
+    - award.date
+    required_fact_value: null
+    require_same_subject_metric: false
+- tag_id: certified
+  high_risk: true
+  legal_subject_kinds:
+  - certification
+  authorization_any_of:
+  - subject_statuses:
+    - active
+    required_fact_predicates:
+    - certification.issue_date
+    required_fact_value: null
+    require_same_subject_metric: false
+- tag_id: designed
+  high_risk: false
+  legal_subject_kinds:
+  - project
+  - employment
+  authorization_any_of:
+  - subject_statuses: []
+    required_fact_predicates:
+    - project.contribution
+    - employment.responsibility
+    required_fact_value: null
+    require_same_subject_metric: false
+- tag_id: built
+  high_risk: false
+  legal_subject_kinds:
+  - project
+  - employment
+  authorization_any_of:
+  - subject_statuses: []
+    required_fact_predicates:
+    - project.contribution
+    - employment.accomplishment
+    required_fact_value: null
+    require_same_subject_metric: false
+- tag_id: implemented
+  high_risk: false
+  legal_subject_kinds:
+  - project
+  - employment
+  authorization_any_of:
+  - subject_statuses: []
+    required_fact_predicates:
+    - project.contribution
+    - employment.accomplishment
+    required_fact_value: null
+    require_same_subject_metric: false
+- tag_id: led
+  high_risk: false
+  legal_subject_kinds:
+  - employment
+  - affiliation
+  authorization_any_of:
+  - subject_statuses: []
+    required_fact_predicates:
+    - employment.responsibility
+    - employment.accomplishment
+    - affiliation.role
+    required_fact_value: null
+    require_same_subject_metric: false
+- tag_id: measured
+  high_risk: false
+  legal_subject_kinds:
+  - person
+  - education
+  - employment
+  - project
+  - publication
+  - award
+  - certification
+  - affiliation
+  - course
+  - presentation
+  - patent
+  authorization_any_of:
+  - subject_statuses: []
+    required_fact_predicates: []
+    required_fact_value: null
+    require_same_subject_metric: true

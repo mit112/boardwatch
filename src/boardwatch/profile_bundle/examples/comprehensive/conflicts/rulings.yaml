@@ -1,0 +1,10 @@
+rulings:
+- ruling_id: ruling.packet-pantry.start-date.001
+  conflict_id: conflict.packet-pantry.start-date
+  decision: select_candidate
+  selected_fact_id: fact.packet-pantry.start-date.002
+  rejected_fact_ids:
+  - fact.packet-pantry.start-date.001
+  rationale: The later date is the start of implementation; the earlier one was ideation.
+  owner_evidence_id: evidence.packet-pantry.owner-ruling.001
+  decided_at: '2026-08-10'

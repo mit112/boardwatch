@@ -1,0 +1,60 @@
+units_version: 1
+units:
+- unit_id: items
+  display_name: items
+  symbol: items
+  aliases:
+  - item
+  allowed_metric_kinds:
+  - count
+- unit_id: milliseconds
+  display_name: milliseconds
+  symbol: ms
+  aliases:
+  - millisecond
+  allowed_metric_kinds:
+  - duration
+  - latency
+- unit_id: items_per_second
+  display_name: items per second
+  symbol: items/s
+  aliases:
+  - item_per_second
+  allowed_metric_kinds:
+  - rate
+  - throughput
+- unit_id: percent
+  display_name: percent
+  symbol: '%'
+  aliases:
+  - percentage
+  allowed_metric_kinds:
+  - percentage
+- unit_id: usd
+  display_name: US dollars
+  symbol: USD
+  aliases:
+  - us_dollars
+  allowed_metric_kinds:
+  - currency
+- unit_id: bytes
+  display_name: bytes
+  symbol: B
+  aliases:
+  - byte
+  allowed_metric_kinds:
+  - size
+- unit_id: ordinal
+  display_name: ordinal position
+  symbol: ordinal
+  aliases:
+  - place
+  allowed_metric_kinds:
+  - rank
+- unit_id: points
+  display_name: points
+  symbol: pts
+  aliases:
+  - point
+  allowed_metric_kinds:
+  - score

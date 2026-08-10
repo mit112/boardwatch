@@ -31,6 +31,23 @@ def test_shipped_data_files_finds_the_known_data_files() -> None:
     assert len(found) >= 6
 
 
+def test_the_bundle_schema_and_example_are_shipped_package_data() -> None:
+    """The JSON Schema and the synthetic example are only useful to an INSTALLED user, so the
+    dev-checkout tests reading them from src/ prove nothing on their own."""
+    found = shipped_data_files(_repo())
+    assert "boardwatch/profile_bundle/resources/career-profile.schema.json" in found
+    for document in (
+        "manifest.yaml",
+        "policy/predicates.yaml",
+        "application/gated-facts.yaml",
+        "evidence/records.yaml",
+        "policy/secret-scan.yaml",
+    ):
+        assert f"boardwatch/profile_bundle/examples/comprehensive/{document}" in found
+    example = {p for p in found if p.startswith("boardwatch/profile_bundle/examples/")}
+    assert len(example) == 33
+
+
 def test_shipped_data_files_excludes_python_and_caches() -> None:
     found = shipped_data_files(_repo())
     assert not [p for p in found if p.endswith(".py")]

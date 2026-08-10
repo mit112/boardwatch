@@ -1,0 +1,45 @@
+ledger_version: 1
+sources:
+- source_id: source.synthetic-notes
+  enumerator_id: markdown-blocks-v1
+  enumerator_version: 1
+  source_content_digest: sha256:c7b14820da0f2b4d7e78e45e2fa0614008dc9667ed186ec85fcc6a1353287ecd
+  approved_scope:
+    kind: complete_file
+  source_record_ids:
+  - source-record.944c2949212afd453c6df1f836e3b3f7e8c959c800032f03ac3dfdb18c850725
+  - source-record.bcf308bbe38a6812f15001d11e7800cda911cba8a1a47da6fca31a5e60e7a9e5
+  - source-record.5e0521371b368f834f16acafdc2d96a63e6ce94c330e8c51bf5eb2d9e09256ce
+- source_id: source.synthetic-repository
+  enumerator_id: markdown-blocks-v1
+  enumerator_version: 1
+  source_content_digest: sha256:72a25a02d0398b054dac344095dbbe245e853efe8f7646445681ddc54a9495d9
+  approved_scope:
+    kind: selected_sections
+    locators:
+    - readme/architecture
+  source_record_ids:
+  - source-record.f7bb1af73e34542d9fc04ee6df27f92872ffab8b7d46dc0bc9bedc9d16c6db45
+records:
+- source_record_id: source-record.944c2949212afd453c6df1f836e3b3f7e8c959c800032f03ac3dfdb18c850725
+  source_id: source.synthetic-notes
+  normalized_locator: packet-pantry/stack/paragraph-1
+  disposition: imported
+  candidate_ids:
+  - candidate.0ce5a9c4286566ccc3495c832ceb6a2b640bafc4a140e340731a2f8cfada71ed
+- source_record_id: source-record.bcf308bbe38a6812f15001d11e7800cda911cba8a1a47da6fca31a5e60e7a9e5
+  source_id: source.synthetic-notes
+  normalized_locator: packet-pantry/stack/list-item-1
+  disposition: excluded
+  candidate_ids: []
+- source_record_id: source-record.5e0521371b368f834f16acafdc2d96a63e6ce94c330e8c51bf5eb2d9e09256ce
+  source_id: source.synthetic-notes
+  normalized_locator: _root/paragraph-1
+  disposition: review_required
+  candidate_ids: []
+- source_record_id: source-record.f7bb1af73e34542d9fc04ee6df27f92872ffab8b7d46dc0bc9bedc9d16c6db45
+  source_id: source.synthetic-repository
+  normalized_locator: readme/architecture/paragraph-1
+  disposition: imported
+  candidate_ids:
+  - candidate.ff1a028b491c3395ad8789bc76620a33c31676a10519819f409b4a711045c7ed
