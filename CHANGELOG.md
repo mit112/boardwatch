@@ -6,6 +6,8 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-08-10
+
 ### Added
 
 - **Applied-state suppression** — a job you have already applied to is never served as a lead again
@@ -75,97 +77,6 @@ All notable changes to this project are documented here. The format follows
   longer govern); `reopen --job N` / `reopen --stale` releases them. A stamp mismatch is never released
   automatically: auto-expiry on mismatch would rebuild the whole shortlist on any settings tweak.
 
-### Fixed
-
-- **The funnel artifact keeps reconciling when liveness withholds a lead** (D-111, from the Slice 3
-  review). The tailor stage entered at `shortlisted` and advanced at `tailored` with `tailor_failed` as
-  its only drop, so a withheld lead left a gap in a stage that is deliberately not `derived` — meaning any
-  run where liveness did its job emitted an artifact stamped DOES NOT RECONCILE, breaking Gate P0's
-  "three consecutive runs that reconcile to 100%" clause. The stage now carries a `withheld_not_live` drop.
-- **A day where every candidate was already applied to no longer fails the run** (D-111). Applied state is
-  checked ahead of the ledger, so those candidates left `hidden_handled` — the bucket the zero-output guard
-  reads — and landed in `hidden_applied`, which it did not, re-arming the guard on exactly the
-  steady-state day the `hidden_handled` clause was added to disarm.
-- **A day whose whole shortlist turned out to be dead is reported as an honest empty day, not a broken
-  résumé path** (D-111). Liveness withholding every lead would otherwise have tripped both the
-  "every lead failed to tailor" fatal, which counted a withheld posting as a render failure, and the
-  zero-output guard, which could not explain a run that judged new eligible postings and produced nothing.
-  A withheld posting is also removed from the cohort guard's set rather than added to its accounted set —
-  it is a third terminal state, neither a lead nor a render failure — and is dropped from
-  `surfaced_job_ids`, so a lead delivered to nobody cannot consume the `seen` queue.
-
-- **Only a caller that DELIVERS a lead consumes the queue** (D-110, from the Slice 2 review). The `seen`
-  write had been applied to every `rank_open_postings` call, and three of the four production callers deliver
-  nothing: `eligibility gate request` suppressed the shortlist it had just built for judging, so the
-  `boardwatch run` the handshake exists to feed shortlisted **0** for the whole TTL and the verdicts never
-  reached an artifact; the pipeline wrote `seen` *before* the tailor loop, so a missing `tectonic`, an invalid
-  persona or a Ctrl-C hid every shortlisted lead for seven days with nothing built, and the documented retry
-  re-ranked into an empty shortlist; and `bwd`, which ranks twice a day, suppressed the rows its own build
-  call was about to request and built zero folders while printing "nothing new to build".
-- **A transient render failure no longer deletes a lead permanently** (D-110). A non-zero `tectonic` exit
-  (cold support-file cache with no network, disk full, OOM) maps to `shippable=False` exactly like the page
-  limit, so it earned a permanent `skipped` — and no `policy_version` component covers the résumé or
-  `resume_max_pages`, so `ledger reopen --stale` could not bring those leads back either. `LeadArtifactError`
-  now carries both gate reasons as data and only the closed `DETERMINISTIC_GATE_REFUSALS` catalog earns a
-  permanent disposition; anything else is retried.
-- **Regrouping carries the ledger decision onto the canonical job** (D-110). Moving postings off a job left
-  its `built` row governing a job nothing anchors while the canonical job carried nothing, so the
-  already-built lead was surfaced and tailored again — the exact defect Slice 2 exists to remove, arriving
-  through the projection Slice 2 added. The decision is carried forward monotonically and the emptied row is
-  released, so no live row is left with no re-entry path.
-- **`job_grouping_events` records only moves that happened** (D-110). A plan built against a stale read
-  appended a trail entry whose guarded `UPDATE` then matched 0 rows, so the table D-104 names the undo path
-  could not in fact rebuild the projection.
-- **The run summary names `hidden_handled`** (D-110). `_zero_output_guard` had been widened to stop fataling
-  on an already-handled shortlist, but the operator's one-line summary omitted the bucket, printing
-  "0 shortlisted of 400 considered (0, 0, 0, 0)" and exiting 0. `top --json` now reports the bucket on stderr
-  before returning, so a script no longer receives `[]` with no reason.
-
-- **Duplicate suppression no longer switches itself off when a scan discovers a posting** (D-105, closing
-  D-098). `write_identities` had exactly one caller in `src/` — the manual `boardwatch identities backfill`
-  — so any run that discovered one new posting left it uncovered, `identities_complete()` went False, and
-  suppression silently stopped corpus-wide, making `hidden_duplicate == 0` mean "not measured" on
-  essentially every real run. Identities are now written **per posting inside the board's existing scan
-  transaction**, so a posting and its identity commit or vanish together and the cost is O(postings this
-  board listed) rather than a second corpus-wide `body_text` load. A retitle with an unchanged body — which
-  moves an identity key without producing a revision — is covered by the same call.
-- **The zero-output guard no longer calls a caught-up queue a failure.** A run can judge genuinely new
-  eligible postings and still produce 0 leads because every candidate is already `built`; the guard now
-  fires only when `eligible_judged_this_run > 0` **and** nothing was suppressed as handled. Without this the
-  daily driver's exit status would have been 1 every day once the queue caught up, destroying the signal the
-  run ledger exists to carry. A run with no handled candidates still cannot explain itself and still fires.
-
-### Changed
-
-- **`config_hash` moves**, because `seen_ttl_days` was added to `_CONFIG_RELEVANT` (P6 Slice 2). It is a P0
-  artifact-v3 field and an input to the ledger's `policy_version`, so a run manifest written before this
-  change is no longer hash-comparable with one written after. Recorded here because the changelog is
-  authoritative for what shipped and a moved identity hash is not an implementation detail.
-
-- **The decision log and the metrics log are archive-split** (D-108). `DECISIONS.md` keeps D-077 onward
-  (4,369 → 1,235 lines); D-001 … D-076 move verbatim to `DECISIONS-ARCHIVE.md`. `METRICS.md` keeps the live
-  run-log and acceptance tables plus the P6-era records (1,547 → 465 lines); the baseline, the superseded
-  abstain table, and the P0–P5 session records move to `METRICS-ARCHIVE.md`. Each live file now opens with
-  an **index spanning both of its files** — file, line, title — and the "read the range, not the file"
-  protocol. Entry and section bodies were copied byte-for-byte and the halves diffed back against the
-  originals (identical SHA-1 on both, 322,260 and 96,063 bytes); every generated line number was read back
-  and checked, 108/108 and 29/29. Cross-references are by number (`D-028`), so nothing needed rewriting.
-
-### Fixed
-
-- **Disjunctive experience-years over-fire — Gate P5 MET at 100% precision** (D-073). The `experience_years`
-  family's `total_years_minimum` / `range_years_minimum` patterns read the pure-years arm of a DISJUNCTION
-  ("a Bachelor's degree … **or** N years of experience") as a hard floor, so a master's-plus-one-year
-  candidate was told INELIGIBLE on a posting they clear via the degree path — deleting a real job, the
-  unrecoverable direction. Both patterns now carry `abstain_by: [&degree_alternative_to_years]`, so a
-  degree-gated alternative makes the years bar ABSTAIN (verdict `uncertain`) instead of resolving `unmet`,
-  mirroring the degree family's "degree OR equivalent experience" handling. On the 173-row labeled set this
-  moved exactly one verdict (the SpaceX false positive, `ineligible → uncertain`), taking INELIGIBLE
-  precision 16/17 → **16/16 (100%)** with recall unchanged and zero span violations, so
-  `boardwatch eligibility score` now exits 0. `abstain_by` is document-scoped (like the degree precedent);
-  the recall the abstain concedes is the two-stage gate's (D-071) to recover.
-
-### Added
 
 - **Duplicate-posting suppression — P6 Slice 1, the identity and suppression half** (D-077 … D-101). A new
   `posting_identities` table (migration `p6_posting_identities`, now the Alembic head) stores multiple ranked
@@ -314,42 +225,6 @@ All notable changes to this project are documented here. The format follows
   named exceptions, REQUIRED/PREFERRED context) and data-gated items (labeled eval set, 35+ visa phrases)
   are deferred — they need the human-verified labeled set to measure Gate P5's precision.
 
-### Changed
-
-- **The résumé render engine is now tectonic compiling the user's own LaTeX template, replacing Typst**
-  (résumé-tailoring fix, Increment 1 — D-058, D-060). Diagnosis found the tailored output read as a
-  "plain-text dump" for two reasons: a five-line Typst stub preamble with no real page setup, and tailoring
-  itself being near-invisible. Typst could only ever *approximate* the user's own template — a different
-  typesetting engine cannot reproduce a LaTeX file byte-for-byte — so tectonic (a single ~30 MB LaTeX
-  binary, the same footprint class as Typst) now compiles the résumé's real `.tex` source unchanged.
-
-  - **`render/typst.py` and its tests are deleted.** A new `LatexRenderer` (`render/latex.py`) emits
-    sections into `%%SECTIONS%%` markers in a bundled default template (`render/templates/resume_base.tex`,
-    registered in `SHIPPED_DATA`); a user's own template installs to `{config_dir}/resume_template.tex` and
-    overrides the bundled default. `_validate_template` now requires the `%%SECTIONS%%` markers to be
-    present in the resolved template, so a malformed template fails loudly instead of degrading silently.
-  - **Bolding moves to native inline `\textbf{}`**, matching the job-apps LaTeX pattern; entailment
-    (`output_is_entailed`) strips markup before comparing tokens to the master, and any non-`\textbf{}`
-    LaTeX command inside a bullet is a violation.
-  - **Page count now reads `pdfinfo`** instead of a Typst-native metadata query.
-  - **`Entry` gained structured fields** — `kind`, `title`, `dates`, `subtitle`, `location` — plus a new
-    `Resume.extracurricular` section, so LaTeX subheadings (role/company/dates on one line, tech stack on
-    the next) render correctly; entailment now checks all of them, not just `title`.
-  - **The persisted meta key `typst_pdf_built` keeps its legacy name.** Renaming it would ripple into
-    funnel/reconcile queries that already read it, which is out of scope for this change.
-  - Header and Education stay template-hardcoded in this increment (job-apps-exact); single-sourcing them
-    from `resume.yaml` is a documented fast-follow, not built here. Keyword bolding from `jd_skills`
-    (Increment 2) and per-role authored title/summary selection (Increment 3) are each their own plan.
-
-  **Result: the user's real résumé now renders to 1 page** (verified by a real compile plus `pdfinfo`,
-  measured on Mit's own résumé), resolving the standing Gate-P3 blocker where the old Typst stub rendered
-  an authored résumé to 2 pages against a `resume_max_pages=1` limit, dropping every lead on every run.
-  Fidelity against Mit's job-apps LaTeX PDF is a layout match — no emitter or layout bugs found. A new, real
-  remaining blocker was found, and it is content, not the render engine: three bullets in Mit's
-  `resume.yaml` exceed the per-lead layout gate's 220-character ceiling (D-053), so Tier-A degrades to the
-  untailored master on every posting until they are shortened.
-
-### Added
 
 - **A run reaper drains phantom `running` rows instead of leaving them permanent forever** (P3 slice 2,
   D-046). A crashed or killed run left `runs.status='running'` with `finished_at IS NULL` with nothing to
@@ -405,69 +280,6 @@ All notable changes to this project are documented here. The format follows
     master now aborts the run loudly (`MasterResumeError`, fatal) instead of silently dropping every lead
     one at a time.
 
-### Fixed
-
-- **The per-lead layout gate no longer runs on the untailored master résumé, and can no longer drop a lead
-  on layout alone** (D-055, Opus 5 checkpoint review, fix 1 — HIGH). As first shipped, item 5a's gate also
-  ran on the master fallback and reused a *selection* cap (`MAX_BULLETS_PER_ENTRY`, which bullet selection
-  trims *to*) as a *layout* invariant; a low-`jd_skills` posting made `tailored == master`, both failed
-  identically, the master-fallback rescue did nothing, and the lead was dropped where before P4 it would
-  have shipped Mit's real résumé — breaking the "master fallback is unconditionally shippable" guarantee.
-  The per-lead gate now applies to the tailored and Tier-B renders only; a genuine compile failure on both
-  sides is the only remaining way a lead drops. Master-authoring defects are now caught separately, once,
-  at load instead (D-056, above).
-- **A valid single-combined-line résumé header (e.g. "Name · email · site") is no longer rejected as
-  missing a name** (D-056, fix round). `validate_master`'s original `len(resume.header) < 2` check assumed
-  a ≥2-line header as if it were schema rather than a scaffolding convention; fixed to check only that the
-  first header line is non-blank, decoupled from line count.
-- **A Tier-B rewrite's recorded lineage hash now points at the Tier-A bullet actually shipped, not at a
-  possibly-rejected tailored render** (D-055, fix 2). `tier_a_content_hash` was capturing whichever render
-  happened to run first rather than the shipped `chosen_hash`.
-
-### Changed
-
-- **A held scan lock now names the blocking process instead of a generic message** (P3, §3.P3 item 1,
-  D-043). `run_scan` writes a message-only sidecar (`scan.lock.meta`: pid/hostname/started_at) around the
-  existing `FileLock` acquire/release; on contention the error names the blocking pid, host, and start
-  time, falling back to the unchanged generic message if the sidecar is missing or malformed. The sidecar
-  is never a lock authority — `filelock` alone decides acquire/release — so a stale or corrupt sidecar only
-  degrades the message, never correctness. `boardwatch scan`/`boardwatch run` now print the caught
-  exception's own message instead of a hardcoded constant, so the pid-naming message actually reaches the
-  CLI. Stale-reclaim was declined outright, not deferred (D-045) — unsound as designed, and the OS already
-  reclaims a dead flock on process exit. Token-gated unlock remains deferred. The run reaper has since
-  shipped (D-046, see below).
-- **LLM adapter calls now retry transient 429/5xx failures with backoff instead of dropping the rewrite**
-  (P3, §3.P3 item 10, D-040). Both `AnthropicClient` and `OpenAICompatClient` classify a 429 or 5xx
-  response as `LLMTransientError` and retry through a shared `llm/retry.py` helper (tenacity,
-  `Retry-After` honored when the provider sends one, bounded at 4 attempts) before falling back to
-  today's Tier-A-keeping containment on exhaustion. The retry lives inside the adapter's own request path,
-  below the rewrite lane's per-call budget metering, so a retried call still costs exactly one budget
-  unit. Any other non-2xx status, or an invalid response body, still raises the flat, non-retryable
-  `LLMError` unchanged.
-- **The systemic-scan-outage predicate is now one function, `is_systemic_scan_outage`
-  (`scan/coordinator.py`), called by both the pipeline (`run_pipeline`) and the standalone
-  `boardwatch scan`** (P3, §3.P3 item 4, D-037). Previously the same "attempted > 0, complete == 0,
-  unchanged == 0" logic was written out twice; behavior is unchanged, this only removes the risk of the
-  two copies drifting apart.
-- **`show` now renders an `eligible` verdict that fired zero eligibility rules, one that fired and
-  cleared all of them, and one that fired some non-blocking `preference`-family rows that were NOT
-  cleared, as three distinct headers** (P2, §3.P2 item 6, D-036). Previously all three rendered as a
-  bare "Eligibility: eligible" — "no flags" is not the same claim as "cleared", and a fired-but-unmet
-  row is not "cleared" either, even when it did not block the verdict (D-035's five still-`preference`
-  families). A new derived `AuditView.presentation` (`VerdictPresentation`, no schema change, stored
-  `verdict` unchanged) now headers the three cases "eligible — no eligibility rule applied (not
-  screened)", "eligible — N requirement(s) cleared" (only when every fired row is `met`), and
-  "eligible — N requirement(s) evaluated (M cleared; see details)" for the mixed case.
-- **`work_auth`'s default severity is now `blocker`, not `preference`** (P2, §3.P2 item 7, D-035). Every
-  eligibility family previously shipped `default_policy: preference`, so a fresh, policy-less profile got
-  **0 `ineligible` verdicts ever** — the multi-tenancy requirement failing for anyone who had not, like Mit,
-  set `work_auth: blocker` by hand. `work_auth` is the canonical hard-stop family (bar metric B7),
-  the most-developed, and keystone-gated (it abstains to `uncertain`, never `ineligible`, when
-  `work_authorization` is undeclared), so it is the one family safe to flip today; the other five
-  (`experience_years`, `clearance`, `degree`, `contract_not_fte`, `internship`) remain `preference`,
-  opt-in, pending further review.
-
-### Added
 
 - **`docs/program/WAL_DISCIPLINE.md`** — documented SQLite/WAL concurrency stance (P3 item 8 doc half, D-041): per-connection WAL + busy_timeout + single-writer scan lock; names the untested cross-OS two-writer config as the remaining hard half.
 - **A run-scoped morning artifact, `morning-<run_id>.{json,md}`, written beside the funnel**
@@ -724,7 +536,162 @@ All notable changes to this project are documented here. The format follows
   never be backfilled and NULL means "predates attribution", never zero. *(Landed inert; the entry above is
   what populates it. Both are in this same unreleased version.)*
 
+
+- **`boardwatch stats` — one read-only readout of where you stand.** Two views over your
+  local database: qualified opportunities in a trailing window (`--days`, default 7),
+  partitioned into `qualified` / `uncertain` / `ineligible` / `unevaluated`; and the
+  discovery pipeline (seen → passes filters → not ineligible → tracked). The partition is
+  deliberately honest — a posting with no current eligibility verdict is counted as
+  `unevaluated`, never silently folded into `qualified`, so an empty eligibility ledger reads
+  as "N unevaluated" rather than "0 qualified". Keyless and read-only; needs a profile
+  (`boardwatch init`).
+
+- **Workday support — a sixth provider, and the first with a composite board identity.**
+  A Workday board is a host + tenant + career-site triple, so its target form is
+  `workday:<host>/<tenant>/<CareerSite>` (pasting the career-site URL works too and derives
+  the tenant). It is carried as a single composite slug, so `UNIQUE(provider, slug)` is
+  unchanged and there is no migration — that constraint is in fact load-bearing here,
+  because one tenant can serve several disjoint career sites. Site slugs are case-sensitive;
+  hosts and tenants are normalized to lowercase.
+
+  Workday's public API had to be measured rather than assumed, and every finding below has a
+  regression test. It is POST-only (a GET returns 400), which is why `Fetcher` gained
+  `post_json` — routed through the same per-host pacing and backoff, which matters because a
+  2000-posting board is 100+ requests to one host. Its page size is a hard 20 (`limit=21`
+  returns 400, it is not clamped). Its reported `total` is capped at 2000 while
+  `offset >= 2000` wraps back to page 1, so pagination terminates on a short page rather
+  than on `offset < total`, which would never terminate on a large board. And `timeType` is
+  *not* an intern signal — it reads "Full time" on a real PhD-intern requisition — so the
+  intern/new-grad signal is read from the `workerSubType` facet instead, via one bounded
+  facet-filtered query per matched bucket, matched on the human-readable descriptor because
+  the facet ids are tenant-specific. `timeType` and the matched descriptor are captured into
+  `raw_json` because backfilling them would mean re-scanning every Workday board; nothing
+  reads them yet.
+
+  Two consequences worth stating plainly. Workday serves no `ETag` and no `Last-Modified`,
+  so conditional fetches are inert for it and every scan re-reads the board. And no Workday
+  boards are added to the bundled registry, so you watch them with `companies add` — until
+  you do, `doctor` reports Workday connectivity as *not checked* rather than guessing.
+
+  One deliberate deviation from the other five providers: `remote_policy` prefers Workday's
+  structured `remoteType` field ("Fully Remote" / "Partially Remote") over the location-text
+  heuristic, the same way the Ashby adapter already prefers its structured `isRemote`
+  boolean. Tenants that do not set the field fall back to the heuristic.
+
+- **Two eligibility rule families: `contract_not_fte` and `internship`.** The catalog now
+  carries six families. `contract_not_fte` reads whether a posting declares a contract,
+  contract-to-hire, temporary, fixed-term, 1099 or corp-to-corp engagement — or, symmetrically,
+  permanent full-time employment — and resolves it against a stated employment-type
+  preference (`fte_only`, `open_to_contract`, `contract_only`). `internship` reads whether a
+  posting declares itself an internship or co-op and resolves it against whether you want
+  them. Both are prompted by `init` and `profile edit` through the existing catalog-driven
+  loop, so neither adds a question to maintain.
+
+  Both default to `preference` rather than `blocker`, which is a measurement and not a
+  guess: the patterns were tuned against 13,590 real postings and score 100% precision
+  (internship) and 86% precision (contract) against the providers' own structured
+  employment-type field. Only `blocker` can produce `ineligible`, so at the shipped default a
+  false positive costs one visible informational row and hides nothing. Opt either into
+  `blocker` with `eligibility policy set <family> blocker`.
+
+  Known limit, stated plainly: the engine reads a posting's body and never its title, so
+  internship recall is 27% of postings whose title names an internship, and 20% of those whose
+  provider states an internship employment type. A posting titled "Software Engineering Intern"
+  whose body never says so is not detected. Raising that needs the title in the engine's input,
+  which is a separate change.
+
 ### Changed
+
+- **`config_hash` moves**, because `seen_ttl_days` was added to `_CONFIG_RELEVANT` (P6 Slice 2). It is a P0
+  artifact-v3 field and an input to the ledger's `policy_version`, so a run manifest written before this
+  change is no longer hash-comparable with one written after. Recorded here because the changelog is
+  authoritative for what shipped and a moved identity hash is not an implementation detail.
+
+- **The decision log and the metrics log are archive-split** (D-108). `DECISIONS.md` keeps D-077 onward
+  (4,369 → 1,235 lines); D-001 … D-076 move verbatim to `DECISIONS-ARCHIVE.md`. `METRICS.md` keeps the live
+  run-log and acceptance tables plus the P6-era records (1,547 → 465 lines); the baseline, the superseded
+  abstain table, and the P0–P5 session records move to `METRICS-ARCHIVE.md`. Each live file now opens with
+  an **index spanning both of its files** — file, line, title — and the "read the range, not the file"
+  protocol. Entry and section bodies were copied byte-for-byte and the halves diffed back against the
+  originals (identical SHA-1 on both, 322,260 and 96,063 bytes); every generated line number was read back
+  and checked, 108/108 and 29/29. Cross-references are by number (`D-028`), so nothing needed rewriting.
+
+
+- **The résumé render engine is now tectonic compiling the user's own LaTeX template, replacing Typst**
+  (résumé-tailoring fix, Increment 1 — D-058, D-060). Diagnosis found the tailored output read as a
+  "plain-text dump" for two reasons: a five-line Typst stub preamble with no real page setup, and tailoring
+  itself being near-invisible. Typst could only ever *approximate* the user's own template — a different
+  typesetting engine cannot reproduce a LaTeX file byte-for-byte — so tectonic (a single ~30 MB LaTeX
+  binary, the same footprint class as Typst) now compiles the résumé's real `.tex` source unchanged.
+
+  - **`render/typst.py` and its tests are deleted.** A new `LatexRenderer` (`render/latex.py`) emits
+    sections into `%%SECTIONS%%` markers in a bundled default template (`render/templates/resume_base.tex`,
+    registered in `SHIPPED_DATA`); a user's own template installs to `{config_dir}/resume_template.tex` and
+    overrides the bundled default. `_validate_template` now requires the `%%SECTIONS%%` markers to be
+    present in the resolved template, so a malformed template fails loudly instead of degrading silently.
+  - **Bolding moves to native inline `\textbf{}`**, matching the job-apps LaTeX pattern; entailment
+    (`output_is_entailed`) strips markup before comparing tokens to the master, and any non-`\textbf{}`
+    LaTeX command inside a bullet is a violation.
+  - **Page count now reads `pdfinfo`** instead of a Typst-native metadata query.
+  - **`Entry` gained structured fields** — `kind`, `title`, `dates`, `subtitle`, `location` — plus a new
+    `Resume.extracurricular` section, so LaTeX subheadings (role/company/dates on one line, tech stack on
+    the next) render correctly; entailment now checks all of them, not just `title`.
+  - **The persisted meta key `typst_pdf_built` keeps its legacy name.** Renaming it would ripple into
+    funnel/reconcile queries that already read it, which is out of scope for this change.
+  - Header and Education stay template-hardcoded in this increment (job-apps-exact); single-sourcing them
+    from `resume.yaml` is a documented fast-follow, not built here. Keyword bolding from `jd_skills`
+    (Increment 2) and per-role authored title/summary selection (Increment 3) are each their own plan.
+
+  **Result: the user's real résumé now renders to 1 page** (verified by a real compile plus `pdfinfo`,
+  measured on Mit's own résumé), resolving the standing Gate-P3 blocker where the old Typst stub rendered
+  an authored résumé to 2 pages against a `resume_max_pages=1` limit, dropping every lead on every run.
+  Fidelity against Mit's job-apps LaTeX PDF is a layout match — no emitter or layout bugs found. A new, real
+  remaining blocker was found, and it is content, not the render engine: three bullets in Mit's
+  `resume.yaml` exceed the per-lead layout gate's 220-character ceiling (D-053), so Tier-A degrades to the
+  untailored master on every posting until they are shortened.
+
+
+- **A held scan lock now names the blocking process instead of a generic message** (P3, §3.P3 item 1,
+  D-043). `run_scan` writes a message-only sidecar (`scan.lock.meta`: pid/hostname/started_at) around the
+  existing `FileLock` acquire/release; on contention the error names the blocking pid, host, and start
+  time, falling back to the unchanged generic message if the sidecar is missing or malformed. The sidecar
+  is never a lock authority — `filelock` alone decides acquire/release — so a stale or corrupt sidecar only
+  degrades the message, never correctness. `boardwatch scan`/`boardwatch run` now print the caught
+  exception's own message instead of a hardcoded constant, so the pid-naming message actually reaches the
+  CLI. Stale-reclaim was declined outright, not deferred (D-045) — unsound as designed, and the OS already
+  reclaims a dead flock on process exit. Token-gated unlock remains deferred. The run reaper has since
+  shipped (D-046, see below).
+- **LLM adapter calls now retry transient 429/5xx failures with backoff instead of dropping the rewrite**
+  (P3, §3.P3 item 10, D-040). Both `AnthropicClient` and `OpenAICompatClient` classify a 429 or 5xx
+  response as `LLMTransientError` and retry through a shared `llm/retry.py` helper (tenacity,
+  `Retry-After` honored when the provider sends one, bounded at 4 attempts) before falling back to
+  today's Tier-A-keeping containment on exhaustion. The retry lives inside the adapter's own request path,
+  below the rewrite lane's per-call budget metering, so a retried call still costs exactly one budget
+  unit. Any other non-2xx status, or an invalid response body, still raises the flat, non-retryable
+  `LLMError` unchanged.
+- **The systemic-scan-outage predicate is now one function, `is_systemic_scan_outage`
+  (`scan/coordinator.py`), called by both the pipeline (`run_pipeline`) and the standalone
+  `boardwatch scan`** (P3, §3.P3 item 4, D-037). Previously the same "attempted > 0, complete == 0,
+  unchanged == 0" logic was written out twice; behavior is unchanged, this only removes the risk of the
+  two copies drifting apart.
+- **`show` now renders an `eligible` verdict that fired zero eligibility rules, one that fired and
+  cleared all of them, and one that fired some non-blocking `preference`-family rows that were NOT
+  cleared, as three distinct headers** (P2, §3.P2 item 6, D-036). Previously all three rendered as a
+  bare "Eligibility: eligible" — "no flags" is not the same claim as "cleared", and a fired-but-unmet
+  row is not "cleared" either, even when it did not block the verdict (D-035's five still-`preference`
+  families). A new derived `AuditView.presentation` (`VerdictPresentation`, no schema change, stored
+  `verdict` unchanged) now headers the three cases "eligible — no eligibility rule applied (not
+  screened)", "eligible — N requirement(s) cleared" (only when every fired row is `met`), and
+  "eligible — N requirement(s) evaluated (M cleared; see details)" for the mixed case.
+- **`work_auth`'s default severity is now `blocker`, not `preference`** (P2, §3.P2 item 7, D-035). Every
+  eligibility family previously shipped `default_policy: preference`, so a fresh, policy-less profile got
+  **0 `ineligible` verdicts ever** — the multi-tenancy requirement failing for anyone who had not, like Mit,
+  set `work_auth: blocker` by hand. `work_auth` is the canonical hard-stop family (bar metric B7),
+  the most-developed, and keystone-gated (it abstains to `uncertain`, never `ineligible`, when
+  `work_authorization` is undeclared), so it is the one family safe to flip today; the other five
+  (`experience_years`, `clearance`, `degree`, `contract_not_fte`, `internship`) remain `preference`,
+  opt-in, pending further review.
+
 
 - **Funnel artifact version 1 → 2**, for the `sources` and `source_totals` sections.
 
@@ -794,72 +761,6 @@ All notable changes to this project are documented here. The format follows
   coverage. Real, discriminating tokens — including `SQL`, `Distributed systems`,
   `Low latency / high throughput` and `High availability` — are untouched.
 
-### Added
-
-- **`boardwatch stats` — one read-only readout of where you stand.** Two views over your
-  local database: qualified opportunities in a trailing window (`--days`, default 7),
-  partitioned into `qualified` / `uncertain` / `ineligible` / `unevaluated`; and the
-  discovery pipeline (seen → passes filters → not ineligible → tracked). The partition is
-  deliberately honest — a posting with no current eligibility verdict is counted as
-  `unevaluated`, never silently folded into `qualified`, so an empty eligibility ledger reads
-  as "N unevaluated" rather than "0 qualified". Keyless and read-only; needs a profile
-  (`boardwatch init`).
-
-- **Workday support — a sixth provider, and the first with a composite board identity.**
-  A Workday board is a host + tenant + career-site triple, so its target form is
-  `workday:<host>/<tenant>/<CareerSite>` (pasting the career-site URL works too and derives
-  the tenant). It is carried as a single composite slug, so `UNIQUE(provider, slug)` is
-  unchanged and there is no migration — that constraint is in fact load-bearing here,
-  because one tenant can serve several disjoint career sites. Site slugs are case-sensitive;
-  hosts and tenants are normalized to lowercase.
-
-  Workday's public API had to be measured rather than assumed, and every finding below has a
-  regression test. It is POST-only (a GET returns 400), which is why `Fetcher` gained
-  `post_json` — routed through the same per-host pacing and backoff, which matters because a
-  2000-posting board is 100+ requests to one host. Its page size is a hard 20 (`limit=21`
-  returns 400, it is not clamped). Its reported `total` is capped at 2000 while
-  `offset >= 2000` wraps back to page 1, so pagination terminates on a short page rather
-  than on `offset < total`, which would never terminate on a large board. And `timeType` is
-  *not* an intern signal — it reads "Full time" on a real PhD-intern requisition — so the
-  intern/new-grad signal is read from the `workerSubType` facet instead, via one bounded
-  facet-filtered query per matched bucket, matched on the human-readable descriptor because
-  the facet ids are tenant-specific. `timeType` and the matched descriptor are captured into
-  `raw_json` because backfilling them would mean re-scanning every Workday board; nothing
-  reads them yet.
-
-  Two consequences worth stating plainly. Workday serves no `ETag` and no `Last-Modified`,
-  so conditional fetches are inert for it and every scan re-reads the board. And no Workday
-  boards are added to the bundled registry, so you watch them with `companies add` — until
-  you do, `doctor` reports Workday connectivity as *not checked* rather than guessing.
-
-  One deliberate deviation from the other five providers: `remote_policy` prefers Workday's
-  structured `remoteType` field ("Fully Remote" / "Partially Remote") over the location-text
-  heuristic, the same way the Ashby adapter already prefers its structured `isRemote`
-  boolean. Tenants that do not set the field fall back to the heuristic.
-
-- **Two eligibility rule families: `contract_not_fte` and `internship`.** The catalog now
-  carries six families. `contract_not_fte` reads whether a posting declares a contract,
-  contract-to-hire, temporary, fixed-term, 1099 or corp-to-corp engagement — or, symmetrically,
-  permanent full-time employment — and resolves it against a stated employment-type
-  preference (`fte_only`, `open_to_contract`, `contract_only`). `internship` reads whether a
-  posting declares itself an internship or co-op and resolves it against whether you want
-  them. Both are prompted by `init` and `profile edit` through the existing catalog-driven
-  loop, so neither adds a question to maintain.
-
-  Both default to `preference` rather than `blocker`, which is a measurement and not a
-  guess: the patterns were tuned against 13,590 real postings and score 100% precision
-  (internship) and 86% precision (contract) against the providers' own structured
-  employment-type field. Only `blocker` can produce `ineligible`, so at the shipped default a
-  false positive costs one visible informational row and hides nothing. Opt either into
-  `blocker` with `eligibility policy set <family> blocker`.
-
-  Known limit, stated plainly: the engine reads a posting's body and never its title, so
-  internship recall is 27% of postings whose title names an internship, and 20% of those whose
-  provider states an internship employment type. A posting titled "Software Engineering Intern"
-  whose body never says so is not detected. Raising that needs the title in the engine's input,
-  which is a separate change.
-
-### Changed
 
 - **Editing the rule catalog re-evaluates every stored verdict.** Adding the two families
   moves `rules_hash`, so the first `eligibility run` after upgrading re-evaluates the whole
@@ -875,6 +776,96 @@ All notable changes to this project are documented here. The format follows
   commands remain offline by default.
 
 ### Fixed
+
+- **The funnel artifact keeps reconciling when liveness withholds a lead** (D-111, from the Slice 3
+  review). The tailor stage entered at `shortlisted` and advanced at `tailored` with `tailor_failed` as
+  its only drop, so a withheld lead left a gap in a stage that is deliberately not `derived` — meaning any
+  run where liveness did its job emitted an artifact stamped DOES NOT RECONCILE, breaking Gate P0's
+  "three consecutive runs that reconcile to 100%" clause. The stage now carries a `withheld_not_live` drop.
+- **A day where every candidate was already applied to no longer fails the run** (D-111). Applied state is
+  checked ahead of the ledger, so those candidates left `hidden_handled` — the bucket the zero-output guard
+  reads — and landed in `hidden_applied`, which it did not, re-arming the guard on exactly the
+  steady-state day the `hidden_handled` clause was added to disarm.
+- **A day whose whole shortlist turned out to be dead is reported as an honest empty day, not a broken
+  résumé path** (D-111). Liveness withholding every lead would otherwise have tripped both the
+  "every lead failed to tailor" fatal, which counted a withheld posting as a render failure, and the
+  zero-output guard, which could not explain a run that judged new eligible postings and produced nothing.
+  A withheld posting is also removed from the cohort guard's set rather than added to its accounted set —
+  it is a third terminal state, neither a lead nor a render failure — and is dropped from
+  `surfaced_job_ids`, so a lead delivered to nobody cannot consume the `seen` queue.
+
+- **Only a caller that DELIVERS a lead consumes the queue** (D-110, from the Slice 2 review). The `seen`
+  write had been applied to every `rank_open_postings` call, and three of the four production callers deliver
+  nothing: `eligibility gate request` suppressed the shortlist it had just built for judging, so the
+  `boardwatch run` the handshake exists to feed shortlisted **0** for the whole TTL and the verdicts never
+  reached an artifact; the pipeline wrote `seen` *before* the tailor loop, so a missing `tectonic`, an invalid
+  persona or a Ctrl-C hid every shortlisted lead for seven days with nothing built, and the documented retry
+  re-ranked into an empty shortlist; and `bwd`, which ranks twice a day, suppressed the rows its own build
+  call was about to request and built zero folders while printing "nothing new to build".
+- **A transient render failure no longer deletes a lead permanently** (D-110). A non-zero `tectonic` exit
+  (cold support-file cache with no network, disk full, OOM) maps to `shippable=False` exactly like the page
+  limit, so it earned a permanent `skipped` — and no `policy_version` component covers the résumé or
+  `resume_max_pages`, so `ledger reopen --stale` could not bring those leads back either. `LeadArtifactError`
+  now carries both gate reasons as data and only the closed `DETERMINISTIC_GATE_REFUSALS` catalog earns a
+  permanent disposition; anything else is retried.
+- **Regrouping carries the ledger decision onto the canonical job** (D-110). Moving postings off a job left
+  its `built` row governing a job nothing anchors while the canonical job carried nothing, so the
+  already-built lead was surfaced and tailored again — the exact defect Slice 2 exists to remove, arriving
+  through the projection Slice 2 added. The decision is carried forward monotonically and the emptied row is
+  released, so no live row is left with no re-entry path.
+- **`job_grouping_events` records only moves that happened** (D-110). A plan built against a stale read
+  appended a trail entry whose guarded `UPDATE` then matched 0 rows, so the table D-104 names the undo path
+  could not in fact rebuild the projection.
+- **The run summary names `hidden_handled`** (D-110). `_zero_output_guard` had been widened to stop fataling
+  on an already-handled shortlist, but the operator's one-line summary omitted the bucket, printing
+  "0 shortlisted of 400 considered (0, 0, 0, 0)" and exiting 0. `top --json` now reports the bucket on stderr
+  before returning, so a script no longer receives `[]` with no reason.
+
+- **Duplicate suppression no longer switches itself off when a scan discovers a posting** (D-105, closing
+  D-098). `write_identities` had exactly one caller in `src/` — the manual `boardwatch identities backfill`
+  — so any run that discovered one new posting left it uncovered, `identities_complete()` went False, and
+  suppression silently stopped corpus-wide, making `hidden_duplicate == 0` mean "not measured" on
+  essentially every real run. Identities are now written **per posting inside the board's existing scan
+  transaction**, so a posting and its identity commit or vanish together and the cost is O(postings this
+  board listed) rather than a second corpus-wide `body_text` load. A retitle with an unchanged body — which
+  moves an identity key without producing a revision — is covered by the same call.
+- **The zero-output guard no longer calls a caught-up queue a failure.** A run can judge genuinely new
+  eligible postings and still produce 0 leads because every candidate is already `built`; the guard now
+  fires only when `eligible_judged_this_run > 0` **and** nothing was suppressed as handled. Without this the
+  daily driver's exit status would have been 1 every day once the queue caught up, destroying the signal the
+  run ledger exists to carry. A run with no handled candidates still cannot explain itself and still fires.
+
+
+- **Disjunctive experience-years over-fire — Gate P5 MET at 100% precision** (D-073). The `experience_years`
+  family's `total_years_minimum` / `range_years_minimum` patterns read the pure-years arm of a DISJUNCTION
+  ("a Bachelor's degree … **or** N years of experience") as a hard floor, so a master's-plus-one-year
+  candidate was told INELIGIBLE on a posting they clear via the degree path — deleting a real job, the
+  unrecoverable direction. Both patterns now carry `abstain_by: [&degree_alternative_to_years]`, so a
+  degree-gated alternative makes the years bar ABSTAIN (verdict `uncertain`) instead of resolving `unmet`,
+  mirroring the degree family's "degree OR equivalent experience" handling. On the 173-row labeled set this
+  moved exactly one verdict (the SpaceX false positive, `ineligible → uncertain`), taking INELIGIBLE
+  precision 16/17 → **16/16 (100%)** with recall unchanged and zero span violations, so
+  `boardwatch eligibility score` now exits 0. `abstain_by` is document-scoped (like the degree precedent);
+  the recall the abstain concedes is the two-stage gate's (D-071) to recover.
+
+
+- **The per-lead layout gate no longer runs on the untailored master résumé, and can no longer drop a lead
+  on layout alone** (D-055, Opus 5 checkpoint review, fix 1 — HIGH). As first shipped, item 5a's gate also
+  ran on the master fallback and reused a *selection* cap (`MAX_BULLETS_PER_ENTRY`, which bullet selection
+  trims *to*) as a *layout* invariant; a low-`jd_skills` posting made `tailored == master`, both failed
+  identically, the master-fallback rescue did nothing, and the lead was dropped where before P4 it would
+  have shipped Mit's real résumé — breaking the "master fallback is unconditionally shippable" guarantee.
+  The per-lead gate now applies to the tailored and Tier-B renders only; a genuine compile failure on both
+  sides is the only remaining way a lead drops. Master-authoring defects are now caught separately, once,
+  at load instead (D-056, above).
+- **A valid single-combined-line résumé header (e.g. "Name · email · site") is no longer rejected as
+  missing a name** (D-056, fix round). `validate_master`'s original `len(resume.header) < 2` check assumed
+  a ≥2-line header as if it were schema rather than a scaffolding convention; fixed to check only that the
+  first header line is non-blank, decoupled from line count.
+- **A Tier-B rewrite's recorded lineage hash now points at the Tier-A bullet actually shipped, not at a
+  possibly-rejected tailored render** (D-055, fix 2). `tier_a_content_hash` was capturing whichever render
+  happened to run first rather than the shipped `chosen_hash`.
+
 
 - **`companies import` now rejects duplicate `provider:slug` rows.** It built validated
   entries but never ran the catalog's `validate_entries` integrity check, so a file listing
@@ -958,5 +949,6 @@ First public release.
   disk. Overridable with `--data-dir`. No server, no cloud, no telemetry.
 - **`doctor`** for connectivity, per-board health and freshness, and database integrity.
 
+[0.3.0]: https://github.com/mit112/boardwatch/releases/tag/v0.3.0
 [0.2.0]: https://github.com/mit112/boardwatch/releases/tag/v0.2.0
 [0.1.0]: https://github.com/mit112/boardwatch/releases/tag/v0.1.0

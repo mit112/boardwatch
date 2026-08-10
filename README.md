@@ -643,13 +643,22 @@ often. A job seeker checking a dozen companies once a day is the intended shape.
 - [x] More ATS providers (community-driven)
 - [x] Data-portability export (`--format jsonl|csv`)
 - [x] Résumé tailoring (`tailor init/validate/run`, local, no-fabrication guarantee)
-
-Next:
-
 - [x] Workday provider (host/tenant/site composite board identity)
 - [x] More eligibility rule families (contract vs. full-time, internships)
 - [x] A readable settings surface, so every opt-in feature is discoverable and reversible
       without hand-editing `config.toml`
+- [x] Deduplication, so the same role posted twice is one lead and not two
+- [x] A durable decision ledger, so a lead you were already shown does not come back tomorrow
+- [x] Liveness and applied-state checks, so a filled requisition and a job you already applied
+      to both stay off the list
+
+Next:
+
+- [ ] An onboarding flow that fits fields other than software, so the eligibility taxonomy is
+      gathered from you rather than assumed
+- [ ] A measured acceptance run — the daily numbers published rather than asserted
+- [ ] Broader company coverage, but only after the above shows the funnel converts; breadth
+      multiplies whatever is downstream of it, including the mistakes
 
 > **These boxes track `main`, which can run ahead of the latest published release.**
 > [CHANGELOG.md](CHANGELOG.md) is the authoritative record of what shipped in the version
