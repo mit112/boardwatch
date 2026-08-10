@@ -5,6 +5,20 @@ dedup. All nine plan tasks are BUILT on branch `p6-slice1`, the branch has now b
 three independent reviewers, and the resulting fixes are committed. Still NOT merged to `main`.**
 `main` is unchanged. Merging is Mit's decision.
 
+**`make check` on the fixed branch (`f2f2430`): exit 0** — `generalization: OK`, ruff clean,
+`mypy --strict` clean, 3749 passed / 1 deselected, coverage 95.22%, **4m17s**, in a detached worktree
+pinned to the commit. (The 18m47s and 16m07s recorded for the overnight runs were cold: each created
+its venv from scratch and ran against a cold filesystem cache. Same four stages, same machine — the
+difference is warm caches, not a smaller gate. Full-run rows are in `METRICS.md`.)
+
+**The first post-fix gate run was RED and was right, twice.** `tests/unit/test_normalize.py` had
+*already pinned the C++/C collision as an ACCEPTED caveat* — retired deliberately and re-ratified in
+**D-096**, because the caveat was accepted when `normalize_title` fed no suppressing key. And
+`test_a_version_bump_writes_beside_history_rather_than_mutating_it` hard-coded `"p6.2"` as its stand-in
+for "some other version", which this bump turned into the real one, tripping the UNIQUE constraint on a
+test unrelated to what changed. Both were consequences of the fix that the focused test modules could
+not see — the same shape of miss as the overnight run's, and the direct evidence for **D-099**.
+
 **The review and what it cost.** Three reviewers in parallel on `main..3a35819`: a fresh-context
 Opus 5 whole-branch review, DeepSeek v4 flash, and GPT-5.6 sol at high reasoning. Verdicts were
 REWORK / REWORK / SHIP-WITH-FIXES. Every finding was checked against the code before being acted
@@ -40,18 +54,29 @@ code normalizes them (design §2.1). Re-grouping raw reproduces 136/174/0.74%, m
 own unguarded baseline. Full investigation in `METRICS.md`.
 
 **Two claims that stood here have been RETRACTED (2026-08-10) — they were tautologies, not
-verification.** (1) *"Per-source `unique` reconciles through a second path: sum(open) − sum(unique) =
-186"* — `unique_by_company` is built from the same `identity_rows` and the same `resolve_duplicates`
-output that produced the count, grouped by the same column, so that identity holds for every possible
-database state. It is the `open_postings` equivalent `run_funnel_queries`' own docstring forbids by
-name, citing D-028. (2) *"Precision re-checked through an independent four-field comparison: 0 of 186
-failures"* — `_verify_quad` **is** those four comparisons with those normalizers.
+verification.** Quoted in full, because a retraction that quotes a weaker version of the original is
+its own defect:
+
+1. *"Per-source `unique` reconciles through a second path: sum(open) − sum(unique) = 186 across 118
+   sources, **equal to the resolver's own count**."* — `unique_by_company` is built from the same
+   `identity_rows` and the same `resolve_duplicates` output that produced that count, grouped by the
+   same column, so the identity holds for every possible database state. The clause doing the work
+   ("equal to the resolver's own count") is the part that cannot fail. It is the `open_postings`
+   equivalent `run_funnel_queries`' own docstring forbids by name, citing D-028.
+2. *"**Precision is intact** and was checked through a second path … comparing company_id, normalized
+   title, normalized locations and normalized body independently — **0 failures**."* — `_verify_quad`
+   **is** those four comparisons with those normalizers. "Precision is intact" is withdrawn too, not
+   just the arithmetic; nothing supported it when it was written.
+
+The same two claims also stood, unannotated, inside **D-094**. They are now marked retracted there as
+well — the first retraction pass missed them because its grep was piped through `head -30` and the
+match sat below the cut. **A truncated grep is not a negative result.**
 
 **The 186 does survive a real independent check.** Grouping the stored `identity_key`s in SQL, calling
 no Python normalizer and no resolver, returns the same 147/186. Details and the raw-field precision
 audit are in `METRICS.md` under "Precision re-derived independently". Note what the agreement implies:
-`_verify_quad` rejected zero members corpus-wide, so the string-verify has never fired and cannot be
-cited as precision evidence — it re-runs the key's own normalizers.
+`_verify_quad` rejected zero members on this corpus, so the string-verify did not fire once and cannot
+be cited as precision evidence — it re-runs the key's own normalizers (D-097).
 
 **Fifteen design decisions are now individual entries, D-079 … D-093** (summarized in D-077 until
 now). **D-094** records the build itself, including **five** defects found *in the plan* — four by
@@ -804,8 +829,13 @@ changes adopted, none contested.
 
 ## Next action
 
-**P6 Slice 1 is BUILT on branch `p6-slice1` — all nine tasks, committed, `main` untouched. The
-next action is a fresh-context whole-branch review, then Mit's merge decision.**
+**P6 Slice 1 is BUILT, REVIEWED and FIXED on branch `p6-slice1`; `make check` is green at `f2f2430`;
+`main` is untouched. The next action is Mit's merge decision — nothing else is outstanding.**
+
+> **The whole-branch review is DONE (D-095).** Three independent reviewers, twelve findings, all fixed
+> or explicitly rejected; nine vacuous tests repaired and mutation-checked. Do **not** re-run it. The
+> blockquote below is the pre-review standing and is kept only as the record of what the overnight run
+> handed over — every "unreviewed" and "next action" statement in it is **superseded**.
 
 > **The unattended run scheduled for 03:10 on 2026-08-10 EXECUTED and completed all nine tasks**
 > (launchd agent `com.mitsheth.boardwatch-p6`; status file
@@ -813,10 +843,10 @@ next action is a fresh-context whole-branch review, then Mit's merge decision.**
 > only (no merge, no PR, no force-push), copy-only for every live-data step, and it never wrote to
 > the live store.
 >
-> **Nothing on that branch has been reviewed by anyone.** Treat every commit as unreviewed work in
+> ~~**Nothing on that branch has been reviewed by anyone.** Treat every commit as unreviewed work in
 > progress. Per standing practice a checkpoint this size wants a fresh-context whole-branch Opus 5
-> review before merging — the P2 item 4 review caught a CRITICAL that every per-task review had
-> missed. Read `git log --oneline main..p6-slice1` and the status file before starting anything.
+> review before merging.~~ **SUPERSEDED 2026-08-10 — the review happened; see D-095.** The standing
+> practice was right: it caught two blockers and five majors, exactly as the P2 item 4 review did.
 >
 > **The one thing the run did not finish:** the `boardwatch top --top 20` half of Task 8's live
 > smoke. It ran >40 min against a 23,455-posting copy (it pays for `run_preflight` +
@@ -826,6 +856,12 @@ next action is a fresh-context whole-branch review, then Mit's merge decision.**
 > reconciling to the same 186 across 118 sources. The plan itself notes a top-20 usually shows 0
 > duplicates and is therefore the *least* informative of the three. Re-run it if you want the
 > display path exercised end to end.
+>
+> **Correction 2026-08-10:** the "two other ways" above named the resolver's own 186 **and** the
+> funnel's `unique` reconciliation — but that second one is a retracted tautology (D-097), so at the
+> time this was written the justification was one way plus a check that could not disagree. The
+> conclusion survives on better evidence: the SQL re-derivation over stored `identity_key`s returns the
+> same 147/186 and shares no code with the resolver. Read the second way as *that*, not as `unique`.
 
 The design and the 9-task TDD plan live at
 `.superpowers/sdd/2026-08-09-p6-liveness-dedup/` (gitignored), with `HANDOFF.md` there stating
@@ -1167,7 +1203,7 @@ computable but the typed abstain *reason* the keystone invariant wants is not.
 | P3 Unattended one command | **BUILD COMPLETE** for every item needing neither Mit's domain input nor Docker — the run reaper was the last (D-046) | **NOT MET** — both halves outstanding: the 7 consecutive unattended runs (blocked on live config, see below) and the cross-OS two-writer test (needs Docker; the documented-stance half shipped, D-041) |
 | P4 Craft gate | **BUILD COMPLETE** — items 1–7 (D-048, D-049, D-050, D-051, D-053, D-056, D-061, D-063) | **NOT MET** — the blind craft review is the owner's, and has not been run |
 | P5 Eligibility decides | **COMPLETE** — deterministic disjunctive fix (D-073) + the agent-lane final eligibility gate (D-074) | **MET** (D-073) — INELIGIBLE precision **16/16 = 100%** on the 173-row labeled set, 0 span violations, `boardwatch eligibility score` exits 0 |
-| P6 Liveness + dedup | **Slice-1 planning COMPLETE, no code** — spec + 9-task TDD plan executable (D-077 design, D-078 fixture rework); eleven plan defects found and fixed, all by running code rather than by review. Next action = execute Task 1 | **NOT MET, and Slice 1 is not designed to meet it** — it makes one of the gate's four clauses (`unique`) measurable; duplicate leakage, dead postings and the 20-sample suppression audit are operational measurements over a running system |
+| P6 Liveness + dedup | **Slice 1 BUILT, REVIEWED and FIXED on `p6-slice1`, unmerged** — nine tasks built unattended (D-094), then three-reviewer whole-branch review with twelve findings fixed (D-095, D-096, D-097, D-098, D-099); `make check` green at `f2f2430`. Next action = Mit's merge decision. Slices 2 and 3 not started | **NOT MET, and Slice 1 is not designed to meet it** — it makes one of the gate's four clauses (`unique`) measurable; duplicate leakage, dead postings and the 20-sample suppression audit are operational measurements over a running system |
 | 14-day acceptance run | not started | — |
 | P7 Breadth | not started | — |
 

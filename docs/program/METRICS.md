@@ -1257,23 +1257,39 @@ Normalizing locations (sort + case-fold + whitespace-collapse, per design §2.1)
 directly: **12 of the 186** suppressions have raw location lists that are not equal.
 
 Not a cause: title normalization. **0 of 186** suppressions have a stored `normalized_title` that
-disagrees with `normalize_title(title)`.
+disagrees with `normalize_title(title)`. **Measured against the `p6.1` normalizer and now stale:**
+D-096 changed `normalize_title` to fold `+` and `#` to words, while the stored `normalized_title`
+column is a plain `casefold()`, so the two disagree for every title containing those characters. The
+figure still holds for these 186 (none of them contains `+` or `#` — the same measurement that made
+D-096 safe), but do not generalize it past this set.
 
-**RETRACTED 2026-08-10 — this was not a second path.** The original claim read: *"Every one of the
-186 suppressions was re-verified outside `_verify_quad`, comparing company_id, normalized title,
-normalized locations and normalized body independently — 0 failures."* But `_verify_quad` **is**
-those four comparisons using those normalizers, so re-running them outside the function agrees for
-every possible input. The "0 of 186" was determined before the check ran. Same defect D-028 deleted a
-per-board `eligible` total for, and the same class D-020 already recorded: a check whose docstring
-claims a different path while computing `X == X`.
+**RETRACTED 2026-08-10 — this was not a second path.** The original claim read, in full:
+*"**Precision is intact and was checked through a second path.** Every one of the 186 suppressions was
+re-verified outside `_verify_quad`, comparing company_id, normalized title, normalized locations and
+normalized body independently — **0 failures**. Sampled groups are same-role-different-requisition
+pairs: identical titles, identical locations, distinct `provider_posting_id`."*
+
+But `_verify_quad` **is** those four comparisons using those normalizers, so re-running them outside
+the function agrees for every possible input. The "0 failures" was determined before the check ran.
+Same defect D-028 deleted a per-board `eligible` total for, and the same class D-020 already recorded:
+a check whose docstring claims a different path while computing `X == X`.
+
+**"Precision is intact" is withdrawn as well, explicitly** — not merely narrowed to the arithmetic. It
+was the broadest assertion in the original and it rested entirely on the empty check. Precision is
+*separately* supported by the raw-field audit below, which can disagree and does (8 groups) — but
+nothing supported it at the time it was written.
 
 The paragraph is retracted, not deleted, because a read-first document must not quietly lose a claim
 someone may have already acted on. Sampled groups genuinely are same-role-different-requisition
-pairs — that observation stands; only the "0 failures" arithmetic was empty.
+pairs — that observation stands on its own.
 
 See "Precision re-derived independently (2026-08-10)" below for a check that can actually disagree.
 
-### Precision re-derived independently (2026-08-10, post-review-fixes, `p6.2`)
+### Count and precision re-derived independently (2026-08-10, post-review-fixes, `p6.2`)
+
+*The count is re-derived first; the precision audit is the second table below. The heading originally
+said only "Precision", over a table that re-derives a count — corrected, since STATE.md points readers
+here for the precision audit specifically.*
 
 Run on a copy of the copy (`scratchpad/auditdir`), so neither the live store nor the smoke copy was
 touched. This replaces the retracted check above.
@@ -1290,28 +1306,48 @@ disagree with the Python path — and the interesting result is where it does an
 | A survivor that was itself suppressed | **none** |
 | `identities verify` | **exit 0** — 23,455 verified |
 | `p6.1` rows still present beside `p6.2` | **117,254 each** |
+| `make check` at `f2f2430` (warm venv + cache) | **exit 0** — 3749 passed, 95.22%, **4m17s** |
+
+The equal `p6.1`/`p6.2` row counts carry a second fact worth stating, since this is the only place it
+is measured: the `[null]`-locations loader fix drops three location-bearing kinds per affected posting,
+so identical totals also mean **zero** open postings have `locations_json = [null]` in this corpus. The
+fix is a guard against a shape the corpus does not currently contain, not a correction to these numbers.
+The `4m17s` gate is the same four stages as the overnight 16m07s — the difference is a warm venv and
+filesystem cache, not a smaller run.
 
 **The two paths agree at 186 — and that agreement is itself the finding.** SQL surplus equals the
 resolver's surplus, which means `_verify_quad` rejected **zero** members across the entire corpus.
-The string-verify has never once fired. It is not broken; it is redundant with the key on this data,
+The string-verify did not fire once on this corpus (it does reject in
+`tests/unit/test_dedup_resolver.py`, where a divergent body is forged, so this is a property of the
+data, not of the function). It is not broken; it is redundant with the key on this data,
 because it re-runs the same normalizers the key was built from. So it defends against a SHA-256
 collision and against staleness, but **not** against the normalizers being lossy — which is exactly
 how the C++/C# title collision got in. Recorded so nobody cites "string-verified" as evidence of
 precision it cannot supply.
 
-**Precision checked where the key cannot help — raw-field disagreement inside a group:**
+**Precision checked where the key cannot help — raw-field disagreement inside a group.** Exactly two
+comparisons qualify, because the `exact_quad` key hashes *normalized* title and *normalized* locations
+but takes `company_id` and `content_hash` **raw**:
 
 | | |
 |---|---|
 | Groups whose members differ in RAW `title` | **8 of 147** |
 | Groups whose members differ in RAW `locations_json` | **11 of 147** |
-| Groups whose members differ in `content_hash` | **0** |
-| Groups whose members differ in `company_id` | **0** |
+
+A first draft of this table also reported "groups differing in `content_hash`: 0" and "in `company_id`:
+0". **Both were deleted, not downgraded** (D-028's precedent), because sharing one `identity_key`
+*entails* sharing both — they hold for every possible database state, modulo a SHA-256 collision. Two
+tautologies in the paragraph written to replace a retracted tautology, under a heading that says
+"where the key cannot help". Caught by the docs review, and recorded because the near-miss is the
+point: the reflex to pad a verification table with rows that cannot fail survived the retraction that
+was supposed to cure it.
 
 All 8 raw-title disagreements were read by eye and every one is punctuation, spacing or case noise on
-the same role — `Mobile Expert - Bilingual…` vs `Mobile Expert, Bilingual…`, `Store-in-Store` vs
-`Store in Store`, `Javascript` vs `JavaScript`, `IC design` vs `IC Design`. **Zero are semantic
-collisions.** That measurement is what killed the first proposed fix for the C++/C# hole (adding a raw
+the same role. The five distinct shapes, all five of which are pinned by
+`test_punctuation_noise_still_collapses`: `Mobile Expert - Bilingual…` vs `Mobile Expert, Bilingual…`;
+`Store-in-Store, Retail Sales` vs `Store in Store - Retail Sales`; `Javascript` vs `JavaScript`;
+`IC design Engineer` vs `IC Design Engineer`; `Manager, Clinical Study Lead` vs `Manager Clinical Study
+Lead`. **Zero are semantic collisions.** That measurement is what killed the first proposed fix for the C++/C# hole (adding a raw
 case-folded title comparison to `_verify_quad`): it would have broken 6 of those 8 real suppressions
 to defend a collision this corpus does not contain. The shipped fix folds `+` and `#` to words in
 `normalize_title` instead — 123 open titles contain `+`, 16 contain `#`, **none of them is in any
@@ -1329,10 +1365,20 @@ Measured on the copy:
 | `identities backfill` (117,254 rows, cold) | **41 s** |
 
 9 s on a run that already takes minutes is not a concern; the **471 MB peak** is the number to
-watch, and it scales with corpus size. Flagged rather than tuned: the obvious fix (a SQL GROUP BY
-over stored `identity_key`s instead of re-resolving in Python) would re-introduce exactly the
-"group the same table a different way" tautology D-028 deleted, and would skip the string-verify
-that makes suppression safe. Any optimization here has to keep the verify.
+watch, and it scales with corpus size.
+
+Flagged rather than tuned, and the distinction matters — **corrected 2026-08-10**, because the
+sentence that stood here contradicted the section above. SQL grouping over stored `identity_key`s is
+legitimate **as an out-of-band re-derivation of the count** (that is exactly the independent path used
+above, and it is independent precisely because it shares no code with the resolver). What it may not
+do is **replace the resolver in the production read path**: it would drop the guard against a stale
+stored identity, which is a live condition (D-098). The earlier text conflated the two and called the
+first one a D-028 tautology — it is not; D-028 was about grouping *the same already-counted set* a
+second way and calling it verification.
+
+The earlier text also said the verify is what "makes suppression safe". Deleted: `_verify_quad`
+rejected zero members corpus-wide (D-097), and it re-runs the key's own normalizers, so it cannot be
+cited as the thing that makes suppression safe.
 
 ### `assisted`
 

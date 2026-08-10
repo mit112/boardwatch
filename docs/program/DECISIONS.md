@@ -3724,12 +3724,22 @@ groups / 12 rows; measured directly, **12 of the 186** suppressions have raw loc
 differ. Title normalization contributes nothing: 0 of 186 have a stored `normalized_title`
 disagreeing with `normalize_title(title)`.
 
-**Precision was re-checked through a second path**, comparing company_id, normalized title,
-normalized locations and normalized body outside `_verify_quad`: **0 of 186 failures**. Sampled
-groups are same-role-different-requisition pairs — identical titles, identical locations, distinct
-`provider_posting_id`. And the funnel's per-source `unique` reconciles independently:
-sum(open) − sum(unique) = **186** across 118 sources, equal to the resolver's own count, with
-`assisted` `None` on all 118.
+~~**Precision was re-checked through a second path**, comparing company_id, normalized title,
+normalized locations and normalized body outside `_verify_quad`: **0 of 186 failures**.~~
+**RETRACTED 2026-08-10 — see D-097.** `_verify_quad` *is* those four comparisons with those
+normalizers, so the check could not disagree. Sampled groups are same-role-different-requisition
+pairs — identical titles, identical locations, distinct `provider_posting_id`; that observation
+stands. ~~And the funnel's per-source `unique` reconciles independently: sum(open) − sum(unique) =
+**186** across 118 sources, equal to the resolver's own count~~ — **RETRACTED 2026-08-10, same
+entry**: `unique_by_company` is built from the same `identity_rows` and the same `resolve_duplicates`
+output that produced the count, so that identity holds for every possible database state. `assisted`
+was `None` on all 118, which is unaffected.
+
+**Marked, not rewritten** — this log is append-only, so the original wording stays legible and the
+withdrawal is annotated in place. Recorded here because the retraction commit itself missed this
+entry: the grep that was supposed to find every restatement was piped through `head -30` and the
+match on this line sat below the cut. **A truncated grep is not a negative result** — the same rule
+that already applies to a failed command applies to a clipped one.
 
 ### Not finished
 
@@ -3744,7 +3754,9 @@ than quietly dropped.
 
 ---
 
-## D-095 — P6 Slice 1 reviewed by three independent reviewers; seven findings fixed, two rejected
+## D-095 — P6 Slice 1 reviewed by three independent reviewers; twelve findings fixed, two rejected
+
+*2026-08-10, post-overnight-build fix session.*
 
 **Context.** The branch was built unattended and gated green, but nothing had been reviewed. The P2
 item 4 whole-branch review had caught a CRITICAL that every per-task review missed, so this
@@ -3756,22 +3768,42 @@ lanes pay for themselves.
 access, read-only sandbox). Verdicts REWORK / REWORK / SHIP-WITH-FIXES. Every claim was verified
 against the code before being acted on.
 
-**Was the third lane worth it?** Yes, and not for the reason expected. The reviewers overlapped on
-exactly **one** finding, and each found something neither other saw:
+**Was the third lane worth it?** Yes, and not for the reason expected. **Corrected 2026-08-10 after a
+docs review:** an earlier version of this entry said "seven findings" and "the reviewers overlapped on
+exactly one finding". Both were wrong, and the second was load-bearing for this entry's own
+conclusion. The full enumeration, twelve findings with an attribution each:
 
-- Opus alone: the drain bounded by `limit`; `company_id` untested in the only suppressing key; the
-  tautological verification claims in STATE/METRICS.
-- GPT-5.6 sol alone: the `normalize_title` C++/C# collision (the most consequential defect of the
-  set); the migration importing the live catalog into its CHECK constraint.
-- DeepSeek alone: `locations_json = [null]` becoming a location component; the `split("_")`
-  field-neutrality test.
-- All three: `_verify_quad`'s `None == None` hole.
+| Finding | Found by | Fixed in |
+|---|---|---|
+| `_verify_quad`'s `None == None` hole | **all three** | `dedup.py` |
+| `load_identities` corpus-sized `IN` list (32,766 cap) | **DeepSeek + Opus** | `identity_queries.py` |
+| `normalize_title` C++/C#/C collision | GPT-5.6 sol | `normalize.py`, D-096 |
+| migration imports the live catalog into its CHECK | GPT-5.6 sol | `p6_posting_identities.py` |
+| `ValueError` handler in `normalize_url` never exercised | GPT-5.6 sol | test |
+| `host_class` precedence in `_elect` untested | GPT-5.6 sol | test |
+| drain bounded by the rank `limit` | Opus | `top_cmd.py` |
+| `company_id` untested in the only suppressing key | Opus | test |
+| the two tautological verification claims | Opus | D-097, METRICS/STATE |
+| `normalize_url` param-order test vacuous | Opus | test |
+| three `all()`-over-empty assertions | Opus | test |
+| bare `KeyError` for a resolver-less kind | Opus (minor, elevated) | `dedup.py` |
+| `locations_json = [null]` as location evidence | DeepSeek | `identity_queries.py` |
+| `split("_")` field-neutrality test vacuous | DeepSeek | test |
+
+So the overlap is **two** findings, not one — and the second overlap (the `IN`-list cliff) is arguably
+the most consequential of the whole set, since it made `identities verify` and the funnel sweep a
+scheduled failure as the corpus grows past 32,766 open postings. It was previously unattributed here,
+which is exactly the gap that let the miscount stand. Each reviewer still found things neither other
+saw, so the conclusion holds — but on a corrected count.
 
 **Two findings were rejected as factually wrong**, which is the cost of the extra lanes:
 
 1. DeepSeek: *"`normalize_body` is ASCII-only (`[^a-z0-9 ]`), so `["Remote","远程"]` collides with
    `["Remote"," "]`."* It confused `normalize_body` with `normalize_company`. Measured:
-   `normalized_locations(["Remote","远程"])` → `["remote","远程"]`. No collision.
+   `normalized_locations(["Remote","远程"])` returns the JSON string `'["remote", "远程"]'` (escaped
+   as `远程`, since `json.dumps` defaults to `ensure_ascii=True`), while
+   `normalized_locations(["Remote","  "])` returns `'["", "remote"]'`. Two different keys, so no
+   collision — the non-ASCII text is preserved, not stripped.
 2. GPT-5.6 sol: *"survivor election prioritizes host class before `first_seen_at`, contrary to the
    stated earliest-seen rule."* D-086 explicitly ratifies `(host_class, earliest first_seen_at,
    lowest posting_id)` and the docstring matches. Its sub-claim was kept: no test covered the
@@ -3786,6 +3818,8 @@ would have justified emergency work on the wrong thing.
 ---
 
 ## D-096 — The C++/C# fix folds punctuation into words; it does NOT add a raw-title comparison
+
+*2026-08-10.*
 
 **Context.** `normalize_title` folds `[\W_]` to spaces, so `C++ Developer`, `C# Developer` and
 `C Developer` all normalize to `c developer`. Since `_verify_quad` re-runs the same normalizer, the
@@ -3827,14 +3861,18 @@ one was found by `make check`, not by the focused test modules.
 
 ---
 
-## D-097 — `_verify_quad` has never fired; "string-verified" is not precision evidence
+## D-097 — `_verify_quad` rejected nothing on the live corpus; "string-verified" is not precision evidence
+
+*2026-08-10.*
 
 **Context.** Re-deriving the suppression count in SQL (grouping stored `identity_key`s, calling no
 Python normalizer and no resolver) returned **147 groups / 186 surplus rows** — identical to
 `resolve_duplicates`.
 
 **Choice.** Record the agreement as a finding rather than as reassurance. Equal counts mean
-`_verify_quad` rejected **zero** members corpus-wide: the string-verify has never once fired.
+`_verify_quad` rejected **zero** members on the 2026-08-10 copy of the live store. Scoped to that
+snapshot deliberately: "has never once fired" overreaches one corpus, and the function does reject in
+`tests/unit/test_dedup_resolver.py` where a divergent body is forged.
 
 It is not broken. It is redundant with the key on this data, because it re-runs the same normalizers
 the key was built from. So it genuinely defends against a SHA-256 collision and against stale stored
@@ -3843,8 +3881,12 @@ collision (D-096) got in. Nothing may cite "string-verified" as evidence of prec
 supply. Precision evidence has to come from a comparison the key does not already make: the raw-field
 audit in METRICS.md is the one that can disagree.
 
-**Alternatives rejected.** Deleting `_verify_quad` as dead weight. It is the only guard against a
-stale stored identity, which is a live condition (D-098), and it costs one pass over a small group.
+**Alternatives rejected.** Deleting `_verify_quad` as dead weight. It is the only guard that fires **in
+the read path**, and staleness is a live condition (D-098); it costs one pass over a small group.
+Corrected 2026-08-10 — an earlier draft said "the only guard against a stale stored identity", which
+D-091 falsifies: `identities verify` detects staleness by recomputing (Path B) and exits 1 on it. The
+distinction is the whole point, though — `verify` only catches it when somebody runs it, and nothing in
+the automated path does.
 
 ---
 
@@ -3869,9 +3911,16 @@ an uninstrumented run is indistinguishable from a clean one — the same "a rule
 monitoring failure, not a conservatism feature" problem the keystone invariant exists for.
 
 **Alternatives rejected.** Wiring the idempotent backfill into the pipeline now. It is the better end
-state and makes the Gate P6 `unique` clause genuinely measurable, but it adds the measured 471 MB
-peak RSS / 9.4 s to every run and belongs with Slice 2's ledger work, where the cost can be paid once
-rather than twice.
+state and makes the Gate P6 `unique` clause genuinely measurable, but it adds a **second corpus-wide
+`body_text` load** beside the one `count_by_source` already does, and belongs with Slice 2's ledger
+work where that load can be paid once rather than twice.
+
+**Cost corrected 2026-08-10.** An earlier draft justified this deferral with "it adds the measured
+471 MB peak RSS / 9.4 s to every run". Those figures belong to `count_by_source`'s survivor sweep,
+which **already runs on every run**, so wiring in the backfill cannot add them. The backfill's own
+measured cost is **41 s** cold (METRICS.md), and 10.3 s on a warm copy in the fix session. Citing the
+wrong subsystem's number — ~4× too small — in the sentence that rules the work out until Slice 2 is
+precisely the kind of unchallengeable-looking figure this log exists to prevent.
 
 ---
 
