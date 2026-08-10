@@ -3807,9 +3807,23 @@ not contain. The shipped fix costs nothing: 123 open titles contain `+` and 16 c
 now pinned by tests — one asserting C++/C#/C produce different keys, one asserting the five real
 punctuation-noise pairs still collapse.
 
-**The transferable lesson.** A fix aimed at a theoretical failure must have its blast radius measured
-on real data before it ships. This one would have traded live recall for hypothetical precision, and
-only the corpus could say so.
+**This RETIRES a previously pinned ACCEPTED caveat, deliberately.**
+`tests/unit/test_normalize.py::TestNormalizeTitle::test_caveat_cpp_collapses_to_c` asserted
+`normalize_title("C++ Developer") == "c developer"` with the comment *"Pinned ACCEPTED caveat: '+' is
+stripped, so C++ titles collide with C titles."* So the collision was known and accepted — but it was
+accepted when `normalize_title` fed no suppressing key and a title collision was cosmetic. P6 slice 1
+made it a component of `exact_quad`, the only kind that can suppress, which changed the consequence
+from "two titles look alike" to "a real, different posting is hidden". The caveat is therefore
+re-ratified against its new stakes rather than inherited: the test is replaced by
+`test_language_punctuation_no_longer_collapses`, which pins the new behaviour and records why.
+
+**The two transferable lessons.** (1) A fix aimed at a theoretical failure must have its blast radius
+measured on real data before it ships — this one would have traded live recall for hypothetical
+precision, and only the corpus could say so. (2) **A pinned caveat is scoped to the consumers it was
+pinned against.** When a normalizer acquires a new consumer with harsher consequences, every accepted
+caveat on it needs re-checking; `grep` for existing tests of a function before changing it, because
+the accepted-caveat tests are where the prior reasoning is recorded and they are easy to miss — this
+one was found by `make check`, not by the focused test modules.
 
 ---
 

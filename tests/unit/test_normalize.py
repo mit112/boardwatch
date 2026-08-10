@@ -37,9 +37,22 @@ class TestNormalizeTitle:
             == "sr software engineer backend remote"
         )
 
-    def test_caveat_cpp_collapses_to_c(self) -> None:
-        # Pinned ACCEPTED caveat: '+' is stripped, so C++ titles collide with C titles.
-        assert normalize_title("C++ Developer") == "c developer"
+    def test_language_punctuation_no_longer_collapses(self) -> None:
+        # This RETIRES a previously pinned ACCEPTED caveat ("'+' is stripped, so C++ titles
+        # collide with C titles"), which asserted `normalize_title("C++ Developer") ==
+        # "c developer"`. The caveat was accepted when a title collision was cosmetic. P6
+        # slice 1 made normalize_title a component of `exact_quad` — the ONLY suppressing
+        # identity kind — so the same collision now HIDES a real, different posting, and
+        # `_verify_quad` re-runs this very function and agrees with the wrong answer. See
+        # D-096, including the measurement showing the fix costs no recall on the live corpus.
+        assert normalize_title("C++ Developer") == "c plus plus developer"
+        assert normalize_title("C# Developer") == "c sharp developer"
+        assert normalize_title("C Developer") == "c developer"
+
+    def test_other_punctuation_is_still_stripped(self) -> None:
+        # Only '+' and '#' are folded to words; everything else keeps collapsing, which is
+        # what lets real duplicates that differ only in punctuation noise still match.
+        assert normalize_title("Store-in-Store, Retail") == normalize_title("Store in Store Retail")
 
     def test_whitespace_collapsed(self) -> None:
         assert normalize_title("Software   Engineer\t II") == "software engineer ii"

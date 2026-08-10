@@ -45,9 +45,19 @@ def test_one_row_per_posting_kind_and_version(seed_dedup):
 
 
 def test_a_version_bump_writes_beside_history_rather_than_mutating_it(seed_dedup):
+    """The second version must be one that can never BE the current one.
+
+    This previously hard-coded `"p6.2"` as the stand-in for "some other version", which
+    silently became the real `IDENTITY_ALGORITHM_VERSION` at the next bump — both rows then
+    landed on the same (posting_id, kind, version) and the UNIQUE constraint fired, failing a
+    test that has nothing to do with what broke. A historical sentinel cannot collide with a
+    future release, so this no longer depends on the constant's current value.
+    """
+    historical = "p0.0-never-a-real-version"
+    assert historical != IDENTITY_ALGORITHM_VERSION
     seed = seed_dedup()
     _row(seed.engine, seed.posting_ids[0])
-    _row(seed.engine, seed.posting_ids[0], algorithm_version="p6.2", identity_key="z" * 64)
+    _row(seed.engine, seed.posting_ids[0], algorithm_version=historical, identity_key="z" * 64)
     with seed.engine.connect() as conn:
         assert len(conn.execute(select(posting_identities)).all()) == 2
 
