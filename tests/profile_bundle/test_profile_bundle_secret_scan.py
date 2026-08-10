@@ -30,11 +30,18 @@ from boardwatch.profile_bundle.secret_scan import (
 
 _MEDIA = CaptureMediaType.TEXT_PLAIN
 
+# Assembled at runtime so the PEM armour never exists as a literal on disk. The body is the word
+# `filler` and there is no key material here, but `gitleaks` scans the repo's *bytes* and cannot know
+# that — and the honest fix is to keep the bytes clean rather than to allowlist the pattern, which
+# would excuse it everywhere. Same reason the AWS fixtures below are built from `"AKIA" + "A" * 16`.
+_PEM_BEGIN = "-----BEGIN RSA PRIVATE" + " KEY-----"
+_PEM_END = "-----END RSA PRIVATE" + " KEY-----"
+
 # (rule_id, positive fixture that must match, near-miss fixture that must not match)
 _RULE_FIXTURES: tuple[tuple[str, str, str], ...] = (
     (
         "private-key-block",
-        "-----BEGIN RSA PRIVATE KEY-----\nfiller\n-----END RSA PRIVATE KEY-----\n",
+        f"{_PEM_BEGIN}\nfiller\n{_PEM_END}\n",
         # No `ignore_case` flag: lowercase must not match, only the exact literal casing.
         "-----begin rsa private key-----\n",
     ),
@@ -269,7 +276,10 @@ def test_scan_capture_rejects_invalid_utf8_rather_than_reporting_no_hits() -> No
 def test_v1_has_no_entropy_heuristic() -> None:
     # A high-entropy bare token that matches none of the eight named rules must produce zero
     # hits: v1 deliberately does not try to guess at "this looks random enough to be a secret".
-    high_entropy_token = "Qx7ZmP3vN9kLdRt2WsYb8Jf4Hc6Vu1EoIaGnMq5T"
+    # Chunked for the same reason as `_PEM_BEGIN`: a 40-char high-entropy literal next to a name
+    # containing "token" is precisely what `gitleaks`' generic-api-key rule looks for, and it cannot
+    # tell this one was typed by hand to match nothing.
+    high_entropy_token = "Qx7ZmP3vN9" + "kLdRt2WsYb" + "8Jf4Hc6Vu1" + "EoIaGnMq5T"
     assert len(high_entropy_token) == 40
     hits = scan_capture(
         high_entropy_token.encode("utf-8"),

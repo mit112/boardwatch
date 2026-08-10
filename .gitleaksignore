@@ -1,0 +1,13 @@
+# Findings excused by fingerprint (`commit:file:rule:line`), which excuses exactly one blob in one
+# historical commit — never the pattern repo-wide. That distinction is the whole point: a rule-level
+# or path-level allowlist would stop this repo's own secret-scanning fixtures from ever being caught
+# again, which is the same mistake as adding a `HOME_PATH_EXCEPTIONS` row to satisfy one fixture.
+#
+# Both entries below are synthetic fixtures for the career-profile bundle's own secret scanner
+# (Gate A, D-115) — one PEM header whose body is the literal word `filler`, one 40-character token
+# typed by hand for a test asserting that v1 has NO entropy heuristic, i.e. that it matches nothing.
+# The durable fix landed in D-116: both are now assembled at runtime, so the literals no longer
+# exist on disk and no future commit can reintroduce them silently. These two lines only cover the
+# bytes already written to history, which cannot be unwritten.
+fa532a8c860aeca8758a2abc262921b89290f7c1:tests/profile_bundle/test_profile_bundle_secret_scan.py:generic-api-key:272
+fa532a8c860aeca8758a2abc262921b89290f7c1:tests/profile_bundle/test_profile_bundle_secret_scan.py:private-key:37
