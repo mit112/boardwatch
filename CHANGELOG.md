@@ -52,6 +52,17 @@ All notable changes to this project are documented here. The format follows
   daily driver's exit status would have been 1 every day once the queue caught up, destroying the signal the
   run ledger exists to carry. A run with no handled candidates still cannot explain itself and still fires.
 
+### Changed
+
+- **The decision log and the metrics log are archive-split** (D-108). `DECISIONS.md` keeps D-077 onward
+  (4,369 → 1,234 lines); D-001 … D-076 move verbatim to `DECISIONS-ARCHIVE.md`. `METRICS.md` keeps the live
+  run-log and acceptance tables plus the P6-era records (1,547 → 465 lines); the baseline, the superseded
+  abstain table, and the P0–P5 session records move to `METRICS-ARCHIVE.md`. Each live file now opens with
+  an **index spanning both of its files** — file, line, title — and the "read the range, not the file"
+  protocol. Entry and section bodies were copied byte-for-byte and the halves diffed back against the
+  originals (identical SHA-1 on both, 322,260 and 96,063 bytes); every generated line number was read back
+  and checked, 108/108 and 29/29. Cross-references are by number (`D-028`), so nothing needed rewriting.
+
 ### Fixed
 
 - **Disjunctive experience-years over-fire — Gate P5 MET at 100% precision** (D-073). The `experience_years`

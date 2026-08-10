@@ -4,16 +4,17 @@
 > **If it disagrees with the repo, the repo wins** — fix this file and note the correction in
 > `DECISIONS.md`. Plan: `PROGRAM.md`. Numbers: `METRICS.md`. Rationale: `DECISIONS.md`. What shipped:
 > `CHANGELOG.md`.
+>
+> `DECISIONS.md` and `METRICS.md` each carry an **index spanning themselves and a closed archive**
+> (`*-ARCHIVE.md`, D-108). Read the index, then the one range you need — never the whole file.
 
 **This file states only what is true now.** It carries no commit sha and no commit count on purpose — both
 go stale inside a single session, and a cold session following the ritual hits the disagreement on its first
 check (D-017). `git log --oneline -1` is the authority.
 
-**Rewritten 2026-08-10**, from 1,387 lines to this. It had accumulated ten sessions of narrative —
-per-session retrospectives, frozen snapshots of resolved questions, superseded headers stacked on top of one
-another — which is *history*, and history belongs in `DECISIONS.md` / `CHANGELOG.md` / `METRICS.md`, all of
-which already held it. Nothing had to be moved out first. The previous version is in git if you want the
-prose. CLAUDE.md's rule is the reason: a file that narrates its own history stops being read.
+**Rewrite this file, never prepend to it.** It reached 1,387 lines by stacking superseded headers and
+per-session retrospectives — history, which belongs in `DECISIONS.md` / `CHANGELOG.md` / `METRICS.md`. Git
+has every previous version.
 
 ---
 
@@ -24,7 +25,8 @@ item 4). `make check` **exit 0**: 3822 passed, 1 deselected, `generalization: OK
 clean, 4m42s, in a detached worktree pinned to the commit. Decisions **D-103 … D-107**.
 
 **It is committed to local `main` and deliberately NOT pushed, and it has had no independent review.**
-Seven commits sit ahead of `origin/main`. Slice 1, a comparable checkpoint, went to a branch and merged only
+Several commits sit ahead of `origin/main` — `git rev-list --count origin/main..main` is the authority, and
+a number written here goes stale the same day (D-017). Slice 1, a comparable checkpoint, went to a branch and merged only
 after a three-reviewer fresh-context review (D-095) plus Mit's explicit authorization; this slice was
 committed straight to `main` under standing "commit freely" permission, which is a process divergence worth
 naming rather than discovering. **The owed step is a fresh-context whole-branch review before pushing** —

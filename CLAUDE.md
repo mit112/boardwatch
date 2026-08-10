@@ -29,9 +29,17 @@ followed — keep incidents out of this file.
 |---|---|
 | `docs/program/STATE.md` | **Read first.** Current standing. Rewritten every session. |
 | `docs/program/PROGRAM.md` | Phases, measurable gates, scope, departures from job-apps' roadmap. |
-| `docs/program/DECISIONS.md` | Append-only decision log. Context · choice · alternatives rejected. |
-| `docs/program/METRICS.md` | Per-run numbers. Gates are checked here. |
+| `docs/program/DECISIONS.md` | Append-only decision log. Context · choice · alternatives rejected. Holds D-077 onward, and **the index for both decision files**. |
+| `docs/program/DECISIONS-ARCHIVE.md` | D-001 … D-076, verbatim. **Closed** — never append here. |
+| `docs/program/METRICS.md` | Per-run numbers. Gates are checked here. Holds the live tables, the P6-era records, and **the index for both metrics files**. |
+| `docs/program/METRICS-ARCHIVE.md` | The closed P0–P5 session records. **Closed** — never append here. |
 | `CHANGELOG.md` | Authoritative for what actually shipped. |
+
+**Neither log is read end to end** — together they are ~100k tokens. Each live file opens with an index
+spanning itself and its archive: find the entry or section you want, then read only that range with
+`sed -n '<start>,<end>p'`. Line numbers drift as entries are appended, so confirm one with
+`grep -n` before trusting it. Cross-references are by number (`D-028`), never by file, so they resolve
+across the split.
 
 `.agent/` and `.superpowers/` are gitignored working material — useful context, **not** a source of truth
 for released behaviour.

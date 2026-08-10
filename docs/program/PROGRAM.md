@@ -204,8 +204,8 @@ boxes (Typst-native: page count honestly stands in for the vacuous LaTeX concept
 per lead; and an injected compile failure demonstrably falls back to untailored rather than losing the
 lead. Evidence: deterministic tests pinning every catalog branch, plus a real-store dogfood 2026-08-07
 exercising both the FATAL/drop path (live default `resume_max_pages=1` against Mit's real 2-page résumé)
-and the 100%-PDF path (isolated store copy at `resume_max_pages=2`) — full record in `METRICS.md`
-§"Session 9 — P1a dogfood" and `DECISIONS.md` D-032.
+and the 100%-PDF path (isolated store copy at `resume_max_pages=2`) — full record in `METRICS-ARCHIVE.md`
+§"Session 9 — P1a dogfood" and `DECISIONS-ARCHIVE.md` D-032.
 
 ### P2 — Profile object and the keystone invariant
 
@@ -280,7 +280,7 @@ JD containing "we are unable to sponsor work visas" (already met, D-035); **0** 
 declared-field list; **0** INELIGIBLE verdicts lack a span; per-rule abstain rate reported for all rules,
 with `not_applicable` distinguished from `never_fired`. The dropped "three **different** verdicts" clause
 is **deferred, not retired** — it is a gate clause of item 8, the onboarding gatherer. Numbers in
-`METRICS.md` §"Gate P2".
+`METRICS-ARCHIVE.md` §"Gate P2".
 
 ### P3 — One command, unattended (live gap closed)
 
@@ -606,8 +606,10 @@ needs a drain.
 |---|---|---|
 | `docs/program/PROGRAM.md` | This file — phases, gates, scope, disagreements | On phase change or gate revision |
 | `docs/program/STATE.md` | **Read first.** Current phase, shipped, next, blocked, open questions | **Every session, without exception** |
-| `docs/program/DECISIONS.md` | One entry per architectural decision: context, choice, alternatives rejected | Append-only |
-| `docs/program/METRICS.md` | Per-run numbers so gates are checkable over time | Every run |
+| `docs/program/DECISIONS.md` | One entry per architectural decision: context, choice, alternatives rejected. D-077 onward, plus the index spanning both decision files | Append-only |
+| `docs/program/DECISIONS-ARCHIVE.md` | D-001 … D-076, verbatim (D-108) | Closed |
+| `docs/program/METRICS.md` | Per-run numbers so gates are checkable over time. Live tables, P6-era records, plus the index spanning both metrics files | Every run |
+| `docs/program/METRICS-ARCHIVE.md` | The closed P0–P5 session records (D-108) | Closed |
 | `CLAUDE.md` | Session-start ritual + repo conventions | Rarely |
 
 ---
