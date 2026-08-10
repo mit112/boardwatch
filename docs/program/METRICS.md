@@ -54,13 +54,14 @@ reports drift without writing, and `make check` depends on it (D-109).
 | METRICS-ARCHIVE.md | 1047 | Session — 2026-08-08 (P5 run #2 — disjunctive fix, Gate P5 MET at 100%; D-073) |
 | METRICS-ARCHIVE.md | 1084 | Session — 2026-08-08 (D-071b final eligibility gate build — no answer-key number changes) |
 | METRICS-ARCHIVE.md | 1120 | Gate P2 — 2026-08-08 · field-tier mechanism (P2 item 4, D-075). **MET AS RECONCILED** |
-| METRICS.md | 67 | Run log |
-| METRICS.md | 95 | Acceptance run |
-| METRICS.md | 106 | Session — 2026-08-09/10 · P6 Slice 1 design + plan. **No build, no gate movement.** |
-| METRICS.md | 132 | Session — 2026-08-10 · P6 Slice 1 BUILT (unattended run). Branch `p6-slice1`, not merged. |
-| METRICS.md | 342 | 2026-08-10 — P6 Slice 1 on the LIVE store (first real backfill) + Gate P6 clause 4 |
-| METRICS.md | 381 | Session 2026-08-10 (later) — P6 Slice 2: the durable decision ledger, its drain, and job regrouping |
-| METRICS.md | 474 | Session — 2026-08-10 (later) · D-109, the program-index gate. No phase gate moved. |
+| METRICS.md | 68 | Run log |
+| METRICS.md | 96 | Acceptance run |
+| METRICS.md | 107 | Session — 2026-08-09/10 · P6 Slice 1 design + plan. **No build, no gate movement.** |
+| METRICS.md | 133 | Session — 2026-08-10 · P6 Slice 1 BUILT (unattended run). Branch `p6-slice1`, not merged. |
+| METRICS.md | 343 | 2026-08-10 — P6 Slice 1 on the LIVE store (first real backfill) + Gate P6 clause 4 |
+| METRICS.md | 382 | Session 2026-08-10 (later) — P6 Slice 2: the durable decision ledger, its drain, and job regrouping |
+| METRICS.md | 475 | Session — 2026-08-10 (later) · D-109, the program-index gate. No phase gate moved. |
+| METRICS.md | 516 | Session — 2026-08-10 (later still) · The P6 Slice 2 review (D-110). No phase gate moved. |
 
 ---
 
@@ -388,7 +389,7 @@ delta is real duplicates, not over-suppression.
 | Tests | **3822 passed**, 1 deselected |
 | `generalization` | OK · ruff clean · `mypy --strict` clean (190 files) |
 | Wall time | **4m42s**, detached worktree pinned to `8a70f36` |
-| Schema head after | `p6_job_dispositions` |
+| Schema head after | `p6_job_dispositions` — **in the REPO.** The live store is still at `p6_posting_identities` and has no `job_dispositions` table; the live figures elsewhere in this section are Slice 1's |
 
 A first gate run at `6086e07` came back **exit 2 — 4 failed, 3811 passed**, and was right. All four were one
 class: a caller that ranks twice against the same corpus, now getting a second answer that hides what the
@@ -509,3 +510,93 @@ here and neither entry resolves it** — that is Mit's call, still open. The doc
 three files enumerating `make check`'s contents that had gone stale (`CONTRIBUTING.md`, `AGENTS.md`,
 `.github/PULL_REQUEST_TEMPLATE.md`), which is the fourth time a claim in this repo has needed fixing in more
 places than the change that invalidated it touched.
+
+---
+
+## Session — 2026-08-10 (later still) · The P6 Slice 2 review (D-110). No phase gate moved.
+
+**Gates run.** Three full `make check` runs, each in a detached worktree pinned to its commit.
+
+| Commit | What it covered | Result |
+|---|---|---|
+| `b4d18b4` | baseline before any fix — the reviewed tree as built | **exit 0** · 3837 passed, 1 deselected, coverage 95.08%, 5m04s |
+| `769ceb8` | the code fixes | **exit 0** · 3845 passed, 1 deselected, coverage 95.06%, 4m47s |
+| final | code fixes + docs + the three reconciled tests | recorded below |
+
+The `769ceb8` run is +8 tests on the baseline and −0.02pp coverage; the new tests are 3 regroup/ledger store
+cases, 3 parametrised refusal-classification cases and 2 caller cases.
+
+**One gate failure worth recording, because it was self-inflicted.** The first attempt at the final gate
+exited **2** on `generalization: 2 violation(s)` — a home-directory absolute path in
+`docs/superpowers/specs/…-design-review.md`. Those files were pre-existing **untracked** working material from
+the previous session, and a `git add -A` in this session committed them. Untracked and gitignored are not the
+same thing, and `add -A` does not know the difference. Fixed by `git rm --cached` + amend; the files are back
+to untracked and still on disk. **The generalization checker caught working material entering the repo, which
+is exactly its job** — worth noting as the check earning its keep rather than as noise.
+
+**Review yield — four reviewers, all fresh-context, dispatched concurrently.**
+
+| Reviewer | Raised | Real | Wrong / rejected |
+|---|---|---|---|
+| diff (whole code range) | 7 | 7 | 0 — but its "regrouping is unreachable" reasoning was half wrong (see below) |
+| ranker-callers tracer | 5 + 4 test findings | all | 0 |
+| schema / hot-path auditor | 6 | 6 | 0 BLOCKER/MAJOR found; its value was 3 **corrections to claims** |
+| docs-only | 5 MAJOR + 11 MINOR | all | 0 |
+
+**Two BLOCKERs and five MAJORs were real.** The two BLOCKERs — `eligibility gate request` consuming the
+shortlist it judges, and a transient `tectonic` failure earning a permanent `skipped` — were each found
+independently by two reviewers. The `bwd` breakage (zero folders built per day, for seven days) came only from
+the callers tracer, which was the reviewer given the narrowest brief.
+
+**Measured, not asserted.**
+
+- The permanence CHECK: **12/12** shapes agree with intent on **both** an Alembic-migrated and a
+  `create_all` database, by raw `sqlite3` INSERT, with rejections attributed by constraint name. The rendered
+  `CREATE TABLE` text is character-identical for all three CHECKs. **And D-103's stated reason for that form
+  was wrong** — a truth table against a real naive-CHECK table shows the shape it names is *rejected*
+  (`0 = 1`), while what the naive form admits is `(seen, NULL, NULL)`, a `seen` row that never expires and
+  that `stale_dispositions` cannot list. See D-110.
+- The identity write in the scan hot path, N=3000 (Workday's own `_MAX_PAGES 150 × _PAGE_LIMIT 20`), 4.2 KB
+  bodies, statements counted with a `before_cursor_execute` hook:
+
+  | path | wall | queries | Δ |
+  |---|---|---|---|
+  | INSERT, identity OFF | 1.717 s | 15,002 (5.00/posting) | — |
+  | INSERT, identity ON | 2.204 s | 21,002 (7.00/posting) | **+0.487 s (+28.4%), +2.00 q/posting** |
+  | REVISE, identity OFF | 1.401 s | 12,002 (4.00/posting) | — |
+  | REVISE, identity ON | 3.441 s | 21,002 (7.00/posting) | **+2.039 s (+145.5%), +3.00 q/posting** |
+
+  `EXPLAIN QUERY PLAN` confirms the per-posting read is an index SEARCH on
+  `UNIQUE(posting_id, kind, algorithm_version)`, so the cost is O(postings this board listed × log corpus) and
+  does **not** scale with the corpus. D-105's cost claim holds. +2 s on the worst board against a
+  network-bound scan is not material.
+- Failure modes executed against the scan path: empty/whitespace/symbol-only title, empty body, `[]` and
+  `["", "  "]` locations, 500 locations, a 2 MB body, emoji/RTL/NFD unicode — **all OK**. Lone surrogates
+  raise `UnicodeEncodeError` but did so **before** this change too (verified by monkeypatching the identity
+  write to a no-op), so nothing newly reachable.
+- The regroup refusal guard, six scenarios in a migrated store: control merges; non-survivor tracked refuses
+  `tracked_job` with **0** events written and both anchors unchanged; survivor tracked refuses nothing;
+  non-survivor artifact refuses; artifact with NULL `job_id` does not protect; missing anchor refuses
+  `missing_job_anchor`. All four D-104 claims verified.
+- The two defects this session found itself were **reproduced in isolated stores before and after the fix**:
+  a `built` decision orphaned on a job nothing anchors, and a trail event written for an `UPDATE` that matched
+  0 rows.
+
+**Mutation checks.** Ignoring the fatal in the `seen` gate → the fatal test goes red. Restoring `gate
+request`'s consume → its test goes red. Recording `skipped` for every `LeadArtifactError` → 2 of the 3
+parametrised refusal cases go red. **A `git checkout` during that work discarded four uncommitted `runner.py`
+fixes** — the trap already on record — and they were re-applied. Commit before mutating.
+
+**Corrections to previously-recorded numbers**, all verified against the repo: D-108's index read-back was
+**108/108**, not 107/107 (the paragraph whose point is that an unchecked generated number is what bites this
+repo); the post-split `DECISIONS.md` was **1,235** lines, not 1,175 (`DECISIONS.md`) or 1,234 (`CHANGELOG.md`);
+the pre-rewrite `STATE.md` was **1,386** lines, not 1,387; D-103's blast radius was four tests in **three**
+modules, not four; `record_artifact` has **three** call sites in `src/`, not two. The archive split itself
+re-verified clean and independently: entry bodies 322,260 bytes / SHA-1 `472dec65…`, METRICS 96,063 bytes /
+SHA-1 `adcca125…`, identical D-number sets, nothing lost or duplicated.
+
+**Both external second opinions produced nothing.** GPT-5.x via the Codex runtime returned no content
+(zero assistant messages in the session transcript), and DeepSeek `deepseek-v4-flash` consumed its entire
+`max_tokens` as `reasoning_tokens` twice — 8,000 then 32,000 — emitting an empty `content` both times.
+Recorded so the next session does not spend the same time on them; per Mit, hand him a review prompt to run
+manually instead.
