@@ -1644,12 +1644,17 @@ publishes to **PyPI, GHCR and GitHub Releases** in one step. A PyPI version, onc
 even after deletion, so the tag push is the single irreversible act in this repo and belongs to the owner.
 Preparing the release and performing it are separate, and only the first is automatable.
 
-**A caveat that will otherwise be misread as success.** `release.yml` runs `make check` on
-`ubuntu-latest` — the same runner pool that, per the standing CI failure, never acquires. Pushing the tag
-is expected to **queue forever rather than publish**. The tag is harmless and the workflow re-runnable once
-runners work. **Verify a release on PyPI, never in the Actions tab**, and never read a silent workflow as a
-successful publish — checking `status` rather than mere presence is the same rule the CI row already
-carries.
+**A prediction made here was wrong, and the correction is the useful part.** This entry originally said
+`release.yml` would "queue forever rather than publish", reasoning that it runs `make check` on
+`ubuntu-latest` — the same pool the standing CI failure names. Mit pushed the tag and **the release
+workflow acquired a runner within seconds**. So the CI failure is specific to `ci.yml`, not repo-wide, and
+generalising it was an inference from one workflow presented as a property of the account. The tag
+(`v0.3.0` → `426f45c`) was still in `build + smoke test` ~13 minutes later with PyPI answering 404, so the
+*outcome* remained unconfirmed when the session ended.
+
+What survives the correction is the verification rule, which was right for a different reason:
+**verify a release on PyPI, GHCR and the Releases page — never in the Actions tab**, and never read a
+silent or still-running workflow as a successful publish. Check `status`, not mere presence.
 
 **Cutting the release is what surfaced that the user-facing docs still described Typst.** D-058/D-060
 replaced Typst with tectonic eleven decisions ago, and the program docs were updated — but `README.md`

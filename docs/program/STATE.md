@@ -51,9 +51,15 @@ task. So the useful work is, in order: (1) start accumulating real daily runs, w
 prompt is written at `.agent/review-prompt-p6-slice3.md` (gitignored); (3) P2 item 8 or P3 slice 5, both
 owner-gated and both wanting their own context window.
 
-**0.3.0 is cut but not published.** Version, changelog and lockfile are on `main`; the tag is deliberately
-not pushed, because pushing `v*` publishes to PyPI/GHCR/GitHub Releases irreversibly. See the blockers
-table for the command and the caveat.
+**0.3.0 is cut and TAGGED (`v0.3.0` → `426f45c`); the publish was still running when this session ended.**
+Version, changelog and lockfile are on `main`. Cutting it is also what surfaced that `README.md` and
+`docs/configuration.md` still described **Typst** — replaced by tectonic eleven decisions earlier — and
+that `config show` reached only 4 of 10 settings, `seen_ttl_days` among them (D-112). **Confirm the
+publish on PyPI first thing next session.**
+
+**Next session's first input: Mit's Codex review of Slice 3.** He is running it externally; the prompt is
+`.agent/review-prompt-p6-slice3.md` (gitignored). Take the findings back and treat them like D-110's —
+in-session reviewers already found two BLOCKERs here that reading alone had missed.
 
 **One earlier review fix does not ship.** `bwd` lives in `.agent/bin/bw-daily`, which is gitignored, so its
 `top --no-record` fix is local to this machine. The *defect* was in shipped behaviour and the shipped fix is
@@ -126,8 +132,8 @@ since D-035, unchanged by everything since.
 |---|---|---|
 | **Three `resume.yaml` bullets exceed the 220-char layout gate** | Forces an untailored-master degrade on every posting. The file also lacks Knowledge Forge, has stale `skill_groups`, and an empty extracurricular block. **Mit pins `resume_max_pages=1` — do not advise setting it to 2.** | Mit (content) |
 | **P2 item 8 — the onboarding gatherer** | The thing that would make the field tier fire for anyone. D-054 forbids us authoring non-tech field content, so it must be gathered per user. Needs its own brainstorm | owner-gated |
-| **0.3.0 is cut but NOT PUBLISHED** | `CHANGELOG.md` and `pyproject.toml` say `0.3.0`, the 14 duplicated subsections are merged into one triple, and the wheel builds and installs clean in an isolated venv reporting `0.3.0`. **No tag is pushed**, and that is the whole remaining step: `.github/workflows/release.yml` fires on `v*` and publishes to PyPI, GHCR and GitHub Releases, which is irreversible. `git tag v0.3.0 && git push origin v0.3.0` — **but see the row below first** | Mit (publish) |
-| **The release workflow will queue forever, like CI** | `release.yml` runs `make check` on `ubuntu-latest`, the same runner pool that never acquires. Pushing the tag is expected to hang rather than publish. The tag itself is harmless and re-runnable once runners work; just do not read a silent workflow as a successful publish. **Verify on PyPI, not in the Actions tab** | GitHub |
+| **0.3.0 tag is pushed; publish outcome UNCONFIRMED** | Tag `v0.3.0` → `426f45c`, pushed by Mit 2026-08-10 ~17:08 UTC. The release workflow **did acquire a runner** and was still in `build + smoke test` (its own `make check`) ~13 min later; `https://pypi.org/pypi/boardwatch/0.3.0/json` still answered **404** at that point. **First action next session: confirm on PyPI, GHCR and the Releases page — not in the Actions tab.** If the build failed, fix and re-tag; a PyPI version is only burned once something actually uploads | verify |
+| **CI never acquires a runner — but `release.yml` DID** | The standing failure is real for `ci.yml` (queues forever; `gh workflow run ci` 422s because it has no `workflow_dispatch`). It is **not** repo-wide: `release.yml` picked up a runner within seconds. A prediction that the release would queue was made this session and was **wrong** — do not generalise the CI failure to every workflow. Local `make check` remains the authority for `main` | GitHub |
 | **P3 Slice 5 — LLM economics** | Substantial and design-heavy; use a fresh context window | P3 |
 | **P3 item 8 — cross-OS two-writer WAL test** | A same-OS test proves nothing; needs a Docker-Linux-container + macOS-host harness. The documented-stance half shipped (D-041) | P3 |
 | **A `SIGKILL`ed run leaves a dangling `runs` row** | `try/finally` covers exceptions and Ctrl-C, not SIGKILL. Largely drained by the age-based reaper (D-046); a heartbeat-column reaper is the deferred correct fix | P3 |

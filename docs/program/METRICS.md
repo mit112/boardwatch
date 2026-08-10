@@ -54,15 +54,16 @@ reports drift without writing, and `make check` depends on it (D-109).
 | METRICS-ARCHIVE.md | 1047 | Session — 2026-08-08 (P5 run #2 — disjunctive fix, Gate P5 MET at 100%; D-073) |
 | METRICS-ARCHIVE.md | 1084 | Session — 2026-08-08 (D-071b final eligibility gate build — no answer-key number changes) |
 | METRICS-ARCHIVE.md | 1120 | Gate P2 — 2026-08-08 · field-tier mechanism (P2 item 4, D-075). **MET AS RECONCILED** |
-| METRICS.md | 69 | Run log |
-| METRICS.md | 97 | Acceptance run |
-| METRICS.md | 108 | Session — 2026-08-09/10 · P6 Slice 1 design + plan. **No build, no gate movement.** |
-| METRICS.md | 134 | Session — 2026-08-10 · P6 Slice 1 BUILT (unattended run). Branch `p6-slice1`, not merged. |
-| METRICS.md | 344 | 2026-08-10 — P6 Slice 1 on the LIVE store (first real backfill) + Gate P6 clause 4 |
-| METRICS.md | 383 | Session 2026-08-10 (later) — P6 Slice 2: the durable decision ledger, its drain, and job regrouping |
-| METRICS.md | 476 | Session — 2026-08-10 (later) · D-109, the program-index gate. No phase gate moved. |
-| METRICS.md | 517 | Session — 2026-08-10 (later still) · The P6 Slice 2 review (D-110). No phase gate moved. |
-| METRICS.md | 607 | Session — 2026-08-10 (later still ×2) · P6 Slice 3, items 5 and 6 (D-111). Gate P6 unchanged: still 2 of 4. |
+| METRICS.md | 70 | Run log |
+| METRICS.md | 98 | Acceptance run |
+| METRICS.md | 109 | Session — 2026-08-09/10 · P6 Slice 1 design + plan. **No build, no gate movement.** |
+| METRICS.md | 135 | Session — 2026-08-10 · P6 Slice 1 BUILT (unattended run). Branch `p6-slice1`, not merged. |
+| METRICS.md | 345 | 2026-08-10 — P6 Slice 1 on the LIVE store (first real backfill) + Gate P6 clause 4 |
+| METRICS.md | 384 | Session 2026-08-10 (later) — P6 Slice 2: the durable decision ledger, its drain, and job regrouping |
+| METRICS.md | 477 | Session — 2026-08-10 (later) · D-109, the program-index gate. No phase gate moved. |
+| METRICS.md | 518 | Session — 2026-08-10 (later still) · The P6 Slice 2 review (D-110). No phase gate moved. |
+| METRICS.md | 608 | Session — 2026-08-10 (later still ×2) · P6 Slice 3, items 5 and 6 (D-111). Gate P6 unchanged: still 2 of 4. |
+| METRICS.md | 721 | Session — 2026-08-10 (later still ×3) · 0.3.0 cut and tagged (D-112). No phase gate moved. |
 
 ---
 
@@ -714,3 +715,54 @@ immediately by a red suite.
   Re-verified read-only this session. A regrouped store would read 23,887.
 - `PROGRAM.md` §3.P6 item 5 cites "§6, correction 3", but §6 is now *Program machinery* and carries no
   numbered corrections. The cross-reference is stale; the item text stands on its own.
+
+---
+
+## Session — 2026-08-10 (later still ×3) · 0.3.0 cut and tagged (D-112). No phase gate moved.
+
+**Gate.** `make check` in a detached worktree, twice more as the release changed: **exit 0, 3,908 passed,
+95.07%** on the doc-corrected slice, then **exit 0, 3,911 passed, 95.07%** on the final release commit
+(`0834f81`). Session total **+66 tests** over the `5f0150d` baseline of 3,845.
+
+### The changelog merge
+
+| | Before | After |
+|---|---|---|
+| Subsections in the release section | **14** (`Added` ×5, `Changed` ×5, `Fixed` ×4) | **3** |
+| Top-level bullets | 70 | **67** (3 removed as internal-only) |
+
+The bullet count was **asserted equal** across the merge rather than eyeballed, and the merge refused
+outright if any content sat outside a subsection. The 3 removed described the docs-index tooling, a
+`docs/program/` markdown file, and the decision-log archive split — none of which is in the wheel
+(`hatchling` builds `src/boardwatch` only).
+
+### Release verified through a different path than the one that produced it
+
+`make check` proves the source tree, not the artifact. So: `uv build` → both artifacts named `0.3.0` →
+wheel installed into a **fresh isolated venv** → it reported `0.3.0` and carried `top --include-applied`
+and `run --no-check-liveness`. That is the check that would have caught a version bump that did not
+propagate.
+
+### What cutting the release found — 3 defects, none of them in the changelog
+
+| Defect | Evidence |
+|---|---|
+| `README.md` + `docs/configuration.md` still described **Typst** | `--format typst` does not exist (real value `latex`, `cli/tailor_cmd.py:106`); PDF called "best-effort" when P1a made it a hard gate; output named `.{typ,pdf}`, actually `.{tex,pdf}`. Replaced by tectonic in D-058/D-060, **11 decisions earlier** |
+| `config show`/`set` reached **4 of 10** scalar settings | `seen_ttl_days` — shipped in this release — was invisible and unsettable. So were `busy_timeout_ms`, `reap_stale_after_hours`, `location_filter_mode`, `zero_skill_coverage_prior`, `recency_half_life_days` |
+| 6 changelog claims falsified by the release itself | "nothing writes identities yet", "dedup has never run", "until dedup lands in P6", "the zero-output guard is not built here", "needs the reaper that P3 owns", and a stale Gate P6 line |
+
+The `config` fix's own test found a **sixth** missing key after five had been listed by hand — which is
+the argument for the detector over the care. **Third hand-maintained mirror to bite in one session**,
+after the ranker's six drop sites and the funnel's tailor stage.
+
+### The tag, and a prediction that was wrong
+
+`v0.3.0` → `426f45c`, pushed by Mit at **17:08 UTC**. This session predicted the release workflow would
+**queue forever** like `ci.yml`; it **acquired a runner within seconds**. The CI failure is specific to
+`ci.yml`, not repo-wide. At ~13 min the run was still in `build + smoke test` and
+`pypi.org/pypi/boardwatch/0.3.0/json` answered **404**, so the publish outcome is **unconfirmed** —
+verify on PyPI, not in the Actions tab.
+
+**One self-inflicted gate failure**, recorded so it is not read as a code failure: a `make check` exited 2
+with `FileNotFoundError: /private/tmp/bw-gate-rel2` and **zero test failures**, because the worktree was
+removed while its own run was still in flight. Remove a gate worktree only after its run exits.
