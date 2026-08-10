@@ -749,7 +749,25 @@ changes adopted, none contested.
 ## Next action
 
 **P6 Slice 1 is the active item — PLANNING IS COMPLETE, nothing built (2026-08-10, planning
-session 2). The next action is to execute Task 1.** The design and the 9-task TDD plan live at
+session 2). The next action is to execute Task 1.**
+
+> **An UNATTENDED run of this plan was scheduled for 03:10 on 2026-08-10** (launchd agent
+> `com.mitsheth.boardwatch-p6`; runner `~/.claude/scheduled/p6-slice1-run.sh`, prompt
+> `~/.claude/scheduled/p6-slice1-prompt.md`, logs `~/.claude/scheduled/logs/`). **If you are that
+> run, ignore this box and execute the plan.** If you are a later session: check
+> `~/.claude/scheduled/logs/p6-status-*.md` and `git log --oneline main..p6-slice1` BEFORE
+> starting anything, or you risk redoing work that already exists.
+>
+> Three constraints were imposed on that run and they bound what you can assume about its output:
+> it works on branch **`p6-slice1`** and is forbidden to merge to `main` or open a PR; it may only
+> touch a **copy** of the store, never the live data dir; and **nothing it produced has been
+> reviewed by anyone.** Treat its commits as unreviewed work in progress. Per standing practice a
+> checkpoint this size wants a fresh-context whole-branch Opus 5 review before merging — the P2
+> item 4 review caught a CRITICAL that every per-task review had missed. The run may also have
+> stopped part-way (nine tasks × a 5–17 min `make check`, started at 98% of the 5h quota window);
+> a partial result is the expected case, not a failure.
+
+The design and the 9-task TDD plan live at
 `.superpowers/sdd/2026-08-09-p6-liveness-dedup/` (gitignored), with `HANDOFF.md` there stating
 exactly where to resume; the durable records are **D-077** (design) and **D-078** (the plan made
 executable). Slice 1 covers P6 items 1–3 (posting-identity table, allowlist URL normalization,
