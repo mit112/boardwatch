@@ -20,12 +20,16 @@ runs:
     # bundle. `TECTONIC_CACHE_DIR` is honoured by 0.17.0 and collapses three per-OS cache locations
     # (which tectonic's own docs get wrong for at least two of them) into one path this cache step
     # and every later step can name.
+    #
+    # Under RUNNER_TEMP, deliberately NOT the workspace: `release.yml` runs `uv build` after this,
+    # and the bundle is ~42 MB of untracked files that a source-distribution build would be within
+    # its rights to sweep in.
     - shell: bash
-      run: echo "TECTONIC_CACHE_DIR=${{ github.workspace }}/.tectonic-cache" >> "$GITHUB_ENV"
+      run: echo "TECTONIC_CACHE_DIR=${{ runner.temp }}/tectonic-cache" >> "$GITHUB_ENV"
 
     - uses: actions/cache@v4
       with:
-        path: ${{ github.workspace }}/.tectonic-cache
+        path: ${{ runner.temp }}/tectonic-cache
         key: tectonic-${{ inputs.tectonic-version }}-${{ runner.os }}-v1
 
     - name: linux — poppler from apt, tectonic from the pinned release
@@ -96,6 +100,7 @@ runs:
     # confusing test failures deep in the suite instead of one red step that names the cause.
     - name: prove both binaries work and warm the bundle
       shell: bash
+      working-directory: ${{ runner.temp }}
       run: |
         set -euxo pipefail
         tectonic --version
