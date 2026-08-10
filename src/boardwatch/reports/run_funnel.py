@@ -573,6 +573,9 @@ def build_run_funnel(
     fatal: str | None = None,
 ) -> RunFunnel:
     """Assemble the funnel from counts. Pure: no engine, no clock, no filesystem."""
+    # Normalized once, before the stages: the tailor stage needs `dead` to account for the leads
+    # liveness withheld, and an unprobed run must contribute 0 there rather than crash on None.
+    liveness = liveness or LivenessCheck(checked=None, dead=None, unknown=None)
     verdicts = dict(corpus.by_verdict)
     eligible = verdicts.pop("eligible", 0)
     ineligible = verdicts.pop("ineligible", 0)
@@ -762,7 +765,18 @@ def build_run_funnel(
             # ran, how many leads it would have handed over is unknown rather than zero.
             entered=None if shortlist is None else shortlist.shortlisted,
             advanced=tailored,
-            drops=(Drop(reason="tailor_failed", count=tailor_failed),),
+            drops=(
+                Drop(reason="tailor_failed", count=tailor_failed),
+                Drop(
+                    reason="withheld_not_live",
+                    count=liveness.dead or 0,
+                    note=(
+                        "re-fetched immediately before the render and answered 404/410, so it "
+                        "never entered the tailor loop (P6 item 6). NOT a render failure — a "
+                        "third terminal state, which is why it is its own bucket"
+                    ),
+                ),
+            ),
         ),
         Stage(
             name="pdf",
@@ -849,7 +863,7 @@ def build_run_funnel(
         sources=tuple(sources),
         source_totals=source_totals,
         stub_rate=StubRate(open_postings=corpus.open_postings, stubs=stub_postings),
-        liveness=liveness or LivenessCheck(checked=None, dead=None, unknown=None),
+        liveness=liveness,
         fabrication=build_fabrication_counters(rewrite_rows),
         coverage=build_coverage_summary(coverages),
         abstain=abstain,

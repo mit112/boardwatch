@@ -12,7 +12,7 @@ from pathlib import Path
 
 import pytest
 from rich.console import Console
-from sqlalchemy import insert, select
+from sqlalchemy import insert
 
 from boardwatch.cli.top_cmd import rank_open_postings
 from boardwatch.core.clock import utcnow
@@ -84,12 +84,12 @@ def _ready(data_dir: Path, count: int) -> list[tuple[int, int]]:
 
 def _rank(data_dir: Path, **kwargs: object):
     settings = load_settings(data_dir=data_dir)
+    kwargs.setdefault("record_surfaced", False)
+    kwargs.setdefault("limit", 10)
     return rank_open_postings(
         get_engine(data_dir),
         settings,
-        limit=10,
         output_console=Console(quiet=True),
-        record_surfaced=False,
         **kwargs,  # type: ignore[arg-type]
     )
 
@@ -163,6 +163,69 @@ def test_the_drain_shows_the_row_and_names_the_status(env: Path) -> None:
     assert results.visible[0].applied_as == "interviewing"
 
 
+def test_the_drain_does_not_advance_the_queue_even_though_it_SHOWS_the_row(  # noqa: N802
+    env: Path,
+) -> None:
+    """The asymmetry is deliberate and is the mirror of D-110's rule. A drained row IS put in
+    front of the operator, but as an audit of a suppression rather than as a lead — recording it
+    `seen` would let `top --include-applied` consume a queue it exists to inspect. Matches how
+    the duplicate and handled drains already behave."""
+    seeded = _ready(env, 1)
+    _apply(env, seeded[0][1], "applied")
+
+    results = _rank(env, include_applied=True)
+
+    assert [p.posting_id for p in results.visible] == [seeded[0][0]]
+    assert results.surfaced_job_ids == ()
+
+
+def test_the_drain_is_not_bounded_by_the_rank_cutoff(env: Path) -> None:
+    """A drain bounded by `limit` reaches only the suppressed rows that would also have ranked,
+    which is not a re-entry path for the bucket — and an unlistable suppression is a leak, not a
+    filter. Same reasoning as `--include-duplicates`."""
+    seeded = _ready(env, 3)
+    for _posting_id, job_id in seeded:
+        _apply(env, job_id, "applied")
+
+    results = _rank(env, include_applied=True, limit=1)
+
+    assert len(results.visible) == 3
+    assert results.hidden_below_cutoff == 0
+
+
+def test_a_new_attempt_does_NOT_release_an_earlier_submission(env: Path) -> None:  # noqa: N802
+    """Pins what the query actually does, because the natural reading of `--new-attempt` is the
+    opposite and the first version of this docstring got it wrong.
+
+    `WHERE status IN APPLIED_STATUSES` runs BEFORE the ordering, and `track add --new-attempt`
+    writes its row at `create_application`'s default `interested`, which the filter drops. So an
+    attempt 1 of `rejected` keeps governing. Intended — a rejected application still happened —
+    but it means the drain is `top --include-applied` or withdrawing the OLD attempt, never
+    starting a new one.
+    """
+    seeded = _ready(env, 1)
+    job_id = seeded[0][1]
+    _apply(env, job_id, "rejected")
+    _apply(env, job_id, "interested")  # what `track add --new-attempt` writes
+
+    results = _rank(env)
+
+    assert results.hidden_applied == 1
+    assert results.visible == []
+    assert _rank(env, include_applied=True).visible[0].applied_as == "rejected"
+
+
+def test_the_LATEST_submitted_attempt_names_the_suppression(env: Path) -> None:  # noqa: N802
+    """Ordering is load-bearing for the label the drain shows, and reversing it passed the whole
+    suite before this test existed."""
+    seeded = _ready(env, 1)
+    job_id = seeded[0][1]
+    _apply(env, job_id, "rejected")
+    _apply(env, job_id, "interviewing")
+
+    assert _rank(env, include_applied=True).visible[0].applied_as == "interviewing"
+
+
 def test_an_applied_job_is_never_surfaced_so_it_cannot_be_recorded_seen(env: Path) -> None:
     """`surfaced_job_ids` is what the pipeline turns into ledger writes after tailoring. A job
     filtered here must not appear in it, or the pipeline would record a `seen` decision about a
@@ -205,13 +268,24 @@ def test_applied_state_outranks_a_live_ledger_disposition(env: Path) -> None:
 
 def test_the_ranker_asks_the_applications_table_not_the_ledger(env: Path) -> None:
     """One fact, one home. Suppressing must not mirror the application into a disposition —
-    two rows for one fact can disagree, and only one of them has a drain the operator knows."""
-    seeded = _ready(env, 1)
+    two rows for one fact can disagree, and only one of them has a drain the operator knows.
+
+    Ranked with `record_surfaced=True` deliberately. With it False the ranker has no
+    `job_dispositions` writer at all, so an empty ledger is guaranteed for any implementation
+    and this test would earn its name by accident. True is the mode where the realistic
+    regression — the applied job leaking into `surfaced_job_ids` and earning a `seen` row —
+    can actually happen.
+    """
+    seeded = _ready(env, 2)
     _apply(env, seeded[0][1], "applied")
 
-    _rank(env)
+    results = _rank(env, record_surfaced=True)
 
     engine = get_engine(env)
     with engine.connect() as conn:
-        assert load_dispositions(conn) == {}
-        assert conn.execute(select(tables.job_dispositions)).all() == []
+        dispositions = load_dispositions(conn)
+    # The unsuppressed posting WAS surfaced and did earn a `seen` row — so the ledger writer
+    # demonstrably ran, and the applied job's absence below is a decision rather than a no-op.
+    assert dispositions[seeded[1][1]].disposition == "seen"
+    assert seeded[0][1] not in dispositions
+    assert results.hidden_applied == 1

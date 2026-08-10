@@ -16,24 +16,32 @@ URL at all — is `unknown`, and `unknown` is served.
 
 **What is deliberately NOT here: a closed-phrase catalog.** `PROGRAM.md` item 6 names "a saved
 body containing a closed phrase" as the AUTHORITATIVE signal, inherited from job-apps, which
-scraped HTML pages. boardwatch reads structured ATS APIs and every provider builds `body_text`
-from the payload's description field alone (`greenhouse` `content`, `ashby` `descriptionHtml`,
-`workable`/`workday` `description`/`jobDescription`, `lever`'s assembled sections,
-`smartrecruiters` `_body_text`). Page chrome — the "this posting is no longer accepting
-applications" banner — is structurally incapable of reaching that column. Measured against the
-live corpus 2026-08-10, a nine-phrase candidate catalog matched 11 of 23,455 open postings and
-**every one of the 11 was a false positive**: two Workday boilerplate conditionals ("If the job
-posting is no longer available then all roles have been filled"), one location restriction ("we
-are not accepting applications of candidates outside of New York"), and eight job descriptions
-for roles that handle purchase requisitions. Shipping that catalog as authoritative would have
-suppressed 11 live leads to catch none. Re-derive it with:
+scraped HTML pages. boardwatch reads structured ATS APIs, and every provider assembles
+`body_text` **only from employer-authored description fields of a JSON payload** — one field for
+greenhouse (`content`), ashby (`descriptionHtml`), workable and workday; two joined for lever
+(`descriptionPlain` + `additionalPlain`); three for smartrecruiters (`jobDescription`,
+`qualifications`, `additionalInformation`). No provider ever sees the rendered careers page, so
+page chrome — the "this posting is no longer accepting applications" banner a scraper would
+read — is structurally incapable of reaching that column.
+
+What *can* reach it is an employer writing closure-shaped prose inside the JD, and that is
+exactly what the measurement found. Against the live corpus 2026-08-10 a nine-phrase candidate
+catalog matched 11 of 23,455 open postings and **every one of the 11 was a false positive**: two
+Workday boilerplate conditionals ("If the job posting is no longer available then all roles have
+been filled"), one location restriction ("we are not accepting applications of candidates
+outside of New York"), and eight job descriptions for roles that handle purchase requisitions.
+Shipping that catalog as authoritative would have suppressed 11 live leads to catch none.
+Re-derive it with:
 
     sqlite3 "file:$DB?mode=ro" "select count(*) from postings where status='open'
       and lower(body_text) like '%no longer accepting%'"   -- and the other eight phrases
 
-Where a provider offers its own liveness flag the authoritative signal already exists and is
-already used: `providers/smartrecruiters.py` drops a posting whose detail payload says
-`active is False`. That is what "authoritative" looks like on an API corpus.
+One provider does expose a native liveness flag: `providers/smartrecruiters.py` drops a posting
+whose detail payload says `active is False`. That is what "authoritative" would look like on an
+API corpus — but it is **not** coverage for this gate, and the difference matters. It fetches
+detail payloads only for postings NOT already in the store, and only within `detail_fetch_budget`,
+so for the entire population liveness is about — postings already stored and being ranked — the
+flag is never re-read. It is a first-discovery filter on 1 of 6 providers, not a liveness check.
 """
 
 from __future__ import annotations
@@ -47,12 +55,14 @@ VERDICTS: tuple[str, ...] = ("alive", "dead", "unknown")
 
 # Closed catalog of why. Typed at the decision site so nothing downstream classifies a liveness
 # outcome by string-matching a message.
+# A run that was not probed produces no `Liveness` at all — the pipeline reports it through
+# `checked is None`, so there is deliberately no `not_probed` member here. A catalog entry
+# nothing emits is a bucket that cannot be audited.
 SIGNALS: tuple[str, ...] = (
     "refetch_gone",  # the only signal that yields `dead`
     "refetch_ok",
     "refetch_error",
     "no_url",
-    "not_probed",
 )
 
 # HTTP statuses that mean the resource is gone, as opposed to merely unavailable to us.
@@ -64,11 +74,17 @@ GONE_STATUSES = frozenset({404, 410})
 
 
 class UnknownLivenessVerdict(Exception):
-    """Raised at the decision site, so a bad verdict can never be recovered by string-match."""
+    """Raised at the construction site, so a bad value is never recovered by string-match.
 
-    def __init__(self, verdict: str) -> None:
-        super().__init__(f"{verdict!r} is not a liveness verdict")
+    One class, two fields, and the message names which one is wrong: a caller that catches this
+    can ask, and a human reading a traceback is not told "not a verdict" about a bad signal.
+    """
+
+    def __init__(self, *, verdict: str | None = None, signal: str | None = None) -> None:
+        bad = f"verdict {verdict!r}" if verdict is not None else f"signal {signal!r}"
+        super().__init__(f"{bad} is not in the liveness catalog")
         self.verdict = verdict
+        self.signal = signal
 
 
 @dataclass(frozen=True)
@@ -84,9 +100,9 @@ class Liveness:
 
     def __post_init__(self) -> None:
         if self.verdict not in VERDICTS:
-            raise UnknownLivenessVerdict(self.verdict)
+            raise UnknownLivenessVerdict(verdict=self.verdict)
         if self.signal not in SIGNALS:
-            raise UnknownLivenessVerdict(self.signal)
+            raise UnknownLivenessVerdict(signal=self.signal)
 
     @property
     def withholds(self) -> bool:

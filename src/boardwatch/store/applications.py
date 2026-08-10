@@ -115,9 +115,16 @@ def applied_job_ids(conn: Connection) -> dict[int, str]:
     set because the `--include-applied` drain shows it: "already applied" and "already
     rejected" are different things to be told about a lead you are looking at again.
 
-    When a job has several attempts, the LAST one by `attempt_no` wins — that is the attempt
-    the operator is currently living in, and `track add --new-attempt` exists precisely to
-    supersede an earlier one.
+    When a job has several attempts, the winner is the last **submitted** one by `attempt_no` —
+    the filter runs before the ordering. So `track add --new-attempt` does NOT supersede an
+    earlier submission: it writes a fresh row at `create_application`'s default `interested`,
+    which is outside the catalog, so an attempt 1 of `rejected` keeps governing and the job
+    stays suppressed as "already applied (rejected)".
+
+    That is the intended direction — the question this answers is "did this job already receive
+    an application?", and one that was rejected still did — but it means the drain for a
+    deliberate re-application is `top --include-applied`, or withdrawing the OLD attempt, not
+    starting a new one. Recorded because the natural reading of `--new-attempt` is the opposite.
     """
     rows = conn.execute(
         select(applications.c.job_id, applications.c.status)

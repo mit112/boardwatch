@@ -92,6 +92,19 @@ class RankedResults:
     identical on every valid input and no test can tell them apart. It still matters — with
     `len(rows)` a single deleted counter is caught; with the sum it is self-consistent and
     invisible.
+
+    **A new drop bucket has SIX hand-maintained mirror sites and only three of them are
+    checked by anything.** Counted honestly, because two successive reviews corrected this number
+    upward (D-111): this dataclass and its increment site; `pipeline/runner.py`'s mapping into
+    `ShortlistCounts`; `ShortlistCounts` itself and the shortlist stage's `Drop` list (both
+    `reports/run_funnel.py`); a `Drop` on the funnel's **tailor** stage as well if the bucket
+    removes postings *after* ranking, as liveness does; `_zero_output_guard` if the bucket can
+    legitimately explain an empty day; and `run_cmd.py::_shortlist_line`.
+
+    The stage `reconciled` identities catch a miss in the `Drop` lists and in the `runner.py`
+    mapping — at runtime, not statically. **Nothing catches a miss in `_shortlist_line`**, which
+    is the operator's only one-line summary, so that one is covered by a test instead
+    (`test_the_operator_summary_line_names_both_new_buckets`).
     """
 
     visible: list[RankedPosting]

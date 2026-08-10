@@ -78,22 +78,37 @@ def test_the_catalogs_are_closed_and_pinned() -> None:
     not one. Same for inventing a verdict outside the catalog."""
     assert GONE_STATUSES == frozenset({404, 410})
     assert VERDICTS == ("alive", "dead", "unknown")
-    assert set(SIGNALS) == {
-        "refetch_gone", "refetch_ok", "refetch_error", "no_url", "not_probed"
+    assert set(SIGNALS) == {"refetch_gone", "refetch_ok", "refetch_error", "no_url"}
+
+
+def test_every_signal_in_the_catalog_is_actually_emitted() -> None:
+    """A catalog entry nothing produces is a bucket that cannot be audited. `not_probed` was in
+    this catalog and was emitted by nothing — an unprobed run reports `checked is None` instead."""
+    emitted = {
+        verdict_for_status(1, 200).signal,
+        verdict_for_status(1, 404).signal,
+        verdict_for_failure(1, None, "x").signal,
+        verdict_without_url(1).signal,
     }
+    assert emitted == set(SIGNALS)
 
 
-@pytest.mark.parametrize(
-    ("verdict", "signal"),
-    [("gone", "refetch_ok"), ("alive", "body_says_closed")],
-)
-def test_an_out_of_catalog_value_raises_at_the_construction_site(
-    verdict: str, signal: str
-) -> None:
+def test_an_out_of_catalog_verdict_raises_and_names_the_VERDICT() -> None:  # noqa: N802
     """Typed at the raise site, so no caller downstream classifies a liveness outcome by
-    string-matching a message (CLAUDE.md)."""
-    with pytest.raises(UnknownLivenessVerdict):
-        Liveness(posting_id=1, verdict=verdict, signal=signal)
+    string-matching a message (CLAUDE.md). The exception says WHICH field was wrong."""
+    with pytest.raises(UnknownLivenessVerdict) as exc:
+        Liveness(posting_id=1, verdict="gone", signal="refetch_ok")
+    assert exc.value.verdict == "gone"
+    assert exc.value.signal is None
+
+
+def test_an_out_of_catalog_signal_raises_and_names_the_SIGNAL() -> None:  # noqa: N802
+    """Asserted separately from the verdict case, because one exception class serving both is
+    exactly how a traceback ends up saying "not a verdict" about a bad signal."""
+    with pytest.raises(UnknownLivenessVerdict) as exc:
+        Liveness(posting_id=1, verdict="alive", signal="body_says_closed")
+    assert exc.value.signal == "body_says_closed"
+    assert exc.value.verdict is None
 
 
 def test_only_dead_withholds() -> None:

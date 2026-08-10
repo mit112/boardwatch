@@ -181,11 +181,13 @@ def _cohort_guard(
 
 
 def _zero_output_guard(
-    eligible_judged_this_run: int, hidden_handled: int = 0, dead_leads: int = 0
+    eligible_judged_this_run: int,
+    hidden_handled: int = 0,
+    dead_leads: int = 0,
+    hidden_applied: int = 0,
 ) -> str | None:
     """P3 item 5 (B5) — 0 leads is provably right IFF this run did no NEW eligible work, **or**
-    every candidate it had was already handled, **or** every candidate it had turned out to be
-    dead.
+    every candidate it had was already handled, already applied to, or dead.
 
     `eligible_judged_this_run` is run_id-attributed (not a cross-run handled ledger): a
     steady-state day where every eligible posting is a cache hit from a PRIOR run has this at
@@ -203,11 +205,24 @@ def _zero_output_guard(
     `dead_leads` is the P6 item 6 clause and is the same shape of widening for the same reason: a
     run that ranked a full shortlist and found every posting on it gone has produced 0 leads for
     a reason it can name and evidence. Without this clause, liveness working perfectly would read
-    as the silent empty day it exists to prevent. Both widenings stay narrow in the way that
-    matters — a run with nothing handled and nothing dead still cannot explain itself, and still
-    fires.
+    as the silent empty day it exists to prevent.
+
+    `hidden_applied` is P6 item 5's clause, and it is a **regression fix as much as a widening**.
+    Applied state is checked ahead of the ledger, so a job that is both applied-to and `built`
+    moved out of `hidden_handled` and into `hidden_applied` — which would have re-armed this
+    guard on exactly the steady-state day the `hidden_handled` clause was added to disarm: a
+    profile edit re-judges the whole corpus, every candidate is suppressed as applied, and the
+    daily driver exits 1 with nothing wrong.
+
+    All three widenings stay narrow in the way that matters — a run with nothing handled, nothing
+    applied and nothing dead still cannot explain itself, and still fires.
     """
-    if eligible_judged_this_run > 0 and hidden_handled == 0 and dead_leads == 0:
+    if (
+        eligible_judged_this_run > 0
+        and hidden_handled == 0
+        and dead_leads == 0
+        and hidden_applied == 0
+    ):
         return (
             f"empty day not provably right: {eligible_judged_this_run} eligible postings "
             "judged this run but 0 leads"
@@ -336,9 +351,11 @@ def run_pipeline(
     because the row is created by the scan stage inside the lock it failed to acquire.
 
     `liveness_prober=None` skips the liveness check (P6 item 6) and reports it as UNMEASURED,
-    not as zero dead. Passed in rather than built here so the pipeline itself stays free of
-    network I/O and so a caller — `run_cmd`, which always supplies one — decides whether this
-    run may talk to the outside world.
+    not as zero dead. Passed in rather than built here so that *which URLs get probed* is the
+    caller's decision — `run_cmd` always supplies one. This does **not** make the pipeline
+    offline: the scan stage fetches every configured board and is by far its largest network
+    consumer, so `liveness_prober=None` is not an offline mode. `skip_scan=True` plus no prober
+    is.
     """
     console = console or Console()
     # Deferred: top_cmd imports from the CLI layer, and importing it at module scope makes
@@ -603,10 +620,12 @@ def run_pipeline(
                 f"every lead failed to tailor ({summary.tailor_failed}/{renderable})"
             )
 
-        # P3 item 5 (B5) — zero-output guard. Only reachable here when `shortlisted == 0` (the
-        # `shortlisted > 0` empty case is already fatal above), i.e. a candidate-less day.
-        # Checked BEFORE cohort completeness (design's stated order) so the more specific
-        # empty-day message wins when both would otherwise fire on the same run.
+        # P3 item 5 (B5) — zero-output guard. Reachable when `renderable == 0`, which is either a
+        # candidate-less day (`shortlisted == 0`) or — since P6 item 6 — a day where a non-empty
+        # shortlist was entirely WITHHELD as dead. The second is why the fatal above subtracts
+        # `dead_lead_ids` and why this guard takes them: `shortlisted > 0` no longer implies the
+        # fatal already fired. Checked BEFORE cohort completeness (design's stated order) so the
+        # more specific empty-day message wins when both would otherwise fire on the same run.
         if summary.fatal is None and not summary.tailored:
             with engine.connect() as conn:
                 identity = current_identity(conn, settings)
@@ -630,6 +649,7 @@ def run_pipeline(
                 eligible_judged_this_run,
                 ranked.hidden_handled,
                 len(summary.dead_lead_ids),
+                ranked.hidden_applied,
             )
 
         # P3 item 9 — cohort completeness. Every SHORTLISTED candidate (`ranked.visible`, which

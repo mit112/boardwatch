@@ -204,10 +204,41 @@ def test_a_shortlist_that_is_entirely_dead_is_an_HONEST_empty_day(  # noqa: N802
 
 def test_the_zero_output_guard_still_fires_with_nothing_dead_and_nothing_handled() -> None:
     """The widening stays narrow. A run that can explain nothing must still fail."""
-    assert _zero_output_guard(5, 0, 0) is not None
-    assert _zero_output_guard(5, 0, 1) is None  # explained by liveness
-    assert _zero_output_guard(5, 1, 0) is None  # explained by the ledger
-    assert _zero_output_guard(0, 0, 0) is None  # no new eligible work at all
+    assert _zero_output_guard(5, 0, 0, 0) is not None
+    assert _zero_output_guard(5, 0, 1, 0) is None  # explained by liveness
+    assert _zero_output_guard(5, 1, 0, 0) is None  # explained by the ledger
+    assert _zero_output_guard(5, 0, 0, 1) is None  # explained by applied state
+    assert _zero_output_guard(0, 0, 0, 0) is None  # no new eligible work at all
+
+
+def test_a_day_where_every_candidate_was_already_applied_to_is_an_HONEST_empty_day(  # noqa: N802
+    env: Path, tmp_path: Path
+) -> None:
+    """A regression this slice introduced and had to fix, not a new feature.
+
+    Applied state is checked ahead of the ledger, so a job that is both applied-to and `built`
+    moved OUT of `hidden_handled`. On a steady-state day — profile edited, whole corpus
+    re-judged, every candidate already applied to — that re-armed the zero-output guard the
+    `hidden_handled` clause had been added to disarm, and the daily driver would exit 1 with
+    nothing wrong.
+    """
+    from boardwatch.store.applications import create_application  # noqa: PLC0415
+
+    ids = _ready(env, 2)
+    engine = get_engine(env)
+    with engine.begin() as conn:
+        for row in conn.execute(
+            select(tables.postings.c.job_id).where(tables.postings.c.id.in_(ids))
+        ).all():
+            create_application(conn, job_id=int(row.job_id), status="applied")
+
+    summary = _pipeline(env, tmp_path / "apps", top_n=2, prober=_prober())
+
+    assert summary.tailored == []
+    assert summary.shortlist is not None
+    assert summary.shortlist.hidden_applied == 2
+    assert summary.shortlist.hidden_handled == 0  # the bucket the guard used to read
+    assert summary.fatal is None, summary.fatal
 
 
 def test_an_unprobed_run_reports_liveness_as_UNMEASURED_not_as_zero_dead(  # noqa: N802
@@ -239,24 +270,104 @@ def test_a_posting_with_no_url_is_served_without_being_probed(env: Path) -> None
     assert results[ids[0]].signal == "no_url"
 
 
+def test_the_funnel_artifact_still_RECONCILES_when_a_lead_is_withheld(  # noqa: N802
+    env: Path, tmp_path: Path
+) -> None:
+    """The defect a reviewer caught by RUNNING this rather than reading it.
+
+    The tailor stage enters at `shortlist.shortlisted` and advanced at `tailored`, and its only
+    drop was `tailor_failed`. A withheld lead left a gap in a stage that is deliberately NOT
+    `derived`, so the artifact came out stamped DOES NOT RECONCILE — meaning liveness doing its
+    job would have broken Gate P0's "three consecutive runs that reconcile to 100%" clause. The
+    feature working correctly must not destroy the accounting signal.
+    """
+    import json  # noqa: PLC0415
+
+    ids = _ready(env, 2)
+    out_root = tmp_path / "apps"
+    summary = _pipeline(env, out_root, top_n=2, prober=_prober(dead={ids[0]}))
+
+    assert summary.funnel is not None, summary.errors
+    payload = json.loads(summary.funnel.json_path.read_text())
+    tailor = next(stage for stage in payload["stages"] if stage["name"] == "tailor")
+    withheld = next(
+        drop for drop in tailor["drops"] if drop["reason"] == "withheld_not_live"
+    )
+
+    assert withheld["count"] == 1
+    assert tailor["reconciled"] is True
+    assert payload["reconciles"] is True
+
+
+def test_the_run_COMMAND_actually_wires_a_prober_in(env: Path, tmp_path: Path) -> None:  # noqa: N802
+    """The one thing that makes liveness run in production, and every other test bypasses it by
+    calling `run_pipeline` directly. Flipping `--check-liveness`'s default, or passing `None`
+    where the prober is built, would ship liveness dead on arrival with the suite green."""
+    from typer.testing import CliRunner  # noqa: PLC0415
+
+    import boardwatch.cli.run_cmd as run_cmd  # noqa: PLC0415
+    from boardwatch.cli.app import app  # noqa: PLC0415
+
+    _ready(env, 1)
+    seen: list[object] = []
+    original = run_cmd.run_pipeline
+
+    def spy(*args: object, **kwargs: object):  # type: ignore[no-untyped-def]
+        seen.append(kwargs.get("liveness_prober"))
+        return original(*args, **kwargs)  # type: ignore[arg-type]
+
+    run_cmd.run_pipeline = spy  # type: ignore[assignment]
+    try:
+        CliRunner().invoke(
+            app, ["--data-dir", str(env), "run", "--no-scan", "--out", str(tmp_path / "a")]
+        )
+        CliRunner().invoke(
+            app,
+            ["--data-dir", str(env), "run", "--no-scan", "--no-check-liveness",
+             "--out", str(tmp_path / "b")],
+        )
+    finally:
+        run_cmd.run_pipeline = original  # type: ignore[assignment]
+
+    assert len(seen) == 2
+    assert callable(seen[0]), "the default must probe"
+    assert seen[1] is None, "--no-check-liveness must report unmeasured, not probe"
+
+
+def test_the_operator_summary_line_names_both_new_buckets(env: Path) -> None:
+    """`_shortlist_line` is the operator's one line, and it had no test at all. A bucket that
+    explains an empty day but is missing from it prints counts that visibly fail to reconcile —
+    the silent empty day in a new costume, which is the comment's own words."""
+    from boardwatch.cli.run_cmd import _shortlist_line  # noqa: PLC0415
+    from boardwatch.pipeline.runner import PipelineSummary  # noqa: PLC0415
+    from boardwatch.reports.run_funnel import ShortlistCounts  # noqa: PLC0415
+
+    summary = PipelineSummary(run_id=1)
+    summary.shortlist = ShortlistCounts(considered=9, shortlisted=1, hidden_applied=3)
+    summary.dead_lead_ids = [7, 8]
+
+    line = _shortlist_line(summary)
+
+    assert "3 already applied" in line
+    assert "2 withheld as gone" in line
+    assert _shortlist_line(PipelineSummary(run_id=1)) == "ranker did not run"
+
+
 def test_check_leads_writes_nothing(env: Path) -> None:
     """Stated as its own test because it is the invariant the whole module rests on."""
     ids = _ready(env, 2)
     engine = get_engine(env)
 
-    def snapshot() -> list[tuple[int, str, object]]:
+    def full_dump() -> dict[str, list[tuple[object, ...]]]:
+        # Every row of every table, not just the three columns liveness would plausibly touch:
+        # "writes nothing" is the module's load-bearing invariant, so the assertion is scoped to
+        # the claim rather than to the columns the author happened to think of.
         with engine.connect() as conn:
-            return [
-                (int(r.id), str(r.status), r.closed_at)
-                for r in conn.execute(
-                    select(
-                        tables.postings.c.id,
-                        tables.postings.c.status,
-                        tables.postings.c.closed_at,
-                    )
-                ).all()
-            ]
+            return {
+                name: [tuple(row) for row in conn.execute(select(table)).all()]
+                for name, table in sorted(tables.metadata.tables.items())
+            }
 
-    before = snapshot()
+    before = full_dump()
     check_leads(engine, ids, prober=_prober(dead=set(ids)))
-    assert snapshot() == before
+    assert full_dump() == before

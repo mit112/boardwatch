@@ -79,8 +79,9 @@ def run(
             out_root=out_root,
             resume_path=resume_path or settings.config_dir / "resume.yaml",
             skip_scan=skip_scan,
-            # Built here rather than inside the pipeline so the decision to talk to the network
-            # is the CLI's, and so `run_pipeline` stays callable with no outbound I/O at all.
+            # Built here rather than inside the pipeline so that which URLs get probed is the
+            # CLI's decision. Not an offline switch — the scan stage fetches every configured
+            # board, and `--no-scan` is what makes a run offline.
             liveness_prober=build_prober(settings) if check_liveness else None,
         )
     except ScanLockHeldError as exc:
