@@ -1,9 +1,10 @@
 # PROGRAM STATE — read this first
 
 **Last updated:** 2026-08-10 (post-review fix session). **P6 Slice 1 is BUILT, REVIEWED, FIXED and
-MERGED to `main` — `main` is `f26c87a` and pushed.** Fast-forwarded, so all 19 commits keep their
-individual history. Merged on Mit's explicit authorization after the three-reviewer whole-branch
-review; `make check` was green on the exact merged tree.
+MERGED to `main`, and pushed.** Fast-forwarded, so all 19 commits keep their individual history.
+Merged on Mit's explicit authorization after the three-reviewer whole-branch review; `make check` was
+green on the exact merged tree. (No sha here on purpose — D-017: a sha in a read-first header is stale
+the next commit. `git log --oneline -1` is the authority.)
 
 **The live store is backfilled and dedup is RUNNING on real data** — schema head
 `p6_posting_identities`, 117,254 identity rows at `p6.2`, `identities verify` exit 0, **147 groups /
