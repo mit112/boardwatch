@@ -243,3 +243,46 @@ def test_set_refuses_secret_in_array_of_tables_and_never_leaks(cfg) -> None:
     assert "watches[0].api_key" in result.output   # nested path is named
     assert canary not in result.output             # value never leaks
     assert result.exception is None or canary not in repr(result.exception)
+
+
+def test_every_scalar_setting_is_reachable_from_the_cli() -> None:
+    """`_SCALAR_KEYS` is a hand-maintained mirror of `Settings`, and it drifted silently.
+
+    Five settings — `seen_ttl_days` among them, which P6 shipped as the knob governing how long
+    a surfaced lead stays suppressed — were absent, so `config show` did not print them and
+    `config set` rejected them as unknown keys, while the README promised the command "prints
+    every key" and the settings surface promised every feature was reversible without
+    hand-editing `config.toml`. Nothing caught it because a missing entry is not an error
+    anywhere; this test is the detector.
+    """
+    from boardwatch.cli.config_cmd import _SCALAR_KEYS
+    from boardwatch.core.settings import Settings
+
+    # data_dir/config_dir are CLI/env-level paths, and the three nested models have their own
+    # surfaces (weights.*, llm.*, notify.*).
+    nested = {"weights", "llm", "notify"}
+    paths = {"data_dir", "config_dir"}
+    scalar = set(Settings.model_fields) - nested - paths
+
+    assert scalar == set(_SCALAR_KEYS), (
+        f"missing from config show/set: {sorted(scalar - set(_SCALAR_KEYS))}; "
+        f"stale entries: {sorted(set(_SCALAR_KEYS) - scalar)}"
+    )
+
+
+def test_the_new_scalar_keys_round_trip_through_set_and_show(cfg) -> None:
+    """Reachability is not enough — a key that shows but cannot be written is still a gap."""
+    assert runner.invoke(app, ["config", "set", "seen_ttl_days", "14"]).exit_code == 0
+    assert runner.invoke(app, ["config", "set", "location_filter_mode", "hard"]).exit_code == 0
+
+    out = runner.invoke(app, ["config", "show"]).stdout
+    assert "seen_ttl_days = 14" in out
+    assert "location_filter_mode = hard" in out
+    assert load_settings(data_dir=None).seen_ttl_days == 14
+
+
+def test_an_invalid_value_for_a_new_key_is_refused(cfg) -> None:
+    """Validation rides on constructing a `Settings`, so the enum and the ge=1 bound both fire
+    even though the casters here only parse."""
+    assert runner.invoke(app, ["config", "set", "location_filter_mode", "sideways"]).exit_code == 1
+    assert runner.invoke(app, ["config", "set", "seen_ttl_days", "0"]).exit_code == 1

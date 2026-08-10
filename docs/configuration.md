@@ -12,6 +12,11 @@ every `top` run (no restart needed).
 | `retry_attempts` | int, 1–10 | 3 | next scan |
 | `scan_workers` | int, 1–8 | 4 | next scan |
 | `detail_fetch_budget` | int, 1–1000 | 50 | next scan |
+| `seen_ttl_days` | int, ≥ 1 | 7 | next top/run |
+| `reap_stale_after_hours` | int, ≥ 1 | 24 | next run |
+| `location_filter_mode` | `soft` \| `hard` | `soft` | next top |
+| `zero_skill_coverage_prior` | float, [0, 1] | 0.50 | next top |
+| `recency_half_life_days` | float | 14.0 | next top |
 | `weights.skill_coverage` | float, [0, 1] | 0.50 | next top |
 | `weights.title_match` | float, [0, 1] | 0.25 | next top |
 | `weights.recency` | float, [0, 1] | 0.15 | next top |

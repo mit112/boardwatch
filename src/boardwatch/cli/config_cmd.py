@@ -22,6 +22,13 @@ config_app = typer.Typer(no_args_is_help=True, help="Show or change settings.")
 console = Console()
 
 # key → (caster, "takes effect", units note). weights.* are nested under [weights].
+# Every scalar `Settings` field except the two paths, which are CLI/env-level and not settable
+# here. `test_every_scalar_setting_is_reachable_from_the_cli` asserts that exhaustively, because
+# this is a hand-maintained mirror of `Settings` and it silently drifted once: `seen_ttl_days`,
+# `location_filter_mode`, `reap_stale_after_hours`, `zero_skill_coverage_prior` and
+# `recency_half_life_days` all shipped invisible to `config show` and unsettable by `config set`,
+# while the README promised the command "prints every key". Range and enum validation happens by
+# constructing a `Settings` with the new value, so a caster here only has to parse.
 _SCALAR_KEYS = {
     "per_host_delay_seconds": (float, "next scan", "seconds, floor 0.25"),
     "retry_attempts": (int, "next scan", "total attempts 1–10 (1 = no retry)"),
@@ -29,6 +36,18 @@ _SCALAR_KEYS = {
     "detail_fetch_budget": (
         int, "next scan", "per-posting detail fetches per board per scan, 1–1000"
     ),
+    "seen_ttl_days": (
+        int, "next top/run", "days a surfaced-but-unbuilt lead stays suppressed, ≥1"
+    ),
+    "reap_stale_after_hours": (
+        int, "next run", "age at which an unfinished run row is treated as crashed, ≥1"
+    ),
+    "location_filter_mode": (str, "next top", "soft (rank only) or hard (veto)"),
+    "zero_skill_coverage_prior": (
+        float, "next top", "score given when a posting lists no detectable skills, [0,1]"
+    ),
+    "recency_half_life_days": (float, "next top", "days at which the recency score halves"),
+    "busy_timeout_ms": (int, "next command", "SQLite busy timeout in milliseconds"),
 }
 _WEIGHT_KEYS = {"skill_coverage", "title_match", "recency", "location_fit"}
 

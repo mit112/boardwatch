@@ -738,6 +738,14 @@ All notable changes to this project are documented here. The format follows
 
 ### Fixed
 
+- **`config show` and `config set` now reach every setting.** Six of the ten scalar settings —
+  including `seen_ttl_days`, which governs how long a lead you were shown stays out of the shortlist —
+  were absent from the command's key registry, so `show` did not print them and `set` rejected them as
+  unknown keys. They could only be changed by hand-editing `config.toml`, which is exactly what the
+  settings surface exists to avoid. `busy_timeout_ms`, `reap_stale_after_hours`, `location_filter_mode`,
+  `zero_skill_coverage_prior` and `recency_half_life_days` were the others. A test now asserts the
+  registry covers every scalar field, so it cannot drift again.
+
 - **The funnel artifact keeps reconciling when liveness withholds a lead** (D-111, from the Slice 3
   review). The tailor stage entered at `shortlisted` and advanced at `tailored` with `tailor_failed` as
   its only drop, so a withheld lead left a gap in a stage that is deliberately not `derived` — meaning any

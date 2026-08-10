@@ -264,6 +264,9 @@ recomputation of verdicts.
 | `per_host_delay_seconds` | ≥ 0.25 | 1.0 | politeness between requests to one host |
 | `retry_attempts` | 1–10 | 3 | retries on transient failures |
 | `scan_workers` | 1–8 | 4 | concurrent boards per scan |
+| `seen_ttl_days` | ≥ 1 | 7 | how long a lead you were shown, but which produced nothing, stays out of the shortlist |
+| `reap_stale_after_hours` | ≥ 1 | 24 | age at which an unfinished run row is treated as crashed |
+| `location_filter_mode` | `soft`/`hard` | `soft` | whether a location mismatch only lowers rank, or vetoes the posting |
 | `weights.skill_coverage` | 0–1 | 0.50 | ranking weight |
 | `weights.title_match` | 0–1 | 0.25 | ranking weight |
 | `weights.recency` | 0–1 | 0.15 | ranking weight |
