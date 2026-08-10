@@ -27,7 +27,7 @@ from datetime import timedelta
 from pathlib import Path
 
 from rich.console import Console
-from sqlalchemy import Connection, Engine, select
+from sqlalchemy import Engine, select
 
 from boardwatch.core.clock import utcnow
 from boardwatch.core.dedup import Suppression
@@ -39,7 +39,7 @@ from boardwatch.eligibility.engine import ENGINE_KIND, engine_version
 from boardwatch.eligibility.preflight import current_identity
 from boardwatch.pipeline.freshness import folders_reconcile
 from boardwatch.pipeline.funnel_writer import collect_run_funnel
-from boardwatch.reports.manifest import config_hash, policy_version, profile_row_hash
+from boardwatch.pipeline.policy import run_policy_version
 from boardwatch.reports.morning import MorningLead, build_morning, write_morning
 from boardwatch.reports.resume_gate import LeadArtifactError, RenderToolMissingError
 from boardwatch.reports.run_funnel import (
@@ -57,7 +57,6 @@ from boardwatch.store.queries import (
     RUN_OK,
     ensure_run,
     finish_run,
-    get_profile,
     reap_stale_runs,
 )
 from boardwatch.store.regroup import apply_merges, job_anchors, protected_job_ids
@@ -195,34 +194,6 @@ def _zero_output_guard(eligible_judged_this_run: int, hidden_handled: int = 0) -
     return None
 
 
-def _policy_version(conn: Connection, settings: Settings) -> str:
-    """The stamp this run's permanent dispositions carry (design §2.4).
-
-    Reuses the run manifest's identity wholesale — the same five components the funnel artifact
-    already reports — so "what would make us re-decide this" and "what makes two runs
-    comparable" cannot drift apart. Nothing new is hashed.
-    """
-    identity = current_identity(conn, settings)
-    profile_row = get_profile(conn)
-    return policy_version(
-        code_fingerprint=engine_version(),
-        config_hash=config_hash(settings),
-        profile_row_hash=(
-            profile_row_hash(
-                skills=profile_row.skills_json,
-                target_titles=profile_row.target_titles_json,
-                exclude_titles=profile_row.exclude_titles_json,
-                locations=profile_row.locations_json,
-                remote_only=profile_row.remote_only,
-            )
-            if profile_row is not None
-            else None
-        ),
-        profile_facts_hash=identity[0] if identity is not None else None,
-        rules_hash=identity[1] if identity is not None else None,
-    )
-
-
 def _record_permanent_dispositions(
     engine: Engine, settings: Settings, summary: PipelineSummary, run_id: int
 ) -> None:
@@ -239,7 +210,7 @@ def _record_permanent_dispositions(
         return
     built_ids = {lead.posting_id for lead in summary.tailored}
     with engine.begin() as conn:
-        stamp = _policy_version(conn, settings)
+        stamp = run_policy_version(conn, settings)
         anchors = job_anchors(conn, posting_ids)
         for posting_id in posting_ids:
             job_id = anchors.get(posting_id)
