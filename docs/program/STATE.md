@@ -34,10 +34,13 @@ had just built for judging, the pipeline suppressed the shortlist before the ren
 `skipped` with no drain that could release it, and regrouping orphaned a `built` decision on a job nothing
 anchors, re-tailoring the lead — Slice 2's own defect arriving through the projection Slice 2 added.
 
-**Nothing is pushed yet.** `git rev-list --count origin/main..main` is the authority on how far ahead `main`
-is (a number written here goes stale the same day, D-017). The review condition on the standing push
-permission is now met; what remains is Mit's call on whether to push and whether to cut 0.3.0 in the same
-pass.
+**Everything through the review is PUSHED** — Mit authorized it once the gate was green, and `main` is at
+`origin/main`. `git rev-list --count origin/main..main` is the authority (it should read 0; a number written
+here goes stale the same day, D-017). The push reported `Bypassed rule violations: 6 of 6 required status
+checks are expected` — that is the known runner-acquisition failure, not a repo problem; local `make check` is
+the authority and was exit 0.
+
+**Still Mit's call: cutting 0.3.0.** The recommended precondition (the Slice 2 review landing) is now met.
 
 **Two review findings were deliberately NOT fixed**, with reasons in D-110: `record_disposition` is an
 unlocked read-modify-write (SQLite/WAL rolls one racer back rather than losing an update, and two-writer is
@@ -59,7 +62,18 @@ the `--no-record` flag itself; a fresh clone's `bwd` will need the same one-line
 `p6_posting_identities`, 117,254 identity rows at `p6.2`, `identities verify` exit 0, 147 groups / 186
 surplus rows / 0.79%). Slice 2 was verified on an **isolated copy**, which is why the live figures below are
 Slice 1's. Running `boardwatch identities regroup` against the live store is a deliberate, still-unrun step:
-it moves 186 postings onto 147 canonical jobs.
+it moves 186 postings onto 147 canonical jobs. **Mit declined it on 2026-08-10** — not blocked, just not now.
+
+**Re-verified read-only on 2026-08-10, so nobody has to reconstruct it:** `alembic_version` =
+`p6_posting_identities`, **no `job_dispositions` table**, `job_grouping_events` = **0 rows**, `postings` =
+24,073 and `count(distinct job_id)` = **24,073 — still exactly 1:1**. That last number is the clean proof the
+regroup ran on the copy and not here: a regrouped live store would read **23,887**. Two things are easy to
+misremember as "we already did the live store": the Slice 1 backfill, which genuinely did write those 117,254
+identity rows here, and the regroup's **idempotence** check (second pass moved 0), which ran on the copy.
+The 769 MB `boardwatch.db.pre-p6-backup-20260810` is still in place beside the store.
+
+Note the live store needs the `p6_job_dispositions` migration before a regroup there can carry any ledger
+decision — there are no dispositions on it to carry today.
 
 **What was NOT demonstrated on real data:** the ledger's own end-to-end behaviour. A `boardwatch top 5`
 against the 23,455-posting copy ran past 20 minutes without finishing and was stopped — it pays for
