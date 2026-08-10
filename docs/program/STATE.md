@@ -104,7 +104,6 @@ since D-035, unchanged by everything since.
 | **Three `resume.yaml` bullets exceed the 220-char layout gate** | Forces an untailored-master degrade on every posting. The file also lacks Knowledge Forge, has stale `skill_groups`, and an empty extracurricular block. **Mit pins `resume_max_pages=1` — do not advise setting it to 2.** | Mit (content) |
 | **P2 item 8 — the onboarding gatherer** | The thing that would make the field tier fire for anyone. D-054 forbids us authoring non-tech field content, so it must be gathered per user. Needs its own brainstorm | owner-gated |
 | **`CHANGELOG.md`'s `[Unreleased]` has never been cut to a release** | 799 of its 874 lines, 14 duplicated subsections (`Added` ×5, `Fixed` ×4, `Changed` ×5) because each session appends a fresh pair instead of merging. Last release v0.2.0 (2026-08-04); `pyproject.toml` still says `0.2.0`. Recommended: cut **0.3.0 after the P6 Slice 2 review lands**, not before — everything unreleased is also unpushed and unreviewed — and merge the duplicate subsections in the same pass | Mit (release) |
-| **The program-doc index regenerator is not in the repo** | D-108's indexes carry line numbers that drift on every append. An idempotent regenerator (reads current heading positions, so it self-corrects any drift) sits at `.agent/tools/reindex_program_docs.py` — gitignored, therefore local-only and lost on a fresh clone. Promoting it to `tools/` + a `make reindex` target is a non-docs change and owes a full `make check`; do it in a session that can pay the gate. Until then: run it after appending an entry, or confirm a line number with `grep -n` | deferred |
 | **P3 Slice 5 — LLM economics** | Substantial and design-heavy; use a fresh context window | P3 |
 | **P3 item 8 — cross-OS two-writer WAL test** | A same-OS test proves nothing; needs a Docker-Linux-container + macOS-host harness. The documented-stance half shipped (D-041) | P3 |
 | **A `SIGKILL`ed run leaves a dangling `runs` row** | `try/finally` covers exceptions and Ctrl-C, not SIGKILL. Largely drained by the age-based reaper (D-046); a heartbeat-column reaper is the deferred correct fix | P3 |
@@ -118,7 +117,12 @@ since D-035, unchanged by everything since.
   only runs under `make check`. Run it in a detached worktree pinned to a commit
   (`git worktree add --detach /tmp/bw-gate <sha>`) so editing the main tree cannot corrupt a run in flight,
   capture the real exit code, and **never** pipe it through `head`/`tail` (SIGPIPE gives a false negative).
-  End a backgrounded gate with `exit $ec`. For a docs-only change, `make generalization` alone (~1 s) suffices.
+  End a backgrounded gate with `exit $ec`. For a docs-only change, `make generalization && make index-check`
+  (~1 s together) suffices — `index-check` is in the list because index drift is caused almost entirely by
+  docs-only commits, which never reach `make check` (D-109).
+- **After appending to `DECISIONS.md` or `METRICS.md`, add the index row and run `make reindex`.** The
+  spanning indexes' line numbers drift on *any* edit above a heading; appending D-109's own row moved 33 of
+  them. `make check` fails on a stale index.
 - **The per-task fast-check set must include `tests/unit/test_store.py` and `tests/unit/test_schema_head.py`**
   for anything touching `tables.py`, a migration, or the Alembic head (D-099). `test_schema_head.py` pins the
   head, so a new migration must bump it explicitly.

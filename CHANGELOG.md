@@ -8,6 +8,16 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- **`make reindex` and `make index-check`, backed by `tools/program_index`** (D-109). The spanning indexes
+  that open `docs/program/DECISIONS.md` and `METRICS.md` carry generated line numbers that drift on *any*
+  edit above a heading, not only on an append — one commit editing two preamble paragraphs moved 38 rows.
+  The regenerator derives every number from the headings themselves, so it converges however far the index
+  has drifted and no-ops when it is already right; it previously lived in gitignored working material and
+  would have died with a fresh clone. `make check` now depends on `index-check`, and
+  `tests/unit/test_program_index.py` asserts the same over the real files under plain `pytest`. A heading
+  with no index row, a row naming a heading that does not exist, and a duplicate heading key are reported
+  and fail — never silently repaired or last-wins.
+
 - **Durable decision ledger, its drain, and job regrouping — P6 Slice 2** (D-103 … D-107). A new
   `job_dispositions` table (migration `p6_job_dispositions`, now the Alembic head) records **one row per
   job**, upserted monotonically along `seen` < `skipped` < `built`. `built`/`skipped` are permanent and

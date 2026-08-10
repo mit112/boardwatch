@@ -25,9 +25,9 @@ Line numbers drift as sections are appended. Confirm one before trusting it:
 grep -n '^## ' docs/program/METRICS.md docs/program/METRICS-ARCHIVE.md
 ```
 
-**After appending a section, add its index row and then re-run the regenerator** —
-`uv run python .agent/tools/reindex_program_docs.py`, which rewrites both files' line numbers from the
-headings themselves and is a no-op when they are already right.
+**After appending a section, add its index row and then run `make reindex`**, which rewrites both files'
+line numbers from the headings themselves and is a no-op when they are already right. `make index-check`
+reports drift without writing, and `make check` depends on it (D-109).
 
 | File | Line | Section |
 |---|---|---|

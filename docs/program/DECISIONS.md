@@ -27,10 +27,10 @@ Line numbers drift as entries are appended. Confirm one before trusting it:
 grep -n '^## D-0NN' docs/program/DECISIONS.md docs/program/DECISIONS-ARCHIVE.md
 ```
 
-**After appending an entry, add its index row and then re-run the regenerator** —
-`uv run python .agent/tools/reindex_program_docs.py`. It reads every heading's current position and
-rewrites the line numbers in place, so it corrects drift no matter how far it has gone, and is a no-op when
-the index is already right. It is gitignored working material; see `STATE.md`'s carried gaps.
+**After appending an entry, add its index row and then run `make reindex`.** It reads every heading's
+current position and rewrites the line numbers in place, so it corrects drift no matter how far it has gone,
+and is a no-op when the index is already right. `make index-check` reports drift without writing, and
+`make check` depends on it, so a stale index fails the gate (D-109).
 
 | # | File | Line | Decision |
 |---|---|---|---|
@@ -110,38 +110,39 @@ the index is already right. It is gitignored working material; see `STATE.md`'s 
 | D-074 | DECISIONS-ARCHIVE.md | 3009 | Final eligibility gate lane SHIPPED (persistent, agent-lane, fail-open); Gate P5 unchanged |
 | D-075 | DECISIONS-ARCHIVE.md | 3084 | Gate P2 reconciled: three individually-correct verdicts (may coincide); ≥3-field mechanism via fixtures |
 | D-076 | DECISIONS-ARCHIVE.md | 3153 | P2 item 4's final whole-branch review: what it caught, and four rulings it forced |
-| D-077 | DECISIONS.md | 148 | P6 Slice 1: the design is settled and the plan is written; no code exists yet |
-| D-078 | DECISIONS.md | 238 | P6 Slice 1: the plan's test fixtures are now real; eleven defects, all found by running code |
-| D-079 | DECISIONS.md | 327 | P6 Slice 1 annotates only; `postings.job_id` is not mutated |
-| D-080 | DECISIONS.md | 341 | `content_hash` alone may never suppress |
-| D-081 | DECISIONS.md | 355 | `exact_quad` is the sole suppressing kind, and its yield is stated honestly |
-| D-082 | DECISIONS.md | 373 | `cross_host` ships annotate-only, reversing an earlier draft |
-| D-083 | DECISIONS.md | 394 | No location evidence ⇒ no location-bearing identity, never a `"[]"` sentinel |
-| D-084 | DECISIONS.md | 409 | Three host classes, not two; matching is exact-or-dot-suffix |
-| D-085 | DECISIONS.md | 423 | Allowlist URL normalization, not a denylist |
-| D-086 | DECISIONS.md | 437 | Survivor election never consults score; `posting_id` is a load-bearing tiebreak |
-| D-087 | DECISIONS.md | 452 | Instrumentation is completeness-gated, not existence-gated |
-| D-088 | DECISIONS.md | 466 | `assisted` stays `None` in this slice |
-| D-089 | DECISIONS.md | 481 | Identities are upserted on every observation; a kind that stops being produced is deleted |
-| D-090 | DECISIONS.md | 498 | The ranker is completeness-gated for reproducibility, not safety |
-| D-091 | DECISIONS.md | 516 | The recount recomputes in Python, and claims staleness only |
-| D-092 | DECISIONS.md | 531 | Identities are backfilled by an explicit command, not by the migration |
-| D-093 | DECISIONS.md | 545 | Slice 1 does NOT meet Gate P6, and makes only one of its four clauses measurable |
-| D-094 | DECISIONS.md | 559 | P6 Slice 1 BUILT (unattended run): five more plan defects, three of them tests that could not fail |
-| D-095 | DECISIONS.md | 687 | P6 Slice 1 reviewed by three independent reviewers; fourteen findings fixed, two rejected |
-| D-096 | DECISIONS.md | 752 | The C++/C# fix folds punctuation into words; it does NOT add a raw-title comparison |
-| D-097 | DECISIONS.md | 796 | `_verify_quad` rejected nothing on the live corpus; "string-verified" is not precision evidence |
-| D-098 | DECISIONS.md | 825 | Suppression reports when it is OFF; wiring backfill into the pipeline is Slice 2 |
-| D-099 | DECISIONS.md | 861 | Gate batching stays allowed; the per-task fast-check set must include the schema guards |
-| D-100 | DECISIONS.md | 887 | P6 Slice 1 merged to `main`; Gate P6 clause 3 is MET, not merely measurable |
-| D-101 | DECISIONS.md | 919 | Gate P6 clause 4 is MET: 20/20 sampled suppressions are genuine duplicates |
-| D-102 | DECISIONS.md | 949 | D-072 (model-tier benchmark) is deferred indefinitely |
-| D-103 | DECISIONS.md | 971 | P6 Slice 2: the ledger is a current-state row per job, `seen` suppresses on a TTL, and the policy stamp never auto-reopens |
-| D-104 | DECISIONS.md | 1036 | Job regrouping: the survivor's job wins, and a tracked group is refused whole |
-| D-105 | DECISIONS.md | 1079 | Identity writes move into the scan path, closing D-098 — and D-098's cost argument did not apply |
-| D-106 | DECISIONS.md | 1110 | Two consequences the build forced: what earns a permanent `skipped`, and the zero-output guard |
-| D-107 | DECISIONS.md | 1136 | P6 Slice 2 BUILT and verified on real data; `cross_host` dereference deferred by measured absence |
-| D-108 | DECISIONS.md | 1185 | The decision log and the metrics log are archive-split; the reading protocol moves into the index |
+| D-077 | DECISIONS.md | 149 | P6 Slice 1: the design is settled and the plan is written; no code exists yet |
+| D-078 | DECISIONS.md | 239 | P6 Slice 1: the plan's test fixtures are now real; eleven defects, all found by running code |
+| D-079 | DECISIONS.md | 328 | P6 Slice 1 annotates only; `postings.job_id` is not mutated |
+| D-080 | DECISIONS.md | 342 | `content_hash` alone may never suppress |
+| D-081 | DECISIONS.md | 356 | `exact_quad` is the sole suppressing kind, and its yield is stated honestly |
+| D-082 | DECISIONS.md | 374 | `cross_host` ships annotate-only, reversing an earlier draft |
+| D-083 | DECISIONS.md | 395 | No location evidence ⇒ no location-bearing identity, never a `"[]"` sentinel |
+| D-084 | DECISIONS.md | 410 | Three host classes, not two; matching is exact-or-dot-suffix |
+| D-085 | DECISIONS.md | 424 | Allowlist URL normalization, not a denylist |
+| D-086 | DECISIONS.md | 438 | Survivor election never consults score; `posting_id` is a load-bearing tiebreak |
+| D-087 | DECISIONS.md | 453 | Instrumentation is completeness-gated, not existence-gated |
+| D-088 | DECISIONS.md | 467 | `assisted` stays `None` in this slice |
+| D-089 | DECISIONS.md | 482 | Identities are upserted on every observation; a kind that stops being produced is deleted |
+| D-090 | DECISIONS.md | 499 | The ranker is completeness-gated for reproducibility, not safety |
+| D-091 | DECISIONS.md | 517 | The recount recomputes in Python, and claims staleness only |
+| D-092 | DECISIONS.md | 532 | Identities are backfilled by an explicit command, not by the migration |
+| D-093 | DECISIONS.md | 546 | Slice 1 does NOT meet Gate P6, and makes only one of its four clauses measurable |
+| D-094 | DECISIONS.md | 560 | P6 Slice 1 BUILT (unattended run): five more plan defects, three of them tests that could not fail |
+| D-095 | DECISIONS.md | 688 | P6 Slice 1 reviewed by three independent reviewers; fourteen findings fixed, two rejected |
+| D-096 | DECISIONS.md | 753 | The C++/C# fix folds punctuation into words; it does NOT add a raw-title comparison |
+| D-097 | DECISIONS.md | 797 | `_verify_quad` rejected nothing on the live corpus; "string-verified" is not precision evidence |
+| D-098 | DECISIONS.md | 826 | Suppression reports when it is OFF; wiring backfill into the pipeline is Slice 2 |
+| D-099 | DECISIONS.md | 862 | Gate batching stays allowed; the per-task fast-check set must include the schema guards |
+| D-100 | DECISIONS.md | 888 | P6 Slice 1 merged to `main`; Gate P6 clause 3 is MET, not merely measurable |
+| D-101 | DECISIONS.md | 920 | Gate P6 clause 4 is MET: 20/20 sampled suppressions are genuine duplicates |
+| D-102 | DECISIONS.md | 950 | D-072 (model-tier benchmark) is deferred indefinitely |
+| D-103 | DECISIONS.md | 972 | P6 Slice 2: the ledger is a current-state row per job, `seen` suppresses on a TTL, and the policy stamp never auto-reopens |
+| D-104 | DECISIONS.md | 1037 | Job regrouping: the survivor's job wins, and a tracked group is refused whole |
+| D-105 | DECISIONS.md | 1080 | Identity writes move into the scan path, closing D-098 — and D-098's cost argument did not apply |
+| D-106 | DECISIONS.md | 1111 | Two consequences the build forced: what earns a permanent `skipped`, and the zero-output guard |
+| D-107 | DECISIONS.md | 1137 | P6 Slice 2 BUILT and verified on real data; `cross_host` dereference deferred by measured absence |
+| D-108 | DECISIONS.md | 1186 | The decision log and the metrics log are archive-split; the reading protocol moves into the index |
+| D-109 | DECISIONS.md | 1245 | Index drift fails the gate; the regenerator ships as `tools/program_index` |
 
 ---
 
@@ -1238,3 +1239,57 @@ learns it wanted them.
 **Not done, deliberately.** `CHANGELOG.md` is 863 lines for one reason — its `[Unreleased]` section has never
 been cut to a release. That is the same growth shape, but cutting a release is the owner's call, not a
 documentation-hygiene decision, so it is recommended to Mit rather than taken here.
+
+---
+
+## D-109 — Index drift fails the gate, and the fixer lives in `tools/`
+
+**Context.** D-108 left `DECISIONS.md` and `METRICS.md` each opening with an index spanning themselves and a
+closed archive. Those line numbers are generated, and they drift on *any* edit above a heading — not only on
+an append. Editing two preamble paragraphs in a single commit moved 32 decision rows and 6 metrics rows at
+once. The regenerator that fixes this existed and worked, but lived in `.agent/`, which is gitignored: it was
+local-only and would die with a fresh clone. So the read-first navigation aid carried numbers that nobody
+checked and no clone could repair — the exact shape this repo has been bitten by before.
+
+**Choice — the tool ships as `tools/program_index`, and drift fails the gate three ways.** `make reindex`
+repairs; `make index-check` reports and exits 1 without writing; `check` gains `index-check` as a
+prerequisite; and `tests/unit/test_program_index.py::test_the_real_program_indexes_are_current` asserts the
+same thing under plain `uv run pytest`.
+
+**Should drift fail a gate at all?** The options were named rather than picked silently:
+
+1. *Fixer only, no gate.* Cheapest. Rejected: it is exactly the status quo that produced 38 drifted rows in
+   one commit, minus the gitignore problem.
+2. *Gate inside `make check` only.* Rejected as insufficient on its own, for a reason specific to this repo:
+   **a docs-only change is exempted from `make check`** and runs `make generalization` alone. Drift is caused
+   almost exclusively by docs-only commits, so a `make check`-only gate never fires on the commit that caused
+   it — it fires later, on an unrelated code commit, blaming the wrong change.
+3. *A rule inside the generalization checker.* Rejected: that checker's stated job is keeping personal and
+   private content out of the repo, and `CONTRIBUTING.md` calls weakening one of its checks
+   security-sensitive. Folding documentation hygiene into a security gate blurs both.
+4. *A standalone `index-check` target, in `check` and runnable alone.* **Chosen.** It costs 0.24 s, so the
+   docs-only path can afford it, and it fires at the moment of the change.
+
+The argument against gating — that it trains people to run a fixer reflexively without reading it — is real
+and is not fully answered. It is mitigated by the checker printing every row it would change (`D-103: 970 ->
+971`) rather than a bare pass/fail, so the reflexive fix at least shows its work.
+
+**Carrying the assertion in both a make target and a test is deliberate, not an oversight.** They share one
+pure function. The target is what a docs-only commit can run in a quarter-second without pytest; the test is
+what makes the checker mutation-checkable and what fires for anyone who runs the suite without the Makefile.
+
+**Two conditions are reported but never repaired**: a heading with no index row, and a row naming a heading
+that does not exist. Both are exit 1 in *fix* mode as well as check mode, because repairing them means
+inventing a title a human owes. Drift alone is exit 0 in fix mode — repairing it is the fixer doing its job.
+A duplicate heading key is likewise an error rather than a silent last-wins, which is what the prior script
+did.
+
+**Verified by mutation, derived from each test's claim, not from the implementation.** Four mutations, four
+caught: never noticing a wrong number (4 tests red); dropping the rule that the index's own heading owes no
+index row (3 red, including the real-docs test); never reporting an unindexed heading (2 red); and
+perturbing a real index row in `DECISIONS.md` to `D-103 | 970` (the real-docs test red, `index-check` exit 1,
+and `make reindex` restored the file to a byte-identical state — empty `git diff`).
+
+**Consequence.** `STATE.md`'s carried-gap row for this is closed. The docs-only shortcut is now
+`make generalization && make index-check`, not `make generalization` alone. `.agent/tools/reindex_program_docs.py`
+is deleted, so there is one copy rather than two that can diverge.
