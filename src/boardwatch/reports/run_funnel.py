@@ -203,6 +203,11 @@ class ShortlistCounts:
     # is NOT gated on identity completeness, so 0 here means 0: no job the ranker considered
     # carried a live disposition.
     hidden_handled: int = 0
+    # P6 item 5: the job already carries a SUBMITTED application, so the operator has acted on
+    # this lead outside the program. Not gated on identity completeness either, and unlike
+    # `hidden_handled` it is released by nothing the program does on its own — no TTL, no policy
+    # stamp — only by `track status <id> withdrawn`.
+    hidden_applied: int = 0
 
 
 @dataclass(frozen=True)
@@ -601,6 +606,15 @@ def build_run_funnel(
                     note="provable exact_quad duplicate; drain with `top --include-duplicates`",
                 ),
                 Drop(
+                    reason="hidden_applied",
+                    count=shortlist.hidden_applied,
+                    note=(
+                        "the job already carries a submitted application; drain with "
+                        "`top --include-applied`, or release it with "
+                        "`track status <id> withdrawn`"
+                    ),
+                ),
+                Drop(
                     reason="hidden_handled",
                     count=shortlist.hidden_handled,
                     note=(
@@ -616,8 +630,9 @@ def build_run_funnel(
                 ),
             ),
             # NOT derived. `entered` is the ranker's own row count, measured independently of
-            # the five counters below, so this identity can genuinely fail — it is the stage
-            # P0 item 3 turned from bookkeeping into evidence.
+            # the drop counters above, so this identity can genuinely fail — it is the stage
+            # P0 item 3 turned from bookkeeping into evidence, and it is what catches a new
+            # bucket added to the ranker but not mirrored here.
             derived=False,
             note=(
                 "The ranker's whole considered population. NOT a continuation of `verdict` — "

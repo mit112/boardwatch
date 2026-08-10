@@ -94,6 +94,7 @@ def funnel(
     hidden_below_cutoff: int = 0,
     skipped_not_new: int = 0,
     hidden_duplicate: int = 0,
+    hidden_applied: int = 0,
     considered: int | None = None,
     tailor_failed: int = 0,
     artifacts: TailoredArtifactCounts | None = None,
@@ -120,7 +121,7 @@ def funnel(
         considered = (
             shortlisted + hidden_ineligible + hidden_non_swe
             + hidden_hard_filter + hidden_below_cutoff + skipped_not_new
-            + hidden_duplicate
+            + hidden_duplicate + hidden_applied
         )
     counts = counts or corpus()
     tailored_artifacts = artifacts or TailoredArtifactCounts(
@@ -161,6 +162,7 @@ def funnel(
             hidden_below_cutoff=hidden_below_cutoff,
             skipped_not_new=skipped_not_new,
             hidden_duplicate=hidden_duplicate,
+            hidden_applied=hidden_applied,
         ) if ranker_ran else None,
         leads=leads,
         tailor_failed=tailor_failed,
@@ -395,6 +397,22 @@ def test_the_shortlist_stage_is_evidence_because_the_ranker_reports_what_it_cons
     assert "shortlist" in next(
         line for line in body.splitlines() if "could actually have failed" in line
     )
+
+
+def test_an_applied_suppression_is_named_in_the_artifact_and_still_reconciles() -> None:
+    """P6 item 5. The ranker's `hidden_applied` bucket has to be mirrored here or the identity
+    above goes False — which is the only thing standing between "a new bucket" and "postings
+    quietly missing from the funnel again", since the three bucket lists are hand-maintained.
+    """
+    report = funnel(considered=17, shortlisted=1, hidden_ineligible=5, hidden_non_swe=8,
+                    hidden_applied=3, leads=[lead()])
+
+    shortlist = stage(report, "shortlist")
+    applied = next(drop for drop in shortlist.drops if drop.reason == "hidden_applied")
+    assert applied.count == 3
+    assert shortlist.entered == 17
+    assert "track status" in applied.note  # the drain is named where the count is
+    assert shortlist.reconciled is True
 
 
 def test_a_posting_the_ranker_loses_breaks_the_shortlist_stage_instead_of_hiding() -> None:

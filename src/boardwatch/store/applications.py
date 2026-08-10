@@ -19,6 +19,17 @@ ApplicationStatus = Literal[
     "interested", "applied", "interviewing", "offer", "rejected", "withdrawn"
 ]
 
+# Statuses that imply a submission actually happened. `interested` is excluded because it is
+# `create_application`'s default and means only that a lead was tracked; `withdrawn` because it
+# cannot distinguish withdrawing an application from withdrawing interest before applying.
+#
+# One catalog, two callers, and the reasons coincide rather than merely agreeing: the funnel
+# counts these as conversions (`count_applied_for_postings`) and the ranker suppresses them
+# (P6 item 5). Both ask the same question — did this job already receive an application? — so a
+# status that should not count as a conversion is exactly one that should not suppress a lead.
+# `withdrawn` falling outside the set is what makes `track status <id> withdrawn` the drain.
+APPLIED_STATUSES = ("applied", "interviewing", "offer", "rejected")
+
 
 def append_application_event(
     conn: Connection,
@@ -89,6 +100,31 @@ def get_applications(conn: Connection, job_id: int) -> list[Row[Any]]:
             .order_by(applications.c.attempt_no)
         ).all()
     )
+
+
+def applied_job_ids(conn: Connection) -> dict[int, str]:
+    """Jobs that already carry a submitted application, mapped to the status that says so.
+
+    The whole table, unfiltered by job: `applications` has 0 rows on every store measured so
+    far and cannot plausibly outgrow the shortlist it is joined against, so paying for an `IN`
+    list here would buy nothing and would reintroduce the 32,766-parameter cap that
+    `load_dispositions` documents.
+
+    Keyed on `job_id`, the canonical anchor, so an application survives its posting being
+    revised, closed, or regrouped onto another job. The status is returned rather than a bare
+    set because the `--include-applied` drain shows it: "already applied" and "already
+    rejected" are different things to be told about a lead you are looking at again.
+
+    When a job has several attempts, the LAST one by `attempt_no` wins — that is the attempt
+    the operator is currently living in, and `track add --new-attempt` exists precisely to
+    supersede an earlier one.
+    """
+    rows = conn.execute(
+        select(applications.c.job_id, applications.c.status)
+        .where(applications.c.status.in_(APPLIED_STATUSES))
+        .order_by(applications.c.job_id, applications.c.attempt_no)
+    ).all()
+    return {int(row.job_id): str(row.status) for row in rows}
 
 
 def set_application_status(

@@ -408,6 +408,7 @@ def run_pipeline(
             skipped_not_new=ranked.skipped_not_new,
             hidden_duplicate=ranked.hidden_duplicate,
             hidden_handled=ranked.hidden_handled,
+            hidden_applied=ranked.hidden_applied,
         )
 
         # P6 slice 2 §3.4: project this run's duplicate groups onto canonical jobs, so a lead

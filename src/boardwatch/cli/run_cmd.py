@@ -33,7 +33,8 @@ def _shortlist_line(summary: PipelineSummary) -> str:
     return (
         f"{counts.shortlisted} shortlisted of {counts.considered} considered "
         f"({counts.hidden_ineligible} ineligible, {counts.hidden_non_swe} non-SWE, "
-        f"{counts.hidden_duplicate} duplicate, {counts.hidden_handled} already handled, "
+        f"{counts.hidden_duplicate} duplicate, {counts.hidden_applied} already applied, "
+        f"{counts.hidden_handled} already handled, "
         f"{counts.hidden_below_cutoff} below cutoff)"
     )
 

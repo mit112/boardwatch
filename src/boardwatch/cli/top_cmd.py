@@ -36,6 +36,7 @@ from boardwatch.rank.heuristic import (
 )
 from boardwatch.rank.role_gate import RoleVerdict, role_verdict
 from boardwatch.store.app_state import get_digest_cursor
+from boardwatch.store.applications import applied_job_ids
 from boardwatch.store.identity_queries import (
     identities_complete,
     load_identities,
@@ -69,16 +70,19 @@ class RankedPosting:
     # The live ledger disposition that suppressed this row, set only when it is surfaced by the
     # `--include-handled` drain (P6 slice 2). A normally-visible posting has None.
     handled_as: str | None = None
+    # The application status that suppressed this row, set only when it is surfaced by the
+    # `--include-applied` drain (P6 slice 3). A normally-visible posting has None.
+    applied_as: str | None = None
 
 
 @dataclass(frozen=True)
 class RankedResults:
     """The shortlist plus every count needed to account for the postings considered.
 
-    `considered` and the six drop counts exist so the funnel's shortlist stage can reconcile:
+    `considered` and the seven drop counts exist so the funnel's shortlist stage can reconcile:
     `considered == len(visible) + skipped_not_new + hidden_hard_filter + hidden_non_swe +
-    hidden_ineligible + hidden_duplicate + hidden_handled + hidden_below_cutoff`. Each is its own
-    counter,
+    hidden_ineligible + hidden_duplicate + hidden_applied + hidden_handled +
+    hidden_below_cutoff`. Each is its own counter,
     incremented where the posting actually leaves, never a remainder computed by subtraction —
     a remainder cannot catch a `continue` that forgot to count, which is the only way this
     identity realistically breaks (P0 item 3).
@@ -123,6 +127,13 @@ class RankedResults:
     # completeness: a disposition is a record of a decision this program made, and it governs
     # whether or not dedup is currently running.
     hidden_handled: int = 0
+    # Suppressed because the job already carries a SUBMITTED application (P6 item 5). Sits ahead
+    # of the ledger because it is the stronger fact and the one that never lapses: a `seen`
+    # disposition expires and a `built` one is a decision this program took, whereas an
+    # application is a decision the OPERATOR took, outside the program, and no policy stamp can
+    # make it stale. Drained by `--include-applied`, and by `track status <id> withdrawn`, which
+    # moves the row out of `APPLIED_STATUSES` at the source.
+    hidden_applied: int = 0
     # The duplicate groups this run resolved, threaded out so the pipeline can project them onto
     # canonical jobs without recomputing dedup over the corpus a second time. Empty when
     # identities are incomplete, which is the same condition that leaves `hidden_duplicate` at 0.
@@ -143,6 +154,7 @@ def rank_open_postings(
     include_non_swe: bool = False,
     include_duplicates: bool = False,
     include_handled: bool = False,
+    include_applied: bool = False,
     only_new: bool = False,
     output_console: Console = console,
     run_id: int | None = None,
@@ -282,6 +294,7 @@ def rank_open_postings(
     suppressions: dict[int, Suppression] = {}
     anchors: dict[int, int] = {}
     handled: dict[int, LedgerRow] = {}
+    applied: dict[int, str] = {}
     eligible_ids = [p.posting_id for p in eligible]
     with engine.connect() as dedup_conn:
         # Completeness is evaluated over ALL open postings, not just the eligible ones — it
@@ -308,6 +321,12 @@ def rank_open_postings(
         handled = live_dispositions(
             dedup_conn, now=now, job_ids=sorted(set(anchors.values()))
         )
+        # Applied state (P6 item 5). Read alongside the ledger and keyed the same way, but from
+        # a different table on purpose: an application is the operator's own record, written by
+        # `track`, and mirroring it into a disposition would give one fact two homes that can
+        # disagree. The ranker asks `applications` directly, exactly as `protected_job_ids`
+        # already does for regrouping.
+        applied = applied_job_ids(dedup_conn)
 
     # Only non-duplicate rows are counted against `limit`. Drained duplicates are appended
     # unconditionally, so `--include-duplicates` can return more than `limit` rows.
@@ -319,6 +338,7 @@ def rank_open_postings(
     # duplicates land in `hidden_duplicate` instead.
     kept = 0
     hidden_handled = 0
+    hidden_applied = 0
     surfaced_job_ids: list[int] = []
     for posting in eligible:
         suppression = suppressions.get(posting.posting_id)
@@ -332,6 +352,18 @@ def rank_open_postings(
         # reason eligibility is: `top 8` should return 8 ACTIONABLE rows, not 8 slots of which
         # five were built last week.
         job_id = anchors.get(posting.posting_id)
+        # Applied state is checked BEFORE the ledger, so a job that is both applied-to and
+        # `built` reports the applied reason. Not cosmetic: the ledger's `built` lapses on a
+        # policy change and its drain would release the row, whereas an application never
+        # should. Attributing the drop to the bucket that outlives the other keeps the count
+        # honest for anyone reading the funnel to decide what to drain.
+        applied_status = applied.get(job_id) if job_id is not None else None
+        if applied_status is not None and not include_applied:
+            hidden_applied += 1
+            continue
+        if applied_status is not None:
+            visible.append(replace(posting, applied_as=applied_status))
+            continue
         disposition = handled.get(job_id) if job_id is not None else None
         if disposition is not None and not include_handled:
             hidden_handled += 1
@@ -363,6 +395,7 @@ def rank_open_postings(
         hidden_duplicate=hidden_duplicate,
         identities_are_complete=ids_complete,
         hidden_handled=hidden_handled,
+        hidden_applied=hidden_applied,
         suppressions=tuple(suppressions.values()),
     )
 
@@ -448,9 +481,11 @@ def count_filter_matches(engine: Engine, settings: Settings) -> int | None:
 
 def _why_cell(posting: RankedPosting) -> str:
     """A drained row names why it was suppressed, inline, so it can never be read as an ordinary
-    lead. Both drains annotate; a normally-visible row is unannotated."""
+    lead. Every drain annotates; a normally-visible row is unannotated."""
     if posting.duplicate_of is not None:
         return f"{posting.why} · duplicate of {posting.duplicate_of}"
+    if posting.applied_as is not None:
+        return f"{posting.why} · already applied ({posting.applied_as})"
     if posting.handled_as is not None:
         return f"{posting.why} · already {posting.handled_as}"
     return posting.why
@@ -499,6 +534,11 @@ def top(
         "--include-handled",
         help="Show postings already built, skipped, or surfaced inside their seen TTL.",
     ),
+    include_applied: bool = typer.Option(
+        False,
+        "--include-applied",
+        help="Show postings whose job you have already applied to.",
+    ),
     new: bool = typer.Option(
         False, "--new", help="Only postings first seen since your last digest."
     ),
@@ -522,6 +562,7 @@ def top(
             include_non_swe=include_non_swe,
             include_duplicates=include_duplicates,
             include_handled=include_handled,
+            include_applied=include_applied,
             only_new=new,
             output_console=output_console,
             record_surfaced=not no_record,
@@ -538,6 +579,15 @@ def top(
             "recently) — re-run with --include-handled to see them.",
             markup=False,
         )
+    if json_output and results.hidden_applied and not include_applied:
+        # Same reason as the notice above, and it needs saying separately: "you already applied"
+        # is not something `--include-handled` will ever explain, so a script told only about the
+        # ledger would be told the wrong thing about why its array is short.
+        output_console.print(
+            f"{results.hidden_applied} hidden as already applied to — re-run with "
+            "--include-applied to see them.",
+            markup=False,
+        )
     if json_output:
         console.print_json(
             json.dumps(
@@ -551,6 +601,7 @@ def top(
                         "role": p.role,
                         "duplicate_of": p.duplicate_of,
                         "handled_as": p.handled_as,
+                        "applied_as": p.applied_as,
                     }
                     for p in results.visible
                 ]
@@ -614,5 +665,13 @@ def top(
         console.print(
             f"{results.hidden_handled} hidden as already handled (built, skipped, or surfaced "
             "recently) — see them with --include-handled, each naming its disposition.",
+            markup=False,
+        )
+    if results.hidden_applied and not include_applied:
+        # Named separately from `hidden_handled` because the drain is different: this bucket is
+        # not released by `ledger reopen` or by any TTL, only by `track status <id> withdrawn`.
+        console.print(
+            f"{results.hidden_applied} hidden as already applied to — see them with "
+            "--include-applied, each naming its application status.",
             markup=False,
         )

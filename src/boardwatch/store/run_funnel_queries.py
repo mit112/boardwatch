@@ -30,6 +30,7 @@ from dataclasses import dataclass
 from sqlalchemy import Connection, Select, case, func, literal, select, tuple_
 
 from boardwatch.core.dedup import resolve_duplicates
+from boardwatch.store.applications import APPLIED_STATUSES
 from boardwatch.store.identity_queries import (
     identities_complete,
     load_identities,
@@ -47,12 +48,6 @@ from boardwatch.store.tables import (
 
 # The Tier A résumé artifact the pipeline's tailor stage writes, one per lead.
 TAILORED_KIND = "resume_tailored"
-
-# Application statuses that imply a submission actually happened. `interested` is excluded
-# because it is `create_application`'s default and means only that a lead was tracked;
-# `withdrawn` because it cannot distinguish withdrawing an application from withdrawing
-# interest before applying.
-APPLIED_STATUSES = ("applied", "interviewing", "offer", "rejected")
 
 # Attribution buckets. `unattributed` is kept apart from `prior_run` because a NULL run_id
 # means exactly one thing (D-019) — the row predates run attribution — and folding it into
