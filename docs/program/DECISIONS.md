@@ -1260,23 +1260,27 @@ same thing under plain `uv run pytest`.
 
 1. *Fixer only, no gate.* Cheapest. Rejected: it is exactly the status quo that produced 38 drifted rows in
    one commit, minus the gitignore problem.
-2. *Gate inside `make check` only.* Rejected as insufficient on its own, for a reason specific to this repo:
-   **a docs-only change is exempted from `make check`** and runs `make generalization` alone. Drift is caused
-   almost exclusively by docs-only commits, so a `make check`-only gate never fires on the commit that caused
-   it — it fires later, on an unrelated code commit, blaming the wrong change.
+2. *Gate inside `make check` only.* Rejected as insufficient on its own, because drift is caused almost
+   entirely by docs-only commits and it is not certain those run `make check`. **The repo contradicts itself
+   here and this entry does not resolve it**: D-014 rules that "a docs-only commit is not exempt — run
+   `make check` before any commit, including docs", while `STATE.md` records the practice of running
+   `make generalization` alone, which is what the D-108 commits actually did. Under D-014's reading a
+   `make check`-only gate would suffice; under the practice it never fires on the commit that caused the
+   drift, and blames a later unrelated code commit instead.
 3. *A rule inside the generalization checker.* Rejected: that checker's stated job is keeping personal and
    private content out of the repo, and `CONTRIBUTING.md` calls weakening one of its checks
    security-sensitive. Folding documentation hygiene into a security gate blurs both.
-4. *A standalone `index-check` target, in `check` and runnable alone.* **Chosen.** It costs 0.24 s, so the
-   docs-only path can afford it, and it fires at the moment of the change.
+4. *A standalone `index-check` target, in `check` and runnable alone.* **Chosen, because it is correct under
+   either reading of that contradiction.** It is in `check` for D-014's reading, and cheap enough (0.05 s
+   warm, 0.20 s cold) to sit in the docs-only path for the practice's.
 
 The argument against gating — that it trains people to run a fixer reflexively without reading it — is real
-and is not fully answered. It is mitigated by the checker printing every row it would change (`D-103: 970 ->
-971`) rather than a bare pass/fail, so the reflexive fix at least shows its work.
+and is not fully answered. It is mitigated by the checker printing every row it would change
+(`DECISIONS.md:D-103: 970 -> 972`) rather than a bare pass/fail, so the reflexive fix at least shows its work.
 
 **Carrying the assertion in both a make target and a test is deliberate, not an oversight.** They share one
-pure function. The target is what a docs-only commit can run in a quarter-second without pytest; the test is
-what makes the checker mutation-checkable and what fires for anyone who runs the suite without the Makefile.
+pure function. The target is what a docs-only commit can run in a twentieth of a second without pytest; the
+test is what makes the checker mutation-checkable and what fires for anyone running the suite without `make`.
 
 **Two conditions are reported but never repaired**: a heading with no index row, and a row naming a heading
 that does not exist. Both are exit 1 in *fix* mode as well as check mode, because repairing them means
@@ -1290,6 +1294,26 @@ index row (3 red, including the real-docs test); never reporting an unindexed he
 perturbing a real index row in `DECISIONS.md` to `D-103 | 970` (the real-docs test red, `index-check` exit 1,
 and `make reindex` restored the file to a byte-identical state — empty `git diff`).
 
-**Consequence.** `STATE.md`'s carried-gap row for this is closed. The docs-only shortcut is now
-`make generalization && make index-check`, not `make generalization` alone. `.agent/tools/reindex_program_docs.py`
-is deleted, so there is one copy rather than two that can diverge.
+**Reviewed, and the review found five defects — three of them the same root cause.** The scan had no notion
+of fenced code blocks, and **these logs quote their own index rows and their own `grep -n '^## '` output
+inside fences**, which the index preambles above actively instruct the reader to run. So: an illustrative row
+inside a fence was rewritten as though it were a real entry, and `index-check` then demanded that edit
+forever; a fenced `## ` heading became a phantom duplicate that failed the gate unrepairably *and* shadowed
+the real heading's position; and because the index block was anchored to the last row-shaped line **anywhere**
+in the file, one such stray line switched the missing-index-row check off for everything above it — the check
+this tool exists to provide, silently disabled by the tool's own documentation style. Two more: a duplicate
+heading key kept first-wins, so `reindex` could write a line nobody chose into the index before reporting the
+ambiguity; and `main` printed "index is current" on a run that had just reported a problem in that file.
+
+Fixed by reading only lines outside fences, and by defining the index as the **first unbroken run** of index
+rows. Four more mutations, four caught. The row-in-a-fence test survives either single mutation because the
+two defences are independent, so it was proved non-vacuous by mutating both at once (3 red). The reviewer's
+original reproduction was then re-run against a copy of the real `DECISIONS.md`: the quoted example row is
+untouched, and the genuinely-unindexed heading below it is now reported instead of suppressed.
+
+**The lesson generalizes past this tool.** A tool that reads the repo's own documentation must model that
+documentation's conventions, and the convention most likely to break it is the one the document uses to
+explain itself.
+
+**Consequence.** `STATE.md`'s carried-gap row for this is closed. `.agent/tools/reindex_program_docs.py` is
+deleted, so there is one copy rather than two that can diverge.

@@ -16,7 +16,9 @@ All notable changes to this project are documented here. The format follows
   would have died with a fresh clone. `make check` now depends on `index-check`, and
   `tests/unit/test_program_index.py` asserts the same over the real files under plain `pytest`. A heading
   with no index row, a row naming a heading that does not exist, and a duplicate heading key are reported
-  and fail — never silently repaired or last-wins.
+  and fail — never silently repaired or last-wins. **Fenced code blocks are not read**, because these logs
+  quote their own index rows and their own `grep -n '^## '` output inside fences, and the index is the
+  **first unbroken run** of index rows, so a row-shaped line further down is prose.
 
 - **Durable decision ledger, its drain, and job regrouping — P6 Slice 2** (D-103 … D-107). A new
   `job_dispositions` table (migration `p6_job_dispositions`, now the Alembic head) records **one row per

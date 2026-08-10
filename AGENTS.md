@@ -51,7 +51,7 @@ Do not resolve either by assumption or by code fiat.
 
 ## Verification and Git
 
-`make check` is the only green gate. It runs generalization, Ruff, strict mypy, and pytest; run it in
+`make check` is the only green gate. It runs generalization, the program-index check, Ruff, strict mypy, and pytest; run it in
 plain mode and preserve the real exit code. A failed command is not evidence of a clean negative.
 
 Use descriptive imperative commit messages, one logical change per commit, and never add AI

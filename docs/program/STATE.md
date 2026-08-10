@@ -35,6 +35,11 @@ confident *and* reviewed; only the first holds.
 
 Schema head is **`p6_job_dispositions`**.
 
+**Committed after that gate run, and not yet gated at HEAD: `tools/program_index` + `make reindex` /
+`make index-check`** (D-109), which keeps the `DECISIONS`/`METRICS` spanning indexes true and fails `check`
+when they are stale. `make check` was **exit 0 at the first of its three commits**; the two since — a
+five-defect review fix and this documentation — have not been through it. Run it before pushing.
+
 **Next action: P6 Slice 3** — applied-state suppression (`PROGRAM.md` §3.P6 item 5) and liveness (item 6).
 Liveness is what the remaining "0 dead postings" gate clause needs. Two things to know before planning it:
 item 5 has **no live population** (`applications` = 0 rows), and item 6's is tiny — 3 open postings contain a
@@ -117,12 +122,13 @@ since D-035, unchanged by everything since.
   only runs under `make check`. Run it in a detached worktree pinned to a commit
   (`git worktree add --detach /tmp/bw-gate <sha>`) so editing the main tree cannot corrupt a run in flight,
   capture the real exit code, and **never** pipe it through `head`/`tail` (SIGPIPE gives a false negative).
-  End a backgrounded gate with `exit $ec`. For a docs-only change, `make generalization && make index-check`
-  (~1 s together) suffices — `index-check` is in the list because index drift is caused almost entirely by
-  docs-only commits, which never reach `make check` (D-109).
+  End a backgrounded gate with `exit $ec`. For a docs-only change the practice has been
+  `make generalization && make index-check` (1.3 s together) — but note **D-014 rules that docs-only commits
+  are not exempt** from `make check` at all, and the practice quietly relaxes it. D-109 chose a design that
+  is correct either way rather than resolving the contradiction; resolving it is Mit's.
 - **After appending to `DECISIONS.md` or `METRICS.md`, add the index row and run `make reindex`.** The
-  spanning indexes' line numbers drift on *any* edit above a heading; appending D-109's own row moved 33 of
-  them. `make check` fails on a stale index.
+  spanning indexes' line numbers drift on *any* edit above a heading; appending D-109's own row shifted 32 of
+  them. `make check` fails on a stale index (D-109).
 - **The per-task fast-check set must include `tests/unit/test_store.py` and `tests/unit/test_schema_head.py`**
   for anything touching `tables.py`, a migration, or the Alembic head (D-099). `test_schema_head.py` pins the
   head, so a new migration must bump it explicitly.

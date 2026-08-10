@@ -37,8 +37,9 @@ followed — keep incidents out of this file.
 
 **Neither log is read end to end** — together they are ~100k tokens. Each live file opens with an index
 spanning itself and its archive: find the entry or section you want, then read only that range with
-`sed -n '<start>,<end>p'`. Line numbers drift as entries are appended, so confirm one with
-`grep -n` before trusting it. Cross-references are by number (`D-028`), never by file, so they resolve
+`sed -n '<start>,<end>p'`. Line numbers drift on any edit above a heading, so confirm one with `grep -n`
+before trusting it. **After appending an entry, add its index row and run `make reindex`**; `make check`
+fails on a stale index (D-109). Cross-references are by number (`D-028`), never by file, so they resolve
 across the split.
 
 `.agent/` and `.superpowers/` are gitignored working material — useful context, **not** a source of truth

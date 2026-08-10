@@ -54,12 +54,13 @@ reports drift without writing, and `make check` depends on it (D-109).
 | METRICS-ARCHIVE.md | 1047 | Session — 2026-08-08 (P5 run #2 — disjunctive fix, Gate P5 MET at 100%; D-073) |
 | METRICS-ARCHIVE.md | 1084 | Session — 2026-08-08 (D-071b final eligibility gate build — no answer-key number changes) |
 | METRICS-ARCHIVE.md | 1120 | Gate P2 — 2026-08-08 · field-tier mechanism (P2 item 4, D-075). **MET AS RECONCILED** |
-| METRICS.md | 66 | Run log |
-| METRICS.md | 94 | Acceptance run |
-| METRICS.md | 105 | Session — 2026-08-09/10 · P6 Slice 1 design + plan. **No build, no gate movement.** |
-| METRICS.md | 131 | Session — 2026-08-10 · P6 Slice 1 BUILT (unattended run). Branch `p6-slice1`, not merged. |
-| METRICS.md | 341 | 2026-08-10 — P6 Slice 1 on the LIVE store (first real backfill) + Gate P6 clause 4 |
-| METRICS.md | 380 | Session 2026-08-10 (later) — P6 Slice 2: the durable decision ledger, its drain, and job regrouping |
+| METRICS.md | 67 | Run log |
+| METRICS.md | 95 | Acceptance run |
+| METRICS.md | 106 | Session — 2026-08-09/10 · P6 Slice 1 design + plan. **No build, no gate movement.** |
+| METRICS.md | 132 | Session — 2026-08-10 · P6 Slice 1 BUILT (unattended run). Branch `p6-slice1`, not merged. |
+| METRICS.md | 342 | 2026-08-10 — P6 Slice 1 on the LIVE store (first real backfill) + Gate P6 clause 4 |
+| METRICS.md | 381 | Session 2026-08-10 (later) — P6 Slice 2: the durable decision ledger, its drain, and job regrouping |
+| METRICS.md | 474 | Session — 2026-08-10 (later) · D-109, the program-index gate. No phase gate moved. |
 
 ---
 
@@ -467,3 +468,41 @@ zero-output guard and the filesystem cross-check, whose claims do not depend on 
 The pre-migration backup `boardwatch.db.pre-p6-backup-20260810` (769 MB) is still in place. Root filesystem
 is at **39%** with 18 GiB free, so the disk pressure that made deleting it worth considering has resolved
 and it was left alone.
+
+---
+
+## Session — 2026-08-10 (later) · D-109, the program-index gate. No phase gate moved.
+
+No pipeline run, so no funnel numbers and no Gate P6 movement. Recorded because the numbers below are the
+evidence for D-109 and are otherwise unverifiable after the fact.
+
+| Measure | Value |
+|---|---|
+| `make check` at `6064119` (tool + first docs commit) | **exit 0**, in a detached worktree pinned to the commit |
+| `make check` at HEAD | **not run** — two later commits are ungated |
+| `make index-check`, warm | 0.05 s (0.20 s cold) |
+| `make generalization && make index-check` | 1.26 s |
+| Index rows shifted by appending D-109's own row | 32 of 33 DECISIONS rows (the 33rd was the new row itself); 0 METRICS rows |
+| `tests/unit/test_program_index.py` | 15 tests |
+
+**Mutation results — 8 mutations, 8 caught.** Each derived from a test's stated claim, not from the code.
+Committed before mutating and `__pycache__` cleared each time (both have faked a CAUGHT here before).
+
+| Mutation | Tests red |
+|---|---|
+| Never notice a wrong index number | 4 |
+| Drop the rule that the index's own heading owes no index row | 3 (incl. the real-docs test) |
+| Never report a heading that has no index row | 2 |
+| Perturb a real row to `D-103 \| 970` in `DECISIONS.md` | 1 real-docs test; `index-check` exit 1; `make reindex` restored a byte-identical file |
+| Read fenced code blocks again | 1 |
+| Anchor the index to the last row-shaped line anywhere | 1 |
+| Duplicate heading keeps first-wins | 1 |
+| Print "index is current" despite reported problems | 1 |
+| *(both fence defences removed at once — proves the row-in-a-fence test is not vacuous)* | 3 |
+
+**Review yield.** One code reviewer, one docs-only reviewer, both fresh-context. Code: 5 defects, all real,
+all fixed. Docs: 4 MAJOR + 5 MINOR, of which the load-bearing one was that D-109's argument rested on a
+docs-only `make check` exemption that **D-014 explicitly denies** — see D-109. The docs reviewer also found
+three files enumerating `make check`'s contents that had gone stale (`CONTRIBUTING.md`, `AGENTS.md`,
+`.github/PULL_REQUEST_TEMPLATE.md`), which is the fourth time a claim in this repo has needed fixing in more
+places than the change that invalidated it touched.
