@@ -35,7 +35,18 @@ from boardwatch.eligibility.hashing import digest
 # The closed classification from METRICS.md §"Session 7". Every top-level Settings field is in
 # exactly one of these three (the third being `llm`, whose own fields are classified below).
 _CONFIG_RELEVANT: frozenset[str] = frozenset(
-    {"weights", "recency_half_life_days", "zero_skill_coverage_prior", "location_filter_mode"}
+    {
+        "weights",
+        "recency_half_life_days",
+        "zero_skill_coverage_prior",
+        "location_filter_mode",
+        # P6 slice 2: how long a surfaced-but-unbuilt job stays suppressed. Decision-relevant —
+        # it changes which postings reach the lead list on any given run, which is the test this
+        # set applies. Consequence, stated so it is not read as a bug: `policy_version` is
+        # derived from `config_hash`, so changing the TTL marks every permanent disposition
+        # stale. Harmless by design — stale is reported, never auto-reopened (design §2.4).
+        "seen_ttl_days",
+    }
 )
 _CONFIG_IRRELEVANT: frozenset[str] = frozenset(
     {

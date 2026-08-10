@@ -85,6 +85,11 @@ class Settings(BaseModel):
     # board; exceeding it yields a partial snapshot, never a silent truncation.
     detail_fetch_budget: int = Field(default=50, ge=1, le=1000)
     recency_half_life_days: float = 14.0
+    # How long a job stays suppressed after being surfaced as a lead without a deliverable
+    # being produced (P6 slice 2). The TTL is itself a drain: a job you were shown and did not
+    # act on re-enters the shortlist after this, in case you missed it or the JD moved.
+    # `built`/`skipped` are permanent and are not governed by this.
+    seen_ttl_days: int = Field(default=7, ge=1)
     location_filter_mode: Literal["soft", "hard"] = "soft"
     # Coverage imputed when a posting has no recognized skills at all (§3.6). Dropping
     # the component instead redistributes its 0.50 weight to whatever else scored well,

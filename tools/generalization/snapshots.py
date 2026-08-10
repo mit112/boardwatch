@@ -18,6 +18,11 @@ EXPECTED_SETTINGS_DEFAULTS: dict[str, object] = {
     "Settings.scan_workers": 4,
     "Settings.detail_fetch_budget": 50,
     "Settings.recency_half_life_days": 14.0,
+    # How long a surfaced-but-unbuilt job stays suppressed (P6 slice 2). 7 is neutral: one
+    # week is the shortest period that outlives a single work week, so a job shown on Monday
+    # is not re-served on Tuesday and is not withheld past the next weekly review. It encodes
+    # no preference about roles, seniority, geography or field.
+    "Settings.seen_ttl_days": 7,
     "Settings.location_filter_mode": "soft",
     "Settings.zero_skill_coverage_prior": 0.50,
     "Settings.weights": {
@@ -66,6 +71,7 @@ SETTINGS_FIELD_CLASS: dict[str, str] = {
     "Settings.scan_workers": "operational",
     "Settings.detail_fetch_budget": "operational",
     "Settings.recency_half_life_days": "preference",
+    "Settings.seen_ttl_days": "preference",
     "Settings.location_filter_mode": "preference",
     "Settings.zero_skill_coverage_prior": "preference",
     "Settings.weights": "preference",

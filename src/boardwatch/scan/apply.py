@@ -30,9 +30,18 @@ from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 from boardwatch.core.clock import utcnow
 from boardwatch.core.models import BoardSnapshot, RawPosting
 from boardwatch.core.normalize import content_hash, normalize_title
+from boardwatch.core.posting_identity import IdentityInputs, compute_identities
 from boardwatch.store.events import append_event
+from boardwatch.store.identity_queries import write_identities
 from boardwatch.store.sources import record_version_source
-from boardwatch.store.tables import board_scans, http_cache, jobs, posting_versions, postings
+from boardwatch.store.tables import (
+    board_scans,
+    companies,
+    http_cache,
+    jobs,
+    posting_versions,
+    postings,
+)
 
 CLOSE_AFTER_MISSES = 2  # not configurable (plan Conventions)
 
@@ -87,6 +96,10 @@ def _apply_listed(
             select(postings).where(postings.c.company_id == company_id)
         ).all()
     }
+    # One query per board, for the `cross_host` identity component (P6 slice 2 §4).
+    company_name = str(
+        conn.execute(select(companies.c.name).where(companies.c.id == company_id)).scalar_one()
+    )
     for raw in raw_postings:
         new_hash = content_hash(raw.body_text)
         row = existing.get(raw.provider_posting_id)
@@ -112,6 +125,10 @@ def _apply_listed(
                 source_record_id=raw.provider_posting_id, observed_at=now, payload_hash=new_hash,
             )
             append_event(conn, posting_id, "new", run_id)
+            _write_posting_identity(
+                conn, raw, posting_id=posting_id, company_id=company_id,
+                company_name=company_name, content_hash=new_hash, first_seen_at=now, now=now,
+            )
             result.new += 1
             continue
         values: dict[str, Any] = _mutable_fields(raw, now)  # D25: regardless of content_hash
@@ -132,7 +149,73 @@ def _apply_listed(
             append_event(conn, row.id, "revised", run_id)
             result.revised += 1
         conn.execute(update(postings).where(postings.c.id == row.id).values(**values))
+        # AFTER the update, so the identity is computed from what was just persisted. The
+        # observation may have moved title or locations without producing a revision (the D25
+        # rule above refreshes them regardless of content_hash), which moves an identity key.
+        _write_posting_identity(
+            conn, raw, posting_id=int(row.id), company_id=company_id,
+            company_name=company_name,
+            content_hash=values.get("content_hash", row.content_hash),
+            first_seen_at=row.first_seen_at, now=now,
+        )
     return result
+
+
+def _write_posting_identity(
+    conn: Connection,
+    raw: RawPosting,
+    *,
+    posting_id: int,
+    company_id: int,
+    company_name: str,
+    content_hash: str,
+    first_seen_at: datetime,
+    now: datetime,
+) -> None:
+    """Keep this posting's stored identities current, inside the board's own transaction.
+
+    P6 slice 2 §4, closing D-098: before this, `write_identities` had exactly one caller in
+    `src/` — the manual `boardwatch identities backfill`. Nothing in the scan or pipeline path
+    wrote identities, so **any** run that discovered one new posting left it uncovered,
+    `identities_complete()` went False and duplicate suppression silently switched off
+    corpus-wide.
+
+    Written here rather than as a sweep in the pipeline, which is what D-098 had in mind when it
+    priced this work at a second corpus-wide `body_text` load: every field `IdentityInputs`
+    needs is already in hand at this point, so the cost is O(postings this board listed) and no
+    body is loaded that was not already in memory.
+
+    Deliberately NOT wrapped in a try/except. A failure fails the board's transaction, so the
+    posting and its identity commit or vanish together — the D16 property this module is built
+    on. A posting stored without its identity is exactly the state that disables suppression.
+    """
+    write_identities(
+        conn,
+        posting_id,
+        compute_identities(
+            IdentityInputs(
+                posting_id=posting_id,
+                company_id=company_id,
+                company_name=company_name,
+                provider_posting_id=raw.provider_posting_id,
+                title=raw.title,
+                # Mirrors identity_queries.load_identity_inputs' coercion: non-string elements
+                # are dropped, not stringified, so a JSON `[null]` cannot become the truthy
+                # location component `["none"]` and let two postings suppress on evidence
+                # neither one has.
+                locations=(
+                    [x for x in raw.locations if isinstance(x, str)]
+                    if isinstance(raw.locations, list)
+                    else None
+                ),
+                content_hash=content_hash,
+                body_text=raw.body_text,
+                url=raw.url,
+                first_seen_at=first_seen_at,
+            )
+        ),
+        now=now,
+    )
 
 
 def _insert_version(
