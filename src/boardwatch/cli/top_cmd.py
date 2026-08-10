@@ -71,10 +71,9 @@ class RankedResults:
     `considered` and the six drop counts exist so the funnel's shortlist stage can reconcile:
     `considered == len(visible) + skipped_not_new + hidden_hard_filter + hidden_non_swe +
     hidden_ineligible + hidden_below_cutoff + hidden_duplicate`. Each is its own counter,
-    incremented where the
-    posting actually leaves, never a remainder computed by subtraction — a remainder cannot
-    catch a `continue` that forgot to count, which is the only way this identity realistically
-    breaks (P0 item 3).
+    incremented where the posting actually leaves, never a remainder computed by subtraction —
+    a remainder cannot catch a `continue` that forgot to count, which is the only way this
+    identity realistically breaks (P0 item 3).
 
     That `considered` is `len(rows)` rather than that sum is a **code-review invariant, not a
     tested one**: the loop's exits are exhaustive, so rewriting it as the sum is behaviourally

@@ -1250,6 +1250,23 @@ re-verified outside `_verify_quad`, comparing company_id, normalized title, norm
 normalized body independently — **0 failures**. Sampled groups are same-role-different-requisition
 pairs: identical titles, identical locations, distinct `provider_posting_id`.
 
+### Cost the fifth sweep adds to every run — measured, and worth a reviewer's eye
+
+`count_by_source`'s new survivor sweep loads **every open posting's `body_text`** (it must: the
+`unique` denominator is corpus-wide, so unlike the ranker it cannot bound the load to a shortlist).
+Measured on the copy:
+
+| | |
+|---|---|
+| `count_by_source` over 23,455 open postings | **9.4 s**, peak RSS **471 MB** |
+| `identities backfill` (117,254 rows, cold) | **41 s** |
+
+9 s on a run that already takes minutes is not a concern; the **471 MB peak** is the number to
+watch, and it scales with corpus size. Flagged rather than tuned: the obvious fix (a SQL GROUP BY
+over stored `identity_key`s instead of re-resolving in Python) would re-introduce exactly the
+"group the same table a different way" tautology D-028 deleted, and would skip the string-verify
+that makes suppression safe. Any optimization here has to keep the verify.
+
 ### `assisted`
 
 **Not instrumented — reports `None`, not 0.** `exact_quad` is keyed on `company_id` and sources *are*
