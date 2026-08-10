@@ -1239,7 +1239,7 @@ command below ran with `--data-dir` pointed at the copy (P1a's dogfood pattern).
 | Groups `exact_quad` collapses | **147** |
 | Surplus rows `exact_quad` removes | **186** (**0.79%** of open postings) |
 | Kinds appearing in any suppression | `exact_quad` only |
-| Suppressions failing an INDEPENDENT four-field recheck | **0 of 186** |
+| ~~Suppressions failing an INDEPENDENT four-field recheck~~ | ~~**0 of 186**~~ — **RETRACTED, see below** |
 | A survivor that was itself suppressed | **none** |
 
 ### The figure moved from the pre-registered baseline, and why
@@ -1259,10 +1259,63 @@ directly: **12 of the 186** suppressions have raw location lists that are not eq
 Not a cause: title normalization. **0 of 186** suppressions have a stored `normalized_title` that
 disagrees with `normalize_title(title)`.
 
-**Precision is intact and was checked through a second path.** Every one of the 186 suppressions was
-re-verified outside `_verify_quad`, comparing company_id, normalized title, normalized locations and
-normalized body independently — **0 failures**. Sampled groups are same-role-different-requisition
-pairs: identical titles, identical locations, distinct `provider_posting_id`.
+**RETRACTED 2026-08-10 — this was not a second path.** The original claim read: *"Every one of the
+186 suppressions was re-verified outside `_verify_quad`, comparing company_id, normalized title,
+normalized locations and normalized body independently — 0 failures."* But `_verify_quad` **is**
+those four comparisons using those normalizers, so re-running them outside the function agrees for
+every possible input. The "0 of 186" was determined before the check ran. Same defect D-028 deleted a
+per-board `eligible` total for, and the same class D-020 already recorded: a check whose docstring
+claims a different path while computing `X == X`.
+
+The paragraph is retracted, not deleted, because a read-first document must not quietly lose a claim
+someone may have already acted on. Sampled groups genuinely are same-role-different-requisition
+pairs — that observation stands; only the "0 failures" arithmetic was empty.
+
+See "Precision re-derived independently (2026-08-10)" below for a check that can actually disagree.
+
+### Precision re-derived independently (2026-08-10, post-review-fixes, `p6.2`)
+
+Run on a copy of the copy (`scratchpad/auditdir`), so neither the live store nor the smoke copy was
+touched. This replaces the retracted check above.
+
+**What makes it a different path:** the grouping is done in **SQL** over the stored `identity_key`s
+and never calls `resolve_duplicates`, `_verify_quad`, or any Python normalizer. It can therefore
+disagree with the Python path — and the interesting result is where it does and does not.
+
+| Measurement | Value |
+|---|---|
+| SQL-only grouping of open `exact_quad` rows at `p6.2` | **147 groups / 186 surplus rows** |
+| Python `resolve_duplicates` on the same store | **186 surplus, 147 distinct survivors** |
+| Kinds appearing in any suppression | `exact_quad` only |
+| A survivor that was itself suppressed | **none** |
+| `identities verify` | **exit 0** — 23,455 verified |
+| `p6.1` rows still present beside `p6.2` | **117,254 each** |
+
+**The two paths agree at 186 — and that agreement is itself the finding.** SQL surplus equals the
+resolver's surplus, which means `_verify_quad` rejected **zero** members across the entire corpus.
+The string-verify has never once fired. It is not broken; it is redundant with the key on this data,
+because it re-runs the same normalizers the key was built from. So it defends against a SHA-256
+collision and against staleness, but **not** against the normalizers being lossy — which is exactly
+how the C++/C# title collision got in. Recorded so nobody cites "string-verified" as evidence of
+precision it cannot supply.
+
+**Precision checked where the key cannot help — raw-field disagreement inside a group:**
+
+| | |
+|---|---|
+| Groups whose members differ in RAW `title` | **8 of 147** |
+| Groups whose members differ in RAW `locations_json` | **11 of 147** |
+| Groups whose members differ in `content_hash` | **0** |
+| Groups whose members differ in `company_id` | **0** |
+
+All 8 raw-title disagreements were read by eye and every one is punctuation, spacing or case noise on
+the same role — `Mobile Expert - Bilingual…` vs `Mobile Expert, Bilingual…`, `Store-in-Store` vs
+`Store in Store`, `Javascript` vs `JavaScript`, `IC design` vs `IC Design`. **Zero are semantic
+collisions.** That measurement is what killed the first proposed fix for the C++/C# hole (adding a raw
+case-folded title comparison to `_verify_quad`): it would have broken 6 of those 8 real suppressions
+to defend a collision this corpus does not contain. The shipped fix folds `+` and `#` to words in
+`normalize_title` instead — 123 open titles contain `+`, 16 contain `#`, **none of them is in any
+suppression group**, so the figure is unchanged at 147/186 and no recall was traded away.
 
 ### Cost the fifth sweep adds to every run — measured, and worth a reviewer's eye
 

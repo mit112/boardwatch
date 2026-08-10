@@ -1,10 +1,22 @@
 # PROGRAM STATE — read this first
 
-**Last updated:** 2026-08-10 (unattended overnight run). **Active item: P6 Slice 1 — liveness +
-dedup. All nine plan tasks are BUILT and committed on branch `p6-slice1`. NOT merged to `main`,
-and NOT reviewed.** `main` is unchanged. The branch is the deliverable; merging it is Mit's
-decision, because nothing was reviewed at 3am and the standing merge permission is conditional on
-review.
+**Last updated:** 2026-08-10 (post-review fix session). **Active item: P6 Slice 1 — liveness +
+dedup. All nine plan tasks are BUILT on branch `p6-slice1`, the branch has now been REVIEWED by
+three independent reviewers, and the resulting fixes are committed. Still NOT merged to `main`.**
+`main` is unchanged. Merging is Mit's decision.
+
+**The review and what it cost.** Three reviewers in parallel on `main..3a35819`: a fresh-context
+Opus 5 whole-branch review, DeepSeek v4 flash, and GPT-5.6 sol at high reasoning. Verdicts were
+REWORK / REWORK / SHIP-WITH-FIXES. Every finding was checked against the code before being acted
+on, and **two were rejected as factually wrong** — DeepSeek claimed `normalize_body` strips
+non-ASCII (it confused it with `normalize_company`; measured, `["Remote","远程"]` keeps both), and
+GPT claimed the survivor election contradicts a stated earliest-seen rule (D-086 explicitly ratifies
+`(host_class, first_seen_at, posting_id)`). Seven findings were real and are fixed (D-095). Nine
+tests could not fail for the claim they made; all nine are fixed and mutation-checked, and the two
+key components that had **no** test at all — `company_id` in the `exact_quad` key, and `host_class`
+precedence in `_elect` — now have one. The three reviewers overlapped on only one finding, and each
+found something the other two missed entirely; the single most consequential defect (the C++/C#
+title collision) came from the reviewer that also produced the most errors.
 
 **Gate P6 is NOT met, and Slice 1 was designed not to meet it (D-093).** It makes exactly one of
 the gate's four clauses measurable — the funnel's `unique` counter, now a measured number instead
@@ -22,13 +34,24 @@ the funnel's measured per-source `unique` (with `assisted` deliberately still `N
 
 **Measured on an isolated COPY of the live store — the live store was never written to.** 23,455
 open postings, 117,254 identity rows, `identities verify` exit 0, **147 groups / 186 surplus rows /
-0.79%** suppressed, all `exact_quad`. Per-source `unique` reconciles through a second path:
-sum(open) − sum(unique) = 186 across 118 sources, equal to the resolver's own count. **The figure
-moved from the pre-registered 131/168/0.72% baseline and the cause was found before committing:**
-the baseline grouped locations raw, the shipped code normalizes them (design §2.1). Re-grouping raw
-reproduces 136/174/0.74%, matching the design's own unguarded baseline. Precision was re-checked
-through an independent four-field comparison: **0 of 186 failures**. Full investigation in
-`METRICS.md`.
+0.79%** suppressed, all `exact_quad`. **The figure moved from the pre-registered 131/168/0.72%
+baseline and the cause was found before committing:** the baseline grouped locations raw, the shipped
+code normalizes them (design §2.1). Re-grouping raw reproduces 136/174/0.74%, matching the design's
+own unguarded baseline. Full investigation in `METRICS.md`.
+
+**Two claims that stood here have been RETRACTED (2026-08-10) — they were tautologies, not
+verification.** (1) *"Per-source `unique` reconciles through a second path: sum(open) − sum(unique) =
+186"* — `unique_by_company` is built from the same `identity_rows` and the same `resolve_duplicates`
+output that produced the count, grouped by the same column, so that identity holds for every possible
+database state. It is the `open_postings` equivalent `run_funnel_queries`' own docstring forbids by
+name, citing D-028. (2) *"Precision re-checked through an independent four-field comparison: 0 of 186
+failures"* — `_verify_quad` **is** those four comparisons with those normalizers.
+
+**The 186 does survive a real independent check.** Grouping the stored `identity_key`s in SQL, calling
+no Python normalizer and no resolver, returns the same 147/186. Details and the raw-field precision
+audit are in `METRICS.md` under "Precision re-derived independently". Note what the agreement implies:
+`_verify_quad` rejected zero members corpus-wide, so the string-verify has never fired and cannot be
+cited as precision evidence — it re-runs the key's own normalizers.
 
 **Fifteen design decisions are now individual entries, D-079 … D-093** (summarized in D-077 until
 now). **D-094** records the build itself, including **five** defects found *in the plan* — four by

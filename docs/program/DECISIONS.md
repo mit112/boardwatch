@@ -3741,3 +3741,146 @@ duplicates and so cannot distinguish working dedup from inert dedup. Recorded as
 than quietly dropped.
 
 **Gate P6 remains NOT met** (D-093), and no clause of it was claimed.
+
+---
+
+## D-095 — P6 Slice 1 reviewed by three independent reviewers; seven findings fixed, two rejected
+
+**Context.** The branch was built unattended and gated green, but nothing had been reviewed. The P2
+item 4 whole-branch review had caught a CRITICAL that every per-task review missed, so this
+comparable checkpoint got the same treatment — widened to three reviewers to see whether the extra
+lanes pay for themselves.
+
+**Choice.** Three reviewers in parallel on the pinned range `main..3a35819`: fresh-context Opus 5
+(whole-branch, read-only), DeepSeek v4 flash (full diff), GPT-5.6 sol at high reasoning (repo
+access, read-only sandbox). Verdicts REWORK / REWORK / SHIP-WITH-FIXES. Every claim was verified
+against the code before being acted on.
+
+**Was the third lane worth it?** Yes, and not for the reason expected. The reviewers overlapped on
+exactly **one** finding, and each found something neither other saw:
+
+- Opus alone: the drain bounded by `limit`; `company_id` untested in the only suppressing key; the
+  tautological verification claims in STATE/METRICS.
+- GPT-5.6 sol alone: the `normalize_title` C++/C# collision (the most consequential defect of the
+  set); the migration importing the live catalog into its CHECK constraint.
+- DeepSeek alone: `locations_json = [null]` becoming a location component; the `split("_")`
+  field-neutrality test.
+- All three: `_verify_quad`'s `None == None` hole.
+
+**Two findings were rejected as factually wrong**, which is the cost of the extra lanes:
+
+1. DeepSeek: *"`normalize_body` is ASCII-only (`[^a-z0-9 ]`), so `["Remote","远程"]` collides with
+   `["Remote"," "]`."* It confused `normalize_body` with `normalize_company`. Measured:
+   `normalized_locations(["Remote","远程"])` → `["remote","远程"]`. No collision.
+2. GPT-5.6 sol: *"survivor election prioritizes host class before `first_seen_at`, contrary to the
+   stated earliest-seen rule."* D-086 explicitly ratifies `(host_class, earliest first_seen_at,
+   lowest posting_id)` and the docstring matches. Its sub-claim was kept: no test covered the
+   precedence, because every `exact_quad` test seeds one host.
+
+**Alternatives rejected.** Trusting the reviewers' severities. DeepSeek rated the `_verify_quad`
+hole a BLOCKER on precision grounds; it is not, because `_verify_quad` re-compares company, title,
+locations **and body** against current data, so anything it clears still shares a byte-identical
+normalized body. The real damage was narrower (a D-083 invariant violation), and mis-rating it
+would have justified emergency work on the wrong thing.
+
+---
+
+## D-096 — The C++/C# fix folds punctuation into words; it does NOT add a raw-title comparison
+
+**Context.** `normalize_title` folds `[\W_]` to spaces, so `C++ Developer`, `C# Developer` and
+`C Developer` all normalize to `c developer`. Since `_verify_quad` re-runs the same normalizer, the
+string-verify agrees with the key on the wrong answer — the exact failure shape D-083 names.
+
+**Choice.** Fold `+` and `#` to words (` plus `, ` sharp `) inside `normalize_title`, before the
+punctuation strip. Bump `IDENTITY_ALGORITHM_VERSION` to `p6.2` as any normalizer change requires.
+
+**Alternatives rejected — and this one was rejected by measurement, after being recommended.** The
+first proposal was to add a case-folded, whitespace-collapsed **raw title** comparison to
+`_verify_quad`, so the verify would stop depending on the key's own normalizer. Measured against the
+live corpus first: **8 of 147 suppression groups already differ in raw title, and all 8 differ only
+in punctuation, spacing or case on the same role** (`Mobile Expert - Bilingual…` vs
+`Mobile Expert, Bilingual…`; `Store-in-Store` vs `Store in Store`; `Javascript` vs `JavaScript`;
+`IC design` vs `IC Design`; `Manager, Clinical Study Lead` vs `Manager Clinical Study Lead`). A raw
+comparison would have leaked **6 of those 8 real duplicates** to defend a collision the corpus does
+not contain. The shipped fix costs nothing: 123 open titles contain `+` and 16 contain `#`, and
+**none of them sits in any suppression group**, so the measured figure stays 147/186. Both facts are
+now pinned by tests — one asserting C++/C#/C produce different keys, one asserting the five real
+punctuation-noise pairs still collapse.
+
+**The transferable lesson.** A fix aimed at a theoretical failure must have its blast radius measured
+on real data before it ships. This one would have traded live recall for hypothetical precision, and
+only the corpus could say so.
+
+---
+
+## D-097 — `_verify_quad` has never fired; "string-verified" is not precision evidence
+
+**Context.** Re-deriving the suppression count in SQL (grouping stored `identity_key`s, calling no
+Python normalizer and no resolver) returned **147 groups / 186 surplus rows** — identical to
+`resolve_duplicates`.
+
+**Choice.** Record the agreement as a finding rather than as reassurance. Equal counts mean
+`_verify_quad` rejected **zero** members corpus-wide: the string-verify has never once fired.
+
+It is not broken. It is redundant with the key on this data, because it re-runs the same normalizers
+the key was built from. So it genuinely defends against a SHA-256 collision and against stale stored
+identities, but **not** against the normalizers being lossy — which is precisely how the C++/C#
+collision (D-096) got in. Nothing may cite "string-verified" as evidence of precision it cannot
+supply. Precision evidence has to come from a comparison the key does not already make: the raw-field
+audit in METRICS.md is the one that can disagree.
+
+**Alternatives rejected.** Deleting `_verify_quad` as dead weight. It is the only guard against a
+stale stored identity, which is a live condition (D-098), and it costs one pass over a small group.
+
+---
+
+## D-098 — Suppression reports when it is OFF; wiring backfill into the pipeline is Slice 2
+
+**Context.** `write_identities` has exactly one caller in `src/` — the manual
+`boardwatch identities backfill`. Nothing in the scan or pipeline path writes identities. So on any
+run that discovers ≥1 new posting, `identities_complete()` is False, suppression is silently
+disabled and `unique` reports `None` for every source; on a run that only mutates existing postings,
+coverage stays complete and suppression runs on **stale** keys. The 147/186 figure was produced by a
+manual backfill on a copy — a sequence that does not occur in the shipped automated path.
+
+**Choice (ruled by Mit).** Ship the operator-visible notice now; defer wiring the backfill into the
+pipeline to Slice 2. `top` prints, whenever coverage is incomplete, that suppression is OFF and
+which command fixes it. `RankedResults` carries `identities_are_complete`, defaulting to **False** —
+the noisy direction, so a caller that forgets to set it gets "disabled" rather than a silent claim
+that the subsystem ran.
+
+**Why the notice is not cosmetic.** `hidden_duplicate == 0` is ambiguous between "no duplicates
+found" and "dedup never ran", and the second is the *common* case, not the corner. Without the notice
+an uninstrumented run is indistinguishable from a clean one — the same "a rule that cannot fire is a
+monitoring failure, not a conservatism feature" problem the keystone invariant exists for.
+
+**Alternatives rejected.** Wiring the idempotent backfill into the pipeline now. It is the better end
+state and makes the Gate P6 `unique` clause genuinely measurable, but it adds the measured 471 MB
+peak RSS / 9.4 s to every run and belongs with Slice 2's ledger work, where the cost can be paid once
+rather than twice.
+
+---
+
+## D-099 — Gate batching stays allowed; the per-task fast-check set must include the schema guards
+
+**Context.** The overnight run batched `make check` over Tasks 5–8 rather than gating each task, and
+committed before the batched gate returned. That gate came back RED on
+`test_migrations_match_metadata` — a constraint-naming drift the standing suite **already covered**.
+The per-task fast checks (ruff, `mypy --strict`, the generalization checker, plus the focused test
+modules) did not include `test_store.py`, so the defect survived four commits.
+
+**Choice (ruled by Mit).** Do **not** ban batching. Batching a ~18-minute gate over several tasks is
+the correct wall-clock trade and the pinned-worktree pattern that made it safe is worth keeping. The
+ruling is narrower: the per-task fast-check set **must** include the schema/metadata guard tests —
+`tests/unit/test_store.py` and `tests/unit/test_schema_head.py` — for any task that touches
+`tables.py`, a migration, or the Alembic head. They run in seconds.
+
+**Alternatives rejected.** A blanket "gate every task" rule. Five ~18-minute gates is most of an
+unattended night, and the failure here was not that the gate ran late — it was that the cheap check
+which would have caught it was not in the per-task set. Fixing the set is the surgical repair;
+banning batching pays a large wall-clock cost for a defect that a two-second test catches.
+
+**Also recorded, because it is the real cause of the commit order.** The run committed Tasks 5–8
+before their gate returned. "Never commit on a red gate" is unenforceable when the gate result
+arrives after the commit; the enforceable version is "do not commit a schema change without running
+the schema guards", which is what this ruling installs.
