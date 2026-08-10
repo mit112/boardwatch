@@ -28,24 +28,20 @@ importantly — the measurements that shaped it.
 
 **Slice 3, in one paragraph.** The ranker gained a `hidden_applied` bucket read straight from
 `applications` (not mirrored into a ledger disposition — one fact, one home), drained by
-`top --include-applied` and released at the source by `track status <id> withdrawn`. Liveness re-fetches
-each shortlisted posting immediately before its résumé is built and withholds one answering **404/410**;
-everything else is served. The funnel artifact is now **version 4** (top-level `liveness` block).
+`top --include-applied` and released by `track status <id> withdrawn`. Liveness re-fetches each
+shortlisted posting immediately before its résumé is built and withholds one answering **404/410**;
+everything else is served. Funnel artifact is now **version 4**.
 
-**The closed-phrase catalog was NOT shipped, deliberately, and this is not an omission to correct.**
-`PROGRAM.md` item 6 calls it the authoritative signal, inheriting that from job-apps, which scraped HTML.
-Every provider assembles `body_text` only from employer-authored **description fields of a JSON payload**
-(one field for most, two for lever, three for smartrecruiters) and never sees the rendered careers page,
-so page chrome cannot reach that column. Measured: a nine-phrase catalog matched **11 of 23,455** open
-postings and **all 11 were false positives**; a high-precision catalog matches **0**. Reasoning and the
-re-derivation query are in `core/liveness.py`'s docstring; the numbers are in `METRICS.md`. The older
-"3 open postings contain a closed phrase" figure is **superseded** — it was recorded without its catalog.
+**The closed-phrase catalog was NOT shipped, deliberately — not an omission to correct.** `PROGRAM.md`
+item 6 calls it the authoritative signal, inheriting that from job-apps, which scraped HTML. Providers
+assemble `body_text` only from JSON-payload description fields and never see the rendered page, so page
+chrome cannot reach that column. Measured: **11 of 23,455** matches, **all false positives**; a
+high-precision catalog matches **0**. Full reasoning in D-111 and `core/liveness.py`'s docstring; the
+older "3 open postings contain a closed phrase" figure is **superseded** — recorded without its catalog.
 
-**Slice 3 WAS reviewed in-session — three reviewers, two BLOCKERs, both fixed** (recorded in D-111).
-Both were invisible to reading and found by executing the pipeline: the funnel's tailor stage stopped
-reconciling whenever liveness withheld a lead (breaking **Gate P0**, not P6), and `build_prober` — the
-whole production probe path — had no test. **A fresh-context review is still worth having** and is a
-reasonable next action, but it is a second opinion now, not an owed first pass.
+**Slice 3 WAS reviewed in-session — three reviewers, two BLOCKERs, both fixed** (D-111). Both were
+invisible to reading and found by executing the pipeline. A fresh-context review is a second opinion now,
+not an owed first pass; Mit is running one through Codex.
 
 **Next action: P6 has nothing left to BUILD — its last two gate clauses need the system RUN.** Duplicate
 leakage needs 7 days of runs (and the window must start after D-110, which changed which callers advance
@@ -55,8 +51,9 @@ task. So the useful work is, in order: (1) start accumulating real daily runs, w
 prompt is written at `.agent/review-prompt-p6-slice3.md` (gitignored); (3) P2 item 8 or P3 slice 5, both
 owner-gated and both wanting their own context window.
 
-**Still Mit's call: cutting 0.3.0.** Its recommended precondition, the Slice 2 review, was met before this
-session.
+**0.3.0 is cut but not published.** Version, changelog and lockfile are on `main`; the tag is deliberately
+not pushed, because pushing `v*` publishes to PyPI/GHCR/GitHub Releases irreversibly. See the blockers
+table for the command and the caveat.
 
 **One earlier review fix does not ship.** `bwd` lives in `.agent/bin/bw-daily`, which is gitignored, so its
 `top --no-record` fix is local to this machine. The *defect* was in shipped behaviour and the shipped fix is
@@ -129,7 +126,8 @@ since D-035, unchanged by everything since.
 |---|---|---|
 | **Three `resume.yaml` bullets exceed the 220-char layout gate** | Forces an untailored-master degrade on every posting. The file also lacks Knowledge Forge, has stale `skill_groups`, and an empty extracurricular block. **Mit pins `resume_max_pages=1` — do not advise setting it to 2.** | Mit (content) |
 | **P2 item 8 — the onboarding gatherer** | The thing that would make the field tier fire for anyone. D-054 forbids us authoring non-tech field content, so it must be gathered per user. Needs its own brainstorm | owner-gated |
-| **`CHANGELOG.md`'s `[Unreleased]` has never been cut to a release** | It carries 14 duplicated subsections (`Added` ×5, `Fixed` ×4, `Changed` ×5) because sessions appended a fresh triple instead of merging; D-110's and D-111's entries went into the existing subsections rather than adding a 15th. Last release v0.2.0 (2026-08-04); `pyproject.toml` still says `0.2.0`. **The precondition for cutting 0.3.0 is met** — merge the duplicate subsections in the same pass | Mit (release) |
+| **0.3.0 is cut but NOT PUBLISHED** | `CHANGELOG.md` and `pyproject.toml` say `0.3.0`, the 14 duplicated subsections are merged into one triple, and the wheel builds and installs clean in an isolated venv reporting `0.3.0`. **No tag is pushed**, and that is the whole remaining step: `.github/workflows/release.yml` fires on `v*` and publishes to PyPI, GHCR and GitHub Releases, which is irreversible. `git tag v0.3.0 && git push origin v0.3.0` — **but see the row below first** | Mit (publish) |
+| **The release workflow will queue forever, like CI** | `release.yml` runs `make check` on `ubuntu-latest`, the same runner pool that never acquires. Pushing the tag is expected to hang rather than publish. The tag itself is harmless and re-runnable once runners work; just do not read a silent workflow as a successful publish. **Verify on PyPI, not in the Actions tab** | GitHub |
 | **P3 Slice 5 — LLM economics** | Substantial and design-heavy; use a fresh context window | P3 |
 | **P3 item 8 — cross-OS two-writer WAL test** | A same-OS test proves nothing; needs a Docker-Linux-container + macOS-host harness. The documented-stance half shipped (D-041) | P3 |
 | **A `SIGKILL`ed run leaves a dangling `runs` row** | `try/finally` covers exceptions and Ctrl-C, not SIGKILL. Largely drained by the age-based reaper (D-046); a heartbeat-column reaper is the deferred correct fix | P3 |

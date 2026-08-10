@@ -110,41 +110,42 @@ and is a no-op when the index is already right. `make index-check` reports drift
 | D-074 | DECISIONS-ARCHIVE.md | 3009 | Final eligibility gate lane SHIPPED (persistent, agent-lane, fail-open); Gate P5 unchanged |
 | D-075 | DECISIONS-ARCHIVE.md | 3084 | Gate P2 reconciled: three individually-correct verdicts (may coincide); ≥3-field mechanism via fixtures |
 | D-076 | DECISIONS-ARCHIVE.md | 3153 | P2 item 4's final whole-branch review: what it caught, and four rulings it forced |
-| D-077 | DECISIONS.md | 151 | P6 Slice 1: the design is settled and the plan is written; no code exists yet |
-| D-078 | DECISIONS.md | 241 | P6 Slice 1: the plan's test fixtures are now real; eleven defects, all found by running code |
-| D-079 | DECISIONS.md | 330 | P6 Slice 1 annotates only; `postings.job_id` is not mutated |
-| D-080 | DECISIONS.md | 344 | `content_hash` alone may never suppress |
-| D-081 | DECISIONS.md | 358 | `exact_quad` is the sole suppressing kind, and its yield is stated honestly |
-| D-082 | DECISIONS.md | 376 | `cross_host` ships annotate-only, reversing an earlier draft |
-| D-083 | DECISIONS.md | 397 | No location evidence ⇒ no location-bearing identity, never a `"[]"` sentinel |
-| D-084 | DECISIONS.md | 412 | Three host classes, not two; matching is exact-or-dot-suffix |
-| D-085 | DECISIONS.md | 426 | Allowlist URL normalization, not a denylist |
-| D-086 | DECISIONS.md | 440 | Survivor election never consults score; `posting_id` is a load-bearing tiebreak |
-| D-087 | DECISIONS.md | 455 | Instrumentation is completeness-gated, not existence-gated |
-| D-088 | DECISIONS.md | 469 | `assisted` stays `None` in this slice |
-| D-089 | DECISIONS.md | 484 | Identities are upserted on every observation; a kind that stops being produced is deleted |
-| D-090 | DECISIONS.md | 501 | The ranker is completeness-gated for reproducibility, not safety |
-| D-091 | DECISIONS.md | 519 | The recount recomputes in Python, and claims staleness only |
-| D-092 | DECISIONS.md | 534 | Identities are backfilled by an explicit command, not by the migration |
-| D-093 | DECISIONS.md | 548 | Slice 1 does NOT meet Gate P6, and makes only one of its four clauses measurable |
-| D-094 | DECISIONS.md | 562 | P6 Slice 1 BUILT (unattended run): five more plan defects, three of them tests that could not fail |
-| D-095 | DECISIONS.md | 690 | P6 Slice 1 reviewed by three independent reviewers; fourteen findings fixed, two rejected |
-| D-096 | DECISIONS.md | 755 | The C++/C# fix folds punctuation into words; it does NOT add a raw-title comparison |
-| D-097 | DECISIONS.md | 799 | `_verify_quad` rejected nothing on the live corpus; "string-verified" is not precision evidence |
-| D-098 | DECISIONS.md | 828 | Suppression reports when it is OFF; wiring backfill into the pipeline is Slice 2 |
-| D-099 | DECISIONS.md | 864 | Gate batching stays allowed; the per-task fast-check set must include the schema guards |
-| D-100 | DECISIONS.md | 890 | P6 Slice 1 merged to `main`; Gate P6 clause 3 is MET, not merely measurable |
-| D-101 | DECISIONS.md | 922 | Gate P6 clause 4 is MET: 20/20 sampled suppressions are genuine duplicates |
-| D-102 | DECISIONS.md | 952 | D-072 (model-tier benchmark) is deferred indefinitely |
-| D-103 | DECISIONS.md | 974 | P6 Slice 2: the ledger is a current-state row per job, `seen` suppresses on a TTL, and the policy stamp never auto-reopens |
-| D-104 | DECISIONS.md | 1046 | Job regrouping: the survivor's job wins, and a tracked group is refused whole |
-| D-105 | DECISIONS.md | 1089 | Identity writes move into the scan path, closing D-098 — and D-098's cost argument did not apply |
-| D-106 | DECISIONS.md | 1120 | Two consequences the build forced: what earns a permanent `skipped`, and the zero-output guard |
-| D-107 | DECISIONS.md | 1146 | P6 Slice 2 BUILT and verified on real data; `cross_host` dereference deferred by measured absence |
-| D-108 | DECISIONS.md | 1195 | The decision log and the metrics log are archive-split; the reading protocol moves into the index |
-| D-109 | DECISIONS.md | 1254 | Index drift fails the gate, and the fixer lives in `tools/` |
-| D-110 | DECISIONS.md | 1332 | The Slice 2 review: only a caller that delivers a lead may consume the queue |
-| D-111 | DECISIONS.md | 1449 | P6 Slice 3: applied-state suppression, and liveness sized to what the corpus actually is |
+| D-077 | DECISIONS.md | 152 | P6 Slice 1: the design is settled and the plan is written; no code exists yet |
+| D-078 | DECISIONS.md | 242 | P6 Slice 1: the plan's test fixtures are now real; eleven defects, all found by running code |
+| D-079 | DECISIONS.md | 331 | P6 Slice 1 annotates only; `postings.job_id` is not mutated |
+| D-080 | DECISIONS.md | 345 | `content_hash` alone may never suppress |
+| D-081 | DECISIONS.md | 359 | `exact_quad` is the sole suppressing kind, and its yield is stated honestly |
+| D-082 | DECISIONS.md | 377 | `cross_host` ships annotate-only, reversing an earlier draft |
+| D-083 | DECISIONS.md | 398 | No location evidence ⇒ no location-bearing identity, never a `"[]"` sentinel |
+| D-084 | DECISIONS.md | 413 | Three host classes, not two; matching is exact-or-dot-suffix |
+| D-085 | DECISIONS.md | 427 | Allowlist URL normalization, not a denylist |
+| D-086 | DECISIONS.md | 441 | Survivor election never consults score; `posting_id` is a load-bearing tiebreak |
+| D-087 | DECISIONS.md | 456 | Instrumentation is completeness-gated, not existence-gated |
+| D-088 | DECISIONS.md | 470 | `assisted` stays `None` in this slice |
+| D-089 | DECISIONS.md | 485 | Identities are upserted on every observation; a kind that stops being produced is deleted |
+| D-090 | DECISIONS.md | 502 | The ranker is completeness-gated for reproducibility, not safety |
+| D-091 | DECISIONS.md | 520 | The recount recomputes in Python, and claims staleness only |
+| D-092 | DECISIONS.md | 535 | Identities are backfilled by an explicit command, not by the migration |
+| D-093 | DECISIONS.md | 549 | Slice 1 does NOT meet Gate P6, and makes only one of its four clauses measurable |
+| D-094 | DECISIONS.md | 563 | P6 Slice 1 BUILT (unattended run): five more plan defects, three of them tests that could not fail |
+| D-095 | DECISIONS.md | 691 | P6 Slice 1 reviewed by three independent reviewers; fourteen findings fixed, two rejected |
+| D-096 | DECISIONS.md | 756 | The C++/C# fix folds punctuation into words; it does NOT add a raw-title comparison |
+| D-097 | DECISIONS.md | 800 | `_verify_quad` rejected nothing on the live corpus; "string-verified" is not precision evidence |
+| D-098 | DECISIONS.md | 829 | Suppression reports when it is OFF; wiring backfill into the pipeline is Slice 2 |
+| D-099 | DECISIONS.md | 865 | Gate batching stays allowed; the per-task fast-check set must include the schema guards |
+| D-100 | DECISIONS.md | 891 | P6 Slice 1 merged to `main`; Gate P6 clause 3 is MET, not merely measurable |
+| D-101 | DECISIONS.md | 923 | Gate P6 clause 4 is MET: 20/20 sampled suppressions are genuine duplicates |
+| D-102 | DECISIONS.md | 953 | D-072 (model-tier benchmark) is deferred indefinitely |
+| D-103 | DECISIONS.md | 975 | P6 Slice 2: the ledger is a current-state row per job, `seen` suppresses on a TTL, and the policy stamp never auto-reopens |
+| D-104 | DECISIONS.md | 1047 | Job regrouping: the survivor's job wins, and a tracked group is refused whole |
+| D-105 | DECISIONS.md | 1090 | Identity writes move into the scan path, closing D-098 — and D-098's cost argument did not apply |
+| D-106 | DECISIONS.md | 1121 | Two consequences the build forced: what earns a permanent `skipped`, and the zero-output guard |
+| D-107 | DECISIONS.md | 1147 | P6 Slice 2 BUILT and verified on real data; `cross_host` dereference deferred by measured absence |
+| D-108 | DECISIONS.md | 1196 | The decision log and the metrics log are archive-split; the reading protocol moves into the index |
+| D-109 | DECISIONS.md | 1255 | Index drift fails the gate, and the fixer lives in `tools/` |
+| D-110 | DECISIONS.md | 1333 | The Slice 2 review: only a caller that delivers a lead may consume the queue |
+| D-111 | DECISIONS.md | 1450 | P6 Slice 3: applied-state suppression, and liveness sized to what the corpus actually is |
+| D-112 | DECISIONS.md | 1619 | 0.3.0 is cut, the changelog gets ONE triple, and the tag is the owner's to push |
 
 ---
 
@@ -1612,3 +1613,61 @@ Duplicate leakage still needs its 7 days.
 
 **Not resolved here, still Mit's:** the funnel-write swallow, whether any family beyond `work_auth`
 defaults to `blocker`, and whether docs-only commits owe a full `make check`.
+
+---
+
+## D-112 — 0.3.0 is cut, the changelog gets ONE triple, and the tag is the owner's to push
+
+*2026-08-10. Release mechanics, recorded because two of the three parts are conventions a later session
+will otherwise re-break.*
+
+**`[Unreleased]` had accreted 14 subsections** — `Added` ×5, `Changed` ×5, `Fixed` ×4 — because each
+session appended a fresh triple rather than adding to the existing one. Nothing was lost, but the section
+was unreadable and would have shipped that way. **The convention from here: one `Added` / `Changed` /
+`Fixed` triple per release section, newest bullet first within each. Add to the existing subsection; never
+append a new one.**
+
+**How the merge was verified, because "I read it and it looked right" is the failure mode this program
+keeps paying for.** Split on the `###` headers, re-concatenate per category preserving order, then assert
+the count of top-level bullets is **identical before and after** (70), and refuse outright if any content
+sat outside a subsection where the merge would silently drop it. Boundaries were located by content
+(`## [Unreleased]`, the next `## [`), never by hardcoded line numbers, which drift.
+
+**Release-readiness was checked through a different path than the one that produced it** (CLAUDE.md).
+`make check` proves the source tree; it does not prove the artifact. So the wheel was built, installed into
+a **fresh isolated venv**, and asked its own version (`0.3.0`) and for the two new flags
+(`top --include-applied`, `run --no-check-liveness`) — which is how you learn that what ships is what was
+written, rather than trusting the build.
+
+**The tag is NOT pushed, and that is deliberate.** `.github/workflows/release.yml` fires on `v*` and
+publishes to **PyPI, GHCR and GitHub Releases** in one step. A PyPI version, once taken, cannot be reused
+even after deletion, so the tag push is the single irreversible act in this repo and belongs to the owner.
+Preparing the release and performing it are separate, and only the first is automatable.
+
+**A caveat that will otherwise be misread as success.** `release.yml` runs `make check` on
+`ubuntu-latest` — the same runner pool that, per the standing CI failure, never acquires. Pushing the tag
+is expected to **queue forever rather than publish**. The tag is harmless and the workflow re-runnable once
+runners work. **Verify a release on PyPI, never in the Actions tab**, and never read a silent workflow as a
+successful publish — checking `status` rather than mere presence is the same rule the CI row already
+carries.
+
+**Cutting the release is what surfaced that the user-facing docs still described Typst.** D-058/D-060
+replaced Typst with tectonic eleven decisions ago, and the program docs were updated — but `README.md`
+still told users the renderer "shells out to a local Typst install if present", offered a `--format typst`
+flag that **does not exist** (the real value is `latex`, and it is the only adapter), described the PDF as
+"best-effort" when P1a made it a hard gate, and named the output pair `.{typ,pdf}` when it is `.{tex,pdf}`.
+`docs/configuration.md` repeated the same path. The 0.3.0 changelog also described the P1a gate in Typst
+terms — an interim state **no user ever saw**, since 0.2.0 shipped Typst and 0.3.0 ships tectonic.
+
+This is [[retracting-a-claim-means-grepping]] again in a new place: the retraction swept `src/` and
+`docs/program/`, and stopped at the two files a *user* actually reads. **A release is the moment those
+files are republished** — PyPI renders `README.md` as the project description — so "does the README still
+describe the shipped system?" belongs in the release procedure, not in the changelog pass. The remaining
+`typst` strings are deliberate: the *Changed* entry explaining the swap, and the persisted meta key
+`typst_pdf_built`, whose legacy name is documented rather than renamed.
+
+**The README roadmap's "Next" list was fully ticked**, so it promised nothing while looking like a plan —
+the same defect the 0.2.0 release commit fixed once already, which is why it is recorded this time.
+Replaced with the three genuinely-next items, and breadth is stated as **conditional** on the other two
+rather than as a queued feature, because CLAUDE.md's "breadth is last" is a constraint on the roadmap and
+not only on the code.

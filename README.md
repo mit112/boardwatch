@@ -167,10 +167,13 @@ Three properties are deliberate:
 
 - **Evidence-linked.** Every requirement carries the exact sentence it was read from,
   sliced from the posting version that was evaluated. Nothing is paraphrased or invented.
-- **Deterministic.** The same posting and the same facts always produce the same verdict.
-  There is no language model in the loop and nothing to hallucinate: the vocabulary and
-  rules are a versioned catalog, and a verdict is invalidated and recomputed only when
-  your profile or the catalog changes.
+- **Deterministic by default.** The same posting and the same facts always produce the same
+  verdict. Out of the box there is no language model in the loop and nothing to hallucinate:
+  the vocabulary and rules are a versioned catalog, and a verdict is invalidated and
+  recomputed only when your profile or the catalog changes. There is an **opt-in,
+  off-by-default** model-assisted gate that can additionally hide a posting it reads as
+  ineligible; it can only ever hide, never clear, and turning it off restores the fully
+  deterministic path.
 - **Honest.** A clean posting reads as "no flags", never as a guarantee. "no flags" means
   only that no catalogued disqualifier was found, not that you are cleared to apply, and
   ambiguous wording reads as "check" rather than a false all-clear.
@@ -416,7 +419,7 @@ boardwatch tailor run <posting-id>     # tailor it against one posting's extract
 ```
 
 `validate` and `run` read `{config_dir}/resume.yaml` unless you pass `--resume PATH`. `run`
-also takes `--out DIR` (default `{data_dir}/tailored`), `--format typst` (the only 1.0
+also takes `--out DIR` (default `{data_dir}/tailored`), `--format latex` (the only 1.0
 adapter), and `--dry-run` (report only; writes no file and records no artifact). It prints
 one line per bullet — kept, reordered, swapped, or dropped, with the JD skills that bullet
 covers — and the same per-bullet audit is stored on the artifact row.
@@ -433,15 +436,20 @@ database row is written, never delivered as a "best effort".
 **Honest bounds (Tier A).** This is Tier A: a local, deterministic bullet-selection and safe-synonym
 pass — it does not rewrite your prose, invent new claims, or call any model. **Your
 `profile` text (the free-form blurb from `boardwatch init`) is never imported into the
-résumé** — `tailor` reads only what you author in `resume.yaml`. PDF output is
-**best-effort**: it shells out to a local [Typst](https://typst.app/) install if present;
-without one you still get the rendered Typst source and can compile it yourself, or paste
-it elsewhere. Output lands at `{data_dir}/tailored/tailored-<posting-id>.{typ,pdf}` — a
-deterministic path, so **re-running `tailor run` for the same posting overwrites that
-file** even though each run is recorded as its own artifact in the database; the file on
-disk always reflects your most recent run, not necessarily the one you're currently
-reading about. If a later Typst compile fails, the stale PDF from the previous run is
-removed rather than left behind next to the new source.
+résumé** — `tailor` reads only what you author in `resume.yaml`.
+
+**PDF output is a hard gate, not best-effort.** The renderer is
+[tectonic](https://tectonic-typesetting.github.io/), compiling a LaTeX template you can
+override at `{config_dir}/resume_template.tex`. A lead without a shippable PDF is refused
+rather than delivered as rendered source: a missing `tectonic` on `PATH` fails the run
+loudly, and a résumé that compiles to more pages than `resume_max_pages` (default 1) is
+rejected. `boardwatch doctor` probes for the binary. Output lands at
+`{data_dir}/tailored/tailored-<posting-id>.{tex,pdf}` — a deterministic path, so
+**re-running `tailor run` for the same posting overwrites that file** even though each run
+is recorded as its own artifact in the database; the file on disk always reflects your most
+recent run, not necessarily the one you're currently reading about. If a later compile
+fails, the stale PDF from the previous run is removed rather than left behind next to the
+new source.
 
 ### Tier B (opt-in LLM)
 
@@ -649,8 +657,9 @@ often. A job seeker checking a dozen companies once a day is the intended shape.
       without hand-editing `config.toml`
 - [x] Deduplication, so the same role posted twice is one lead and not two
 - [x] A durable decision ledger, so a lead you were already shown does not come back tomorrow
-- [x] Liveness and applied-state checks, so a filled requisition and a job you already applied
-      to both stay off the list
+- [x] Applied-state suppression, so a job you already applied to stays off the list
+- [x] A liveness re-check during `run`, so a requisition that has been taken down is dropped
+      before a résumé is built for it
 
 Next:
 

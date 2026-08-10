@@ -10,6 +10,14 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- **`--verify` on `companies add` and `companies import`.** Opt-in live board probe before
+  the watch is written, reusing each provider's existing `healthcheck`. Reachable boards are
+  watched (reachable-but-empty is watched with a note); boards that return 404, error, or
+  cannot be reached are skipped instead of written, since an unreachable board is absence of
+  evidence rather than evidence the slug is wrong. `import --verify` exits non-zero when it
+  skipped any entry, so a partial import cannot be mistaken for a complete one. Both
+  commands remain offline by default.
+
 - **Applied-state suppression** — a job you have already applied to is never served as a lead again
   (P6 item 5, D-111). The ranker reads `applications` directly, keyed on the canonical job so the
   suppression survives the posting being revised, closed or regrouped. The suppressing set is
@@ -36,18 +44,6 @@ All notable changes to this project are documented here. The format follows
 - **`boardwatch top --no-record`** — rank without marking anything `seen`, so the call does not advance the
   queue (D-110). The write-side counterpart to `--include-handled`: needed by any script that ranks once to
   display and again to act, and by anyone taking a second look at a shortlist they just saw.
-
-- **`make reindex` and `make index-check`, backed by `tools/program_index`** (D-109). The spanning indexes
-  that open `docs/program/DECISIONS.md` and `METRICS.md` carry generated line numbers that drift on *any*
-  edit above a heading, not only on an append — one commit editing two preamble paragraphs moved 38 rows.
-  The regenerator derives every number from the headings themselves, so it converges however far the index
-  has drifted and no-ops when it is already right; it previously lived in gitignored working material and
-  would have died with a fresh clone. `make check` now depends on `index-check`, and
-  `tests/unit/test_program_index.py` asserts the same over the real files under plain `pytest`. A heading
-  with no index row, a row naming a heading that does not exist, and a duplicate heading key are reported
-  and fail — never silently repaired or last-wins. **Fenced code blocks are not read**, because these logs
-  quote their own index rows and their own `grep -n '^## '` output inside fences, and the index is the
-  **first unbroken run** of index rows, so a row-shaped line further down is prose.
 
 - **Durable decision ledger, its drain, and job regrouping — P6 Slice 2** (D-103 … D-107). A new
   `job_dispositions` table (migration `p6_job_dispositions`, now the Alembic head) records **one row per
@@ -77,7 +73,6 @@ All notable changes to this project are documented here. The format follows
   longer govern); `reopen --job N` / `reopen --stale` releases them. A stamp mismatch is never released
   automatically: auto-expiry on mismatch would rebuild the whole shortlist on any settings tweak.
 
-
 - **Duplicate-posting suppression — P6 Slice 1, the identity and suppression half** (D-077 … D-101). A new
   `posting_identities` table (migration `p6_posting_identities`, now the Alembic head) stores multiple ranked
   identities per posting, computed from a **closed, ranked, versioned catalog** in which `exact_quad`
@@ -105,18 +100,17 @@ All notable changes to this project are documented here. The format follows
   identity, and ships the drain in the same change as the quarantine: `--include-duplicates` surfaces every
   suppressed row, each naming the posting it duplicates. Drained rows do **not** consume `limit` slots — a
   drain bounded by the rank cutoff reaches only the suppressed rows that would also have ranked, which is not
-  a re-entry path for the bucket. Suppression and the funnel's per-source `unique` are both **completeness-
-  gated**: until every open posting carries a current-version identity, nothing is suppressed and `unique`
-  reports `None` rather than a partial number (D-088). Because nothing in the automated path writes identities
-  yet, `top` now states out loud when suppression is off and which command fixes it, so `0 duplicates` is
-  distinguishable from "never measured" (D-098). `assisted` stays not-instrumented on purpose: no suppressing
+  a re-entry path for the bucket. Suppression and the funnel's per-source `unique` are both **completeness-gated**: until every open posting carries a current-version identity, nothing is suppressed and `unique`
+  reports `None` rather than a partial number (D-088). `top` states out loud when suppression is off and
+  which command fixes it, so `0 duplicates` is distinguishable from "never measured". `assisted` stays not-instrumented on purpose: no suppressing
   kind in this slice can cross a source boundary, so `0` would be a structural zero dressed as a measurement.
 
   Measured on the live 23,455-posting corpus: **147 groups / 186 surplus rows / 0.79%**, all `exact_quad`,
   re-derived independently by grouping the stored keys in SQL. **20 of 20 sampled suppressions audited as
   genuine duplicates, zero false positives** (D-101) — same company, same title, same location, distinct
-  requisition id. Gate P6 is **not** met and Slice 1 was designed not to meet it (D-093); two of its four
-  clauses now are, and the remaining two need a running system and liveness rather than more building.
+  requisition id. Gate P6 is **not** met: two of its four clauses now are, and the
+  remaining two — duplicate leakage measured over 7 days, and 0 dead postings reaching the lead list —
+  need the system RUN rather than more building.
 
 - **Field-tier eligibility taxonomy — the `career_field` routing mechanism** (P2 item 4, D-075). The
   eligibility catalog now carries the three-tier vocabulary `CLAUDE.md` asks for as versioned *data*: every
@@ -139,7 +133,7 @@ All notable changes to this project are documented here. The format follows
   the bundled `career_fields` is `[software]`, so **bundled behaviour is unchanged** apart from the one-time
   cache re-key; multi-field routing is exercised by test fixtures (controlled catalogs with 2–3 declared
   fields), not by a live run, because D-054 gathers non-tech field content per user at onboarding rather than
-  authoring it here. `make check` green (3636 passed, coverage 95.23%).
+  authoring it here.
 
 - **Final eligibility gate — a persistent, agent-lane check over the live shortlist** (D-074). A second,
   standing eligibility lane distinct from the one-time P5 answer-key labeling pass: `boardwatch eligibility
@@ -173,19 +167,19 @@ All notable changes to this project are documented here. The format follows
   `PrecisionReport.audited_coverage` + `meets_ship_gate()` + `boardwatch eligibility score`'s non-zero exit
   block shipping B1–B4 until audited coverage ≥ `SHIP_AUDIT_COVERAGE_BAR` (0.20); `PROGRAM.md` §3.P5 carries
   the checkable gate line + the "modeled-family hard stops only" reframe. Built as 7 TDD tasks, each
-  task-reviewed, with a whole-branch review (SHIP-AS-IS). `make check` green (3584 passed).
+  task-reviewed, with a whole-branch review (SHIP-AS-IS).
 
 - **P5b B0 scaffolding — the Gate-P5 precision scorer + reference policy** (D-065). `eligibility/scoring.py`
   measures the P5 gate without shipping any verdict-changing rule: `reference_all_blocker_policy(catalog)`
-  (a code constant setting every catalog family to `blocker`, per PROGRAM.md:384 — auto-covers future B4
+  (a code constant setting every catalog family to `blocker` — auto-covers future B4
   families, no fixture/drift), `score()` → `PrecisionReport` (INELIGIBLE precision `None`-vs-0/0 disciplined,
   recall, per-rule abstain rate, false-positive triage, span violations), `meets_gate(0.95)`, and
   `load_labeled_set()` reading a `*.jsonl` worksheet that fills in over time (null verdict = unlabeled →
   skipped; malformed row fails loud). `carries_valid_span` extends P5a S1's "0 INELIGIBLE without a span"
   property to the labeled set, shared rather than forked, and deliberately kept out of the digested engine
-  modules. The verdict-changing rules (B1–B4) stay gated on Mit's human-verified labeled set. A stratified
+  modules. The verdict-changing rules (B1–B4) stay gated on a human-verified labeled set. A stratified
   173-row candidate worksheet + labeling instructions were seeded locally (gitignored — real JD bodies are
-  personal data). `make check` green (3551 passed, 95.25%), new module 100% covered.
+  personal data).
 
 - **Keyword-coverage measurement for tailored résumés** (P4 item 6 — D-061). A per-lead and per-run report
   (never a veto) of how many of a JD's *requirement* terms the résumé genuinely covers. The denominator is
@@ -195,8 +189,7 @@ All notable changes to this project are documented here. The format follows
   so a bullet that echoes a JD term cannot inflate coverage. `fraction` is `None`, never `0.0`, when a JD
   has no recognized requirement terms. Surfaced in each tailored artifact's `meta_json`, the morning report,
   and a run-level funnel summary (mean/median coverage, most-frequent missing terms). Fail-safe: a coverage
-  bug records `coverage=None` and never drops a lead. Shipped `58f032e`; `make check` green (3112 passed,
-  95.32%).
+  bug records `coverage=None` and never drops a lead.
 
 - **Persona registry + résumé title de-senioritizer** (P4 item 7 + folded-in item 4 — D-063). A persona is
   a résumé-*presentation* lens (title, skill-group order, entry subset), never an eligibility variant, so
@@ -209,8 +202,7 @@ All notable changes to this project are documented here. The format follows
   yields an "iOS Engineer" headline, never stamping "Senior" on a new-grad résumé. Rendered into the paired
   `%%TITLE%%` template slot (graceful degrade when absent). A malformed registry is a loud run-level fatal;
   an unmatched JD family is the normal default path. Keyword coverage (item 6) still measures against the
-  original master, so persona shaping can't inflate it. Shipped `1988c39`; `make check` green (3148 passed,
-  95.23%).
+  original master, so persona shaping can't inflate it.
 
 - **P5a — verdict-safe eligibility-integrity slices** (D-064). Three changes that raise decision integrity
   without altering any deterministic eligibility verdict: (1) a corpus-wide **property gate** asserting
@@ -220,11 +212,9 @@ All notable changes to this project are documented here. The format follows
   reconciling the anomaly into `total_rows` so denominators never silently shrink; (3) the opt-in LLM
   eligibility lane's response cache is now keyed on **profile + catalog identity** (`profile_hash` +
   `rules_hash` folded into the cache key), so a cached verdict is never replayed across a changed profile
-  or rule catalog — `ResponseCache.key`'s signature is unchanged, leaving the tailor rewrite lane intact.
-  Shipped `faf8aa9`; `make check` green (3525 passed, 95.17%). Verdict-changing P5 items (new families,
+  or rule catalog — `ResponseCache.key`'s signature is unchanged, leaving the tailor rewrite lane intact. Verdict-changing P5 items (new families,
   named exceptions, REQUIRED/PREFERRED context) and data-gated items (labeled eval set, 35+ visa phrases)
   are deferred — they need the human-verified labeled set to measure Gate P5's precision.
-
 
 - **A run reaper drains phantom `running` rows instead of leaving them permanent forever** (P3 slice 2,
   D-046). A crashed or killed run left `runs.status='running'` with `finished_at IS NULL` with nothing to
@@ -280,8 +270,6 @@ All notable changes to this project are documented here. The format follows
     master now aborts the run loudly (`MasterResumeError`, fatal) instead of silently dropping every lead
     one at a time.
 
-
-- **`docs/program/WAL_DISCIPLINE.md`** — documented SQLite/WAL concurrency stance (P3 item 8 doc half, D-041): per-connection WAL + busy_timeout + single-writer scan lock; names the untested cross-OS two-writer config as the remaining hard half.
 - **A run-scoped morning artifact, `morning-<run_id>.{json,md}`, written beside the funnel**
   (P3, §3.P3 item 7, D-038). For every lead a run tailored: apply URL, résumé PDF path, the
   honest `AuditView.presentation` verdict label, a quoted evidence span (or the eligibility
@@ -330,19 +318,18 @@ All notable changes to this project are documented here. The format follows
     (`optimize`→`improve`, `optimize`→`optimized`) is vetoed and reverts to Tier-A until the equivalence
     table is curated to permit specific swaps.
 
-- **A hard résumé PDF gate — no lead ships without a compliant, compiled PDF** (P1a). Replaces the old
-  silent `"source only (no PDF; typst not available or compile failed)"` degrade with a typed,
-  fail-closed pipeline:
+- **A hard résumé PDF gate — no lead ships without a compliant, compiled PDF** (P1a). Replaces 0.2.0's
+  silent `"source only (no PDF; renderer not available or compile failed)"` degrade with a typed,
+  fail-closed pipeline. (This gate was built against Typst and then ported when the engine changed —
+  see *Changed* below. The description here is of the shipped, tectonic-based behaviour.)
 
-  - **Binary-missing vs. compile-failure, split at the type.** A missing `typst` on `PATH` is an
-    environment fault (`TypstUnavailableError`) that aborts the whole run fatal and exits the CLI
+  - **Binary-missing vs. compile-failure, split at the type.** A missing renderer binary on `PATH` is an
+    environment fault that aborts the whole run fatal and exits the CLI
     non-zero with install guidance; a compile failure or a page-count overflow on one lead's résumé is a
     per-lead fault handled by the fallback below. Both are drawn from closed catalogs
     (`CompileReason`, `GateReason`) — never string-matched.
-  - **Page count is a hard fail, checked Typst-native.** A new `resume_max_pages` profile column (default
-    1) is enforced via a `typst eval` query against a metadata label the renderer now injects into every
-    emitted résumé — no PDF-parsing dependency, no reliance on LaTeX-only `hbox`/`vbox` diagnostics (which
-    Typst does not emit).
+  - **Page count is a hard fail.** A new `resume_max_pages` profile column (default 1) is enforced on the
+    compiled PDF, so a résumé that overflows the limit is rejected rather than shipped.
   - **Untailored-master fallback.** A tailored résumé that fails to compile or overflows the page limit
     falls back to rendering the untailored master; if that also fails, the lead is dropped with **no**
     `resume_tailored` row and **no** lead folder left behind — a plain compliant résumé beats none, and a
@@ -351,9 +338,9 @@ All notable changes to this project are documented here. The format follows
     `_failed/<slug>.log` before cleanup), so a fallback or a drop is always diagnosable after the fact.
   - **A slot-filled assertion** (`validate_slots`) runs on the tailored résumé right before render and
     fails the lead (routing into the same fallback) if tailoring stripped an entry down to nothing.
-  - **`typst` is now packaged, not just assumed installed.** The Dockerfile installs the pinned release
-    binary, and `doctor` probes both presence and version, warning loudly on a mismatch — an
-    unpinned typst can silently break the page-count query syntax and make every lead fall back or drop.
+  - **The renderer is packaged, not just assumed installed.** The Dockerfile installs the pinned
+    `tectonic` release binary, and `doctor` probes both presence and version, warning loudly on a
+    mismatch rather than letting every lead silently fall back or drop.
 
 - **`boardwatch verify`** — a standalone DB↔artifact reconciliation sweep (P0 item 5). Reads a run's frozen
   `funnel-<run_id>.json` off disk, re-queries the store independently for the run-keyed quantities that
@@ -364,8 +351,8 @@ All notable changes to this project are documented here. The format follows
   and exits non-zero with `NO_ARTIFACT` if no artifact exists for it; plain `verify` sweeps every
   `funnel-*.json` present on disk. Read-only; supplements Gate P0 rather than re-anchoring it (D-031).
 
-- **A run manifest, a stub rate and fabrication counters in the funnel artifact** (artifact v3;
-  `ARTIFACT_VERSION` 2→3) — P0 items 4, 6 and 8, batched because all three add a section to the same
+- **A run manifest, a stub rate and fabrication counters in the funnel artifact** —
+  P0 items 4, 6 and 8, batched because all three add a section to the same
   artifact.
 
   - **Manifest** (item 4): the versioned identity a run ran under, so two runs can be compared for
@@ -404,7 +391,7 @@ All notable changes to this project are documented here. The format follows
 
   **Scope, stated rather than implied:** `running` with `finished_at` NULL means only *nothing closed this
   row*. A run in flight, a killed run, and a standalone lane that raised between minting its run and
-  finishing it all share that signature; separating them needs the reaper that P3 owns.
+  finishing it all share that signature; the run reaper above is what separates them.
 
   Two write paths were recording a *failed* run as `ok` and were fixed with it: the scan's own abort
   handler (under `boardwatch run` the scan is called outside the pipeline's `try`, so that handler is the
@@ -418,8 +405,8 @@ All notable changes to this project are documented here. The format follows
 
   **`unique` and `assisted` both report `not instrumented`, never 0.** Both are dedup-attribution
   quantities: `assisted` credits a source that arrived *second* for a posting another source won. Postings
-  here are 1:1 with jobs and each belongs to exactly one company, so there is no second source to credit
-  until dedup lands in P6. Reporting 0 would assert that no source ever arrived second — the naive
+  here are 1:1 with jobs and each belongs to exactly one company, so there is no second source to credit.
+  Reporting 0 would assert that no source ever arrived second — the naive
   attribution that, per job-apps' own handover, nearly cost it a working adapter.
 
   The denominator is every **open** posting a board owns, not what it listed this run: an unchanged board
@@ -443,7 +430,6 @@ All notable changes to this project are documented here. The format follows
   ranker's own row count measured independently of them, so the stage's balance can genuinely fail. `boardwatch run` now
   prints how many postings were considered and how many fell below the cutoff.
 
-
 - **Per-run funnel artifact, written on every `boardwatch run`.** Two halves — `funnel-<run_id>.json` and
   `funnel-<run_id>.md` — land in `<out>/<YYYY-MM-DD>/` beside that day's tailored résumés, outside the git
   tree. The Markdown names the board each lead came from, and every stage states its drop buckets with
@@ -458,11 +444,11 @@ All notable changes to this project are documented here. The format follows
   that recount `tailored` and `leads_with_pdf` from the store rather than trusting what the pipeline
   reported. `attribution` and `verdict` are SQL partitions of the set they are compared against, so their
   balance holds for any input; they are labelled `derived` rather than presented as evidence.
-  `leads_with_pdf` is read from `meta_json.typst_pdf_built`, not from a row count: `artifacts.uri`
-  holds the `.typ` path whether or not a PDF ever compiled.
+  `leads_with_pdf` is read from `meta_json.typst_pdf_built` (a legacy key name — see *Changed*), not
+  from a row count: `artifacts.uri` holds the résumé source path whether or not a PDF ever compiled.
 
-  Stages that nobody has instrumented report **`null`, never 0** — dedup has never run, and reporting 0
-  duplicates would assert the opposite of the truth. Stages that balance by construction are labelled
+  Stages that nobody has instrumented report **`null`, never 0**, because reporting 0 would assert a
+  measurement nobody took. Stages that balance by construction are labelled
   `derived`, and the artifact prints which stages could actually have failed. The artifact
   also carries the abstain rate for **every** rule in the catalog (including the ones that have never
   fired) and the count of evaluations that carry no run at all, which is expected only to shrink.
@@ -489,8 +475,7 @@ All notable changes to this project are documented here. The format follows
   exit status that is non-zero every day carries no information.
 
   The two fatal cases above are the ones that would otherwise be silent empty days. The general
-  zero-output guard — deciding when producing nothing was *provably right* — needs cohort completeness
-  and is not built here.
+  zero-output guard — deciding when producing nothing was *provably right* — is the separate entry above.
 
   A contended run writes nothing at all: the run row is created by the scan stage, inside the file lock,
   so on the default path there is no window in which the schema is migrated or a row inserted before the
@@ -533,9 +518,7 @@ All notable changes to this project are documented here. The format follows
 
 - **Nullable `run_id` on `eligibility_evaluations` and `artifacts`** (Alembic revision
   `run_attribution`, additive). `eligibility_evaluations` is append-only, so rows predating the column can
-  never be backfilled and NULL means "predates attribution", never zero. *(Landed inert; the entry above is
-  what populates it. Both are in this same unreleased version.)*
-
+  never be backfilled and NULL means "predates attribution", never zero. *(Landed inert; the entry above is what populates it.)*
 
 - **`boardwatch stats` — one read-only readout of where you stand.** Two views over your
   local database: qualified opportunities in a trailing window (`--days`, default 7),
@@ -607,16 +590,6 @@ All notable changes to this project are documented here. The format follows
   change is no longer hash-comparable with one written after. Recorded here because the changelog is
   authoritative for what shipped and a moved identity hash is not an implementation detail.
 
-- **The decision log and the metrics log are archive-split** (D-108). `DECISIONS.md` keeps D-077 onward
-  (4,369 → 1,235 lines); D-001 … D-076 move verbatim to `DECISIONS-ARCHIVE.md`. `METRICS.md` keeps the live
-  run-log and acceptance tables plus the P6-era records (1,547 → 465 lines); the baseline, the superseded
-  abstain table, and the P0–P5 session records move to `METRICS-ARCHIVE.md`. Each live file now opens with
-  an **index spanning both of its files** — file, line, title — and the "read the range, not the file"
-  protocol. Entry and section bodies were copied byte-for-byte and the halves diffed back against the
-  originals (identical SHA-1 on both, 322,260 and 96,063 bytes); every generated line number was read back
-  and checked, 108/108 and 29/29. Cross-references are by number (`D-028`), so nothing needed rewriting.
-
-
 - **The résumé render engine is now tectonic compiling the user's own LaTeX template, replacing Typst**
   (résumé-tailoring fix, Increment 1 — D-058, D-060). Diagnosis found the tailored output read as a
   "plain-text dump" for two reasons: a five-line Typst stub preamble with no real page setup, and tailoring
@@ -642,14 +615,11 @@ All notable changes to this project are documented here. The format follows
     from `resume.yaml` is a documented fast-follow, not built here. Keyword bolding from `jd_skills`
     (Increment 2) and per-role authored title/summary selection (Increment 3) are each their own plan.
 
-  **Result: the user's real résumé now renders to 1 page** (verified by a real compile plus `pdfinfo`,
-  measured on Mit's own résumé), resolving the standing Gate-P3 blocker where the old Typst stub rendered
-  an authored résumé to 2 pages against a `resume_max_pages=1` limit, dropping every lead on every run.
-  Fidelity against Mit's job-apps LaTeX PDF is a layout match — no emitter or layout bugs found. A new, real
-  remaining blocker was found, and it is content, not the render engine: three bullets in Mit's
-  `resume.yaml` exceed the per-lead layout gate's 220-character ceiling (D-053), so Tier-A degrades to the
-  untailored master on every posting until they are shortened.
-
+  **Result: a real authored résumé now renders to 1 page** (verified by a real compile plus `pdfinfo`),
+  resolving the standing blocker where the old Typst stub rendered an authored résumé to 2 pages against a
+  `resume_max_pages=1` limit and dropped every lead on every run. Note that a bullet long enough to overflow
+  the per-lead layout gate's 220-character ceiling still degrades that lead to the untailored master, so
+  `tailor validate` is worth running after editing `resume.yaml`.
 
 - **A held scan lock now names the blocking process instead of a generic message** (P3, §3.P3 item 1,
   D-043). `run_scan` writes a message-only sidecar (`scan.lock.meta`: pid/hostname/started_at) around the
@@ -659,8 +629,7 @@ All notable changes to this project are documented here. The format follows
   degrades the message, never correctness. `boardwatch scan`/`boardwatch run` now print the caught
   exception's own message instead of a hardcoded constant, so the pid-naming message actually reaches the
   CLI. Stale-reclaim was declined outright, not deferred (D-045) — unsound as designed, and the OS already
-  reclaims a dead flock on process exit. Token-gated unlock remains deferred. The run reaper has since
-  shipped (D-046, see below).
+  reclaims a dead flock on process exit. Token-gated unlock remains deferred. The run reaper has since shipped (D-046, in *Added*).
 - **LLM adapter calls now retry transient 429/5xx failures with backoff instead of dropping the rewrite**
   (P3, §3.P3 item 10, D-040). Both `AnthropicClient` and `OpenAICompatClient` classify a 429 or 5xx
   response as `LLMTransientError` and retry through a shared `llm/retry.py` helper (tenacity,
@@ -685,15 +654,16 @@ All notable changes to this project are documented here. The format follows
   "eligible — N requirement(s) evaluated (M cleared; see details)" for the mixed case.
 - **`work_auth`'s default severity is now `blocker`, not `preference`** (P2, §3.P2 item 7, D-035). Every
   eligibility family previously shipped `default_policy: preference`, so a fresh, policy-less profile got
-  **0 `ineligible` verdicts ever** — the multi-tenancy requirement failing for anyone who had not, like Mit,
+  **0 `ineligible` verdicts ever** — the multi-tenancy requirement failing for anyone who had not
   set `work_auth: blocker` by hand. `work_auth` is the canonical hard-stop family (bar metric B7),
   the most-developed, and keystone-gated (it abstains to `uncertain`, never `ineligible`, when
   `work_authorization` is undeclared), so it is the one family safe to flip today; the other five
   (`experience_years`, `clearance`, `degree`, `contract_not_fte`, `internship`) remain `preference`,
   opt-in, pending further review.
 
-
-- **Funnel artifact version 1 → 2**, for the `sources` and `source_totals` sections.
+- **Funnel artifact version 1 → 4 over this release**, adding the `sources`/`source_totals`
+  sections (v2), the run manifest, stub rate and fabrication counters (v3), and the `liveness`
+  block (v4). A consumer pinned to v1 needs updating.
 
 - **`boardwatch doctor` now says "a run is in progress" rather than "a scan is in progress".** Since run
   attribution, an unfinished run is also a `boardwatch run` still tailoring or a standalone eligibility
@@ -761,19 +731,10 @@ All notable changes to this project are documented here. The format follows
   coverage. Real, discriminating tokens — including `SQL`, `Distributed systems`,
   `Low latency / high throughput` and `High availability` — are untouched.
 
-
 - **Editing the rule catalog re-evaluates every stored verdict.** Adding the two families
   moves `rules_hash`, so the first `eligibility run` after upgrading re-evaluates the whole
   corpus and writes fresh rows. Prior verdicts are superseded, never rewritten — the
   eligibility tables remain append-only.
-
-- **`--verify` on `companies add` and `companies import`.** Opt-in live board probe before
-  the watch is written, reusing each provider's existing `healthcheck`. Reachable boards are
-  watched (reachable-but-empty is watched with a note); boards that return 404, error, or
-  cannot be reached are skipped instead of written, since an unreachable board is absence of
-  evidence rather than evidence the slug is wrong. `import --verify` exits non-zero when it
-  skipped any entry, so a partial import cannot be mistaken for a complete one. Both
-  commands remain offline by default.
 
 ### Fixed
 
@@ -835,7 +796,6 @@ All notable changes to this project are documented here. The format follows
   daily driver's exit status would have been 1 every day once the queue caught up, destroying the signal the
   run ledger exists to carry. A run with no handled candidates still cannot explain itself and still fires.
 
-
 - **Disjunctive experience-years over-fire — Gate P5 MET at 100% precision** (D-073). The `experience_years`
   family's `total_years_minimum` / `range_years_minimum` patterns read the pure-years arm of a DISJUNCTION
   ("a Bachelor's degree … **or** N years of experience") as a hard floor, so a master's-plus-one-year
@@ -848,13 +808,12 @@ All notable changes to this project are documented here. The format follows
   `boardwatch eligibility score` now exits 0. `abstain_by` is document-scoped (like the degree precedent);
   the recall the abstain concedes is the two-stage gate's (D-071) to recover.
 
-
 - **The per-lead layout gate no longer runs on the untailored master résumé, and can no longer drop a lead
   on layout alone** (D-055, Opus 5 checkpoint review, fix 1 — HIGH). As first shipped, item 5a's gate also
   ran on the master fallback and reused a *selection* cap (`MAX_BULLETS_PER_ENTRY`, which bullet selection
   trims *to*) as a *layout* invariant; a low-`jd_skills` posting made `tailored == master`, both failed
   identically, the master-fallback rescue did nothing, and the lead was dropped where before P4 it would
-  have shipped Mit's real résumé — breaking the "master fallback is unconditionally shippable" guarantee.
+  have shipped the author's real résumé — breaking the "master fallback is unconditionally shippable" guarantee.
   The per-lead gate now applies to the tailored and Tier-B renders only; a genuine compile failure on both
   sides is the only remaining way a lead drops. Master-authoring defects are now caught separately, once,
   at load instead (D-056, above).
@@ -865,7 +824,6 @@ All notable changes to this project are documented here. The format follows
 - **A Tier-B rewrite's recorded lineage hash now points at the Tier-A bullet actually shipped, not at a
   possibly-rejected tailored render** (D-055, fix 2). `tier_a_content_hash` was capturing whichever render
   happened to run first rather than the shipped `chosen_hash`.
-
 
 - **`companies import` now rejects duplicate `provider:slug` rows.** It built validated
   entries but never ran the catalog's `validate_entries` integrity check, so a file listing

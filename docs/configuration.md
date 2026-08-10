@@ -43,7 +43,7 @@ consumers. Like the LLM API key below, this URL is never stored in `config.toml`
 | Path | Purpose |
 |---|---|
 | `{config_dir}/resume.yaml` | Your authored, structured résumé (written by `tailor init`, read by `tailor validate`/`tailor run`). |
-| `{data_dir}/tailored/` | Output directory for rendered Typst source and best-effort PDFs, one `tailored-<posting-id>.{typ,pdf}` pair per posting. |
+| `{data_dir}/tailored/` | Output directory for rendered LaTeX source and its compiled PDF, one `tailored-<posting-id>.{tex,pdf}` pair per posting. |
 
 ### Tier B (opt-in LLM rewording)
 
