@@ -51,6 +51,42 @@ def test_a_410_from_the_real_fetcher_is_read_as_GONE(tmp_path: Path) -> None:  #
 
 
 @respx.mock
+def test_a_404_reached_THROUGH_A_REDIRECT_is_served(tmp_path: Path) -> None:  # noqa: N802
+    """The client is built with `follow_redirects=True`, so this arrives as a bare `FetchFailure`
+    with `status_code=404` and nothing in the message about the hop — indistinguishable, from the
+    status alone, from the posting itself answering gone. An employer moving ATS whose old links
+    redirect to a host with a dead deep-link path would have every live requisition withheld.
+
+    Only the real client can prove this: the fake probers elsewhere never redirect, and reading
+    `verdict_for_failure` alone shows a `redirected` flag with no evidence anything sets it."""
+    respx.get(URL).mock(
+        return_value=httpx.Response(302, headers={"Location": "https://new.example/careers"})
+    )
+    moved = respx.get("https://new.example/careers").mock(return_value=httpx.Response(404))
+
+    result = build_prober(_settings(tmp_path))(42, URL)
+
+    assert moved.called  # the chain really was followed, or this test proves nothing
+    assert result.verdict == "unknown"
+    assert result.signal == "refetch_gone_after_redirect"
+    assert result.withholds is False
+
+
+@respx.mock
+def test_a_404_on_the_URL_ITSELF_still_withholds_after_the_redirect_rule(  # noqa: N802
+    tmp_path: Path,
+) -> None:
+    """The other half of the pair, and the one that keeps the gate alive: forgiving redirected
+    gone-statuses must not quietly forgive direct ones. `response.history` is empty here."""
+    respx.get(URL).mock(return_value=httpx.Response(404))
+
+    result = build_prober(_settings(tmp_path))(42, URL)
+
+    assert result.verdict == "dead"
+    assert result.signal == "refetch_gone"
+
+
+@respx.mock
 def test_a_200_is_alive(tmp_path: Path) -> None:
     respx.get(URL).mock(return_value=httpx.Response(200, content=b"still hiring"))
 

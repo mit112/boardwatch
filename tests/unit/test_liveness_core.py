@@ -11,8 +11,10 @@ import pytest
 
 from boardwatch.core.liveness import (
     GONE_STATUSES,
+    SIGNAL_VERDICTS,
     SIGNALS,
     VERDICTS,
+    ContradictoryLiveness,
     Liveness,
     UnknownLivenessVerdict,
     verdict_for_failure,
@@ -75,12 +77,39 @@ def test_a_posting_with_no_url_claims_nothing() -> None:
     assert result.withholds is False
 
 
+def test_a_gone_status_reached_THROUGH_A_REDIRECT_is_served() -> None:  # noqa: N802
+    """The stored URL never answered gone — something it was sent to did. An employer migrating
+    ATS whose old links point at a new host with a dead deep-link path would otherwise have every
+    one of its live requisitions withheld, and the 404 in the message would look conclusive."""
+    result = verdict_for_failure(
+        7, 404, "HTTP 404 for https://new.example/careers", redirected=True
+    )
+    assert result.verdict == "unknown"
+    assert result.signal == "refetch_gone_after_redirect"
+    assert result.withholds is False
+
+
+def test_a_redirect_is_only_forgiven_for_the_GONE_statuses() -> None:  # noqa: N802
+    """A redirected 403 is already `unknown`; it must keep the transport-error signal rather than
+    claim a gone-status was seen. The new signal means one thing or it means nothing."""
+    assert verdict_for_failure(7, 403, "HTTP 403", redirected=True).signal == "refetch_error"
+
+
 def test_the_catalogs_are_closed_and_pinned() -> None:
     """Turning any other status into a withholding one has to edit a test that says why it is
     not one. Same for inventing a verdict outside the catalog."""
     assert GONE_STATUSES == frozenset({404, 410})
     assert VERDICTS == ("alive", "dead", "unknown")
-    assert set(SIGNALS) == {"refetch_gone", "refetch_ok", "refetch_error", "no_url"}
+    assert set(SIGNALS) == {
+        "refetch_gone",
+        "refetch_gone_after_redirect",
+        "refetch_ok",
+        "refetch_error",
+        "no_url",
+    }
+    # Every signal declares its verdict, and `dead` is reachable through exactly one of them.
+    assert set(SIGNAL_VERDICTS) == set(SIGNALS)
+    assert [s for s, v in SIGNAL_VERDICTS.items() if v == "dead"] == ["refetch_gone"]
 
 
 def test_every_signal_in_the_catalog_is_actually_emitted() -> None:
@@ -90,6 +119,7 @@ def test_every_signal_in_the_catalog_is_actually_emitted() -> None:
         verdict_for_status(1, 200).signal,
         verdict_for_status(1, 404).signal,
         verdict_for_failure(1, None, "x").signal,
+        verdict_for_failure(1, 404, "x", redirected=True).signal,
         verdict_without_url(1).signal,
     }
     assert emitted == set(SIGNALS)
@@ -113,11 +143,22 @@ def test_an_out_of_catalog_signal_raises_and_names_the_SIGNAL() -> None:  # noqa
     assert exc.value.verdict is None
 
 
+def test_a_verdict_its_signal_does_not_sanction_cannot_be_BUILT() -> None:  # noqa: N802
+    """Both fields catalogued and still wrong. `dead` + `refetch_error` is the dangerous pair: it
+    passes both membership checks and withholds a posting that merely timed out, inverting the
+    fail-open direction at a call site rather than in the catalog where it could be reviewed."""
+    with pytest.raises(ContradictoryLiveness) as exc:
+        Liveness(posting_id=1, verdict="dead", signal="refetch_error")
+    assert exc.value.expected == "unknown"
+    assert exc.value.signal == "refetch_error"
+
+
 def test_only_dead_withholds() -> None:
-    """The whole gate, in one assertion: `alive` and `unknown` both reach the lead list."""
+    """The whole gate, in one assertion: `alive` and `unknown` both reach the lead list. Built
+    through the signal catalog, since a verdict no signal carries can no longer be constructed."""
     withholding = {
         verdict
-        for verdict in VERDICTS
-        if Liveness(posting_id=1, verdict=verdict, signal="refetch_ok").withholds
+        for signal, verdict in SIGNAL_VERDICTS.items()
+        if Liveness(posting_id=1, verdict=verdict, signal=signal).withholds
     }
     assert withholding == {"dead"}

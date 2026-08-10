@@ -14,6 +14,16 @@ missed. Only an explicit gone-status earns `dead`. Everything else — a timeout
 connection, a 403 from a bot-blocker, a 500, a redirect to a careers homepage, a posting with no
 URL at all — is `unknown`, and `unknown` is served.
 
+**"Explicit" means the stored URL itself answered gone, not something it was redirected to.**
+`Fetcher` is built with `follow_redirects=True`, so a 404 can arrive from a *different* resource
+than the one asked about: an employer migrating ATS points old links at a new host whose
+deep-link path 404s while the requisition is live at the new URL, and the chain reports a bare
+404 with no trace of the hop. Classifying that as `dead` would withhold live leads — the exact
+failure this module exists to prevent — so a gone-status reached through a redirect is
+`unknown`, under its own signal so the case stays auditable rather than merging into the
+transport-error bucket. A redirect that ends in success needs no special handling: it is served
+either way.
+
 **What is deliberately NOT here: a closed-phrase catalog.** `PROGRAM.md` item 6 names "a saved
 body containing a closed phrase" as the AUTHORITATIVE signal, inherited from job-apps, which
 scraped HTML pages. boardwatch reads structured ATS APIs, and every provider assembles
@@ -60,10 +70,24 @@ VERDICTS: tuple[str, ...] = ("alive", "dead", "unknown")
 # nothing emits is a bucket that cannot be audited.
 SIGNALS: tuple[str, ...] = (
     "refetch_gone",  # the only signal that yields `dead`
+    "refetch_gone_after_redirect",  # gone, but a different URL said so — served
     "refetch_ok",
     "refetch_error",
     "no_url",
 )
+
+# Which verdict each signal carries. The pair is fully determined, so an inconsistent
+# combination is a construction bug, not a state the rest of the system should have to handle:
+# `Liveness(1, "dead", "refetch_error")` would otherwise build happily and withhold a timed-out
+# posting, silently inverting the fail-open direction with every catalog membership check
+# passing. Enforced in `__post_init__` for that reason.
+SIGNAL_VERDICTS: dict[str, str] = {
+    "refetch_gone": "dead",
+    "refetch_gone_after_redirect": "unknown",
+    "refetch_ok": "alive",
+    "refetch_error": "unknown",
+    "no_url": "unknown",
+}
 
 # HTTP statuses that mean the resource is gone, as opposed to merely unavailable to us.
 # 404 and 410 ONLY. Not 403: measured 2026-08-10, `pinterestcareers.com` answers 403 to an
@@ -87,6 +111,22 @@ class UnknownLivenessVerdict(Exception):
         self.signal = signal
 
 
+class ContradictoryLiveness(Exception):
+    """Both fields are in the catalog, but they disagree — a distinct fault from an unknown one.
+
+    Its own class rather than a third mode of `UnknownLivenessVerdict`, because the two need
+    different answers: an unknown value means the catalog is missing an entry, a contradictory
+    pair means a call site built a verdict the catalog never sanctions. Carries both fields plus
+    the one the signal mandates, so a traceback says what it should have been.
+    """
+
+    def __init__(self, *, verdict: str, signal: str, expected: str) -> None:
+        super().__init__(f"signal {signal!r} carries verdict {expected!r}, not {verdict!r}")
+        self.verdict = verdict
+        self.signal = signal
+        self.expected = expected
+
+
 @dataclass(frozen=True)
 class Liveness:
     """One posting's liveness at one instant. Carries no timestamp on purpose — a timestamp
@@ -103,6 +143,11 @@ class Liveness:
             raise UnknownLivenessVerdict(verdict=self.verdict)
         if self.signal not in SIGNALS:
             raise UnknownLivenessVerdict(signal=self.signal)
+        expected = SIGNAL_VERDICTS[self.signal]
+        if self.verdict != expected:
+            raise ContradictoryLiveness(
+                verdict=self.verdict, signal=self.signal, expected=expected
+            )
 
     @property
     def withholds(self) -> bool:
@@ -127,14 +172,29 @@ def verdict_for_status(posting_id: int, status_code: int) -> Liveness:
     )
 
 
-def verdict_for_failure(posting_id: int, status_code: int | None, detail: str) -> Liveness:
+def verdict_for_failure(
+    posting_id: int, status_code: int | None, detail: str, *, redirected: bool = False
+) -> Liveness:
     """Classify a re-fetch that raised. A gone-status still counts — the Fetcher raises
     `FetchFailure` for every non-200, so a 404 arrives here rather than through
-    `verdict_for_status`, and reading only the happy path would make the probe find nothing."""
+    `verdict_for_status`, and reading only the happy path would make the probe find nothing.
+
+    `redirected` says whether the gone-status came from the URL that was asked about or from
+    somewhere it was sent. Only the former withholds; see the module docstring. It is keyword-only
+    and defaults to False so that a caller which cannot know defaults to the *stricter* reading of
+    its own evidence rather than being handed a fail-open it never established.
+    """
     if status_code is not None and status_code in GONE_STATUSES:
         # The caller's detail is kept, not replaced by a bare "HTTP 404": the `FetchFailure`
         # message carries the URL, and withholding a lead is the one outcome whose reason
         # somebody will want to check by hand.
+        if redirected:
+            return Liveness(
+                posting_id=posting_id,
+                verdict="unknown",
+                signal="refetch_gone_after_redirect",
+                detail=detail,
+            )
         return Liveness(
             posting_id=posting_id, verdict="dead", signal="refetch_gone", detail=detail
         )
@@ -151,7 +211,9 @@ def verdict_without_url(posting_id: int) -> Liveness:
 __all__ = [
     "GONE_STATUSES",
     "SIGNALS",
+    "SIGNAL_VERDICTS",
     "VERDICTS",
+    "ContradictoryLiveness",
     "Liveness",
     "UnknownLivenessVerdict",
     "verdict_for_failure",

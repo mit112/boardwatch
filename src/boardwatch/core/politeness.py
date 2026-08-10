@@ -33,11 +33,20 @@ _RETRYABLE_STATUSES = frozenset({429, 500, 502, 503, 504})
 
 
 class FetchFailure(Exception):
-    """A fetch that produced no usable 200/304; providers map this to a failed snapshot."""
+    """A fetch that produced no usable 200/304; providers map this to a failed snapshot.
 
-    def __init__(self, message: str, status_code: int | None = None) -> None:
+    `redirected` records whether the status came from the URL that was requested or from one it
+    was sent to — this client follows redirects, so the two are indistinguishable in the status
+    alone. Providers ignore it; the liveness probe cannot, because "gone" from a redirect target
+    is not evidence the requested posting is gone (`core/liveness.py`).
+    """
+
+    def __init__(
+        self, message: str, status_code: int | None = None, *, redirected: bool = False
+    ) -> None:
         super().__init__(message)
         self.status_code = status_code
+        self.redirected = redirected
 
 
 class _RetryableStatus(Exception):
@@ -175,7 +184,9 @@ class Fetcher:
             raise _RetryableStatus(response.status_code, _parse_retry_after(response))
         if response.status_code != 200:
             raise FetchFailure(
-                f"HTTP {response.status_code} for {url}", status_code=response.status_code
+                f"HTTP {response.status_code} for {url}",
+                status_code=response.status_code,
+                redirected=bool(response.history),
             )
         etag = response.headers.get("ETag")
         last_modified = response.headers.get("Last-Modified")

@@ -47,6 +47,9 @@ def build_prober(settings: Settings) -> LivenessProber:
 
     GET, not HEAD: `Fetcher` exposes `get`/`post_json` only, and reusing it keeps the identifying
     user agent, the per-host serial pacing and the host locks that make repeated probing polite.
+    What reuse also brings is `follow_redirects=True`, so the status this sees may belong to a
+    resource the stored URL was sent to rather than the posting itself — `FetchFailure.redirected`
+    is forwarded for exactly that reason, and `core/liveness.py` decides what it means.
     """
     fetcher = Fetcher(settings.model_copy(update={"retry_attempts": 1}))
 
@@ -54,7 +57,9 @@ def build_prober(settings: Settings) -> LivenessProber:
         try:
             result = fetcher.get(url)
         except FetchFailure as exc:
-            return verdict_for_failure(posting_id, exc.status_code, str(exc))
+            return verdict_for_failure(
+                posting_id, exc.status_code, str(exc), redirected=exc.redirected
+            )
         except Exception as exc:  # noqa: BLE001 - any transport fault is `unknown`, never `dead`
             # Deliberately broad. The whole point is that nothing except an explicit gone-status
             # withholds a lead, so an unforeseen client error must not become a silent veto.
