@@ -6,6 +6,31 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+> 0.3.0 was tagged but its build failed and **nothing was published**, so these entries sit here rather
+> than in 0.3.0 until the re-release form is decided. If `v0.3.0` is re-tagged they fold into that
+> section; if 0.3.1 is cut, this section becomes it.
+
+### Fixed
+
+- **A posting whose URL redirects to a dead page is no longer withheld as gone** (D-113). The fetcher
+  follows redirects, so a `302 → 404` chain reported a bare 404 and the liveness probe read it as the
+  posting itself being gone — which would have hidden every live requisition of an employer whose old
+  ATS links point at a new host with a dead deep-link path. Only a gone-status from the URL actually
+  asked about withholds a lead now; a redirected one is served, under its own signal so it stays
+  countable. Relatedly, a `Liveness` verdict its signal does not sanction can no longer be constructed
+  at all.
+
+- **`top` no longer hides why the list is empty** (D-113). When suppression removed everything, the
+  human-readable output printed "no open postings match your filters" — a claim that the corpus is
+  empty — and returned before naming what was hidden or how to see it. The duplicate, handled and
+  applied notices, each of which names its own drain, now print on that path too. The `--json` path was
+  already correct.
+
+- **CI installs `tectonic` and `pdfinfo`** (D-114). Both became hard dependencies of the résumé PDF gate
+  after 0.2.0 shipped, and no workflow ever installed them, so 33 tests failed on every runner — which
+  is what stopped the 0.3.0 release build from publishing. They are now installed on all three runner
+  OSes rather than the tests being skipped where the binaries are missing.
+
 ## [0.3.0] - 2026-08-10
 
 ### Added

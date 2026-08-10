@@ -39,29 +39,28 @@ chrome cannot reach that column. Measured: **11 of 23,455** matches, **all false
 high-precision catalog matches **0**. Full reasoning in D-111 and `core/liveness.py`'s docstring; the
 older "3 open postings contain a closed phrase" figure is **superseded** — recorded without its catalog.
 
-**Slice 3 WAS reviewed in-session — three reviewers, two BLOCKERs, both fixed** (D-111). Both were
-invisible to reading and found by executing the pipeline. A fresh-context review is a second opinion now,
-not an owed first pass; Mit is running one through Codex.
+**Slice 3 has now been reviewed twice and is DONE.** Three in-session reviewers found two BLOCKERs
+(D-111); Mit's fresh-context Codex review then found three more — a redirected 404 forging a gone-status,
+a `Liveness` that validated its verdict and signal independently, and `top` swallowing its own hidden-bucket
+notices on an empty result. **All three are fixed and mutation-checked (D-113).** No review of Slice 3 is
+owed.
 
 **Next action: P6 has nothing left to BUILD — its last two gate clauses need the system RUN.** Duplicate
 leakage needs 7 days of runs (and the window must start after D-110, which changed which callers advance
 the queue), and "0 dead postings" needs a real run whose leads are actually probed. Neither is a coding
-task. So the useful work is, in order: (1) start accumulating real daily runs, which is gated on Mit's
-`resume.yaml` fix below; (2) optionally take a fresh-context second opinion on Slice 3 — a self-contained
-prompt is written at `.agent/review-prompt-p6-slice3.md` (gitignored); (3) P2 item 8 or P3 slice 5, both
-owner-gated and both wanting their own context window.
+task. So the useful work is, in order: (1) get CI green on all three OSes and re-release 0.3.0 (below);
+(2) start accumulating real daily runs, which is gated on Mit's `resume.yaml` fix below; (3) P2 item 8 or
+P3 slice 5, both owner-gated and both wanting their own context window. Slice 3's second-opinion review is
+**done** — do not re-run it from `.agent/review-prompt-p6-slice3.md`.
 
-**0.3.0 is cut and TAGGED (`v0.3.0` → `426f45c`) but the release build FAILED and nothing published** —
-33 tests died on the runner because no workflow installs `tectonic`/`poppler-utils`, a gap that predates
-this session by three days. Nothing is burned; see the blockers table.
-Version, changelog and lockfile are on `main`. Cutting it is also what surfaced that `README.md` and
-`docs/configuration.md` still described **Typst** — replaced by tectonic eleven decisions earlier — and
-that `config show` reached only 4 of 10 settings, `seen_ttl_days` among them (D-112). **Confirm the
-publish on PyPI first thing next session.**
-
-**Next session's first input: Mit's Codex review of Slice 3.** He is running it externally; the prompt is
-`.agent/review-prompt-p6-slice3.md` (gitignored). Take the findings back and treat them like D-110's —
-in-session reviewers already found two BLOCKERs here that reading alone had missed.
+**0.3.0 is cut and TAGGED (`v0.3.0` → `426f45c`) but the release build FAILED and nothing published.**
+33 tests died on the runner because no workflow installed `tectonic`/`poppler-utils`, a gap that predated
+that session by three days. Nothing is burned — PyPI still 404s for 0.3.0, so the version is free.
+**The cause is now fixed (D-114): both binaries are installed on all three runner OSes via a composite
+action.** That fix has never run on a real runner, so the next step is to push and read the result —
+and **not to re-tag until `ci.yml` is green on all three**. Cutting the release is also what surfaced that
+`README.md` and `docs/configuration.md` still described **Typst** and that `config show` reached only 4 of
+10 settings, `seen_ttl_days` among them (D-112).
 
 **One earlier review fix does not ship.** `bwd` lives in `.agent/bin/bw-daily`, which is gitignored, so its
 `top --no-record` fix is local to this machine. The *defect* was in shipped behaviour and the shipped fix is
@@ -134,14 +133,12 @@ since D-035, unchanged by everything since.
 |---|---|---|
 | **Three `resume.yaml` bullets exceed the 220-char layout gate** | Forces an untailored-master degrade on every posting. The file also lacks Knowledge Forge, has stale `skill_groups`, and an empty extracurricular block. **Mit pins `resume_max_pages=1` — do not advise setting it to 2.** | Mit (content) |
 | **P2 item 8 — the onboarding gatherer** | The thing that would make the field tier fire for anyone. D-054 forbids us authoring non-tech field content, so it must be gathered per user. Needs its own brainstorm | owner-gated |
-| **0.3.0 did NOT publish — the release build FAILED, and nothing was uploaded** | Tag `v0.3.0` → `426f45c` is pushed, but run `31412535583` failed in `build + smoke test` and all three publish jobs (**PyPI, GHCR, GitHub Release**) were correctly **skipped**. PyPI still 404s for 0.3.0, so **no version is burned** — the same tag can be re-run once the cause below is fixed. Fix, then re-tag (delete and re-push `v0.3.0`, or cut `v0.3.1`) — Mit's call | Mit (release) |
-| **ROOT CAUSE: no workflow installs `tectonic` or `poppler-utils`, and the suite now requires them** | 33 tests failed on the runner, every one of them `tectonic binary not found on PATH` or `_pdf_page_count` returning None (needs `pdfinfo`). **Pre-existing, not a regression from Slice 3**: tectonic became a hard dependency in D-058/D-060 (`e9c0393`, 2026-08-07), *after* v0.2.0 was tagged on 2026-08-04, and `ci.yml` runs on `5f0150d` and `101bc67` — both predating this session — fail identically. The `Dockerfile` installs both (`curl … tectonic@0.17.0` + `poppler-utils`); **no workflow does**. It went unnoticed because CI was not acquiring runners, so nothing ever ran | Mit (scope) |
-| **Fixing it is a real scope decision, not a one-liner** | `ci.yml` runs a 3-OS matrix (ubuntu/macos/windows × py3.11–3.13); tectonic + poppler on Windows is awkward. Options: (a) install on all three, (b) install in `release.yml` + ubuntu only and narrow the matrix, (c) skip the tectonic-dependent tests when the binary is absent — **(c) is the tempting one and is against this repo's ethos**, since it would silently stop verifying P1a's hard résumé gate on CI while reporting green. Do not pick (c) by default | Mit |
-| **CI IS acquiring runners again** | The standing "never acquires" failure has **resolved** — `ci.yml` and `release.yml` both ran on 2026-08-10. This session predicted the release would queue forever and was **wrong**. CI now reports real, pre-existing failures (see above), so it is once again a signal worth reading — but it is red for the tectonic reason, not for a code reason | GitHub |
+| **0.3.0 did NOT publish, and the re-release form is undecided** | Tag `v0.3.0` → `426f45c` is pushed, but run `31412535583` failed in `build + smoke test` and all three publish jobs (**PyPI, GHCR, GitHub Release**) were correctly **skipped**. PyPI still 404s for 0.3.0, so **no version is burned**. The cause is fixed (row below); what remains is Mit's choice between deleting and re-pushing `v0.3.0` and cutting `v0.3.1`. He deferred it until the fix is verified. The new CHANGELOG entries sit under `[Unreleased]` and fold into whichever section that choice creates | Mit (release) |
+| **The tectonic/poppler gap is FIXED but has never run on a runner** | `.github/actions/setup-typesetting` installs both on ubuntu, macOS and Windows, and is used by `ci.yml`'s matrix job and `release.yml`'s build job (D-114). Asset layouts and the Linux/macOS binaries were verified locally; **the Windows path is constructed from a verified zip layout, not from a green run**. The first push is the experiment. **Do not re-tag until `ci.yml` is green on all three OSes** — re-tagging on the strength of a plausible YAML diff is the same mistake that produced the failed build, with more confidence behind it | verify |
+| **CI IS acquiring runners again** | The old "never acquires" failure has **resolved** — `ci.yml` and `release.yml` both ran on 2026-08-10, and `release.yml` picked up a runner in seconds. CI is a signal worth reading again. Do not generalise one workflow's failure to the whole account | GitHub |
 | **P3 Slice 5 — LLM economics** | Substantial and design-heavy; use a fresh context window | P3 |
 | **P3 item 8 — cross-OS two-writer WAL test** | A same-OS test proves nothing; needs a Docker-Linux-container + macOS-host harness. The documented-stance half shipped (D-041) | P3 |
 | **A `SIGKILL`ed run leaves a dangling `runs` row** | `try/finally` covers exceptions and Ctrl-C, not SIGKILL. Largely drained by the age-based reaper (D-046); a heartbeat-column reaper is the deferred correct fix | P3 |
-| **CI never acquires a runner** | Runs queue forever unacquired; `gh workflow run ci` returns 422 (the workflow has no `workflow_dispatch` trigger). **Not a repo problem — do not re-diagnose it as a test or config failure.** Local `make check` is the authority. Check run `status`, never mere presence | GitHub |
 
 ---
 
@@ -158,6 +155,14 @@ since D-035, unchanged by everything since.
 - **Only 404/410 withholds a lead; everything else is served** (D-111). Timeout, 403, 5xx, redirect and a
   NULL URL are all `unknown`. 403 is not hypothetical — a live Pinterest posting answers 403 to an
   unfamiliar user agent, so treating it as gone would silently blacklist whole employers.
+- **"Gone" means the URL asked about said so, not somewhere it was redirected to** (D-113). `Fetcher` sets
+  `follow_redirects=True`, so a `302 → 404` chain arrives as a bare 404; `FetchFailure.redirected` is what
+  distinguishes them, and a redirected gone-status is `unknown` under `refetch_gone_after_redirect`. Every
+  liveness test but one injects a fake prober that cannot redirect, so **only the real-`Fetcher` test
+  covers this** — do not delete it as a duplicate.
+- **A `Liveness` verdict must be the one its signal carries** (D-113). `SIGNAL_VERDICTS` is total and
+  `__post_init__` enforces it, so `dead` is reachable through `refetch_gone` and nothing else. Constructing
+  a contradictory pair raises `ContradictoryLiveness` rather than silently withholding a posting.
 - **An unprobed run reports liveness as UNMEASURED, never 0 dead** (D-111). `run_pipeline` takes an injected
   prober and does no network I/O of its own; `run --no-check-liveness` opts out.
 - **Applied state is read from `applications`, never mirrored into the ledger** (D-111). `interested` does

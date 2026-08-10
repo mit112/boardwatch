@@ -110,42 +110,44 @@ and is a no-op when the index is already right. `make index-check` reports drift
 | D-074 | DECISIONS-ARCHIVE.md | 3009 | Final eligibility gate lane SHIPPED (persistent, agent-lane, fail-open); Gate P5 unchanged |
 | D-075 | DECISIONS-ARCHIVE.md | 3084 | Gate P2 reconciled: three individually-correct verdicts (may coincide); ≥3-field mechanism via fixtures |
 | D-076 | DECISIONS-ARCHIVE.md | 3153 | P2 item 4's final whole-branch review: what it caught, and four rulings it forced |
-| D-077 | DECISIONS.md | 152 | P6 Slice 1: the design is settled and the plan is written; no code exists yet |
-| D-078 | DECISIONS.md | 242 | P6 Slice 1: the plan's test fixtures are now real; eleven defects, all found by running code |
-| D-079 | DECISIONS.md | 331 | P6 Slice 1 annotates only; `postings.job_id` is not mutated |
-| D-080 | DECISIONS.md | 345 | `content_hash` alone may never suppress |
-| D-081 | DECISIONS.md | 359 | `exact_quad` is the sole suppressing kind, and its yield is stated honestly |
-| D-082 | DECISIONS.md | 377 | `cross_host` ships annotate-only, reversing an earlier draft |
-| D-083 | DECISIONS.md | 398 | No location evidence ⇒ no location-bearing identity, never a `"[]"` sentinel |
-| D-084 | DECISIONS.md | 413 | Three host classes, not two; matching is exact-or-dot-suffix |
-| D-085 | DECISIONS.md | 427 | Allowlist URL normalization, not a denylist |
-| D-086 | DECISIONS.md | 441 | Survivor election never consults score; `posting_id` is a load-bearing tiebreak |
-| D-087 | DECISIONS.md | 456 | Instrumentation is completeness-gated, not existence-gated |
-| D-088 | DECISIONS.md | 470 | `assisted` stays `None` in this slice |
-| D-089 | DECISIONS.md | 485 | Identities are upserted on every observation; a kind that stops being produced is deleted |
-| D-090 | DECISIONS.md | 502 | The ranker is completeness-gated for reproducibility, not safety |
-| D-091 | DECISIONS.md | 520 | The recount recomputes in Python, and claims staleness only |
-| D-092 | DECISIONS.md | 535 | Identities are backfilled by an explicit command, not by the migration |
-| D-093 | DECISIONS.md | 549 | Slice 1 does NOT meet Gate P6, and makes only one of its four clauses measurable |
-| D-094 | DECISIONS.md | 563 | P6 Slice 1 BUILT (unattended run): five more plan defects, three of them tests that could not fail |
-| D-095 | DECISIONS.md | 691 | P6 Slice 1 reviewed by three independent reviewers; fourteen findings fixed, two rejected |
-| D-096 | DECISIONS.md | 756 | The C++/C# fix folds punctuation into words; it does NOT add a raw-title comparison |
-| D-097 | DECISIONS.md | 800 | `_verify_quad` rejected nothing on the live corpus; "string-verified" is not precision evidence |
-| D-098 | DECISIONS.md | 829 | Suppression reports when it is OFF; wiring backfill into the pipeline is Slice 2 |
-| D-099 | DECISIONS.md | 865 | Gate batching stays allowed; the per-task fast-check set must include the schema guards |
-| D-100 | DECISIONS.md | 891 | P6 Slice 1 merged to `main`; Gate P6 clause 3 is MET, not merely measurable |
-| D-101 | DECISIONS.md | 923 | Gate P6 clause 4 is MET: 20/20 sampled suppressions are genuine duplicates |
-| D-102 | DECISIONS.md | 953 | D-072 (model-tier benchmark) is deferred indefinitely |
-| D-103 | DECISIONS.md | 975 | P6 Slice 2: the ledger is a current-state row per job, `seen` suppresses on a TTL, and the policy stamp never auto-reopens |
-| D-104 | DECISIONS.md | 1047 | Job regrouping: the survivor's job wins, and a tracked group is refused whole |
-| D-105 | DECISIONS.md | 1090 | Identity writes move into the scan path, closing D-098 — and D-098's cost argument did not apply |
-| D-106 | DECISIONS.md | 1121 | Two consequences the build forced: what earns a permanent `skipped`, and the zero-output guard |
-| D-107 | DECISIONS.md | 1147 | P6 Slice 2 BUILT and verified on real data; `cross_host` dereference deferred by measured absence |
-| D-108 | DECISIONS.md | 1196 | The decision log and the metrics log are archive-split; the reading protocol moves into the index |
-| D-109 | DECISIONS.md | 1255 | Index drift fails the gate, and the fixer lives in `tools/` |
-| D-110 | DECISIONS.md | 1333 | The Slice 2 review: only a caller that delivers a lead may consume the queue |
-| D-111 | DECISIONS.md | 1450 | P6 Slice 3: applied-state suppression, and liveness sized to what the corpus actually is |
-| D-112 | DECISIONS.md | 1619 | 0.3.0 is cut, the changelog gets ONE triple, and the tag is the owner's to push |
+| D-077 | DECISIONS.md | 154 | P6 Slice 1: the design is settled and the plan is written; no code exists yet |
+| D-078 | DECISIONS.md | 244 | P6 Slice 1: the plan's test fixtures are now real; eleven defects, all found by running code |
+| D-079 | DECISIONS.md | 333 | P6 Slice 1 annotates only; `postings.job_id` is not mutated |
+| D-080 | DECISIONS.md | 347 | `content_hash` alone may never suppress |
+| D-081 | DECISIONS.md | 361 | `exact_quad` is the sole suppressing kind, and its yield is stated honestly |
+| D-082 | DECISIONS.md | 379 | `cross_host` ships annotate-only, reversing an earlier draft |
+| D-083 | DECISIONS.md | 400 | No location evidence ⇒ no location-bearing identity, never a `"[]"` sentinel |
+| D-084 | DECISIONS.md | 415 | Three host classes, not two; matching is exact-or-dot-suffix |
+| D-085 | DECISIONS.md | 429 | Allowlist URL normalization, not a denylist |
+| D-086 | DECISIONS.md | 443 | Survivor election never consults score; `posting_id` is a load-bearing tiebreak |
+| D-087 | DECISIONS.md | 458 | Instrumentation is completeness-gated, not existence-gated |
+| D-088 | DECISIONS.md | 472 | `assisted` stays `None` in this slice |
+| D-089 | DECISIONS.md | 487 | Identities are upserted on every observation; a kind that stops being produced is deleted |
+| D-090 | DECISIONS.md | 504 | The ranker is completeness-gated for reproducibility, not safety |
+| D-091 | DECISIONS.md | 522 | The recount recomputes in Python, and claims staleness only |
+| D-092 | DECISIONS.md | 537 | Identities are backfilled by an explicit command, not by the migration |
+| D-093 | DECISIONS.md | 551 | Slice 1 does NOT meet Gate P6, and makes only one of its four clauses measurable |
+| D-094 | DECISIONS.md | 565 | P6 Slice 1 BUILT (unattended run): five more plan defects, three of them tests that could not fail |
+| D-095 | DECISIONS.md | 693 | P6 Slice 1 reviewed by three independent reviewers; fourteen findings fixed, two rejected |
+| D-096 | DECISIONS.md | 758 | The C++/C# fix folds punctuation into words; it does NOT add a raw-title comparison |
+| D-097 | DECISIONS.md | 802 | `_verify_quad` rejected nothing on the live corpus; "string-verified" is not precision evidence |
+| D-098 | DECISIONS.md | 831 | Suppression reports when it is OFF; wiring backfill into the pipeline is Slice 2 |
+| D-099 | DECISIONS.md | 867 | Gate batching stays allowed; the per-task fast-check set must include the schema guards |
+| D-100 | DECISIONS.md | 893 | P6 Slice 1 merged to `main`; Gate P6 clause 3 is MET, not merely measurable |
+| D-101 | DECISIONS.md | 925 | Gate P6 clause 4 is MET: 20/20 sampled suppressions are genuine duplicates |
+| D-102 | DECISIONS.md | 955 | D-072 (model-tier benchmark) is deferred indefinitely |
+| D-103 | DECISIONS.md | 977 | P6 Slice 2: the ledger is a current-state row per job, `seen` suppresses on a TTL, and the policy stamp never auto-reopens |
+| D-104 | DECISIONS.md | 1049 | Job regrouping: the survivor's job wins, and a tracked group is refused whole |
+| D-105 | DECISIONS.md | 1092 | Identity writes move into the scan path, closing D-098 — and D-098's cost argument did not apply |
+| D-106 | DECISIONS.md | 1123 | Two consequences the build forced: what earns a permanent `skipped`, and the zero-output guard |
+| D-107 | DECISIONS.md | 1149 | P6 Slice 2 BUILT and verified on real data; `cross_host` dereference deferred by measured absence |
+| D-108 | DECISIONS.md | 1198 | The decision log and the metrics log are archive-split; the reading protocol moves into the index |
+| D-109 | DECISIONS.md | 1257 | Index drift fails the gate, and the fixer lives in `tools/` |
+| D-110 | DECISIONS.md | 1335 | The Slice 2 review: only a caller that delivers a lead may consume the queue |
+| D-111 | DECISIONS.md | 1452 | P6 Slice 3: applied-state suppression, and liveness sized to what the corpus actually is |
+| D-112 | DECISIONS.md | 1621 | 0.3.0 is cut, the changelog gets ONE triple, and the tag is the owner's to push |
+| D-113 | DECISIONS.md | 1725 | The Slice 3 external review: a followed redirect can forge a gone-status |
+| D-114 | DECISIONS.md | 1788 | CI installs tectonic and pdfinfo on all three OSes; skipping the gate was refused |
 
 ---
 
@@ -1717,3 +1719,113 @@ the same defect the 0.2.0 release commit fixed once already, which is why it is 
 Replaced with the three genuinely-next items, and breadth is stated as **conditional** on the other two
 rather than as a queued feature, because CLAUDE.md's "breadth is last" is a constraint on the roadmap and
 not only on the code.
+
+---
+
+## D-113 — The Slice 3 external review: a followed redirect can forge a gone-status
+
+*2026-08-10. Mit ran the fresh-context review of Slice 3 through Codex, against the real
+`5f0150d..18bfecc` range. Three findings, all real, all fixed here. Recorded because one of them is a
+class this program will meet again — a fail-open contract stated in a docstring and quietly voided by a
+library default two modules away.*
+
+**The finding that mattered: `Fetcher` is constructed with `follow_redirects=True`.** `core/liveness.py`
+says only an explicit gone-status withholds a lead and lists "a redirect to a careers homepage" among the
+outcomes that are served. That was true of the redirect *itself* and false of where it leads. The client
+follows the chain and reports the **final** status, so a stored posting URL answering `302 → 404` arrives
+at `verdict_for_failure` as a bare 404 with no trace of the hop — indistinguishable from the posting
+itself being gone, and withheld. The realistic shape is an employer migrating ATS: old links point at a
+new host whose deep-link path 404s while the requisition is live at a new URL. Every one of that
+employer's leads disappears, and the 404 in the detail string looks conclusive to whoever checks.
+
+**Fixed by carrying the fact, not by guessing at it.** `FetchFailure` gained `redirected`, set from
+`response.history` at the one site that raises for a non-200; the probe forwards it; and a gone-status
+that arrives redirected is `unknown` under its own signal, **`refetch_gone_after_redirect`**. A separate
+signal rather than folding it into `refetch_error` — the two answer different questions, and a bucket
+that cannot be counted cannot be audited. The parameter is keyword-only and defaults to `False`, so a
+caller that cannot establish a redirect gets the stricter reading of its own evidence rather than a
+fail-open it never earned ([[defaulted-param-backfills-every-caller]] is about the opposite default, and
+the direction was chosen with it in mind).
+
+**Only the real client could have caught this.** Every other liveness test injects a fake prober, and a
+fake prober never redirects. Reading `verdict_for_failure` in isolation shows a flag with no evidence
+anything ever sets it. The new test drives the actual `Fetcher` through respx with a two-hop chain and
+asserts the second route was called — otherwise it would pass while proving nothing. That is D-111's
+lesson arriving a third time: **reviewers and tests that RUN the code find what reading cannot.**
+
+**Second finding: `Liveness` validated its two catalogued fields independently.** `verdict` had to be in
+`VERDICTS` and `signal` in `SIGNALS`, and nothing checked that they agreed — so
+`Liveness(42, "dead", "refetch_error")` constructed happily and withheld a posting that merely timed out,
+inverting the fail-open direction at a call site while every membership check passed. The pair is fully
+determined, so it is now expressed that way: `SIGNAL_VERDICTS` maps each signal to the one verdict it
+carries, `__post_init__` rejects anything else, and `ContradictoryLiveness` is its own exception class
+because "the catalog is missing an entry" and "a call site built something the catalog forbids" need
+different answers. `test_only_dead_withholds` now iterates the mapping rather than the verdict tuple —
+a verdict no signal carries can no longer be built at all.
+
+**Third finding, and it was wider than reported.** `top` returned immediately after "no open postings
+match your filters" whenever nothing was visible and the ineligible and non-software buckets were empty —
+before the notices, which all sit after the table. Codex named the applied bucket; the same early return
+swallowed **`hidden_duplicate` and `hidden_handled` identically**, so fixing only what was reported would
+have left two silent drains. Suppression that empties the list is precisely when the operator needs the
+reason, and what they got instead asserts the corpus is empty. The notices are now extracted and called
+from both exits. Worth noting the JSON path had this right already — the two paths diverged because each
+was fixed once, separately.
+
+**The reusable shape of all three: a rule stated in one module, enforced nowhere.** Fail-open lived in a
+docstring while `follow_redirects` lived in another file; the verdict/signal pairing lived in a comment
+while validation checked the fields apart; the drain contract lived in `CLAUDE.md` while the early return
+decided it. Each fix moves the rule into something that fails — a forwarded flag, a total mapping, a
+single call site.
+
+**Verification.** Four mutations, one per claim, each derived from the test's stated claim and run after
+committing ([[mutation-testing-lies-two-ways]]): the redirect rule ignored, `redirected` never set by the
+Fetcher, the coherence check disabled, and the empty-result notice call deleted. All four CAUGHT. The
+second is the one that matters — it is the only one that proves the plumbing rather than the decision.
+
+---
+
+## D-114 — CI installs tectonic and pdfinfo on all three OSes; skipping the gate was refused
+
+*2026-08-10. The scope decision D-112 left open, taken by Mit. Recorded because the reasoning generalizes
+past this one dependency.*
+
+**The choice was between three options and the cheap one was disqualified on principle.** (a) install on
+ubuntu, macOS and Windows; (b) install in `release.yml` plus an ubuntu-only test lane, narrowing the
+matrix; (c) mark the 33 tectonic-dependent tests to skip when the binary is absent. **Mit chose (a).**
+(c) is a one-liner and would have turned CI green immediately — while P1a's hard résumé PDF gate stopped
+being verified anywhere except Mit's laptop, and CI reported success for a suite that no longer ran it.
+"A check that did not run must report *not measured*, never *pass*" is the rule the whole instrumentation
+phase was built on; it does not stop applying at the CI boundary. (b) was a real option and was rejected
+for coverage: `tectonic` and `pdfinfo` are the two places where behaviour is most plausibly
+platform-dependent, so an ubuntu-only lane would drop the check exactly where it earns its keep.
+
+**One composite action, `.github/actions/setup-typesetting`, not three copied blocks.** It is used by
+`ci.yml`'s matrix job and `release.yml`'s build job — the second is why the release failed at all — and
+keeps the version pin in one place. Note it is nonetheless the **fourth** hand-maintained mirror this
+week: `TECTONIC_VERSION` in the `Dockerfile` and the action's default input are one fact in two files with
+no detector. Benign if they drift (both versions work) and called out in the action so the next person
+sees it.
+
+**Four things were verified rather than assumed, and three of the four contradicted the obvious guess.**
+The Linux **gnu** build is dynamically linked against `libgraphite2.so.3`, which is absent from a stock
+runner image — it installs cleanly and then will not start; the **musl** asset runs on a bare container
+with no extra packages. Chocolatey's `poppler` package ships the poppler **source tarball**, 891 files
+with zero executables, so it cannot put `pdfinfo` on PATH at all; Windows takes prebuilt binaries from a
+pinned `poppler-windows` release instead. That release's tag (`v26.02.0-0`) and the directory inside its
+zip (`poppler-26.02.0`) **do not match**, so the bin path is globbed rather than derived by string
+surgery. And tectonic's own source comments give the wrong cache directory for at least two of the three
+platforms — disproved by running the binary — so `TECTONIC_CACHE_DIR` is set instead, collapsing three
+uncertain paths into one the cache step can name.
+
+**The install step ends by compiling a real document and reading its page count back.** A `--version`
+check proves a file exists and is executable; it does not prove tectonic can fetch its bundle and produce
+a PDF, which is the thing 33 tests depend on. Compiling proves the deliverable through a different path
+than the one that produced it, and it converts a broken install from 33 puzzling failures deep in the
+suite into one red step that names the cause.
+
+**What this does NOT prove.** Nothing here has run on a real GitHub runner. Asset layouts, checksums and
+the Linux and macOS binaries were verified locally; the Windows commands are constructed from a verified
+zip layout, not from a green run. **The first push is the experiment**, and the release must not be
+re-tagged until `ci.yml` is green on all three OSes — re-tagging on the strength of a plausible-looking
+YAML diff would repeat, with more confidence, exactly the mistake that produced the failed 0.3.0 build.

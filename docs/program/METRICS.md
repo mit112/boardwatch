@@ -54,16 +54,17 @@ reports drift without writing, and `make check` depends on it (D-109).
 | METRICS-ARCHIVE.md | 1047 | Session — 2026-08-08 (P5 run #2 — disjunctive fix, Gate P5 MET at 100%; D-073) |
 | METRICS-ARCHIVE.md | 1084 | Session — 2026-08-08 (D-071b final eligibility gate build — no answer-key number changes) |
 | METRICS-ARCHIVE.md | 1120 | Gate P2 — 2026-08-08 · field-tier mechanism (P2 item 4, D-075). **MET AS RECONCILED** |
-| METRICS.md | 70 | Run log |
-| METRICS.md | 98 | Acceptance run |
-| METRICS.md | 109 | Session — 2026-08-09/10 · P6 Slice 1 design + plan. **No build, no gate movement.** |
-| METRICS.md | 135 | Session — 2026-08-10 · P6 Slice 1 BUILT (unattended run). Branch `p6-slice1`, not merged. |
-| METRICS.md | 345 | 2026-08-10 — P6 Slice 1 on the LIVE store (first real backfill) + Gate P6 clause 4 |
-| METRICS.md | 384 | Session 2026-08-10 (later) — P6 Slice 2: the durable decision ledger, its drain, and job regrouping |
-| METRICS.md | 477 | Session — 2026-08-10 (later) · D-109, the program-index gate. No phase gate moved. |
-| METRICS.md | 518 | Session — 2026-08-10 (later still) · The P6 Slice 2 review (D-110). No phase gate moved. |
-| METRICS.md | 608 | Session — 2026-08-10 (later still ×2) · P6 Slice 3, items 5 and 6 (D-111). Gate P6 unchanged: still 2 of 4. |
-| METRICS.md | 721 | Session — 2026-08-10 (later still ×3) · 0.3.0 cut and tagged (D-112). No phase gate moved. |
+| METRICS.md | 71 | Run log |
+| METRICS.md | 99 | Acceptance run |
+| METRICS.md | 110 | Session — 2026-08-09/10 · P6 Slice 1 design + plan. **No build, no gate movement.** |
+| METRICS.md | 136 | Session — 2026-08-10 · P6 Slice 1 BUILT (unattended run). Branch `p6-slice1`, not merged. |
+| METRICS.md | 346 | 2026-08-10 — P6 Slice 1 on the LIVE store (first real backfill) + Gate P6 clause 4 |
+| METRICS.md | 385 | Session 2026-08-10 (later) — P6 Slice 2: the durable decision ledger, its drain, and job regrouping |
+| METRICS.md | 478 | Session — 2026-08-10 (later) · D-109, the program-index gate. No phase gate moved. |
+| METRICS.md | 519 | Session — 2026-08-10 (later still) · The P6 Slice 2 review (D-110). No phase gate moved. |
+| METRICS.md | 609 | Session — 2026-08-10 (later still ×2) · P6 Slice 3, items 5 and 6 (D-111). Gate P6 unchanged: still 2 of 4. |
+| METRICS.md | 722 | Session — 2026-08-10 (later still ×3) · 0.3.0 cut and tagged (D-112). No phase gate moved. |
+| METRICS.md | 773 | Session — 2026-08-10 (later still ×4) · The Slice 3 external review (D-113) + the CI dependency fix (D-114). No phase gate moved. |
 
 ---
 
@@ -766,3 +767,56 @@ verify on PyPI, not in the Actions tab.
 **One self-inflicted gate failure**, recorded so it is not read as a code failure: a `make check` exited 2
 with `FileNotFoundError: /private/tmp/bw-gate-rel2` and **zero test failures**, because the worktree was
 removed while its own run was still in flight. Remove a gate worktree only after its run exits.
+
+---
+
+## Session — 2026-08-10 (later still ×4) · The Slice 3 external review (D-113) + the CI dependency fix (D-114). No phase gate moved.
+
+### The review — 3 findings from Codex, all real, all fixed
+
+| # | Severity as reported | Finding | Standing |
+|---|---|---|---|
+| 1 | BLOCKER | `Fetcher` follows redirects, so a `302 → 404` chain reads as the posting itself being gone and withholds a live lead | **Fixed.** `FetchFailure.redirected` forwarded; redirected gone ⇒ `unknown` under the new signal `refetch_gone_after_redirect` |
+| 2 | MAJOR | `Liveness` validated verdict and signal independently, so `dead` + `refetch_error` constructed and withheld a timed-out posting | **Fixed.** `SIGNAL_VERDICTS` is total; `ContradictoryLiveness` raised at construction |
+| 3 | MINOR | `top`'s empty-result early return printed before the `hidden_applied` notice and its drain | **Fixed, and wider than reported** — the same return swallowed `hidden_duplicate` and `hidden_handled` too |
+
+Reviewer's own verification, taken at face value only where it is checkable: it reviewed `5f0150d..18bfecc`
+(not the "three commits" the prompt named), ran 111 focused tests, and reported `make check` green at a
+source-identical commit with 3,908 tests / 95.07% coverage — consistent with this session's own runs. It
+made no repository changes.
+
+### Mutation checks — 4, one per new claim, all CAUGHT
+
+Each derived from the test's stated claim, run after committing, with `__pycache__` cleared between rounds.
+
+| # | Mutation | Result |
+|---|---|---|
+| 1 | Redirect rule ignored — a gone-status is `dead` however it was reached | CAUGHT (3 failed) |
+| 2 | `Fetcher` never sets `FetchFailure.redirected` | CAUGHT (1 failed) |
+| 3 | Verdict/signal coherence check disabled | CAUGHT (1 failed) |
+| 4 | Empty-result notice call deleted from `top` | CAUGHT (2 failed) |
+
+**#2 is the one that matters.** #1 and #3 test a decision that is visible by reading; #2 is the only one
+that proves the plumbing between two modules, and it is the half a reader would have assumed rather than
+checked.
+
+### Gate run
+
+`make check` in a detached worktree pinned to `70004b7`: **exit 0, 3,918 passed, 1 deselected, coverage
+95.10%, 298.84 s.** Up from 3,911 at `0834f81` — 7 new tests (2 core-liveness redirect cases, 1 catalog
+coherence case, 2 real-`Fetcher` redirect cases, 2 CLI empty-result notice cases).
+
+### The CI dependency gap, closed
+
+| Fact | Number |
+|---|---|
+| Tests failing on every runner before the fix | **33** (54 `tectonic binary not found` + 8 `_pdf_page_count` → None across their tracebacks) |
+| Workflows that installed either binary | **0** of 3 |
+| Days the gap was invisible because CI acquired no runners | **3** (D-058/D-060 landed 2026-08-07) |
+| Runner OSes now installing both | **3** of 3 |
+| Chocolatey `poppler` executables shipped | **0** (891 files, all source) |
+| Tectonic bundle cache after one trivial compile | 42 MB |
+
+**Not yet measured: anything on a real runner.** Asset layouts, checksums and the Linux and macOS binaries
+were verified locally; the Windows commands are constructed from a verified zip layout. The push is the
+experiment.
