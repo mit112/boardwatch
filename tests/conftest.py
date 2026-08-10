@@ -4,7 +4,7 @@ At the tree root rather than under tests/unit/ because tests/cli/test_identities
 needs the same corpus.
 """
 
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -143,3 +143,30 @@ def seed_dedup(dedup_env: Path) -> Callable[..., DedupSeed]:
         )
 
     return seed
+
+
+@pytest.fixture()
+def backfill_identities() -> Callable[..., int]:
+    """Compute and store identities for a seeded corpus, the way `identities backfill` does.
+
+    `posting_ids=None` covers everything; passing a subset is the ONLY way to produce the
+    partial-coverage corpus that Tasks 7 and 8 use to pin the completeness gate.
+    """
+
+    def backfill(seed: DedupSeed, posting_ids: Sequence[int] | None = None) -> int:
+        # The imports are inside the function on purpose. tests/conftest.py is imported at
+        # collection time for EVERY test in the repo, so a module-level import of a module
+        # added by a later task would break collection repo-wide at the previous commit and
+        # at any bisect point between them.
+        from boardwatch.core.posting_identity import compute_identities
+        from boardwatch.store.identity_queries import load_identity_inputs, write_identities
+
+        written = 0
+        with seed.engine.begin() as conn:
+            for row in load_identity_inputs(conn, posting_ids):
+                written += write_identities(
+                    conn, row.posting_id, compute_identities(row), now=seed.now
+                )
+        return written
+
+    return backfill
