@@ -54,17 +54,18 @@ reports drift without writing, and `make check` depends on it (D-109).
 | METRICS-ARCHIVE.md | 1047 | Session — 2026-08-08 (P5 run #2 — disjunctive fix, Gate P5 MET at 100%; D-073) |
 | METRICS-ARCHIVE.md | 1084 | Session — 2026-08-08 (D-071b final eligibility gate build — no answer-key number changes) |
 | METRICS-ARCHIVE.md | 1120 | Gate P2 — 2026-08-08 · field-tier mechanism (P2 item 4, D-075). **MET AS RECONCILED** |
-| METRICS.md | 71 | Run log |
-| METRICS.md | 99 | Acceptance run |
-| METRICS.md | 110 | Session — 2026-08-09/10 · P6 Slice 1 design + plan. **No build, no gate movement.** |
-| METRICS.md | 136 | Session — 2026-08-10 · P6 Slice 1 BUILT (unattended run). Branch `p6-slice1`, not merged. |
-| METRICS.md | 346 | 2026-08-10 — P6 Slice 1 on the LIVE store (first real backfill) + Gate P6 clause 4 |
-| METRICS.md | 385 | Session 2026-08-10 (later) — P6 Slice 2: the durable decision ledger, its drain, and job regrouping |
-| METRICS.md | 478 | Session — 2026-08-10 (later) · D-109, the program-index gate. No phase gate moved. |
-| METRICS.md | 519 | Session — 2026-08-10 (later still) · The P6 Slice 2 review (D-110). No phase gate moved. |
-| METRICS.md | 609 | Session — 2026-08-10 (later still ×2) · P6 Slice 3, items 5 and 6 (D-111). Gate P6 unchanged: still 2 of 4. |
-| METRICS.md | 722 | Session — 2026-08-10 (later still ×3) · 0.3.0 cut and tagged (D-112). No phase gate moved. |
-| METRICS.md | 773 | Session — 2026-08-10 (later still ×4) · The Slice 3 external review (D-113) + the CI dependency fix (D-114). No phase gate moved. |
+| METRICS.md | 72 | Run log |
+| METRICS.md | 100 | Acceptance run |
+| METRICS.md | 111 | Session — 2026-08-09/10 · P6 Slice 1 design + plan. **No build, no gate movement.** |
+| METRICS.md | 137 | Session — 2026-08-10 · P6 Slice 1 BUILT (unattended run). Branch `p6-slice1`, not merged. |
+| METRICS.md | 347 | 2026-08-10 — P6 Slice 1 on the LIVE store (first real backfill) + Gate P6 clause 4 |
+| METRICS.md | 386 | Session 2026-08-10 (later) — P6 Slice 2: the durable decision ledger, its drain, and job regrouping |
+| METRICS.md | 479 | Session — 2026-08-10 (later) · D-109, the program-index gate. No phase gate moved. |
+| METRICS.md | 520 | Session — 2026-08-10 (later still) · The P6 Slice 2 review (D-110). No phase gate moved. |
+| METRICS.md | 610 | Session — 2026-08-10 (later still ×2) · P6 Slice 3, items 5 and 6 (D-111). Gate P6 unchanged: still 2 of 4. |
+| METRICS.md | 723 | Session — 2026-08-10 (later still ×3) · 0.3.0 cut and tagged (D-112). No phase gate moved. |
+| METRICS.md | 774 | Session — 2026-08-10 (later still ×4) · The Slice 3 external review (D-113) + the CI dependency fix (D-114). No phase gate moved. |
+| METRICS.md | 894 | Session — 2026-08-10 (later still ×5) · Gate A career-profile bundle, slices T1–T9 (D-115). No phase gate moved. |
 
 ---
 
@@ -887,3 +888,92 @@ there and nowhere else), warm-up compile, and `pdfinfo` reading `Pages: 1` back.
 in a container; asset checksums are verified for all five targets. **The Windows commands are constructed
 from a verified zip layout and have never been run.** The push is the experiment, and Windows is the part
 of it that can genuinely fail.
+
+---
+
+## Session — 2026-08-10 (later still ×5) · Gate A career-profile bundle, slices T1–T9 (D-115). No phase gate moved.
+
+A parallel track, not a P0–P7 phase. **No program gate moved and none was expected to** — Gate A is the
+career-profile bundle's own gate, it is **not met**, and it additionally requires an independent review
+before Gate B may begin.
+
+### What exists — 9 of 19 slices, one commit each
+
+| Commit | Slice |
+|---|---|
+| `24e850f` | T1 dependency floor, package boundary, paths, typed outcomes |
+| `d83e507` | T2 restricted YAML loader + closed 33-document grammar |
+| `672e0bc` | T3 entity/contact/fact/relation/skill models |
+| `c978324` | T4 policy catalogs, evidence, metrics, claims |
+| `81ea7f9` | T5 manifests, history, imports, documents, JSON Schema export |
+| `6586093` | T6 comprehensive synthetic example + package-data proof |
+| `0ce6736` | T7 canonical serializer, evidence set, bundle/candidate identity, hash isolation |
+| `d6a2fc1` | T8 document loading, global index, structural + referential validation |
+| `fa532a8` | T9 blobs, redactions, byte budgets, versioned secret scanning |
+
+**T10–T19 do not exist:** semantics, owner-gate derivation and approval stamps, deterministic import,
+completeness/digest/reports, storage, rebase, promotion, migrations, the CLI, docs/audit.
+
+### The gate — one run, on the final tree
+
+| | |
+|---|---|
+| `make check` | **exit 0**, plain and unpiped, 392.53s (6m32s) |
+| stages executed | generalization `OK` · program-index `--check` · `ruff check .` · `mypy --strict src tools` · pytest |
+| pytest | **4,764 passed, 1 deselected** |
+| coverage | **95.20%** (floor 85%) |
+| `tests/profile_bundle` alone | **838 passed** |
+
+### Negative tests confirmed by reverting the check, not by assuming
+
+Each validation layer was disabled and the suite re-run, so a passing negative test is a measured result:
+
+| Layer | Tests that went red without it |
+|---|---|
+| structural | **2 of 31** |
+| referential | **11 of 24** |
+| evidence | **29 of 36** |
+
+The low structural number is itself a finding, not a gap: most structural violations are unrepresentable
+because the document models refuse them at parse time (D-115).
+
+### What `make check` caught that nothing else did
+
+ruff, `mypy --strict`, and **838 green profile-bundle tests** — and `make check` still exited **2**.
+**6 generalization violations**, all in the session's own new test fixtures: 4 × R1 literal home paths,
+2 × R2 `example.test` addresses. This is the third recorded instance of the standing rule that
+pytest + ruff + mypy passing individually is not green.
+
+The first fix attempt added 2 reviewed `HOME_PATH_EXCEPTIONS` entries and **broke 31 shape tests** —
+those tests run the checker over synthetic trees where any entry reports as stale. Reverted;
+`allowlists.py` ends the session **unchanged**. The convention the repo already had is runtime assembly
+of the fixture string, so the literal never exists on disk.
+
+### Second-path verification, where it was available
+
+- **Bundle identity:** design §7 steps 2–3 were implemented a **second** time in a throwaway generator.
+  Both implementations independently produce `evidence_set_digest`
+  `sha256:bb92aef8ff2d82c0178482ab5fa4c24975e6f3ab8251f3e6d939e14d3bcffde0`.
+- **Package data:** the real wheel was built and its contents listed — all **33** example documents plus
+  the 145 KB JSON Schema ship, verified through the build rather than through the manifest that declares it.
+- **Serializer isolation:** a characterization test pins the exact bytes of `eligibility/hashing.py` and
+  all three `_version_of` helpers against accidental consolidation, using one non-ASCII payload that
+  exposes both the `ensure_ascii` and the NFC differences at once.
+
+### Defects found in the session's own code, by its own tests
+
+| Defect | Why no test would have caught it later |
+|---|---|
+| index dispatched on **field name** | catalog rows indexed as records; a **correct** bundle reported duplicate IDs |
+| evidence symmetry compared `supports` only | would have forced every legitimate contextual attachment to overstate itself |
+| `SUPPORTED_RULESET_VERSIONS` bound **by name** at import | §12.2's stronger-ruleset rescan could not observe a new catalog version — it would have failed the day a v2 shipped, silently |
+
+### Carried gaps, stated
+
+- **Gate A not met; T10–T19 not built.** No `profile-bundle` CLI command exists.
+- **No bundle-to-`Resume` bridge, deliberately.** `tailor_cmd._resume_path` still returns
+  `settings.config_dir / "resume.yaml"`; nothing under `src/boardwatch/tailor/` imports the package.
+- **Fixture gap:** the packaged "comprehensive" example carries **no redaction**, so the redaction-marker
+  check is covered only by constructed cases. A test asserts the absence so the gap cannot silently
+  close or widen. Fixing it moves `evidence_set_digest` and every digest pinned against it.
+- **13 commits unpushed** on `main` at session end — 9 from this track, 4 from the concurrent P6 session.

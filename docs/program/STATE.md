@@ -53,8 +53,12 @@ the queue), and "0 dead postings" needs a real run whose leads are actually prob
 task. So the useful work is, in order: (1) unblock and push the 4 held commits, confirm `ci.yml` green, then
 re-release 0.3.0 (below — CI itself is already proven green on all three OSes);
 (2) start accumulating real daily runs, which is gated on Mit's `resume.yaml` fix below; (3) P2 item 8 or
-P3 slice 5, both owner-gated and both wanting their own context window. Slice 3's second-opinion review is
-**done** — do not re-run it from `.agent/review-prompt-p6-slice3.md`.
+P3 slice 5, both owner-gated and both wanting their own context window; (4) the career-profile bundle's
+Gate A, T10 onward — a parallel track that needs no owner decision to continue (below). Slice 3's
+second-opinion review is **done** — do not re-run it from `.agent/review-prompt-p6-slice3.md`.
+
+**`main` is 13 commits ahead of `origin` at the time of writing** — 4 from the P6/release work and 9 from
+the Gate A track. `git status --short --branch` is the authority; that count goes stale immediately.
 
 **0.3.0 is cut and TAGGED (`v0.3.0` → `426f45c`) but the release build FAILED and nothing published.**
 33 tests died on the runner because no workflow installed `tectonic`/`poppler-utils`, a gap that predated
@@ -88,6 +92,22 @@ live store": the Slice 1 backfill (which genuinely did write those rows here) an
 against real leads. A `boardwatch top 5` against the 23,455-posting copy ran past 20 minutes without
 finishing and was stopped — it pays for `run_preflight` + `run_eligibility` over the whole corpus. Both are
 covered by mutation-checked tests; neither has been exercised at corpus scale.
+
+**A PARALLEL TRACK now exists: the canonical career-profile bundle, Gate A — 9 of 19 slices built
+(D-115).** Not a P0–P7 phase, and it moved no program gate. Its design and implementation plan live
+**untracked** under `docs/superpowers/` — read them there; do not work this track from a fresh worktree,
+where they would disappear. `src/boardwatch/profile_bundle/` holds the typed outcomes, a restricted YAML
+loader, the closed 33-document grammar, every record model, the JSON Schema export, a synthetic example
+shipped as package data, an isolated canonical serializer with §7's identity algorithm, the global record
+index, structural + referential validation, the blob store, and versioned secret scanning.
+
+**Gate A is NOT met and the bundle is wired to nothing.** There is no `profile-bundle` CLI command, and
+there is deliberately **no bundle-to-`Resume` bridge** — `tailor_cmd._resume_path` still returns
+`settings.config_dir / "resume.yaml"` and nothing under `src/boardwatch/tailor/` imports the package (a
+test asserts both directions). No SQLite schema, store-head, or Alembic change. **Gate B, the private
+canonical baseline, stays prohibited until Gate A is implemented AND independently reviewed** — that
+review is owed and has not happened. Next slice is **T10, semantics** (design §20.4); T11–T19 follow.
+Read D-115 first: it records why several §20 rows deliberately have no check beside them.
 
 ---
 
@@ -252,6 +272,15 @@ result, a self-report is not verification — lives there.
 - **Reviewers that RUN the code find what reviewers that read it cannot.** Both of D-111's BLOCKERs were
   invisible to reading and obvious to one pipeline execution. Dispatch a **separate** docs-only reviewer
   as well — they keep finding blockers in documentation written about already-reviewed code.
+- **A check that cannot fire is deleted, not shipped.** Gate A found design-named validation rows whose
+  condition the Pydantic models already refuse at parse time. Implementing them anyway produces code that
+  can never run — the same defect class as a never-resolving eligibility rule reporting 100% abstain. Remove
+  the duplicate and write a test that says **where** the guarantee actually lands, so the spec row does not
+  merely look uncovered (D-115).
+- **A generalization exception entry is repo-wide, and the shape tests assume the tables are empty.**
+  Adding two `HOME_PATH_EXCEPTIONS` rows to satisfy a fixture broke 31 tests, because the checker reports an
+  unused entry as stale against every synthetic tree. The convention is to **assemble the offending literal
+  at runtime** so it never exists on disk — the rule protects the repo's bytes, not the checker's opinion.
 - **Measure the spec's premise before building it.** D-098 priced a deferral with the wrong subsystem's
   figures (D-105); D-111 found PROGRAM item 6's authoritative signal was 0-for-11 on the real corpus and
   structurally unable to reach the column it reads. A spec written against a different codebase's data is

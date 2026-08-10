@@ -110,44 +110,45 @@ and is a no-op when the index is already right. `make index-check` reports drift
 | D-074 | DECISIONS-ARCHIVE.md | 3009 | Final eligibility gate lane SHIPPED (persistent, agent-lane, fail-open); Gate P5 unchanged |
 | D-075 | DECISIONS-ARCHIVE.md | 3084 | Gate P2 reconciled: three individually-correct verdicts (may coincide); ≥3-field mechanism via fixtures |
 | D-076 | DECISIONS-ARCHIVE.md | 3153 | P2 item 4's final whole-branch review: what it caught, and four rulings it forced |
-| D-077 | DECISIONS.md | 154 | P6 Slice 1: the design is settled and the plan is written; no code exists yet |
-| D-078 | DECISIONS.md | 244 | P6 Slice 1: the plan's test fixtures are now real; eleven defects, all found by running code |
-| D-079 | DECISIONS.md | 333 | P6 Slice 1 annotates only; `postings.job_id` is not mutated |
-| D-080 | DECISIONS.md | 347 | `content_hash` alone may never suppress |
-| D-081 | DECISIONS.md | 361 | `exact_quad` is the sole suppressing kind, and its yield is stated honestly |
-| D-082 | DECISIONS.md | 379 | `cross_host` ships annotate-only, reversing an earlier draft |
-| D-083 | DECISIONS.md | 400 | No location evidence ⇒ no location-bearing identity, never a `"[]"` sentinel |
-| D-084 | DECISIONS.md | 415 | Three host classes, not two; matching is exact-or-dot-suffix |
-| D-085 | DECISIONS.md | 429 | Allowlist URL normalization, not a denylist |
-| D-086 | DECISIONS.md | 443 | Survivor election never consults score; `posting_id` is a load-bearing tiebreak |
-| D-087 | DECISIONS.md | 458 | Instrumentation is completeness-gated, not existence-gated |
-| D-088 | DECISIONS.md | 472 | `assisted` stays `None` in this slice |
-| D-089 | DECISIONS.md | 487 | Identities are upserted on every observation; a kind that stops being produced is deleted |
-| D-090 | DECISIONS.md | 504 | The ranker is completeness-gated for reproducibility, not safety |
-| D-091 | DECISIONS.md | 522 | The recount recomputes in Python, and claims staleness only |
-| D-092 | DECISIONS.md | 537 | Identities are backfilled by an explicit command, not by the migration |
-| D-093 | DECISIONS.md | 551 | Slice 1 does NOT meet Gate P6, and makes only one of its four clauses measurable |
-| D-094 | DECISIONS.md | 565 | P6 Slice 1 BUILT (unattended run): five more plan defects, three of them tests that could not fail |
-| D-095 | DECISIONS.md | 693 | P6 Slice 1 reviewed by three independent reviewers; fourteen findings fixed, two rejected |
-| D-096 | DECISIONS.md | 758 | The C++/C# fix folds punctuation into words; it does NOT add a raw-title comparison |
-| D-097 | DECISIONS.md | 802 | `_verify_quad` rejected nothing on the live corpus; "string-verified" is not precision evidence |
-| D-098 | DECISIONS.md | 831 | Suppression reports when it is OFF; wiring backfill into the pipeline is Slice 2 |
-| D-099 | DECISIONS.md | 867 | Gate batching stays allowed; the per-task fast-check set must include the schema guards |
-| D-100 | DECISIONS.md | 893 | P6 Slice 1 merged to `main`; Gate P6 clause 3 is MET, not merely measurable |
-| D-101 | DECISIONS.md | 925 | Gate P6 clause 4 is MET: 20/20 sampled suppressions are genuine duplicates |
-| D-102 | DECISIONS.md | 955 | D-072 (model-tier benchmark) is deferred indefinitely |
-| D-103 | DECISIONS.md | 977 | P6 Slice 2: the ledger is a current-state row per job, `seen` suppresses on a TTL, and the policy stamp never auto-reopens |
-| D-104 | DECISIONS.md | 1049 | Job regrouping: the survivor's job wins, and a tracked group is refused whole |
-| D-105 | DECISIONS.md | 1092 | Identity writes move into the scan path, closing D-098 — and D-098's cost argument did not apply |
-| D-106 | DECISIONS.md | 1123 | Two consequences the build forced: what earns a permanent `skipped`, and the zero-output guard |
-| D-107 | DECISIONS.md | 1149 | P6 Slice 2 BUILT and verified on real data; `cross_host` dereference deferred by measured absence |
-| D-108 | DECISIONS.md | 1198 | The decision log and the metrics log are archive-split; the reading protocol moves into the index |
-| D-109 | DECISIONS.md | 1257 | Index drift fails the gate, and the fixer lives in `tools/` |
-| D-110 | DECISIONS.md | 1335 | The Slice 2 review: only a caller that delivers a lead may consume the queue |
-| D-111 | DECISIONS.md | 1452 | P6 Slice 3: applied-state suppression, and liveness sized to what the corpus actually is |
-| D-112 | DECISIONS.md | 1621 | 0.3.0 is cut, the changelog gets ONE triple, and the tag is the owner's to push |
-| D-113 | DECISIONS.md | 1725 | The Slice 3 external review: a followed redirect can forge a gone-status |
-| D-114 | DECISIONS.md | 1813 | CI installs tectonic and pdfinfo on all three OSes; skipping the gate was refused |
+| D-077 | DECISIONS.md | 155 | P6 Slice 1: the design is settled and the plan is written; no code exists yet |
+| D-078 | DECISIONS.md | 245 | P6 Slice 1: the plan's test fixtures are now real; eleven defects, all found by running code |
+| D-079 | DECISIONS.md | 334 | P6 Slice 1 annotates only; `postings.job_id` is not mutated |
+| D-080 | DECISIONS.md | 348 | `content_hash` alone may never suppress |
+| D-081 | DECISIONS.md | 362 | `exact_quad` is the sole suppressing kind, and its yield is stated honestly |
+| D-082 | DECISIONS.md | 380 | `cross_host` ships annotate-only, reversing an earlier draft |
+| D-083 | DECISIONS.md | 401 | No location evidence ⇒ no location-bearing identity, never a `"[]"` sentinel |
+| D-084 | DECISIONS.md | 416 | Three host classes, not two; matching is exact-or-dot-suffix |
+| D-085 | DECISIONS.md | 430 | Allowlist URL normalization, not a denylist |
+| D-086 | DECISIONS.md | 444 | Survivor election never consults score; `posting_id` is a load-bearing tiebreak |
+| D-087 | DECISIONS.md | 459 | Instrumentation is completeness-gated, not existence-gated |
+| D-088 | DECISIONS.md | 473 | `assisted` stays `None` in this slice |
+| D-089 | DECISIONS.md | 488 | Identities are upserted on every observation; a kind that stops being produced is deleted |
+| D-090 | DECISIONS.md | 505 | The ranker is completeness-gated for reproducibility, not safety |
+| D-091 | DECISIONS.md | 523 | The recount recomputes in Python, and claims staleness only |
+| D-092 | DECISIONS.md | 538 | Identities are backfilled by an explicit command, not by the migration |
+| D-093 | DECISIONS.md | 552 | Slice 1 does NOT meet Gate P6, and makes only one of its four clauses measurable |
+| D-094 | DECISIONS.md | 566 | P6 Slice 1 BUILT (unattended run): five more plan defects, three of them tests that could not fail |
+| D-095 | DECISIONS.md | 694 | P6 Slice 1 reviewed by three independent reviewers; fourteen findings fixed, two rejected |
+| D-096 | DECISIONS.md | 759 | The C++/C# fix folds punctuation into words; it does NOT add a raw-title comparison |
+| D-097 | DECISIONS.md | 803 | `_verify_quad` rejected nothing on the live corpus; "string-verified" is not precision evidence |
+| D-098 | DECISIONS.md | 832 | Suppression reports when it is OFF; wiring backfill into the pipeline is Slice 2 |
+| D-099 | DECISIONS.md | 868 | Gate batching stays allowed; the per-task fast-check set must include the schema guards |
+| D-100 | DECISIONS.md | 894 | P6 Slice 1 merged to `main`; Gate P6 clause 3 is MET, not merely measurable |
+| D-101 | DECISIONS.md | 926 | Gate P6 clause 4 is MET: 20/20 sampled suppressions are genuine duplicates |
+| D-102 | DECISIONS.md | 956 | D-072 (model-tier benchmark) is deferred indefinitely |
+| D-103 | DECISIONS.md | 978 | P6 Slice 2: the ledger is a current-state row per job, `seen` suppresses on a TTL, and the policy stamp never auto-reopens |
+| D-104 | DECISIONS.md | 1050 | Job regrouping: the survivor's job wins, and a tracked group is refused whole |
+| D-105 | DECISIONS.md | 1093 | Identity writes move into the scan path, closing D-098 — and D-098's cost argument did not apply |
+| D-106 | DECISIONS.md | 1124 | Two consequences the build forced: what earns a permanent `skipped`, and the zero-output guard |
+| D-107 | DECISIONS.md | 1150 | P6 Slice 2 BUILT and verified on real data; `cross_host` dereference deferred by measured absence |
+| D-108 | DECISIONS.md | 1199 | The decision log and the metrics log are archive-split; the reading protocol moves into the index |
+| D-109 | DECISIONS.md | 1258 | Index drift fails the gate, and the fixer lives in `tools/` |
+| D-110 | DECISIONS.md | 1336 | The Slice 2 review: only a caller that delivers a lead may consume the queue |
+| D-111 | DECISIONS.md | 1453 | P6 Slice 3: applied-state suppression, and liveness sized to what the corpus actually is |
+| D-112 | DECISIONS.md | 1622 | 0.3.0 is cut, the changelog gets ONE triple, and the tag is the owner's to push |
+| D-113 | DECISIONS.md | 1726 | The Slice 3 external review: a followed redirect can forge a gone-status |
+| D-114 | DECISIONS.md | 1814 | CI installs tectonic and pdfinfo on all three OSes; skipping the gate was refused |
+| D-115 | DECISIONS.md | 1882 | Gate A of the career-profile bundle: 9 of 19 slices, and a rule for checks that cannot fire |
 
 ---
 
@@ -1875,3 +1876,85 @@ the Linux and macOS binaries were verified locally; the Windows commands are con
 zip layout, not from a green run. **The first push is the experiment**, and the release must not be
 re-tagged until `ci.yml` is green on all three OSes — re-tagging on the strength of a plausible-looking
 YAML diff would repeat, with more confidence, exactly the mistake that produced the failed 0.3.0 build.
+
+---
+
+## D-115 — Gate A of the canonical career-profile bundle: 9 of 19 slices, and a rule for checks that cannot fire
+
+**Context.** A separate design and implementation plan for a *canonical career-profile bundle* live
+untracked under `docs/superpowers/` (spec + plan, both dated 2026-08-10, both marked
+READY-FOR-IMPLEMENTATION). This is not a P0–P7 phase; it is a parallel track, and its Gate A is the
+**generalized mechanism only** — Gate B, the private canonical baseline, is prohibited until Gate A is
+implemented *and independently reviewed*. Role-family projection, persona/claim selection, taxonomy
+integration, rendering, and JD/tailoring evaluation are all later designs.
+
+**What was built:** slices T1–T9 of 19, one commit each, in dependency order. `src/boardwatch/profile_bundle/`
+now holds the typed outcome catalog, a restricted YAML loader, the closed 33-document file grammar, every
+record model, the JSON Schema export, a 33-file synthetic example shipped as package data, an isolated
+canonical serializer with the §7 bundle/candidate identity algorithm, the global record index, structural
+and referential validation, the content-addressed blob store, and versioned secret scanning.
+**T10–T19 are not built:** semantics, owner-gate derivation and approval stamps, deterministic import,
+completeness/digest/reports, storage, rebase, promotion, migrations, the CLI, and the docs/audit pass.
+
+**Gate A is NOT met and the bundle is not wired to anything.** There is no `profile-bundle` CLI command
+yet, and there is deliberately **no bundle-to-`Resume` bridge**: `tailor_cmd._resume_path` still returns
+`settings.config_dir / "resume.yaml"`, and nothing under `src/boardwatch/tailor/` imports the package. No
+SQLite schema, store-head, or Alembic change. A test asserts the isolation in both directions.
+
+### The rule this slice establishes: a check that cannot fire is deleted, not shipped
+
+Design §20.1–20.2 list conditions as validation checks that the **Pydantic models already refuse at parse
+time**: `required_metric_ids` is a `MetricId`, so pointing it at a fact is a pattern failure;
+`ConflictRecord._resolved_groups_name_their_ruling` and `RulingRecord._selection_matches_the_decision`
+enforce their own shapes. Implementing those a second time in a validation layer produces code that can
+never run, which is the same defect class as a never-resolving eligibility rule reporting 100% abstain.
+
+**So the duplicates were removed, and the tests say where each guarantee actually lands** —
+`test_typed_reference_fields_refuse_the_wrong_kind_before_this_layer` asserts the parse-time refusal
+rather than leaving a §20 row looking uncovered. `record_kind_mismatch` is the one exception kept: §20.1
+names it, its docstring states plainly that authored YAML cannot reach it, and `prefix_matches_kind` is
+tested directly so the guard still has teeth if a field is ever widened to a bare `RecordId`.
+
+**This is a departure from the plan's task list and is deliberate.** It is not a contradiction in the
+design — the guarantee is *stronger* where it lands, just not where §20 implies. A reviewer comparing
+the code against §20 will find rows with no check beside them, and this entry is the reason.
+
+### Three findings the work itself produced
+
+**Dispatch by record TYPE, never by field name.** The first index keyed off attribute names, so
+`policy/relations.yaml`'s `relations` field of `RelationSpec` catalog rows was indexed as relation
+records, and `policy/sources.yaml` and `imports/source-ledger.yaml` both having a `sources` field made a
+**correct** bundle report duplicate IDs and a wrong owning file. Name-based dispatch cannot tell a
+catalog row from a record; a type map can.
+
+**Evidence link symmetry compares the union of all three relationship sets.** §12 makes the relationship
+a closed choice of `supports` / `contradicts` / `contextualizes`, and §12.1 separately says a contextual
+source cannot satisfy a verification requirement. Comparing `fact.evidence_ids` against
+`supports_record_ids` alone would force every legitimate contextual attachment to overstate itself. The
+verification question is semantic and belongs to T10, not to referential validation.
+
+**A by-name import of a version set defeats the versioning mechanism it implements.** §12.2 requires a
+newer installed secret-scan catalog to rescan an older revision and report hits as *blockers*, never
+errors. `validation/evidence.py` first bound `SUPPORTED_RULESET_VERSIONS` at import, which snapshots it —
+the stronger-ruleset path was structurally unable to observe a newly retained version, i.e. the one
+mechanism that must work the day a v2 ships would have failed on that day and no test would have said so.
+Fixed by importing `secret_scan` as a **module** and reading the set at call time.
+
+### `make check` caught what ruff, mypy and pytest could not
+
+ruff, `mypy --strict`, and 838 profile-bundle tests were all green while `make check` exited **2**: the
+new test fixtures tripped R1/R2 of the generalization gate with literal home paths and an `example.test`
+address. The first fix reached for the checker's `HOME_PATH_EXCEPTIONS` table — wrong twice over, because
+an entry excuses the string **repo-wide**, and because 31 shape tests assume that table is empty and
+report unused entries as stale. The repo already had the answer, stated in `tests/generalization/test_shape.py`'s
+own docstring: **violating fixtures are assembled at runtime so the literals never exist on disk.** The
+rule protects the repo's *bytes* — git history, a `grep` over a clone, the published wheel — not just the
+checker's opinion. `allowlists.py` was reverted to unchanged.
+
+**Alternatives rejected.** Building the bundle inside a fresh worktree — the authoritative design and plan
+are untracked under `docs/superpowers/` and would have disappeared. Consolidating the bundle's canonical
+serializer with `eligibility/hashing.py` or the three `_version_of` helpers — those bytes feed stored
+identities behind BEFORE UPDATE/DELETE triggers, and a characterization test now pins all four against
+accidental merging. Adding a redaction to the packaged example to close a fixture gap — it would move
+`evidence_set_digest` and every digest pinned against it, so it is left for a deliberate fixture change
+and the gap is asserted, not hidden.
