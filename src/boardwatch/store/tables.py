@@ -25,6 +25,7 @@ from sqlalchemy import (
 )
 
 from boardwatch.core.identity_kinds import IDENTITY_KIND_NAMES
+from boardwatch.core.ledger import DISPOSITIONS, PERMANENT_DISPOSITIONS, REASON_NAMES
 
 # Convention: naming convention is set at the MetaData level so Alembic
 # autogenerate produces stable, predictable constraint names.
@@ -400,4 +401,46 @@ posting_identities = Table(
     UniqueConstraint("posting_id", "kind", "algorithm_version"),
     CheckConstraint(f"kind IN ({_IDENTITY_KIND_LIST})", name="identity_kind_enum"),
     Index("ix_posting_identities_key", "kind", "identity_key"),
+)
+
+# Both catalogs are closed, and both are enforced twice: typed at the write site
+# (core/ledger.py's UnknownDisposition / UnknownDispositionReason) and again here, so a direct
+# INSERT cannot invent a bucket either.
+_DISPOSITION_LIST = ", ".join(f"'{name}'" for name in DISPOSITIONS)
+_REASON_LIST = ", ".join(f"'{name}'" for name in REASON_NAMES)
+_PERMANENT_LIST = ", ".join(f"'{name}'" for name in sorted(PERMANENT_DISPOSITIONS))
+
+job_dispositions = Table(
+    "job_dispositions",
+    metadata,
+    # One row per job, upserted — the spec asks for monotonic UPSERTS, and an append-only log
+    # cannot be upserted (P6 slice 2 design §2.1). The append-only trail lives in
+    # job_grouping_events, which is the half that mutates a key another table reads.
+    Column("job_id", Integer, ForeignKey("jobs.id"), primary_key=True),
+    Column("disposition", Text, nullable=False),
+    Column("reason", Text, nullable=False),
+    # NOT NULL exactly for the permanent tier; NULL exactly for `seen`. The two CHECKs below are
+    # the spec's "built/skipped permanent and seen TTL'd" plus "a policy-version stamp on
+    # permanent dispositions", expressed where a caller cannot forget them.
+    Column("policy_version", Text, nullable=True),
+    Column("expires_at", DateTime, nullable=True),
+    # Set by the drain instead of deleting the row, so draining a bucket does not erase it.
+    Column("reopened_at", DateTime, nullable=True),
+    Column("first_decided_at", DateTime, nullable=False),
+    Column("decided_at", DateTime, nullable=False),
+    Column("run_id", Integer, ForeignKey("runs.id"), nullable=True),
+    CheckConstraint(f"disposition IN ({_DISPOSITION_LIST})", name="disposition_enum"),
+    CheckConstraint(f"reason IN ({_REASON_LIST})", name="disposition_reason_enum"),
+    # Both tiers stated explicitly. A single biconditional
+    # `(disposition IN permanent) = (policy_version IS NOT NULL AND expires_at IS NULL)` looks
+    # equivalent and is not: it constrains only the permanent side, so a `seen` row carrying a
+    # policy stamp AND no TTL satisfies it (0 = 0). Caught by the store tests before it shipped.
+    CheckConstraint(
+        f"(disposition IN ({_PERMANENT_LIST})"
+        " AND policy_version IS NOT NULL AND expires_at IS NULL)"
+        f" OR (disposition NOT IN ({_PERMANENT_LIST})"
+        " AND policy_version IS NULL AND expires_at IS NOT NULL)",
+        name="permanence_wellformed",
+    ),
+    Index("ix_job_dispositions_expires_at", "expires_at"),
 )
