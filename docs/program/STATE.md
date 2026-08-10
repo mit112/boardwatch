@@ -19,9 +19,17 @@ prose. CLAUDE.md's rule is the reason: a file that narrates its own history stop
 
 ## Current standing
 
-**P6 Slice 2 is BUILT and on `main`** — the durable decision ledger, its drain, and job regrouping
-(`PROGRAM.md` §3.P6 item 4). `make check` **exit 0**: 3822 passed, 1 deselected, `generalization: OK`, ruff
-and `mypy --strict` clean, 4m42s, in a detached worktree pinned to the commit. Decisions **D-103 … D-107**.
+**P6 Slice 2 is BUILT** — the durable decision ledger, its drain, and job regrouping (`PROGRAM.md` §3.P6
+item 4). `make check` **exit 0**: 3822 passed, 1 deselected, `generalization: OK`, ruff and `mypy --strict`
+clean, 4m42s, in a detached worktree pinned to the commit. Decisions **D-103 … D-107**.
+
+**It is committed to local `main` and deliberately NOT pushed, and it has had no independent review.**
+Seven commits sit ahead of `origin/main`. Slice 1, a comparable checkpoint, went to a branch and merged only
+after a three-reviewer fresh-context review (D-095) plus Mit's explicit authorization; this slice was
+committed straight to `main` under standing "commit freely" permission, which is a process divergence worth
+naming rather than discovering. **The owed step is a fresh-context whole-branch review before pushing** —
+`origin/main..main` is the range. Standing permission to push is conditional on the work being both
+confident *and* reviewed; only the first holds.
 
 Schema head is **`p6_job_dispositions`**.
 
@@ -34,7 +42,14 @@ closed phrase, 0 are stale beyond 30 days. Size the slice to that reality rather
 `p6_posting_identities`, 117,254 identity rows at `p6.2`, `identities verify` exit 0, 147 groups / 186
 surplus rows / 0.79%). Slice 2 was verified on an **isolated copy**, which is why the live figures below are
 Slice 1's. Running `boardwatch identities regroup` against the live store is a deliberate, still-unrun step:
-it moves 186 postings onto 147 canonical jobs. A pre-migration backup sits beside the store
+it moves 186 postings onto 147 canonical jobs.
+
+**What was NOT demonstrated on real data:** the ledger's own end-to-end behaviour. A `boardwatch top 5`
+against the 23,455-posting copy ran past 20 minutes without finishing and was stopped — it pays for
+`run_preflight` + `run_eligibility` over the whole corpus, the same reason Slice 1's live top-20 smoke never
+completed either. The queue-advance behaviour is proven by
+`tests/pipeline/test_ledger_advances_the_queue.py` (mutation-checked) and the *regrouping* half was verified
+on the real copy; the display path at corpus scale was not. Re-run it if you want that exercised. A pre-migration backup sits beside the store
 (`boardwatch.db.pre-p6-backup-20260810`, 769 MB); the disk pressure that made deleting it worth considering
 has resolved (root at 39%, 18 GiB free), so it was left alone.
 
