@@ -20,32 +20,18 @@ has every previous version.
 
 ## Current standing
 
-**P6 Slice 2 is BUILT and now REVIEWED** — the durable decision ledger, its drain, and job regrouping
+**P6 Slice 2 is BUILT, REVIEWED and PUSHED** — the durable decision ledger, its drain, and job regrouping
 (`PROGRAM.md` §3.P6 item 4). Decisions **D-103 … D-107**; the review is **D-110**. Schema head is
 **`p6_job_dispositions`**.
 
-**The owed review is DONE and its findings are fixed.** Four independent reviewers (diff, docs-only,
-ranker-callers, schema/hot-path) over `origin/main..main`, covering Slice 2, D-108 and D-109. It found **two
-BLOCKERs and five MAJORs that were real**, all fixed and re-gated. Read D-110 before touching the ledger; the
-short version is that the `seen` write had been applied to *every* `rank_open_postings` call, and three of the
-four production callers deliver no lead to anybody — so `eligibility gate request` suppressed the shortlist it
-had just built for judging, the pipeline suppressed the shortlist before the render rather than after, and
-`bwd` built **zero folders** every day. Separately, a transient `tectonic` failure earned a *permanent*
-`skipped` with no drain that could release it, and regrouping orphaned a `built` decision on a job nothing
-anchors, re-tailoring the lead — Slice 2's own defect arriving through the projection Slice 2 added.
+**The owed review is DONE, its findings are fixed, and everything is PUSHED** — `main` is at `origin/main`
+(`git rev-list --count origin/main..main` is the authority and should read 0). Four reviewers over
+`origin/main..main`, covering Slice 2, D-108 and D-109: **two BLOCKERs and five MAJORs, all real, all fixed and
+re-gated.** **Read D-110 before touching the ledger** — it holds the findings, the two deliberately left
+unfixed, and why. The push reported `Bypassed rule violations: 6 of 6 required status checks are expected`,
+which is the known runner-acquisition failure, not a repo problem.
 
-**Everything through the review is PUSHED** — Mit authorized it once the gate was green, and `main` is at
-`origin/main`. `git rev-list --count origin/main..main` is the authority (it should read 0; a number written
-here goes stale the same day, D-017). The push reported `Bypassed rule violations: 6 of 6 required status
-checks are expected` — that is the known runner-acquisition failure, not a repo problem; local `make check` is
-the authority and was exit 0.
-
-**Still Mit's call: cutting 0.3.0.** The recommended precondition (the Slice 2 review landing) is now met.
-
-**Two review findings were deliberately NOT fixed**, with reasons in D-110: `record_disposition` is an
-unlocked read-modify-write (SQLite/WAL rolls one racer back rather than losing an update, and two-writer is
-P3 item 8's question), and the DB checks the reason catalog as a *union*, so a raw `INSERT` could pair `built`
-with `surfaced` — reachable only by bypassing Python, and tightening it costs a migration.
+**Still Mit's call: cutting 0.3.0.** Its recommended precondition, the review landing, is now met.
 
 **Next action: P6 Slice 3** — applied-state suppression (`PROGRAM.md` §3.P6 item 5) and liveness (item 6).
 Liveness is what the remaining "0 dead postings" gate clause needs. Two things to know before planning it:
@@ -64,25 +50,20 @@ surplus rows / 0.79%). Slice 2 was verified on an **isolated copy**, which is wh
 Slice 1's. Running `boardwatch identities regroup` against the live store is a deliberate, still-unrun step:
 it moves 186 postings onto 147 canonical jobs. **Mit declined it on 2026-08-10** — not blocked, just not now.
 
-**Re-verified read-only on 2026-08-10, so nobody has to reconstruct it:** `alembic_version` =
-`p6_posting_identities`, **no `job_dispositions` table**, `job_grouping_events` = **0 rows**, `postings` =
-24,073 and `count(distinct job_id)` = **24,073 — still exactly 1:1**. That last number is the clean proof the
-regroup ran on the copy and not here: a regrouped live store would read **23,887**. Two things are easy to
-misremember as "we already did the live store": the Slice 1 backfill, which genuinely did write those 117,254
-identity rows here, and the regroup's **idempotence** check (second pass moved 0), which ran on the copy.
-The 769 MB `boardwatch.db.pre-p6-backup-20260810` is still in place beside the store.
-
-Note the live store needs the `p6_job_dispositions` migration before a regroup there can carry any ledger
-decision — there are no dispositions on it to carry today.
+**Re-verified read-only 2026-08-10:** head `p6_posting_identities`, **no `job_dispositions` table**,
+`job_grouping_events` **0 rows**, `postings` 24,073 and `count(distinct job_id)` **24,073 — still exactly
+1:1**. That last number is the cheap proof, since a regrouped store would read **23,887**. Two things get
+misremembered as "we already did the live store": the Slice 1 backfill (which genuinely did write those
+117,254 rows here) and the regroup's **idempotence** check, which ran on the copy. The live store also needs
+the `p6_job_dispositions` migration before a regroup there could carry any decision. The 769 MB
+`boardwatch.db.pre-p6-backup-20260810` is still beside it.
 
 **What was NOT demonstrated on real data:** the ledger's own end-to-end behaviour. A `boardwatch top 5`
 against the 23,455-posting copy ran past 20 minutes without finishing and was stopped — it pays for
 `run_preflight` + `run_eligibility` over the whole corpus, the same reason Slice 1's live top-20 smoke never
 completed either. The queue-advance behaviour is proven by
 `tests/pipeline/test_ledger_advances_the_queue.py` (mutation-checked) and the *regrouping* half was verified
-on the real copy; the display path at corpus scale was not. Re-run it if you want that exercised. A pre-migration backup sits beside the store
-(`boardwatch.db.pre-p6-backup-20260810`, 769 MB); the disk pressure that made deleting it worth considering
-has resolved (root at 39%, 18 GiB free), so it was left alone.
+on the real copy; the display path at corpus scale was not. Re-run it if you want that exercised.
 
 ---
 
@@ -96,7 +77,7 @@ has resolved (root at 39%, 18 GiB free), so it was left alone.
 | P3 Unattended one command | **COMPLETE** for everything needing neither Mit's domain input nor Docker | **NOT MET** — 7 consecutive unattended runs, plus the cross-OS two-writer test. Slice 5 remains |
 | P4 Craft gate | **COMPLETE** — items 1–7 | **NOT MET** — the blind craft review is the owner's, and has not been run |
 | P5 Eligibility decides | **COMPLETE** — D-073 + D-074 | **MET** — INELIGIBLE precision 16/16, 0 span violations, `eligibility score` exits 0 |
-| P6 Liveness + dedup | **Slice 1 merged; Slice 2 on local `main`, reviewed (D-110) but unpushed.** Slice 3 (items 5, 6) not started | **NOT MET — 2 of 4 clauses met**, below |
+| P6 Liveness + dedup | **Slices 1 and 2 both merged, reviewed and pushed** (Slice 2's review is D-110). Slice 3 (items 5, 6) not started | **NOT MET — 2 of 4 clauses met**, below |
 | 14-day acceptance | not started | — |
 | P7 Breadth | not started | — |
 
