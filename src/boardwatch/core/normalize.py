@@ -22,6 +22,20 @@ _COMPANY_SUFFIXES = re.compile(r"\b(inc|llc|corp|co|ltd|technologies|technology|
 _NON_ALNUM_TO_SPACE = re.compile(r"[\W_]")
 _WS = re.compile(r"\s+")
 
+# Folded to words BEFORE the punctuation strip, which would otherwise erase them and make
+# "C++ Developer", "C# Developer" and "C Developer" all normalize to "c developer" — three
+# different roles sharing one identity component. `exact_quad` also requires an identical
+# content_hash, so the collision only bites when a poster reuses one body across a role
+# family, which is exactly what boilerplate reqs do. Precision is the invariant here.
+#
+# Only these two characters are folded, not punctuation generally: measured on a live
+# 23,455-posting corpus, 8 of 147 suppression groups differ in raw title and all 8 differ
+# only in punctuation/case noise on the same role (hyphen vs comma, "Store-in-Store" vs
+# "Store in Store", "Javascript" vs "JavaScript"). Folding more would leak those 8 real
+# duplicates to defend a collision that does not occur. 123 open titles contain "+" and 16
+# contain "#", and none of them sits in any suppression group, so this costs no recall.
+_LANG_TOKENS = (("+", " plus "), ("#", " sharp "))
+
 
 def normalize_company(name: str) -> str:
     c = name.lower().strip()
@@ -32,6 +46,8 @@ def normalize_company(name: str) -> str:
 
 def normalize_title(title: str) -> str:
     t = title.lower()
+    for char, word in _LANG_TOKENS:
+        t = t.replace(char, word)
     t = _NON_ALNUM_TO_SPACE.sub(" ", t)
     return _WS.sub(" ", t).strip()
 

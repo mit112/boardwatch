@@ -5,8 +5,18 @@ below must resolve to "nothing suppressed".
 """
 
 from datetime import datetime
+from unittest import mock
 
-from boardwatch.core.dedup import _elect, elect_cross_host_survivor, resolve_duplicates
+import pytest
+
+from boardwatch.core import dedup
+from boardwatch.core.dedup import (
+    MissingSuppressionResolver,
+    _elect,
+    elect_cross_host_survivor,
+    resolve_duplicates,
+)
+from boardwatch.core.identity_kinds import IdentityKindSpec
 from boardwatch.core.posting_identity import (
     IdentityInputs,
     PostingIdentity,
@@ -165,8 +175,30 @@ def test_a_single_posting_is_never_a_duplicate_of_itself():
 
 
 def test_different_companies_do_not_match_on_exact_quad():
-    result = _resolve(_p(1, company_id=10), _p(2, company_id=11))
-    assert all(s.kind != "exact_quad" for s in result)
+    """`assert result == ()`, not `all(... for s in result)`.
+
+    The old assertion was vacuous: `result` is empty here, so `all()` was true regardless.
+    Worse, it could not observe its own mutation — dropping `company` from the exact_quad
+    key lets these two group, but `_verify_quad` still compares `a.company_id == b.company_id`
+    and elects no losers, so `result` stays `()` and the old form stayed green. The key-level
+    guard is `test_different_companies_produce_different_exact_quad_keys` in
+    test_posting_identity.py; this one pins the end-to-end outcome.
+    """
+    assert _resolve(_p(1, company_id=10), _p(2, company_id=11)) == ()
+
+
+def test_elect_prefers_the_ats_host_over_an_earlier_first_seen_aggregator():
+    """host_class is the FIRST term of the election key (D-086), ahead of first_seen_at.
+
+    Every other exact_quad test seeds a single Greenhouse host, so none of them can observe
+    the precedence — with one host class the key collapses to (first_seen_at, posting_id) and
+    reordering the terms changes nothing. Here the aggregator was seen first, so an election
+    keyed on first_seen_at before host_class returns posting 1 and this goes red.
+    """
+    aggregator = _p(1, url=_LINKEDIN, first_seen_at=datetime(2026, 1, 1))
+    ats = _p(2, url=_GREENHOUSE, first_seen_at=datetime(2026, 6, 1))
+    assert _elect([aggregator, ats]).posting_id == 2
+    assert _elect([ats, aggregator]).posting_id == 2
 
 
 # --- cross_host: annotate-only (design §3, §3.1) --------------------------------------
@@ -277,21 +309,76 @@ def test_election_declines_when_there_is_nothing_to_drop():
 def test_exact_provider_never_suppresses():
     """It keys on (company_id, provider_posting_id), which postings enforces UNIQUE.
 
-    If this ever fires, that constraint has been lost.
+    If this ever fires, that constraint has been lost. Asserted as `== ()` rather than
+    `all(s.kind != ... for s in result)`: the result is empty, so the `all()` form was true
+    for any implementation at all.
     """
     a = _p(1, title="Alpha", provider_posting_id="gh-1")
     b = _p(2, title="Beta", provider_posting_id="gh-1")
-    assert all(s.kind != "exact_provider" for s in _resolve(a, b))
+    assert _resolve(a, b) == ()
 
 
 def test_annotate_only_kinds_never_appear_in_a_suppression():
-    result = _resolve(
-        _p(1, content_hash="b" * 64, title="A"),
-        _p(2, content_hash="b" * 64, title="B"),
+    """Same vacuity as above: `result` is empty, so the old `all()` observed nothing.
+
+    Flipping `suppresses=True` on either annotate-only kind now raises
+    MissingSuppressionResolver rather than returning a suppression — pinned separately by
+    test_a_suppressing_kind_without_a_resolver_raises_a_typed_error.
+    """
+    assert (
+        _resolve(
+            _p(1, content_hash="b" * 64, title="A"),
+            _p(2, content_hash="b" * 64, title="B"),
+        )
+        == ()
     )
-    assert all(s.kind not in {"content_hash_only", "company_title_location"} for s in result)
 
 
 def test_a_posting_is_suppressed_at_most_once():
+    """Asserted as the concrete outcome, because the de-duplication is structural.
+
+    `resolve_duplicates` accumulates into a dict keyed on posting_id, so
+    `len({s.posting_id ...}) == len(result)` is true for every possible input and no mutation
+    of the resolver can make it red. The observable claim is which rows lose, so assert that.
+    """
     result = _resolve(_p(1), _p(2), _p(3))
-    assert len({s.posting_id for s in result}) == len(result)
+    assert {s.posting_id for s in result} == {2, 3}
+    assert {s.survivor_posting_id for s in result} == {1}
+
+
+def test_a_stale_exact_quad_cannot_suppress_postings_with_no_location_evidence():
+    """The stored path, which is the only path production uses (design §1.2, D-083).
+
+    `compute_identities` emits no exact_quad without location evidence, but this resolver
+    groups STORED identities and nothing in the scan path rewrites them: `scan/apply.py`
+    refreshes `locations_json` on every observation while `identities_complete` checks only
+    that a current-version row EXISTS. So a posting can lose its locations and keep the
+    exact_quad row that was written when it still had them.
+
+    `_verify_quad` must then refuse on absence, not compare: two Nones are EQUAL, so a check
+    that only compares passes and suppresses on evidence the catalog marks non-suppressing.
+    Dropping the `loc_a is not None` clause turns this red.
+    """
+    stale = (PostingIdentity("exact_quad", "key-from-when-they-had-locations"),)
+    result = _resolve(
+        _p(1, locations=None),
+        _p(2, locations=None),
+        overrides={1: stale, 2: stale},
+    )
+    assert result == ()
+
+
+def test_a_suppressing_kind_without_a_resolver_raises_a_typed_error():
+    """A catalog edit reaches this: it is not unreachable just because defaults avoid it.
+
+    Marking content_hash_only as suppressing names a kind `_RESOLVERS` has no entry for. That
+    used to surface as a bare KeyError from inside the ranker; violations are typed at the
+    raise site so behaviour is never classified by string-matching a message.
+    """
+    fake = IdentityKindSpec("content_hash_only", 4, True)
+    rows = [_p(1), _p(2)]
+    identities = {r.posting_id: compute_identities(r) for r in rows}
+    with mock.patch.object(dedup, "SUPPRESSING_KINDS", (fake,)):
+        with pytest.raises(MissingSuppressionResolver) as excinfo:
+            resolve_duplicates(rows, identities)
+    assert excinfo.value.name == "content_hash_only"

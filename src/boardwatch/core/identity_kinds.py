@@ -21,7 +21,12 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-IDENTITY_ALGORITHM_VERSION = "p6.1"
+# p6.2: normalize_title now folds "+" and "#" to words, so C++/C#/C stop sharing one title
+# component. Any normalizer change requires this bump — see the module docstring. Readers
+# filter to the current version, so existing p6.1 rows stop being read: suppression turns
+# off and `unique` reports None until `boardwatch identities backfill` runs again. That is
+# the designed degradation, not a regression.
+IDENTITY_ALGORITHM_VERSION = "p6.2"
 
 
 class UnknownIdentityKind(ValueError):

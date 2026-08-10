@@ -1,5 +1,7 @@
 """The identity-kind catalog is closed, ranked and versioned (design §2, §3)."""
 
+import re
+
 import pytest
 
 from boardwatch.core.host_class import classify_host
@@ -57,11 +59,19 @@ def test_out_of_catalog_kind_raises_typed_error_not_a_new_bucket():
 
 
 def test_catalog_is_field_neutral():
-    # Generalization: a US-citizen senior nurse must flow through unchanged. Identity is
-    # company/title/location/body — none of which encode a role, field or country.
-    blob = " ".join(IDENTITY_KIND_NAMES).lower()
+    """Generalization: a US-citizen senior nurse must flow through unchanged.
+
+    Identity is company/title/location/body — none of which encode a role, field or country.
+
+    Tokenized on whitespace AND underscores. The earlier version joined the names with
+    spaces and then split on `"_"` only, so the elements were fragments like
+    `"location cross"` and a banned word was never one of them: adding a kind named `swe`
+    yields the fragment `"host swe"`, and the test stayed green on the very mutation it
+    exists to catch.
+    """
+    tokens = set(re.split(r"[\s_]+", " ".join(IDENTITY_KIND_NAMES).lower()))
     for banned in ("swe", "engineer", "software", "tech", "visa", "us", "nurse"):
-        assert banned not in blob.split("_")
+        assert banned not in tokens
 
 
 @pytest.mark.parametrize(

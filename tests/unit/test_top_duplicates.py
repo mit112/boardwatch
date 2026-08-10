@@ -49,17 +49,93 @@ def test_duplicates_are_hidden_and_counted(seed_dedup, backfill_identities):
 
 
 def test_the_drain_shows_every_suppressed_row(seed_dedup, backfill_identities):
-    """A suppression that cannot be listed is a leak, not a filter."""
-    seed = seed_dedup(count=2)
+    """A suppression that cannot be listed is a leak, not a filter.
+
+    `limit=1` with a three-way group is the whole point: the limit MUST bind. An earlier
+    version of this test used count=2 with limit=10, so the limit was never reached and the
+    assertion held for any limit handling at all — including the one that ran drained
+    duplicates through `if len(visible) < limit`, where the drain surfaces only the
+    suppressed rows that also beat the rank cutoff and the bucket stays unlistable.
+
+    With the limit binding, that implementation reads `1 == 1 + 2` and goes red. Drained rows
+    do not consume limit slots, so the drain deliberately returns more than `limit` rows.
+    """
+    seed = seed_dedup(count=3)
     backfill_identities(seed)
     settings = _settings(seed.data_dir)
-    shown = rank_open_postings(seed.engine, settings, limit=10, include_duplicates=True)
-    hidden = rank_open_postings(seed.engine, settings, limit=10)
+    shown = rank_open_postings(seed.engine, settings, limit=1, include_duplicates=True)
+    hidden = rank_open_postings(seed.engine, settings, limit=1)
+    assert hidden.hidden_duplicate == 2, "the group must actually be suppressed"
     assert len(shown.visible) == len(hidden.visible) + hidden.hidden_duplicate
+    assert len(shown.visible) > 1, "the drain must be able to exceed the rank limit"
     assert shown.hidden_duplicate == 0
     surfaced = [p for p in shown.visible if p.duplicate_of is not None]
-    assert len(surfaced) == 1
-    assert surfaced[0].duplicate_of in {p.posting_id for p in hidden.visible}
+    assert len(surfaced) == 2
+    assert {p.duplicate_of for p in surfaced} == {p.posting_id for p in hidden.visible}
+
+
+def test_the_drain_does_not_evict_survivors_to_make_room(seed_dedup, backfill_identities):
+    """The survivor a drained row names must itself still be in the output.
+
+    Otherwise `duplicate of 41` points at a posting the reader cannot see, which is a worse
+    failure than hiding the duplicate: it looks like an answer and is not one.
+    """
+    seed = seed_dedup(count=3)
+    backfill_identities(seed)
+    shown = rank_open_postings(
+        seed.engine, _settings(seed.data_dir), limit=1, include_duplicates=True
+    )
+    shown_ids = {p.posting_id for p in shown.visible}
+    for p in shown.visible:
+        if p.duplicate_of is not None:
+            assert p.duplicate_of in shown_ids
+
+
+def test_the_reconciliation_identity_holds_with_the_drain_open(seed_dedup, backfill_identities):
+    """The identity must survive the drain, at a limit that binds.
+
+    Drained rows land in `visible` instead of `hidden_duplicate`; the sum is unchanged.
+    """
+    seed = seed_dedup(count=3)
+    backfill_identities(seed)
+    r = rank_open_postings(
+        seed.engine, _settings(seed.data_dir), limit=1, include_duplicates=True
+    )
+    assert r.considered == (
+        len(r.visible)
+        + r.skipped_not_new
+        + r.hidden_hard_filter
+        + r.hidden_non_swe
+        + r.hidden_ineligible
+        + r.hidden_below_cutoff
+        + r.hidden_duplicate
+    )
+
+
+def test_incomplete_identities_are_reported_not_silently_zero(seed_dedup, backfill_identities):
+    """`hidden_duplicate == 0` is ambiguous; this flag is what disambiguates it.
+
+    Nothing in the automated path writes identities, so "dedup never ran" is the common
+    state, not the corner. A caller that cannot tell it from "no duplicates found" will read
+    an uninstrumented run as a clean one.
+    """
+    seed = seed_dedup(count=2)
+    before = rank_open_postings(seed.engine, _settings(seed.data_dir), limit=10)
+    assert before.identities_are_complete is False
+    assert before.hidden_duplicate == 0
+
+    backfill_identities(seed)
+    after = rank_open_postings(seed.engine, _settings(seed.data_dir), limit=10)
+    assert after.identities_are_complete is True
+    assert after.hidden_duplicate == 1
+
+
+def test_a_partial_backfill_reports_incomplete(seed_dedup, backfill_identities):
+    """Partial coverage must read as incomplete, not as complete-with-nothing-found."""
+    seed = seed_dedup(count=3)
+    backfill_identities(seed, seed.posting_ids[:2])
+    r = rank_open_postings(seed.engine, _settings(seed.data_dir), limit=10)
+    assert r.identities_are_complete is False
 
 
 def test_the_survivor_is_the_earliest_seen_posting(seed_dedup, backfill_identities):

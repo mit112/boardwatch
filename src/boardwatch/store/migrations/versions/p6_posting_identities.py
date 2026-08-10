@@ -11,14 +11,25 @@ Does not touch postings.job_id: slice 1 annotates, slice 2 projects (design §1.
 import sqlalchemy as sa
 from alembic import op
 
-from boardwatch.core.identity_kinds import IDENTITY_KIND_NAMES
-
 revision = "p6_posting_identities"
 down_revision = "p1_resume_max_pages"
 branch_labels = None
 depends_on = None
 
-_KIND_LIST = ", ".join(f"'{name}'" for name in IDENTITY_KIND_NAMES)
+# FROZEN as of this revision. Do NOT import IDENTITY_KIND_NAMES here: a migration is a
+# historical record, and importing the live catalog makes this CHECK constraint change
+# retroactively. Edit the catalog and a fresh database replays this revision with the NEW
+# enum while an already-migrated database keeps the OLD one — the same backfill then
+# succeeds on one install and raises IntegrityError on the other, from identical code.
+# Widening the enum is a new migration, not an edit to this literal.
+_FROZEN_KINDS = (
+    "exact_provider",
+    "exact_quad",
+    "cross_host",
+    "company_title_location",
+    "content_hash_only",
+)
+_KIND_LIST = ", ".join(f"'{name}'" for name in _FROZEN_KINDS)
 
 
 def upgrade() -> None:

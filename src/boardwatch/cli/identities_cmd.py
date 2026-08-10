@@ -50,7 +50,9 @@ def verify(ctx: typer.Context) -> None:
     missing: list[int] = []
     with engine.connect() as conn:
         rows = load_identity_inputs(conn)
-        stored = load_identities(conn, [r.posting_id for r in rows])
+        # No id list: at corpus scale it would exceed SQLite's bound-parameter cap and make
+        # the verification path itself the thing that fails. See load_identities.
+        stored = load_identities(conn)
         for row in rows:
             expected = set(compute_identities(row))
             have = set(stored.get(row.posting_id, ()))

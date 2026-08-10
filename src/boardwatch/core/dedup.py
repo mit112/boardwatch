@@ -33,6 +33,14 @@ from boardwatch.core.posting_identity import (
 _HOST_RANK = {"ats": 0, "unknown": 1, "aggregator": 2}
 
 
+class MissingSuppressionResolver(ValueError):
+    """A kind is marked `suppresses=True` in the catalog but has no resolver here."""
+
+    def __init__(self, name: str) -> None:
+        super().__init__(f"suppressing kind has no resolver: {name!r}")
+        self.name = name
+
+
 @dataclass(frozen=True)
 class Suppression:
     posting_id: int
@@ -57,14 +65,23 @@ def _verify_quad(a: IdentityInputs, b: IdentityInputs) -> bool:
     """Re-compare the underlying strings before acting on a hash equality.
 
     body_text and content_hash are NOT NULL in the schema, so there is no missing-body
-    branch. Locations cannot be None here either: compute_identities does not emit an
-    exact_quad at all without location evidence (design §2.1), which is stronger than
-    failing verification — two Nones would compare EQUAL and pass this check.
+    branch. Locations are checked for PRESENCE, not merely for equality, and that is not
+    belt-and-braces: `compute_identities` emits no exact_quad without location evidence
+    (design §2.1), but this resolver groups **stored** identities, and nothing in the scan
+    path rewrites them. `scan/apply.py` refreshes `locations_json` on every observation
+    while `identities_complete` only checks that a current-version row EXISTS, never that
+    it is fresh. So a stale exact_quad can group two postings that today carry no location
+    evidence at all — and two Nones compare EQUAL, which would pass this check and suppress
+    on evidence the catalog marks non-suppressing. Requiring presence keeps D-083's rule
+    ("no location evidence => no location-bearing suppression") true on the stored path and
+    not just the computed one.
     """
+    loc_a = normalized_locations(a.locations)
     return (
         a.company_id == b.company_id
         and normalize_title(a.title) == normalize_title(b.title)
-        and normalized_locations(a.locations) == normalized_locations(b.locations)
+        and loc_a is not None
+        and loc_a == normalized_locations(b.locations)
         and normalize_body(a.body_text) == normalize_body(b.body_text)
     )
 
@@ -138,7 +155,16 @@ def resolve_duplicates(
         for members in groups.values():
             if len(members) < 2:
                 continue
-            survivor, losers = _RESOLVERS[spec.name](members)
+            try:
+                resolver = _RESOLVERS[spec.name]
+            except KeyError:
+                # Typed at the raise site, not a bare KeyError surfacing from inside the
+                # ranker. Reachable by a one-line catalog edit — flipping `suppresses=True`
+                # on content_hash_only or company_title_location names a suppressing kind
+                # with no resolver — which is exactly the "a config override reaches it"
+                # case that must be handled rather than deferred as unreachable.
+                raise MissingSuppressionResolver(spec.name) from None
+            survivor, losers = resolver(members)
             for loser in losers:
                 suppressed[loser.posting_id] = Suppression(
                     posting_id=loser.posting_id,

@@ -486,7 +486,9 @@ def count_by_source(
     complete = identities_complete(conn)
     if complete:
         identity_rows = load_identity_inputs(conn)
-        identities = load_identities(conn, [r.posting_id for r in identity_rows])
+        # No id list: at corpus scale it would exceed SQLite's bound-parameter cap and take
+        # the funnel artifact down with it. See load_identities.
+        identities = load_identities(conn)
         suppressed = {s.posting_id for s in resolve_duplicates(identity_rows, identities)}
         for row in identity_rows:
             if row.posting_id not in suppressed:

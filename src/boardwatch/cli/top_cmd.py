@@ -103,6 +103,12 @@ class RankedResults:
     # `exact_quad` can land a posting here, and only when identities are COMPLETE — a
     # partial backfill suppresses nothing. Drained by `--include-duplicates`.
     hidden_duplicate: int = 0
+    # Whether the dedup gate was actually open. Defaults to False, the noisy direction: a
+    # caller that forgets to set it gets "suppression disabled" rather than silently
+    # claiming the subsystem ran. `hidden_duplicate == 0` on its own is ambiguous — it means
+    # either "no duplicates found" or "dedup never ran" — and nothing in the shipped
+    # automated path writes identities, so the second case is the common one.
+    identities_are_complete: bool = False
 
 
 def rank_open_postings(
@@ -245,7 +251,8 @@ def rank_open_postings(
     with engine.connect() as dedup_conn:
         # Completeness is evaluated over ALL open postings, not just the eligible ones — it
         # is a property of the backfill, not of this query.
-        if identities_complete(dedup_conn):
+        ids_complete = identities_complete(dedup_conn)
+        if ids_complete:
             identities = load_identities(dedup_conn, eligible_ids)
             # Bounded by eligible_ids on purpose: body_text is the largest column in the
             # schema, and the unfiltered call would pull every open posting's body into
@@ -260,15 +267,26 @@ def rank_open_postings(
                 )
             }
 
+    # Only non-duplicate rows are counted against `limit`. Drained duplicates are appended
+    # unconditionally, so `--include-duplicates` can return more than `limit` rows.
+    # Deliberate: a drain bounded by the rank cutoff reaches only the suppressed rows that
+    # would also have ranked, which is not a re-entry path for the bucket — and the bucket is
+    # what has to be auditable (a suppression that cannot be listed is a leak, not a filter).
+    # The reconciliation identity still holds in both modes: with the drain open every
+    # eligible posting lands in `visible` or `hidden_below_cutoff`; with it closed,
+    # duplicates land in `hidden_duplicate` instead.
+    kept = 0
     for posting in eligible:
         suppression = suppressions.get(posting.posting_id)
         if suppression is not None and not include_duplicates:
             hidden_duplicate += 1
             continue
         if suppression is not None:
-            posting = replace(posting, duplicate_of=suppression.survivor_posting_id)
-        if len(visible) < limit:
+            visible.append(replace(posting, duplicate_of=suppression.survivor_posting_id))
+            continue
+        if kept < limit:
             visible.append(posting)
+            kept += 1
         else:
             # Counted, not discarded. Everything here cleared every filter and was beaten
             # only by rank, which is a different reason from every other bucket and the one
@@ -283,6 +301,7 @@ def rank_open_postings(
         hidden_below_cutoff=hidden_below_cutoff,
         skipped_not_new=skipped_not_new,
         hidden_duplicate=hidden_duplicate,
+        identities_are_complete=ids_complete,
     )
 
 
@@ -402,6 +421,18 @@ def top(
             )
         )
         return
+    # Printed before the empty-output guard, and regardless of whether anything was hidden:
+    # this is the one state where the absence of a duplicate count means nothing was
+    # measured. Nothing in the automated path writes identities — `scan` refreshes postings
+    # but never recomputes their identity rows — so a single newly discovered posting closes
+    # the completeness gate and disables suppression until the backfill is re-run by hand.
+    if not results.identities_are_complete:
+        output_console.print(
+            "duplicate suppression is OFF: some open postings have no current-version "
+            "identity, so 0 duplicates here means not measured, not none. Run "
+            "`boardwatch identities backfill`.",
+            markup=False,
+        )
     if not results.visible and not results.hidden_ineligible and not results.hidden_non_swe:
         if new:
             output_console.print("nothing new since your last digest")

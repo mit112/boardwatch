@@ -52,9 +52,14 @@ def load_identity_inputs(
             # `locations_json` is a JSON column, so this is already a deserialized list.
             # Anything else a provider managed to store (a dict, a bare string) is not
             # location evidence, and coercing it here keeps that judgement in one place —
-            # `normalized_locations` then has no parsing to get wrong. Mirrors the existing
-            # `list(row.locations_json or [])` in `cli/top_cmd.py`.
-            locations=[str(x) for x in r[5]] if isinstance(r[5], list) else None,
+            # `normalized_locations` then has no parsing to get wrong.
+            #
+            # Non-string ELEMENTS are dropped rather than stringified. `str(x)` turned a
+            # JSON `[null]` into `["None"]`, which normalizes to `["none"]` — a truthy
+            # location component invented out of an explicit absence, so two postings with
+            # `[null]` could suppress on "evidence" neither one has. Dropping them leaves an
+            # empty list, which `normalized_locations` correctly reads as no evidence.
+            locations=[x for x in r[5] if isinstance(x, str)] if isinstance(r[5], list) else None,
             content_hash=str(r[6]),  # NOT NULL in the schema; str() is for mypy, not safety
             body_text=str(r[7]),  # ditto
             url=None if r[8] is None else str(r[8]),
@@ -65,20 +70,31 @@ def load_identity_inputs(
 
 
 def load_identities(
-    conn: Connection, posting_ids: Sequence[int]
+    conn: Connection, posting_ids: Sequence[int] | None = None
 ) -> dict[int, tuple[PostingIdentity, ...]]:
-    if not posting_ids:
+    """Current-version identities for the named postings, or for all of them.
+
+    `posting_ids=None` means "all" and issues NO `IN` list, mirroring
+    `load_identity_inputs`. That is not symmetry for its own sake: SQLite caps bound
+    parameters at `SQLITE_LIMIT_VARIABLE_NUMBER` — measured 32766 on the bundled 3.45.1
+    (23,455 parameters succeed, 32,767 raises `OperationalError`), and only 999 before
+    SQLite 3.32. Both the funnel's `unique` sweep and `identities verify` pass every open
+    posting id, and the corpus is already 23,455, so an `IN` list made the *verification*
+    path a scheduled failure as the program adds breadth. Returning identities for closed
+    postings too is harmless: every caller looks rows up by id from its own row set.
+
+    An empty list still means an empty result, not "all".
+    """
+    if posting_ids is not None and not posting_ids:
         return {}
-    rows = conn.execute(
-        select(
-            posting_identities.c.posting_id,
-            posting_identities.c.kind,
-            posting_identities.c.identity_key,
-        ).where(
-            posting_identities.c.posting_id.in_(list(posting_ids)),
-            posting_identities.c.algorithm_version == IDENTITY_ALGORITHM_VERSION,
-        )
-    ).all()
+    stmt = select(
+        posting_identities.c.posting_id,
+        posting_identities.c.kind,
+        posting_identities.c.identity_key,
+    ).where(posting_identities.c.algorithm_version == IDENTITY_ALGORITHM_VERSION)
+    if posting_ids is not None:
+        stmt = stmt.where(posting_identities.c.posting_id.in_(list(posting_ids)))
+    rows = conn.execute(stmt).all()
     out: dict[int, list[PostingIdentity]] = {}
     for posting_id, kind, key in rows:
         out.setdefault(int(posting_id), []).append(PostingIdentity(str(kind), str(key)))
