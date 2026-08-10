@@ -18,7 +18,12 @@ DOCS = Path(__file__).resolve().parents[2] / "docs" / "program"
 
 def _run(spec: IndexSpec, docs: Path) -> Result:
     live, archive = docs / spec.live, docs / spec.archive
-    return reindex(spec, live.read_text(), archive.read_text())
+    # `encoding="utf-8"` is load-bearing, not hygiene. `read_text()` with no encoding uses the
+    # locale's, which is cp1252 on a Windows runner — and the decision headings are matched on
+    # `## D-113 — `, whose em-dash then decodes to mojibake. The gate did not report "cannot
+    # read"; it reported every one of 114 index rows as having no heading, which reads like a
+    # corrupt index rather than a corrupt decoder.
+    return reindex(spec, live.read_text(encoding="utf-8"), archive.read_text(encoding="utf-8"))
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -61,7 +66,9 @@ def main(argv: list[str] | None = None) -> int:
         for drift in result.drifts:
             print(f"  {drift.render()}", file=stream)
         if not args.check:
-            (args.docs / spec.live).write_text(result.text)
+            # `newline="\n"` for the same class of reason as the read: the default translates
+            # to CRLF on Windows, so a one-row repair would rewrite every line in the file.
+            (args.docs / spec.live).write_text(result.text, encoding="utf-8", newline="\n")
 
     if args.check and drifted:
         print("Run `make reindex` to correct it.", file=sys.stderr)

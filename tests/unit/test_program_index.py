@@ -57,10 +57,12 @@ METRICS_ARCHIVE = """# ARCHIVE
 
 def _seed(docs: Path) -> None:
     docs.mkdir(parents=True, exist_ok=True)
-    (docs / "DECISIONS.md").write_text(DECISIONS_LIVE)
-    (docs / "DECISIONS-ARCHIVE.md").write_text(DECISIONS_ARCHIVE)
-    (docs / "METRICS.md").write_text(METRICS_LIVE)
-    (docs / "METRICS-ARCHIVE.md").write_text(METRICS_ARCHIVE)
+    # `encoding="utf-8"` on the fixtures too: they carry the same em-dash the real logs do, so
+    # a locale-encoded write would make these tests fail for the tool's own reason on Windows.
+    (docs / "DECISIONS.md").write_text(DECISIONS_LIVE, encoding="utf-8")
+    (docs / "DECISIONS-ARCHIVE.md").write_text(DECISIONS_ARCHIVE, encoding="utf-8")
+    (docs / "METRICS.md").write_text(METRICS_LIVE, encoding="utf-8")
+    (docs / "METRICS-ARCHIVE.md").write_text(METRICS_ARCHIVE, encoding="utf-8")
 
 
 def test_a_stale_row_is_reported_against_the_heading_it_names() -> None:
@@ -158,21 +160,23 @@ def test_check_mode_fails_on_drift_and_writes_nothing(tmp_path: Path) -> None:
     _seed(tmp_path)
 
     assert main(["--check", "--docs", str(tmp_path)]) == 1
-    assert (tmp_path / "DECISIONS.md").read_text() == DECISIONS_LIVE
+    assert (tmp_path / "DECISIONS.md").read_text(encoding="utf-8") == DECISIONS_LIVE
 
 
 def test_the_fixer_repairs_drift_and_then_the_check_passes(tmp_path: Path) -> None:
     _seed(tmp_path)
 
     assert main(["--docs", str(tmp_path)]) == 0
-    assert "| D-002 | DECISIONS.md | 10 |" in (tmp_path / "DECISIONS.md").read_text()
-    assert "| METRICS.md | 12 | Run log |" in (tmp_path / "METRICS.md").read_text()
+    assert "| D-002 | DECISIONS.md | 10 |" in (tmp_path / "DECISIONS.md").read_text(encoding="utf-8")
+    assert "| METRICS.md | 12 | Run log |" in (tmp_path / "METRICS.md").read_text(encoding="utf-8")
     assert main(["--check", "--docs", str(tmp_path)]) == 0
 
 
 def test_the_fixer_still_fails_when_something_it_cannot_repair_remains(tmp_path: Path) -> None:
     _seed(tmp_path)
-    (tmp_path / "DECISIONS.md").write_text(DECISIONS_LIVE + "\n## D-003 — Never indexed\n")
+    (tmp_path / "DECISIONS.md").write_text(
+        DECISIONS_LIVE + "\n## D-003 — Never indexed\n", encoding="utf-8"
+    )
 
     assert main(["--docs", str(tmp_path)]) == 1
 
@@ -182,7 +186,8 @@ def test_a_file_with_a_problem_is_never_called_current(
 ) -> None:
     _seed(tmp_path)
     (tmp_path / "DECISIONS.md").write_text(
-        DECISIONS_LIVE.replace("| 99 |", "| 10 |") + "\n## D-003 — Never indexed\n"
+        DECISIONS_LIVE.replace("| 99 |", "| 10 |") + "\n## D-003 — Never indexed\n",
+        encoding="utf-8",
     )
 
     assert main(["--check", "--docs", str(tmp_path)]) == 1
@@ -200,8 +205,35 @@ def test_the_real_program_indexes_are_current() -> None:
     for spec in SPECS:
         result = reindex(
             spec,
-            (DOCS / spec.live).read_text(),
-            (DOCS / spec.archive).read_text(),
+            (DOCS / spec.live).read_text(encoding="utf-8"),
+            (DOCS / spec.archive).read_text(encoding="utf-8"),
         )
         assert result.errors == (), f"{spec.live}: {result.errors}"
         assert result.drifts == (), f"{spec.live}: {[d.render() for d in result.drifts]}"
+
+
+def test_the_tool_never_relies_on_the_LOCALE_encoding() -> None:  # noqa: N802
+    """Run the real entry point with `EncodingWarning` promoted to an error.
+
+    This is the defect that took CI down on Windows and could not be caught on macOS: a
+    `read_text()` with no encoding picks up the locale's, which is cp1252 on a Windows runner,
+    and the decision headings are matched on `## D-113 — `. The em-dash decoded to mojibake and
+    every one of 114 index rows was reported as having no heading — a corrupt-index message for
+    a corrupt-decoder cause.
+
+    Asserting through `-X warn_default_encoding` rather than by grepping the source: it catches
+    any unencoded read or write the tool grows later, including inside a helper, and it runs the
+    same on every platform. A test that only checked today's two call sites would go quiet the
+    moment somebody added a third.
+    """
+    import subprocess  # noqa: PLC0415
+    import sys  # noqa: PLC0415
+
+    result = subprocess.run(
+        [sys.executable, "-X", "warn_default_encoding", "-W", "error::EncodingWarning",
+         "-m", "tools.program_index", "--check"],
+        capture_output=True, text=True,
+        cwd=str(Path(__file__).resolve().parents[2]),
+    )
+    assert "EncodingWarning" not in result.stderr, result.stderr
+    assert result.returncode == 0, f"{result.stdout}\n{result.stderr}"
