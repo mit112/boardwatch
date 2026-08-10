@@ -21,14 +21,17 @@ id rather than minting its own; run standalone, each still mints one, which is w
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from dataclasses import dataclass, field
 from datetime import timedelta
 from pathlib import Path
 
 from rich.console import Console
-from sqlalchemy import Engine, select
+from sqlalchemy import Connection, Engine, select
 
 from boardwatch.core.clock import utcnow
+from boardwatch.core.dedup import Suppression
+from boardwatch.core.regroup import plan_regrouping
 from boardwatch.core.settings import Settings
 from boardwatch.eligibility.audit import AuditView, load_audit
 from boardwatch.eligibility.catalog import load_rules
@@ -36,6 +39,7 @@ from boardwatch.eligibility.engine import ENGINE_KIND, engine_version
 from boardwatch.eligibility.preflight import current_identity
 from boardwatch.pipeline.freshness import folders_reconcile
 from boardwatch.pipeline.funnel_writer import collect_run_funnel
+from boardwatch.reports.manifest import config_hash, policy_version, profile_row_hash
 from boardwatch.reports.morning import MorningLead, build_morning, write_morning
 from boardwatch.reports.resume_gate import LeadArtifactError, RenderToolMissingError
 from boardwatch.reports.run_funnel import (
@@ -47,7 +51,16 @@ from boardwatch.reports.run_funnel import (
 from boardwatch.reports.tailor import run_tailor
 from boardwatch.scan.coordinator import ScanSummary, is_systemic_scan_outage, run_scan
 from boardwatch.store.db import ensure_schema
-from boardwatch.store.queries import RUN_FAILED, RUN_OK, ensure_run, finish_run, reap_stale_runs
+from boardwatch.store.ledger_queries import record_disposition
+from boardwatch.store.queries import (
+    RUN_FAILED,
+    RUN_OK,
+    ensure_run,
+    finish_run,
+    get_profile,
+    reap_stale_runs,
+)
+from boardwatch.store.regroup import apply_merges, job_anchors, protected_job_ids
 from boardwatch.store.run_funnel_queries import count_eligible_judged_this_run, lead_provenance
 from boardwatch.store.tables import postings
 from boardwatch.tailor.coverage import CoverageReport
@@ -115,6 +128,11 @@ class PipelineSummary:
     # against `ranked.visible`, rather than by count — a count identity balances even when one
     # candidate vanished and another was double-counted; an ID-set difference cannot.
     tailor_failed_ids: list[int] = field(default_factory=list)
+    # The subset of `tailor_failed_ids` the résumé gate refused DETERMINISTICALLY
+    # (`LeadArtifactError`), which is what earns a permanent `skipped` disposition. An
+    # unclassified failure is excluded on purpose: it may be transient, and a permanent
+    # disposition on a transient fault silently deletes a real lead (P6 slice 2).
+    unshippable_ids: list[int] = field(default_factory=list)
     # Every Tier-B rewrite row across all leads this run — the fabrication counters (P0 item 8)
     # are folded from these. Empty when LLM tailoring is off, which is an honest zero.
     rewrite_rows: list[dict[str, object]] = field(default_factory=list)
@@ -126,6 +144,10 @@ class PipelineSummary:
     # Where the per-run morning artifact landed (P3 item 7). Same fail-safe as `funnel`: a
     # reporting failure is swallowed and reported to the console, never allowed to fail the run.
     morning: WrittenArtifact | None = None
+    # P6 slice 2: postings moved onto a canonical job this run, and the groups left ungrouped.
+    # Refusals are carried rather than dropped — a refusal that is invisible is a leak in the
+    # same way an unlistable suppression is.
+    regrouped: int = 0
 
     @property
     def leads_with_pdf(self) -> int:
@@ -148,20 +170,118 @@ def _cohort_guard(
     return None
 
 
-def _zero_output_guard(eligible_judged_this_run: int) -> str | None:
-    """P3 item 5 (B5) — 0 leads is provably right IFF this run did no NEW eligible work.
+def _zero_output_guard(eligible_judged_this_run: int, hidden_handled: int = 0) -> str | None:
+    """P3 item 5 (B5) — 0 leads is provably right IFF this run did no NEW eligible work, **or**
+    every candidate it had was already handled.
 
     `eligible_judged_this_run` is run_id-attributed (not a cross-run handled ledger): a
     steady-state day where every eligible posting is a cache hit from a PRIOR run has this at
     0 and is honest. > 0 with 0 leads means new eligible work existed this run and nothing came
     of it — the silent-empty-day this guard exists to catch.
+
+    `hidden_handled` is the P6 slice 2 clause, and it is a widening the ledger forces rather than
+    a weakening. Under the ledger a run can judge genuinely new eligible postings and still
+    produce 0 leads because every candidate carries a live disposition. That is an honest empty
+    day with a reason it can name, and without this clause the daily driver's exit status would
+    be 1 every day once the queue is caught up — the precise signal destruction
+    `PipelineSummary`'s own docstring exists to prevent. A run with NO handled candidates still
+    cannot explain itself, and still fires.
     """
-    if eligible_judged_this_run > 0:
+    if eligible_judged_this_run > 0 and hidden_handled == 0:
         return (
             f"empty day not provably right: {eligible_judged_this_run} eligible postings "
             "judged this run but 0 leads"
         )
     return None
+
+
+def _policy_version(conn: Connection, settings: Settings) -> str:
+    """The stamp this run's permanent dispositions carry (design §2.4).
+
+    Reuses the run manifest's identity wholesale — the same five components the funnel artifact
+    already reports — so "what would make us re-decide this" and "what makes two runs
+    comparable" cannot drift apart. Nothing new is hashed.
+    """
+    identity = current_identity(conn, settings)
+    profile_row = get_profile(conn)
+    return policy_version(
+        code_fingerprint=engine_version(),
+        config_hash=config_hash(settings),
+        profile_row_hash=(
+            profile_row_hash(
+                skills=profile_row.skills_json,
+                target_titles=profile_row.target_titles_json,
+                exclude_titles=profile_row.exclude_titles_json,
+                locations=profile_row.locations_json,
+                remote_only=profile_row.remote_only,
+            )
+            if profile_row is not None
+            else None
+        ),
+        profile_facts_hash=identity[0] if identity is not None else None,
+        rules_hash=identity[1] if identity is not None else None,
+    )
+
+
+def _record_permanent_dispositions(
+    engine: Engine, settings: Settings, summary: PipelineSummary, run_id: int
+) -> None:
+    """Record `built` for every tailored lead and `skipped` for every deterministic refusal.
+
+    Keyed on the posting's CANONICAL job, which `_regroup` has already settled this run, so a
+    disposition recorded here covers the whole duplicate group rather than one member of it.
+
+    Monotonic, so a lead the ranker already marked `seen` is raised to `built` and a job already
+    `built` is left alone.
+    """
+    posting_ids = [lead.posting_id for lead in summary.tailored] + summary.unshippable_ids
+    if not posting_ids:
+        return
+    built_ids = {lead.posting_id for lead in summary.tailored}
+    with engine.begin() as conn:
+        stamp = _policy_version(conn, settings)
+        anchors = job_anchors(conn, posting_ids)
+        for posting_id in posting_ids:
+            job_id = anchors.get(posting_id)
+            if job_id is None:
+                continue  # no anchor to key on; `postings.job_id` is NOT NULL by trigger
+            is_built = posting_id in built_ids
+            record_disposition(
+                conn,
+                job_id,
+                disposition="built" if is_built else "skipped",
+                reason="lead_built" if is_built else "unshippable_artifact",
+                policy_version=stamp,
+                now=utcnow(),
+                run_id=run_id,
+            )
+
+
+def _regroup(engine: Engine, suppressions: Sequence[Suppression]) -> tuple[int, list[str]]:
+    """Move each suppressed posting onto its survivor's job. Returns (moved, messages).
+
+    Refusals are returned as non-fatal messages, not swallowed: a group left ungrouped because a
+    member's job carries an application is a correct outcome, but an invisible one is a leak.
+    """
+    if not suppressions:
+        return 0, []
+    member_ids = sorted(
+        {s.posting_id for s in suppressions} | {s.survivor_posting_id for s in suppressions}
+    )
+    messages: list[str] = []
+    with engine.begin() as conn:
+        plan = plan_regrouping(
+            suppressions,
+            job_anchors(conn, member_ids),
+            protected_job_ids=protected_job_ids(conn),
+        )
+        moved = apply_merges(conn, plan.merges, identity_kind="exact_quad", now=utcnow())
+    for refusal in plan.refusals:
+        messages.append(
+            f"regroup: group of posting {refusal.survivor_posting_id} left ungrouped "
+            f"({refusal.reason}): {', '.join(str(p) for p in refusal.member_posting_ids)}"
+        )
+    return moved, messages
 
 
 def _slug(company: str, posting_id: int) -> str:
@@ -271,7 +391,17 @@ def run_pipeline(
             hidden_below_cutoff=ranked.hidden_below_cutoff,
             skipped_not_new=ranked.skipped_not_new,
             hidden_duplicate=ranked.hidden_duplicate,
+            hidden_handled=ranked.hidden_handled,
         )
+
+        # P6 slice 2 §3.4: project this run's duplicate groups onto canonical jobs, so a lead
+        # built below lands on the job that covers its duplicates from the next run onward.
+        # Reuses the suppressions the ranker already resolved rather than re-deduplicating the
+        # corpus — the coverage that costs is two duplicates that are BOTH ineligible, which are
+        # never surfaced, so grouping them changes nothing.
+        summary.regrouped, regroup_errors = _regroup(engine, ranked.suppressions)
+        stage_errors.extend(regroup_errors)
+        summary.errors.extend(regroup_errors)
 
         console.print("[bold]tailor[/bold]")
         for posting in ranked.visible:
@@ -322,6 +452,13 @@ def run_pipeline(
                 _remove_if_empty(dest)
                 summary.tailor_failed += 1
                 summary.tailor_failed_ids.append(posting.posting_id)
+                # The résumé gate refused a shippable artifact for this posting, and it is a
+                # DETERMINISTIC refusal — the same résumé against the same JD under the same
+                # settings refuses identically — so it earns a permanent `skipped`. The generic
+                # `except` below deliberately does not: an unclassified failure may be transient
+                # (a provider blip, an interrupted render), and a permanent disposition on a
+                # transient fault silently deletes a real lead.
+                summary.unshippable_ids.append(posting.posting_id)
                 message = f"tailor: posting {posting.posting_id}: {exc}"
                 stage_errors.append(message)
                 summary.errors.append(message)
@@ -351,6 +488,12 @@ def run_pipeline(
                     coverage=result.coverage,
                 )
             )
+
+        # P6 slice 2 §5.3 — the permanent half of the ledger. Written AFTER the loop, so `built`
+        # is only ever recorded for a lead whose artifact already exists: a crash between the
+        # render and this write leaves the job undisposed, which over-shows it next run. That is
+        # the safe direction; the opposite would suppress a job with no deliverable.
+        _record_permanent_dispositions(engine, settings, summary, run_id)
 
         # Every lead the ranker produced failed to render. Not "zero was provably right" —
         # zero was produced from a non-empty shortlist, which is a broken résumé path
@@ -384,7 +527,9 @@ def run_pipeline(
                     if identity is not None
                     else 0
                 )
-            summary.fatal = _zero_output_guard(eligible_judged_this_run)
+            summary.fatal = _zero_output_guard(
+                eligible_judged_this_run, ranked.hidden_handled
+            )
 
         # P3 item 9 — cohort completeness. Every SHORTLISTED candidate (`ranked.visible`, which
         # EXCLUDES `skipped_not_new` — top_cmd.py:63) must have reached a terminal state: a lead

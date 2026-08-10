@@ -9,8 +9,9 @@ in-process top path the perf smoke benchmarks (§6.3-7).
 from __future__ import annotations
 
 import json
+from collections.abc import Sequence
 from dataclasses import dataclass, replace
-from datetime import datetime
+from datetime import datetime, timedelta
 
 import typer
 from rich.console import Console
@@ -20,6 +21,7 @@ from sqlalchemy import Connection, Engine, select
 from boardwatch.cli.context import build_context
 from boardwatch.core.clock import utcnow
 from boardwatch.core.dedup import Suppression, resolve_duplicates
+from boardwatch.core.ledger import LedgerRow
 from boardwatch.core.settings import Settings
 from boardwatch.eligibility.preflight import run_eligibility
 from boardwatch.eligibility.read import current_gate_verdicts, current_verdicts
@@ -39,7 +41,9 @@ from boardwatch.store.identity_queries import (
     load_identities,
     load_identity_inputs,
 )
+from boardwatch.store.ledger_queries import live_dispositions, record_disposition
 from boardwatch.store.queries import current_posting_versions, get_profile
+from boardwatch.store.regroup import job_anchors
 from boardwatch.store.tables import companies, extractions, posting_events, postings
 
 console = Console()
@@ -62,6 +66,9 @@ class RankedPosting:
     # The survivor this posting was suppressed in favour of. Set only when the row is
     # surfaced by the `--include-duplicates` drain; a normally-visible posting has None.
     duplicate_of: int | None = None
+    # The live ledger disposition that suppressed this row, set only when it is surfaced by the
+    # `--include-handled` drain (P6 slice 2). A normally-visible posting has None.
+    handled_as: str | None = None
 
 
 @dataclass(frozen=True)
@@ -70,7 +77,8 @@ class RankedResults:
 
     `considered` and the six drop counts exist so the funnel's shortlist stage can reconcile:
     `considered == len(visible) + skipped_not_new + hidden_hard_filter + hidden_non_swe +
-    hidden_ineligible + hidden_below_cutoff + hidden_duplicate`. Each is its own counter,
+    hidden_ineligible + hidden_duplicate + hidden_handled + hidden_below_cutoff`. Each is its own
+    counter,
     incremented where the posting actually leaves, never a remainder computed by subtraction —
     a remainder cannot catch a `continue` that forgot to count, which is the only way this
     identity realistically breaks (P0 item 3).
@@ -109,6 +117,16 @@ class RankedResults:
     # either "no duplicates found" or "dedup never ran" — and nothing in the shipped
     # automated path writes identities, so the second case is the common one.
     identities_are_complete: bool = False
+    # Suppressed by a live ledger disposition — the job was already built, already refused, or
+    # surfaced recently enough to still be inside its `seen` TTL (P6 slice 2). Drained by
+    # `--include-handled`, and unlike `hidden_duplicate` this bucket is NOT gated on identity
+    # completeness: a disposition is a record of a decision this program made, and it governs
+    # whether or not dedup is currently running.
+    hidden_handled: int = 0
+    # The duplicate groups this run resolved, threaded out so the pipeline can project them onto
+    # canonical jobs without recomputing dedup over the corpus a second time. Empty when
+    # identities are incomplete, which is the same condition that leaves `hidden_duplicate` at 0.
+    suppressions: tuple[Suppression, ...] = ()
 
 
 def rank_open_postings(
@@ -120,6 +138,7 @@ def rank_open_postings(
     include_ineligible: bool = False,
     include_non_swe: bool = False,
     include_duplicates: bool = False,
+    include_handled: bool = False,
     only_new: bool = False,
     output_console: Console = console,
     run_id: int | None = None,
@@ -247,6 +266,8 @@ def rank_open_postings(
     # because survivor election over a subset is backfill-order-dependent, and Gate P6 has
     # to re-derive 20 sampled suppressions from the data.
     suppressions: dict[int, Suppression] = {}
+    anchors: dict[int, int] = {}
+    handled: dict[int, LedgerRow] = {}
     eligible_ids = [p.posting_id for p in eligible]
     with engine.connect() as dedup_conn:
         # Completeness is evaluated over ALL open postings, not just the eligible ones — it
@@ -266,6 +287,13 @@ def rank_open_postings(
                     [inputs_by_id[i] for i in eligible_ids if i in inputs_by_id], identities
                 )
             }
+        # The ledger (P6 slice 2 §5.1). Read in the same connection but OUTSIDE the completeness
+        # gate above: a stored disposition records a decision this program already made, so it
+        # governs whether or not dedup happens to be running this minute.
+        anchors = job_anchors(dedup_conn, eligible_ids)
+        handled = live_dispositions(
+            dedup_conn, now=now, job_ids=sorted(set(anchors.values()))
+        )
 
     # Only non-duplicate rows are counted against `limit`. Drained duplicates are appended
     # unconditionally, so `--include-duplicates` can return more than `limit` rows.
@@ -276,6 +304,8 @@ def rank_open_postings(
     # eligible posting lands in `visible` or `hidden_below_cutoff`; with it closed,
     # duplicates land in `hidden_duplicate` instead.
     kept = 0
+    hidden_handled = 0
+    surfaced_job_ids: list[int] = []
     for posting in eligible:
         suppression = suppressions.get(posting.posting_id)
         if suppression is not None and not include_duplicates:
@@ -284,7 +314,20 @@ def rank_open_postings(
         if suppression is not None:
             visible.append(replace(posting, duplicate_of=suppression.survivor_posting_id))
             continue
+        # The ledger check sits after dedup and before the cutoff. Before the cutoff for the same
+        # reason eligibility is: `top 8` should return 8 ACTIONABLE rows, not 8 slots of which
+        # five were built last week.
+        job_id = anchors.get(posting.posting_id)
+        disposition = handled.get(job_id) if job_id is not None else None
+        if disposition is not None and not include_handled:
+            hidden_handled += 1
+            continue
+        if disposition is not None:
+            visible.append(replace(posting, handled_as=disposition.disposition))
+            continue
         if kept < limit:
+            if job_id is not None:
+                surfaced_job_ids.append(job_id)
             visible.append(posting)
             kept += 1
         else:
@@ -292,6 +335,7 @@ def rank_open_postings(
             # only by rank, which is a different reason from every other bucket and the one
             # the funnel could not name before P0 item 3.
             hidden_below_cutoff += 1
+    _record_surfaced(engine, settings, surfaced_job_ids, now=now, run_id=run_id)
     return RankedResults(
         visible=visible,
         hidden_ineligible=hidden,
@@ -302,7 +346,50 @@ def rank_open_postings(
         skipped_not_new=skipped_not_new,
         hidden_duplicate=hidden_duplicate,
         identities_are_complete=ids_complete,
+        hidden_handled=hidden_handled,
+        suppressions=tuple(suppressions.values()),
     )
+
+
+def _record_surfaced(
+    engine: Engine,
+    settings: Settings,
+    job_ids: Sequence[int],
+    *,
+    now: datetime,
+    run_id: int | None,
+) -> None:
+    """Mark the jobs this call surfaced as leads `seen`, TTL'd by `seen_ttl_days`.
+
+    Written here rather than by each caller so `top` and the pipeline cannot drift on what counts
+    as "surfaced". That makes the ranker a writer, which it already was — it calls
+    `run_eligibility`, which persists verdicts.
+
+    Monotonic, so this is a no-op against a job already `built` or `skipped`: `record_disposition`
+    returns False without writing rather than downgrading it.
+
+    **Not swallowed.** A failed `seen` write means tomorrow's run re-serves today's rows, which
+    is the exact defect this slice exists to remove — measured live, five postings each tailored
+    across four separate runs. Silently degrading back to that is worse than failing loudly.
+
+    Consequence, deliberate and reversible: two `top` invocations inside the TTL show different
+    rows, because the first advanced the queue. `--include-handled` brings them back, and the
+    command says so whenever the bucket is non-empty.
+    """
+    if not job_ids:
+        return
+    expires_at = now + timedelta(days=settings.seen_ttl_days)
+    with engine.begin() as conn:
+        for job_id in job_ids:
+            record_disposition(
+                conn,
+                job_id,
+                disposition="seen",
+                reason="surfaced",
+                expires_at=expires_at,
+                now=now,
+                run_id=run_id,
+            )
 
 
 def count_filter_matches(engine: Engine, settings: Settings) -> int | None:
@@ -343,6 +430,16 @@ def count_filter_matches(engine: Engine, settings: Settings) -> int | None:
     return count
 
 
+def _why_cell(posting: RankedPosting) -> str:
+    """A drained row names why it was suppressed, inline, so it can never be read as an ordinary
+    lead. Both drains annotate; a normally-visible row is unannotated."""
+    if posting.duplicate_of is not None:
+        return f"{posting.why} · duplicate of {posting.duplicate_of}"
+    if posting.handled_as is not None:
+        return f"{posting.why} · already {posting.handled_as}"
+    return posting.why
+
+
 def _verdict_token(verdict: str | None) -> str:
     """A one-token eligibility flag, chosen so no value reads as a clean bill of health
     (D-P2-18): `eligible` means only that no catalogued disqualifier was detected."""
@@ -381,6 +478,11 @@ def top(
     include_duplicates: bool = typer.Option(
         False, "--include-duplicates", help="Show postings suppressed as duplicates."
     ),
+    include_handled: bool = typer.Option(
+        False,
+        "--include-handled",
+        help="Show postings already built, skipped, or surfaced inside their seen TTL.",
+    ),
     new: bool = typer.Option(
         False, "--new", help="Only postings first seen since your last digest."
     ),
@@ -397,6 +499,7 @@ def top(
             include_ineligible=include_ineligible,
             include_non_swe=include_non_swe,
             include_duplicates=include_duplicates,
+            include_handled=include_handled,
             only_new=new,
             output_console=output_console,
         )
@@ -415,6 +518,7 @@ def top(
                         "why": p.why,
                         "role": p.role,
                         "duplicate_of": p.duplicate_of,
+                        "handled_as": p.handled_as,
                     }
                     for p in results.visible
                 ]
@@ -450,9 +554,7 @@ def top(
         table.add_row(
             str(p.posting_id), p.title, p.company,
             f"{p.score.total:.2f}", _verdict_token(p.verdict),
-            # A drained duplicate names its survivor inline, so a row surfaced by
-            # --include-duplicates is never mistaken for an ordinary lead.
-            f"{p.why} · duplicate of {p.duplicate_of}" if p.duplicate_of is not None else p.why,
+            _why_cell(p),
         )
     console.print(table)
     if results.hidden_ineligible and not include_ineligible:
@@ -471,5 +573,14 @@ def top(
         console.print(
             f"{results.hidden_duplicate} hidden as duplicates — see them with "
             "--include-duplicates, each naming the posting it duplicates.",
+            markup=False,
+        )
+    if results.hidden_handled and not include_handled:
+        # Printed because the queue advancing is otherwise indistinguishable from the corpus
+        # shrinking: a job you were shown yesterday is simply absent today, with no visible
+        # reason. `seen` rows lapse on their own; `built`/`skipped` need `ledger reopen`.
+        console.print(
+            f"{results.hidden_handled} hidden as already handled (built, skipped, or surfaced "
+            "recently) — see them with --include-handled, each naming its disposition.",
             markup=False,
         )

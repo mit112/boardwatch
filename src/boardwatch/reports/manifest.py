@@ -151,3 +151,38 @@ def profile_row_hash(
         "remote_only": remote_only,
     }
     return digest(payload)
+
+
+def policy_version(
+    *,
+    code_fingerprint: str,
+    config_hash: str,
+    profile_row_hash: str | None,
+    profile_facts_hash: str | None,
+    rules_hash: str | None,
+) -> str:
+    """The stamp on a PERMANENT ledger disposition (P6 slice 2, design §2.4).
+
+    Composed from the run manifest's own identity rather than a new hash, because "what would
+    make us want to re-decide this" and "what makes two runs comparable" are the same question,
+    and the manifest already answers it. Nothing new is hashed here.
+
+    The three profile-derived components are `None` on a run with no profile — the same runs whose
+    manifest reports them as `None`. That is a distinct stamp, not a missing one: a decision taken
+    without a profile really was taken under a different policy than one taken with it.
+
+    A stamp mismatch never re-opens a disposition on its own. Auto-expiry on mismatch would
+    rebuild the whole shortlist on any settings tweak, and an automatic re-open cannot be
+    reviewed before it happens; `ledger show --stale` lists them and `ledger reopen` releases
+    them. Inherits the manifest's one stated coverage gap — the skill-taxonomy version moves
+    neither `config_hash` nor `profile_row_hash`.
+    """
+    return digest(
+        {
+            "code": code_fingerprint,
+            "config": config_hash,
+            "profile_row": profile_row_hash,
+            "profile_facts": profile_facts_hash,
+            "rules": rules_hash,
+        }
+    )

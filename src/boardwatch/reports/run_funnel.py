@@ -198,6 +198,11 @@ class ShortlistCounts:
     # complete — a partial backfill suppresses nothing, so 0 here can mean either "no
     # duplicates" or "not backfilled". `unique` in the per-source table distinguishes them.
     hidden_duplicate: int = 0
+    # P6 slice 2: suppressed by a live ledger disposition — already built, already refused, or
+    # surfaced recently enough to still be inside its `seen` TTL. Unlike `hidden_duplicate` this
+    # is NOT gated on identity completeness, so 0 here means 0: no job the ranker considered
+    # carried a live disposition.
+    hidden_handled: int = 0
 
 
 @dataclass(frozen=True)
@@ -594,6 +599,15 @@ def build_run_funnel(
                     reason="hidden_duplicate",
                     count=shortlist.hidden_duplicate,
                     note="provable exact_quad duplicate; drain with `top --include-duplicates`",
+                ),
+                Drop(
+                    reason="hidden_handled",
+                    count=shortlist.hidden_handled,
+                    note=(
+                        "a live ledger disposition: already built, already refused, or surfaced "
+                        "inside its seen TTL; drain with `top --include-handled` or "
+                        "`ledger reopen`"
+                    ),
                 ),
                 Drop(
                     reason="capped_by_top_n",
