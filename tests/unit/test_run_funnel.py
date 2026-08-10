@@ -20,6 +20,7 @@ from boardwatch.eligibility.catalog import RulesCatalog, load_rules
 from boardwatch.reports.abstain import AbstainReport, build_abstain_report
 from boardwatch.reports.run_funnel import (
     Lead,
+    LivenessCheck,
     RunFunnel,
     RunManifest,
     ScanContext,
@@ -95,6 +96,7 @@ def funnel(
     skipped_not_new: int = 0,
     hidden_duplicate: int = 0,
     hidden_applied: int = 0,
+    liveness: LivenessCheck | None = None,
     considered: int | None = None,
     tailor_failed: int = 0,
     artifacts: TailoredArtifactCounts | None = None,
@@ -164,6 +166,7 @@ def funnel(
             hidden_duplicate=hidden_duplicate,
             hidden_applied=hidden_applied,
         ) if ranker_ran else None,
+        liveness=liveness,
         leads=leads,
         tailor_failed=tailor_failed,
         tailored_artifacts=tailored_artifacts,
@@ -408,11 +411,41 @@ def test_an_applied_suppression_is_named_in_the_artifact_and_still_reconciles() 
                     hidden_applied=3, leads=[lead()])
 
     shortlist = stage(report, "shortlist")
+    # Asserted FIRST, because this is the claim: drop the mirroring and the identity goes False
+    # on its own, without needing a test that knows the bucket's name.
+    assert shortlist.entered == 17
+    assert shortlist.reconciled is True
     applied = next(drop for drop in shortlist.drops if drop.reason == "hidden_applied")
     assert applied.count == 3
-    assert shortlist.entered == 17
     assert "track status" in applied.note  # the drain is named where the count is
-    assert shortlist.reconciled is True
+
+
+def test_an_unprobed_liveness_check_reports_unmeasured_rather_than_zero_dead() -> None:
+    """P6 item 6, and the D-022/D-023 rule it obeys: nulls, not zeros, and `instrumented` is
+    emitted so a reader never has to infer "unmeasured" from a null."""
+    report = funnel()
+    payload = funnel_to_dict(report)
+
+    assert payload["liveness"] == {
+        "instrumented": False, "checked": None, "dead": None, "unknown": None, "alive": None
+    }
+    section = funnel_to_markdown(report).split("## Liveness")[1].split("##")[0]
+    assert "not instrumented" in section
+    assert "NOT the same as no dead postings" in section
+
+
+def test_a_probed_liveness_check_reports_dead_and_unknown_separately() -> None:
+    """`unknown` is next to `dead` and not folded into `alive`: a run where the probe learned
+    nothing looks identical to a healthy one if you read only `dead`."""
+    report = funnel(liveness=LivenessCheck(checked=10, dead=2, unknown=3))
+    payload = funnel_to_dict(report)
+
+    assert payload["liveness"] == {
+        "instrumented": True, "checked": 10, "dead": 2, "unknown": 3, "alive": 5
+    }
+    section = funnel_to_markdown(report).split("## Liveness")[1].split("##")[0]
+    assert "2 withheld as gone" in section
+    assert "3 unknown (served)" in section
 
 
 def test_a_posting_the_ranker_loses_breaks_the_shortlist_stage_instead_of_hiding() -> None:
@@ -628,8 +661,9 @@ def test_both_halves_are_written_and_named_by_run(tmp_path: Path) -> None:
     assert written.markdown_path == tmp_path / "funnel-42.md"
     payload = json.loads(written.json_path.read_text())
     assert payload["run_id"] == 42
-    # Bumped to 3 by P0 item 4/6/8, which added the manifest, stub_rate and fabrication sections.
-    assert payload["artifact_version"] == 3
+    # Bumped to 3 by P0 item 4/6/8, which added the manifest, stub_rate and fabrication
+    # sections; to 4 by P6 item 6, which added the top-level `liveness` block.
+    assert payload["artifact_version"] == 4
     assert written.markdown_path.read_text().startswith("# boardwatch run 42")
 
 

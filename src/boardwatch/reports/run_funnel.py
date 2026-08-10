@@ -58,7 +58,7 @@ from boardwatch.tailor.coverage import CoverageReport
 # How many distinct missing requirement terms the coverage summary lists, most-frequent first.
 _TOP_MISSING = 10
 
-ARTIFACT_VERSION = 3
+ARTIFACT_VERSION = 4  # v4 adds the top-level `liveness` block (P6 item 6)
 
 # The stored verdict that carries the keystone invariant's ABSTAIN. Named here once so the
 # rename is visible rather than scattered through the renderers as a string literal.
@@ -250,6 +250,36 @@ class StubRate:
     def rate(self) -> float | None:
         """None over an empty corpus — a rate over zero rows is undefined, not 0%."""
         return None if self.open_postings == 0 else self.stubs / self.open_postings
+
+
+@dataclass(frozen=True)
+class LivenessCheck:
+    """P6 item 6: what the re-fetch found about the shortlist, reported every run.
+
+    `checked is None` means the shortlist was NOT probed — no prober was supplied — and is
+    deliberately distinct from `checked=0` (probed an empty shortlist) and from `dead=0` (probed
+    and everything was live). Reporting an unprobed run as "0 dead" would assert a measurement
+    nobody took, which is the D-022/D-023 rule this artifact applies everywhere else.
+
+    `unknown` is reported next to `dead` rather than folded into `alive`, because it is the
+    number that says how much of the check is actually working: a run where every posting came
+    back `unknown` has a fail-open probe telling you nothing, and looks identical to a healthy
+    run if you only read `dead`.
+    """
+
+    checked: int | None
+    dead: int | None
+    unknown: int | None
+
+    @property
+    def instrumented(self) -> bool:
+        return self.checked is not None
+
+    @property
+    def alive(self) -> int | None:
+        if self.checked is None or self.dead is None or self.unknown is None:
+            return None
+        return self.checked - self.dead - self.unknown
 
 
 # The closed catalog of Tier-B rewrite outcomes. `drop_reason` is an untyped string at the
@@ -470,6 +500,7 @@ class RunFunnel:
     sources: tuple[SourceOutcome, ...]
     source_totals: tuple[SourceTotal, ...]
     stub_rate: StubRate
+    liveness: LivenessCheck
     fabrication: FabricationCounters
     coverage: CoverageSummary
     abstain: AbstainReport
@@ -531,6 +562,9 @@ def build_run_funnel(
     tailored_artifacts: TailoredArtifactCounts,
     marked_applied: int,
     stub_postings: int,
+    # Omitted means UNMEASURED, never "0 dead" — a caller that forgets gets the honest report
+    # rather than a clean liveness result it never took.
+    liveness: LivenessCheck | None = None,
     rewrite_rows: Sequence[dict[str, object]],
     unattributed_evaluations: int,
     abstain: AbstainReport,
@@ -815,6 +849,7 @@ def build_run_funnel(
         sources=tuple(sources),
         source_totals=source_totals,
         stub_rate=StubRate(open_postings=corpus.open_postings, stubs=stub_postings),
+        liveness=liveness or LivenessCheck(checked=None, dead=None, unknown=None),
         fabrication=build_fabrication_counters(rewrite_rows),
         coverage=build_coverage_summary(coverages),
         abstain=abstain,
@@ -857,6 +892,15 @@ def funnel_to_dict(funnel: RunFunnel) -> dict[str, object]:
             "profile_row_hash": funnel.manifest.profile_row_hash,
             "rules_hash": funnel.manifest.rules_hash,
             "status": funnel.manifest.status,
+        },
+        "liveness": {
+            # All None when the shortlist was not probed. `instrumented` is emitted so a reader
+            # never has to infer "unmeasured" from a null, the same way each stage does.
+            "instrumented": funnel.liveness.instrumented,
+            "checked": funnel.liveness.checked,
+            "dead": funnel.liveness.dead,
+            "unknown": funnel.liveness.unknown,
+            "alive": funnel.liveness.alive,
         },
         "stub_rate": {
             "open_postings": funnel.stub_rate.open_postings,
@@ -1264,10 +1308,26 @@ def funnel_to_markdown(funnel: RunFunnel) -> str:
             f"{', '.join(funnel.abstain.out_of_catalog)}",
         ]
 
+    live = funnel.liveness
     stub = funnel.stub_rate
     stub_rate = "not instrumented (empty corpus)" if stub.rate is None else f"{stub.rate:.2%}"
     fab = funnel.fabrication
     lines += [
+        "",
+        "## Liveness",
+        "",
+        (
+            "not instrumented — the shortlist was not re-fetched this run, which is NOT the "
+            "same as no dead postings"
+            if not live.instrumented
+            else f"{live.checked} leads re-fetched · {live.dead} withheld as gone · "
+            f"{live.unknown} unknown (served)"
+        ),
+        "",
+        "*Liveness is never cached and never writes to the store: a `dead` result withholds the "
+        "lead from this run only, and `postings.status` stays the scanner's. Only an explicit "
+        "404/410 withholds; every other outcome — timeout, 403, 5xx, no URL — is served, "
+        "because missing a real job costs more than one wasted résumé.*",
         "",
         "## Stub rate",
         "",
@@ -1391,6 +1451,7 @@ __all__ = [
     "Drop",
     "FabricationCounters",
     "Lead",
+    "LivenessCheck",
     "RunFunnel",
     "RunManifest",
     "ScanContext",

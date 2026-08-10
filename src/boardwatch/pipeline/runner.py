@@ -39,10 +39,12 @@ from boardwatch.eligibility.engine import ENGINE_KIND, engine_version
 from boardwatch.eligibility.preflight import current_identity
 from boardwatch.pipeline.freshness import folders_reconcile
 from boardwatch.pipeline.funnel_writer import collect_run_funnel
+from boardwatch.pipeline.liveness import LivenessProber, check_leads
 from boardwatch.pipeline.policy import run_policy_version
 from boardwatch.reports.morning import MorningLead, build_morning, write_morning
 from boardwatch.reports.resume_gate import LeadArtifactError, RenderToolMissingError
 from boardwatch.reports.run_funnel import (
+    LivenessCheck,
     ScanContext,
     ShortlistCounts,
     WrittenArtifact,
@@ -147,6 +149,15 @@ class PipelineSummary:
     # Refusals are carried rather than dropped — a refusal that is invisible is a leak in the
     # same way an unlistable suppression is.
     regrouped: int = 0
+    # P6 item 6. `None` means the shortlist was NOT probed, which is not the same as "probed and
+    # none were dead" — the D-022/D-023 rule. A run with no prober reports the check as
+    # unmeasured rather than claiming a clean liveness result it never took.
+    liveness_checked: int | None = None
+    liveness_dead: int | None = None
+    liveness_unknown: int | None = None
+    # The postings withheld as gone, kept by ID rather than by count so the cohort guard can
+    # reconcile SETS. They are not tailor failures and not leads; they never entered the loop.
+    dead_lead_ids: list[int] = field(default_factory=list)
 
     @property
     def leads_with_pdf(self) -> int:
@@ -169,9 +180,12 @@ def _cohort_guard(
     return None
 
 
-def _zero_output_guard(eligible_judged_this_run: int, hidden_handled: int = 0) -> str | None:
+def _zero_output_guard(
+    eligible_judged_this_run: int, hidden_handled: int = 0, dead_leads: int = 0
+) -> str | None:
     """P3 item 5 (B5) — 0 leads is provably right IFF this run did no NEW eligible work, **or**
-    every candidate it had was already handled.
+    every candidate it had was already handled, **or** every candidate it had turned out to be
+    dead.
 
     `eligible_judged_this_run` is run_id-attributed (not a cross-run handled ledger): a
     steady-state day where every eligible posting is a cache hit from a PRIOR run has this at
@@ -185,8 +199,15 @@ def _zero_output_guard(eligible_judged_this_run: int, hidden_handled: int = 0) -
     be 1 every day once the queue is caught up — the precise signal destruction
     `PipelineSummary`'s own docstring exists to prevent. A run with NO handled candidates still
     cannot explain itself, and still fires.
+
+    `dead_leads` is the P6 item 6 clause and is the same shape of widening for the same reason: a
+    run that ranked a full shortlist and found every posting on it gone has produced 0 leads for
+    a reason it can name and evidence. Without this clause, liveness working perfectly would read
+    as the silent empty day it exists to prevent. Both widenings stay narrow in the way that
+    matters — a run with nothing handled and nothing dead still cannot explain itself, and still
+    fires.
     """
-    if eligible_judged_this_run > 0 and hidden_handled == 0:
+    if eligible_judged_this_run > 0 and hidden_handled == 0 and dead_leads == 0:
         return (
             f"empty day not provably right: {eligible_judged_this_run} eligible postings "
             "judged this run but 0 leads"
@@ -307,11 +328,17 @@ def run_pipeline(
     out_root: Path,
     resume_path: Path,
     skip_scan: bool = False,
+    liveness_prober: LivenessProber | None = None,
 ) -> PipelineSummary:
     """Run scan → eligibility → tailor under one run row and return what each stage did.
 
     Raises ScanLockHeldError if another scan holds the lock. Nothing is written in that case,
     because the row is created by the scan stage inside the lock it failed to acquire.
+
+    `liveness_prober=None` skips the liveness check (P6 item 6) and reports it as UNMEASURED,
+    not as zero dead. Passed in rather than built here so the pipeline itself stays free of
+    network I/O and so a caller — `run_cmd`, which always supplies one — decides whether this
+    run may talk to the outside world.
     """
     console = console or Console()
     # Deferred: top_cmd imports from the CLI layer, and importing it at module scope makes
@@ -420,8 +447,46 @@ def run_pipeline(
         stage_errors.extend(regroup_errors)
         summary.errors.extend(regroup_errors)
 
+        # P6 item 6 — liveness, immediately before the render and after everything that decides
+        # WHICH postings are leads. Here because the gate clause is "0 dead postings reaching the
+        # lead list", and this is the last point at which a posting is still only a candidate.
+        #
+        # Nothing is written. A `dead` result withholds the lead from THIS run and from the
+        # ledger write below; it does not close the posting, because `postings.status` belongs to
+        # the scanner's board-absence rule and one 404 must not be able to retire a live
+        # requisition permanently. Tomorrow's run asks again.
+        leads = list(ranked.visible)
+        dead_job_ids: set[int] = set()
+        if liveness_prober is not None:
+            results = check_leads(
+                engine, [p.posting_id for p in leads], prober=liveness_prober
+            )
+            summary.liveness_checked = len(results)
+            summary.liveness_dead = sum(1 for r in results.values() if r.withholds)
+            summary.liveness_unknown = sum(
+                1 for r in results.values() if r.verdict == "unknown"
+            )
+            dead_ids = {pid for pid, r in results.items() if r.withholds}
+            if dead_ids:
+                summary.dead_lead_ids.extend(sorted(dead_ids))
+                for posting_id in sorted(dead_ids):
+                    detail = results[posting_id].detail
+                    summary.errors.append(
+                        f"liveness: posting {posting_id} withheld as gone ({detail})"
+                    )
+                leads = [p for p in leads if p.posting_id not in dead_ids]
+                # The `seen` write below must not name a job whose lead was withheld: nothing was
+                # presented to anybody, so suppressing it for the TTL would hide a posting that
+                # may simply have been behind a broken CDN. Same reasoning as the stage gate.
+                with engine.connect() as anchor_conn:
+                    dead_job_ids = set(job_anchors(anchor_conn, sorted(dead_ids)).values())
+            console.print(
+                f"liveness: {summary.liveness_checked} checked, {summary.liveness_dead} gone, "
+                f"{summary.liveness_unknown} unknown (unknown is served)"
+            )
+
         console.print("[bold]tailor[/bold]")
-        for posting in ranked.visible:
+        for posting in leads:
             dest = day_dir / _slug(posting.company, posting.posting_id)
             try:
                 result = run_tailor(
@@ -518,17 +583,24 @@ def run_pipeline(
             settings,
             summary,
             run_id,
-            surfaced_job_ids=ranked.surfaced_job_ids,
+            # A job whose posting was withheld as gone is dropped from the `seen` tier for the
+            # same reason a fatal drops the whole tier: it was never presented to anybody.
+            surfaced_job_ids=tuple(
+                job_id for job_id in ranked.surfaced_job_ids if job_id not in dead_job_ids
+            ),
             stage_completed=summary.fatal is None,
         )
 
         # Every lead the ranker produced failed to render. Not "zero was provably right" —
         # zero was produced from a non-empty shortlist, which is a broken résumé path
-        # (missing resume.yaml, tectonic gone), not an honest empty day.
+        # (missing resume.yaml, tectonic gone), not an honest empty day. Postings withheld as
+        # gone are subtracted first: they never entered the tailor loop, so counting them as
+        # render failures would report a dead board as a broken résumé path.
         shortlisted = summary.shortlist.shortlisted if summary.shortlist else 0
-        if summary.fatal is None and shortlisted > 0 and not summary.tailored:
+        renderable = shortlisted - len(summary.dead_lead_ids)
+        if summary.fatal is None and renderable > 0 and not summary.tailored:
             summary.fatal = (
-                f"every lead failed to tailor ({summary.tailor_failed}/{shortlisted})"
+                f"every lead failed to tailor ({summary.tailor_failed}/{renderable})"
             )
 
         # P3 item 5 (B5) — zero-output guard. Only reachable here when `shortlisted == 0` (the
@@ -555,7 +627,9 @@ def run_pipeline(
                     else 0
                 )
             summary.fatal = _zero_output_guard(
-                eligible_judged_this_run, ranked.hidden_handled
+                eligible_judged_this_run,
+                ranked.hidden_handled,
+                len(summary.dead_lead_ids),
             )
 
         # P3 item 9 — cohort completeness. Every SHORTLISTED candidate (`ranked.visible`, which
@@ -563,7 +637,12 @@ def run_pipeline(
         # (`summary.tailored`) or a tailor failure (`summary.tailor_failed_ids`). Reconciled by
         # posting_id SET, not by count, so a compensating bug cannot balance.
         if summary.fatal is None:
-            visible_ids = frozenset(posting.posting_id for posting in ranked.visible)
+            # Postings withheld as gone are removed from the cohort rather than added to the
+            # accounted set: they are a THIRD terminal state, not a lead and not a render
+            # failure, and folding them into either would make one of those counts a lie.
+            visible_ids = frozenset(
+                posting.posting_id for posting in ranked.visible
+            ) - frozenset(summary.dead_lead_ids)
             lead_ids = frozenset(lead.posting_id for lead in summary.tailored)
             failed_ids = frozenset(summary.tailor_failed_ids)
             summary.fatal = _cohort_guard(visible_ids, lead_ids, failed_ids)
@@ -646,6 +725,11 @@ def _emit_funnel(
             postings_seen=summary.scan_postings_seen,
         ),
         shortlist=summary.shortlist,
+        liveness=LivenessCheck(
+            checked=summary.liveness_checked,
+            dead=summary.liveness_dead,
+            unknown=summary.liveness_unknown,
+        ),
         tailored=[
             (lead.posting_id, lead.company, lead.title, lead.out_dir, lead.pdf_built)
             for lead in summary.tailored

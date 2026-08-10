@@ -32,6 +32,7 @@ from boardwatch.reports.abstain import AbstainReport, build_abstain_report
 from boardwatch.reports.manifest import config_hash, profile_row_hash
 from boardwatch.reports.run_funnel import (
     Lead,
+    LivenessCheck,
     RunFunnel,
     RunManifest,
     ScanContext,
@@ -85,6 +86,7 @@ def collect_run_funnel(
     run_id: int,
     scan: ScanContext,
     shortlist: ShortlistCounts | None,
+    liveness: LivenessCheck | None = None,
     tailored: list[tuple[int, str, str, Path, bool]],
     tailor_failed: int,
     rewrite_rows: list[dict[str, object]],
@@ -206,6 +208,7 @@ def collect_run_funnel(
         scan=scan,
         corpus=corpus,
         shortlist=shortlist,
+        liveness=liveness,
         sources=sources,
         leads=leads,
         tailor_failed=tailor_failed,

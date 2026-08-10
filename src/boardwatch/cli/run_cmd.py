@@ -12,6 +12,7 @@ import typer
 from rich.console import Console
 
 from boardwatch.cli.context import build_context
+from boardwatch.pipeline.liveness import build_prober
 from boardwatch.pipeline.runner import DEFAULT_TOP_N, PipelineSummary, run_pipeline
 from boardwatch.scan.coordinator import ScanLockHeldError
 
@@ -29,13 +30,17 @@ def _shortlist_line(summary: PipelineSummary) -> str:
     # explains a legitimately empty day, and `_zero_output_guard` was widened to stop fataling on
     # it. A widened guard whose bucket is absent from the operator's one-line summary prints
     # "0 shortlisted of 400 considered (0, 0, 0, 0)" and exits 0 — counts that visibly fail to
-    # reconcile, which is the silent empty day in a new costume.
+    # reconcile, which is the silent empty day in a new costume. `dead_lead_ids` is here for
+    # exactly the same reason: it is the other clause that widened that guard.
+    dead = (
+        f", {len(summary.dead_lead_ids)} withheld as gone" if summary.dead_lead_ids else ""
+    )
     return (
         f"{counts.shortlisted} shortlisted of {counts.considered} considered "
         f"({counts.hidden_ineligible} ineligible, {counts.hidden_non_swe} non-SWE, "
         f"{counts.hidden_duplicate} duplicate, {counts.hidden_applied} already applied, "
         f"{counts.hidden_handled} already handled, "
-        f"{counts.hidden_below_cutoff} below cutoff)"
+        f"{counts.hidden_below_cutoff} below cutoff{dead})"
     )
 
 
@@ -53,6 +58,12 @@ def run(
     skip_scan: bool = typer.Option(
         False, "--no-scan", help="Reuse already-fetched postings instead of refetching boards."
     ),
+    check_liveness: bool = typer.Option(
+        True,
+        "--check-liveness/--no-check-liveness",
+        help="Re-fetch each shortlisted posting and withhold any that answers 404/410. "
+        "Turning it off reports liveness as unmeasured, not as zero dead.",
+    ),
 ) -> None:
     """Run the whole pipeline once, attributing every row it writes to one run."""
     # ensure=False mirrors scan_cmd: run_scan migrates INSIDE the scan lock, so a contended
@@ -68,6 +79,9 @@ def run(
             out_root=out_root,
             resume_path=resume_path or settings.config_dir / "resume.yaml",
             skip_scan=skip_scan,
+            # Built here rather than inside the pipeline so the decision to talk to the network
+            # is the CLI's, and so `run_pipeline` stays callable with no outbound I/O at all.
+            liveness_prober=build_prober(settings) if check_liveness else None,
         )
     except ScanLockHeldError as exc:
         console.print(str(exc))  # names the blocking pid when the sidecar has one (D-043)
