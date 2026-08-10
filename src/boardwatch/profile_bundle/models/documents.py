@@ -85,10 +85,18 @@ from boardwatch.profile_bundle.models.skills import SkillRecord
 # --------------------------------------------------------------------------------------
 
 
-class _FactBearing(StrictModel):
-    """Any document that owns atomic facts. Order is preserved; duplicates are refused."""
+class FactBearingDocument(StrictModel):
+    """Any document that owns atomic facts. Order is preserved; duplicates are refused.
+
+    Public because validation needs to ask "does this document hold facts?" without enumerating the
+    twelve subclasses — a list that would silently go stale when a thirteenth is added.
+    """
 
     facts: Annotated[tuple[FactRecord, ...], UniqueOrdered]
+
+
+#: Back-compatible private alias used by the document definitions below.
+_FactBearing = FactBearingDocument
 
 
 class IdentityDocument(_FactBearing):

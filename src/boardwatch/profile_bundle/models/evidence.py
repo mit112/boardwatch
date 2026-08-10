@@ -291,6 +291,18 @@ EvidenceRecord = Annotated[
     Field(discriminator="evidence_class"),
 ]
 
+#: The same six classes without the discriminator annotation, for `isinstance` narrowing and for
+#: index/validation signatures. `EvidenceRecord` above is the parsing type and cannot be used in an
+#: `isinstance` check, so a second name is needed rather than reaching for the private base class.
+AnyEvidence = (
+    PublicRecordEvidence
+    | PrivateDocumentEvidence
+    | RepositoryArtifactEvidence
+    | MeasuredResultEvidence
+    | OwnerAttestationEvidence
+    | SecondarySummaryEvidence
+)
+
 #: Evidence classes that can never satisfy a verification requirement on their own (§12.1).
 NON_VERIFYING_CLASSES: frozenset[EvidenceClass] = frozenset({EvidenceClass.SECONDARY_SUMMARY})
 
