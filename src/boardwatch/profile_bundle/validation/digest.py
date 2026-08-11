@@ -139,35 +139,59 @@ class CurrentPointer(StrictModel):
     revision: PositiveInt
 
 
+def current_pointer_bytes(pointer: CurrentPointer) -> bytes:
+    """The one byte form of `CURRENT`: canonical JSON and exactly one trailing newline.
+
+    Promotion writes these bytes and `read_current` requires them, so the contract has one owner.
+    The alternative — a writer that emits a form and a reader that describes the same form in its
+    own words — is how "canonical" becomes a word in a design document rather than a property of a
+    file, which is exactly the state this replaces.
+
+    Deliberately NOT `canonical.canonical_json_bytes`: that serializer is the bundle's *identity*
+    algorithm, and `CURRENT` is excluded from every digest. Routing a pointer through it would
+    couple the pointer's spelling to a hash contract it takes no part in, so that widening one would
+    silently move the other.
+    """
+    return (
+        json.dumps(
+            pointer.model_dump(mode="json"), sort_keys=True, separators=(",", ":")
+        ).encode("utf-8")
+        + b"\n"
+    )
+
+
 def read_current(bundle_root: Path) -> CurrentPointer:
     """Parse `CURRENT`, refusing anything outside its exact contract.
 
-    The contract is canonical JSON with exactly these two keys and one trailing newline. Trailing
-    content is refused rather than stripped: a pointer with extra bytes after the object is a torn
-    write, and treating it as valid is how an interrupted promotion becomes the selected revision.
+    The contract is canonical JSON with exactly these two keys and one trailing newline, and it is
+    enforced by re-emitting the parsed pointer through `current_pointer_bytes` and requiring the
+    file to be those bytes. Stated that way rather than as a second description of the form, so the
+    reader cannot drift from the writer: an added key, a reordering, or `json.dumps(indent=4)` all
+    fail one comparison instead of three separate rules that each have to be remembered.
 
-    The reader is more permissive than the contract in one respect that is not yet load-bearing:
-    `json.loads` accepts any whitespace inside the object, so a pointer written with
-    `json.dumps(indent=4)` is read back happily although the design says canonical JSON. Nothing in
-    `src/` writes this file yet. **T16 owes the canonical writer, and a test that a whitespaced
-    pointer is refused** — the two belong in the same change, because a check with no writer beside
-    it has no way to say what the canonical form is.
+    Trailing content is refused rather than stripped for the same reason it always was: a pointer
+    with extra bytes after the object is a torn write, and treating it as valid is how an
+    interrupted promotion becomes the selected revision.
     """
     path = current_path(bundle_root)
     try:
-        raw = path.read_text(encoding="utf-8")
+        raw = path.read_bytes()
     except OSError as exc:
         raise PointerError(f"{CURRENT_PATH} is unreadable: {io_reason(exc)}") from exc
-    if not raw.endswith("\n") or raw.rstrip("\n") != raw[:-1]:
-        raise PointerError(f"{CURRENT_PATH} must end with exactly one newline")
     try:
-        payload = json.loads(raw)
-    except ValueError as exc:
+        payload = json.loads(raw.decode("utf-8"))
+    except (UnicodeDecodeError, ValueError) as exc:
         raise PointerError(f"{CURRENT_PATH} is not valid JSON: {exc}") from exc
     try:
-        return CurrentPointer.model_validate(payload)
+        pointer = CurrentPointer.model_validate(payload)
     except ValidationError as exc:
         raise PointerError(f"{CURRENT_PATH} is not a valid pointer: {exc}") from exc
+    if raw != current_pointer_bytes(pointer):
+        raise PointerError(
+            f"{CURRENT_PATH} is not in the canonical pointer form: it must be exactly the compact "
+            "key-sorted JSON object this bundle writes, followed by one newline"
+        )
+    return pointer
 
 
 def read_complete(revision_dir: Path) -> str:
@@ -562,6 +586,7 @@ __all__ = [
     "CandidateDigestGap",
     "CurrentPointer",
     "PointerError",
+    "current_pointer_bytes",
     "read_ancestor_manifest",
     "read_complete",
     "read_current",

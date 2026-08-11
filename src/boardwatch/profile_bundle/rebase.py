@@ -95,6 +95,7 @@ from boardwatch.profile_bundle.paths import (
 from boardwatch.profile_bundle.storage import (
     SelectedRevision,
     SelectionError,
+    identical_trees,
     read_current_once,
     selected_documents,
 )
@@ -184,7 +185,7 @@ def _rebase_locked(bundle_root: Path, name: str) -> OperationOutcome[DraftHandle
 
     backup = rebase_backup_root(bundle_root, name, draft_manifest.parent_bundle_digest)
     reuse = backup.exists()
-    if reuse and not _identical_trees(draft_dir, backup):
+    if reuse and not identical_trees(draft_dir, backup):
         return _refusal(
             IssueCode.DRAFT_BACKUP_CONFLICT,
             f"drafts/{backup.name} already exists and does not hold this draft byte for byte; "
@@ -494,7 +495,7 @@ def _install(
         # An exact backup already holds these bytes, so the draft is moved to a temporary name and
         # removed after the install. A deliberate departure from §21's "no command deletes drafts":
         # what is removed is not a draft but a copy this command made two statements ago under the
-        # temporary prefix, and `_identical_trees` proved its bytes are retained at the backup path
+        # temporary prefix, and `identical_trees` proved its bytes are retained at the backup path
         # first. The alternative — leaving it — adds a full-size `.tmp-draft-` tree that no command
         # drains and `inventory` reports forever: a leak traded for a provably lossless delete.
         # `ignore_errors` because the install has already succeeded: a failure here leaves residue
@@ -532,36 +533,6 @@ def _emit(staging: Path, logical: PurePosixPath, document: DocumentModel) -> Non
     (staging / logical).write_bytes(
         document_bytes(document.model_dump(mode="json"), logical_path=logical)
     )
-
-
-def _identical_trees(left: Path, right: Path) -> bool:
-    """Whether two real directories hold exactly the same relative paths and bytes.
-
-    A symlink on either side makes the answer `False` rather than "follow it and compare": a
-    symlinked backup is not this draft's bytes, it is a pointer at somebody else's. That includes
-    the *root* — a backup path symlinked at the draft would otherwise compare equal to it by
-    construction, and the caller would then delete the only copy of the pre-rebase draft.
-    """
-    left_contents = _tree_contents(left)
-    return left_contents is not None and left_contents == _tree_contents(right)
-
-
-def _tree_contents(root: Path) -> dict[str, bytes] | None:
-    """Every relative path under `root` and its bytes, or `None` if `root` is not a real directory.
-
-    `rglob` follows a symlinked root silently, so the root is checked before it is walked.
-    """
-    if root.is_symlink() or not root.is_dir():
-        return None
-    contents: dict[str, bytes] = {}
-    for path in sorted(root.rglob("*")):
-        relative = path.relative_to(root).as_posix()
-        if path.is_symlink():
-            return None
-        contents[relative + "/" if path.is_dir() else relative] = (
-            b"" if path.is_dir() else path.read_bytes()
-        )
-    return contents
 
 
 # --------------------------------------------------------------------------------------

@@ -3,6 +3,12 @@
 This module deliberately contains no terminal or filesystem behavior. The command layer owns the
 controlling-TTY confirmation; this pure seam receives the confirmed decisions and produces the
 typed stamp that history validation can bind to the candidate.
+
+It also owns the stamp's stored *byte* form, for the same reason it owns the stamp's shape: the
+approval that `approve` files under `approvals/sha256-<candidate>.yaml` is the one `promote` reads
+back, and two spellings of one document is two chances for an owner's approval to become unreadable
+to the command that needs it. Where those bytes go is `paths.approval_path`'s; writing them is the
+command layer's.
 """
 
 from __future__ import annotations
@@ -11,6 +17,7 @@ from collections import Counter
 from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import datetime
+from pathlib import PurePosixPath
 
 from boardwatch.profile_bundle.canonical import digest_of, normalized, record_digest
 from boardwatch.profile_bundle.index import BundleIndex, build_index
@@ -21,6 +28,7 @@ from boardwatch.profile_bundle.models.history import (
     ApprovalStamp,
 )
 from boardwatch.profile_bundle.models.policy import SourceSpec
+from boardwatch.profile_bundle.yaml_writer import document_bytes
 
 
 @dataclass(frozen=True)
@@ -211,3 +219,16 @@ def build_approval_stamp(
             "entries": entries,
         }
     )
+
+
+def approval_stamp_bytes(stamp: ApprovalStamp, *, logical_path: PurePosixPath) -> bytes:
+    """The stored form of one approval stamp: the stamp's own mapping, and nothing wrapping it.
+
+    One stamp rather than a ledger of them, because `paths.approval_path` keys the file by the
+    candidate digest and a candidate has exactly one approval. A list at that path could only mean
+    two approvals of one thing, and a reader would have to choose between them.
+
+    Emitted through `document_bytes` — the writer whose output this bundle's restricted loader is
+    known to read back unchanged — so a stamp cannot be filed in a form `promote` cannot parse.
+    """
+    return document_bytes(stamp.model_dump(mode="json"), logical_path=logical_path)
