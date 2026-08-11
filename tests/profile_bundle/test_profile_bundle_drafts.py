@@ -429,6 +429,27 @@ def test_checkout_reports_every_model_error_the_control_reports(
     assert not draft_root(promoted_tree.bundle_root, "work").exists()
 
 
+def test_checkout_of_a_revision_whose_evidence_document_is_gone_names_the_missing_file(
+    promoted_tree: PromotedRevisionTree,
+) -> None:
+    """`internal_error` is "file a bug"; a declared document that is merely absent is not that.
+
+    Canonicalising the parent's evidence set is not a load, so `parse_error_diagnostics` has no arm
+    for its failure: routing it through that mapping reported `internal_error` at exit 3 for a tree
+    the control and `inventory` both report as a missing required file at exit 1.
+    """
+    (promoted_tree.revision_dir / "evidence" / "records.yaml").unlink()
+    outcome = checkout_current(promoted_tree.bundle_root, name="work")
+    control = validate_bundle(
+        promoted_tree.revision_dir, bundle_root=promoted_tree.bundle_root, mode="revision"
+    )
+    assert str(IssueCode.MISSING_REQUIRED_FILE) in {d.code for d in control.diagnostics}
+    assert [d.code for d in outcome.diagnostics] == [str(IssueCode.MISSING_REQUIRED_FILE)]
+    assert [d.path for d in outcome.diagnostics] == ["evidence/records.yaml"]
+    assert outcome.exit_code == control.exit_code == 1
+    assert not draft_root(promoted_tree.bundle_root, "work").exists()
+
+
 def test_no_draft_command_names_an_absolute_path_in_a_diagnostic(tmp_path: Path) -> None:
     """§19 renders diagnostics as JSON an operator may paste elsewhere, and every pre-T14 diagnostic
     in this package uses logical paths. A stringified `OSError` carries an absolute one."""

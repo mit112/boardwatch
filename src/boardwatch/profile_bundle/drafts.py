@@ -77,6 +77,7 @@ from boardwatch.profile_bundle.blobs import (
 )
 from boardwatch.profile_bundle.canonical import (
     EVIDENCE_PATH,
+    CanonicalizationError,
     MappingBlobReader,
     evidence_set_digest,
     referenced_blob_digests,
@@ -280,6 +281,21 @@ def checkout_current(bundle_root: Path, *, name: str) -> OperationOutcome[DraftH
         quarantined = _blob_quarantine(bundle_root, parent)
     except SelectionError as exc:
         return _refusal(exc.code, str(exc))
+    except CanonicalizationError as exc:
+        # Ahead of the load-failure arm, and not routed through it: reading the parent's evidence
+        # set is not a load, so `parse_error_diagnostics` has no arm for it and fell through to
+        # `internal_error` — "file a bug" for a revision whose evidence document is merely absent,
+        # which the control and `inventory` both report as the missing file it is.
+        return outcome_with(
+            None,
+            (
+                diagnostic(
+                    IssueCode.MISSING_REQUIRED_FILE,
+                    f"{exc}; the parent's blob references were not read, so no draft was created",
+                    path=EVIDENCE_PATH.as_posix(),
+                ),
+            ),
+        )
     except ProfileBundleError as exc:
         # `parse_error_diagnostics` is already the mapping from a typed load failure to its code,
         # and it keeps every finding a `BundleParseError` carries instead of collapsing a list of
