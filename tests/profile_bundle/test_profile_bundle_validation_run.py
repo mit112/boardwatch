@@ -31,6 +31,7 @@ from tests.profile_bundle.conftest import (
     PromotedRevisionTree,
     SyntheticBundle,
     quoted_yaml,
+    reseal_without_reapproval,
 )
 
 AS_OF = date(2026, 8, 11)
@@ -198,6 +199,34 @@ def test_completeness_is_skipped_when_a_structural_prerequisite_is_absent(
     assert IssueCode.MISSING_REQUIRED_FILE in codes
     assert IssueCode.COMPLETENESS_COUNTS not in codes
     assert outcome.exit_code == 1
+
+
+def test_a_skipped_completeness_run_reports_no_as_of(
+    promoted_tree: PromotedRevisionTree,
+) -> None:
+    """`as_of` present means the dated checks ran. Nothing else in the report says so.
+
+    A skipped run still carried the requested date and `blocker: 0`, so machine output could not
+    tell "completeness ran and found nothing" from "completeness never started" — and the second
+    reads as the first, which is the more reassuring of the two.
+    """
+    (promoted_tree.revision_dir / "policy" / "predicates.yaml").unlink()
+    report = revision_outcome(promoted_tree, completeness=True, as_of=AS_OF).value
+    assert report.as_of is None
+    assert '"as_of":null' in report_json(report)
+
+
+def test_a_deep_history_audit_without_completeness_is_refused(
+    promoted_tree: PromotedRevisionTree,
+) -> None:
+    """`deep_history` only reaches `ancestry_completeness`, which only runs under completeness.
+
+    Accepting it and doing nothing is the worst of the three options: the caller asked for the one
+    audit that makes an edited ancestor visible at all and would be told, in a clean report, that
+    there was nothing to see. It is a programming error at the call boundary, like `as_of`.
+    """
+    with pytest.raises(ValueError, match="deep_history"):
+        revision_outcome(promoted_tree, deep_history=True)
 
 
 # --------------------------------------------------------------------------------------
@@ -539,3 +568,87 @@ def test_a_draft_whose_blob_is_gone_reports_no_candidate_digest(
     outcome = draft_outcome(synthetic_bundle)
     assert outcome.value.candidate_digest is None
     assert IssueCode.MISSING_BLOB in {d.code for d in outcome.diagnostics}
+
+
+# --------------------------------------------------------------------------------------
+# What the reported candidate digest means
+# --------------------------------------------------------------------------------------
+
+
+def test_the_reported_candidate_digest_is_the_one_this_tree_recomputes(
+    chained_tree: PromotedRevisionTree,
+) -> None:
+    """Never the manifest's declared value, which is the number under suspicion.
+
+    Reporting `approved_candidate_digest` verbatim made a never-verified declaration
+    indistinguishable in JSON from a verified one: a re-sealed revision that no owner ever approved
+    printed the forged tree's *claimed* digest under the same key, with the same shape, as a clean
+    one. The field is the digest the bytes on disk reduce to, so a consumer diffing it against the
+    approval stamp sees the forgery.
+    """
+    forged = reseal_without_reapproval(
+        chained_tree,
+        mutate=lambda data: data["skills"][0].update({"canonical_name": "Never Approved"}),
+    )
+    declared = forged.documents.manifest.approved_candidate_digest
+    report = revision_outcome(forged).value
+    assert report.candidate_digest is not None
+    assert report.candidate_digest != declared
+    assert IssueCode.CANDIDATE_DIGEST_MISMATCH in {d.code for d in revision_outcome(forged).diagnostics}
+
+
+def test_a_revision_whose_parent_is_off_disk_reports_no_candidate_digest(
+    chained_tree: PromotedRevisionTree,
+) -> None:
+    """`None` is "this run made no claim", and it is the only honest answer here.
+
+    The candidate view folds in the parent's revision number and digest, so with the parent gone
+    there is nothing to recompute against. Printing the declared value instead would present an
+    unverified number exactly as a verified one — which is what §21 keeping a revision valid through
+    unavailable history must not be allowed to cost.
+    """
+    parent_digest = chained_tree.documents.manifest.parent_bundle_digest
+    assert parent_digest is not None
+    shutil.rmtree(revision_root(chained_tree.bundle_root, parent_digest))
+    assert revision_outcome(chained_tree).value.candidate_digest is None
+
+
+def test_a_revision_whose_parent_is_gone_states_that_it_made_no_claim(
+    chained_tree: PromotedRevisionTree,
+) -> None:
+    """A forgery plus a deleted parent used to report zero diagnostics and exit 0.
+
+    The silence was justified by deferring to `ancestry_completeness`'s `unverifiable_ancestor`
+    blocker — which only runs when completeness is requested, so on the DEFAULT path the deferral
+    target never ran at all. `candidate_digest: null` was the whole signal, and nothing said why.
+
+    §21 is unchanged deliberately: a missing ancestor stays a completeness blocker and the selected
+    revision stays structurally valid, so this is stated at the information tier, which never moves
+    an exit code. What it buys is that "unmeasured" stops reading as "verified clean".
+    """
+    forged = reseal_without_reapproval(
+        chained_tree,
+        mutate=lambda data: data["skills"][0].update({"canonical_name": "Never Approved"}),
+    )
+    parent_digest = forged.documents.manifest.parent_bundle_digest
+    assert parent_digest is not None
+    shutil.rmtree(revision_root(forged.bundle_root, parent_digest))
+
+    outcome = revision_outcome(forged)
+    found = [d for d in outcome.diagnostics if d.code == IssueCode.CANDIDATE_DIGEST_UNVERIFIED]
+    assert len(found) == 1
+    assert (found[0].tier, found[0].details["reason"]) == ("information", "absent")
+    assert (outcome.category, outcome.exit_code) == ("clean", 0)
+    assert outcome.value.candidate_digest is None
+
+
+def test_a_revision_that_recomputes_its_candidate_digest_states_nothing(
+    chained_tree: PromotedRevisionTree,
+) -> None:
+    """The negative control for a finding about silence: a claim was made, so nothing is said.
+
+    Without this the new row could be emitted on every revision and still look like it worked.
+    """
+    outcome = revision_outcome(chained_tree)
+    assert IssueCode.CANDIDATE_DIGEST_UNVERIFIED not in {d.code for d in outcome.diagnostics}
+    assert outcome.value.candidate_digest == chained_tree.candidate_digest

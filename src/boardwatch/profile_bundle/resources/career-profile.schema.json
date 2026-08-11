@@ -4428,11 +4428,11 @@
     },
     "SourceSpec": {
       "additionalProperties": false,
-      "description": "Portable source metadata only (§6, §18).\n\n`policy/sources.yaml` is authoritative for `source_kind` and `portable_locator`;\n`imports/source-ledger.yaml` owns enumeration, scope, digests, and dispositions. The two\ndocuments may not repeat the same metadata fields, so there is no `enumerator_id` here.\n\nAbsolute machine-local roots live only in the non-revisioned root `local-sources.yaml`, which\nis why `portable_locator` is relative and validation rejects a home path inside it.",
+      "description": "Portable source metadata only (§6, §18).\n\n`policy/sources.yaml` is authoritative for `source_kind` and `portable_locator`;\n`imports/source-ledger.yaml` owns enumeration, scope, digests, and dispositions. The two\ndocuments may not repeat the same metadata fields, so there is no `enumerator_id` here.\n\nAbsolute machine-local roots live only in the non-revisioned root `local-sources.yaml`, which\nis why `portable_locator` is relative. The field validator below is where that lands: it\nrefuses an absolute path, a drive qualifier, a backslash, a `.`/`..` component, a control\ncharacter, and a leading `~`. Nothing else in `validation/` reads this field — the personal-path\nscan walks evidence records only — so a claim about it that is not in that validator is false.",
       "properties": {
         "portable_locator": {
           "minLength": 1,
-          "pattern": "\\S",
+          "pattern": "^(?![\\s\\S]*[\\x00-\\x1f\\x7f])(?![A-Za-z]:)(?!/)(?!~)(?=[\\s\\S]*\\S)(?!\\.\\.?(?:/|$))[^/\\\\\\x00-\\x1f\\x7f]*(?:/(?!\\.\\.?(?:/|$))[^/\\\\\\x00-\\x1f\\x7f]*)*$",
           "title": "Portable Locator",
           "type": "string"
         },
