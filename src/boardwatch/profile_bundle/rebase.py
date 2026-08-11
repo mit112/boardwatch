@@ -54,6 +54,8 @@ from collections.abc import Mapping, Sequence
 from pathlib import Path, PurePosixPath
 
 from boardwatch.profile_bundle.canonical import (
+    EVIDENCE_PATH,
+    MANIFEST_PATH,
     FilesystemBlobReader,
     MissingBlobError,
     evidence_set_digest,
@@ -98,9 +100,6 @@ from boardwatch.profile_bundle.storage import (
 )
 from boardwatch.profile_bundle.validation.context import load_documents, parse_error_diagnostics
 from boardwatch.profile_bundle.yaml_writer import document_bytes
-
-MANIFEST_PATH = PurePosixPath("manifest.yaml")
-EVIDENCE_PATH = PurePosixPath("evidence/records.yaml")
 
 #: Manifest fields the rebase carries across by three-way merge. Derived from the two models rather
 #: than listed, so a field added to the shared envelope is merged instead of silently dropped: it is
