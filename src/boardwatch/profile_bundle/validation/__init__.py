@@ -21,6 +21,7 @@ from boardwatch.profile_bundle.validation.context import (
     parse_error_diagnostics,
     sorted_diagnostics,
 )
+from boardwatch.profile_bundle.validation.history import validate_history
 from boardwatch.profile_bundle.validation.referential import (
     records_blocked_by_unresolved_conflicts,
     validate_referential,
@@ -43,6 +44,7 @@ __all__ = [
     "semantic_completeness",
     "sorted_diagnostics",
     "validate_referential",
+    "validate_history",
     "validate_semantic",
     "validate_structural",
 ]

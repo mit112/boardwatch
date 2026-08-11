@@ -1,0 +1,213 @@
+"""Pure owner-gate derivation and approval-stamp construction for T11.
+
+This module deliberately contains no terminal or filesystem behavior. The command layer owns the
+controlling-TTY confirmation; this pure seam receives the confirmed decisions and produces the
+typed stamp that history validation can bind to the candidate.
+"""
+
+from __future__ import annotations
+
+from collections import Counter
+from collections.abc import Sequence
+from dataclasses import dataclass
+from datetime import datetime
+
+from boardwatch.profile_bundle.canonical import digest_of, normalized, record_digest
+from boardwatch.profile_bundle.index import BundleIndex, build_index
+from boardwatch.profile_bundle.models.documents import BundleDocuments
+from boardwatch.profile_bundle.models.history import (
+    ApprovalAction,
+    ApprovalEntry,
+    ApprovalStamp,
+)
+from boardwatch.profile_bundle.models.policy import SourceSpec
+
+
+@dataclass(frozen=True)
+class ApprovalDecision:
+    """One owner-gated transition required by a candidate revision."""
+
+    action: ApprovalAction
+    target_record_id: str
+    target_content_digest: str
+    resulting_state: str
+
+
+def _record_map(index: BundleIndex) -> dict[str, object]:
+    return dict(index.records)
+
+
+def _changed(candidate: object, parent: object | None) -> bool:
+    return parent is None or record_digest(candidate) != record_digest(parent)  # type: ignore[arg-type]
+
+
+def _joined_source_digest(source: SourceSpec, ledger: object) -> str:
+    return digest_of([normalized(source), normalized(ledger)])  # type: ignore[arg-type]
+
+
+def _source_decisions(candidate: BundleIndex, parent: BundleIndex | None) -> list[ApprovalDecision]:
+    decisions: list[ApprovalDecision] = []
+    parent_sources = parent.sources.by_id if parent and parent.sources else {}
+    parent_ledger = parent.source_ledger.sources if parent and parent.source_ledger else ()
+    parent_ledger_by_id = {source.source_id: source for source in parent_ledger}
+    ledger_by_id = (
+        {source.source_id: source for source in candidate.source_ledger.sources}
+        if candidate.source_ledger
+        else {}
+    )
+    if candidate.sources is None:
+        return decisions
+    for source in candidate.sources.sources:
+        ledger = ledger_by_id.get(source.source_id)
+        if ledger is None:
+            continue
+        old_source = parent_sources.get(source.source_id)
+        old_ledger = parent_ledger_by_id.get(source.source_id)
+        old_digest = (
+            _joined_source_digest(old_source, old_ledger)
+            if old_source is not None and old_ledger is not None
+            else None
+        )
+        new_digest = _joined_source_digest(source, ledger)
+        if old_digest != new_digest:
+            decisions.append(
+                ApprovalDecision(
+                    action=ApprovalAction.APPROVE_SOURCE_SCOPE,
+                    target_record_id=source.source_id,
+                    target_content_digest=new_digest,
+                    resulting_state="approved",
+                )
+            )
+    return decisions
+
+
+def _exclusion_decisions(
+    candidate: BundleIndex, parent: BundleIndex | None
+) -> list[ApprovalDecision]:
+    parent_by_id = (
+        {record.source_record_id: record for record in parent.ledger_records}
+        if parent
+        else {}
+    )
+    ledger_by_id = {record.source_record_id: record for record in candidate.ledger_records}
+    decisions: list[ApprovalDecision] = []
+    for exclusion in candidate.exclusions:
+        if exclusion.reason.value != "owner_excluded":
+            continue
+        ledger = ledger_by_id.get(exclusion.source_record_id)
+        old_exclusion = next(
+            (
+                item
+                for item in (parent.exclusions if parent else ())
+                if item.source_record_id == exclusion.source_record_id
+            ),
+            None,
+        )
+        old_ledger = parent_by_id.get(exclusion.source_record_id)
+        old_digest = (
+            digest_of([normalized(old_ledger), normalized(old_exclusion)])
+            if old_ledger is not None and old_exclusion is not None
+            else None
+        )
+        new_digest = (
+            digest_of([normalized(ledger), normalized(exclusion)])
+            if ledger is not None
+            else digest_of(normalized(exclusion))
+        )
+        if old_digest != new_digest:
+            decisions.append(
+                ApprovalDecision(
+                    action=ApprovalAction.APPROVE_SOURCE_RECORD_EXCLUSION,
+                    target_record_id=exclusion.source_record_id,
+                    target_content_digest=new_digest,
+                    resulting_state="owner_excluded",
+                )
+            )
+    return decisions
+
+
+def required_approval_decisions(
+    candidate: BundleDocuments, parent: BundleDocuments | None
+) -> tuple[ApprovalDecision, ...]:
+    """Derive every owner-gated transition from candidate content and its direct parent."""
+    current = build_index(candidate)
+    previous = build_index(parent) if parent is not None else None
+    old = _record_map(previous) if previous else {}
+    decisions: list[ApprovalDecision] = []
+
+    for record_id, record in sorted(current.records.items()):
+        prior = old.get(record_id)
+        if not _changed(record, prior):
+            continue
+        action: ApprovalAction | None = None
+        resulting_state: str | None = None
+        if record_id.startswith("fact.") and getattr(
+            record, "verification_state", None
+        ) == "owner_confirmed":
+            action, resulting_state = ApprovalAction.CONFIRM_FACT, "owner_confirmed"
+        elif record_id.startswith("contact."):
+            action, resulting_state = ApprovalAction.CONFIRM_CONTACT, "owner_confirmed"
+        elif record_id.startswith("evidence.") and getattr(
+            getattr(record, "sufficiency_review", None), "state", None
+        ) == "owner_approved":
+            action, resulting_state = ApprovalAction.APPROVE_EVIDENCE_SUFFICIENCY, "owner_approved"
+        elif record_id.startswith("claim.") and getattr(record, "status", None) == "approved":
+            action, resulting_state = ApprovalAction.APPROVE_CLAIM, "approved"
+        elif record_id.startswith("metric.") and (
+            prior is None
+            or getattr(record, "allowed_surfaces", ()) != getattr(prior, "allowed_surfaces", ())
+        ):
+            action, resulting_state = ApprovalAction.APPROVE_METRIC_SURFACES, "approved"
+        elif record_id.startswith("ruling."):
+            action, resulting_state = ApprovalAction.AUTHORIZE_CONFLICT_RULING, "authorized"
+        if action is not None and resulting_state is not None:
+            decisions.append(
+                ApprovalDecision(
+                    action=action,
+                    target_record_id=record_id,
+                    target_content_digest=record_digest(record),
+                    resulting_state=resulting_state,
+                )
+            )
+
+    decisions.extend(_source_decisions(current, previous))
+    decisions.extend(_exclusion_decisions(current, previous))
+    return tuple(sorted(decisions, key=lambda item: (item.action.value, item.target_record_id)))
+
+
+def build_approval_stamp(
+    *,
+    stamp_id: str,
+    candidate_digest: str,
+    approved_at: datetime,
+    decisions: Sequence[ApprovalDecision],
+) -> ApprovalStamp:
+    """Build a typed stamp from already-confirmed decisions; perform no I/O or TTY checks."""
+    counts: Counter[tuple[str, str]] = Counter()
+    entries: list[ApprovalEntry] = []
+    for decision in decisions:
+        key = (decision.action.value, decision.target_record_id)
+        counts[key] += 1
+        approval_id = (
+            f"approval.{decision.action.value}.{decision.target_record_id}.{counts[key]:03d}"
+        )
+        entries.append(
+            ApprovalEntry.model_validate(
+                {
+                    "approval_id": approval_id,
+                    "action": decision.action,
+                    "target_record_id": decision.target_record_id,
+                    "target_content_digest": decision.target_content_digest,
+                    "resulting_state": decision.resulting_state,
+                }
+            )
+        )
+    return ApprovalStamp.model_validate(
+        {
+            "approval_stamp_id": stamp_id,
+            "candidate_content_digest": candidate_digest,
+            "approved_at": approved_at,
+            "approved_via": "controlling_terminal",
+            "entries": entries,
+        }
+    )

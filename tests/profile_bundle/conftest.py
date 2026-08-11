@@ -15,13 +15,17 @@ from __future__ import annotations
 import hashlib
 import shutil
 from dataclasses import dataclass
+from datetime import UTC, datetime
 from importlib import resources
 from pathlib import Path
 
 import pytest
 
+from boardwatch.profile_bundle.approvals import build_approval_stamp, required_approval_decisions
 from boardwatch.profile_bundle.canonical import MappingBlobReader
 from boardwatch.profile_bundle.models.documents import BundleDocuments
+from boardwatch.profile_bundle.models.history import ApprovalStamp, ChangeRecord
+from boardwatch.profile_bundle.models.manifests import RevisionManifest
 from boardwatch.profile_bundle.paths import blob_path, blobs_dir, draft_root, drafts_dir
 from boardwatch.profile_bundle.validation import load_documents
 
@@ -82,6 +86,71 @@ class SyntheticBundle:
     def write(self, relative: str, text: str) -> None:
         """Rewrite one document in place. Used to build the negative cases."""
         self.document(relative).write_text(text, encoding="utf-8")
+
+
+@dataclass(frozen=True)
+class PromotedRevisionFixture:
+    """A deliberate promoted-revision seam shared by the later history slices."""
+
+    documents: BundleDocuments
+    manifest: RevisionManifest
+    change: ChangeRecord
+    approval: ApprovalStamp
+
+
+@pytest.fixture
+def promoted_revision_fixture(tmp_path: Path) -> PromotedRevisionFixture:
+    """One revision manifest, one change record, and one approval stamp.
+
+    The fixture is intentionally typed rather than assembled from YAML so T13/T16 can reuse the
+    same promotion-shaped objects without smuggling an authored revision into the draft example.
+    """
+    root = tmp_path / "career-profile"
+    root.mkdir()
+    drafts_dir(root).mkdir()
+    bundle = materialise(root)
+    documents = parse_documents(bundle.draft)
+    draft = documents.manifest
+    manifest_values = draft.model_dump(mode="json")
+    manifest_values.pop("draft_of_revision", None)
+    manifest = RevisionManifest.model_validate(
+        {
+            **manifest_values,
+            "state": "revision",
+            "revision": 1,
+            "parent_bundle_digest": None,
+            "bundle_digest": "sha256:" + "1" * 64,
+            "created_at": "2026-08-10T12:00:00Z",
+            "created_by": "owner",
+            "change_id": "change.example.000001",
+            "approved_candidate_digest": "sha256:" + "2" * 64,
+            "approval_stamp_id": "approval-stamp.000001",
+        }
+    )
+    change = ChangeRecord.model_validate(
+        {
+            "change_id": "change.example.000001",
+            "revision": 1,
+            "parent_bundle_digest": None,
+            "actor": "owner",
+            "authorized_by": "owner",
+            "summary": "Initial promoted synthetic revision",
+            "changed_record_ids": [],
+            "created_at": "2026-08-10T12:00:00Z",
+        }
+    )
+    approval = build_approval_stamp(
+        stamp_id="approval-stamp.000001",
+        candidate_digest="sha256:" + "2" * 64,
+        approved_at=datetime(2026, 8, 10, 12, tzinfo=UTC),
+        decisions=required_approval_decisions(documents, None),
+    )
+    return PromotedRevisionFixture(
+        documents=documents,
+        manifest=manifest,
+        change=change,
+        approval=approval,
+    )
 
 
 def materialise(root: Path, *, draft_name: str = "baseline") -> SyntheticBundle:
