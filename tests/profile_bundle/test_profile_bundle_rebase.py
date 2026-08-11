@@ -39,6 +39,7 @@ from conftest import (
     promote_next_revision,
     quoted_yaml,
 )
+from pydantic import BaseModel
 
 from boardwatch.profile_bundle import rebase as rebase_module
 from boardwatch.profile_bundle.canonical import candidate_content_digest
@@ -50,6 +51,7 @@ from boardwatch.profile_bundle.diff import (
 )
 from boardwatch.profile_bundle.drafts import checkout_current
 from boardwatch.profile_bundle.errors import IssueCode
+from boardwatch.profile_bundle.layout import owner_for_path
 from boardwatch.profile_bundle.locking import BundleLockHeldError, bundle_lock
 from boardwatch.profile_bundle.models.documents import (
     BundleDocuments,
@@ -69,6 +71,7 @@ from boardwatch.profile_bundle.paths import (
     rebase_backup_root,
 )
 from boardwatch.profile_bundle.rebase import rebase_draft
+from boardwatch.profile_bundle.schema import DOCUMENT_MODELS
 from boardwatch.profile_bundle.validation import load_documents
 from boardwatch.profile_bundle.yaml_loader import load_yaml_bytes
 from boardwatch.profile_bundle.yaml_writer import DocumentEmitError
@@ -398,15 +401,43 @@ def test_merge_keeps_a_record_only_we_removed_while_both_sides_moved() -> None:
     assert merged.skills[0].canonical_name == DRAFT_RENAME
 
 
-def test_merge_refuses_two_documents_of_different_kinds(
+def test_a_logical_path_alone_decides_which_model_parsed_it(scene: Scene) -> None:
+    """Where the "both sides are the same kind of document" guarantee lands.
+
+    `merge_document` does not re-check it, so this does: over two independently loaded real trees,
+    not over the mapping, so a loader that ever dispatched on content rather than on path would fail
+    here rather than inside a merge.
+    """
+    ours = load_documents(scene.draft, mode="draft")
+    theirs = load_documents(scene.current.revision_dir, mode="revision")
+    shared = sorted(set(ours.by_path) & set(theirs.by_path), key=str)
+    assert len(shared) > 20
+
+    for logical in shared:
+        expected = DOCUMENT_MODELS[owner_for_path(logical)]
+        assert type(ours.by_path[logical]) is expected
+        assert type(theirs.by_path[logical]) is expected
+
+
+def test_only_nested_fields_hold_tuples_of_scalars(
     promoted_tree: PromotedRevisionTree,
 ) -> None:
-    """Defensive: a path determines a kind, so this is unreachable through `rebase_draft`."""
-    skills = promoted_tree.documents.by_path[SKILLS_PATH]
-    units = promoted_tree.documents.by_path[PurePosixPath("policy/units.yaml")]
+    """Why `merge_values` never has to ask whether a tuple's elements are models.
 
-    with pytest.raises(DocumentMergeConflict):
-        merge_document(None, skills, units)
+    Every tuple among a document's or a manifest's *top-level* fields holds records or catalog rows;
+    the scalar tuples (`FactRecord.values`, `MetricRecord.allowed_phrasings`, …) live one level down,
+    inside records, where the merge never looks. `record_id_of` is the backstop for both cases.
+    """
+    documents = [promoted_tree.documents.manifest, *promoted_tree.documents.by_path.values()]
+    checked = 0
+    for document in documents:
+        for name in type(document).model_fields:
+            value = getattr(document, name)
+            if not isinstance(value, tuple) or not value:
+                continue
+            checked += 1
+            assert all(isinstance(item, BaseModel) for item in value), f"{name} holds scalars"
+    assert checked > 20
 
 
 # --------------------------------------------------------------------------------------

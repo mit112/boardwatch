@@ -167,6 +167,11 @@ def merge_document(
 ) -> DocumentModel:
     """Three-way merge of one logical document, resolved per record where both sides moved.
 
+    `ours` and `theirs` are the same logical path in two trees, and nothing here re-checks that they
+    are the same kind of document: `layout.owner_for_path` maps a path to one kind and
+    `schema.DOCUMENT_MODELS` maps that kind to one model, so the class is a function of the path and
+    two independently loaded trees cannot disagree about it. That is where the guarantee lives.
+
     `base` is `None` for a document neither tree inherited — a parentless draft, or a file both
     sides created. Record tuples then merge against an empty base, which is exactly right: every
     record on both sides is an addition, and additions of *different* records do not collide.
@@ -178,12 +183,6 @@ def merge_document(
     caller must handle: it is translated into `DocumentMergeConflict` here, at the raise site, so no
     caller has to recognise a `pydantic.ValidationError` escaping a merge.
     """
-    if type(ours) is not type(theirs):
-        raise DocumentMergeConflict(
-            "<document>",
-            f"one path holds a {type(ours).__name__} in the draft and a {type(theirs).__name__} in "
-            "the selected revision; a merge would have to invent which one it is",
-        )
     append_only = _APPEND_ONLY_SEQUENCES.get(type(theirs))
     merged: dict[str, Any] = {}
     for name in type(theirs).model_fields:
@@ -238,13 +237,14 @@ def _record_ids(value: Any) -> list[str] | None:
 
     A tuple of catalog rows (`PredicateSpec`, `UnitSpec`, …) returns `None` because `record_id_of`
     refuses it — the same refusal the index relies on to keep catalog rows out of the record space.
+    That one refusal is the whole test: an element that is not a model at all carries no ID field
+    either, so it takes the same path, and an `isinstance` check ahead of it would only restate what
+    `record_id_of` already decides.
     """
     if not isinstance(value, tuple):
         return None
     identifiers: list[str] = []
     for item in value:
-        if not isinstance(item, BaseModel):
-            return None
         try:
             identifiers.append(record_id_of(item))
         except TypeError:
