@@ -67,7 +67,7 @@ reports drift without writing, and `make check` depends on it (D-109).
 | METRICS.md | 776 | Session — 2026-08-10 (later still ×4) · The Slice 3 external review (D-113) + the CI dependency fix (D-114). No phase gate moved. |
 | METRICS.md | 896 | Session — 2026-08-10 (later still ×5) · Gate A career-profile bundle, slices T1–T9 (D-115). No phase gate moved. |
 | METRICS.md | 985 | Session — 2026-08-10 (later still ×6) · The held commits are PUSHED; CI's first honest read (D-116, D-117). No phase gate moved. |
-| METRICS.md | 1057 | Session — 2026-08-10 (later still ×7) · Gate A slice T10, semantic validation (D-118). No phase gate moved. |
+| METRICS.md | 1060 | Session — 2026-08-10 (later still ×7) · Gate A slice T10, semantic validation (D-118). No phase gate moved. |
 
 ---
 
@@ -1046,9 +1046,12 @@ existed and 0 after.
 
 - **Gate A is gate-green but NOT reviewed.** Its commits being on `origin/main` is not sign-off, and the
   independent review is still owed before Gate B may start.
-- **The 0.3.0 re-tag has not been executed.** Mit's decision is taken (move `v0.3.0`, D-117) and the
-  CHANGELOG is folded, but the tag moves only once `ci.yml` is green on all three OSes on the commit it
-  will name.
+- ~~**The 0.3.0 re-tag has not been executed.**~~ **Done later the same night — 0.3.0 is PUBLISHED**
+  (D-119). `v0.3.0` moved `426f45c` → `dc1ffec`; `ci.yml` run `31442555052` was **12 of 12 green**, the
+  first fully green run in the project's history. Verified on all three targets through paths independent
+  of the workflow's report: PyPI JSON API lists `0.3.0` (wheel 618,554 B, sdist 1,395,850 B), the GitHub
+  Release carries both assets at **matching byte sizes**, and the GHCR manifest answers 200 as an OCI
+  index over amd64 + arm64.
 - **No local pre-push check for the three CI-only jobs.** `gitleaks git --log-opts=origin/main..HEAD` is
   the cheap mitigation and was not wired in.
 
