@@ -457,7 +457,12 @@ def test_a_missing_blob_is_left_to_the_evidence_layer(
     promoted_tree: PromotedRevisionTree,
 ) -> None:
     """`validation/evidence.py` already reports a missing blob under its own specific code. Two
-    codes for one missing file is noise, and the evidence layer's is the one that names it."""
+    codes for one missing file is noise, and the evidence layer's is the one that names it.
+
+    What this layer does say is that it therefore made no candidate claim — an information row, not
+    a second diagnosis of the cause. Without it the digest layer's whole output for a bundle whose
+    blobs are gone is indistinguishable from its output for one that verified.
+    """
     from boardwatch.profile_bundle.canonical import MappingBlobReader
 
     ctx = build_context(
@@ -466,7 +471,10 @@ def test_a_missing_blob_is_left_to_the_evidence_layer(
         blobs=MappingBlobReader({}),
         bundle_root=promoted_tree.bundle_root,
     )
-    assert validate_digest(ctx) == ()
+    found = validate_digest(ctx)
+    assert [(f.code, f.tier, f.details["reason"]) for f in found] == [
+        (IssueCode.CANDIDATE_DIGEST_UNVERIFIED, "information", "not_recomputable")
+    ]
 
 
 def test_a_clean_child_revision_recomputes_its_candidate_digest_from_the_parent_on_disk(
@@ -510,9 +518,14 @@ def test_a_child_revision_makes_no_claim_when_its_parent_is_not_on_disk(
     """§21 keeps a selected revision valid when its history is unavailable.
 
     So an unreadable ancestor withholds the comparison rather than failing it — restoring one old
-    directory from backup must not decide whether the bundle is usable. The absence is reported, as
+    directory from backup must not decide whether the bundle is usable. The cause is diagnosed, as
     `unverifiable_ancestor`, by `ancestry_completeness`; reporting it twice here under a digest code
     would send an operator hunting for a second problem.
+
+    But the withholding itself is stated, at the information tier and with the same typed fault, and
+    the tree below is why: it is a forgery, and every error-tier check agrees with it. Emitting
+    nothing left `candidate_digest: null` as the only trace, on the one path where
+    `ancestry_completeness` does not run at all.
     """
     forged = reseal_without_reapproval(
         chained_tree,
@@ -521,7 +534,8 @@ def test_a_child_revision_makes_no_claim_when_its_parent_is_not_on_disk(
     parent_digest = forged.documents.manifest.parent_bundle_digest  # type: ignore[union-attr]
     assert parent_digest is not None
     shutil.rmtree(revision_root(forged.bundle_root, parent_digest))
-    assert codes(forged) == []
+    assert codes(forged) == [IssueCode.CANDIDATE_DIGEST_UNVERIFIED]
+    assert [(f.tier, f.details["reason"]) for f in findings(forged)] == [("information", "absent")]
 
 
 def test_a_supplied_parent_snapshot_is_used_instead_of_the_one_on_disk(

@@ -725,7 +725,11 @@ def test_a_missing_ancestor_is_a_blocker_not_an_error(chained_tree: PromotedRevi
     assert [f.code for f in found] == ["unverifiable_ancestor"]
     assert found[0].tier == "blocker"
     assert found[0].details["reason"] == "absent"
-    assert validate_digest(ctx) == ()
+    # The digest layer raises no error about it either — it withholds the candidate comparison and
+    # says so at the information tier, which is what keeps the exit code where §21 puts it.
+    assert [(f.code, f.tier) for f in validate_digest(ctx)] == [
+        ("candidate_digest_unverified", "information")
+    ]
 
 
 def test_an_unreadable_ancestor_manifest_is_a_blocker(

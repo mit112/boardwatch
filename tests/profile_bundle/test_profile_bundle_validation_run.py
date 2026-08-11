@@ -589,3 +589,44 @@ def test_a_revision_whose_parent_is_off_disk_reports_no_candidate_digest(
     assert parent_digest is not None
     shutil.rmtree(revision_root(chained_tree.bundle_root, parent_digest))
     assert revision_outcome(chained_tree).value.candidate_digest is None
+
+
+def test_a_revision_whose_parent_is_gone_states_that_it_made_no_claim(
+    chained_tree: PromotedRevisionTree,
+) -> None:
+    """A forgery plus a deleted parent used to report zero diagnostics and exit 0.
+
+    The silence was justified by deferring to `ancestry_completeness`'s `unverifiable_ancestor`
+    blocker — which only runs when completeness is requested, so on the DEFAULT path the deferral
+    target never ran at all. `candidate_digest: null` was the whole signal, and nothing said why.
+
+    §21 is unchanged deliberately: a missing ancestor stays a completeness blocker and the selected
+    revision stays structurally valid, so this is stated at the information tier, which never moves
+    an exit code. What it buys is that "unmeasured" stops reading as "verified clean".
+    """
+    forged = reseal_without_reapproval(
+        chained_tree,
+        mutate=lambda data: data["skills"][0].update({"canonical_name": "Never Approved"}),
+    )
+    parent_digest = forged.documents.manifest.parent_bundle_digest
+    assert parent_digest is not None
+    shutil.rmtree(revision_root(forged.bundle_root, parent_digest))
+
+    outcome = revision_outcome(forged)
+    found = [d for d in outcome.diagnostics if d.code == IssueCode.CANDIDATE_DIGEST_UNVERIFIED]
+    assert len(found) == 1
+    assert (found[0].tier, found[0].details["reason"]) == ("information", "absent")
+    assert (outcome.category, outcome.exit_code) == ("clean", 0)
+    assert outcome.value.candidate_digest is None
+
+
+def test_a_revision_that_recomputes_its_candidate_digest_states_nothing(
+    chained_tree: PromotedRevisionTree,
+) -> None:
+    """The negative control for a finding about silence: a claim was made, so nothing is said.
+
+    Without this the new row could be emitted on every revision and still look like it worked.
+    """
+    outcome = revision_outcome(chained_tree)
+    assert IssueCode.CANDIDATE_DIGEST_UNVERIFIED not in {d.code for d in outcome.diagnostics}
+    assert outcome.value.candidate_digest == chained_tree.candidate_digest
