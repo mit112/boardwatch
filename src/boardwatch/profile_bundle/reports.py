@@ -91,7 +91,13 @@ class ValidationReport:
 
     schema_version: int | None
     bundle_digest: str | None
+    #: The candidate digest the validated tree RECOMPUTES, never one it merely declares. `None`
+    #: means the run made no claim — a missing blob, an unrecoverable candidate view, or a parent
+    #: revision that is not on disk.
     candidate_digest: str | None
+    #: The date the dated completeness checks ran at, and `None` when they did not run at all —
+    #: including a completeness run skipped because a structural prerequisite was missing. Reporting
+    #: the requested date regardless would make a skipped run read as a clean one.
     as_of: date | None
     diagnostics: tuple[Diagnostic, ...]
     counts: ValidationCounts

@@ -179,6 +179,34 @@ def test_completeness_is_skipped_when_a_structural_prerequisite_is_absent(
     assert outcome.exit_code == 1
 
 
+def test_a_skipped_completeness_run_reports_no_as_of(
+    promoted_tree: PromotedRevisionTree,
+) -> None:
+    """`as_of` present means the dated checks ran. Nothing else in the report says so.
+
+    A skipped run still carried the requested date and `blocker: 0`, so machine output could not
+    tell "completeness ran and found nothing" from "completeness never started" — and the second
+    reads as the first, which is the more reassuring of the two.
+    """
+    (promoted_tree.revision_dir / "policy" / "predicates.yaml").unlink()
+    report = revision_outcome(promoted_tree, completeness=True, as_of=AS_OF).value
+    assert report.as_of is None
+    assert '"as_of":null' in report_json(report)
+
+
+def test_a_deep_history_audit_without_completeness_is_refused(
+    promoted_tree: PromotedRevisionTree,
+) -> None:
+    """`deep_history` only reaches `ancestry_completeness`, which only runs under completeness.
+
+    Accepting it and doing nothing is the worst of the three options: the caller asked for the one
+    audit that makes an edited ancestor visible at all and would be told, in a clean report, that
+    there was nothing to see. It is a programming error at the call boundary, like `as_of`.
+    """
+    with pytest.raises(ValueError, match="deep_history"):
+        revision_outcome(promoted_tree, deep_history=True)
+
+
 # --------------------------------------------------------------------------------------
 # Every layer runs
 # --------------------------------------------------------------------------------------

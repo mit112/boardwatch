@@ -109,6 +109,12 @@ def validate_bundle(
             "completeness validation needs an explicit as_of date; this package reads no clock, so "
             "the caller chooses the date and the report states it"
         )
+    if deep_history and not completeness:
+        raise ValueError(
+            "deep_history is the ancestor audit inside completeness validation, so it needs "
+            "completeness=True; accepting it alone would answer the one question that makes an "
+            "edited ancestor visible with a clean report nobody ran"
+        )
     blobs = FilesystemBlobReader(blobs_dir(bundle_root))
     try:
         ctx = build_context(
@@ -127,7 +133,12 @@ def validate_bundle(
         *validate_imports(ctx),
         *validate_digest(ctx),
     ]
-    if completeness and as_of is not None and _prerequisites_are_present(ctx):
+    # `as_of` in the report means exactly "the dated checks ran at this date", so it is set from
+    # what happened rather than from what was asked for. A skipped run that still reported the
+    # requested date and `blocker: 0` was indistinguishable in JSON from a completeness run that
+    # found nothing — and it reads as the reassuring one of the two.
+    completeness_ran = completeness and as_of is not None and _prerequisites_are_present(ctx)
+    if completeness_ran and as_of is not None:
         findings.extend(
             evidence_completeness(
                 ctx, installed_ruleset_version=installed_secret_ruleset_version()
@@ -143,7 +154,7 @@ def validate_bundle(
             schema_version=ctx.manifest.schema_version,
             bundle_digest=_reported_bundle_digest(ctx),
             candidate_digest=_reported_candidate_digest(ctx),
-            as_of=as_of if completeness else None,
+            as_of=as_of if completeness_ran else None,
             diagnostics=tuple(findings),
             counts=count_diagnostics(findings),
         )
