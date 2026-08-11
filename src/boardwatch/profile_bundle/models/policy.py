@@ -43,7 +43,7 @@ from boardwatch.profile_bundle.models.base import (
     VerificationBasis,
 )
 from boardwatch.profile_bundle.models.claims import ClaimType
-from boardwatch.profile_bundle.models.evidence import EvidenceClass
+from boardwatch.profile_bundle.models.evidence import BASIS_EVIDENCE_CLASSES, EvidenceClass
 from boardwatch.profile_bundle.models.facts import FactValue, FactValueKind
 from boardwatch.profile_bundle.models.metrics import MetricKind
 
@@ -156,6 +156,21 @@ class PredicateSpec(StrictModel):
             raise ValueError(
                 f"{self.predicate_id}: legal_string_values is set but `string` is not a legal "
                 "value type, so the enumeration could never apply"
+            )
+        return self
+
+    @model_validator(mode="after")
+    def _verification_bases_need_evidence_routes(self) -> PredicateSpec:
+        for basis in self.legal_verification_bases:
+            corresponding = BASIS_EVIDENCE_CLASSES[basis.value]
+            if any(
+                not corresponding.isdisjoint(alternative.classes)
+                for alternative in self.minimum_evidence
+            ):
+                continue
+            raise ValueError(
+                f"{self.predicate_id}: legal verification basis {basis.value!r} has no "
+                "minimum_evidence alternative containing a corresponding evidence class"
             )
         return self
 

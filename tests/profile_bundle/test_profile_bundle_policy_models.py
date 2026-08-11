@@ -139,9 +139,25 @@ def test_owner_attestation_authority_catalog_is_the_declared_three() -> None:
 
 def test_minimum_evidence_alternatives_may_carry_a_combination() -> None:
     spec = PredicateSpec.model_validate(
-        _predicate(minimum_evidence=[{"classes": ["public_record", "private_document"]}])
+        _predicate(
+            minimum_evidence=[{"classes": ["public_record", "private_document"]}],
+            legal_verification_bases=[
+                "public_record_verified",
+                "private_document_verified",
+            ],
+        )
     )
     assert spec.minimum_evidence[0].classes == ("private_document", "public_record")
+
+
+def test_every_legal_verification_basis_has_a_satisfiable_evidence_route() -> None:
+    with pytest.raises(ValidationError):
+        PredicateSpec.model_validate(
+            _predicate(
+                minimum_evidence=[{"classes": ["private_document"]}],
+                legal_verification_bases=["public_record_verified"],
+            )
+        )
 
 
 @pytest.mark.parametrize(
