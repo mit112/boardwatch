@@ -47,10 +47,8 @@ from __future__ import annotations
 
 from collections.abc import Iterator, Mapping
 from datetime import date, timedelta
-from pathlib import Path, PurePosixPath
-from typing import Final, Literal
-
-from pydantic import TypeAdapter, ValidationError
+from pathlib import Path
+from typing import Final
 
 from boardwatch.profile_bundle.canonical import (
     CanonicalizationError,
@@ -59,13 +57,10 @@ from boardwatch.profile_bundle.canonical import (
 )
 from boardwatch.profile_bundle.effective import effective_fact_ids, eligible_metric
 from boardwatch.profile_bundle.errors import (
-    BundlePathError,
     Diagnostic,
     IssueCode,
     JsonValue,
     ProfileBundleError,
-    RestrictedYamlError,
-    UnsupportedSchemaVersionError,
     diagnostic,
     tier_of,
 )
@@ -73,35 +68,22 @@ from boardwatch.profile_bundle.models.base import EFFECTIVE_STATES, Surface, Ver
 from boardwatch.profile_bundle.models.claims import ClaimStatus
 from boardwatch.profile_bundle.models.evidence import SufficiencyState
 from boardwatch.profile_bundle.models.imports import ExclusionLedger
-from boardwatch.profile_bundle.models.manifests import BundleManifest, RevisionManifest
+from boardwatch.profile_bundle.models.manifests import RevisionManifest
 from boardwatch.profile_bundle.models.policy import ExpiryBehaviour
-from boardwatch.profile_bundle.paths import revision_root
-from boardwatch.profile_bundle.schema import require_supported_schema
 from boardwatch.profile_bundle.validation.context import ValidationContext, load_documents
+from boardwatch.profile_bundle.validation.digest import (
+    AncestorFault,
+    AncestorUnverifiable,
+    read_ancestor_manifest,
+)
 from boardwatch.profile_bundle.validation.imports import import_totals
 from boardwatch.profile_bundle.validation.referential import (
     records_blocked_by_unresolved_conflicts,
 )
-from boardwatch.profile_bundle.yaml_loader import load_yaml_bytes
 
 IDENTITY_PATH: Final = "facts/identity.yaml"
 CONFLICTS_PATH: Final = "conflicts/groups.yaml"
 MANIFEST_PATH: Final = "manifest.yaml"
-
-_MANIFEST_ADAPTER: Final[TypeAdapter[BundleManifest]] = TypeAdapter(BundleManifest)
-
-#: Why one ancestor could not be verified. Typed at the raise site so a consumer classifies on
-#: `details["reason"]` rather than on the message text.
-AncestorFault = Literal[
-    "absent",
-    "unreadable",
-    "malformed",
-    "unsupported_schema",
-    "not_a_revision",
-    "declared_digest_mismatch",
-    "content_digest_mismatch",
-    "cycle",
-]
 
 
 def validate_completeness(ctx: ValidationContext, *, as_of: date) -> tuple[Diagnostic, ...]:
@@ -487,14 +469,6 @@ def _surface_coverage(ctx: ValidationContext, effective: frozenset[str]) -> Mapp
 # --------------------------------------------------------------------------------------
 
 
-class _AncestorUnverifiable(ProfileBundleError):
-    """One ancestor could not be verified, with the reason typed rather than described."""
-
-    def __init__(self, reason: AncestorFault, message: str) -> None:
-        super().__init__(message)
-        self.reason: AncestorFault = reason
-
-
 def ancestry_completeness(
     ctx: ValidationContext, *, deep: bool = False
 ) -> tuple[Diagnostic, ...]:
@@ -527,7 +501,7 @@ def _walk_ancestors(
         seen.add(digest)
         try:
             manifest = _ancestor_manifest(bundle_root, digest, blobs_deep=deep, ctx=ctx)
-        except _AncestorUnverifiable as exc:
+        except AncestorUnverifiable as exc:
             yield _ancestor_finding(digest, exc.reason, str(exc))
             return  # everything above an unverifiable ancestor is unreachable too
         digest = manifest.parent_bundle_digest
@@ -546,39 +520,17 @@ def _ancestor_finding(digest: str, reason: AncestorFault, message: str) -> Diagn
 def _ancestor_manifest(
     bundle_root: Path, digest: str, *, blobs_deep: bool, ctx: ValidationContext
 ) -> RevisionManifest:
-    """The stable envelope of one ancestor, or a typed refusal naming why it is unverifiable."""
-    try:
-        root = revision_root(bundle_root, digest)
-    except BundlePathError as exc:
-        raise _AncestorUnverifiable("malformed", str(exc)) from exc
-    path = root / MANIFEST_PATH
-    if not root.is_dir() or not path.is_file():
-        raise _AncestorUnverifiable("absent", f"{root.name} is not on disk")
-    try:
-        raw = path.read_bytes()
-    except OSError as exc:
-        raise _AncestorUnverifiable("unreadable", str(exc)) from exc
-    try:
-        parsed = load_yaml_bytes(raw, logical_path=PurePosixPath(MANIFEST_PATH))
-        manifest = _MANIFEST_ADAPTER.validate_python(parsed)
-    except (RestrictedYamlError, ValidationError) as exc:
-        raise _AncestorUnverifiable("malformed", f"its manifest does not parse: {exc}") from exc
-    try:
-        require_supported_schema(manifest.schema_version)
-    except UnsupportedSchemaVersionError as exc:
-        raise _AncestorUnverifiable("unsupported_schema", str(exc)) from exc
-    if not isinstance(manifest, RevisionManifest):
-        raise _AncestorUnverifiable(
-            "not_a_revision", "its manifest declares state 'draft'; an ancestor is always promoted"
-        )
-    if manifest.bundle_digest != digest:
-        raise _AncestorUnverifiable(
-            "declared_digest_mismatch",
-            f"the directory names {digest} but its manifest declares {manifest.bundle_digest}",
-        )
+    """One ancestor's manifest, plus the deep audit when it was asked for.
+
+    The read itself is `digest.read_ancestor_manifest`, shared with the digest layer's candidate
+    comparison — which needs the same parent envelope and must agree with this walk about whether it
+    is readable at all. Everything this adds is the opt-in byte audit, which is the only part §20.6
+    calls a deep parse.
+    """
+    ancestor = read_ancestor_manifest(bundle_root, digest)
     if blobs_deep:
-        _audit_ancestor_bytes(root, digest, ctx)
-    return manifest
+        _audit_ancestor_bytes(ancestor.root, digest, ctx)
+    return ancestor.manifest
 
 
 def _audit_ancestor_bytes(root: Path, digest: str, ctx: ValidationContext) -> None:
@@ -593,9 +545,9 @@ def _audit_ancestor_bytes(root: Path, digest: str, ctx: ValidationContext) -> No
         documents = load_documents(root, mode="revision")
         computed = bundle_digest(documents, blobs)
     except (ProfileBundleError, MissingBlobError, CanonicalizationError) as exc:
-        raise _AncestorUnverifiable("malformed", f"its documents do not load: {exc}") from exc
+        raise AncestorUnverifiable("malformed", f"its documents do not load: {exc}") from exc
     if computed != digest:
-        raise _AncestorUnverifiable(
+        raise AncestorUnverifiable(
             "content_digest_mismatch",
             f"its documents produce {computed}, not the {digest} that names it",
         )

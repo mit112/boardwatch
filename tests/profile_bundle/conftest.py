@@ -478,6 +478,41 @@ def promote_next_revision(
     )
 
 
+def reseal_without_reapproval(
+    tree: PromotedRevisionTree, *, mutate: Callable[[Any], None]
+) -> PromotedRevisionTree:
+    """Re-seal `tree` around edited content while keeping the owner's original approval.
+
+    This is the forgery §20.6's candidate clause exists to catch, performed exactly as somebody with
+    write access to the bundle would: edit a document, recompute the bundle digest, rename the
+    directory, rewrite `COMPLETE` and `CURRENT`. Every other digest check then agrees, because every
+    other digest is recomputed from the new bytes. Only `approved_candidate_digest` and the approval
+    stamp still describe what the owner actually looked at, which is why the candidate comparison is
+    the single check standing between this tree and a clean report.
+    """
+    staging = tree.bundle_root / f".staging-reseal-{tree.revision}"
+    shutil.copytree(tree.revision_dir, staging)
+    complete_marker_path(staging).unlink()
+
+    path = staging / "skills" / "inventory.yaml"
+    data = load_yaml_bytes(path.read_bytes(), logical_path=PurePosixPath("skills/inventory.yaml"))
+    mutate(data)
+    path.write_bytes(quoted_yaml(data))
+
+    manifest = tree.documents.manifest
+    assert isinstance(manifest, RevisionManifest)
+    shutil.rmtree(tree.revision_dir)  # the digest-named directory is what gets replaced
+    return _seal_revision(
+        tree.bundle_root,
+        staging,
+        manifest_values=manifest.model_dump(mode="json"),
+        changes=list(tree.documents.by_path[PurePosixPath("history/changes.yaml")].changes),
+        stamps=list(tree.documents.by_path[PurePosixPath("history/approvals.yaml")].approvals),
+        candidate_digest=manifest.approved_candidate_digest,
+        revision=tree.revision,
+    )
+
+
 @pytest.fixture
 def promoted_tree(tmp_path: Path) -> PromotedRevisionTree:
     return promote_example_tree(tmp_path / "career-profile")

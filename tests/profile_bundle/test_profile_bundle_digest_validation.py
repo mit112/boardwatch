@@ -20,6 +20,7 @@ carry these tests.
 from __future__ import annotations
 
 import json
+import shutil
 from pathlib import PurePosixPath
 from typing import Any
 
@@ -51,6 +52,7 @@ from tests.profile_bundle.conftest import (
     SyntheticBundle,
     blob_reader,
     quoted_yaml,
+    reseal_without_reapproval,
 )
 
 
@@ -466,25 +468,69 @@ def test_a_missing_blob_is_left_to_the_evidence_layer(
     assert validate_digest(ctx) == ()
 
 
-def test_a_child_revision_makes_no_candidate_claim_without_its_parent(
+def test_a_clean_child_revision_recomputes_its_candidate_digest_from_the_parent_on_disk(
     chained_tree: PromotedRevisionTree,
 ) -> None:
-    """A child revision's candidate digest is not recomputable from the child alone.
+    """A child revision's candidate view folds in its parent's revision number and digest.
 
-    `_candidate_manifest` folds the parent's revision number and bundle digest into the candidate
-    view, so recomputing with `parent=None` yields a different digest — not an approximation. An
-    earlier draft of this layer compared it anyway, which would have reported **every** revision
-    after the first as a candidate mismatch during ordinary validation. The chain fixture is what
-    exposed it; revision 1 is parentless and passed happily.
+    Recomputing with `parent=None` yields a DIFFERENT digest, not an approximation, so a layer that
+    compared it anyway would report every revision after the first as a mismatch. The resolution is
+    to read the parent's stable manifest envelope from disk — the exact subset §7 and §20.6 permit
+    history traversal to read — rather than to decline the comparison.
     """
     assert IssueCode.CANDIDATE_DIGEST_MISMATCH not in codes(chained_tree)
 
 
-def test_a_child_revision_recomputes_its_candidate_digest_when_the_parent_is_supplied(
+def test_a_forged_child_revision_is_reported_without_a_parent_snapshot(
     chained_tree: PromotedRevisionTree,
 ) -> None:
-    """The same check, now able to fire. Without this the skip above would be indistinguishable from
-    the check being broken."""
+    """§20.6's binding of an approval to content, at the revision where it can actually be evaded.
+
+    The tree is re-sealed around a document the owner never approved: the bundle digest is
+    recomputed, the directory renamed, `COMPLETE` and `CURRENT` rewritten. Every other digest check
+    therefore agrees with the new bytes, which is why the assertion is on the *whole* code list —
+    this comparison is the only thing between the forgery and a clean report, and it must fire on
+    the default path, with no caller having supplied a parent snapshot.
+    """
+    forged = reseal_without_reapproval(
+        chained_tree,
+        mutate=lambda data: data["skills"][0].update({"canonical_name": "Never Approved"}),
+    )
+    assert codes(forged) == [IssueCode.CANDIDATE_DIGEST_MISMATCH] * 2
+    assert [finding.path for finding in findings(forged)] == [
+        "manifest.yaml",
+        "history/approvals.yaml",
+    ]
+
+
+def test_a_child_revision_makes_no_claim_when_its_parent_is_not_on_disk(
+    chained_tree: PromotedRevisionTree,
+) -> None:
+    """§21 keeps a selected revision valid when its history is unavailable.
+
+    So an unreadable ancestor withholds the comparison rather than failing it — restoring one old
+    directory from backup must not decide whether the bundle is usable. The absence is reported, as
+    `unverifiable_ancestor`, by `ancestry_completeness`; reporting it twice here under a digest code
+    would send an operator hunting for a second problem.
+    """
+    forged = reseal_without_reapproval(
+        chained_tree,
+        mutate=lambda data: data["skills"][0].update({"canonical_name": "Never Approved"}),
+    )
+    parent_digest = forged.documents.manifest.parent_bundle_digest  # type: ignore[union-attr]
+    assert parent_digest is not None
+    shutil.rmtree(revision_root(forged.bundle_root, parent_digest))
+    assert codes(forged) == []
+
+
+def test_a_supplied_parent_snapshot_is_used_instead_of_the_one_on_disk(
+    chained_tree: PromotedRevisionTree,
+) -> None:
+    """Promotion holds the parent it just validated; it must not be made to re-read it.
+
+    Passing the snapshot has to reach the same verdict as resolving the parent from disk, or the
+    promotion path and the validation path would disagree about the same tree.
+    """
     parent_digest = chained_tree.documents.manifest.parent_bundle_digest  # type: ignore[union-attr]
     assert parent_digest is not None
     earlier = revision_root(chained_tree.bundle_root, parent_digest)

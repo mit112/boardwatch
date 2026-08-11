@@ -22,7 +22,10 @@ because editing both together is a forgery that either comparison alone accepts.
 ## What this layer deliberately does not do
 
 - **It does not deep-parse ancestors.** §20.6 says validation of an already-selected revision does
-  not repeat promotion's parent checks. That is implemented by omission.
+  not repeat promotion's parent checks, and that "ancestor links are traversed through stored
+  manifest digests without deep revalidation". Reading a parent's *stable manifest envelope* is
+  exactly that permitted traversal, and `read_ancestor_manifest` is the one reader that does it;
+  loading an ancestor's documents is the deep parse, and only `deep=True` completeness does that.
 - **It does not report a missing blob.** `validation/evidence.py` already does, under a code that
   names the file. Two codes for one missing blob is noise.
 - **It does not restate `validate_history`'s findings.** The final change entry's revision and
@@ -37,9 +40,11 @@ from __future__ import annotations
 
 import json
 from collections.abc import Callable, Iterator
-from pathlib import Path
+from dataclasses import dataclass
+from pathlib import Path, PurePosixPath
+from typing import Final, Literal
 
-from pydantic import PositiveInt, ValidationError
+from pydantic import PositiveInt, TypeAdapter, ValidationError
 
 from boardwatch.profile_bundle.canonical import (
     CanonicalizationError,
@@ -53,22 +58,57 @@ from boardwatch.profile_bundle.errors import (
     Diagnostic,
     IssueCode,
     ProfileBundleError,
+    RestrictedYamlError,
+    UnsupportedSchemaVersionError,
     diagnostic,
 )
 from boardwatch.profile_bundle.models.base import Sha256Digest, StrictModel
-from boardwatch.profile_bundle.models.manifests import DraftManifest
+from boardwatch.profile_bundle.models.manifests import (
+    BundleManifest,
+    DraftManifest,
+    RevisionManifest,
+    StableManifestEnvelope,
+)
 from boardwatch.profile_bundle.paths import (
     complete_marker_path,
     current_path,
     digest_token,
     require_digest,
+    revision_root,
 )
+from boardwatch.profile_bundle.schema import require_supported_schema
 from boardwatch.profile_bundle.validation.context import ValidationContext
+from boardwatch.profile_bundle.yaml_loader import load_yaml_bytes
 
 MANIFEST_PATH = "manifest.yaml"
 CHANGES_PATH = "history/changes.yaml"
 CURRENT_PATH = "CURRENT"
 COMPLETE_PATH = "COMPLETE"
+
+_MANIFEST_ADAPTER: Final[TypeAdapter[BundleManifest]] = TypeAdapter(BundleManifest)
+
+#: Why one ancestor could not be verified. Typed at the raise site so a consumer classifies on
+#: `details["reason"]` rather than on the message text.
+AncestorFault = Literal[
+    "absent",
+    "unreadable",
+    "malformed",
+    "unsupported_schema",
+    "not_a_revision",
+    "declared_digest_mismatch",
+    "content_digest_mismatch",
+    "cycle",
+]
+
+
+def _why(exc: OSError) -> str:
+    """Why an I/O call failed, with no filesystem path in it.
+
+    Every message this module raises can reach `Diagnostic.message`, which `report_json` emits
+    verbatim; `str(OSError)` appends the absolute path, so a report from a home directory would
+    carry it. The caller already names the logical file.
+    """
+    return exc.strerror or type(exc).__name__
 
 
 class PointerError(ProfileBundleError):
@@ -129,6 +169,69 @@ def read_complete(revision_dir: Path) -> str:
         return require_digest(raw[:-1])
     except BundlePathError as exc:
         raise PointerError(f"{COMPLETE_PATH} does not carry a digest: {exc}") from exc
+
+
+class AncestorUnverifiable(ProfileBundleError):
+    """One ancestor could not be read, with the reason typed rather than described."""
+
+    def __init__(self, reason: AncestorFault, message: str) -> None:
+        super().__init__(message)
+        self.reason: AncestorFault = reason
+
+
+@dataclass(frozen=True)
+class AncestorRevision:
+    """One ancestor's directory and its parsed manifest, as read through its stable envelope."""
+
+    root: Path
+    manifest: RevisionManifest
+
+
+def read_ancestor_manifest(bundle_root: Path, digest: str) -> AncestorRevision:
+    """Read one ancestor's manifest from disk, refusing anything that is not a promoted revision.
+
+    The one reader for §20.6's permitted ancestor traversal. Two callers need it and they need it
+    to agree: `completeness.ancestry_completeness` walks the chain and reports each failure as an
+    `unverifiable_ancestor` blocker, and `_the_candidate_view_recomputes_its_approved_digest` needs
+    the direct parent's `revision` and `bundle_digest` — the `StableManifestEnvelope` fields, and
+    nothing else — to recompute the candidate view of a child revision. A second reader would be a
+    second set of rules about what counts as a readable ancestor.
+
+    Nothing here loads the ancestor's other documents. That is the deep parse §20.6 says validating
+    an already-selected revision does not do; `completeness._audit_ancestor_bytes` is the opt-in
+    that does, and it layers on top of this.
+    """
+    try:
+        root = revision_root(bundle_root, digest)
+    except BundlePathError as exc:
+        raise AncestorUnverifiable("malformed", str(exc)) from exc
+    path = root / MANIFEST_PATH
+    logical = PurePosixPath(root.name) / MANIFEST_PATH
+    if not root.is_dir() or not path.is_file():
+        raise AncestorUnverifiable("absent", f"{root.name} is not on disk")
+    try:
+        raw = path.read_bytes()
+    except OSError as exc:
+        raise AncestorUnverifiable("unreadable", f"{logical} is unreadable: {_why(exc)}") from exc
+    try:
+        parsed = load_yaml_bytes(raw, logical_path=PurePosixPath(MANIFEST_PATH))
+        manifest = _MANIFEST_ADAPTER.validate_python(parsed)
+    except (RestrictedYamlError, ValidationError) as exc:
+        raise AncestorUnverifiable("malformed", f"its manifest does not parse: {exc}") from exc
+    try:
+        require_supported_schema(manifest.schema_version)
+    except UnsupportedSchemaVersionError as exc:
+        raise AncestorUnverifiable("unsupported_schema", str(exc)) from exc
+    if not isinstance(manifest, RevisionManifest):
+        raise AncestorUnverifiable(
+            "not_a_revision", "its manifest declares state 'draft'; an ancestor is always promoted"
+        )
+    if manifest.bundle_digest != digest:
+        raise AncestorUnverifiable(
+            "declared_digest_mismatch",
+            f"the directory names {digest} but its manifest declares {manifest.bundle_digest}",
+        )
+    return AncestorRevision(root=root, manifest=manifest)
 
 
 def validate_digest(ctx: ValidationContext) -> tuple[Diagnostic, ...]:
@@ -284,25 +387,25 @@ def _the_candidate_view_recomputes_its_approved_digest(
     This is what binds an approval to content rather than to a name. It is compared against the
     manifest *and* the final approval stamp: editing both together is a forgery that either
     comparison alone accepts.
+
+    It must fire at every revision, not only the first. A child's candidate view folds in its
+    parent's revision number and digest, and an earlier form of this check declined the comparison
+    whenever no `ParentSnapshot` had been handed in — which `validate_bundle` never does, so the
+    clause was skipped for every revision from 2 onward. Re-sealing such a tree around content no
+    owner approved passed every other digest check, because every other digest is recomputed from
+    the new bytes. `recomputed_candidate_digest` closes it by reading the parent's stable envelope
+    from disk, the traversal §20.6 explicitly permits.
     """
     manifest = ctx.manifest
     if isinstance(manifest, DraftManifest):
         return
-    if manifest.parent_bundle_digest is not None and ctx.parent is None:
-        # The candidate view of a child revision folds in its parent's revision number and digest,
-        # so without the parent snapshot the recomputation is not merely approximate — it is a
-        # different digest, and comparing it would report EVERY revision after the first as a
-        # mismatch. §20.6 says validating an already-selected revision does not deep-parse
-        # ancestors, so the honest behaviour when the ancestor was not supplied is to make no claim.
-        # Promotion (which always holds the parent) is where this becomes mandatory.
-        return
-    blobs = ctx.blobs
-    assert blobs is not None  # `validate_digest` returns early without a reader
-    parent = ctx.parent.envelope if ctx.parent is not None else None
-    computed = _computed(lambda: candidate_digest_from_revision(ctx.documents, blobs, parent))
+    computed = recomputed_candidate_digest(ctx)
     if computed is None:
-        # `candidate_digest_from_revision` raises on the same final-`change_id` mismatch
-        # `validate_history` already reports. Silence here leaves the operator one finding.
+        # Three separate silences, all of them another layer's finding or another layer's absence:
+        # a missing blob (`validation/evidence.py`), a final-`change_id` mismatch that makes the
+        # candidate view unrecoverable (`validate_history`), and an ancestor that is not on disk
+        # (`ancestry_completeness`'s `unverifiable_ancestor` blocker). Reporting any of them here a
+        # second time under a digest code sends an operator hunting for a second problem.
         return
     if computed != manifest.approved_candidate_digest:
         yield diagnostic(
@@ -342,6 +445,50 @@ def _the_final_change_names_the_same_parent(ctx: ValidationContext) -> Iterator[
         )
 
 
+def recomputed_candidate_digest(ctx: ValidationContext) -> str | None:
+    """The candidate digest a promoted revision reduces back to, or `None` when none can be claimed.
+
+    Public because the report needs the same value the check compares: printing the manifest's
+    declared `approved_candidate_digest` would make a never-verified number indistinguishable from a
+    verified one in machine output, and `None` here is precisely "this run made no claim".
+
+    The parent is resolved in one of two ways and never guessed at. A caller that already holds the
+    parent — promotion does — supplies a `ParentSnapshot`; anyone else gets it read from disk, since
+    §20.6 permits traversing ancestor links through their stored manifest digests. Only the stable
+    envelope's `revision` and `bundle_digest` are read — exactly what
+    `canonical._candidate_manifest` consumes.
+    """
+    manifest = ctx.manifest
+    blobs = ctx.blobs
+    if isinstance(manifest, DraftManifest) or blobs is None:
+        return None
+    try:
+        parent = _parent_envelope(ctx, manifest)
+    except AncestorUnverifiable:
+        return None
+    return _computed(lambda: candidate_digest_from_revision(ctx.documents, blobs, parent))
+
+
+def _parent_envelope(
+    ctx: ValidationContext, manifest: RevisionManifest
+) -> StableManifestEnvelope | None:
+    """The direct parent's stable envelope, `None` for revision 1, or a typed refusal.
+
+    `None` is a real answer — revision 1 has no parent and its candidate view says so — which is why
+    an unreadable parent raises rather than returning `None`: folding "there is no parent" into
+    "the parent could not be read" would compare a child revision against a parentless candidate
+    view and report every such revision as a forgery.
+    """
+    declared = manifest.parent_bundle_digest
+    if declared is None:
+        return None
+    if ctx.parent is not None:
+        return ctx.parent.envelope
+    if ctx.bundle_root is None:
+        raise AncestorUnverifiable("absent", "no bundle root was supplied to resolve the parent in")
+    return read_ancestor_manifest(ctx.bundle_root, declared).manifest.envelope
+
+
 def _bundle_digest_of(ctx: ValidationContext) -> str | None:
     blobs = ctx.blobs
     assert blobs is not None  # `validate_digest` returns early without a reader
@@ -362,9 +509,14 @@ def _computed(compute: Callable[[], str]) -> str | None:
 
 
 __all__ = [
+    "AncestorFault",
+    "AncestorRevision",
+    "AncestorUnverifiable",
     "CurrentPointer",
     "PointerError",
+    "read_ancestor_manifest",
     "read_complete",
     "read_current",
+    "recomputed_candidate_digest",
     "validate_digest",
 ]

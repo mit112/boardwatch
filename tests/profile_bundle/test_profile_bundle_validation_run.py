@@ -31,6 +31,7 @@ from tests.profile_bundle.conftest import (
     PromotedRevisionTree,
     SyntheticBundle,
     quoted_yaml,
+    reseal_without_reapproval,
 )
 
 AS_OF = date(2026, 8, 11)
@@ -517,3 +518,46 @@ def test_a_draft_whose_blob_is_gone_reports_no_candidate_digest(
     outcome = draft_outcome(synthetic_bundle)
     assert outcome.value.candidate_digest is None
     assert IssueCode.MISSING_BLOB in {d.code for d in outcome.diagnostics}
+
+
+# --------------------------------------------------------------------------------------
+# What the reported candidate digest means
+# --------------------------------------------------------------------------------------
+
+
+def test_the_reported_candidate_digest_is_the_one_this_tree_recomputes(
+    chained_tree: PromotedRevisionTree,
+) -> None:
+    """Never the manifest's declared value, which is the number under suspicion.
+
+    Reporting `approved_candidate_digest` verbatim made a never-verified declaration
+    indistinguishable in JSON from a verified one: a re-sealed revision that no owner ever approved
+    printed the forged tree's *claimed* digest under the same key, with the same shape, as a clean
+    one. The field is the digest the bytes on disk reduce to, so a consumer diffing it against the
+    approval stamp sees the forgery.
+    """
+    forged = reseal_without_reapproval(
+        chained_tree,
+        mutate=lambda data: data["skills"][0].update({"canonical_name": "Never Approved"}),
+    )
+    declared = forged.documents.manifest.approved_candidate_digest
+    report = revision_outcome(forged).value
+    assert report.candidate_digest is not None
+    assert report.candidate_digest != declared
+    assert IssueCode.CANDIDATE_DIGEST_MISMATCH in {d.code for d in revision_outcome(forged).diagnostics}
+
+
+def test_a_revision_whose_parent_is_off_disk_reports_no_candidate_digest(
+    chained_tree: PromotedRevisionTree,
+) -> None:
+    """`None` is "this run made no claim", and it is the only honest answer here.
+
+    The candidate view folds in the parent's revision number and digest, so with the parent gone
+    there is nothing to recompute against. Printing the declared value instead would present an
+    unverified number exactly as a verified one — which is what §21 keeping a revision valid through
+    unavailable history must not be allowed to cost.
+    """
+    parent_digest = chained_tree.documents.manifest.parent_bundle_digest
+    assert parent_digest is not None
+    shutil.rmtree(revision_root(chained_tree.bundle_root, parent_digest))
+    assert revision_outcome(chained_tree).value.candidate_digest is None

@@ -58,7 +58,10 @@ from boardwatch.profile_bundle.validation.context import (
     build_context,
     parse_error_diagnostics,
 )
-from boardwatch.profile_bundle.validation.digest import validate_digest
+from boardwatch.profile_bundle.validation.digest import (
+    recomputed_candidate_digest,
+    validate_digest,
+)
 from boardwatch.profile_bundle.validation.evidence import (
     evidence_completeness,
     validate_evidence_structural,
@@ -166,19 +169,22 @@ def _reported_bundle_digest(ctx: ValidationContext) -> str | None:
 
 
 def _reported_candidate_digest(ctx: ValidationContext) -> str | None:
-    """The digest an owner approves.
+    """The candidate digest THIS TREE recomputes — never a value it merely declares.
 
-    Declared for a promoted revision — `validate_digest` separately proves the revision recomputes
-    it — and RECOMPUTED for a draft, where the manifest carries a sentinel and the whole point of
-    `validate --draft` is to hand the owner the digest to approve (§19 step 7).
+    For a draft that is the digest the owner is being asked to approve (§19 step 7); for a promoted
+    revision it is the inverse candidate view §20.6 requires to equal both the manifest's
+    `approved_candidate_digest` and the appended approval stamp. Both are computed from the bytes on
+    disk, so the field means one thing in machine output.
 
-    `None` for a draft whose parent was not supplied: the candidate view folds in the parent's
-    revision number and digest, so recomputing without it produces a different digest rather than an
-    approximate one, and printing it would invite an owner to approve a value nothing will match.
+    Reporting `manifest.approved_candidate_digest` verbatim is what this replaces: a re-sealed
+    revision nobody approved printed its own claim under the same key as a verified value, and no
+    consumer could tell them apart. `None` is "this run made no claim" — a missing blob, an
+    unrecoverable candidate view, or a parent that is not on disk — and it is deliberately
+    indistinguishable from a draft whose parent was not supplied, because both are the same absence.
     """
     manifest = ctx.manifest
     if isinstance(manifest, RevisionManifest):
-        return manifest.approved_candidate_digest
+        return recomputed_candidate_digest(ctx)
     if manifest.parent_bundle_digest is not None and ctx.parent is None:
         return None
     blobs = ctx.blobs
