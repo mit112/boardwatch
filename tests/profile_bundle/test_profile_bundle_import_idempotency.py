@@ -1381,3 +1381,134 @@ def test_the_packaged_examples_own_locators_all_match_their_adapters(
     reviewer's counter-examples instead of against the emitter.
     """
     assert IssueCode.IMPORT_ENUMERATOR_MISMATCH not in codes(findings(synthetic_bundle))
+
+
+# --------------------------------------------------------------------------------------
+# Round-3 review findings: forgeries that passed all four validation layers
+# --------------------------------------------------------------------------------------
+
+
+def test_a_heading_named_root_is_importable_end_to_end(
+    synthetic_bundle: SyntheticBundle,
+) -> None:
+    """The round-three headline, and round one's defect class repeated.
+
+    `_` is unreserved, so the encoder returned `_root` unchanged for a heading literally named
+    `_root`; the D-122 scope refusal then made that legitimate repository source unimportable. The
+    encoder now escapes the collision, so the two namespaces are distinct and both are valid.
+    """
+    spec = SourceSpec(
+        source_id="source.synthetic-repository",
+        source_kind=SourceKind.REPOSITORY_MARKDOWN,
+        portable_locator="packet-pantry/README.md",
+    )
+    enumerated = enumerate_source(
+        spec,
+        b"Pre-heading prose.\n\n# _root\n\nInside the heading.\n",
+        scope=SelectedSectionsScope(kind="selected_sections", locators=("%5Froot",)),
+    )
+    assert [record.normalized_locator for record in enumerated.records] == [
+        "%5Froot/heading",
+        "%5Froot/paragraph-1",
+    ]
+
+    def rehome(data: Any) -> None:
+        for source in data["sources"]:
+            if source["approved_scope"]["kind"] == "selected_sections":
+                source["approved_scope"]["locators"] = ["%5Froot"]
+        for record in data["records"]:
+            if record["source_id"] != "source.synthetic-repository":
+                continue
+            record["normalized_locator"] = "%5Froot/paragraph-1"
+            record["source_record_id"] = derive_source_record_id(
+                record["source_id"], "%5Froot/paragraph-1"
+            )
+
+    original = [
+        record.source_record_id
+        for record in build_context(synthetic_bundle.draft, mode="draft").index.ledger_records
+        if record.source_id == "source.synthetic-repository"
+    ]
+    edit_document(synthetic_bundle, "imports/source-ledger.yaml", rehome)
+
+    def repoint(data: Any) -> None:
+        for source in data["sources"]:
+            source["source_record_ids"] = [
+                derive_source_record_id("source.synthetic-repository", "%5Froot/paragraph-1")
+                if item in original
+                else item
+                for item in source["source_record_ids"]
+            ]
+
+    edit_document(synthetic_bundle, "imports/source-ledger.yaml", repoint)
+    scoped = [
+        found
+        for found in findings(synthetic_bundle)
+        if found.code == IssueCode.IMPORT_SCOPE_INVALID
+    ]
+    assert scoped == []
+
+
+def test_a_forged_record_deeper_than_markdown_can_nest_is_reported(
+    synthetic_bundle: SyntheticBundle,
+) -> None:
+    """Seven heading segments plus a terminal. `_HEADING_RE` caps nesting at six, so no
+    enumeration of any Markdown source produced this; the grammar used to accept any depth."""
+    edit_document(
+        synthetic_bundle,
+        "imports/source-ledger.yaml",
+        lambda data: relocate(data, "a/b/c/d/e/f/g/paragraph-1"),
+    )
+    assert IssueCode.IMPORT_ENUMERATOR_MISMATCH in codes(findings(synthetic_bundle))
+
+
+def test_a_forged_structured_record_carrying_a_raw_duplicate_suffix_is_reported(
+    synthetic_bundle: SyntheticBundle,
+) -> None:
+    """`objects/synthetic~2` is a normalized locator, so the normalization check cannot fire.
+
+    Only the Markdown adapter applies `~N`, and it applies it to a resolved heading path after
+    encoding. The structured adapter encodes every key, so a `~` reaches its locators only as
+    `%7E` — which makes this a hand-written record sitting in the Gate B denominator.
+    """
+    locator = "objects/synthetic~2"
+    record_id = derive_source_record_id("source.synthetic-private-record", locator)
+
+    def enumerate_privately(data: Any) -> None:
+        data["sources"].append(
+            {
+                "source_id": "source.synthetic-private-record",
+                "enumerator_id": "structured-objects-v1",
+                "enumerator_version": 1,
+                "source_content_digest": "sha256:" + "0" * 64,
+                "approved_scope": {"kind": "complete_file"},
+                "source_record_ids": [record_id],
+            }
+        )
+        data["records"].append(
+            {
+                "source_record_id": record_id,
+                "source_id": "source.synthetic-private-record",
+                "normalized_locator": locator,
+                "disposition": "excluded",
+                "candidate_ids": [],
+            }
+        )
+
+    def explain(data: Any) -> None:
+        data["exclusions"].append(
+            {
+                "source_record_id": record_id,
+                "reason": "no_candidate_assertion",
+                "rationale": "Structural key with no assertion.",
+            }
+        )
+
+    edit_document(synthetic_bundle, "imports/source-ledger.yaml", enumerate_privately)
+    edit_document(synthetic_bundle, "imports/exclusions.yaml", explain)
+    reported = [
+        found
+        for found in findings(synthetic_bundle)
+        if found.code == IssueCode.IMPORT_ENUMERATOR_MISMATCH and found.record_id == record_id
+    ]
+    assert len(reported) == 1

@@ -203,6 +203,11 @@ def _approved_scopes_match_the_source_kind(ctx: ValidationContext) -> Iterator[D
             # `_root` holds the blocks before the first heading and is never a heading path, so
             # the adapter refuses it. Validation has to agree, or a bundle validates clean and
             # then cannot be re-enumerated from its own source.
+            #
+            # This is only sound because `_root` is RESERVED by the encoder. It was added before
+            # the reservation was, and a heading literally named `_root` then resolved to `_root`
+            # as well — so this refusal made that legitimate source unimportable, which is the
+            # defect class it was written to prevent. Such a heading now resolves to `%5Froot`.
             if locator == ROOT_SEGMENT or locator.startswith(f"{ROOT_SEGMENT}/"):
                 yield diagnostic(
                     IssueCode.IMPORT_SCOPE_INVALID,

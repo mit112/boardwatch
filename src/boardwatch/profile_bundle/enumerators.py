@@ -66,6 +66,13 @@ class EnumerationError(ProfileBundleError):
 #: The only characters left unescaped: ASCII alphanumerics plus `._-` (§18).
 _UNRESERVED: Final[frozenset[str]] = frozenset(string.ascii_letters + string.digits + "._-")
 
+#: Segments an adapter emits DIRECTLY rather than through `encode_locator_segment`. `_` is
+#: unreserved, so without this the encoder returned `_root` unchanged for a heading literally named
+#: `_root` and two different logical sections shared one namespace — pre-heading content and that
+#: heading derived the same record IDs. A new synthetic segment must be added here as well, or it
+#: reintroduces the collision.
+_RESERVED_SEGMENTS: Final[frozenset[str]] = frozenset({ROOT_SEGMENT})
+
 #: The deterministic duplicate-path suffix `~2`, `~3`, … A `~1` is never emitted, so it is not
 #: recognised either; recognising it would make two spellings of the first occurrence.
 _DUPLICATE_SUFFIX_RE: Final = re.compile(r"^(?P<body>.*)~(?P<index>[2-9]|[1-9][0-9]+)$")
@@ -104,6 +111,10 @@ def _encode_text(text: str) -> str:
 
     Split out so `is_normalized_locator` can be defined as this function's exact inverse rather
     than as a hand-written grammar. A grammar drifts from the encoder; a round trip cannot.
+
+    A body that would land on a reserved segment has its first character escaped instead. Refusing
+    it outright would make a document carrying such a heading unenumerable, which is the same
+    "legitimate source is unimportable" defect the reservation exists to prevent.
     """
     encoded: list[str] = []
     for character in text:
@@ -111,7 +122,11 @@ def _encode_text(text: str) -> str:
             encoded.append(character)
             continue
         encoded.extend(f"%{byte:02X}" for byte in character.encode("utf-8"))
-    return "".join(encoded)
+    joined = "".join(encoded)
+    if joined not in _RESERVED_SEGMENTS:
+        return joined
+    escaped = "".join(f"%{byte:02X}" for byte in joined[0].encode("utf-8"))
+    return escaped + joined[1:]
 
 
 def _decoded_segment(segment: str) -> str | None:
@@ -168,6 +183,22 @@ def normalize_locator(raw: str, *, adapter: SourceEnumerator) -> str:
     return "/".join(segments)
 
 
+def is_emitted_segment(segment: str) -> bool:
+    """Whether `segment` is exactly what `encode_locator_segment` produces for its own text.
+
+    No duplicate-suffix exception, deliberately. `~N` is applied by the Markdown adapter to a
+    resolved heading path *after* encoding, so it is meaningful there and nowhere else: every
+    other adapter writes its segments through the encoder, which escapes `~` to `%7E`. An adapter
+    grammar therefore asks this question directly, while `is_normalized_locator` — which is
+    adapter-blind, because it also has to admit the scope locators an owner authors — allows the
+    suffix. `objects/synthetic~2` is the difference: a normalized locator no adapter can emit.
+    """
+    if not segment or segment in (".", ".."):
+        return False
+    decoded = _decoded_segment(segment)
+    return decoded is not None and _canonical_encoding(decoded) == segment
+
+
 def is_normalized_locator(text: str) -> bool:
     """Whether `text` is exactly what an adapter would have emitted.
 
@@ -189,12 +220,13 @@ def is_normalized_locator(text: str) -> bool:
     if not text:
         return False
     for part in text.split("/"):
+        if part in _RESERVED_SEGMENTS:
+            # Emitted by an adapter directly, so it is not the encoder's output and cannot be
+            # compared against it. `_root~2` is refused: the suffix is a heading-path device and
+            # a reserved segment is never a heading path.
+            continue
         match = _DUPLICATE_SUFFIX_RE.match(part)
-        body = match.group("body") if match is not None else part
-        if not body or body in (".", ".."):
-            return False
-        decoded = _decoded_segment(body)
-        if decoded is None or _canonical_encoding(decoded) != body:
+        if not is_emitted_segment(match.group("body") if match is not None else part):
             return False
     return True
 
@@ -377,6 +409,11 @@ class BoardwatchResumeEnumerator:
         emission stages are a closed set of shapes, so a locator that matches none of them is one
         no enumeration ever produced. Kept beside `_locator` deliberately: a grammar written
         anywhere else drifts from the emitter the first time a stage is added.
+
+        Every variable segment goes through `_locator`, which is `encode_locator_segment` — so it
+        is checked with `is_emitted_segment` rather than accepted as any string. This adapter has
+        no duplicate-path rule, so `entries/entry~2/metadata` is a spelling it cannot produce even
+        though the adapter-blind locator predicate accepts it.
         """
         parts = locator.split("/")
         head = parts[0]
@@ -385,10 +422,12 @@ class BoardwatchResumeEnumerator:
         if head == "title":
             return len(parts) == 1
         if head == "skill-groups":
-            return len(parts) == 3 and _is_index(parts[2])
+            return len(parts) == 3 and is_emitted_segment(parts[1]) and _is_index(parts[2])
         if head == "entries":
+            if len(parts) < 3 or not is_emitted_segment(parts[1]):
+                return False
             return (len(parts) == 3 and parts[2] == "metadata") or (
-                len(parts) == 4 and parts[2] == "bullets"
+                len(parts) == 4 and parts[2] == "bullets" and is_emitted_segment(parts[3])
             )
         return False
 
@@ -481,7 +520,12 @@ def _identity(authored_id: str) -> str:
 # markdown-blocks-v1 (§18.1)
 # --------------------------------------------------------------------------------------
 
-_HEADING_RE: Final = re.compile(r"^(#{1,6})[ \t]+(.+?)[ \t]*$")
+#: How deep Markdown headings nest. `_HEADING_RE` is BUILT from this and `emits_locator` READS it,
+#: so the grammar's depth cap cannot drift from the syntax the parser accepts. Restating the number
+#: in the grammar is what let a seven-level forged record pass every validation layer.
+_MAX_HEADING_LEVEL: Final = 6
+
+_HEADING_RE: Final = re.compile(rf"^(#{{1,{_MAX_HEADING_LEVEL}}})[ \t]+(.+?)[ \t]*$")
 _FENCE_RE: Final = re.compile(r"^ {0,3}(`{3,}|~{3,})")
 _LIST_ITEM_RE: Final = re.compile(r"^ {0,3}(?:[-+*]|[0-9]+[.)])[ \t]+")
 
@@ -489,6 +533,22 @@ _LIST_ITEM_RE: Final = re.compile(r"^ {0,3}(?:[-+*]|[0-9]+[.)])[ \t]+")
 #: The block kinds `MarkdownBlocksEnumerator._blocks` emits with a 1-based index. `heading` is
 #: deliberately absent: it is the one kind whose locator carries no number.
 _NUMBERED_BLOCK_KINDS: Final[frozenset[str]] = frozenset({"paragraph", "fence", "list-item"})
+
+
+def _is_heading_segment(segment: str) -> bool:
+    """One resolved heading path segment: an encoded body, optionally with the `~N` suffix.
+
+    `_unique_segment` applies the suffix after encoding, so this is the one place a raw `~` is
+    something an adapter emits. A reserved segment is not a heading path and is refused here.
+    """
+    match = _DUPLICATE_SUFFIX_RE.match(segment)
+    return is_emitted_segment(match.group("body") if match is not None else segment)
+
+
+def _is_numbered_terminal(terminal: str) -> bool:
+    """`<kind>-<N>` for a closed block kind, which is what `_locator` emits for a non-heading."""
+    kind, _, index = terminal.rpartition("-")
+    return kind in _NUMBERED_BLOCK_KINDS and _is_index(index)
 
 
 def _is_index(text: str) -> bool:
@@ -559,19 +619,24 @@ class MarkdownBlocksEnumerator:
     def emits_locator(self, locator: str) -> bool:
         """Whether `locator` has a shape `_locator` can produce, with no source bytes read.
 
-        Which heading path exists genuinely needs the file; the terminal segment does not. It is
-        `heading`, or one of the closed block kinds followed by a 1-based index. A locator failing
-        this could not have come from any enumeration of any Markdown source, so it is a
-        hand-written record sitting in the denominator.
+        Which heading path exists genuinely needs the file; its DEPTH and its segments' spelling do
+        not. `_HEADING_RE` nests at most `_MAX_HEADING_LEVEL` levels, so a path deeper than that is
+        one no enumeration of any Markdown source produced — the grammar used to accept any depth
+        because it restated the emitter's rules instead of reading its constants.
+
+        The terminal segment is `heading`, or one of the closed block kinds followed by a 1-based
+        index. `_root` is the one path that is not a heading path: it holds the blocks before the
+        first heading, so it stands alone and never carries `/heading`.
         """
         parts = locator.split("/")
-        if len(parts) < 2:
+        if len(parts) < 2 or len(parts) > _MAX_HEADING_LEVEL + 1:
             return False
-        terminal = parts[-1]
-        if terminal == "heading":
-            return True
-        kind, _, index = terminal.rpartition("-")
-        return kind in _NUMBERED_BLOCK_KINDS and _is_index(index)
+        path, terminal = parts[:-1], parts[-1]
+        if path == [ROOT_SEGMENT]:
+            return _is_numbered_terminal(terminal)
+        if not all(_is_heading_segment(part) for part in path):
+            return False
+        return terminal == "heading" or _is_numbered_terminal(terminal)
 
     def _blocks(self, lines: list[str]) -> tuple[list[_Block], list[str]]:
         """One ordered pass. Returns the blocks and every resolved heading path, in source order."""
@@ -739,11 +804,12 @@ class StructuredObjectsEnumerator:
         """Whether `locator` has a shape `enumerate` can produce, with no source bytes read.
 
         Every record is one identified object under a fixed `objects/` prefix, so the shape is
-        exactly two segments. Which keys exist needs the file; that there are never three segments
-        does not.
+        exactly two segments. Which keys exist needs the file; that there are never three segments,
+        and that the key is exactly the encoder's own output, do not. This adapter has no duplicate
+        rule at all, so a `~` reaches its locators only as `%7E`.
         """
         parts = locator.split("/")
-        return len(parts) == 2 and parts[0] == "objects"
+        return len(parts) == 2 and parts[0] == "objects" and is_emitted_segment(parts[1])
 
     def _encoded(self, raw: object, what: str, seen: set[str]) -> str:
         if not isinstance(raw, str) or not raw.strip():
