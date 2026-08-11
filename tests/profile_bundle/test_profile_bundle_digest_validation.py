@@ -79,7 +79,7 @@ def edit_revision(tree: PromotedRevisionTree, relative: str, mutate: Any) -> Non
     path = tree.revision_dir / relative
     data = load_yaml_bytes(path.read_bytes(), logical_path=PurePosixPath(relative))
     mutate(data)
-    path.write_bytes(quoted_yaml(data))
+    path.write_bytes(quoted_yaml(data, logical_path=PurePosixPath(relative)))
 
 
 # --------------------------------------------------------------------------------------

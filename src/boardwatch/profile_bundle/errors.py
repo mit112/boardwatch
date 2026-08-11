@@ -408,6 +408,17 @@ def _default_message(code: IssueCode) -> str:
     return str(code).replace("_", " ")
 
 
+def io_reason(exc: OSError) -> str:
+    """Why an I/O operation failed, without the absolute path a stringified `OSError` carries.
+
+    A diagnostic is rendered into JSON an operator may paste elsewhere, and every path in this
+    package's diagnostics is a logical one — an absolute `$HOME` path is neither theirs to publish
+    nor the same on the next machine. The caller has already named the logical path it was working
+    on, so only the reason is missing.
+    """
+    return exc.strerror or type(exc).__name__
+
+
 class ProfileBundleError(Exception):
     """Base for every typed failure this package raises across a module boundary."""
 

@@ -67,7 +67,7 @@ def edit(bundle: SyntheticBundle, relative: str, mutate: Any) -> None:
     path = bundle.document(relative)
     data = load_yaml_bytes(path.read_bytes(), logical_path=PurePosixPath(relative))
     mutate(data)
-    path.write_bytes(quoted_yaml(data))
+    path.write_bytes(quoted_yaml(data, logical_path=PurePosixPath(relative)))
 
 
 def parse_codes(root: Path) -> list[str]:
@@ -643,7 +643,7 @@ def test_an_ancestor_that_renames_itself_is_a_blocker(
     path = parent_root / "manifest.yaml"
     data = load_yaml_bytes(path.read_bytes(), logical_path=PurePosixPath("manifest.yaml"))
     data["bundle_digest"] = "sha256:" + "a" * 64
-    path.write_bytes(quoted_yaml(data))
+    path.write_bytes(quoted_yaml(data, logical_path=PurePosixPath("manifest.yaml")))
     ctx = build_context(
         chained_tree.revision_dir,
         mode="revision",
@@ -670,7 +670,7 @@ def test_a_mutated_ancestor_is_only_caught_by_the_deep_audit(
     path = parent_root / "skills" / "inventory.yaml"
     data = load_yaml_bytes(path.read_bytes(), logical_path=PurePosixPath("skills/inventory.yaml"))
     data["skills"][0]["canonical_name"] = "Edited Ancestor"
-    path.write_bytes(quoted_yaml(data))
+    path.write_bytes(quoted_yaml(data, logical_path=PurePosixPath("skills/inventory.yaml")))
 
     assert ancestry_codes(chained_tree) == []
     ctx = build_context(
@@ -693,7 +693,7 @@ def test_a_self_referential_ancestor_terminates(promoted_tree: PromotedRevisionT
     path = forged_root / "manifest.yaml"
     data = load_yaml_bytes(path.read_bytes(), logical_path=PurePosixPath("manifest.yaml"))
     data.update({"bundle_digest": forged, "revision": 2, "parent_bundle_digest": forged})
-    path.write_bytes(quoted_yaml(data))
+    path.write_bytes(quoted_yaml(data, logical_path=PurePosixPath("manifest.yaml")))
 
     ctx = build_context(
         forged_root, mode="revision", blobs=blob_reader(), bundle_root=promoted_tree.bundle_root
@@ -724,7 +724,7 @@ def test_an_ancestor_from_a_newer_boardwatch_is_a_blocker(
     path = revision_root(chained_tree.bundle_root, parent_digest) / "manifest.yaml"
     data = load_yaml_bytes(path.read_bytes(), logical_path=PurePosixPath("manifest.yaml"))
     data["schema_version"] = 999
-    path.write_bytes(quoted_yaml(data))
+    path.write_bytes(quoted_yaml(data, logical_path=PurePosixPath("manifest.yaml")))
     ctx = build_context(
         chained_tree.revision_dir,
         mode="revision",

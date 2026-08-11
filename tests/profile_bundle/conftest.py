@@ -23,7 +23,6 @@ from pathlib import Path, PurePosixPath
 from typing import Any
 
 import pytest
-import yaml
 
 from boardwatch.profile_bundle.approvals import build_approval_stamp, required_approval_decisions
 from boardwatch.profile_bundle.canonical import (
@@ -45,6 +44,7 @@ from boardwatch.profile_bundle.paths import (
 )
 from boardwatch.profile_bundle.validation import load_documents
 from boardwatch.profile_bundle.yaml_loader import load_yaml_bytes
+from boardwatch.profile_bundle.yaml_writer import document_bytes
 
 EXAMPLE_PACKAGE = "boardwatch.profile_bundle"
 EXAMPLE_RELATIVE = "examples/comprehensive"
@@ -218,29 +218,18 @@ def blob_reader() -> MappingBlobReader:
 # --------------------------------------------------------------------------------------
 
 
-def quoted_yaml(payload: object) -> bytes:
-    """Serialise `payload` with every string quoted.
+def quoted_yaml(payload: object, *, logical_path: PurePosixPath) -> bytes:
+    """Serialise `payload` as a document this bundle's loader reads back unchanged.
 
-    `yaml.safe_dump` alone is unusable here: it emits plain scalars the restricted loader refuses,
-    and 6 of the example's 27 documents contain one (`2024-09`, `+1 555 0100 EXAMPLE`,
-    `~120 items/s`, a bare hex digest, and two regexes). Quoting every string sidesteps the plain
-    grammar entirely and cannot change a parsed value, because ints, bools and nulls are untouched.
+    T14 shipped that emitter, so this is now `document_bytes` under the name the fixtures already
+    used: a fixture that carried its own copy of the quoting policy would be a second statement of
+    the authoring contract, and the whole point of `document_bytes` is that it verifies the contract
+    by reading the bytes back instead of restating it.
 
-    This is deliberately a fixture helper, not a production emitter. T14 owns that, and it will
-    need to be cleverer than this; what matters here is that `promote_example_tree` asserts the tree
-    it wrote re-parses to the documents it intended, so a drifting writer fails loudly.
+    `logical_path` is passed through rather than defaulted for the emitter's own reason: it is the
+    only thing that makes a failure locatable.
     """
-
-    class _QuoteStrings(yaml.SafeDumper):
-        pass
-
-    _QuoteStrings.add_representer(
-        str,
-        lambda dumper, value: dumper.represent_scalar("tag:yaml.org,2002:str", value, style="'"),
-    )
-    return yaml.dump(
-        payload, Dumper=_QuoteStrings, sort_keys=False, allow_unicode=True, default_flow_style=False
-    ).encode("utf-8")
+    return document_bytes(payload, logical_path=logical_path)
 
 
 @dataclass(frozen=True)
@@ -320,13 +309,22 @@ def promote_example_tree(bundle_root: Path, *, revision: int = 1) -> PromotedRev
 
     def write_promotion_documents(values: dict[str, object]) -> None:
         (staging / "manifest.yaml").write_bytes(
-            quoted_yaml(RevisionManifest.model_validate(values).model_dump(mode="json"))
+            quoted_yaml(
+                RevisionManifest.model_validate(values).model_dump(mode="json"),
+                logical_path=PurePosixPath("manifest.yaml"),
+            )
         )
         (staging / "history" / "changes.yaml").write_bytes(
-            quoted_yaml({"changes": [change.model_dump(mode="json")]})
+            quoted_yaml(
+                {"changes": [change.model_dump(mode="json")]},
+                logical_path=PurePosixPath("history/changes.yaml"),
+            )
         )
         (staging / "history" / "approvals.yaml").write_bytes(
-            quoted_yaml({"approvals": [stamp.model_dump(mode="json")]})
+            quoted_yaml(
+                {"approvals": [stamp.model_dump(mode="json")]},
+                logical_path=PurePosixPath("history/approvals.yaml"),
+            )
         )
 
     return _seal_revision(
@@ -361,13 +359,22 @@ def _seal_revision(
 
     def write(values: dict[str, object]) -> None:
         (staging / "manifest.yaml").write_bytes(
-            quoted_yaml(RevisionManifest.model_validate(values).model_dump(mode="json"))
+            quoted_yaml(
+                RevisionManifest.model_validate(values).model_dump(mode="json"),
+                logical_path=PurePosixPath("manifest.yaml"),
+            )
         )
         (staging / "history" / "changes.yaml").write_bytes(
-            quoted_yaml({"changes": [one.model_dump(mode="json") for one in changes]})
+            quoted_yaml(
+                {"changes": [one.model_dump(mode="json") for one in changes]},
+                logical_path=PurePosixPath("history/changes.yaml"),
+            )
         )
         (staging / "history" / "approvals.yaml").write_bytes(
-            quoted_yaml({"approvals": [one.model_dump(mode="json") for one in stamps]})
+            quoted_yaml(
+                {"approvals": [one.model_dump(mode="json") for one in stamps]},
+                logical_path=PurePosixPath("history/approvals.yaml"),
+            )
         )
 
     write(manifest_values)
@@ -417,9 +424,10 @@ def promote_next_revision(
     complete_marker_path(staging).unlink()
 
     path = staging / "skills" / "inventory.yaml"
-    data = load_yaml_bytes(path.read_bytes(), logical_path=PurePosixPath("skills/inventory.yaml"))
+    logical = PurePosixPath("skills/inventory.yaml")
+    data = load_yaml_bytes(path.read_bytes(), logical_path=logical)
     mutate(data)
-    path.write_bytes(quoted_yaml(data))
+    path.write_bytes(quoted_yaml(data, logical_path=logical))
 
     parent_manifest = parent.documents.manifest
     assert isinstance(parent_manifest, RevisionManifest)

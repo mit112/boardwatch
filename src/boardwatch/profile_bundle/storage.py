@@ -17,16 +17,27 @@ skipped it would still return something that looked coherent:
 
 `read_current` is T13's, defined next to the model it parses, and is deliberately reused rather than
 reimplemented — two readers for one 45-byte file are two chances to disagree about what it says.
-What this module adds is the *once*: every public read operation in the subsystem enters through
+What this module adds is the *once*: every operation that resolves a selection enters through
 `read_current_once`, so "how many times did this command read the pointer?" has one answer that a
-test can assert by counting calls.
+test can assert by counting calls. (`validate` is not one of them: it is given a tree and a bundle
+root and reads the pointer through `validation.digest.read_current`, once, to find an ancestor.)
+
+**The symbol a test must patch is `storage.read_current`, never `storage.read_current_once`.**
+`drafts`, `inspection` and the rebase path all do `from …storage import read_current_once`, which
+binds the function object at import; replacing this module's attribute afterwards reaches none of
+them, and a counting test written that way would observe zero calls and pass while measuring
+nothing. `read_current` is different because it is resolved as a module global *inside*
+`read_current_once`, at call time — which is the only reason the existing counting tests work.
 
 ## Why a symlink is refused here and not by the layout walker
 
 `discover_source_files` refuses every symlink it walks past, but it starts *inside* the tree and so
-never examines the tree's own root, nor `CURRENT`, which is not a document at all. Those two are the
-paths that decide which bytes the walker will be pointed at, which makes them the confinement
-boundary rather than an extra check beside one.
+never examines the tree's own root, nor the bundle root's own members, none of which are documents.
+Those are the paths that decide which bytes the walker will be pointed at, which makes them the
+confinement boundary rather than an extra check beside one. `require_confined_root` states that
+boundary once over the whole declared grammar, rather than once per directory a command happens to
+touch: `approvals/` and `revisions/` hold nothing until promotion writes them, and a per-directory
+guard would leave exactly those two escapes armed for the slice that does.
 """
 
 from __future__ import annotations
@@ -40,6 +51,7 @@ from boardwatch.profile_bundle.models.manifests import RevisionManifest
 from boardwatch.profile_bundle.paths import (
     COMPLETE_FILE,
     CURRENT_FILE,
+    ROOT_MEMBERS,
     current_path,
     revision_root,
 )
@@ -76,6 +88,28 @@ class SelectedRevision:
     bundle_digest: str
 
 
+def require_confined_root(bundle_root: Path) -> None:
+    """Refuse a bundle root that reaches outside itself through one of its declared members.
+
+    §6 says the active revision and all required evidence are self-contained under one root, and §7
+    depends on it: blob bytes are hashed into `evidence_set_digest` and therefore into
+    `bundle_digest`, so a symlinked `blobs/` would let content nobody can see from the root decide
+    the bundle's identity.
+
+    Written over `ROOT_MEMBERS` — the same closed grammar `inventory` reports against — so that a
+    member added later, and every writer added later, inherits the check instead of restating it.
+    A dangling symlink is refused too: `is_symlink` does not follow, and a member that resolves to
+    nothing today is still a member that is not inside this root.
+    """
+    for member in sorted(ROOT_MEMBERS):
+        if (bundle_root / member).is_symlink():
+            raise SelectionError(
+                IssueCode.SYMLINK_REFUSED,
+                f"{member} is a symlink; a bundle is self-contained under one root, so every "
+                "declared member of it must be a real file or directory inside that root",
+            )
+
+
 def read_current_once(bundle_root: Path) -> SelectedRevision:
     """Resolve the selected revision, reading `CURRENT` exactly one time.
 
@@ -83,19 +117,14 @@ def read_current_once(bundle_root: Path) -> SelectedRevision:
     selection has no revision to report *about*, and every caller here either refuses outright or
     reports the failure as its own finding (`inventory` does the latter).
     """
+    require_confined_root(bundle_root)
     pointer_path = current_path(bundle_root)
-    if pointer_path.is_symlink():
-        raise SelectionError(
-            IssueCode.SYMLINK_REFUSED,
-            f"{CURRENT_FILE} is a symlink; the selected revision must be named by a file inside "
-            "the bundle root",
-        )
     if not pointer_path.exists():
         # Promotion only ever `os.replace`s this path, never unlinks it, so an absent `CURRENT` is
         # a bundle that has never been promoted rather than a race against a promotion in flight.
         raise SelectionError(
             IssueCode.NO_CURRENT_REVISION,
-            f"{bundle_root} has no {CURRENT_FILE}; no revision has been promoted yet",
+            f"there is no {CURRENT_FILE} in this bundle; no revision has been promoted yet",
         )
     try:
         pointer = read_current(bundle_root)
@@ -170,5 +199,6 @@ __all__ = [
     "SelectionError",
     "read_current",
     "read_current_once",
+    "require_confined_root",
     "selected_documents",
 ]

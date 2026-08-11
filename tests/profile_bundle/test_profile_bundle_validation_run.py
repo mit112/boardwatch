@@ -16,13 +16,13 @@ from __future__ import annotations
 
 import shutil
 from datetime import date
-from pathlib import PurePosixPath
+from pathlib import Path, PurePosixPath
 from typing import Any
 
 import pytest
 
 from boardwatch.profile_bundle.errors import IssueCode
-from boardwatch.profile_bundle.paths import revision_root
+from boardwatch.profile_bundle.paths import BLOBS_DIR, revision_root
 from boardwatch.profile_bundle.reports import report_json
 from boardwatch.profile_bundle.validation import run as run_module
 from boardwatch.profile_bundle.validation.run import validate_bundle
@@ -40,14 +40,14 @@ def edit_revision(tree: PromotedRevisionTree, relative: str, mutate: Any) -> Non
     path = tree.revision_dir / relative
     data = load_yaml_bytes(path.read_bytes(), logical_path=PurePosixPath(relative))
     mutate(data)
-    path.write_bytes(quoted_yaml(data))
+    path.write_bytes(quoted_yaml(data, logical_path=PurePosixPath(relative)))
 
 
 def edit_draft(bundle: SyntheticBundle, relative: str, mutate: Any) -> None:
     path = bundle.document(relative)
     data = load_yaml_bytes(path.read_bytes(), logical_path=PurePosixPath(relative))
     mutate(data)
-    path.write_bytes(quoted_yaml(data))
+    path.write_bytes(quoted_yaml(data, logical_path=PurePosixPath(relative)))
 
 
 def revision_outcome(tree: PromotedRevisionTree, **kwargs: Any) -> Any:
@@ -73,6 +73,28 @@ def test_a_promoted_revision_validates_clean_without_completeness(
     outcome = revision_outcome(promoted_tree)
     assert (outcome.category, outcome.exit_code) == ("clean", 0)
     assert outcome.diagnostics == ()
+
+
+def test_a_bundle_whose_blob_store_leaves_the_root_is_refused(
+    promoted_tree: PromotedRevisionTree, tmp_path: Path
+) -> None:
+    """§6's self-containment is what makes the digest layer's answer mean anything.
+
+    The blob bytes are hashed into `evidence_set_digest` and therefore into `bundle_digest`, so a
+    `blobs/` pointing outside the root would let content nobody can see from the bundle decide the
+    bundle's identity — and `validate` is the command whose job is to say that identity is right.
+    `require_confined_root` is the same check `inventory` and the draft commands enter through;
+    this test names where it lands for `validate`.
+    """
+    outside = tmp_path / "outside-blobs"
+    store = promoted_tree.bundle_root / BLOBS_DIR
+    store.rename(outside)
+    store.symlink_to(outside, target_is_directory=True)
+
+    outcome = revision_outcome(promoted_tree)
+    assert [d.code for d in outcome.diagnostics] == [str(IssueCode.SYMLINK_REFUSED)]
+    assert outcome.exit_code == 1
+    assert outcome.value.bundle_digest is None
 
 
 def test_the_report_identifies_the_revision_it_validated(
@@ -455,7 +477,7 @@ def test_the_deep_audit_is_opt_in(chained_tree: PromotedRevisionTree) -> None:
     path = parent_root / "skills" / "inventory.yaml"
     data = load_yaml_bytes(path.read_bytes(), logical_path=PurePosixPath("skills/inventory.yaml"))
     data["skills"][0]["canonical_name"] = "Edited Ancestor"
-    path.write_bytes(quoted_yaml(data))
+    path.write_bytes(quoted_yaml(data, logical_path=PurePosixPath("skills/inventory.yaml")))
 
     shallow = revision_outcome(chained_tree, completeness=True, as_of=AS_OF)
     deep = revision_outcome(

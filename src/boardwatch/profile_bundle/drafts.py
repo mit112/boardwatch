@@ -1,7 +1,16 @@
 """`init` and `checkout`: the two ways a writable draft comes into existence (design §6, §19).
 
-Both commands end in the same place — a populated `drafts/<name>/` or a refusal that wrote nothing —
-and differ in everything before it.
+Both commands end in the same place — a populated `drafts/<name>/`, or a refusal that created no
+draft — and differ in everything before it.
+
+"No draft" rather than "nothing at all", deliberately: `init` also creates the root skeleton and the
+empty private sidecar, and those are outside the draft's rollback because they are what the *next*
+attempt needs in order to run. A bundle root holding four empty directories is the state `init`
+exists to produce, not wreckage from one that failed, and re-running is idempotent.
+
+That only holds while every write it leaves behind is a *complete* one, which is why the sidecar is
+staged and renamed rather than written in place. A truncated `local-sources.yaml` would be reported
+by `inventory` as an error, and the retry — which skips an existing sidecar — would never repair it.
 
 ## `init` authors, `checkout` copies
 
@@ -36,6 +45,17 @@ the draft is produced with its parent digest intact.
 Every draft is built in a temporary directory beside its destination and renamed into place. A
 refusal therefore cannot leave a partial draft that a later command would mistake for a real one,
 and `init`'s own "this name already exists" check cannot be defeated by its own wreckage.
+
+The same reasoning is why a blob the store cannot *read at all* refuses before installation: §21's
+exit 3 says the check could not run, and a caller retrying it must not be met with
+`draft_already_exists` from the attempt that reported it could not run. A blob that is missing or
+fails its digest is a different case — that is §6's recovery path, and it produces the draft.
+
+## The operator-facing wording is not settled here
+
+The structural layer names `facts/identity.yaml` as a missing required file, which reads as
+corruption rather than as "author your identity here". Translating that for a human is T18's, at the
+command boundary; this module deliberately reports the machine-readable fact.
 """
 
 from __future__ import annotations
@@ -56,17 +76,18 @@ from boardwatch.profile_bundle.blobs import (
     read_blob,
 )
 from boardwatch.profile_bundle.canonical import (
+    EVIDENCE_PATH,
     MappingBlobReader,
     evidence_set_digest,
     referenced_blob_digests,
 )
 from boardwatch.profile_bundle.errors import (
-    BundleIoError,
     Diagnostic,
     IssueCode,
     OperationOutcome,
     ProfileBundleError,
     diagnostic,
+    io_reason,
     outcome_with,
 )
 from boardwatch.profile_bundle.layout import DocumentKind, SourceFile, discover_source_files
@@ -126,12 +147,13 @@ from boardwatch.profile_bundle.storage import (
     SelectedRevision,
     SelectionError,
     read_current_once,
+    require_confined_root,
     selected_documents,
 )
+from boardwatch.profile_bundle.validation.context import parse_error_diagnostics
 from boardwatch.profile_bundle.yaml_writer import document_bytes
 
 MANIFEST_PATH: Final = PurePosixPath("manifest.yaml")
-EVIDENCE_PATH: Final = PurePosixPath("evidence/records.yaml")
 
 #: The version every catalog an `init` writes declares, and therefore the version its manifest pins.
 #: The manifest's copy is derived from the catalogs below rather than restated, so the two cannot
@@ -144,9 +166,16 @@ INITIAL_CATALOG_VERSION: Final = 1
 DEFAULT_PROFILE_ID: Final = "profile.owner"
 DEFAULT_CAREER_FIELD: Final = "unspecified"
 
-#: The prefix every draft installation temporary uses. `inventory` recognises it as an interrupted
-#: install rather than as an artefact that does not belong under `drafts/` at all.
+#: The prefix every draft installation temporary uses. `inventory` reads this constant and reports
+#: an entry carrying it as an interrupted install rather than as an artefact that does not belong
+#: under `drafts/` at all.
 DRAFT_TEMP_PREFIX: Final = ".tmp-draft-"
+
+#: The prefix the private sidecar's staged write uses. It sits at the bundle root because that is
+#: where its destination is, and an atomic rename needs both on one filesystem. Unlike a declared
+#: member, a leftover one is genuinely outside the root grammar, so `inventory`'s existing
+#: undeclared-entry finding says the right thing about it and no second rule is needed.
+SIDECAR_TEMP_PREFIX: Final = ".tmp-local-sources-"
 
 #: Declared directories that hold one file per entity. Created empty so an owner can see where an
 #: employment or project file belongs; the grammar admits them empty.
@@ -185,10 +214,12 @@ def init_draft(bundle_root: Path, *, name: str) -> OperationOutcome[DraftHandle]
     a second parentless draft could otherwise be promoted as a revision 1 that replaced history.
     """
     draft_name = require_draft_name(name)
+    if (refusal := _unconfined(bundle_root)) is not None:
+        return refusal
     if current_path(bundle_root).exists():
         return _refusal(
             IssueCode.CURRENT_ALREADY_EXISTS,
-            f"{bundle_root} already selects a revision; use checkout to create a draft from it",
+            "this bundle already selects a revision; use checkout to create a draft from it",
         )
     target = draft_root(bundle_root, draft_name)
     if target.exists():
@@ -202,9 +233,18 @@ def init_draft(bundle_root: Path, *, name: str) -> OperationOutcome[DraftHandle]
     try:
         _ensure_skeleton(bundle_root)
         _write_local_sources(bundle_root)
+    except OSError as exc:
+        # Reported apart from the draft: a failure here has not touched `drafts/` at all, and a
+        # message naming the draft would send the owner looking in the wrong place.
+        return _refusal(
+            IssueCode.IO_ERROR, f"could not create the bundle skeleton: {io_reason(exc)}"
+        )
+    try:
         _install(bundle_root, target, lambda staging: _write_tree(staging, manifest, documents))
     except OSError as exc:
-        return _refusal(IssueCode.IO_ERROR, f"could not create {target}: {exc}")
+        return _refusal(
+            IssueCode.IO_ERROR, f"could not create drafts/{draft_name}: {io_reason(exc)}"
+        )
 
     return OperationOutcome.clean(
         DraftHandle(
@@ -216,6 +256,10 @@ def init_draft(bundle_root: Path, *, name: str) -> OperationOutcome[DraftHandle]
 def checkout_current(bundle_root: Path, *, name: str) -> OperationOutcome[DraftHandle]:
     """Copy the selected revision into a writable draft that names it as its parent (§19)."""
     draft_name = require_draft_name(name)
+    # Before the name is examined: a draft name that collides with something outside the bundle is
+    # not a name collision, and reporting one would name the wrong problem.
+    if (refusal := _unconfined(bundle_root)) is not None:
+        return refusal
     target = draft_root(bundle_root, draft_name)
     if target.exists():
         return _refusal(
@@ -232,13 +276,17 @@ def checkout_current(bundle_root: Path, *, name: str) -> OperationOutcome[DraftH
         # manifest's identity against the pointer, and a draft that recorded the wrong parent digest
         # would be refused at promotion with nothing left to explain it.
         parent = selected_documents(selection)
+        manifest = _draft_manifest_of(parent.manifest, selection)
+        quarantined = _blob_quarantine(bundle_root, parent)
     except SelectionError as exc:
         return _refusal(exc.code, str(exc))
     except ProfileBundleError as exc:
-        return _refusal(_code_for(exc), f"{selection.root.name}: {exc}")
+        # `parse_error_diagnostics` is already the mapping from a typed load failure to its code,
+        # and it keeps every finding a `BundleParseError` carries instead of collapsing a list of
+        # broken fields into one. A second copy here reported a future schema version as an unknown
+        # file and a grammar violation as "could not run at all".
+        return outcome_with(None, parse_error_diagnostics(exc))
 
-    manifest = _draft_manifest_of(parent.manifest, selection)
-    quarantined = _blob_quarantine(bundle_root, parent)
     try:
         _install(
             bundle_root,
@@ -246,7 +294,9 @@ def checkout_current(bundle_root: Path, *, name: str) -> OperationOutcome[DraftH
             lambda staging: _copy_tree(staging, sources, manifest),
         )
     except OSError as exc:
-        return _refusal(IssueCode.IO_ERROR, f"could not create {target}: {exc}")
+        return _refusal(
+            IssueCode.IO_ERROR, f"could not create drafts/{draft_name}: {io_reason(exc)}"
+        )
 
     handle = DraftHandle(
         name=draft_name,
@@ -440,7 +490,9 @@ def _blob_quarantine(bundle_root: Path, documents: BundleDocuments) -> tuple[Dia
 
     `read_blob` is the one reader that verifies, and its two typed failures are exactly the two
     reasons §6 admits for the recovery path — so the classification comes from the exception type,
-    never from its message.
+    never from its message. Its third, `BundleIoError`, is deliberately not caught: a store that
+    cannot be read is not a quarantine an owner can recapture their way out of, and letting it
+    propagate is what keeps the refusal ahead of the installation.
     """
     findings: list[Diagnostic] = []
     for declared in referenced_blob_digests(documents):
@@ -451,9 +503,6 @@ def _blob_quarantine(bundle_root: Path, documents: BundleDocuments) -> tuple[Dia
             reason = BlobQuarantineReason.MISSING
         except BlobDigestMismatchError:
             reason = BlobQuarantineReason.DIGEST_MISMATCH
-        except BundleIoError as exc:
-            findings.append(diagnostic(IssueCode.IO_ERROR, str(exc), path=EVIDENCE_PATH.as_posix()))
-            continue
         if reason is None:
             continue
         findings.append(
@@ -490,16 +539,34 @@ def _write_local_sources(bundle_root: Path) -> None:
     Present-and-empty rather than absent: "no local originals are mapped" is then a state an owner
     can see and `inventory` can report a parse failure for, instead of an absent file that every
     reader has to treat as an empty one.
+
+    Written through a temporary and renamed, for the same reason a draft is: a plain write that
+    failed halfway would leave a *truncated* sidecar, and `inventory` reports an unparseable one as
+    an error — so a failed `init` would hand the owner a corrupt file that the retry, which skips an
+    existing sidecar, would never repair. An interrupted write leaves a `.tmp-` entry at the root
+    instead, which is genuinely undeclared and reported as such.
+
+    The temporary is created by `mkstemp`, so the file is never briefly readable by anyone else on
+    the way to its final mode.
     """
     path = local_sources_path(bundle_root)
     if path.exists():
         return
-    path.write_bytes(
-        document_bytes(
-            EMPTY_SIDECAR.model_dump(mode="json"), logical_path=PurePosixPath(LOCAL_SOURCES_FILE)
-        )
-    )
-    path.chmod(0o600)
+    handle, temporary = tempfile.mkstemp(dir=bundle_root, prefix=SIDECAR_TEMP_PREFIX)
+    staged = Path(temporary)
+    try:
+        with os.fdopen(handle, "wb") as stream:
+            stream.write(
+                document_bytes(
+                    EMPTY_SIDECAR.model_dump(mode="json"),
+                    logical_path=PurePosixPath(LOCAL_SOURCES_FILE),
+                )
+            )
+        staged.chmod(0o600)
+        os.replace(staged, path)
+    except BaseException:
+        staged.unlink(missing_ok=True)
+        raise
 
 
 def _install(bundle_root: Path, target: Path, populate: Callable[[Path], None]) -> None:
@@ -558,9 +625,13 @@ def _refusal(code: IssueCode, message: str) -> OperationOutcome[DraftHandle]:
     return outcome_with(None, (diagnostic(code, message),))
 
 
-def _code_for(exc: ProfileBundleError) -> IssueCode:
-    """The typed load failures a revision tree can produce, mapped from the exception TYPE."""
-    return IssueCode.IO_ERROR if isinstance(exc, BundleIoError) else IssueCode.UNKNOWN_FILE
+def _unconfined(bundle_root: Path) -> OperationOutcome[DraftHandle] | None:
+    """`require_confined_root` as a refusal, so both commands enter through the one check."""
+    try:
+        require_confined_root(bundle_root)
+    except SelectionError as exc:
+        return _refusal(exc.code, str(exc))
+    return None
 
 
 __all__ = [

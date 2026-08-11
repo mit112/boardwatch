@@ -16,6 +16,10 @@ import pytest
 from boardwatch.profile_bundle.errors import IssueCode
 from boardwatch.profile_bundle.models.manifests import RevisionManifest
 from boardwatch.profile_bundle.paths import (
+    CURRENT_FILE,
+    LOCAL_SOURCES_FILE,
+    LOCK_FILE,
+    ROOT_MEMBERS,
     complete_marker_path,
     current_path,
     digest_token,
@@ -119,6 +123,32 @@ def test_a_symlinked_revision_directory_is_refused(
     with pytest.raises(SelectionError) as raised:
         read_current_once(promoted_tree.bundle_root)
     assert raised.value.code is IssueCode.SYMLINK_REFUSED
+
+
+@pytest.mark.parametrize("member", sorted(ROOT_MEMBERS))
+def test_every_declared_root_member_is_refused_as_a_symlink(
+    promoted_tree: PromotedRevisionTree, tmp_path: Path, member: str
+) -> None:
+    """§6: the bundle is self-contained under one root, so no declared member may leave it.
+
+    Parametrised over `ROOT_MEMBERS` itself rather than over the members these commands happen to
+    touch today: `approvals/` and `revisions/` hold nothing until promotion writes them, and a
+    per-directory guard would leave those two escapes armed for the slice that does.
+    """
+    inside = promoted_tree.bundle_root / member
+    outside = tmp_path / f"outside-{member}"
+    if inside.exists():
+        inside.rename(outside)
+    elif member in {CURRENT_FILE, LOCK_FILE, LOCAL_SOURCES_FILE}:
+        outside.write_text("elsewhere\n", encoding="utf-8")
+    else:
+        outside.mkdir()
+    inside.symlink_to(outside, target_is_directory=outside.is_dir())
+
+    with pytest.raises(SelectionError) as raised:
+        read_current_once(promoted_tree.bundle_root)
+    assert raised.value.code is IssueCode.SYMLINK_REFUSED
+    assert member in str(raised.value)
 
 
 def test_the_pointer_is_read_exactly_once(

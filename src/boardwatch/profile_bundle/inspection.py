@@ -18,12 +18,17 @@ name is not a digest. Those are all `orphaned_artefact` at the `information` tie
 change an exit code — the operator is being told, not stopped.
 
 A **field** means *this is normal and you should know*: unreferenced blobs (an older revision may
-still cite them), complete-but-unselected revisions, the draft list.
+still cite them), complete-but-unselected revisions, the draft list. A field may also be `None`,
+which means *not measured*: an empty blob-reference set and one that could not be read are different
+answers, and collapsing them reports a measurement nobody took.
 
 Two things are genuine errors and do change the exit code: a selected revision that cannot be
-resolved or read, and a private `local-sources.yaml` that will not parse or that maps a source ID
-the selected revision does not declare. The second is dead configuration — the owner cannot reopen
-an original through it and nothing else will ever mention it.
+resolved or read, and a private `local-sources.yaml` that will not parse. A sidecar that *parses*
+but maps a source ID the selected revision does not declare is dead configuration and reported at
+the information tier: the sidecar is machine-local, excluded from every digest and never exported,
+so an error there would make one bundle exit 1 on this machine and 0 on the next — an exit code that
+is not a function of the bundle. The finding names the revision it was measured against, because a
+mapping live for revision 1 and dropped by revision 2 is dead only against the selection.
 
 **A bundle that has never promoted is not a finding.** It is the state `init` deliberately leaves
 behind, so `inventory` reports `selected: None` and exits 0. Any other choice would make a fresh
@@ -32,7 +37,10 @@ bundle exit 1 and teach an operator to ignore this command's exit code.
 ## One pointer read
 
 All three commands enter through `storage.read_current_once`, so an operation reports one coherent
-immutable revision even if a promotion lands while it is running.
+immutable revision even if a promotion lands while it is running — and, through the same call, one
+confinement check over the whole root grammar. A root whose declared member is a symlink is refused
+outright rather than enumerated: every list below would otherwise report content from outside the
+root as this bundle's own.
 """
 
 from __future__ import annotations
@@ -44,7 +52,12 @@ from pathlib import Path, PurePosixPath
 from pydantic import BaseModel, ValidationError
 
 from boardwatch.profile_bundle.blobs import BLOB_TEMP_PREFIX, stored_digests
-from boardwatch.profile_bundle.canonical import referenced_blob_digests
+from boardwatch.profile_bundle.canonical import (
+    EVIDENCE_PATH,
+    CanonicalizationError,
+    referenced_blob_digests,
+)
+from boardwatch.profile_bundle.drafts import DRAFT_TEMP_PREFIX
 from boardwatch.profile_bundle.errors import (
     BundlePathError,
     Diagnostic,
@@ -53,6 +66,7 @@ from boardwatch.profile_bundle.errors import (
     ProfileBundleError,
     RestrictedYamlError,
     diagnostic,
+    io_reason,
     outcome_with,
 )
 from boardwatch.profile_bundle.index import build_index
@@ -80,8 +94,10 @@ from boardwatch.profile_bundle.storage import (
     SelectedRevision,
     SelectionError,
     read_current_once,
+    require_confined_root,
     selected_documents,
 )
+from boardwatch.profile_bundle.validation.context import parse_error_diagnostics
 from boardwatch.profile_bundle.validation.digest import PointerError, read_complete
 from boardwatch.profile_bundle.yaml_loader import load_yaml_bytes
 
@@ -94,7 +110,12 @@ _SIDECAR_PATH = PurePosixPath(LOCAL_SOURCES_FILE)
 
 @dataclass(frozen=True)
 class InventoryReport:
-    """Everything present under one bundle root, and nothing changed by looking."""
+    """Everything present under one bundle root, and nothing changed by looking.
+
+    `referenced_blobs` and `unreferenced_blobs` are `None` — not `()` — when the selected revision's
+    evidence could not be read. The accompanying diagnostic says why; an empty tuple would claim
+    every blob in the shared store is unreferenced on the strength of a measurement nobody took.
+    """
 
     bundle_root: Path
     selected: SelectedRevision | None
@@ -103,8 +124,8 @@ class InventoryReport:
     complete_revisions: tuple[str, ...]
     incomplete_revisions: tuple[str, ...]
     temporary_entries: tuple[str, ...]
-    referenced_blobs: tuple[str, ...]
-    unreferenced_blobs: tuple[str, ...]
+    referenced_blobs: tuple[str, ...] | None
+    unreferenced_blobs: tuple[str, ...] | None
     undeclared_root_entries: tuple[str, ...]
     local_sources: LocalSourcesSidecar | None
 
@@ -155,6 +176,10 @@ def inventory(bundle_root: Path) -> OperationOutcome[InventoryReport]:
     findings: list[Diagnostic] = []
     selection: SelectedRevision | None = None
     try:
+        require_confined_root(bundle_root)
+    except SelectionError as exc:
+        return outcome_with(None, (diagnostic(exc.code, str(exc)),))
+    try:
         selection = read_current_once(bundle_root)
     except SelectionError as exc:
         if exc.code is not _NOT_A_FINDING:
@@ -165,11 +190,12 @@ def inventory(bundle_root: Path) -> OperationOutcome[InventoryReport]:
         try:
             documents = selected_documents(selection)
         except SelectionError as exc:
+            # An identity failure means nothing is selected, exactly as a missing `COMPLETE` does:
+            # the directory is still on disk and still reported, but as an unselected one.
             findings.append(diagnostic(exc.code, str(exc)))
+            selection = None
         except ProfileBundleError as exc:
-            findings.append(
-                diagnostic(IssueCode.IO_ERROR, f"the selected revision could not be read: {exc}")
-            )
+            findings.extend(parse_error_diagnostics(exc))
 
     undeclared = _undeclared_root_entries(bundle_root)
     findings.extend(_orphans("", undeclared, "the bundle root's member list is closed"))
@@ -187,9 +213,16 @@ def inventory(bundle_root: Path) -> OperationOutcome[InventoryReport]:
         _orphans(f"{REVISIONS_DIR}/", temporary, "this directory holds only digest-named revisions")
     )
 
-    drafts, stray_drafts = _draft_names(bundle_root)
+    drafts, interrupted, stray_drafts = _draft_names(bundle_root)
     findings.extend(
-        _orphans(f"{DRAFTS_DIR}/", stray_drafts, "an interrupted draft installation, left in place")
+        _orphans(f"{DRAFTS_DIR}/", interrupted, "an interrupted draft installation, left in place")
+    )
+    findings.extend(
+        _orphans(
+            f"{DRAFTS_DIR}/",
+            stray_drafts,
+            "this directory holds drafts, each a directory named by the draft-name grammar",
+        )
     )
 
     stamps, stray_stamps = _approval_stamps(bundle_root)
@@ -205,9 +238,10 @@ def inventory(bundle_root: Path) -> OperationOutcome[InventoryReport]:
             "the blob store holds one file per digest, named by it",
         )
     )
-    referenced = _referenced(documents)
+    referenced, reference_findings = _referenced(documents)
+    findings.extend(reference_findings)
 
-    sidecar, sidecar_findings = _local_sources(bundle_root, documents)
+    sidecar, sidecar_findings = _local_sources(bundle_root, selection, documents)
     findings.extend(sidecar_findings)
 
     report = InventoryReport(
@@ -218,9 +252,9 @@ def inventory(bundle_root: Path) -> OperationOutcome[InventoryReport]:
         complete_revisions=complete,
         incomplete_revisions=incomplete,
         temporary_entries=temporary,
-        referenced_blobs=() if referenced is None else referenced,
+        referenced_blobs=referenced,
         unreferenced_blobs=(
-            ()
+            None
             if referenced is None
             else tuple(digest for digest in stored if digest not in frozenset(referenced))
         ),
@@ -233,18 +267,16 @@ def inventory(bundle_root: Path) -> OperationOutcome[InventoryReport]:
 def _undeclared_root_entries(bundle_root: Path) -> tuple[str, ...]:
     """Names directly under the root that the closed §6 grammar does not admit.
 
-    A symlinked member counts as undeclared even when its name is right: `CURRENT` and the revision
-    directories are refused as symlinks at the point of use, and a symlinked `blobs/` or `drafts/`
-    would put bundle content outside the one root the bundle claims to be self-contained under.
+    Only the name is examined. A member whose name IS admitted but which leaves the root is a
+    confinement failure, not an undeclared entry, and `require_confined_root` has already refused
+    the whole command over it — folding the two conditions into this list reported `blobs` with the
+    reason "the bundle root's member list is closed", which is the one thing that was not wrong
+    with it.
     """
     if not bundle_root.is_dir():
         return ()
     return tuple(
-        sorted(
-            entry.name
-            for entry in bundle_root.iterdir()
-            if entry.name not in ROOT_MEMBERS or entry.is_symlink()
-        )
+        sorted(entry.name for entry in bundle_root.iterdir() if entry.name not in ROOT_MEMBERS)
     )
 
 
@@ -308,19 +340,28 @@ def _approval_stamps(bundle_root: Path) -> tuple[tuple[str, ...], tuple[str, ...
     return tuple(stamps), tuple(stray)
 
 
-def _draft_names(bundle_root: Path) -> tuple[tuple[str, ...], tuple[str, ...]]:
-    """Draft directory names, and anything under `drafts/` that is not one.
+def _draft_names(
+    bundle_root: Path,
+) -> tuple[tuple[str, ...], tuple[str, ...], tuple[str, ...]]:
+    """Draft directory names, the interrupted installations, and everything else under `drafts/`.
 
     Deliberately not parsed: a draft is the one place in the bundle that may hold anything at all,
     and an inventory that read every draft's manifest would fail on somebody's work in progress.
-    An entry left by an interrupted install is reported, never adopted and never removed.
+    Neither an interrupted install nor a stray file is adopted or removed; they are told apart
+    because only one of them is a claim about what a Boardwatch command did. The prefix is read from
+    the writer that produces it, exactly as the blob store's is, so an operator's own `NOTES.txt` is
+    never described as an interrupted install.
     """
     directory = drafts_dir(bundle_root)
     if not directory.is_dir():
-        return ((), ())
+        return ((), (), ())
     found: list[str] = []
+    interrupted: list[str] = []
     stray: list[str] = []
     for entry in sorted(directory.iterdir()):
+        if entry.name.startswith(DRAFT_TEMP_PREFIX):
+            interrupted.append(entry.name)
+            continue
         try:
             name = require_draft_name(entry.name)
         except BundlePathError:
@@ -330,7 +371,7 @@ def _draft_names(bundle_root: Path) -> tuple[tuple[str, ...], tuple[str, ...]]:
             found.append(name)
         else:
             stray.append(entry.name)
-    return tuple(found), tuple(stray)
+    return tuple(found), tuple(interrupted), tuple(stray)
 
 
 def _blob_entries(bundle_root: Path) -> tuple[tuple[str, ...], tuple[str, ...]]:
@@ -351,27 +392,48 @@ def _blob_entries(bundle_root: Path) -> tuple[tuple[str, ...], tuple[str, ...]]:
     return stored, stray
 
 
-def _referenced(documents: BundleDocuments | None) -> tuple[str, ...] | None:
-    """The blob digests the SELECTED revision cites, or `None` when they could not be read.
+def _referenced(
+    documents: BundleDocuments | None,
+) -> tuple[tuple[str, ...] | None, tuple[Diagnostic, ...]]:
+    """The blob digests the SELECTED revision cites, or `None` and the reason it was not measured.
 
     A blob outside this set is not garbage — §6 shares the store across revisions, and an older
     revision may be the only thing citing it. That is exactly why the report names it and no command
     removes it. `None` is distinct from empty on purpose: a revision whose evidence document is
     missing has no measured reference set, and calling every stored blob unreferenced would be a
     measurement nobody took.
+
+    Distinct *and* visible: the caller carries `None` into the report and this diagnostic tells the
+    operator which file is missing. `referenced_blob_digests` raises exactly one typed failure, and
+    `load_documents` has already guaranteed that a `evidence/records.yaml` which is present parsed
+    as an evidence document — so the only reachable cause is the absent file it is reported as,
+    which is the same finding `validate` reports for the same tree.
     """
     if documents is None:
-        return None
+        return None, ()
     try:
-        return referenced_blob_digests(documents)
-    except ProfileBundleError:
-        return None
+        return referenced_blob_digests(documents), ()
+    except CanonicalizationError as exc:
+        return None, (
+            diagnostic(
+                IssueCode.MISSING_REQUIRED_FILE,
+                f"{exc}; the blob reference set was not measured",
+                path=EVIDENCE_PATH.as_posix(),
+            ),
+        )
 
 
 def _local_sources(
-    bundle_root: Path, documents: BundleDocuments | None
+    bundle_root: Path,
+    selection: SelectedRevision | None,
+    documents: BundleDocuments | None,
 ) -> tuple[LocalSourcesSidecar | None, tuple[Diagnostic, ...]]:
-    """Parse the private sidecar and check its keys against the selected source catalog."""
+    """Parse the private sidecar and check its keys against the selected source catalog.
+
+    A sidecar that will not parse is an error: it is a file this machine cannot read at all. A
+    sidecar that parses and names a source the *selected* revision does not declare is not, because
+    the answer changes with the selection and the sidecar takes no part in any digest or export.
+    """
     path = local_sources_path(bundle_root)
     if not path.exists():
         return None, ()
@@ -381,7 +443,11 @@ def _local_sources(
         return None, (diagnostic(exc.code, str(exc), path=LOCAL_SOURCES_FILE),)
     except OSError as exc:
         return None, (
-            diagnostic(IssueCode.IO_ERROR, f"{LOCAL_SOURCES_FILE}: {exc}", path=LOCAL_SOURCES_FILE),
+            diagnostic(
+                IssueCode.IO_ERROR,
+                f"{LOCAL_SOURCES_FILE}: {io_reason(exc)}",
+                path=LOCAL_SOURCES_FILE,
+            ),
         )
     try:
         sidecar = LocalSourcesSidecar.model_validate(raw)
@@ -394,7 +460,7 @@ def _local_sources(
                 path=LOCAL_SOURCES_FILE,
             ),
         )
-    if documents is None:
+    if documents is None or selection is None:
         # Nothing to compare against; reporting every mapping as broken would be a measurement
         # taken against a catalog that was never read.
         return sidecar, ()
@@ -402,9 +468,9 @@ def _local_sources(
     declared = frozenset(catalog.by_id) if catalog is not None else frozenset()
     return sidecar, tuple(
         diagnostic(
-            IssueCode.BROKEN_REFERENCE,
-            f"{LOCAL_SOURCES_FILE} maps {source_id}, which the selected revision's source catalog "
-            "does not declare; the mapping cannot reopen anything",
+            IssueCode.ORPHANED_ARTEFACT,
+            f"{LOCAL_SOURCES_FILE} maps {source_id}, which the source catalog of revision "
+            f"{selection.revision} does not declare; the mapping cannot reopen anything",
             path=LOCAL_SOURCES_FILE,
             record_id=source_id,
         )
@@ -431,10 +497,10 @@ def _orphans(prefix: str, names: Iterable[str], why: str) -> tuple[Diagnostic, .
 
 def inspect_record(bundle_root: Path, record_id: str) -> OperationOutcome[InspectReport]:
     """Report one record from the selected revision, with what cites it and what contests it."""
-    resolved = _selected(bundle_root)
-    if isinstance(resolved, Diagnostic):
-        return outcome_with(None, (resolved,))
-    selection, documents = resolved
+    try:
+        selection, documents = _selected(bundle_root)
+    except ProfileBundleError as exc:
+        return outcome_with(None, _selection_failure(exc))
 
     index = build_index(documents)
     record = index.get(record_id)
@@ -475,10 +541,10 @@ def conflicts_report(bundle_root: Path) -> OperationOutcome[ConflictsReport]:
     An unresolved group is data, not a finding: §20.5 says a bundle may validly preserve
     uncertainty, and `validate --completeness` is where an open group becomes a blocker.
     """
-    resolved = _selected(bundle_root)
-    if isinstance(resolved, Diagnostic):
-        return outcome_with(None, (resolved,))
-    selection, documents = resolved
+    try:
+        selection, documents = _selected(bundle_root)
+    except ProfileBundleError as exc:
+        return outcome_with(None, _selection_failure(exc))
     index = build_index(documents)
     return OperationOutcome.clean(
         ConflictsReport(
@@ -490,19 +556,27 @@ def conflicts_report(bundle_root: Path) -> OperationOutcome[ConflictsReport]:
     )
 
 
-def _selected(bundle_root: Path) -> tuple[SelectedRevision, BundleDocuments] | Diagnostic:
-    """The selected revision and its documents, or the one diagnostic explaining why not.
+def _selected(bundle_root: Path) -> tuple[SelectedRevision, BundleDocuments]:
+    """The selected revision and its documents, or a typed failure explaining why there are none.
 
     Unlike `inventory`, these two commands have nothing to say about a bundle whose selection cannot
     be resolved, so "no revision has been promoted yet" is a refusal here rather than a field.
     """
-    try:
-        selection = read_current_once(bundle_root)
-        return selection, selected_documents(selection)
-    except SelectionError as exc:
-        return diagnostic(exc.code, str(exc))
-    except ProfileBundleError as exc:
-        return diagnostic(IssueCode.IO_ERROR, f"the selected revision could not be read: {exc}")
+    selection = read_current_once(bundle_root)
+    return selection, selected_documents(selection)
+
+
+def _selection_failure(exc: ProfileBundleError) -> tuple[Diagnostic, ...]:
+    """The one place a failure to resolve or read the selection becomes diagnostics.
+
+    A `SelectionError` carries the code chosen at its raise site. Everything else is a typed load
+    failure, and `parse_error_diagnostics` is already the mapping for those — including the per-file
+    findings a `BundleParseError` carries, which a single `io_error` here threw away along with the
+    exit code they imply.
+    """
+    if isinstance(exc, SelectionError):
+        return (diagnostic(exc.code, str(exc)),)
+    return parse_error_diagnostics(exc)
 
 
 __all__ = [
