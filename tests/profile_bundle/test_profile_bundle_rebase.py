@@ -60,6 +60,7 @@ from boardwatch.profile_bundle.models.history import ApprovalLedger
 from boardwatch.profile_bundle.models.manifests import DraftManifest, RevisionManifest
 from boardwatch.profile_bundle.paths import (
     LOCK_FILE,
+    MAX_DRAFT_NAME_LENGTH,
     approval_path,
     blob_path,
     draft_root,
@@ -806,6 +807,25 @@ def test_a_backup_with_an_extra_file_refuses(scene: Scene) -> None:
     assert outcome.exit_code == 1
     assert _codes(outcome) == [IssueCode.DRAFT_BACKUP_CONFLICT]
     assert _snapshot(scene.bundle_root) == before
+
+
+@pytest.mark.parametrize("name", ["my-work-branch", "a" * MAX_DRAFT_NAME_LENGTH])
+def test_a_long_but_legal_draft_name_is_rebasable(tmp_path: Path, name: str) -> None:
+    """`checkout` accepts these, so the rebase must too — and the filesystem must take the backup.
+
+    14 characters is the first length whose derived backup name outgrows the operator-facing cap.
+    """
+    bundle_root = tmp_path / "career-profile"
+    parent = promote_example_tree(bundle_root)
+    assert checkout_current(bundle_root, name=name).exit_code == 0
+    promote_next_revision(parent, mutate=_rename_first_skill(REVISION_TWO_NAME))
+
+    outcome = rebase_draft(bundle_root, name=name)
+
+    assert outcome.exit_code == 0, outcome.diagnostics
+    backup = rebase_backup_root(bundle_root, name, parent.bundle_digest)
+    assert backup.is_dir()
+    assert _skills(draft_root(bundle_root, name)).skills[0].canonical_name == REVISION_TWO_NAME
 
 
 def test_a_parentless_draft_uses_the_root_backup_token(tmp_path: Path) -> None:

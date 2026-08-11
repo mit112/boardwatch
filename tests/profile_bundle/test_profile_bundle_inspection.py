@@ -28,6 +28,7 @@ from boardwatch.profile_bundle.paths import (
     draft_root,
     drafts_dir,
     local_sources_path,
+    rebase_backup_root,
     revisions_dir,
 )
 from tests.profile_bundle.conftest import (
@@ -163,6 +164,21 @@ def test_inventory_reports_undeclared_root_entries_without_failing(
     assert report.undeclared_root_entries == ("notes.txt",)
     assert outcome.exit_code == 0
     assert {d.tier for d in outcome.diagnostics} == {"information"}
+
+
+def test_inventory_reads_a_rebase_backup_of_a_long_draft_name_as_a_draft(
+    promoted_tree: PromotedRevisionTree,
+) -> None:
+    """A backup name is a draft name plus 83 derived characters, so it outgrows the shorter cap."""
+    backup = rebase_backup_root(promoted_tree.bundle_root, "my-work-branch", "sha256:" + "a" * 64)
+    backup.mkdir(parents=True)
+
+    outcome = inventory(promoted_tree.bundle_root)
+
+    report = outcome.value
+    assert report is not None
+    assert backup.name in report.drafts
+    assert f"drafts/{backup.name}" not in {finding.path for finding in outcome.diagnostics}
 
 
 def test_inventory_reports_an_interrupted_draft_installation(

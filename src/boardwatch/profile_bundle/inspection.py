@@ -73,7 +73,7 @@ from boardwatch.profile_bundle.paths import (
     drafts_dir,
     local_sources_path,
     require_bare_digest,
-    require_draft_name,
+    require_draft_segment,
     revisions_dir,
 )
 from boardwatch.profile_bundle.storage import (
@@ -314,6 +314,10 @@ def _draft_names(bundle_root: Path) -> tuple[tuple[str, ...], tuple[str, ...]]:
     Deliberately not parsed: a draft is the one place in the bundle that may hold anything at all,
     and an inventory that read every draft's manifest would fail on somebody's work in progress.
     An entry left by an interrupted install is reported, never adopted and never removed.
+
+    A rebase backup is a draft directory (`paths.rebase_backup_name` says so), so the classification
+    uses the segment grammar: the operator-facing cap would report the backup of any draft named
+    longer than 13 characters as stray.
     """
     directory = drafts_dir(bundle_root)
     if not directory.is_dir():
@@ -322,7 +326,7 @@ def _draft_names(bundle_root: Path) -> tuple[tuple[str, ...], tuple[str, ...]]:
     stray: list[str] = []
     for entry in sorted(directory.iterdir()):
         try:
-            name = require_draft_name(entry.name)
+            name = require_draft_segment(entry.name)
         except BundlePathError:
             stray.append(entry.name)
             continue
