@@ -37,16 +37,7 @@ from typing import Any
 import pytest
 
 from boardwatch.profile_bundle import promotion as promotion_module
-from boardwatch.profile_bundle.approvals import (
-    approval_stamp_bytes,
-    build_approval_stamp,
-    required_approval_decisions,
-)
-from boardwatch.profile_bundle.canonical import (
-    CHANGE_LEDGER_PATH,
-    bundle_digest,
-    candidate_content_digest,
-)
+from boardwatch.profile_bundle.canonical import CHANGE_LEDGER_PATH, bundle_digest
 from boardwatch.profile_bundle.drafts import checkout_current
 from boardwatch.profile_bundle.errors import IssueCode
 from boardwatch.profile_bundle.inspection import inventory
@@ -82,6 +73,7 @@ from boardwatch.profile_bundle.yaml_loader import load_yaml_bytes
 from tests.profile_bundle.conftest import (
     EXAMPLE_PROFILE_ID,
     PromotedRevisionTree,
+    approve_draft,
     blob_reader,
     materialise,
     promote_next_revision,
@@ -129,31 +121,9 @@ def _approve(
     parent: Path | None = None,
     stamp_id: str = "approval-stamp.000001",
 ) -> str:
-    """Do what `profile-bundle approve` will: stamp the draft's current candidate digest.
-
-    The digest is computed here through the in-memory blob reader, so the value promotion binds is
-    reached by a different route than the `FilesystemBlobReader` promotion itself uses.
-    """
-    documents = load_documents(draft, mode="draft")
-    parent_documents = None if parent is None else load_documents(parent, mode="revision")
-    envelope = None
-    if parent_documents is not None:
-        manifest = parent_documents.manifest
-        assert isinstance(manifest, RevisionManifest)
-        envelope = manifest.envelope
-    candidate = candidate_content_digest(documents, blob_reader(), envelope)
-    stamp = build_approval_stamp(
-        stamp_id=stamp_id,
-        candidate_digest=candidate,
-        approved_at=PROMOTED_AT,
-        decisions=required_approval_decisions(documents, parent_documents),
+    return approve_draft(
+        bundle_root, draft, parent=parent, stamp_id=stamp_id, approved_at=PROMOTED_AT
     )
-    path = approval_path(bundle_root, candidate)
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_bytes(
-        approval_stamp_bytes(stamp, logical_path=PurePosixPath(f"approvals/{path.name}"))
-    )
-    return candidate
 
 
 @dataclass(frozen=True)
@@ -939,6 +909,43 @@ def test_a_missing_blob_refuses_before_anything_is_written(scene: Scene) -> None
     assert outcome.exit_code == 1
     assert _codes(outcome) == [IssueCode.MISSING_BLOB]
     assert _snapshot(scene.bundle_root) == before
+
+
+def test_every_module_in_the_package_imports_on_its_own(tmp_path: Path) -> None:
+    """Each module, imported FIRST in a fresh interpreter, in a subprocess per module.
+
+    The property this pins is an outside fact rather than anything the package says about itself:
+    `python -c "import boardwatch.profile_bundle.<module>"` either works or does not. It did not,
+    for `storage` and every module reading it, because `validation/__init__` imported `run` which
+    imported `storage` which read `validation.context`. A test session never saw it — pytest imports
+    `validation` long before anything else — and the crash matrix, which starts a bare interpreter
+    and imports `promotion` first, is what walked into it.
+
+    Subprocesses rather than `importlib.reload`, because "first" is the whole condition and this
+    process has already imported all of them.
+    """
+    package = Path(promotion_module.__file__).parent
+    modules = sorted(
+        path.stem
+        for path in package.glob("*.py")
+        if path.stem != "__init__"
+    )
+    assert {"promotion", "storage", "rebase", "drafts"} <= set(modules)
+
+    failures = {
+        name: subprocess.run(
+            [sys.executable, "-c", f"import boardwatch.profile_bundle.{name}"],
+            capture_output=True,
+            text=True,
+            cwd=tmp_path,
+        )
+        for name in modules
+    }
+    assert {
+        name: result.stderr.strip().splitlines()[-1]
+        for name, result in failures.items()
+        if result.returncode != 0
+    } == {}
 
 
 def test_the_selected_revision_reads_back_through_the_ordinary_reader(scene: Scene) -> None:

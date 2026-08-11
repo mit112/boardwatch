@@ -24,7 +24,11 @@ from typing import Any
 
 import pytest
 
-from boardwatch.profile_bundle.approvals import build_approval_stamp, required_approval_decisions
+from boardwatch.profile_bundle.approvals import (
+    approval_stamp_bytes,
+    build_approval_stamp,
+    required_approval_decisions,
+)
 from boardwatch.profile_bundle.canonical import (
     MappingBlobReader,
     bundle_digest,
@@ -34,6 +38,7 @@ from boardwatch.profile_bundle.models.documents import BundleDocuments
 from boardwatch.profile_bundle.models.history import ApprovalStamp, ChangeRecord
 from boardwatch.profile_bundle.models.manifests import RevisionManifest
 from boardwatch.profile_bundle.paths import (
+    approval_path,
     blob_path,
     blobs_dir,
     complete_marker_path,
@@ -213,6 +218,30 @@ def blob_reader() -> MappingBlobReader:
     return MappingBlobReader({BLOB_SHA256: BLOB_BYTES})
 
 
+def stored_blob_reader(bundle_root: Path) -> MappingBlobReader:
+    """An in-memory reader over whatever the bundle's store actually holds.
+
+    `blob_reader` knows one blob and is right wherever the example is the whole story. A recapture
+    puts a *second* blob in the store under a digest no fixture can predict, so a test that approves
+    such a draft needs the store's real contents — and still wants them in memory, so the value it
+    computes is not reached through the same `FilesystemBlobReader` the code under test uses.
+
+    Keyed by filename rather than by content on purpose: that is what the store's own reader does,
+    so a blob whose bytes no longer hash to its name reaches both readers identically instead of
+    disappearing from one of them.
+    """
+    directory = blobs_dir(bundle_root)
+    if not directory.is_dir():
+        return MappingBlobReader({})
+    return MappingBlobReader(
+        {
+            entry.name: entry.read_bytes()
+            for entry in sorted(directory.iterdir())
+            if entry.is_file() and not entry.name.startswith(".tmp-")
+        }
+    )
+
+
 # --------------------------------------------------------------------------------------
 # A promoted revision that actually exists on disk (T13 §20.6, reused by T14 and T16)
 # --------------------------------------------------------------------------------------
@@ -230,6 +259,43 @@ def quoted_yaml(payload: object, *, logical_path: PurePosixPath) -> bytes:
     only thing that makes a failure locatable.
     """
     return document_bytes(payload, logical_path=logical_path)
+
+
+def approve_draft(
+    bundle_root: Path,
+    draft: Path,
+    *,
+    parent: Path | None = None,
+    stamp_id: str = "approval-stamp.000001",
+    approved_at: datetime = datetime(2026, 8, 11, 9, tzinfo=UTC),
+) -> str:
+    """Do what `profile-bundle approve` will: file a stamp for the draft's candidate digest.
+
+    Shared by every promotion test because the *binding* — which digest a stamp covers, and the
+    bytes it is stored as — is a contract, and four copies of it would be four chances for a test to
+    approve something `promote` does not look for. The digest is computed through the in-memory blob
+    reader, so it reaches the same value by a different route than promotion's filesystem reader.
+    """
+    documents = load_documents(draft, mode="draft")
+    parent_documents = None if parent is None else load_documents(parent, mode="revision")
+    envelope = None
+    if parent_documents is not None:
+        parent_manifest = parent_documents.manifest
+        assert isinstance(parent_manifest, RevisionManifest)
+        envelope = parent_manifest.envelope
+    candidate = candidate_content_digest(documents, stored_blob_reader(bundle_root), envelope)
+    stamp = build_approval_stamp(
+        stamp_id=stamp_id,
+        candidate_digest=candidate,
+        approved_at=approved_at,
+        decisions=required_approval_decisions(documents, parent_documents),
+    )
+    path = approval_path(bundle_root, candidate)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_bytes(
+        approval_stamp_bytes(stamp, logical_path=PurePosixPath(f"approvals/{path.name}"))
+    )
+    return candidate
 
 
 @dataclass(frozen=True)

@@ -190,14 +190,28 @@ def build_approval_stamp(
     approved_at: datetime,
     decisions: Sequence[ApprovalDecision],
 ) -> ApprovalStamp:
-    """Build a typed stamp from already-confirmed decisions; perform no I/O or TTY checks."""
+    """Build a typed stamp from already-confirmed decisions; perform no I/O or TTY checks.
+
+    Each generated `approval_id` carries the stamp's own scope, because §8 makes approval IDs unique
+    across the whole bundle and `validate_structural` checks them across every stamp in the ledger —
+    not within one. Numbering per action and target alone restarted at `001` in every stamp, so any
+    record approved in two revisions produced one ID twice and the second revision could not be
+    promoted at all. That is the ordinary case, not an exotic one: re-approving a record the owner
+    edited again is what a bundle's history is made of, and §6's evidence-recapture recovery cannot
+    complete without it.
+
+    The scope is the stamp ID's own tail, and one stamp per revision plus `ApprovalLedger`'s
+    uniqueness rule is what makes the result unique by construction rather than by convention.
+    """
+    scope = stamp_id.removeprefix("approval-stamp.")
     counts: Counter[tuple[str, str]] = Counter()
     entries: list[ApprovalEntry] = []
     for decision in decisions:
         key = (decision.action.value, decision.target_record_id)
         counts[key] += 1
         approval_id = (
-            f"approval.{decision.action.value}.{decision.target_record_id}.{counts[key]:03d}"
+            f"approval.{scope}.{decision.action.value}.{decision.target_record_id}"
+            f".{counts[key]:03d}"
         )
         entries.append(
             ApprovalEntry.model_validate(
