@@ -189,13 +189,17 @@ def inventory(bundle_root: Path) -> OperationOutcome[InventoryReport]:
     if selection is not None:
         try:
             documents = selected_documents(selection)
+        # Either failure means nothing is selected, exactly as a missing `COMPLETE` does: the
+        # directory is still on disk and still reported, but as an unselected one. Both arms clear
+        # it, because `selected` naming a revision whose identity did not check out and `selected`
+        # naming one whose documents did not parse are the same unverified claim, and each leaves
+        # `unselected_revisions` hiding the directory it is talking about.
         except SelectionError as exc:
-            # An identity failure means nothing is selected, exactly as a missing `COMPLETE` does:
-            # the directory is still on disk and still reported, but as an unselected one.
             findings.append(diagnostic(exc.code, str(exc)))
             selection = None
         except ProfileBundleError as exc:
             findings.extend(parse_error_diagnostics(exc))
+            selection = None
 
     undeclared = _undeclared_root_entries(bundle_root)
     findings.extend(_orphans("", undeclared, "the bundle root's member list is closed"))

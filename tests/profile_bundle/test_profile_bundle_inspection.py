@@ -298,6 +298,26 @@ def test_inventory_selects_nothing_when_the_manifest_identity_check_fails(
     assert report.selected is None
 
 
+def test_inventory_selects_nothing_when_the_selected_revision_does_not_parse(
+    promoted_tree: PromotedRevisionTree,
+) -> None:
+    """The second shape of the same corruption class as a manifest that names another digest.
+
+    `selected` is the field T18 renders, so naming a revision this command could not read is a claim
+    it did not verify — and it takes the directory out of `unselected_revisions` at the same time,
+    hiding the one directory the diagnostics are about.
+    """
+    (promoted_tree.revision_dir / "manifest.yaml").write_text("'state': 'revision'\n",
+                                                              encoding="utf-8")
+    outcome = inventory(promoted_tree.bundle_root)
+    report = outcome.value
+    assert report is not None
+    assert report.selected is None
+    assert report.complete_revisions == (digest_token(promoted_tree.bundle_digest),)
+    assert report.unselected_revisions == (digest_token(promoted_tree.bundle_digest),)
+    assert outcome.exit_code == 1
+
+
 @pytest.mark.parametrize(
     ("relative", "content", "expected"),
     [
