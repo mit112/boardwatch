@@ -54,21 +54,22 @@ reports drift without writing, and `make check` depends on it (D-109).
 | METRICS-ARCHIVE.md | 1047 | Session — 2026-08-08 (P5 run #2 — disjunctive fix, Gate P5 MET at 100%; D-073) |
 | METRICS-ARCHIVE.md | 1084 | Session — 2026-08-08 (D-071b final eligibility gate build — no answer-key number changes) |
 | METRICS-ARCHIVE.md | 1120 | Gate P2 — 2026-08-08 · field-tier mechanism (P2 item 4, D-075). **MET AS RECONCILED** |
-| METRICS.md | 75 | Run log |
-| METRICS.md | 103 | Acceptance run |
-| METRICS.md | 114 | Session — 2026-08-09/10 · P6 Slice 1 design + plan. **No build, no gate movement.** |
-| METRICS.md | 140 | Session — 2026-08-10 · P6 Slice 1 BUILT (unattended run). Branch `p6-slice1`, not merged. |
-| METRICS.md | 350 | 2026-08-10 — P6 Slice 1 on the LIVE store (first real backfill) + Gate P6 clause 4 |
-| METRICS.md | 389 | Session 2026-08-10 (later) — P6 Slice 2: the durable decision ledger, its drain, and job regrouping |
-| METRICS.md | 482 | Session — 2026-08-10 (later) · D-109, the program-index gate. No phase gate moved. |
-| METRICS.md | 523 | Session — 2026-08-10 (later still) · The P6 Slice 2 review (D-110). No phase gate moved. |
-| METRICS.md | 613 | Session — 2026-08-10 (later still ×2) · P6 Slice 3, items 5 and 6 (D-111). Gate P6 unchanged: still 2 of 4. |
-| METRICS.md | 726 | Session — 2026-08-10 (later still ×3) · 0.3.0 cut and tagged (D-112). No phase gate moved. |
-| METRICS.md | 777 | Session — 2026-08-10 (later still ×4) · The Slice 3 external review (D-113) + the CI dependency fix (D-114). No phase gate moved. |
-| METRICS.md | 897 | Session — 2026-08-10 (later still ×5) · Gate A career-profile bundle, slices T1–T9 (D-115). No phase gate moved. |
-| METRICS.md | 986 | Session — 2026-08-10 (later still ×6) · The held commits are PUSHED; CI's first honest read (D-116, D-117). No phase gate moved. |
-| METRICS.md | 1061 | Session — 2026-08-10 (later still ×7) · Gate A slice T10, semantic validation (D-118). No phase gate moved. |
-| METRICS.md | 1242 | Session — 2026-08-10 · Gate A fix history reconciliation; independent T1–T10 review still owed. No phase gate moved. |
+| METRICS.md | 76 | Run log |
+| METRICS.md | 104 | Acceptance run |
+| METRICS.md | 115 | Session — 2026-08-09/10 · P6 Slice 1 design + plan. **No build, no gate movement.** |
+| METRICS.md | 141 | Session — 2026-08-10 · P6 Slice 1 BUILT (unattended run). Branch `p6-slice1`, not merged. |
+| METRICS.md | 351 | 2026-08-10 — P6 Slice 1 on the LIVE store (first real backfill) + Gate P6 clause 4 |
+| METRICS.md | 390 | Session 2026-08-10 (later) — P6 Slice 2: the durable decision ledger, its drain, and job regrouping |
+| METRICS.md | 483 | Session — 2026-08-10 (later) · D-109, the program-index gate. No phase gate moved. |
+| METRICS.md | 524 | Session — 2026-08-10 (later still) · The P6 Slice 2 review (D-110). No phase gate moved. |
+| METRICS.md | 614 | Session — 2026-08-10 (later still ×2) · P6 Slice 3, items 5 and 6 (D-111). Gate P6 unchanged: still 2 of 4. |
+| METRICS.md | 727 | Session — 2026-08-10 (later still ×3) · 0.3.0 cut and tagged (D-112). No phase gate moved. |
+| METRICS.md | 778 | Session — 2026-08-10 (later still ×4) · The Slice 3 external review (D-113) + the CI dependency fix (D-114). No phase gate moved. |
+| METRICS.md | 898 | Session — 2026-08-10 (later still ×5) · Gate A career-profile bundle, slices T1–T9 (D-115). No phase gate moved. |
+| METRICS.md | 987 | Session — 2026-08-10 (later still ×6) · The held commits are PUSHED; CI's first honest read (D-116, D-117). No phase gate moved. |
+| METRICS.md | 1062 | Session — 2026-08-10 (later still ×7) · Gate A slice T10, semantic validation (D-118). No phase gate moved. |
+| METRICS.md | 1243 | Session — 2026-08-10 · Gate A fix history reconciliation; independent T1–T10 review still owed. No phase gate moved. |
+| METRICS.md | 1267 | Session — 2026-08-10 · Independent Gate A T1–T10 review sign-off; T11 permitted. |
 
 ---
 
@@ -1261,4 +1262,42 @@ pass have not been treated as complete merely because these fix commits are pres
 `make check` runs were green.
 
 The pinned evidence-set digest remains the review target:
+`sha256:bb92aef8ff2d82c0178482ab5fa4c24975e6f3ab8251f3e6d939e14d3bcffde0`.
+
+## Session — 2026-08-10 · Independent Gate A T1–T10 review sign-off; T11 permitted.
+
+This is the completed independent review of the five Gate A fix commits (`1de10c7`, `20ff50c`,
+`8d32294`, `9d78450`, and `bbec2c0`) and the untracked design correction. The review used the live
+code, the original findings above, targeted executable reproductions, negative controls, and the
+packaged example. It did not treat prior `make check` output or test names as review evidence.
+
+### Verdict
+
+**INDEPENDENT REVIEW SIGN-OFF: PASS.** No unresolved BLOCKING or SHOULD-FIX findings remain, so the
+hard gate permits T11. This does **not** mark Gate A implementation complete: T11 is the next planned
+slice, Gate B remains prohibited, and T12 onward was not started.
+
+### Findings
+
+| Severity | Finding | Resolution and verification |
+|---|---|---|
+| SHOULD-FIX | `yaml_loader.load_yaml_bytes` classified an unexpected internal parser exception as `INVALID_YAML`, contrary to §21's internal-failure path. | **Fixed** in `dfa655e`. The test was run red first (the injected `ValueError` produced the wrong typed failure), then the loader test passed and plain unpiped `make check` exited 0. |
+| SHOULD-FIX | `_ABSOLUTE_PERSONAL_PATH_RE` required two backslashes in its Windows branch, so ordinary `C:\\Users\\...` text escaped the §12.2 personal-path scan. | **Fixed** in `f166d18`. The new regression was run red first, then the focused evidence suite passed and plain unpiped `make check` exited 0. |
+| BLOCKING | None. | No unresolved blocker after re-review. |
+| NICE-TO-HAVE | None material to the reviewed Gate A scope. | No action required. |
+
+### Executed review evidence
+
+| Area | Result |
+|---|---|
+| Restricted YAML | Explicit standard/custom tags refused; invalid UTF-8, malformed YAML, and restricted scalars returned typed codes; plain scalar allowlist negative controls refused `0xZZ`, `1e3`, `2026-08`, `123abc`, `+`, and `089`; quoted forms remained strings. |
+| Predicate contracts | All 41 shipped rows accepted a conforming fact through the real loader and semantic validator. Negative controls reached `unknown_predicate`, `predicate_surface_illegal`, and `evidence_contract_unmet`. Unreachable basis routes and empty `legal_surfaces` were refused. |
+| Identity | The packaged example produced the pinned evidence digest and a stable bundle digest. Formatting/key-order, relocation, sidecar, and blob-path controls were stable; evidence content and blob-byte changes moved identity. |
+| Evidence and secrets | Blob tampering raised `BlobDigestMismatchError` without altering the corrupt bytes. Clean captures stayed clean; secret hits exposed rule IDs and UTF-8 byte ranges only, with correct non-ASCII offsets and no matched text. |
+| Packaged example | 33 documents loaded through the production loader; structural, referential, evidence, and semantic validation each returned zero findings; the pinned digest remained `sha256:bb92aef8ff2d82c0178482ab5fa4c24975e6f3ab8251f3e6d939e14d3bcffde0`. |
+| T10/catalog pass | Direct code-running sweep plus focused semantic, metric, claim, surface, evidence, referential, canonical, blob, and secret suites: 269 focused tests passed with `--no-cov`; the full repository gate passed with 4,897 tests. Removed dead checks and `SHIPPED_PROJECT_STATUSES` have no remaining source references. |
+| Docs-only pass | STATE/METRICS status and indexes were reconciled; no new decision ID was needed. |
+
+The review therefore closes the prior partial-review carryover and authorizes the exact T11 scope in
+the implementation plan. The pinned evidence-set digest remains:
 `sha256:bb92aef8ff2d82c0178482ab5fa4c24975e6f3ab8251f3e6d939e14d3bcffde0`.
