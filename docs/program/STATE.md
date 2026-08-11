@@ -35,6 +35,10 @@ order: (1) start accumulating real daily runs, gated on Mit's `resume.yaml` fix 
 the T12 round-four/five fix, review and merge T13, then T14; (3) P2 item 8 or P3 slice 5, both owner-gated
 and both wanting their own context window.
 
+**Gate A's remaining slices are T14–T19**: one-read storage/checkout/inspect (T14, in progress on
+`t14-storage`), draft rebase + backup drain (T15), crash-consistent promotion (T16), schema-v1
+bootstrap (T17), the `profile-bundle` CLI (T18), and the authoring contract + final gate (T19).
+
 **This file is 286 lines against a ~170 target and is still OWED a trim.** It grew again here because Gate
 A's standing genuinely grew. The next trim should compress the P6 narrative, which is now fully recorded in
 D-110/D-111/D-113 — not the "standing facts" list, which is the whole point of the file.
@@ -65,15 +69,18 @@ wired to nothing** — no CLI command, and deliberately no bundle-to-`Resume` br
 directions). Its commits being on `origin/main` is **not** sign-off. **Gate B stays prohibited until
 Gate A is implemented AND independently reviewed.**
 
-**T1–T11 are implemented and independently reviewed. T12 has now been reviewed FIVE times and every
-finding is fixed — and it is still not signed off.** Rounds one, two and three each returned REWORK
+**T1–T12 are implemented and independently reviewed. T12's review loop is CLOSED (D-126) — it was
+reviewed FIVE times, every finding is fixed, and no sixth round is owed.** Rounds one, two and three each returned REWORK
 (D-121, D-122, D-124) and each is fixed (D-125). Rounds four and five ran **concurrently against the
 same commit with different lenses** — one hunting runtime forgeries, one checking conformance against
 the design's own words — and both returned REWORK. **Both independently found the same gap** the
 author and a 20-mutation suite had missed: the byte-free adapter grammar reached record locators and
 stopped, so an approved scope could name a shape no heading stack resolves to, validate clean, and
 then fail every re-enumeration. All of it is fixed, with **28 of 28 distinct mutations caught** and
-the gate green at **exit 0, 5,260 tests, 95.41%**. The conformance lens alone found a `SourceSpec` docstring claiming a
+the gate green at **exit 0, 5,260 tests, 95.41%**. **D-126 states the exit criterion so this loop is
+not reopened by reflex: a slice's review ends when a round finds no BLOCKING defect that is either a
+silent identity/data-integrity fault or a legitimate input the system refuses.** Round four found
+neither. That rule is per-slice and evidence-based — T13 has never been reviewed and owes its first. The conformance lens alone found a `SourceSpec` docstring claiming a
 guarantee that landed nowhere — a sentence **D-122 had already recorded as false**.
 
 **Read D-125 before touching locators, and D-120 before touching identity derivation.** The four
@@ -166,7 +173,6 @@ since D-035, unchanged by everything since.
 | Item | Detail | Owner |
 |---|---|---|
 | **Three `resume.yaml` bullets exceed the 220-char layout gate** | Forces an untailored-master degrade on every posting, which is what blocks accumulating real runs. The file also lacks Knowledge Forge, has stale `skill_groups`, and an empty extracurricular block. **Mit pins `resume_max_pages=1` — do not advise setting it to 2.** | Mit (content) |
-| **T12's round-four/five fix owes its own review** | Five reviews, five REWORKs, **every finding fixed** (D-125) with 28 of 28 distinct mutations caught. No BLOCKING finding is outstanding. What is owed is one more independent review **of the fix itself**: a retraction commit reintroduces the defect class it cures, and this slice has now proved that four times. Start it in fresh context — every round authored by the context that caused the defect inherited its blind spot. | next |
 | **T13 is built on branch `t13-digest`, unmerged** | All five modules done, 1,389 tests green, ruff + mypy clean, no full gate on that branch. Owes an independent review and a merge. **One judgement call needs Mit:** the build extended the `METRIC_REVIEW_MISSING` deletion ruling to `MISSING_PERSON_ENTITY` and `ENTITY_STATUS_UNDECLARED` on the same "cannot fire" grounds, and added `FACT_VALUE_EXPIRED` and `COMPLETENESS_COUNTS`. Net catalog size unchanged, but a catalog is closed and versioned. Also open: §20.5's "expired evidence" has **no representable condition** — evidence records carry `reviewed_at` and the schema has no interval for them anywhere. | T13 |
 | **The 03:10 launchd job re-fires a task that already shipped** | `com.mitsheth.boardwatch-p6.plist` is a *daily* `StartCalendarInterval` job carrying the *one-shot* "execute P6 Slice 1" prompt, which asserts `main` at `fb0386a` — now an ancestor 110 commits back. It misfired on 2026-08-11 and will misfire nightly. Benign and self-detecting (the session-start ritual catches it in a few read-only commands), **not** self-correcting. Fix: `launchctl bootout gui/$UID/com.mitsheth.boardwatch-p6`, or repoint `~/.claude/scheduled/p6-slice1-run.sh` at a fresh prompt (D-123) | Mit (automation) |
 | **No local pre-push check for the three CI-only jobs** | `gitleaks`, `perf` and `generalization` run in CI and not under `make check`; `gitleaks` is not installed by project tooling. `gitleaks git --log-opts=origin/main..HEAD` is the cheap mitigation (D-117) | open |
