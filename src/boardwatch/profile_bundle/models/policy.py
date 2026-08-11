@@ -44,7 +44,7 @@ from boardwatch.profile_bundle.models.base import (
 )
 from boardwatch.profile_bundle.models.claims import ClaimType
 from boardwatch.profile_bundle.models.evidence import BASIS_EVIDENCE_CLASSES, EvidenceClass
-from boardwatch.profile_bundle.models.facts import FactValue, FactValueKind
+from boardwatch.profile_bundle.models.facts import VALUE_DATE_KINDS, FactValue, FactValueKind
 from boardwatch.profile_bundle.models.metrics import MetricKind
 
 # ======================================================================================
@@ -171,6 +171,33 @@ class PredicateSpec(StrictModel):
             raise ValueError(
                 f"{self.predicate_id}: legal verification basis {basis.value!r} has no "
                 "minimum_evidence alternative containing a corresponding evidence class"
+            )
+        return self
+
+    @model_validator(mode="after")
+    def _a_value_date_expiry_needs_a_value_carrying_a_date(self) -> PredicateSpec:
+        """§10.4's expiry row is named after the **value** date, so there has to be one to read.
+
+        `completeness._declared_expiry` reads that date from the kinds in `VALUE_DATE_KINDS`. A row
+        pairing this behaviour with any other value type therefore declared an expiry no fact under
+        it could ever trigger: a `year_month` or `date_range` fact with `expires_at: null` stayed
+        effective at every `as_of`, with no finding and no code to notice. Nothing else forbids the
+        pairing, and `legal_value_types` is versioned user data — so a second user's catalog reaches
+        it without anyone touching code, which is exactly the multi-tenancy contract.
+
+        Refused here rather than widened there: one rule in one place, failing loudly where the row
+        is authored, instead of an expiry check that has to learn every value kind.
+        """
+        if self.expiry.behaviour is not ExpiryBehaviour.BLOCK_ACTIVE_USE_AFTER_VALUE_DATE:
+            return self
+        dateless = sorted(
+            kind.value for kind in self.legal_value_types if kind not in VALUE_DATE_KINDS
+        )
+        if dateless:
+            raise ValueError(
+                f"{self.predicate_id}: expiry behaviour block_active_use_after_value_date reads a "
+                f"date from the fact's value, but legal_value_types admits {dateless}, which carry "
+                "none; a fact of that type could never be blocked"
             )
         return self
 
@@ -304,6 +331,28 @@ class SourceKind(StrEnum):
     REPOSITORY_MARKDOWN = "repository_markdown"
 
 
+#: One `portable_locator` segment: never `.` or `..`, and never a separator, a backslash or a
+#: control character. Built from a segment rather than written as one expression so the dot-segment
+#: refusal cannot accidentally match across a `/`.
+_PORTABLE_SEGMENT: Final = r"(?!\.\.?(?:/|$))[^/\\\x00-\x1f\x7f]*"
+
+#: The whole constraint as ONE regex, so it reaches the exported JSON Schema.
+#:
+#: A Pydantic `field_validator` contributes nothing to `career-profile.schema.json`, so every
+#: authoring tool that reads the schema accepted `../escape/source.md` while the model refused it.
+#: The validator below keeps its four separate branches — one diagnostic each — and this pattern
+#: carries the same refusals into the schema; a parametrized test asserts the two agree over a
+#: corpus, which is what stops them drifting into two different contracts.
+#:
+#: The leading control-character lookahead is not redundant with the segment's character class: it
+#: also refuses a TRAILING newline, which `$` would otherwise allow through under Python's regex
+#: dialect but not ECMA-262's.
+PORTABLE_LOCATOR_PATTERN: Final = (
+    r"^(?![\s\S]*[\x00-\x1f\x7f])(?![A-Za-z]:)(?!/)(?!~)(?=[\s\S]*\S)"
+    rf"{_PORTABLE_SEGMENT}(?:/{_PORTABLE_SEGMENT})*$"
+)
+
+
 class SourceSpec(StrictModel):
     """Portable source metadata only (§6, §18).
 
@@ -312,12 +361,17 @@ class SourceSpec(StrictModel):
     documents may not repeat the same metadata fields, so there is no `enumerator_id` here.
 
     Absolute machine-local roots live only in the non-revisioned root `local-sources.yaml`, which
-    is why `portable_locator` is relative and validation rejects a home path inside it.
+    is why `portable_locator` is relative. The field validator below is where that lands: it
+    refuses an absolute path, a drive qualifier, a backslash, a `.`/`..` component, a control
+    character, and a leading `~`. Nothing else in `validation/` reads this field — the personal-path
+    scan walks evidence records only — so a claim about it that is not in that validator is false.
     """
 
     source_id: SourceId
     source_kind: SourceKind
-    portable_locator: NonBlankStr
+    portable_locator: Annotated[
+        NonBlankStr, Field(json_schema_extra={"pattern": PORTABLE_LOCATOR_PATTERN})
+    ]
 
     @field_validator("portable_locator")
     @classmethod
@@ -330,12 +384,23 @@ class SourceSpec(StrictModel):
         reads outside the tree the owner approved. Parse time is the only place that reaches every
         reader of the document.
         """
+        if any(character < " " or character == "\x7f" for character in value):
+            # A NUL made `open()` raise `ValueError: embedded null byte` before any filesystem
+            # call, so the bundle validated clean through all four layers and then failed at the
+            # one place with no diagnostic to give. The earlier branches enumerated the spellings
+            # a reviewer had shown rather than the character classes that break a path.
+            raise ValueError("portable_locator must not contain a control character")
         if "\\" in value:
             raise ValueError("portable_locator must use POSIX separators, not backslashes")
         if value.startswith("/"):
             raise ValueError("portable_locator must be relative, not absolute")
         if re.match(r"^[A-Za-z]:", value):
             raise ValueError("portable_locator must be relative, not a drive-qualified path")
+        if value.startswith("~"):
+            # The home path this class's docstring has claimed to refuse since T12. `~/notes/x.md`
+            # is *relative*, so the absolute branch above never saw it, and D-122 recorded the
+            # claim as false and then fixed only the other half of the sentence.
+            raise ValueError("portable_locator must be relative to the approved root, not to $HOME")
         if any(segment in (".", "..") for segment in value.split("/")):
             raise ValueError("portable_locator must not contain a '.' or '..' segment")
         return value

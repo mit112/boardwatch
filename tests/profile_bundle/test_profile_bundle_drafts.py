@@ -9,10 +9,12 @@ promotion later re-checks against `CURRENT`.
 
 from __future__ import annotations
 
+import errno
 import json
 import os
 import stat
 from pathlib import Path, PurePosixPath
+from typing import Any
 
 import pytest
 
@@ -49,7 +51,7 @@ from boardwatch.profile_bundle.paths import (
 )
 from boardwatch.profile_bundle.validation import load_documents, validate_bundle
 from boardwatch.profile_bundle.yaml_loader import load_yaml_bytes
-from tests.profile_bundle.conftest import BLOB_SHA256, PromotedRevisionTree
+from tests.profile_bundle.conftest import BLOB_SHA256, PromotedRevisionTree, quoted_yaml
 
 IDENTITY = PurePosixPath("facts/identity.yaml")
 
@@ -146,6 +148,39 @@ def test_init_writes_an_empty_private_sidecar_outside_the_draft(tmp_path: Path) 
     assert not (handle.root / LOCAL_SOURCES_FILE).exists()
     if os.name == "posix":
         assert stat.S_IMODE(sidecar.stat().st_mode) == 0o600
+
+
+def test_a_failed_sidecar_write_leaves_nothing_for_the_retry_to_trip_over(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """`init` may leave the skeleton behind, but only whole files.
+
+    A plain write interrupted halfway leaves a truncated `local-sources.yaml`; `inventory` reports an
+    unparseable sidecar as an error, and the retry skips an existing one, so the corrupt file would
+    outlive every attempt to fix it by re-running the command.
+    """
+    root = tmp_path / "career-profile"
+    real = os.replace
+
+    def failing(src: Any, dst: Any, **kwargs: Any) -> None:
+        if Path(dst).name == LOCAL_SOURCES_FILE:
+            raise OSError(errno.ENOSPC, "No space left on device")
+        real(src, dst, **kwargs)
+
+    monkeypatch.setattr(os, "replace", failing)
+    outcome = init_draft(root, name="initial")
+    assert outcome.exit_code == 3
+    assert [d.code for d in outcome.diagnostics] == [str(IssueCode.IO_ERROR)]
+    assert not local_sources_path(root).exists()
+    assert [entry.name for entry in root.iterdir() if entry.name.startswith(".tmp-")] == []
+
+    monkeypatch.undo()
+    assert init_draft(root, name="initial").category == "clean"
+    assert LocalSourcesSidecar.model_validate(
+        load_yaml_bytes(
+            local_sources_path(root).read_bytes(), logical_path=PurePosixPath(LOCAL_SOURCES_FILE)
+        )
+    ) == EMPTY_SIDECAR
 
 
 def test_init_refuses_once_a_revision_has_been_promoted(
@@ -334,6 +369,146 @@ def test_checkout_refuses_a_revision_that_is_not_the_one_selected(
     assert outcome.exit_code == 1
     assert [d.code for d in outcome.diagnostics] == [str(IssueCode.CURRENT_POINTER_MISMATCH)]
     assert not draft_root(promoted_tree.bundle_root, "work").exists()
+
+
+def test_checkout_that_cannot_read_a_blob_installs_no_draft(
+    promoted_tree: PromotedRevisionTree,
+) -> None:
+    """§21's exit 3 means the check could not run at all, so it must not also leave a draft behind.
+
+    A blob that is missing or fails its digest is §6's recovery path and still produces a draft; a
+    blob whose bytes could not be read at all is not a state anyone can recover from by editing the
+    draft, and a caller retrying on exit 3 would otherwise be met with `draft_already_exists`.
+    """
+    stored = blob_path(promoted_tree.bundle_root, BLOB_SHA256)
+    stored.chmod(0o600)
+    stored.unlink()
+    stored.mkdir()
+    before = _tree_snapshot(promoted_tree.bundle_root)
+    outcome = checkout_current(promoted_tree.bundle_root, name="work")
+    assert outcome.exit_code == 3
+    assert [d.code for d in outcome.diagnostics] == [str(IssueCode.IO_ERROR)]
+    assert outcome.value is None
+    assert not draft_root(promoted_tree.bundle_root, "work").exists()
+    assert _tree_snapshot(promoted_tree.bundle_root) == before
+
+
+def test_checkout_reports_a_future_schema_version_the_way_validate_does(
+    promoted_tree: PromotedRevisionTree,
+) -> None:
+    """A bundle this build is too old to read is not a small problem with the draft name.
+
+    `validation.context.parse_error_diagnostics` is already the load-failure to `IssueCode` mapping,
+    and it has an arm for exactly this so an operator upgrades Boardwatch instead of filing a bug.
+    """
+    _edit_revision(promoted_tree, "manifest.yaml", lambda data: data.update({"schema_version": 99}))
+    outcome = checkout_current(promoted_tree.bundle_root, name="work")
+    control = validate_bundle(
+        promoted_tree.revision_dir, bundle_root=promoted_tree.bundle_root, mode="revision"
+    )
+    assert [d.code for d in outcome.diagnostics] == [d.code for d in control.diagnostics]
+    assert [d.code for d in outcome.diagnostics] == [str(IssueCode.UNSUPPORTED_SCHEMA_VERSION)]
+    assert outcome.exit_code == control.exit_code == 3
+
+
+def test_checkout_reports_every_model_error_the_control_reports(
+    promoted_tree: PromotedRevisionTree,
+) -> None:
+    """`BundleParseError` carries one finding per broken field; collapsing them into one code
+    throws away the list the operator has to work through."""
+    (promoted_tree.revision_dir / "skills" / "inventory.yaml").write_text(
+        "'skills':\n- 'nope': 'x'\n", encoding="utf-8"
+    )
+    outcome = checkout_current(promoted_tree.bundle_root, name="work")
+    control = validate_bundle(
+        promoted_tree.revision_dir, bundle_root=promoted_tree.bundle_root, mode="revision"
+    )
+    assert [d.code for d in outcome.diagnostics] == [d.code for d in control.diagnostics]
+    assert {d.code for d in outcome.diagnostics} == {str(IssueCode.MODEL_VALIDATION_ERROR)}
+    assert outcome.exit_code == control.exit_code == 1
+    assert not draft_root(promoted_tree.bundle_root, "work").exists()
+
+
+def test_checkout_of_a_revision_whose_evidence_document_is_gone_names_the_missing_file(
+    promoted_tree: PromotedRevisionTree,
+) -> None:
+    """`internal_error` is "file a bug"; a declared document that is merely absent is not that.
+
+    Canonicalising the parent's evidence set is not a load, so `parse_error_diagnostics` has no arm
+    for its failure: routing it through that mapping reported `internal_error` at exit 3 for a tree
+    the control and `inventory` both report as a missing required file at exit 1.
+    """
+    (promoted_tree.revision_dir / "evidence" / "records.yaml").unlink()
+    outcome = checkout_current(promoted_tree.bundle_root, name="work")
+    control = validate_bundle(
+        promoted_tree.revision_dir, bundle_root=promoted_tree.bundle_root, mode="revision"
+    )
+    assert str(IssueCode.MISSING_REQUIRED_FILE) in {d.code for d in control.diagnostics}
+    assert [d.code for d in outcome.diagnostics] == [str(IssueCode.MISSING_REQUIRED_FILE)]
+    assert [d.path for d in outcome.diagnostics] == ["evidence/records.yaml"]
+    assert outcome.exit_code == control.exit_code == 1
+    assert not draft_root(promoted_tree.bundle_root, "work").exists()
+
+
+def test_no_draft_command_names_an_absolute_path_in_a_diagnostic(tmp_path: Path) -> None:
+    """§19 renders diagnostics as JSON an operator may paste elsewhere, and every pre-T14 diagnostic
+    in this package uses logical paths. A stringified `OSError` carries an absolute one."""
+    root = tmp_path / "career-profile"
+    outcomes = [
+        checkout_current(root, name="work"),
+        init_draft(root, name="initial"),
+        init_draft(root, name="initial"),
+        init_draft(root, name="second"),
+    ]
+    blocked = tmp_path / "blocked-bundle"
+    blocked.mkdir()
+    drafts_dir(blocked).write_text("not a directory\n", encoding="utf-8")
+    outcomes.append(init_draft(blocked, name="initial"))
+    assert outcomes[-1].exit_code == 3
+
+    for outcome in outcomes:
+        for finding in outcome.diagnostics:
+            assert str(tmp_path) not in finding.message, finding
+
+
+def test_a_symlinked_declared_member_stops_init_from_writing_outside_the_root(
+    tmp_path: Path,
+) -> None:
+    """Confinement is checked over the whole root grammar, so `init` cannot populate a `drafts/`
+    that is really somewhere else."""
+    root = tmp_path / "career-profile"
+    root.mkdir()
+    outside = tmp_path / "outside-drafts"
+    outside.mkdir()
+    drafts_dir(root).symlink_to(outside, target_is_directory=True)
+
+    outcome = init_draft(root, name="initial")
+    assert outcome.exit_code == 1
+    assert [d.code for d in outcome.diagnostics] == [str(IssueCode.SYMLINK_REFUSED)]
+    assert list(outside.iterdir()) == []
+
+
+def test_a_symlinked_declared_member_is_refused_before_the_draft_name_is_examined(
+    promoted_tree: PromotedRevisionTree, tmp_path: Path
+) -> None:
+    """The reason reported must be the one that matters: a draft name colliding with something
+    outside the bundle is not a name collision, it is a bundle that is not self-contained."""
+    outside = tmp_path / "outside-drafts"
+    drafts_dir(promoted_tree.bundle_root).mkdir(parents=True, exist_ok=True)
+    drafts_dir(promoted_tree.bundle_root).rename(outside)
+    (outside / "work").mkdir()
+    drafts_dir(promoted_tree.bundle_root).symlink_to(outside, target_is_directory=True)
+
+    outcome = checkout_current(promoted_tree.bundle_root, name="work")
+    assert [d.code for d in outcome.diagnostics] == [str(IssueCode.SYMLINK_REFUSED)]
+
+
+def _edit_revision(tree: PromotedRevisionTree, relative: str, mutate: Any) -> None:
+    path = tree.revision_dir / relative
+    logical = PurePosixPath(relative)
+    data = load_yaml_bytes(path.read_bytes(), logical_path=logical)
+    mutate(data)
+    path.write_bytes(quoted_yaml(data, logical_path=logical))
 
 
 def test_checkout_reads_the_pointer_exactly_once(

@@ -116,7 +116,7 @@ def _edit_document(root: Path, logical: PurePosixPath, mutate: Callable[[Any], N
     path = root / logical
     data = load_yaml_bytes(path.read_bytes(), logical_path=logical)
     mutate(data)
-    path.write_bytes(quoted_yaml(data))
+    path.write_bytes(quoted_yaml(data, logical_path=logical))
 
 
 def _edit_skills(root: Path, mutate: Callable[[Any], None]) -> None:
@@ -257,7 +257,7 @@ def test_reformatting_a_document_is_not_a_record_change(scene: Scene) -> None:
     before = load_documents(scene.draft, mode="draft")
     path = scene.draft / SKILLS_PATH
     data = load_yaml_bytes(path.read_bytes(), logical_path=SKILLS_PATH)
-    path.write_bytes(quoted_yaml(data))
+    path.write_bytes(quoted_yaml(data, logical_path=SKILLS_PATH))
     assert path.read_bytes() != b""
 
     assert diff_records(before, load_documents(scene.draft, mode="draft")).touched == frozenset()
@@ -1143,7 +1143,8 @@ def test_a_file_only_the_draft_has_survives_the_rebase(scene: Scene) -> None:
                 },
                 "facts": [],
             }
-        )
+        ),
+        logical_path=added,
     )
 
     outcome = rebase_draft(scene.bundle_root, name=DRAFT_NAME)
@@ -1183,7 +1184,7 @@ def test_a_selected_revision_whose_manifest_disagrees_with_the_pointer_refuses(
     manifest_path = scene.current.revision_dir / "manifest.yaml"
     data = load_yaml_bytes(manifest_path.read_bytes(), logical_path=PurePosixPath("manifest.yaml"))
     data["bundle_digest"] = "sha256:" + "e" * 64
-    manifest_path.write_bytes(quoted_yaml(data))
+    manifest_path.write_bytes(quoted_yaml(data, logical_path=PurePosixPath("manifest.yaml")))
 
     outcome = rebase_draft(scene.bundle_root, name=DRAFT_NAME)
 

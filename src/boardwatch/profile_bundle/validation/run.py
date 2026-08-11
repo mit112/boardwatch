@@ -37,7 +37,12 @@ from boardwatch.profile_bundle.canonical import (
     MissingBlobError,
     candidate_content_digest,
 )
-from boardwatch.profile_bundle.errors import Diagnostic, OperationOutcome, ProfileBundleError
+from boardwatch.profile_bundle.errors import (
+    Diagnostic,
+    OperationOutcome,
+    ProfileBundleError,
+    diagnostic,
+)
 from boardwatch.profile_bundle.models.manifests import RevisionManifest
 from boardwatch.profile_bundle.paths import blobs_dir
 from boardwatch.profile_bundle.reports import (
@@ -46,6 +51,7 @@ from boardwatch.profile_bundle.reports import (
     empty_report,
     outcome_for_report,
 )
+from boardwatch.profile_bundle.storage import SelectionError, require_confined_root
 from boardwatch.profile_bundle.validation.completeness import (
     ancestry_completeness,
     validate_completeness,
@@ -58,7 +64,10 @@ from boardwatch.profile_bundle.validation.context import (
     build_context,
     parse_error_diagnostics,
 )
-from boardwatch.profile_bundle.validation.digest import validate_digest
+from boardwatch.profile_bundle.validation.digest import (
+    recomputed_candidate_digest,
+    validate_digest,
+)
 from boardwatch.profile_bundle.validation.evidence import (
     evidence_completeness,
     validate_evidence_structural,
@@ -106,6 +115,19 @@ def validate_bundle(
             "completeness validation needs an explicit as_of date; this package reads no clock, so "
             "the caller chooses the date and the report states it"
         )
+    if deep_history and not completeness:
+        raise ValueError(
+            "deep_history is the ancestor audit inside completeness validation, so it needs "
+            "completeness=True; accepting it alone would answer the one question that makes an "
+            "edited ancestor visible with a clean report nobody ran"
+        )
+    try:
+        # Before a single byte is read: §6's self-containment is what makes the digest layer's
+        # answer mean anything, and a symlinked `blobs/` would otherwise hash content from outside
+        # the root into `evidence_set_digest` and so into `bundle_digest`.
+        require_confined_root(bundle_root)
+    except SelectionError as exc:
+        return outcome_for_report(empty_report((diagnostic(exc.code, str(exc)),)))
     blobs = FilesystemBlobReader(blobs_dir(bundle_root))
     try:
         ctx = build_context(
@@ -124,7 +146,12 @@ def validate_bundle(
         *validate_imports(ctx),
         *validate_digest(ctx),
     ]
-    if completeness and as_of is not None and _prerequisites_are_present(ctx):
+    # `as_of` in the report means exactly "the dated checks ran at this date", so it is set from
+    # what happened rather than from what was asked for. A skipped run that still reported the
+    # requested date and `blocker: 0` was indistinguishable in JSON from a completeness run that
+    # found nothing — and it reads as the reassuring one of the two.
+    completeness_ran = completeness and as_of is not None and _prerequisites_are_present(ctx)
+    if completeness_ran and as_of is not None:
         findings.extend(
             evidence_completeness(
                 ctx, installed_ruleset_version=installed_secret_ruleset_version()
@@ -140,7 +167,7 @@ def validate_bundle(
             schema_version=ctx.manifest.schema_version,
             bundle_digest=_reported_bundle_digest(ctx),
             candidate_digest=_reported_candidate_digest(ctx),
-            as_of=as_of if completeness else None,
+            as_of=as_of if completeness_ran else None,
             diagnostics=tuple(findings),
             counts=count_diagnostics(findings),
         )
@@ -166,19 +193,22 @@ def _reported_bundle_digest(ctx: ValidationContext) -> str | None:
 
 
 def _reported_candidate_digest(ctx: ValidationContext) -> str | None:
-    """The digest an owner approves.
+    """The candidate digest THIS TREE recomputes — never a value it merely declares.
 
-    Declared for a promoted revision — `validate_digest` separately proves the revision recomputes
-    it — and RECOMPUTED for a draft, where the manifest carries a sentinel and the whole point of
-    `validate --draft` is to hand the owner the digest to approve (§19 step 7).
+    For a draft that is the digest the owner is being asked to approve (§19 step 7); for a promoted
+    revision it is the inverse candidate view §20.6 requires to equal both the manifest's
+    `approved_candidate_digest` and the appended approval stamp. Both are computed from the bytes on
+    disk, so the field means one thing in machine output.
 
-    `None` for a draft whose parent was not supplied: the candidate view folds in the parent's
-    revision number and digest, so recomputing without it produces a different digest rather than an
-    approximate one, and printing it would invite an owner to approve a value nothing will match.
+    Reporting `manifest.approved_candidate_digest` verbatim is what this replaces: a re-sealed
+    revision nobody approved printed its own claim under the same key as a verified value, and no
+    consumer could tell them apart. `None` is "this run made no claim" — a missing blob, an
+    unrecoverable candidate view, or a parent that is not on disk — and it is deliberately
+    indistinguishable from a draft whose parent was not supplied, because both are the same absence.
     """
     manifest = ctx.manifest
     if isinstance(manifest, RevisionManifest):
-        return manifest.approved_candidate_digest
+        return recomputed_candidate_digest(ctx)
     if manifest.parent_bundle_digest is not None and ctx.parent is None:
         return None
     blobs = ctx.blobs

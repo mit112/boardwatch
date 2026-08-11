@@ -31,55 +31,133 @@ whose old link points at a dead path on a new host.
 **Next action: P6 has nothing left to BUILD — its last two gate clauses need the system RUN.** Duplicate
 leakage needs 7 days of runs (the window must start after D-110, which changed which callers advance the
 queue), and "0 dead postings" needs a real run whose leads are actually probed. So the useful work is, in
-order: (1) start accumulating real daily runs, gated on Mit's `resume.yaml` fix below; (2) Gate A — T13
-onward, with T12's independent review owed; (3) P2 item 8 or P3 slice 5, both owner-gated and both
+order: (1) start accumulating real daily runs, gated on Mit's `resume.yaml` fix below; (2) Gate A —
+finish T14–T19 per the branch table below; (3) P2 item 8 or P3 slice 5, both owner-gated and both
 wanting their own context window.
+
+### Gate A branch table — where every unmerged slice stands (2026-08-11)
+
+**Nothing below is pushed, and no sha here is `main`'s** — `git log --oneline -1` is the authority for
+that (D-017). Every branch is local; `docs/superpowers/` holds
+the design and plan and is untracked — copy it into any worktree you create.
+
+| Branch | Head | Stands where |
+|---|---|---|
+| `t13-followup` | — | **MERGED** to main at `b87fa06`, gate exit 0 · 5,436 passed · 95.64%. Branch retained but done. |
+| `t14-storage` | `9d11d03` + fix round 2 in flight | **REVIEWED — REWORK** (round 2, adversarial, `scratchpad/T14-REVIEW-ROUND2.md`). 1 BLOCKING + 4 SHOULD-FIX. The BLOCKING is in the check the earlier audit blessed: the `ROOT_MEMBERS` confinement refusal is **one path component short** — `ROOT_MEMBERS` holds top-level names including `blobs`, but the store is `paths.blobs_dir() == blobs/sha256`, so symlinking `blobs/sha256` or a single blob file out of the root passes, and those bytes are hashed into `bundle_digest` while `validate`/`inventory`/`checkout` all report exit 0 clean. Its guarding test **cannot** catch it — the test reads the same `BLOBS_DIR`/`ROOT_MEMBERS` constants the check reads, so it agrees with itself; the fix pins the outside fact (`resolve().is_relative_to`) instead of enumerating names. The 4 SHOULD-FIX are all "the fix is there but nothing pins it": three mutations (`inspection.py:190-198`, `:412-413`, `:569-579`) leave the suite **green**. 14 of 18 reverted checks did go red. A bind mount was NOT tested (needs root) — untested, not a negative result. |
+| `t15-rebase` | `e9ab3bc` + fix round in flight | **REVIEWED — REWORK by BOTH lenses**, run concurrently (`scratchpad/T15-REVIEW-LENS-A.md` runtime, `T15-REVIEW-LENS-B.md` conformance). **6 distinct BLOCKING + 8 SHOULD-FIX**; the slice's own 54 tests are green and cover **none** of the BLOCKING. Both lenses independently hit `rebase.py:294-310` from different angles — one-sided document deletion silently discarding the other side's work — which is one root defect with several shapes: record-free `policy/*.yaml` catalogs are invisible to the record-ID overlap gate, and additions are discarded in both directions, including **silently reverting a promoted record**. The others: a symlinked backup root is accepted as byte-identical and the original draft is then `rmtree`d unrecoverably (exit 0); the append-only history ledgers are merged as ordinary record lists, **deleting an approval stamp** the selected revision carries; a merged document failing its own validator escapes as an uncaught `pydantic.ValidationError`; a shadowed record ID makes an edit invisible and the merge drops one of the two records (`BundleIndex.collisions` is the signal and `diff.py` never reads it); and a legal 14-char draft name can **never** be rebased, stranding the draft forever, because `paths.py:35`'s "96 characters leaves room for the longest derived suffix" is arithmetically wrong — the real cap is 13. Verified sound and not to be re-litigated: the crash matrix at three boundaries the author did not pick (real `SIGKILL`), the lock contract under real processes, and `_install`'s no-writes claim under a whole-tree hash. |
+| `t16-promotion` | `e9ab3bc` | **Not started.** The branch exists but is identical to `t15-rebase`; the build agent died before its first edit. Its carried debt is in `scratchpad/CARRIED-DEBT.md`. **Do not start it until T15's fix round lands** — it is byte-identical to the reviewed-REWORK `t15-rebase`, so it currently carries all 6 of T15's BLOCKING defects, and it takes the same lock, computes the same digest over the same blob store, and needs `_identical_trees`/`_tree_contents` (private to `rebase.py`) for its own step 7. Building on it now would build on a known-broken foundation. |
+| `t17-schema` | `7626d32` | Built: schema-v1 bootstrap and the migration no-op. **REVIEWED — APPROVE**, light pass in-session, record at `scratchpad/T17-REVIEW.md`. No BLOCKING and no SHOULD-FIX in its own diff; the D-115 "could never execute" reasoning is pinned by a tripwire that takes 3 tests red when `SUPPORTED_SCHEMA_VERSIONS` grows. Two obligations belong to its forward merge, not to T17 — see the note below the table. |
+| T18, T19 | — | Not started. T18 is the `profile-bundle` CLI, the first non-inert surface. T19 is the authoring contract and the final Gate A gate. |
+
+**T14's fix must be merged forward into `t15-rebase`, `t16-promotion` and `t17-schema` before any of
+them lands** — it fixes a symlink confinement escape that applies to *every* declared root member,
+and T15's backup and T16's promotion temporary both inherit it. Do not add a second guard downstream.
+
+**Those three branches fork from T14's base, not from `main`.** `git branch --contains d681653`
+returns all four. So merging `t14-storage` into each brings T14's fix round **and** `main`
+transitively — **one merge, not two.** Do not merge `main` in separately first; it only forces the
+same conflicts to be resolved twice.
+
+**That merge breaks callers without producing a conflict.** T14 made `conftest.quoted_yaml`'s
+`logical_path` **required**; `t17-schema`'s new `test_profile_bundle_schema_head.py:34` calls it
+without one. Different files, so `git merge` reports success and the failure appears only at runtime.
+Sweep every `quoted_yaml(` call in the branch being merged. Related and already seen once: T13 and T14
+each independently added a byte-identical helper stripping the absolute path out of an `OSError`, and
+the merge kept both — when resolving, look for **the same function under two names**.
+
+**Conversely, some downstream findings are fixed BY that merge — re-measure, do not patch.**
+`migrations.py` maps `SelectionError` through `str(exc)`, which leaks an absolute `$HOME`-class path
+into a `no_current_revision` diagnostic on `t17-schema`. T14 fixed it at the raise site
+(`storage.py:127` drops `bundle_root`), so the leak clears on merge. Patching it downstream would be
+the second guard this table forbids.
+
+**`t15-rebase`, `t16-promotion` and `t17-schema` are behind `main`** — they fork at `2e6f667`, before
+T13 merged. Merge `main` in before gating, or the gate measures a tree nobody will ship. Doing this for
+T14 was not a formality: it surfaced **four test failures and two conflicts** that neither branch's own
+green suite could see. Expect the same for the other three.
+
+**One conflict resolution is worth not re-litigating.** T13 and T14 each independently added a helper
+returning an `OSError`'s reason without the absolute path `str(exc)` appends — byte-identical bodies
+under two names, `errors.io_reason` and a module-private `_why` in `validation/digest.py`. `io_reason`
+survives because it already lives in the shared error module and three modules already import it.
+
+**The next dispatch queue is written down**: `scratchpad/RESUME-AT-0910.md` holds the T14 review brief,
+both T15 lenses, the T17 light review and the T16 build, with each slice's carried debt and
+self-declared gaps already folded in.
+
+**This file is 331 lines against a ~170 target and is still OWED a trim.** It grew again here because Gate
+A's standing genuinely grew. The next trim should compress the P6 narrative, which is now fully recorded in
+D-110/D-111/D-113 — not the "standing facts" list, which is the whole point of the file. **The Gate A
+branch table above is deliberately exempt**: it is the only record of six unmerged local branches, and it
+shrinks to one line the moment they land.
 
 **A green `make check` is NOT a green CI** (D-117). `gitleaks`, `perf` and `generalization` are separate CI
 jobs `make check` never runs, and pushing turned `gitleaks` red for the first time in the project's history
 with every local check green. This does not contradict "`make check` is the only gate" — that holds for *this
 repo's own correctness*. Run `gitleaks git --log-opts=origin/main..HEAD` before pushing.
 
-**0.3.0 is PUBLISHED (D-119)** — on PyPI, GHCR (`amd64` + `arm64`) and GitHub Releases, verified through
-three paths independent of the workflow's own report. `v0.3.0` is a **lightweight** tag on `dc1ffec`,
-matching `v0.1.0`/`v0.2.0`. Its precondition was `ci.yml` run `31442555052`: **12 of 12 green**, the first
-fully green `ci.yml` in the project's history — which closed both the tectonic/poppler gap (D-114, 33
-failures → 0) and the Windows cp1252 program-index defect.
+**0.3.0 is PUBLISHED (D-119)** — PyPI, GHCR (`amd64` + `arm64`) and GitHub Releases, verified through three
+paths independent of the workflow's own report. `v0.3.0` is a **lightweight** tag on `dc1ffec`, like every
+prior tag. It **ships Gate A inside it, deliberately**: the wheel carries the whole `profile_bundle`
+package and the `## [0.3.0]` section does not enumerate it. **Mit was offered "hold until Gate A is
+reviewed" twice and declined both times.** The basis holds because the package is **inert** — no CLI
+command, no bundle-to-`Resume` bridge, a test asserts both directions, nothing in a shipped code path
+reaches it. Publishing changed the release, **not** the review's standing.
 
-**0.3.0 ships Gate A inside it, deliberately (D-119).** The wheel carries the whole `profile_bundle` package —
-65 entries, 31 modules, 33 example YAML documents, 1 JSON Schema — and the `## [0.3.0]` section does not
-enumerate them. **Mit was offered "hold until Gate A is reviewed" twice — once before the loader BLOCKERs were
-known and once after — and declined both.** The basis held because the package is **inert**: no CLI command, no
-bundle-to-`Resume` bridge, a test asserts both directions, and nothing in a shipped code path reaches it. It is
-a defect in code that ships but never runs. **Publishing changed the release, not the review's standing** — the
-review is still owed and Gate B is still prohibited.
+**A PARALLEL TRACK exists: the canonical career-profile bundle, Gate A — 16 of 19 slices built, 14
+merged (D-115, D-118, D-120, D-125, D-127).** T15 and T17 are built but unreviewed, T16/T18/T19 are
+not started. Not a P0–P7 phase; it has moved no program gate. Its design and plan live
+**untracked** under `docs/superpowers/` — read them there, and **copy that directory into any worktree you
+create**, where they otherwise vanish. `src/boardwatch/profile_bundle/` holds the typed outcomes, the
+restricted YAML loader, the closed 33-document grammar, every record model, the JSON Schema export, a
+packaged synthetic example, an isolated canonical serializer, the global record index, structural +
+referential + evidence + **semantic** validation, the **effectiveness derivation**, the blob store,
+versioned secret scanning, owner-gate derivation and append-only history, and the four deterministic
+source adapters with candidate identity and import validation. **Gate A is NOT met and the bundle is
+wired to nothing** — no CLI command, and deliberately no bundle-to-`Resume` bridge (a test asserts both
+directions). Its commits being on `origin/main` is **not** sign-off. **Gate B stays prohibited until
+Gate A is implemented AND independently reviewed.**
 
-**A PARALLEL TRACK exists: the canonical career-profile bundle, Gate A — 12 of 19 slices built (D-115,
-D-118, D-120).** Not a P0–P7 phase; it has moved no program gate. Its design and plan live **untracked** under
-`docs/superpowers/` — read them there, and never work this track from a fresh worktree, where they vanish.
-`src/boardwatch/profile_bundle/` holds the typed outcomes, restricted YAML loader, the closed 33-document
-grammar, every record model, the JSON Schema export, a packaged synthetic example, an isolated canonical
-serializer, the global record index, structural + referential + evidence + **semantic** validation, the
-**effectiveness derivation**, the blob store, versioned secret scanning, owner-gate derivation and
-append-only history, and now the four deterministic source adapters with candidate identity and import
-validation. **Gate A is NOT met, T12 is NOT reviewed, and the bundle is wired to nothing** — no CLI command, and deliberately no bundle-to-`Resume`
-bridge (a test asserts both directions). Its commits being on `origin/main` is **not** sign-off. **Gate B
-stays prohibited until Gate A is implemented AND independently reviewed**; that review is owed.
+**T1–T12 are implemented and independently reviewed. T12's review loop is CLOSED (D-126) — it was
+reviewed FIVE times, every finding is fixed, and no sixth round is owed.** Rounds one, two and three each returned REWORK
+(D-121, D-122, D-124) and each is fixed (D-125). Rounds four and five ran **concurrently against the
+same commit with different lenses** — one hunting runtime forgeries, one checking conformance against
+the design's own words — and both returned REWORK. **Both independently found the same gap** the
+author and a 20-mutation suite had missed: the byte-free adapter grammar reached record locators and
+stopped, so an approved scope could name a shape no heading stack resolves to, validate clean, and
+then fail every re-enumeration. All of it is fixed, with **28 of 28 distinct mutations caught** and
+the gate green at **exit 0, 5,260 tests, 95.41%**. **D-126 states the exit criterion so this loop is
+not reopened by reflex: a slice's review ends when a round finds no BLOCKING defect that is either a
+silent identity/data-integrity fault or a legitimate input the system refuses.** Round four found
+neither. That rule is per-slice and evidence-based — T13 has never been reviewed and owes its first. The conformance lens alone found a `SourceSpec` docstring claiming a
+guarantee that landed nowhere — a sentence **D-122 had already recorded as false**.
 
-**T1–T11 are implemented and independently reviewed; T12 is implemented and NOT reviewed.** T12 (D-120)
-is deterministic enumeration, candidate identity, and idempotent import — the four approved adapters, NFC
-percent-encoded locators, the derived `source-record.<64hex>` and `candidate.<64hex>` IDs, predicate-
-authorized value canonicalization, idempotent package merging, and the import validation layer. Its
-`make check` exited 0 (5,086 tests, 95.39%) and 59 mutations were each caught by a narrow test, but a
-green gate is not sign-off: **the independent T12 review is owed.** Read D-120 before touching identity
-derivation — the résumé adapter's stage order and `~N` locator preservation are both load-bearing for
-stored IDs, and four checks were deleted there for being unable to fire.
+**Read D-125 before touching locators, and D-120 before touching identity derivation.** The four
+things most likely to be undone by accident:
 
-**Next slice is T13**, completeness, digest validation, ancestor traversal, and deterministic reports. It
-inherits the promoted-revision fixture T11 built and the digest primitives from T8 (`record_digest`,
-`candidate_content_digest`, `candidate_digest_from_revision`, `source_scope_target_digest`,
-`source_exclusion_target_digest`). Note that `validate_imports` and `imports_completeness` are deliberately
-NOT exported from `validation/__init__.py` yet — T13 owns wiring them into the report layer.
+- **`_root`, `.` and `..` are ESCAPED by the encoder, never refused** (`%5Froot`, `%2E`, `%2E.`).
+  Refusing makes a legitimate document unenumerable, which is rounds one and three's shared defect
+  class. `normalize_locator` keeps a `.`/`..` guard for raw *paths*, where the same spelling means
+  traversal — D-120's reason for deleting that guard has inverted.
+- **The reservation is global on purpose.** A structured key or résumé identifier named `_root` is
+  escaped too and moves in §18.1's encoded-key sort. A per-adapter reservation would mean two
+  encoders and the drift the round removed.
+- **`is_normalized_locator` is deliberately WEAKER than `emits_locator`.** It admits the `~N` suffix
+  and a reserved segment anywhere, because it also serves owner-authored scope locators. Tightening
+  it strands every legitimate selected scope.
+- **The résumé adapter's stage order and `~N` locator preservation are load-bearing for stored IDs**,
+  and four checks were deleted in T12 for being unable to fire.
+
+**T13 is MERGED to `main`** (gate `5aa8d1c`: exit 0, 5,416 passed, 95.61%): `reports.py`, `validation/digest.py`, the
+promoted-revision fixture, `validation/completeness.py` and `validation/run.py`. Its review found one BLOCKING — the §20.6 clause binding an owner's approval to promoted content was
+skipped for **every revision from 2 onward**, so a re-sealed tree carrying documents nobody approved
+validated clean. Fixed and verified three ways (pre-fix / post-fix / fix mutated out). **Mit ruled that `METRIC_REVIEW_MISSING` is DELETED and metrics
+get no review interval** (`review_interval_days` is a `PredicateSpec` column, a metric has no
+predicate, and `reviewed_at` is required, so the check could not fire — D-115). A metric's freshness
+is its `reviewed_at` date alone. The build also fixed two pre-existing defects: `validate_history`
+derived owner gates against `parent=None`, reporting ~35 spurious `missing_owner_approval` errors on
+**every revision ≥ 2**, and `parse_error_diagnostics` had no arm for `UnsupportedSchemaVersionError`.
 
 **The live store has NOT had Slice 2 applied.** Migrated and backfilled for Slice 1 only (head
 `p6_posting_identities`, 117,254 identity rows, `identities verify` exit 0, 147 groups / 186 surplus /
@@ -89,18 +167,15 @@ the cheap proof, since a regrouped store would read 23,887. `identities regroup`
 onto 147 canonical jobs and needs the `p6_job_dispositions` migration first; **Mit declined it on
 2026-08-10** — not blocked, just not now. The 769 MB backup sits beside it.
 
-**What has NOT been demonstrated on real data:** the ledger end to end, and the liveness probe against real
-leads. A `boardwatch top 5` against the 23,455-posting copy ran past 20 minutes and was stopped — it pays
-for `run_preflight` + `run_eligibility` over the whole corpus. Both are mutation-checked by tests; neither
-has run at corpus scale.
+**Not demonstrated on real data:** the ledger end to end, and the liveness probe against real leads. A
+`boardwatch top 5` against the 23,455-posting copy ran past 20 minutes and was stopped — it pays for
+`run_preflight` + `run_eligibility` over the whole corpus. Both are mutation-checked by tests; neither has
+run at corpus scale.
 
-**The closed-phrase catalog was NOT shipped, deliberately — not an omission to correct.** Providers assemble
-`body_text` only from JSON-payload description fields and never see the rendered page, so page chrome cannot
-reach that column. Measured **11 of 23,455** matches, **all false positives**; a high-precision catalog
-matches **0**. The older "3 open postings contain a closed phrase" figure is **superseded**.
-
-**One earlier review fix does not ship.** `bwd` lives in gitignored `.agent/bin/bw-daily`, so its
-`top --no-record` fix is local to this machine; the shipped fix is the flag itself.
+**The closed-phrase catalog was NOT shipped, deliberately — not an omission to correct** (D-111). Providers
+assemble `body_text` only from JSON-payload description fields, so page chrome cannot reach that column:
+**11 of 23,455** matched, **all false positives**; a high-precision catalog matches **0**. Also note `bwd`
+lives in gitignored `.agent/bin/bw-daily`, so its `top --no-record` fix is local to this machine.
 
 ---
 
@@ -149,7 +224,10 @@ since D-035, unchanged by everything since.
 | Item | Detail | Owner |
 |---|---|---|
 | **Three `resume.yaml` bullets exceed the 220-char layout gate** | Forces an untailored-master degrade on every posting, which is what blocks accumulating real runs. The file also lacks Knowledge Forge, has stale `skill_groups`, and an empty extracurricular block. **Mit pins `resume_max_pages=1` — do not advise setting it to 2.** | Mit (content) |
-| **Gate A implementation remains incomplete; T12 is implemented but NOT independently reviewed** | T1–T11 are implemented and signed off. T12 (D-120) adds the four source adapters, derived candidate identity, idempotent import merging, and import validation; its `make check` exited 0 and 59/59 mutations were caught, but **that is not sign-off** and the independent review is owed. T13 onward remains unstarted; Gate B stays prohibited. | T13 |
+| **T14 is in review-fix; T15 is building** | T14 (one-read storage, drafts, inspection, and the first production YAML emitter) is on `t14-storage`. **Both its reviews returned REWORK**, converging independently on three findings. Two BLOCKINGs are this project's signature defect restated: the load-failure→`IssueCode` mapping was copied twice out of `parse_error_diagnostics` (so a schema-99 bundle reads as `unknown_file`/exit 1), and an *unmeasured* blob-reference set is reported as a measured *empty* one. A third: every declared root directory can be symlinked out of the bundle, and `init` still exits 0. | T14 |
+| **A forged revision whose parent is DELETED validates clean on the default path** | exit 0, no diagnostics, `candidate_digest: null`. §21 sanctions the tier and `--completeness` catches it, so this is a boundary rather than a defect — but `validate` alone cannot distinguish "verified" from "no claim made". Being closed by an information-tier diagnostic that names the reason. | T13 |
+| **`block_active_use_after_value_date` only understands `date` values** | A predicate whose value type is `year_month` or `date_range`, with `expires_at: null`, is never blocked at any `as_of`. `legal_value_types` is versioned USER data, so **a second user's catalog reaches this without anyone touching code** — a multi-tenancy hole, not a typo. Being closed by refusing the pairing at catalog-validation time. | T13 |
+| **The 03:10 launchd job re-fires a task that already shipped** | `com.mitsheth.boardwatch-p6.plist` is a *daily* `StartCalendarInterval` job carrying the *one-shot* "execute P6 Slice 1" prompt, which asserts `main` at `fb0386a` — now an ancestor 110 commits back. It misfired on 2026-08-11 and will misfire nightly. Benign and self-detecting (the session-start ritual catches it in a few read-only commands), **not** self-correcting. Fix: `launchctl bootout gui/$UID/com.mitsheth.boardwatch-p6`, or repoint `~/.claude/scheduled/p6-slice1-run.sh` at a fresh prompt (D-123) | Mit (automation) |
 | **No local pre-push check for the three CI-only jobs** | `gitleaks`, `perf` and `generalization` run in CI and not under `make check`; `gitleaks` is not installed by project tooling. `gitleaks git --log-opts=origin/main..HEAD` is the cheap mitigation (D-117) | open |
 | **Five Gate A fix commits are independently reviewed** | The current `origin/main` contains `1de10c7`, `20ff50c`, `8d32294`, `9d78450`, and `bbec2c0`; each exact diff and the untracked design correction were checked against the original findings with executable reproductions and negative controls. Their prior `make check` results were not used as sign-off. | complete |
 | **The earlier partial-review findings are resolved or separately fixed** | Explicit tags, typed YAML codes, scalar allowlisting, predicate evidence routes, `legal_surfaces`, and dead-check removals were rechecked. The independent review also found and fixed the broad YAML-loader exception classification (`dfa655e`) and the Windows personal-path scan gap (`f166d18`). No BLOCKING or unresolved SHOULD-FIX findings remain. | review |
@@ -243,17 +321,29 @@ Only what `CLAUDE.md` does not already say.
 - **Commit before EVERY mutation round, not once before you start.** The `git checkout` that reverts a
   mutation destroys any uncommitted edit. Fired three times. Clear `__pycache__` too — stale bytecode fakes
   both a CAUGHT and a spurious failure. Derive the mutation from the test's CLAIM, not the implementation.
+  **Check the driver for byte-identical duplicates before quoting a count** (D-122 reported 13 when 12 were
+  distinct; the driver now aborts).
+- **A test derived from a constant agrees with itself.** Deriving a test from the emitter closes drift
+  between two pieces of code and says nothing about a shared wrong premise: mutating `_MAX_HEADING_LEVEL`
+  survived because every assertion about the cap read the same constant it was checking (D-125). Pin the
+  outside fact — what Markdown does — not the constant.
 - **A detector must be confirmed to FIRE** — mutate the thing it watches and watch it go red (D-116). Its
   mirror image: **a check that cannot fire is deleted, not shipped** (D-115) — write a test saying *where* the
-  guarantee actually lands, so the spec row does not merely look uncovered.
+  guarantee actually lands. A fix elsewhere can make a live check dead: escaping `.`/`..` in the encoder
+  killed a guard that had been firing until then (D-125).
+- **Two reviewers with different LENSES beat two sequential rounds.** A forgery-hunting reviewer and a
+  design-conformance reviewer run against the same commit both found the same missed gap independently,
+  and only the conformance one found a docstring asserting a guarantee that landed nowhere (D-125).
+  Reviewers that RUN the code find what reviewers that read it cannot (D-111).
 - **`git add -A` and `git add -u` both sweep another writer's work.** `-u` feels safer because it cannot take
   untracked files, which is exactly why it is easy to forget it takes *every* tracked modification in the
   tree. Stage explicit paths, always.
 - **When two sessions share a clone, a position in `git log` proves neither authorship nor order.** Commits
   land above *and* below yours. Push an explicit sha (`git push origin <sha>:main`) so a concurrent commit
   cannot ride along un-gated.
-- **Reviewers that RUN the code find what reviewers that read it cannot.** Both of D-111's BLOCKERs were
-  invisible to reading and obvious to one pipeline execution. Dispatch a **separate** docs-only reviewer too.
+- **Concurrent subagents and a gate contend for the same CPU.** Load average 21 stretched a 65-second suite
+  to eight minutes and SIGTERMed a gate in an earlier session. Pin the gate to a sha in its own worktree,
+  and do not start a second heavy suite beside it.
 - **Measure the spec's premise before building it.** D-098 priced a deferral with the wrong subsystem's
   figures (D-105); D-111 found PROGRAM item 6's authoritative signal was 0-for-11 on the real corpus and
   structurally unable to reach the column it reads. A spec written against another codebase's data is a

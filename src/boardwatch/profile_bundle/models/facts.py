@@ -19,7 +19,7 @@ from __future__ import annotations
 
 from datetime import date
 from enum import StrEnum
-from typing import Annotated, Literal
+from typing import Annotated, Final, Literal
 
 from pydantic import Field, model_validator
 
@@ -59,6 +59,17 @@ class FactValueKind(StrEnum):
     URL = "url"
     STRING_LIST = "string_list"
     SKILL_REF = "skill_ref"
+
+
+#: The value kinds whose value IS a date, so §10.4's "block active use after **value date**" can
+#: read one from the fact itself.
+#:
+#: One set with two readers. `PredicateSpec` refuses that expiry behaviour on a predicate admitting
+#: any other value type, and `completeness._declared_expiry` reads a value date from exactly these
+#: kinds; a parametrized test asserts the two agree over the whole union. Splitting them is how a
+#: catalog row comes to declare an expiry no fact under it can ever trigger — `legal_value_types` is
+#: versioned user data, so a second user's catalog reaches that pairing without any code change.
+VALUE_DATE_KINDS: Final[frozenset[FactValueKind]] = frozenset({FactValueKind.DATE})
 
 
 class StringValue(StrictModel):

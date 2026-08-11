@@ -17,16 +17,33 @@ skipped it would still return something that looked coherent:
 
 `read_current` is T13's, defined next to the model it parses, and is deliberately reused rather than
 reimplemented — two readers for one 45-byte file are two chances to disagree about what it says.
-What this module adds is the *once*: every public read operation in the subsystem enters through
+What this module adds is the *once*: every operation that resolves a selection enters through
 `read_current_once`, so "how many times did this command read the pointer?" has one answer that a
-test can assert by counting calls.
+test can assert by counting calls. (`validate` is not one of them: it is given a tree and a bundle
+root and reads the pointer through `validation.digest.read_current`, once, to find an ancestor.)
+
+**The symbol a test must patch is `storage.read_current`, never `storage.read_current_once`.**
+`drafts`, `inspection` and the rebase path all do `from …storage import read_current_once`, which
+binds the function object at import; replacing this module's attribute afterwards reaches none of
+them, and a counting test written that way would observe zero calls and pass while measuring
+nothing. `read_current` is different because it is resolved as a module global *inside*
+`read_current_once`, at call time — which is the only reason the existing counting tests work.
 
 ## Why a symlink is refused here and not by the layout walker
 
 `discover_source_files` refuses every symlink it walks past, but it starts *inside* the tree and so
-never examines the tree's own root, nor `CURRENT`, which is not a document at all. Those two are the
-paths that decide which bytes the walker will be pointed at, which makes them the confinement
-boundary rather than an extra check beside one.
+never examines the tree's own root, nor the bundle root's own members, nor the blob store, none of
+which are documents. Those are the paths that decide which bytes the walker will be pointed at,
+which makes them the confinement boundary rather than an extra check beside one.
+`require_confined_root` states that boundary once over every path an identity can be computed from,
+rather than once per directory a command happens to touch: `approvals/` and `revisions/` hold
+nothing until promotion writes them, and a per-directory guard would leave exactly those two escapes
+armed for the slice that does.
+
+The set of those paths is *derived*, never listed again: the root's own entries come from
+`ROOT_MEMBERS` and the blob store comes from `paths.blobs_dir`, because the store sits one component
+below the member named `blobs` and a check written over the names alone reached `blobs/` while the
+bytes that decide `bundle_digest` live in `blobs/sha256/`.
 """
 
 from __future__ import annotations
@@ -40,6 +57,8 @@ from boardwatch.profile_bundle.models.manifests import RevisionManifest
 from boardwatch.profile_bundle.paths import (
     COMPLETE_FILE,
     CURRENT_FILE,
+    ROOT_MEMBERS,
+    blobs_dir,
     current_path,
     revision_root,
 )
@@ -76,6 +95,67 @@ class SelectedRevision:
     bundle_digest: str
 
 
+def require_confined_root(bundle_root: Path) -> None:
+    """Refuse a bundle root that reaches outside itself through any path its identity is read from.
+
+    §6 says the active revision and all required evidence are self-contained under one root, and §7
+    depends on it: blob bytes are hashed into `evidence_set_digest` and therefore into
+    `bundle_digest`, so a symlinked `blobs/` would let content nobody can see from the root decide
+    the bundle's identity.
+
+    Written once over the whole set — the same closed grammar `inventory` reports against, plus the
+    blob store `paths` derives below it — so that a member added later, and every writer added
+    later, inherits the check instead of restating it.
+
+    Residual risk: this is a path-based check and therefore TOCTOU. A symlink created after it
+    returns is not seen, and the operation proceeds against wherever the new link points — for the
+    draft commands that is the tree `_install` renames into `drafts/<name>`, and for `validate` it
+    is the blob bytes read into `evidence_set_digest`. Closing that window needs `openat`/
+    `O_NOFOLLOW` per component, which nothing here attempts; the check narrows the exposure to the
+    interval rather than eliminating it.
+    """
+    resolved_root = bundle_root.resolve()
+    for member in sorted(ROOT_MEMBERS):
+        _require_derived_location(bundle_root / member, bundle_root, resolved_root)
+    # The store is `blobs/<algorithm>/`, one component below the member named `blobs`, and is asked
+    # for by the accessor that builds it rather than spelled out again here — a check written over
+    # the root's member names alone cannot reach the directory whose bytes decide `bundle_digest`.
+    store = blobs_dir(bundle_root)
+    _require_derived_location(store, bundle_root, resolved_root)
+    if store.is_dir():
+        # Each entry on its own: a single blob file is enough to decide `bundle_digest`, and the
+        # store's own path being confined says nothing about what its entries point at.
+        for entry in sorted(store.iterdir()):
+            _require_derived_location(entry, bundle_root, resolved_root)
+
+
+def _require_derived_location(path: Path, bundle_root: Path, resolved_root: Path) -> None:
+    """The one refusal: `path` must resolve to exactly the place the layout derived it from.
+
+    Stated as an equality against that derivation rather than as a rule about symlinks, because the
+    fact §6 needs is *where the bytes are*. `resolve()` follows a chain of any length and sees a
+    link an ancestor introduced, so every path a later slice derives is covered by one sentence
+    without amending it — which is the drift that put the check one component above the blob store.
+
+    The equality refuses both ways out, and it takes both to keep this the only rule here: a member
+    that leaves the root entirely lets outside content decide `bundle_digest`, and one that aliases
+    another member inside it makes two names for one directory, under which `inventory` reports a
+    revision directory as a draft. A dangling link is refused as well, since `resolve()` does not
+    require the target to exist and a path resolving to nothing elsewhere is still not this path.
+
+    The reported path is relative to the root, so a diagnostic never carries a machine-specific
+    prefix.
+    """
+    relative = path.relative_to(bundle_root)
+    if path.resolve() != resolved_root / relative:
+        raise SelectionError(
+            IssueCode.SYMLINK_REFUSED,
+            f"{relative.as_posix()} does not resolve to its own place in this bundle; a bundle is "
+            "self-contained under one root, so every path its identity is computed from must be "
+            "the file or directory the layout names and not a link to somewhere else",
+        )
+
+
 def read_current_once(bundle_root: Path) -> SelectedRevision:
     """Resolve the selected revision, reading `CURRENT` exactly one time.
 
@@ -83,19 +163,14 @@ def read_current_once(bundle_root: Path) -> SelectedRevision:
     selection has no revision to report *about*, and every caller here either refuses outright or
     reports the failure as its own finding (`inventory` does the latter).
     """
+    require_confined_root(bundle_root)
     pointer_path = current_path(bundle_root)
-    if pointer_path.is_symlink():
-        raise SelectionError(
-            IssueCode.SYMLINK_REFUSED,
-            f"{CURRENT_FILE} is a symlink; the selected revision must be named by a file inside "
-            "the bundle root",
-        )
     if not pointer_path.exists():
         # Promotion only ever `os.replace`s this path, never unlinks it, so an absent `CURRENT` is
         # a bundle that has never been promoted rather than a race against a promotion in flight.
         raise SelectionError(
             IssueCode.NO_CURRENT_REVISION,
-            f"{bundle_root} has no {CURRENT_FILE}; no revision has been promoted yet",
+            f"there is no {CURRENT_FILE} in this bundle; no revision has been promoted yet",
         )
     try:
         pointer = read_current(bundle_root)
@@ -170,5 +245,6 @@ __all__ = [
     "SelectionError",
     "read_current",
     "read_current_once",
+    "require_confined_root",
     "selected_documents",
 ]

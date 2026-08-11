@@ -155,6 +155,10 @@ class IssueCode(StrEnum):
     BUNDLE_DIGEST_MISMATCH = "bundle_digest_mismatch"
     EVIDENCE_SET_DIGEST_MISMATCH = "evidence_set_digest_mismatch"
     CANDIDATE_DIGEST_MISMATCH = "candidate_digest_mismatch"
+    #: Information, not a finding about the revision: the run could not recompute a candidate
+    #: digest, so the approval-to-content comparison did not happen. Its absence is what made an
+    #: unmeasured revision indistinguishable from a verified one in both renderings.
+    CANDIDATE_DIGEST_UNVERIFIED = "candidate_digest_unverified"
     CURRENT_POINTER_MISMATCH = "current_pointer_mismatch"
     COMPLETE_MARKER_MISSING = "complete_marker_missing"
     MANIFEST_DIRECTORY_MISMATCH = "manifest_directory_mismatch"
@@ -218,13 +222,20 @@ _BLOCKER_CODES: frozenset[IssueCode] = frozenset(
     }
 )
 
-#: Codes that are reports about the bundle root or a run's own arithmetic, never about the selected
-#: revision's validity. `completeness_counts` is here rather than in `_BLOCKER_CODES` because §20.5
-#: puts counts, surfaces, status distribution and evidence coverage in the `information` tier: a run
-#: whose only finding is a count is a clean run, and giving it any other tier would make every
-#: complete bundle exit 1.
+#: Codes that are reports about the bundle root, a run's own arithmetic, or what a run did not
+#: measure — never about the selected revision's validity. `completeness_counts` is here rather than
+#: in `_BLOCKER_CODES` because §20.5 puts counts, surfaces, status distribution and evidence
+#: coverage in the `information` tier: a run whose only finding is a count is a clean run, and
+#: giving it any other tier would make every complete bundle exit 1. `candidate_digest_unverified`
+#: is here for the same reason from the other direction — §21 keeps a revision valid when its
+#: ancestry is unavailable, so naming the comparison that did not happen must not change the exit
+#: code, only make the gap visible.
 _INFORMATION_CODES: frozenset[IssueCode] = frozenset(
-    {IssueCode.ORPHANED_ARTEFACT, IssueCode.COMPLETENESS_COUNTS}
+    {
+        IssueCode.ORPHANED_ARTEFACT,
+        IssueCode.COMPLETENESS_COUNTS,
+        IssueCode.CANDIDATE_DIGEST_UNVERIFIED,
+    }
 )
 
 #: Typed state refusals: the check completed and the operator has an action. Exit 1.
@@ -406,6 +417,17 @@ def outcome_for(code: IssueCode, message: str | None = None, **details: JsonValu
 
 def _default_message(code: IssueCode) -> str:
     return str(code).replace("_", " ")
+
+
+def io_reason(exc: OSError) -> str:
+    """Why an I/O operation failed, without the absolute path a stringified `OSError` carries.
+
+    A diagnostic is rendered into JSON an operator may paste elsewhere, and every path in this
+    package's diagnostics is a logical one — an absolute `$HOME` path is neither theirs to publish
+    nor the same on the next machine. The caller has already named the logical path it was working
+    on, so only the reason is missing.
+    """
+    return exc.strerror or type(exc).__name__
 
 
 class ProfileBundleError(Exception):

@@ -10,11 +10,11 @@ bundle it had just changed.
 from __future__ import annotations
 
 import json
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 
 import pytest
 
-from boardwatch.profile_bundle.drafts import init_draft
+from boardwatch.profile_bundle.drafts import DRAFT_TEMP_PREFIX, init_draft
 from boardwatch.profile_bundle.errors import IssueCode
 from boardwatch.profile_bundle.inspection import conflicts_report, inspect_record, inventory
 from boardwatch.profile_bundle.models.history import ConflictRecord
@@ -31,13 +31,17 @@ from boardwatch.profile_bundle.paths import (
     rebase_backup_root,
     revisions_dir,
 )
+from boardwatch.profile_bundle.validation import validate_bundle
+from boardwatch.profile_bundle.yaml_loader import load_yaml_bytes
 from tests.profile_bundle.conftest import (
     BLOB_SHA256,
     PromotedRevisionTree,
     promote_next_revision,
+    quoted_yaml,
 )
 
 CANDIDATE_DIGEST = "sha256:" + "3" * 64
+OTHER_DIGEST = "sha256:" + "f" * 64
 FACT_ID = "fact.packet-pantry.end-date.001"
 CONFLICT_ID = "conflict.packet-pantry.end-date"
 
@@ -181,23 +185,6 @@ def test_inventory_reads_a_rebase_backup_of_a_long_draft_name_as_a_draft(
     assert f"drafts/{backup.name}" not in {finding.path for finding in outcome.diagnostics}
 
 
-def test_inventory_reports_an_interrupted_draft_installation(
-    promoted_tree: PromotedRevisionTree,
-) -> None:
-    """`init` and `checkout` build a draft beside its destination and rename it in, so a leftover
-    staging directory is a real state. It is not a draft, and it is not deleted either."""
-    leftover = drafts_dir(promoted_tree.bundle_root) / ".tmp-draft-abc123"
-    leftover.mkdir(parents=True)
-    before = _snapshot(promoted_tree.bundle_root)
-    outcome = inventory(promoted_tree.bundle_root)
-    report = outcome.value
-    assert report is not None
-    assert leftover.name not in report.drafts
-    assert "drafts/.tmp-draft-abc123" in {d.path for d in outcome.diagnostics}
-    assert outcome.exit_code == 0
-    assert _snapshot(promoted_tree.bundle_root) == before
-
-
 def test_an_in_flight_blob_write_is_not_reported_as_an_artefact(
     promoted_tree: PromotedRevisionTree,
 ) -> None:
@@ -208,33 +195,78 @@ def test_an_in_flight_blob_write_is_not_reported_as_an_artefact(
     assert outcome.diagnostics == ()
 
 
-def test_inventory_measures_no_blob_references_when_it_cannot_read_them(
+def test_inventory_reports_an_unmeasured_blob_reference_set_as_unmeasured(
     promoted_tree: PromotedRevisionTree,
 ) -> None:
-    """Empty and unmeasured are different answers.
+    """Empty and unmeasured are different answers, and the report has to be able to say which.
 
-    Without the distinction a revision whose evidence document had gone missing would report every
-    blob in the shared store as unreferenced — a claim nobody computed, about files no command is
-    allowed to remove anyway.
+    Collapsed into `()`, a revision whose evidence document had gone missing reports a fully
+    populated, clean-looking inventory in which the one genuinely unaccounted-for blob has
+    disappeared — a claim nobody computed, about files no command is allowed to remove anyway.
     """
+    orphan = "b" * 64
+    blob_path(promoted_tree.bundle_root, orphan).write_bytes(b"unreferenced")
+    measured = inventory(promoted_tree.bundle_root).value
+    assert measured is not None
+    assert measured.referenced_blobs == (BLOB_SHA256,)
+    assert measured.unreferenced_blobs == (orphan,)
+
     (promoted_tree.revision_dir / "evidence" / "records.yaml").unlink()
-    report = inventory(promoted_tree.bundle_root).value
+    outcome = inventory(promoted_tree.bundle_root)
+    report = outcome.value
     assert report is not None
-    assert report.referenced_blobs == ()
-    assert report.unreferenced_blobs == ()
+    assert report.referenced_blobs is None
+    assert report.unreferenced_blobs is None
+    assert (str(IssueCode.MISSING_REQUIRED_FILE), "evidence/records.yaml") in {
+        (d.code, d.path) for d in outcome.diagnostics
+    }
+    assert outcome.exit_code == 1
 
 
-def test_inventory_parses_the_private_sidecar_and_reports_a_dead_mapping(
+def test_inventory_does_not_measure_blob_references_without_a_readable_selection(
+    promoted_tree: PromotedRevisionTree,
+) -> None:
+    """Unmeasured is unmeasured on the route that produces it most, not only on the rarest one.
+
+    A selection that cannot be resolved or read at all leaves no documents to take a reference set
+    from, and that is the state a torn promotion, an unparseable revision and a fresh bundle are all
+    in. Reporting `()` there calls every blob in the shared store unreferenced — the same
+    measurement-nobody-took this field exists to avoid, on the common path instead of the rare one.
+    """
+    orphan = "b" * 64
+    blob_path(promoted_tree.bundle_root, orphan).write_bytes(b"unreferenced")
+    measured = inventory(promoted_tree.bundle_root).value
+    assert measured is not None
+    assert (measured.referenced_blobs, measured.unreferenced_blobs) == ((BLOB_SHA256,), (orphan,))
+
+    complete_marker_path(promoted_tree.revision_dir).unlink()
+    outcome = inventory(promoted_tree.bundle_root)
+    report = outcome.value
+    assert report is not None
+    assert report.selected is None
+    assert report.referenced_blobs is None
+    assert report.unreferenced_blobs is None
+
+
+def test_inventory_reports_a_dead_local_source_mapping_without_changing_its_exit_code(
     promoted_tree: PromotedRevisionTree,
 ) -> None:
     """A mapping to a source the revision does not declare is dead config: the owner cannot reopen
-    the original through it, and nothing else in the bundle will ever mention it."""
+    the original through it, and nothing else in the bundle will ever mention it.
+
+    It is not an error, because the sidecar is machine-local, excluded from every digest and never
+    exported — so an error tier would make one bundle exit 1 on this machine and 0 on the next. The
+    finding names the revision it was measured against, because a mapping live for revision 1 and
+    dropped by revision 2 is dead only against the selection.
+    """
     local_sources_path(promoted_tree.bundle_root).write_text(
         "'source.not-in-this-revision': '/tmp/originals'\n", encoding="utf-8"
     )
     outcome = inventory(promoted_tree.bundle_root)
-    assert outcome.exit_code == 1
-    assert str(IssueCode.BROKEN_REFERENCE) in {d.code for d in outcome.diagnostics}
+    assert outcome.exit_code == 0, outcome.diagnostics
+    dead = [d for d in outcome.diagnostics if d.record_id == "source.not-in-this-revision"]
+    assert [d.tier for d in dead] == ["information"]
+    assert str(promoted_tree.revision) in dead[0].message
     report = outcome.value
     assert report is not None
     assert report.local_sources is not None
@@ -247,6 +279,177 @@ def test_inventory_reports_an_unparseable_sidecar(promoted_tree: PromotedRevisio
     report = outcome.value
     assert report is not None
     assert report.local_sources is None
+
+
+def test_inventory_refuses_a_bundle_root_that_reaches_outside_itself(
+    promoted_tree: PromotedRevisionTree, tmp_path: Path
+) -> None:
+    """Every enumeration `inventory` performs would otherwise report content from outside the root
+    as this bundle's own — and it did: 44 files under a symlinked `drafts/` were listed as drafts of
+    this bundle, at information tier, exit 0."""
+    outside = tmp_path / "outside-drafts"
+    drafts_dir(promoted_tree.bundle_root).mkdir(parents=True, exist_ok=True)
+    drafts_dir(promoted_tree.bundle_root).rename(outside)
+    (outside / "not-this-bundles-draft").mkdir()
+    drafts_dir(promoted_tree.bundle_root).symlink_to(outside, target_is_directory=True)
+
+    outcome = inventory(promoted_tree.bundle_root)
+    assert [d.code for d in outcome.diagnostics] == [str(IssueCode.SYMLINK_REFUSED)]
+    assert outcome.value is None
+    assert "member list is closed" not in outcome.diagnostics[0].message
+
+
+def test_inventory_tells_an_interrupted_install_apart_from_a_file_that_does_not_belong(
+    promoted_tree: PromotedRevisionTree,
+) -> None:
+    """`DRAFT_TEMP_PREFIX` says `inventory` recognises an interrupted install; the prefix is read
+    from the writer that produces it, exactly as the blob store's is."""
+    leftover = drafts_dir(promoted_tree.bundle_root) / f"{DRAFT_TEMP_PREFIX}abc123"
+    leftover.mkdir(parents=True)
+    (drafts_dir(promoted_tree.bundle_root) / "NOTES.txt").write_text("mine\n", encoding="utf-8")
+    before = _snapshot(promoted_tree.bundle_root)
+    outcome = inventory(promoted_tree.bundle_root)
+    said = {d.path: d.message for d in outcome.diagnostics}
+    assert "interrupted draft installation" in said[f"drafts/{leftover.name}"]
+    assert "interrupted draft installation" not in said["drafts/NOTES.txt"]
+    report = outcome.value
+    assert report is not None
+    assert leftover.name not in report.drafts
+    assert outcome.exit_code == 0
+    assert _snapshot(promoted_tree.bundle_root) == before
+
+
+def test_inventory_selects_nothing_when_the_manifest_identity_check_fails(
+    promoted_tree: PromotedRevisionTree,
+) -> None:
+    """The same corruption class as a missing `COMPLETE`, which is already pinned to
+    `selected is None`: a revision whose manifest names another digest is not the selected one."""
+    stolen = revisions_dir(promoted_tree.bundle_root) / digest_token(OTHER_DIGEST)
+    promoted_tree.revision_dir.rename(stolen)
+    complete_marker_path(stolen).write_text(f"{OTHER_DIGEST}\n", encoding="utf-8")
+    current_path(promoted_tree.bundle_root).write_text(
+        json.dumps({"bundle_digest": OTHER_DIGEST, "revision": promoted_tree.revision},
+                   sort_keys=True, separators=(",", ":")) + "\n",
+        encoding="utf-8",
+    )
+    outcome = inventory(promoted_tree.bundle_root)
+    assert str(IssueCode.CURRENT_POINTER_MISMATCH) in {d.code for d in outcome.diagnostics}
+    report = outcome.value
+    assert report is not None
+    assert report.selected is None
+
+
+def test_inventory_selects_nothing_when_the_selected_revision_does_not_parse(
+    promoted_tree: PromotedRevisionTree,
+) -> None:
+    """The second shape of the same corruption class as a manifest that names another digest.
+
+    `selected` is the field T18 renders, so naming a revision this command could not read is a claim
+    it did not verify — and it takes the directory out of `unselected_revisions` at the same time,
+    hiding the one directory the diagnostics are about.
+    """
+    (promoted_tree.revision_dir / "manifest.yaml").write_text("'state': 'revision'\n",
+                                                              encoding="utf-8")
+    outcome = inventory(promoted_tree.bundle_root)
+    report = outcome.value
+    assert report is not None
+    assert report.selected is None
+    assert report.complete_revisions == (digest_token(promoted_tree.bundle_digest),)
+    assert report.unselected_revisions == (digest_token(promoted_tree.bundle_digest),)
+    assert outcome.exit_code == 1
+
+
+@pytest.mark.parametrize(
+    ("relative", "content", "expected"),
+    [
+        ("skills/inventory.yaml", "'skills':\n- 'nope': 'x'\n", IssueCode.MODEL_VALIDATION_ERROR),
+        ("facts/notes.txt", "stray\n", IssueCode.UNKNOWN_FILE),
+    ],
+)
+def test_inventory_codes_a_load_failure_the_way_the_control_does(
+    promoted_tree: PromotedRevisionTree, relative: str, content: str, expected: IssueCode
+) -> None:
+    """`validate_bundle` is the control: `parse_error_diagnostics` is already the one mapping from a
+    typed load failure to an `IssueCode`, and a second copy here reported a grammar violation as
+    "could not run at all" and seven field errors as one wrong finding."""
+    (promoted_tree.revision_dir / relative).write_text(content, encoding="utf-8")
+    outcome = inventory(promoted_tree.bundle_root)
+    control = validate_bundle(
+        promoted_tree.revision_dir, bundle_root=promoted_tree.bundle_root, mode="revision"
+    )
+    assert [d.code for d in outcome.diagnostics] == [d.code for d in control.diagnostics]
+    assert {d.code for d in outcome.diagnostics} == {str(expected)}
+    assert outcome.exit_code == control.exit_code == 1
+
+
+@pytest.mark.parametrize(
+    ("relative", "content", "expected"),
+    [
+        ("skills/inventory.yaml", "'skills':\n- 'nope': 'x'\n", IssueCode.MODEL_VALIDATION_ERROR),
+        ("facts/notes.txt", "stray\n", IssueCode.UNKNOWN_FILE),
+    ],
+)
+def test_inspect_and_conflicts_code_a_load_failure_the_way_the_control_does(
+    promoted_tree: PromotedRevisionTree, relative: str, content: str, expected: IssueCode
+) -> None:
+    """`inventory` is not the only command that reaches `parse_error_diagnostics`.
+
+    `inspect` and `conflicts` resolve their selection through the third delegation site, and the
+    single `io_error` it used to restate threw away both the code an operator acts on and the
+    per-file list a `BundleParseError` carries. Pinned for both commands, because the fix could
+    otherwise be deleted from two of the three it was made for and only `inventory` would notice.
+    """
+    (promoted_tree.revision_dir / relative).write_text(content, encoding="utf-8")
+    control = validate_bundle(
+        promoted_tree.revision_dir, bundle_root=promoted_tree.bundle_root, mode="revision"
+    )
+    for outcome in (
+        inspect_record(promoted_tree.bundle_root, FACT_ID),
+        conflicts_report(promoted_tree.bundle_root),
+    ):
+        assert [d.code for d in outcome.diagnostics] == [d.code for d in control.diagnostics]
+        assert {d.code for d in outcome.diagnostics} == {str(expected)}
+        assert outcome.exit_code == control.exit_code == 1
+        assert outcome.value is None
+
+
+def test_inventory_codes_a_future_schema_version_as_unsupported(
+    promoted_tree: PromotedRevisionTree,
+) -> None:
+    """The arm `parse_error_diagnostics` documents: without it an operator files a bug instead of
+    upgrading Boardwatch."""
+    manifest = promoted_tree.revision_dir / "manifest.yaml"
+    logical = PurePosixPath("manifest.yaml")
+    data = load_yaml_bytes(manifest.read_bytes(), logical_path=logical)
+    assert isinstance(data, dict)
+    data["schema_version"] = 99
+    manifest.write_bytes(quoted_yaml(data, logical_path=logical))
+
+    outcome = inventory(promoted_tree.bundle_root)
+    assert [d.code for d in outcome.diagnostics] == [str(IssueCode.UNSUPPORTED_SCHEMA_VERSION)]
+    assert outcome.exit_code == 3
+
+
+def test_no_read_command_names_an_absolute_path_in_a_diagnostic(tmp_path: Path) -> None:
+    """Every pre-T14 diagnostic in this package uses logical paths; `no_current_revision` fires on
+    the most common state of all, and a machine-specific path is not deterministic JSON."""
+    root = tmp_path / "career-profile"
+    root.mkdir()
+    local_sources_path(root).mkdir()
+    unreadable = tmp_path / "unreadable-pointer"
+    unreadable.mkdir()
+    current_path(unreadable).mkdir()
+    outcomes = [
+        inventory(root),
+        inspect_record(root, FACT_ID),
+        conflicts_report(root),
+        inventory(unreadable),
+        inspect_record(unreadable, FACT_ID),
+    ]
+    for outcome in outcomes:
+        assert outcome.diagnostics
+        for finding in outcome.diagnostics:
+            assert str(tmp_path) not in finding.message, finding
 
 
 def test_inventory_reads_the_pointer_exactly_once(
