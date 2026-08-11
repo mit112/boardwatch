@@ -17,7 +17,11 @@ import yaml
 
 from boardwatch.profile_bundle.errors import IssueCode
 from boardwatch.profile_bundle.index import build_index, prefix_matches_kind, record_id_of
-from boardwatch.profile_bundle.validation import build_context, validate_structural
+from boardwatch.profile_bundle.validation import (
+    BundleParseError,
+    build_context,
+    validate_structural,
+)
 from boardwatch.profile_bundle.yaml_loader import load_yaml_bytes
 from tests.profile_bundle.conftest import SyntheticBundle, blob_reader
 
@@ -91,6 +95,33 @@ def test_every_record_in_the_example_is_indexed_exactly_once(
     assert ctx.index.collisions == ()
     per_kind = sum(len(records) for records in ctx.index.by_kind.values())
     assert len(ctx.index.records) == per_kind
+
+
+@pytest.mark.parametrize(
+    ("body", "expected"),
+    [
+        (b"value: \xff\n", IssueCode.INVALID_UTF8),
+        (b"value: [unclosed\n", IssueCode.INVALID_YAML),
+        (b"value: yes\n", IssueCode.RESTRICTED_YAML_VIOLATION),
+    ],
+)
+def test_yaml_failure_keeps_its_raise_site_code(
+    synthetic_bundle: SyntheticBundle,
+    body: bytes,
+    expected: IssueCode,
+) -> None:
+    relative = "facts/identity.yaml"
+    synthetic_bundle.document(relative).write_bytes(body)
+
+    with pytest.raises(BundleParseError) as excinfo:
+        build_context(synthetic_bundle.draft, mode="draft")
+
+    matching = [
+        finding
+        for finding in excinfo.value.diagnostics
+        if finding.path == relative and finding.code == expected
+    ]
+    assert len(matching) == 1
 
 
 def test_the_index_dispatches_on_record_type_not_field_name(

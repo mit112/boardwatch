@@ -387,6 +387,10 @@ class BundlePathError(ProfileBundleError):
 class RestrictedYamlError(ProfileBundleError):
     """A document violated the restricted-YAML authoring contract."""
 
+    def __init__(self, code: IssueCode, message: str) -> None:
+        super().__init__(message)
+        self.code = code
+
 
 class BundleLayoutError(ProfileBundleError):
     """A file is outside the closed logical grammar, or in the wrong owning file."""

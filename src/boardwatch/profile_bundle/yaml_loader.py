@@ -27,7 +27,7 @@ from typing import Any, Final, cast
 import yaml
 from yaml.nodes import MappingNode, Node, ScalarNode
 
-from boardwatch.profile_bundle.errors import RestrictedYamlError
+from boardwatch.profile_bundle.errors import IssueCode, RestrictedYamlError
 
 _STR_TAG: Final = "tag:yaml.org,2002:str"
 _NULL_TAG: Final = "tag:yaml.org,2002:null"
@@ -77,10 +77,12 @@ class CareerProfileLoader(yaml.SafeLoader):
             return _INT_TAG
         if _AMBIGUOUS_LEADING_ZERO_RE.match(value):
             raise RestrictedYamlError(
+                IssueCode.RESTRICTED_YAML_VIOLATION,
                 f"plain scalar {value!r} has an ambiguous leading zero; quote it or drop the zero"
             )
         if _AMBIGUOUS_NUMERIC_BASE_RE.match(value):
             raise RestrictedYamlError(
+                IssueCode.RESTRICTED_YAML_VIOLATION,
                 f"plain scalar {value!r} is a base-prefixed numeric literal; the authoring "
                 "contract accepts only base-10 integers, or quote it as a string"
             )
@@ -90,6 +92,7 @@ class CareerProfileLoader(yaml.SafeLoader):
         )
         if stock != _STR_TAG:
             raise RestrictedYamlError(
+                IssueCode.RESTRICTED_YAML_VIOLATION,
                 f"plain scalar {value!r} would be read as {stock.rsplit(':', 1)[-1]!r} under "
                 "YAML 1.1; the authoring contract requires it quoted, or written as `true`, "
                 "`false`, `null`, or a base-10 integer"
@@ -99,18 +102,21 @@ class CareerProfileLoader(yaml.SafeLoader):
     def compose_node(self, parent: Node | None, index: Any) -> Node | None:
         if self.check_event(yaml.events.AliasEvent):  # type: ignore[no-untyped-call]
             raise RestrictedYamlError(
+                IssueCode.RESTRICTED_YAML_VIOLATION,
                 "YAML aliases are not permitted: one record must have one byte sequence"
             )
         event = self.peek_event()  # type: ignore[no-untyped-call]
         tag = getattr(event, "tag", None)
         if tag is not None:
             raise RestrictedYamlError(
+                IssueCode.RESTRICTED_YAML_VIOLATION,
                 f"explicit YAML tag {tag!r} is not permitted: the restricted loader alone "
                 "decides scalar and collection types"
             )
         anchor = getattr(event, "anchor", None)
         if anchor is not None:
             raise RestrictedYamlError(
+                IssueCode.RESTRICTED_YAML_VIOLATION,
                 f"YAML anchor {anchor!r} is not permitted: an anchor is the first half of an alias"
             )
         return super().compose_node(parent, index)
@@ -127,13 +133,20 @@ class CareerProfileLoader(yaml.SafeLoader):
             key = self.construct_object(key_node, deep=True)
             if not isinstance(key, str):
                 raise RestrictedYamlError(
+                    IssueCode.RESTRICTED_YAML_VIOLATION,
                     f"mapping key {key!r} is not a string; canonical JSON stringifies keys, so a "
                     "non-string key would collide with its own string spelling"
                 )
             if key == "<<":
-                raise RestrictedYamlError("YAML merge keys are not permitted")
+                raise RestrictedYamlError(
+                    IssueCode.RESTRICTED_YAML_VIOLATION,
+                    "YAML merge keys are not permitted",
+                )
             if key in seen:
-                raise RestrictedYamlError(f"duplicate mapping key {key!r}")
+                raise RestrictedYamlError(
+                    IssueCode.RESTRICTED_YAML_VIOLATION,
+                    f"duplicate mapping key {key!r}",
+                )
             seen.add(key)
         return super().construct_mapping(node, deep=deep)
 
@@ -147,17 +160,27 @@ def load_yaml_bytes(raw: bytes, *, logical_path: PurePosixPath) -> object:
     try:
         text = raw.decode("utf-8")
     except UnicodeDecodeError as exc:
-        raise RestrictedYamlError(f"{logical_path}: not valid UTF-8 ({exc.reason})") from exc
+        raise RestrictedYamlError(
+            IssueCode.INVALID_UTF8,
+            f"{logical_path}: not valid UTF-8 ({exc.reason})",
+        ) from exc
     try:
         documents = list(yaml.load_all(text, Loader=CareerProfileLoader))
     except RestrictedYamlError as exc:
-        raise RestrictedYamlError(f"{logical_path}: {exc}") from exc
+        raise RestrictedYamlError(exc.code, f"{logical_path}: {exc}") from exc
     except yaml.YAMLError as exc:
-        raise RestrictedYamlError(f"{logical_path}: invalid YAML ({type(exc).__name__})") from exc
+        raise RestrictedYamlError(
+            IssueCode.INVALID_YAML,
+            f"{logical_path}: invalid YAML ({type(exc).__name__})",
+        ) from exc
     except Exception as exc:
-        raise RestrictedYamlError(f"{logical_path}: invalid YAML ({type(exc).__name__})") from exc
+        raise RestrictedYamlError(
+            IssueCode.INVALID_YAML,
+            f"{logical_path}: invalid YAML ({type(exc).__name__})",
+        ) from exc
     if len(documents) > 1:
         raise RestrictedYamlError(
+            IssueCode.RESTRICTED_YAML_VIOLATION,
             f"{logical_path}: {len(documents)} YAML documents; exactly one is permitted"
         )
     return documents[0] if documents else None

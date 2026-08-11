@@ -113,7 +113,7 @@ def load_documents(root: Path, *, mode: TreeMode) -> BundleDocuments:
         except RestrictedYamlError as exc:
             findings.append(
                 diagnostic(
-                    IssueCode.RESTRICTED_YAML_VIOLATION,
+                    exc.code,
                     str(exc),
                     path=entry.logical_path.as_posix(),
                 )
