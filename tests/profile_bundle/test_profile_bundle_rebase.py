@@ -31,14 +31,6 @@ from pathlib import Path, PurePosixPath
 from typing import Any
 
 import pytest
-from conftest import (
-    PromotedRevisionTree,
-    blob_reader,
-    materialise,
-    promote_example_tree,
-    promote_next_revision,
-    quoted_yaml,
-)
 from pydantic import BaseModel
 
 from boardwatch.profile_bundle import rebase as rebase_module
@@ -75,6 +67,14 @@ from boardwatch.profile_bundle.schema import DOCUMENT_MODELS
 from boardwatch.profile_bundle.validation import load_documents
 from boardwatch.profile_bundle.yaml_loader import load_yaml_bytes
 from boardwatch.profile_bundle.yaml_writer import DocumentEmitError
+from tests.profile_bundle.conftest import (
+    PromotedRevisionTree,
+    blob_reader,
+    materialise,
+    promote_example_tree,
+    promote_next_revision,
+    quoted_yaml,
+)
 
 DRAFT_NAME = "work"
 SKILLS_PATH = PurePosixPath("skills/inventory.yaml")
@@ -1075,7 +1075,7 @@ def test_a_staged_tree_that_does_not_read_back_is_never_installed(
 
 def test_a_missing_blob_refuses_before_anything_is_written(scene: Scene) -> None:
     """The rebased manifest states an evidence-set digest; without the bytes it cannot."""
-    from conftest import BLOB_SHA256
+    from tests.profile_bundle.conftest import BLOB_SHA256
 
     blob_path(scene.bundle_root, BLOB_SHA256).unlink()
     before = _snapshot(scene.bundle_root)
@@ -1142,9 +1142,9 @@ def test_a_file_only_the_draft_has_survives_the_rebase(scene: Scene) -> None:
                     "status": "prototype",
                 },
                 "facts": [],
-            }
-        ),
-        logical_path=added,
+            },
+            logical_path=added,
+        )
     )
 
     outcome = rebase_draft(scene.bundle_root, name=DRAFT_NAME)
