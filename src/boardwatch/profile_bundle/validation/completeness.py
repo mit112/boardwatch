@@ -19,8 +19,10 @@ time- or environment-varying input is a keyword argument the caller injects, so 
 - `stale_fact` is the **declared** `VerificationState.STALE`. No date is read.
 - `expired_review` is **computed**: the fact's `reviewed_at` plus its predicate's
   `review_interval_days` is in the past at `as_of`.
-- `fact_value_expired` is also computed, from a different declaration: the fact's `expires_at` under
-  a predicate whose `ExpiryBehaviour` is `block_active_use_after_value_date`.
+- `fact_value_expired` is also computed, from a different declaration: under a predicate whose
+  `ExpiryBehaviour` is `block_active_use_after_value_date`, the earlier of the fact's `expires_at`
+  and its date value — §10.4 names the row after the **value** date, and for `certification.expiry`
+  the value is that date.
 
 They are separate codes because they call for separate actions — retire the record, re-review it, or
 renew the credential — and a code whose meaning depends on which check emitted it cannot be acted on
@@ -47,10 +49,8 @@ from __future__ import annotations
 
 from collections.abc import Iterator, Mapping
 from datetime import date, timedelta
-from pathlib import Path, PurePosixPath
+from pathlib import Path
 from typing import Final, Literal
-
-from pydantic import TypeAdapter, ValidationError
 
 from boardwatch.profile_bundle.canonical import (
     CanonicalizationError,
@@ -59,49 +59,39 @@ from boardwatch.profile_bundle.canonical import (
 )
 from boardwatch.profile_bundle.effective import effective_fact_ids, eligible_metric
 from boardwatch.profile_bundle.errors import (
-    BundlePathError,
+    BundleIoError,
     Diagnostic,
     IssueCode,
     JsonValue,
     ProfileBundleError,
-    RestrictedYamlError,
-    UnsupportedSchemaVersionError,
     diagnostic,
     tier_of,
 )
 from boardwatch.profile_bundle.models.base import EFFECTIVE_STATES, Surface, VerificationState
 from boardwatch.profile_bundle.models.claims import ClaimStatus
 from boardwatch.profile_bundle.models.evidence import SufficiencyState
+from boardwatch.profile_bundle.models.facts import DateValue, FactRecord
 from boardwatch.profile_bundle.models.imports import ExclusionLedger
-from boardwatch.profile_bundle.models.manifests import BundleManifest, RevisionManifest
+from boardwatch.profile_bundle.models.manifests import RevisionManifest
 from boardwatch.profile_bundle.models.policy import ExpiryBehaviour
-from boardwatch.profile_bundle.paths import revision_root
-from boardwatch.profile_bundle.schema import require_supported_schema
 from boardwatch.profile_bundle.validation.context import ValidationContext, load_documents
+from boardwatch.profile_bundle.validation.digest import (
+    AncestorFault,
+    AncestorUnverifiable,
+    read_ancestor_manifest,
+)
 from boardwatch.profile_bundle.validation.imports import import_totals
 from boardwatch.profile_bundle.validation.referential import (
     records_blocked_by_unresolved_conflicts,
 )
-from boardwatch.profile_bundle.yaml_loader import load_yaml_bytes
 
 IDENTITY_PATH: Final = "facts/identity.yaml"
 CONFLICTS_PATH: Final = "conflicts/groups.yaml"
 MANIFEST_PATH: Final = "manifest.yaml"
 
-_MANIFEST_ADAPTER: Final[TypeAdapter[BundleManifest]] = TypeAdapter(BundleManifest)
-
-#: Why one ancestor could not be verified. Typed at the raise site so a consumer classifies on
-#: `details["reason"]` rather than on the message text.
-AncestorFault = Literal[
-    "absent",
-    "unreadable",
-    "malformed",
-    "unsupported_schema",
-    "not_a_revision",
-    "declared_digest_mismatch",
-    "content_digest_mismatch",
-    "cycle",
-]
+#: Which declaration produced the date a `fact_value_expired` finding blocks on. Typed at the raise
+#: site so a consumer reads `details["declared_by"]` instead of the message text.
+ExpiryDeclaration = Literal["value", "expires_at", "both"]
 
 
 def validate_completeness(ctx: ValidationContext, *, as_of: date) -> tuple[Diagnostic, ...]:
@@ -269,35 +259,63 @@ def _effective_facts_have_not_passed_their_value_date(
 ) -> Iterator[Diagnostic]:
     """§10.4's `block_active_use_after_value_date`, evaluated at `as_of`.
 
-    Both declarations are required: the fact's `expires_at` and the predicate's behaviour. A date
-    authored on a fact whose predicate expires `never` records when the author expects to revisit
-    it, not a date after which the value stops being true — blocking on that alone would retire a
-    live skill because somebody left themselves a note.
+    The predicate's behaviour decides whether any date is read at all. A date authored on a fact
+    whose predicate expires `never` records when the author expects to revisit it, not a date after
+    which the value stops being true — blocking on that alone would retire a live skill because
+    somebody left themselves a note.
     """
     catalog = ctx.index.predicates
     if catalog is None:
         return
     specs = catalog.by_id
     for fact in ctx.index.facts:
-        if fact.fact_id not in effective or fact.expires_at is None:
+        if fact.fact_id not in effective:
             continue
         spec = specs.get(fact.predicate)
         if spec is None or spec.expiry.behaviour is not (
             ExpiryBehaviour.BLOCK_ACTIVE_USE_AFTER_VALUE_DATE
         ):
             continue
-        if fact.expires_at >= as_of:
+        declared = _declared_expiry(fact)
+        if declared is None or declared[0] >= as_of:
             continue
+        expired_on, declared_by = declared
         yield diagnostic(
             IssueCode.FACT_VALUE_EXPIRED,
-            f"{fact.fact_id} expired on {fact.expires_at.isoformat()} and {fact.predicate} blocks "
+            f"{fact.fact_id} expired on {expired_on.isoformat()} and {fact.predicate} blocks "
             f"active use after its value date",
             path=ctx.path_of(fact.fact_id),
             record_id=fact.fact_id,
-            expires_at=fact.expires_at.isoformat(),
+            expired_on=expired_on.isoformat(),
+            declared_by=declared_by,
             as_of=as_of.isoformat(),
             predicate=str(fact.predicate),
         )
+
+
+def _declared_expiry(fact: FactRecord) -> tuple[date, ExpiryDeclaration] | None:
+    """The date after which this fact's value stops being active, and which declaration states it.
+
+    The §10.4 row is "block active use after **value date**", and for `certification.expiry` the
+    fact's VALUE *is* that date. Reading only the `expires_at` column — as this check first did —
+    left a credential that lapsed years ago effective forever whenever its author left the column
+    null: still `verified`, still carrying `resume` in `allowed_surfaces`, still counted in
+    `surface_coverage`, and a résumé built from the bundle would have asserted it.
+
+    Both are declarations of one thing, so the EARLIER governs. Taking the later would let an author
+    revive a lapsed credential by writing a column date after the one the credential itself carries,
+    which is the same hole in a different place. `declared_by` is typed so a consumer classifies on
+    `details` rather than on the message.
+    """
+    value = fact.value.value if isinstance(fact.value, DateValue) else None
+    column = fact.expires_at
+    if value is None:
+        return None if column is None else (column, "expires_at")
+    if column is None or column > value:
+        return (value, "value")
+    if column < value:
+        return (column, "expires_at")
+    return (value, "both")
 
 
 def _unresolved_conflicts_block_their_candidates(ctx: ValidationContext) -> Iterator[Diagnostic]:
@@ -487,14 +505,6 @@ def _surface_coverage(ctx: ValidationContext, effective: frozenset[str]) -> Mapp
 # --------------------------------------------------------------------------------------
 
 
-class _AncestorUnverifiable(ProfileBundleError):
-    """One ancestor could not be verified, with the reason typed rather than described."""
-
-    def __init__(self, reason: AncestorFault, message: str) -> None:
-        super().__init__(message)
-        self.reason: AncestorFault = reason
-
-
 def ancestry_completeness(
     ctx: ValidationContext, *, deep: bool = False
 ) -> tuple[Diagnostic, ...]:
@@ -527,7 +537,7 @@ def _walk_ancestors(
         seen.add(digest)
         try:
             manifest = _ancestor_manifest(bundle_root, digest, blobs_deep=deep, ctx=ctx)
-        except _AncestorUnverifiable as exc:
+        except AncestorUnverifiable as exc:
             yield _ancestor_finding(digest, exc.reason, str(exc))
             return  # everything above an unverifiable ancestor is unreachable too
         digest = manifest.parent_bundle_digest
@@ -546,39 +556,17 @@ def _ancestor_finding(digest: str, reason: AncestorFault, message: str) -> Diagn
 def _ancestor_manifest(
     bundle_root: Path, digest: str, *, blobs_deep: bool, ctx: ValidationContext
 ) -> RevisionManifest:
-    """The stable envelope of one ancestor, or a typed refusal naming why it is unverifiable."""
-    try:
-        root = revision_root(bundle_root, digest)
-    except BundlePathError as exc:
-        raise _AncestorUnverifiable("malformed", str(exc)) from exc
-    path = root / MANIFEST_PATH
-    if not root.is_dir() or not path.is_file():
-        raise _AncestorUnverifiable("absent", f"{root.name} is not on disk")
-    try:
-        raw = path.read_bytes()
-    except OSError as exc:
-        raise _AncestorUnverifiable("unreadable", str(exc)) from exc
-    try:
-        parsed = load_yaml_bytes(raw, logical_path=PurePosixPath(MANIFEST_PATH))
-        manifest = _MANIFEST_ADAPTER.validate_python(parsed)
-    except (RestrictedYamlError, ValidationError) as exc:
-        raise _AncestorUnverifiable("malformed", f"its manifest does not parse: {exc}") from exc
-    try:
-        require_supported_schema(manifest.schema_version)
-    except UnsupportedSchemaVersionError as exc:
-        raise _AncestorUnverifiable("unsupported_schema", str(exc)) from exc
-    if not isinstance(manifest, RevisionManifest):
-        raise _AncestorUnverifiable(
-            "not_a_revision", "its manifest declares state 'draft'; an ancestor is always promoted"
-        )
-    if manifest.bundle_digest != digest:
-        raise _AncestorUnverifiable(
-            "declared_digest_mismatch",
-            f"the directory names {digest} but its manifest declares {manifest.bundle_digest}",
-        )
+    """One ancestor's manifest, plus the deep audit when it was asked for.
+
+    The read itself is `digest.read_ancestor_manifest`, shared with the digest layer's candidate
+    comparison — which needs the same parent envelope and must agree with this walk about whether it
+    is readable at all. Everything this adds is the opt-in byte audit, which is the only part §20.6
+    calls a deep parse.
+    """
+    ancestor = read_ancestor_manifest(bundle_root, digest)
     if blobs_deep:
-        _audit_ancestor_bytes(root, digest, ctx)
-    return manifest
+        _audit_ancestor_bytes(ancestor.root, digest, ctx)
+    return ancestor.manifest
 
 
 def _audit_ancestor_bytes(root: Path, digest: str, ctx: ValidationContext) -> None:
@@ -592,10 +580,19 @@ def _audit_ancestor_bytes(root: Path, digest: str, ctx: ValidationContext) -> No
     try:
         documents = load_documents(root, mode="revision")
         computed = bundle_digest(documents, blobs)
+    except BundleIoError as exc:
+        # Its own arm, and deliberately not interpolated. `BundleIoError` is built from
+        # `str(OSError)`, which appends the absolute path it failed on, and `report_json` emits
+        # `message` verbatim — so the arm below would put a `$HOME` path in a report an operator
+        # pastes elsewhere. The fault is typed instead, and the ancestor's digest is in `details`.
+        # Recovering the logical file would mean parsing that message, which this package refuses
+        # to do anywhere.
+        raise AncestorUnverifiable("unreadable", "one of its documents could not be read") from exc
     except (ProfileBundleError, MissingBlobError, CanonicalizationError) as exc:
-        raise _AncestorUnverifiable("malformed", f"its documents do not load: {exc}") from exc
+        # Every remaining message here is built from logical paths, record IDs and value types.
+        raise AncestorUnverifiable("malformed", f"its documents do not load: {exc}") from exc
     if computed != digest:
-        raise _AncestorUnverifiable(
+        raise AncestorUnverifiable(
             "content_digest_mismatch",
             f"its documents produce {computed}, not the {digest} that names it",
         )

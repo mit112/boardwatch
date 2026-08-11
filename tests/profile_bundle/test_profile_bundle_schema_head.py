@@ -31,7 +31,7 @@ def _rewrite_manifest(revision_dir: Path, mutate: Any) -> dict[str, Any]:
     data = load_yaml_bytes(path.read_bytes(), logical_path=PurePosixPath("manifest.yaml"))
     assert isinstance(data, dict)
     mutate(data)
-    path.write_bytes(quoted_yaml(data))
+    path.write_bytes(quoted_yaml(data, logical_path=PurePosixPath("manifest.yaml")))
     return data
 
 
