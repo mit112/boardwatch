@@ -143,7 +143,7 @@ def read_current(bundle_root: Path) -> CurrentPointer:
     try:
         raw = path.read_text(encoding="utf-8")
     except OSError as exc:
-        raise PointerError(f"{CURRENT_PATH} is unreadable: {exc}") from exc
+        raise PointerError(f"{CURRENT_PATH} is unreadable: {_why(exc)}") from exc
     if not raw.endswith("\n") or raw.rstrip("\n") != raw[:-1]:
         raise PointerError(f"{CURRENT_PATH} must end with exactly one newline")
     try:
@@ -162,7 +162,7 @@ def read_complete(revision_dir: Path) -> str:
     try:
         raw = path.read_text(encoding="utf-8")
     except OSError as exc:
-        raise PointerError(f"{COMPLETE_PATH} is unreadable: {exc}") from exc
+        raise PointerError(f"{COMPLETE_PATH} is unreadable: {_why(exc)}") from exc
     if not raw.endswith("\n") or raw.rstrip("\n") != raw[:-1]:
         raise PointerError(f"{COMPLETE_PATH} must end with exactly one newline")
     try:

@@ -769,6 +769,11 @@ def test_an_ancestor_manifest_that_cannot_be_read_is_a_blocker(
             blobs=blob_reader(),
             bundle_root=chained_tree.bundle_root,
         )
-        assert [f.details["reason"] for f in ancestry_completeness(ctx)] == ["unreadable"]
+        found = ancestry_completeness(ctx)
+        assert [f.details["reason"] for f in found] == ["unreadable"]
+        # `report_json` emits `message` verbatim, and `reports.py` states that a diagnostic never
+        # carries a value like this. `str(OSError)` appends the absolute path it failed on, so the
+        # reason has to be taken from the exception without it.
+        assert str(chained_tree.bundle_root) not in found[0].message
     finally:
         path.chmod(0o644)

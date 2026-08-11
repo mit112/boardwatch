@@ -20,6 +20,7 @@ carry these tests.
 from __future__ import annotations
 
 import json
+import os
 import shutil
 from pathlib import PurePosixPath
 from typing import Any
@@ -552,3 +553,31 @@ def test_a_supplied_parent_snapshot_is_used_instead_of_the_one_on_disk(
     assert IssueCode.CANDIDATE_DIGEST_MISMATCH not in sorted(
         finding.code for finding in validate_digest(ctx)
     )
+
+
+@pytest.mark.skipif(os.geteuid() == 0, reason="root reads a mode-000 file, so the guard cannot fire")
+@pytest.mark.parametrize(
+    ("filename", "code"),
+    [
+        ("CURRENT", IssueCode.CURRENT_POINTER_MISMATCH),
+        ("COMPLETE", IssueCode.COMPLETE_MARKER_MISSING),
+    ],
+)
+def test_an_unreadable_pointer_names_the_file_and_not_the_filesystem_path(
+    promoted_tree: PromotedRevisionTree, filename: str, code: str
+) -> None:
+    """`reports.py` states a diagnostic never carries a value like an absolute path, and this repo
+    runs a generalization checker about home paths in its bytes. `str(OSError)` appends the path it
+    failed on, so the reason is taken from the exception and the logical name supplies the rest."""
+    path = (
+        current_path(promoted_tree.bundle_root)
+        if filename == "CURRENT"
+        else complete_marker_path(promoted_tree.revision_dir)
+    )
+    path.chmod(0o000)
+    try:
+        found = [finding for finding in findings(promoted_tree) if finding.code == code]
+        assert len(found) == 1
+        assert str(promoted_tree.bundle_root) not in found[0].message
+    finally:
+        path.chmod(0o644)
