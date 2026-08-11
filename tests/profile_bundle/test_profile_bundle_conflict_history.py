@@ -74,6 +74,21 @@ def test_a_stale_target_digest_is_reported(promoted_revision_fixture) -> None:
     assert IssueCode.APPROVAL_TARGET_DIGEST_MISMATCH in codes
 
 
+def test_a_forged_authorized_by_value_is_reported(promoted_revision_fixture) -> None:
+    documents = _with_history(promoted_revision_fixture)
+    forged = promoted_revision_fixture.change.model_copy(update={"authorized_by": "agent"})
+    by_path = dict(documents.by_path)
+    by_path[PurePosixPath("history/changes.yaml")] = ChangeLedger(changes=(forged,))
+    ctx = context_from_documents(
+        BundleDocuments(manifest=documents.manifest, by_path=by_path),
+        root=Path("."),
+        mode="revision",
+    )
+    assert IssueCode.CHANGE_ENTRY_MISMATCH in {
+        finding.code for finding in validate_history(ctx)
+    }
+
+
 def test_parent_ledgers_are_prefixes_and_promotion_appends_one_change_and_stamp(
     promoted_revision_fixture,
 ) -> None:

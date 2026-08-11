@@ -8,6 +8,7 @@ from boardwatch.profile_bundle.approvals import ApprovalDecision, required_appro
 from boardwatch.profile_bundle.canonical import record_digest
 from boardwatch.profile_bundle.errors import Diagnostic, IssueCode, diagnostic
 from boardwatch.profile_bundle.models.history import (
+    Actor,
     ApprovalEntry,
     ApprovalStamp,
 )
@@ -60,11 +61,15 @@ def validate_history(ctx: ValidationContext) -> tuple[Diagnostic, ...]:
 
     if changes:
         latest = changes[-1]
-        if latest.revision != manifest.revision or latest.change_id != manifest.change_id:
+        if (
+            latest.revision != manifest.revision
+            or latest.change_id != manifest.change_id
+            or latest.authorized_by != Actor.OWNER
+        ):
             findings.append(
                 diagnostic(
                     IssueCode.CHANGE_ENTRY_MISMATCH,
-                    "latest change does not match the revision manifest",
+                    "latest change does not match the revision manifest or owner stamp",
                     path="history/changes.yaml",
                 )
             )
