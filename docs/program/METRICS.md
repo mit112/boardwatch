@@ -1610,7 +1610,33 @@ review rounds and a completed T13 — still holds; what was missing is that a wi
 sized against remaining budget, and that an agent's work should be committed by its author at each
 finding rather than in one report at the end.
 
+### Continued after the stop — main-thread work only
+
+Subagents were unavailable for the rest of the session, but gates and merges are main-thread work, so
+the chain continued.
+
+| Step | Result |
+|---|---|
+| `t13-followup` gate (main merged in first) | **exit 0 · 5,436 passed · 1 deselected · 95.64% · 9m00s** |
+| `t13-followup` merged to main | `b87fa06`. T13 is now complete. |
+| `main` merged into `t14-storage` | **2 conflicts, 4 test failures** — none visible from either branch's own green suite. Resolved at `9d11d03`; 1,598 passed, ruff + mypy clean. |
+| `t14-storage` gate | Started; **still running when the session ended**. Log: `scratchpad/t14-wt/gate-t14.log`. Read the real exit code from it rather than assuming. |
+
+**The merge is the measurement worth keeping.** Both branches were independently green, and merging
+them was not a formality: it produced two conflicts and four failures. One conflict was two
+byte-identical helpers under two names (`errors.io_reason` and a private `_why`) — the duplication class
+this package has spent five review rounds on, arriving this time through parallel branches rather than
+through a restated rule. **Merge `main` into `t15-rebase`, `t16-promotion` and `t17-schema` before
+gating any of them.**
+
+The T14 fix round was audited against its findings list by the orchestrating session rather than by its
+author, who was killed before reporting. All four BLOCKING and the two SHOULD-FIX items checked have a
+corresponding change, and BLOCKING 1 landed as **one** refusal over `ROOT_MEMBERS` rather than four
+per-directory guards. The audit deliberately does not claim more than that: it did not check that each
+new check has a test that fails without it, and two SHOULD-FIX items were never examined.
+
 ### Standing
 
-Gate A **not met**: 16 of 19 slices built, 13 merged. T15 and T17 are built and reviewed by nobody;
-T16, T18 and T19 are not started. Gate B **prohibited**. **Nothing pushed.**
+Gate A **not met**: 16 of 19 slices built, 14 merged. T15 and T17 are built and reviewed by nobody;
+T16, T18 and T19 are not started. T14 is integrated and gating but **unreviewed**. Gate B
+**prohibited**. **Nothing pushed.**

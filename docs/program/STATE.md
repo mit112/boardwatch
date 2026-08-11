@@ -42,8 +42,8 @@ the design and plan and is untracked — copy it into any worktree you create.
 
 | Branch | Head | Stands where |
 |---|---|---|
-| `t13-followup` | `4bd3c49` | Three fixes to T13's second review, **green (1509) but ungated**. Adds `IssueCode.CANDIDATE_DIGEST_UNVERIFIED` — a closed-catalog widening, justified in D-127. Ready to gate and merge. |
-| `t14-storage` | `d441e2d` | Fix round for T14's four BLOCKING + six SHOULD-FIX. **`d441e2d` is UNVERIFIED** — its author was killed mid-round by a usage limit and never reported, so no account of it exists. Green (1478) and ruff-clean; the findings-to-changes mapping must be re-derived from the diff before it merges. Findings are in `scratchpad/T14-REVIEW-FINDINGS.md`. |
+| `t13-followup` | — | **MERGED** to main at `b87fa06`, gate exit 0 · 5,436 passed · 95.64%. Branch retained but done. |
+| `t14-storage` | `9d11d03` | Fix round for T14's four BLOCKING + six SHOULD-FIX, plus main merged in. Its author was killed mid-round by a usage limit and never reported, so the findings-to-changes mapping was **re-derived from the diff by the orchestrating session** — the audit table is at the bottom of `scratchpad/T14-REVIEW-FINDINGS.md` and states what it does *not* establish. 1,598 passed, ruff + mypy clean. **Owes a review**, and the review should start from that audit table, not the original findings list. |
 | `t15-rebase` | `e9ab3bc` | Built: record-level draft rebase, the shared `filelock` writer lock, the backup drain. 54 new tests, 1511 green. **Reviewed by nobody** — both lenses died at dispatch. |
 | `t16-promotion` | `e9ab3bc` | **Not started.** The branch exists but is identical to `t15-rebase`; the build agent died before its first edit. Its carried debt is in `scratchpad/CARRIED-DEBT.md`. |
 | `t17-schema` | `7626d32` | Built: schema-v1 bootstrap and the migration no-op. **Reviewed by nobody** — the light review died before its first probe. |
@@ -53,10 +53,21 @@ the design and plan and is untracked — copy it into any worktree you create.
 them lands** — it fixes a symlink confinement escape that applies to *every* declared root member,
 and T15's backup and T16's promotion temporary both inherit it. Do not add a second guard downstream.
 
-**`t14-storage` and everything branched from it are behind `main`** — they fork at `2e6f667`, before
-T13 merged. Merge `main` in before gating, or the gate measures a tree nobody will ship.
+**`t15-rebase`, `t16-promotion` and `t17-schema` are behind `main`** — they fork at `2e6f667`, before
+T13 merged. Merge `main` in before gating, or the gate measures a tree nobody will ship. Doing this for
+T14 was not a formality: it surfaced **four test failures and two conflicts** that neither branch's own
+green suite could see. Expect the same for the other three.
 
-**This file is 318 lines against a ~170 target and is still OWED a trim.** It grew again here because Gate
+**One conflict resolution is worth not re-litigating.** T13 and T14 each independently added a helper
+returning an `OSError`'s reason without the absolute path `str(exc)` appends — byte-identical bodies
+under two names, `errors.io_reason` and a module-private `_why` in `validation/digest.py`. `io_reason`
+survives because it already lives in the shared error module and three modules already import it.
+
+**The next dispatch queue is written down**: `scratchpad/RESUME-AT-0910.md` holds the T14 review brief,
+both T15 lenses, the T17 light review and the T16 build, with each slice's carried debt and
+self-declared gaps already folded in.
+
+**This file is 331 lines against a ~170 target and is still OWED a trim.** It grew again here because Gate
 A's standing genuinely grew. The next trim should compress the P6 narrative, which is now fully recorded in
 D-110/D-111/D-113 — not the "standing facts" list, which is the whole point of the file. **The Gate A
 branch table above is deliberately exempt**: it is the only record of six unmerged local branches, and it
