@@ -209,7 +209,7 @@ def test_one_blob_referenced_twice_still_yields_exactly_one_leaf(
     switched = text.replace(
         "  capture:\n    kind: inline\n    text: Median request latency measured at 18 ms across"
         " the same five minute run.\n    media_type: text/plain",
-        f"  capture:\n    kind: blob\n    sha256: {BLOB_SHA256}\n    media_type: text/markdown",
+        f"  capture:\n    kind: blob\n    sha256: '{BLOB_SHA256}'\n    media_type: text/markdown",
     )
     assert switched != text, "the latency capture was not rewritten; the fixture text moved"
     synthetic_bundle.write("evidence/records.yaml", switched)

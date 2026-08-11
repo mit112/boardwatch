@@ -14,6 +14,7 @@ from typing import Any
 
 import pytest
 import yaml
+from yaml.nodes import ScalarNode
 
 from boardwatch.profile_bundle.errors import IssueCode
 from boardwatch.profile_bundle.index import build_index, prefix_matches_kind, record_id_of
@@ -35,6 +36,14 @@ class _NoAliasDumper(yaml.SafeDumper):
 
     def ignore_aliases(self, data: Any) -> bool:  # noqa: ANN401 - PyYAML's own signature
         return True
+
+
+def _represent_quoted_string(dumper: yaml.SafeDumper, value: str) -> ScalarNode:
+    """Mutation fixtures quote strings so they obey the restricted loader after re-dumping."""
+    return dumper.represent_scalar("tag:yaml.org,2002:str", value, style="'")
+
+
+_NoAliasDumper.add_representer(str, _represent_quoted_string)
 
 
 def edit_document(

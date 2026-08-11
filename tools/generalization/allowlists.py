@@ -317,7 +317,7 @@ _BUNDLE_EXAMPLE_PINS: dict[str, str] = {
     "conflicts/rulings.yaml":
         "sha256:c9679bd12c8cead852bdafbb4f164c2771d5867d4606f9425b5c9b5186d04345",
     "evidence/records.yaml":
-        "sha256:95d3e5fcc770f710c291ba6157520b33cda576e1836511523a27effa0fe6fd66",
+        "sha256:f8b141ac260230517981753671647cf6c8fe129401e724916aa8eba2b88f191b",
     "facts/affiliations.yaml":
         "sha256:761319ddc42e8bf9316f51ccb71b6f2033e3248224cde3b76ca5fbf0ac300618",
     "facts/awards.yaml":
@@ -327,17 +327,17 @@ _BUNDLE_EXAMPLE_PINS: dict[str, str] = {
     "facts/courses.yaml":
         "sha256:43f7a13e37cf2c5274427ab78b20016c1a3729965aa1cccd7ef9471bda957d18",
     "facts/education.yaml":
-        "sha256:3d8349de2c6762a239cb17958add318210c3db554290bde26dd5d202d1ea46a6",
+        "sha256:86f19bee927a530ff4bcdc6cd854ccae9e808ea6fcb582ebffafe0b2e1e6ca05",
     "facts/experience/employment.example-labs.yaml":
         "sha256:7a3acb072dbf7a6a8173ba2da50dd92e86105ae4da7f1096a0c6630c448c21be",
     "facts/identity.yaml":
-        "sha256:d2ef2e1a2de2fa56387e5d49f06f29535a7d5eead45a12b0c51c51f4b4d4ee1d",
+        "sha256:597e2d3de7b9d63542a2286fe09361d85826358491f4ee75803a77cd6d645b33",
     "facts/patents.yaml":
         "sha256:ca720fa926db6fabaecdec0a1a0b38c0066f99439b1f4776744cea8a6bf99c57",
     "facts/presentations.yaml":
         "sha256:e684690e2f3a93d08aa5f744c38bcd519e839c19cccf2434cbfeb4ae7be8ba99",
     "facts/projects/project.packet-pantry.yaml":
-        "sha256:25316d0af4e683d44475c4ee6efe0e80d006857306425187256bc41230a5e8c9",
+        "sha256:007713158d4c5e56ea0a61843f200215faf5e116752c5cc3f7303cea33c4454e",
     "facts/publications.yaml":
         "sha256:9992e6009ac516e41027882ea7127d040b7bd1c6cf55bfc102284f7298744d1c",
     "history/approvals.yaml":
@@ -353,7 +353,7 @@ _BUNDLE_EXAMPLE_PINS: dict[str, str] = {
     "manifest.yaml":
         "sha256:8eb558c71706ca78f33d4ff44666a1edc984ed4df7dec0a36c060f0e9e7263ea",
     "metrics/records.yaml":
-        "sha256:d72ee37cbc6bb7ec38a4caa0e8a6d94b565bdf2747f2ac2e6e14536daa4d670d",
+        "sha256:0e43342b74ab39230e7c3cd06cab040d4619ebdebf3d50269c497f697a259f42",
     "policy/assertion-tags.yaml":
         "sha256:7b6611700c8b75f6ecd603170e994cf24b4fa9decce3b19de2074cf50cbc35a7",
     "policy/predicates.yaml":
@@ -361,7 +361,7 @@ _BUNDLE_EXAMPLE_PINS: dict[str, str] = {
     "policy/relations.yaml":
         "sha256:ccc7d7adf02df6b746e130624ef94ddacd8dbcc38c1d051d718d03e790ced9bd",
     "policy/secret-scan.yaml":
-        "sha256:7b890d737ac91fbe8c4c4230025c273b0e64ad4eabe9d64072166a263f19a5e7",
+        "sha256:35285428a600ad9eb7ca8ab7e7d6345f5a43a8dc83071656360c83d4b0b7d66b",
     "policy/skill-categories.yaml":
         "sha256:718c17258356a9e3d62a61ba739fb668c22d9600834271b78fec3e701649301f",
     "policy/sources.yaml":

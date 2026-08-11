@@ -6,7 +6,7 @@ metrics:
     number: '120'
     unit: items_per_second
     qualifier: approximate
-  display_value: ~120 items/s
+  display_value: '~120 items/s'
   measurement_context: Single-node local benchmark with one producer
   measurement_method: Committed load profile run for five minutes
   evidence_ids:
@@ -17,7 +17,7 @@ metrics:
   - public
   allowed_phrasings:
   - sustained approximately 120 items/s
-  - sustained ~120 items/s
+  - 'sustained ~120 items/s'
   forbidden_phrasings:
   - handled thousands of items per second
   protected_tokens:
@@ -61,7 +61,7 @@ metrics:
     number: '72'
     unit: points
     qualifier: exact
-  display_value: 72 pts on the retired scorecard
+  display_value: '72 pts on the retired scorecard'
   measurement_context: Retired internal scorecard from the prototype era
   measurement_method: Scorecard spreadsheet, methodology since replaced
   evidence_ids:
@@ -69,7 +69,7 @@ metrics:
   verification_state: verified
   allowed_surfaces: []
   allowed_phrasings:
-  - scored 72 pts on the retired scorecard
+  - 'scored 72 pts on the retired scorecard'
   forbidden_phrasings:
   - top-rated service
   protected_tokens:

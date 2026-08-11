@@ -33,7 +33,7 @@ contacts:
 - contact_id: contact.example.phone
   person_id: person.example-candidate
   channel_type: phone
-  value: +1 555 0100 EXAMPLE
+  value: '+1 555 0100 EXAMPLE'
   allowed_surfaces:
   - application
   verification_state: owner_confirmed

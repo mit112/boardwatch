@@ -38,14 +38,19 @@ MANIFEST = PurePosixPath("manifest.yaml")
         "-.inf",
         "1.5",
         "0x1f",
+        "0xZZ",
         "0o17",
+        "1e3",
         "1_000",
         "12:30",
         "True",
         "FALSE",
         "Null",
         "089",
+        "2026-08",
         "2026-08-10T12:00:00Z",
+        "123abc",
+        "+",
     ],
 )
 def test_ambiguous_plain_scalar_is_rejected(token: str) -> None:
@@ -59,7 +64,29 @@ def test_quoted_boolean_like_string_stays_a_string() -> None:
 
 @pytest.mark.parametrize(
     "token",
-    ["2026-08-10", "1.5", "01", "yes", "true", "12:30", ".nan"],
+    ["text", "snake_case", "project.record-1", "sha256:abc", "words with spaces"],
+)
+def test_declared_plain_string_grammar_is_accepted(token: str) -> None:
+    assert load_yaml_bytes(f"value: {token}\n".encode(), logical_path=IDENTITY) == {
+        "value": token
+    }
+
+
+@pytest.mark.parametrize(
+    "token",
+    [
+        "2026-08-10",
+        "2026-08",
+        "1.5",
+        "1e3",
+        "0xZZ",
+        "01",
+        "yes",
+        "true",
+        "12:30",
+        ".nan",
+        "123abc",
+    ],
 )
 def test_quoting_is_the_documented_escape_hatch(token: str) -> None:
     assert load_yaml_bytes(f'value: "{token}"\n'.encode(), logical_path=IDENTITY) == {

@@ -3,7 +3,7 @@ evidence:
   title: Packet Pantry local throughput baseline
   capture:
     kind: blob
-    sha256: 21e4321f83a756b29acda64ccccb7c54709c0c05cfb78d557dc8c20ef3edf2c5
+    sha256: '21e4321f83a756b29acda64ccccb7c54709c0c05cfb78d557dc8c20ef3edf2c5'
     media_type: text/markdown
   captured_at: '2026-08-10T12:00:00Z'
   reviewed_at: '2026-08-10'
@@ -71,7 +71,7 @@ evidence:
   evidence_class: repository_artifact
   source_id: source.synthetic-repository
   path: docs/baseline.md
-  repository_commit: 0123456789abcdef0123456789abcdef01234567
+  repository_commit: '0123456789abcdef0123456789abcdef01234567'
 - evidence_id: evidence.example.transcript.001
   title: Example University record excerpt
   capture:
@@ -140,7 +140,7 @@ evidence:
     reference: Example Public Register, 2026 annual listing
   locator:
     kind: section
-    value: 2026 listings
+    value: '2026 listings'
 - evidence_id: evidence.example.owner-attestation.001
   title: Owner attestation for intended wording and private history
   capture:

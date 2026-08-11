@@ -36,13 +36,10 @@ _INT_TAG: Final = "tag:yaml.org,2002:int"
 
 #: Exactly base-10, optional sign, no leading zeroes beyond a bare `0`, no underscores.
 _INT_RE: Final = re.compile(r"^[-+]?(?:0|[1-9][0-9]*)$")
-#: A leading-zero run that stock YAML would NOT resolve (it has an 8 or a 9), so it would
-#: silently become a string. Refused explicitly: it is an integer to every human reader.
-_AMBIGUOUS_LEADING_ZERO_RE: Final = re.compile(r"^[-+]?0[0-9]+$")
-#: YAML 1.2 base prefixes. PyYAML's 1.1 tables resolve `0x1f` but not `0o17`, so one of the two
-#: would become the string "0o17" while the other became 31. Both are refused: an author writing
-#: either means a number, and the loader must not have a spelling that quietly means neither.
-_AMBIGUOUS_NUMERIC_BASE_RE: Final = re.compile(r"^[-+]?0[bBoOxX][0-9a-fA-F_]+$")
+#: Unquoted strings are identifiers or prose beginning with an ASCII letter or underscore.
+#: Numeric-looking strings, punctuation-leading prose, dates, digests, and free-form captures use
+#: YAML's quoted-string escape hatch instead of growing a blocklist of ambiguous spellings.
+_PLAIN_STRING_RE: Final = re.compile(r"^[A-Za-z_][^\r\n]*$")
 
 _ACCEPTED_NULL: Final = frozenset({"", "null", "~"})
 _ACCEPTED_BOOL: Final = frozenset({"true", "false"})
@@ -75,17 +72,6 @@ class CareerProfileLoader(yaml.SafeLoader):
             return _BOOL_TAG
         if _INT_RE.match(value):
             return _INT_TAG
-        if _AMBIGUOUS_LEADING_ZERO_RE.match(value):
-            raise RestrictedYamlError(
-                IssueCode.RESTRICTED_YAML_VIOLATION,
-                f"plain scalar {value!r} has an ambiguous leading zero; quote it or drop the zero"
-            )
-        if _AMBIGUOUS_NUMERIC_BASE_RE.match(value):
-            raise RestrictedYamlError(
-                IssueCode.RESTRICTED_YAML_VIOLATION,
-                f"plain scalar {value!r} is a base-prefixed numeric literal; the authoring "
-                "contract accepts only base-10 integers, or quote it as a string"
-            )
         stock = cast(
             str,
             super().resolve(ScalarNode, value, (True, False)),  # type: ignore[no-untyped-call]
@@ -96,6 +82,12 @@ class CareerProfileLoader(yaml.SafeLoader):
                 f"plain scalar {value!r} would be read as {stock.rsplit(':', 1)[-1]!r} under "
                 "YAML 1.1; the authoring contract requires it quoted, or written as `true`, "
                 "`false`, `null`, or a base-10 integer"
+            )
+        if not _PLAIN_STRING_RE.fullmatch(value):
+            raise RestrictedYamlError(
+                IssueCode.RESTRICTED_YAML_VIOLATION,
+                f"plain scalar {value!r} is outside the plain-string grammar; quote it or start "
+                "it with an ASCII letter or underscore"
             )
         return _STR_TAG
 
