@@ -616,6 +616,45 @@ def _approval_ids(root: Path, *, mode: str) -> list[str]:
     return [stamp.approval_stamp_id for stamp in document.approvals]
 
 
+def test_a_manifest_field_changed_on_both_sides_refuses(scene: Scene) -> None:
+    """The manifest is merged field-wise too, and a catalog version has no record to merge by.
+
+    The end-to-end cover of that refusal: the draft and the newly promoted revision each bump the
+    unit catalog version, which is exactly what a real catalog promotion would do.
+    """
+    manifest_path = PurePosixPath("manifest.yaml")
+    def bump(version: int) -> Callable[[Any], None]:
+        return lambda data: data.update({"unit_catalog_version": version})
+
+    _edit_document(scene.draft, manifest_path, bump(2))
+    _edit_document(scene.current.revision_dir, manifest_path, bump(3))
+    before = _snapshot(scene.bundle_root)
+
+    outcome = rebase_draft(scene.bundle_root, name=DRAFT_NAME)
+
+    assert outcome.exit_code == 1
+    assert _codes(outcome) == [IssueCode.DRAFT_REBASE_CONFLICT]
+    finding = outcome.diagnostics[0]
+    assert finding.path == manifest_path.as_posix()
+    assert finding.details["field"] == "unit_catalog_version"
+    assert _snapshot(scene.bundle_root) == before
+
+
+def test_the_manifest_fields_the_rebase_assigns_itself_all_exist() -> None:
+    """A typo in that literal would silently three-way-merge a promotion-derived field.
+
+    Pinned against the model rather than against the literal, which is the only way the two can
+    disagree.
+    """
+    assert rebase_module._DERIVED_MANIFEST_FIELDS <= frozenset(DraftManifest.model_fields)
+    assert not (rebase_module._INHERITED_MANIFEST_FIELDS & rebase_module._DERIVED_MANIFEST_FIELDS)
+    # Every field a draft and a revision share is either inherited by merge or assigned here.
+    shared = frozenset(DraftManifest.model_fields) & frozenset(RevisionManifest.model_fields)
+    assert shared <= (
+        rebase_module._INHERITED_MANIFEST_FIELDS | rebase_module._DERIVED_MANIFEST_FIELDS
+    )
+
+
 def test_a_stamp_the_draft_dropped_from_its_ledger_is_never_merged_away(scene: Scene) -> None:
     """§17: the ledgers are append-only, so a draft-side removal is a conflict, not a deletion."""
     _edit_document(scene.draft, APPROVALS_PATH, lambda data: data["approvals"].clear())
