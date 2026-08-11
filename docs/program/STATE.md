@@ -44,53 +44,54 @@ the design and plan and is untracked — copy it into any worktree you create.
 | Branch | Head | Stands where |
 |---|---|---|
 | `t13-followup` | — | **MERGED** to main at `b87fa06`, gate exit 0 · 5,436 passed · 95.64%. Branch retained but done. |
-| `t14-storage` | `9d11d03` + fix round 2 in flight | **REVIEWED — REWORK** (round 2, adversarial, `scratchpad/T14-REVIEW-ROUND2.md`). 1 BLOCKING + 4 SHOULD-FIX. The BLOCKING is in the check the earlier audit blessed: the `ROOT_MEMBERS` confinement refusal is **one path component short** — `ROOT_MEMBERS` holds top-level names including `blobs`, but the store is `paths.blobs_dir() == blobs/sha256`, so symlinking `blobs/sha256` or a single blob file out of the root passes, and those bytes are hashed into `bundle_digest` while `validate`/`inventory`/`checkout` all report exit 0 clean. Its guarding test **cannot** catch it — the test reads the same `BLOBS_DIR`/`ROOT_MEMBERS` constants the check reads, so it agrees with itself; the fix pins the outside fact (`resolve().is_relative_to`) instead of enumerating names. The 4 SHOULD-FIX are all "the fix is there but nothing pins it": three mutations (`inspection.py:190-198`, `:412-413`, `:569-579`) leave the suite **green**. 14 of 18 reverted checks did go red. A bind mount was NOT tested (needs root) — untested, not a negative result. |
-| `t15-rebase` | `e9ab3bc` + fix round in flight | **REVIEWED — REWORK by BOTH lenses**, run concurrently (`scratchpad/T15-REVIEW-LENS-A.md` runtime, `T15-REVIEW-LENS-B.md` conformance). **6 distinct BLOCKING + 8 SHOULD-FIX**; the slice's own 54 tests are green and cover **none** of the BLOCKING. Both lenses independently hit `rebase.py:294-310` from different angles — one-sided document deletion silently discarding the other side's work — which is one root defect with several shapes: record-free `policy/*.yaml` catalogs are invisible to the record-ID overlap gate, and additions are discarded in both directions, including **silently reverting a promoted record**. The others: a symlinked backup root is accepted as byte-identical and the original draft is then `rmtree`d unrecoverably (exit 0); the append-only history ledgers are merged as ordinary record lists, **deleting an approval stamp** the selected revision carries; a merged document failing its own validator escapes as an uncaught `pydantic.ValidationError`; a shadowed record ID makes an edit invisible and the merge drops one of the two records (`BundleIndex.collisions` is the signal and `diff.py` never reads it); and a legal 14-char draft name can **never** be rebased, stranding the draft forever, because `paths.py:35`'s "96 characters leaves room for the longest derived suffix" is arithmetically wrong — the real cap is 13. Verified sound and not to be re-litigated: the crash matrix at three boundaries the author did not pick (real `SIGKILL`), the lock contract under real processes, and `_install`'s no-writes claim under a whole-tree hash. |
+| `t14-storage` | **merged** | **MERGED** to main at `aff1dc0`. Round-2 review found 1 BLOCKING + 4 SHOULD-FIX (REWORK); fixed in 5 commits, one per finding. Gate **exit 0 · 5,534 passed · 95.73% · 11m54s**. Detail in D-128. Its fix round had the orchestrator's targeted verification, **not a full independent review round** — the blocking fix was checked by mutating the predicate and re-running the reviewer's probes. |
+| `t15-rebase` | `e34c1d2` | Reviewed by **two concurrent lenses, both REWORK**: 6 distinct BLOCKING + 8 SHOULD-FIX, none covered by its own 54 green tests. Fixed in 12 commits; `main` merged forward; two design departures ruled in D-129. Gate in flight. Detail in D-128. |
 | `t16-promotion` | `e9ab3bc` | **Not started.** The branch exists but is identical to `t15-rebase`; the build agent died before its first edit. Its carried debt is in `scratchpad/CARRIED-DEBT.md`. **Do not start it until T15's fix round lands** — it is byte-identical to the reviewed-REWORK `t15-rebase`, so it currently carries all 6 of T15's BLOCKING defects, and it takes the same lock, computes the same digest over the same blob store, and needs `_identical_trees`/`_tree_contents` (private to `rebase.py`) for its own step 7. Building on it now would build on a known-broken foundation. |
-| `t17-schema` | `7626d32` | Built: schema-v1 bootstrap and the migration no-op. **REVIEWED — APPROVE**, light pass in-session, record at `scratchpad/T17-REVIEW.md`. No BLOCKING and no SHOULD-FIX in its own diff; the D-115 "could never execute" reasoning is pinned by a tripwire that takes 3 tests red when `SUPPORTED_SCHEMA_VERSIONS` grows. Two obligations belong to its forward merge, not to T17 — see the note below the table. |
+| `t17-schema` | `5c4929a` | **REVIEWED — APPROVE** (light pass; no BLOCKING, no SHOULD-FIX in its own diff). `main` merged forward. **Owed: its post-merge test verification** — the worktree venv was broken when the merge landed and repairing it mid-gate risked the running gate. |
 | T18, T19 | — | Not started. T18 is the `profile-bundle` CLI, the first non-inert surface. T19 is the authoring contract and the final Gate A gate. |
 
-**T14's fix must be merged forward into `t15-rebase`, `t16-promotion` and `t17-schema` before any of
-them lands** — it fixes a symlink confinement escape that applies to *every* declared root member,
-and T15's backup and T16's promotion temporary both inherit it. Do not add a second guard downstream.
+**T14 is merged, so the forward-merge debt is now T16's alone** — and T16 must take `main`, not the
+pre-fix `t15-rebase` it is currently identical to.
 
-**Those three branches fork from T14's base, not from `main`.** `git branch --contains d681653`
-returns all four. So merging `t14-storage` into each brings T14's fix round **and** `main`
-transitively — **one merge, not two.** Do not merge `main` in separately first; it only forces the
-same conflicts to be resolved twice.
+**The downstream branches fork from T14's base, not from `main`.** `git branch --contains d681653`
+returns all four, so merging `main` into each brings T14's fix round transitively — **one merge, not
+two.** Merging `main` in separately first only forces the same conflicts to be resolved twice.
 
-**That merge breaks callers without producing a conflict.** T14 made `conftest.quoted_yaml`'s
-`logical_path` **required**; `t17-schema`'s new `test_profile_bundle_schema_head.py:34` calls it
-without one. Different files, so `git merge` reports success and the failure appears only at runtime.
-Sweep every `quoted_yaml(` call in the branch being merged. Related and already seen once: T13 and T14
-each independently added a byte-identical helper stripping the absolute path out of an `OSError`, and
-the merge kept both — when resolving, look for **the same function under two names**.
+**That merge breaks callers without producing a conflict, twice measured.** T14 made
+`conftest.quoted_yaml`'s `logical_path` **required**, and every branch carries new test files T14 never
+saw, so `git merge` reports success and the failure appears only at runtime. **Sweep every
+`quoted_yaml(` call in the branch being merged, and do not trust a line-based grep** — multi-line calls
+carry the argument on a following line, so only the suite settles it.
 
-**Conversely, some downstream findings are fixed BY that merge — re-measure, do not patch.**
-`migrations.py` maps `SelectionError` through `str(exc)`, which leaks an absolute `$HOME`-class path
-into a `no_current_revision` diagnostic on `t17-schema`. T14 fixed it at the raise site
-(`storage.py:127` drops `bundle_root`), so the leak clears on merge. Patching it downstream would be
-the second guard this table forbids.
+**Two shapes to look for when resolving.** *The same function under two names*: T13 and T14 each
+independently added a byte-identical helper stripping the absolute path out of an `OSError`;
+`errors.io_reason` survived and `validation/digest.py`'s private `_why` was deleted. And *a deletion on
+one side that is a rename on the other*: `main` had deleted a test `t15-rebase` still carried, and
+keeping both would have restored the hardcoded-constant version that T14's fix deliberately replaced.
 
-**`t15-rebase`, `t16-promotion` and `t17-schema` are behind `main`** — they fork at `2e6f667`, before
-T13 merged. Merge `main` in before gating, or the gate measures a tree nobody will ship. Doing this for
-T14 was not a formality: it surfaced **four test failures and two conflicts** that neither branch's own
-green suite could see. Expect the same for the other three.
+**Conversely, some downstream findings are fixed BY the merge — re-measure, do not patch.**
+`migrations.py`'s `str(exc)` leaked an absolute path into a `no_current_revision` diagnostic until T14
+fixed it at the raise site. Patching that downstream would be a second guard.
 
-**One conflict resolution is worth not re-litigating.** T13 and T14 each independently added a helper
-returning an `OSError`'s reason without the absolute path `str(exc)` appends — byte-identical bodies
-under two names, `errors.io_reason` and a module-private `_why` in `validation/digest.py`. `io_reason`
-survives because it already lives in the shared error module and three modules already import it.
+**A narrow suite cannot see a cross-suite import collision.** `t15-rebase`'s new test module used a
+bare `from conftest import ...`, which binds whichever `conftest.py` was imported as the top-level
+`conftest` module first — under the full suite that is `tests/unit/conftest.py`. Two tests failed with
+an `ImportError` that **no** run of `tests/profile_bundle` alone can produce, and that both review
+lenses were structurally unable to see because they were told to keep runs narrow. Import from
+`tests.profile_bundle.conftest`, as every other module in that directory already does. This is the
+concrete reason `make check` is the only gate.
 
-**The next dispatch queue is written down**: `scratchpad/RESUME-AT-0910.md` holds the T14 review brief,
-both T15 lenses, the T17 light review and the T16 build, with each slice's carried debt and
-self-declared gaps already folded in.
+**Dispatch state.** `scratchpad/RESUME-AT-0910.md` is the queue the previous session left; the T14
+review, both T15 lenses and the T17 review are now **consumed**. What remains from it is the T16 build
+brief (`scratchpad/BRIEF-T16.md`) and its carried debt (`scratchpad/CARRIED-DEBT.md`), then T18 and T19.
+Review records are `scratchpad/T14-REVIEW-ROUND2.md`, `T15-REVIEW-LENS-A.md`, `T15-REVIEW-LENS-B.md`
+and `T17-REVIEW.md`; Lens A's runnable probes are archived at `scratchpad/T15-lensa-probes/` and are the
+executable statement of six defects, so re-run them after any change to the rebase.
 
-**This file is 331 lines against a ~170 target and is still OWED a trim.** It grew again here because Gate
-A's standing genuinely grew. The next trim should compress the P6 narrative, which is now fully recorded in
-D-110/D-111/D-113 — not the "standing facts" list, which is the whole point of the file. **The Gate A
-branch table above is deliberately exempt**: it is the only record of six unmerged local branches, and it
-shrinks to one line the moment they land.
+**This file remains well over its ~170-line target and is OWED a trim** (no count here on purpose —
+D-017). The next trim should compress the P6 narrative, now fully recorded in D-110/D-111/D-113, not the
+standing-facts list. **The Gate A branch table is deliberately exempt**: it is the only record of the
+unmerged local branches, and it collapses to one line the moment they land.
 
 **A green `make check` is NOT a green CI** (D-117). `gitleaks`, `perf` and `generalization` are separate CI
 jobs `make check` never runs, and pushing turned `gitleaks` red for the first time in the project's history
