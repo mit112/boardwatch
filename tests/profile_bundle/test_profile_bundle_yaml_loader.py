@@ -17,7 +17,8 @@ from typing import NoReturn
 import pytest
 import yaml
 
-from boardwatch.profile_bundle.errors import RestrictedYamlError
+from boardwatch.profile_bundle.errors import ProfileBundleError, RestrictedYamlError
+from boardwatch.profile_bundle.validation.context import parse_error_diagnostics
 from boardwatch.profile_bundle.yaml_loader import load_yaml_bytes
 
 IDENTITY = PurePosixPath("facts/identity.yaml")
@@ -189,7 +190,7 @@ def test_custom_yaml_tag_is_refused() -> None:
         load_yaml_bytes(b"value: !foo text\n", logical_path=MANIFEST)
 
 
-def test_unexpected_parser_exception_is_wrapped(
+def test_unexpected_parser_exception_is_an_internal_failure(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     def raise_builtin(*args: object, **kwargs: object) -> NoReturn:
@@ -197,9 +198,12 @@ def test_unexpected_parser_exception_is_wrapped(
 
     monkeypatch.setattr(yaml, "load_all", raise_builtin)
 
-    with pytest.raises(RestrictedYamlError) as excinfo:
+    with pytest.raises(ProfileBundleError) as excinfo:
         load_yaml_bytes(b"value: text\n", logical_path=MANIFEST)
-    assert "manifest.yaml" in str(excinfo.value)
+    assert not isinstance(excinfo.value, RestrictedYamlError)
+    diagnostics = parse_error_diagnostics(excinfo.value)
+    assert len(diagnostics) == 1
+    assert diagnostics[0].code == "internal_error"
 
 
 def test_empty_document_parses_to_none_for_the_model_layer_to_reject() -> None:

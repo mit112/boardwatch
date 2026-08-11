@@ -27,7 +27,7 @@ from typing import Any, Final, cast
 import yaml
 from yaml.nodes import MappingNode, Node, ScalarNode
 
-from boardwatch.profile_bundle.errors import IssueCode, RestrictedYamlError
+from boardwatch.profile_bundle.errors import IssueCode, ProfileBundleError, RestrictedYamlError
 
 _STR_TAG: Final = "tag:yaml.org,2002:str"
 _NULL_TAG: Final = "tag:yaml.org,2002:null"
@@ -166,10 +166,7 @@ def load_yaml_bytes(raw: bytes, *, logical_path: PurePosixPath) -> object:
             f"{logical_path}: invalid YAML ({type(exc).__name__})",
         ) from exc
     except Exception as exc:
-        raise RestrictedYamlError(
-            IssueCode.INVALID_YAML,
-            f"{logical_path}: invalid YAML ({type(exc).__name__})",
-        ) from exc
+        raise ProfileBundleError(f"{logical_path}: internal YAML loader failure") from exc
     if len(documents) > 1:
         raise RestrictedYamlError(
             IssueCode.RESTRICTED_YAML_VIOLATION,
