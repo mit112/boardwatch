@@ -54,27 +54,28 @@ reports drift without writing, and `make check` depends on it (D-109).
 | METRICS-ARCHIVE.md | 1047 | Session — 2026-08-08 (P5 run #2 — disjunctive fix, Gate P5 MET at 100%; D-073) |
 | METRICS-ARCHIVE.md | 1084 | Session — 2026-08-08 (D-071b final eligibility gate build — no answer-key number changes) |
 | METRICS-ARCHIVE.md | 1120 | Gate P2 — 2026-08-08 · field-tier mechanism (P2 item 4, D-075). **MET AS RECONCILED** |
-| METRICS.md | 81 | Run log |
-| METRICS.md | 109 | Acceptance run |
-| METRICS.md | 120 | Session — 2026-08-09/10 · P6 Slice 1 design + plan. **No build, no gate movement.** |
-| METRICS.md | 146 | Session — 2026-08-10 · P6 Slice 1 BUILT (unattended run). Branch `p6-slice1`, not merged. |
-| METRICS.md | 356 | 2026-08-10 — P6 Slice 1 on the LIVE store (first real backfill) + Gate P6 clause 4 |
-| METRICS.md | 395 | Session 2026-08-10 (later) — P6 Slice 2: the durable decision ledger, its drain, and job regrouping |
-| METRICS.md | 488 | Session — 2026-08-10 (later) · D-109, the program-index gate. No phase gate moved. |
-| METRICS.md | 529 | Session — 2026-08-10 (later still) · The P6 Slice 2 review (D-110). No phase gate moved. |
-| METRICS.md | 619 | Session — 2026-08-10 (later still ×2) · P6 Slice 3, items 5 and 6 (D-111). Gate P6 unchanged: still 2 of 4. |
-| METRICS.md | 732 | Session — 2026-08-10 (later still ×3) · 0.3.0 cut and tagged (D-112). No phase gate moved. |
-| METRICS.md | 783 | Session — 2026-08-10 (later still ×4) · The Slice 3 external review (D-113) + the CI dependency fix (D-114). No phase gate moved. |
-| METRICS.md | 903 | Session — 2026-08-10 (later still ×5) · Gate A career-profile bundle, slices T1–T9 (D-115). No phase gate moved. |
-| METRICS.md | 992 | Session — 2026-08-10 (later still ×6) · The held commits are PUSHED; CI's first honest read (D-116, D-117). No phase gate moved. |
-| METRICS.md | 1067 | Session — 2026-08-10 (later still ×7) · Gate A slice T10, semantic validation (D-118). No phase gate moved. |
-| METRICS.md | 1248 | Session — 2026-08-10 · Gate A fix history reconciliation; independent T1–T10 review still owed. No phase gate moved. |
-| METRICS.md | 1272 | Session — 2026-08-10 · Independent Gate A T1–T10 review sign-off; T11 permitted. |
-| METRICS.md | 1310 | Session — 2026-08-11 · Gate A T11 implemented and reviewed. No phase gate moved. |
-| METRICS.md | 1340 | Session — 2026-08-11 (later) · Gate A T12 implemented, NOT independently reviewed. No phase gate moved. |
-| METRICS.md | 1401 | Session — 2026-08-11 (later ×2) · Gate A T12 reviewed TWICE, both REWORK, both rounds fixed. No phase gate moved. |
-| METRICS.md | 1449 | Session — 2026-08-11 (later ×3) · Gate A T12 reviewed a THIRD time, REWORK again. T13 partially built on a branch. No phase gate moved. |
-| METRICS.md | 1375 | Session — 2026-08-11 (later still) · The T12 independent review (D-121) and its fix. No phase gate moved. |
+| METRICS.md | 82 | Run log |
+| METRICS.md | 110 | Acceptance run |
+| METRICS.md | 121 | Session — 2026-08-09/10 · P6 Slice 1 design + plan. **No build, no gate movement.** |
+| METRICS.md | 147 | Session — 2026-08-10 · P6 Slice 1 BUILT (unattended run). Branch `p6-slice1`, not merged. |
+| METRICS.md | 357 | 2026-08-10 — P6 Slice 1 on the LIVE store (first real backfill) + Gate P6 clause 4 |
+| METRICS.md | 396 | Session 2026-08-10 (later) — P6 Slice 2: the durable decision ledger, its drain, and job regrouping |
+| METRICS.md | 489 | Session — 2026-08-10 (later) · D-109, the program-index gate. No phase gate moved. |
+| METRICS.md | 530 | Session — 2026-08-10 (later still) · The P6 Slice 2 review (D-110). No phase gate moved. |
+| METRICS.md | 620 | Session — 2026-08-10 (later still ×2) · P6 Slice 3, items 5 and 6 (D-111). Gate P6 unchanged: still 2 of 4. |
+| METRICS.md | 733 | Session — 2026-08-10 (later still ×3) · 0.3.0 cut and tagged (D-112). No phase gate moved. |
+| METRICS.md | 784 | Session — 2026-08-10 (later still ×4) · The Slice 3 external review (D-113) + the CI dependency fix (D-114). No phase gate moved. |
+| METRICS.md | 904 | Session — 2026-08-10 (later still ×5) · Gate A career-profile bundle, slices T1–T9 (D-115). No phase gate moved. |
+| METRICS.md | 993 | Session — 2026-08-10 (later still ×6) · The held commits are PUSHED; CI's first honest read (D-116, D-117). No phase gate moved. |
+| METRICS.md | 1068 | Session — 2026-08-10 (later still ×7) · Gate A slice T10, semantic validation (D-118). No phase gate moved. |
+| METRICS.md | 1249 | Session — 2026-08-10 · Gate A fix history reconciliation; independent T1–T10 review still owed. No phase gate moved. |
+| METRICS.md | 1273 | Session — 2026-08-10 · Independent Gate A T1–T10 review sign-off; T11 permitted. |
+| METRICS.md | 1311 | Session — 2026-08-11 · Gate A T11 implemented and reviewed. No phase gate moved. |
+| METRICS.md | 1341 | Session — 2026-08-11 (later) · Gate A T12 implemented, NOT independently reviewed. No phase gate moved. |
+| METRICS.md | 1402 | Session — 2026-08-11 (later ×2) · Gate A T12 reviewed TWICE, both REWORK, both rounds fixed. No phase gate moved. |
+| METRICS.md | 1450 | Session — 2026-08-11 (later ×3) · Gate A T12 reviewed a THIRD time, REWORK again. T13 partially built on a branch. No phase gate moved. |
+| METRICS.md | 1505 | Session — 2026-08-11 (later ×4) · T12 fixed through five reviews; T13 built. No phase gate moved. |
+| METRICS.md | 1376 | Session — 2026-08-11 (later still) · The T12 independent review (D-121) and its fix. No phase gate moved. |
 
 ---
 
@@ -1500,3 +1501,60 @@ review showed a declined finding needed implementing; then the real run, **exit 
 Gate A **not met**, T12 **not signed off** after three reviews, Gate B **prohibited**. This session's
 work is at `d360fa6` on `main` (a concurrent session then added `1fe4033`); nothing was pushed. T13 is
 on `t13-digest`, unmerged. **Next: the four D-124 fixes, in fresh context.**
+
+## Session — 2026-08-11 (later ×4) · T12 fixed through five reviews; T13 built. No phase gate moved.
+
+### The round-three fix and the two reviews of it (D-125)
+
+| Item | Result |
+|---|---|
+| D-124's findings | **4 BLOCKING + 1 SHOULD-FIX, all fixed.** Each fix removes a restatement of the emitter rather than patching an instance. |
+| Reviews of that fix | **Two, run concurrently with different lenses** — runtime-forgery hunting and design conformance. Both returned **REWORK**. |
+| What both found independently | The scope-locator gap: the byte-free grammar reached record locators and stopped, so an approved scope could name a shape no heading stack resolves to, validate clean, and fail every re-enumeration. |
+| What only the conformance lens found | `SourceSpec`'s docstring still claimed a home-path refusal that landed nowhere — a sentence **D-122 had already recorded as false**. |
+| New findings, round 4/5 | 1 BLOCKING + 5 SHOULD-FIX + 6 NOTE across the two. **All fixed** except two deliberate declines, both recorded in D-125. |
+| Forgeries that passed all four layers | **0** after the fix, over 15 hand-built cases plus ~14,000 generated sources. |
+| Encoder/predicate disagreement | **0** over ~580,000 generated encoder inputs; 0 reservation collisions. |
+| Schema/model agreement | **124,497 inputs, 0 divergences**; the pattern is ECMA-262-valid. |
+| Stored identity changed | **None.** The only text whose encoding changed is exactly `_root`/`.`/`..`; the packaged example's one `_root/paragraph-1` is the synthetic segment, which never passes through the encoder. |
+
+### Mutation testing
+
+| Round | Mutations | Caught | Survivor |
+|---|---|---|---|
+| 1 | 20 distinct | 19 | `_MAX_HEADING_LEVEL = 5` — every assertion about the cap read the same constant it was checking |
+| 2 | 28 distinct | 27 | `is_emitted_segment`'s `.`/`..` guard — the escape had made it unreachable |
+| 3 | 28 distinct | **28** | — |
+
+**Both survivors were real defects, not driver noise.** The driver now aborts on a byte-identical
+duplicate before running anything, which is the check D-122's inflated "13 of 13" needed.
+
+### T13 (branch `t13-digest`, unmerged)
+
+| Slice | Result |
+|---|---|
+| Already built | `reports.py`, `validation/digest.py`, the promoted-revision fixture — 70 tests, unchanged this session. |
+| Built this session | `validation/completeness.py` (§20.5, plus ancestor traversal with a typed closed-fault reason) and `validation/run.py`. **59 new tests** — 48 completeness, 30 run. |
+| Branch totals | **1,389 passed**, `ruff` clean, `mypy` clean. Three commits. |
+| Owner ruling applied | `METRIC_REVIEW_MISSING` **deleted**; metrics get no review interval. A metric's freshness is its required `reviewed_at` date alone. |
+| Two pre-existing defects fixed | `validate_history` derived owner gates against `parent=None`, reporting **~35 spurious `missing_owner_approval` errors** on every revision ≥ 2 — `validate` was unusable on any child revision. And `parse_error_diagnostics` had no arm for `UnsupportedSchemaVersionError`, so §21's typed code surfaced as `internal_error` (the exit code was right by coincidence, which is why nothing caught it). |
+| Owed | An independent review, including of the judgement call below, and a merge. |
+
+**One T13 judgement call needs the owner's eye.** The build extended Mit's D-115 deletion ruling from
+`METRIC_REVIEW_MISSING` to `MISSING_PERSON_ENTITY` and `ENTITY_STATUS_UNDECLARED`, on the grounds
+that both are equally unfireable. That was **not** what was ruled on. It also added two codes,
+`FACT_VALUE_EXPIRED` and `COMPLETENESS_COUNTS`, leaving the catalog the same size. Reviewable and
+reversible; recorded here because a catalog is closed and versioned, so changing it is not a detail.
+
+### Gate time
+
+The gate ran three times. Once to a **generalization** failure in ~1 minute — the R7 content pin for
+`career-profile.schema.json`, working exactly as designed on a one-line schema change. Once
+deliberately **SIGTERM**ed at 57% when the head moved past it. Then the real run on the final head.
+Concurrent subagents drove load average to 21 and stretched a 65-second suite to eight minutes; the
+lesson from the previous session holds and was paid for again.
+
+### Standing
+
+Gate A **not met**. T12 has every finding from five reviews fixed and is **still not signed off** —
+the round-four/five fix owes its own review. Gate B **prohibited**. Nothing pushed.

@@ -110,54 +110,55 @@ and is a no-op when the index is already right. `make index-check` reports drift
 | D-074 | DECISIONS-ARCHIVE.md | 3009 | Final eligibility gate lane SHIPPED (persistent, agent-lane, fail-open); Gate P5 unchanged |
 | D-075 | DECISIONS-ARCHIVE.md | 3084 | Gate P2 reconciled: three individually-correct verdicts (may coincide); ≥3-field mechanism via fixtures |
 | D-076 | DECISIONS-ARCHIVE.md | 3153 | P2 item 4's final whole-branch review: what it caught, and four rulings it forced |
-| D-077 | DECISIONS.md | 164 | P6 Slice 1: the design is settled and the plan is written; no code exists yet |
-| D-078 | DECISIONS.md | 254 | P6 Slice 1: the plan's test fixtures are now real; eleven defects, all found by running code |
-| D-079 | DECISIONS.md | 343 | P6 Slice 1 annotates only; `postings.job_id` is not mutated |
-| D-080 | DECISIONS.md | 357 | `content_hash` alone may never suppress |
-| D-081 | DECISIONS.md | 371 | `exact_quad` is the sole suppressing kind, and its yield is stated honestly |
-| D-082 | DECISIONS.md | 389 | `cross_host` ships annotate-only, reversing an earlier draft |
-| D-083 | DECISIONS.md | 410 | No location evidence ⇒ no location-bearing identity, never a `"[]"` sentinel |
-| D-084 | DECISIONS.md | 425 | Three host classes, not two; matching is exact-or-dot-suffix |
-| D-085 | DECISIONS.md | 439 | Allowlist URL normalization, not a denylist |
-| D-086 | DECISIONS.md | 453 | Survivor election never consults score; `posting_id` is a load-bearing tiebreak |
-| D-087 | DECISIONS.md | 468 | Instrumentation is completeness-gated, not existence-gated |
-| D-088 | DECISIONS.md | 482 | `assisted` stays `None` in this slice |
-| D-089 | DECISIONS.md | 497 | Identities are upserted on every observation; a kind that stops being produced is deleted |
-| D-090 | DECISIONS.md | 514 | The ranker is completeness-gated for reproducibility, not safety |
-| D-091 | DECISIONS.md | 532 | The recount recomputes in Python, and claims staleness only |
-| D-092 | DECISIONS.md | 547 | Identities are backfilled by an explicit command, not by the migration |
-| D-093 | DECISIONS.md | 561 | Slice 1 does NOT meet Gate P6, and makes only one of its four clauses measurable |
-| D-094 | DECISIONS.md | 575 | P6 Slice 1 BUILT (unattended run): five more plan defects, three of them tests that could not fail |
-| D-095 | DECISIONS.md | 703 | P6 Slice 1 reviewed by three independent reviewers; fourteen findings fixed, two rejected |
-| D-096 | DECISIONS.md | 768 | The C++/C# fix folds punctuation into words; it does NOT add a raw-title comparison |
-| D-097 | DECISIONS.md | 812 | `_verify_quad` rejected nothing on the live corpus; "string-verified" is not precision evidence |
-| D-098 | DECISIONS.md | 841 | Suppression reports when it is OFF; wiring backfill into the pipeline is Slice 2 |
-| D-099 | DECISIONS.md | 877 | Gate batching stays allowed; the per-task fast-check set must include the schema guards |
-| D-100 | DECISIONS.md | 903 | P6 Slice 1 merged to `main`; Gate P6 clause 3 is MET, not merely measurable |
-| D-101 | DECISIONS.md | 935 | Gate P6 clause 4 is MET: 20/20 sampled suppressions are genuine duplicates |
-| D-102 | DECISIONS.md | 965 | D-072 (model-tier benchmark) is deferred indefinitely |
-| D-103 | DECISIONS.md | 987 | P6 Slice 2: the ledger is a current-state row per job, `seen` suppresses on a TTL, and the policy stamp never auto-reopens |
-| D-104 | DECISIONS.md | 1059 | Job regrouping: the survivor's job wins, and a tracked group is refused whole |
-| D-105 | DECISIONS.md | 1102 | Identity writes move into the scan path, closing D-098 — and D-098's cost argument did not apply |
-| D-106 | DECISIONS.md | 1133 | Two consequences the build forced: what earns a permanent `skipped`, and the zero-output guard |
-| D-107 | DECISIONS.md | 1159 | P6 Slice 2 BUILT and verified on real data; `cross_host` dereference deferred by measured absence |
-| D-108 | DECISIONS.md | 1208 | The decision log and the metrics log are archive-split; the reading protocol moves into the index |
-| D-109 | DECISIONS.md | 1267 | Index drift fails the gate, and the fixer lives in `tools/` |
-| D-110 | DECISIONS.md | 1345 | The Slice 2 review: only a caller that delivers a lead may consume the queue |
-| D-111 | DECISIONS.md | 1462 | P6 Slice 3: applied-state suppression, and liveness sized to what the corpus actually is |
-| D-112 | DECISIONS.md | 1631 | 0.3.0 is cut, the changelog gets ONE triple, and the tag is the owner's to push |
-| D-113 | DECISIONS.md | 1735 | The Slice 3 external review: a followed redirect can forge a gone-status |
-| D-114 | DECISIONS.md | 1823 | CI installs tectonic and pdfinfo on all three OSes; skipping the gate was refused |
-| D-115 | DECISIONS.md | 1891 | Gate A of the career-profile bundle: 9 of 19 slices, and a rule for checks that cannot fire |
-| D-116 | DECISIONS.md | 1973 | A docs-only commit owes the two fast gates, not the full suite; the tectonic pin gets a detector |
-| D-117 | DECISIONS.md | 2020 | 0.3.0's tag moves rather than 0.3.1 being cut; gitleaks fixed by cleaning bytes, not allowlisting |
-| D-118 | DECISIONS.md | 2070 | Gate A slice T10: effectiveness derived in one place, and two more §20.4 rows with no check |
-| D-119 | DECISIONS.md | 2167 | 0.3.0 is PUBLISHED: the tag moved onto a CI-green commit, and ships two known BLOCKERs deliberately |
-| D-120 | DECISIONS.md | 2235 | Gate A slice T12: the résumé emission order is fixed, and three more checks that cannot fire |
-| D-121 | DECISIONS.md | 2318 | The T12 review: a green gate and a perfect mutation score hid five BLOCKING defects |
-| D-122 | DECISIONS.md | 2379 | The T12 re-review: one defect the fix created, two contracts never enforced, and a decline that was wrong |
-| D-123 | DECISIONS.md | 2502 | A recurring trigger holding a one-shot prompt re-fires a task that already shipped |
-| D-124 | DECISIONS.md | 2547 | The third T12 review: the locator grammar keeps failing because it restates the emitter instead of deriving from it |
+| D-077 | DECISIONS.md | 165 | P6 Slice 1: the design is settled and the plan is written; no code exists yet |
+| D-078 | DECISIONS.md | 255 | P6 Slice 1: the plan's test fixtures are now real; eleven defects, all found by running code |
+| D-079 | DECISIONS.md | 344 | P6 Slice 1 annotates only; `postings.job_id` is not mutated |
+| D-080 | DECISIONS.md | 358 | `content_hash` alone may never suppress |
+| D-081 | DECISIONS.md | 372 | `exact_quad` is the sole suppressing kind, and its yield is stated honestly |
+| D-082 | DECISIONS.md | 390 | `cross_host` ships annotate-only, reversing an earlier draft |
+| D-083 | DECISIONS.md | 411 | No location evidence ⇒ no location-bearing identity, never a `"[]"` sentinel |
+| D-084 | DECISIONS.md | 426 | Three host classes, not two; matching is exact-or-dot-suffix |
+| D-085 | DECISIONS.md | 440 | Allowlist URL normalization, not a denylist |
+| D-086 | DECISIONS.md | 454 | Survivor election never consults score; `posting_id` is a load-bearing tiebreak |
+| D-087 | DECISIONS.md | 469 | Instrumentation is completeness-gated, not existence-gated |
+| D-088 | DECISIONS.md | 483 | `assisted` stays `None` in this slice |
+| D-089 | DECISIONS.md | 498 | Identities are upserted on every observation; a kind that stops being produced is deleted |
+| D-090 | DECISIONS.md | 515 | The ranker is completeness-gated for reproducibility, not safety |
+| D-091 | DECISIONS.md | 533 | The recount recomputes in Python, and claims staleness only |
+| D-092 | DECISIONS.md | 548 | Identities are backfilled by an explicit command, not by the migration |
+| D-093 | DECISIONS.md | 562 | Slice 1 does NOT meet Gate P6, and makes only one of its four clauses measurable |
+| D-094 | DECISIONS.md | 576 | P6 Slice 1 BUILT (unattended run): five more plan defects, three of them tests that could not fail |
+| D-095 | DECISIONS.md | 704 | P6 Slice 1 reviewed by three independent reviewers; fourteen findings fixed, two rejected |
+| D-096 | DECISIONS.md | 769 | The C++/C# fix folds punctuation into words; it does NOT add a raw-title comparison |
+| D-097 | DECISIONS.md | 813 | `_verify_quad` rejected nothing on the live corpus; "string-verified" is not precision evidence |
+| D-098 | DECISIONS.md | 842 | Suppression reports when it is OFF; wiring backfill into the pipeline is Slice 2 |
+| D-099 | DECISIONS.md | 878 | Gate batching stays allowed; the per-task fast-check set must include the schema guards |
+| D-100 | DECISIONS.md | 904 | P6 Slice 1 merged to `main`; Gate P6 clause 3 is MET, not merely measurable |
+| D-101 | DECISIONS.md | 936 | Gate P6 clause 4 is MET: 20/20 sampled suppressions are genuine duplicates |
+| D-102 | DECISIONS.md | 966 | D-072 (model-tier benchmark) is deferred indefinitely |
+| D-103 | DECISIONS.md | 988 | P6 Slice 2: the ledger is a current-state row per job, `seen` suppresses on a TTL, and the policy stamp never auto-reopens |
+| D-104 | DECISIONS.md | 1060 | Job regrouping: the survivor's job wins, and a tracked group is refused whole |
+| D-105 | DECISIONS.md | 1103 | Identity writes move into the scan path, closing D-098 — and D-098's cost argument did not apply |
+| D-106 | DECISIONS.md | 1134 | Two consequences the build forced: what earns a permanent `skipped`, and the zero-output guard |
+| D-107 | DECISIONS.md | 1160 | P6 Slice 2 BUILT and verified on real data; `cross_host` dereference deferred by measured absence |
+| D-108 | DECISIONS.md | 1209 | The decision log and the metrics log are archive-split; the reading protocol moves into the index |
+| D-109 | DECISIONS.md | 1268 | Index drift fails the gate, and the fixer lives in `tools/` |
+| D-110 | DECISIONS.md | 1346 | The Slice 2 review: only a caller that delivers a lead may consume the queue |
+| D-111 | DECISIONS.md | 1463 | P6 Slice 3: applied-state suppression, and liveness sized to what the corpus actually is |
+| D-112 | DECISIONS.md | 1632 | 0.3.0 is cut, the changelog gets ONE triple, and the tag is the owner's to push |
+| D-113 | DECISIONS.md | 1736 | The Slice 3 external review: a followed redirect can forge a gone-status |
+| D-114 | DECISIONS.md | 1824 | CI installs tectonic and pdfinfo on all three OSes; skipping the gate was refused |
+| D-115 | DECISIONS.md | 1892 | Gate A of the career-profile bundle: 9 of 19 slices, and a rule for checks that cannot fire |
+| D-116 | DECISIONS.md | 1974 | A docs-only commit owes the two fast gates, not the full suite; the tectonic pin gets a detector |
+| D-117 | DECISIONS.md | 2021 | 0.3.0's tag moves rather than 0.3.1 being cut; gitleaks fixed by cleaning bytes, not allowlisting |
+| D-118 | DECISIONS.md | 2071 | Gate A slice T10: effectiveness derived in one place, and two more §20.4 rows with no check |
+| D-119 | DECISIONS.md | 2168 | 0.3.0 is PUBLISHED: the tag moved onto a CI-green commit, and ships two known BLOCKERs deliberately |
+| D-120 | DECISIONS.md | 2236 | Gate A slice T12: the résumé emission order is fixed, and three more checks that cannot fire |
+| D-121 | DECISIONS.md | 2319 | The T12 review: a green gate and a perfect mutation score hid five BLOCKING defects |
+| D-122 | DECISIONS.md | 2380 | The T12 re-review: one defect the fix created, two contracts never enforced, and a decline that was wrong |
+| D-123 | DECISIONS.md | 2503 | A recurring trigger holding a one-shot prompt re-fires a task that already shipped |
+| D-124 | DECISIONS.md | 2548 | The third T12 review: the locator grammar keeps failing because it restates the emitter instead of deriving from it |
+| D-125 | DECISIONS.md | 2613 | The T12 round-three fix, and two more reviews of it: a forbidden segment is escaped, never refused |
 
 ---
 
@@ -2608,3 +2609,135 @@ fixtures omit.
 round is deliberately starting in **fresh context**: both previous fix rounds were authored by the
 same context that produced the defects being fixed, which is the pattern D-122 named and then
 repeated.
+
+## D-125 — The T12 round-three fix, and two more reviews of it: a forbidden segment is escaped, never refused
+
+*2026-08-11, fresh context. Closes D-124's four BLOCKING findings and the SHOULD-FIX that overrode
+D-122's accepted gap, then the findings of a fourth and fifth review of that fix. Gate A remains NOT
+met.*
+
+D-124 named the cause; this entry records the shape of the answer. **Every rule that describes the
+emitter now reads the emitter's own constants**, so one restatement is removed per finding rather
+than one instance patched per finding.
+
+### `_root` is reserved by the encoder, not refused by validation
+
+`ROOT_SEGMENT` is `_root` and `_` is unreserved, so `encode_locator_segment("_root")` returned
+`_root` unchanged and pre-heading content shared a namespace — and derived record IDs — with a
+heading literally named `_root`. D-122's scope refusal then made such a source unimportable.
+
+`_encode_text` now escapes the **first character** of any body that lands on a forbidden whole
+segment, so that heading resolves to `%5Froot`. **Escaping rather than refusing is the whole point.**
+Refusing `_root` as a heading body would relocate round one's defect, not close it: a legitimate
+Markdown document would become unenumerable instead of unimportable.
+
+**The same mechanism now covers `.` and `..`, which it did not.** `# .` and `# ..` were hard
+`EnumerationError`s — the identical defect, sitting four lines from the docstring giving the reason
+for not doing that. They encode to `%2E` and `%2E.`; §18 forbids a `.` *segment*, and `%2E` is not
+one, so the escape satisfies the rule the refusal was serving.
+
+`normalize_locator` keeps its own `.`/`..` **path-component** guard, restored here. D-120 deleted it
+because `encode_locator_segment` refused those bodies; that reason has now inverted. A `.` in a raw
+path means traversal, and silently encoding it would turn "this directory" into a literal segment.
+
+### The reservation is deliberately GLOBAL, and the design is silent on all of it
+
+The collision is Markdown's alone, but the escape lives in the shared encoder. `is_emitted_segment`
+and `is_normalized_locator` are adapter-blind by necessity — they also serve owner-authored scope
+locators — so a per-adapter reservation would mean two encoders and precisely the drift this round
+removes. **The cost is explicit:** a `structured-objects-v1` key or a résumé `entry_id` literally
+named `_root` is escaped too, which moves it in §18.1's encoded-key sort order. Deterministic and
+reproducible, so §18's byte-identical re-enumeration still holds — but it is a behaviour change to
+two adapters made to fix a third, and it is pinned by test rather than left to inference.
+
+**§18 names no reserved segments** and says nothing about a heading body colliding with `_root`. It
+constrains which characters *may* remain unescaped, not which *must*, so `%5Froot` is a spelling its
+own grammar admits. *Alternative rejected:* change `ROOT_SEGMENT` to a token no encoded body can
+produce (one carrying a `%` escape), which needs no reservation and no encoder special case — but it
+rewrites every stored `_root/…` locator and therefore every record ID derived from one, including
+the packaged example's own ledger.
+
+### The depth cap and the `~N` rule stop being restatements
+
+- `_MAX_HEADING_LEVEL` **builds** `_HEADING_RE` and is **read** by `emits_locator`. The grammar
+  accepted any depth while the parser capped nesting at six, and a seven-level forged record passed
+  all four validation layers.
+- `is_emitted_segment` is the encoder's exact inverse **with no duplicate-suffix exception**. The
+  résumé and structured grammars call it directly, so `objects/synthetic~2` is refused although the
+  adapter-blind predicate accepts it. `~N` is applied by the Markdown adapter to a resolved heading
+  path *after* encoding, so it is meaningful there and nowhere else, while §18.1 requires the
+  adapter-blind predicate to keep admitting the resolved paths an owner writes into a selected
+  scope. **The module therefore has two predicates where the design has one notion**, and the weaker
+  one now says so in its own docstring rather than claiming to be the strong one.
+- **`is_resolved_heading_path` closes the sibling gap both later reviewers found independently.** The
+  byte-free grammar reached `records[].normalized_locator` and stopped, so an approved scope could
+  name `a/b/c/d/e/f/g` or `Overview/_root` — shapes no heading stack resolves to — validate clean,
+  and then fail every re-enumeration with a hard error. That is the argument the `_root` scope
+  refusal directly above it already rested on. Two checks became one that asks the emitter's
+  question.
+
+### `portable_locator`: the sentence is made true, and the schema stops disagreeing with the model
+
+A NUL produced a structurally valid bundle whose source path `open()` refuses before any filesystem
+call. The validator enumerated the spellings a reviewer had shown rather than the character classes
+that break a path; it now refuses every C0 control character and DEL.
+
+**`SourceSpec`'s docstring claimed "validation rejects a home path inside it". D-122 recorded that
+sentence as false and fixed only its other half.** `~/notes/x.md` is *relative*, so the absolute
+branch never saw it, and nothing else reads the field — the personal-path scan walks evidence records
+only. A leading `~` is now refused, and the docstring enumerates exactly what the validator does
+instead of describing a guarantee that lands nowhere.
+
+**D-122's accepted schema gap is overridden.** `PORTABLE_LOCATOR_PATTERN` carries the whole
+constraint into `career-profile.schema.json` while the six validator branches keep their separate
+diagnostics — the two coexist rather than one replacing the other. D-122 declined this because a
+single regex collapses four refusals into one message; that trade was real, but the schema is what
+every external authoring tool validates against and it was admitting `../escape/source.md`. A
+parametrized corpus asserts the pattern and the model agree spelling by spelling, and an independent
+run put that agreement at **124,497 inputs, zero divergences**. The pattern is ECMA-262-valid, which
+is the dialect a JSON-Schema consumer uses.
+
+**The other two locator fields stay `\S`, deliberately.** `SelectedSectionsScope.locators` and
+`SourceLedgerRecord.normalized_locator` are constrained by a percent-encoding grammar, and writing
+that grammar as a schema regex would be *a restatement of the encoder that cannot be kept in sync* —
+the defect class of this entire round. `portable_locator` differs in kind: its constraint is a
+character-class rule with no encoder behind it, so one regex is the whole contract rather than a
+second copy of one. Revisit only if the schema gains a generated-from-the-encoder route.
+
+### What mutation testing found that the tests did not
+
+**Twenty-eight distinct mutations, checked for byte-identical duplicates before the run** — D-122
+reported "13 of 13 caught" when the driver held 12 distinct mutations and one repeat. The driver now
+aborts on a duplicate rather than trusting the count.
+
+Two rounds were needed, and each survivor was a real defect:
+
+- **`_MAX_HEADING_LEVEL = 5` survived.** Every assertion about the cap read the same constant it was
+  checking, so the constant and its tests agreed with each other while both disagreed with
+  CommonMark. This is the **self-referential** form of the defect D-124 described: deriving a test
+  from the emitter fixes drift between two pieces of code and does nothing about a shared wrong
+  premise. The replacement enumerates six- and seven-hash sources and asserts what Markdown does.
+- **`is_emitted_segment`'s `.`/`..` guard survived**, because escaping those bodies had made it
+  unreachable — `_canonical_encoding(".")` is now `%2E`, so the round trip already refuses the bare
+  spelling. Deleted under D-115 rather than kept as coverage it no longer provides. The
+  empty-segment guard stays: `""` does encode to itself.
+
+**28 of 28 after both.**
+
+### What the fourth and fifth reviews say about review evidence
+
+Two reviewers ran against the same commit with deliberately different lenses — one hunting runtime
+forgeries, one checking conformance against the design's own words — and **both independently found
+the scope-locator gap**, which neither the fix's author nor a 20-mutation suite reached. The
+conformance lens alone found the false `SourceSpec` docstring that had already survived D-122 naming
+it. Two lenses on one commit is cheaper than two sequential rounds and finds things one lens does
+not; a second reviewer is not redundancy.
+
+A property test over ~14,000 generated sources and ~580,000 encoder inputs found **zero** cases where
+an adapter emits a locator its own strict predicate refuses — round one's defect class is not back —
+and zero collisions in the reservation. That is evidence the previous three rounds could not produce,
+because their properties ran only over what the fixtures contained.
+
+**Consequence.** Every finding from five reviews is fixed. T12 is **still not signed off**: a
+retraction commit reintroduces the defect class it cures, so the round-four/five fix owes its own
+independent review, in fresh context, before Gate B. Gate A remains **not met**. Nothing is pushed.
