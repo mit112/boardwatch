@@ -54,19 +54,20 @@ reports drift without writing, and `make check` depends on it (D-109).
 | METRICS-ARCHIVE.md | 1047 | Session — 2026-08-08 (P5 run #2 — disjunctive fix, Gate P5 MET at 100%; D-073) |
 | METRICS-ARCHIVE.md | 1084 | Session — 2026-08-08 (D-071b final eligibility gate build — no answer-key number changes) |
 | METRICS-ARCHIVE.md | 1120 | Gate P2 — 2026-08-08 · field-tier mechanism (P2 item 4, D-075). **MET AS RECONCILED** |
-| METRICS.md | 73 | Run log |
-| METRICS.md | 101 | Acceptance run |
-| METRICS.md | 112 | Session — 2026-08-09/10 · P6 Slice 1 design + plan. **No build, no gate movement.** |
-| METRICS.md | 138 | Session — 2026-08-10 · P6 Slice 1 BUILT (unattended run). Branch `p6-slice1`, not merged. |
-| METRICS.md | 348 | 2026-08-10 — P6 Slice 1 on the LIVE store (first real backfill) + Gate P6 clause 4 |
-| METRICS.md | 387 | Session 2026-08-10 (later) — P6 Slice 2: the durable decision ledger, its drain, and job regrouping |
-| METRICS.md | 480 | Session — 2026-08-10 (later) · D-109, the program-index gate. No phase gate moved. |
-| METRICS.md | 521 | Session — 2026-08-10 (later still) · The P6 Slice 2 review (D-110). No phase gate moved. |
-| METRICS.md | 611 | Session — 2026-08-10 (later still ×2) · P6 Slice 3, items 5 and 6 (D-111). Gate P6 unchanged: still 2 of 4. |
-| METRICS.md | 724 | Session — 2026-08-10 (later still ×3) · 0.3.0 cut and tagged (D-112). No phase gate moved. |
-| METRICS.md | 775 | Session — 2026-08-10 (later still ×4) · The Slice 3 external review (D-113) + the CI dependency fix (D-114). No phase gate moved. |
-| METRICS.md | 895 | Session — 2026-08-10 (later still ×5) · Gate A career-profile bundle, slices T1–T9 (D-115). No phase gate moved. |
-| METRICS.md | 984 | Session — 2026-08-10 (later still ×6) · The held commits are PUSHED; CI's first honest read (D-116, D-117). No phase gate moved. |
+| METRICS.md | 74 | Run log |
+| METRICS.md | 102 | Acceptance run |
+| METRICS.md | 113 | Session — 2026-08-09/10 · P6 Slice 1 design + plan. **No build, no gate movement.** |
+| METRICS.md | 139 | Session — 2026-08-10 · P6 Slice 1 BUILT (unattended run). Branch `p6-slice1`, not merged. |
+| METRICS.md | 349 | 2026-08-10 — P6 Slice 1 on the LIVE store (first real backfill) + Gate P6 clause 4 |
+| METRICS.md | 388 | Session 2026-08-10 (later) — P6 Slice 2: the durable decision ledger, its drain, and job regrouping |
+| METRICS.md | 481 | Session — 2026-08-10 (later) · D-109, the program-index gate. No phase gate moved. |
+| METRICS.md | 522 | Session — 2026-08-10 (later still) · The P6 Slice 2 review (D-110). No phase gate moved. |
+| METRICS.md | 612 | Session — 2026-08-10 (later still ×2) · P6 Slice 3, items 5 and 6 (D-111). Gate P6 unchanged: still 2 of 4. |
+| METRICS.md | 725 | Session — 2026-08-10 (later still ×3) · 0.3.0 cut and tagged (D-112). No phase gate moved. |
+| METRICS.md | 776 | Session — 2026-08-10 (later still ×4) · The Slice 3 external review (D-113) + the CI dependency fix (D-114). No phase gate moved. |
+| METRICS.md | 896 | Session — 2026-08-10 (later still ×5) · Gate A career-profile bundle, slices T1–T9 (D-115). No phase gate moved. |
+| METRICS.md | 985 | Session — 2026-08-10 (later still ×6) · The held commits are PUSHED; CI's first honest read (D-116, D-117). No phase gate moved. |
+| METRICS.md | 1057 | Session — 2026-08-10 (later still ×7) · Gate A slice T10, semantic validation (D-118). No phase gate moved. |
 
 ---
 
@@ -1050,3 +1051,79 @@ existed and 0 after.
   will name.
 - **No local pre-push check for the three CI-only jobs.** `gitleaks git --log-opts=origin/main..HEAD` is
   the cheap mitigation and was not wired in.
+
+---
+
+## Session — 2026-08-10 (later still ×7) · Gate A slice T10, semantic validation (D-118). No phase gate moved.
+
+Gate A is now **10 of 19 slices**. Still NOT met, still NOT reviewed, still wired to nothing.
+
+### The gate
+
+| Tree | Command | Exit | Tests | Coverage |
+|---|---|---|---|---|
+| `08d5c96`, detached worktree | `make check` | **0** | 4,866 passed, 1 deselected | 95.20% |
+| `08d5c96` | `gitleaks git --log-opts=origin/main..HEAD` | **0** | 1 commit, ~147 KB in 86 ms | no leaks found |
+
+T9 closed at 4,764 passed. The slice adds **102** tests across four files and moves coverage not at
+all — 95.20% before and after, which is what a layer arriving with its own tests looks like.
+
+### Every semantic check was disabled and confirmed to take a test with it
+
+Each of the thirteen error checks was removed from `validate_semantic`'s tuple in turn, and
+`semantic_completeness` was stubbed to return `()`. The slice was committed first, so the restore was
+safe; the tree was confirmed byte-identical afterwards. **Zero missed.**
+
+| Check disabled | Tests that failed |
+|---|---:|
+| `_predicate_contracts_hold` | 7 |
+| `_effective_facts_meet_their_predicate_evidence_contract` | 3 |
+| `_cardinality_and_exclusivity_hold_over_effective_facts` | 4 |
+| `_competing_single_valued_facts_are_inside_a_conflict_group` | 1 |
+| `_fact_states_agree_with_supersession_edges` | 2 |
+| `_assertion_tag_statuses_are_holdable` | 1 |
+| `_skills_are_categorised_and_grounded` | 5 |
+| `_metrics_use_the_revisions_unit_catalog` | 2 |
+| `_metric_wordings_carry_their_protected_tokens` | 2 |
+| `_application_only_facts_do_not_widen` | 2 |
+| `_claims_reference_eligible_records` | 6 |
+| `_claim_tags_are_known_and_authorised` | 10 |
+| `_claim_text_traces_to_its_metrics` | 11 |
+| `semantic_completeness` | 1 |
+
+### What the packaged example turned out to prove, and what it cannot
+
+The example validated semantically **clean on the first run** — 0 errors, 1 blocker
+(`metric.packet-pantry.legacy-score.001`'s disqualifying caveat, which is the tier §11 asks for).
+That is a real result rather than a vacuous one, because the fixture independently carries: a
+superseded correction on a cardinality-`one` predicate, two `unresolved` candidates in one declared
+conflict group, all three caveat severities, all six evidence classes, entities of all eleven kinds,
+and six of the twelve assertion tags including three high-risk ones.
+
+**Two things it cannot cover, both asserted so they cannot change silently:**
+
+| Gap | The assertion that pins it |
+|---|---|
+| No `rendered` metric mention — every mention is `qualitative_only` | `test_the_example_declares_no_rendered_metric_mention` |
+| No numeral in any claim text, so the strict figure rule is never exercised by the fixture | `test_no_approved_claim_in_the_example_carries_a_numeral` |
+
+Closing either moves `evidence_set_digest` and every digest pinned against it, so both are deliberate
+fixture changes rather than omissions — the same standing as D-115's redaction gap.
+
+### The predicate sweep is derived from the catalog, not from a list
+
+`test_a_conforming_fact_is_accepted_for_every_shipped_predicate` reads
+`policy/predicates.yaml` out of the packaged example and synthesises, for each of the **41** rows, a
+fact satisfying every column: a legal subject kind resolved to a real entity of that kind, the first
+legal value type, a legal usage context, the full legal surface set, a legal basis with the strongest
+state that basis may establish, and evidence records of the classes the row's cheapest
+`minimum_evidence` alternative names. All 41 accepted. A new predicate row becomes a new case with no
+test edit; a changed column changes what the case is built from.
+
+### Wheel contents measured by the concurrent release session
+
+Not this session's command, and recorded because it bears on the track: the wheel built at `dc1ffec`
+carries **65 `profile_bundle` entries** — 31 modules, 33 example YAML documents, 1 JSON Schema — and
+the `## [0.3.0]` changelog section names none of them. So T1–T10 would publish to PyPI unreviewed
+under an irreversible version. Inert (no CLI, no `Resume` bridge, both asserted), and `gitleaks` and
+`generalization` are green on it. **Owner's call, now in `STATE.md`'s blocker table.**

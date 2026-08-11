@@ -110,47 +110,48 @@ and is a no-op when the index is already right. `make index-check` reports drift
 | D-074 | DECISIONS-ARCHIVE.md | 3009 | Final eligibility gate lane SHIPPED (persistent, agent-lane, fail-open); Gate P5 unchanged |
 | D-075 | DECISIONS-ARCHIVE.md | 3084 | Gate P2 reconciled: three individually-correct verdicts (may coincide); ≥3-field mechanism via fixtures |
 | D-076 | DECISIONS-ARCHIVE.md | 3153 | P2 item 4's final whole-branch review: what it caught, and four rulings it forced |
-| D-077 | DECISIONS.md | 157 | P6 Slice 1: the design is settled and the plan is written; no code exists yet |
-| D-078 | DECISIONS.md | 247 | P6 Slice 1: the plan's test fixtures are now real; eleven defects, all found by running code |
-| D-079 | DECISIONS.md | 336 | P6 Slice 1 annotates only; `postings.job_id` is not mutated |
-| D-080 | DECISIONS.md | 350 | `content_hash` alone may never suppress |
-| D-081 | DECISIONS.md | 364 | `exact_quad` is the sole suppressing kind, and its yield is stated honestly |
-| D-082 | DECISIONS.md | 382 | `cross_host` ships annotate-only, reversing an earlier draft |
-| D-083 | DECISIONS.md | 403 | No location evidence ⇒ no location-bearing identity, never a `"[]"` sentinel |
-| D-084 | DECISIONS.md | 418 | Three host classes, not two; matching is exact-or-dot-suffix |
-| D-085 | DECISIONS.md | 432 | Allowlist URL normalization, not a denylist |
-| D-086 | DECISIONS.md | 446 | Survivor election never consults score; `posting_id` is a load-bearing tiebreak |
-| D-087 | DECISIONS.md | 461 | Instrumentation is completeness-gated, not existence-gated |
-| D-088 | DECISIONS.md | 475 | `assisted` stays `None` in this slice |
-| D-089 | DECISIONS.md | 490 | Identities are upserted on every observation; a kind that stops being produced is deleted |
-| D-090 | DECISIONS.md | 507 | The ranker is completeness-gated for reproducibility, not safety |
-| D-091 | DECISIONS.md | 525 | The recount recomputes in Python, and claims staleness only |
-| D-092 | DECISIONS.md | 540 | Identities are backfilled by an explicit command, not by the migration |
-| D-093 | DECISIONS.md | 554 | Slice 1 does NOT meet Gate P6, and makes only one of its four clauses measurable |
-| D-094 | DECISIONS.md | 568 | P6 Slice 1 BUILT (unattended run): five more plan defects, three of them tests that could not fail |
-| D-095 | DECISIONS.md | 696 | P6 Slice 1 reviewed by three independent reviewers; fourteen findings fixed, two rejected |
-| D-096 | DECISIONS.md | 761 | The C++/C# fix folds punctuation into words; it does NOT add a raw-title comparison |
-| D-097 | DECISIONS.md | 805 | `_verify_quad` rejected nothing on the live corpus; "string-verified" is not precision evidence |
-| D-098 | DECISIONS.md | 834 | Suppression reports when it is OFF; wiring backfill into the pipeline is Slice 2 |
-| D-099 | DECISIONS.md | 870 | Gate batching stays allowed; the per-task fast-check set must include the schema guards |
-| D-100 | DECISIONS.md | 896 | P6 Slice 1 merged to `main`; Gate P6 clause 3 is MET, not merely measurable |
-| D-101 | DECISIONS.md | 928 | Gate P6 clause 4 is MET: 20/20 sampled suppressions are genuine duplicates |
-| D-102 | DECISIONS.md | 958 | D-072 (model-tier benchmark) is deferred indefinitely |
-| D-103 | DECISIONS.md | 980 | P6 Slice 2: the ledger is a current-state row per job, `seen` suppresses on a TTL, and the policy stamp never auto-reopens |
-| D-104 | DECISIONS.md | 1052 | Job regrouping: the survivor's job wins, and a tracked group is refused whole |
-| D-105 | DECISIONS.md | 1095 | Identity writes move into the scan path, closing D-098 — and D-098's cost argument did not apply |
-| D-106 | DECISIONS.md | 1126 | Two consequences the build forced: what earns a permanent `skipped`, and the zero-output guard |
-| D-107 | DECISIONS.md | 1152 | P6 Slice 2 BUILT and verified on real data; `cross_host` dereference deferred by measured absence |
-| D-108 | DECISIONS.md | 1201 | The decision log and the metrics log are archive-split; the reading protocol moves into the index |
-| D-109 | DECISIONS.md | 1260 | Index drift fails the gate, and the fixer lives in `tools/` |
-| D-110 | DECISIONS.md | 1338 | The Slice 2 review: only a caller that delivers a lead may consume the queue |
-| D-111 | DECISIONS.md | 1455 | P6 Slice 3: applied-state suppression, and liveness sized to what the corpus actually is |
-| D-112 | DECISIONS.md | 1624 | 0.3.0 is cut, the changelog gets ONE triple, and the tag is the owner's to push |
-| D-113 | DECISIONS.md | 1728 | The Slice 3 external review: a followed redirect can forge a gone-status |
-| D-114 | DECISIONS.md | 1816 | CI installs tectonic and pdfinfo on all three OSes; skipping the gate was refused |
-| D-115 | DECISIONS.md | 1884 | Gate A of the career-profile bundle: 9 of 19 slices, and a rule for checks that cannot fire |
-| D-116 | DECISIONS.md | 1966 | A docs-only commit owes the two fast gates, not the full suite; the tectonic pin gets a detector |
-| D-117 | DECISIONS.md | 2013 | 0.3.0's tag moves rather than 0.3.1 being cut; gitleaks fixed by cleaning bytes, not allowlisting |
+| D-077 | DECISIONS.md | 158 | P6 Slice 1: the design is settled and the plan is written; no code exists yet |
+| D-078 | DECISIONS.md | 248 | P6 Slice 1: the plan's test fixtures are now real; eleven defects, all found by running code |
+| D-079 | DECISIONS.md | 337 | P6 Slice 1 annotates only; `postings.job_id` is not mutated |
+| D-080 | DECISIONS.md | 351 | `content_hash` alone may never suppress |
+| D-081 | DECISIONS.md | 365 | `exact_quad` is the sole suppressing kind, and its yield is stated honestly |
+| D-082 | DECISIONS.md | 383 | `cross_host` ships annotate-only, reversing an earlier draft |
+| D-083 | DECISIONS.md | 404 | No location evidence ⇒ no location-bearing identity, never a `"[]"` sentinel |
+| D-084 | DECISIONS.md | 419 | Three host classes, not two; matching is exact-or-dot-suffix |
+| D-085 | DECISIONS.md | 433 | Allowlist URL normalization, not a denylist |
+| D-086 | DECISIONS.md | 447 | Survivor election never consults score; `posting_id` is a load-bearing tiebreak |
+| D-087 | DECISIONS.md | 462 | Instrumentation is completeness-gated, not existence-gated |
+| D-088 | DECISIONS.md | 476 | `assisted` stays `None` in this slice |
+| D-089 | DECISIONS.md | 491 | Identities are upserted on every observation; a kind that stops being produced is deleted |
+| D-090 | DECISIONS.md | 508 | The ranker is completeness-gated for reproducibility, not safety |
+| D-091 | DECISIONS.md | 526 | The recount recomputes in Python, and claims staleness only |
+| D-092 | DECISIONS.md | 541 | Identities are backfilled by an explicit command, not by the migration |
+| D-093 | DECISIONS.md | 555 | Slice 1 does NOT meet Gate P6, and makes only one of its four clauses measurable |
+| D-094 | DECISIONS.md | 569 | P6 Slice 1 BUILT (unattended run): five more plan defects, three of them tests that could not fail |
+| D-095 | DECISIONS.md | 697 | P6 Slice 1 reviewed by three independent reviewers; fourteen findings fixed, two rejected |
+| D-096 | DECISIONS.md | 762 | The C++/C# fix folds punctuation into words; it does NOT add a raw-title comparison |
+| D-097 | DECISIONS.md | 806 | `_verify_quad` rejected nothing on the live corpus; "string-verified" is not precision evidence |
+| D-098 | DECISIONS.md | 835 | Suppression reports when it is OFF; wiring backfill into the pipeline is Slice 2 |
+| D-099 | DECISIONS.md | 871 | Gate batching stays allowed; the per-task fast-check set must include the schema guards |
+| D-100 | DECISIONS.md | 897 | P6 Slice 1 merged to `main`; Gate P6 clause 3 is MET, not merely measurable |
+| D-101 | DECISIONS.md | 929 | Gate P6 clause 4 is MET: 20/20 sampled suppressions are genuine duplicates |
+| D-102 | DECISIONS.md | 959 | D-072 (model-tier benchmark) is deferred indefinitely |
+| D-103 | DECISIONS.md | 981 | P6 Slice 2: the ledger is a current-state row per job, `seen` suppresses on a TTL, and the policy stamp never auto-reopens |
+| D-104 | DECISIONS.md | 1053 | Job regrouping: the survivor's job wins, and a tracked group is refused whole |
+| D-105 | DECISIONS.md | 1096 | Identity writes move into the scan path, closing D-098 — and D-098's cost argument did not apply |
+| D-106 | DECISIONS.md | 1127 | Two consequences the build forced: what earns a permanent `skipped`, and the zero-output guard |
+| D-107 | DECISIONS.md | 1153 | P6 Slice 2 BUILT and verified on real data; `cross_host` dereference deferred by measured absence |
+| D-108 | DECISIONS.md | 1202 | The decision log and the metrics log are archive-split; the reading protocol moves into the index |
+| D-109 | DECISIONS.md | 1261 | Index drift fails the gate, and the fixer lives in `tools/` |
+| D-110 | DECISIONS.md | 1339 | The Slice 2 review: only a caller that delivers a lead may consume the queue |
+| D-111 | DECISIONS.md | 1456 | P6 Slice 3: applied-state suppression, and liveness sized to what the corpus actually is |
+| D-112 | DECISIONS.md | 1625 | 0.3.0 is cut, the changelog gets ONE triple, and the tag is the owner's to push |
+| D-113 | DECISIONS.md | 1729 | The Slice 3 external review: a followed redirect can forge a gone-status |
+| D-114 | DECISIONS.md | 1817 | CI installs tectonic and pdfinfo on all three OSes; skipping the gate was refused |
+| D-115 | DECISIONS.md | 1885 | Gate A of the career-profile bundle: 9 of 19 slices, and a rule for checks that cannot fire |
+| D-116 | DECISIONS.md | 1967 | A docs-only commit owes the two fast gates, not the full suite; the tectonic pin gets a detector |
+| D-117 | DECISIONS.md | 2014 | 0.3.0's tag moves rather than 0.3.1 being cut; gitleaks fixed by cleaning bytes, not allowlisting |
+| D-118 | DECISIONS.md | 2064 | Gate A slice T10: effectiveness derived in one place, and two more §20.4 rows with no check |
 
 ---
 
@@ -2057,3 +2058,100 @@ the file existed and 0 after.
 not contradict it: `make check` remains the only gate for *this repo's own correctness*, while three CI jobs
 check properties the local gate has never covered. The cheap mitigation, not yet taken, is to run
 `gitleaks git --log-opts=origin/main..HEAD` before a push.
+
+---
+
+## D-118 — Gate A slice T10: effectiveness derived in one place, and two more §20.4 rows with no check
+
+*2026-08-10. Continues the parallel career-profile-bundle track from D-115. Slice T10 of 19 —
+semantic validation, design §20.4. Gate A remains NOT met and NOT reviewed.*
+
+**What was built.** `src/boardwatch/profile_bundle/effective.py` and
+`validation/semantic.py`, plus four test files. `make check` in a detached worktree pinned to
+`08d5c96`: exit **0**, **4,866 passed**, **95.20%** coverage. Thirteen error checks and one
+completeness check, using the semantic `IssueCode` block T1 had already declared and left unused.
+
+### Effectiveness is derived once, because four rules have to agree about it
+
+§10.3 says "downstream eligibility is derived" and never stores it. Four separate rules then depend
+on that derivation: predicate cardinality, the skill surface union, the claim surface intersection,
+and §15's assertion-tag authorizations. Each re-deriving it would let them disagree — and the
+disagreement would be invisible, because every one of them would still pass its own tests.
+`effective.py` is therefore the single definition, and it splits two words the design keeps apart:
+**effective** is §10.4's exact three conditions (state `verified`/`owner_confirmed`, not superseded
+by an active edge, not conflict-blocked), while **eligible for a surface** adds the fact's declared
+surfaces, the predicate row's maximum, and the `application_only` collapse.
+
+**Evidence validity and expiry are deliberately NOT folded into eligibility.** §10.3 lists both as
+reasons a fact is unavailable, but the evidence layer already reports missing blobs, unmet contracts
+and unreviewed sufficiency, and §20 runs the layers in dependency order rather than having each
+restate the previous one's findings. Folding them in would turn one unreviewed evidence record into a
+cascade of surface errors on every fact, skill and claim downstream, and an operator would have to
+work backwards to the single cause. Expiry stays out for a stronger reason: §20 requires validation
+to be a pure function of content, so it belongs to completeness against an explicit `--as-of` date.
+
+### Two more §20.4 rows have no check, and the tests say where the guarantee lands
+
+Extending D-115's rule, now applied twice more.
+
+**"Entity statuses come from the correct catalog"** cannot fire. `EntityRecord` is a discriminated
+union on `entity_type` and each member declares its own status enum, so a project status cannot
+validate against an award; the ID prefix is typed too, so `entity_id: project.x` with
+`entity_type: award` fails `AwardId`'s pattern. Authored YAML never becomes a wrong-catalog model.
+**The reachable defect is one step away and is now checked:** `policy/assertion-tags.yaml` carries
+`subject_statuses` as bare `LowerToken`s, so `shipped_privately` parses cleanly and then matches
+nothing forever — a high-risk tag silently unauthorizable, which is the eligibility-rule-that-cannot-
+fire defect wearing a different hat. `ENTITY_STATUS_ILLEGAL` reports exactly that.
+
+**`METRIC_PHRASING_MISSING` was redefined rather than left dead.** `allowed_phrasings` has
+`min_length=1`, so "a metric with no phrasing" does not parse. The code now means the reachable
+thing: a claim declares it *renders* a metric and none of that metric's allowed phrasings appears in
+the text.
+
+**Cardinality and exclusivity were kept from restating each other.** Every shipped row pairing
+`one_effective_value` with cardinality `one` makes exclusivity's count clause redundant, so that
+clause is scoped to cardinality `many` — two findings for one mistake is noise. It is still
+reachable, because `policy/predicates.yaml` is revision-owned *data*: a user's `many` +
+`one_effective_value` row is authorable, and a test edits one and watches the clause fire. This is
+the ["dead for bundled" ≠ unreachable] distinction, applied deliberately.
+
+### One interpretation, recorded as an interpretation
+
+§14 requires a verified skill to have "a supporting `technology.used` fact whose predicate contract
+allows skill grounding" and does **not** say the fact's own `skill_id` must name the skill it
+grounds. Implemented as if it does, because without it a fact recording that one technology was used
+would ground a record for a different one — which is the substance of §14's "referencing a skill only
+in an old résumé … is insufficient". Flagged in `effective.grounding_facts`' docstring and to Mit
+rather than presented as a quotation. **If this reading is wrong, the check is the thing to remove.**
+
+### The claim figure scanner is strict on purpose
+
+§15 requires every numeral in claim text to trace to a referenced metric's allowed rendering. The
+implementation takes that literally: a figure traces only when a referenced metric whose mention is
+`rendered` has an allowed phrasing appearing verbatim in the text *and* containing that figure. So a
+year, a version number and a "24/7" are all untraceable figures. A scanner that tried to tell a
+"real" measurement from an incidental number would be making exactly the informal judgement §11
+opens by refusing, and a test states the strictness so it is a decision rather than a surprise.
+
+**A second carried fixture gap, asserted rather than hidden.** The packaged example declares only
+`qualitative_only` metric mentions, so every `rendered` path is exercised by constructed cases;
+`test_the_example_declares_no_rendered_metric_mention` asserts the absence so closing it is
+deliberate. Adding one would move `evidence_set_digest` and every digest pinned against it — the same
+reason D-115 left the redaction gap open.
+
+### The mutation discipline was run, and the layer's own trap was found first
+
+All fourteen checks were disabled one at a time and confirmed to take at least one test with them —
+7/3/4/1/2/1/5/2/2/2/6/10/11/1 failures, **zero missed** — with the slice committed first so the
+restore was safe. Separately, an import cycle was designed out before it could bite:
+`validation/__init__.py` imports `semantic`, which imports `effective`, so `effective` reading
+anything from the `validation` package at module scope would make
+`import boardwatch.profile_bundle.effective` re-enter a half-initialised module. The context type is
+`TYPE_CHECKING`-only and the one runtime helper is imported inside its function — the deferred-import
+shape `validation/evidence.py` already used.
+
+**Alternatives rejected.** Implementing the entity-status row anyway "for completeness" — that is the
+defect D-115 named. Folding evidence eligibility into `eligible_fact_surfaces` — cascades, above.
+Reporting exclusivity's count clause regardless of cardinality — redundant against cardinality on
+every shipped row. A figure scanner with a heuristic for "real" measurements — it would decide the
+thing the bundle exists to stop being decided informally.

@@ -39,7 +39,7 @@ leakage needs 7 days of runs (the window must start after D-110, which changed w
 queue), and "0 dead postings" needs a real run whose leads are actually probed. So the useful work is, in
 order: (1) finish the 0.3.0 re-release, which is now waiting only on a green `ci.yml`; (2) start
 accumulating real daily runs, gated on Mit's `resume.yaml` fix below; (3) P2 item 8 or P3 slice 5, both
-owner-gated and both wanting their own context window; (4) Gate A's T10 onward.
+owner-gated and both wanting their own context window; (4) Gate A's T11 onward.
 
 **A green `make check` is NOT a green CI** (D-117). `gitleaks`, `perf` and `generalization` are separate CI
 jobs `make check` never runs, and pushing turned `gitleaks` red for the first time in the project's history
@@ -56,16 +56,28 @@ re-pushing it unmoved re-runs the identical failure.
 ×3 and macOS ×3 green — 33 failures → 0. Windows was red there for a *different*, now-fixed reason (the
 program-index cp1252 decode, `1 failed / 3,922 passed`), whose fix was in the held commits and is now pushed.
 
-**A PARALLEL TRACK exists: the canonical career-profile bundle, Gate A — 9 of 19 slices built (D-115).**
-Not a P0–P7 phase; it has moved no program gate. Its design and plan live **untracked** under
+**A PARALLEL TRACK exists: the canonical career-profile bundle, Gate A — 10 of 19 slices built (D-115,
+D-118).** Not a P0–P7 phase; it has moved no program gate. Its design and plan live **untracked** under
 `docs/superpowers/` — read them there, and never work this track from a fresh worktree, where they vanish.
 `src/boardwatch/profile_bundle/` holds the typed outcomes, restricted YAML loader, the closed 33-document
 grammar, every record model, the JSON Schema export, a packaged synthetic example, an isolated canonical
-serializer, the global record index, structural + referential + evidence validation, the blob store, and
-versioned secret scanning. **Gate A is NOT met, it is NOT reviewed, and the bundle is wired to nothing** —
-no CLI command, and deliberately no bundle-to-`Resume` bridge (a test asserts both directions). Its commits
-being on `origin/main` is **not** sign-off. **Gate B stays prohibited until Gate A is implemented AND
-independently reviewed**; that review is owed. Next slice is **T10, semantics** (design §20.4).
+serializer, the global record index, structural + referential + evidence + **semantic** validation, the
+**effectiveness derivation**, the blob store, and versioned secret scanning. **Gate A is NOT met, it is NOT
+reviewed, and the bundle is wired to nothing** — no CLI command, and deliberately no bundle-to-`Resume`
+bridge (a test asserts both directions). Its commits being on `origin/main` is **not** sign-off. **Gate B
+stays prohibited until Gate A is implemented AND independently reviewed**; that review is owed.
+
+**Next slice is T11, owner gates and append-only history** — and it needs something the previous ten did
+not: **a promoted-revision fixture.** The packaged example is a revision-1 *draft* with `changes: []` and
+`approvals: []`, and its manifest is a `DraftManifest`, so it can never be parsed as a promoted revision.
+Every owner-gate trigger in §13 fires at promotion, not in a draft, where `owner_confirmed` and
+`status: approved` are legitimately only *proposals*. So T11 must first build a revision manifest, one
+change record and one stamp — work T13 and T16 need too, and worth doing once, deliberately, rather than
+inside whichever slice trips over it first. The digest primitives it will call already exist from T8
+(`record_digest`, `candidate_content_digest`, `candidate_digest_from_revision`,
+`source_scope_target_digest`, `source_exclusion_target_digest`). Note also that `ApprovalEntry` already
+refuses a wrong target kind and a wrong resulting state at parse time, so two of the plan's Step-1 failure
+modes are D-115 cases, not checks.
 
 **The live store has NOT had Slice 2 applied.** Migrated and backfilled for Slice 1 only (head
 `p6_posting_identities`, 117,254 identity rows, `identities verify` exit 0, 147 groups / 186 surplus /
@@ -136,7 +148,7 @@ since D-035, unchanged by everything since.
 |---|---|---|
 | **Three `resume.yaml` bullets exceed the 220-char layout gate** | Forces an untailored-master degrade on every posting, which is what blocks accumulating real runs. The file also lacks Knowledge Forge, has stale `skill_groups`, and an empty extracurricular block. **Mit pins `resume_max_pages=1` — do not advise setting it to 2.** | Mit (content) |
 | **0.3.0 re-tag not yet executed** | The form is decided (move `v0.3.0`, D-117) and the CHANGELOG is folded. Waiting only on `ci.yml` green on all three OSes on the commit the tag will name | verify, then release |
-| **Gate A is not reviewed** | Gate-green and pushed, but the independent review is owed and **Gate B is prohibited until it happens**. Being on `origin/main` is not sign-off | review |
+| **Gate A is not reviewed, and T1–T10 ship inside the 0.3.0 wheel** | Gate-green and pushed, but the independent review is owed and **Gate B is prohibited until it happens**. Being on `origin/main` is not sign-off. The wheel built at `dc1ffec` carries 65 `profile_bundle` entries (31 modules, 33 example YAML, 1 schema) and the `## [0.3.0]` section does not mention them, so publishing sends unreviewed code to PyPI under an irreversible version. Inert — no CLI, no `Resume` bridge — and `gitleaks`/`generalization` are green on it. No commit on `main` carries the CI fix without it. **Mit's call: review before 0.3.0 publishes, or publish and review after** | owner-gated |
 | **No local pre-push check for the three CI-only jobs** | `gitleaks`, `perf` and `generalization` run in CI and not under `make check`; `gitleaks` is not installed by project tooling. `gitleaks git --log-opts=origin/main..HEAD` is the cheap mitigation (D-117) | open |
 | **P2 item 8 — the onboarding gatherer** | The thing that would make the field tier fire for anyone. D-054 forbids us authoring non-tech field content, so it must be gathered per user. Needs its own brainstorm | owner-gated |
 | **P3 Slice 5 — LLM economics** | Substantial and design-heavy; use a fresh context window | P3 |
