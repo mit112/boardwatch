@@ -162,14 +162,21 @@ class IssueCode(StrEnum):
     UNVERIFIABLE_ANCESTOR = "unverifiable_ancestor"
 
     # -- completeness ---------------------------------------------------------------
-    MISSING_PERSON_ENTITY = "missing_person_entity"
+    #
+    # Three of §20.5's "required profile field" clauses have no code here, deliberately (D-115):
+    # `IdentityDocument.person` is one required field, every entity kind that §9 gives a status
+    # declares it as a required closed enum, and a metric's `reviewed_at` is a required `date` while
+    # `review_interval_days` belongs to a predicate a metric does not have. Each condition is
+    # unrepresentable rather than unchecked, so a code for it could never fire and would read as
+    # coverage. `tests/profile_bundle/test_profile_bundle_completeness.py` names where each of the
+    # three guarantees actually lands.
     MISSING_CONTACT_CHANNEL = "missing_contact_channel"
     UNRESOLVED_CONFLICT = "unresolved_conflict"
     STALE_FACT = "stale_fact"
     EXPIRED_REVIEW = "expired_review"
+    FACT_VALUE_EXPIRED = "fact_value_expired"
     MISSING_REVIEW_STATE = "missing_review_state"
-    ENTITY_STATUS_UNDECLARED = "entity_status_undeclared"
-    METRIC_REVIEW_MISSING = "metric_review_missing"
+    COMPLETENESS_COUNTS = "completeness_counts"
     ORPHANED_ARTEFACT = "orphaned_artefact"
     CORRUPT_BLOB_QUARANTINE = "corrupt_blob_quarantine"
 
@@ -201,20 +208,24 @@ _BLOCKER_CODES: frozenset[IssueCode] = frozenset(
         IssueCode.IMPORT_RECORD_UNDISPOSITIONED,
         IssueCode.IMPORT_UNEXPLAINED_RECORD,
         IssueCode.UNVERIFIABLE_ANCESTOR,
-        IssueCode.MISSING_PERSON_ENTITY,
         IssueCode.MISSING_CONTACT_CHANNEL,
         IssueCode.UNRESOLVED_CONFLICT,
         IssueCode.STALE_FACT,
         IssueCode.EXPIRED_REVIEW,
+        IssueCode.FACT_VALUE_EXPIRED,
         IssueCode.MISSING_REVIEW_STATE,
-        IssueCode.ENTITY_STATUS_UNDECLARED,
-        IssueCode.METRIC_REVIEW_MISSING,
         IssueCode.CORRUPT_BLOB_QUARANTINE,
     }
 )
 
-#: Codes that are reports about the bundle root, never about the selected revision's validity.
-_INFORMATION_CODES: frozenset[IssueCode] = frozenset({IssueCode.ORPHANED_ARTEFACT})
+#: Codes that are reports about the bundle root or a run's own arithmetic, never about the selected
+#: revision's validity. `completeness_counts` is here rather than in `_BLOCKER_CODES` because §20.5
+#: puts counts, surfaces, status distribution and evidence coverage in the `information` tier: a run
+#: whose only finding is a count is a clean run, and giving it any other tier would make every
+#: complete bundle exit 1.
+_INFORMATION_CODES: frozenset[IssueCode] = frozenset(
+    {IssueCode.ORPHANED_ARTEFACT, IssueCode.COMPLETENESS_COUNTS}
+)
 
 #: Typed state refusals: the check completed and the operator has an action. Exit 1.
 STATE_REFUSAL_CODES: frozenset[IssueCode] = frozenset(
