@@ -239,7 +239,13 @@ def is_emitted_segment(segment: str) -> bool:
     adapter-blind, because it also has to admit the scope locators an owner authors — allows the
     suffix. `objects/synthetic~2` is the difference: a normalized locator no adapter can emit.
     """
-    if not segment or segment in (".", ".."):
+    if not segment:
+        # The one guard the round trip cannot supply: `""` encodes to itself.
+        #
+        # `.` and `..` had a guard here too until the encoder began ESCAPING them. It is deleted
+        # rather than kept: `_canonical_encoding(".")` is now `%2E`, so the round trip already
+        # refuses the bare spelling, and mutation testing proved the guard could no longer fail a
+        # single test (D-115 — a check that cannot fire reads as coverage while providing none).
         return False
     decoded = _decoded_segment(segment)
     return decoded is not None and _canonical_encoding(decoded) == segment
