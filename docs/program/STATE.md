@@ -45,10 +45,14 @@ the design and plan and is untracked — copy it into any worktree you create.
 |---|---|---|
 | `t13-followup` | — | **MERGED** to main at `b87fa06`, gate exit 0 · 5,436 passed · 95.64%. Branch retained but done. |
 | `t14-storage` | **merged** | **MERGED** to main at `aff1dc0`. Round-2 review found 1 BLOCKING + 4 SHOULD-FIX (REWORK); fixed in 5 commits, one per finding. Gate **exit 0 · 5,534 passed · 95.73% · 11m54s**. Detail in D-128. Its fix round had the orchestrator's targeted verification, **not a full independent review round** — the blocking fix was checked by mutating the predicate and re-running the reviewer's probes. |
-| `t15-rebase` | `e34c1d2` | Reviewed by **two concurrent lenses, both REWORK**: 6 distinct BLOCKING + 8 SHOULD-FIX, none covered by its own 54 green tests. Fixed in 12 commits; `main` merged forward; two design departures ruled in D-129. Gate in flight. Detail in D-128. |
-| `t16-promotion` | `e9ab3bc` | **Not started.** The branch exists but is identical to `t15-rebase`; the build agent died before its first edit. Its carried debt is in `scratchpad/CARRIED-DEBT.md`. **Do not start it until T15's fix round lands** — it is byte-identical to the reviewed-REWORK `t15-rebase`, so it currently carries all 6 of T15's BLOCKING defects, and it takes the same lock, computes the same digest over the same blob store, and needs `_identical_trees`/`_tree_contents` (private to `rebase.py`) for its own step 7. Building on it now would build on a known-broken foundation. |
-| `t17-schema` | `5c4929a` | **REVIEWED — APPROVE** (light pass; no BLOCKING, no SHOULD-FIX in its own diff). `main` merged forward. **Owed: its post-merge test verification** — the worktree venv was broken when the merge landed and repairing it mid-gate risked the running gate. |
+| `t15-rebase` | **merged** | **MERGED** to main at `f74be0e`. Two concurrent lenses, both REWORK: 6 distinct BLOCKING + 8 SHOULD-FIX, none covered by its own 54 green tests. Fixed in 12 commits; two design departures ruled in D-129. Branch gate **exit 0 · 5,611 passed · 95.83%**. Detail in D-128. |
+| `t16-promotion` | at `main` | **Build IN FLIGHT.** Branch reset onto `main` (it had no work of its own and was byte-identical to the pre-fix `t15-rebase`). Brief `scratchpad/BRIEF-T16.md`; carried debt `scratchpad/CARRIED-DEBT.md`. Highest-risk slice: crash-consistent promotion, exact-target reuse, corrupt-parent recovery. |
+| `t17-schema` | **merged** | **MERGED** to main at `27879bb`. Light review: APPROVE, no BLOCKING and no SHOULD-FIX in its own diff. |
 | T18, T19 | — | Not started. T18 is the `profile-bundle` CLI, the first non-inert surface. T19 is the authoring contract and the final Gate A gate. |
+
+**Combined gate on `main` with T14+T15+T17: exit 0 · 5,620 passed · 95.83%.** Gate A is **15 of 19 slices merged**; T16, T18 and T19 remain. **Gate A is NOT met and Gate B stays prohibited.** Nothing on this track is pushed.
+
+**Owed: an independent review of T14's and T15's FIX ROUNDS.** Both were merged on the orchestrator's targeted verification (mutating each predicate, re-running the reviewers' archived probes) rather than a fresh review round of their own. The blocking fixes are sound as far as that goes; what is unestablished is whether every *new* check has a test that fails without it.
 
 **T14 is merged, so the forward-merge debt is now T16's alone** — and T16 must take `main`, not the
 pre-fix `t15-rebase` it is currently identical to.

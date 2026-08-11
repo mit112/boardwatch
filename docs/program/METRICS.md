@@ -54,29 +54,30 @@ reports drift without writing, and `make check` depends on it (D-109).
 | METRICS-ARCHIVE.md | 1047 | Session — 2026-08-08 (P5 run #2 — disjunctive fix, Gate P5 MET at 100%; D-073) |
 | METRICS-ARCHIVE.md | 1084 | Session — 2026-08-08 (D-071b final eligibility gate build — no answer-key number changes) |
 | METRICS-ARCHIVE.md | 1120 | Gate P2 — 2026-08-08 · field-tier mechanism (P2 item 4, D-075). **MET AS RECONCILED** |
-| METRICS.md | 83 | Run log |
-| METRICS.md | 111 | Acceptance run |
-| METRICS.md | 122 | Session — 2026-08-09/10 · P6 Slice 1 design + plan. **No build, no gate movement.** |
-| METRICS.md | 148 | Session — 2026-08-10 · P6 Slice 1 BUILT (unattended run). Branch `p6-slice1`, not merged. |
-| METRICS.md | 358 | 2026-08-10 — P6 Slice 1 on the LIVE store (first real backfill) + Gate P6 clause 4 |
-| METRICS.md | 397 | Session 2026-08-10 (later) — P6 Slice 2: the durable decision ledger, its drain, and job regrouping |
-| METRICS.md | 490 | Session — 2026-08-10 (later) · D-109, the program-index gate. No phase gate moved. |
-| METRICS.md | 531 | Session — 2026-08-10 (later still) · The P6 Slice 2 review (D-110). No phase gate moved. |
-| METRICS.md | 621 | Session — 2026-08-10 (later still ×2) · P6 Slice 3, items 5 and 6 (D-111). Gate P6 unchanged: still 2 of 4. |
-| METRICS.md | 734 | Session — 2026-08-10 (later still ×3) · 0.3.0 cut and tagged (D-112). No phase gate moved. |
-| METRICS.md | 785 | Session — 2026-08-10 (later still ×4) · The Slice 3 external review (D-113) + the CI dependency fix (D-114). No phase gate moved. |
-| METRICS.md | 905 | Session — 2026-08-10 (later still ×5) · Gate A career-profile bundle, slices T1–T9 (D-115). No phase gate moved. |
-| METRICS.md | 994 | Session — 2026-08-10 (later still ×6) · The held commits are PUSHED; CI's first honest read (D-116, D-117). No phase gate moved. |
-| METRICS.md | 1069 | Session — 2026-08-10 (later still ×7) · Gate A slice T10, semantic validation (D-118). No phase gate moved. |
-| METRICS.md | 1250 | Session — 2026-08-10 · Gate A fix history reconciliation; independent T1–T10 review still owed. No phase gate moved. |
-| METRICS.md | 1274 | Session — 2026-08-10 · Independent Gate A T1–T10 review sign-off; T11 permitted. |
-| METRICS.md | 1312 | Session — 2026-08-11 · Gate A T11 implemented and reviewed. No phase gate moved. |
-| METRICS.md | 1342 | Session — 2026-08-11 (later) · Gate A T12 implemented, NOT independently reviewed. No phase gate moved. |
-| METRICS.md | 1403 | Session — 2026-08-11 (later ×2) · Gate A T12 reviewed TWICE, both REWORK, both rounds fixed. No phase gate moved. |
-| METRICS.md | 1451 | Session — 2026-08-11 (later ×3) · Gate A T12 reviewed a THIRD time, REWORK again. T13 partially built on a branch. No phase gate moved. |
-| METRICS.md | 1506 | Session — 2026-08-11 (later ×4) · T12 fixed through five reviews; T13 built. No phase gate moved. |
-| METRICS.md | 1572 | Session — 2026-08-11 (later ×5) · T13 merged; T14 reviewed and partly fixed; T15 and T17 built. No phase gate moved. |
-| METRICS.md | 1377 | Session — 2026-08-11 (later still) · The T12 independent review (D-121) and its fix. No phase gate moved. |
+| METRICS.md | 84 | Run log |
+| METRICS.md | 112 | Acceptance run |
+| METRICS.md | 123 | Session — 2026-08-09/10 · P6 Slice 1 design + plan. **No build, no gate movement.** |
+| METRICS.md | 149 | Session — 2026-08-10 · P6 Slice 1 BUILT (unattended run). Branch `p6-slice1`, not merged. |
+| METRICS.md | 359 | 2026-08-10 — P6 Slice 1 on the LIVE store (first real backfill) + Gate P6 clause 4 |
+| METRICS.md | 398 | Session 2026-08-10 (later) — P6 Slice 2: the durable decision ledger, its drain, and job regrouping |
+| METRICS.md | 491 | Session — 2026-08-10 (later) · D-109, the program-index gate. No phase gate moved. |
+| METRICS.md | 532 | Session — 2026-08-10 (later still) · The P6 Slice 2 review (D-110). No phase gate moved. |
+| METRICS.md | 622 | Session — 2026-08-10 (later still ×2) · P6 Slice 3, items 5 and 6 (D-111). Gate P6 unchanged: still 2 of 4. |
+| METRICS.md | 735 | Session — 2026-08-10 (later still ×3) · 0.3.0 cut and tagged (D-112). No phase gate moved. |
+| METRICS.md | 786 | Session — 2026-08-10 (later still ×4) · The Slice 3 external review (D-113) + the CI dependency fix (D-114). No phase gate moved. |
+| METRICS.md | 906 | Session — 2026-08-10 (later still ×5) · Gate A career-profile bundle, slices T1–T9 (D-115). No phase gate moved. |
+| METRICS.md | 995 | Session — 2026-08-10 (later still ×6) · The held commits are PUSHED; CI's first honest read (D-116, D-117). No phase gate moved. |
+| METRICS.md | 1070 | Session — 2026-08-10 (later still ×7) · Gate A slice T10, semantic validation (D-118). No phase gate moved. |
+| METRICS.md | 1251 | Session — 2026-08-10 · Gate A fix history reconciliation; independent T1–T10 review still owed. No phase gate moved. |
+| METRICS.md | 1275 | Session — 2026-08-10 · Independent Gate A T1–T10 review sign-off; T11 permitted. |
+| METRICS.md | 1313 | Session — 2026-08-11 · Gate A T11 implemented and reviewed. No phase gate moved. |
+| METRICS.md | 1343 | Session — 2026-08-11 (later) · Gate A T12 implemented, NOT independently reviewed. No phase gate moved. |
+| METRICS.md | 1404 | Session — 2026-08-11 (later ×2) · Gate A T12 reviewed TWICE, both REWORK, both rounds fixed. No phase gate moved. |
+| METRICS.md | 1452 | Session — 2026-08-11 (later ×3) · Gate A T12 reviewed a THIRD time, REWORK again. T13 partially built on a branch. No phase gate moved. |
+| METRICS.md | 1507 | Session — 2026-08-11 (later ×4) · T12 fixed through five reviews; T13 built. No phase gate moved. |
+| METRICS.md | 1573 | Session — 2026-08-11 (later ×5) · T13 merged; T14 reviewed and partly fixed; T15 and T17 built. No phase gate moved. |
+| METRICS.md | 1645 | Session — 2026-08-11 (later ×6) · T14 reviewed, fixed and MERGED; T15 reviewed twice and fixed; T17 reviewed. No phase gate moved. |
+| METRICS.md | 1378 | Session — 2026-08-11 (later still) · The T12 independent review (D-121) and its fix. No phase gate moved. |
 
 ---
 
@@ -1640,3 +1641,122 @@ new check has a test that fails without it, and two SHOULD-FIX items were never 
 Gate A **not met**: 16 of 19 slices built, 14 merged. T15 and T17 are built and reviewed by nobody;
 T16, T18 and T19 are not started. T14 is integrated and **green on a full gate but unreviewed**, which
 is deliberately not enough to merge — three slices inherit it. Gate B **prohibited**. **Nothing pushed.**
+
+## Session — 2026-08-11 (later ×6) · T14 reviewed, fixed and MERGED; T15 reviewed twice and fixed; T17 reviewed. No phase gate moved.
+
+Resumed from the dispatch queue the previous session left when it hit a usage limit. Three reviews and
+two fix rounds, dispatched three wide rather than five. Recorded in D-128.
+
+### What landed
+
+| Slice | Where | Numbers |
+|---|---|---|
+| T14 | **merged to `main`** at `aff1dc0` | Round-2 review: **1 BLOCKING, 4 SHOULD-FIX**, REWORK. Fix round 5 commits, one per finding. Gate: **exit 0 · 5,534 passed · 95.73% · 11m54s**. |
+| T15 | **merged to `main`** at `f74be0e` | Reviewed by **two concurrent lenses, both REWORK**: **6 distinct BLOCKING, 8 SHOULD-FIX**, none covered by its own 54 green tests. Fix round 12 commits + 1 merge fix. Gate: **exit 0 · 5,611 passed · 95.83% · 13m18s**. |
+| T17 | **merged to `main`** at `27879bb` | Light review: **APPROVE**, no BLOCKING and no SHOULD-FIX in its own diff. 9 tests green post-merge. |
+| T16 | `t16-promotion`, still identical to pre-fix `t15-rebase` | **Not started, and now explicitly gated** behind T15 — it carried all 6 of T15's BLOCKING defects. Must take `main`, not the branch it currently matches. |
+
+Gate A is **15 of 19 slices merged**. T16, T18, T19 remain; Gate A is NOT met and Gate B stays
+prohibited. Nothing on this track is pushed — `origin/main` is untouched.
+
+### Review yield: 7 BLOCKING and 12 SHOULD-FIX in code whose suites were green
+
+T15's 54 tests covered **none** of its six BLOCKING. The recurring cause is not a missing test but a
+test that cannot fail:
+
+- T14's confinement check was guarded by two tests that read the same `BLOBS_DIR`/`ROOT_MEMBERS`
+  constants the check reads, so both agreed `blobs/` was the blob store when the store is
+  `blobs/sha256`. Replacements locate the store **by content** — the one file whose name is the
+  sha256 of its own bytes.
+- Three separate mutations to `inspection.py` (`:190-198`, `:412-413`, `:569-579`) left the suite
+  entirely green, so two-thirds of an earlier BLOCKING fix could have been deleted silently.
+- Both fix rounds were held to: revert the check, watch the test go red, restore it. T14 reported 14
+  of 18 reverted checks going red before the round; all five findings pinned after.
+
+### The orchestrator's own instruction was wrong, and was caught by testing it
+
+The T14 fix brief specified the confinement predicate as
+`path.resolve().is_relative_to(bundle_root.resolve())`. The implementing agent declined it and shipped
+the stronger equality `path.resolve() == resolved_root / path.relative_to(bundle_root)`, stating why.
+Verified by weakening it back: `test_a_member_that_aliases_another_member_inside_the_root_is_refused`
+fails with `DID NOT RAISE`. `is_relative_to` admits a member aliasing another member **inside** the
+root, under which `drafts/` resolving to `revisions/` makes `inventory` report a revision directory as
+a draft. Re-running the reviewer's own probes confirmed the escape cases flip to `symlink_refused`,
+the inside-root alias stays refused, and a symlinked bundle root stays correctly allowed.
+
+### Three measurement routes that lied, all caught before being reported
+
+1. **A gate log containing `All checks passed!` at line 7** — emitted by the lint step while pytest was
+   still at 73%. Reading it as the gate's verdict is a false green. Only `GATE_EXIT` and the pytest
+   summary line are the result.
+2. **A backgrounded pytest reported "exit code 0" that was `tail`'s exit code**, because the command
+   was piped. The real result was `3 failed, 1634 passed, 47 errors`. Backgrounded gates must end with
+   `exit $ec` and must not be piped.
+3. **Two worktree venvs were silently corrupted mid-session**: the `.py` files under
+   `alembic/autogenerate/compare/` disappeared from `t14-wt` and `t15-wt` at the identical mtime,
+   leaving `ImportError: ... (unknown location)` and pytest exit 4. `uv` hardlinks package files from a
+   shared global cache, so **every worktree venv shares inodes and one cache disturbance breaks them
+   all together**. Repaired with `uv sync --reinstall --all-groups`. T14's gate had finished 5 minutes
+   before the corruption, checked by timestamp rather than assumed, so that result stands.
+
+**A partial `uv sync` makes it worse:** `uv sync --reinstall-package alembic` fixed alembic and pruned
+the dev group, so `pytest-cov` vanished and pytest failed with `unrecognized arguments: --cov`. Use
+`--all-groups`.
+
+### T15 took THREE gate runs, and only the full gate could have caught any of it
+
+Round 1 failed with 2 tests red at 13m45s: one was a merge resolution that put `logical_path` on
+`write_bytes` instead of `quoted_yaml`, one closing paren away — suspected at the time and wrongly
+dismissed on the strength of a line-based grep that cannot distinguish the two. Round 2 failed at
+**lint**, in 79 lines, because moving to the qualified import made it first-party and it needed
+resorting. Round 3: **exit 0 · 5,611 passed · 95.83% · 13m18s**.
+
+The second round-1 failure is the one worth keeping. `t15-rebase`'s new test module used a bare
+`from conftest import ...`, which binds whichever `conftest.py` was imported as the top-level
+`conftest` module first — under the full suite that is `tests/unit/conftest.py`, so `BLOB_SHA256` was
+not found. **No run of `tests/profile_bundle` alone can produce that ImportError.** It came from the
+original build commit `e9ab3bc`, which means it survived both review lenses *and* the fix round — and
+it had to, because all three were instructed to keep runs narrow and never run `make check`. The
+review stage is structurally blind to cross-suite collisions; only the gate sees them. Every sibling
+module in that directory already imported from `tests.profile_bundle.conftest`.
+
+### The merge that reported success and then failed
+
+`main` → `t15-rebase` produced **2 conflicts** (both in `inspection.py` and its test, neither a logic
+conflict) and **4** `quoted_yaml` call sites needing repair in a file `main` never saw, which therefore
+never conflicted. Measured in advance on a throwaway worktree: `Automatic merge went well`, then
+`TypeError: quoted_yaml() missing 1 required keyword-only argument: 'logical_path'`.
+
+Two traps priced for next time. **A line-based grep for the broken signature reports false positives**
+— multi-line calls carry the argument on a following line, so only the suite settles it. And **a
+deletion on one side must be checked for a rename on the other**: `main` had deleted a test `t15`
+still carried, and "safely" keeping both would have restored the hardcoded-`.tmp-draft-abc123` test
+that T14's fix deliberately replaced with one reading `DRAFT_TEMP_PREFIX` from the writer.
+
+Also: resolving conflict markers is not resolving the conflict. Both files sat at `UU` until an
+explicit `git add`, which `git status` showed and the passing test run did not.
+
+### Dispatch economics
+
+Three agents, then two fix rounds, against the previous session's five-wide dispatch that lost four
+agents to a single usage limit. Every reviewer was briefed to **append each finding to a file the
+moment it is confirmed** (a read-only agent cannot commit, so a file is its only durable artefact) and
+every fix agent to **commit per finding, not per report**. Both held: the T14 reviewer had 79 lines of
+confirmed findings on disk well before it reported, and the T15 fix round's 12 commits were each
+independently recoverable.
+
+### The gate that failed because the machine was out of disk
+
+`main`'s combined gate (T14+T15+T17) died at 3730 tests with
+`OSError: [Errno 28] No space left on device` — 706 MiB free on a 228 GiB volume at 100%. That is
+also the most likely cause of the "venv corruption" above, which had been attributed to `uv`
+hardlinking from a shared cache; **that attribution was wrong**. Files vanishing from two venvs at an
+identical mtime is what disk exhaustion looks like, and the symptom surfaces wherever the next write
+lands, which is why it presented as three unrelated tooling faults.
+
+Reclaimed ~950 MiB: seven merged/stale worktrees removed (each ~165 MiB) and `uv cache prune` freeing
+646 MiB across 15,339 unused files. **A worktree per slice is not free at ~165 MiB each** — remove
+them as their branches merge rather than at the end of the program.
+
+Re-run clean: **exit 0 · 5,620 passed · 95.83% · 38m18s**. The wall-clock is inflated ~3x by a build
+agent running concurrently; the same gate took 11m54s and 13m18s uncontended.
