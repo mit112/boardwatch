@@ -207,6 +207,31 @@ def test_inventory_reports_an_unmeasured_blob_reference_set_as_unmeasured(
     assert outcome.exit_code == 1
 
 
+def test_inventory_does_not_measure_blob_references_without_a_readable_selection(
+    promoted_tree: PromotedRevisionTree,
+) -> None:
+    """Unmeasured is unmeasured on the route that produces it most, not only on the rarest one.
+
+    A selection that cannot be resolved or read at all leaves no documents to take a reference set
+    from, and that is the state a torn promotion, an unparseable revision and a fresh bundle are all
+    in. Reporting `()` there calls every blob in the shared store unreferenced — the same
+    measurement-nobody-took this field exists to avoid, on the common path instead of the rare one.
+    """
+    orphan = "b" * 64
+    blob_path(promoted_tree.bundle_root, orphan).write_bytes(b"unreferenced")
+    measured = inventory(promoted_tree.bundle_root).value
+    assert measured is not None
+    assert (measured.referenced_blobs, measured.unreferenced_blobs) == ((BLOB_SHA256,), (orphan,))
+
+    complete_marker_path(promoted_tree.revision_dir).unlink()
+    outcome = inventory(promoted_tree.bundle_root)
+    report = outcome.value
+    assert report is not None
+    assert report.selected is None
+    assert report.referenced_blobs is None
+    assert report.unreferenced_blobs is None
+
+
 def test_inventory_reports_a_dead_local_source_mapping_without_changing_its_exit_code(
     promoted_tree: PromotedRevisionTree,
 ) -> None:
