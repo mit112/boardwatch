@@ -11,6 +11,10 @@ resolve half the references against whichever record happened to be indexed firs
 
 from __future__ import annotations
 
+from boardwatch.profile_bundle.validation.completeness import (
+    ancestry_completeness,
+    validate_completeness,
+)
 from boardwatch.profile_bundle.validation.context import (
     BundleParseError,
     ParentSnapshot,
@@ -21,11 +25,13 @@ from boardwatch.profile_bundle.validation.context import (
     parse_error_diagnostics,
     sorted_diagnostics,
 )
+from boardwatch.profile_bundle.validation.digest import validate_digest
 from boardwatch.profile_bundle.validation.history import validate_history
 from boardwatch.profile_bundle.validation.referential import (
     records_blocked_by_unresolved_conflicts,
     validate_referential,
 )
+from boardwatch.profile_bundle.validation.run import validate_bundle
 from boardwatch.profile_bundle.validation.semantic import (
     semantic_completeness,
     validate_semantic,
@@ -36,6 +42,7 @@ __all__ = [
     "BundleParseError",
     "ParentSnapshot",
     "ValidationContext",
+    "ancestry_completeness",
     "build_context",
     "context_from_documents",
     "load_documents",
@@ -43,6 +50,9 @@ __all__ = [
     "records_blocked_by_unresolved_conflicts",
     "semantic_completeness",
     "sorted_diagnostics",
+    "validate_bundle",
+    "validate_completeness",
+    "validate_digest",
     "validate_referential",
     "validate_history",
     "validate_semantic",

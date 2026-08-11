@@ -112,6 +112,14 @@ def validate_history(ctx: ValidationContext) -> tuple[Diagnostic, ...]:
 
     if not stamps:
         return tuple(findings)
+    if manifest.parent_bundle_digest is not None and ctx.parent is None:
+        # Owner gates are DERIVED by diffing this revision against its parent, and promotion appends
+        # exactly one stamp covering only what changed. Deriving them with `parent=None` treats
+        # every record as new and demands that one stamp approve the entire bundle, which reported
+        # every revision after the first as missing dozens of approvals. §20.6 says validating an
+        # already selected revision does not repeat promotion's parent checks, so the honest
+        # behaviour without the parent is to make no claim. Promotion always holds it.
+        return tuple(findings)
     parent_documents = ctx.parent.documents if ctx.parent is not None else None
     required = required_approval_decisions(ctx.documents, parent_documents)
     latest_stamp = stamps[-1]

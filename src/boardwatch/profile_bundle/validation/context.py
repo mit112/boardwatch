@@ -28,6 +28,7 @@ from boardwatch.profile_bundle.errors import (
     IssueCode,
     ProfileBundleError,
     RestrictedYamlError,
+    UnsupportedSchemaVersionError,
     diagnostic,
 )
 from boardwatch.profile_bundle.index import BundleIndex, build_index
@@ -235,9 +236,18 @@ def parse_error_diagnostics(exc: ProfileBundleError) -> tuple[Diagnostic, ...]:
 
     `BundleLayoutError` and `BundleIoError` become one diagnostic each; a `BundleParseError` already
     carries its own list. Nothing here guesses at a code from an exception message.
+
+    `UnsupportedSchemaVersionError` needs its own arm because `load_documents` raises it directly
+    from `require_supported_schema`: without one it falls through to `internal_error`, which is the
+    right exit code (both are `could_not_complete`) under the wrong name, so an operator would file
+    a bug instead of upgrading Boardwatch. There is deliberately no arm for
+    `UnsupportedSecretRulesetError` — it is raised while scanning captures, which happens inside a
+    layer that reports its own diagnostics, and never on the load path this function serves.
     """
     if isinstance(exc, BundleParseError):
         return exc.diagnostics
+    if isinstance(exc, UnsupportedSchemaVersionError):
+        return (diagnostic(IssueCode.UNSUPPORTED_SCHEMA_VERSION, str(exc)),)
     if isinstance(exc, BundleLayoutError):
         return (diagnostic(IssueCode.UNKNOWN_FILE, str(exc)),)
     if isinstance(exc, BundleIoError):
