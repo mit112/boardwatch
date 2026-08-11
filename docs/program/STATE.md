@@ -28,42 +28,31 @@ likely to be undone by accident: `Fetcher` sets `follow_redirects=True`, so a `3
 bare 404, and `FetchFailure.redirected` is the only thing distinguishing a posting that is gone from one
 whose old link points at a dead path on a new host.
 
-**The two-writer push standoff is over.** Two sessions were committing into this clone and their commits
-interleaved, and the other writer's tree was red in a clean checkout — a committed test imported a module
-that existed only as an untracked file. That module is now tracked, and `make check` in a **detached
-worktree** came back exit 0 / 4,764 passed / 95.20%, which is the only form of that check that means
-anything here. `cefd13e..1cdcd66` is on `origin/main` (D-116, D-117).
-
 **Next action: P6 has nothing left to BUILD — its last two gate clauses need the system RUN.** Duplicate
 leakage needs 7 days of runs (the window must start after D-110, which changed which callers advance the
 queue), and "0 dead postings" needs a real run whose leads are actually probed. So the useful work is, in
-order: (1) finish the 0.3.0 re-release, which is now waiting only on a green `ci.yml`; (2) start
-accumulating real daily runs, gated on Mit's `resume.yaml` fix below; (3) P2 item 8 or P3 slice 5, both
-owner-gated and both wanting their own context window; (4) Gate A's T11 onward.
+order: (1) start accumulating real daily runs, gated on Mit's `resume.yaml` fix below; (2) Gate A — finish
+its review, then T11 onward; (3) P2 item 8 or P3 slice 5, both owner-gated and both wanting their own
+context window.
 
 **A green `make check` is NOT a green CI** (D-117). `gitleaks`, `perf` and `generalization` are separate CI
 jobs `make check` never runs, and pushing turned `gitleaks` red for the first time in the project's history
 with every local check green. This does not contradict "`make check` is the only gate" — that holds for *this
-repo's own correctness*.
+repo's own correctness*. Run `gitleaks git --log-opts=origin/main..HEAD` before pushing.
 
-**0.3.0: the decision is TAKEN and only CI stands in the way.** Mit chose to **move `v0.3.0`** rather than
-cut 0.3.1 (D-117); nothing ever published, so the tag has no consumers. The `[Unreleased]` entries are
-already folded into the single `## [0.3.0] - 2026-08-10` section. **The tag must land on a commit containing
-the CI fix** — `v0.3.0` names `426f45c`, whose tree has no `.github/actions/setup-typesetting` at all, so
-re-pushing it unmoved re-runs the identical failure.
+**0.3.0 is PUBLISHED (D-119)** — on PyPI, GHCR (`amd64` + `arm64`) and GitHub Releases, verified through
+three paths independent of the workflow's own report. `v0.3.0` is a **lightweight** tag on `dc1ffec`,
+matching `v0.1.0`/`v0.2.0`. Its precondition was `ci.yml` run `31442555052`: **12 of 12 green**, the first
+fully green `ci.yml` in the project's history — which closed both the tectonic/poppler gap (D-114, 33
+failures → 0) and the Windows cp1252 program-index defect.
 
 **0.3.0 ships Gate A inside it, deliberately (D-119).** The wheel carries the whole `profile_bundle` package —
 65 entries, 31 modules, 33 example YAML documents, 1 JSON Schema — and the `## [0.3.0]` section does not
-enumerate them. **Mit was offered "hold 0.3.0 until Gate A is reviewed" and declined it**: the package is inert
-(no CLI command, no bundle-to-`Resume` bridge, a test asserts both directions, nothing in a shipped code path
-imports it), `gitleaks` and `generalization` are green on it in CI so no secrets or personal data ship,
-changelogs do not normally enumerate internal packages, and no commit on `main` carries the CI fix without it.
-**Publishing changed the release, not the review's standing** — the Gate A review is still owed and Gate B is
-still prohibited.
-
-**The tectonic/poppler gap is fixed and PROVEN on runners (D-114).** Run `31421520836` on `cefd13e`: ubuntu
-×3 and macOS ×3 green — 33 failures → 0. Windows was red there for a *different*, now-fixed reason (the
-program-index cp1252 decode, `1 failed / 3,922 passed`), whose fix was in the held commits and is now pushed.
+enumerate them. **Mit was offered "hold until Gate A is reviewed" twice — once before the loader BLOCKERs were
+known and once after — and declined both.** The basis held because the package is **inert**: no CLI command, no
+bundle-to-`Resume` bridge, a test asserts both directions, and nothing in a shipped code path reaches it. It is
+a defect in code that ships but never runs. **Publishing changed the release, not the review's standing** — the
+review is still owed and Gate B is still prohibited.
 
 **A PARALLEL TRACK exists: the canonical career-profile bundle, Gate A — 10 of 19 slices built (D-115,
 D-118).** Not a P0–P7 phase; it has moved no program gate. Its design and plan live **untracked** under
@@ -156,10 +145,9 @@ since D-035, unchanged by everything since.
 | Item | Detail | Owner |
 |---|---|---|
 | **Three `resume.yaml` bullets exceed the 220-char layout gate** | Forces an untailored-master degrade on every posting, which is what blocks accumulating real runs. The file also lacks Knowledge Forge, has stale `skill_groups`, and an empty extracurricular block. **Mit pins `resume_max_pages=1` — do not advise setting it to 2.** | Mit (content) |
-| **0.3.0 re-tag not yet executed** | The form is decided (move `v0.3.0`, D-117) and the CHANGELOG is folded. Waiting only on `ci.yml` green on all three OSes on the commit the tag will name | verify, then release |
 | **Gate A T1–T10's review is ~⅓ DONE and was stopped on usage grounds** | A 3-wide dispatch became **11 agents** through nesting; Mit stopped the remaining 7. **Completed:** the closed-catalog checks (9 catalogs and all 41 predicate rows × 14 columns match the design exactly, negative-controlled) and a full restricted-YAML-loader audit. **Still owed:** the code-running T10 pass, canonical identity vs §7, blobs + secret scanning, the dead-check sweep, the packaged-example audit, and a docs-only pass. Gate B stays prohibited; `origin/main` is not sign-off and neither is being published | review |
 | **No local pre-push check for the three CI-only jobs** | `gitleaks`, `perf` and `generalization` run in CI and not under `make check`; `gitleaks` is not installed by project tooling. `gitleaks git --log-opts=origin/main..HEAD` is the cheap mitigation (D-117) | open |
-| **TWO BLOCKERs in the restricted YAML loader break content addressing** | `yaml_loader.py:65-97` narrows only *implicit* scalars and never inspects `node.tag`, so **an explicit `!!bool`/`!!int`/`!!timestamp`/`!!binary`/`!!omap` tag bypasses the whole §7 contract** — demonstrated end-to-end: four byte-different spellings of one record produce the **identical `bundle_digest`**, and `!!omap` smuggles duplicate keys past `construct_mapping`. Second BLOCKER: PyYAML's tag constructors raise **raw builtins** that escape `load_documents` as tracebacks, defeating §21's exit contract. **One fix closes both** — reject any explicitly-written node tag in `compose_node`, beside the anchor check that already has the event in hand. `StrictModel` does not backstop it (no `strict=True`) | Gate A, first |
+| **The two YAML-loader BLOCKERs are FIXED but the fix is UNREVIEWED** | `compose_node` now refuses any event carrying an explicit `tag`, which closes both: the `!!bool`/`!!int`/`!!timestamp`/`!!omap` bypass that let **four byte-different spellings produce one `bundle_digest`**, and the raw builtins that escaped `load_documents`. Committed as `1de10c7` + `20ff50c` by a session that ended without pushing them; **gated green independently here — exit 0, 4,883 passed, 95.22%**, which also proves the tag refusal does not over-reject, since the packaged 33-document bundle still loads. Both commits have **empty bodies**, against convention. Two observations, neither blocking: (1) the catch-all `except Exception` in `load_yaml_bytes` relabels *our own* internal defects as the user's "invalid YAML", which is the wrong attribution even if fail-safe at a parse boundary; (2) BLOCKER 2's documented trigger (`!!bool y` -> `KeyError`) is now **unreachable**, because the tag is refused before construction — so that clause is exercised only by monkeypatching `yaml.load_all`, which is a D-115 question worth asking. The reproduction in `METRICS.md` is correspondingly stale for that route | Gate A review |
 | **Three MAJORs and six MINORs also open from the partial review** | Chief among them: §10.4's "every legal verification basis must be backed by its corresponding evidence class" is unvalidated at catalog level (`models/policy.py:124-171`), so a tenant-authored predicate row can declare an unreachable evidence route; `IssueCode.INVALID_YAML` is **permanently dead** because one exception type covers 8+ violations classified by message text; and out-of-contract scalars use a 2-pattern blocklist where §20.1 implies an allowlist (unquoted `2026-08` and `'2026-08'` reach the same digest). Full tables in `METRICS.md`'s T10 record. **None fixed: batched behind one `make check` rather than ~7.5 min per finding** | Gate A |
 | **P2 item 8 — the onboarding gatherer** | The thing that would make the field tier fire for anyone. D-054 forbids us authoring non-tech field content, so it must be gathered per user. Needs its own brainstorm | owner-gated |
 | **P3 Slice 5 — LLM economics** | Substantial and design-heavy; use a fresh context window | P3 |

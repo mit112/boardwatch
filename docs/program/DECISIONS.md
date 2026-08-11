@@ -110,48 +110,49 @@ and is a no-op when the index is already right. `make index-check` reports drift
 | D-074 | DECISIONS-ARCHIVE.md | 3009 | Final eligibility gate lane SHIPPED (persistent, agent-lane, fail-open); Gate P5 unchanged |
 | D-075 | DECISIONS-ARCHIVE.md | 3084 | Gate P2 reconciled: three individually-correct verdicts (may coincide); ≥3-field mechanism via fixtures |
 | D-076 | DECISIONS-ARCHIVE.md | 3153 | P2 item 4's final whole-branch review: what it caught, and four rulings it forced |
-| D-077 | DECISIONS.md | 158 | P6 Slice 1: the design is settled and the plan is written; no code exists yet |
-| D-078 | DECISIONS.md | 248 | P6 Slice 1: the plan's test fixtures are now real; eleven defects, all found by running code |
-| D-079 | DECISIONS.md | 337 | P6 Slice 1 annotates only; `postings.job_id` is not mutated |
-| D-080 | DECISIONS.md | 351 | `content_hash` alone may never suppress |
-| D-081 | DECISIONS.md | 365 | `exact_quad` is the sole suppressing kind, and its yield is stated honestly |
-| D-082 | DECISIONS.md | 383 | `cross_host` ships annotate-only, reversing an earlier draft |
-| D-083 | DECISIONS.md | 404 | No location evidence ⇒ no location-bearing identity, never a `"[]"` sentinel |
-| D-084 | DECISIONS.md | 419 | Three host classes, not two; matching is exact-or-dot-suffix |
-| D-085 | DECISIONS.md | 433 | Allowlist URL normalization, not a denylist |
-| D-086 | DECISIONS.md | 447 | Survivor election never consults score; `posting_id` is a load-bearing tiebreak |
-| D-087 | DECISIONS.md | 462 | Instrumentation is completeness-gated, not existence-gated |
-| D-088 | DECISIONS.md | 476 | `assisted` stays `None` in this slice |
-| D-089 | DECISIONS.md | 491 | Identities are upserted on every observation; a kind that stops being produced is deleted |
-| D-090 | DECISIONS.md | 508 | The ranker is completeness-gated for reproducibility, not safety |
-| D-091 | DECISIONS.md | 526 | The recount recomputes in Python, and claims staleness only |
-| D-092 | DECISIONS.md | 541 | Identities are backfilled by an explicit command, not by the migration |
-| D-093 | DECISIONS.md | 555 | Slice 1 does NOT meet Gate P6, and makes only one of its four clauses measurable |
-| D-094 | DECISIONS.md | 569 | P6 Slice 1 BUILT (unattended run): five more plan defects, three of them tests that could not fail |
-| D-095 | DECISIONS.md | 697 | P6 Slice 1 reviewed by three independent reviewers; fourteen findings fixed, two rejected |
-| D-096 | DECISIONS.md | 762 | The C++/C# fix folds punctuation into words; it does NOT add a raw-title comparison |
-| D-097 | DECISIONS.md | 806 | `_verify_quad` rejected nothing on the live corpus; "string-verified" is not precision evidence |
-| D-098 | DECISIONS.md | 835 | Suppression reports when it is OFF; wiring backfill into the pipeline is Slice 2 |
-| D-099 | DECISIONS.md | 871 | Gate batching stays allowed; the per-task fast-check set must include the schema guards |
-| D-100 | DECISIONS.md | 897 | P6 Slice 1 merged to `main`; Gate P6 clause 3 is MET, not merely measurable |
-| D-101 | DECISIONS.md | 929 | Gate P6 clause 4 is MET: 20/20 sampled suppressions are genuine duplicates |
-| D-102 | DECISIONS.md | 959 | D-072 (model-tier benchmark) is deferred indefinitely |
-| D-103 | DECISIONS.md | 981 | P6 Slice 2: the ledger is a current-state row per job, `seen` suppresses on a TTL, and the policy stamp never auto-reopens |
-| D-104 | DECISIONS.md | 1053 | Job regrouping: the survivor's job wins, and a tracked group is refused whole |
-| D-105 | DECISIONS.md | 1096 | Identity writes move into the scan path, closing D-098 — and D-098's cost argument did not apply |
-| D-106 | DECISIONS.md | 1127 | Two consequences the build forced: what earns a permanent `skipped`, and the zero-output guard |
-| D-107 | DECISIONS.md | 1153 | P6 Slice 2 BUILT and verified on real data; `cross_host` dereference deferred by measured absence |
-| D-108 | DECISIONS.md | 1202 | The decision log and the metrics log are archive-split; the reading protocol moves into the index |
-| D-109 | DECISIONS.md | 1261 | Index drift fails the gate, and the fixer lives in `tools/` |
-| D-110 | DECISIONS.md | 1339 | The Slice 2 review: only a caller that delivers a lead may consume the queue |
-| D-111 | DECISIONS.md | 1456 | P6 Slice 3: applied-state suppression, and liveness sized to what the corpus actually is |
-| D-112 | DECISIONS.md | 1625 | 0.3.0 is cut, the changelog gets ONE triple, and the tag is the owner's to push |
-| D-113 | DECISIONS.md | 1729 | The Slice 3 external review: a followed redirect can forge a gone-status |
-| D-114 | DECISIONS.md | 1817 | CI installs tectonic and pdfinfo on all three OSes; skipping the gate was refused |
-| D-115 | DECISIONS.md | 1885 | Gate A of the career-profile bundle: 9 of 19 slices, and a rule for checks that cannot fire |
-| D-116 | DECISIONS.md | 1967 | A docs-only commit owes the two fast gates, not the full suite; the tectonic pin gets a detector |
-| D-117 | DECISIONS.md | 2014 | 0.3.0's tag moves rather than 0.3.1 being cut; gitleaks fixed by cleaning bytes, not allowlisting |
-| D-118 | DECISIONS.md | 2064 | Gate A slice T10: effectiveness derived in one place, and two more §20.4 rows with no check |
+| D-077 | DECISIONS.md | 159 | P6 Slice 1: the design is settled and the plan is written; no code exists yet |
+| D-078 | DECISIONS.md | 249 | P6 Slice 1: the plan's test fixtures are now real; eleven defects, all found by running code |
+| D-079 | DECISIONS.md | 338 | P6 Slice 1 annotates only; `postings.job_id` is not mutated |
+| D-080 | DECISIONS.md | 352 | `content_hash` alone may never suppress |
+| D-081 | DECISIONS.md | 366 | `exact_quad` is the sole suppressing kind, and its yield is stated honestly |
+| D-082 | DECISIONS.md | 384 | `cross_host` ships annotate-only, reversing an earlier draft |
+| D-083 | DECISIONS.md | 405 | No location evidence ⇒ no location-bearing identity, never a `"[]"` sentinel |
+| D-084 | DECISIONS.md | 420 | Three host classes, not two; matching is exact-or-dot-suffix |
+| D-085 | DECISIONS.md | 434 | Allowlist URL normalization, not a denylist |
+| D-086 | DECISIONS.md | 448 | Survivor election never consults score; `posting_id` is a load-bearing tiebreak |
+| D-087 | DECISIONS.md | 463 | Instrumentation is completeness-gated, not existence-gated |
+| D-088 | DECISIONS.md | 477 | `assisted` stays `None` in this slice |
+| D-089 | DECISIONS.md | 492 | Identities are upserted on every observation; a kind that stops being produced is deleted |
+| D-090 | DECISIONS.md | 509 | The ranker is completeness-gated for reproducibility, not safety |
+| D-091 | DECISIONS.md | 527 | The recount recomputes in Python, and claims staleness only |
+| D-092 | DECISIONS.md | 542 | Identities are backfilled by an explicit command, not by the migration |
+| D-093 | DECISIONS.md | 556 | Slice 1 does NOT meet Gate P6, and makes only one of its four clauses measurable |
+| D-094 | DECISIONS.md | 570 | P6 Slice 1 BUILT (unattended run): five more plan defects, three of them tests that could not fail |
+| D-095 | DECISIONS.md | 698 | P6 Slice 1 reviewed by three independent reviewers; fourteen findings fixed, two rejected |
+| D-096 | DECISIONS.md | 763 | The C++/C# fix folds punctuation into words; it does NOT add a raw-title comparison |
+| D-097 | DECISIONS.md | 807 | `_verify_quad` rejected nothing on the live corpus; "string-verified" is not precision evidence |
+| D-098 | DECISIONS.md | 836 | Suppression reports when it is OFF; wiring backfill into the pipeline is Slice 2 |
+| D-099 | DECISIONS.md | 872 | Gate batching stays allowed; the per-task fast-check set must include the schema guards |
+| D-100 | DECISIONS.md | 898 | P6 Slice 1 merged to `main`; Gate P6 clause 3 is MET, not merely measurable |
+| D-101 | DECISIONS.md | 930 | Gate P6 clause 4 is MET: 20/20 sampled suppressions are genuine duplicates |
+| D-102 | DECISIONS.md | 960 | D-072 (model-tier benchmark) is deferred indefinitely |
+| D-103 | DECISIONS.md | 982 | P6 Slice 2: the ledger is a current-state row per job, `seen` suppresses on a TTL, and the policy stamp never auto-reopens |
+| D-104 | DECISIONS.md | 1054 | Job regrouping: the survivor's job wins, and a tracked group is refused whole |
+| D-105 | DECISIONS.md | 1097 | Identity writes move into the scan path, closing D-098 — and D-098's cost argument did not apply |
+| D-106 | DECISIONS.md | 1128 | Two consequences the build forced: what earns a permanent `skipped`, and the zero-output guard |
+| D-107 | DECISIONS.md | 1154 | P6 Slice 2 BUILT and verified on real data; `cross_host` dereference deferred by measured absence |
+| D-108 | DECISIONS.md | 1203 | The decision log and the metrics log are archive-split; the reading protocol moves into the index |
+| D-109 | DECISIONS.md | 1262 | Index drift fails the gate, and the fixer lives in `tools/` |
+| D-110 | DECISIONS.md | 1340 | The Slice 2 review: only a caller that delivers a lead may consume the queue |
+| D-111 | DECISIONS.md | 1457 | P6 Slice 3: applied-state suppression, and liveness sized to what the corpus actually is |
+| D-112 | DECISIONS.md | 1626 | 0.3.0 is cut, the changelog gets ONE triple, and the tag is the owner's to push |
+| D-113 | DECISIONS.md | 1730 | The Slice 3 external review: a followed redirect can forge a gone-status |
+| D-114 | DECISIONS.md | 1818 | CI installs tectonic and pdfinfo on all three OSes; skipping the gate was refused |
+| D-115 | DECISIONS.md | 1886 | Gate A of the career-profile bundle: 9 of 19 slices, and a rule for checks that cannot fire |
+| D-116 | DECISIONS.md | 1968 | A docs-only commit owes the two fast gates, not the full suite; the tectonic pin gets a detector |
+| D-117 | DECISIONS.md | 2015 | 0.3.0's tag moves rather than 0.3.1 being cut; gitleaks fixed by cleaning bytes, not allowlisting |
+| D-118 | DECISIONS.md | 2065 | Gate A slice T10: effectiveness derived in one place, and two more §20.4 rows with no check |
+| D-119 | DECISIONS.md | 2162 | 0.3.0 is PUBLISHED: the tag moved onto a CI-green commit, and ships two known BLOCKERs deliberately |
 
 ---
 
@@ -2155,3 +2156,73 @@ defect D-115 named. Folding evidence eligibility into `eligible_fact_surfaces` �
 Reporting exclusivity's count clause regardless of cardinality — redundant against cardinality on
 every shipped row. A figure scanner with a heuristic for "real" measurements — it would decide the
 thing the bundle exists to stop being decided informally.
+
+---
+
+## D-119 — 0.3.0 is PUBLISHED: the tag moved onto a CI-green commit, and it ships two known BLOCKERs deliberately
+
+*2026-08-11. Executes D-117's decision and records the two rulings Mit gave while it was in flight. The
+release is the whole of it; the interesting part is what was known at the moment of publishing.*
+
+**Done.** `v0.3.0` was deleted on `origin` and locally and re-created — **lightweight**, matching `v0.1.0`
+and `v0.2.0` and the convention `release.yml`'s own header documents — on **`dc1ffec`**, replacing
+`426f45c`. `release.yml` then went green on all four jobs and 0.3.0 exists on PyPI, GHCR and GitHub
+Releases. `[Unreleased]` had already been folded into the single `## [0.3.0] - 2026-08-10` section, so the
+tag names a commit that describes itself.
+
+**The precondition was met in full, not approximately.** `ci.yml` run `31442555052` on `dc1ffec`:
+**12 of 12 jobs green** — `gitleaks`, `perf`, `generalization`, and `test` across ubuntu/macOS/Windows ×
+3.11/3.12/3.13. This is the first fully green `ci.yml` in the project's history; the tectonic/poppler gap
+(D-114) and the cp1252 program-index defect were the last two things standing in the way.
+
+**Publishing was verified through three paths independent of the workflow's own report**, because a
+component's self-report is not verification: PyPI's JSON API lists `['0.1.0','0.2.0','0.3.0']` with a
+618,554-byte wheel and a 1,395,850-byte sdist; `gh release view v0.3.0` shows not-draft, not-prerelease,
+with both assets at **byte sizes matching PyPI exactly**; and the GHCR manifest for `:0.3.0` and `:latest`
+answers 200 as an OCI index over **amd64 + arm64**, read anonymously from the registry because this
+machine's `gh` token lacks `read:packages`.
+
+**Mit ruled ship-as-is TWICE, and the second time is the one that matters.** The first ruling was made once
+it was measured that the wheel carries Gate A: 65 `profile_bundle` entries — 31 modules, 33 synthetic YAML
+documents, one JSON Schema — while the changelog does not enumerate them. No commit on `main` carries the CI
+fix *without* Gate A (its commits sit **below** the fix in history), so excluding it would have needed a
+cherry-pick branch matching no commit on `main`. He was offered "hold 0.3.0 until Gate A is reviewed" and
+declined it.
+
+Then, before the publish jobs fired, the partial Gate A review found **two BLOCKERs in the restricted YAML
+loader that break content addressing** — four byte-different spellings of one record producing the identical
+`bundle_digest`. He was asked again, with the window still open and the option to cancel the run, and ruled
+publish again. **The basis of the ruling was unchanged and that is why it held:** the package is inert. No
+CLI command, no bundle-to-`Resume` bridge, a test asserting both directions, and nothing in a shipped code
+path reaches the loader. It is a defect in code that ships but never runs. Holding would have punished the CI
+fix — the thing 0.3.0 exists to release — for an unrelated subsystem's bug.
+
+**What publishing did NOT change.** The Gate A review is still **owed**, its scope is **T1–T10** (not T1–T9;
+a slice landed after the wheel was measured), and **Gate B remains prohibited**. A partial review is not a
+review: the 3-wide dispatch became 11 agents through nesting and was stopped, so roughly two thirds never
+ran. Findings landing on already-published code is a consequence of the ruling, not a defect in it, and they
+are fixed in a later version rather than by unpublishing anything.
+
+**Two measurement traps this paid for, both of which produced a confident wrong answer.**
+
+1. **PyPI's HTML route lies.** `https://pypi.org/project/boardwatch/0.3.0/` returned **HTTP 200 for a version
+   that did not exist**, and was reported as "already published" on the strength of it. The JSON API
+   (`/pypi/boardwatch/0.3.0/json`) returned **404**, and `/pypi/boardwatch/json` listed only `0.1.0` and
+   `0.2.0`. Use the JSON API. Had the HTML 200 been trusted, Mit would never have been given the second
+   decision, because the window would have looked closed.
+2. **A polling watcher's exit 0 means only that the loop ended.** Both CI watchers exhausted their iteration
+   count and exited 0 with the run still `in_progress`. This is the same defect class as
+   `background-command-exit-code-masking`, and the narrower phrasing there ("end a backgrounded gate with
+   `exit $ec`") does not cover it: the exit code was *correct*, the **intent** was unfinished. A poll loop
+   must report whether its predicate was met, not merely that it stopped.
+
+**Also observed: GitHub's job-summary API lags its own step list.** Windows 3.13 ran 70 minutes against ~40
+for its siblings, and for the last 30 the run summary reported it `in_progress` while its step list already
+showed `pytest` and `Complete job` as `success`. Query steps
+(`gh api repos/:owner/:repo/actions/jobs/<id>`) before concluding a job is slow, hung, or red.
+
+**Alternatives rejected.** Adding a changelog line disclosing the inert bundle: `main` had already advanced
+past `dc1ffec`, so a docs commit on the tip would have dragged unreviewed T10 code into the release, and
+keeping it clean would have meant tagging a commit not on `main` — worse practice than the problem it fixed.
+Annotating the tag: all three prior tags are lightweight and `release.yml` reads no tag metadata, so 0.3.0
+would have been the odd one out for nothing.
