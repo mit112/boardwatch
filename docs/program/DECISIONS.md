@@ -110,57 +110,58 @@ and is a no-op when the index is already right. `make index-check` reports drift
 | D-074 | DECISIONS-ARCHIVE.md | 3009 | Final eligibility gate lane SHIPPED (persistent, agent-lane, fail-open); Gate P5 unchanged |
 | D-075 | DECISIONS-ARCHIVE.md | 3084 | Gate P2 reconciled: three individually-correct verdicts (may coincide); ≥3-field mechanism via fixtures |
 | D-076 | DECISIONS-ARCHIVE.md | 3153 | P2 item 4's final whole-branch review: what it caught, and four rulings it forced |
-| D-077 | DECISIONS.md | 167 | P6 Slice 1: the design is settled and the plan is written; no code exists yet |
-| D-078 | DECISIONS.md | 257 | P6 Slice 1: the plan's test fixtures are now real; eleven defects, all found by running code |
-| D-079 | DECISIONS.md | 346 | P6 Slice 1 annotates only; `postings.job_id` is not mutated |
-| D-080 | DECISIONS.md | 360 | `content_hash` alone may never suppress |
-| D-081 | DECISIONS.md | 374 | `exact_quad` is the sole suppressing kind, and its yield is stated honestly |
-| D-082 | DECISIONS.md | 392 | `cross_host` ships annotate-only, reversing an earlier draft |
-| D-083 | DECISIONS.md | 413 | No location evidence ⇒ no location-bearing identity, never a `"[]"` sentinel |
-| D-084 | DECISIONS.md | 428 | Three host classes, not two; matching is exact-or-dot-suffix |
-| D-085 | DECISIONS.md | 442 | Allowlist URL normalization, not a denylist |
-| D-086 | DECISIONS.md | 456 | Survivor election never consults score; `posting_id` is a load-bearing tiebreak |
-| D-087 | DECISIONS.md | 471 | Instrumentation is completeness-gated, not existence-gated |
-| D-088 | DECISIONS.md | 485 | `assisted` stays `None` in this slice |
-| D-089 | DECISIONS.md | 500 | Identities are upserted on every observation; a kind that stops being produced is deleted |
-| D-090 | DECISIONS.md | 517 | The ranker is completeness-gated for reproducibility, not safety |
-| D-091 | DECISIONS.md | 535 | The recount recomputes in Python, and claims staleness only |
-| D-092 | DECISIONS.md | 550 | Identities are backfilled by an explicit command, not by the migration |
-| D-093 | DECISIONS.md | 564 | Slice 1 does NOT meet Gate P6, and makes only one of its four clauses measurable |
-| D-094 | DECISIONS.md | 578 | P6 Slice 1 BUILT (unattended run): five more plan defects, three of them tests that could not fail |
-| D-095 | DECISIONS.md | 706 | P6 Slice 1 reviewed by three independent reviewers; fourteen findings fixed, two rejected |
-| D-096 | DECISIONS.md | 771 | The C++/C# fix folds punctuation into words; it does NOT add a raw-title comparison |
-| D-097 | DECISIONS.md | 815 | `_verify_quad` rejected nothing on the live corpus; "string-verified" is not precision evidence |
-| D-098 | DECISIONS.md | 844 | Suppression reports when it is OFF; wiring backfill into the pipeline is Slice 2 |
-| D-099 | DECISIONS.md | 880 | Gate batching stays allowed; the per-task fast-check set must include the schema guards |
-| D-100 | DECISIONS.md | 906 | P6 Slice 1 merged to `main`; Gate P6 clause 3 is MET, not merely measurable |
-| D-101 | DECISIONS.md | 938 | Gate P6 clause 4 is MET: 20/20 sampled suppressions are genuine duplicates |
-| D-102 | DECISIONS.md | 968 | D-072 (model-tier benchmark) is deferred indefinitely |
-| D-103 | DECISIONS.md | 990 | P6 Slice 2: the ledger is a current-state row per job, `seen` suppresses on a TTL, and the policy stamp never auto-reopens |
-| D-104 | DECISIONS.md | 1062 | Job regrouping: the survivor's job wins, and a tracked group is refused whole |
-| D-105 | DECISIONS.md | 1105 | Identity writes move into the scan path, closing D-098 — and D-098's cost argument did not apply |
-| D-106 | DECISIONS.md | 1136 | Two consequences the build forced: what earns a permanent `skipped`, and the zero-output guard |
-| D-107 | DECISIONS.md | 1162 | P6 Slice 2 BUILT and verified on real data; `cross_host` dereference deferred by measured absence |
-| D-108 | DECISIONS.md | 1211 | The decision log and the metrics log are archive-split; the reading protocol moves into the index |
-| D-109 | DECISIONS.md | 1270 | Index drift fails the gate, and the fixer lives in `tools/` |
-| D-110 | DECISIONS.md | 1348 | The Slice 2 review: only a caller that delivers a lead may consume the queue |
-| D-111 | DECISIONS.md | 1465 | P6 Slice 3: applied-state suppression, and liveness sized to what the corpus actually is |
-| D-112 | DECISIONS.md | 1634 | 0.3.0 is cut, the changelog gets ONE triple, and the tag is the owner's to push |
-| D-113 | DECISIONS.md | 1738 | The Slice 3 external review: a followed redirect can forge a gone-status |
-| D-114 | DECISIONS.md | 1826 | CI installs tectonic and pdfinfo on all three OSes; skipping the gate was refused |
-| D-115 | DECISIONS.md | 1894 | Gate A of the career-profile bundle: 9 of 19 slices, and a rule for checks that cannot fire |
-| D-116 | DECISIONS.md | 1976 | A docs-only commit owes the two fast gates, not the full suite; the tectonic pin gets a detector |
-| D-117 | DECISIONS.md | 2023 | 0.3.0's tag moves rather than 0.3.1 being cut; gitleaks fixed by cleaning bytes, not allowlisting |
-| D-118 | DECISIONS.md | 2073 | Gate A slice T10: effectiveness derived in one place, and two more §20.4 rows with no check |
-| D-119 | DECISIONS.md | 2170 | 0.3.0 is PUBLISHED: the tag moved onto a CI-green commit, and ships two known BLOCKERs deliberately |
-| D-120 | DECISIONS.md | 2238 | Gate A slice T12: the résumé emission order is fixed, and three more checks that cannot fire |
-| D-121 | DECISIONS.md | 2321 | The T12 review: a green gate and a perfect mutation score hid five BLOCKING defects |
-| D-122 | DECISIONS.md | 2382 | The T12 re-review: one defect the fix created, two contracts never enforced, and a decline that was wrong |
-| D-123 | DECISIONS.md | 2505 | A recurring trigger holding a one-shot prompt re-fires a task that already shipped |
-| D-124 | DECISIONS.md | 2550 | The third T12 review: the locator grammar keeps failing because it restates the emitter instead of deriving from it |
-| D-125 | DECISIONS.md | 2615 | The T12 round-three fix, and two more reviews of it: a forbidden segment is escaped, never refused |
-| D-126 | DECISIONS.md | 2747 | T12's review loop is CLOSED, with a stated exit criterion |
-| D-127 | DECISIONS.md | 2803 | Gate A slices T13 and T14: an approval bound to nothing, and the first code that WRITES a bundle |
+| D-077 | DECISIONS.md | 168 | P6 Slice 1: the design is settled and the plan is written; no code exists yet |
+| D-078 | DECISIONS.md | 258 | P6 Slice 1: the plan's test fixtures are now real; eleven defects, all found by running code |
+| D-079 | DECISIONS.md | 347 | P6 Slice 1 annotates only; `postings.job_id` is not mutated |
+| D-080 | DECISIONS.md | 361 | `content_hash` alone may never suppress |
+| D-081 | DECISIONS.md | 375 | `exact_quad` is the sole suppressing kind, and its yield is stated honestly |
+| D-082 | DECISIONS.md | 393 | `cross_host` ships annotate-only, reversing an earlier draft |
+| D-083 | DECISIONS.md | 414 | No location evidence ⇒ no location-bearing identity, never a `"[]"` sentinel |
+| D-084 | DECISIONS.md | 429 | Three host classes, not two; matching is exact-or-dot-suffix |
+| D-085 | DECISIONS.md | 443 | Allowlist URL normalization, not a denylist |
+| D-086 | DECISIONS.md | 457 | Survivor election never consults score; `posting_id` is a load-bearing tiebreak |
+| D-087 | DECISIONS.md | 472 | Instrumentation is completeness-gated, not existence-gated |
+| D-088 | DECISIONS.md | 486 | `assisted` stays `None` in this slice |
+| D-089 | DECISIONS.md | 501 | Identities are upserted on every observation; a kind that stops being produced is deleted |
+| D-090 | DECISIONS.md | 518 | The ranker is completeness-gated for reproducibility, not safety |
+| D-091 | DECISIONS.md | 536 | The recount recomputes in Python, and claims staleness only |
+| D-092 | DECISIONS.md | 551 | Identities are backfilled by an explicit command, not by the migration |
+| D-093 | DECISIONS.md | 565 | Slice 1 does NOT meet Gate P6, and makes only one of its four clauses measurable |
+| D-094 | DECISIONS.md | 579 | P6 Slice 1 BUILT (unattended run): five more plan defects, three of them tests that could not fail |
+| D-095 | DECISIONS.md | 707 | P6 Slice 1 reviewed by three independent reviewers; fourteen findings fixed, two rejected |
+| D-096 | DECISIONS.md | 772 | The C++/C# fix folds punctuation into words; it does NOT add a raw-title comparison |
+| D-097 | DECISIONS.md | 816 | `_verify_quad` rejected nothing on the live corpus; "string-verified" is not precision evidence |
+| D-098 | DECISIONS.md | 845 | Suppression reports when it is OFF; wiring backfill into the pipeline is Slice 2 |
+| D-099 | DECISIONS.md | 881 | Gate batching stays allowed; the per-task fast-check set must include the schema guards |
+| D-100 | DECISIONS.md | 907 | P6 Slice 1 merged to `main`; Gate P6 clause 3 is MET, not merely measurable |
+| D-101 | DECISIONS.md | 939 | Gate P6 clause 4 is MET: 20/20 sampled suppressions are genuine duplicates |
+| D-102 | DECISIONS.md | 969 | D-072 (model-tier benchmark) is deferred indefinitely |
+| D-103 | DECISIONS.md | 991 | P6 Slice 2: the ledger is a current-state row per job, `seen` suppresses on a TTL, and the policy stamp never auto-reopens |
+| D-104 | DECISIONS.md | 1063 | Job regrouping: the survivor's job wins, and a tracked group is refused whole |
+| D-105 | DECISIONS.md | 1106 | Identity writes move into the scan path, closing D-098 — and D-098's cost argument did not apply |
+| D-106 | DECISIONS.md | 1137 | Two consequences the build forced: what earns a permanent `skipped`, and the zero-output guard |
+| D-107 | DECISIONS.md | 1163 | P6 Slice 2 BUILT and verified on real data; `cross_host` dereference deferred by measured absence |
+| D-108 | DECISIONS.md | 1212 | The decision log and the metrics log are archive-split; the reading protocol moves into the index |
+| D-109 | DECISIONS.md | 1271 | Index drift fails the gate, and the fixer lives in `tools/` |
+| D-110 | DECISIONS.md | 1349 | The Slice 2 review: only a caller that delivers a lead may consume the queue |
+| D-111 | DECISIONS.md | 1466 | P6 Slice 3: applied-state suppression, and liveness sized to what the corpus actually is |
+| D-112 | DECISIONS.md | 1635 | 0.3.0 is cut, the changelog gets ONE triple, and the tag is the owner's to push |
+| D-113 | DECISIONS.md | 1739 | The Slice 3 external review: a followed redirect can forge a gone-status |
+| D-114 | DECISIONS.md | 1827 | CI installs tectonic and pdfinfo on all three OSes; skipping the gate was refused |
+| D-115 | DECISIONS.md | 1895 | Gate A of the career-profile bundle: 9 of 19 slices, and a rule for checks that cannot fire |
+| D-116 | DECISIONS.md | 1977 | A docs-only commit owes the two fast gates, not the full suite; the tectonic pin gets a detector |
+| D-117 | DECISIONS.md | 2024 | 0.3.0's tag moves rather than 0.3.1 being cut; gitleaks fixed by cleaning bytes, not allowlisting |
+| D-118 | DECISIONS.md | 2074 | Gate A slice T10: effectiveness derived in one place, and two more §20.4 rows with no check |
+| D-119 | DECISIONS.md | 2171 | 0.3.0 is PUBLISHED: the tag moved onto a CI-green commit, and ships two known BLOCKERs deliberately |
+| D-120 | DECISIONS.md | 2239 | Gate A slice T12: the résumé emission order is fixed, and three more checks that cannot fire |
+| D-121 | DECISIONS.md | 2322 | The T12 review: a green gate and a perfect mutation score hid five BLOCKING defects |
+| D-122 | DECISIONS.md | 2383 | The T12 re-review: one defect the fix created, two contracts never enforced, and a decline that was wrong |
+| D-123 | DECISIONS.md | 2506 | A recurring trigger holding a one-shot prompt re-fires a task that already shipped |
+| D-124 | DECISIONS.md | 2551 | The third T12 review: the locator grammar keeps failing because it restates the emitter instead of deriving from it |
+| D-125 | DECISIONS.md | 2616 | The T12 round-three fix, and two more reviews of it: a forbidden segment is escaped, never refused |
+| D-126 | DECISIONS.md | 2748 | T12's review loop is CLOSED, with a stated exit criterion |
+| D-127 | DECISIONS.md | 2804 | Gate A slices T13 and T14: an approval bound to nothing, and the first code that WRITES a bundle |
+| D-128 | DECISIONS.md | 2925 | Gate A T14 round 2, T15 and T17: what three green suites could not see |
 
 ---
 
@@ -2920,3 +2921,188 @@ build is at `d681653` and its fix round at `d441e2d` is **UNVERIFIED** — the a
 mid-round by a usage limit and never reported, so no account of the mapping from findings to changes
 exists and it must be re-derived from the diff before merge. **Neither is pushed.** Gate A is NOT met;
 Gate B stays prohibited.
+
+## D-128 — Gate A T14 round 2, T15 and T17: what three green suites could not see
+
+*2026-08-11. T14's unreviewed fix round reviewed and repaired, T15 reviewed by two concurrent lenses
+and repaired, T17 reviewed and approved. Gate A remains NOT met; T16, T18, T19 follow. Nothing on
+this track is pushed.*
+
+### The branches are stacked on T14, not on `main` — one merge, not two
+
+`git branch --contains d681653` returns `t14-storage`, `t15-rebase`, `t16-promotion` and
+`t17-schema`. All three downstream branches fork from **T14's base commits**, so merging
+`t14-storage` into each brings T14's fix round **and** `main` transitively. The prior instruction to
+merge `main` in first was wrong in a costly direction: it forces the same conflicts to be resolved
+twice.
+
+**The forward merge breaks callers without producing a conflict, and this was measured, not
+predicted.** T14 made `conftest.quoted_yaml`'s `logical_path` required and fixed its own callers;
+`t17-schema`'s `test_profile_bundle_schema_head.py:34` is a **new file T14 never saw**, so the two
+never textually collide. A trial merge in a throwaway worktree reported `Automatic merge went well`
+and then failed at runtime with `TypeError: quoted_yaml() missing 1 required keyword-only argument:
+'logical_path'`. **Sweep every call of a signature the incoming branch changed; `git merge`'s silence
+is not evidence.** This is the third instance of the same class on this track, after the two
+byte-identical `OSError` helpers T13 and T14 each added independently.
+
+**What the real merge of `main` into `t15-rebase` produced**, for the next slice to expect: two
+conflicts, both in `inspection.py` and its test, and **four** `quoted_yaml` call sites needing repair
+in T15's own new `test_profile_bundle_rebase.py`. Neither conflict was a logic conflict.
+
+- The `inspection.py` conflict was **docstring-only**, and both sides were kept: T14 explains how a
+  stray `NOTES.txt` is told apart from an interrupted install by reading the prefix from the writer,
+  T15 adds why the classification needs the segment grammar. Complementary, not competing.
+- The test conflict was the more dangerous shape: **`main` deleted a test that T15 kept.** Resolved by
+  confirming T14 had *replaced* it with a strictly better one
+  (`test_inventory_tells_an_interrupted_install_apart_from_a_file_that_does_not_belong`, which reads
+  `DRAFT_TEMP_PREFIX` from the writer rather than hardcoding `.tmp-draft-abc123` and adds the
+  `NOTES.txt` negative case) before dropping the superseded copy. **A deletion on one side of a merge
+  has to be checked for a rename on the other**, or resolving it "safely" by keeping both restores the
+  exact hardcoded-constant test the incoming fix removed.
+- A line-based grep for the broken signature reports **false positives**: multi-line calls carry
+  `logical_path` on a following line. Only the suite settles it.
+
+The mirror also holds: some downstream findings are **fixed by** that merge and must not be patched
+locally. `migrations.py` passes `str(exc)` into a diagnostic, which leaks an absolute path on
+`t17-schema`; T14 fixed it at the raise site by dropping `bundle_root` from the message. Patching it
+downstream would have been a duplicate guard.
+
+### Confinement is an equality against the derived location, NOT `is_relative_to`
+
+T14's round-2 BLOCKING was in the check its own audit had blessed as "the right shape". The shape was
+right — one refusal over the closed grammar, not four per-directory guards — but it iterated
+`ROOT_MEMBERS`, a set of **top-level names**, while the blob store is `paths.blobs_dir()` =
+`blobs/sha256`, one component below the member named `blobs`. Symlinking the store, or one blob file,
+out of the root passed the check, and those outside bytes were hashed into `evidence_set_digest` and
+therefore `bundle_digest` while `validate`, `inventory` and `checkout` all reported **exit 0, clean**.
+Design §6/§24's "self-contained under one root" was enforced by nothing.
+
+**The root cause is the restated rule, not the missing component.** A check written over names can
+never reach a path `paths` derives. The set of checked paths is now derived from `paths` —
+`ROOT_MEMBERS` for the root's entries, `paths.blobs_dir` for the store, and the store's entries
+individually, since one blob file is enough to decide `bundle_digest`.
+
+**The predicate was specified wrongly by the orchestrator and corrected by the implementer.** The
+brief said to pin the outside fact as `path.resolve().is_relative_to(bundle_root.resolve())`. That
+admits a second escape: a member resolving to *another member inside* the root, under which
+`drafts/` → `revisions/` makes `inventory` report a revision directory as a draft. What shipped is
+the strictly stronger equality `path.resolve() == resolved_root / path.relative_to(bundle_root)` —
+"must resolve to exactly where the layout derived it". Verified by weakening it back and watching
+`test_a_member_that_aliases_another_member_inside_the_root_is_refused` go red (`DID NOT RAISE`), and
+by re-running the reviewer's own probes: the escape cases flip to `symlink_refused`, the
+inside-the-root alias stays refused where `is_relative_to` would have regressed it, and a symlinked
+**bundle root** stays correctly allowed. **Do not "simplify" this back to `is_relative_to`.**
+
+Residual risk stated in the code and deliberately not closed: the check is path-based and therefore
+TOCTOU: a symlink created after it returns is not seen, and the write lands where the new link
+points. Closing it needs `openat`/`O_NOFOLLOW` per component. A **bind mount was never tested**
+because it needs root — untested, not a negative result.
+
+### A green suite is not the signal; a mutation that stays green is
+
+Across T14 and T15 the reviews found **7 BLOCKING and 12 SHOULD-FIX in code whose own suites were
+green** — T15's 54 tests covered none of its six. The recurring shape is not a missing test but a
+test that cannot fail:
+
+- T14's guarding tests for the confinement check read the same `BLOBS_DIR`/`ROOT_MEMBERS` constants
+  the check reads, so both agreed `blobs/` was the store. The replacements locate the store **by
+  content** — the one file whose name is the sha256 of its own bytes — so they hold wherever the
+  layout puts it.
+- Three separate mutations to `inspection.py` (`:190-198`, `:412-413`, `:569-579`) left the suite
+  entirely green, meaning two-thirds of an earlier BLOCKING fix could have been deleted silently.
+
+**Both fix rounds were therefore held to: revert the check, watch the test go red, restore it.** That
+standard, not the suite's colour, is what closed these.
+
+### T15: one root defect wearing several masks, found by two lenses at once
+
+Two lenses run concurrently on one commit both landed on `rebase.py:294-310` from different angles,
+which is what identified it as one cause rather than two symptoms: a one-sided document deletion
+silently discards the other side's work. The runtime lens found it for the six record-free
+`policy/*.yaml` catalogs, which the record-ID overlap gate structurally cannot see; the conformance
+lens found it for **additions** in the record-bearing case, where the worse half silently **reverts a
+promoted record** with no change-ledger entry. The module already agreed this shape is a refusal —
+`_rebased_manifest` refuses exactly it for `evidence/records.yaml` — and simply did not apply that
+judgement generally.
+
+The other five: a symlinked **backup root** was accepted as byte-identical (the entry check never
+examined the root it was handed), after which the original draft was `rmtree`d unrecoverably at exit
+0; the append-only history ledgers were merged as ordinary record lists, **deleting an approval
+stamp** the selected revision carried; a merged document failing its own validator escaped as an
+uncaught `pydantic.ValidationError` rather than a typed outcome; a **shadowed record ID** made an
+edit invisible and the merge dropped one of the two records, with `BundleIndex.collisions` being the
+exact available signal that `diff.py` never read; and a legal **14-character draft name could never
+be rebased**, stranding the draft forever, because `paths.py`'s claim that "96 characters leaves room
+for the longest derived suffix" was arithmetically wrong — the real cap is 13.
+
+Confirmed sound and closed to re-litigation: the crash matrix at three boundaries the author did not
+pick, injected with real `SIGKILL`; the lock contract under real subprocesses (contention → exit 3
+`bundle_lock_held` with a whole-tree hash unchanged, a SIGKILLed holder's lockfile reacquirable,
+nothing reading or ageing the lockfile); and `_install`'s no-writes claim under a whole-tree hash.
+One author-declared gap was **refuted** (`rebase.py:354-355` is reachable end to end) and one
+confirmed **dead** (`diff.py:175`, deleted per D-115).
+
+### T15's fix, and the four judgement calls inside it
+
+All six BLOCKING fixed, each pinned by a test watched red without its fix. The shapes worth carrying
+forward:
+
+- **The one-sided deletion refusal is now conditional on the base**, not on record identity: a
+  document only one side has is dropped only when the other side left it exactly as the base had it;
+  otherwise `draft_rebase_conflict` names the records that would be lost. That covers the record-free
+  catalogs the overlap gate structurally could not see.
+- **The append-only ledgers get their own merge** (`_merge_append_only`): the selected revision's
+  sequence must be the result's **prefix**, our additions follow, and a draft-side removal *or*
+  rewrite of an inherited entry refuses. This also removed the uncaught-`ValidationError` crash,
+  because the ledger contiguity validator was what the raw merge was tripping.
+- **A shadowed record ID now refuses** (`record_contents` raises `RecordIdCollision`, one
+  `duplicate_record_id` per collision attributed to the tree holding it) rather than letting `_by_id`
+  collapse duplicates last-wins.
+
+**Judgement call 1 — the draft-name cap was made honest rather than the grammar changed.**
+`MAX_DRAFT_NAME_LENGTH` stays 96 for operator-supplied names; a new `MAX_DRAFT_SEGMENT_LENGTH` =
+96 + the derived suffix governs on-disk draft *directory* names. Changing the derivation would have
+broken §19's pinned on-disk grammar and everything in T16 that depends on it. Consequence handled:
+`inspection._draft_names` classifies with the segment grammar, or a long draft's backup would have
+been reported as a stray artefact.
+
+**Judgement call 2 — the backup-reuse `rmtree` was KEPT, against the literal text of §21/§6.** What
+it removes is a copy the same command made two statements earlier under `DRAFT_TEMP_PREFIX`, proved
+byte-identical to the retained backup first. Leaving it would strand a full-size `.tmp-draft-` tree
+with **no drain**, which `inventory` then reports forever. That trades a provably lossless delete for
+a permanent leak, and this repo's standing rule is that every quarantine needs a drain designed in the
+same change — a bucket with no re-entry path is the worse outcome. Recorded as a deliberate departure
+rather than silently taken.
+
+**Judgement call 3 — `record_ids` is populated wherever the conflicting unit has record identity**,
+and the contract is pinned in `_merge_conflict`'s docstring: empty means the unit has no addressable
+records, where `path` + `details.field` is the locator.
+
+**Judgement call 4 — the record-list permutation is documented as a known limit, not made a check.**
+Detecting it would refuse the ordinary case where only the revision reordered. The claim at
+`diff_records` was narrowed instead, since a permutation is not a reformatting. This is the one Lens A
+probe (`m1`) that still fails by design, confirmed independently after the fix: 18 of 19 merge/stamp
+probes pass and all 9 crash/lock probes pass.
+
+**Two design sentences the code now deliberately departs from, and nobody has amended**, because
+`docs/superpowers/` is untracked working material that must never be staged: §19 should permit an
+empty `record_ids` for a field- or document-level conflict, and §21 should carve out "a draft the
+command has proved byte-identical to a retained backup". Left for whoever holds the design text — if
+it is not amended, judgement call 2 will be re-litigated.
+
+### T17 is APPROVED, and `migrate` takes no `--draft`
+
+One light pass, no BLOCKING and no SHOULD-FIX in its own diff. Its D-115 claim — that an
+`if found != CURRENT_SCHEMA_VERSION` branch could never execute, because `load_documents` gates every
+revision through `require_supported_schema` — is pinned by a tripwire rather than a comment, and the
+pin is not self-agreeing: growing `SUPPORTED_SCHEMA_VERSIONS` to `{1, 2}` turns **three** tests red.
+T18 must **not** add `--draft`/`--draft-name` to `migrate`: at v1 nothing is written, so the argument
+could only be accepted and silently ignored, discarding operator intent. Design §7's bare form is
+right and the plan's Task 18 CLI list is wrong.
+
+### T16 is gated behind T15's fix
+
+`t16-promotion` is byte-identical to the reviewed-REWORK `t15-rebase`, so it carries all six of
+T15's BLOCKING defects, takes the same lock, computes the same digest over the same blob store, and
+needs `_identical_trees`/`_tree_contents` — the function defect 1 lives in — for its own step 7.
+Starting it before T15's fix lands would build on a known-broken foundation.
