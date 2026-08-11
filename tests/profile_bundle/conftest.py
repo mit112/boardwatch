@@ -13,21 +13,38 @@ logical content — only its digest is.
 from __future__ import annotations
 
 import hashlib
+import json
 import shutil
+from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from importlib import resources
-from pathlib import Path
+from pathlib import Path, PurePosixPath
+from typing import Any
 
 import pytest
+import yaml
 
 from boardwatch.profile_bundle.approvals import build_approval_stamp, required_approval_decisions
-from boardwatch.profile_bundle.canonical import MappingBlobReader
+from boardwatch.profile_bundle.canonical import (
+    MappingBlobReader,
+    bundle_digest,
+    candidate_content_digest,
+)
 from boardwatch.profile_bundle.models.documents import BundleDocuments
 from boardwatch.profile_bundle.models.history import ApprovalStamp, ChangeRecord
 from boardwatch.profile_bundle.models.manifests import RevisionManifest
-from boardwatch.profile_bundle.paths import blob_path, blobs_dir, draft_root, drafts_dir
+from boardwatch.profile_bundle.paths import (
+    blob_path,
+    blobs_dir,
+    complete_marker_path,
+    current_path,
+    draft_root,
+    drafts_dir,
+    revision_root,
+)
 from boardwatch.profile_bundle.validation import load_documents
+from boardwatch.profile_bundle.yaml_loader import load_yaml_bytes
 
 EXAMPLE_PACKAGE = "boardwatch.profile_bundle"
 EXAMPLE_RELATIVE = "examples/comprehensive"
@@ -194,3 +211,283 @@ def parse_documents(root: Path, *, final_revision: bool = False) -> BundleDocume
 def blob_reader() -> MappingBlobReader:
     """A reader over the one blob the example names, for identity computations in tests."""
     return MappingBlobReader({BLOB_SHA256: BLOB_BYTES})
+
+
+# --------------------------------------------------------------------------------------
+# A promoted revision that actually exists on disk (T13 §20.6, reused by T14 and T16)
+# --------------------------------------------------------------------------------------
+
+
+def quoted_yaml(payload: object) -> bytes:
+    """Serialise `payload` with every string quoted.
+
+    `yaml.safe_dump` alone is unusable here: it emits plain scalars the restricted loader refuses,
+    and 6 of the example's 27 documents contain one (`2024-09`, `+1 555 0100 EXAMPLE`,
+    `~120 items/s`, a bare hex digest, and two regexes). Quoting every string sidesteps the plain
+    grammar entirely and cannot change a parsed value, because ints, bools and nulls are untouched.
+
+    This is deliberately a fixture helper, not a production emitter. T14 owns that, and it will
+    need to be cleverer than this; what matters here is that `promote_example_tree` asserts the tree
+    it wrote re-parses to the documents it intended, so a drifting writer fails loudly.
+    """
+
+    class _QuoteStrings(yaml.SafeDumper):
+        pass
+
+    _QuoteStrings.add_representer(
+        str,
+        lambda dumper, value: dumper.represent_scalar("tag:yaml.org,2002:str", value, style="'"),
+    )
+    return yaml.dump(
+        payload, Dumper=_QuoteStrings, sort_keys=False, allow_unicode=True, default_flow_style=False
+    ).encode("utf-8")
+
+
+@dataclass(frozen=True)
+class PromotedRevisionTree:
+    """A revision directory whose name, `COMPLETE`, manifest and `CURRENT` all agree."""
+
+    bundle_root: Path
+    revision_dir: Path
+    bundle_digest: str
+    candidate_digest: str
+    revision: int
+    documents: BundleDocuments
+
+
+def promote_example_tree(bundle_root: Path, *, revision: int = 1) -> PromotedRevisionTree:
+    """Materialise the packaged example as a genuinely promoted revision.
+
+    Digest validation cannot be tested against a fixture with placeholder digests: every check
+    would report a mismatch and the positive path would never run. So this reproduces promotion's
+    digest order rather than asserting a number — the candidate digest is computed from the draft,
+    the stamp is built over it, the change record is appended, and only then is the bundle digest
+    computed from the bytes on disk.
+
+    It writes exactly three documents. The other 24 are copied byte for byte, which keeps the
+    fixture from depending on a YAML writer for anything the example already states.
+    """
+    bundle_root.mkdir(parents=True, exist_ok=True)
+    drafts_dir(bundle_root).mkdir(exist_ok=True)
+    blobs_dir(bundle_root).mkdir(parents=True, exist_ok=True)
+    blob_path(bundle_root, BLOB_SHA256).write_bytes(BLOB_BYTES)
+
+    staging = bundle_root / ".staging-revision"
+    materialise_revision_tree(staging)
+    draft_documents = load_documents(staging, mode="draft")
+    blobs = blob_reader()
+
+    candidate_digest = candidate_content_digest(draft_documents, blobs, None)
+    stamp_id = "approval-stamp.000001"
+    change_id = "change.example.000001"
+    created = "2026-08-10T12:00:00Z"
+
+    stamp = build_approval_stamp(
+        stamp_id=stamp_id,
+        candidate_digest=candidate_digest,
+        approved_at=datetime(2026, 8, 10, 12, tzinfo=UTC),
+        decisions=required_approval_decisions(draft_documents, None),
+    )
+    change = ChangeRecord.model_validate(
+        {
+            "change_id": change_id,
+            "revision": revision,
+            "parent_bundle_digest": None,
+            "actor": "owner",
+            "authorized_by": "owner",
+            "summary": "Initial promoted synthetic revision",
+            "changed_record_ids": [],
+            "created_at": created,
+        }
+    )
+
+    draft_values = draft_documents.manifest.model_dump(mode="json")
+    draft_values.pop("draft_of_revision", None)
+    manifest_values = {
+        **draft_values,
+        "state": "revision",
+        "revision": revision,
+        "parent_bundle_digest": None,
+        # Overwritten below once it can be computed. `_manifest_with` blanks this field before
+        # hashing the manifest leaf, so the placeholder cannot influence the digest it becomes.
+        "bundle_digest": "sha256:" + "0" * 64,
+        "created_at": created,
+        "created_by": "owner",
+        "change_id": change_id,
+        "approved_candidate_digest": candidate_digest,
+        "approval_stamp_id": stamp_id,
+    }
+
+    def write_promotion_documents(values: dict[str, object]) -> None:
+        (staging / "manifest.yaml").write_bytes(
+            quoted_yaml(RevisionManifest.model_validate(values).model_dump(mode="json"))
+        )
+        (staging / "history" / "changes.yaml").write_bytes(
+            quoted_yaml({"changes": [change.model_dump(mode="json")]})
+        )
+        (staging / "history" / "approvals.yaml").write_bytes(
+            quoted_yaml({"approvals": [stamp.model_dump(mode="json")]})
+        )
+
+    return _seal_revision(
+        bundle_root,
+        staging,
+        manifest_values=manifest_values,
+        changes=[change],
+        stamps=[stamp],
+        candidate_digest=candidate_digest,
+        revision=revision,
+    )
+
+
+def _seal_revision(
+    bundle_root: Path,
+    staging: Path,
+    *,
+    manifest_values: dict[str, object],
+    changes: list[ChangeRecord],
+    stamps: list[ApprovalStamp],
+    candidate_digest: str,
+    revision: int,
+) -> PromotedRevisionTree:
+    """Write the three promotion documents, compute the digest from disk, and name the directory.
+
+    Shared by both promotions so a chain cannot be sealed by different rules than a first revision.
+    The digest is deliberately recomputed from what landed on disk rather than from the models above:
+    a fixture that digests its own in-memory objects agrees with itself while disagreeing with every
+    reader, which is the failure the design calls out for promotion itself.
+    """
+    blobs = blob_reader()
+
+    def write(values: dict[str, object]) -> None:
+        (staging / "manifest.yaml").write_bytes(
+            quoted_yaml(RevisionManifest.model_validate(values).model_dump(mode="json"))
+        )
+        (staging / "history" / "changes.yaml").write_bytes(
+            quoted_yaml({"changes": [one.model_dump(mode="json") for one in changes]})
+        )
+        (staging / "history" / "approvals.yaml").write_bytes(
+            quoted_yaml({"approvals": [one.model_dump(mode="json") for one in stamps]})
+        )
+
+    write(manifest_values)
+    digest = bundle_digest(load_documents(staging, mode="revision"), blobs)
+    manifest_values["bundle_digest"] = digest
+    write(manifest_values)
+    final = load_documents(staging, mode="revision")
+    assert bundle_digest(final, blobs) == digest, "writing the digest in changed the digest"
+
+    revision_dir = revision_root(bundle_root, digest)
+    revision_dir.parent.mkdir(parents=True, exist_ok=True)
+    staging.rename(revision_dir)
+    complete_marker_path(revision_dir).write_text(f"{digest}\n", encoding="utf-8")
+    current_path(bundle_root).write_text(
+        json.dumps(
+            {"bundle_digest": digest, "revision": revision}, sort_keys=True, separators=(",", ":")
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    return PromotedRevisionTree(
+        bundle_root=bundle_root,
+        revision_dir=revision_dir,
+        bundle_digest=digest,
+        candidate_digest=candidate_digest,
+        revision=revision,
+        documents=final,
+    )
+
+
+def promote_next_revision(
+    parent: PromotedRevisionTree, *, mutate: Callable[[Any], None]
+) -> PromotedRevisionTree:
+    """Promote a child revision of `parent`, changing one document through `mutate`.
+
+    Needed because several §20.6 clauses cannot fire at revision 1 at all: `ChangeRecord` refuses a
+    revision-1 entry that names a parent digest, so "the final change names a different parent than
+    the manifest" is only reachable once a parent exists. A fixture that stopped at revision 1 would
+    leave that check shipped and unexercised.
+
+    The ledgers are appended to, never rewritten, because that prefix property is what
+    `validate_history` compares against the parent and what makes local history verifiable.
+    """
+    revision = parent.revision + 1
+    staging = parent.bundle_root / f".staging-revision-{revision}"
+    shutil.copytree(parent.revision_dir, staging)
+    complete_marker_path(staging).unlink()
+
+    path = staging / "skills" / "inventory.yaml"
+    data = load_yaml_bytes(path.read_bytes(), logical_path=PurePosixPath("skills/inventory.yaml"))
+    mutate(data)
+    path.write_bytes(quoted_yaml(data))
+
+    parent_manifest = parent.documents.manifest
+    assert isinstance(parent_manifest, RevisionManifest)
+    draft_values = parent_manifest.model_dump(mode="json")
+    change_id = f"change.example.{revision:06d}"
+    stamp_id = f"approval-stamp.{revision:06d}"
+    created = f"2026-08-1{revision}T12:00:00Z"
+
+    # The candidate view of a promotion is the tree with its own change entry removed, so the
+    # digest is computed against the parent's ledger length before the new entry is appended.
+    staged_documents = load_documents(staging, mode="revision")
+    candidate_digest = candidate_content_digest(
+        staged_documents, blob_reader(), parent_manifest.envelope
+    )
+    stamp = build_approval_stamp(
+        stamp_id=stamp_id,
+        candidate_digest=candidate_digest,
+        approved_at=datetime(2026, 8, 10 + revision, 12, tzinfo=UTC),
+        # `required_approval_decisions` compares against the parent's DOCUMENTS to see what
+        # changed; `candidate_content_digest` takes its manifest ENVELOPE. Two different
+        # parent-shaped parameters, and passing one where the other belongs type-checks under
+        # neither but fails at runtime deep inside `build_index`.
+        decisions=required_approval_decisions(staged_documents, parent.documents),
+    )
+    change = ChangeRecord.model_validate(
+        {
+            "change_id": change_id,
+            "revision": revision,
+            "parent_bundle_digest": parent.bundle_digest,
+            "actor": "owner",
+            "authorized_by": "owner",
+            "summary": f"Synthetic revision {revision}",
+            "changed_record_ids": [],
+            "created_at": created,
+        }
+    )
+    return _seal_revision(
+        parent.bundle_root,
+        staging,
+        manifest_values={
+            **draft_values,
+            "state": "revision",
+            "revision": revision,
+            "parent_bundle_digest": parent.bundle_digest,
+            "bundle_digest": "sha256:" + "0" * 64,
+            "created_at": created,
+            "created_by": "owner",
+            "change_id": change_id,
+            "approved_candidate_digest": candidate_digest,
+            "approval_stamp_id": stamp_id,
+        },
+        changes=[*parent.documents.by_path[PurePosixPath("history/changes.yaml")].changes, change],
+        stamps=[*parent.documents.by_path[PurePosixPath("history/approvals.yaml")].approvals, stamp],
+        candidate_digest=candidate_digest,
+        revision=revision,
+    )
+
+
+@pytest.fixture
+def promoted_tree(tmp_path: Path) -> PromotedRevisionTree:
+    return promote_example_tree(tmp_path / "career-profile")
+
+
+@pytest.fixture
+def chained_tree(tmp_path: Path) -> PromotedRevisionTree:
+    """Revision 2, promoted onto a real revision 1 that is still on disk."""
+    first = promote_example_tree(tmp_path / "career-profile")
+    return promote_next_revision(
+        first,
+        mutate=lambda data: data["skills"][0].update({"canonical_name": "Second Revision Language"}),
+    )
