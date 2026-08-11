@@ -63,15 +63,30 @@ class EnumerationError(ProfileBundleError):
 # Locators (§18)
 # --------------------------------------------------------------------------------------
 
-#: The only characters left unescaped: ASCII alphanumerics plus `._-` (§18).
+#: The characters left unescaped by the encoding loop: ASCII alphanumerics plus `._-` (§18). One
+#: whole-segment exception follows: a body encoding to a reserved segment has its first character
+#: escaped anyway, so `_` is unreserved everywhere except at the start of exactly `_root`.
 _UNRESERVED: Final[frozenset[str]] = frozenset(string.ascii_letters + string.digits + "._-")
 
-#: Segments an adapter emits DIRECTLY rather than through `encode_locator_segment`. `_` is
-#: unreserved, so without this the encoder returned `_root` unchanged for a heading literally named
-#: `_root` and two different logical sections shared one namespace — pre-heading content and that
-#: heading derived the same record IDs. A new synthetic segment must be added here as well, or it
-#: reintroduces the collision.
+#: Segments that occupy a POSITION an encoded body could otherwise occupy. `_` is unreserved, so
+#: without this the encoder returned `_root` unchanged for a heading literally named `_root` and
+#: two logical sections shared one namespace — pre-heading content and that heading derived the
+#: same record IDs.
+#:
+#: This is NOT the set of segments an adapter writes literally. `heading`, `paragraph-N`,
+#: `objects`, `entries`, `metadata`, `bullets` and the rest are all emitted directly and must NOT
+#: be listed here: each occupies a position no encoded body reaches, and reserving one would only
+#: make `is_normalized_locator` accept it anywhere. Add a segment here when — and only when — it
+#: shares a position with an encoded body, as `_root` shares the first segment of a heading path.
 _RESERVED_SEGMENTS: Final[frozenset[str]] = frozenset({ROOT_SEGMENT})
+
+#: Whole-segment spellings `_encode_text` never emits as themselves. Two reasons, one mechanism:
+#: a reserved segment would collide with a synthetic one, and `.`/`..` are the traversal spellings
+#: §18 forbids in a locator. Both are ESCAPED rather than refused. Refusing was the original
+#: behaviour and it made `# .` and `# ..` hard enumeration errors — a legitimate document rendered
+#: unenumerable, which is the same defect class as rounds one and three. `%2E` is not a `.` segment,
+#: so §18's refusal is satisfied by the escape.
+_ESCAPED_WHOLE_SEGMENTS: Final[frozenset[str]] = _RESERVED_SEGMENTS | frozenset({".", ".."})
 
 #: The deterministic duplicate-path suffix `~2`, `~3`, … A `~1` is never emitted, so it is not
 #: recognised either; recognising it would make two spellings of the first occurrence.
@@ -87,11 +102,21 @@ def encode_locator_segment(raw: str, *, adapter: SourceEnumerator) -> str:
     becoming two segments and changing the record's identity.
     """
     text = unicodedata.normalize("NFC", raw).strip()
-    if not text or text in (".", ".."):
+    if not text:
         raise EnumerationError(
-            f"{adapter.id}: {raw!r} is not a usable locator segment; empty, `.`, and `..` "
-            "segments are refused"
+            f"{adapter.id}: {raw!r} is not a usable locator segment; a blank body carries no "
+            "assertion and has nothing to encode"
         )
+    try:
+        text.encode("utf-8")
+    except UnicodeEncodeError as exc:
+        # A JSON source may spell an astral character as a surrogate pair, and a lone half then
+        # reaches the encoder. Typed at the raise site: the untyped `UnicodeEncodeError` this
+        # replaces escaped `EnumerationError`'s contract that every caller gets every record or
+        # a typed error.
+        raise EnumerationError(
+            f"{adapter.id}: {raw!r} contains an unpaired surrogate and is not encodable text"
+        ) from exc
     return _encode_text(text)
 
 
@@ -109,12 +134,19 @@ def _canonical_encoding(text: str) -> str:
 def _encode_text(text: str) -> str:
     """The pure encoding: no normalisation, no trimming, no refusals.
 
-    Split out so `is_normalized_locator` can be defined as this function's exact inverse rather
-    than as a hand-written grammar. A grammar drifts from the encoder; a round trip cannot.
+    Split out so `is_emitted_segment` can be defined as this function's exact inverse rather than
+    as a hand-written grammar. A grammar drifts from the encoder; a round trip cannot. Note that
+    `is_normalized_locator` is deliberately *weaker* than that inverse — it also admits the `~N`
+    suffix and the reserved segments, because it serves owner-authored scope locators too.
 
     A body that would land on a reserved segment has its first character escaped instead. Refusing
     it outright would make a document carrying such a heading unenumerable, which is the same
-    "legitimate source is unimportable" defect the reservation exists to prevent.
+    "legitimate source is unimportable" defect the reservation exists to prevent. The escape is
+    applied here, in the SHARED encoder, rather than in the Markdown adapter that owns the
+    collision: `is_emitted_segment` and `is_normalized_locator` are adapter-blind by necessity, so
+    a per-adapter reservation would mean two encoders and the drift this module exists to remove.
+    The cost is that a structured key or a résumé identifier literally named `_root` is escaped as
+    well, which moves it in §18.1's encoded-key sort order.
     """
     encoded: list[str] = []
     for character in text:
@@ -123,7 +155,7 @@ def _encode_text(text: str) -> str:
             continue
         encoded.extend(f"%{byte:02X}" for byte in character.encode("utf-8"))
     joined = "".join(encoded)
-    if joined not in _RESERVED_SEGMENTS:
+    if joined not in _ESCAPED_WHOLE_SEGMENTS:
         return joined
     escaped = "".join(f"%{byte:02X}" for byte in joined[0].encode("utf-8"))
     return escaped + joined[1:]
@@ -157,21 +189,35 @@ def _decoded_segment(segment: str) -> str | None:
 def normalize_locator(raw: str, *, adapter: SourceEnumerator) -> str:
     """A complete POSIX-relative locator, normalized to the §18 contract.
 
+    For an authoring tool holding a RAW path — segment bodies as a person typed them. It is not
+    the inverse of `is_normalized_locator` and has no production caller: an already-resolved path
+    must not be passed through it, because percent-encoding is not idempotent
+    (`Alpha%20Beta` becomes `Alpha%2520Beta`) and a body of `_root` becomes `%5Froot`.
+
     A trailing `~2`/`~3` duplicate suffix on any segment is preserved rather than encoded. That
-    suffix is applied *after* encoding when a Markdown heading path repeats (§18.1), so a resolved
-    heading path — which is exactly what an owner writes into a `selected_sections` scope — must
-    survive being normalized again. The cost is that a heading whose body literally ends in `~2`
+    suffix is applied *after* encoding when a Markdown heading path repeats (§18.1), so a raw path
+    already carrying one keeps it. The cost is that a heading whose body literally ends in `~2`
     cannot be told apart from the second occurrence of the same heading without it; adapters
-    encode their own bodies through `encode_locator_segment`, so only owner-authored scope
-    locators are affected.
+    encode their own bodies through `encode_locator_segment`, so only owner-authored input is
+    affected.
 
     An absolute or empty locator has no guard of its own here, deliberately: `/a` splits to an
     empty leading segment and `""` splits to one empty segment, so `encode_locator_segment` is
     always the thing that refuses them. A second check would read as coverage it does not provide.
+
+    A `.`/`..` COMPONENT does have a guard, and D-120's reason for deleting it has since inverted:
+    `encode_locator_segment` now escapes such a body to `%2E` rather than refusing it, because a
+    heading may legitimately be named `.`. In a raw *path* the same spelling means the traversal
+    §18 forbids, and silently encoding it would turn "this directory" into a literal segment.
     """
     text = unicodedata.normalize("NFC", raw).strip()
     segments: list[str] = []
     for part in text.split("/"):
+        if part in (".", ".."):
+            raise EnumerationError(
+                f"{adapter.id}: {raw!r} contains a {part!r} path component, which §18 forbids in "
+                "a locator"
+            )
         match = _DUPLICATE_SUFFIX_RE.match(part)
         if match is not None:
             segments.append(
@@ -200,7 +246,13 @@ def is_emitted_segment(segment: str) -> bool:
 
 
 def is_normalized_locator(text: str) -> bool:
-    """Whether `text` is exactly what an adapter would have emitted.
+    """Whether every segment of `text` is a spelling the locator contract admits.
+
+    Deliberately WEAKER than "exactly what an adapter emitted", which is what
+    `emits_locator` answers per adapter. This predicate also has to accept the locators an owner
+    authors into a `selected_sections` scope, so it admits the `~N` duplicate suffix on any segment
+    and a reserved segment at any position. `objects/synthetic~2` is the gap that leaves: a
+    normalized locator no adapter can emit, refused by the structured adapter's own grammar.
 
     Defined as a round trip through the encoder rather than as a grammar. A grammar that merely
     *admits* percent escapes accepts spellings no adapter can produce — `%41` for `A` is the
@@ -533,6 +585,24 @@ _LIST_ITEM_RE: Final = re.compile(r"^ {0,3}(?:[-+*]|[0-9]+[.)])[ \t]+")
 #: The block kinds `MarkdownBlocksEnumerator._blocks` emits with a 1-based index. `heading` is
 #: deliberately absent: it is the one kind whose locator carries no number.
 _NUMBERED_BLOCK_KINDS: Final[frozenset[str]] = frozenset({"paragraph", "fence", "list-item"})
+
+
+def is_resolved_heading_path(locator: str) -> bool:
+    """Whether `locator` is a path `_blocks` can resolve a heading stack to (§18.1).
+
+    This is what a `selected_sections` scope locator must be — "Selected locators refer to these
+    resolved paths, including any `~N` suffix" — and it is a strictly different shape from a record
+    locator: no terminal segment, at most `_MAX_HEADING_LEVEL` segments, and never the reserved
+    `_root`, which holds the blocks *before* the first heading and is therefore not a section.
+
+    Lives beside the emitter for the same reason `emits_locator` does. `selected_sections` pairs
+    with exactly one adapter in `SOURCE_KIND_ADAPTERS`, so a Markdown-specific predicate is the
+    whole of the contract rather than one adapter's share of it.
+    """
+    segments = locator.split("/")
+    if not 1 <= len(segments) <= _MAX_HEADING_LEVEL:
+        return False
+    return all(_is_heading_segment(segment) for segment in segments)
 
 
 def _is_heading_segment(segment: str) -> bool:

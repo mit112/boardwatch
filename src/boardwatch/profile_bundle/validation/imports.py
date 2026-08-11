@@ -37,6 +37,7 @@ from boardwatch.profile_bundle.enumerators import (
     derive_source_record_id,
     enumerator_for,
     is_normalized_locator,
+    is_resolved_heading_path,
 )
 from boardwatch.profile_bundle.errors import Diagnostic, IssueCode, diagnostic
 from boardwatch.profile_bundle.imports import (
@@ -189,34 +190,31 @@ def _approved_scopes_match_the_source_kind(ctx: ValidationContext) -> Iterator[D
         if source.approved_scope.kind != "selected_sections":
             continue
         for locator in source.approved_scope.locators:
-            if is_normalized_locator(locator):
+            # ONE check, asking the emitter's own question: is this a path a heading stack can
+            # resolve to? It used to be two — "is it normalized?" and "is it `_root`?" — and
+            # neither of them refused a section deeper than Markdown can nest, so a scope could
+            # name a shape no enumeration produces. Validation has to agree with the adapter here,
+            # or a bundle validates clean and then cannot be re-enumerated from its own source.
+            #
+            # The `_root` half is only sound because `_root` is RESERVED by the encoder. It was
+            # added before the reservation was, and a heading literally named `_root` then
+            # resolved to `_root` as well — so the refusal made that legitimate source
+            # unimportable, which is the defect class it was written to prevent. Such a heading
+            # now resolves to `%5Froot`.
+            if is_resolved_heading_path(locator):
                 continue
+            reason = (
+                "names pre-heading content, which no selected section can contain"
+                if locator == ROOT_SEGMENT or locator.startswith(f"{ROOT_SEGMENT}/")
+                else "is not a resolved heading path, so no enumeration can produce it"
+            )
             yield diagnostic(
                 IssueCode.IMPORT_SCOPE_INVALID,
-                f"{source.source_id}: selected-section locator {locator!r} is not a normalized "
-                "locator, so it cannot name a resolved heading path",
+                f"{source.source_id}: selected-section locator {locator!r} {reason}",
                 path=LEDGER_PATH,
                 record_id=source.source_id,
                 locator=locator,
             )
-        for locator in source.approved_scope.locators:
-            # `_root` holds the blocks before the first heading and is never a heading path, so
-            # the adapter refuses it. Validation has to agree, or a bundle validates clean and
-            # then cannot be re-enumerated from its own source.
-            #
-            # This is only sound because `_root` is RESERVED by the encoder. It was added before
-            # the reservation was, and a heading literally named `_root` then resolved to `_root`
-            # as well — so this refusal made that legitimate source unimportable, which is the
-            # defect class it was written to prevent. Such a heading now resolves to `%5Froot`.
-            if locator == ROOT_SEGMENT or locator.startswith(f"{ROOT_SEGMENT}/"):
-                yield diagnostic(
-                    IssueCode.IMPORT_SCOPE_INVALID,
-                    f"{source.source_id}: {locator!r} names pre-heading content, which no "
-                    "selected section can contain",
-                    path=LEDGER_PATH,
-                    record_id=source.source_id,
-                    locator=locator,
-                )
         yield from _records_lie_inside_their_approved_scope(ctx, source)
 
 

@@ -32,6 +32,7 @@ from boardwatch.profile_bundle.enumerators import (
     encode_locator_segment,
     enumerator_for,
     is_normalized_locator,
+    is_resolved_heading_path,
     normalize_locator,
     source_content_digest,
 )
@@ -1227,3 +1228,96 @@ def test_every_adversarial_source_emits_only_locators_its_own_grammar_accepts() 
         assert emitted, source
         assert [one for one in emitted if not adapter.emits_locator(one)] == [], source
         assert [one for one in emitted if not is_normalized_locator(one)] == [], source
+
+
+def test_the_reservation_is_global_so_every_adapter_escapes_the_root_segment() -> None:
+    """The collision is Markdown's, but the reservation lives in the shared encoder on purpose.
+
+    `is_emitted_segment` and `is_normalized_locator` are adapter-blind by necessity — they also
+    serve owner-authored scope locators — so a per-adapter reservation would give the repo two
+    encoders and reintroduce exactly the drift this grammar exists to remove. The cost is recorded
+    rather than hidden: a structured key or a résumé identifier literally named `_root` is escaped
+    too, which moves it in §18.1's encoded-key sort order.
+    """
+    assert locators(structured_records("'_root': one\nZebra: two\n")) == [
+        "objects/%5Froot",
+        "objects/Zebra",
+    ]
+    tilde = RESUME.replace("entry_id: entry-one", "entry_id: _root")
+    assert "entries/%5Froot/metadata" in locators(resume_records(tilde))
+
+
+@pytest.mark.parametrize(
+    "locator",
+    ["Overview", "Overview/Details", "Overview~2", "Alpha%20Beta/Caf%C3%A9~3"],
+)
+def test_a_resolved_heading_path_is_recognised(locator: str) -> None:
+    assert is_resolved_heading_path(locator)
+
+
+@pytest.mark.parametrize(
+    "locator",
+    [
+        "",
+        "_root",
+        "_root/Details",
+        "Overview/_root",
+        "a/b/c/d/e/f/g",
+        "Alpha Beta",
+        "Overview~1",
+        "Overview/",
+    ],
+)
+def test_a_locator_no_heading_stack_can_resolve_to_is_refused(locator: str) -> None:
+    """A selected scope names a resolved heading path, and §18.1 caps that path at the heading
+    nesting depth. `Overview/heading` is a record locator, not a section."""
+    assert not is_resolved_heading_path(locator)
+
+
+def test_every_heading_path_a_real_enumeration_resolves_is_recognised() -> None:
+    """Derived from the emitter: whatever `_blocks` resolved, the predicate must accept."""
+    source = (
+        "# Alpha Beta\n\ntext\n\n## Café\n\ntext\n\n# Alpha Beta\n\ntext\n\n# _root\n\ntext\n"
+    )
+    paths = {one.removesuffix("/heading") for one in locators(markdown_records(source))
+             if one.endswith("/heading")}
+    assert paths
+    assert [one for one in sorted(paths) if not is_resolved_heading_path(one)] == []
+
+
+@pytest.mark.parametrize(("body", "segment"), [(".", "%2E"), ("..", "%2E."), ("_root", "%5Froot")])
+def test_a_whole_segment_spelling_the_contract_forbids_is_escaped_not_refused(
+    body: str, segment: str
+) -> None:
+    """`# .` and `# ..` used to be hard enumeration errors.
+
+    The reservation mechanism's own rationale — refusing makes a legitimate document unenumerable —
+    applies to the traversal spellings too, and it was not applied to them. `%2E` is not a `.`
+    segment, so §18's refusal is satisfied by the escape rather than by the refusal.
+    """
+    adapter = markdown_adapter()
+    assert encode_locator_segment(body, adapter=adapter) == segment
+    assert is_normalized_locator(segment)
+    assert locators(markdown_records(f"# {body}\n\nreal prose.\n")) == [
+        f"{segment}/heading",
+        f"{segment}/paragraph-1",
+    ]
+    assert adapter.emits_locator(f"{segment}/paragraph-1")
+
+
+def test_a_dot_component_in_a_RAW_path_is_still_refused() -> None:
+    """The escape belongs to a segment BODY. In a raw path the same spelling means traversal, and
+    D-120's reason for deleting this guard — that the encoder refused it — has inverted."""
+    for raw in [".", "..", "a/./b", "a/../b"]:
+        with pytest.raises(EnumerationError):
+            normalize_locator(raw, adapter=markdown_adapter())
+
+
+def test_an_unpaired_surrogate_is_a_typed_enumeration_error() -> None:
+    """Legal JSON spells an astral character as a surrogate pair, so a lone half reaches the
+    encoder. It raised an untyped `UnicodeEncodeError`, escaping the contract that every caller
+    gets either every record or a typed error."""
+    with pytest.raises(EnumerationError):
+        encode_locator_segment("\ud83d", adapter=markdown_adapter())
+    with pytest.raises(EnumerationError):
+        structured_records(b'{"Ship it \\ud83d\\ude80": "value"}'.decode())

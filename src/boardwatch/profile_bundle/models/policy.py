@@ -321,7 +321,7 @@ _PORTABLE_SEGMENT: Final = r"(?!\.\.?(?:/|$))[^/\\\x00-\x1f\x7f]*"
 #: also refuses a TRAILING newline, which `$` would otherwise allow through under Python's regex
 #: dialect but not ECMA-262's.
 PORTABLE_LOCATOR_PATTERN: Final = (
-    r"^(?![\s\S]*[\x00-\x1f\x7f])(?![A-Za-z]:)(?!/)(?=[\s\S]*\S)"
+    r"^(?![\s\S]*[\x00-\x1f\x7f])(?![A-Za-z]:)(?!/)(?!~)(?=[\s\S]*\S)"
     rf"{_PORTABLE_SEGMENT}(?:/{_PORTABLE_SEGMENT})*$"
 )
 
@@ -334,7 +334,10 @@ class SourceSpec(StrictModel):
     documents may not repeat the same metadata fields, so there is no `enumerator_id` here.
 
     Absolute machine-local roots live only in the non-revisioned root `local-sources.yaml`, which
-    is why `portable_locator` is relative and validation rejects a home path inside it.
+    is why `portable_locator` is relative. The field validator below is where that lands: it
+    refuses an absolute path, a drive qualifier, a backslash, a `.`/`..` component, a control
+    character, and a leading `~`. Nothing else in `validation/` reads this field — the personal-path
+    scan walks evidence records only — so a claim about it that is not in that validator is false.
     """
 
     source_id: SourceId
@@ -366,6 +369,11 @@ class SourceSpec(StrictModel):
             raise ValueError("portable_locator must be relative, not absolute")
         if re.match(r"^[A-Za-z]:", value):
             raise ValueError("portable_locator must be relative, not a drive-qualified path")
+        if value.startswith("~"):
+            # The home path this class's docstring has claimed to refuse since T12. `~/notes/x.md`
+            # is *relative*, so the absolute branch above never saw it, and D-122 recorded the
+            # claim as false and then fixed only the other half of the sentence.
+            raise ValueError("portable_locator must be relative to the approved root, not to $HOME")
         if any(segment in (".", "..") for segment in value.split("/")):
             raise ValueError("portable_locator must not contain a '.' or '..' segment")
         return value

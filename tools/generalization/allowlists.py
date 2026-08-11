@@ -102,7 +102,7 @@ SHIPPED_DATA: dict[str, DataEntry] = {
         "§19). Describes record SHAPES only — no person, organisation, metric or claim value. A "
         "parity test asserts the committed bytes equal schema.schema_json() exactly, so this pin "
         "and that test together stop the shipped contract from drifting from the models.",
-        pin="sha256:f5f18d956a628aa4f35bfdc0472555a4ab33a435d7d42f28514040fb22738cdc",
+        pin="sha256:024927129b868f1696428f823aa78e761f5f7f820c89554385c4542e7ca72128",
     ),
     "src/boardwatch/store/migrations/script.py.mako": DataEntry(
         kind="template",

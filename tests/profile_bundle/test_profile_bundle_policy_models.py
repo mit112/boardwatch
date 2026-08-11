@@ -789,6 +789,9 @@ PORTABLE_LOCATOR_CORPUS = [
     "notes/100% done.md",
     "notes/dot.in.name.md",
     "notes/..hidden.md",
+    "~/notes/source.md",
+    "~mit/notes/source.md",
+    "notes/~backup.md",
     "a//b",
     "notes/",
     "ab:c",
@@ -838,3 +841,33 @@ def test_the_exported_schemas_locator_pattern_agrees_with_the_model(locator: str
 
     constraint = re.compile(PORTABLE_LOCATOR_PATTERN)
     assert bool(constraint.search(locator)) is _model_accepts(locator), locator
+
+
+@pytest.mark.parametrize("locator", ["~/notes/source.md", "~mit/notes/source.md", "~"])
+def test_a_home_relative_portable_locator_is_refused(locator: str) -> None:
+    """`SourceSpec`'s docstring has claimed since T12 that "validation rejects a home path inside
+    it". D-122 recorded that both halves of that sentence were false and fixed only the first: the
+    absolute-path branch does not see `~/notes/x.md`, which is relative. A documented guarantee
+    that lands nowhere is the defect class this slice has now been reviewed for four times, so the
+    sentence is made true rather than deleted — a leading `~` segment is the home path it names.
+    """
+    with pytest.raises(ValidationError):
+        SourceSpec.model_validate(
+            {
+                "source_id": "source.synthetic-notes",
+                "source_kind": "markdown_document",
+                "portable_locator": locator,
+            }
+        )
+
+
+def test_a_tilde_that_is_not_the_home_prefix_is_still_a_usable_filename() -> None:
+    """The refusal is positional. `~` only means `$HOME` at the start of a path."""
+    spec = SourceSpec.model_validate(
+        {
+            "source_id": "source.synthetic-notes",
+            "source_kind": "markdown_document",
+            "portable_locator": "notes/~backup.md",
+        }
+    )
+    assert spec.portable_locator == "notes/~backup.md"

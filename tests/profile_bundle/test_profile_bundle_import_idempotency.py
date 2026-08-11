@@ -1512,3 +1512,65 @@ def test_a_forged_structured_record_carrying_a_raw_duplicate_suffix_is_reported(
         if found.code == IssueCode.IMPORT_ENUMERATOR_MISMATCH and found.record_id == record_id
     ]
     assert len(reported) == 1
+
+
+@pytest.mark.parametrize("section", ["a/b/c/d/e/f/g", "Overview/_root", "Alpha Beta"])
+def test_an_approved_section_no_heading_stack_can_resolve_to_is_reported(
+    synthetic_bundle: SyntheticBundle, section: str
+) -> None:
+    """§18.1: "Selected locators refer to these resolved paths, including any `~N` suffix."
+
+    The byte-free adapter grammar reached `records[].normalized_locator` and stopped there, so a
+    scope section deeper than Markdown can nest — or one naming a reserved segment, or a record
+    locator rather than a section — was checked only for normalization. That is the same argument
+    the `_root` refusal beside it rests on: a bundle that validates clean and then cannot be
+    re-enumerated from its own source.
+    """
+
+    def rescope(data: Any) -> None:
+        for source in data["sources"]:
+            if source["approved_scope"]["kind"] == "selected_sections":
+                source["approved_scope"]["locators"] = [section]
+
+    edit_document(synthetic_bundle, "imports/source-ledger.yaml", rescope)
+    reported = [
+        found
+        for found in findings(synthetic_bundle)
+        if found.code == IssueCode.IMPORT_SCOPE_INVALID
+        and found.record_id == "source.synthetic-repository"
+    ]
+    assert [found.details.get("locator") for found in reported] == [section]
+
+
+def test_a_record_locator_that_is_not_normalized_lands_on_the_uncatalogued_source(
+    synthetic_bundle: SyntheticBundle,
+) -> None:
+    """Where the normalization guarantee actually lands, now that the adapter grammar exists.
+
+    `emits_locator` is strictly stronger than `is_normalized_locator` for every adapter, and the
+    grammar check skips a record whose source is absent from `policy/sources.yaml` — so the
+    normalization diagnostic is reachable only there. D-115: say where a guarantee lands rather
+    than leaving a check looking like coverage it does not provide.
+    """
+
+    def orphan(data: Any) -> None:
+        data["sources"] = [
+            source
+            for source in data["sources"]
+            if source["source_id"] != "source.synthetic-notes"
+        ]
+
+    edit_document(synthetic_bundle, "policy/sources.yaml", orphan)
+    edit_document(
+        synthetic_bundle,
+        "imports/source-ledger.yaml",
+        lambda data: relocate(data, "Alpha Beta/paragraph-1"),
+    )
+    reported = [
+        found
+        for found in findings(synthetic_bundle)
+        if found.code == IssueCode.IMPORT_ENUMERATOR_MISMATCH
+        and found.details.get("locator") == "Alpha Beta/paragraph-1"
+    ]
+    assert len(reported) == 1
+    assert "normalized" in reported[0].message
