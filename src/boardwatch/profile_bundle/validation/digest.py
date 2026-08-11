@@ -34,6 +34,16 @@ because editing both together is a forgery that either comparison alone accepts.
 - **It computes nothing without a blob reader.** Every digest needs the blob bytes, and reporting a
   mismatch that was never computed would be a measurement nobody took. That silence is safe only
   because `validation/run.py` always supplies a reader, and a test asserts it there.
+
+## A silence that is stated rather than assumed
+
+Where this layer declines to compare, it says so. `candidate_digest_unverified` is an information
+row carrying the typed reason no candidate digest was recomputed, because the deferral that
+justifies the silence — `ancestry_completeness`'s `unverifiable_ancestor` blocker — runs only when
+completeness is requested. On the default path a re-sealed revision whose parent directory was
+deleted otherwise reported nothing at all, which is the same output as a revision whose approval was
+verified. The tier is `information` so §21's "the selected revision remains structurally valid"
+still holds exactly: the exit code does not move, only the ambiguity goes away.
 """
 
 from __future__ import annotations
@@ -99,6 +109,12 @@ AncestorFault = Literal[
     "content_digest_mismatch",
     "cycle",
 ]
+
+#: Why a run made no candidate-digest claim. A parent that could not be resolved keeps its own
+#: `AncestorFault` rather than being flattened into one bucket, so `unverifiable_ancestor` and this
+#: row describe the same absence in the same words; `not_recomputable` is everything else, which is
+#: always another layer's finding (a missing blob, or a candidate view that cannot be inverted).
+CandidateDigestGap = AncestorFault | Literal["not_recomputable"]
 
 
 def _why(exc: OSError) -> str:
@@ -399,13 +415,28 @@ def _the_candidate_view_recomputes_its_approved_digest(
     manifest = ctx.manifest
     if isinstance(manifest, DraftManifest):
         return
-    computed = recomputed_candidate_digest(ctx)
+    computed, gap = _candidate_digest_claim(ctx)
     if computed is None:
-        # Three separate silences, all of them another layer's finding or another layer's absence:
-        # a missing blob (`validation/evidence.py`), a final-`change_id` mismatch that makes the
-        # candidate view unrecoverable (`validate_history`), and an ancestor that is not on disk
-        # (`ancestry_completeness`'s `unverifiable_ancestor` blocker). Reporting any of them here a
-        # second time under a digest code sends an operator hunting for a second problem.
+        # The comparison did not happen, and saying so is not the same as reporting the cause.
+        #
+        # The cause always belongs to another layer: a missing blob is `validation/evidence.py`'s
+        # finding, a final-`change_id` mismatch that makes the candidate view unrecoverable is
+        # `validate_history`'s, and an unreadable ancestor is `ancestry_completeness`'s
+        # `unverifiable_ancestor`. Restating any of them here under a digest code sends an operator
+        # hunting for a second problem, so this row names the gap and types the reason instead.
+        #
+        # It is emitted rather than skipped because only ONE of those three deferrals runs on this
+        # path. `ancestry_completeness` runs only under `completeness=True`, so a re-sealed revision
+        # whose parent directory had been deleted reported no diagnostics and exited 0 — the same
+        # shape as a revision whose approval was verified. §21 keeps such a revision structurally
+        # valid, so the tier here is `information`, which never moves an exit code.
+        yield diagnostic(
+            IssueCode.CANDIDATE_DIGEST_UNVERIFIED,
+            "no candidate digest could be recomputed for this revision, so its approved candidate "
+            "digest was not compared against its content; this run makes no claim about it",
+            path=MANIFEST_PATH,
+            reason=gap,
+        )
         return
     if computed != manifest.approved_candidate_digest:
         yield diagnostic(
@@ -458,15 +489,31 @@ def recomputed_candidate_digest(ctx: ValidationContext) -> str | None:
     envelope's `revision` and `bundle_digest` are read — exactly what
     `canonical._candidate_manifest` consumes.
     """
+    return _candidate_digest_claim(ctx)[0]
+
+
+def _candidate_digest_claim(
+    ctx: ValidationContext,
+) -> tuple[str | None, CandidateDigestGap | None]:
+    """The recomputed candidate digest, or `None` and the typed reason there is none.
+
+    Both halves come from one call because the check that compares the digest and the row that
+    reports its absence need the same answer, and asking twice could give two.
+
+    A parent that could not be resolved keeps `AncestorUnverifiable`'s own `reason`, so "the
+    directory is gone" and "the manifest does not parse" stay distinguishable in `details` — the
+    same fault vocabulary `ancestry_completeness` reports under, rather than a second one.
+    """
     manifest = ctx.manifest
     blobs = ctx.blobs
     if isinstance(manifest, DraftManifest) or blobs is None:
-        return None
+        return None, "not_recomputable"
     try:
         parent = _parent_envelope(ctx, manifest)
-    except AncestorUnverifiable:
-        return None
-    return _computed(lambda: candidate_digest_from_revision(ctx.documents, blobs, parent))
+    except AncestorUnverifiable as exc:
+        return None, exc.reason
+    computed = _computed(lambda: candidate_digest_from_revision(ctx.documents, blobs, parent))
+    return (computed, None) if computed is not None else (None, "not_recomputable")
 
 
 def _parent_envelope(
@@ -512,6 +559,7 @@ __all__ = [
     "AncestorFault",
     "AncestorRevision",
     "AncestorUnverifiable",
+    "CandidateDigestGap",
     "CurrentPointer",
     "PointerError",
     "read_ancestor_manifest",

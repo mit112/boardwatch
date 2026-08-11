@@ -23,11 +23,17 @@ import pytest
 
 from boardwatch.profile_bundle.errors import IssueCode, tier_of
 from boardwatch.profile_bundle.models.entities import STATUS_CATALOGS
+from boardwatch.profile_bundle.models.facts import (
+    VALUE_DATE_KINDS,
+    FactRecord,
+    FactValueKind,
+)
 from boardwatch.profile_bundle.models.metrics import MetricRecord
 from boardwatch.profile_bundle.models.policy import ExpirySpec
 from boardwatch.profile_bundle.paths import revision_root
 from boardwatch.profile_bundle.validation import BundleParseError, build_context, load_documents
 from boardwatch.profile_bundle.validation.completeness import (
+    _declared_expiry,
     ancestry_completeness,
     validate_completeness,
 )
@@ -531,6 +537,69 @@ def test_a_fact_whose_predicate_never_expires_is_not_reported_for_its_expiry_dat
     }
 
 
+def test_a_catalog_pairing_a_value_date_expiry_with_a_dateless_type_fails_the_whole_bundle(
+    synthetic_bundle: SyntheticBundle,
+) -> None:
+    """Where the model's refusal lands for a real bundle, rather than for a hand-built row.
+
+    `policy/predicates.yaml` is read through the same document loader as every other file, so the
+    pairing is reported as a `model_validation_error` and the run never reaches a verdict at all.
+    That is the whole point of refusing it at authoring time: the alternative was a bundle that
+    validated clean while one predicate's expiry could never fire.
+    """
+
+    def mutate(data: Any) -> None:
+        for spec in data["predicates"]:
+            if spec["predicate_id"] == "certification.expiry":
+                spec["legal_value_types"] = ["year_month"]
+
+    edit(synthetic_bundle, "policy/predicates.yaml", mutate)
+    assert parse_codes(synthetic_bundle.draft) == ["model_validation_error"]
+
+
+#: One authored value per kind in the closed union, so the parametrization below covers all ten and
+#: a new kind fails here with a `KeyError` instead of silently not being measured.
+VALUE_BY_KIND: dict[str, Any] = {
+    "string": {"type": "string", "value": "Example Cloud Practitioner"},
+    "integer": {"type": "integer", "value": 3},
+    "decimal": {"type": "decimal", "value": "1.5"},
+    "boolean": {"type": "boolean", "value": True},
+    "date": {"type": "date", "value": "2020-01-01"},
+    "year_month": {"type": "year_month", "value": "2020-01"},
+    "date_range": {"type": "date_range", "start": "2020-01-01", "end": "2020-02-01"},
+    "url": {"type": "url", "value": "https://example.test/credential"},
+    "string_list": {"type": "string_list", "values": ["example"]},
+    "skill_ref": {"type": "skill_ref", "skill_id": "skill.example-language"},
+}
+
+
+@pytest.mark.parametrize("kind", sorted(FactValueKind, key=str))
+def test_the_expiry_check_reads_a_value_date_from_exactly_the_kinds_the_catalog_admits(
+    synthetic_bundle: SyntheticBundle, kind: FactValueKind
+) -> None:
+    """One set, two readers, and the test that stops them becoming two contracts.
+
+    `PredicateSpec` refuses `block_active_use_after_value_date` on any value type outside
+    `VALUE_DATE_KINDS`, and this function reads a value date from exactly those kinds. Either side
+    moving alone reopens the hole the pair exists to close: a catalog row whose facts carry a
+    `year_month` or a `date_range` and `expires_at: null` was never blocked at any `as_of`, with no
+    finding and no code. So the agreement is asserted over every member of the closed union rather
+    than asserted in a comment.
+    """
+    ctx = build_context(synthetic_bundle.draft, mode="draft", blobs=blob_reader())
+    credential = next(
+        f for f in ctx.index.facts if f.fact_id == "fact.example-credential.expiry.001"
+    )
+    fact = FactRecord.model_validate(
+        {
+            **credential.model_dump(mode="json"),
+            "value": VALUE_BY_KIND[kind.value],
+            "expires_at": None,
+        }
+    )
+    assert (_declared_expiry(fact) is not None) == (kind in VALUE_DATE_KINDS)
+
+
 def test_a_review_interval_is_not_past_on_the_day_it_falls_due(
     synthetic_bundle: SyntheticBundle,
 ) -> None:
@@ -656,7 +725,11 @@ def test_a_missing_ancestor_is_a_blocker_not_an_error(chained_tree: PromotedRevi
     assert [f.code for f in found] == ["unverifiable_ancestor"]
     assert found[0].tier == "blocker"
     assert found[0].details["reason"] == "absent"
-    assert validate_digest(ctx) == ()
+    # The digest layer raises no error about it either — it withholds the candidate comparison and
+    # says so at the information tier, which is what keeps the exit code where §21 puts it.
+    assert [(f.code, f.tier) for f in validate_digest(ctx)] == [
+        ("candidate_digest_unverified", "information")
+    ]
 
 
 def test_an_unreadable_ancestor_manifest_is_a_blocker(
@@ -827,5 +900,45 @@ def test_an_ancestor_manifest_that_cannot_be_read_is_a_blocker(
         # carries a value like this. `str(OSError)` appends the absolute path it failed on, so the
         # reason has to be taken from the exception without it.
         assert str(chained_tree.bundle_root) not in found[0].message
+    finally:
+        path.chmod(0o644)
+
+
+@pytest.mark.skipif(os.geteuid() == 0, reason="root reads a mode-000 file, so the guard cannot fire")
+def test_a_deep_audit_of_an_unreadable_ancestor_document_carries_no_filesystem_path(
+    chained_tree: PromotedRevisionTree,
+) -> None:
+    """The same leak as the test above, one layer up, where fixing the manifest read did not reach.
+
+    The deep audit loads the ancestor's DOCUMENTS, and that read raises a `BundleIoError` built from
+    `str(OSError)` — which appends the absolute path it failed on. Interpolating the exception whole
+    put a `$HOME` path into an `unverifiable_ancestor` message, which `report_json` emits verbatim.
+    Only `deep=True` reaches this route, so the shallow test above could not see it.
+    """
+    parent_digest = chained_tree.documents.manifest.parent_bundle_digest
+    assert parent_digest is not None
+    path = revision_root(chained_tree.bundle_root, parent_digest) / "facts" / "identity.yaml"
+
+    def audited() -> tuple[Any, ...]:
+        ctx = build_context(
+            chained_tree.revision_dir,
+            mode="revision",
+            blobs=blob_reader(),
+            bundle_root=chained_tree.bundle_root,
+        )
+        return ancestry_completeness(ctx, deep=True)
+
+    # The negative control for a test about a leak: the same audit over the same chain with nothing
+    # chmodded reports nothing at all, so the finding below is the permission and not the audit.
+    assert audited() == ()
+    path.chmod(0o000)
+    try:
+        found = audited()
+        assert len(found) == 1
+        assert str(chained_tree.bundle_root) not in found[0].message
+        assert (found[0].code, found[0].details["reason"]) == (
+            "unverifiable_ancestor",
+            "unreadable",
+        )
     finally:
         path.chmod(0o644)

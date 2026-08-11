@@ -209,6 +209,66 @@ def test_string_enumeration_without_a_string_value_type_is_refused() -> None:
         )
 
 
+VALUE_DATE_EXPIRY = {
+    "behaviour": "block_active_use_after_value_date",
+    "review_interval_days": None,
+}
+
+
+def test_a_value_date_expiry_parses_on_a_date_valued_predicate() -> None:
+    """§10.4's one row with this behaviour, `certification.expiry`, is `date`-valued."""
+    spec = PredicateSpec.model_validate(
+        _predicate(
+            predicate_id="certification.expiry",
+            legal_value_types=["date"],
+            expiry=VALUE_DATE_EXPIRY,
+        )
+    )
+    assert spec.expiry.behaviour is ExpiryBehaviour.BLOCK_ACTIVE_USE_AFTER_VALUE_DATE
+
+
+@pytest.mark.parametrize(
+    "value_types",
+    [
+        ["year_month"],
+        ["date_range"],
+        ["string"],
+        # A row that is date-valued *as well as* something else is the same hole: the fact chooses
+        # which spelling it uses, so one legal type without a date leaves that fact unblockable.
+        ["date", "string"],
+    ],
+)
+def test_a_value_date_expiry_on_a_value_type_with_no_date_is_refused(
+    value_types: list[str],
+) -> None:
+    """The multi-tenancy shape of a silent hole, refused where it is authored.
+
+    `block_active_use_after_value_date` blocks a fact after the date its VALUE carries, and
+    `completeness._declared_expiry` reads that date from the kinds in `VALUE_DATE_KINDS`. A row
+    pairing the behaviour with any other value type produced a fact that was never blocked at any
+    `as_of` — no finding, no code, nothing to notice. `legal_value_types` is versioned USER data, so
+    a second user's catalog reaches this without anyone touching code; refusing the pairing at
+    authoring time turns the silence into one loud error, and keeps the rule in one place instead of
+    teaching the expiry check about every value kind.
+    """
+    with pytest.raises(ValidationError, match="block_active_use_after_value_date"):
+        PredicateSpec.model_validate(
+            _predicate(legal_value_types=value_types, expiry=VALUE_DATE_EXPIRY)
+        )
+
+
+def test_a_value_type_with_no_date_is_fine_under_any_other_expiry_behaviour() -> None:
+    """The negative control: the refusal is about the PAIRING, not about the value type.
+
+    `technology.used` is `skill_ref` and expires `never`, and every other §10.4 row is some value
+    type that carries no date at all. A rule that refused those would refuse the shipped catalog.
+    """
+    spec = PredicateSpec.model_validate(
+        _predicate(legal_value_types=["year_month", "skill_ref"])
+    )
+    assert spec.expiry.behaviour is ExpiryBehaviour.NEVER
+
+
 def test_application_only_policy_cannot_admit_resume_or_public() -> None:
     """§10.4 makes `application_only` a second latch, so a widened maximum must still fail."""
     with pytest.raises(ValidationError):
