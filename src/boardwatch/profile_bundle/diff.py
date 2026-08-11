@@ -34,7 +34,7 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from typing import Any, Final
 
-from pydantic import BaseModel
+from pydantic import BaseModel, ValidationError
 
 from boardwatch.profile_bundle.canonical import record_digest
 from boardwatch.profile_bundle.errors import ProfileBundleError
@@ -45,6 +45,10 @@ from boardwatch.profile_bundle.models.documents import BundleDocuments, Document
 #: because `None` is a legitimate value for several fields and a merge that confused the two would
 #: treat "absent" as "explicitly null".
 NO_BASE: Final = object()
+
+#: `DocumentMergeConflict.field` for a refusal that belongs to the document as a whole rather than
+#: to one of its fields. Named so `rebase` can report it without matching on a bare string.
+_WHOLE_DOCUMENT: Final = "<document>"
 
 
 @dataclass(frozen=True)
@@ -120,7 +124,10 @@ def merge_document(
 
     The result is built through `model_validate`, not `model_copy`, so every document-level
     invariant the wrapper declares — unique ordering, claim-type ownership, contacts belonging to
-    the one person — is re-checked on the merged value rather than assumed from its parts.
+    the one person — is re-checked on the merged value rather than assumed from its parts. Two sides
+    that are each valid can merge into a document that is not, so that re-check is a *refusal* the
+    caller must handle: it is translated into `DocumentMergeConflict` here, at the raise site, so no
+    caller has to recognise a `pydantic.ValidationError` escaping a merge.
     """
     if type(ours) is not type(theirs):
         raise DocumentMergeConflict(
@@ -136,7 +143,14 @@ def merge_document(
             getattr(ours, name),
             getattr(theirs, name),
         )
-    return type(theirs).model_validate(merged)
+    try:
+        return type(theirs).model_validate(merged)
+    except ValidationError as exc:
+        raise DocumentMergeConflict(
+            _WHOLE_DOCUMENT,
+            "both sides are valid on their own but the merged document is not: "
+            + "; ".join(error["msg"] for error in exc.errors()),
+        ) from exc
 
 
 def merge_values(name: str, base: Any, ours: Any, theirs: Any) -> Any:

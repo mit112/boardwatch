@@ -534,6 +534,34 @@ def test_a_conflict_keeps_the_drafts_own_value(tmp_path: Path) -> None:
     assert _skills(conflicting.draft).skills[0].canonical_name == DRAFT_RENAME
 
 
+def test_a_merged_document_that_fails_its_own_validator_is_a_typed_refusal(scene: Scene) -> None:
+    """Two individually valid sides, one invalid merge. Never an exception out of `rebase_draft`."""
+    changes = PurePosixPath("history/changes.yaml")
+
+    def append_own_entry(data: Any) -> None:
+        entry = copy.deepcopy(data["changes"][0])
+        entry["change_id"] = "change.mine.000002"
+        entry["revision"] = 2
+        entry["parent_bundle_digest"] = scene.parent.bundle_digest
+        entry["summary"] = "the owner's own note in the draft ledger"
+        data["changes"].append(entry)
+
+    _edit_document(scene.draft, changes, append_own_entry)
+    # Each side still loads on its own; only the merge of the two is invalid.
+    assert changes in load_documents(scene.draft, mode="draft").by_path
+    assert changes in load_documents(scene.current.revision_dir, mode="revision").by_path
+    before = _snapshot(scene.bundle_root)
+
+    outcome = rebase_draft(scene.bundle_root, name=DRAFT_NAME)
+
+    assert outcome.exit_code == 1
+    assert _codes(outcome) == [IssueCode.DRAFT_REBASE_CONFLICT]
+    assert outcome.diagnostics[0].path == changes.as_posix()
+    # The validator's own sentence reaches the operator rather than a traceback.
+    assert "contiguous" in outcome.diagnostics[0].message
+    assert _snapshot(scene.bundle_root) == before
+
+
 # --------------------------------------------------------------------------------------
 # One side deleted a document the other side changed
 # --------------------------------------------------------------------------------------
