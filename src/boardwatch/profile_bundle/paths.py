@@ -32,9 +32,23 @@ _BARE_DIGEST_RE: Final = re.compile(r"^[0-9a-f]{64}$")
 # filesystem. The interior admits `.` and `-` because the rebase backup name is itself a draft
 # directory (`<name>.pre-rebase-sha256-<64hex>`), and a grammar that rejected it would make the
 # drain unrepresentable. A trailing separator is refused so no name can be a prefix-with-dot of
-# another, and 96 characters leaves room for the longest derived suffix inside filesystem limits.
+# another.
 _DRAFT_NAME_RE: Final = re.compile(r"^[a-z0-9](?:[a-z0-9._-]*[a-z0-9])?$")
+
+#: The longest name this module derives from a draft name: the rebase backup's
+#: `.pre-rebase-sha256-<64hex>`. Computed rather than counted, so the two caps below stay consistent
+#: with the grammar `rebase_backup_name` actually emits.
+_LONGEST_DERIVED_SUFFIX: Final = len(f".pre-rebase-{'sha256-' + '0' * 64}")
+
+#: The cap on a name an operator or agent supplies.
 MAX_DRAFT_NAME_LENGTH: Final = 96
+
+#: The cap on any draft *directory* name, which includes the ones this module derives. It has to
+#: exceed `MAX_DRAFT_NAME_LENGTH` by the derived suffix: capping both at 96 would mean every legal
+#: draft name longer than `96 - 83` derived a backup name its own grammar refused, so it could never
+#: be rebased and `promote` would report `stale_draft_parent` for it forever. The sum is still far
+#: inside the 255-byte per-component limit the filesystems Boardwatch runs on enforce.
+MAX_DRAFT_SEGMENT_LENGTH: Final = MAX_DRAFT_NAME_LENGTH + _LONGEST_DERIVED_SUFFIX
 
 BUNDLE_DIR_NAME: Final = "career-profile"
 CURRENT_FILE: Final = "CURRENT"
@@ -94,11 +108,28 @@ def digest_token(value: str) -> str:
 
 
 def require_draft_name(name: str) -> str:
-    """Return `name` if it matches the closed draft-name grammar, else raise."""
-    if not name or len(name) > MAX_DRAFT_NAME_LENGTH or not _DRAFT_NAME_RE.match(name):
+    """Return `name` if it matches the closed draft-name grammar, else raise.
+
+    For a name that came from an operator or an agent. A name this module *derived* goes through
+    `require_draft_segment`, which admits the derived suffix as well.
+    """
+    return _require_draft_segment(name, MAX_DRAFT_NAME_LENGTH)
+
+
+def require_draft_segment(name: str) -> str:
+    """Return `name` if it is a legal draft directory name, including a derived one, else raise.
+
+    Same grammar, the longer cap. Used where the subject is a directory that already exists — a
+    rebase backup an inventory found under `drafts/`, say — rather than a name being requested.
+    """
+    return _require_draft_segment(name, MAX_DRAFT_SEGMENT_LENGTH)
+
+
+def _require_draft_segment(name: str, limit: int) -> str:
+    if not name or len(name) > limit or not _DRAFT_NAME_RE.match(name):
         raise BundlePathError(
             f"draft name {name!r} is not a single lowercase path segment matching "
-            f"{_DRAFT_NAME_RE.pattern} within {MAX_DRAFT_NAME_LENGTH} characters"
+            f"{_DRAFT_NAME_RE.pattern} within {limit} characters"
         )
     return name
 
@@ -141,9 +172,13 @@ def rebase_backup_name(name: str, old_parent_digest: str | None) -> str:
 
     Deterministic on purpose: a second rebase of the same draft from the same parent must land on
     the same path so it can be compared byte-for-byte instead of accumulating numbered backups.
+
+    The derived name is re-checked against the grammar — confinement is not inherited from the input
+    just because the suffix looks safe — but against the segment cap, because the suffix is this
+    module's own and refusing it would refuse the draft rather than the name.
     """
     token = ROOT_PARENT_TOKEN if old_parent_digest is None else digest_token(old_parent_digest)
-    return require_draft_name(f"{require_draft_name(name)}.pre-rebase-{token}")
+    return require_draft_segment(f"{require_draft_name(name)}.pre-rebase-{token}")
 
 
 def rebase_backup_root(bundle_root: Path, name: str, old_parent_digest: str | None) -> Path:

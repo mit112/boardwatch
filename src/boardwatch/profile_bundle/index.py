@@ -272,6 +272,16 @@ def _document_records(document: DocumentModel) -> Iterator[tuple[str, BaseModel]
                 yield kind, item
 
 
+def record_ids_in_document(document: DocumentModel) -> tuple[str, ...]:
+    """Every addressable record ID one document owns, in the order the document declares them.
+
+    Exposed for the rebase, which has to name the records a one-sided document deletion would
+    discard before there is any merged tree to index. It delegates to the same walk `build_index`
+    uses, so "which values are records" keeps one definition.
+    """
+    return tuple(record_id_of(record) for _, record in _document_records(document))
+
+
 def build_index(documents: BundleDocuments) -> BundleIndex:
     """Index one parsed logical tree. Never raises on a duplicate; it collects them."""
     records: dict[str, BaseModel] = {}

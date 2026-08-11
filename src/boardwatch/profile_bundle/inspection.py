@@ -87,7 +87,7 @@ from boardwatch.profile_bundle.paths import (
     drafts_dir,
     local_sources_path,
     require_bare_digest,
-    require_draft_name,
+    require_draft_segment,
     revisions_dir,
 )
 from boardwatch.profile_bundle.storage import (
@@ -355,6 +355,10 @@ def _draft_names(
     because only one of them is a claim about what a Boardwatch command did. The prefix is read from
     the writer that produces it, exactly as the blob store's is, so an operator's own `NOTES.txt` is
     never described as an interrupted install.
+
+    A rebase backup is a draft directory (`paths.rebase_backup_name` says so), so the classification
+    uses the segment grammar: the operator-facing cap would report the backup of any draft named
+    longer than 13 characters as stray.
     """
     directory = drafts_dir(bundle_root)
     if not directory.is_dir():
@@ -367,7 +371,7 @@ def _draft_names(
             interrupted.append(entry.name)
             continue
         try:
-            name = require_draft_name(entry.name)
+            name = require_draft_segment(entry.name)
         except BundlePathError:
             stray.append(entry.name)
             continue

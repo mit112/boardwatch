@@ -14,6 +14,7 @@ import pytest
 
 from boardwatch.profile_bundle.errors import BundlePathError
 from boardwatch.profile_bundle.paths import (
+    MAX_DRAFT_NAME_LENGTH,
     approval_path,
     approvals_dir,
     blob_path,
@@ -23,6 +24,7 @@ from boardwatch.profile_bundle.paths import (
     drafts_dir,
     local_sources_path,
     lock_path,
+    rebase_backup_name,
     resolve_bundle_root,
     revision_root,
     revisions_dir,
@@ -59,6 +61,20 @@ def test_derived_and_ordinary_draft_names_are_accepted(name: str, tmp_path: Path
 def test_hostile_or_overlong_draft_names_are_rejected(name: str, tmp_path: Path) -> None:
     with pytest.raises(BundlePathError):
         draft_root(tmp_path, name)
+
+
+@pytest.mark.parametrize("name", ["w", "my-work-branch", "a" * MAX_DRAFT_NAME_LENGTH])
+def test_every_admitted_draft_name_derives_a_backup_name_that_is_also_admitted(name: str) -> None:
+    """The two caps are one rule, not two numbers: any name `checkout` accepts must be rebasable.
+
+    A 14-character name is a legitimate input, so a cap that refused its derived backup name would
+    strand the draft — it could never be re-parented, and `promote` would refuse it forever.
+    """
+    derived = rebase_backup_name(name, "sha256:" + "0" * 64)
+
+    assert derived == f"{name}.pre-rebase-sha256-" + "0" * 64
+    # The outside fact the caps exist for: one path component is at most 255 bytes.
+    assert len(derived.encode("utf-8")) <= 255
 
 
 def test_fixed_root_members_are_the_closed_set(tmp_path: Path) -> None:
