@@ -110,56 +110,57 @@ and is a no-op when the index is already right. `make index-check` reports drift
 | D-074 | DECISIONS-ARCHIVE.md | 3009 | Final eligibility gate lane SHIPPED (persistent, agent-lane, fail-open); Gate P5 unchanged |
 | D-075 | DECISIONS-ARCHIVE.md | 3084 | Gate P2 reconciled: three individually-correct verdicts (may coincide); ≥3-field mechanism via fixtures |
 | D-076 | DECISIONS-ARCHIVE.md | 3153 | P2 item 4's final whole-branch review: what it caught, and four rulings it forced |
-| D-077 | DECISIONS.md | 166 | P6 Slice 1: the design is settled and the plan is written; no code exists yet |
-| D-078 | DECISIONS.md | 256 | P6 Slice 1: the plan's test fixtures are now real; eleven defects, all found by running code |
-| D-079 | DECISIONS.md | 345 | P6 Slice 1 annotates only; `postings.job_id` is not mutated |
-| D-080 | DECISIONS.md | 359 | `content_hash` alone may never suppress |
-| D-081 | DECISIONS.md | 373 | `exact_quad` is the sole suppressing kind, and its yield is stated honestly |
-| D-082 | DECISIONS.md | 391 | `cross_host` ships annotate-only, reversing an earlier draft |
-| D-083 | DECISIONS.md | 412 | No location evidence ⇒ no location-bearing identity, never a `"[]"` sentinel |
-| D-084 | DECISIONS.md | 427 | Three host classes, not two; matching is exact-or-dot-suffix |
-| D-085 | DECISIONS.md | 441 | Allowlist URL normalization, not a denylist |
-| D-086 | DECISIONS.md | 455 | Survivor election never consults score; `posting_id` is a load-bearing tiebreak |
-| D-087 | DECISIONS.md | 470 | Instrumentation is completeness-gated, not existence-gated |
-| D-088 | DECISIONS.md | 484 | `assisted` stays `None` in this slice |
-| D-089 | DECISIONS.md | 499 | Identities are upserted on every observation; a kind that stops being produced is deleted |
-| D-090 | DECISIONS.md | 516 | The ranker is completeness-gated for reproducibility, not safety |
-| D-091 | DECISIONS.md | 534 | The recount recomputes in Python, and claims staleness only |
-| D-092 | DECISIONS.md | 549 | Identities are backfilled by an explicit command, not by the migration |
-| D-093 | DECISIONS.md | 563 | Slice 1 does NOT meet Gate P6, and makes only one of its four clauses measurable |
-| D-094 | DECISIONS.md | 577 | P6 Slice 1 BUILT (unattended run): five more plan defects, three of them tests that could not fail |
-| D-095 | DECISIONS.md | 705 | P6 Slice 1 reviewed by three independent reviewers; fourteen findings fixed, two rejected |
-| D-096 | DECISIONS.md | 770 | The C++/C# fix folds punctuation into words; it does NOT add a raw-title comparison |
-| D-097 | DECISIONS.md | 814 | `_verify_quad` rejected nothing on the live corpus; "string-verified" is not precision evidence |
-| D-098 | DECISIONS.md | 843 | Suppression reports when it is OFF; wiring backfill into the pipeline is Slice 2 |
-| D-099 | DECISIONS.md | 879 | Gate batching stays allowed; the per-task fast-check set must include the schema guards |
-| D-100 | DECISIONS.md | 905 | P6 Slice 1 merged to `main`; Gate P6 clause 3 is MET, not merely measurable |
-| D-101 | DECISIONS.md | 937 | Gate P6 clause 4 is MET: 20/20 sampled suppressions are genuine duplicates |
-| D-102 | DECISIONS.md | 967 | D-072 (model-tier benchmark) is deferred indefinitely |
-| D-103 | DECISIONS.md | 989 | P6 Slice 2: the ledger is a current-state row per job, `seen` suppresses on a TTL, and the policy stamp never auto-reopens |
-| D-104 | DECISIONS.md | 1061 | Job regrouping: the survivor's job wins, and a tracked group is refused whole |
-| D-105 | DECISIONS.md | 1104 | Identity writes move into the scan path, closing D-098 — and D-098's cost argument did not apply |
-| D-106 | DECISIONS.md | 1135 | Two consequences the build forced: what earns a permanent `skipped`, and the zero-output guard |
-| D-107 | DECISIONS.md | 1161 | P6 Slice 2 BUILT and verified on real data; `cross_host` dereference deferred by measured absence |
-| D-108 | DECISIONS.md | 1210 | The decision log and the metrics log are archive-split; the reading protocol moves into the index |
-| D-109 | DECISIONS.md | 1269 | Index drift fails the gate, and the fixer lives in `tools/` |
-| D-110 | DECISIONS.md | 1347 | The Slice 2 review: only a caller that delivers a lead may consume the queue |
-| D-111 | DECISIONS.md | 1464 | P6 Slice 3: applied-state suppression, and liveness sized to what the corpus actually is |
-| D-112 | DECISIONS.md | 1633 | 0.3.0 is cut, the changelog gets ONE triple, and the tag is the owner's to push |
-| D-113 | DECISIONS.md | 1737 | The Slice 3 external review: a followed redirect can forge a gone-status |
-| D-114 | DECISIONS.md | 1825 | CI installs tectonic and pdfinfo on all three OSes; skipping the gate was refused |
-| D-115 | DECISIONS.md | 1893 | Gate A of the career-profile bundle: 9 of 19 slices, and a rule for checks that cannot fire |
-| D-116 | DECISIONS.md | 1975 | A docs-only commit owes the two fast gates, not the full suite; the tectonic pin gets a detector |
-| D-117 | DECISIONS.md | 2022 | 0.3.0's tag moves rather than 0.3.1 being cut; gitleaks fixed by cleaning bytes, not allowlisting |
-| D-118 | DECISIONS.md | 2072 | Gate A slice T10: effectiveness derived in one place, and two more §20.4 rows with no check |
-| D-119 | DECISIONS.md | 2169 | 0.3.0 is PUBLISHED: the tag moved onto a CI-green commit, and ships two known BLOCKERs deliberately |
-| D-120 | DECISIONS.md | 2237 | Gate A slice T12: the résumé emission order is fixed, and three more checks that cannot fire |
-| D-121 | DECISIONS.md | 2320 | The T12 review: a green gate and a perfect mutation score hid five BLOCKING defects |
-| D-122 | DECISIONS.md | 2381 | The T12 re-review: one defect the fix created, two contracts never enforced, and a decline that was wrong |
-| D-123 | DECISIONS.md | 2504 | A recurring trigger holding a one-shot prompt re-fires a task that already shipped |
-| D-124 | DECISIONS.md | 2549 | The third T12 review: the locator grammar keeps failing because it restates the emitter instead of deriving from it |
-| D-125 | DECISIONS.md | 2614 | The T12 round-three fix, and two more reviews of it: a forbidden segment is escaped, never refused |
-| D-126 | DECISIONS.md | 2746 | T12's review loop is CLOSED, with a stated exit criterion |
+| D-077 | DECISIONS.md | 167 | P6 Slice 1: the design is settled and the plan is written; no code exists yet |
+| D-078 | DECISIONS.md | 257 | P6 Slice 1: the plan's test fixtures are now real; eleven defects, all found by running code |
+| D-079 | DECISIONS.md | 346 | P6 Slice 1 annotates only; `postings.job_id` is not mutated |
+| D-080 | DECISIONS.md | 360 | `content_hash` alone may never suppress |
+| D-081 | DECISIONS.md | 374 | `exact_quad` is the sole suppressing kind, and its yield is stated honestly |
+| D-082 | DECISIONS.md | 392 | `cross_host` ships annotate-only, reversing an earlier draft |
+| D-083 | DECISIONS.md | 413 | No location evidence ⇒ no location-bearing identity, never a `"[]"` sentinel |
+| D-084 | DECISIONS.md | 428 | Three host classes, not two; matching is exact-or-dot-suffix |
+| D-085 | DECISIONS.md | 442 | Allowlist URL normalization, not a denylist |
+| D-086 | DECISIONS.md | 456 | Survivor election never consults score; `posting_id` is a load-bearing tiebreak |
+| D-087 | DECISIONS.md | 471 | Instrumentation is completeness-gated, not existence-gated |
+| D-088 | DECISIONS.md | 485 | `assisted` stays `None` in this slice |
+| D-089 | DECISIONS.md | 500 | Identities are upserted on every observation; a kind that stops being produced is deleted |
+| D-090 | DECISIONS.md | 517 | The ranker is completeness-gated for reproducibility, not safety |
+| D-091 | DECISIONS.md | 535 | The recount recomputes in Python, and claims staleness only |
+| D-092 | DECISIONS.md | 550 | Identities are backfilled by an explicit command, not by the migration |
+| D-093 | DECISIONS.md | 564 | Slice 1 does NOT meet Gate P6, and makes only one of its four clauses measurable |
+| D-094 | DECISIONS.md | 578 | P6 Slice 1 BUILT (unattended run): five more plan defects, three of them tests that could not fail |
+| D-095 | DECISIONS.md | 706 | P6 Slice 1 reviewed by three independent reviewers; fourteen findings fixed, two rejected |
+| D-096 | DECISIONS.md | 771 | The C++/C# fix folds punctuation into words; it does NOT add a raw-title comparison |
+| D-097 | DECISIONS.md | 815 | `_verify_quad` rejected nothing on the live corpus; "string-verified" is not precision evidence |
+| D-098 | DECISIONS.md | 844 | Suppression reports when it is OFF; wiring backfill into the pipeline is Slice 2 |
+| D-099 | DECISIONS.md | 880 | Gate batching stays allowed; the per-task fast-check set must include the schema guards |
+| D-100 | DECISIONS.md | 906 | P6 Slice 1 merged to `main`; Gate P6 clause 3 is MET, not merely measurable |
+| D-101 | DECISIONS.md | 938 | Gate P6 clause 4 is MET: 20/20 sampled suppressions are genuine duplicates |
+| D-102 | DECISIONS.md | 968 | D-072 (model-tier benchmark) is deferred indefinitely |
+| D-103 | DECISIONS.md | 990 | P6 Slice 2: the ledger is a current-state row per job, `seen` suppresses on a TTL, and the policy stamp never auto-reopens |
+| D-104 | DECISIONS.md | 1062 | Job regrouping: the survivor's job wins, and a tracked group is refused whole |
+| D-105 | DECISIONS.md | 1105 | Identity writes move into the scan path, closing D-098 — and D-098's cost argument did not apply |
+| D-106 | DECISIONS.md | 1136 | Two consequences the build forced: what earns a permanent `skipped`, and the zero-output guard |
+| D-107 | DECISIONS.md | 1162 | P6 Slice 2 BUILT and verified on real data; `cross_host` dereference deferred by measured absence |
+| D-108 | DECISIONS.md | 1211 | The decision log and the metrics log are archive-split; the reading protocol moves into the index |
+| D-109 | DECISIONS.md | 1270 | Index drift fails the gate, and the fixer lives in `tools/` |
+| D-110 | DECISIONS.md | 1348 | The Slice 2 review: only a caller that delivers a lead may consume the queue |
+| D-111 | DECISIONS.md | 1465 | P6 Slice 3: applied-state suppression, and liveness sized to what the corpus actually is |
+| D-112 | DECISIONS.md | 1634 | 0.3.0 is cut, the changelog gets ONE triple, and the tag is the owner's to push |
+| D-113 | DECISIONS.md | 1738 | The Slice 3 external review: a followed redirect can forge a gone-status |
+| D-114 | DECISIONS.md | 1826 | CI installs tectonic and pdfinfo on all three OSes; skipping the gate was refused |
+| D-115 | DECISIONS.md | 1894 | Gate A of the career-profile bundle: 9 of 19 slices, and a rule for checks that cannot fire |
+| D-116 | DECISIONS.md | 1976 | A docs-only commit owes the two fast gates, not the full suite; the tectonic pin gets a detector |
+| D-117 | DECISIONS.md | 2023 | 0.3.0's tag moves rather than 0.3.1 being cut; gitleaks fixed by cleaning bytes, not allowlisting |
+| D-118 | DECISIONS.md | 2073 | Gate A slice T10: effectiveness derived in one place, and two more §20.4 rows with no check |
+| D-119 | DECISIONS.md | 2170 | 0.3.0 is PUBLISHED: the tag moved onto a CI-green commit, and ships two known BLOCKERs deliberately |
+| D-120 | DECISIONS.md | 2238 | Gate A slice T12: the résumé emission order is fixed, and three more checks that cannot fire |
+| D-121 | DECISIONS.md | 2321 | The T12 review: a green gate and a perfect mutation score hid five BLOCKING defects |
+| D-122 | DECISIONS.md | 2382 | The T12 re-review: one defect the fix created, two contracts never enforced, and a decline that was wrong |
+| D-123 | DECISIONS.md | 2505 | A recurring trigger holding a one-shot prompt re-fires a task that already shipped |
+| D-124 | DECISIONS.md | 2550 | The third T12 review: the locator grammar keeps failing because it restates the emitter instead of deriving from it |
+| D-125 | DECISIONS.md | 2615 | The T12 round-three fix, and two more reviews of it: a forbidden segment is escaped, never refused |
+| D-126 | DECISIONS.md | 2747 | T12's review loop is CLOSED, with a stated exit criterion |
+| D-127 | DECISIONS.md | 2803 | Gate A slices T13 and T14: an approval bound to nothing, and the first code that WRITES a bundle |
 
 ---
 
@@ -2796,3 +2797,126 @@ precisely because a future session reading "five REWORKs" will otherwise reopen 
 
 **Consequence.** T12 is done. **Next: T14 onward**, with T13's first review in flight. Gate B stays
 prohibited until Gate A is complete.
+
+---
+
+## D-127 — Gate A slices T13 and T14: an approval bound to nothing, and the first code that WRITES a bundle
+
+*2026-08-11, overnight autonomous run. T13 (reports, digest validation, completeness, the validation
+run) and T14 (one-read storage, drafts, inspection, the production YAML emitter). Gate A remains NOT
+met; T15–T19 follow.*
+
+### T13's review found an approval that bound to nothing
+
+The §20.6 clause tying an owner's approval to promoted content — the revision's inverse candidate view
+must recompute the digest carried by both its manifest and its appended stamp — was **skipped for every
+revision from 2 onward**. `_the_candidate_view_recomputes_its_approved_digest` returned early whenever
+the manifest declared a parent and no `ParentSnapshot` had been supplied, and `validate_bundle` never
+constructs one.
+
+**Consequence, reproduced:** re-seal a revision-2 tree around documents nobody approved — recompute the
+bundle digest, rename the directory, rewrite `COMPLETE` and `CURRENT` — and every remaining digest check
+passes, because every remaining digest is recomputed from the new bytes. The one comparison standing
+between that forgery and a clean report was the one that returned early.
+
+**The early return's justification was wrong**, and that is the transferable part. It cited §20.6's
+"validating an already-selected revision does not deep-parse ancestors". But the candidate view reads
+only the parent's `revision` and `bundle_digest` — what the `StableManifestEnvelope` in §7 explicitly
+permits history traversal to read — and `completeness._ancestor_manifest` **already read exactly that
+from disk on the same code path**. The check could always have run.
+
+**Fix: one reader, not two.** `completeness._ancestor_manifest` was extracted verbatim into
+`digest.read_ancestor_manifest`, with `AncestorFault` and `AncestorUnverifiable` moving with it; the
+completeness function became a four-line wrapper keeping its typed reasons and its opt-in byte audit. A
+second ancestor reader would have been the defect class D-125 is about. `_parent_envelope` raises rather
+than returning `None` for an unreadable parent, because `None` is a real answer — revision 1 has no
+parent — and conflating the two would compare a child against a parentless candidate view and report
+every child revision as a forgery.
+
+**Verified three ways by the orchestrating session, not by the author.** A probe written from the
+finding's CLAIM rather than from the fix, run in a worktree pinned to each commit:
+
+| Run | revision-1 control | revision-2 forged |
+|---|---|---|
+| pre-fix `2e6f667` | fires (2) | **0** |
+| post-fix `353debb` | fires (2) | **2** |
+| fix mutated (parent never resolved from disk) | fires (2) | **0** |
+
+The control firing in all three runs is what makes the revision-2 silence mean "the check did not run"
+rather than "the forgery failed". The mutation restoring the exact pre-fix output is what makes the fix
+load-bearing rather than incidental.
+
+### The expiry ruling: the EARLIER of the two declared dates wins
+
+`fact_value_expired` keyed only on the `expires_at` column, but §10.4's row for `certification.expiry`
+is "block active use after **value date**" and the fact's value IS that date. A credential that lapsed
+years ago with `expires_at: null` stayed `verified`, kept `resume` in its allowed surfaces, and was
+counted in surface coverage — a résumé built from the bundle would assert it.
+
+`_declared_expiry` now returns the **earlier** of the two, with `details["declared_by"]` typed as
+`value | expires_at | both`. **Earlier, not later**, because a rule where the later date wins lets an
+author revive a lapsed credential by writing a column date past the one the credential itself carries.
+The packaged example sets both dates identically, which is exactly why no existing test distinguished
+them.
+
+The follow-up round then closed the hole at its source rather than at the reader: `models/facts.py`
+gained `VALUE_DATE_KINDS`, and `PredicateSpec` now **refuses** `block_active_use_after_value_date` when
+any legal value type lies outside it. The admitted set is defined as *the kinds the expiry check
+actually reads* — not the kinds a date is *derivable* from, which would have admitted `year_month` and
+`date_range` and left the hole exactly where it was. One constant, two readers.
+
+### An unmeasured digest is not a clean one
+
+The candidate-digest comparison is skipped when the parent is absent. That silence was byte-identical to
+"compared and clean". `IssueCode.CANDIDATE_DIGEST_UNVERIFIED` was added — a **widening of a closed
+catalog**, which this program treats as a contract change needing justification, and the justification
+is that without it the two states cannot be told apart from the report. It reports at information tier
+and changes no exit code. Three existing tests asserted the silence and now assert the visible form.
+
+### T14 is the first code in this package that WRITES
+
+`init_draft` cannot be built on `yaml.safe_dump`: measured, it emits plain scalars the restricted loader
+refuses for **6 of the 33** packaged example documents. `yaml_writer.document_bytes` force-quotes
+strings and then **verifies rather than restates** — it reads its own bytes back through
+`load_yaml_bytes` and compares, so the loader's grammar exists in one place. Verified independently: 33
+of 33 round-trip.
+
+**`init` writes a deliberately invalid draft, and that is the right shape.** `IdentityDocument.person`
+requires a display name and dates, and this package reads no clock, so `init` cannot author
+`facts/identity.yaml` without inventing a person. Verified: a fresh `init` writes 30 files, exits 0, and
+`validate --draft` reports **exactly one** finding, `missing_required_file (facts/identity.yaml)`. A
+placeholder person that survived to promotion would be a fact nobody authored. **T18 owes the operator
+a human translation of that message** — it currently reads as corruption rather than "author your
+identity here".
+
+**`init` writes the installed secret-scan ruleset, not an empty one** — an empty
+`policy/secret-scan.yaml` would make the first revision claim a scan it never ran. Read from the module
+at call time, never by-name import; that snapshotting defect has bitten this repo before.
+
+### T14's two reviews: four BLOCKING, and one of them is class-level
+
+Both lenses returned REWORK. The findings are recorded in full in
+`scratchpad/T14-REVIEW-FINDINGS.md`; the two that generalize:
+
+**The symlink confinement escape is not about `drafts/`.** The conformance lens found that a symlinked
+`drafts/` escapes the bundle root while `init` still returns clean, exit 0. Extending it, **every**
+declared root member does: `drafts`, `blobs`, `approvals`, `revisions`. `approvals/` and `revisions/`
+show zero escaped files today only because `init` writes nothing into them **yet** — T16's promotion
+writes both. `paths.py`'s own docstring says derivation IS the confinement boundary. The fix must be
+**one check applied to every member of `ROOT_MEMBERS`**, at the point the root is resolved, so every
+present and future writer inherits it. Four per-directory guards would be the restated-rule defect class
+this program has spent five review rounds on.
+
+**A test that asserts the defect it guards against.** `_referenced` returns `None` for "could not read"
+and its docstring says "`None` is distinct from empty on purpose"; one function up, both
+`referenced_blobs` and `unreferenced_blobs` collapse `None` to `()`. The guarding test is docstringed
+"Empty and unmeasured are different answers" and then asserts they are byte-identical. It cannot fail
+when the distinction is absent. Same class as the mutation survivor in D-125.
+
+### Consequence and standing
+
+T13 is merged at `c0020e8`; its follow-up (`t13-followup`, `4bd3c49`) is green and **ungated**. T14's
+build is at `d681653` and its fix round at `d441e2d` is **UNVERIFIED** — the author was terminated
+mid-round by a usage limit and never reported, so no account of the mapping from findings to changes
+exists and it must be re-derived from the diff before merge. **Neither is pushed.** Gate A is NOT met;
+Gate B stays prohibited.

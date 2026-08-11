@@ -31,17 +31,36 @@ whose old link points at a dead path on a new host.
 **Next action: P6 has nothing left to BUILD — its last two gate clauses need the system RUN.** Duplicate
 leakage needs 7 days of runs (the window must start after D-110, which changed which callers advance the
 queue), and "0 dead postings" needs a real run whose leads are actually probed. So the useful work is, in
-order: (1) start accumulating real daily runs, gated on Mit's `resume.yaml` fix below; (2) Gate A — review
-the T12 round-four/five fix, review and merge T13, then T14; (3) P2 item 8 or P3 slice 5, both owner-gated
-and both wanting their own context window.
+order: (1) start accumulating real daily runs, gated on Mit's `resume.yaml` fix below; (2) Gate A —
+finish T14–T19 per the branch table below; (3) P2 item 8 or P3 slice 5, both owner-gated and both
+wanting their own context window.
 
-**Gate A's remaining slices are T14–T19**: one-read storage/checkout/inspect (T14, in progress on
-`t14-storage`), draft rebase + backup drain (T15), crash-consistent promotion (T16), schema-v1
-bootstrap (T17), the `profile-bundle` CLI (T18), and the authoring contract + final gate (T19).
+### Gate A branch table — where every unmerged slice stands (2026-08-11)
 
-**This file is 286 lines against a ~170 target and is still OWED a trim.** It grew again here because Gate
+`main` is at `02ee167`. **Nothing below is pushed.** Every branch is local; `docs/superpowers/` holds
+the design and plan and is untracked — copy it into any worktree you create.
+
+| Branch | Head | Stands where |
+|---|---|---|
+| `t13-followup` | `4bd3c49` | Three fixes to T13's second review, **green (1509) but ungated**. Adds `IssueCode.CANDIDATE_DIGEST_UNVERIFIED` — a closed-catalog widening, justified in D-127. Ready to gate and merge. |
+| `t14-storage` | `d441e2d` | Fix round for T14's four BLOCKING + six SHOULD-FIX. **`d441e2d` is UNVERIFIED** — its author was killed mid-round by a usage limit and never reported, so no account of it exists. Green (1478) and ruff-clean; the findings-to-changes mapping must be re-derived from the diff before it merges. Findings are in `scratchpad/T14-REVIEW-FINDINGS.md`. |
+| `t15-rebase` | `e9ab3bc` | Built: record-level draft rebase, the shared `filelock` writer lock, the backup drain. 54 new tests, 1511 green. **Reviewed by nobody** — both lenses died at dispatch. |
+| `t16-promotion` | `e9ab3bc` | **Not started.** The branch exists but is identical to `t15-rebase`; the build agent died before its first edit. Its carried debt is in `scratchpad/CARRIED-DEBT.md`. |
+| `t17-schema` | `7626d32` | Built: schema-v1 bootstrap and the migration no-op. **Reviewed by nobody** — the light review died before its first probe. |
+| T18, T19 | — | Not started. T18 is the `profile-bundle` CLI, the first non-inert surface. T19 is the authoring contract and the final Gate A gate. |
+
+**T14's fix must be merged forward into `t15-rebase`, `t16-promotion` and `t17-schema` before any of
+them lands** — it fixes a symlink confinement escape that applies to *every* declared root member,
+and T15's backup and T16's promotion temporary both inherit it. Do not add a second guard downstream.
+
+**`t14-storage` and everything branched from it are behind `main`** — they fork at `2e6f667`, before
+T13 merged. Merge `main` in before gating, or the gate measures a tree nobody will ship.
+
+**This file is 318 lines against a ~170 target and is still OWED a trim.** It grew again here because Gate
 A's standing genuinely grew. The next trim should compress the P6 narrative, which is now fully recorded in
-D-110/D-111/D-113 — not the "standing facts" list, which is the whole point of the file.
+D-110/D-111/D-113 — not the "standing facts" list, which is the whole point of the file. **The Gate A
+branch table above is deliberately exempt**: it is the only record of six unmerged local branches, and it
+shrinks to one line the moment they land.
 
 **A green `make check` is NOT a green CI** (D-117). `gitleaks`, `perf` and `generalization` are separate CI
 jobs `make check` never runs, and pushing turned `gitleaks` red for the first time in the project's history
@@ -56,8 +75,9 @@ reviewed" twice and declined both times.** The basis holds because the package i
 command, no bundle-to-`Resume` bridge, a test asserts both directions, nothing in a shipped code path
 reaches it. Publishing changed the release, **not** the review's standing.
 
-**A PARALLEL TRACK exists: the canonical career-profile bundle, Gate A — 13 of 19 slices built (D-115,
-D-118, D-120, D-125).** Not a P0–P7 phase; it has moved no program gate. Its design and plan live
+**A PARALLEL TRACK exists: the canonical career-profile bundle, Gate A — 16 of 19 slices built, 13
+merged (D-115, D-118, D-120, D-125, D-127).** T15 and T17 are built but unreviewed, T16/T18/T19 are
+not started. Not a P0–P7 phase; it has moved no program gate. Its design and plan live
 **untracked** under `docs/superpowers/` — read them there, and **copy that directory into any worktree you
 create**, where they otherwise vanish. `src/boardwatch/profile_bundle/` holds the typed outcomes, the
 restricted YAML loader, the closed 33-document grammar, every record model, the JSON Schema export, a

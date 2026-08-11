@@ -54,28 +54,29 @@ reports drift without writing, and `make check` depends on it (D-109).
 | METRICS-ARCHIVE.md | 1047 | Session — 2026-08-08 (P5 run #2 — disjunctive fix, Gate P5 MET at 100%; D-073) |
 | METRICS-ARCHIVE.md | 1084 | Session — 2026-08-08 (D-071b final eligibility gate build — no answer-key number changes) |
 | METRICS-ARCHIVE.md | 1120 | Gate P2 — 2026-08-08 · field-tier mechanism (P2 item 4, D-075). **MET AS RECONCILED** |
-| METRICS.md | 82 | Run log |
-| METRICS.md | 110 | Acceptance run |
-| METRICS.md | 121 | Session — 2026-08-09/10 · P6 Slice 1 design + plan. **No build, no gate movement.** |
-| METRICS.md | 147 | Session — 2026-08-10 · P6 Slice 1 BUILT (unattended run). Branch `p6-slice1`, not merged. |
-| METRICS.md | 357 | 2026-08-10 — P6 Slice 1 on the LIVE store (first real backfill) + Gate P6 clause 4 |
-| METRICS.md | 396 | Session 2026-08-10 (later) — P6 Slice 2: the durable decision ledger, its drain, and job regrouping |
-| METRICS.md | 489 | Session — 2026-08-10 (later) · D-109, the program-index gate. No phase gate moved. |
-| METRICS.md | 530 | Session — 2026-08-10 (later still) · The P6 Slice 2 review (D-110). No phase gate moved. |
-| METRICS.md | 620 | Session — 2026-08-10 (later still ×2) · P6 Slice 3, items 5 and 6 (D-111). Gate P6 unchanged: still 2 of 4. |
-| METRICS.md | 733 | Session — 2026-08-10 (later still ×3) · 0.3.0 cut and tagged (D-112). No phase gate moved. |
-| METRICS.md | 784 | Session — 2026-08-10 (later still ×4) · The Slice 3 external review (D-113) + the CI dependency fix (D-114). No phase gate moved. |
-| METRICS.md | 904 | Session — 2026-08-10 (later still ×5) · Gate A career-profile bundle, slices T1–T9 (D-115). No phase gate moved. |
-| METRICS.md | 993 | Session — 2026-08-10 (later still ×6) · The held commits are PUSHED; CI's first honest read (D-116, D-117). No phase gate moved. |
-| METRICS.md | 1068 | Session — 2026-08-10 (later still ×7) · Gate A slice T10, semantic validation (D-118). No phase gate moved. |
-| METRICS.md | 1249 | Session — 2026-08-10 · Gate A fix history reconciliation; independent T1–T10 review still owed. No phase gate moved. |
-| METRICS.md | 1273 | Session — 2026-08-10 · Independent Gate A T1–T10 review sign-off; T11 permitted. |
-| METRICS.md | 1311 | Session — 2026-08-11 · Gate A T11 implemented and reviewed. No phase gate moved. |
-| METRICS.md | 1341 | Session — 2026-08-11 (later) · Gate A T12 implemented, NOT independently reviewed. No phase gate moved. |
-| METRICS.md | 1402 | Session — 2026-08-11 (later ×2) · Gate A T12 reviewed TWICE, both REWORK, both rounds fixed. No phase gate moved. |
-| METRICS.md | 1450 | Session — 2026-08-11 (later ×3) · Gate A T12 reviewed a THIRD time, REWORK again. T13 partially built on a branch. No phase gate moved. |
-| METRICS.md | 1505 | Session — 2026-08-11 (later ×4) · T12 fixed through five reviews; T13 built. No phase gate moved. |
-| METRICS.md | 1376 | Session — 2026-08-11 (later still) · The T12 independent review (D-121) and its fix. No phase gate moved. |
+| METRICS.md | 83 | Run log |
+| METRICS.md | 111 | Acceptance run |
+| METRICS.md | 122 | Session — 2026-08-09/10 · P6 Slice 1 design + plan. **No build, no gate movement.** |
+| METRICS.md | 148 | Session — 2026-08-10 · P6 Slice 1 BUILT (unattended run). Branch `p6-slice1`, not merged. |
+| METRICS.md | 358 | 2026-08-10 — P6 Slice 1 on the LIVE store (first real backfill) + Gate P6 clause 4 |
+| METRICS.md | 397 | Session 2026-08-10 (later) — P6 Slice 2: the durable decision ledger, its drain, and job regrouping |
+| METRICS.md | 490 | Session — 2026-08-10 (later) · D-109, the program-index gate. No phase gate moved. |
+| METRICS.md | 531 | Session — 2026-08-10 (later still) · The P6 Slice 2 review (D-110). No phase gate moved. |
+| METRICS.md | 621 | Session — 2026-08-10 (later still ×2) · P6 Slice 3, items 5 and 6 (D-111). Gate P6 unchanged: still 2 of 4. |
+| METRICS.md | 734 | Session — 2026-08-10 (later still ×3) · 0.3.0 cut and tagged (D-112). No phase gate moved. |
+| METRICS.md | 785 | Session — 2026-08-10 (later still ×4) · The Slice 3 external review (D-113) + the CI dependency fix (D-114). No phase gate moved. |
+| METRICS.md | 905 | Session — 2026-08-10 (later still ×5) · Gate A career-profile bundle, slices T1–T9 (D-115). No phase gate moved. |
+| METRICS.md | 994 | Session — 2026-08-10 (later still ×6) · The held commits are PUSHED; CI's first honest read (D-116, D-117). No phase gate moved. |
+| METRICS.md | 1069 | Session — 2026-08-10 (later still ×7) · Gate A slice T10, semantic validation (D-118). No phase gate moved. |
+| METRICS.md | 1250 | Session — 2026-08-10 · Gate A fix history reconciliation; independent T1–T10 review still owed. No phase gate moved. |
+| METRICS.md | 1274 | Session — 2026-08-10 · Independent Gate A T1–T10 review sign-off; T11 permitted. |
+| METRICS.md | 1312 | Session — 2026-08-11 · Gate A T11 implemented and reviewed. No phase gate moved. |
+| METRICS.md | 1342 | Session — 2026-08-11 (later) · Gate A T12 implemented, NOT independently reviewed. No phase gate moved. |
+| METRICS.md | 1403 | Session — 2026-08-11 (later ×2) · Gate A T12 reviewed TWICE, both REWORK, both rounds fixed. No phase gate moved. |
+| METRICS.md | 1451 | Session — 2026-08-11 (later ×3) · Gate A T12 reviewed a THIRD time, REWORK again. T13 partially built on a branch. No phase gate moved. |
+| METRICS.md | 1506 | Session — 2026-08-11 (later ×4) · T12 fixed through five reviews; T13 built. No phase gate moved. |
+| METRICS.md | 1572 | Session — 2026-08-11 (later ×5) · T13 merged; T14 reviewed and partly fixed; T15 and T17 built. No phase gate moved. |
+| METRICS.md | 1377 | Session — 2026-08-11 (later still) · The T12 independent review (D-121) and its fix. No phase gate moved. |
 
 ---
 
@@ -1565,3 +1566,51 @@ again — but the parallelism bought two full review rounds and a completed T13 
 
 Gate A **not met**. T12 has every finding from five reviews fixed and is **still not signed off** —
 the round-four/five fix owes its own review. Gate B **prohibited**. Nothing pushed.
+
+---
+
+## Session — 2026-08-11 (later ×5) · T13 merged; T14 reviewed and partly fixed; T15 and T17 built. No phase gate moved.
+
+An overnight autonomous run against Gate A, ended early by a session usage limit that killed five
+subagents within seconds of each other. Recorded in D-127.
+
+### What landed
+
+| Slice | Where | Numbers |
+|---|---|---|
+| T13 | **merged to `main`** at `c0020e8` | Two reviews, both REWORK, all findings fixed. Gate: **exit 0 · 5,416 passed · 95.61% · 9m04s**. |
+| T13 follow-up | `t13-followup` `4bd3c49`, unmerged | 3 commits, **1,509 passed**, ruff + mypy clean. **Ungated.** Adds `IssueCode.CANDIDATE_DIGEST_UNVERIFIED` (closed-catalog widening). |
+| T14 | `t14-storage` `d681653` built, `d441e2d` fix | Build reviewed twice, both REWORK: **4 BLOCKING, 6 SHOULD-FIX**. Fix round **1,478 passed**, ruff clean, **UNVERIFIED and ungated**. |
+| T15 | `t15-rebase` `e9ab3bc`, unmerged | Built: rebase, the shared `filelock` writer lock, the backup drain. 54 new tests, **1,511 passed**. **Unreviewed.** |
+| T17 | `t17-schema` `7626d32`, unmerged | Built: schema-v1 bootstrap and the migration no-op. **Unreviewed.** |
+| T16 | `t16-promotion`, identical to `t15-rebase` | **Not started** — the build agent died before its first edit. |
+
+### The measurement that matters most this session
+
+T13's BLOCKING was verified by the orchestrating session through a probe written from the finding's
+claim rather than from the fix, with a revision-1 control firing in every run: pre-fix 0, post-fix 2,
+fix-mutated 0. **The control is the whole point** — without it, the pre-fix zero would read as "the
+forgery failed" instead of "the check never ran". Recorded in D-127.
+
+### The stop
+
+Five subagents — a T14 fix round, a T16 build, a T17 review and both T15 review lenses — failed
+simultaneously with `You've hit your session limit`. Capacity does not return until 09:10 CDT.
+
+**Two costs were paid and are worth pricing.** The T14 fix agent was killed *after* its last edit and
+*before* its report, leaving 13 modified files with no account of what they addressed; the work is
+green and was committed rather than discarded, but the findings-to-changes mapping now has to be
+re-derived from the diff, which is strictly more expensive than having been told. And four of the five
+agents had produced nothing yet, so their entire dispatch was wasted.
+
+**The lesson is about dispatch width under an unknown remaining budget, not about parallelism.** Five
+concurrent reviewers each spawning nested children is a multiple of five agents' worth of usage, and
+the run had no reading of how much was left. The previous session's note — that concurrency bought two
+review rounds and a completed T13 — still holds; what was missing is that a wide fan-out should be
+sized against remaining budget, and that an agent's work should be committed by its author at each
+finding rather than in one report at the end.
+
+### Standing
+
+Gate A **not met**: 16 of 19 slices built, 13 merged. T15 and T17 are built and reviewed by nobody;
+T16, T18 and T19 are not started. Gate B **prohibited**. **Nothing pushed.**
