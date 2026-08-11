@@ -31,17 +31,36 @@ whose old link points at a dead path on a new host.
 **Next action: P6 has nothing left to BUILD — its last two gate clauses need the system RUN.** Duplicate
 leakage needs 7 days of runs (the window must start after D-110, which changed which callers advance the
 queue), and "0 dead postings" needs a real run whose leads are actually probed. So the useful work is, in
-order: (1) start accumulating real daily runs, gated on Mit's `resume.yaml` fix below; (2) Gate A — review
-the T12 round-four/five fix, review and merge T13, then T14; (3) P2 item 8 or P3 slice 5, both owner-gated
-and both wanting their own context window.
+order: (1) start accumulating real daily runs, gated on Mit's `resume.yaml` fix below; (2) Gate A —
+finish T14–T19 per the branch table below; (3) P2 item 8 or P3 slice 5, both owner-gated and both
+wanting their own context window.
 
-**Gate A's remaining slices are T14–T19**: one-read storage/checkout/inspect (T14, in progress on
-`t14-storage`), draft rebase + backup drain (T15), crash-consistent promotion (T16), schema-v1
-bootstrap (T17), the `profile-bundle` CLI (T18), and the authoring contract + final gate (T19).
+### Gate A branch table — where every unmerged slice stands (2026-08-11)
 
-**This file is 286 lines against a ~170 target and is still OWED a trim.** It grew again here because Gate
+`main` is at `02ee167`. **Nothing below is pushed.** Every branch is local; `docs/superpowers/` holds
+the design and plan and is untracked — copy it into any worktree you create.
+
+| Branch | Head | Stands where |
+|---|---|---|
+| `t13-followup` | `4bd3c49` | Three fixes to T13's second review, **green (1509) but ungated**. Adds `IssueCode.CANDIDATE_DIGEST_UNVERIFIED` — a closed-catalog widening, justified in D-127. Ready to gate and merge. |
+| `t14-storage` | `d441e2d` | Fix round for T14's four BLOCKING + six SHOULD-FIX. **`d441e2d` is UNVERIFIED** — its author was killed mid-round by a usage limit and never reported, so no account of it exists. Green (1478) and ruff-clean; the findings-to-changes mapping must be re-derived from the diff before it merges. Findings are in `scratchpad/T14-REVIEW-FINDINGS.md`. |
+| `t15-rebase` | `e9ab3bc` | Built: record-level draft rebase, the shared `filelock` writer lock, the backup drain. 54 new tests, 1511 green. **Reviewed by nobody** — both lenses died at dispatch. |
+| `t16-promotion` | `e9ab3bc` | **Not started.** The branch exists but is identical to `t15-rebase`; the build agent died before its first edit. Its carried debt is in `scratchpad/CARRIED-DEBT.md`. |
+| `t17-schema` | `7626d32` | Built: schema-v1 bootstrap and the migration no-op. **Reviewed by nobody** — the light review died before its first probe. |
+| T18, T19 | — | Not started. T18 is the `profile-bundle` CLI, the first non-inert surface. T19 is the authoring contract and the final Gate A gate. |
+
+**T14's fix must be merged forward into `t15-rebase`, `t16-promotion` and `t17-schema` before any of
+them lands** — it fixes a symlink confinement escape that applies to *every* declared root member,
+and T15's backup and T16's promotion temporary both inherit it. Do not add a second guard downstream.
+
+**`t14-storage` and everything branched from it are behind `main`** — they fork at `2e6f667`, before
+T13 merged. Merge `main` in before gating, or the gate measures a tree nobody will ship.
+
+**This file is 318 lines against a ~170 target and is still OWED a trim.** It grew again here because Gate
 A's standing genuinely grew. The next trim should compress the P6 narrative, which is now fully recorded in
-D-110/D-111/D-113 — not the "standing facts" list, which is the whole point of the file.
+D-110/D-111/D-113 — not the "standing facts" list, which is the whole point of the file. **The Gate A
+branch table above is deliberately exempt**: it is the only record of six unmerged local branches, and it
+shrinks to one line the moment they land.
 
 **A green `make check` is NOT a green CI** (D-117). `gitleaks`, `perf` and `generalization` are separate CI
 jobs `make check` never runs, and pushing turned `gitleaks` red for the first time in the project's history
@@ -56,8 +75,9 @@ reviewed" twice and declined both times.** The basis holds because the package i
 command, no bundle-to-`Resume` bridge, a test asserts both directions, nothing in a shipped code path
 reaches it. Publishing changed the release, **not** the review's standing.
 
-**A PARALLEL TRACK exists: the canonical career-profile bundle, Gate A — 13 of 19 slices built (D-115,
-D-118, D-120, D-125).** Not a P0–P7 phase; it has moved no program gate. Its design and plan live
+**A PARALLEL TRACK exists: the canonical career-profile bundle, Gate A — 16 of 19 slices built, 13
+merged (D-115, D-118, D-120, D-125, D-127).** T15 and T17 are built but unreviewed, T16/T18/T19 are
+not started. Not a P0–P7 phase; it has moved no program gate. Its design and plan live
 **untracked** under `docs/superpowers/` — read them there, and **copy that directory into any worktree you
 create**, where they otherwise vanish. `src/boardwatch/profile_bundle/` holds the typed outcomes, the
 restricted YAML loader, the closed 33-document grammar, every record model, the JSON Schema export, a
@@ -99,9 +119,10 @@ things most likely to be undone by accident:
 - **The résumé adapter's stage order and `~N` locator preservation are load-bearing for stored IDs**,
   and four checks were deleted in T12 for being unable to fire.
 
-**T13 is BUILT on branch `t13-digest`, unmerged**: `reports.py`, `validation/digest.py`, the
-promoted-revision fixture, `validation/completeness.py` and `validation/run.py` — 1,389 tests green on
-that branch, `ruff` and `mypy` clean. **Mit ruled that `METRIC_REVIEW_MISSING` is DELETED and metrics
+**T13 is MERGED to `main`** (gate `5aa8d1c`: exit 0, 5,416 passed, 95.61%): `reports.py`, `validation/digest.py`, the
+promoted-revision fixture, `validation/completeness.py` and `validation/run.py`. Its review found one BLOCKING — the §20.6 clause binding an owner's approval to promoted content was
+skipped for **every revision from 2 onward**, so a re-sealed tree carrying documents nobody approved
+validated clean. Fixed and verified three ways (pre-fix / post-fix / fix mutated out). **Mit ruled that `METRIC_REVIEW_MISSING` is DELETED and metrics
 get no review interval** (`review_interval_days` is a `PredicateSpec` column, a metric has no
 predicate, and `reviewed_at` is required, so the check could not fire — D-115). A metric's freshness
 is its `reviewed_at` date alone. The build also fixed two pre-existing defects: `validate_history`
@@ -173,9 +194,9 @@ since D-035, unchanged by everything since.
 | Item | Detail | Owner |
 |---|---|---|
 | **Three `resume.yaml` bullets exceed the 220-char layout gate** | Forces an untailored-master degrade on every posting, which is what blocks accumulating real runs. The file also lacks Knowledge Forge, has stale `skill_groups`, and an empty extracurricular block. **Mit pins `resume_max_pages=1` — do not advise setting it to 2.** | Mit (content) |
-| **T13: reviewed once, REWORK, fixes IN FLIGHT** | First review found **1 BLOCKING**: the §20.6 check binding an owner's approval to promoted content was skipped for **every revision ≥ 2**, so a re-sealed revision-2 tree with content the owner never approved validated clean. `main` is merged into `t13-digest` (its base predated T12's round-three fixes). The guard `manifest.parent_bundle_digest is not None and ctx.parent is None` has exactly **three** sites: `digest.py:291` (wrong — needs only `parent.revision`/`parent.bundle_digest`, which §7 lets history traversal read), `run.py:182` (reporting), and `history.py:115` (**defensible** — it uses `ctx.parent.documents` and `.index`, a deep parse §20.6 forbids by default). | T13 |
-| **T13's other findings** | SHOULD-FIX: `fact_value_expired` keys only on `expires_at`, so a `certification.expiry` fact — whose predicate is "block active use after **value date**" and whose value IS that date — is never blocked when `expires_at` is null; a résumé would assert an expired credential. NOTEs: an `OSError` string leaks `$HOME` into `Diagnostic.message` (T13 sites owned here; `blobs.py`/`context.py` predate it), `deep_history=True` is a silent no-op without `completeness`, and a skipped completeness run is indistinguishable from a clean one. | T13 |
-| **T13 is built on branch `t13-digest`, unmerged** | All five modules done, 1,389 tests green, ruff + mypy clean, no full gate on that branch. Owes a merge once the review fixes land. **One judgement call needs Mit:** the build extended the `METRIC_REVIEW_MISSING` deletion ruling to `MISSING_PERSON_ENTITY` and `ENTITY_STATUS_UNDECLARED` on the same "cannot fire" grounds, and added `FACT_VALUE_EXPIRED` and `COMPLETENESS_COUNTS`. Net catalog size unchanged, but a catalog is closed and versioned. Also open: §20.5's "expired evidence" has **no representable condition** — evidence records carry `reviewed_at` and the schema has no interval for them anywhere. | T13 |
+| **T14 is in review-fix; T15 is building** | T14 (one-read storage, drafts, inspection, and the first production YAML emitter) is on `t14-storage`. **Both its reviews returned REWORK**, converging independently on three findings. Two BLOCKINGs are this project's signature defect restated: the load-failure→`IssueCode` mapping was copied twice out of `parse_error_diagnostics` (so a schema-99 bundle reads as `unknown_file`/exit 1), and an *unmeasured* blob-reference set is reported as a measured *empty* one. A third: every declared root directory can be symlinked out of the bundle, and `init` still exits 0. | T14 |
+| **A forged revision whose parent is DELETED validates clean on the default path** | exit 0, no diagnostics, `candidate_digest: null`. §21 sanctions the tier and `--completeness` catches it, so this is a boundary rather than a defect — but `validate` alone cannot distinguish "verified" from "no claim made". Being closed by an information-tier diagnostic that names the reason. | T13 |
+| **`block_active_use_after_value_date` only understands `date` values** | A predicate whose value type is `year_month` or `date_range`, with `expires_at: null`, is never blocked at any `as_of`. `legal_value_types` is versioned USER data, so **a second user's catalog reaches this without anyone touching code** — a multi-tenancy hole, not a typo. Being closed by refusing the pairing at catalog-validation time. | T13 |
 | **The 03:10 launchd job re-fires a task that already shipped** | `com.mitsheth.boardwatch-p6.plist` is a *daily* `StartCalendarInterval` job carrying the *one-shot* "execute P6 Slice 1" prompt, which asserts `main` at `fb0386a` — now an ancestor 110 commits back. It misfired on 2026-08-11 and will misfire nightly. Benign and self-detecting (the session-start ritual catches it in a few read-only commands), **not** self-correcting. Fix: `launchctl bootout gui/$UID/com.mitsheth.boardwatch-p6`, or repoint `~/.claude/scheduled/p6-slice1-run.sh` at a fresh prompt (D-123) | Mit (automation) |
 | **No local pre-push check for the three CI-only jobs** | `gitleaks`, `perf` and `generalization` run in CI and not under `make check`; `gitleaks` is not installed by project tooling. `gitleaks git --log-opts=origin/main..HEAD` is the cheap mitigation (D-117) | open |
 | **Five Gate A fix commits are independently reviewed** | The current `origin/main` contains `1de10c7`, `20ff50c`, `8d32294`, `9d78450`, and `bbec2c0`; each exact diff and the untracked design correction were checked against the original findings with executable reproductions and negative controls. Their prior `make check` results were not used as sign-off. | complete |
