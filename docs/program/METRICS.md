@@ -54,22 +54,23 @@ reports drift without writing, and `make check` depends on it (D-109).
 | METRICS-ARCHIVE.md | 1047 | Session — 2026-08-08 (P5 run #2 — disjunctive fix, Gate P5 MET at 100%; D-073) |
 | METRICS-ARCHIVE.md | 1084 | Session — 2026-08-08 (D-071b final eligibility gate build — no answer-key number changes) |
 | METRICS-ARCHIVE.md | 1120 | Gate P2 — 2026-08-08 · field-tier mechanism (P2 item 4, D-075). **MET AS RECONCILED** |
-| METRICS.md | 76 | Run log |
-| METRICS.md | 104 | Acceptance run |
-| METRICS.md | 115 | Session — 2026-08-09/10 · P6 Slice 1 design + plan. **No build, no gate movement.** |
-| METRICS.md | 141 | Session — 2026-08-10 · P6 Slice 1 BUILT (unattended run). Branch `p6-slice1`, not merged. |
-| METRICS.md | 351 | 2026-08-10 — P6 Slice 1 on the LIVE store (first real backfill) + Gate P6 clause 4 |
-| METRICS.md | 390 | Session 2026-08-10 (later) — P6 Slice 2: the durable decision ledger, its drain, and job regrouping |
-| METRICS.md | 483 | Session — 2026-08-10 (later) · D-109, the program-index gate. No phase gate moved. |
-| METRICS.md | 524 | Session — 2026-08-10 (later still) · The P6 Slice 2 review (D-110). No phase gate moved. |
-| METRICS.md | 614 | Session — 2026-08-10 (later still ×2) · P6 Slice 3, items 5 and 6 (D-111). Gate P6 unchanged: still 2 of 4. |
-| METRICS.md | 727 | Session — 2026-08-10 (later still ×3) · 0.3.0 cut and tagged (D-112). No phase gate moved. |
-| METRICS.md | 778 | Session — 2026-08-10 (later still ×4) · The Slice 3 external review (D-113) + the CI dependency fix (D-114). No phase gate moved. |
-| METRICS.md | 898 | Session — 2026-08-10 (later still ×5) · Gate A career-profile bundle, slices T1–T9 (D-115). No phase gate moved. |
-| METRICS.md | 987 | Session — 2026-08-10 (later still ×6) · The held commits are PUSHED; CI's first honest read (D-116, D-117). No phase gate moved. |
-| METRICS.md | 1062 | Session — 2026-08-10 (later still ×7) · Gate A slice T10, semantic validation (D-118). No phase gate moved. |
-| METRICS.md | 1243 | Session — 2026-08-10 · Gate A fix history reconciliation; independent T1–T10 review still owed. No phase gate moved. |
-| METRICS.md | 1267 | Session — 2026-08-10 · Independent Gate A T1–T10 review sign-off; T11 permitted. |
+| METRICS.md | 77 | Run log |
+| METRICS.md | 105 | Acceptance run |
+| METRICS.md | 116 | Session — 2026-08-09/10 · P6 Slice 1 design + plan. **No build, no gate movement.** |
+| METRICS.md | 142 | Session — 2026-08-10 · P6 Slice 1 BUILT (unattended run). Branch `p6-slice1`, not merged. |
+| METRICS.md | 352 | 2026-08-10 — P6 Slice 1 on the LIVE store (first real backfill) + Gate P6 clause 4 |
+| METRICS.md | 391 | Session 2026-08-10 (later) — P6 Slice 2: the durable decision ledger, its drain, and job regrouping |
+| METRICS.md | 484 | Session — 2026-08-10 (later) · D-109, the program-index gate. No phase gate moved. |
+| METRICS.md | 525 | Session — 2026-08-10 (later still) · The P6 Slice 2 review (D-110). No phase gate moved. |
+| METRICS.md | 615 | Session — 2026-08-10 (later still ×2) · P6 Slice 3, items 5 and 6 (D-111). Gate P6 unchanged: still 2 of 4. |
+| METRICS.md | 728 | Session — 2026-08-10 (later still ×3) · 0.3.0 cut and tagged (D-112). No phase gate moved. |
+| METRICS.md | 779 | Session — 2026-08-10 (later still ×4) · The Slice 3 external review (D-113) + the CI dependency fix (D-114). No phase gate moved. |
+| METRICS.md | 899 | Session — 2026-08-10 (later still ×5) · Gate A career-profile bundle, slices T1–T9 (D-115). No phase gate moved. |
+| METRICS.md | 988 | Session — 2026-08-10 (later still ×6) · The held commits are PUSHED; CI's first honest read (D-116, D-117). No phase gate moved. |
+| METRICS.md | 1063 | Session — 2026-08-10 (later still ×7) · Gate A slice T10, semantic validation (D-118). No phase gate moved. |
+| METRICS.md | 1244 | Session — 2026-08-10 · Gate A fix history reconciliation; independent T1–T10 review still owed. No phase gate moved. |
+| METRICS.md | 1268 | Session — 2026-08-10 · Independent Gate A T1–T10 review sign-off; T11 permitted. |
+| METRICS.md | 1306 | Session — 2026-08-11 · Gate A T11 implemented and reviewed. No phase gate moved. |
 
 ---
 
@@ -1300,4 +1301,34 @@ slice, Gate B remains prohibited, and T12 onward was not started.
 
 The review therefore closes the prior partial-review carryover and authorizes the exact T11 scope in
 the implementation plan. The pinned evidence-set digest remains:
+`sha256:bb92aef8ff2d82c0178482ab5fa4c24975e6f3ab8251f3e6d939e14d3bcffde0`.
+
+## Session — 2026-08-11 · Gate A T11 implemented and reviewed. No phase gate moved.
+
+The hard gate from the preceding review sign-off was met, so this session implemented only Task 11
+from the existing plan. T12 onward, personal data, Resume integration, schema/store/migrations,
+CHANGELOG.md, the v0.3.0 tag, and Gate B remain out of scope.
+
+### T11 result
+
+| Slice | Result |
+|---|---|
+| Pure owner-gate derivation | Added `required_approval_decisions` for fact, contact, evidence sufficiency, claim, metric surfaces, joined source scope, source-record exclusion, and conflict-ruling authorization. |
+| Approval stamp | Added pure `build_approval_stamp`; it performs no TTY interaction or filesystem writes and rejects wrong target kinds/states through the typed entry model. |
+| Reusable fixture | Added a deliberate promoted-revision fixture containing a `RevisionManifest`, one `ChangeRecord`, and one `ApprovalStamp` with the candidate's required owner entries, reusable by later history/promotion slices. |
+| History | Added append-only change/approval/ruling prefix checks, exact one-change/one-stamp promotion append checks, manifest binding checks, required owner-entry checks, target-content digest checks, and owner-derived `authorized_by` enforcement. |
+| Scope | T11 files only; no T12+ implementation was started. |
+
+### T11 verification and findings
+
+The initial T11 slice is commit `645046e`; its plain unpiped `make check` exited 0 with 4,906 selected
+tests. A post-commit self-review found one SHOULD-FIX gap: forged `authorized_by` was not rejected by
+history validation. TDD was run red by removing the guard, the guard was restored, and commit
+`402de97` fixed it; its plain unpiped `make check` exited 0 with 4,907 selected tests. No unresolved
+BLOCKING or SHOULD-FIX findings remain. The T11 focused suite passed 9 tests before the final fix and
+6 history tests after it.
+
+The independent review remains signed off, T11 is complete, and Gate A as a whole remains **not met**
+because the later planned slices have not been implemented or reviewed. The pinned evidence-set digest
+remains:
 `sha256:bb92aef8ff2d82c0178482ab5fa4c24975e6f3ab8251f3e6d939e14d3bcffde0`.
