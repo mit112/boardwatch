@@ -31,6 +31,10 @@ from boardwatch.profile_bundle.errors import BundleIoError, ProfileBundleError
 from boardwatch.profile_bundle.models.evidence import CaptureMediaType
 from boardwatch.profile_bundle.paths import blob_path, blobs_dir, require_bare_digest
 
+#: The prefix every in-flight blob write uses. Named once so a reader of the store can tell a
+#: half-written capture from an artefact that does not belong there at all.
+BLOB_TEMP_PREFIX: Final = ".tmp-"
+
 #: Per-capture hard limit, inline or blob (§12.2). A limit, not a recommendation.
 MAX_CAPTURE_BYTES: Final = 1_048_576
 
@@ -143,7 +147,9 @@ def write_blob(
     try:
         directory.mkdir(parents=True, exist_ok=True)
         # Exclusive temp file in the SAME directory, so the rename is atomic on one filesystem.
-        handle, temporary = tempfile.mkstemp(dir=directory, prefix=".tmp-", suffix=".blob")
+        handle, temporary = tempfile.mkstemp(
+            dir=directory, prefix=BLOB_TEMP_PREFIX, suffix=".blob"
+        )
         temp_path = Path(temporary)
         try:
             with os.fdopen(handle, "wb") as stream:
@@ -225,7 +231,7 @@ def stored_digests(bundle_root: Path) -> tuple[str, ...]:
         return ()
     found: list[str] = []
     for entry in directory.iterdir():
-        if not entry.is_file() or entry.name.startswith(".tmp-"):
+        if not entry.is_file() or entry.name.startswith(BLOB_TEMP_PREFIX):
             continue
         try:
             found.append(require_bare_digest(entry.name))

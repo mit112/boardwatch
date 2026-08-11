@@ -144,6 +144,10 @@ INITIAL_CATALOG_VERSION: Final = 1
 DEFAULT_PROFILE_ID: Final = "profile.owner"
 DEFAULT_CAREER_FIELD: Final = "unspecified"
 
+#: The prefix every draft installation temporary uses. `inventory` recognises it as an interrupted
+#: install rather than as an artefact that does not belong under `drafts/` at all.
+DRAFT_TEMP_PREFIX: Final = ".tmp-draft-"
+
 #: Declared directories that hold one file per entity. Created empty so an owner can see where an
 #: employment or project file belongs; the grammar admits them empty.
 _ENTITY_DIRECTORIES: Final[tuple[PurePosixPath, ...]] = (
@@ -502,7 +506,7 @@ def _install(bundle_root: Path, target: Path, populate: Callable[[Path], None]) 
     later command while holding half a revision.
     """
     drafts_dir(bundle_root).mkdir(parents=True, exist_ok=True)
-    staging = Path(tempfile.mkdtemp(dir=drafts_dir(bundle_root), prefix=".tmp-draft-"))
+    staging = Path(tempfile.mkdtemp(dir=drafts_dir(bundle_root), prefix=DRAFT_TEMP_PREFIX))
     try:
         populate(staging)
         os.replace(staging, target)

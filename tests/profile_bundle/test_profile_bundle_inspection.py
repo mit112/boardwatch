@@ -165,6 +165,49 @@ def test_inventory_reports_undeclared_root_entries_without_failing(
     assert {d.tier for d in outcome.diagnostics} == {"information"}
 
 
+def test_inventory_reports_an_interrupted_draft_installation(
+    promoted_tree: PromotedRevisionTree,
+) -> None:
+    """`init` and `checkout` build a draft beside its destination and rename it in, so a leftover
+    staging directory is a real state. It is not a draft, and it is not deleted either."""
+    leftover = drafts_dir(promoted_tree.bundle_root) / ".tmp-draft-abc123"
+    leftover.mkdir(parents=True)
+    before = _snapshot(promoted_tree.bundle_root)
+    outcome = inventory(promoted_tree.bundle_root)
+    report = outcome.value
+    assert report is not None
+    assert leftover.name not in report.drafts
+    assert "drafts/.tmp-draft-abc123" in {d.path for d in outcome.diagnostics}
+    assert outcome.exit_code == 0
+    assert _snapshot(promoted_tree.bundle_root) == before
+
+
+def test_an_in_flight_blob_write_is_not_reported_as_an_artefact(
+    promoted_tree: PromotedRevisionTree,
+) -> None:
+    """The blob store names its own temporaries, and this reader reads that name from the store
+    rather than restating it, so a capture being written is not mistaken for a stray file."""
+    (blobs_dir(promoted_tree.bundle_root) / ".tmp-halfway.blob").write_bytes(b"partial")
+    outcome = inventory(promoted_tree.bundle_root)
+    assert outcome.diagnostics == ()
+
+
+def test_inventory_measures_no_blob_references_when_it_cannot_read_them(
+    promoted_tree: PromotedRevisionTree,
+) -> None:
+    """Empty and unmeasured are different answers.
+
+    Without the distinction a revision whose evidence document had gone missing would report every
+    blob in the shared store as unreferenced — a claim nobody computed, about files no command is
+    allowed to remove anyway.
+    """
+    (promoted_tree.revision_dir / "evidence" / "records.yaml").unlink()
+    report = inventory(promoted_tree.bundle_root).value
+    assert report is not None
+    assert report.referenced_blobs == ()
+    assert report.unreferenced_blobs == ()
+
+
 def test_inventory_parses_the_private_sidecar_and_reports_a_dead_mapping(
     promoted_tree: PromotedRevisionTree,
 ) -> None:

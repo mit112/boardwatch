@@ -43,7 +43,7 @@ from pathlib import Path, PurePosixPath
 
 from pydantic import BaseModel, ValidationError
 
-from boardwatch.profile_bundle.blobs import stored_digests
+from boardwatch.profile_bundle.blobs import BLOB_TEMP_PREFIX, stored_digests
 from boardwatch.profile_bundle.canonical import referenced_blob_digests
 from boardwatch.profile_bundle.errors import (
     BundlePathError,
@@ -62,7 +62,10 @@ from boardwatch.profile_bundle.models.sidecars import LocalSourcesSidecar
 from boardwatch.profile_bundle.paths import (
     APPROVALS_DIR,
     BLOB_ALGORITHM_DIR,
+    BLOBS_DIR,
+    DRAFTS_DIR,
     LOCAL_SOURCES_FILE,
+    REVISIONS_DIR,
     ROOT_MEMBERS,
     approvals_dir,
     blobs_dir,
@@ -169,23 +172,38 @@ def inventory(bundle_root: Path) -> OperationOutcome[InventoryReport]:
             )
 
     undeclared = _undeclared_root_entries(bundle_root)
-    findings.extend(_orphans(undeclared, "the bundle root's member list is closed"))
+    findings.extend(_orphans("", undeclared, "the bundle root's member list is closed"))
 
     complete, incomplete, temporary = _revision_directories(bundle_root)
     findings.extend(
-        _orphans(incomplete, "a digest-named revision without a usable COMPLETE marker is a torn "
-                             "promotion; it is retained and blocks nothing")
+        _orphans(
+            f"{REVISIONS_DIR}/",
+            incomplete,
+            "a digest-named revision without a usable COMPLETE marker is a torn promotion; it is "
+            "retained and blocks nothing",
+        )
     )
     findings.extend(
-        _orphans(temporary, f"{revisions_dir(bundle_root).name}/ holds only digest-named revisions")
+        _orphans(f"{REVISIONS_DIR}/", temporary, "this directory holds only digest-named revisions")
+    )
+
+    drafts, stray_drafts = _draft_names(bundle_root)
+    findings.extend(
+        _orphans(f"{DRAFTS_DIR}/", stray_drafts, "an interrupted draft installation, left in place")
     )
 
     stamps, stray_stamps = _approval_stamps(bundle_root)
-    findings.extend(_orphans(stray_stamps, f"{APPROVALS_DIR}/ is keyed by candidate digest"))
+    findings.extend(
+        _orphans(f"{APPROVALS_DIR}/", stray_stamps, "this directory is keyed by candidate digest")
+    )
 
     stored, stray_blobs = _blob_entries(bundle_root)
     findings.extend(
-        _orphans(stray_blobs, f"{BLOB_ALGORITHM_DIR}/ holds one file per digest, named by it")
+        _orphans(
+            f"{BLOBS_DIR}/{BLOB_ALGORITHM_DIR}/",
+            stray_blobs,
+            "the blob store holds one file per digest, named by it",
+        )
     )
     referenced = _referenced(documents)
 
@@ -195,14 +213,16 @@ def inventory(bundle_root: Path) -> OperationOutcome[InventoryReport]:
     report = InventoryReport(
         bundle_root=bundle_root,
         selected=selection,
-        drafts=_draft_names(bundle_root),
+        drafts=drafts,
         approval_stamps=stamps,
         complete_revisions=complete,
         incomplete_revisions=incomplete,
         temporary_entries=temporary,
-        referenced_blobs=referenced,
-        unreferenced_blobs=tuple(
-            digest for digest in stored if digest not in frozenset(referenced)
+        referenced_blobs=() if referenced is None else referenced,
+        unreferenced_blobs=(
+            ()
+            if referenced is None
+            else tuple(digest for digest in stored if digest not in frozenset(referenced))
         ),
         undeclared_root_entries=undeclared,
         local_sources=sidecar,
@@ -288,22 +308,29 @@ def _approval_stamps(bundle_root: Path) -> tuple[tuple[str, ...], tuple[str, ...
     return tuple(stamps), tuple(stray)
 
 
-def _draft_names(bundle_root: Path) -> tuple[str, ...]:
-    """Draft directory names only.
+def _draft_names(bundle_root: Path) -> tuple[tuple[str, ...], tuple[str, ...]]:
+    """Draft directory names, and anything under `drafts/` that is not one.
 
     Deliberately not parsed: a draft is the one place in the bundle that may hold anything at all,
     and an inventory that read every draft's manifest would fail on somebody's work in progress.
+    An entry left by an interrupted install is reported, never adopted and never removed.
     """
     directory = drafts_dir(bundle_root)
     if not directory.is_dir():
-        return ()
+        return ((), ())
     found: list[str] = []
+    stray: list[str] = []
     for entry in sorted(directory.iterdir()):
         try:
-            found.append(require_draft_name(entry.name))
+            name = require_draft_name(entry.name)
         except BundlePathError:
-            continue  # an installation temporary; reported by the root/orphan pass, never adopted
-    return tuple(found)
+            stray.append(entry.name)
+            continue
+        if entry.is_dir() and not entry.is_symlink():
+            found.append(name)
+        else:
+            stray.append(entry.name)
+    return tuple(found), tuple(stray)
 
 
 def _blob_entries(bundle_root: Path) -> tuple[tuple[str, ...], tuple[str, ...]]:
@@ -312,23 +339,33 @@ def _blob_entries(bundle_root: Path) -> tuple[tuple[str, ...], tuple[str, ...]]:
     if not directory.is_dir():
         return ((), ())
     known = frozenset(stored)
-    stray = tuple(sorted(entry.name for entry in directory.iterdir() if entry.name not in known))
+    # A `.tmp-` name is an in-flight or abandoned capture the store already knows to skip, not an
+    # artefact that does not belong here; the prefix is read from the store rather than restated.
+    stray = tuple(
+        sorted(
+            entry.name
+            for entry in directory.iterdir()
+            if entry.name not in known and not entry.name.startswith(BLOB_TEMP_PREFIX)
+        )
+    )
     return stored, stray
 
 
-def _referenced(documents: BundleDocuments | None) -> tuple[str, ...]:
-    """The blob digests the SELECTED revision cites.
+def _referenced(documents: BundleDocuments | None) -> tuple[str, ...] | None:
+    """The blob digests the SELECTED revision cites, or `None` when they could not be read.
 
     A blob outside this set is not garbage — §6 shares the store across revisions, and an older
     revision may be the only thing citing it. That is exactly why the report names it and no command
-    removes it.
+    removes it. `None` is distinct from empty on purpose: a revision whose evidence document is
+    missing has no measured reference set, and calling every stored blob unreferenced would be a
+    measurement nobody took.
     """
     if documents is None:
-        return ()
+        return None
     try:
         return referenced_blob_digests(documents)
     except ProfileBundleError:
-        return ()
+        return None
 
 
 def _local_sources(
@@ -375,10 +412,15 @@ def _local_sources(
     )
 
 
-def _orphans(names: Iterable[str], why: str) -> tuple[Diagnostic, ...]:
-    """One `information` finding per artefact outside the grammar. Never changes an exit code."""
+def _orphans(prefix: str, names: Iterable[str], why: str) -> tuple[Diagnostic, ...]:
+    """One `information` finding per artefact outside the grammar. Never changes an exit code.
+
+    `prefix` qualifies the reported path with the directory the entry was found in, so a stray
+    `notes.txt` at the root and one under `revisions/` are two distinguishable findings.
+    """
     return tuple(
-        diagnostic(IssueCode.ORPHANED_ARTEFACT, f"{name}: {why}", path=name) for name in names
+        diagnostic(IssueCode.ORPHANED_ARTEFACT, f"{prefix}{name}: {why}", path=f"{prefix}{name}")
+        for name in names
     )
 
 
