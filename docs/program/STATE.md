@@ -66,9 +66,8 @@ validation. **Gate A is NOT met, T12 is NOT reviewed, and the bundle is wired to
 bridge (a test asserts both directions). Its commits being on `origin/main` is **not** sign-off. **Gate B
 stays prohibited until Gate A is implemented AND independently reviewed**; that review is owed.
 
-**T1–T11 are implemented and independently reviewed. T12 is implemented and has been REVIEWED
-TWICE, both verdicts REWORK, both rounds fixed — it is NOT signed off and a third review is owed.**
-T12 (D-120)
+**T1–T11 are implemented and independently reviewed. T12 has been REVIEWED THREE TIMES, all three
+verdicts REWORK. Rounds one and two are fixed; round three is NOT started.** T12 (D-120)
 is deterministic enumeration, candidate identity, and idempotent import — the four approved adapters, NFC
 percent-encoded locators, the derived `source-record.<64hex>` and `candidate.<64hex>` IDs, predicate-
 authorized value canonicalization, idempotent package merging, and the import validation layer. Its
@@ -78,9 +77,17 @@ a space. `ce0a8de` fixed those; the **re-review of that fix returned REWORK agai
 more BLOCKING findings — one created by the fix itself, two contracts that had never been enforced
 anywhere, and one only partly closed. A verification agent added a fifth, and a docs reviewer showed
 that one of the round-two declines rested on a false premise. All are fixed, with 20 distinct
-mutations caught. Read D-120 before touching identity derivation — the résumé adapter's stage order
-and `~N` locator preservation are both load-bearing for stored IDs, and four checks were deleted
-there for being unable to fire.
+mutations caught; gate exit 0, 5,200 tests, 95.40%.
+
+**The third review (D-124) returned REWORK again: 4 BLOCKING + 1 SHOULD-FIX, all four in code written
+to close round two.** The worst repeats round one's defect class exactly — `ROOT_SEGMENT` is not
+reserved by the encoder, so a heading literally named `_root` shares a namespace with pre-heading
+content, and round two's `_root` scope refusal makes that legitimate source unimportable. **The cause
+is structural, not four bugs: the locator grammar restates the emitter instead of reading its
+constants**, so it drifts on the first input no fixture contained. Read D-124 before touching
+locators, and D-120 before touching identity derivation — the résumé adapter's stage order and `~N`
+locator preservation are both load-bearing for stored IDs, and four checks were deleted there for
+being unable to fire.
 
 **Next slice is T13** — and it is **STARTED, uncommitted**: `src/boardwatch/profile_bundle/reports.py`
 (222 lines, design §19–§21) and `tests/profile_bundle/test_profile_bundle_reports.py` (279 lines) sit
@@ -161,7 +168,8 @@ since D-035, unchanged by everything since.
 | Item | Detail | Owner |
 |---|---|---|
 | **Three `resume.yaml` bullets exceed the 220-char layout gate** | Forces an untailored-master degrade on every posting, which is what blocks accumulating real runs. The file also lacks Knowledge Forge, has stale `skill_groups`, and an empty extracurricular block. **Mit pins `resume_max_pages=1` — do not advise setting it to 2.** | Mit (content) |
-| **Gate A implementation remains incomplete; T12 is twice-reviewed, twice-fixed, and NOT signed off** | T1–T11 are signed off. T12 (D-120) shipped the four source adapters, derived candidate identity, idempotent import merging and import validation. Review one returned REWORK with five BLOCKING findings (D-121, fixed in `ce0a8de`); review two returned REWORK with four more (D-122), one of which the first fix created. **Each retraction owes its own review — a third is owed before Gate B.** T13 onward remains unstarted; Gate B stays prohibited. | T13 |
+| **T12 owes a THIRD round of fixes (D-124) — 4 BLOCKING, none started** | Three reviews, three REWORKs. Round three: `_root` is not reserved so a legitimate heading named `_root` is unimportable (round one's defect class, repeated); `emits_locator` accepts heading paths deeper than the six levels `_HEADING_RE` allows; the raw `~N` exception is adapter-blind so `synthetic~2` validates although only `synthetic%7E2` can be emitted; `portable_locator` accepts an embedded NUL. Plus the JSON-schema gap D-122 wrongly accepted. **Fix the cause — make the grammar read the emitter's constants — not the four instances.** Start in fresh context: both prior rounds were authored by the context that caused them. | next |
+| **T13 is partially built on branch `t13-digest`, unmerged** | `reports.py` + `validation/digest.py` + the promoted-revision fixture (`promote_example_tree`, `promote_next_revision`); 70 targeted tests, ruff and `mypy --strict` clean, no full gate. `validation/completeness.py` and `validation/run.py` are not written. Two open rulings recorded in D-124's session metrics: `METRIC_REVIEW_MISSING` has no interval to be past and no way to be absent (delete-or-resolve under D-115, **needs Mit's call**), and `STALE_FACT` is ruled to mean the declared state while the computed condition is `EXPIRED_REVIEW`. | T13 |
 | **The 03:10 launchd job re-fires a task that already shipped** | `com.mitsheth.boardwatch-p6.plist` is a *daily* `StartCalendarInterval` job carrying the *one-shot* "execute P6 Slice 1" prompt, which asserts `main` at `fb0386a` — now an ancestor 110 commits back. It misfired on 2026-08-11 and will misfire nightly. Benign and self-detecting (the session-start ritual catches it in a few read-only commands), **not** self-correcting. Fix: `launchctl bootout gui/$UID/com.mitsheth.boardwatch-p6`, or repoint `~/.claude/scheduled/p6-slice1-run.sh` at a fresh prompt (D-123) | Mit (automation) |
 | **No local pre-push check for the three CI-only jobs** | `gitleaks`, `perf` and `generalization` run in CI and not under `make check`; `gitleaks` is not installed by project tooling. `gitleaks git --log-opts=origin/main..HEAD` is the cheap mitigation (D-117) | open |
 | **Five Gate A fix commits are independently reviewed** | The current `origin/main` contains `1de10c7`, `20ff50c`, `8d32294`, `9d78450`, and `bbec2c0`; each exact diff and the untracked design correction were checked against the original findings with executable reproductions and negative controls. Their prior `make check` results were not used as sign-off. | complete |

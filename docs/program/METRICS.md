@@ -54,26 +54,27 @@ reports drift without writing, and `make check` depends on it (D-109).
 | METRICS-ARCHIVE.md | 1047 | Session — 2026-08-08 (P5 run #2 — disjunctive fix, Gate P5 MET at 100%; D-073) |
 | METRICS-ARCHIVE.md | 1084 | Session — 2026-08-08 (D-071b final eligibility gate build — no answer-key number changes) |
 | METRICS-ARCHIVE.md | 1120 | Gate P2 — 2026-08-08 · field-tier mechanism (P2 item 4, D-075). **MET AS RECONCILED** |
-| METRICS.md | 80 | Run log |
-| METRICS.md | 108 | Acceptance run |
-| METRICS.md | 119 | Session — 2026-08-09/10 · P6 Slice 1 design + plan. **No build, no gate movement.** |
-| METRICS.md | 145 | Session — 2026-08-10 · P6 Slice 1 BUILT (unattended run). Branch `p6-slice1`, not merged. |
-| METRICS.md | 355 | 2026-08-10 — P6 Slice 1 on the LIVE store (first real backfill) + Gate P6 clause 4 |
-| METRICS.md | 394 | Session 2026-08-10 (later) — P6 Slice 2: the durable decision ledger, its drain, and job regrouping |
-| METRICS.md | 487 | Session — 2026-08-10 (later) · D-109, the program-index gate. No phase gate moved. |
-| METRICS.md | 528 | Session — 2026-08-10 (later still) · The P6 Slice 2 review (D-110). No phase gate moved. |
-| METRICS.md | 618 | Session — 2026-08-10 (later still ×2) · P6 Slice 3, items 5 and 6 (D-111). Gate P6 unchanged: still 2 of 4. |
-| METRICS.md | 731 | Session — 2026-08-10 (later still ×3) · 0.3.0 cut and tagged (D-112). No phase gate moved. |
-| METRICS.md | 782 | Session — 2026-08-10 (later still ×4) · The Slice 3 external review (D-113) + the CI dependency fix (D-114). No phase gate moved. |
-| METRICS.md | 902 | Session — 2026-08-10 (later still ×5) · Gate A career-profile bundle, slices T1–T9 (D-115). No phase gate moved. |
-| METRICS.md | 991 | Session — 2026-08-10 (later still ×6) · The held commits are PUSHED; CI's first honest read (D-116, D-117). No phase gate moved. |
-| METRICS.md | 1066 | Session — 2026-08-10 (later still ×7) · Gate A slice T10, semantic validation (D-118). No phase gate moved. |
-| METRICS.md | 1247 | Session — 2026-08-10 · Gate A fix history reconciliation; independent T1–T10 review still owed. No phase gate moved. |
-| METRICS.md | 1271 | Session — 2026-08-10 · Independent Gate A T1–T10 review sign-off; T11 permitted. |
-| METRICS.md | 1309 | Session — 2026-08-11 · Gate A T11 implemented and reviewed. No phase gate moved. |
-| METRICS.md | 1339 | Session — 2026-08-11 (later) · Gate A T12 implemented, NOT independently reviewed. No phase gate moved. |
-| METRICS.md | 1400 | Session — 2026-08-11 (later ×2) · Gate A T12 reviewed TWICE, both REWORK, both rounds fixed. No phase gate moved. |
-| METRICS.md | 1374 | Session — 2026-08-11 (later still) · The T12 independent review (D-121) and its fix. No phase gate moved. |
+| METRICS.md | 81 | Run log |
+| METRICS.md | 109 | Acceptance run |
+| METRICS.md | 120 | Session — 2026-08-09/10 · P6 Slice 1 design + plan. **No build, no gate movement.** |
+| METRICS.md | 146 | Session — 2026-08-10 · P6 Slice 1 BUILT (unattended run). Branch `p6-slice1`, not merged. |
+| METRICS.md | 356 | 2026-08-10 — P6 Slice 1 on the LIVE store (first real backfill) + Gate P6 clause 4 |
+| METRICS.md | 395 | Session 2026-08-10 (later) — P6 Slice 2: the durable decision ledger, its drain, and job regrouping |
+| METRICS.md | 488 | Session — 2026-08-10 (later) · D-109, the program-index gate. No phase gate moved. |
+| METRICS.md | 529 | Session — 2026-08-10 (later still) · The P6 Slice 2 review (D-110). No phase gate moved. |
+| METRICS.md | 619 | Session — 2026-08-10 (later still ×2) · P6 Slice 3, items 5 and 6 (D-111). Gate P6 unchanged: still 2 of 4. |
+| METRICS.md | 732 | Session — 2026-08-10 (later still ×3) · 0.3.0 cut and tagged (D-112). No phase gate moved. |
+| METRICS.md | 783 | Session — 2026-08-10 (later still ×4) · The Slice 3 external review (D-113) + the CI dependency fix (D-114). No phase gate moved. |
+| METRICS.md | 903 | Session — 2026-08-10 (later still ×5) · Gate A career-profile bundle, slices T1–T9 (D-115). No phase gate moved. |
+| METRICS.md | 992 | Session — 2026-08-10 (later still ×6) · The held commits are PUSHED; CI's first honest read (D-116, D-117). No phase gate moved. |
+| METRICS.md | 1067 | Session — 2026-08-10 (later still ×7) · Gate A slice T10, semantic validation (D-118). No phase gate moved. |
+| METRICS.md | 1248 | Session — 2026-08-10 · Gate A fix history reconciliation; independent T1–T10 review still owed. No phase gate moved. |
+| METRICS.md | 1272 | Session — 2026-08-10 · Independent Gate A T1–T10 review sign-off; T11 permitted. |
+| METRICS.md | 1310 | Session — 2026-08-11 · Gate A T11 implemented and reviewed. No phase gate moved. |
+| METRICS.md | 1340 | Session — 2026-08-11 (later) · Gate A T12 implemented, NOT independently reviewed. No phase gate moved. |
+| METRICS.md | 1401 | Session — 2026-08-11 (later ×2) · Gate A T12 reviewed TWICE, both REWORK, both rounds fixed. No phase gate moved. |
+| METRICS.md | 1449 | Session — 2026-08-11 (later ×3) · Gate A T12 reviewed a THIRD time, REWORK again. T13 partially built on a branch. No phase gate moved. |
+| METRICS.md | 1375 | Session — 2026-08-11 (later still) · The T12 independent review (D-121) and its fix. No phase gate moved. |
 
 ---
 
@@ -1444,3 +1445,58 @@ T12 is implemented, twice-reviewed, twice-fixed and mutation-verified. It is **n
 retraction commit reintroduces the defect class it cures, so each one owes its own review, and a
 third is owed before Gate B. Gate A as a whole remains **not met** and **not fully reviewed**. **T13
 is the next task**, and its promoted-revision fixture is built and verified in a fresh interpreter.
+
+## Session — 2026-08-11 (later ×3) · Gate A T12 reviewed a THIRD time, REWORK again. T13 partially built on a branch. No phase gate moved.
+
+### The third T12 review (D-124)
+
+| Item | Result |
+|---|---|
+| Reviewer | Same external reviewer, high reasoning effort, fresh worktree pinned at `126a268`. |
+| Verdict | **REWORK** — the third consecutive one. |
+| Findings | **4 BLOCKING + 1 SHOULD-FIX**, every one reproduced against all four validation layers. |
+| Previous rounds | All round-one and round-two findings confirmed **closed**. |
+| Where the new ones live | All four are in code written to close the previous round. |
+| Reproduced independently | Yes — the `_root` namespace collision was reproduced in this session before the finding was accepted, and is worse than the review framed it: the emitter itself conflates pre-heading content with a heading named `_root`. |
+
+Round-three fixes are **NOT started**, deliberately. Both previous fix rounds were authored by the
+context that produced the defects, and that is the failure D-122 named and then repeated.
+
+### T13 (partial, branch `t13-digest`, not merged)
+
+| Slice | Result |
+|---|---|
+| `reports.py` | Report model, deterministic JSON + human renderings, §21 outcome and exit code. **30 tests.** |
+| `validation/digest.py` | §20.6: bundle and evidence-set digests, directory/`COMPLETE`/`CURRENT` agreement, manifest state, the inverse candidate view, the final change's parent. Plus `CurrentPointer` + `read_current` + `read_complete` — the first readers of those files anywhere in `src/`. **40 tests.** |
+| Fixture | `promote_example_tree` builds a genuinely promoted revision (name, `COMPLETE`, manifest and `CURRENT` all agree, digest recomputed from disk and confirmed in a **fresh interpreter**); `promote_next_revision` chains children. A three-revision chain was verified: distinct digests, correct parent links, appended ledgers, three retained directories. |
+| Verification | `ruff` clean, `mypy --strict` clean, **70 targeted tests pass**. No full `make check` — T13 is incomplete. |
+| Not written | `validation/completeness.py`, `validation/run.py`. |
+
+**The fixture caught a defect in the layer it exists to test.** A child revision's candidate digest
+folds in its parent's revision number and bundle digest, so recomputing without the parent snapshot
+yields a different digest, not an approximation. The check compared it anyway, which would have
+reported **every revision after the first** as a candidate mismatch on the ordinary
+no-deep-parse-ancestors path §20.6 requires. Revision 1 is parentless and passed happily; only the
+chain exposed it.
+
+### Two facts recorded for T14
+
+- `yaml.safe_dump` breaks **6 of the example's 27 documents**: the restricted loader refuses the plain
+  scalars it emits for `2024-09`, `+1 555 0100 EXAMPLE`, `~120 items/s`, a bare hex digest, and two
+  secret-scan regexes. T14's emitter must force-quote or the bundle it writes cannot be read back.
+- `required_approval_decisions` takes the parent's **documents**; `candidate_content_digest` takes its
+  manifest **envelope**. Passing one where the other belongs type-checks and then fails deep inside
+  `build_index`.
+
+### Gate time
+
+`make check` ran three times for one commit: SIGTERM'd at 38% after ~15 minutes with two subagents
+reading the same tree; then ~7 minutes to 37% once they finished, killed deliberately when the docs
+review showed a declined finding needed implementing; then the real run, **exit 0, 5,200 tests,
+95.40%, 9m38s**. Roughly 31 minutes of gate time for one result.
+
+### Standing
+
+Gate A **not met**, T12 **not signed off** after three reviews, Gate B **prohibited**. This session's
+work is at `d360fa6` on `main` (a concurrent session then added `1fe4033`); nothing was pushed. T13 is
+on `t13-digest`, unmerged. **Next: the four D-124 fixes, in fresh context.**
