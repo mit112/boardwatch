@@ -72,7 +72,8 @@ same commit with different lenses** — one hunting runtime forgeries, one check
 the design's own words — and both returned REWORK. **Both independently found the same gap** the
 author and a 20-mutation suite had missed: the byte-free adapter grammar reached record locators and
 stopped, so an approved scope could name a shape no heading stack resolves to, validate clean, and
-then fail every re-enumeration. The conformance lens alone found a `SourceSpec` docstring claiming a
+then fail every re-enumeration. All of it is fixed, with **28 of 28 distinct mutations caught** and
+the gate green at **exit 0, 5,260 tests, 95.41%**. The conformance lens alone found a `SourceSpec` docstring claiming a
 guarantee that landed nowhere — a sentence **D-122 had already recorded as false**.
 
 **Read D-125 before touching locators, and D-120 before touching identity derivation.** The four

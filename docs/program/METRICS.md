@@ -1546,13 +1546,20 @@ that both are equally unfireable. That was **not** what was ruled on. It also ad
 `FACT_VALUE_EXPIRED` and `COMPLETENESS_COUNTS`, leaving the catalog the same size. Reviewable and
 reversible; recorded here because a catalog is closed and versioned, so changing it is not a detail.
 
-### Gate time
+### Gate
 
-The gate ran three times. Once to a **generalization** failure in ~1 minute — the R7 content pin for
-`career-profile.schema.json`, working exactly as designed on a one-line schema change. Once
-deliberately **SIGTERM**ed at 57% when the head moved past it. Then the real run on the final head.
-Concurrent subagents drove load average to 21 and stretched a 65-second suite to eight minutes; the
-lesson from the previous session holds and was paid for again.
+| Run | Result |
+|---|---|
+| 1 (`1bbdaf5`'s parent) | **Failed in ~1 minute** — `generalization` R7's content pin for `career-profile.schema.json`, working exactly as designed on a one-line schema change. Not a defect; the pin is the review prompt. |
+| 2 (`1bbdaf5`) | **SIGTERM at 57%, deliberately** — the head moved past it when the round-4/5 findings arrived. Exit 144 is my `pkill`, not a failure. |
+| 3 (`235f30e`, the final head) | **exit 0 · 5,260 passed · 1 deselected · 95.41% · 32m58s** |
+
+`6cd8665` is docs-only and owes `generalization` + `index-check` only (D-116); both ran green before
+it was committed.
+
+Concurrent subagents drove load average to **21** and stretched a 65-second suite to eight minutes,
+which is most of why run 3 took 33 minutes. The previous session's lesson holds and was paid for
+again — but the parallelism bought two full review rounds and a completed T13 in the same window.
 
 ### Standing
 
