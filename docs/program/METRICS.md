@@ -1144,13 +1144,15 @@ Dispatched three fresh-context Opus reviewers, then **stopped two of them on Mit
 "at this rate, we'll run out of usage." Recorded honestly because a half-run review that is
 remembered as a whole one is worse than no review.
 
-**What ran to completion:** nothing I dispatched directly. The foundations reviewer had fanned out
-into its own nested sub-agents before I stopped it, and **two of those grandchildren finished after
-their parent was killed**, which is where every finding below comes from. Cost estimates for a
-"3-wide" review must assume nesting.
+**What ran to completion:** nothing I dispatched directly. The foundations reviewer had fanned out into
+its own nested sub-agents, and **three of those grandchildren finished after their parent was killed**,
+which is where every finding below comes from. A "3-wide" review was in fact **11 agents**; Mit
+stopped the remaining 7 outright. Cost estimates must assume nesting.
 
-**Still owed:** the code-running review of T10, the whole of the T1–T9 foundations pass beyond the two
-catalog checks below, and the docs-only pass.
+**Still owed:** the code-running review of T10 (killed before it reported), canonical identity vs §7,
+blobs and secret scanning, the dead-check sweep, the packaged-example fixture audit, the
+metric/evidence and conflict/claim/tag catalog checks, and the docs-only pass. **Roughly two thirds of
+the intended review did not happen.**
 
 #### Verified, with negative controls
 
@@ -1175,6 +1177,52 @@ exact column names, so `0 / 41` is a real negative rather than a vacuous parser.
 | MINOR | `test_profile_bundle_entity_models.py:113,147` | The two tests defending that sort **cannot fail** — removing the sort leaves both passing. "A check that cannot fire reads as coverage", in the tests this time |
 | MINOR | `models/entities.py:239` | `SHIPPED_PROJECT_STATUSES` is dead: its only reader is a test asserting it equals its own literal. The real `shipped` authorization is catalog data. Its comment overstates the wiring |
 | MINOR (owed, not wrong) | `models/policy.py:97-110` | `expiry` / `review_interval_days` are required, correct, and **consumed by nothing** — no `as_of` exists anywhere in `src/boardwatch/profile_bundle/`. Consistent with 10 of 19 slices; flagged so the column's presence is not read as enforcement |
+
+#### The restricted YAML loader: 2 BLOCKERs, and both break content addressing
+
+The single highest-value finding of the session, and it lands on **T2**, not on T10.
+
+**BLOCKER — an explicit YAML 1.1 tag bypasses the entire restricted-loader contract**
+(`yaml_loader.py:65-97`). `resolve()` narrows only *implicit* scalars; nothing inspects `node.tag`, so
+`!!bool`, `!!int`, `!!float`, `!!timestamp`, `!!binary`, `!!set`, `!!omap` and `!!pairs` all reach the
+stock `SafeConstructor` untouched. Anchors are refused; tags are not. Every clause of §7's narrowing is
+evadable in one keystroke — `!!bool yes` → `True`, `!!int 0123` → `83` (octal), `!!timestamp 2026-08-10`
+→ a `date`, and `!!omap` bypasses `construct_mapping` so **duplicate keys survive**.
+
+**Demonstrated end-to-end against the real packaged bundle: four byte-different spellings of one record
+produce the identical `bundle_digest`.** `value: true` versus `value: !!bool yes` / `!!bool on` /
+`!!bool TRUE`, and `reviewed_at: '2026-08-10'` versus `!!timestamp 2026-08-10`, all accepted, all
+hashing the same. `schema_version: 1` versus `!!int 0x1` / `!!int 001` / `!!binary MQ==` likewise. This
+is precisely the harm the module's own docstring says justifies refusing anchors wholesale: "they make
+one logical record expressible in two byte sequences, which is exactly what content addressing must not
+have to reason about."
+
+Pydantic does **not** backstop it: `StrictModel` sets `extra="forbid"` and `frozen=True` but not
+`strict=True`, so `IntegerValue` accepts `!!binary MzE=` as `31`.
+
+**BLOCKER — untyped builtin exceptions escape `load_documents`** (`yaml_loader.py:145-150` guards only
+`yaml.YAMLError`). PyYAML's tag constructors raise raw builtins: `!!bool y` → `KeyError`, `!!int abc` →
+`ValueError`, `!!timestamp nope` → `AttributeError`, `!!set x` → `ValueError`. None is a
+`ProfileBundleError`, and `validation/context.py:113` catches only `RestrictedYamlError`, so a traceback
+leaves the package and defeats §21's exit contract. Reachable from ordinary authored content, since
+§19's workflow has an agent writing draft YAML that `validate --draft` then reads.
+
+**One fix closes both:** reject any explicitly-written node tag in `compose_node`, where the anchor
+check already lives and already has the event in hand.
+
+| Severity | Where | Defect |
+|---|---|---|
+| **MAJOR** | `errors.py:387`, `yaml_loader.py` | One `RestrictedYamlError` covers 8+ distinct violations, distinguishable only by message text, and `context.py` collapses them all to `RESTRICTED_YAML_VIOLATION`. Consequence: **`IssueCode.INVALID_YAML` is referenced nowhere but its own definition** — permanently dead — and `INVALID_UTF8` never fires for a document. Violates `CLAUDE.md`'s "typed violations at the raise site, never classify by string-matching a message" |
+| **MAJOR** | `yaml_loader.py:37-45` | Out-of-contract scalars are caught by a **2-pattern blocklist** where §20.1 implies an allowlist. `0x1f` is refused but `0xZZ` is not; `0123` is refused but `1e3` is not. Sharpest case: `YearMonthValue` accepts both `'2026-08'` and unquoted `2026-08` to the **same digest**, while the neighbouring `DateValue` refuses the unquoted form |
+| MINOR | `yaml_loader.py:38,47` | `+0`/`-0`/`0` and `null`/`~`/empty each collapse to one canonical value — same byte-multiplicity class, but explicit choices. `a: -` is refused while `a: +` is accepted as `'+'` |
+| MINOR | design §7 line 302 | The design says the loader "removes" YAML 1.1's coercions; it keeps the resolvers and consults them as an ambiguity oracle. The implementation is the better design — the *design text* wants the correction, so nobody "fixes" the code toward the spec |
+
+**Verified correct (no finding):** all 17 requested cases behave per design for *plain* scalars —
+duplicate keys in six positions, anchors, aliases, merge keys both spellings, leading-zero and
+base-prefixed integers, sexagesimal `12:30:00` refused as an int, every quoted form surviving as an
+exact `str`, non-finite floats, BOM handling, multi-document refusal, and non-UTF-8. The
+`pyyaml>=6.0,<7.0` pin is present in both `pyproject.toml` and `uv.lock` (resolved 6.0.3), so §7's
+dependency precondition is **MET**. No loader bypass exists anywhere in the package.
 
 **None of these were fixed in this session** — a code fix owes a full `make check` (~7.5 min), and
 batching them behind one gate is cheaper than paying it per finding. They are open work, not history.
