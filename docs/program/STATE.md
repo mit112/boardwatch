@@ -52,6 +52,15 @@ already folded into the single `## [0.3.0] - 2026-08-10` section. **The tag must
 the CI fix** — `v0.3.0` names `426f45c`, whose tree has no `.github/actions/setup-typesetting` at all, so
 re-pushing it unmoved re-runs the identical failure.
 
+**0.3.0 ships Gate A inside it, deliberately (D-119).** The wheel carries the whole `profile_bundle` package —
+65 entries, 31 modules, 33 example YAML documents, 1 JSON Schema — and the `## [0.3.0]` section does not
+enumerate them. **Mit was offered "hold 0.3.0 until Gate A is reviewed" and declined it**: the package is inert
+(no CLI command, no bundle-to-`Resume` bridge, a test asserts both directions, nothing in a shipped code path
+imports it), `gitleaks` and `generalization` are green on it in CI so no secrets or personal data ship,
+changelogs do not normally enumerate internal packages, and no commit on `main` carries the CI fix without it.
+**Publishing changed the release, not the review's standing** — the Gate A review is still owed and Gate B is
+still prohibited.
+
 **The tectonic/poppler gap is fixed and PROVEN on runners (D-114).** Run `31421520836` on `cefd13e`: ubuntu
 ×3 and macOS ×3 green — 33 failures → 0. Windows was red there for a *different*, now-fixed reason (the
 program-index cp1252 decode, `1 failed / 3,922 passed`), whose fix was in the held commits and is now pushed.
@@ -148,7 +157,7 @@ since D-035, unchanged by everything since.
 |---|---|---|
 | **Three `resume.yaml` bullets exceed the 220-char layout gate** | Forces an untailored-master degrade on every posting, which is what blocks accumulating real runs. The file also lacks Knowledge Forge, has stale `skill_groups`, and an empty extracurricular block. **Mit pins `resume_max_pages=1` — do not advise setting it to 2.** | Mit (content) |
 | **0.3.0 re-tag not yet executed** | The form is decided (move `v0.3.0`, D-117) and the CHANGELOG is folded. Waiting only on `ci.yml` green on all three OSes on the commit the tag will name | verify, then release |
-| **Gate A is not reviewed, and T1–T10 ship inside the 0.3.0 wheel** | Gate-green and pushed, but the independent review is owed and **Gate B is prohibited until it happens**. Being on `origin/main` is not sign-off. The wheel built at `dc1ffec` carries 65 `profile_bundle` entries (31 modules, 33 example YAML, 1 schema) and the `## [0.3.0]` section does not mention them, so publishing sends unreviewed code to PyPI under an irreversible version. Inert — no CLI, no `Resume` bridge — and `gitleaks`/`generalization` are green on it. No commit on `main` carries the CI fix without it. **Mit's call: review before 0.3.0 publishes, or publish and review after** | owner-gated |
+| **Gate A T1–T10 is not reviewed** | Gate-green and pushed, but the independent review is owed and **Gate B is prohibited until it happens**. Being on `origin/main` is not sign-off, and neither is being published. **Scope is T1–T10, not T1–T9** | review |
 | **No local pre-push check for the three CI-only jobs** | `gitleaks`, `perf` and `generalization` run in CI and not under `make check`; `gitleaks` is not installed by project tooling. `gitleaks git --log-opts=origin/main..HEAD` is the cheap mitigation (D-117) | open |
 | **P2 item 8 — the onboarding gatherer** | The thing that would make the field tier fire for anyone. D-054 forbids us authoring non-tech field content, so it must be gathered per user. Needs its own brainstorm | owner-gated |
 | **P3 Slice 5 — LLM economics** | Substantial and design-heavy; use a fresh context window | P3 |

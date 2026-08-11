@@ -1120,10 +1120,16 @@ state that basis may establish, and evidence records of the classes the row's ch
 `minimum_evidence` alternative names. All 41 accepted. A new predicate row becomes a new case with no
 test edit; a changed column changes what the case is built from.
 
-### Wheel contents measured by the concurrent release session
+### Wheel contents measured by the concurrent release session — and the ruling that followed
 
 Not this session's command, and recorded because it bears on the track: the wheel built at `dc1ffec`
 carries **65 `profile_bundle` entries** — 31 modules, 33 example YAML documents, 1 JSON Schema — and
-the `## [0.3.0]` changelog section names none of them. So T1–T10 would publish to PyPI unreviewed
-under an irreversible version. Inert (no CLI, no `Resume` bridge, both asserted), and `gitleaks` and
-`generalization` are green on it. **Owner's call, now in `STATE.md`'s blocker table.**
+the `## [0.3.0]` changelog section names none of them. So T1–T10 publish to PyPI unreviewed under an
+irreversible version.
+
+**Mit ruled: ship as-is (D-119).** He was offered "hold 0.3.0 until Gate A is reviewed" as an explicit
+option and declined it — the package is inert (no CLI, no `Resume` bridge, both asserted, nothing in a
+shipped code path imports it), `gitleaks` and `generalization` are green on it in CI, changelogs do not
+normally enumerate internal packages, and no commit on `main` carries the CI fix without it. So this is
+**not** an open question and this record should not be read as one. What did not change: **the Gate A
+review is still owed, its scope is now T1–T10 rather than T1–T9, and Gate B stays prohibited.**
