@@ -82,7 +82,12 @@ mutations caught. Read D-120 before touching identity derivation — the résum�
 and `~N` locator preservation are both load-bearing for stored IDs, and four checks were deleted
 there for being unable to fire.
 
-**Next slice is T13**, completeness, digest validation, ancestor traversal, and deterministic reports. It
+**Next slice is T13** — and it is **STARTED, uncommitted**: `src/boardwatch/profile_bundle/reports.py`
+(222 lines, design §19–§21) and `tests/profile_bundle/test_profile_bundle_reports.py` (279 lines) sit
+**untracked** in the working tree, written by a session that did not commit them. They are somebody
+else's in-flight work: **stage explicit paths, never `git add -A`/`-u`**. Collection is unaffected —
+5,200 of 5,201 tests collect with them present. T13 covers completeness, digest validation, ancestor
+traversal, and deterministic reports. It
 inherits the promoted-revision fixture T11 built and the digest primitives from T8 (`record_digest`,
 `candidate_content_digest`, `candidate_digest_from_revision`, `source_scope_target_digest`,
 `source_exclusion_target_digest`). Note that `validate_imports` and `imports_completeness` are deliberately
@@ -157,6 +162,7 @@ since D-035, unchanged by everything since.
 |---|---|---|
 | **Three `resume.yaml` bullets exceed the 220-char layout gate** | Forces an untailored-master degrade on every posting, which is what blocks accumulating real runs. The file also lacks Knowledge Forge, has stale `skill_groups`, and an empty extracurricular block. **Mit pins `resume_max_pages=1` — do not advise setting it to 2.** | Mit (content) |
 | **Gate A implementation remains incomplete; T12 is twice-reviewed, twice-fixed, and NOT signed off** | T1–T11 are signed off. T12 (D-120) shipped the four source adapters, derived candidate identity, idempotent import merging and import validation. Review one returned REWORK with five BLOCKING findings (D-121, fixed in `ce0a8de`); review two returned REWORK with four more (D-122), one of which the first fix created. **Each retraction owes its own review — a third is owed before Gate B.** T13 onward remains unstarted; Gate B stays prohibited. | T13 |
+| **The 03:10 launchd job re-fires a task that already shipped** | `com.mitsheth.boardwatch-p6.plist` is a *daily* `StartCalendarInterval` job carrying the *one-shot* "execute P6 Slice 1" prompt, which asserts `main` at `fb0386a` — now an ancestor 110 commits back. It misfired on 2026-08-11 and will misfire nightly. Benign and self-detecting (the session-start ritual catches it in a few read-only commands), **not** self-correcting. Fix: `launchctl bootout gui/$UID/com.mitsheth.boardwatch-p6`, or repoint `~/.claude/scheduled/p6-slice1-run.sh` at a fresh prompt (D-123) | Mit (automation) |
 | **No local pre-push check for the three CI-only jobs** | `gitleaks`, `perf` and `generalization` run in CI and not under `make check`; `gitleaks` is not installed by project tooling. `gitleaks git --log-opts=origin/main..HEAD` is the cheap mitigation (D-117) | open |
 | **Five Gate A fix commits are independently reviewed** | The current `origin/main` contains `1de10c7`, `20ff50c`, `8d32294`, `9d78450`, and `bbec2c0`; each exact diff and the untracked design correction were checked against the original findings with executable reproductions and negative controls. Their prior `make check` results were not used as sign-off. | complete |
 | **The earlier partial-review findings are resolved or separately fixed** | Explicit tags, typed YAML codes, scalar allowlisting, predicate evidence routes, `legal_surfaces`, and dead-check removals were rechecked. The independent review also found and fixed the broad YAML-loader exception classification (`dfa655e`) and the Windows personal-path scan gap (`f166d18`). No BLOCKING or unresolved SHOULD-FIX findings remain. | review |

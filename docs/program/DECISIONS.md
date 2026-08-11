@@ -110,52 +110,53 @@ and is a no-op when the index is already right. `make index-check` reports drift
 | D-074 | DECISIONS-ARCHIVE.md | 3009 | Final eligibility gate lane SHIPPED (persistent, agent-lane, fail-open); Gate P5 unchanged |
 | D-075 | DECISIONS-ARCHIVE.md | 3084 | Gate P2 reconciled: three individually-correct verdicts (may coincide); ≥3-field mechanism via fixtures |
 | D-076 | DECISIONS-ARCHIVE.md | 3153 | P2 item 4's final whole-branch review: what it caught, and four rulings it forced |
-| D-077 | DECISIONS.md | 162 | P6 Slice 1: the design is settled and the plan is written; no code exists yet |
-| D-078 | DECISIONS.md | 252 | P6 Slice 1: the plan's test fixtures are now real; eleven defects, all found by running code |
-| D-079 | DECISIONS.md | 341 | P6 Slice 1 annotates only; `postings.job_id` is not mutated |
-| D-080 | DECISIONS.md | 355 | `content_hash` alone may never suppress |
-| D-081 | DECISIONS.md | 369 | `exact_quad` is the sole suppressing kind, and its yield is stated honestly |
-| D-082 | DECISIONS.md | 387 | `cross_host` ships annotate-only, reversing an earlier draft |
-| D-083 | DECISIONS.md | 408 | No location evidence ⇒ no location-bearing identity, never a `"[]"` sentinel |
-| D-084 | DECISIONS.md | 423 | Three host classes, not two; matching is exact-or-dot-suffix |
-| D-085 | DECISIONS.md | 437 | Allowlist URL normalization, not a denylist |
-| D-086 | DECISIONS.md | 451 | Survivor election never consults score; `posting_id` is a load-bearing tiebreak |
-| D-087 | DECISIONS.md | 466 | Instrumentation is completeness-gated, not existence-gated |
-| D-088 | DECISIONS.md | 480 | `assisted` stays `None` in this slice |
-| D-089 | DECISIONS.md | 495 | Identities are upserted on every observation; a kind that stops being produced is deleted |
-| D-090 | DECISIONS.md | 512 | The ranker is completeness-gated for reproducibility, not safety |
-| D-091 | DECISIONS.md | 530 | The recount recomputes in Python, and claims staleness only |
-| D-092 | DECISIONS.md | 545 | Identities are backfilled by an explicit command, not by the migration |
-| D-093 | DECISIONS.md | 559 | Slice 1 does NOT meet Gate P6, and makes only one of its four clauses measurable |
-| D-094 | DECISIONS.md | 573 | P6 Slice 1 BUILT (unattended run): five more plan defects, three of them tests that could not fail |
-| D-095 | DECISIONS.md | 701 | P6 Slice 1 reviewed by three independent reviewers; fourteen findings fixed, two rejected |
-| D-096 | DECISIONS.md | 766 | The C++/C# fix folds punctuation into words; it does NOT add a raw-title comparison |
-| D-097 | DECISIONS.md | 810 | `_verify_quad` rejected nothing on the live corpus; "string-verified" is not precision evidence |
-| D-098 | DECISIONS.md | 839 | Suppression reports when it is OFF; wiring backfill into the pipeline is Slice 2 |
-| D-099 | DECISIONS.md | 875 | Gate batching stays allowed; the per-task fast-check set must include the schema guards |
-| D-100 | DECISIONS.md | 901 | P6 Slice 1 merged to `main`; Gate P6 clause 3 is MET, not merely measurable |
-| D-101 | DECISIONS.md | 933 | Gate P6 clause 4 is MET: 20/20 sampled suppressions are genuine duplicates |
-| D-102 | DECISIONS.md | 963 | D-072 (model-tier benchmark) is deferred indefinitely |
-| D-103 | DECISIONS.md | 985 | P6 Slice 2: the ledger is a current-state row per job, `seen` suppresses on a TTL, and the policy stamp never auto-reopens |
-| D-104 | DECISIONS.md | 1057 | Job regrouping: the survivor's job wins, and a tracked group is refused whole |
-| D-105 | DECISIONS.md | 1100 | Identity writes move into the scan path, closing D-098 — and D-098's cost argument did not apply |
-| D-106 | DECISIONS.md | 1131 | Two consequences the build forced: what earns a permanent `skipped`, and the zero-output guard |
-| D-107 | DECISIONS.md | 1157 | P6 Slice 2 BUILT and verified on real data; `cross_host` dereference deferred by measured absence |
-| D-108 | DECISIONS.md | 1206 | The decision log and the metrics log are archive-split; the reading protocol moves into the index |
-| D-109 | DECISIONS.md | 1265 | Index drift fails the gate, and the fixer lives in `tools/` |
-| D-110 | DECISIONS.md | 1343 | The Slice 2 review: only a caller that delivers a lead may consume the queue |
-| D-111 | DECISIONS.md | 1460 | P6 Slice 3: applied-state suppression, and liveness sized to what the corpus actually is |
-| D-112 | DECISIONS.md | 1629 | 0.3.0 is cut, the changelog gets ONE triple, and the tag is the owner's to push |
-| D-113 | DECISIONS.md | 1733 | The Slice 3 external review: a followed redirect can forge a gone-status |
-| D-114 | DECISIONS.md | 1821 | CI installs tectonic and pdfinfo on all three OSes; skipping the gate was refused |
-| D-115 | DECISIONS.md | 1889 | Gate A of the career-profile bundle: 9 of 19 slices, and a rule for checks that cannot fire |
-| D-116 | DECISIONS.md | 1971 | A docs-only commit owes the two fast gates, not the full suite; the tectonic pin gets a detector |
-| D-117 | DECISIONS.md | 2018 | 0.3.0's tag moves rather than 0.3.1 being cut; gitleaks fixed by cleaning bytes, not allowlisting |
-| D-118 | DECISIONS.md | 2068 | Gate A slice T10: effectiveness derived in one place, and two more §20.4 rows with no check |
-| D-119 | DECISIONS.md | 2165 | 0.3.0 is PUBLISHED: the tag moved onto a CI-green commit, and ships two known BLOCKERs deliberately |
-| D-120 | DECISIONS.md | 2233 | Gate A slice T12: the résumé emission order is fixed, and three more checks that cannot fire |
-| D-121 | DECISIONS.md | 2316 | The T12 review: a green gate and a perfect mutation score hid five BLOCKING defects |
-| D-122 | DECISIONS.md | 2377 | The T12 re-review: one defect the fix created, two contracts never enforced, and a decline that was wrong |
+| D-077 | DECISIONS.md | 163 | P6 Slice 1: the design is settled and the plan is written; no code exists yet |
+| D-078 | DECISIONS.md | 253 | P6 Slice 1: the plan's test fixtures are now real; eleven defects, all found by running code |
+| D-079 | DECISIONS.md | 342 | P6 Slice 1 annotates only; `postings.job_id` is not mutated |
+| D-080 | DECISIONS.md | 356 | `content_hash` alone may never suppress |
+| D-081 | DECISIONS.md | 370 | `exact_quad` is the sole suppressing kind, and its yield is stated honestly |
+| D-082 | DECISIONS.md | 388 | `cross_host` ships annotate-only, reversing an earlier draft |
+| D-083 | DECISIONS.md | 409 | No location evidence ⇒ no location-bearing identity, never a `"[]"` sentinel |
+| D-084 | DECISIONS.md | 424 | Three host classes, not two; matching is exact-or-dot-suffix |
+| D-085 | DECISIONS.md | 438 | Allowlist URL normalization, not a denylist |
+| D-086 | DECISIONS.md | 452 | Survivor election never consults score; `posting_id` is a load-bearing tiebreak |
+| D-087 | DECISIONS.md | 467 | Instrumentation is completeness-gated, not existence-gated |
+| D-088 | DECISIONS.md | 481 | `assisted` stays `None` in this slice |
+| D-089 | DECISIONS.md | 496 | Identities are upserted on every observation; a kind that stops being produced is deleted |
+| D-090 | DECISIONS.md | 513 | The ranker is completeness-gated for reproducibility, not safety |
+| D-091 | DECISIONS.md | 531 | The recount recomputes in Python, and claims staleness only |
+| D-092 | DECISIONS.md | 546 | Identities are backfilled by an explicit command, not by the migration |
+| D-093 | DECISIONS.md | 560 | Slice 1 does NOT meet Gate P6, and makes only one of its four clauses measurable |
+| D-094 | DECISIONS.md | 574 | P6 Slice 1 BUILT (unattended run): five more plan defects, three of them tests that could not fail |
+| D-095 | DECISIONS.md | 702 | P6 Slice 1 reviewed by three independent reviewers; fourteen findings fixed, two rejected |
+| D-096 | DECISIONS.md | 767 | The C++/C# fix folds punctuation into words; it does NOT add a raw-title comparison |
+| D-097 | DECISIONS.md | 811 | `_verify_quad` rejected nothing on the live corpus; "string-verified" is not precision evidence |
+| D-098 | DECISIONS.md | 840 | Suppression reports when it is OFF; wiring backfill into the pipeline is Slice 2 |
+| D-099 | DECISIONS.md | 876 | Gate batching stays allowed; the per-task fast-check set must include the schema guards |
+| D-100 | DECISIONS.md | 902 | P6 Slice 1 merged to `main`; Gate P6 clause 3 is MET, not merely measurable |
+| D-101 | DECISIONS.md | 934 | Gate P6 clause 4 is MET: 20/20 sampled suppressions are genuine duplicates |
+| D-102 | DECISIONS.md | 964 | D-072 (model-tier benchmark) is deferred indefinitely |
+| D-103 | DECISIONS.md | 986 | P6 Slice 2: the ledger is a current-state row per job, `seen` suppresses on a TTL, and the policy stamp never auto-reopens |
+| D-104 | DECISIONS.md | 1058 | Job regrouping: the survivor's job wins, and a tracked group is refused whole |
+| D-105 | DECISIONS.md | 1101 | Identity writes move into the scan path, closing D-098 — and D-098's cost argument did not apply |
+| D-106 | DECISIONS.md | 1132 | Two consequences the build forced: what earns a permanent `skipped`, and the zero-output guard |
+| D-107 | DECISIONS.md | 1158 | P6 Slice 2 BUILT and verified on real data; `cross_host` dereference deferred by measured absence |
+| D-108 | DECISIONS.md | 1207 | The decision log and the metrics log are archive-split; the reading protocol moves into the index |
+| D-109 | DECISIONS.md | 1266 | Index drift fails the gate, and the fixer lives in `tools/` |
+| D-110 | DECISIONS.md | 1344 | The Slice 2 review: only a caller that delivers a lead may consume the queue |
+| D-111 | DECISIONS.md | 1461 | P6 Slice 3: applied-state suppression, and liveness sized to what the corpus actually is |
+| D-112 | DECISIONS.md | 1630 | 0.3.0 is cut, the changelog gets ONE triple, and the tag is the owner's to push |
+| D-113 | DECISIONS.md | 1734 | The Slice 3 external review: a followed redirect can forge a gone-status |
+| D-114 | DECISIONS.md | 1822 | CI installs tectonic and pdfinfo on all three OSes; skipping the gate was refused |
+| D-115 | DECISIONS.md | 1890 | Gate A of the career-profile bundle: 9 of 19 slices, and a rule for checks that cannot fire |
+| D-116 | DECISIONS.md | 1972 | A docs-only commit owes the two fast gates, not the full suite; the tectonic pin gets a detector |
+| D-117 | DECISIONS.md | 2019 | 0.3.0's tag moves rather than 0.3.1 being cut; gitleaks fixed by cleaning bytes, not allowlisting |
+| D-118 | DECISIONS.md | 2069 | Gate A slice T10: effectiveness derived in one place, and two more §20.4 rows with no check |
+| D-119 | DECISIONS.md | 2166 | 0.3.0 is PUBLISHED: the tag moved onto a CI-green commit, and ships two known BLOCKERs deliberately |
+| D-120 | DECISIONS.md | 2234 | Gate A slice T12: the résumé emission order is fixed, and three more checks that cannot fire |
+| D-121 | DECISIONS.md | 2317 | The T12 review: a green gate and a perfect mutation score hid five BLOCKING defects |
+| D-122 | DECISIONS.md | 2378 | The T12 re-review: one defect the fix created, two contracts never enforced, and a decline that was wrong |
+| D-123 | DECISIONS.md | 2501 | A recurring trigger holding a one-shot prompt re-fires a task that already shipped |
 
 ---
 
@@ -2496,3 +2497,48 @@ inflated by a duplicate, presented as evidence.
 **Consequence.** 20 distinct mutations across this round, all caught (12 for the review fixes, 8
 for the adapter grammar). Gate result recorded in METRICS. The fix is **not** signed off: a third
 review is owed before Gate B, and T12 is the block every later task trusts.
+
+## D-123 — A recurring trigger holding a one-shot prompt re-fires a task that already shipped
+
+*2026-08-11, 03:10, unattended. The scheduled run declined to execute its own prompt. No code was
+written; no branch was created. Recorded because the misfire recurs nightly until the trigger is
+changed, and because the next session to hit it will otherwise re-derive this from scratch.*
+
+**Context.** `~/Library/LaunchAgents/com.mitsheth.boardwatch-p6.plist` uses
+`StartCalendarInterval` at 03:10 with no terminating condition, so it is a *daily* job. The command
+it runs, `~/.claude/scheduled/p6-slice1-run.sh`, passes a *one-shot* prompt,
+`~/.claude/scheduled/p6-slice1-prompt.md`, whose task is "P6 Slice 1 — execute the plan, starting at
+Task 1". That prompt asserts a starting state of `main` at `fb0386a` with only `AGENTS.md` untracked.
+
+Slice 1 was executed by the **2026-08-10** occurrence of this same job, on branch `p6-slice1`, and has
+since been reviewed (D-095), merged, and followed by Slices 2 and 3 (D-103…D-107, D-110, D-111,
+D-113) and twelve Gate A slices. At tonight's occurrence `fb0386a` was an **ancestor of `HEAD`, 110
+commits back**; `AGENTS.md` was tracked; and every module the plan's nine tasks create already
+existed — `core/identity_kinds.py`, `core/posting_identity.py`, `store/identity_queries.py`,
+`cli/identities_cmd.py`, migration `p6_posting_identities`, the root `tests/conftest.py`, and six
+test modules. The Alembic head has moved twice past what the plan targets, to `p6_job_dispositions`.
+
+**Choice.** Execute nothing. CLAUDE.md's session-start ritual says the repo wins over a document that
+disagrees with it, and that governs a *prompt* at least as strongly as it governs `STATE.md`: a prompt
+is a document written at a past commit. Following it would have created a duplicate migration, a
+second identity catalog, and a `p6-slice1` branch off a tree that already contains the merged
+original — a merge conflict with itself, in a session with nobody awake to arbitrate.
+
+**Alternatives rejected.** *Unload the launchd job.* Reversible and it stops the waste, but the plist
+is Mit's automation and the same job is the vehicle for the standing unattended-run pattern; silently
+disabling it at 3am substitutes our judgement for theirs on a schedule we were not asked to own.
+*Rewrite the prompt to point at the next real task.* Worse — it picks the next task by fiat, which is
+exactly the decision the owner reserves, and it hides the misfire instead of surfacing it. *Treat the
+prompt's rule 4 ("do not stop at the first failure — route around it") as licence to do other work.*
+Rule 4 routes around a failed **task within this plan**; it is not a mandate to invent a scope, and
+rule 8 of the same prompt forbids starting anything the task does not ask for.
+
+**Consequence.** The failure mode is **self-detecting and benign**: any session that performs the
+session-start ritual reaches this conclusion in a handful of read-only commands, so the recurrence
+costs one short window per night and cannot corrupt the tree. It is not self-*correcting* — the
+trigger must change. Two fixes, either sufficient: `launchctl bootout gui/$UID/com.mitsheth.boardwatch-p6`
+to retire the job, or repoint `p6-slice1-run.sh` at a fresh prompt for the actual next task. The
+general lesson for this program's automation: **a prompt that names a starting sha is a one-shot
+artifact, and pairing one with a recurring trigger guarantees it eventually executes against a tree
+it was not written for.** An unattended prompt should either state its own precondition as a check
+that aborts (`git merge-base --is-ancestor`), or be deleted by the run that consumes it.
