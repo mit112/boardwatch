@@ -958,3 +958,133 @@ def test_the_selected_revision_reads_back_through_the_ordinary_reader(scene: Sce
 
     assert documents.manifest == _manifest_of(outcome.value.root)
     assert selection == outcome.value
+
+
+# --------------------------------------------------------------------------------------
+# The store is shared and takes no lock, so it can move under a promotion
+# --------------------------------------------------------------------------------------
+
+
+def test_a_blob_that_disappears_mid_promotion_refuses_instead_of_raising(
+    scene: Scene, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """`blobs/` is shared across revisions and no writer of it takes the bundle lock.
+
+    So the bytes behind a digest can leave between the derivation and the from-disk re-read. §21 has
+    no exit code for an exception escaping a command, and this is the backstop that keeps it a
+    typed refusal.
+    """
+    from boardwatch.profile_bundle.paths import blob_path
+    from tests.profile_bundle.conftest import BLOB_SHA256
+
+    real = promotion_module._write_revision
+
+    def vanish(staged: Path, prepared: Any) -> None:
+        real(staged, prepared)
+        blob_path(scene.bundle_root, BLOB_SHA256).unlink()
+
+    monkeypatch.setattr(promotion_module, "_write_revision", vanish)
+
+    outcome = promote(scene.bundle_root, _request())
+
+    assert outcome.exit_code == 1
+    assert _codes(outcome) == [IssueCode.MISSING_BLOB]
+    assert not current_path(scene.bundle_root).exists()
+    assert _temporaries(scene.bundle_root) == []
+
+
+def test_a_blob_rewritten_mid_promotion_stops_the_promotion(
+    scene: Scene, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The re-read recomputes the digest from disk, and a blob leaf is part of that digest.
+
+    Comparing the documents alone would not catch this: the models are unchanged and only the bytes
+    the manifest hashes have moved, which is exactly the mutation §21 calls a digest failure.
+    """
+    from boardwatch.profile_bundle.paths import blob_path
+    from tests.profile_bundle.conftest import BLOB_SHA256
+
+    real = promotion_module._write_revision
+
+    def rewrite(staged: Path, prepared: Any) -> None:
+        real(staged, prepared)
+        path = blob_path(scene.bundle_root, BLOB_SHA256)
+        path.chmod(0o600)
+        path.write_bytes(b"# different bytes under the same digest\n")
+
+    monkeypatch.setattr(promotion_module, "_write_revision", rewrite)
+
+    outcome = promote(scene.bundle_root, _request())
+
+    assert outcome.exit_code == 3
+    assert _codes(outcome) == [IssueCode.INTERNAL_ERROR]
+    assert not current_path(scene.bundle_root).exists()
+    assert _temporaries(scene.bundle_root) == []
+
+
+def test_a_pointer_written_for_another_revision_is_caught_after_the_replace(
+    scene: Scene, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The deferred pointer clause, asserted where the pointer now exists.
+
+    Step 6 tolerates `current_pointer_mismatch` because for a first promotion there is no `CURRENT`
+    at all. What makes that safe is this: after the replace, the selection is resolved through the
+    ordinary reader and compared with what the promotion wrote.
+    """
+    first, _, _ = _second_revision(scene, edit=_rename_skill("Revision Two"))
+    stale = current_path(scene.bundle_root).read_bytes()
+    real = promotion_module._write_file
+
+    def wrong_pointer(path: Path, data: bytes) -> None:
+        if path.name.startswith(promotion_module.CURRENT_TEMP_PREFIX):
+            data = stale
+        real(path, data)
+
+    monkeypatch.setattr(promotion_module, "_write_file", wrong_pointer)
+
+    outcome = promote(scene.bundle_root, _request(SECOND_DRAFT))
+
+    assert outcome.exit_code == 1
+    assert _codes(outcome) == [IssueCode.CURRENT_POINTER_MISMATCH]
+    assert read_current_once(scene.bundle_root).root == first
+
+
+def test_a_current_file_that_cannot_be_resolved_refuses_before_any_write(scene: Scene) -> None:
+    """Only "there is no pointer yet" means revision 1; every other failure is a refusal."""
+    _promoted(scene)
+    current_path(scene.bundle_root).write_bytes(b"not a pointer\n")
+    before = _snapshot(scene.bundle_root)
+
+    outcome = promote(scene.bundle_root, _request(SECOND_DRAFT))
+
+    assert outcome.exit_code == 1
+    assert _codes(outcome) == [IssueCode.CURRENT_POINTER_MISMATCH]
+    assert _snapshot(scene.bundle_root) == before
+
+
+def test_a_stamp_file_that_is_not_a_stamp_is_reported_as_such(scene: Scene) -> None:
+    """It exists, so it is not missing; it does not parse, so it is not stale either."""
+    approval_path(scene.bundle_root, scene.candidate).write_bytes(b"approvals: []\n")
+    before = _snapshot(scene.bundle_root)
+
+    outcome = promote(scene.bundle_root, _request())
+
+    assert outcome.exit_code == 1
+    assert _codes(outcome) == [IssueCode.MODEL_VALIDATION_ERROR]
+    assert outcome.diagnostics[0].path is not None
+    assert outcome.diagnostics[0].path.startswith("approvals/")
+    assert _snapshot(scene.bundle_root) == before
+
+
+def test_a_draft_missing_its_history_documents_cannot_be_promoted(scene: Scene) -> None:
+    """Promotion appends to those two ledgers; there is nothing to append to."""
+    (scene.draft / "history" / "changes.yaml").unlink()
+    _approve(scene.bundle_root, scene.draft)
+    before = _snapshot(scene.bundle_root)
+
+    outcome = promote(scene.bundle_root, _request())
+
+    assert outcome.exit_code == 1
+    assert _codes(outcome) == [IssueCode.MISSING_REQUIRED_FILE]
+    assert outcome.diagnostics[0].path == "history"
+    assert _snapshot(scene.bundle_root) == before

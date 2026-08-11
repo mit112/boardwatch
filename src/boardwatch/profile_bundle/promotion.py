@@ -236,6 +236,19 @@ def promote(
             return _promote_locked(bundle_root, draft_name, request)
     except BundleLockHeldError as exc:
         return _refusal(IssueCode.BUNDLE_LOCK_HELD, str(exc))
+    except MissingBlobError as exc:
+        # The backstop for a blob that disappears mid-promotion. `_derive` catches the ordinary
+        # case, where the blob was already gone when the draft's identity was computed; this covers
+        # every later computation, and it exists because the store is shared and takes no lock —
+        # `add-evidence` and a hand-edit both reach it while this command is running. Without it a
+        # `MissingBlobError` escapes `promote` as an exception, which is the shape §21 has no exit
+        # code for.
+        return _refusal(
+            IssueCode.MISSING_BLOB,
+            f"blob sha256:{exc.bare_digest} left this bundle while the promotion was running, so "
+            "the revision's identity could not be computed and nothing was promoted",
+            path=EVIDENCE_PATH.as_posix(),
+        )
     except BundleIoError as exc:
         return _refusal(IssueCode.IO_ERROR, str(exc))
     except OSError as exc:
