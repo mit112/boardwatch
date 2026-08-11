@@ -449,10 +449,62 @@ def test_a_lapsed_credential_names_the_fact_and_the_date_it_was_measured_against
     ]
     assert [f.record_id for f in found] == ["fact.example-credential.expiry.001"]
     assert found[0].details == {
-        "expires_at": "2026-07-01",
+        "expired_on": "2026-07-01",
+        "declared_by": "both",
         "as_of": AFTER_EXPIRY.isoformat(),
         "predicate": "certification.expiry",
     }
+
+
+def expiry_findings(bundle: SyntheticBundle, as_of: date) -> list[Any]:
+    ctx = build_context(bundle.draft, mode="draft", blobs=blob_reader())
+    return [f for f in validate_completeness(ctx, as_of=as_of) if f.code == "fact_value_expired"]
+
+
+def set_credential_expires_at(bundle: SyntheticBundle, value: str | None) -> None:
+    def mutate(data: Any) -> None:
+        for fact in data["facts"]:
+            if fact["fact_id"] == "fact.example-credential.expiry.001":
+                fact["expires_at"] = value
+
+    edit(bundle, "facts/certifications.yaml", mutate)
+
+
+def test_a_credential_is_blocked_by_its_own_value_date_with_no_expires_at(
+    synthetic_bundle: SyntheticBundle,
+) -> None:
+    """§10.4's row is "block active use after **value date**", and for `certification.expiry` the
+    fact's VALUE *is* that date.
+
+    Keying only on the `expires_at` column meant a credential that lapsed years ago, whose author
+    left `expires_at: null`, stayed `verified` and effective at every `as_of` — keeping `resume`,
+    `public` and `application` in its `allowed_surfaces` and counting toward `surface_coverage`. A
+    résumé built from the bundle would have asserted it. The packaged example sets both dates
+    identically, which is exactly why no existing test could tell them apart, so this one removes the
+    column and leaves only the value.
+    """
+    set_credential_expires_at(synthetic_bundle, None)
+    found = expiry_findings(synthetic_bundle, AFTER_EXPIRY)
+    assert [f.record_id for f in found] == ["fact.example-credential.expiry.001"]
+    assert found[0].details["expired_on"] == "2026-07-01"
+    assert found[0].details["declared_by"] == "value"
+    assert expiry_findings(synthetic_bundle, BEFORE_EXPIRY) == []
+
+
+def test_the_earlier_of_a_credentials_two_declared_dates_governs(
+    synthetic_bundle: SyntheticBundle,
+) -> None:
+    """`expires_at` and a date value under this predicate declare the same thing.
+
+    Taking the later of the two would let an author revive a lapsed credential by writing a column
+    date after the one the credential itself carries, so the earlier governs and the finding names
+    which declaration produced it — typed in `details`, not spelled out in the message.
+    """
+    set_credential_expires_at(synthetic_bundle, "2030-01-01")
+    found = expiry_findings(synthetic_bundle, AFTER_EXPIRY)
+    assert [(f.details["expired_on"], f.details["declared_by"]) for f in found] == [
+        ("2026-07-01", "value")
+    ]
 
 
 def test_a_fact_whose_predicate_never_expires_is_not_reported_for_its_expiry_date(

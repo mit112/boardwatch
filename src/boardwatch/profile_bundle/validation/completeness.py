@@ -19,8 +19,10 @@ time- or environment-varying input is a keyword argument the caller injects, so 
 - `stale_fact` is the **declared** `VerificationState.STALE`. No date is read.
 - `expired_review` is **computed**: the fact's `reviewed_at` plus its predicate's
   `review_interval_days` is in the past at `as_of`.
-- `fact_value_expired` is also computed, from a different declaration: the fact's `expires_at` under
-  a predicate whose `ExpiryBehaviour` is `block_active_use_after_value_date`.
+- `fact_value_expired` is also computed, from a different declaration: under a predicate whose
+  `ExpiryBehaviour` is `block_active_use_after_value_date`, the earlier of the fact's `expires_at`
+  and its date value — §10.4 names the row after the **value** date, and for `certification.expiry`
+  the value is that date.
 
 They are separate codes because they call for separate actions — retire the record, re-review it, or
 renew the credential — and a code whose meaning depends on which check emitted it cannot be acted on
@@ -48,7 +50,7 @@ from __future__ import annotations
 from collections.abc import Iterator, Mapping
 from datetime import date, timedelta
 from pathlib import Path
-from typing import Final
+from typing import Final, Literal
 
 from boardwatch.profile_bundle.canonical import (
     CanonicalizationError,
@@ -67,6 +69,7 @@ from boardwatch.profile_bundle.errors import (
 from boardwatch.profile_bundle.models.base import EFFECTIVE_STATES, Surface, VerificationState
 from boardwatch.profile_bundle.models.claims import ClaimStatus
 from boardwatch.profile_bundle.models.evidence import SufficiencyState
+from boardwatch.profile_bundle.models.facts import DateValue, FactRecord
 from boardwatch.profile_bundle.models.imports import ExclusionLedger
 from boardwatch.profile_bundle.models.manifests import RevisionManifest
 from boardwatch.profile_bundle.models.policy import ExpiryBehaviour
@@ -84,6 +87,10 @@ from boardwatch.profile_bundle.validation.referential import (
 IDENTITY_PATH: Final = "facts/identity.yaml"
 CONFLICTS_PATH: Final = "conflicts/groups.yaml"
 MANIFEST_PATH: Final = "manifest.yaml"
+
+#: Which declaration produced the date a `fact_value_expired` finding blocks on. Typed at the raise
+#: site so a consumer reads `details["declared_by"]` instead of the message text.
+ExpiryDeclaration = Literal["value", "expires_at", "both"]
 
 
 def validate_completeness(ctx: ValidationContext, *, as_of: date) -> tuple[Diagnostic, ...]:
@@ -251,35 +258,63 @@ def _effective_facts_have_not_passed_their_value_date(
 ) -> Iterator[Diagnostic]:
     """§10.4's `block_active_use_after_value_date`, evaluated at `as_of`.
 
-    Both declarations are required: the fact's `expires_at` and the predicate's behaviour. A date
-    authored on a fact whose predicate expires `never` records when the author expects to revisit
-    it, not a date after which the value stops being true — blocking on that alone would retire a
-    live skill because somebody left themselves a note.
+    The predicate's behaviour decides whether any date is read at all. A date authored on a fact
+    whose predicate expires `never` records when the author expects to revisit it, not a date after
+    which the value stops being true — blocking on that alone would retire a live skill because
+    somebody left themselves a note.
     """
     catalog = ctx.index.predicates
     if catalog is None:
         return
     specs = catalog.by_id
     for fact in ctx.index.facts:
-        if fact.fact_id not in effective or fact.expires_at is None:
+        if fact.fact_id not in effective:
             continue
         spec = specs.get(fact.predicate)
         if spec is None or spec.expiry.behaviour is not (
             ExpiryBehaviour.BLOCK_ACTIVE_USE_AFTER_VALUE_DATE
         ):
             continue
-        if fact.expires_at >= as_of:
+        declared = _declared_expiry(fact)
+        if declared is None or declared[0] >= as_of:
             continue
+        expired_on, declared_by = declared
         yield diagnostic(
             IssueCode.FACT_VALUE_EXPIRED,
-            f"{fact.fact_id} expired on {fact.expires_at.isoformat()} and {fact.predicate} blocks "
+            f"{fact.fact_id} expired on {expired_on.isoformat()} and {fact.predicate} blocks "
             f"active use after its value date",
             path=ctx.path_of(fact.fact_id),
             record_id=fact.fact_id,
-            expires_at=fact.expires_at.isoformat(),
+            expired_on=expired_on.isoformat(),
+            declared_by=declared_by,
             as_of=as_of.isoformat(),
             predicate=str(fact.predicate),
         )
+
+
+def _declared_expiry(fact: FactRecord) -> tuple[date, ExpiryDeclaration] | None:
+    """The date after which this fact's value stops being active, and which declaration states it.
+
+    The §10.4 row is "block active use after **value date**", and for `certification.expiry` the
+    fact's VALUE *is* that date. Reading only the `expires_at` column — as this check first did —
+    left a credential that lapsed years ago effective forever whenever its author left the column
+    null: still `verified`, still carrying `resume` in `allowed_surfaces`, still counted in
+    `surface_coverage`, and a résumé built from the bundle would have asserted it.
+
+    Both are declarations of one thing, so the EARLIER governs. Taking the later would let an author
+    revive a lapsed credential by writing a column date after the one the credential itself carries,
+    which is the same hole in a different place. `declared_by` is typed so a consumer classifies on
+    `details` rather than on the message.
+    """
+    value = fact.value.value if isinstance(fact.value, DateValue) else None
+    column = fact.expires_at
+    if value is None:
+        return None if column is None else (column, "expires_at")
+    if column is None or column > value:
+        return (value, "value")
+    if column < value:
+        return (column, "expires_at")
+    return (value, "both")
 
 
 def _unresolved_conflicts_block_their_candidates(ctx: ValidationContext) -> Iterator[Diagnostic]:
