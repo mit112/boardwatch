@@ -11,13 +11,14 @@ mutation". A blocking acquire would turn a second operator's mistake into a hung
 retry loop would turn it into a hung terminal that also writes.
 
 **The operating system is the only authority.** The kernel drops a dead process's `flock`
-immediately; the lockfile it created is only unlinked by its *own* release, so a holder that is
-killed leaves the path behind. §6 is explicit that Boardwatch "must never break or remove a lock
-based only on PID age, timestamp, or file existence" — so a leftover `career-profile.lock` means
-nothing at all, and nothing here reads it, ages it, or deletes it. That is what makes a stale file
-harmless: the next acquire succeeds because the kernel says the lock is free, not because a
-heuristic decided the file was old enough. It also means the file's presence or absence is not a
-signal in either direction, and no caller may treat it as one.
+immediately, and a killed holder leaves its lockfile behind. §6 is explicit that Boardwatch "must
+never break or remove a lock based only on PID age, timestamp, or file existence" — so a leftover
+`career-profile.lock` means nothing at all, and nothing here reads it, ages it, or deletes it. That
+is what makes a stale file harmless: the next acquire succeeds because the kernel says the lock is
+free, not because a heuristic decided the file was old enough. It also means the file's presence or
+absence is not a signal in either direction, and no caller may treat it as one. Nothing here depends
+on *who* unlinks the file, or on whether anybody does — that differs between `filelock` versions the
+declared floor admits, and it is exactly the kind of detail a lock must not rest on.
 
 **`filelock`, not `flock`.** §6 names Boardwatch's existing cross-platform dependency, which the
 scan coordinator already uses. Introducing a POSIX-only primitive here would contradict the
@@ -37,11 +38,15 @@ from boardwatch.profile_bundle.paths import LOCK_FILE, lock_path
 
 
 class BundleLockHeldError(ProfileBundleError):
-    """Another live process holds the bundle's writer lock.
+    """The bundle's writer lock is already held.
 
     Typed rather than signalled by a return value because every caller's answer is the same — refuse
     with `bundle_lock_held`, exit 3 — and a caller that forgot to check a boolean would proceed to
     write.
+
+    Not "another process": `bundle_lock` builds a fresh `FileLock` per call, so a second acquire
+    inside *this* process fails identically, and a composite command that took the lock twice would
+    otherwise send its operator hunting for a process that does not exist.
     """
 
 
@@ -62,8 +67,8 @@ def bundle_lock(bundle_root: Path) -> Iterator[Path]:
         lock.acquire(blocking=False)
     except Timeout as exc:
         raise BundleLockHeldError(
-            f"another process holds this bundle's {LOCK_FILE}; nothing was waited for and nothing "
-            "was changed"
+            f"this bundle's {LOCK_FILE} is already held, by another command or by this one holding "
+            "it twice; nothing was waited for and nothing was changed"
         ) from exc
     except OSError as exc:
         # `strerror` rather than `str(exc)`: the stringified error embeds the absolute lockfile

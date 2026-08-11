@@ -1321,6 +1321,21 @@ def test_the_lock_helper_refuses_a_second_holder_and_releases_on_exit(
         pass
 
 
+def test_a_second_acquire_in_one_process_does_not_blame_another_process(scene: Scene) -> None:
+    """A fresh `FileLock` per call means one process can contend with itself, and T16 will.
+
+    The refusal is correct; the sentence has to be too, or the operator goes looking for a process
+    that is not there.
+    """
+    with bundle_lock(scene.bundle_root):
+        with pytest.raises(BundleLockHeldError) as raised:
+            with bundle_lock(scene.bundle_root):
+                pass
+
+    assert "another process" not in str(raised.value)
+    assert LOCK_FILE in str(raised.value)
+
+
 def test_the_lock_is_never_broken_or_removed(
     scene: Scene, lock_holder: Callable[[Path], subprocess.Popen[str]]
 ) -> None:
