@@ -492,8 +492,13 @@ def _install(
                 "discarded rather than installed",
             )
         # An exact backup already holds these bytes, so the draft is moved to a temporary name and
-        # removed after the install. Nothing is lost: the retained backup is byte-identical, which
-        # is the condition that got us here.
+        # removed after the install. A deliberate departure from §21's "no command deletes drafts":
+        # what is removed is not a draft but a copy this command made two statements ago under the
+        # temporary prefix, and `_identical_trees` proved its bytes are retained at the backup path
+        # first. The alternative — leaving it — adds a full-size `.tmp-draft-` tree that no command
+        # drains and `inventory` reports forever: a leak traded for a provably lossless delete.
+        # `ignore_errors` because the install has already succeeded: a failure here leaves residue
+        # that `inventory` reports, and failing the operation would be the worse answer.
         vacated = (
             drafts_dir(bundle_root) / f"{DRAFT_TEMP_PREFIX}{uuid.uuid4().hex}" if reuse else backup
         )
@@ -631,6 +636,12 @@ def _merge_conflict(logical: PurePosixPath, exc: DocumentMergeConflict) -> Diagn
     `draft_rebase_conflict` covers it because the operator's situation is identical — two edits, one
     place, nobody but them can choose — and inventing a second code for the field-level case would
     widen a closed catalog to describe a distinction they cannot act on differently.
+
+    `record_ids` is therefore empty whenever the conflicting unit has no record identity: a catalog
+    version, a tuple of catalog rows, or a document-level invariant. §19's "with the exact record
+    IDs" is about the record-overlap case, and for these `path` plus `details.field` is the whole
+    locator. A consumer building §17's `changed_record_ids` must read `record_ids` as "the records
+    this refusal is about", never as "every record involved".
     """
     return diagnostic(
         IssueCode.DRAFT_REBASE_CONFLICT,

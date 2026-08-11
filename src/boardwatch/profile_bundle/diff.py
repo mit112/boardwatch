@@ -31,9 +31,12 @@ number has no identity to merge by, so it raises. Guessing there would silently 
 edit; a refusal costs them one command.
 
 The record merge re-checks per record what the caller already checked globally. That looks
-redundant and is not: `ExclusionRecord` and `SourceLedgerSource` carry ID fields but are
-deliberately *not* in the global index (§18 keys them by the record they describe), so a
-both-sides edit to one of them reaches here having passed the global overlap check.
+redundant and is not: an `ExclusionRecord` and a `SourceLedgerSource` are keyed by the record they
+describe (§18), so their IDs *are* in the global index — belonging to that other record. Editing
+one of them therefore changes no indexed record's content, the global overlap check sees nothing,
+and a both-sides edit arrives here unexamined. The distinction matters because "their IDs are
+absent" would invite adding them to `index._RECORD_KINDS`, which would immediately report every
+bundle as having a `duplicate_record_id`.
 """
 
 from __future__ import annotations
@@ -148,6 +151,10 @@ def diff_records(base: BundleDocuments, changed: BundleDocuments) -> RecordDiff:
     Content comparison is by canonical record digest, not by YAML bytes: reformatting a document,
     reordering its mapping keys, or re-emitting it through a different writer must not read as an
     edit, or every rebase after a re-serialisation would report a conflict with itself.
+
+    The mapping is keyed by ID, so *permuting* a record list is invisible here — and a permutation
+    is not a reformatting: record order is part of the canonical digest, so it is content. The
+    consequence is stated where it lands, in `_merge_records`.
     """
     before = record_contents(base)
     after = record_contents(changed)
@@ -323,6 +330,12 @@ def _merge_records(
     moved onto it; our additions land after it, in our own order. Order is significant to the
     bundle digest, so it has to be decided once and deterministically rather than by whichever
     dict happened to be iterated first.
+
+    The cost, stated rather than hidden: a draft whose only change to a list was *reordering* it
+    loses that change, silently. `diff_records` keys by ID and cannot see a permutation, so the
+    overlap gate cannot refuse it either. Detecting it would mean treating any two-sided reorder as
+    a conflict, which would refuse the ordinary case where the revision reordered and the draft did
+    not — so this stays a known limit of the rebase rather than a check.
     """
     base_by = _by_id(base)
     ours_by = _by_id(ours)
