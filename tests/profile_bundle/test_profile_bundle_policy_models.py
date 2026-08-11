@@ -36,6 +36,7 @@ from boardwatch.profile_bundle.models.policy import (
     SkillCategoryCatalog,
     SourceCatalog,
     SourceKind,
+    SourceSpec,
     SurfacePolicy,
     UnitCatalog,
 )
@@ -389,6 +390,49 @@ def test_source_catalog_holds_only_portable_metadata() -> None:
         }
     )
     assert catalog.by_id["source.synthetic-notes"].source_kind is SourceKind.MARKDOWN_DOCUMENT
+
+
+@pytest.mark.parametrize(
+    "locator",
+    [
+        "/absolute/source.md",
+        "../escape/source.md",
+        "notes/../../escape.md",
+        "./notes/source.md",
+        "C:/machine/source.md",
+        "C:\\machine\\source.md",
+        "\\\\host\\share\\source.md",
+        "notes\\source.md",
+    ],
+)
+def test_a_portable_locator_that_is_not_a_relative_posix_path_is_refused(locator: str) -> None:
+    """§6/§18: `portable_locator` is portable *because* it is relative.
+
+    The absolute machine-local root lives only in the non-revisioned `local-sources.yaml`, and the
+    portable locator is resolved beneath it. An absolute or traversing locator escapes that root
+    entirely, so it is not a portability defect but a read outside the approved tree — and it
+    survived structural, referential, semantic, and import validation because the field was only
+    `NonBlankStr`. The refusal belongs at parse time, where every reader of the document gets it.
+    """
+    with pytest.raises(ValidationError):
+        SourceSpec.model_validate(
+            {
+                "source_id": "source.synthetic-notes",
+                "source_kind": "markdown_document",
+                "portable_locator": locator,
+            }
+        )
+
+
+def test_a_relative_posix_portable_locator_is_accepted() -> None:
+    spec = SourceSpec.model_validate(
+        {
+            "source_id": "source.synthetic-notes",
+            "source_kind": "markdown_document",
+            "portable_locator": "notes/synthetic.md",
+        }
+    )
+    assert spec.portable_locator == "notes/synthetic.md"
 
 
 def test_source_catalog_does_not_repeat_ledger_owned_fields() -> None:

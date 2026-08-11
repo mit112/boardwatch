@@ -32,8 +32,10 @@ from collections.abc import Iterator, Mapping
 from dataclasses import dataclass
 
 from boardwatch.profile_bundle.enumerators import (
+    ROOT_SEGMENT,
     SOURCE_KIND_ADAPTERS,
     derive_source_record_id,
+    enumerator_for,
     is_normalized_locator,
 )
 from boardwatch.profile_bundle.errors import Diagnostic, IssueCode, diagnostic
@@ -48,6 +50,7 @@ from boardwatch.profile_bundle.models.imports import (
     ExclusionLedger,
     ExclusionReason,
     SourceLedger,
+    SourceLedgerSource,
 )
 from boardwatch.profile_bundle.validation.context import ValidationContext
 
@@ -98,10 +101,12 @@ def validate_imports(ctx: ValidationContext) -> tuple[Diagnostic, ...]:
             _enumerators_pair_with_their_source_kind,
             _approved_scopes_match_the_source_kind,
             _record_identity_is_the_derived_one,
+            _record_locators_are_shapes_their_adapter_can_emit,
             _candidate_identity_is_the_derived_one,
             _one_record_per_logical_unit,
             _dispositions_agree_with_the_exclusion_document,
             _imported_records_name_their_own_candidates,
+            _every_candidate_is_named_by_its_record,
         )
         for finding in check(ctx)
     )
@@ -194,6 +199,20 @@ def _approved_scopes_match_the_source_kind(ctx: ValidationContext) -> Iterator[D
                 record_id=source.source_id,
                 locator=locator,
             )
+        for locator in source.approved_scope.locators:
+            # `_root` holds the blocks before the first heading and is never a heading path, so
+            # the adapter refuses it. Validation has to agree, or a bundle validates clean and
+            # then cannot be re-enumerated from its own source.
+            if locator == ROOT_SEGMENT or locator.startswith(f"{ROOT_SEGMENT}/"):
+                yield diagnostic(
+                    IssueCode.IMPORT_SCOPE_INVALID,
+                    f"{source.source_id}: {locator!r} names pre-heading content, which no "
+                    "selected section can contain",
+                    path=LEDGER_PATH,
+                    record_id=source.source_id,
+                    locator=locator,
+                )
+        yield from _records_lie_inside_their_approved_scope(ctx, source)
 
 
 # --------------------------------------------------------------------------------------
@@ -279,6 +298,102 @@ def _candidate_identity_is_the_derived_one(ctx: ValidationContext) -> Iterator[D
                 record_id=candidate.candidate_id,
                 expected=derived,
             )
+
+
+def _records_lie_inside_their_approved_scope(
+    ctx: ValidationContext, source: SourceLedgerSource
+) -> Iterator[Diagnostic]:
+    """Every record of a selected-sections source must sit inside one of its approved sections.
+
+    §18 binds a repository approval to "the ledger's exact scope object", and an approval that does
+    not constrain which records may appear constrains nothing: the scope could name one section
+    while the records enumerate an entire checkout. This needs no source bytes — the scope and the
+    record locators are both in the ledger.
+    """
+    if source.approved_scope.kind != "selected_sections":
+        return
+    sections = source.approved_scope.locators
+    for record in ctx.index.ledger_records:
+        if record.source_id != source.source_id:
+            continue
+        if any(
+            record.normalized_locator == section
+            or record.normalized_locator.startswith(f"{section}/")
+            for section in sections
+        ):
+            continue
+        yield diagnostic(
+            IssueCode.IMPORT_SCOPE_INVALID,
+            f"{record.source_record_id} enumerates {record.normalized_locator!r}, which lies "
+            f"outside every section {source.source_id} is approved for",
+            path=LEDGER_PATH,
+            record_id=record.source_record_id,
+            locator=record.normalized_locator,
+        )
+
+
+def _every_candidate_is_named_by_its_record(ctx: ValidationContext) -> Iterator[Diagnostic]:
+    """A candidate its own record does not name is counted nowhere.
+
+    The ledger model refuses a non-imported record that names a candidate, and the ownership check
+    only walks imported records, so a candidate hanging off a `review_required` record falls
+    between the two: it exists, it derives correctly, and it is in no denominator.
+    """
+    named = {
+        candidate_id
+        for record in ctx.index.ledger_records
+        for candidate_id in record.candidate_ids
+    }
+    known_records = {record.source_record_id for record in ctx.index.ledger_records}
+    for candidate in ctx.index.candidates:
+        if candidate.candidate_id in named:
+            continue
+        # A candidate naming a record the ledger does not define is `validate_referential`'s
+        # finding, not a second report here.
+        if candidate.source_record_id not in known_records:
+            continue
+        yield diagnostic(
+            IssueCode.IMPORT_MISSING_CANDIDATE,
+            f"{candidate.candidate_id} is defined but {candidate.source_record_id} does not name "
+            "it, so it belongs to no disposition",
+            path=CANDIDATES_PATH,
+            record_id=candidate.candidate_id,
+            source_record_id=candidate.source_record_id,
+        )
+
+
+def _record_locators_are_shapes_their_adapter_can_emit(
+    ctx: ValidationContext,
+) -> Iterator[Diagnostic]:
+    """A locator no adapter could have emitted is a hand-written record in the denominator.
+
+    An earlier review finding was declined on the grounds that "could this adapter have emitted
+    this locator?" needs the source bytes. Half of it does — which heading or key exists is a fact
+    about the file. The other half does not: each adapter emits a closed set of SHAPES, and a
+    locator matching none of them could not have come from any enumeration of any source. Checking
+    the byte-free half also closes the relabelling forgery, where a source's kind and enumerator
+    are both changed and every record it owns is silently reinterpreted under a different grammar.
+    """
+    catalog = ctx.index.sources
+    if catalog is None:
+        return
+    for record in ctx.index.ledger_records:
+        spec = catalog.by_id.get(record.source_id)
+        if spec is None:
+            # An unknown source is `validate_referential`'s finding, not a second report here.
+            continue
+        adapter = enumerator_for(spec.source_kind, source_id=record.source_id)
+        if adapter.emits_locator(record.normalized_locator):
+            continue
+        yield diagnostic(
+            IssueCode.IMPORT_ENUMERATOR_MISMATCH,
+            f"{record.source_record_id}: {record.normalized_locator!r} is not a shape "
+            f"{adapter.id} can emit, so no enumeration of {record.source_id} produced it",
+            path=LEDGER_PATH,
+            record_id=record.source_record_id,
+            locator=record.normalized_locator,
+            enumerator_id=adapter.id,
+        )
 
 
 def _one_record_per_logical_unit(ctx: ValidationContext) -> Iterator[Diagnostic]:

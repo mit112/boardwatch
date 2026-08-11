@@ -88,8 +88,19 @@ def encode_locator_segment(raw: str, *, adapter: SourceEnumerator) -> str:
     return _encode_text(text)
 
 
+def _canonical_encoding(text: str) -> str:
+    """Exactly what `encode_locator_segment` produces for `text`, its refusals aside.
+
+    The encoder NFC-normalises and trims *before* encoding, so the predicate has to do the same or
+    it accepts spellings the encoder can never emit — `e%CC%81` for a composed `é`, `%20a` for a
+    leading space. Each of those derives its own source-record ID, which inflates the Gate B
+    denominator with a phantom record and no finding anywhere.
+    """
+    return _encode_text(unicodedata.normalize("NFC", text).strip())
+
+
 def _encode_text(text: str) -> str:
-    """The pure encoding: no trimming, no refusals.
+    """The pure encoding: no normalisation, no trimming, no refusals.
 
     Split out so `is_normalized_locator` can be defined as this function's exact inverse rather
     than as a hand-written grammar. A grammar drifts from the encoder; a round trip cannot.
@@ -170,8 +181,10 @@ def is_normalized_locator(text: str) -> bool:
     `normalize_locator(x) == x` would report every correctly encoded locator as wrong.
 
     Emptiness and `.`/`..` are refused explicitly; the round trip alone would accept both, since
-    each encodes to itself. Unicode form needs no separate guard — a decomposed character
-    re-encodes to its escaped bytes and fails the comparison.
+    each encodes to itself. Unicode form and surrounding whitespace are handled by comparing
+    against `_canonical_encoding`, which applies the encoder's own NFC and trim — comparing against
+    the bare encoding accepted `e%CC%81` and `%20a`, because an already-escaped decomposed
+    character round-trips to itself.
     """
     if not text:
         return False
@@ -181,7 +194,7 @@ def is_normalized_locator(text: str) -> bool:
         if not body or body in (".", ".."):
             return False
         decoded = _decoded_segment(body)
-        if decoded is None or _encode_text(decoded) != body:
+        if decoded is None or _canonical_encoding(decoded) != body:
             return False
     return True
 
@@ -245,6 +258,8 @@ class SourceEnumerator(Protocol):
     def enumerate(
         self, source: bytes, *, scope: ApprovedScope
     ) -> tuple[EnumeratedSourceRecord, ...]: ...
+
+    def emits_locator(self, locator: str) -> bool: ...
 
 
 @dataclass(frozen=True)
@@ -355,6 +370,28 @@ class BoardwatchResumeEnumerator:
     def _locator(self, *segments: str) -> str:
         return "/".join(encode_locator_segment(part, adapter=self) for part in segments)
 
+    def emits_locator(self, locator: str) -> bool:
+        """Whether `locator` has a shape `_records` can produce, with no source bytes read.
+
+        Validation cannot know WHICH entries a résumé holds without the file, but the seven
+        emission stages are a closed set of shapes, so a locator that matches none of them is one
+        no enumeration ever produced. Kept beside `_locator` deliberately: a grammar written
+        anywhere else drifts from the emitter the first time a stage is added.
+        """
+        parts = locator.split("/")
+        head = parts[0]
+        if head in ("header", "education", "extracurricular"):
+            return len(parts) == 2 and _is_index(parts[1])
+        if head == "title":
+            return len(parts) == 1
+        if head == "skill-groups":
+            return len(parts) == 3 and _is_index(parts[2])
+        if head == "entries":
+            return (len(parts) == 3 and parts[2] == "metadata") or (
+                len(parts) == 4 and parts[2] == "bullets"
+            )
+        return False
+
     def _records(self, resume: ResumeSource) -> tuple[EnumeratedSourceRecord, ...]:
         """The design's seven emission stages, in order.
 
@@ -449,6 +486,20 @@ _FENCE_RE: Final = re.compile(r"^ {0,3}(`{3,}|~{3,})")
 _LIST_ITEM_RE: Final = re.compile(r"^ {0,3}(?:[-+*]|[0-9]+[.)])[ \t]+")
 
 
+#: The block kinds `MarkdownBlocksEnumerator._blocks` emits with a 1-based index. `heading` is
+#: deliberately absent: it is the one kind whose locator carries no number.
+_NUMBERED_BLOCK_KINDS: Final[frozenset[str]] = frozenset({"paragraph", "fence", "list-item"})
+
+
+def _is_index(text: str) -> bool:
+    """A 1-based decimal index with no sign, padding, or separator.
+
+    `str.isdigit` is not enough — it admits superscripts and other Unicode digit forms, which would
+    let two spellings of "1" name two records for one block.
+    """
+    return text.isascii() and text.isdigit() and not text.startswith("0")
+
+
 def _indent_columns(line: str) -> int:
     """Leading indentation in columns: a space is one, a tab advances to the next multiple of 4."""
     column = 0
@@ -504,6 +555,23 @@ class MarkdownBlocksEnumerator:
         if block.kind == "heading":
             return f"{block.heading_path}/heading"
         return f"{block.heading_path}/{block.kind}-{index}"
+
+    def emits_locator(self, locator: str) -> bool:
+        """Whether `locator` has a shape `_locator` can produce, with no source bytes read.
+
+        Which heading path exists genuinely needs the file; the terminal segment does not. It is
+        `heading`, or one of the closed block kinds followed by a 1-based index. A locator failing
+        this could not have come from any enumeration of any Markdown source, so it is a
+        hand-written record sitting in the denominator.
+        """
+        parts = locator.split("/")
+        if len(parts) < 2:
+            return False
+        terminal = parts[-1]
+        if terminal == "heading":
+            return True
+        kind, _, index = terminal.rpartition("-")
+        return kind in _NUMBERED_BLOCK_KINDS and _is_index(index)
 
     def _blocks(self, lines: list[str]) -> tuple[list[_Block], list[str]]:
         """One ordered pass. Returns the blocks and every resolved heading path, in source order."""
@@ -589,11 +657,13 @@ class MarkdownBlocksEnumerator:
         prefixes: list[str] = []
         for raw in locators:
             # §18.1: "Selected locators refer to these resolved paths, including any `~N`
-            # suffix." A resolved path is ALREADY normalized, so it is validated, never
-            # re-encoded. Running it through `normalize_locator` turned `Alpha%20Beta` into
-            # `Alpha%2520Beta` and left no working route for any heading containing a space.
-            resolved = unicodedata.normalize("NFC", raw).strip()
-            if resolved not in known:
+            # suffix." A resolved path is ALREADY normalized, so it is compared as given —
+            # never re-encoded (`normalize_locator` turned `Alpha%20Beta` into `Alpha%2520Beta`
+            # and left no route to any heading containing a space) and never repaired. An
+            # earlier NFC-and-strip here accepted `" Overview "`, a string the ledger's own
+            # locator predicate refuses and no enumeration can emit, so the scope and the records
+            # it authorises stopped being the same string.
+            if raw not in known:
                 # One refusal, not two. A separate "is it normalized?" guard could never be the
                 # thing that fired: `known` holds resolved paths, every one of which is already
                 # normalized, so a non-normalized locator always misses this membership test.
@@ -601,7 +671,7 @@ class MarkdownBlocksEnumerator:
                     f"{self.id}: selected section {raw!r} names no heading in this source; a "
                     "scope locator is a resolved heading path and is already percent-encoded"
                 )
-            prefixes.append(resolved)
+            prefixes.append(raw)
         return [
             block
             for block in blocks
@@ -664,6 +734,16 @@ class StructuredObjectsEnumerator:
             _record(self.source_id, f"objects/{encoded}", value)
             for encoded, value in sorted(rows, key=lambda row: row[0])
         )
+
+    def emits_locator(self, locator: str) -> bool:
+        """Whether `locator` has a shape `enumerate` can produce, with no source bytes read.
+
+        Every record is one identified object under a fixed `objects/` prefix, so the shape is
+        exactly two segments. Which keys exist needs the file; that there are never three segments
+        does not.
+        """
+        parts = locator.split("/")
+        return len(parts) == 2 and parts[0] == "objects"
 
     def _encoded(self, raw: object, what: str, seen: set[str]) -> str:
         if not isinstance(raw, str) or not raw.strip():

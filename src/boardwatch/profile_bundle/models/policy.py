@@ -319,6 +319,27 @@ class SourceSpec(StrictModel):
     source_kind: SourceKind
     portable_locator: NonBlankStr
 
+    @field_validator("portable_locator")
+    @classmethod
+    def _locator_is_a_relative_posix_path(cls, value: str) -> str:
+        """The portable locator is portable *because* it is relative to a machine-local root.
+
+        `NonBlankStr` alone let `/absolute/source.md` and `../escape/source.md` through every
+        validation layer, which is not a portability nit: the locator is resolved beneath the root
+        declared in the non-revisioned `local-sources.yaml`, so an absolute or traversing spelling
+        reads outside the tree the owner approved. Parse time is the only place that reaches every
+        reader of the document.
+        """
+        if "\\" in value:
+            raise ValueError("portable_locator must use POSIX separators, not backslashes")
+        if value.startswith("/"):
+            raise ValueError("portable_locator must be relative, not absolute")
+        if re.match(r"^[A-Za-z]:", value):
+            raise ValueError("portable_locator must be relative, not a drive-qualified path")
+        if any(segment in (".", "..") for segment in value.split("/")):
+            raise ValueError("portable_locator must not contain a '.' or '..' segment")
+        return value
+
 
 class SourceCatalog(StrictModel):
     sources_version: PositiveInt

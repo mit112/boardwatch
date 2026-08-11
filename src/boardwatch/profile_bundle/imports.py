@@ -319,10 +319,33 @@ def uncanonical_value(value: FactValue) -> str | None:
     return None
 
 
-def _require_derived(candidate: CandidateRecord, where: str) -> None:
+def _require_derived(
+    candidate: CandidateRecord, where: str, predicates: PredicateCatalog
+) -> None:
+    """Every reason a stored candidate could not have come from the importer.
+
+    The catalog is required rather than optional because canonicality is predicate-dependent: a
+    set-like list stored out of order has every element collapsed and trimmed, so only
+    `application.authorized_regions`'s own contract knows it is wrong. Without the catalog this
+    function could check that an ID hashes the payload beside it and nothing more, which is exactly
+    what a forger supplies.
+    """
+    spec = predicates.by_id.get(candidate.predicate)
+    if spec is None:
+        raise CandidateImportError(
+            f"{where}: {candidate.candidate_id} asserts unknown predicate "
+            f"{candidate.predicate!r}"
+        )
     violation = uncanonical_value(candidate.canonicalized_typed_value)
     if violation is not None:
         raise CandidateImportError(f"{where}: {candidate.candidate_id}: {violation}")
+    if canonicalize_candidate_value(candidate.canonicalized_typed_value, spec) != (
+        candidate.canonicalized_typed_value
+    ):
+        raise CandidateImportError(
+            f"{where}: {candidate.candidate_id}: stored value is not the canonical form "
+            f"{candidate.predicate!r} authorizes"
+        )
     derived = derive_candidate_id(
         candidate.source_record_id, candidate.predicate, candidate.canonicalized_typed_value
     )
@@ -334,7 +357,7 @@ def _require_derived(candidate: CandidateRecord, where: str) -> None:
 
 
 def merge_candidate_package(
-    existing: CandidatePackage, incoming: CandidatePackage
+    existing: CandidatePackage, incoming: CandidatePackage, *, predicates: PredicateCatalog
 ) -> ImportMergeResult:
     """Merge `incoming` into `existing` without overwriting anything already recorded."""
     if existing.candidates_version != incoming.candidates_version:
@@ -345,7 +368,7 @@ def merge_candidate_package(
 
     merged: dict[str, dict[str, Any]] = {}
     for candidate in existing.candidates:
-        _require_derived(candidate, "existing package")
+        _require_derived(candidate, "existing package", predicates)
         merged[candidate.candidate_id] = candidate.model_dump(mode="json")
 
     added: list[str] = []
@@ -353,7 +376,7 @@ def merge_candidate_package(
     unchanged: list[str] = []
 
     for candidate in incoming.candidates:
-        _require_derived(candidate, "incoming package")
+        _require_derived(candidate, "incoming package", predicates)
         payload = candidate.model_dump(mode="json")
         current = merged.get(candidate.candidate_id)
         if current is None:

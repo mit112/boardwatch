@@ -412,7 +412,7 @@ def test_re_extracting_identical_input_creates_zero_new_candidates(
     synthetic_bundle: SyntheticBundle,
 ) -> None:
     package = package_for(synthetic_bundle, [proposal(first_record(), "A summary")])
-    merged = merge_candidate_package(package, package)
+    merged = merge_candidate_package(package, package, predicates=predicates(synthetic_bundle))
     assert merged.added == ()
     assert merged.appended_occurrences == ()
     assert merged.unchanged == (package.candidates[0].candidate_id,)
@@ -421,8 +421,8 @@ def test_re_extracting_identical_input_creates_zero_new_candidates(
 
 def test_merging_is_idempotent_under_repetition(synthetic_bundle: SyntheticBundle) -> None:
     package = package_for(synthetic_bundle, [proposal(first_record(), "A summary")])
-    once = merge_candidate_package(package, package).package
-    twice = merge_candidate_package(once, package).package
+    once = merge_candidate_package(package, package, predicates=predicates(synthetic_bundle)).package
+    twice = merge_candidate_package(once, package, predicates=predicates(synthetic_bundle)).package
     assert once == twice
 
 
@@ -435,7 +435,7 @@ def test_a_different_proposed_id_still_collapses_onto_one_candidate(
     second = package_for(
         synthetic_bundle, [proposal(first_record(), "A summary", proposed_id="candidate.two")]
     )
-    merged = merge_candidate_package(first, second)
+    merged = merge_candidate_package(first, second, predicates=predicates(synthetic_bundle))
     assert len(merged.package.candidates) == 1
     assert merged.added == ()
 
@@ -445,7 +445,7 @@ def test_whitespace_equivalent_values_collapse_onto_one_candidate(
 ) -> None:
     first = package_for(synthetic_bundle, [proposal(first_record(), "A summary")])
     second = package_for(synthetic_bundle, [proposal(first_record(), " A   summary ")])
-    merged = merge_candidate_package(first, second)
+    merged = merge_candidate_package(first, second, predicates=predicates(synthetic_bundle))
     assert len(merged.package.candidates) == 1
     assert merged.added == ()
 
@@ -455,7 +455,7 @@ def test_a_paraphrase_is_deliberately_outside_the_equivalence_class(
 ) -> None:
     first = package_for(synthetic_bundle, [proposal(first_record(), "A summary")])
     second = package_for(synthetic_bundle, [proposal(first_record(), "A short summary")])
-    merged = merge_candidate_package(first, second)
+    merged = merge_candidate_package(first, second, predicates=predicates(synthetic_bundle))
     assert len(merged.package.candidates) == 2
     assert len(merged.added) == 1
 
@@ -471,6 +471,7 @@ def test_extraction_order_and_grouping_do_not_change_the_result(
     grouped = merge_candidate_package(
         package_for(synthetic_bundle, [one], source),
         package_for(synthetic_bundle, [two], source),
+        predicates=predicates(synthetic_bundle),
     ).package
     assert together == reversed_order == grouped
 
@@ -487,7 +488,7 @@ def test_a_changed_source_digest_with_the_same_value_appends_one_occurrence(
         scope=COMPLETE,
     )
     later = package_for(synthetic_bundle, [proposal(first_record(), "A summary")], edited)
-    merged = merge_candidate_package(package, later)
+    merged = merge_candidate_package(package, later, predicates=predicates(synthetic_bundle))
 
     assert merged.added == ()
     assert merged.appended_occurrences == (package.candidates[0].candidate_id,)
@@ -499,7 +500,7 @@ def test_an_occurrence_pair_is_unique_within_one_candidate(
     synthetic_bundle: SyntheticBundle,
 ) -> None:
     package = package_for(synthetic_bundle, [proposal(first_record(), "A summary")])
-    merged = merge_candidate_package(package, package).package
+    merged = merge_candidate_package(package, package, predicates=predicates(synthetic_bundle)).package
     pairs = [
         (occurrence.source_content_digest, occurrence.record_content_digest)
         for occurrence in merged.candidates[0].occurrences
@@ -512,7 +513,7 @@ def test_merging_never_overwrites_a_retained_display_value(
 ) -> None:
     first = package_for(synthetic_bundle, [proposal(first_record(), "A summary")])
     second = package_for(synthetic_bundle, [proposal(first_record(), " A summary ")])
-    merged = merge_candidate_package(first, second).package
+    merged = merge_candidate_package(first, second, predicates=predicates(synthetic_bundle)).package
     assert merged.candidates[0].original_display_value == "A summary"
 
 
@@ -532,7 +533,7 @@ def test_a_forged_candidate_id_is_refused_rather_than_merged(
         }
     )
     with pytest.raises(CandidateImportError):
-        merge_candidate_package(package, forged)
+        merge_candidate_package(package, forged, predicates=predicates(synthetic_bundle))
 
 
 def test_merging_packages_of_different_versions_is_refused(
@@ -543,7 +544,7 @@ def test_merging_packages_of_different_versions_is_refused(
         {**package.model_dump(mode="json"), "candidates_version": 2}
     )
     with pytest.raises(CandidateImportError):
-        merge_candidate_package(package, other)
+        merge_candidate_package(package, other, predicates=predicates(synthetic_bundle))
 
 
 # --------------------------------------------------------------------------------------
@@ -1096,7 +1097,7 @@ def test_merging_refuses_a_candidate_whose_value_was_never_canonicalized(
         }
     )
     with pytest.raises(CandidateImportError):
-        merge_candidate_package(package, smuggled)
+        merge_candidate_package(package, smuggled, predicates=predicates(synthetic_bundle))
 
 
 def test_a_set_like_value_stored_out_of_canonical_order_is_reported(
@@ -1143,3 +1144,240 @@ def test_a_set_like_value_stored_out_of_canonical_order_is_reported(
     ]
     assert len(reported) == 1
     assert "canonical form" in reported[0].message
+
+
+# --------------------------------------------------------------------------------------
+# Verification findings: what a forged ledger could still claim
+# --------------------------------------------------------------------------------------
+
+
+def test_a_record_outside_its_sources_approved_scope_is_reported(
+    synthetic_bundle: SyntheticBundle,
+) -> None:
+    """§18 binds a repository approval to the ledger's exact scope object. If a record may sit
+    anywhere regardless of that scope, the approval covers nothing: a ledger could import a whole
+    checkout under an approval the owner gave for one section. Checkable from the ledger alone."""
+
+    def widen(data: Any) -> None:
+        for source in data["sources"]:
+            if source["approved_scope"]["kind"] == "selected_sections":
+                source["approved_scope"]["locators"] = ["totally%20unrelated%20section"]
+
+    edit_document(synthetic_bundle, "imports/source-ledger.yaml", widen)
+    assert IssueCode.IMPORT_SCOPE_INVALID in codes(findings(synthetic_bundle))
+
+
+def test_a_record_inside_a_selected_section_is_accepted(
+    synthetic_bundle: SyntheticBundle,
+) -> None:
+    """The containment rule must accept the section itself and everything beneath it."""
+
+    def narrow(data: Any) -> None:
+        for source in data["sources"]:
+            if source["approved_scope"]["kind"] == "selected_sections":
+                source["approved_scope"]["locators"] = ["readme/architecture"]
+
+    edit_document(synthetic_bundle, "imports/source-ledger.yaml", narrow)
+    assert IssueCode.IMPORT_SCOPE_INVALID not in codes(findings(synthetic_bundle))
+
+
+def test_a_root_scope_locator_is_reported_because_no_heading_can_match_it(
+    synthetic_bundle: SyntheticBundle,
+) -> None:
+    """`_root` is where pre-heading blocks live and is never a heading path, so the adapter would
+    refuse it. Validation must agree, or a bundle validates clean and cannot be re-enumerated."""
+
+    def rooted(data: Any) -> None:
+        for source in data["sources"]:
+            if source["approved_scope"]["kind"] == "selected_sections":
+                source["approved_scope"]["locators"] = ["_root"]
+
+    edit_document(synthetic_bundle, "imports/source-ledger.yaml", rooted)
+    # Asserted on the source-level diagnostic specifically. Rewriting the scope also puts every
+    # record outside it, so a bare "IMPORT_SCOPE_INVALID appeared" assertion passes on the
+    # containment findings alone and says nothing about whether `_root` was refused.
+    reported = [
+        found
+        for found in findings(synthetic_bundle)
+        if found.code == IssueCode.IMPORT_SCOPE_INVALID
+        and found.record_id == "source.synthetic-repository"
+    ]
+    assert [found.details.get("locator") for found in reported] == ["_root"]
+
+
+def test_a_candidate_no_record_names_is_reported(synthetic_bundle: SyntheticBundle) -> None:
+    """A candidate hanging off a `review_required` record is checked by nothing today: the ledger
+    model refuses a non-imported record that NAMES a candidate, and the ownership check only walks
+    imported records. The candidate exists, derives correctly, and is counted nowhere."""
+    payload = {"type": "string", "value": "An orphaned assertion"}
+    review_required = (
+        "source-record.5e0521371b368f834f16acafdc2d96a63e6ce94c330e8c51bf5eb2d9e09256ce"
+    )
+    orphan = derive_candidate_id(review_required, "project.summary", value_of(payload))
+
+    def add(data: Any) -> None:
+        data["candidates"].append(
+            {
+                "candidate_id": orphan,
+                "source_record_id": review_required,
+                "predicate": "project.summary",
+                "canonicalized_typed_value": payload,
+                "original_display_value": "An orphaned assertion",
+                "occurrences": [
+                    {
+                        "source_content_digest": "sha256:" + "c" * 64,
+                        "record_content_digest": "sha256:" + "d" * 64,
+                    }
+                ],
+            }
+        )
+
+    edit_document(synthetic_bundle, "imports/candidates.yaml", add)
+    reported = [
+        finding
+        for finding in findings(synthetic_bundle)
+        if finding.code == IssueCode.IMPORT_MISSING_CANDIDATE and finding.record_id == orphan
+    ]
+    assert len(reported) == 1
+
+
+def test_merging_refuses_a_candidate_whose_predicate_is_not_catalogued(
+    synthetic_bundle: SyntheticBundle,
+) -> None:
+    """Canonicality is predicate-dependent, so merging cannot judge it without the catalog. A
+    self-consistent hash over an uncatalogued predicate was accepted and reported as newly added."""
+    package = package_for(synthetic_bundle, [proposal(first_record(), "A summary")])
+    payload = {"type": "string", "value": "Not canonical"}
+    smuggled = CandidatePackage.model_validate(
+        {
+            "candidates_version": 1,
+            "candidates": [
+                {
+                    **package.candidates[0].model_dump(mode="json"),
+                    "predicate": "invented.predicate",
+                    "canonicalized_typed_value": payload,
+                    "candidate_id": derive_candidate_id(
+                        package.candidates[0].source_record_id,
+                        "invented.predicate",
+                        value_of(payload),
+                    ),
+                }
+            ],
+        }
+    )
+    with pytest.raises(CandidateImportError):
+        merge_candidate_package(package, smuggled, predicates=predicates(synthetic_bundle))
+
+
+def test_merging_refuses_a_set_like_value_that_was_never_sorted(
+    synthetic_bundle: SyntheticBundle,
+) -> None:
+    """Every element is already collapsed, so only the predicate contract can see the disorder."""
+    package = package_for(synthetic_bundle, [proposal(first_record(), "A summary")])
+    payload = {"type": "string_list", "values": ["zebra", "alpha"]}
+    smuggled = CandidatePackage.model_validate(
+        {
+            "candidates_version": 1,
+            "candidates": [
+                {
+                    **package.candidates[0].model_dump(mode="json"),
+                    "predicate": "application.authorized_regions",
+                    "canonicalized_typed_value": payload,
+                    "candidate_id": derive_candidate_id(
+                        package.candidates[0].source_record_id,
+                        "application.authorized_regions",
+                        value_of(payload),
+                    ),
+                }
+            ],
+        }
+    )
+    with pytest.raises(CandidateImportError):
+        merge_candidate_package(package, smuggled, predicates=predicates(synthetic_bundle))
+
+
+# --------------------------------------------------------------------------------------
+# a record's locator must be one its own adapter could have emitted (§18.1)
+# --------------------------------------------------------------------------------------
+
+
+def relocate(data: object, locator: str) -> None:
+    """Move record 2 to `locator`, re-deriving its ID and fixing every reference to it.
+
+    Record 2 is the `_root` one: not imported, so it owns no candidates and only the source's own
+    `source_record_ids` list needs repairing.
+    """
+    record = data["records"][2]  # type: ignore[index]
+    original = record["source_record_id"]
+    record["normalized_locator"] = locator
+    record["source_record_id"] = derive_source_record_id(record["source_id"], locator)
+    for entry in data["sources"]:  # type: ignore[index]
+        entry["source_record_ids"] = [
+            record["source_record_id"] if item == original else item
+            for item in entry["source_record_ids"]
+        ]
+
+
+@pytest.mark.parametrize(
+    "locator",
+    [
+        "packet-pantry/stack/sidebar-1",
+        "packet-pantry/stack/paragraph",
+        "packet-pantry/stack/paragraph-0",
+        "packet-pantry/stack/paragraph-1x",
+        "heading",
+    ],
+)
+def test_a_locator_the_markdown_adapter_could_not_emit_is_reported(
+    synthetic_bundle: SyntheticBundle, locator: str
+) -> None:
+    """The terminal segment of a `markdown-blocks-v1` locator is drawn from a closed set.
+
+    An earlier review finding was declined on the grounds that proving "the adapter could have
+    emitted this" needs the source bytes. That is true of WHICH heading exists and false of the
+    grammar: `_locator` emits `<path>/heading` or `<path>/<kind>-<N>` for a closed `kind`, so the
+    shape is checkable with no bytes at all. Every spelling here is a normalized locator, so the
+    existing normalization check cannot be what fires.
+    """
+    edit_document(
+        synthetic_bundle, "imports/source-ledger.yaml", lambda data: relocate(data, locator)
+    )
+    assert IssueCode.IMPORT_ENUMERATOR_MISMATCH in codes(findings(synthetic_bundle))
+
+
+def test_a_source_relabelled_to_another_kind_keeps_locators_its_adapter_cannot_emit(
+    synthetic_bundle: SyntheticBundle,
+) -> None:
+    """The reviewer's static forgery: change `source_kind` and leave the locators alone.
+
+    The declared `enumerator_id` is relabelled to match, so the existing enumerator/kind pairing
+    check is satisfied and the locator shape is the only thing left that can object.
+    `structured-objects-v1` emits exactly one segment per record, so a multi-segment markdown
+    locator is impossible under it.
+    """
+
+    def relabel_kind(data: object) -> None:
+        for entry in data["sources"]:  # type: ignore[index]
+            if entry["source_id"] == "source.synthetic-notes":
+                entry["source_kind"] = "structured_objects"
+
+    def relabel_enumerator(data: object) -> None:
+        for entry in data["sources"]:  # type: ignore[index]
+            if entry["source_id"] == "source.synthetic-notes":
+                entry["enumerator_id"] = "structured-objects-v1"
+                entry["approved_scope"] = {"kind": "complete_file"}
+
+    edit_document(synthetic_bundle, "policy/sources.yaml", relabel_kind)
+    edit_document(synthetic_bundle, "imports/source-ledger.yaml", relabel_enumerator)
+    assert IssueCode.IMPORT_ENUMERATOR_MISMATCH in codes(findings(synthetic_bundle))
+
+
+def test_the_packaged_examples_own_locators_all_match_their_adapters(
+    synthetic_bundle: SyntheticBundle,
+) -> None:
+    """The check must accept every locator the shipped enumeration actually produced.
+
+    A grammar that refuses the one bundle we ship is a grammar that was written against the
+    reviewer's counter-examples instead of against the emitter.
+    """
+    assert IssueCode.IMPORT_ENUMERATOR_MISMATCH not in codes(findings(synthetic_bundle))

@@ -422,9 +422,21 @@ def test_a_selected_heading_that_does_not_exist_is_a_hard_error() -> None:
         markdown_records(MARKDOWN, selected("Nonexistent"))
 
 
-def test_a_selected_scope_locator_is_normalized_before_matching() -> None:
-    records = markdown_records(MARKDOWN, selected("  Overview/Details  "))
-    assert locators(records) == ["Overview/Details/heading", "Overview/Details/paragraph-1"]
+@pytest.mark.parametrize("spelling", ["  Overview/Details  ", "Overview/Details ", " Overview"])
+def test_a_selected_scope_locator_that_is_not_already_normalized_is_a_hard_error(
+    spelling: str,
+) -> None:
+    """§18.1: a selected locator names an already-resolved heading path, so the adapter validates
+    it rather than repairing it.
+
+    This test previously asserted the opposite — that surrounding whitespace was trimmed before
+    matching. Trimming makes the adapter accept a locator that `is_normalized_locator` refuses and
+    that no enumeration can ever emit, which means the ledger's scope and the ledger's records can
+    disagree about which string names a section. Refusing is the only spelling under which the two
+    are the same string.
+    """
+    with pytest.raises(EnumerationError):
+        markdown_records(MARKDOWN, selected(spelling))
 
 
 def test_selecting_root_content_is_a_hard_error_because_root_is_not_a_heading() -> None:
@@ -920,3 +932,131 @@ def test_enumeration_is_identical_across_interpreter_hash_seeds() -> None:
     first = run("1")
     assert first == run("2") == run("0")
     assert first.strip(), "the probe produced no records"
+
+
+# --------------------------------------------------------------------------------------
+# Verification finding: the round trip must include the encoder's own NFC and trim
+# --------------------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    ("alternate", "canonical"),
+    [
+        ("e%CC%81", "%C3%A9"),   # decomposed: the encoder NFC-normalises first
+        ("%20a", "a"),            # leading space: the encoder trims first
+        ("a%20", "a"),            # trailing space
+        ("%E2%80%82x", "x"),      # EN SPACE is Unicode whitespace and is trimmed
+    ],
+)
+def test_only_the_encoders_own_spelling_is_a_normalized_locator(
+    alternate: str, canonical: str
+) -> None:
+    """`encode_locator_segment` NFC-normalises and trims *before* encoding, so these alternates
+    are spellings it can never emit. Accepting them lets two locators stand for one heading, and
+    each derives its own source-record ID — the Gate B denominator inflates with no finding."""
+    adapter = markdown_adapter()
+    assert encode_locator_segment(_decoded_for(alternate), adapter=adapter) == canonical
+    assert is_normalized_locator(canonical)
+    assert not is_normalized_locator(alternate)
+
+
+def _decoded_for(segment: str) -> str:
+    from boardwatch.profile_bundle.enumerators import _decoded_segment
+
+    decoded = _decoded_segment(segment)
+    assert decoded is not None
+    return decoded
+
+
+def test_a_normalized_locator_is_exactly_what_the_encoder_emits_for_its_own_text() -> None:
+    """The property behind the predicate, stated directly over many texts."""
+    adapter = markdown_adapter()
+    for raw in [
+        "Alpha Beta", "café", "café", " padded ", "100% Done", "a/b", "Ship it 🚀",
+        "tilde~here", "dot.", "under_score", "CAPS", "  ", "x",
+    ]:
+        try:
+            encoded = encode_locator_segment(raw, adapter=adapter)
+        except EnumerationError:
+            continue
+        assert is_normalized_locator(encoded), raw
+
+# --------------------------------------------------------------------------------------
+# emits_locator: every adapter's byte-free locator grammar (§18.1)
+# --------------------------------------------------------------------------------------
+
+
+def test_every_locator_the_resume_adapter_emits_satisfies_its_own_grammar() -> None:
+    """The grammar is derived from the emitter, not written alongside it.
+
+    Asserting the predicate accepts hand-picked good spellings would only prove the predicate
+    agrees with whoever wrote the test. Enumerating a real source and requiring the predicate to
+    accept every locator that came out means a new emission stage cannot be added without either
+    updating the grammar or turning this red.
+    """
+    adapter = BoardwatchResumeEnumerator(source_id=SOURCE)
+    emitted = locators(resume_records())
+    assert emitted
+    assert [one for one in emitted if not adapter.emits_locator(one)] == []
+
+
+def test_every_locator_the_markdown_adapter_emits_satisfies_its_own_grammar() -> None:
+    adapter = markdown_adapter()
+    emitted = locators(markdown_records())
+    assert emitted
+    assert [one for one in emitted if not adapter.emits_locator(one)] == []
+
+
+def test_every_locator_the_structured_adapter_emits_satisfies_its_own_grammar() -> None:
+    adapter = StructuredObjectsEnumerator(source_id=SOURCE)
+    emitted = locators(structured_records('{"alpha": 1, "beta": 2}'))
+    assert emitted
+    assert [one for one in emitted if not adapter.emits_locator(one)] == []
+
+
+@pytest.mark.parametrize(
+    "locator",
+    [
+        "header",
+        "header/1/extra",
+        "header/0",
+        "header/01",
+        "title/1",
+        "skill-groups/languages",
+        "skill-groups/languages/0",
+        "entries/entry.one",
+        "entries/entry.one/bullets",
+        "entries/entry.one/metadata/extra",
+        "objects/alpha",
+        "Overview/heading",
+        "",
+    ],
+)
+def test_a_shape_the_resume_adapter_never_emits_is_refused(locator: str) -> None:
+    assert not BoardwatchResumeEnumerator(source_id=SOURCE).emits_locator(locator)
+
+
+@pytest.mark.parametrize(
+    "locator",
+    [
+        "heading",
+        "Overview/sidebar-1",
+        "Overview/paragraph",
+        "Overview/paragraph-0",
+        "Overview/paragraph-01",
+        "Overview/paragraph-1x",
+        "Overview/paragraph-\N{SUPERSCRIPT ONE}",
+        "objects/alpha",
+        "",
+    ],
+)
+def test_a_shape_the_markdown_adapter_never_emits_is_refused(locator: str) -> None:
+    assert not markdown_adapter().emits_locator(locator)
+
+
+@pytest.mark.parametrize(
+    "locator",
+    ["alpha", "objects", "objects/alpha/beta", "Overview/heading", ""],
+)
+def test_a_shape_the_structured_adapter_never_emits_is_refused(locator: str) -> None:
+    assert not StructuredObjectsEnumerator(source_id=SOURCE).emits_locator(locator)
