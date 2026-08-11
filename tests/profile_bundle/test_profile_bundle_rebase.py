@@ -921,6 +921,39 @@ def test_a_staged_tree_that_will_not_parse_installs_nothing(
     assert _snapshot(scene.bundle_root) == before
 
 
+def test_a_backup_path_symlinked_at_the_draft_is_not_this_draft_byte_for_byte(
+    scene: Scene,
+) -> None:
+    """The trivially-equal case: comparing a draft with itself must not authorise deleting it."""
+    scene.backup.symlink_to(scene.draft)
+    original = _snapshot(scene.draft)
+
+    outcome = rebase_draft(scene.bundle_root, name=DRAFT_NAME)
+
+    assert outcome.exit_code == 1
+    assert _codes(outcome) == [IssueCode.DRAFT_BACKUP_CONFLICT]
+    # §21: the original or the exact backup survives. Here that has to be the original.
+    assert _snapshot(scene.draft) == original
+    assert scene.backup.is_symlink()
+
+
+def test_a_backup_path_symlinked_outside_the_bundle_is_refused(
+    scene: Scene, tmp_path: Path
+) -> None:
+    """A byte-identical copy somewhere else is still not a backup inside this bundle."""
+    outside = tmp_path / "elsewhere"
+    shutil.copytree(scene.draft, outside)
+    scene.backup.symlink_to(outside)
+    original = _snapshot(scene.draft)
+
+    outcome = rebase_draft(scene.bundle_root, name=DRAFT_NAME)
+
+    assert outcome.exit_code == 1
+    assert _codes(outcome) == [IssueCode.DRAFT_BACKUP_CONFLICT]
+    assert _snapshot(scene.draft) == original
+    assert _snapshot(outside) == original
+
+
 def test_a_symlinked_backup_is_never_read_as_this_draft(scene: Scene) -> None:
     shutil.copytree(scene.draft, scene.backup)
     target = scene.backup / SKILLS_PATH

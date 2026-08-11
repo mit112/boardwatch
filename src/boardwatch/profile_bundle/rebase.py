@@ -467,16 +467,24 @@ def _emit(staging: Path, logical: PurePosixPath, document: DocumentModel) -> Non
 
 
 def _identical_trees(left: Path, right: Path) -> bool:
-    """Whether two directories hold exactly the same relative paths and bytes.
+    """Whether two real directories hold exactly the same relative paths and bytes.
 
     A symlink on either side makes the answer `False` rather than "follow it and compare": a
-    symlinked backup is not this draft's bytes, it is a pointer at somebody else's.
+    symlinked backup is not this draft's bytes, it is a pointer at somebody else's. That includes
+    the *root* — a backup path symlinked at the draft would otherwise compare equal to it by
+    construction, and the caller would then delete the only copy of the pre-rebase draft.
     """
     left_contents = _tree_contents(left)
     return left_contents is not None and left_contents == _tree_contents(right)
 
 
 def _tree_contents(root: Path) -> dict[str, bytes] | None:
+    """Every relative path under `root` and its bytes, or `None` if `root` is not a real directory.
+
+    `rglob` follows a symlinked root silently, so the root is checked before it is walked.
+    """
+    if root.is_symlink() or not root.is_dir():
+        return None
     contents: dict[str, bytes] = {}
     for path in sorted(root.rglob("*")):
         relative = path.relative_to(root).as_posix()
