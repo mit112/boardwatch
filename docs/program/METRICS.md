@@ -54,23 +54,24 @@ reports drift without writing, and `make check` depends on it (D-109).
 | METRICS-ARCHIVE.md | 1047 | Session — 2026-08-08 (P5 run #2 — disjunctive fix, Gate P5 MET at 100%; D-073) |
 | METRICS-ARCHIVE.md | 1084 | Session — 2026-08-08 (D-071b final eligibility gate build — no answer-key number changes) |
 | METRICS-ARCHIVE.md | 1120 | Gate P2 — 2026-08-08 · field-tier mechanism (P2 item 4, D-075). **MET AS RECONCILED** |
-| METRICS.md | 77 | Run log |
-| METRICS.md | 105 | Acceptance run |
-| METRICS.md | 116 | Session — 2026-08-09/10 · P6 Slice 1 design + plan. **No build, no gate movement.** |
-| METRICS.md | 142 | Session — 2026-08-10 · P6 Slice 1 BUILT (unattended run). Branch `p6-slice1`, not merged. |
-| METRICS.md | 352 | 2026-08-10 — P6 Slice 1 on the LIVE store (first real backfill) + Gate P6 clause 4 |
-| METRICS.md | 391 | Session 2026-08-10 (later) — P6 Slice 2: the durable decision ledger, its drain, and job regrouping |
-| METRICS.md | 484 | Session — 2026-08-10 (later) · D-109, the program-index gate. No phase gate moved. |
-| METRICS.md | 525 | Session — 2026-08-10 (later still) · The P6 Slice 2 review (D-110). No phase gate moved. |
-| METRICS.md | 615 | Session — 2026-08-10 (later still ×2) · P6 Slice 3, items 5 and 6 (D-111). Gate P6 unchanged: still 2 of 4. |
-| METRICS.md | 728 | Session — 2026-08-10 (later still ×3) · 0.3.0 cut and tagged (D-112). No phase gate moved. |
-| METRICS.md | 779 | Session — 2026-08-10 (later still ×4) · The Slice 3 external review (D-113) + the CI dependency fix (D-114). No phase gate moved. |
-| METRICS.md | 899 | Session — 2026-08-10 (later still ×5) · Gate A career-profile bundle, slices T1–T9 (D-115). No phase gate moved. |
-| METRICS.md | 988 | Session — 2026-08-10 (later still ×6) · The held commits are PUSHED; CI's first honest read (D-116, D-117). No phase gate moved. |
-| METRICS.md | 1063 | Session — 2026-08-10 (later still ×7) · Gate A slice T10, semantic validation (D-118). No phase gate moved. |
-| METRICS.md | 1244 | Session — 2026-08-10 · Gate A fix history reconciliation; independent T1–T10 review still owed. No phase gate moved. |
-| METRICS.md | 1268 | Session — 2026-08-10 · Independent Gate A T1–T10 review sign-off; T11 permitted. |
-| METRICS.md | 1306 | Session — 2026-08-11 · Gate A T11 implemented and reviewed. No phase gate moved. |
+| METRICS.md | 78 | Run log |
+| METRICS.md | 106 | Acceptance run |
+| METRICS.md | 117 | Session — 2026-08-09/10 · P6 Slice 1 design + plan. **No build, no gate movement.** |
+| METRICS.md | 143 | Session — 2026-08-10 · P6 Slice 1 BUILT (unattended run). Branch `p6-slice1`, not merged. |
+| METRICS.md | 353 | 2026-08-10 — P6 Slice 1 on the LIVE store (first real backfill) + Gate P6 clause 4 |
+| METRICS.md | 392 | Session 2026-08-10 (later) — P6 Slice 2: the durable decision ledger, its drain, and job regrouping |
+| METRICS.md | 485 | Session — 2026-08-10 (later) · D-109, the program-index gate. No phase gate moved. |
+| METRICS.md | 526 | Session — 2026-08-10 (later still) · The P6 Slice 2 review (D-110). No phase gate moved. |
+| METRICS.md | 616 | Session — 2026-08-10 (later still ×2) · P6 Slice 3, items 5 and 6 (D-111). Gate P6 unchanged: still 2 of 4. |
+| METRICS.md | 729 | Session — 2026-08-10 (later still ×3) · 0.3.0 cut and tagged (D-112). No phase gate moved. |
+| METRICS.md | 780 | Session — 2026-08-10 (later still ×4) · The Slice 3 external review (D-113) + the CI dependency fix (D-114). No phase gate moved. |
+| METRICS.md | 900 | Session — 2026-08-10 (later still ×5) · Gate A career-profile bundle, slices T1–T9 (D-115). No phase gate moved. |
+| METRICS.md | 989 | Session — 2026-08-10 (later still ×6) · The held commits are PUSHED; CI's first honest read (D-116, D-117). No phase gate moved. |
+| METRICS.md | 1064 | Session — 2026-08-10 (later still ×7) · Gate A slice T10, semantic validation (D-118). No phase gate moved. |
+| METRICS.md | 1245 | Session — 2026-08-10 · Gate A fix history reconciliation; independent T1–T10 review still owed. No phase gate moved. |
+| METRICS.md | 1269 | Session — 2026-08-10 · Independent Gate A T1–T10 review sign-off; T11 permitted. |
+| METRICS.md | 1307 | Session — 2026-08-11 · Gate A T11 implemented and reviewed. No phase gate moved. |
+| METRICS.md | 1337 | Session — 2026-08-11 (later) · Gate A T12 implemented, NOT independently reviewed. No phase gate moved. |
 
 ---
 
@@ -1331,4 +1332,39 @@ BLOCKING or SHOULD-FIX findings remain. The T11 focused suite passed 9 tests bef
 The independent review remains signed off, T11 is complete, and Gate A as a whole remains **not met**
 because the later planned slices have not been implemented or reviewed. The pinned evidence-set digest
 remains:
+`sha256:bb92aef8ff2d82c0178482ab5fa4c24975e6f3ab8251f3e6d939e14d3bcffde0`.
+
+## Session — 2026-08-11 (later) · Gate A T12 implemented, NOT independently reviewed. No phase gate moved.
+
+This session implemented only Task 12 from the existing plan — deterministic enumeration, candidate
+identity, and idempotent import (design §18, §18.1). T13 onward, Gate B, personal data, Resume/tailor
+integration, schema/store/migrations, CLI work, `CHANGELOG.md`, and version tags remain out of scope
+and were not started.
+
+### T12 result
+
+| Slice | Result |
+|---|---|
+| Adapters | `enumerators.py`: the closed version-1 table (`boardwatch_resume`/`boardwatch-resume-v1`, `markdown_document`/`markdown-blocks-v1`, `structured_objects`/`structured-objects-v1`, `repository_markdown`/`markdown-blocks-v1`), all version 1, plus the three adapters themselves. |
+| Locators | NFC, trimmed, case-preserving, percent-encoded POSIX-relative locators; empty, absolute, `.` and `..` components refused; `is_normalized_locator` as a predicate rather than a re-normalization, because percent-encoding is not idempotent. |
+| Identity | `derive_source_record_id` and `derive_candidate_id` over the exact canonical JSON arrays `["source-record", source_id, normalized_locator]` and `["candidate", source_record_id, predicate, canonicalized_typed_value]`. Both recomputed in the tests through a hand-rolled `hashlib`/`json` path, and both reproduce the packaged example's authored IDs unchanged. |
+| Importer | `imports.py`: `enumerate_source` takes bytes and a typed scope (never a path or a repository), hands extraction an immutable `EnumeratedSource`, assigns every ID itself, accepts and ignores a proposed candidate ID, and merges idempotently — same digests collapse, a changed digest appends one occurrence, a changed canonical value creates a new candidate. |
+| Validation | `validation/imports.py`: source-kind/enumerator pairing, approved-scope discriminant and locator shape, derived record identity, one record per `(source, locator)` pair, exclusion reconciliation, imported-record candidate ownership; plus two completeness blockers for `review_required` and for an approved source the ledger never enumerates. |
+| Isolation | No import of `boardwatch.tailor` in either direction; the Boardwatch résumé source model is restated package-locally and deliberately does not run the tailor loader's bullet-whitespace normalization. |
+
+### T12 verification
+
+| Check | Result |
+|---|---|
+| Red first | `uv run pytest <the two T12 files> -q` before any implementation: exit **2**, `ModuleNotFoundError: No module named 'boardwatch.profile_bundle.enumerators'` — the plan's expected failure. |
+| Targeted green | The same two files with `--no-cov`: exit **0**, **179 passed**. The plan's literal command without `--no-cov` exits **1** on the repo-wide `--cov-fail-under=85`, which two test files cannot reach; every test in it passes. |
+| Mutation | **59** production checks were each inverted or disabled one at a time, run against a narrow test, and restored. **59 caught, 0 survived.** Four checks were found unable to fire and deleted (D-120); one was kept and given a test that makes it fire. |
+| Full gate | Plain, unpiped `make check`: exit **0**, **5,086** selected tests, **95.39%** coverage. |
+
+### Standing
+
+T12 is implemented and mutation-verified **locally only**. It has **not** been independently
+reviewed, and nothing here is sign-off. Gate A as a whole remains **not met** and **not fully
+reviewed**: the later planned slices are unimplemented, and Gate B stays prohibited. **T13 is the
+next task.** The pinned evidence-set digest is unchanged:
 `sha256:bb92aef8ff2d82c0178482ab5fa4c24975e6f3ab8251f3e6d939e14d3bcffde0`.

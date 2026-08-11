@@ -31,9 +31,9 @@ whose old link points at a dead path on a new host.
 **Next action: P6 has nothing left to BUILD — its last two gate clauses need the system RUN.** Duplicate
 leakage needs 7 days of runs (the window must start after D-110, which changed which callers advance the
 queue), and "0 dead postings" needs a real run whose leads are actually probed. So the useful work is, in
-order: (1) start accumulating real daily runs, gated on Mit's `resume.yaml` fix below; (2) Gate A — finish
-its review, then T11 onward; (3) P2 item 8 or P3 slice 5, both owner-gated and both wanting their own
-context window.
+order: (1) start accumulating real daily runs, gated on Mit's `resume.yaml` fix below; (2) Gate A — T13
+onward, with T12's independent review owed; (3) P2 item 8 or P3 slice 5, both owner-gated and both
+wanting their own context window.
 
 **A green `make check` is NOT a green CI** (D-117). `gitleaks`, `perf` and `generalization` are separate CI
 jobs `make check` never runs, and pushing turned `gitleaks` red for the first time in the project's history
@@ -54,28 +54,32 @@ bundle-to-`Resume` bridge, a test asserts both directions, and nothing in a ship
 a defect in code that ships but never runs. **Publishing changed the release, not the review's standing** — the
 review is still owed and Gate B is still prohibited.
 
-**A PARALLEL TRACK exists: the canonical career-profile bundle, Gate A — 10 of 19 slices built (D-115,
-D-118).** Not a P0–P7 phase; it has moved no program gate. Its design and plan live **untracked** under
+**A PARALLEL TRACK exists: the canonical career-profile bundle, Gate A — 12 of 19 slices built (D-115,
+D-118, D-120).** Not a P0–P7 phase; it has moved no program gate. Its design and plan live **untracked** under
 `docs/superpowers/` — read them there, and never work this track from a fresh worktree, where they vanish.
 `src/boardwatch/profile_bundle/` holds the typed outcomes, restricted YAML loader, the closed 33-document
 grammar, every record model, the JSON Schema export, a packaged synthetic example, an isolated canonical
 serializer, the global record index, structural + referential + evidence + **semantic** validation, the
-**effectiveness derivation**, the blob store, and versioned secret scanning. **Gate A is NOT met, it is NOT
-reviewed, and the bundle is wired to nothing** — no CLI command, and deliberately no bundle-to-`Resume`
+**effectiveness derivation**, the blob store, versioned secret scanning, owner-gate derivation and
+append-only history, and now the four deterministic source adapters with candidate identity and import
+validation. **Gate A is NOT met, T12 is NOT reviewed, and the bundle is wired to nothing** — no CLI command, and deliberately no bundle-to-`Resume`
 bridge (a test asserts both directions). Its commits being on `origin/main` is **not** sign-off. **Gate B
 stays prohibited until Gate A is implemented AND independently reviewed**; that review is owed.
 
-**Next slice is T11, owner gates and append-only history** — and it needs something the previous ten did
-not: **a promoted-revision fixture.** The packaged example is a revision-1 *draft* with `changes: []` and
-`approvals: []`, and its manifest is a `DraftManifest`, so it can never be parsed as a promoted revision.
-Every owner-gate trigger in §13 fires at promotion, not in a draft, where `owner_confirmed` and
-`status: approved` are legitimately only *proposals*. So T11 must first build a revision manifest, one
-change record and one stamp — work T13 and T16 need too, and worth doing once, deliberately, rather than
-inside whichever slice trips over it first. The digest primitives it will call already exist from T8
-(`record_digest`, `candidate_content_digest`, `candidate_digest_from_revision`,
-`source_scope_target_digest`, `source_exclusion_target_digest`). Note also that `ApprovalEntry` already
-refuses a wrong target kind and a wrong resulting state at parse time, so two of the plan's Step-1 failure
-modes are D-115 cases, not checks.
+**T1–T11 are implemented and independently reviewed; T12 is implemented and NOT reviewed.** T12 (D-120)
+is deterministic enumeration, candidate identity, and idempotent import — the four approved adapters, NFC
+percent-encoded locators, the derived `source-record.<64hex>` and `candidate.<64hex>` IDs, predicate-
+authorized value canonicalization, idempotent package merging, and the import validation layer. Its
+`make check` exited 0 (5,086 tests, 95.39%) and 59 mutations were each caught by a narrow test, but a
+green gate is not sign-off: **the independent T12 review is owed.** Read D-120 before touching identity
+derivation — the résumé adapter's stage order and `~N` locator preservation are both load-bearing for
+stored IDs, and four checks were deleted there for being unable to fire.
+
+**Next slice is T13**, completeness, digest validation, ancestor traversal, and deterministic reports. It
+inherits the promoted-revision fixture T11 built and the digest primitives from T8 (`record_digest`,
+`candidate_content_digest`, `candidate_digest_from_revision`, `source_scope_target_digest`,
+`source_exclusion_target_digest`). Note that `validate_imports` and `imports_completeness` are deliberately
+NOT exported from `validation/__init__.py` yet — T13 owns wiring them into the report layer.
 
 **The live store has NOT had Slice 2 applied.** Migrated and backfilled for Slice 1 only (head
 `p6_posting_identities`, 117,254 identity rows, `identities verify` exit 0, 147 groups / 186 surplus /
@@ -145,7 +149,7 @@ since D-035, unchanged by everything since.
 | Item | Detail | Owner |
 |---|---|---|
 | **Three `resume.yaml` bullets exceed the 220-char layout gate** | Forces an untailored-master degrade on every posting, which is what blocks accumulating real runs. The file also lacks Knowledge Forge, has stale `skill_groups`, and an empty extracurricular block. **Mit pins `resume_max_pages=1` — do not advise setting it to 2.** | Mit (content) |
-| **Gate A implementation remains incomplete; T1–T11 are implemented and reviewed** | The required T1–T10 review is independently signed off, and T11 is complete: pure owner-gate derivation, approval stamps, promoted-revision fixture, conflict/ruling authorization, and append-only history prefixes. T12 onward remains unstarted; Gate B stays prohibited. | T12 |
+| **Gate A implementation remains incomplete; T12 is implemented but NOT independently reviewed** | T1–T11 are implemented and signed off. T12 (D-120) adds the four source adapters, derived candidate identity, idempotent import merging, and import validation; its `make check` exited 0 and 59/59 mutations were caught, but **that is not sign-off** and the independent review is owed. T13 onward remains unstarted; Gate B stays prohibited. | T13 |
 | **No local pre-push check for the three CI-only jobs** | `gitleaks`, `perf` and `generalization` run in CI and not under `make check`; `gitleaks` is not installed by project tooling. `gitleaks git --log-opts=origin/main..HEAD` is the cheap mitigation (D-117) | open |
 | **Five Gate A fix commits are independently reviewed** | The current `origin/main` contains `1de10c7`, `20ff50c`, `8d32294`, `9d78450`, and `bbec2c0`; each exact diff and the untracked design correction were checked against the original findings with executable reproductions and negative controls. Their prior `make check` results were not used as sign-off. | complete |
 | **The earlier partial-review findings are resolved or separately fixed** | Explicit tags, typed YAML codes, scalar allowlisting, predicate evidence routes, `legal_surfaces`, and dead-check removals were rechecked. The independent review also found and fixed the broad YAML-loader exception classification (`dfa655e`) and the Windows personal-path scan gap (`f166d18`). No BLOCKING or unresolved SHOULD-FIX findings remain. | review |
