@@ -13,6 +13,14 @@ Neither is restated here. A second notion of "the same record" is exactly the de
 subsystem has already paid for: the moment two modules disagree about which field names a record,
 one of them reports a clean merge over a collision.
 
+## History is appended to, never merged record by record
+
+The change ledger, the approval ledger and the owner rulings are append-only (§17, §13). A
+record-wise merge cannot express that: it would read "the draft no longer lists revision 1's
+approval stamp" as a deletion and install a draft whose provenance nothing produced. Those three
+sequences are merged as sequences — the selected revision's entries first, ours appended after —
+and any draft-side removal or rewrite of an inherited entry is a refusal.
+
 ## Merging is field-wise, and refuses rather than guesses
 
 `merge_document` is an ordinary three-way merge over a document's declared fields: a side that did
@@ -40,6 +48,11 @@ from boardwatch.profile_bundle.canonical import record_digest
 from boardwatch.profile_bundle.errors import ProfileBundleError
 from boardwatch.profile_bundle.index import build_index, record_id_of
 from boardwatch.profile_bundle.models.documents import BundleDocuments, DocumentModel
+from boardwatch.profile_bundle.models.history import (
+    ApprovalLedger,
+    ChangeLedger,
+    ConflictRulings,
+)
 
 #: Stands for "this had no value in the base tree". A dedicated sentinel rather than `None`,
 #: because `None` is a legitimate value for several fields and a merge that confused the two would
@@ -49,6 +62,16 @@ NO_BASE: Final = object()
 #: `DocumentMergeConflict.field` for a refusal that belongs to the document as a whole rather than
 #: to one of its fields. Named so `rebase` can report it without matching on a bare string.
 _WHOLE_DOCUMENT: Final = "<document>"
+
+#: The append-only sequences (§17's two history ledgers, §13's owner rulings) and the field that
+#: holds each one. Keyed by model class rather than by logical path because the class is what the
+#: merge is handed, and `layout.owner_for_path` already makes the class a function of the path — so
+#: keying on it cannot disagree with the loader about which document this is.
+_APPEND_ONLY_SEQUENCES: Final[Mapping[type[BaseModel], str]] = {
+    ChangeLedger: "changes",
+    ApprovalLedger: "approvals",
+    ConflictRulings: "rulings",
+}
 
 
 @dataclass(frozen=True)
@@ -135,8 +158,17 @@ def merge_document(
             f"one path holds a {type(ours).__name__} in the draft and a {type(theirs).__name__} in "
             "the selected revision; a merge would have to invent which one it is",
         )
+    append_only = _APPEND_ONLY_SEQUENCES.get(type(theirs))
     merged: dict[str, Any] = {}
     for name in type(theirs).model_fields:
+        if name == append_only:
+            merged[name] = _merge_append_only(
+                name,
+                () if base is None else getattr(base, name),
+                getattr(ours, name),
+                getattr(theirs, name),
+            )
+            continue
         merged[name] = merge_values(
             name,
             NO_BASE if base is None else getattr(base, name),
@@ -196,6 +228,61 @@ def _record_ids(value: Any) -> list[str] | None:
 
 def _by_id(records: Sequence[BaseModel]) -> dict[str, BaseModel]:
     return {record_id_of(record): record for record in records}
+
+
+def _merge_append_only(
+    name: str,
+    base: Sequence[BaseModel],
+    ours: Sequence[BaseModel],
+    theirs: Sequence[BaseModel],
+) -> tuple[BaseModel, ...]:
+    """Their sequence, then our additions. Nothing the base already had may move or disappear.
+
+    §17 and §13 make these three documents append-only, and `_merge_records` cannot express that: it
+    resolves each record on its own, so "removed by us, untouched by them" reads as a deletion and
+    silently drops an approval stamp or a ruling the selected revision carries. History is not a set
+    of independently editable records — the selected revision's sequence has to survive as a prefix,
+    or the rebased draft claims a provenance nothing produced.
+
+    Rewriting an entry the base already had is refused for the same reason, in the same breath: the
+    alternatives are to keep the rewrite (which breaks the prefix) or to take the revision's copy
+    (which silently discards an owner edit), and only the owner can choose between them.
+    """
+    base_by = _by_id(base)
+    ours_by = _by_id(ours)
+    theirs_by = _by_id(theirs)
+    for identifier, inherited in base_by.items():
+        our_record = ours_by.get(identifier)
+        if our_record is None:
+            raise DocumentMergeConflict(
+                name,
+                f"{identifier} was dropped from an append-only sequence by the draft while the "
+                "selected revision still carries it; history is appended to, never rewritten",
+                record_id=identifier,
+            )
+        if our_record != inherited and our_record != theirs_by.get(identifier):
+            raise DocumentMergeConflict(
+                name,
+                f"{identifier} was rewritten by the draft in an append-only sequence; history is "
+                "appended to, never rewritten",
+                record_id=identifier,
+            )
+    merged = list(theirs)
+    for record in ours:
+        identifier = record_id_of(record)
+        if identifier in base_by:
+            continue
+        their_record = theirs_by.get(identifier)
+        if their_record is None:
+            merged.append(record)
+        elif their_record != record:
+            raise DocumentMergeConflict(
+                name,
+                f"{identifier} was appended with different contents by the draft and by the "
+                "selected revision",
+                record_id=identifier,
+            )
+    return tuple(merged)
 
 
 def _merge_records(

@@ -56,6 +56,7 @@ from boardwatch.profile_bundle.models.documents import (
     ProjectFactsDocument,
     SkillInventoryDocument,
 )
+from boardwatch.profile_bundle.models.history import ApprovalLedger
 from boardwatch.profile_bundle.models.manifests import DraftManifest, RevisionManifest
 from boardwatch.profile_bundle.paths import (
     LOCK_FILE,
@@ -532,6 +533,58 @@ def test_a_conflict_keeps_the_drafts_own_value(tmp_path: Path) -> None:
     rebase_draft(conflicting.bundle_root, name=DRAFT_NAME)
 
     assert _skills(conflicting.draft).skills[0].canonical_name == DRAFT_RENAME
+
+
+APPROVALS_PATH = PurePosixPath("history/approvals.yaml")
+
+
+def _approval_ids(root: Path, *, mode: str) -> list[str]:
+    document = load_documents(root, mode=mode).by_path[APPROVALS_PATH]
+    assert isinstance(document, ApprovalLedger)
+    return [stamp.approval_stamp_id for stamp in document.approvals]
+
+
+def test_a_stamp_the_draft_dropped_from_its_ledger_is_never_merged_away(scene: Scene) -> None:
+    """§17: the ledgers are append-only, so a draft-side removal is a conflict, not a deletion."""
+    _edit_document(scene.draft, APPROVALS_PATH, lambda data: data["approvals"].clear())
+    carried = _approval_ids(scene.current.revision_dir, mode="revision")
+    assert len(carried) == 2
+    before = _snapshot(scene.bundle_root)
+
+    outcome = rebase_draft(scene.bundle_root, name=DRAFT_NAME)
+
+    assert outcome.exit_code == 1
+    assert _codes(outcome) == [IssueCode.DRAFT_REBASE_CONFLICT]
+    assert outcome.diagnostics[0].path == APPROVALS_PATH.as_posix()
+    assert outcome.diagnostics[0].record_id == carried[0]
+    assert _snapshot(scene.bundle_root) == before
+
+
+def test_a_stamp_the_draft_rewrote_is_a_conflict_rather_than_a_silent_choice(scene: Scene) -> None:
+    """Keeping the rewrite breaks the prefix; taking theirs discards an owner edit. Refuse."""
+
+    def forge(data: Any) -> None:
+        data["approvals"][0]["candidate_content_digest"] = "sha256:" + "a" * 64
+
+    _edit_document(scene.draft, APPROVALS_PATH, forge)
+    before = _snapshot(scene.bundle_root)
+
+    outcome = rebase_draft(scene.bundle_root, name=DRAFT_NAME)
+
+    assert outcome.exit_code == 1
+    assert _codes(outcome) == [IssueCode.DRAFT_REBASE_CONFLICT]
+    assert outcome.diagnostics[0].path == APPROVALS_PATH.as_posix()
+    assert _snapshot(scene.bundle_root) == before
+
+
+def test_the_rebased_draft_carries_the_selected_revisions_ledgers_as_a_prefix(scene: Scene) -> None:
+    """The positive half: an untouched draft ledger inherits every stamp the revision carries."""
+    carried = _approval_ids(scene.current.revision_dir, mode="revision")
+
+    assert rebase_draft(scene.bundle_root, name=DRAFT_NAME).exit_code == 0
+
+    installed = _approval_ids(scene.draft, mode="draft")
+    assert installed[: len(carried)] == carried
 
 
 def test_a_merged_document_that_fails_its_own_validator_is_a_typed_refusal(scene: Scene) -> None:
