@@ -144,7 +144,7 @@ class PredicateSpec(StrictModel):
         min_length=1
     )
     owner_attestation_authority: OwnerAttestationAuthority
-    legal_surfaces: Annotated[tuple[Surface, ...], UniqueSorted]
+    legal_surfaces: Annotated[tuple[Surface, ...], UniqueSorted] = Field(min_length=1)
     surface_policy: SurfacePolicy
     legal_usage_contexts: Annotated[tuple[UsageContext, ...], UniqueSorted] = Field(min_length=1)
     expiry: ExpirySpec

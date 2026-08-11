@@ -168,6 +168,7 @@ def test_every_legal_verification_basis_has_a_satisfiable_evidence_route() -> No
         {"minimum_evidence": [{"classes": ["not_a_class"]}]},
         {"legal_subject_kinds": []},
         {"legal_value_types": []},
+        {"legal_surfaces": []},
         {"legal_usage_contexts": []},
         {"legal_verification_bases": []},
         {"legal_subject_kinds": ["skill"]},

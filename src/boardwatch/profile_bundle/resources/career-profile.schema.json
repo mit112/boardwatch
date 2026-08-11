@@ -2855,6 +2855,7 @@
           "items": {
             "$ref": "#/$defs/Surface"
           },
+          "minItems": 1,
           "title": "Legal Surfaces",
           "type": "array"
         },

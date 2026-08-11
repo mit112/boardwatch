@@ -235,17 +235,6 @@ STATUS_CATALOGS: dict[str, type[StrEnum]] = {
     "patent": PatentStatus,
 }
 
-#: Project statuses that mean the work reached users. §15's `shipped` tag authorizes on this set.
-SHIPPED_PROJECT_STATUSES: frozenset[ProjectStatus] = frozenset(
-    {
-        ProjectStatus.SHIPPED_PRIVATE,
-        ProjectStatus.SHIPPED_OPEN_SOURCE,
-        ProjectStatus.LIVE_PUBLIC,
-        ProjectStatus.SUNSET,
-    }
-)
-
-
 class ContactRecord(StrictModel):
     """One typed contact channel on the single `person` entity (§9).
 

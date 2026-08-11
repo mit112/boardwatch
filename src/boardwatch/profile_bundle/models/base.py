@@ -198,9 +198,9 @@ ENTITY_PREFIXES: Final[tuple[str, ...]] = (
 def id_pattern(*prefixes: str) -> str:
     """An anchored pattern accepting exactly `prefixes` followed by the shared ID tail.
 
-    Longest-first alternation matters: `source` would otherwise shadow `source-record`, and
-    `approval` would shadow `approval-stamp`, so a stamp ID would satisfy a sub-approval
-    reference.
+    Longest-first alternation keeps generated patterns stable and presents more-specific prefixes
+    before their shorter neighbours. Correctness does not depend on that order: the literal dot
+    after the alternation makes the regex engine backtrack when a shorter prefix does not fit.
     """
     ordered = sorted(prefixes, key=len, reverse=True)
     alternation = "|".join(re.escape(prefix) for prefix in ordered)

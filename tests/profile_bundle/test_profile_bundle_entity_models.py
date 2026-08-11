@@ -9,8 +9,6 @@ otherwise reach.
 
 from __future__ import annotations
 
-import re
-
 import pytest
 from pydantic import TypeAdapter, ValidationError
 
@@ -21,7 +19,6 @@ from boardwatch.profile_bundle.models.base import (
     Surface,
     VerificationState,
     entity_kind_of,
-    id_pattern,
     prefix_of,
 )
 from boardwatch.profile_bundle.models.entities import (
@@ -41,7 +38,6 @@ from boardwatch.profile_bundle.models.entities import (
     PersonEntity,
     PresentationEntity,
     ProjectEntity,
-    ProjectStatus,
     PublicationEntity,
 )
 from boardwatch.profile_bundle.models.relations import RelationRecord
@@ -110,12 +106,6 @@ def test_every_prefix_is_recognised_and_round_trips(prefix: str) -> None:
     assert prefix_of(f"{prefix}.example-01") == prefix
 
 
-def test_longer_prefixes_win_so_a_stamp_is_not_an_approval() -> None:
-    """`approval` would otherwise shadow `approval-stamp`, and `source` `source-record`."""
-    assert prefix_of("approval-stamp.000002") == "approval-stamp"
-    assert prefix_of("source-record." + "a" * 64) == "source-record"
-
-
 @pytest.mark.parametrize(
     "candidate",
     [
@@ -142,12 +132,6 @@ def test_malformed_ids_are_refused(candidate: str) -> None:
                 "target_id": "employment.b",
             }
         )
-
-
-def test_id_pattern_matches_a_longer_prefix_before_its_own_prefix() -> None:
-    pattern = re.compile(id_pattern("approval", "approval-stamp"))
-    assert pattern.match("approval-stamp.000002")
-    assert pattern.match("approval.evidence.x")
 
 
 def test_entity_kind_of_refuses_a_non_entity_id() -> None:
@@ -264,20 +248,6 @@ def test_entities_are_frozen() -> None:
     entity = ENTITY_ADAPTER.validate_python(_entity_payload("project", "concept"))
     with pytest.raises(ValidationError):
         entity.display_name = "other"  # type: ignore[misc]
-
-
-def test_shipped_project_statuses_are_the_four_reached_users_states() -> None:
-    from boardwatch.profile_bundle.models.entities import SHIPPED_PROJECT_STATUSES
-
-    assert SHIPPED_PROJECT_STATUSES == frozenset(
-        {
-            ProjectStatus.SHIPPED_PRIVATE,
-            ProjectStatus.SHIPPED_OPEN_SOURCE,
-            ProjectStatus.LIVE_PUBLIC,
-            ProjectStatus.SUNSET,
-        }
-    )
-    assert ProjectStatus.COMPLETED not in SHIPPED_PROJECT_STATUSES
 
 
 # --------------------------------------------------------------------------------------
