@@ -9,7 +9,8 @@ catches up, and the whole value of the command is in what it does when it *canno
    before rereading `CURRENT`. Reading the pointer first would mean deciding what to rebase onto
    using a value a promotion could replace while this command was still deciding.
 2. Refuse, without writing, on: an occupied backup path that does not hold this exact draft, a
-   record both sides touched, an unreadable old parent, or an evidence blob whose bytes are gone.
+   record both sides touched, a document one side deleted and the other changed, one ID claimed by
+   two records, an unreadable old parent, or an evidence blob whose bytes are gone.
 3. Build the rebased tree in a same-filesystem temporary directory and **reread it from disk**.
 4. Rename the old draft to its deterministic backup, then rename the rebased tree into place.
 
@@ -75,6 +76,7 @@ from boardwatch.profile_bundle.errors import (
     diagnostic,
     outcome_with,
 )
+from boardwatch.profile_bundle.index import record_ids_in_document
 from boardwatch.profile_bundle.layout import ENTITY_DOCUMENT_DIRECTORIES
 from boardwatch.profile_bundle.locking import BundleLockHeldError, bundle_lock
 from boardwatch.profile_bundle.models.documents import BundleDocuments, DocumentModel
@@ -288,6 +290,10 @@ def _merge_plan(
     `BundleDocuments.by_path` holds every declared file *except* the manifest, which is why nothing
     here filters it out: the manifest is derived rather than merged and reaches the staged tree
     through `_rebased_manifest`.
+
+    A document only one side still has is dropped only when the *other* side left it exactly as the
+    base had it. Anything else is a one-sided deletion facing an edit, and it is refused rather than
+    resolved by absence — see `_deletion_conflict` for why the record-ID overlap gate cannot see it.
     """
     merged: dict[PurePosixPath, DocumentModel] = {}
     sources: dict[PurePosixPath, _Source] = {}
@@ -296,17 +302,29 @@ def _merge_plan(
         our_document = ours.by_path.get(logical)
         their_document = theirs.by_path.get(logical)
         if our_document is None:
-            # Absent from the draft: dropped by the owner if the base had it, otherwise a file only
-            # the new revision has. The owner-dropped case cannot also have been edited by the new
-            # revision — that would be an overlap, already refused above.
-            if inherited is None and their_document is not None:
-                merged[logical] = their_document
-                sources[logical] = revision_dir / logical
+            # Absent from the draft: a file only the new revision has, or one the owner dropped.
+            if inherited is None:
+                if their_document is not None:
+                    merged[logical] = their_document
+                    sources[logical] = revision_dir / logical
+                continue
+            if their_document is not None and their_document != inherited:
+                return _deletion_conflict(
+                    logical, their_document, deleted_by="the draft", changed_by="that revision"
+                )
             continue
         if their_document is None:
             if inherited is None:
                 merged[logical] = our_document
                 sources[logical] = draft_dir / logical
+                continue
+            if our_document != inherited:
+                return _deletion_conflict(
+                    logical,
+                    our_document,
+                    deleted_by="the selected revision",
+                    changed_by="the draft",
+                )
             continue
         if our_document == their_document or (
             inherited is not None and their_document == inherited
@@ -533,6 +551,32 @@ def _conflict(record_ids: Sequence[str], message: str) -> OperationOutcome[Draft
                 record_ids=list(ordered),
             ),
         ),
+    )
+
+
+def _deletion_conflict(
+    logical: PurePosixPath, kept: DocumentModel, *, deleted_by: str, changed_by: str
+) -> Diagnostic:
+    """One side deleted a document the other side changed. Refused, never resolved by dropping it.
+
+    The record-ID overlap gate cannot see this shape. It intersects record IDs, and a document one
+    side no longer has contributes none — so a deletion facing an addition passes it in both
+    directions, and for the six `policy/*.yaml` catalogs (which hold no addressable records at all)
+    it passes for *every* edit they can carry. Treating the absence as the answer would discard the
+    other side's work with no finding; when `changed_by` is the selected revision it would revert an
+    already-promoted record, which the change ledger would not record either.
+
+    `record_ids` names the records the surviving document holds — the work that would be lost — and
+    is legitimately empty for a document without addressable records, where `path` is the locator.
+    """
+    record_ids = sorted(record_ids_in_document(kept))
+    return diagnostic(
+        IssueCode.DRAFT_REBASE_CONFLICT,
+        f"{logical} was deleted by {deleted_by} and changed by {changed_by}; a rebase never "
+        "chooses between a deletion and an edit, so resolve it in the draft",
+        path=logical.as_posix(),
+        record_id=record_ids[0] if record_ids else None,
+        record_ids=record_ids,
     )
 
 

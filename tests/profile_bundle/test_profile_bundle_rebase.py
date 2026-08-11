@@ -107,11 +107,15 @@ class Scene:
     backup: Path
 
 
-def _edit_skills(root: Path, mutate: Callable[[Any], None]) -> None:
-    path = root / SKILLS_PATH
-    data = load_yaml_bytes(path.read_bytes(), logical_path=SKILLS_PATH)
+def _edit_document(root: Path, logical: PurePosixPath, mutate: Callable[[Any], None]) -> None:
+    path = root / logical
+    data = load_yaml_bytes(path.read_bytes(), logical_path=logical)
     mutate(data)
     path.write_bytes(quoted_yaml(data))
+
+
+def _edit_skills(root: Path, mutate: Callable[[Any], None]) -> None:
+    _edit_document(root, SKILLS_PATH, mutate)
 
 
 def _add_second_skill(data: Any) -> None:
@@ -528,6 +532,111 @@ def test_a_conflict_keeps_the_drafts_own_value(tmp_path: Path) -> None:
     rebase_draft(conflicting.bundle_root, name=DRAFT_NAME)
 
     assert _skills(conflicting.draft).skills[0].canonical_name == DRAFT_RENAME
+
+
+# --------------------------------------------------------------------------------------
+# One side deleted a document the other side changed
+# --------------------------------------------------------------------------------------
+
+UNITS_PATH = PurePosixPath("policy/units.yaml")
+PROJECT_PATH = PurePosixPath("facts/projects/project.packet-pantry.yaml")
+PROMOTED_FACT = "fact.packet-pantry.summary.003"
+
+
+def _bump_units(data: Any) -> None:
+    data["units_version"] = data["units_version"] + 1
+
+
+def _add_fact(fact_id: str) -> Callable[[Any], None]:
+    def mutate(data: Any) -> None:
+        clone = copy.deepcopy(data["facts"][0])
+        clone["fact_id"] = fact_id
+        clone["supersedes_fact_ids"] = []
+        data["facts"].append(clone)
+
+    return mutate
+
+
+def test_a_recordless_document_the_draft_deleted_and_the_revision_changed_refuses(
+    scene: Scene,
+) -> None:
+    """`policy/*.yaml` holds no addressable records, so the overlap gate cannot see this at all."""
+    (scene.draft / UNITS_PATH).unlink()
+    _edit_document(scene.current.revision_dir, UNITS_PATH, _bump_units)
+    before = _snapshot(scene.bundle_root)
+
+    outcome = rebase_draft(scene.bundle_root, name=DRAFT_NAME)
+
+    assert outcome.exit_code == 1
+    assert _codes(outcome) == [IssueCode.DRAFT_REBASE_CONFLICT]
+    assert outcome.diagnostics[0].path == UNITS_PATH.as_posix()
+    # No addressable records exist in this document, so `path` is the whole locator.
+    assert outcome.diagnostics[0].details["record_ids"] == []
+    assert _snapshot(scene.bundle_root) == before
+
+
+def test_a_recordless_document_the_revision_deleted_and_the_draft_changed_refuses(
+    scene: Scene,
+) -> None:
+    """The mirror. Dropping the document here would discard the owner's own edit."""
+    _edit_document(scene.draft, UNITS_PATH, _bump_units)
+    (scene.current.revision_dir / UNITS_PATH).unlink()
+    before = _snapshot(scene.bundle_root)
+
+    outcome = rebase_draft(scene.bundle_root, name=DRAFT_NAME)
+
+    assert outcome.exit_code == 1
+    assert _codes(outcome) == [IssueCode.DRAFT_REBASE_CONFLICT]
+    assert outcome.diagnostics[0].path == UNITS_PATH.as_posix()
+    assert _snapshot(scene.bundle_root) == before
+
+
+def test_a_record_the_revision_promoted_is_never_reverted_by_a_draft_side_deletion(
+    scene: Scene,
+) -> None:
+    """The worst half: promoting the rebased draft would remove a record `CURRENT` holds."""
+    (scene.draft / PROJECT_PATH).unlink()
+    _edit_document(scene.current.revision_dir, PROJECT_PATH, _add_fact(PROMOTED_FACT))
+    before = _snapshot(scene.bundle_root)
+
+    outcome = rebase_draft(scene.bundle_root, name=DRAFT_NAME)
+
+    assert outcome.exit_code == 1
+    assert _codes(outcome) == [IssueCode.DRAFT_REBASE_CONFLICT]
+    finding = outcome.diagnostics[0]
+    assert finding.path == PROJECT_PATH.as_posix()
+    # §19: the conflict carries the exact record IDs — here, the work the deletion would discard.
+    assert PROMOTED_FACT in finding.details["record_ids"]
+    assert finding.record_id == sorted(finding.details["record_ids"])[0]
+    assert _snapshot(scene.bundle_root) == before
+
+
+def test_a_record_the_draft_added_is_never_discarded_by_a_revision_side_deletion(
+    scene: Scene,
+) -> None:
+    """And its mirror: the owner's own new fact in a file the revision dropped."""
+    added = "fact.packet-pantry.summary.004"
+    _edit_document(scene.draft, PROJECT_PATH, _add_fact(added))
+    (scene.current.revision_dir / PROJECT_PATH).unlink()
+    before = _snapshot(scene.bundle_root)
+
+    outcome = rebase_draft(scene.bundle_root, name=DRAFT_NAME)
+
+    assert outcome.exit_code == 1
+    assert _codes(outcome) == [IssueCode.DRAFT_REBASE_CONFLICT]
+    assert added in outcome.diagnostics[0].details["record_ids"]
+    assert _snapshot(scene.bundle_root) == before
+
+
+def test_a_document_the_owner_dropped_and_nobody_else_touched_stays_dropped(scene: Scene) -> None:
+    """The legitimate case the refusal must not swallow: dropping a project is an owner edit."""
+    (scene.draft / PROJECT_PATH).unlink()
+
+    outcome = rebase_draft(scene.bundle_root, name=DRAFT_NAME)
+
+    assert outcome.exit_code == 0, outcome.diagnostics
+    assert not (scene.draft / PROJECT_PATH).exists()
+    assert PROJECT_PATH not in load_documents(scene.draft, mode="draft").by_path
 
 
 # --------------------------------------------------------------------------------------
