@@ -37,7 +37,8 @@ wanting their own context window.
 
 ### Gate A branch table — where every unmerged slice stands (2026-08-11)
 
-`main` is at `02ee167`. **Nothing below is pushed.** Every branch is local; `docs/superpowers/` holds
+**Nothing below is pushed, and no sha here is `main`'s** — `git log --oneline -1` is the authority for
+that (D-017). Every branch is local; `docs/superpowers/` holds
 the design and plan and is untracked — copy it into any worktree you create.
 
 | Branch | Head | Stands where |
@@ -86,7 +87,7 @@ reviewed" twice and declined both times.** The basis holds because the package i
 command, no bundle-to-`Resume` bridge, a test asserts both directions, nothing in a shipped code path
 reaches it. Publishing changed the release, **not** the review's standing.
 
-**A PARALLEL TRACK exists: the canonical career-profile bundle, Gate A — 16 of 19 slices built, 13
+**A PARALLEL TRACK exists: the canonical career-profile bundle, Gate A — 16 of 19 slices built, 14
 merged (D-115, D-118, D-120, D-125, D-127).** T15 and T17 are built but unreviewed, T16/T18/T19 are
 not started. Not a P0–P7 phase; it has moved no program gate. Its design and plan live
 **untracked** under `docs/superpowers/` — read them there, and **copy that directory into any worktree you
