@@ -23,11 +23,17 @@ import pytest
 
 from boardwatch.profile_bundle.errors import IssueCode, tier_of
 from boardwatch.profile_bundle.models.entities import STATUS_CATALOGS
+from boardwatch.profile_bundle.models.facts import (
+    VALUE_DATE_KINDS,
+    FactRecord,
+    FactValueKind,
+)
 from boardwatch.profile_bundle.models.metrics import MetricRecord
 from boardwatch.profile_bundle.models.policy import ExpirySpec
 from boardwatch.profile_bundle.paths import revision_root
 from boardwatch.profile_bundle.validation import BundleParseError, build_context, load_documents
 from boardwatch.profile_bundle.validation.completeness import (
+    _declared_expiry,
     ancestry_completeness,
     validate_completeness,
 )
@@ -529,6 +535,69 @@ def test_a_fact_whose_predicate_never_expires_is_not_reported_for_its_expiry_dat
         for f in validate_completeness(ctx, as_of=AFTER_EXPIRY)
         if f.code == "fact_value_expired"
     }
+
+
+def test_a_catalog_pairing_a_value_date_expiry_with_a_dateless_type_fails_the_whole_bundle(
+    synthetic_bundle: SyntheticBundle,
+) -> None:
+    """Where the model's refusal lands for a real bundle, rather than for a hand-built row.
+
+    `policy/predicates.yaml` is read through the same document loader as every other file, so the
+    pairing is reported as a `model_validation_error` and the run never reaches a verdict at all.
+    That is the whole point of refusing it at authoring time: the alternative was a bundle that
+    validated clean while one predicate's expiry could never fire.
+    """
+
+    def mutate(data: Any) -> None:
+        for spec in data["predicates"]:
+            if spec["predicate_id"] == "certification.expiry":
+                spec["legal_value_types"] = ["year_month"]
+
+    edit(synthetic_bundle, "policy/predicates.yaml", mutate)
+    assert parse_codes(synthetic_bundle.draft) == ["model_validation_error"]
+
+
+#: One authored value per kind in the closed union, so the parametrization below covers all ten and
+#: a new kind fails here with a `KeyError` instead of silently not being measured.
+VALUE_BY_KIND: dict[str, Any] = {
+    "string": {"type": "string", "value": "Example Cloud Practitioner"},
+    "integer": {"type": "integer", "value": 3},
+    "decimal": {"type": "decimal", "value": "1.5"},
+    "boolean": {"type": "boolean", "value": True},
+    "date": {"type": "date", "value": "2020-01-01"},
+    "year_month": {"type": "year_month", "value": "2020-01"},
+    "date_range": {"type": "date_range", "start": "2020-01-01", "end": "2020-02-01"},
+    "url": {"type": "url", "value": "https://example.test/credential"},
+    "string_list": {"type": "string_list", "values": ["example"]},
+    "skill_ref": {"type": "skill_ref", "skill_id": "skill.example-language"},
+}
+
+
+@pytest.mark.parametrize("kind", sorted(FactValueKind, key=str))
+def test_the_expiry_check_reads_a_value_date_from_exactly_the_kinds_the_catalog_admits(
+    synthetic_bundle: SyntheticBundle, kind: FactValueKind
+) -> None:
+    """One set, two readers, and the test that stops them becoming two contracts.
+
+    `PredicateSpec` refuses `block_active_use_after_value_date` on any value type outside
+    `VALUE_DATE_KINDS`, and this function reads a value date from exactly those kinds. Either side
+    moving alone reopens the hole the pair exists to close: a catalog row whose facts carry a
+    `year_month` or a `date_range` and `expires_at: null` was never blocked at any `as_of`, with no
+    finding and no code. So the agreement is asserted over every member of the closed union rather
+    than asserted in a comment.
+    """
+    ctx = build_context(synthetic_bundle.draft, mode="draft", blobs=blob_reader())
+    credential = next(
+        f for f in ctx.index.facts if f.fact_id == "fact.example-credential.expiry.001"
+    )
+    fact = FactRecord.model_validate(
+        {
+            **credential.model_dump(mode="json"),
+            "value": VALUE_BY_KIND[kind.value],
+            "expires_at": None,
+        }
+    )
+    assert (_declared_expiry(fact) is not None) == (kind in VALUE_DATE_KINDS)
 
 
 def test_a_review_interval_is_not_past_on_the_day_it_falls_due(

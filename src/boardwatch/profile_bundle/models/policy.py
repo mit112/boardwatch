@@ -44,7 +44,7 @@ from boardwatch.profile_bundle.models.base import (
 )
 from boardwatch.profile_bundle.models.claims import ClaimType
 from boardwatch.profile_bundle.models.evidence import BASIS_EVIDENCE_CLASSES, EvidenceClass
-from boardwatch.profile_bundle.models.facts import FactValue, FactValueKind
+from boardwatch.profile_bundle.models.facts import VALUE_DATE_KINDS, FactValue, FactValueKind
 from boardwatch.profile_bundle.models.metrics import MetricKind
 
 # ======================================================================================
@@ -171,6 +171,33 @@ class PredicateSpec(StrictModel):
             raise ValueError(
                 f"{self.predicate_id}: legal verification basis {basis.value!r} has no "
                 "minimum_evidence alternative containing a corresponding evidence class"
+            )
+        return self
+
+    @model_validator(mode="after")
+    def _a_value_date_expiry_needs_a_value_carrying_a_date(self) -> PredicateSpec:
+        """§10.4's expiry row is named after the **value** date, so there has to be one to read.
+
+        `completeness._declared_expiry` reads that date from the kinds in `VALUE_DATE_KINDS`. A row
+        pairing this behaviour with any other value type therefore declared an expiry no fact under
+        it could ever trigger: a `year_month` or `date_range` fact with `expires_at: null` stayed
+        effective at every `as_of`, with no finding and no code to notice. Nothing else forbids the
+        pairing, and `legal_value_types` is versioned user data — so a second user's catalog reaches
+        it without anyone touching code, which is exactly the multi-tenancy contract.
+
+        Refused here rather than widened there: one rule in one place, failing loudly where the row
+        is authored, instead of an expiry check that has to learn every value kind.
+        """
+        if self.expiry.behaviour is not ExpiryBehaviour.BLOCK_ACTIVE_USE_AFTER_VALUE_DATE:
+            return self
+        dateless = sorted(
+            kind.value for kind in self.legal_value_types if kind not in VALUE_DATE_KINDS
+        )
+        if dateless:
+            raise ValueError(
+                f"{self.predicate_id}: expiry behaviour block_active_use_after_value_date reads a "
+                f"date from the fact's value, but legal_value_types admits {dateless}, which carry "
+                "none; a fact of that type could never be blocked"
             )
         return self
 
