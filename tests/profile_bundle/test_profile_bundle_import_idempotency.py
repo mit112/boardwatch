@@ -977,3 +977,169 @@ def test_enumerating_the_missing_source_clears_the_unexplained_blocker(
     assert not [
         f for f in blockers(synthetic_bundle) if f.code == IssueCode.IMPORT_UNEXPLAINED_RECORD
     ]
+
+
+# --------------------------------------------------------------------------------------
+# Review findings: stored candidate identity is never taken on trust
+# --------------------------------------------------------------------------------------
+
+NOTES_RECORD = "source-record.944c2949212afd453c6df1f836e3b3f7e8c959c800032f03ac3dfdb18c850725"
+NOTES_CANDIDATE = "candidate.0ce5a9c4286566ccc3495c832ceb6a2b640bafc4a140e340731a2f8cfada71ed"
+REPOSITORY_CANDIDATE = "candidate.ff1a028b491c3395ad8789bc76620a33c31676a10519819f409b4a711045c7ed"
+
+
+def relink(bundle: SyntheticBundle, old: str, new: str) -> None:
+    def swap(data: Any) -> None:
+        for record in data["records"]:
+            record["candidate_ids"] = [
+                new if item == old else item for item in record["candidate_ids"]
+            ]
+
+    edit_document(bundle, "imports/source-ledger.yaml", swap)
+
+
+def test_a_forged_candidate_id_is_reported_by_validation(
+    synthetic_bundle: SyntheticBundle,
+) -> None:
+    """A candidate ID no canonical-JSON digest produced must not survive validation. Without this,
+    a draft can promote an arbitrary identity that every later Gate A task then trusts."""
+    forged = "candidate." + "f" * 64
+
+    def swap(data: Any) -> None:
+        data["candidates"][0]["candidate_id"] = forged
+
+    edit_document(synthetic_bundle, "imports/candidates.yaml", swap)
+    relink(synthetic_bundle, NOTES_CANDIDATE, forged)
+    assert IssueCode.IMPORT_CANDIDATE_IDENTITY_MISMATCH in codes(findings(synthetic_bundle))
+
+
+def test_a_candidate_whose_predicate_is_not_catalogued_is_reported(
+    synthetic_bundle: SyntheticBundle,
+) -> None:
+    """A self-consistent hash proves only that the ID matches the payload beside it. The predicate
+    must still exist in the revision's own catalog."""
+    invented = derive_candidate_id(
+        NOTES_RECORD,
+        "invented.predicate",
+        value_of({"type": "skill_ref", "skill_id": "skill.example-language"}),
+    )
+
+    def swap(data: Any) -> None:
+        data["candidates"][0]["candidate_id"] = invented
+        data["candidates"][0]["predicate"] = "invented.predicate"
+
+    edit_document(synthetic_bundle, "imports/candidates.yaml", swap)
+    relink(synthetic_bundle, NOTES_CANDIDATE, invented)
+    assert IssueCode.UNKNOWN_PREDICATE in codes(findings(synthetic_bundle))
+
+
+def test_a_candidate_whose_stored_value_is_not_canonical_is_reported(
+    synthetic_bundle: SyntheticBundle,
+) -> None:
+    """`'  Not   canonical  '` hashes consistently with its own ID, so identity alone cannot catch
+    it. The stored value must be the canonical form its predicate authorizes, or one assertion
+    ends up with two candidate IDs and the idempotence guarantee is gone."""
+    payload = {"type": "string", "value": "  Not   canonical  "}
+    repository_record = (
+        "source-record.f7bb1af73e34542d9fc04ee6df27f92872ffab8b7d46dc0bc9bedc9d16c6db45"
+    )
+    rebuilt = derive_candidate_id(repository_record, "project.contribution", value_of(payload))
+
+    def swap(data: Any) -> None:
+        candidate = data["candidates"][1]
+        assert candidate["source_record_id"] == repository_record
+        candidate["canonicalized_typed_value"] = payload
+        candidate["candidate_id"] = rebuilt
+
+    edit_document(synthetic_bundle, "imports/candidates.yaml", swap)
+    relink(synthetic_bundle, REPOSITORY_CANDIDATE, rebuilt)
+    assert IssueCode.IMPORT_CANDIDATE_IDENTITY_MISMATCH in codes(findings(synthetic_bundle))
+
+
+def test_an_imported_record_naming_any_foreign_candidate_is_reported(
+    synthetic_bundle: SyntheticBundle,
+) -> None:
+    """Owning one candidate does not license naming another record's. Each candidate ID is derived
+    from its own `source_record_id`, so a foreign one is support the record does not have."""
+
+    def crosswire(data: Any) -> None:
+        data["records"][0]["candidate_ids"] = sorted(
+            [*data["records"][0]["candidate_ids"], REPOSITORY_CANDIDATE]
+        )
+
+    edit_document(synthetic_bundle, "imports/source-ledger.yaml", crosswire)
+    assert IssueCode.IMPORT_MISSING_CANDIDATE in codes(findings(synthetic_bundle))
+
+
+def test_merging_refuses_a_candidate_whose_value_was_never_canonicalized(
+    synthetic_bundle: SyntheticBundle,
+) -> None:
+    """`merge_candidate_package` is a public entry point. A self-consistent hash over an
+    uncollapsed string must not be merged, or the package it produces is not idempotent against
+    the same assertion extracted again."""
+    package = package_for(synthetic_bundle, [proposal(first_record(), "A summary")])
+    payload = {"type": "string", "value": "  A   summary  "}
+    smuggled = CandidatePackage.model_validate(
+        {
+            "candidates_version": 1,
+            "candidates": [
+                {
+                    **package.candidates[0].model_dump(mode="json"),
+                    "canonicalized_typed_value": payload,
+                    "candidate_id": derive_candidate_id(
+                        package.candidates[0].source_record_id,
+                        package.candidates[0].predicate,
+                        value_of(payload),
+                    ),
+                }
+            ],
+        }
+    )
+    with pytest.raises(CandidateImportError):
+        merge_candidate_package(package, smuggled)
+
+
+def test_a_set_like_value_stored_out_of_canonical_order_is_reported(
+    synthetic_bundle: SyntheticBundle,
+) -> None:
+    """The predicate-independent whitespace check cannot see this one: every element is already
+    collapsed and trimmed. Only `canonicalize_candidate_value` knows that
+    `application.authorized_regions` is set-like and must be sorted, so two orderings of one set
+    would otherwise get two candidate IDs."""
+    payload = {"type": "string_list", "values": ["zebra", "alpha"]}
+    unsorted_id = derive_candidate_id(
+        NOTES_RECORD, "application.authorized_regions", value_of(payload)
+    )
+
+    def add(data: Any) -> None:
+        data["candidates"].append(
+            {
+                "candidate_id": unsorted_id,
+                "source_record_id": NOTES_RECORD,
+                "predicate": "application.authorized_regions",
+                "canonicalized_typed_value": payload,
+                "original_display_value": "zebra, alpha",
+                "occurrences": [
+                    {
+                        "source_content_digest": "sha256:" + "c" * 64,
+                        "record_content_digest": "sha256:" + "d" * 64,
+                    }
+                ],
+            }
+        )
+
+    def name_it(data: Any) -> None:
+        record = data["records"][0]
+        record["candidate_ids"] = sorted([*record["candidate_ids"], unsorted_id])
+
+    edit_document(synthetic_bundle, "imports/candidates.yaml", add)
+    edit_document(synthetic_bundle, "imports/source-ledger.yaml", name_it)
+
+    reported = [
+        finding
+        for finding in findings(synthetic_bundle)
+        if finding.code == IssueCode.IMPORT_CANDIDATE_IDENTITY_MISMATCH
+        and finding.record_id == unsorted_id
+    ]
+    assert len(reported) == 1
+    assert "canonical form" in reported[0].message

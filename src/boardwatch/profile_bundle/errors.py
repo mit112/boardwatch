@@ -149,6 +149,7 @@ class IssueCode(StrEnum):
     IMPORT_SCOPE_INVALID = "import_scope_invalid"
     IMPORT_RECORD_UNDISPOSITIONED = "import_record_undispositioned"
     IMPORT_UNEXPLAINED_RECORD = "import_unexplained_record"
+    IMPORT_CANDIDATE_IDENTITY_MISMATCH = "import_candidate_identity_mismatch"
 
     # -- digest and history identity -----------------------------------------------
     BUNDLE_DIGEST_MISMATCH = "bundle_digest_mismatch"

@@ -781,3 +781,142 @@ def test_the_structured_adapter_refuses_a_selected_sections_scope() -> None:
         StructuredObjectsEnumerator(source_id=SOURCE).enumerate(
             b"alpha: first\n", scope=selected("anything")
         )
+
+
+# --------------------------------------------------------------------------------------
+# Review findings: locator canonicality and selected-scope matching
+# --------------------------------------------------------------------------------------
+
+
+def test_a_heading_containing_a_space_can_be_selected_by_its_resolved_path() -> None:
+    """The resolved path of `# Alpha Beta` is `Alpha%20Beta`, and §18.1 says selected locators
+    "refer to these resolved paths". Re-encoding one turns `%20` into `%2520` and leaves no valid
+    import route for the overwhelming majority of real headings."""
+    source = "# Alpha Beta\n\ntext\n"
+    assert locators(markdown_records(source)) == ["Alpha%20Beta/heading", "Alpha%20Beta/paragraph-1"]
+    selected_records = markdown_records(source, selected("Alpha%20Beta"))
+    assert locators(selected_records) == ["Alpha%20Beta/heading", "Alpha%20Beta/paragraph-1"]
+
+
+def test_a_unicode_heading_can_be_selected_by_its_resolved_path() -> None:
+    source = "# Café\n\ntext\n"
+    assert locators(markdown_records(source)) == ["Caf%C3%A9/heading", "Caf%C3%A9/paragraph-1"]
+    assert locators(markdown_records(source, selected("Caf%C3%A9"))) == [
+        "Caf%C3%A9/heading",
+        "Caf%C3%A9/paragraph-1",
+    ]
+
+
+def test_a_heading_body_ending_in_a_tilde_suffix_can_be_selected() -> None:
+    source = "# Alpha~2\n\ntext\n"
+    resolved = locators(markdown_records(source))[0].removesuffix("/heading")
+    assert locators(markdown_records(source, selected(resolved)))[0].endswith("/heading")
+
+
+def test_a_raw_unencoded_scope_locator_is_refused_rather_than_silently_matching() -> None:
+    """`Alpha Beta` is not a normalized locator, so it names no resolved heading path. Accepting
+    it would make the invalid spelling the working one."""
+    with pytest.raises(EnumerationError):
+        markdown_records("# Alpha Beta\n\ntext\n", selected("Alpha Beta"))
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "%41",           # `A` is unreserved: no adapter ever escapes it
+        "a%2Fb%2E",      # `.` is unreserved
+        "%2d",           # lowercase hex is not what the encoder emits
+        "%C3",           # a lone continuation byte is not valid UTF-8
+        "%",
+        "a%",
+        "~2",            # a duplicate suffix with no body
+    ],
+)
+def test_a_non_canonical_percent_escape_is_not_a_normalized_locator(text: str) -> None:
+    assert not is_normalized_locator(text)
+
+
+@pytest.mark.parametrize("text", ["a%20b", "%C3%A9", "Alpha%20Beta~2/heading", "_root"])
+def test_a_canonically_encoded_locator_is_normalized(text: str) -> None:
+    assert is_normalized_locator(text)
+
+
+def test_every_locator_an_adapter_emits_is_recognised_as_normalized() -> None:
+    """The predicate and the encoder must agree, or validation rejects real ledgers."""
+    source = "# Alpha Beta\n\n- a bullet\n\n## Café Détails\n\ntext\n\n# Alpha Beta\n\nmore\n"
+    for record in markdown_records(source):
+        assert is_normalized_locator(record.normalized_locator)  # type: ignore[attr-defined]
+    for record in resume_records():
+        assert is_normalized_locator(record.normalized_locator)  # type: ignore[attr-defined]
+    for record in structured_records("'a/b c': value\n"):
+        assert is_normalized_locator(record.normalized_locator)  # type: ignore[attr-defined]
+
+
+# --------------------------------------------------------------------------------------
+# Review findings: résumé ID uniqueness is decided on the normalized form
+# --------------------------------------------------------------------------------------
+
+
+def test_entry_ids_differing_only_by_surrounding_whitespace_are_one_id() -> None:
+    """`e` and `" e "` encode to the same locator segment and therefore derive the same
+    source-record ID. Refusing them late, at the ledger model, still lets the adapter hand
+    extraction an immutable package containing two records with one identity."""
+    duplicated = RESUME.replace(
+        "extracurricular:",
+        "- entry_id: ' entry-one '\n  heading: Other\n  bullets: []\nextracurricular:",
+    )
+    with pytest.raises(EnumerationError):
+        resume_records(duplicated)
+
+
+def test_bullet_ids_differing_only_by_surrounding_whitespace_are_one_id() -> None:
+    duplicated = RESUME.replace(
+        "extracurricular:",
+        "- entry_id: entry-two\n  heading: Other\n  bullets:\n"
+        "  - bullet_id: ' bullet-one '\n    text: Another\nextracurricular:",
+    )
+    with pytest.raises(EnumerationError):
+        resume_records(duplicated)
+
+
+# --------------------------------------------------------------------------------------
+# Review finding: determinism across interpreter hash seeds
+# --------------------------------------------------------------------------------------
+
+_HASH_SEED_SCRIPT = """
+from boardwatch.profile_bundle.enumerators import MarkdownBlocksEnumerator, StructuredObjectsEnumerator
+from boardwatch.profile_bundle.models.imports import CompleteFileScope
+
+scope = CompleteFileScope(kind="complete_file")
+markdown = MarkdownBlocksEnumerator(source_id="source.synthetic-example")
+text = b"# Beta\\n\\nb\\n\\n# Alpha\\n\\n- one\\n- two\\n\\n# Beta\\n\\nc\\n"
+for record in markdown.enumerate(text, scope=scope):
+    print(record.normalized_locator, record.record_content_digest)
+structured = StructuredObjectsEnumerator(source_id="source.synthetic-example")
+rows = b"zebra: z\\nalpha: a\\nmiddle: m\\ndelta: d\\nomega: o\\n"
+for record in structured.enumerate(rows, scope=scope):
+    print(record.normalized_locator, record.record_content_digest)
+"""
+
+
+def test_enumeration_is_identical_across_interpreter_hash_seeds() -> None:
+    """Re-running inside one interpreter cannot see hash-seed-dependent set iteration: the seed is
+    fixed for the process, so an adapter that iterated a set would still look deterministic."""
+    import os
+    import subprocess
+    import sys
+
+    def run(seed: str) -> str:
+        environment = {**os.environ, "PYTHONHASHSEED": seed}
+        finished = subprocess.run(
+            [sys.executable, "-c", _HASH_SEED_SCRIPT],
+            capture_output=True,
+            text=True,
+            check=True,
+            env=environment,
+        )
+        return finished.stdout
+
+    first = run("1")
+    assert first == run("2") == run("0")
+    assert first.strip(), "the probe produced no records"

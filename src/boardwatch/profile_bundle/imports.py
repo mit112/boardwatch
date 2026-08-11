@@ -300,7 +300,29 @@ class ImportMergeResult:
     unchanged: tuple[str, ...]
 
 
+def uncanonical_value(value: FactValue) -> str | None:
+    """Why `value` is not in canonical form, or `None` if it is.
+
+    Only the predicate-independent half — NFC, collapsed whitespace, trimmed ends. Casefolding and
+    set-like ordering need the predicate contract and are checked where the catalog is in hand.
+
+    This exists because a self-consistent hash proves nothing about canonicality: an uncollapsed
+    string hashes perfectly well against its own ID, and the resulting candidate is a second
+    identity for an assertion that already has one — which is exactly the idempotence §18 promises.
+    """
+    if isinstance(value, StringValue) and _collapsed(value.value) != value.value:
+        return "string value is not NFC-normalised with collapsed, trimmed whitespace"
+    if isinstance(value, StringListValue) and any(
+        _collapsed(item) != item for item in value.values
+    ):
+        return "a list element is not NFC-normalised with collapsed, trimmed whitespace"
+    return None
+
+
 def _require_derived(candidate: CandidateRecord, where: str) -> None:
+    violation = uncanonical_value(candidate.canonicalized_typed_value)
+    if violation is not None:
+        raise CandidateImportError(f"{where}: {candidate.candidate_id}: {violation}")
     derived = derive_candidate_id(
         candidate.source_record_id, candidate.predicate, candidate.canonicalized_typed_value
     )

@@ -37,6 +37,12 @@ from boardwatch.profile_bundle.enumerators import (
     is_normalized_locator,
 )
 from boardwatch.profile_bundle.errors import Diagnostic, IssueCode, diagnostic
+from boardwatch.profile_bundle.imports import (
+    CandidateImportError,
+    canonicalize_candidate_value,
+    derive_candidate_id,
+    uncanonical_value,
+)
 from boardwatch.profile_bundle.models.imports import (
     Disposition,
     ExclusionLedger,
@@ -47,6 +53,7 @@ from boardwatch.profile_bundle.validation.context import ValidationContext
 
 LEDGER_PATH = "imports/source-ledger.yaml"
 EXCLUSIONS_PATH = "imports/exclusions.yaml"
+CANDIDATES_PATH = "imports/candidates.yaml"
 SOURCES_PATH = "policy/sources.yaml"
 
 
@@ -91,6 +98,7 @@ def validate_imports(ctx: ValidationContext) -> tuple[Diagnostic, ...]:
             _enumerators_pair_with_their_source_kind,
             _approved_scopes_match_the_source_kind,
             _record_identity_is_the_derived_one,
+            _candidate_identity_is_the_derived_one,
             _one_record_per_logical_unit,
             _dispositions_agree_with_the_exclusion_document,
             _imported_records_name_their_own_candidates,
@@ -218,6 +226,61 @@ def _record_identity_is_the_derived_one(ctx: ValidationContext) -> Iterator[Diag
             )
 
 
+def _candidate_identity_is_the_derived_one(ctx: ValidationContext) -> Iterator[Diagnostic]:
+    """A stored candidate must be one the importer could have produced.
+
+    Three things, in order, because each depends on the last: the predicate must exist in this
+    revision's own catalog; the stored value must already be the canonical form that catalog
+    authorizes; and the ID must be the digest those two derive. A forged
+    `candidate.ffff…` is otherwise invisible — every other layer only checks that references
+    resolve, so an arbitrary identity reaches promotion and every later slice trusts it.
+    """
+    catalog = ctx.index.predicates.by_id if ctx.index.predicates is not None else {}
+    for candidate in ctx.index.candidates:
+        spec = catalog.get(candidate.predicate)
+        if spec is None:
+            yield diagnostic(
+                IssueCode.UNKNOWN_PREDICATE,
+                f"{candidate.candidate_id} asserts {candidate.predicate!r}, which "
+                "policy/predicates.yaml does not define",
+                path=CANDIDATES_PATH,
+                record_id=candidate.candidate_id,
+                predicate=candidate.predicate,
+            )
+            continue
+
+        violation = uncanonical_value(candidate.canonicalized_typed_value)
+        if violation is None:
+            try:
+                canonical = canonicalize_candidate_value(candidate.canonicalized_typed_value, spec)
+            except CandidateImportError as exc:
+                violation = str(exc)
+            else:
+                if canonical != candidate.canonicalized_typed_value:
+                    violation = "stored value is not the canonical form its predicate authorizes"
+        if violation is not None:
+            yield diagnostic(
+                IssueCode.IMPORT_CANDIDATE_IDENTITY_MISMATCH,
+                f"{candidate.candidate_id}: {violation}",
+                path=CANDIDATES_PATH,
+                record_id=candidate.candidate_id,
+            )
+            continue
+
+        derived = derive_candidate_id(
+            candidate.source_record_id, candidate.predicate, candidate.canonicalized_typed_value
+        )
+        if derived != candidate.candidate_id:
+            yield diagnostic(
+                IssueCode.IMPORT_CANDIDATE_IDENTITY_MISMATCH,
+                f"{candidate.candidate_id} is not the ID its record, predicate, and value derive; "
+                "the importer assigns identity, so this candidate was not produced by one",
+                path=CANDIDATES_PATH,
+                record_id=candidate.candidate_id,
+                expected=derived,
+            )
+
+
 def _one_record_per_logical_unit(ctx: ValidationContext) -> Iterator[Diagnostic]:
     """Two records for one `(source, locator)` pair count one unit twice.
 
@@ -298,17 +361,23 @@ def _imported_records_name_their_own_candidates(ctx: ValidationContext) -> Itera
             continue
         # An unresolvable candidate ID is `validate_referential`'s finding, so it defaults to
         # "this record's own" here rather than being reported a second time as a missing candidate.
-        if any(
-            owner.get(candidate_id, record.source_record_id) == record.source_record_id
+        foreign = [
+            candidate_id
             for candidate_id in record.candidate_ids
-        ):
+            if owner.get(candidate_id, record.source_record_id) != record.source_record_id
+        ]
+        if not foreign:
             continue
+        # EVERY named candidate must be this record's own, not merely one of them. A candidate ID
+        # is derived from its `source_record_id`, so a foreign one is support the record does not
+        # have — and owning a second, genuine candidate does not license the claim.
         yield diagnostic(
             IssueCode.IMPORT_MISSING_CANDIDATE,
-            f"{record.source_record_id} is imported but every candidate it names belongs to "
-            "another source record",
+            f"{record.source_record_id} names {len(foreign)} candidate(s) derived from another "
+            "source record",
             path=LEDGER_PATH,
             record_id=record.source_record_id,
+            foreign=sorted(foreign),
         )
 
 

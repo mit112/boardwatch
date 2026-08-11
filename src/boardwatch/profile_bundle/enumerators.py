@@ -70,10 +70,7 @@ _UNRESERVED: Final[frozenset[str]] = frozenset(string.ascii_letters + string.dig
 #: recognised either; recognising it would make two spellings of the first occurrence.
 _DUPLICATE_SUFFIX_RE: Final = re.compile(r"^(?P<body>.*)~(?P<index>[2-9]|[1-9][0-9]+)$")
 
-_ENCODED_SEGMENT_RE: Final = re.compile(r"(?:[A-Za-z0-9._-]|%[0-9A-F]{2})+")
-_NORMALIZED_SEGMENT_RE: Final = re.compile(
-    rf"^{_ENCODED_SEGMENT_RE.pattern}(?:~(?:[2-9]|[1-9][0-9]+))?$"
-)
+_ESCAPE_RE: Final = re.compile(r"%([0-9A-F]{2})")
 
 
 def encode_locator_segment(raw: str, *, adapter: SourceEnumerator) -> str:
@@ -88,6 +85,15 @@ def encode_locator_segment(raw: str, *, adapter: SourceEnumerator) -> str:
             f"{adapter.id}: {raw!r} is not a usable locator segment; empty, `.`, and `..` "
             "segments are refused"
         )
+    return _encode_text(text)
+
+
+def _encode_text(text: str) -> str:
+    """The pure encoding: no trimming, no refusals.
+
+    Split out so `is_normalized_locator` can be defined as this function's exact inverse rather
+    than as a hand-written grammar. A grammar drifts from the encoder; a round trip cannot.
+    """
     encoded: list[str] = []
     for character in text:
         if character in _UNRESERVED:
@@ -95,6 +101,31 @@ def encode_locator_segment(raw: str, *, adapter: SourceEnumerator) -> str:
             continue
         encoded.extend(f"%{byte:02X}" for byte in character.encode("utf-8"))
     return "".join(encoded)
+
+
+def _decoded_segment(segment: str) -> str | None:
+    """The text `segment` encodes, or `None` if it is not a well-formed encoding.
+
+    Only uppercase two-digit escapes are recognised, because that is all `_encode_text` emits, and
+    the decoded bytes must be valid UTF-8 — a lone continuation byte is not something any adapter
+    can produce.
+    """
+    raw = bytearray()
+    index = 0
+    while index < len(segment):
+        if segment[index] == "%":
+            match = _ESCAPE_RE.match(segment, index)
+            if match is None:
+                return None
+            raw.append(int(match.group(1), 16))
+            index = match.end()
+            continue
+        raw.extend(segment[index].encode("utf-8"))
+        index += 1
+    try:
+        return raw.decode("utf-8")
+    except UnicodeDecodeError:
+        return None
 
 
 def normalize_locator(raw: str, *, adapter: SourceEnumerator) -> str:
@@ -127,20 +158,32 @@ def normalize_locator(raw: str, *, adapter: SourceEnumerator) -> str:
 
 
 def is_normalized_locator(text: str) -> bool:
-    """Whether `text` is already a normalized locator.
+    """Whether `text` is exactly what an adapter would have emitted.
+
+    Defined as a round trip through the encoder rather than as a grammar. A grammar that merely
+    *admits* percent escapes accepts spellings no adapter can produce — `%41` for `A` is the
+    obvious one — and a ledger written that way would validate while naming a locator that can
+    never be re-derived from its source. Decoding and re-encoding cannot drift from the encoder,
+    because it is the encoder.
 
     A predicate rather than a re-normalization: percent-encoding is not idempotent, so
     `normalize_locator(x) == x` would report every correctly encoded locator as wrong.
 
-    Emptiness and Unicode form need no separate guard: `""` splits to one empty segment, which the
-    grammar's `+` refuses, and every character outside ASCII alphanumerics plus `._-` must appear
-    percent-encoded whichever Unicode form it was written in.
+    Emptiness and `.`/`..` are refused explicitly; the round trip alone would accept both, since
+    each encodes to itself. Unicode form needs no separate guard — a decomposed character
+    re-encodes to its escaped bytes and fails the comparison.
     """
-    return all(
-        # `.` and `..` are traversal, not content, and both match the encoded-segment grammar.
-        part not in (".", "..") and _NORMALIZED_SEGMENT_RE.match(part) is not None
-        for part in text.split("/")
-    )
+    if not text:
+        return False
+    for part in text.split("/"):
+        match = _DUPLICATE_SUFFIX_RE.match(part)
+        body = match.group("body") if match is not None else part
+        if not body or body in (".", ".."):
+            return False
+        decoded = _decoded_segment(body)
+        if decoded is None or _encode_text(decoded) != body:
+            return False
+    return True
 
 
 # --------------------------------------------------------------------------------------
@@ -376,12 +419,25 @@ def _refuse_duplicate_resume_ids(adapter_id: str, resume: ResumeSource) -> None:
     header, education, skill items, extracurricular. Where it does offer one, a duplicate would
     silently collapse two records into one denominator unit.
     """
-    entry_ids = [entry.entry_id for entry in resume.entries]
+    entry_ids = [_identity(entry.entry_id) for entry in resume.entries]
     if len(set(entry_ids)) != len(entry_ids):
         raise EnumerationError(f"{adapter_id}: duplicate entry_id")
-    bullet_ids = [bullet.bullet_id for entry in resume.entries for bullet in entry.bullets]
+    bullet_ids = [
+        _identity(bullet.bullet_id) for entry in resume.entries for bullet in entry.bullets
+    ]
     if len(set(bullet_ids)) != len(bullet_ids):
         raise EnumerationError(f"{adapter_id}: duplicate bullet_id")
+
+
+def _identity(authored_id: str) -> str:
+    """The form an authored ID is compared in: exactly what its locator segment will use.
+
+    Comparing raw strings let `e` and `" e "` through as two entries, and both then emitted
+    `entries/e/metadata` — one derived ID for two records. The ledger model refuses that later, but
+    by then the adapter has already handed extraction an immutable package violating its own
+    contract.
+    """
+    return unicodedata.normalize("NFC", authored_id).strip()
 
 
 # --------------------------------------------------------------------------------------
@@ -532,10 +588,18 @@ class MarkdownBlocksEnumerator:
         known = set(heading_paths)
         prefixes: list[str] = []
         for raw in locators:
-            resolved = normalize_locator(raw, adapter=self)
+            # §18.1: "Selected locators refer to these resolved paths, including any `~N`
+            # suffix." A resolved path is ALREADY normalized, so it is validated, never
+            # re-encoded. Running it through `normalize_locator` turned `Alpha%20Beta` into
+            # `Alpha%2520Beta` and left no working route for any heading containing a space.
+            resolved = unicodedata.normalize("NFC", raw).strip()
             if resolved not in known:
+                # One refusal, not two. A separate "is it normalized?" guard could never be the
+                # thing that fired: `known` holds resolved paths, every one of which is already
+                # normalized, so a non-normalized locator always misses this membership test.
                 raise EnumerationError(
-                    f"{self.id}: selected section {raw!r} names no heading in this source"
+                    f"{self.id}: selected section {raw!r} names no heading in this source; a "
+                    "scope locator is a resolved heading path and is already percent-encoded"
                 )
             prefixes.append(resolved)
         return [
