@@ -9,6 +9,7 @@ a reader that satisfied three of them would still hand back a coherent-looking w
 from __future__ import annotations
 
 import json
+import shutil
 from pathlib import Path
 
 import pytest
@@ -17,12 +18,14 @@ from boardwatch.profile_bundle.errors import IssueCode
 from boardwatch.profile_bundle.models.manifests import RevisionManifest
 from boardwatch.profile_bundle.paths import (
     CURRENT_FILE,
+    DRAFTS_DIR,
     LOCAL_SOURCES_FILE,
     LOCK_FILE,
     ROOT_MEMBERS,
     complete_marker_path,
     current_path,
     digest_token,
+    drafts_dir,
     revision_root,
     revisions_dir,
 )
@@ -149,6 +152,27 @@ def test_every_declared_root_member_is_refused_as_a_symlink(
         read_current_once(promoted_tree.bundle_root)
     assert raised.value.code is IssueCode.SYMLINK_REFUSED
     assert member in str(raised.value)
+
+
+def test_a_member_that_aliases_another_member_inside_the_root_is_refused(
+    promoted_tree: PromotedRevisionTree,
+) -> None:
+    """Confinement is "resolves to its own place", not "resolves somewhere under the root".
+
+    Nothing leaves the root here, so a rule about the boundary alone would admit it — and two names
+    for one directory is how `inventory` came to report content as something it is not: with
+    `drafts/` resolving to `revisions/`, a digest-named revision directory satisfies the draft-name
+    grammar and is listed as a draft of this bundle.
+    """
+    drafts = drafts_dir(promoted_tree.bundle_root)
+    if drafts.exists():
+        shutil.rmtree(drafts)
+    drafts.symlink_to(revisions_dir(promoted_tree.bundle_root), target_is_directory=True)
+
+    with pytest.raises(SelectionError) as raised:
+        read_current_once(promoted_tree.bundle_root)
+    assert raised.value.code is IssueCode.SYMLINK_REFUSED
+    assert DRAFTS_DIR in str(raised.value)
 
 
 def test_the_pointer_is_read_exactly_once(

@@ -14,6 +14,7 @@ are pinned here rather than in the layers:
 
 from __future__ import annotations
 
+import hashlib
 import shutil
 from datetime import date
 from pathlib import Path, PurePosixPath
@@ -91,6 +92,86 @@ def test_a_bundle_whose_blob_store_leaves_the_root_is_refused(
     store = promoted_tree.bundle_root / BLOBS_DIR
     store.rename(outside)
     store.symlink_to(outside, target_is_directory=True)
+
+    outcome = revision_outcome(promoted_tree)
+    assert [d.code for d in outcome.diagnostics] == [str(IssueCode.SYMLINK_REFUSED)]
+    assert outcome.exit_code == 1
+    assert outcome.value.bundle_digest is None
+
+
+def content_addressed_file(bundle_root: Path) -> Path:
+    """The one file under `bundle_root` whose name is the sha256 of its own bytes.
+
+    Found by hashing, never by joining a path constant, because the two tests below exist to pin a
+    fact the confinement check must not be allowed to agree with itself about. The check was written
+    over the root's member names, and its test read the same names, so both agreed `blobs/` was the
+    store while the bytes that decide `bundle_digest` sat one component deeper in `blobs/sha256/`.
+    Content addressing is the outside fact: whatever the layout is called, the file whose *name is
+    its digest* is a file whose bytes are hashed into this bundle's identity.
+    """
+    found = [
+        path
+        for path in sorted(bundle_root.rglob("*"))
+        if path.is_file() and hashlib.sha256(path.read_bytes()).hexdigest() == path.name
+    ]
+    assert len(found) == 1, f"expected one content-addressed file, found {found}"
+    return found[0]
+
+
+def test_the_directory_holding_this_bundles_blobs_may_not_leave_the_root(
+    promoted_tree: PromotedRevisionTree, tmp_path: Path
+) -> None:
+    """The store is one component below `blobs/`, and the check guarded only the component above it.
+
+    So symlinking the store itself passed confinement, its bytes were hashed into
+    `evidence_set_digest` and therefore into `bundle_digest`, and `validate`, `inventory` and
+    `checkout` all reported a clean bundle whose identity was computed from content nobody can see
+    from the root. The store is located by content here, so this holds wherever it is spelled.
+    """
+    store = content_addressed_file(promoted_tree.bundle_root).parent
+    outside = tmp_path / "outside-store"
+    store.rename(outside)
+    store.symlink_to(outside, target_is_directory=True)
+
+    outcome = revision_outcome(promoted_tree)
+    assert [d.code for d in outcome.diagnostics] == [str(IssueCode.SYMLINK_REFUSED)]
+    assert outcome.exit_code == 1
+    assert outcome.value.bundle_digest is None
+
+
+def test_an_empty_blob_store_pointing_outside_the_root_is_refused_with_nothing_in_it(
+    promoted_tree: PromotedRevisionTree, tmp_path: Path
+) -> None:
+    """The store's own path is confined separately from its entries, and needs its own test.
+
+    An empty store escapes with nothing in it to notice: a check that only resolved the entries it
+    found would find none and pass, while every capture written afterwards landed outside the root.
+    """
+    store = content_addressed_file(promoted_tree.bundle_root).parent
+    shutil.rmtree(store)
+    outside = tmp_path / "outside-empty-store"
+    outside.mkdir()
+    store.symlink_to(outside, target_is_directory=True)
+
+    outcome = revision_outcome(promoted_tree)
+    assert [d.code for d in outcome.diagnostics] == [str(IssueCode.SYMLINK_REFUSED)]
+    assert outcome.exit_code == 1
+    assert outcome.value.bundle_digest is None
+
+
+def test_one_blob_symlinked_out_of_the_root_cannot_decide_the_bundle_digest(
+    promoted_tree: PromotedRevisionTree, tmp_path: Path
+) -> None:
+    """Confinement is per path, not per directory: every directory here stays inside the root.
+
+    A single symlinked file is enough, because its bytes are hashed into `evidence_set_digest` like
+    any other blob's. A check that confined the store's own path and stopped there would leave the
+    smallest version of the same escape armed.
+    """
+    blob = content_addressed_file(promoted_tree.bundle_root)
+    outside = tmp_path / blob.name
+    blob.rename(outside)
+    blob.symlink_to(outside)
 
     outcome = revision_outcome(promoted_tree)
     assert [d.code for d in outcome.diagnostics] == [str(IssueCode.SYMLINK_REFUSED)]
