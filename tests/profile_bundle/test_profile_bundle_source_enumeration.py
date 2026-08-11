@@ -20,6 +20,8 @@ import json
 import pytest
 
 from boardwatch.profile_bundle.enumerators import (
+    _HEADING_RE,
+    _MAX_HEADING_LEVEL,
     MARKDOWN_BLOCKS_V1,
     SOURCE_KIND_ADAPTERS,
     BoardwatchResumeEnumerator,
@@ -30,6 +32,7 @@ from boardwatch.profile_bundle.enumerators import (
     encode_locator_segment,
     enumerator_for,
     is_normalized_locator,
+    is_resolved_heading_path,
     normalize_locator,
     source_content_digest,
 )
@@ -1060,3 +1063,261 @@ def test_a_shape_the_markdown_adapter_never_emits_is_refused(locator: str) -> No
 )
 def test_a_shape_the_structured_adapter_never_emits_is_refused(locator: str) -> None:
     assert not StructuredObjectsEnumerator(source_id=SOURCE).emits_locator(locator)
+
+
+# --------------------------------------------------------------------------------------
+# Round-3 review findings: the grammar reads the emitter's constants (§18.1)
+# --------------------------------------------------------------------------------------
+
+ROOT_COLLISION = "Intro before any heading.\n\n# _root\n\nInside the heading.\n"
+
+
+def test_a_heading_named_root_does_not_share_a_namespace_with_pre_heading_content() -> None:
+    """`_root` is the adapter's own synthetic segment, so the encoder may never produce it.
+
+    `_` is unreserved, so `encode_locator_segment("_root")` used to return `_root` unchanged and
+    two different logical sections collapsed onto one namespace — pre-heading content and a
+    heading literally named `_root` derived the same record IDs.
+    """
+    assert locators(markdown_records(ROOT_COLLISION)) == [
+        "_root/paragraph-1",
+        "%5Froot/heading",
+        "%5Froot/paragraph-1",
+    ]
+
+
+def test_a_heading_named_root_can_be_selected_by_its_resolved_path() -> None:
+    """The round-one defect class: a legitimate Markdown source made unimportable by a rule."""
+    assert locators(markdown_records(ROOT_COLLISION, selected("%5Froot"))) == [
+        "%5Froot/heading",
+        "%5Froot/paragraph-1",
+    ]
+
+
+@pytest.mark.parametrize("raw", ["_root", " _root ", "_root ".strip()])
+def test_the_encoder_never_emits_a_reserved_segment(raw: str) -> None:
+    assert encode_locator_segment(raw, adapter=markdown_adapter()) == "%5Froot"
+
+
+def test_the_reserved_segment_round_trips_but_its_escaped_spelling_is_the_encoders() -> None:
+    assert is_normalized_locator("_root/paragraph-1")
+    assert is_normalized_locator("%5Froot/heading")
+    assert not is_normalized_locator("_root~2")
+
+
+def test_root_is_a_locator_shape_only_for_pre_heading_blocks() -> None:
+    adapter = markdown_adapter()
+    assert adapter.emits_locator("_root/paragraph-1")
+    assert not adapter.emits_locator("_root/heading")
+    assert not adapter.emits_locator("Overview/_root/paragraph-1")
+
+
+def test_six_hashes_open_a_heading_and_seven_do_not() -> None:
+    """The cap is CommonMark's, stated against real enumeration rather than against the constant.
+
+    Mutating `_MAX_HEADING_LEVEL` to 5 survived a first round of mutation testing: every assertion
+    about the cap read the same constant it was checking, so the constant and the tests agreed with
+    each other while both disagreed with Markdown. This one enumerates instead.
+    """
+    assert locators(markdown_records("###### Six\n\ntext\n")) == ["Six/heading", "Six/paragraph-1"]
+    assert locators(markdown_records("####### Seven\n\ntext\n")) == [
+        "_root/paragraph-1",
+        "_root/paragraph-2",
+    ]
+
+
+def test_the_grammars_depth_cap_is_the_heading_regexs_own_cap() -> None:
+    """Restating "six levels" in a second place is what let a seven-level forgery validate."""
+    assert _HEADING_RE.match("#" * _MAX_HEADING_LEVEL + " deepest") is not None
+    assert _HEADING_RE.match("#" * (_MAX_HEADING_LEVEL + 1) + " deeper") is None
+
+
+def test_a_heading_path_deeper_than_markdown_can_nest_is_refused() -> None:
+    adapter = markdown_adapter()
+    deepest = "/".join(f"h{level}" for level in range(1, _MAX_HEADING_LEVEL + 1))
+    assert adapter.emits_locator(f"{deepest}/heading")
+    assert adapter.emits_locator(f"{deepest}/paragraph-1")
+    assert not adapter.emits_locator(f"{deepest}/overflow/heading")
+    assert not adapter.emits_locator(f"{deepest}/overflow/paragraph-1")
+
+
+def test_the_deepest_real_enumeration_still_satisfies_the_grammar() -> None:
+    """The cap must be exactly the emitter's, not one level short of it."""
+    source = "\n\n".join(f"{'#' * level} H{level}" for level in range(1, _MAX_HEADING_LEVEL + 1))
+    adapter = markdown_adapter()
+    emitted = locators(markdown_records(source + "\n\ndeepest paragraph\n"))
+    assert max(one.count("/") for one in emitted) == _MAX_HEADING_LEVEL
+    assert [one for one in emitted if not adapter.emits_locator(one)] == []
+
+
+@pytest.mark.parametrize(
+    ("locator", "accepted"),
+    [
+        ("Overview~2/paragraph-1", True),
+        ("Overview/Details~3/paragraph-1", True),
+        ("Overview~2/heading", True),
+        ("Overview/paragraph~2-1", False),
+        ("Overview~1/paragraph-1", False),
+    ],
+)
+def test_a_duplicate_suffix_is_meaningful_only_on_a_markdown_heading_segment(
+    locator: str, accepted: bool
+) -> None:
+    assert markdown_adapter().emits_locator(locator) is accepted
+
+
+def test_the_structured_adapter_refuses_a_raw_duplicate_suffix_it_can_only_escape() -> None:
+    """`synthetic~2` is a normalized locator — the predicate is adapter-blind on purpose, because
+    an owner writes resolved heading paths into a selected scope. The structured adapter has no
+    duplicate rule at all: it encodes every key, so `~` can only ever reach a locator as `%7E`."""
+    adapter = StructuredObjectsEnumerator(source_id=SOURCE)
+    assert encode_locator_segment("synthetic~2", adapter=adapter) == "synthetic%7E2"
+    assert is_normalized_locator("objects/synthetic~2")
+    assert not adapter.emits_locator("objects/synthetic~2")
+    assert adapter.emits_locator("objects/synthetic%7E2")
+
+
+@pytest.mark.parametrize(
+    "locator",
+    [
+        "entries/entry~2/metadata",
+        "entries/entry-one/bullets/bullet~2",
+        "skill-groups/Languages~2/1",
+        "entries/entry one/metadata",
+        "skill-groups/Alpha%20Beta~2/1",
+    ],
+)
+def test_the_resume_adapter_refuses_a_segment_its_encoder_could_not_have_written(
+    locator: str,
+) -> None:
+    assert not BoardwatchResumeEnumerator(source_id=SOURCE).emits_locator(locator)
+
+
+def test_a_resume_identifier_containing_a_tilde_is_emitted_escaped_and_accepted() -> None:
+    tilde = RESUME.replace("entry_id: entry-one", "entry_id: entry~2")
+    adapter = BoardwatchResumeEnumerator(source_id=SOURCE)
+    emitted = locators(resume_records(tilde))
+    assert "entries/entry%7E2/metadata" in emitted
+    assert [one for one in emitted if not adapter.emits_locator(one)] == []
+
+
+def test_a_structured_key_containing_a_tilde_is_emitted_escaped_and_accepted() -> None:
+    adapter = StructuredObjectsEnumerator(source_id=SOURCE)
+    emitted = locators(structured_records("'synthetic~2': value\n"))
+    assert emitted == ["objects/synthetic%7E2"]
+    assert [one for one in emitted if not adapter.emits_locator(one)] == []
+
+
+def test_every_adversarial_source_emits_only_locators_its_own_grammar_accepts() -> None:
+    """The property the previous two rounds tested only over what the fixtures happened to hold.
+
+    Each source here carries something no earlier fixture did: a maximal heading nest, a heading
+    named `_root`, a heading body ending in `~2`, a percent sign, and non-BMP text.
+    """
+    adapter = markdown_adapter()
+    sources = [
+        "\n\n".join(f"{'#' * level} Level {level}" for level in range(1, _MAX_HEADING_LEVEL + 1)),
+        ROOT_COLLISION,
+        "# Alpha~2\n\ntext\n\n# Alpha~2\n\nmore\n",
+        "# 100% Done\n\ntext\n",
+        "# Ship it \N{ROCKET}\n\ntext\n",
+        "no heading at all\n\n- a bullet\n",
+    ]
+    for source in sources:
+        emitted = locators(markdown_records(source))
+        assert emitted, source
+        assert [one for one in emitted if not adapter.emits_locator(one)] == [], source
+        assert [one for one in emitted if not is_normalized_locator(one)] == [], source
+
+
+def test_the_reservation_is_global_so_every_adapter_escapes_the_root_segment() -> None:
+    """The collision is Markdown's, but the reservation lives in the shared encoder on purpose.
+
+    `is_emitted_segment` and `is_normalized_locator` are adapter-blind by necessity — they also
+    serve owner-authored scope locators — so a per-adapter reservation would give the repo two
+    encoders and reintroduce exactly the drift this grammar exists to remove. The cost is recorded
+    rather than hidden: a structured key or a résumé identifier literally named `_root` is escaped
+    too, which moves it in §18.1's encoded-key sort order.
+    """
+    assert locators(structured_records("'_root': one\nZebra: two\n")) == [
+        "objects/%5Froot",
+        "objects/Zebra",
+    ]
+    tilde = RESUME.replace("entry_id: entry-one", "entry_id: _root")
+    assert "entries/%5Froot/metadata" in locators(resume_records(tilde))
+
+
+@pytest.mark.parametrize(
+    "locator",
+    ["Overview", "Overview/Details", "Overview~2", "Alpha%20Beta/Caf%C3%A9~3"],
+)
+def test_a_resolved_heading_path_is_recognised(locator: str) -> None:
+    assert is_resolved_heading_path(locator)
+
+
+@pytest.mark.parametrize(
+    "locator",
+    [
+        "",
+        "_root",
+        "_root/Details",
+        "Overview/_root",
+        "a/b/c/d/e/f/g",
+        "Alpha Beta",
+        "Overview~1",
+        "Overview/",
+    ],
+)
+def test_a_locator_no_heading_stack_can_resolve_to_is_refused(locator: str) -> None:
+    """A selected scope names a resolved heading path, and §18.1 caps that path at the heading
+    nesting depth. `Overview/heading` is a record locator, not a section."""
+    assert not is_resolved_heading_path(locator)
+
+
+def test_every_heading_path_a_real_enumeration_resolves_is_recognised() -> None:
+    """Derived from the emitter: whatever `_blocks` resolved, the predicate must accept."""
+    source = (
+        "# Alpha Beta\n\ntext\n\n## Café\n\ntext\n\n# Alpha Beta\n\ntext\n\n# _root\n\ntext\n"
+    )
+    paths = {one.removesuffix("/heading") for one in locators(markdown_records(source))
+             if one.endswith("/heading")}
+    assert paths
+    assert [one for one in sorted(paths) if not is_resolved_heading_path(one)] == []
+
+
+@pytest.mark.parametrize(("body", "segment"), [(".", "%2E"), ("..", "%2E."), ("_root", "%5Froot")])
+def test_a_whole_segment_spelling_the_contract_forbids_is_escaped_not_refused(
+    body: str, segment: str
+) -> None:
+    """`# .` and `# ..` used to be hard enumeration errors.
+
+    The reservation mechanism's own rationale — refusing makes a legitimate document unenumerable —
+    applies to the traversal spellings too, and it was not applied to them. `%2E` is not a `.`
+    segment, so §18's refusal is satisfied by the escape rather than by the refusal.
+    """
+    adapter = markdown_adapter()
+    assert encode_locator_segment(body, adapter=adapter) == segment
+    assert is_normalized_locator(segment)
+    assert locators(markdown_records(f"# {body}\n\nreal prose.\n")) == [
+        f"{segment}/heading",
+        f"{segment}/paragraph-1",
+    ]
+    assert adapter.emits_locator(f"{segment}/paragraph-1")
+
+
+def test_a_dot_component_in_a_RAW_path_is_still_refused() -> None:
+    """The escape belongs to a segment BODY. In a raw path the same spelling means traversal, and
+    D-120's reason for deleting this guard — that the encoder refused it — has inverted."""
+    for raw in [".", "..", "a/./b", "a/../b"]:
+        with pytest.raises(EnumerationError):
+            normalize_locator(raw, adapter=markdown_adapter())
+
+
+def test_an_unpaired_surrogate_is_a_typed_enumeration_error() -> None:
+    """Legal JSON spells an astral character as a surrogate pair, so a lone half reaches the
+    encoder. It raised an untyped `UnicodeEncodeError`, escaping the contract that every caller
+    gets either every record or a typed error."""
+    with pytest.raises(EnumerationError):
+        encode_locator_segment("\ud83d", adapter=markdown_adapter())
+    with pytest.raises(EnumerationError):
+        structured_records(b'{"Ship it \\ud83d\\ude80": "value"}'.decode())

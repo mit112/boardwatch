@@ -13,6 +13,7 @@ authored that file.
 from __future__ import annotations
 
 import json
+import re
 
 import pytest
 
@@ -115,3 +116,20 @@ def test_an_unsupported_version_raises_the_typed_refusal(found: int) -> None:
 def test_the_schema_is_json_serialisable_and_stable_across_calls() -> None:
     assert schema_json() == schema_json()
     json.loads(schema_json())
+
+
+def test_the_exported_schema_constrains_the_portable_locator() -> None:
+    """The exported schema is what an external authoring tool validates against.
+
+    `NonBlankStr`'s `\\S` was the only constraint that reached it, so the schema admitted
+    `../escape/source.md` and `/absolute/source.md` — spellings the model refuses and that read
+    outside the root the owner approved.
+    """
+    from boardwatch.profile_bundle.models.policy import PORTABLE_LOCATOR_PATTERN
+
+    field = bundle_json_schema()["$defs"]["SourceSpec"]["properties"]["portable_locator"]
+    assert field["pattern"] == PORTABLE_LOCATOR_PATTERN
+    constraint = re.compile(field["pattern"])
+    assert constraint.search("notes/synthetic.md")
+    for refused in ["../escape/source.md", "/absolute/source.md", "C:/x.md", "a\\b", "n\x00.md"]:
+        assert not constraint.search(refused), refused

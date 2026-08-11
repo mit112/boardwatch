@@ -14,6 +14,8 @@ so the catalog model refuses them rather than trusting the data.
 
 from __future__ import annotations
 
+import re
+
 import pytest
 from pydantic import ValidationError
 
@@ -748,3 +750,124 @@ def test_claim_type_owners_split_bullets_from_summaries() -> None:
     assert {tag.value for tag in CLAIM_TYPE_OWNERS["claims/summary-candidates.yaml"]} == {
         "professional_summary"
     }
+
+
+@pytest.mark.parametrize(
+    "locator",
+    [
+        "notes/\x00escape.md",
+        "notes/line\nbreak.md",
+        "notes/tab\there.md",
+        "notes/bell\x07.md",
+        "notes/delete\x7f.md",
+    ],
+)
+def test_a_portable_locator_carrying_a_control_character_is_refused(locator: str) -> None:
+    """A NUL produces a structurally valid bundle whose source path cannot be opened at all.
+
+    The earlier validator enumerated the spellings a reviewer had shown — absolute, traversing,
+    drive-qualified, backslashed — rather than the character classes that break a path. `open()`
+    raises `ValueError: embedded null byte` before any filesystem call, so the bundle validates
+    clean through all four layers and fails at the one place with no diagnostic to give.
+    """
+    with pytest.raises(ValidationError):
+        SourceSpec.model_validate(
+            {
+                "source_id": "source.synthetic-notes",
+                "source_kind": "markdown_document",
+                "portable_locator": locator,
+            }
+        )
+
+
+PORTABLE_LOCATOR_CORPUS = [
+    "notes/synthetic.md",
+    "a.md",
+    "deep/nested/path/source.md",
+    "notes/caf\u00e9.md",
+    "notes/Ship it \N{ROCKET}.md",
+    "notes/100% done.md",
+    "notes/dot.in.name.md",
+    "notes/..hidden.md",
+    "~/notes/source.md",
+    "~mit/notes/source.md",
+    "notes/~backup.md",
+    "a//b",
+    "notes/",
+    "ab:c",
+    "/absolute/source.md",
+    "../escape/source.md",
+    "notes/../escape.md",
+    "./notes/source.md",
+    "C:/machine/source.md",
+    "c:source.md",
+    "notes\\source.md",
+    "\\\\host\\share\\source.md",
+    "notes/\x00escape.md",
+    "notes/line\nbreak.md",
+    "notes/trailing.md\n",
+    "   ",
+    "",
+    ".",
+    "..",
+]
+
+
+def _model_accepts(locator: str) -> bool:
+    try:
+        SourceSpec.model_validate(
+            {
+                "source_id": "source.synthetic-notes",
+                "source_kind": "markdown_document",
+                "portable_locator": locator,
+            }
+        )
+    except ValidationError:
+        return False
+    return True
+
+
+@pytest.mark.parametrize("locator", PORTABLE_LOCATOR_CORPUS)
+def test_the_exported_schemas_locator_pattern_agrees_with_the_model(locator: str) -> None:
+    """A `field_validator` contributes nothing to the exported JSON Schema, so an authoring tool
+    reading `career-profile.schema.json` accepted `../escape/source.md` while the model refused it.
+
+    D-122 accepted that gap on the grounds that a single regex collapses four distinct refusals
+    into one message. The third review overrode it: the schema is what every external authoring
+    tool reads. Both now exist — the branches keep their diagnostics, the pattern lands in the
+    schema — and this test is what stops the two from drifting apart.
+    """
+    from boardwatch.profile_bundle.models.policy import PORTABLE_LOCATOR_PATTERN
+
+    constraint = re.compile(PORTABLE_LOCATOR_PATTERN)
+    assert bool(constraint.search(locator)) is _model_accepts(locator), locator
+
+
+@pytest.mark.parametrize("locator", ["~/notes/source.md", "~mit/notes/source.md", "~"])
+def test_a_home_relative_portable_locator_is_refused(locator: str) -> None:
+    """`SourceSpec`'s docstring has claimed since T12 that "validation rejects a home path inside
+    it". D-122 recorded that both halves of that sentence were false and fixed only the first: the
+    absolute-path branch does not see `~/notes/x.md`, which is relative. A documented guarantee
+    that lands nowhere is the defect class this slice has now been reviewed for four times, so the
+    sentence is made true rather than deleted — a leading `~` segment is the home path it names.
+    """
+    with pytest.raises(ValidationError):
+        SourceSpec.model_validate(
+            {
+                "source_id": "source.synthetic-notes",
+                "source_kind": "markdown_document",
+                "portable_locator": locator,
+            }
+        )
+
+
+def test_a_tilde_that_is_not_the_home_prefix_is_still_a_usable_filename() -> None:
+    """The refusal is positional. `~` only means `$HOME` at the start of a path."""
+    spec = SourceSpec.model_validate(
+        {
+            "source_id": "source.synthetic-notes",
+            "source_kind": "markdown_document",
+            "portable_locator": "notes/~backup.md",
+        }
+    )
+    assert spec.portable_locator == "notes/~backup.md"
