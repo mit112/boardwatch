@@ -66,14 +66,21 @@ validation. **Gate A is NOT met, T12 is NOT reviewed, and the bundle is wired to
 bridge (a test asserts both directions). Its commits being on `origin/main` is **not** sign-off. **Gate B
 stays prohibited until Gate A is implemented AND independently reviewed**; that review is owed.
 
-**T1–T11 are implemented and independently reviewed; T12 is implemented and NOT reviewed.** T12 (D-120)
+**T1–T11 are implemented and independently reviewed. T12 is implemented and has been REVIEWED
+TWICE, both verdicts REWORK, both rounds fixed — it is NOT signed off and a third review is owed.**
+T12 (D-120)
 is deterministic enumeration, candidate identity, and idempotent import — the four approved adapters, NFC
 percent-encoded locators, the derived `source-record.<64hex>` and `candidate.<64hex>` IDs, predicate-
 authorized value canonicalization, idempotent package merging, and the import validation layer. Its
-`make check` exited 0 (5,086 tests, 95.39%) and 59 mutations were each caught by a narrow test, but a
-green gate is not sign-off: **the independent T12 review is owed.** Read D-120 before touching identity
-derivation — the résumé adapter's stage order and `~N` locator preservation are both load-bearing for
-stored IDs, and four checks were deleted there for being unable to fire.
+`make check` exited 0 and 59 mutations were each caught — **and the review still found five BLOCKING
+defects** (D-121), the worst of which left repository Markdown unimportable for any heading containing
+a space. `ce0a8de` fixed those; the **re-review of that fix returned REWORK again** (D-122) with four
+more BLOCKING findings — one created by the fix itself, two contracts that had never been enforced
+anywhere, and one only partly closed. A verification agent added a fifth, and a docs reviewer showed
+that one of the round-two declines rested on a false premise. All are fixed, with 20 distinct
+mutations caught. Read D-120 before touching identity derivation — the résumé adapter's stage order
+and `~N` locator preservation are both load-bearing for stored IDs, and four checks were deleted
+there for being unable to fire.
 
 **Next slice is T13**, completeness, digest validation, ancestor traversal, and deterministic reports. It
 inherits the promoted-revision fixture T11 built and the digest primitives from T8 (`record_digest`,
@@ -149,7 +156,7 @@ since D-035, unchanged by everything since.
 | Item | Detail | Owner |
 |---|---|---|
 | **Three `resume.yaml` bullets exceed the 220-char layout gate** | Forces an untailored-master degrade on every posting, which is what blocks accumulating real runs. The file also lacks Knowledge Forge, has stale `skill_groups`, and an empty extracurricular block. **Mit pins `resume_max_pages=1` — do not advise setting it to 2.** | Mit (content) |
-| **Gate A implementation remains incomplete; T12 is implemented but NOT independently reviewed** | T1–T11 are implemented and signed off. T12 (D-120) adds the four source adapters, derived candidate identity, idempotent import merging, and import validation; its `make check` exited 0 and 59/59 mutations were caught, but **that is not sign-off** and the independent review is owed. T13 onward remains unstarted; Gate B stays prohibited. | T13 |
+| **Gate A implementation remains incomplete; T12 is twice-reviewed, twice-fixed, and NOT signed off** | T1–T11 are signed off. T12 (D-120) shipped the four source adapters, derived candidate identity, idempotent import merging and import validation. Review one returned REWORK with five BLOCKING findings (D-121, fixed in `ce0a8de`); review two returned REWORK with four more (D-122), one of which the first fix created. **Each retraction owes its own review — a third is owed before Gate B.** T13 onward remains unstarted; Gate B stays prohibited. | T13 |
 | **No local pre-push check for the three CI-only jobs** | `gitleaks`, `perf` and `generalization` run in CI and not under `make check`; `gitleaks` is not installed by project tooling. `gitleaks git --log-opts=origin/main..HEAD` is the cheap mitigation (D-117) | open |
 | **Five Gate A fix commits are independently reviewed** | The current `origin/main` contains `1de10c7`, `20ff50c`, `8d32294`, `9d78450`, and `bbec2c0`; each exact diff and the untracked design correction were checked against the original findings with executable reproductions and negative controls. Their prior `make check` results were not used as sign-off. | complete |
 | **The earlier partial-review findings are resolved or separately fixed** | Explicit tags, typed YAML codes, scalar allowlisting, predicate evidence routes, `legal_surfaces`, and dead-check removals were rechecked. The independent review also found and fixed the broad YAML-loader exception classification (`dfa655e`) and the Windows personal-path scan gap (`f166d18`). No BLOCKING or unresolved SHOULD-FIX findings remain. | review |
