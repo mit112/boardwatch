@@ -1111,6 +1111,20 @@ def test_root_is_a_locator_shape_only_for_pre_heading_blocks() -> None:
     assert not adapter.emits_locator("Overview/_root/paragraph-1")
 
 
+def test_six_hashes_open_a_heading_and_seven_do_not() -> None:
+    """The cap is CommonMark's, stated against real enumeration rather than against the constant.
+
+    Mutating `_MAX_HEADING_LEVEL` to 5 survived a first round of mutation testing: every assertion
+    about the cap read the same constant it was checking, so the constant and the tests agreed with
+    each other while both disagreed with Markdown. This one enumerates instead.
+    """
+    assert locators(markdown_records("###### Six\n\ntext\n")) == ["Six/heading", "Six/paragraph-1"]
+    assert locators(markdown_records("####### Seven\n\ntext\n")) == [
+        "_root/paragraph-1",
+        "_root/paragraph-2",
+    ]
+
+
 def test_the_grammars_depth_cap_is_the_heading_regexs_own_cap() -> None:
     """Restating "six levels" in a second place is what let a seven-level forgery validate."""
     assert _HEADING_RE.match("#" * _MAX_HEADING_LEVEL + " deepest") is not None
