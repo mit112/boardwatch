@@ -61,6 +61,7 @@ from boardwatch.profile_bundle.canonical import (
 from boardwatch.profile_bundle.diff import (
     NO_BASE,
     DocumentMergeConflict,
+    RecordIdCollision,
     diff_records,
     merge_document,
     merge_values,
@@ -203,6 +204,10 @@ def _rebase_locked(bundle_root: Path, name: str) -> OperationOutcome[DraftHandle
     except ProfileBundleError as exc:
         return outcome_with(None, parse_error_diagnostics(exc))
 
+    collisions = _collision_diagnostics(base, ours, theirs, name, selection.revision)
+    if collisions:
+        return outcome_with(None, collisions)
+
     overlap = _overlapping_records(base, ours, theirs)
     if overlap:
         return _conflict(
@@ -253,6 +258,47 @@ def _base_documents(
             IssueCode.UNVERIFIABLE_ANCESTOR,
             f"the draft's parent revision {parent_digest} could not be read: {exc}",
         )
+
+
+def _collision_diagnostics(
+    base: BundleDocuments | None,
+    ours: BundleDocuments,
+    theirs: BundleDocuments,
+    name: str,
+    revision: int,
+) -> tuple[Diagnostic, ...]:
+    """Duplicate record IDs in any of the three trees, attributed to the tree that holds them.
+
+    A rebase deliberately does not validate the draft first (see the module docstring), so a draft
+    with two records claiming one ID reaches the merge. Neither the record diff nor the install-time
+    reread can catch it: the index answers for the shadowed ID with the *other* record, and the
+    reread compares the installed tree against the merge's own output. So it is checked here, by
+    tree, before any merge decision is taken.
+    """
+    findings: list[Diagnostic] = []
+    for subject, documents in (
+        (f"drafts/{name}", ours),
+        (f"revision {revision}", theirs),
+        ("the draft's old parent revision", base),
+    ):
+        if documents is None:
+            continue
+        try:
+            record_contents(documents)
+        except RecordIdCollision as exc:
+            findings.extend(
+                diagnostic(
+                    IssueCode.DUPLICATE_RECORD_ID,
+                    f"{collision.record_id} is defined in both {collision.first_path} and "
+                    f"{collision.second_path} in {subject}; a rebase cannot tell which of two "
+                    "records with one ID a change refers to",
+                    path=collision.second_path.as_posix(),
+                    record_id=collision.record_id,
+                    first_path=collision.first_path.as_posix(),
+                )
+                for collision in exc.collisions
+            )
+    return tuple(findings)
 
 
 def _overlapping_records(

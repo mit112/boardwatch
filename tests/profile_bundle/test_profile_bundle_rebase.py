@@ -535,6 +535,46 @@ def test_a_conflict_keeps_the_drafts_own_value(tmp_path: Path) -> None:
     assert _skills(conflicting.draft).skills[0].canonical_name == DRAFT_RENAME
 
 
+def _shadow_first_skill(data: Any) -> None:
+    """A second record under the ID the first one already claims. The index keeps only one."""
+    clone = copy.deepcopy(data["skills"][0])
+    clone["canonical_name"] = "Duplicate ID Twin"
+    data["skills"].append(clone)
+
+
+def test_a_duplicate_record_id_in_the_draft_refuses_instead_of_collapsing_it(
+    tmp_path: Path,
+) -> None:
+    """The index drops the shadowed record, so the diff cannot see it and the merge deletes one.
+
+    The revision deliberately touches no record the draft touched, so nothing else in the rebase
+    has a reason to refuse: without the collision check this scene is exit 0 with one record gone.
+    """
+    bundle_root = tmp_path / "career-profile"
+    parent = promote_example_tree(bundle_root)
+    assert checkout_current(bundle_root, name=DRAFT_NAME).exit_code == 0
+    draft = draft_root(bundle_root, DRAFT_NAME)
+    _edit_skills(draft, _shadow_first_skill)
+    promote_next_revision(parent, mutate=_add_second_skill)
+    before = _snapshot(bundle_root)
+    assert [skill.canonical_name for skill in _skills(draft).skills] == [
+        "Example Language",
+        "Duplicate ID Twin",
+    ]
+
+    outcome = rebase_draft(bundle_root, name=DRAFT_NAME)
+
+    assert outcome.exit_code == 1
+    assert _codes(outcome) == [IssueCode.DUPLICATE_RECORD_ID]
+    finding = outcome.diagnostics[0]
+    assert finding.record_id == ORIGINAL_SKILL
+    assert finding.path == SKILLS_PATH.as_posix()
+    assert f"drafts/{DRAFT_NAME}" in finding.message
+    # Both records survive, because nothing was written at all.
+    assert len(_skills(draft).skills) == 2
+    assert _snapshot(bundle_root) == before
+
+
 APPROVALS_PATH = PurePosixPath("history/approvals.yaml")
 
 

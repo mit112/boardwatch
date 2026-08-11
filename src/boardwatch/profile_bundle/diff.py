@@ -46,7 +46,7 @@ from pydantic import BaseModel, ValidationError
 
 from boardwatch.profile_bundle.canonical import record_digest
 from boardwatch.profile_bundle.errors import ProfileBundleError
-from boardwatch.profile_bundle.index import build_index, record_id_of
+from boardwatch.profile_bundle.index import Collision, build_index, record_id_of
 from boardwatch.profile_bundle.models.documents import BundleDocuments, DocumentModel
 from boardwatch.profile_bundle.models.history import (
     ApprovalLedger,
@@ -103,16 +103,42 @@ class DocumentMergeConflict(ProfileBundleError):
         self.record_id = record_id
 
 
+class RecordIdCollision(ProfileBundleError):
+    """One record ID claimed by two records in a single tree.
+
+    Typed and raised rather than returned because the alternative is a caller that forgets: the
+    index's own answer for a shadowed ID is silently partial, and a rebase that merged over it
+    would delete one of the two records with nothing to report.
+    """
+
+    def __init__(self, collisions: tuple[Collision, ...]) -> None:
+        super().__init__(
+            "; ".join(
+                f"{collision.record_id} is defined in both {collision.first_path} and "
+                f"{collision.second_path}"
+                for collision in collisions
+            )
+        )
+        self.collisions = collisions
+
+
 def record_contents(documents: BundleDocuments) -> Mapping[str, str]:
     """Every addressable record in one tree, as ID -> content digest.
 
     Exposed because a parentless draft has no base tree to diff against, and its caller needs the
     same ID set that `diff_records` would have called `added` — computed by this function rather
     than by a second walk of the index.
+
+    Raises `RecordIdCollision` when one ID is claimed twice. `build_index` keeps the first record
+    and collects the rest, which is right for a validation report and wrong for every question this
+    module answers: the shadowed record's content is absent from the mapping, so a change to it is
+    invisible to `diff_records`, and a merge would then collapse the two into one.
     """
+    index = build_index(documents)
+    if index.collisions:
+        raise RecordIdCollision(index.collisions)
     return {
-        identifier: record_digest(record)
-        for identifier, record in build_index(documents).records.items()
+        identifier: record_digest(record) for identifier, record in index.records.items()
     }
 
 
@@ -341,6 +367,7 @@ __all__ = [
     "NO_BASE",
     "DocumentMergeConflict",
     "RecordDiff",
+    "RecordIdCollision",
     "diff_records",
     "merge_document",
     "merge_values",
