@@ -18,22 +18,21 @@ per-session retrospectives, which belong in `DECISIONS.md` / `CHANGELOG.md` / `M
 
 ## Current standing
 
-**P6's build is COMPLETE — all six items — and the long-held commits are PUSHED.** Slices 1 and 2 were
-merged and reviewed earlier (D-095, D-103…D-107, review D-110); Slice 3 is applied-state suppression
-(item 5) and liveness (item 6), recorded as **D-111** and reviewed twice (D-113). Schema head is
-**`p6_job_dispositions`**; Slice 3 added no migration.
+**P6's build is COMPLETE — all six items — and its commits are PUSHED.** Detail in D-095, D-103…D-107,
+D-110 (ledger), D-111 + D-113 (applied state, liveness). Schema head is **`p6_job_dispositions`**.
 
-**Read D-110 before touching the ledger, D-111 and D-113 before touching liveness.** D-113 is the one most
-likely to be undone by accident: `Fetcher` sets `follow_redirects=True`, so a `302 → 404` chain arrives as a
-bare 404, and `FetchFailure.redirected` is the only thing distinguishing a posting that is gone from one
-whose old link points at a dead path on a new host.
+**Read D-110 before touching the ledger, D-111 and D-113 before touching liveness.** The one most likely
+to be undone by accident: `Fetcher` sets `follow_redirects=True`, so a `302 → 404` chain arrives as a bare
+404, and `FetchFailure.redirected` is the only thing distinguishing a posting that is gone from one whose
+old link points at a dead path on a new host.
 
-**Next action: P6 has nothing left to BUILD — its last two gate clauses need the system RUN.** Duplicate
-leakage needs 7 days of runs (the window must start after D-110, which changed which callers advance the
-queue), and "0 dead postings" needs a real run whose leads are actually probed. So the useful work is, in
-order: (1) start accumulating real daily runs, gated on Mit's `resume.yaml` fix below; (2) Gate A —
-finish T14–T19 per the branch table below; (3) P2 item 8 or P3 slice 5, both owner-gated and both
-wanting their own context window.
+**P6 has nothing left to BUILD — its last two gate clauses need the system RUN**: duplicate leakage needs
+7 days of runs (the window must start after D-110, which changed which callers advance the queue), and
+"0 dead postings" needs a real run whose leads are actually probed.
+
+**Next action, in order:** (1) finish Gate A — T16 is in flight, then T18 and T19; (2) start accumulating
+real daily runs, gated on Mit's `resume.yaml` fix below; (3) P2 item 8 or P3 slice 5, both owner-gated and
+both wanting their own context window.
 
 ### Gate A branch table — where every unmerged slice stands (2026-08-11)
 
@@ -54,36 +53,21 @@ the design and plan and is untracked — copy it into any worktree you create.
 
 **Owed: an independent review of T14's and T15's FIX ROUNDS.** Both were merged on the orchestrator's targeted verification (mutating each predicate, re-running the reviewers' archived probes) rather than a fresh review round of their own. The blocking fixes are sound as far as that goes; what is unestablished is whether every *new* check has a test that fails without it.
 
-**T14 is merged, so the forward-merge debt is now T16's alone** — and T16 must take `main`, not the
-pre-fix `t15-rebase` it is currently identical to.
+**T16 is the only branch left to merge forward, and it already sits on `main`.** The traps that cost
+this program real time are recorded in D-128; the three a merge must still act on:
 
-**The downstream branches fork from T14's base, not from `main`.** `git branch --contains d681653`
-returns all four, so merging `main` into each brings T14's fix round transitively — **one merge, not
-two.** Merging `main` in separately first only forces the same conflicts to be resolved twice.
+1. **Sweep every `quoted_yaml(` call** in any branch being merged — `logical_path` is required, new test
+   files never conflict, and the failure appears only at runtime. **A line-based grep gives false
+   positives**; only the suite settles it.
+2. **Look for the same thing under two names, and for a deletion that is really a rename.** Both have
+   happened here: two byte-identical `OSError` helpers, and a test `main` deleted that a branch kept.
+3. **Resolving conflict markers is not resolving the conflict** — files sit at `UU` until an explicit
+   `git add`, which a passing test run will not tell you.
 
-**That merge breaks callers without producing a conflict, twice measured.** T14 made
-`conftest.quoted_yaml`'s `logical_path` **required**, and every branch carries new test files T14 never
-saw, so `git merge` reports success and the failure appears only at runtime. **Sweep every
-`quoted_yaml(` call in the branch being merged, and do not trust a line-based grep** — multi-line calls
-carry the argument on a following line, so only the suite settles it.
-
-**Two shapes to look for when resolving.** *The same function under two names*: T13 and T14 each
-independently added a byte-identical helper stripping the absolute path out of an `OSError`;
-`errors.io_reason` survived and `validation/digest.py`'s private `_why` was deleted. And *a deletion on
-one side that is a rename on the other*: `main` had deleted a test `t15-rebase` still carried, and
-keeping both would have restored the hardcoded-constant version that T14's fix deliberately replaced.
-
-**Conversely, some downstream findings are fixed BY the merge — re-measure, do not patch.**
-`migrations.py`'s `str(exc)` leaked an absolute path into a `no_current_revision` diagnostic until T14
-fixed it at the raise site. Patching that downstream would be a second guard.
-
-**A narrow suite cannot see a cross-suite import collision.** `t15-rebase`'s new test module used a
-bare `from conftest import ...`, which binds whichever `conftest.py` was imported as the top-level
-`conftest` module first — under the full suite that is `tests/unit/conftest.py`. Two tests failed with
-an `ImportError` that **no** run of `tests/profile_bundle` alone can produce, and that both review
-lenses were structurally unable to see because they were told to keep runs narrow. Import from
-`tests.profile_bundle.conftest`, as every other module in that directory already does. This is the
-concrete reason `make check` is the only gate.
+**Import fixtures as `from tests.<package>.conftest import ...`, never bare `from conftest import`.** A
+bare import binds whichever `conftest.py` loaded first; under the full suite that is
+`tests/unit/conftest.py`. This shipped in T15, survived two review lenses and a fix round, and is
+invisible to any narrow run — it is the concrete reason `make check` is the only gate.
 
 **Dispatch state.** `scratchpad/RESUME-AT-0910.md` is the queue the previous session left; the T14
 review, both T15 lenses and the T17 review are now **consumed**. What remains from it is the T16 build
