@@ -47,12 +47,30 @@ the design and plan and is untracked — copy it into any worktree you create.
 | `t14-storage` | `9d11d03` | Fix round for T14's four BLOCKING + six SHOULD-FIX, plus main merged in. Its author was killed mid-round by a usage limit and never reported, so the findings-to-changes mapping was **re-derived from the diff by the orchestrating session** — the audit table is at the bottom of `scratchpad/T14-REVIEW-FINDINGS.md` and states what it does *not* establish. Full gate **exit 0 · 5,525 passed · 95.69% · 10m10s**. **Green is not sign-off: it owes a review**, and the review should start from that audit table, not the original findings list. |
 | `t15-rebase` | `e9ab3bc` | Built: record-level draft rebase, the shared `filelock` writer lock, the backup drain. 54 new tests, 1511 green. **Reviewed by nobody** — both lenses died at dispatch. |
 | `t16-promotion` | `e9ab3bc` | **Not started.** The branch exists but is identical to `t15-rebase`; the build agent died before its first edit. Its carried debt is in `scratchpad/CARRIED-DEBT.md`. |
-| `t17-schema` | `7626d32` | Built: schema-v1 bootstrap and the migration no-op. **Reviewed by nobody** — the light review died before its first probe. |
+| `t17-schema` | `7626d32` | Built: schema-v1 bootstrap and the migration no-op. **REVIEWED — APPROVE**, light pass in-session, record at `scratchpad/T17-REVIEW.md`. No BLOCKING and no SHOULD-FIX in its own diff; the D-115 "could never execute" reasoning is pinned by a tripwire that takes 3 tests red when `SUPPORTED_SCHEMA_VERSIONS` grows. Two obligations belong to its forward merge, not to T17 — see the note below the table. |
 | T18, T19 | — | Not started. T18 is the `profile-bundle` CLI, the first non-inert surface. T19 is the authoring contract and the final Gate A gate. |
 
 **T14's fix must be merged forward into `t15-rebase`, `t16-promotion` and `t17-schema` before any of
 them lands** — it fixes a symlink confinement escape that applies to *every* declared root member,
 and T15's backup and T16's promotion temporary both inherit it. Do not add a second guard downstream.
+
+**Those three branches fork from T14's base, not from `main`.** `git branch --contains d681653`
+returns all four. So merging `t14-storage` into each brings T14's fix round **and** `main`
+transitively — **one merge, not two.** Do not merge `main` in separately first; it only forces the
+same conflicts to be resolved twice.
+
+**That merge breaks callers without producing a conflict.** T14 made `conftest.quoted_yaml`'s
+`logical_path` **required**; `t17-schema`'s new `test_profile_bundle_schema_head.py:34` calls it
+without one. Different files, so `git merge` reports success and the failure appears only at runtime.
+Sweep every `quoted_yaml(` call in the branch being merged. Related and already seen once: T13 and T14
+each independently added a byte-identical helper stripping the absolute path out of an `OSError`, and
+the merge kept both — when resolving, look for **the same function under two names**.
+
+**Conversely, some downstream findings are fixed BY that merge — re-measure, do not patch.**
+`migrations.py` maps `SelectionError` through `str(exc)`, which leaks an absolute `$HOME`-class path
+into a `no_current_revision` diagnostic on `t17-schema`. T14 fixed it at the raise site
+(`storage.py:127` drops `bundle_root`), so the leak clears on merge. Patching it downstream would be
+the second guard this table forbids.
 
 **`t15-rebase`, `t16-promotion` and `t17-schema` are behind `main`** — they fork at `2e6f667`, before
 T13 merged. Merge `main` in before gating, or the gate measures a tree nobody will ship. Doing this for
