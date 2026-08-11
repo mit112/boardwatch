@@ -485,3 +485,35 @@ def test_the_installed_ruleset_version_is_read_at_call_time(
     assert run_module.installed_secret_ruleset_version() == 1
     monkeypatch.setattr(secret_scan, "CURRENT_RULESET_VERSION", 7)
     assert run_module.installed_secret_ruleset_version() == 7
+
+
+def test_a_checked_out_draft_makes_no_candidate_claim_without_its_parent(
+    synthetic_bundle: SyntheticBundle,
+) -> None:
+    """A draft created by `checkout` names a parent, and the candidate view folds that parent's
+    revision number and digest in. Recomputing without it produces a DIFFERENT digest, not an
+    approximate one, and printing it would invite an owner to approve a value nothing will match.
+    """
+
+    def adopt_a_parent(data: Any) -> None:
+        data["draft_of_revision"] = 1
+        data["parent_bundle_digest"] = "sha256:" + "a" * 64
+
+    edit_draft(synthetic_bundle, "manifest.yaml", adopt_a_parent)
+    assert draft_outcome(synthetic_bundle).value.candidate_digest is None
+
+
+def test_a_draft_whose_blob_is_gone_reports_no_candidate_digest(
+    synthetic_bundle: SyntheticBundle,
+) -> None:
+    """The digest is over the ACTUAL capture bytes, so without them there is nothing to report.
+
+    `None` rather than a digest computed from what happens to be readable: the missing blob is the
+    evidence layer's finding, and a candidate digest that silently skipped a capture is exactly the
+    value an owner must never be asked to approve.
+    """
+    synthetic_bundle.blob.chmod(0o600)
+    synthetic_bundle.blob.unlink()
+    outcome = draft_outcome(synthetic_bundle)
+    assert outcome.value.candidate_digest is None
+    assert IssueCode.MISSING_BLOB in {d.code for d in outcome.diagnostics}

@@ -13,6 +13,7 @@ with the date. The tests therefore pin one fixture at two dates and assert exact
 
 from __future__ import annotations
 
+import os
 import shutil
 from datetime import date
 from pathlib import Path, PurePosixPath
@@ -707,3 +708,67 @@ def test_ancestry_is_skipped_for_a_tree_handed_over_without_its_bundle_root(
     handed over would be a measurement never taken."""
     ctx = build_context(chained_tree.revision_dir, mode="revision", blobs=blob_reader())
     assert ancestry_completeness(ctx) == ()
+
+
+def test_an_ancestor_from_a_newer_boardwatch_is_a_blocker(
+    chained_tree: PromotedRevisionTree,
+) -> None:
+    """An ancestor this build cannot read is unverifiable, not invalid.
+
+    §21 sends an unsupported schema version to exit 3 when it is the bundle being validated. An
+    ANCESTOR is different: the selected revision is perfectly readable, and refusing to complete
+    because a historical directory is too new would make one old revision poison every later one.
+    """
+    parent_digest = chained_tree.documents.manifest.parent_bundle_digest
+    assert parent_digest is not None
+    path = revision_root(chained_tree.bundle_root, parent_digest) / "manifest.yaml"
+    data = load_yaml_bytes(path.read_bytes(), logical_path=PurePosixPath("manifest.yaml"))
+    data["schema_version"] = 999
+    path.write_bytes(quoted_yaml(data))
+    ctx = build_context(
+        chained_tree.revision_dir,
+        mode="revision",
+        blobs=blob_reader(),
+        bundle_root=chained_tree.bundle_root,
+    )
+    assert [f.details["reason"] for f in ancestry_completeness(ctx)] == ["unsupported_schema"]
+
+
+def test_an_ancestor_that_is_a_draft_is_a_blocker(chained_tree: PromotedRevisionTree) -> None:
+    """Every ancestor was promoted. A draft manifest in a revisions/ directory is a tree that was
+    copied in by hand, and its sentinel digests mean it can never be the parent it claims to be."""
+    from tests.profile_bundle.conftest import example_source_root
+
+    parent_digest = chained_tree.documents.manifest.parent_bundle_digest
+    assert parent_digest is not None
+    target = revision_root(chained_tree.bundle_root, parent_digest) / "manifest.yaml"
+    target.write_bytes((example_source_root() / "manifest.yaml").read_bytes())
+    ctx = build_context(
+        chained_tree.revision_dir,
+        mode="revision",
+        blobs=blob_reader(),
+        bundle_root=chained_tree.bundle_root,
+    )
+    assert [f.details["reason"] for f in ancestry_completeness(ctx)] == ["not_a_revision"]
+
+
+@pytest.mark.skipif(os.geteuid() == 0, reason="root reads a mode-000 file, so the guard cannot fire")
+def test_an_ancestor_manifest_that_cannot_be_read_is_a_blocker(
+    chained_tree: PromotedRevisionTree,
+) -> None:
+    """Present but unreadable is a different fault from absent: one is a restore from backup, the
+    other is a permissions problem, and an operator who cannot tell them apart guesses."""
+    parent_digest = chained_tree.documents.manifest.parent_bundle_digest
+    assert parent_digest is not None
+    path = revision_root(chained_tree.bundle_root, parent_digest) / "manifest.yaml"
+    path.chmod(0o000)
+    try:
+        ctx = build_context(
+            chained_tree.revision_dir,
+            mode="revision",
+            blobs=blob_reader(),
+            bundle_root=chained_tree.bundle_root,
+        )
+        assert [f.details["reason"] for f in ancestry_completeness(ctx)] == ["unreadable"]
+    finally:
+        path.chmod(0o644)
