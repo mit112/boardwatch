@@ -126,8 +126,8 @@ from boardwatch.profile_bundle.storage import (
     SelectedRevision,
     SelectionError,
     read_current_once,
+    selected_documents,
 )
-from boardwatch.profile_bundle.validation.context import load_documents
 from boardwatch.profile_bundle.yaml_writer import document_bytes
 
 MANIFEST_PATH: Final = PurePosixPath("manifest.yaml")
@@ -228,7 +228,10 @@ def checkout_current(bundle_root: Path, *, name: str) -> OperationOutcome[DraftH
         return _refusal(exc.code, str(exc))
     try:
         sources = discover_source_files(selection.root, final_revision=True)
-        parent = load_documents(selection.root, mode="revision")
+        # `selected_documents` rather than a bare parse: §6 clause 4 makes the reader verify the
+        # manifest's identity against the pointer, and a draft that recorded the wrong parent digest
+        # would be refused at promotion with nothing left to explain it.
+        parent = selected_documents(selection)
     except SelectionError as exc:
         return _refusal(exc.code, str(exc))
     except ProfileBundleError as exc:

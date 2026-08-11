@@ -9,6 +9,7 @@ promotion later re-checks against `CURRENT`.
 
 from __future__ import annotations
 
+import json
 import os
 import stat
 from pathlib import Path, PurePosixPath
@@ -39,6 +40,8 @@ from boardwatch.profile_bundle.paths import (
     blob_path,
     blobs_dir,
     complete_marker_path,
+    current_path,
+    digest_token,
     draft_root,
     drafts_dir,
     local_sources_path,
@@ -310,6 +313,26 @@ def test_checkout_from_a_torn_revision_refuses(promoted_tree: PromotedRevisionTr
     outcome = checkout_current(promoted_tree.bundle_root, name="work")
     assert outcome.exit_code == 1
     assert [d.code for d in outcome.diagnostics] == [str(IssueCode.COMPLETE_MARKER_MISSING)]
+    assert not draft_root(promoted_tree.bundle_root, "work").exists()
+
+
+def test_checkout_refuses_a_revision_that_is_not_the_one_selected(
+    promoted_tree: PromotedRevisionTree,
+) -> None:
+    """A draft records its parent digest from the pointer, so a tree whose manifest says something
+    else must not become one: promotion would refuse the result with nothing to explain it."""
+    other = "sha256:" + "e" * 64
+    stolen = revisions_dir(promoted_tree.bundle_root) / digest_token(other)
+    promoted_tree.revision_dir.rename(stolen)
+    complete_marker_path(stolen).write_text(f"{other}\n", encoding="utf-8")
+    current_path(promoted_tree.bundle_root).write_text(
+        json.dumps({"bundle_digest": other, "revision": 1}, sort_keys=True, separators=(",", ":"))
+        + "\n",
+        encoding="utf-8",
+    )
+    outcome = checkout_current(promoted_tree.bundle_root, name="work")
+    assert outcome.exit_code == 1
+    assert [d.code for d in outcome.diagnostics] == [str(IssueCode.CURRENT_POINTER_MISMATCH)]
     assert not draft_root(promoted_tree.bundle_root, "work").exists()
 
 
