@@ -49,7 +49,7 @@ from boardwatch.profile_bundle.diff import (
     merge_document,
     record_contents,
 )
-from boardwatch.profile_bundle.drafts import checkout_current
+from boardwatch.profile_bundle.drafts import DRAFT_TEMP_PREFIX, checkout_current
 from boardwatch.profile_bundle.errors import IssueCode
 from boardwatch.profile_bundle.layout import owner_for_path
 from boardwatch.profile_bundle.locking import BundleLockHeldError, bundle_lock
@@ -1016,6 +1016,39 @@ def test_failure_before_the_rebased_install_leaves_the_exact_backup(
     assert sorted(entry.name for entry in drafts_dir(scene.bundle_root).iterdir()) == [
         scene.backup.name
     ]
+
+
+def test_failure_while_vacating_a_reused_backup_leaves_the_retained_backup(
+    scene: Scene, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The reuse path vacates the draft to a temporary name, so its window is a different one.
+
+    §21 still has to hold across it: the original is recoverable from the backup that was proved
+    byte-identical, and the draft name holds either the original or nothing.
+    """
+    shutil.copytree(scene.draft, scene.backup)
+    original = _snapshot(scene.draft)
+    real = os.rename
+
+    def fake(src: Any, dst: Any, **kwargs: Any) -> None:
+        real(src, dst, **kwargs)
+        if Path(dst).name.startswith(DRAFT_TEMP_PREFIX):
+            raise OSError(errno.EIO, "injected failure")
+
+    monkeypatch.setattr(os, "rename", fake)
+
+    outcome = rebase_draft(scene.bundle_root, name=DRAFT_NAME)
+
+    assert outcome.exit_code == 3
+    assert _codes(outcome) == [IssueCode.IO_ERROR]
+    assert _snapshot(scene.backup) == original
+    assert not scene.draft.exists()
+    vacated = [
+        entry
+        for entry in drafts_dir(scene.bundle_root).iterdir()
+        if entry.name.startswith(DRAFT_TEMP_PREFIX)
+    ]
+    assert [_snapshot(entry) for entry in vacated] == [original]
 
 
 def test_a_staged_tree_that_does_not_read_back_is_never_installed(
