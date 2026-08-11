@@ -25,6 +25,10 @@ from boardwatch.profile_bundle.validation.referential import (
     records_blocked_by_unresolved_conflicts,
     validate_referential,
 )
+from boardwatch.profile_bundle.validation.semantic import (
+    semantic_completeness,
+    validate_semantic,
+)
 from boardwatch.profile_bundle.validation.structural import validate_structural
 
 __all__ = [
@@ -36,7 +40,9 @@ __all__ = [
     "load_documents",
     "parse_error_diagnostics",
     "records_blocked_by_unresolved_conflicts",
+    "semantic_completeness",
     "sorted_diagnostics",
     "validate_referential",
+    "validate_semantic",
     "validate_structural",
 ]
