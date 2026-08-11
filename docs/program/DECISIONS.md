@@ -110,58 +110,59 @@ and is a no-op when the index is already right. `make index-check` reports drift
 | D-074 | DECISIONS-ARCHIVE.md | 3009 | Final eligibility gate lane SHIPPED (persistent, agent-lane, fail-open); Gate P5 unchanged |
 | D-075 | DECISIONS-ARCHIVE.md | 3084 | Gate P2 reconciled: three individually-correct verdicts (may coincide); ≥3-field mechanism via fixtures |
 | D-076 | DECISIONS-ARCHIVE.md | 3153 | P2 item 4's final whole-branch review: what it caught, and four rulings it forced |
-| D-077 | DECISIONS.md | 168 | P6 Slice 1: the design is settled and the plan is written; no code exists yet |
-| D-078 | DECISIONS.md | 258 | P6 Slice 1: the plan's test fixtures are now real; eleven defects, all found by running code |
-| D-079 | DECISIONS.md | 347 | P6 Slice 1 annotates only; `postings.job_id` is not mutated |
-| D-080 | DECISIONS.md | 361 | `content_hash` alone may never suppress |
-| D-081 | DECISIONS.md | 375 | `exact_quad` is the sole suppressing kind, and its yield is stated honestly |
-| D-082 | DECISIONS.md | 393 | `cross_host` ships annotate-only, reversing an earlier draft |
-| D-083 | DECISIONS.md | 414 | No location evidence ⇒ no location-bearing identity, never a `"[]"` sentinel |
-| D-084 | DECISIONS.md | 429 | Three host classes, not two; matching is exact-or-dot-suffix |
-| D-085 | DECISIONS.md | 443 | Allowlist URL normalization, not a denylist |
-| D-086 | DECISIONS.md | 457 | Survivor election never consults score; `posting_id` is a load-bearing tiebreak |
-| D-087 | DECISIONS.md | 472 | Instrumentation is completeness-gated, not existence-gated |
-| D-088 | DECISIONS.md | 486 | `assisted` stays `None` in this slice |
-| D-089 | DECISIONS.md | 501 | Identities are upserted on every observation; a kind that stops being produced is deleted |
-| D-090 | DECISIONS.md | 518 | The ranker is completeness-gated for reproducibility, not safety |
-| D-091 | DECISIONS.md | 536 | The recount recomputes in Python, and claims staleness only |
-| D-092 | DECISIONS.md | 551 | Identities are backfilled by an explicit command, not by the migration |
-| D-093 | DECISIONS.md | 565 | Slice 1 does NOT meet Gate P6, and makes only one of its four clauses measurable |
-| D-094 | DECISIONS.md | 579 | P6 Slice 1 BUILT (unattended run): five more plan defects, three of them tests that could not fail |
-| D-095 | DECISIONS.md | 707 | P6 Slice 1 reviewed by three independent reviewers; fourteen findings fixed, two rejected |
-| D-096 | DECISIONS.md | 772 | The C++/C# fix folds punctuation into words; it does NOT add a raw-title comparison |
-| D-097 | DECISIONS.md | 816 | `_verify_quad` rejected nothing on the live corpus; "string-verified" is not precision evidence |
-| D-098 | DECISIONS.md | 845 | Suppression reports when it is OFF; wiring backfill into the pipeline is Slice 2 |
-| D-099 | DECISIONS.md | 881 | Gate batching stays allowed; the per-task fast-check set must include the schema guards |
-| D-100 | DECISIONS.md | 907 | P6 Slice 1 merged to `main`; Gate P6 clause 3 is MET, not merely measurable |
-| D-101 | DECISIONS.md | 939 | Gate P6 clause 4 is MET: 20/20 sampled suppressions are genuine duplicates |
-| D-102 | DECISIONS.md | 969 | D-072 (model-tier benchmark) is deferred indefinitely |
-| D-103 | DECISIONS.md | 991 | P6 Slice 2: the ledger is a current-state row per job, `seen` suppresses on a TTL, and the policy stamp never auto-reopens |
-| D-104 | DECISIONS.md | 1063 | Job regrouping: the survivor's job wins, and a tracked group is refused whole |
-| D-105 | DECISIONS.md | 1106 | Identity writes move into the scan path, closing D-098 — and D-098's cost argument did not apply |
-| D-106 | DECISIONS.md | 1137 | Two consequences the build forced: what earns a permanent `skipped`, and the zero-output guard |
-| D-107 | DECISIONS.md | 1163 | P6 Slice 2 BUILT and verified on real data; `cross_host` dereference deferred by measured absence |
-| D-108 | DECISIONS.md | 1212 | The decision log and the metrics log are archive-split; the reading protocol moves into the index |
-| D-109 | DECISIONS.md | 1271 | Index drift fails the gate, and the fixer lives in `tools/` |
-| D-110 | DECISIONS.md | 1349 | The Slice 2 review: only a caller that delivers a lead may consume the queue |
-| D-111 | DECISIONS.md | 1466 | P6 Slice 3: applied-state suppression, and liveness sized to what the corpus actually is |
-| D-112 | DECISIONS.md | 1635 | 0.3.0 is cut, the changelog gets ONE triple, and the tag is the owner's to push |
-| D-113 | DECISIONS.md | 1739 | The Slice 3 external review: a followed redirect can forge a gone-status |
-| D-114 | DECISIONS.md | 1827 | CI installs tectonic and pdfinfo on all three OSes; skipping the gate was refused |
-| D-115 | DECISIONS.md | 1895 | Gate A of the career-profile bundle: 9 of 19 slices, and a rule for checks that cannot fire |
-| D-116 | DECISIONS.md | 1977 | A docs-only commit owes the two fast gates, not the full suite; the tectonic pin gets a detector |
-| D-117 | DECISIONS.md | 2024 | 0.3.0's tag moves rather than 0.3.1 being cut; gitleaks fixed by cleaning bytes, not allowlisting |
-| D-118 | DECISIONS.md | 2074 | Gate A slice T10: effectiveness derived in one place, and two more §20.4 rows with no check |
-| D-119 | DECISIONS.md | 2171 | 0.3.0 is PUBLISHED: the tag moved onto a CI-green commit, and ships two known BLOCKERs deliberately |
-| D-120 | DECISIONS.md | 2239 | Gate A slice T12: the résumé emission order is fixed, and three more checks that cannot fire |
-| D-121 | DECISIONS.md | 2322 | The T12 review: a green gate and a perfect mutation score hid five BLOCKING defects |
-| D-122 | DECISIONS.md | 2383 | The T12 re-review: one defect the fix created, two contracts never enforced, and a decline that was wrong |
-| D-123 | DECISIONS.md | 2506 | A recurring trigger holding a one-shot prompt re-fires a task that already shipped |
-| D-124 | DECISIONS.md | 2551 | The third T12 review: the locator grammar keeps failing because it restates the emitter instead of deriving from it |
-| D-125 | DECISIONS.md | 2616 | The T12 round-three fix, and two more reviews of it: a forbidden segment is escaped, never refused |
-| D-126 | DECISIONS.md | 2748 | T12's review loop is CLOSED, with a stated exit criterion |
-| D-127 | DECISIONS.md | 2804 | Gate A slices T13 and T14: an approval bound to nothing, and the first code that WRITES a bundle |
-| D-128 | DECISIONS.md | 2925 | Gate A T14 round 2, T15 and T17: what three green suites could not see |
+| D-077 | DECISIONS.md | 169 | P6 Slice 1: the design is settled and the plan is written; no code exists yet |
+| D-078 | DECISIONS.md | 259 | P6 Slice 1: the plan's test fixtures are now real; eleven defects, all found by running code |
+| D-079 | DECISIONS.md | 348 | P6 Slice 1 annotates only; `postings.job_id` is not mutated |
+| D-080 | DECISIONS.md | 362 | `content_hash` alone may never suppress |
+| D-081 | DECISIONS.md | 376 | `exact_quad` is the sole suppressing kind, and its yield is stated honestly |
+| D-082 | DECISIONS.md | 394 | `cross_host` ships annotate-only, reversing an earlier draft |
+| D-083 | DECISIONS.md | 415 | No location evidence ⇒ no location-bearing identity, never a `"[]"` sentinel |
+| D-084 | DECISIONS.md | 430 | Three host classes, not two; matching is exact-or-dot-suffix |
+| D-085 | DECISIONS.md | 444 | Allowlist URL normalization, not a denylist |
+| D-086 | DECISIONS.md | 458 | Survivor election never consults score; `posting_id` is a load-bearing tiebreak |
+| D-087 | DECISIONS.md | 473 | Instrumentation is completeness-gated, not existence-gated |
+| D-088 | DECISIONS.md | 487 | `assisted` stays `None` in this slice |
+| D-089 | DECISIONS.md | 502 | Identities are upserted on every observation; a kind that stops being produced is deleted |
+| D-090 | DECISIONS.md | 519 | The ranker is completeness-gated for reproducibility, not safety |
+| D-091 | DECISIONS.md | 537 | The recount recomputes in Python, and claims staleness only |
+| D-092 | DECISIONS.md | 552 | Identities are backfilled by an explicit command, not by the migration |
+| D-093 | DECISIONS.md | 566 | Slice 1 does NOT meet Gate P6, and makes only one of its four clauses measurable |
+| D-094 | DECISIONS.md | 580 | P6 Slice 1 BUILT (unattended run): five more plan defects, three of them tests that could not fail |
+| D-095 | DECISIONS.md | 708 | P6 Slice 1 reviewed by three independent reviewers; fourteen findings fixed, two rejected |
+| D-096 | DECISIONS.md | 773 | The C++/C# fix folds punctuation into words; it does NOT add a raw-title comparison |
+| D-097 | DECISIONS.md | 817 | `_verify_quad` rejected nothing on the live corpus; "string-verified" is not precision evidence |
+| D-098 | DECISIONS.md | 846 | Suppression reports when it is OFF; wiring backfill into the pipeline is Slice 2 |
+| D-099 | DECISIONS.md | 882 | Gate batching stays allowed; the per-task fast-check set must include the schema guards |
+| D-100 | DECISIONS.md | 908 | P6 Slice 1 merged to `main`; Gate P6 clause 3 is MET, not merely measurable |
+| D-101 | DECISIONS.md | 940 | Gate P6 clause 4 is MET: 20/20 sampled suppressions are genuine duplicates |
+| D-102 | DECISIONS.md | 970 | D-072 (model-tier benchmark) is deferred indefinitely |
+| D-103 | DECISIONS.md | 992 | P6 Slice 2: the ledger is a current-state row per job, `seen` suppresses on a TTL, and the policy stamp never auto-reopens |
+| D-104 | DECISIONS.md | 1064 | Job regrouping: the survivor's job wins, and a tracked group is refused whole |
+| D-105 | DECISIONS.md | 1107 | Identity writes move into the scan path, closing D-098 — and D-098's cost argument did not apply |
+| D-106 | DECISIONS.md | 1138 | Two consequences the build forced: what earns a permanent `skipped`, and the zero-output guard |
+| D-107 | DECISIONS.md | 1164 | P6 Slice 2 BUILT and verified on real data; `cross_host` dereference deferred by measured absence |
+| D-108 | DECISIONS.md | 1213 | The decision log and the metrics log are archive-split; the reading protocol moves into the index |
+| D-109 | DECISIONS.md | 1272 | Index drift fails the gate, and the fixer lives in `tools/` |
+| D-110 | DECISIONS.md | 1350 | The Slice 2 review: only a caller that delivers a lead may consume the queue |
+| D-111 | DECISIONS.md | 1467 | P6 Slice 3: applied-state suppression, and liveness sized to what the corpus actually is |
+| D-112 | DECISIONS.md | 1636 | 0.3.0 is cut, the changelog gets ONE triple, and the tag is the owner's to push |
+| D-113 | DECISIONS.md | 1740 | The Slice 3 external review: a followed redirect can forge a gone-status |
+| D-114 | DECISIONS.md | 1828 | CI installs tectonic and pdfinfo on all three OSes; skipping the gate was refused |
+| D-115 | DECISIONS.md | 1896 | Gate A of the career-profile bundle: 9 of 19 slices, and a rule for checks that cannot fire |
+| D-116 | DECISIONS.md | 1978 | A docs-only commit owes the two fast gates, not the full suite; the tectonic pin gets a detector |
+| D-117 | DECISIONS.md | 2025 | 0.3.0's tag moves rather than 0.3.1 being cut; gitleaks fixed by cleaning bytes, not allowlisting |
+| D-118 | DECISIONS.md | 2075 | Gate A slice T10: effectiveness derived in one place, and two more §20.4 rows with no check |
+| D-119 | DECISIONS.md | 2172 | 0.3.0 is PUBLISHED: the tag moved onto a CI-green commit, and ships two known BLOCKERs deliberately |
+| D-120 | DECISIONS.md | 2240 | Gate A slice T12: the résumé emission order is fixed, and three more checks that cannot fire |
+| D-121 | DECISIONS.md | 2323 | The T12 review: a green gate and a perfect mutation score hid five BLOCKING defects |
+| D-122 | DECISIONS.md | 2384 | The T12 re-review: one defect the fix created, two contracts never enforced, and a decline that was wrong |
+| D-123 | DECISIONS.md | 2507 | A recurring trigger holding a one-shot prompt re-fires a task that already shipped |
+| D-124 | DECISIONS.md | 2552 | The third T12 review: the locator grammar keeps failing because it restates the emitter instead of deriving from it |
+| D-125 | DECISIONS.md | 2617 | The T12 round-three fix, and two more reviews of it: a forbidden segment is escaped, never refused |
+| D-126 | DECISIONS.md | 2749 | T12's review loop is CLOSED, with a stated exit criterion |
+| D-127 | DECISIONS.md | 2805 | Gate A slices T13 and T14: an approval bound to nothing, and the first code that WRITES a bundle |
+| D-128 | DECISIONS.md | 2926 | Gate A T14 round 2, T15 and T17: what three green suites could not see |
+| D-129 | DECISIONS.md | 3111 | The two Gate A design departures are RULED: the design text was wrong, not the code |
 
 ---
 
@@ -3106,3 +3107,64 @@ right and the plan's Task 18 CLI list is wrong.
 T15's BLOCKING defects, takes the same lock, computes the same digest over the same blob store, and
 needs `_identical_trees`/`_tree_contents` — the function defect 1 lives in — for its own step 7.
 Starting it before T15's fix lands would build on a known-broken foundation.
+
+## D-129 — The two Gate A design departures are RULED: the design text was wrong, not the code
+
+*2026-08-11, ruled by Mit ("we should do what is best for the project"). Both sentences amended in
+`docs/superpowers/`, which is untracked, so this entry is the durable record. Closes the two items
+D-128 left owed.*
+
+T15's fix round deliberately departed from two sentences of the design and could not amend them. Both
+departures are **upheld** and the design text is corrected, because in both cases the sentence was an
+over-general statement of a narrower true rule.
+
+### §21/§6: "no command deletes drafts" keeps its teeth, and gains one carve-out
+
+The rebase's backup-reuse path `rmtree`s a `DRAFT_TEMP_PREFIX` directory. Literally that is a command
+deleting a draft directory; in substance it is not, and the literal reading is the worse outcome.
+
+What it deletes is a copy **the same command created two statements earlier** and has **proved
+byte-identical** to the backup it retains. The prohibition exists to protect *the owner's work*, and
+this is the command's own scratch. Keeping it loses on both of the project's own rules:
+
+- It strands a full-size tree with **no drain**. Every quarantine owes a drain designed in the same
+  change; a bucket with no re-entry path is a leak, and this one would never be collected.
+- `DRAFT_TEMP_PREFIX` is precisely the marker `inventory` reads as **"an interrupted draft
+  installation"**. So the residue would not merely sit there — it would assert, on every subsequent
+  `inventory`, that an installation was interrupted when none was. **A false diagnostic is worse than a
+  deletion**, and this project has repeatedly paid for reports that claim something that did not happen.
+
+The amended text carves out exactly this and nothing wider: a staging directory the running command
+created itself, under `DRAFT_TEMP_PREFIX`, within the same operation, and has proved byte-identical to
+what it retains. **A command may never delete a draft it did not create, and never one it has not
+proved redundant.** Both halves are load-bearing — drop either and the carve-out becomes a licence.
+
+**Alternative rejected:** never create the redundant copy when reuse is detected. Cleaner in principle
+and it would need no carve-out, but it restructures the install path — which the review verified holds
+under real `SIGKILL` at three boundaries — to remove a provably lossless delete. Not worth
+destabilising a crash-consistent path for a wording problem. Revisit only if that path is rewritten for
+another reason.
+
+### §19: an empty `record_ids` is a statement about shape, never a missing value
+
+§19 promised `draft_rebase_conflict` carries "the exact record IDs". A field-level or whole-document
+conflict **has** no addressable records — that is what the six `policy/*.yaml` catalogs are — so the
+promise was unkeepable for a legitimate conflict class rather than merely unmet.
+
+Ruled: `record_ids` is empty **exactly** when the conflicting unit has no addressable records, and then
+`path` plus `details.field` (where the conflict has one) is the locator. The emptiness is now a typed
+fact a consumer can rely on, not an absence it has to guess about, and the design says so.
+
+**This is settled before T18 consumes it, deliberately.** T18 renders these diagnostics to an operator.
+Had the contract stayed ambiguous, T18 would have had to choose a reading, and the wrong one — "no
+records were affected" — reads as reassurance about the exact case where a whole document is in
+conflict. The design now forbids that reading outright.
+
+### The transferable rule
+
+Both departures were reported as conformance defects and both turned out to be defects **in the
+prose**. The lens that found them was right to raise them and right not to resolve them. The general
+form: when code and design disagree, the question is which one states the narrower true rule — a
+design sentence that forbids a provably lossless act, or promises a field that cannot exist for a legal
+input, is the thing to fix. Amend the text in the same change that establishes the departure, or the
+next reviewer re-raises it and the round is spent twice.
