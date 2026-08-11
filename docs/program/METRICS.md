@@ -1065,8 +1065,12 @@ Gate A is now **10 of 19 slices**. Still NOT met, still NOT reviewed, still wire
 | `08d5c96`, detached worktree | `make check` | **0** | 4,866 passed, 1 deselected | 95.20% |
 | `08d5c96` | `gitleaks git --log-opts=origin/main..HEAD` | **0** | 1 commit, ~147 KB in 86 ms | no leaks found |
 
-T9 closed at 4,764 passed. The slice adds **102** tests across four files and moves coverage not at
-all — 95.20% before and after, which is what a layer arriving with its own tests looks like.
+The slice adds **101** tests across four files — `pytest --collect-only` on the four reports 101 — and
+moves coverage not at all, 95.20% before and after, which is what a layer arriving with its own tests
+looks like. **The arithmetic runs from 4,765, not the 4,764 recorded at `bed9b64`:** `738d7df` added the
+tectonic-pin detector in between, so 4,765 + 101 = 4,866. An earlier draft of this record said "T9
+closed at 4,764" and "adds 102 tests"; both were wrong, and the +102 delta was the reason the second
+one looked right.
 
 ### Every semantic check was disabled and confirmed to take a test with it
 
@@ -1133,3 +1137,52 @@ shipped code path imports it), `gitleaks` and `generalization` are green on it i
 normally enumerate internal packages, and no commit on `main` carries the CI fix without it. So this is
 **not** an open question and this record should not be read as one. What did not change: **the Gate A
 review is still owed, its scope is now T1–T10 rather than T1–T9, and Gate B stays prohibited.**
+
+### The Gate A T1–T10 review: STARTED, STOPPED EARLY, and partly salvaged
+
+Dispatched three fresh-context Opus reviewers, then **stopped two of them on Mit's instruction** —
+"at this rate, we'll run out of usage." Recorded honestly because a half-run review that is
+remembered as a whole one is worse than no review.
+
+**What ran to completion:** nothing I dispatched directly. The foundations reviewer had fanned out
+into its own nested sub-agents before I stopped it, and **two of those grandchildren finished after
+their parent was killed**, which is where every finding below comes from. Cost estimates for a
+"3-wide" review must assume nesting.
+
+**Still owed:** the code-running review of T10, the whole of the T1–T9 foundations pass beyond the two
+catalog checks below, and the docs-only pass.
+
+#### Verified, with negative controls
+
+| Claim checked | Result |
+|---|---|
+| 9 closed catalogs (§9 entity kinds + 10 status catalogs, §10.1 value types, §10.2 states/bases, §10.1 contexts, §10.3 surfaces, §9 channel types, §8 prefixes) | **exact match**, member for member, order included |
+| All **41** predicate rows × **14** columns against §10.4's two tables | **0 disagreements**; catalog order matches design order |
+| `PredicateSpec` has no parser default on any of its 15 keys | verified by dropping each key in turn |
+| No shipped predicate uses `owner_attestation_authority: verified` | verified |
+| The shipped JSON Schema is in enum parity with all 17 catalogs | verified |
+
+Both diffs were **negative-controlled**: mutating a copy of the catalog produced 24 flagged rows with
+exact column names, so `0 / 41` is a real negative rather than a vacuous parser.
+
+#### Findings
+
+| Severity | Where | Defect |
+|---|---|---|
+| **MAJOR** | `models/policy.py:124-171` | §10.4's cross-column rule — "every legal verification basis must be backed by its corresponding evidence class" — is **not validated at catalog level**. `BASIS_EVIDENCE_CLASSES` exists (`models/evidence.py:310`) but is consulted only per *fact*. A tenant-authored `policy/predicates.yaml` can declare a basis no `minimum_evidence` alternative can satisfy; accepted by construction. Shipped data conforms, so it is latent. Impact is an unreachable evidence route, not an eligibility leak |
+| MINOR | `models/policy.py:147` | `legal_surfaces` accepts `[]` while every other required list carries `min_length=1`. An empty maximum is a predicate no fact may ever project. Latent — no shipped row is empty |
+| MINOR | `models/base.py:200-205` | The docstring justifying `id_pattern`'s longest-first sort states a **false premise**: regex backtracking already handles `approval` vs `approval-stamp`. The sort is harmless (0/278 behavioural difference) but its stated reason is wrong |
+| MINOR | `test_profile_bundle_entity_models.py:113,147` | The two tests defending that sort **cannot fail** — removing the sort leaves both passing. "A check that cannot fire reads as coverage", in the tests this time |
+| MINOR | `models/entities.py:239` | `SHIPPED_PROJECT_STATUSES` is dead: its only reader is a test asserting it equals its own literal. The real `shipped` authorization is catalog data. Its comment overstates the wiring |
+| MINOR (owed, not wrong) | `models/policy.py:97-110` | `expiry` / `review_interval_days` are required, correct, and **consumed by nothing** — no `as_of` exists anywhere in `src/boardwatch/profile_bundle/`. Consistent with 10 of 19 slices; flagged so the column's presence is not read as enforcement |
+
+**None of these were fixed in this session** — a code fix owes a full `make check` (~7.5 min), and
+batching them behind one gate is cheaper than paying it per finding. They are open work, not history.
+
+#### One self-inflicted incident, recorded because it nearly produced a false finding
+
+Stopping the docs reviewer mid-mutation-round left `validation/semantic.py` **mutated** in the working
+tree — `_claim_text_traces_to_its_metrics` removed from `validate_semantic`'s tuple, with no restore.
+A third reviewer was reading that same file at the time. Caught by `git status` immediately after the
+stop, restored from `HEAD`, `__pycache__` cleared, 101/101 re-confirmed, and the surviving reviewer
+told about the contamination window. Safe only because the slice was committed first.
