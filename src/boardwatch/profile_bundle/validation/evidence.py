@@ -59,7 +59,7 @@ from boardwatch.profile_bundle.validation.context import ValidationContext
 #: on, because "there is no silent private-bundle exception" — a bundle that leaked
 #: `/Users/<name>/...` would not be portable to the person it was handed to.
 _ABSOLUTE_PERSONAL_PATH_RE: Final[re.Pattern[str]] = re.compile(
-    r"(?:^|[\s\"'(=:])(?:/(?:Users|home)/[^/\s\"')]+|/root|[A-Za-z]:\\\\Users\\\\[^\\\s\"')]+)"
+    r"(?:^|[\s\"'(=:])(?:/(?:Users|home)/[^/\s\"')]+|/root|[A-Za-z]:\\Users\\[^\\\s\"')]+)"
 )
 
 

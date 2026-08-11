@@ -553,6 +553,7 @@ def test_a_capture_that_is_not_valid_utf8_is_reported_not_treated_as_clean(
 #: a `grep` over a clone, and the published wheel. A test needs the string in memory, not on disk.
 _MAC_HOME = "/Us" + "ers/someone"
 _LINUX_HOME = "/ho" + "me/someone"
+_WINDOWS_HOME = "C:" + chr(92) + "Users" + chr(92) + "someone"
 _FICTIONAL_USER = "someone"
 
 
@@ -561,6 +562,7 @@ _FICTIONAL_USER = "someone"
     [
         f"See {_MAC_HOME}/Documents/notes.md for the original.",
         f"Path: {_LINUX_HOME}/src/project/main.py",
+        f"Windows path: {_WINDOWS_HOME}{chr(92)}Documents{chr(92)}notes.md",
         "Stored under /root/captures/one.txt",
     ],
 )
