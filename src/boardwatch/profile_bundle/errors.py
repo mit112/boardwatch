@@ -355,6 +355,26 @@ class OperationOutcome(Generic[T]):
         )
 
 
+def outcome_with(
+    value: T | None, diagnostics: Sequence[Diagnostic]
+) -> OperationOutcome[T]:
+    """`OperationOutcome.from_diagnostics`, with §21's could-not-complete precedence applied.
+
+    A run that could not read the bundle has not found one error, it has found nothing at all, so
+    reporting exit 1 would let a caller treat an unreadable bundle as a bundle with a small problem.
+    One definition, used by every command and by the validation report, because two places
+    implementing the same precedence is two places for it to drift.
+    """
+    if any(finding.code in COULD_NOT_COMPLETE_CODES for finding in diagnostics):
+        return OperationOutcome(
+            category="could_not_complete",
+            value=value,
+            diagnostics=tuple(sorted(diagnostics, key=lambda d: d.sort_key())),
+            exit_code=_CATEGORY_EXIT["could_not_complete"],
+        )
+    return OperationOutcome.from_diagnostics(value, diagnostics)
+
+
 def outcome_for(code: IssueCode, message: str | None = None, **details: JsonValue) -> (
     OperationOutcome[None]
 ):
