@@ -366,6 +366,37 @@ def test_inventory_codes_a_load_failure_the_way_the_control_does(
     assert outcome.exit_code == control.exit_code == 1
 
 
+@pytest.mark.parametrize(
+    ("relative", "content", "expected"),
+    [
+        ("skills/inventory.yaml", "'skills':\n- 'nope': 'x'\n", IssueCode.MODEL_VALIDATION_ERROR),
+        ("facts/notes.txt", "stray\n", IssueCode.UNKNOWN_FILE),
+    ],
+)
+def test_inspect_and_conflicts_code_a_load_failure_the_way_the_control_does(
+    promoted_tree: PromotedRevisionTree, relative: str, content: str, expected: IssueCode
+) -> None:
+    """`inventory` is not the only command that reaches `parse_error_diagnostics`.
+
+    `inspect` and `conflicts` resolve their selection through the third delegation site, and the
+    single `io_error` it used to restate threw away both the code an operator acts on and the
+    per-file list a `BundleParseError` carries. Pinned for both commands, because the fix could
+    otherwise be deleted from two of the three it was made for and only `inventory` would notice.
+    """
+    (promoted_tree.revision_dir / relative).write_text(content, encoding="utf-8")
+    control = validate_bundle(
+        promoted_tree.revision_dir, bundle_root=promoted_tree.bundle_root, mode="revision"
+    )
+    for outcome in (
+        inspect_record(promoted_tree.bundle_root, FACT_ID),
+        conflicts_report(promoted_tree.bundle_root),
+    ):
+        assert [d.code for d in outcome.diagnostics] == [d.code for d in control.diagnostics]
+        assert {d.code for d in outcome.diagnostics} == {str(expected)}
+        assert outcome.exit_code == control.exit_code == 1
+        assert outcome.value is None
+
+
 def test_inventory_codes_a_future_schema_version_as_unsupported(
     promoted_tree: PromotedRevisionTree,
 ) -> None:
