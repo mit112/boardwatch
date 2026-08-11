@@ -59,6 +59,7 @@ from boardwatch.profile_bundle.canonical import (
 )
 from boardwatch.profile_bundle.effective import effective_fact_ids, eligible_metric
 from boardwatch.profile_bundle.errors import (
+    BundleIoError,
     Diagnostic,
     IssueCode,
     JsonValue,
@@ -579,7 +580,16 @@ def _audit_ancestor_bytes(root: Path, digest: str, ctx: ValidationContext) -> No
     try:
         documents = load_documents(root, mode="revision")
         computed = bundle_digest(documents, blobs)
+    except BundleIoError as exc:
+        # Its own arm, and deliberately not interpolated. `BundleIoError` is built from
+        # `str(OSError)`, which appends the absolute path it failed on, and `report_json` emits
+        # `message` verbatim — so the arm below would put a `$HOME` path in a report an operator
+        # pastes elsewhere. The fault is typed instead, and the ancestor's digest is in `details`.
+        # Recovering the logical file would mean parsing that message, which this package refuses
+        # to do anywhere.
+        raise AncestorUnverifiable("unreadable", "one of its documents could not be read") from exc
     except (ProfileBundleError, MissingBlobError, CanonicalizationError) as exc:
+        # Every remaining message here is built from logical paths, record IDs and value types.
         raise AncestorUnverifiable("malformed", f"its documents do not load: {exc}") from exc
     if computed != digest:
         raise AncestorUnverifiable(

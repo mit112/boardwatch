@@ -829,3 +829,43 @@ def test_an_ancestor_manifest_that_cannot_be_read_is_a_blocker(
         assert str(chained_tree.bundle_root) not in found[0].message
     finally:
         path.chmod(0o644)
+
+
+@pytest.mark.skipif(os.geteuid() == 0, reason="root reads a mode-000 file, so the guard cannot fire")
+def test_a_deep_audit_of_an_unreadable_ancestor_document_carries_no_filesystem_path(
+    chained_tree: PromotedRevisionTree,
+) -> None:
+    """The same leak as the test above, one layer up, where fixing the manifest read did not reach.
+
+    The deep audit loads the ancestor's DOCUMENTS, and that read raises a `BundleIoError` built from
+    `str(OSError)` — which appends the absolute path it failed on. Interpolating the exception whole
+    put a `$HOME` path into an `unverifiable_ancestor` message, which `report_json` emits verbatim.
+    Only `deep=True` reaches this route, so the shallow test above could not see it.
+    """
+    parent_digest = chained_tree.documents.manifest.parent_bundle_digest
+    assert parent_digest is not None
+    path = revision_root(chained_tree.bundle_root, parent_digest) / "facts" / "identity.yaml"
+
+    def audited() -> tuple[Any, ...]:
+        ctx = build_context(
+            chained_tree.revision_dir,
+            mode="revision",
+            blobs=blob_reader(),
+            bundle_root=chained_tree.bundle_root,
+        )
+        return ancestry_completeness(ctx, deep=True)
+
+    # The negative control for a test about a leak: the same audit over the same chain with nothing
+    # chmodded reports nothing at all, so the finding below is the permission and not the audit.
+    assert audited() == ()
+    path.chmod(0o000)
+    try:
+        found = audited()
+        assert len(found) == 1
+        assert str(chained_tree.bundle_root) not in found[0].message
+        assert (found[0].code, found[0].details["reason"]) == (
+            "unverifiable_ancestor",
+            "unreadable",
+        )
+    finally:
+        path.chmod(0o644)
