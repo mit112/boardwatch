@@ -71,6 +71,7 @@ from boardwatch.profile_bundle.errors import (
     RestrictedYamlError,
     UnsupportedSchemaVersionError,
     diagnostic,
+    io_reason,
 )
 from boardwatch.profile_bundle.models.base import Sha256Digest, StrictModel
 from boardwatch.profile_bundle.models.manifests import (
@@ -117,16 +118,6 @@ AncestorFault = Literal[
 CandidateDigestGap = AncestorFault | Literal["not_recomputable"]
 
 
-def _why(exc: OSError) -> str:
-    """Why an I/O call failed, with no filesystem path in it.
-
-    Every message this module raises can reach `Diagnostic.message`, which `report_json` emits
-    verbatim; `str(OSError)` appends the absolute path, so a report from a home directory would
-    carry it. The caller already names the logical file.
-    """
-    return exc.strerror or type(exc).__name__
-
-
 class PointerError(ProfileBundleError):
     """A `CURRENT` or `COMPLETE` file that is absent, unreadable, or outside its exact contract."""
 
@@ -154,12 +145,19 @@ def read_current(bundle_root: Path) -> CurrentPointer:
     The contract is canonical JSON with exactly these two keys and one trailing newline. Trailing
     content is refused rather than stripped: a pointer with extra bytes after the object is a torn
     write, and treating it as valid is how an interrupted promotion becomes the selected revision.
+
+    The reader is more permissive than the contract in one respect that is not yet load-bearing:
+    `json.loads` accepts any whitespace inside the object, so a pointer written with
+    `json.dumps(indent=4)` is read back happily although the design says canonical JSON. Nothing in
+    `src/` writes this file yet. **T16 owes the canonical writer, and a test that a whitespaced
+    pointer is refused** — the two belong in the same change, because a check with no writer beside
+    it has no way to say what the canonical form is.
     """
     path = current_path(bundle_root)
     try:
         raw = path.read_text(encoding="utf-8")
     except OSError as exc:
-        raise PointerError(f"{CURRENT_PATH} is unreadable: {_why(exc)}") from exc
+        raise PointerError(f"{CURRENT_PATH} is unreadable: {io_reason(exc)}") from exc
     if not raw.endswith("\n") or raw.rstrip("\n") != raw[:-1]:
         raise PointerError(f"{CURRENT_PATH} must end with exactly one newline")
     try:
@@ -178,7 +176,7 @@ def read_complete(revision_dir: Path) -> str:
     try:
         raw = path.read_text(encoding="utf-8")
     except OSError as exc:
-        raise PointerError(f"{COMPLETE_PATH} is unreadable: {_why(exc)}") from exc
+        raise PointerError(f"{COMPLETE_PATH} is unreadable: {io_reason(exc)}") from exc
     if not raw.endswith("\n") or raw.rstrip("\n") != raw[:-1]:
         raise PointerError(f"{COMPLETE_PATH} must end with exactly one newline")
     try:
@@ -228,7 +226,9 @@ def read_ancestor_manifest(bundle_root: Path, digest: str) -> AncestorRevision:
     try:
         raw = path.read_bytes()
     except OSError as exc:
-        raise AncestorUnverifiable("unreadable", f"{logical} is unreadable: {_why(exc)}") from exc
+        raise AncestorUnverifiable(
+            "unreadable", f"{logical} is unreadable: {io_reason(exc)}"
+        ) from exc
     try:
         parsed = load_yaml_bytes(raw, logical_path=PurePosixPath(MANIFEST_PATH))
         manifest = _MANIFEST_ADAPTER.validate_python(parsed)

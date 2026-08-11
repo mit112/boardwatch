@@ -37,7 +37,12 @@ from boardwatch.profile_bundle.canonical import (
     MissingBlobError,
     candidate_content_digest,
 )
-from boardwatch.profile_bundle.errors import Diagnostic, OperationOutcome, ProfileBundleError
+from boardwatch.profile_bundle.errors import (
+    Diagnostic,
+    OperationOutcome,
+    ProfileBundleError,
+    diagnostic,
+)
 from boardwatch.profile_bundle.models.manifests import RevisionManifest
 from boardwatch.profile_bundle.paths import blobs_dir
 from boardwatch.profile_bundle.reports import (
@@ -46,6 +51,7 @@ from boardwatch.profile_bundle.reports import (
     empty_report,
     outcome_for_report,
 )
+from boardwatch.profile_bundle.storage import SelectionError, require_confined_root
 from boardwatch.profile_bundle.validation.completeness import (
     ancestry_completeness,
     validate_completeness,
@@ -115,6 +121,13 @@ def validate_bundle(
             "completeness=True; accepting it alone would answer the one question that makes an "
             "edited ancestor visible with a clean report nobody ran"
         )
+    try:
+        # Before a single byte is read: §6's self-containment is what makes the digest layer's
+        # answer mean anything, and a symlinked `blobs/` would otherwise hash content from outside
+        # the root into `evidence_set_digest` and so into `bundle_digest`.
+        require_confined_root(bundle_root)
+    except SelectionError as exc:
+        return outcome_for_report(empty_report((diagnostic(exc.code, str(exc)),)))
     blobs = FilesystemBlobReader(blobs_dir(bundle_root))
     try:
         ctx = build_context(

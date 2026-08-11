@@ -366,6 +366,26 @@ class OperationOutcome(Generic[T]):
         )
 
 
+def outcome_with(
+    value: T | None, diagnostics: Sequence[Diagnostic]
+) -> OperationOutcome[T]:
+    """`OperationOutcome.from_diagnostics`, with §21's could-not-complete precedence applied.
+
+    A run that could not read the bundle has not found one error, it has found nothing at all, so
+    reporting exit 1 would let a caller treat an unreadable bundle as a bundle with a small problem.
+    One definition, used by every command and by the validation report, because two places
+    implementing the same precedence is two places for it to drift.
+    """
+    if any(finding.code in COULD_NOT_COMPLETE_CODES for finding in diagnostics):
+        return OperationOutcome(
+            category="could_not_complete",
+            value=value,
+            diagnostics=tuple(sorted(diagnostics, key=lambda d: d.sort_key())),
+            exit_code=_CATEGORY_EXIT["could_not_complete"],
+        )
+    return OperationOutcome.from_diagnostics(value, diagnostics)
+
+
 def outcome_for(code: IssueCode, message: str | None = None, **details: JsonValue) -> (
     OperationOutcome[None]
 ):
@@ -397,6 +417,17 @@ def outcome_for(code: IssueCode, message: str | None = None, **details: JsonValu
 
 def _default_message(code: IssueCode) -> str:
     return str(code).replace("_", " ")
+
+
+def io_reason(exc: OSError) -> str:
+    """Why an I/O operation failed, without the absolute path a stringified `OSError` carries.
+
+    A diagnostic is rendered into JSON an operator may paste elsewhere, and every path in this
+    package's diagnostics is a logical one — an absolute `$HOME` path is neither theirs to publish
+    nor the same on the next machine. The caller has already named the logical path it was working
+    on, so only the reason is missing.
+    """
+    return exc.strerror or type(exc).__name__
 
 
 class ProfileBundleError(Exception):

@@ -30,12 +30,11 @@ from datetime import date
 from typing import Final
 
 from boardwatch.profile_bundle.errors import (
-    COULD_NOT_COMPLETE_CODES,
     Diagnostic,
     IssueTier,
     JsonValue,
     OperationOutcome,
-    exit_code_for_category,
+    outcome_with,
 )
 
 #: The report envelope's own version. Independent of the bundle's `schema_version`: a consumer
@@ -117,18 +116,10 @@ def outcome_for_report(report: ValidationReport) -> OperationOutcome[ValidationR
     One definition, used by both the command layer and the renderings, so a script reading
     `exit_code` from the JSON and a shell reading `$?` can never disagree.
 
-    A could-not-complete code outranks an ordinary finding: a run that could not read the bundle
-    has not found one error, it has found nothing at all, and reporting exit 1 would let a caller
-    treat an unreadable bundle as a bundle with a small problem.
+    A could-not-complete code outranks an ordinary finding; `errors.outcome_with` owns that
+    precedence so the command layer and this report layer cannot disagree about it.
     """
-    if any(finding.code in COULD_NOT_COMPLETE_CODES for finding in report.diagnostics):
-        return OperationOutcome(
-            category="could_not_complete",
-            value=report,
-            diagnostics=report.ordered,
-            exit_code=exit_code_for_category("could_not_complete"),
-        )
-    return OperationOutcome.from_diagnostics(report, report.diagnostics)
+    return outcome_with(report, report.diagnostics)
 
 
 def _diagnostic_json(finding: Diagnostic) -> dict[str, JsonValue]:

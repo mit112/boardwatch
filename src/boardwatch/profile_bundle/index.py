@@ -173,6 +173,11 @@ class BundleIndex:
     #: bidirectional check has an independent view of each direction.
     evidence_links: Mapping[str, tuple[str, ...]] = field(default_factory=dict)
 
+    #: record ID -> the kind it was indexed under. Recorded while indexing rather than recovered by
+    #: searching `by_kind`, because the kind is already in hand there and a search would have to
+    #: compare by object identity to tell two equal records apart.
+    kinds: Mapping[str, str] = field(default_factory=dict)
+
     def get(self, record_id: str) -> BaseModel | None:
         return self.records.get(record_id)
 
@@ -271,6 +276,7 @@ def build_index(documents: BundleDocuments) -> BundleIndex:
     """Index one parsed logical tree. Never raises on a duplicate; it collects them."""
     records: dict[str, BaseModel] = {}
     paths: dict[str, PurePosixPath] = {}
+    kinds: dict[str, str] = {}
     by_kind: dict[str, list[BaseModel]] = {}
     collisions: list[Collision] = []
 
@@ -283,6 +289,7 @@ def build_index(documents: BundleDocuments) -> BundleIndex:
                 continue
             records[identifier] = record
             paths[identifier] = path
+            kinds[identifier] = kind
 
     def kind_of(kind: str) -> tuple[BaseModel, ...]:
         return tuple(by_kind.get(kind, ()))
@@ -339,6 +346,7 @@ def build_index(documents: BundleDocuments) -> BundleIndex:
         secret_ruleset=_typed(documents, "policy/secret-scan.yaml", SecretRuleset),
         source_ledger=_typed(documents, "imports/source-ledger.yaml", SourceLedger),
         evidence_links=links,
+        kinds=kinds,
     )
 
 
