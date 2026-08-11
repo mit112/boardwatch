@@ -102,6 +102,12 @@ class CareerProfileLoader(yaml.SafeLoader):
                 "YAML aliases are not permitted: one record must have one byte sequence"
             )
         event = self.peek_event()  # type: ignore[no-untyped-call]
+        tag = getattr(event, "tag", None)
+        if tag is not None:
+            raise RestrictedYamlError(
+                f"explicit YAML tag {tag!r} is not permitted: the restricted loader alone "
+                "decides scalar and collection types"
+            )
         anchor = getattr(event, "anchor", None)
         if anchor is not None:
             raise RestrictedYamlError(
@@ -147,6 +153,8 @@ def load_yaml_bytes(raw: bytes, *, logical_path: PurePosixPath) -> object:
     except RestrictedYamlError as exc:
         raise RestrictedYamlError(f"{logical_path}: {exc}") from exc
     except yaml.YAMLError as exc:
+        raise RestrictedYamlError(f"{logical_path}: invalid YAML ({type(exc).__name__})") from exc
+    except Exception as exc:
         raise RestrictedYamlError(f"{logical_path}: invalid YAML ({type(exc).__name__})") from exc
     if len(documents) > 1:
         raise RestrictedYamlError(

@@ -12,8 +12,10 @@ would never learn that the contract wants it quoted.
 from __future__ import annotations
 
 from pathlib import PurePosixPath
+from typing import NoReturn
 
 import pytest
+import yaml
 
 from boardwatch.profile_bundle.errors import RestrictedYamlError
 from boardwatch.profile_bundle.yaml_loader import load_yaml_bytes
@@ -131,6 +133,46 @@ def test_multiple_documents_are_refused() -> None:
 def test_python_object_tags_are_refused() -> None:
     with pytest.raises(RestrictedYamlError):
         load_yaml_bytes(b"!!python/object:os.system {}\n", logical_path=MANIFEST)
+
+
+@pytest.mark.parametrize(
+    "body",
+    [
+        b"value: !!str text\n",
+        b"value: !!int 1\n",
+        b"value: !!float 1.5\n",
+        b"value: !!bool true\n",
+        b"value: !!null null\n",
+        b"value: !!timestamp 2026-08-10\n",
+        b"value: !!binary MQ==\n",
+        b"value: !!set {member: null}\n",
+        b"value: !!omap [{key: value}]\n",
+        b"value: !!pairs [{key: value}]\n",
+        b"value: !!seq [item]\n",
+        b"value: !!map {key: value}\n",
+    ],
+)
+def test_explicit_standard_yaml_tag_is_refused(body: bytes) -> None:
+    with pytest.raises(RestrictedYamlError):
+        load_yaml_bytes(body, logical_path=MANIFEST)
+
+
+def test_custom_yaml_tag_is_refused() -> None:
+    with pytest.raises(RestrictedYamlError):
+        load_yaml_bytes(b"value: !foo text\n", logical_path=MANIFEST)
+
+
+def test_unexpected_parser_exception_is_wrapped(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def raise_builtin(*args: object, **kwargs: object) -> NoReturn:
+        raise ValueError("constructor failed")
+
+    monkeypatch.setattr(yaml, "load_all", raise_builtin)
+
+    with pytest.raises(RestrictedYamlError) as excinfo:
+        load_yaml_bytes(b"value: text\n", logical_path=MANIFEST)
+    assert "manifest.yaml" in str(excinfo.value)
 
 
 def test_empty_document_parses_to_none_for_the_model_layer_to_reject() -> None:
