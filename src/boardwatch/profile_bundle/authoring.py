@@ -180,6 +180,12 @@ class EvidenceAddition:
     blob_digest: str | None
     blob_outcome: Literal["written", "reused"] | None
     owner_gates: tuple[ApprovalDecision, ...]
+    #: The fact and metric documents this capture cited itself back from (D-143), sorted. Reported
+    #: because the operator asked to add one evidence record and this may rewrite up to thirteen
+    #: other documents; `owner_gates` does not cover them, since a fact that is not
+    #: `owner_confirmed` is rewritten without incurring a gate. An edit nothing names is one nobody
+    #: can review.
+    cited_back: tuple[str, ...]
 
 
 @dataclass(frozen=True)
@@ -253,6 +259,7 @@ def add_evidence(
             blob_digest=blob_digest,
             blob_outcome=blob_outcome,
             owner_gates=_gates(documents, {EVIDENCE_PATH: appended, **citing_back}),
+            cited_back=tuple(sorted(path.as_posix() for path in citing_back)),
         )
     )
 

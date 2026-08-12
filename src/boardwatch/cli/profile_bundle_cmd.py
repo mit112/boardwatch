@@ -805,11 +805,17 @@ def add_evidence(
             "blob_digest": added.blob_digest,
             "blob_outcome": added.blob_outcome,
             "owner_gates": _gate_json(added.owner_gates),
+            "cited_back": list(added.cited_back),
         },
         lines=(
             f"added {added.evidence_id} to drafts/{added.draft_name} "
             f"({added.capture_kind} capture"
             f"{'' if added.blob_digest is None else f', blob {added.blob_outcome}'})",
+            *(
+                (f"cited back from: {', '.join(added.cited_back)}",)
+                if added.cited_back
+                else ()
+            ),
             *_gate_lines(added.owner_gates),
         ),
     )

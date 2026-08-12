@@ -615,6 +615,7 @@ names. A capture supporting a fact is therefore clean at exit 0 (D-143):
 $ ... add-evidence --draft work --evidence-file <attestation> --capture <capture>
 profile-bundle add-evidence: clean
 added evidence.example-labs.location.002 to drafts/work (inline capture)
+cited back from: facts/experience/employment.example-labs.yaml
 owner approval required:
   confirm_fact fact.example-labs.location.001 -> owner_confirmed
 EXIT=0
@@ -625,6 +626,11 @@ profile-bundle validate: clean
 candidate digest: sha256:0af6d246...
 EXIT=0
 ```
+
+**`cited back from:` names every document the capture rewrote**, and `--json` carries the same list as
+`cited_back`. You asked to add one evidence record; this may rewrite up to thirteen other documents,
+and the owner gates below do not cover them — a fact that is not `owner_confirmed` is rewritten
+without incurring one.
 
 **The `confirm_fact` gate is the thing to notice.** The back-citation changes the fact, and a changed
 fact owes an owner confirmation at promotion. That is not a cost auto-linking introduced — the hand

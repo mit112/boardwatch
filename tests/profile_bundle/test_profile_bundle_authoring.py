@@ -450,6 +450,11 @@ def test_a_capture_supporting_a_fact_writes_the_back_citation(
         synthetic_bundle, "facts/identity.yaml", "fact.example.name.001"
     )
     assert _asymmetries(synthetic_bundle) == []
+    # The rewritten documents are named. The operator asked to add one evidence record; a capture
+    # that silently edits records elsewhere is an edit nobody can review, and `owner_gates` does not
+    # cover them — a fact that is not `owner_confirmed` is rewritten without incurring a gate.
+    assert outcome.value is not None
+    assert outcome.value.cited_back == ("facts/identity.yaml",)
 
 
 def test_a_capture_supporting_a_metric_writes_the_back_citation(
@@ -628,6 +633,8 @@ def test_a_capture_naming_only_a_skill_or_a_claim_rewrites_no_record_document(
         f"drafts/{synthetic_bundle.draft_name}/manifest.yaml",
     }
     assert _asymmetries(synthetic_bundle) == []
+    assert outcome.value is not None
+    assert outcome.value.cited_back == ()
 
 
 def test_a_record_the_draft_does_not_hold_is_left_to_the_broken_reference_check(
