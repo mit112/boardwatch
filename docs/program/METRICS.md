@@ -2277,6 +2277,24 @@ The survivor is a real finding and is owed a deletion: the filter cannot change 
 fact-bearing documents hold only `fact.*` IDs and the metrics document only `metric.*`. Two
 independent readings agree it is inert.
 
+### The Windows matrix, once it could run at all
+
+Pushing exposed that **no Gate A test had ever executed on Windows** — collection aborted on
+`os.geteuid` for ~180 commits. Behind that: ~130 failures, one line causing about a hundred
+(`conftest._seal_revision` writing `CURRENT`/`COMPLETE` with `write_text`, whose `\r\n` no byte-exact
+reader accepts; production writes binary and was never affected). Full account in D-145.
+
+| Class | Count | Fix |
+|---|---|---|
+| `current_pointer_mismatch` cascade | ~100 | `write_bytes` in the fixture |
+| `signal.SIGKILL` absent | ~30 | module skipped (`promotion_crashes`) |
+| `os.mkfifo` absent | 2 | skipped, matching the guard the third already had |
+| mode-bit denial | 1 | skipped |
+| path separator in a test helper | 1 | `as_posix()` — introduced this session |
+
+**Not closed.** The run was cancelled at 72%, so failures masked by the cascade are unknown, and the
+Windows suite is far slower than the 16m23s local run — no Windows job has ever finished.
+
 ### Cost
 
 - A `git checkout --` inside a mutation loop **restored `authoring.py` to HEAD and silently wiped

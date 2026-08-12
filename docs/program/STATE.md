@@ -48,11 +48,18 @@ three post-merge fixes (D-138, D-141, D-142) are on `main`. All four gates, re-r
 | `perf` (CI-only) | **exit 0** · top-path 0.245–0.268 s (unchanged since) |
 | acceptance | **8 PASS / 0 FAIL**, re-run after the fixes |
 
-**CI on the pushed `8c3dd9f` is 9 of 12 green.** `gitleaks`, `perf`, `generalization`, and all six
-macOS/Linux `test` jobs pass; **the three Windows jobs error at collection** — `os.geteuid` does not
-exist there. Fixed locally in `32a109f`, unpushed. The job log reads `1 deselected, 2 errors`, so **no
-test has ever run on Windows in this range**; removing the blocker is what lets CI find out whether the
-suite passes there, and only CI can.
+**The Gate A subsystem had never run on Windows at all, and that is now the open item (D-145).** All
+six macOS/Linux `test` jobs pass, with `gitleaks`, `perf` and `generalization`. Windows failed in two
+layers: collection aborted on `os.geteuid` (`1 deselected, 2 errors` — *no test ran*, for ~180
+commits), and behind it about **130 failures**, of which roughly a hundred came from one line —
+`conftest._seal_revision` writing `CURRENT`/`COMPLETE` with `write_text`, whose `\r\n` no byte-exact
+reader accepts. **Production was never affected**; promotion writes binary. Fixed in `32a109f` and
+`dbb57ef`, together with POSIX-only tests (`SIGKILL`, `mkfifo`, mode bits) that are now skipped.
+
+**Do not record Windows as green.** The run that produced that list was cancelled at 72%, failures were
+masked behind the pointer cascade, and this machine cannot execute the matrix — CI is the only thing
+that can close it. The Windows suite is also far slower (72% in 62 min against 16m23s locally), cause
+unknown, because no Windows run has yet finished.
 
 Evidence: `.agent/GATE-A-CI-EQUIVALENCE.md`, which records the gated sha and the full test-count
 accounting. Two `.md`-only commits followed that gate, owing `generalization` + `index-check`
