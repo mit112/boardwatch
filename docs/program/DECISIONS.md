@@ -3337,6 +3337,22 @@ blob unreadable by replacing it with a **directory**, and confinement now refuse
 earlier. The claim it pins — an unreadable blob is exit 3 and installs no draft — is unchanged; its
 mechanism is now permission rather than kind.
 
+**Re-measured, and the review's two figures are both corrected.** Its "~6×" was a micro-benchmark of
+the two predicates alone; end to end through `require_confined_root` the gain is **2.3×**, because
+the walk either predicate sits inside is shared. And its absolute costs were inflated about ninefold
+by the load average of 16–21 it honestly flagged as an upper bound: on an idle machine the *same
+pre-fix code* costs 976 ms at 20,000 blobs, not 8.7 s. Both predicates measured on this machine at
+load 3.1, minutes apart, with the pre-fix one restored into a copy of `src/` selected by
+`PYTHONPATH` — a figure taken under one load and compared against one taken under another is not a
+comparison.
+
+| blobs in the store | `resolve()` per entry | one `lstat` per entry |
+|---|---|---|
+| 100 | 4.9 ms | 2.3 ms |
+| 1,000 | 46.1 ms | 19.5 ms |
+| 5,000 | 240.0 ms | 101.2 ms |
+| 20,000 | 975.8 ms | 430.3 ms |
+
 ### The symlink-loop fix was itself wrong on one of the three interpreters CI runs
 
 Translating `resolve()`'s `RuntimeError` into a typed refusal closes the hole only where the
