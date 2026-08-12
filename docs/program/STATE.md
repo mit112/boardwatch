@@ -20,7 +20,6 @@ per-session retrospectives, which belong in `DECISIONS.md` / `CHANGELOG.md` / `M
 
 **P6's build is COMPLETE — all six items — and its commits are PUSHED.** Detail in D-095, D-103…D-107,
 D-110 (ledger), D-111 + D-113 (applied state, liveness). Schema head is **`p6_job_dispositions`**.
-
 **Read D-110 before touching the ledger, D-111 and D-113 before touching liveness.** The one most likely
 to be undone by accident: `Fetcher` sets `follow_redirects=True`, so a `302 → 404` chain arrives as a bare
 404, and `FetchFailure.redirected` is the only thing distinguishing a posting that is gone from one whose
@@ -30,7 +29,9 @@ old link points at a dead path on a new host.
 7 days of runs (the window must start after D-110, which changed which callers advance the queue), and
 "0 dead postings" needs a real run whose leads are actually probed.
 
-**Next action, in order:** (1) finish Gate A — T16 is in flight, then T18 and T19; (2) start accumulating
+**Next action, in order:** (1) finish Gate A — T16's fix round and T18's build are both in flight on
+`t18-cli`'s lineage, then T19; **gate the integration branch once rather than per slice**, and review T18
+with two lenses (one on the tailor boundary) and T19 with a docs-only reviewer; (2) start accumulating
 real daily runs, gated on Mit's `resume.yaml` fix below; (3) P2 item 8 or P3 slice 5, both owner-gated and
 both wanting their own context window.
 
@@ -40,27 +41,41 @@ both wanting their own context window.
 that (D-017). Every branch is local; `docs/superpowers/` holds
 the design and plan and is untracked — copy it into any worktree you create.
 
+**The branches survive; the worktrees do not.** `t16-promotion` and `t18-cli` are ordinary refs in
+this repo, so `git log t18-cli` works from anywhere. Their worktrees were checked out under a
+session-specific scratchpad that a later session will not have, so start with `git worktree prune`
+and re-create from the branch — do not conclude from a missing directory that the work is gone.
+
 | Branch | Head | Stands where |
 |---|---|---|
 | `t13-followup` | — | **MERGED** to main at `b87fa06`, gate exit 0 · 5,436 passed · 95.64%. Branch retained but done. |
 | `t14-storage` | **merged** | **MERGED** to main at `aff1dc0`. Round-2 review found 1 BLOCKING + 4 SHOULD-FIX (REWORK); fixed in 5 commits, one per finding. Gate **exit 0 · 5,534 passed · 95.73% · 11m54s**. Detail in D-128. Its fix round is now **independently reviewed** (REWORK): the blocking fix genuinely closes the escape at every depth and keeps a symlinked bundle root allowed, but it regressed a symlink loop into an uncaught `RuntimeError` and admits a FIFO. |
 | `t15-rebase` | **merged** | **MERGED** to main at `f74be0e`. Two concurrent lenses, both REWORK: 6 distinct BLOCKING + 6 SHOULD-FIX, none covered by its own 54 green tests. Fixed in 12 commits; two design departures ruled in D-129. Branch gate **exit 0 · 5,611 passed · 95.83%**. Detail in D-128. Its fix round is now **independently reviewed** (REWORK): five of the six blocking fixes hold under fresh adversarial probes, the sixth — the append-only ledger merge — is closed on one arm only (blocker table). |
-| `t16-promotion` | 4 commits on `main` | **BUILT (all 9 plan steps) and gated — exit 0 · 5,729 passed · 95.84% · 16m12s. REVIEWED BY NOBODY, and NOT merged.** It owes **two lenses plus a concurrency pass** — highest-risk slice, and a green gate is not sign-off. 23-mutation sweep: 21 red, 1 red on re-run, 1 green (deleted per D-115). Found and fixed two pre-existing defects: no `profile_bundle` module was importable first in a fresh interpreter, and `build_approval_stamp` made **colliding approval IDs across revisions**, making any twice-approved record unpromotable and blocking §6 recapture recovery. Its build agent flagged its own deviation: plan step 6 wanted tests first, it wrote them alongside and satisfied the mutation requirement instead. **Branched from `main` BEFORE the append-only blocking fix — merge `main` forward before re-gating.** |
+| `t16-promotion` | `735dfe7` | **BUILT (all 9 plan steps), gated (exit 0 · 5,729 passed · 95.84% · 16m12s) and now REVIEWED BY THREE LENSES — REWORK, REWORK, APPROVE. NOT merged. Its FIX ROUND IS DONE — 11 commits, `fc1b143`…`735dfe7`, 1,822 passed / ruff / mypy clean, one fix per commit each with red-without-fix output; `make check` not run on it.** Both independent lenses found **the same BLOCKING separately**: `promotion.py:426` `_parent` uses `if not quarantined:`, so one quarantined blob switches off the **entire** parent digest recomputation and a parent whose non-ledger documents were edited is silently extended. Also a symlinked draft root promoting outside content into an immutable revision, four uncaught `pydantic.ValidationError`s, a `$HOME` leak and a FIFO hang in `tree_contents`. The concurrency pass returned APPROVE on 20 enumerated write boundaries, 15 real races and a working §6 recapture. Detail in D-132. Reports: `.agent/T16-REVIEW-LENS-A.md`, `-LENS-B.md`, `-CONCURRENCY.md`. |
 | `t17-schema` | **merged** | **MERGED** to main at `27879bb`. Light review: APPROVE, no BLOCKING and no SHOULD-FIX in its own diff. |
-| T18, T19 | — | Not started. T18 is the `profile-bundle` CLI, the first non-inert surface. T19 is the authoring contract and the final Gate A gate. |
+| `t18-cli` | `d64af3c` | **T18 BUILT (9 commits, all twelve commands) and GATED: exit 0 · 5,811 passed · 95.55% · 16m08s.** Carries `main`'s fixes + T16 **as built** + T18. **It owes two review lenses, one on the tailor boundary.** Re-merge `t16-promotion` (11 fix commits) and re-gate before trusting it as T16-complete.** This is the branch that will be gated: it carries `main`'s fixes, T16 and T18 together, so one `make check` covers all three instead of three. Its worktree venv is **Python 3.13** deliberately (see below). |
+| T19 | — | Not started. The authoring contract and the final Gate A gate. It must update `CHANGELOG.md`'s `[Unreleased]` entry, which still calls the package inert with no CLI surface — false the moment T18 lands. |
 
-**Combined gate on `main` with T14+T15+T17: exit 0 · 5,620 passed · 95.83%.** Gate A is **16 of 19 slices merged**; T16, T18 and T19 remain. **Gate A is NOT met and Gate B stays prohibited.** **T1–T12 ARE pushed and shipped inside the 0.3.0 wheel**; what is unpushed is everything from T13 onward.
+**`main`'s fix commits ARE gate-verified — through `t18-cli`, not on `main` itself.** `make check` on `t18-cli` (HEAD `d64af3c`, which contains every `main` fix plus T16 as built plus T18): **GATE_EXIT=0 · 5,811 passed · 1 deselected · 95.55% · 16m08s**. **T16's 11 fix commits are NOT in that gate** — `t18-cli` merged T16 before they existed, so re-merge `t16-promotion` and re-gate. On `main` alone the fixes have only Its last combined gate — exit 0 · 5,620 passed · 95.83% — predates them and says nothing about them. What the seven fix commits have is `tests/profile_bundle/` (1,697 passed), ruff and mypy `--strict`, which this repo explicitly does not count as green: a narrow run is blind to the cross-suite conftest collision described below. The gate is deliberately deferred to `t18-cli`, which contains these commits. Gate A is **16 of 19 slices merged**; T16, T18 and T19 remain. **Gate A is NOT met and Gate B stays prohibited.** **`origin/main` is `88c5857`, which carries T11; the 0.3.0 wheel (`dc1ffec`) carries less still — its `profile_bundle` tree has no `imports.py`, `approvals.py` or `effective.py`, so it is T1–T10. Everything from T12 onward is UNPUSHED.** Verified with `git cat-file -e origin/main:<path>` and `git ls-tree v0.3.0:src/boardwatch/profile_bundle/`, not from any earlier note — D-130 escalated this to "T1–T12" without checking and it was wrong.
 
-**The independent review of T14's and T15's FIX ROUNDS is DONE — verdict REWORK. Do not re-run it.**
-Every new check in both rounds is pinned: **16 of 16 mutations RED**, each caught by exactly the test
-written for it (T14 M1/M2/M3/M5, T15 M1–M11; the one green, T14-M4, is an equivalence, not a gap).
-The three new T14 tests locate the blob store by hashing rather than by the constant the check reads,
-so they cannot agree with themselves. What the round did **not** establish is above: one BLOCKING and
-three residual SHOULD-FIX, all in the blocker table. Evidence, with negative controls on every probe:
-`.agent/T14-T15-FIXROUND-REVIEW.md`.
+**The independent review of T14's and T15's FIX ROUNDS is DONE (REWORK) and its findings are now
+FIXED — do not re-run either.** Every new check in both rounds was pinned: **15 of 16 mutations RED**
+(T14 M1/M2/M3/M5, T15 M1–M11; the sixteenth, T14-M4, is GREEN and is an equivalence, not a gap). The BLOCKING it found — the
+`_merge_plan` short-cut bypassing the append-only merge — and all five SHOULD-FIX are closed in
+D-131. Evidence: `.agent/T14-T15-FIXROUND-REVIEW.md`.
 
-**T16 is the only branch left to merge forward, and it already sits on `main`.** The traps that cost
-this program real time are recorded in D-128; the three a merge must still act on:
+**`Path.resolve()` on a symlink loop differs across the interpreters CI runs**, and the difference is
+security-relevant: 3.11 and 3.12 raise `RuntimeError`, **3.13 returns the loop's own path**, which
+satisfies an equality against the derived location and admits the escape. Confinement therefore
+refuses on `is_symlink()`, which all three agree on. The local venv was 3.12, so the first attempt at
+this fix passed here and would have gone red in CI (D-131). **A worktree left on a different matrix
+entry is free cross-version coverage — keep `t18-wt` on 3.13.** `uv run --python X` inside the repo
+root **silently replaces `.venv`**; repair with `uv venv --clear --python 3.12 && uv sync --reinstall
+--all-groups`.
+
+**T16 has been merged forward onto the corrected `main`** — that merge is `t18-cli`, and it is green.
+The traps that cost this program real time are recorded in D-128; the three any future merge must
+still act on:
 
 1. **Sweep every `quoted_yaml(` call** in any branch being merged — `logical_path` is required, new test
    files never conflict, and the failure appears only at runtime. **A line-based grep gives false
@@ -75,17 +90,24 @@ bare import binds whichever `conftest.py` loaded first; under the full suite tha
 `tests/unit/conftest.py`. This shipped in T15, survived two review lenses and a fix round, and is
 invisible to any narrow run — it is the concrete reason `make check` is the only gate.
 
-**Dispatch state.** `scratchpad/RESUME-AT-0910.md` is the queue the previous session left; the T14
-review, both T15 lenses and the T17 review are now **consumed**. What remains from it is the T16 build
-brief (`scratchpad/BRIEF-T16.md`) and its carried debt (`scratchpad/CARRIED-DEBT.md`), then T18 and T19.
-Review records are `scratchpad/T14-REVIEW-ROUND2.md`, `T15-REVIEW-LENS-A.md`, `T15-REVIEW-LENS-B.md`
-and `T17-REVIEW.md`; Lens A's runnable probes are archived at `scratchpad/T15-lensa-probes/` and are the
-executable statement of six defects, so re-run them after any change to the rebase.
+**The next session's ordered plan is `.agent/NEXT-SESSION-GATE-A.md`** — collect the two build
+agents' commits, finish T16's fix round against `.agent/T16-REVIEW-*.md`, merge `t16-promotion`
+into `t18-cli`, then **one** `make check` on `t18-cli`. Start with `git worktree prune`: the
+worktrees were session-scoped and are gone, the branches are not.
 
-**This file remains well over its ~170-line target and is OWED a trim** (no count here on purpose —
-D-017). The next trim should compress the P6 narrative, now fully recorded in D-110/D-111/D-113, not the
-standing-facts list. **The Gate A branch table is deliberately exempt**: it is the only record of the
-unmerged local branches, and it collapses to one line the moment they land.
+**Dispatch state.** The T14, T15, T16 and T17 reviews are all **consumed** — T16's three lenses were
+the last of them, and none is owed again. What remains is T18's two review lenses (one on the tailor
+boundary) and T19's docs-only reviewer. **The review records that outlive a session live in `.agent/`**
+(`T14-T15-FIXROUND-REVIEW.md`, `T16-REVIEW-LENS-A.md`, `-LENS-B.md`, `-CONCURRENCY.md`); briefs and
+runnable probes live only in the session scratchpad and do not survive it, so copy anything worth
+keeping into `.agent/` before ending. `.agent/` is gitignored working material, not a source of truth
+for released behaviour.
+
+**This file is still over its ~170-line target** (no count here on purpose — D-017). The P6, T12 and T13
+narratives have been compressed into their decision entries; what is left is the **Gate A branch table**,
+which is deliberately exempt — it is the only record of the unmerged local branches and collapses to one
+line the moment they land — and the standing-facts list, which is what a fresh session actually needs.
+Trim the branch table when Gate A closes, not before.
 
 **A green `make check` is NOT a green CI** (D-117). `gitleaks`, `perf` and `generalization` are separate CI
 jobs `make check` never runs, and pushing turned `gitleaks` red for the first time in the project's history
@@ -114,19 +136,11 @@ wired to nothing** — no CLI command, and deliberately no bundle-to-`Resume` br
 directions). Its commits being on `origin/main` is **not** sign-off. **Gate B stays prohibited until
 Gate A is implemented AND independently reviewed.**
 
-**T1–T12 are implemented and independently reviewed. T12's review loop is CLOSED (D-126) — it was
-reviewed FIVE times, every finding is fixed, and no sixth round is owed.** Rounds one, two and three each returned REWORK
-(D-121, D-122, D-124) and each is fixed (D-125). Rounds four and five ran **concurrently against the
-same commit with different lenses** — one hunting runtime forgeries, one checking conformance against
-the design's own words — and both returned REWORK. **Both independently found the same gap** the
-author and a 20-mutation suite had missed: the byte-free adapter grammar reached record locators and
-stopped, so an approved scope could name a shape no heading stack resolves to, validate clean, and
-then fail every re-enumeration. All of it is fixed, with **28 of 28 distinct mutations caught** and
-the gate green at **exit 0, 5,260 tests, 95.41%**. **D-126 states the exit criterion so this loop is
-not reopened by reflex: a slice's review ends when a round finds no BLOCKING defect that is either a
-silent identity/data-integrity fault or a legitimate input the system refuses.** Round four found
-neither. That rule is per-slice and evidence-based. The conformance lens alone found a `SourceSpec` docstring claiming a
-guarantee that landed nowhere — a sentence **D-122 had already recorded as false**.
+**T1–T12 are implemented and independently reviewed. T12's review loop is CLOSED (D-126) — five
+rounds, every finding fixed, 28 of 28 mutations caught, no sixth round owed.** Detail in D-121…D-126.
+**D-126 states the exit criterion so no loop here is reopened by reflex: a slice's review ends when a
+round finds no BLOCKING defect that is either a silent identity/data-integrity fault or a legitimate
+input the system refuses.** Per-slice and evidence-based.
 
 **Read D-125 before touching locators, and D-120 before touching identity derivation.** The four
 things most likely to be undone by accident:
@@ -144,23 +158,18 @@ things most likely to be undone by accident:
 - **The résumé adapter's stage order and `~N` locator preservation are load-bearing for stored IDs**,
   and four checks were deleted in T12 for being unable to fire.
 
-**T13 is MERGED to `main`** (gate `5aa8d1c`: exit 0, 5,416 passed, 95.61%): `reports.py`, `validation/digest.py`, the
-promoted-revision fixture, `validation/completeness.py` and `validation/run.py`. Its review found one BLOCKING — the §20.6 clause binding an owner's approval to promoted content was
-skipped for **every revision from 2 onward**, so a re-sealed tree carrying documents nobody approved
-validated clean. Fixed and verified three ways (pre-fix / post-fix / fix mutated out). **Mit ruled that `METRIC_REVIEW_MISSING` is DELETED and metrics
-get no review interval** (`review_interval_days` is a `PredicateSpec` column, a metric has no
-predicate, and `reviewed_at` is required, so the check could not fire — D-115). A metric's freshness
-is its `reviewed_at` date alone. The build also fixed two pre-existing defects: `validate_history`
-derived owner gates against `parent=None`, reporting ~35 spurious `missing_owner_approval` errors on
-**every revision ≥ 2**, and `parse_error_diagnostics` had no arm for `UnsupportedSchemaVersionError`.
+**T13 is MERGED to `main`** (D-127). Two facts from it that a later slice can undo: **Mit ruled that
+`METRIC_REVIEW_MISSING` is DELETED and metrics get no review interval** — a metric's freshness is its
+`reviewed_at` date alone (D-115) — and §20.6's clause binding an owner's approval to promoted content
+must fire for **every** revision, not only the first.
 
-**The live store has NOT had Slice 2 applied.** Migrated and backfilled for Slice 1 only (head
-`p6_posting_identities`, 117,254 identity rows, `identities verify` exit 0, 147 groups / 186 surplus /
-0.79%); Slice 2 was verified on an **isolated copy**. Re-verified read-only three times on 2026-08-10:
-**no `job_dispositions` table**, `postings` 24,073 and `count(distinct job_id)` **24,073 — exactly 1:1**,
-the cheap proof, since a regrouped store would read 23,887. `identities regroup` would move 186 postings
-onto 147 canonical jobs and needs the `p6_job_dispositions` migration first; **Mit declined it on
-2026-08-10** — not blocked, just not now. The 769 MB backup sits beside it.
+**The live store has NOT had Slice 2 applied**, and that is a standing fact, not a to-do. Migrated and
+backfilled for Slice 1 only (head `p6_posting_identities`, 117,254 identity rows, `identities verify`
+exit 0). The cheap proof, re-verified read-only three times on 2026-08-10: **no `job_dispositions`
+table**, and `postings` 24,073 against `count(distinct job_id)` **24,073 — exactly 1:1**, where a
+regrouped store would read 23,887. `identities regroup` would move 186 postings onto 147 canonical jobs
+and needs the `p6_job_dispositions` migration first; **Mit declined it on 2026-08-10** — not blocked,
+just not now. The 769 MB backup sits beside it.
 
 **Not demonstrated on real data:** the ledger end to end, and the liveness probe against real leads. A
 `boardwatch top 5` against the 23,455-posting copy ran past 20 minutes and was stopped — it pays for
@@ -218,12 +227,9 @@ since D-035, unchanged by everything since.
 
 | Item | Detail | Owner |
 |---|---|---|
-| **BLOCKING on `main`: the append-only ledger merge is bypassed** | `rebase.py:374-378`. `_merge_plan` short-cuts to the draft's document wholesale when the selected revision left a document byte-identical, so `_merge_append_only` never runs — and for `conflicts/rulings.yaml` that is the **normal** case, because an ordinary promotion appends a change and a stamp but no ruling. **A draft that deletes an inherited ruling installs at exit 0 with no diagnostic**, and the revision's sequence is not a prefix of the result. T15's fix for this defect class therefore holds only when the revision also touched the ledger. Reproduced with a negative control on `history/approvals.yaml`, where the revision does append and the refusal fires correctly. Full evidence: `.agent/T14-T15-FIXROUND-REVIEW.md` finding 7. | Gate A |
-| **A symlink LOOP escapes as an uncaught `RuntimeError`** | `storage.py:150`. The T14 fix round replaced a check that refused a loop cleanly with `symlink_refused` by an equality on `resolve()`, which raises instead. Measured before/after on the same path. Wrap the `resolve()`; do not weaken the predicate. Same file, finding 1. | Gate A |
-| **D-129 clause 1 is violated by T15's own merge-validation refusal** | `record_ids: []` is emitted on a document holding 12 addressable records, where D-129 ruled empty means the unit has **no** addressable records. `_merge_conflict`'s docstring states the opposite of the ruling, and D-129 is the later of the two. Settle it before T18 renders these. Same file, finding 8. | Gate A |
-| **A draft name `inventory` prints is not a name any command accepts** | `e7fc9a1` moved Lens B's 13-character trap to 96 rather than closing it: `inspection` classifies drafts with the 179-char segment grammar, while `draft_root` and `rebase_draft` still use the 96-char one — and `rebase.py:139` calls it outside every `except`, so a backup of a long draft raises an uncaught `BundlePathError`. That backup is the only copy of the pre-rebase draft. One cap for anything under `drafts/`. Same file, finding 11. | Gate A |
-| **Confinement costs one `realpath` per stored blob, on every command** | 503 ms at 1,000 blobs, 8.7 s at 20,000, on `inventory`/`checkout`/`validate`/`rebase` and next on T16's `promote`. For the store's *entries* `is_symlink()` is behaviourally identical (every ancestor is checked one loop earlier) and ~6× cheaper; keep the equality only where an aliasing ancestor is possible. `perf` is a CI job `make check` never runs. Same file, finding 15. | Gate A |
-| **A FIFO in the blob store blocks `open()` forever** | The confinement predicate admits it — a FIFO resolves to its own place — and `inventory` then hangs unkillably-by-`SIGTERM` in `open()`. Pre-existing (measured on both sides of the fix), but the new docstring is the first to claim this class is excluded, and the refusal is one `stat` away inside a loop that already iterates the entries. Same file, finding 4. | Gate A |
+| **The T14/T15 fix-round review's six findings are FIXED on `main`** | The BLOCKING `_merge_plan` short-cut that bypassed the append-only merge, the symlink loop, the `record_ids` violation of D-129 clause 1, the draft-name asymmetry, the per-blob `realpath` cost and the FIFO hang — the latter in **both** places it lived, `require_confined_root` and `rebase._tree_contents`, the second found by a docs reviewer reproducing it rather than by the review that reported the first. Six commits, one per finding, each with a test that fails without it. Detail and the corrected measurements in **D-131** — do not re-open from the old blocker text. | complete |
+| **BLOCKING on `t16-promotion`: one quarantined blob disables the whole parent digest check** | `promotion.py:426`. `_parent`'s guard is `if not quarantined:`, where §6 waives only blob-integrity and completeness. A parent whose **non-ledger** documents were edited after promotion is silently extended and the child cements a false ancestry — exit 0, and no command distinguishes the two worlds. Found **separately by both independent lenses**. The shipped test covers `history/changes.yaml`, which the ledger-prefix check catches without blob bytes at all, so the arm it covers is not the arm that is open. Fix round in flight. Evidence: `.agent/T16-REVIEW-LENS-A.md` findings 2 and 2a. | Gate A |
+| **A symlinked draft root promotes outside content into an immutable revision** | `promotion.py:298`. Exit 0, no diagnostic — while `inventory` classifies that same path as `orphaned_artefact` and omits it from `drafts`, so the two commands disagree about what it is. The same rule one level deeper *is* enforced. Lens A finding 7; in the same fix round. | Gate A |
 | **Three `resume.yaml` bullets exceed the 220-char layout gate** | Forces an untailored-master degrade on every posting, which is what blocks accumulating real runs. The file also lacks Knowledge Forge, has stale `skill_groups`, and an empty extracurricular block. **Mit pins `resume_max_pages=1` — do not advise setting it to 2.** | Mit (content) |
 | **The 03:10 launchd job re-fires a task that already shipped** | `com.mitsheth.boardwatch-p6.plist` is a *daily* `StartCalendarInterval` job carrying the *one-shot* "execute P6 Slice 1" prompt, which asserts `main` at `fb0386a` — now an ancestor 110 commits back. It misfired on 2026-08-11 and will misfire nightly. Benign and self-detecting (the session-start ritual catches it in a few read-only commands), **not** self-correcting. Fix: `launchctl bootout gui/$UID/com.mitsheth.boardwatch-p6`, or repoint `~/.claude/scheduled/p6-slice1-run.sh` at a fresh prompt (D-123) | Mit (automation) |
 | **No local pre-push check for the three CI-only jobs** | `gitleaks`, `perf` and `generalization` run in CI and not under `make check`; `gitleaks` is not installed by project tooling. `gitleaks git --log-opts=origin/main..HEAD` is the cheap mitigation (D-117) | open |
