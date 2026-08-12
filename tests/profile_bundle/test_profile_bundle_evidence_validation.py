@@ -682,6 +682,10 @@ def test_a_fact_whose_basis_no_cited_evidence_can_carry_is_reported(
 
     A fact claiming `public_record_verified` while citing only a summary asserts a check that never
     happened, and every report downstream would treat it as verified.
+
+    The summary is made to **support** the fact, which is what "cites only a summary" means under
+    §12: the citation the check reads is the supporting one. The example's own summary merely
+    *contextualizes* that fact, and a contextual citation is a different failure — the test below.
     """
     ctx = build_context(synthetic_bundle.draft, mode="draft", bundle_root=synthetic_bundle.root)
     summary = next(
@@ -702,10 +706,58 @@ def test_a_fact_whose_basis_no_cited_evidence_can_carry_is_reported(
                 entry["verification_basis"] = "public_record_verified"
                 entry["evidence_ids"] = [summary.evidence_id]
 
+    def support_it(data: Any) -> None:
+        for record in data["evidence"]:
+            if record["evidence_id"] == summary.evidence_id:
+                record["supports_record_ids"] = [dependent.fact_id]
+                record["contextualizes_record_ids"] = []
+
     edit_document(synthetic_bundle, owning, overclaim)
+    edit_document(synthetic_bundle, "evidence/records.yaml", support_it)
     findings = of(structural(synthetic_bundle), IssueCode.VERIFICATION_BASIS_UNSUPPORTED)
     assert [f.record_id for f in findings] == [dependent.fact_id]
     assert findings[0].details["cited_classes"] == ["secondary_summary"]
+
+
+def test_a_basis_resting_only_on_contextual_evidence_is_reported(
+    synthetic_bundle: SyntheticBundle,
+) -> None:
+    """Citing a source is not being supported by it (§12, D-144).
+
+    `evidence_ids` is symmetric over `supports | contradicts | contextualizes`, so a fact
+    legitimately cites the source that merely mentions it. Read raw, that citation carried the
+    fact's verification basis — a fact could claim `public_record_verified` on the strength of a
+    summary that never verified anything, and nothing reported it.
+
+    The narrower reading has to keep this reachable rather than skipping it: "cites nothing that
+    resolves" is a referential finding, but "cites only evidence that does not support it" is this
+    check's, and folding the two together is how closing one hole opens another.
+    """
+    ctx = build_context(synthetic_bundle.draft, mode="draft", bundle_root=synthetic_bundle.root)
+    summary = next(
+        record
+        for record in ctx.index.evidence
+        if str(record.evidence_class) == "secondary_summary"
+    )
+    dependent = next(
+        fact for fact in ctx.index.facts if summary.evidence_id in fact.evidence_ids
+    )
+    assert dependent.fact_id in summary.contextualizes_record_ids, (
+        "this test needs a purely contextual citation, which the example is expected to ship"
+    )
+    owning = ctx.index.paths[dependent.fact_id].as_posix()
+
+    def overclaim(data: Any) -> None:
+        for entry in data["facts"]:
+            if entry["fact_id"] == dependent.fact_id:
+                entry["verification_basis"] = "public_record_verified"
+                entry["evidence_ids"] = [summary.evidence_id]
+
+    edit_document(synthetic_bundle, owning, overclaim)
+    findings = of(structural(synthetic_bundle), IssueCode.VERIFICATION_BASIS_UNSUPPORTED)
+    assert [f.record_id for f in findings] == [dependent.fact_id]
+    assert findings[0].details["cited_classes"] == []
+    assert "supports it" in findings[0].message
 
 
 def test_every_basis_in_the_example_is_backed_by_an_acceptable_evidence_class(

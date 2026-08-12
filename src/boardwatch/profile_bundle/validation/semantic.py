@@ -83,6 +83,7 @@ from boardwatch.profile_bundle.models.policy import (
     SurfacePolicy,
 )
 from boardwatch.profile_bundle.validation.context import ValidationContext
+from boardwatch.profile_bundle.validation.evidence import supporting_evidence
 
 
 def validate_semantic(ctx: ValidationContext) -> tuple[Diagnostic, ...]:
@@ -245,9 +246,7 @@ def _effective_facts_meet_their_predicate_evidence_contract(
     if catalog is None:
         return
     by_id = catalog.by_id
-    evidence_classes = {
-        record.evidence_id: record.evidence_class for record in ctx.index.evidence
-    }
+    by_evidence_id = {record.evidence_id: record for record in ctx.index.evidence}
     effective = effective_fact_ids(ctx)
     for fact in ctx.index.facts:
         if fact.fact_id not in effective:
@@ -268,10 +267,11 @@ def _effective_facts_meet_their_predicate_evidence_contract(
                     basis.value for basis in spec.legal_verification_bases
                 ),
             )
+        # Only the evidence that SUPPORTS this fact counts toward its predicate's contract. A
+        # source contradicting or contextualizing a fact is a legitimate §12 citation and must not
+        # satisfy `minimum_evidence` — see `supporting_evidence` for what reading the raw list cost.
         cited = frozenset(
-            evidence_classes[evidence_id]
-            for evidence_id in fact.evidence_ids
-            if evidence_id in evidence_classes
+            record.evidence_class for record in supporting_evidence(fact, by_evidence_id)
         )
         if not any(
             set(alternative.classes) <= cited for alternative in spec.minimum_evidence

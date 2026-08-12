@@ -19,7 +19,7 @@ An unavailable recorded version is `could_not_complete`, never a clean scan. "We
 from __future__ import annotations
 
 import re
-from collections.abc import Iterator
+from collections.abc import Iterator, Mapping
 from typing import Final
 
 from boardwatch.profile_bundle import secret_scan
@@ -46,6 +46,7 @@ from boardwatch.profile_bundle.models.evidence import (
     Redaction,
     SufficiencyState,
 )
+from boardwatch.profile_bundle.models.facts import FactRecord
 from boardwatch.profile_bundle.secret_scan import InvalidUtf8CaptureError
 from boardwatch.profile_bundle.validation.context import ValidationContext
 
@@ -550,16 +551,24 @@ def _verification_bases_are_supported_by_their_evidence(
         acceptable = BASIS_EVIDENCE_CLASSES.get(str(fact.verification_basis))
         if acceptable is None:
             continue  # an unknown basis is a closed-enum failure at parse time
-        cited = [by_id[e] for e in fact.evidence_ids if e in by_id]
-        if not cited:
+        if not any(evidence_id in by_id for evidence_id in fact.evidence_ids):
             continue  # a fact with no resolvable evidence is a referential finding
-        classes = {record.evidence_class for record in cited}
+        # Of the citations that resolve, only the SUPPORTING ones can carry a basis. Kept separate
+        # from the check above on purpose: "cites nothing that resolves" is somebody else's finding,
+        # but "cites only evidence that contradicts or contextualizes it" is this one's, and folding
+        # them together would let a fact claim `public_record_verified` on the strength of a source
+        # that merely mentions it and report nothing at all (D-144).
+        classes = {record.evidence_class for record in supporting_evidence(fact, by_id)}
         if classes & acceptable:
             continue
         yield diagnostic(
             IssueCode.VERIFICATION_BASIS_UNSUPPORTED,
-            f"{fact.fact_id} declares basis {fact.verification_basis} but cites only "
-            f"{', '.join(sorted(str(c) for c in classes))} evidence",
+            f"{fact.fact_id} declares basis {fact.verification_basis} but "
+            + (
+                f"cites only {', '.join(sorted(str(c) for c in classes))} evidence"
+                if classes
+                else "cites no evidence that supports it"
+            ),
             path=ctx.index.path_of(fact.fact_id),
             record_id=fact.fact_id,
             basis=str(fact.verification_basis),
@@ -596,3 +605,31 @@ def _unreviewed_evidence_blocks_its_dependents(ctx: ValidationContext) -> Iterat
 #: Evidence classes that cannot on their own satisfy a verification requirement (§12.1). Re-exported
 #: so the semantic layer can reason about grounding without importing the models package directly.
 NON_VERIFYING_EVIDENCE_CLASSES: Final[frozenset[EvidenceClass]] = NON_VERIFYING_CLASSES
+
+
+def supporting_evidence(
+    fact: FactRecord, by_evidence_id: Mapping[str, AnyEvidence]
+) -> list[AnyEvidence]:
+    """The evidence a fact cites that also **supports** it (§12). The grounding question's input.
+
+    `evidence_ids` is not a statement that the evidence backs the fact. §12 makes the relationship a
+    closed choice of three, and requires the citation to be symmetric over all three, so a fact
+    legitimately cites the source that *contradicts* it and the one that merely *contextualizes* it.
+    Verification is a different question, and only `supports` answers it: a source arguing against a
+    fact cannot be what verifies it, and a contextual source explicitly "cannot satisfy a
+    verification requirement".
+
+    Read raw, `evidence_ids` conflated the two, so one capture that contextualized a fact cleared
+    that fact's predicate `minimum_evidence` and its `verification_basis` — silently, with no
+    compensating diagnostic. Reachable by hand before, and automatic once `add_evidence` began
+    writing the back-citation, which is what surfaced it (D-144).
+
+    One definition for both grounding checks, because two restatements of "cited *and* supporting"
+    is how they come to disagree about which facts are verified.
+    """
+    return [
+        record
+        for evidence_id in fact.evidence_ids
+        if (record := by_evidence_id.get(evidence_id)) is not None
+        and fact.fact_id in record.supports_record_ids
+    ]

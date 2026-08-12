@@ -150,6 +150,21 @@ def install_single_fact(bundle: SyntheticBundle, fact: dict[str, Any], *, into: 
         edit_document(bundle, path, lambda data: data.__setitem__("facts", []))
     edit_document(bundle, into, lambda data: data.__setitem__("facts", [fact]))
 
+    # And make the evidence it cites actually SUPPORT it. `conforming_fact` picks the example's
+    # records by evidence class, and those records name the example's own facts — so without this
+    # the synthetic fact cites evidence that never names it back, which is an asymmetric §12 link
+    # and not a conforming fact at all. It passed only while the grounding checks read
+    # `evidence_ids` without asking the relationship (D-144).
+    cited = set(fact["evidence_ids"])
+    fact_id = fact["fact_id"]
+
+    def _support_the_synthetic_fact(data: dict[str, Any]) -> None:
+        for record in data["evidence"]:
+            if record["evidence_id"] in cited and fact_id not in record["supports_record_ids"]:
+                record["supports_record_ids"] = sorted([*record["supports_record_ids"], fact_id])
+
+    edit_document(bundle, "evidence/records.yaml", _support_the_synthetic_fact)
+
 
 def conforming_fact(bundle: SyntheticBundle, spec: PredicateSpec) -> tuple[dict[str, Any], str]:
     """A fact satisfying every column of `spec`, and the document it belongs in."""
@@ -250,6 +265,55 @@ def test_every_shipped_predicate_is_exercised_by_at_least_one_example_fact_or_th
 # --------------------------------------------------------------------------------------
 # One conforming case per predicate row
 # --------------------------------------------------------------------------------------
+
+
+def test_evidence_that_only_contextualizes_a_fact_does_not_meet_its_contract(
+    tmp_path: Path,
+    shipped_predicates: tuple[PredicateSpec, ...],
+) -> None:
+    """A predicate's `minimum_evidence` is about what SUPPORTS the fact (§10.4, §12, D-144).
+
+    §12 requires `evidence_ids` to be symmetric over the union of `supports`, `contradicts` and
+    `contextualizes`, so a fact legitimately cites a source that merely mentions it. Read raw, that
+    citation satisfied the predicate's evidence contract: one capture that contextualized a fact
+    cleared its `evidence_contract_unmet` with nothing else changing, and no other diagnostic took
+    its place. `add_evidence` writing the back-citation made that reachable without a hand edit,
+    which is how it was found.
+
+    Built from the same conforming fact the sweep uses, so the only difference between clean and
+    reported is the relationship — not the class, the basis, or anything else the contract reads.
+    """
+    spec = next(
+        item
+        for item in shipped_predicates
+        if item.predicate_id == "person.professional_name"
+    )
+    root = tmp_path / "bundle" / "career-profile"
+    root.mkdir(parents=True)
+    (root / "drafts").mkdir()
+    bundle = materialise(root)
+    fact, owning = conforming_fact(bundle, spec)
+    install_single_fact(bundle, fact, into=owning)
+    assert findings_about(bundle, SYNTHETIC_FACT_ID) == (), "the baseline must start clean"
+
+    cited = set(fact["evidence_ids"])
+
+    def contextualize_instead(data: dict[str, Any]) -> None:
+        for record in data["evidence"]:
+            if record["evidence_id"] in cited:
+                record["supports_record_ids"] = [
+                    item
+                    for item in record["supports_record_ids"]
+                    if item != SYNTHETIC_FACT_ID
+                ]
+                record["contextualizes_record_ids"] = sorted(
+                    {*record["contextualizes_record_ids"], SYNTHETIC_FACT_ID}
+                )
+
+    edit_document(bundle, "evidence/records.yaml", contextualize_instead)
+    assert IssueCode.EVIDENCE_CONTRACT_UNMET.value in codes(
+        findings_about(bundle, SYNTHETIC_FACT_ID)
+    )
 
 
 def test_a_conforming_fact_is_accepted_for_every_shipped_predicate(
