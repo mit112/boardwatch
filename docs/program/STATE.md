@@ -75,11 +75,26 @@ suite that owns them, because a script driving the CLI once cannot establish the
 `.agent/GATE-A-ACCEPTANCE.md`.
 
 **The last open question is ANSWERED (D-143).** Mit ruled on 2026-08-12 that `add-evidence` writes the
-back-citation itself, default on; it is built, and `cc489ac` carries the code, the tests and the guide
-correction. The premise the question had been framed on was false — `add_evidence` was **already** a
-multi-document write (evidence *and* manifest), and the guide's §9 said otherwise while the same guide's
-Editing section said the truth. **Gate A's standing therefore turns on the gate re-run over `cc489ac`,
-not on any remaining owner input.**
+back-citation itself, default on. The premise the question had been framed on was false — `add_evidence`
+was **already** a multi-document write (evidence *and* manifest), and the guide said otherwise while the
+same guide's Editing section said the truth. **Gate A's standing turns on the gate, not on owner input.**
+
+**The build was reviewed and came back REWORK, and the fixes are the useful part.** Three lenses ran on
+the first commit: design conformance (**CONFORMS**, §12 quoted, §19 silent on whether `add-evidence` may
+touch other records), docs accuracy (**REWORK** — a transcript whose evidence ID and fact disagreed, and
+two further sites still describing the old two-document behaviour), and adversarial runtime (**REWORK**).
+What the last one found is worth carrying:
+
+- **A behaviour change verified only by the tests the commit itself edited ships red.** The full gate
+  caught one CLI test asserting the old outcome; a narrow run over the authoring file could not.
+- **"Any of the twelve fact-bearing documents" was not test-locked.** A hard-coded four-class list passed
+  all 98 tests reaching `add_evidence` while covering 5 of 13 — D-142's shape inside the fix citing D-142.
+  The catalog is now read off `FactBearingDocument.__subclasses__()` at run time.
+- **The write order was wrong and its comment argued for it at length.** The manifest now goes second;
+  written last it gave every citing document a failure position carrying `evidence_set_digest_mismatch`.
+- **D-144**, the one that outlived the change that surfaced it: grounding checks read `evidence_ids` raw,
+  so a *contextualizing* source satisfied a predicate's evidence contract. Mit ruled to fix the semantic
+  layer rather than narrow the auto-link. The defect predates D-143.
 
 **Two silent-success defects were found and fixed *after* the review loop closed** (D-138/D-142,
 D-141), which is the useful thing to know about this subsystem's remaining risk: both were "no flags"
