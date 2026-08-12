@@ -63,6 +63,20 @@ Two more root members appear once they are needed and are never created by `init
 `CURRENT` (written by the first `promote`) and `career-profile.lock` (the exclusive writer lock).
 Anything else at the root is reported by `inventory` as an orphan and is never deleted.
 
+**A path that is not a bundle is refused, by name.** Every command that reads a bundle answers
+`bundle_not_found` at exit 1 if the root is not a directory — whether you mistyped `--bundle`, or
+omitted it and the default root has never been initialised. No command creates the root as a side
+effect of failing, and the two that take the writer lock check before taking it, because the lock
+file's own creation would otherwise leave a new empty directory as the only trace of the mistake.
+`init` is the drain: it is the one command for which an absent root is normal input.
+
+```console
+$ boardwatch profile-bundle inventory --bundle ~/career-profil
+profile-bundle inventory: findings
+error: bundle_not_found: there is no bundle at this path; nothing was read and nothing was created. `init` creates one, and --bundle names an existing one somewhere else
+EXIT=1
+```
+
 ---
 
 ## 3. The closed tree, and the closed file grammar
