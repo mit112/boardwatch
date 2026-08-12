@@ -218,16 +218,41 @@ def referenced_blob_digests(documents: BundleDocuments) -> tuple[str, ...]:
     )
 
 
-def evidence_set_digest(documents: BundleDocuments, blobs: BlobReader) -> str:
+def _computed_blob_digests(
+    documents: BundleDocuments, blobs: BlobReader, quarantined: frozenset[str]
+) -> dict[str, str]:
+    """Each declared blob digest mapped to the hash of the bytes actually stored under it.
+
+    For a digest in `quarantined` the declaration stands in for bytes that cannot be read. That
+    substitution is exact rather than lenient: `write_blob` verifies a blob's bytes before it
+    becomes visible and every reader here hashes what it read, so for an intact blob the computed
+    hash *is* the declared one. Standing the declaration in therefore reproduces the same digest for
+    a bundle whose blobs are all present, and stops policing exactly the leaves whose bytes are
+    gone — which is what §6's recovery exception waives, and no more than that.
+
+    Whether a digest belongs in `quarantined` is `blobs.quarantined_blobs`' answer, not one this
+    module recomputes; passing an intact blob's digest in would silently excuse it.
+    """
+    return {
+        declared: (
+            declared
+            if declared in quarantined
+            else hashlib.sha256(blobs.read_bytes(declared)).hexdigest()
+        )
+        for declared in referenced_blob_digests(documents)
+    }
+
+
+def evidence_set_digest(
+    documents: BundleDocuments,
+    blobs: BlobReader,
+    *,
+    quarantined: frozenset[str] = frozenset(),
+) -> str:
     """Design §7 steps 2-3. Excludes the manifest, so it introduces no digest cycle."""
     document = _evidence_document(documents)
     records = [normalized(record) for record in document.evidence]
-    computed = sorted(
-        {
-            hashlib.sha256(blobs.read_bytes(declared)).hexdigest()
-            for declared in referenced_blob_digests(documents)
-        }
-    )
+    computed = sorted(set(_computed_blob_digests(documents, blobs, quarantined).values()))
     return digest_of([records, computed])
 
 
@@ -256,29 +281,49 @@ def _document_leaves(
     }
 
 
-def _blob_leaves(documents: BundleDocuments, blobs: BlobReader) -> dict[str, str]:
+def _blob_leaves(
+    documents: BundleDocuments,
+    blobs: BlobReader,
+    *,
+    quarantined: frozenset[str] = frozenset(),
+) -> dict[str, str]:
     """One leaf per UNIQUE blob. Two evidence records naming one blob include it exactly once."""
-    leaves: dict[str, str] = {}
-    for declared in referenced_blob_digests(documents):
-        computed = hashlib.sha256(blobs.read_bytes(declared)).hexdigest()
-        leaves[f"{BLOB_KEY_PREFIX}sha256:{computed}"] = f"sha256:{computed}"
-    return leaves
+    return {
+        f"{BLOB_KEY_PREFIX}sha256:{computed}": f"sha256:{computed}"
+        for computed in _computed_blob_digests(documents, blobs, quarantined).values()
+    }
 
 
-def leaf_index(documents: BundleDocuments, blobs: BlobReader) -> dict[str, str]:
+def leaf_index(
+    documents: BundleDocuments,
+    blobs: BlobReader,
+    *,
+    quarantined: frozenset[str] = frozenset(),
+) -> dict[str, str]:
     """Every `[canonical_key, leaf_digest]` pair that the bundle digest is computed over."""
-    evidence_digest = evidence_set_digest(documents, blobs)
+    evidence_digest = evidence_set_digest(documents, blobs, quarantined=quarantined)
     leaves = _document_leaves(documents.by_path)
-    leaves.update(_blob_leaves(documents, blobs))
+    leaves.update(_blob_leaves(documents, blobs, quarantined=quarantined))
     leaves[f"{DOCUMENT_KEY_PREFIX}{MANIFEST_PATH.as_posix()}"] = digest_of(
         _manifest_with(documents.manifest, evidence_digest)
     )
     return leaves
 
 
-def bundle_digest(documents: BundleDocuments, blobs: BlobReader) -> str:
-    """Design §7 step 6: hash the sorted list of two-element `[key, digest]` lists."""
-    leaves = leaf_index(documents, blobs)
+def bundle_digest(
+    documents: BundleDocuments,
+    blobs: BlobReader,
+    *,
+    quarantined: frozenset[str] = frozenset(),
+) -> str:
+    """Design §7 step 6: hash the sorted list of two-element `[key, digest]` lists.
+
+    `quarantined` names declared blob digests whose bytes the store cannot serve, and defaults to
+    none, so every caller that has its blobs computes exactly what it always did. §6's recovery
+    exception is the one caller that passes a non-empty set: see `_computed_blob_digests` for why
+    substituting the declaration there is exact rather than a relaxation.
+    """
+    leaves = leaf_index(documents, blobs, quarantined=quarantined)
     return digest_of([[key, leaves[key]] for key in sorted(leaves)])
 
 

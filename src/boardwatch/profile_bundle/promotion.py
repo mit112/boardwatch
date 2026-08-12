@@ -386,6 +386,13 @@ def _parent(
     will not parse, a schema this build does not support, a manifest that disagrees with the
     directory naming it, and a mutated document that no longer produces the parent's own digest.
 
+    "Skips only the recomputation that needs those bytes" is literal: the digest is recomputed with
+    the quarantined blobs' declared digests standing in for their leaves, which is exactly the value
+    an intact blob would have contributed and nothing more. Skipping the whole comparison instead
+    would leave every parent document a ledger prefix does not cover — the manifest, the policy
+    catalogs, every entity file — free to be edited under cover of one broken blob, and the child
+    would then cement a `parent_bundle_digest` naming a directory that no longer produces it.
+
     The quarantine is reported as a warning rather than under its declared blocker tier. The tier is
     a statement about *this* operation: a blocker would refuse the promotion, and refusing it would
     leave an owner with a bundle no supported command can repair. `checkout` reports the identical
@@ -423,14 +430,17 @@ def _parent(
         )
         for declared, reason in quarantined
     )
-    if not quarantined:
-        computed = bundle_digest(documents, FilesystemBlobReader(blobs_dir(selection.bundle_root)))
-        if computed != manifest.bundle_digest:
-            return _refusal(
-                IssueCode.BUNDLE_DIGEST_MISMATCH,
-                "the selected revision's documents no longer produce the digest its manifest "
-                "carries, so it cannot be the parent of a new revision",
-            )
+    computed = bundle_digest(
+        documents,
+        FilesystemBlobReader(blobs_dir(selection.bundle_root)),
+        quarantined=frozenset(declared for declared, _ in quarantined),
+    )
+    if computed != manifest.bundle_digest:
+        return _refusal(
+            IssueCode.BUNDLE_DIGEST_MISMATCH,
+            "the selected revision's documents no longer produce the digest its manifest "
+            "carries, so it cannot be the parent of a new revision",
+        )
     return (
         ParentSnapshot(
             root=selection.root,
