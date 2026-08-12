@@ -49,7 +49,12 @@ from pydantic import BaseModel, ValidationError
 
 from boardwatch.profile_bundle.canonical import record_digest
 from boardwatch.profile_bundle.errors import ProfileBundleError
-from boardwatch.profile_bundle.index import Collision, build_index, record_id_of
+from boardwatch.profile_bundle.index import (
+    Collision,
+    build_index,
+    record_id_of,
+    record_ids_in_document,
+)
 from boardwatch.profile_bundle.models.documents import BundleDocuments, DocumentModel
 from boardwatch.profile_bundle.models.history import (
     ApprovalLedger,
@@ -109,12 +114,28 @@ class DocumentMergeConflict(ProfileBundleError):
     collision is a specific record and left `None` when the field has no addressable records at
     all, which is the difference between "you both edited this fact" and "you both bumped this
     catalog version".
+
+    `record_ids` is every record the conflicting *unit* holds, which is `record_id` alone for a
+    record collision and the whole document for a document-level invariant — the one case where a
+    unit with no single record still has records to name. It is set here rather than derived by the
+    caller because only the raise site knows which unit failed.
     """
 
-    def __init__(self, field: str, message: str, *, record_id: str | None = None) -> None:
+    def __init__(
+        self,
+        field: str,
+        message: str,
+        *,
+        record_id: str | None = None,
+        record_ids: Sequence[str] | None = None,
+    ) -> None:
         super().__init__(message)
         self.field = field
         self.record_id = record_id
+        if record_ids is not None:
+            self.record_ids: tuple[str, ...] = tuple(record_ids)
+        else:
+            self.record_ids = () if record_id is None else (record_id,)
 
 
 class RecordIdCollision(ProfileBundleError):
@@ -225,6 +246,12 @@ def merge_document(
             _WHOLE_DOCUMENT,
             "both sides are valid on their own but the merged document is not: "
             + "; ".join(error["msg"] for error in exc.errors()),
+            # The failing unit is the document, so every record either side puts in it is a record
+            # this refusal is about. Both sides, because the merged value does not exist: the
+            # records that collided are exactly the ones the two sides did not have in common.
+            record_ids=sorted(
+                {*record_ids_in_document(ours), *record_ids_in_document(theirs)},
+            ),
         ) from exc
 
 

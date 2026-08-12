@@ -644,6 +644,9 @@ def test_a_manifest_field_changed_on_both_sides_refuses(scene: Scene) -> None:
     finding = outcome.diagnostics[0]
     assert finding.path == manifest_path.as_posix()
     assert finding.details["field"] == "unit_catalog_version"
+    # D-129's empty case, and the negative control for the whole-document one: the conflicting unit
+    # is a version field, which has no addressable records, so `field` is the whole locator.
+    assert finding.details["record_ids"] == []
     assert _snapshot(scene.bundle_root) == before
 
 
@@ -758,6 +761,14 @@ def test_a_merged_document_that_fails_its_own_validator_is_a_typed_refusal(scene
     assert outcome.diagnostics[0].path == changes.as_posix()
     # The validator's own sentence reaches the operator rather than a traceback.
     assert "contiguous" in outcome.diagnostics[0].message
+    # D-129: an empty `record_ids` means the conflicting unit holds no addressable records. This
+    # unit is the whole document, and this document holds records on both sides.
+    reported = outcome.diagnostics[0].details["record_ids"]
+    assert set(reported) == {
+        "change.example.000001",
+        "change.example.000002",
+        "change.mine.000002",
+    }
     assert _snapshot(scene.bundle_root) == before
 
 

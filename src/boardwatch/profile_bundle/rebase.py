@@ -652,18 +652,19 @@ def _merge_conflict(logical: PurePosixPath, exc: DocumentMergeConflict) -> Diagn
     place, nobody but them can choose — and inventing a second code for the field-level case would
     widen a closed catalog to describe a distinction they cannot act on differently.
 
-    `record_ids` is therefore empty whenever the conflicting unit has no record identity: a catalog
-    version, a tuple of catalog rows, or a document-level invariant. §19's "with the exact record
-    IDs" is about the record-overlap case, and for these `path` plus `details.field` is the whole
-    locator. A consumer building §17's `changed_record_ids` must read `record_ids` as "the records
-    this refusal is about", never as "every record involved".
+    `record_ids` is empty exactly when the conflicting unit has no addressable records — a catalog
+    version or a tuple of catalog rows — and then `path` plus `details.field` is the whole locator
+    (D-129). A document-level invariant is *not* one of those cases: its unit is the document, so a
+    refusal on a ledger holding twelve records names all twelve. Reading an empty list as "no
+    records were affected" is the reading the ruling forbids, and a whole-document conflict is
+    precisely where that reading would be reassuring and wrong.
     """
     return diagnostic(
         IssueCode.DRAFT_REBASE_CONFLICT,
         f"{logical}: {exc}",
         path=logical.as_posix(),
         record_id=exc.record_id,
-        record_ids=[exc.record_id] if exc.record_id is not None else [],
+        record_ids=list(exc.record_ids),
         field=exc.field,
     )
 
