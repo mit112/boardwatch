@@ -4,6 +4,24 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- **The canonical career-profile bundle (`boardwatch.profile_bundle`) — present but INERT.** There is
+  no CLI surface and no supported entry point yet, so nothing in this package is reachable from a
+  terminal and no user-facing behaviour changes. It is documented here only because the package is
+  already inside the published `0.3.0` wheel, where the `[0.3.0]` notes below do not enumerate it, and
+  a package a user can see in a wheel but not in a changelog is worse than one they can see in both.
+
+  Merged so far: the restricted YAML loader and emitter, one-read storage and revision selection,
+  drafts (`init` / `checkout`), inspection and inventory reporting, semantic and digest validation,
+  completeness, record-level draft rebase with a shared writer lock, and the schema-v1 head with a
+  migration that has nothing to migrate.
+
+  **Treat it as unsupported and unstable.** Its acceptance gate is not met, its on-disk grammar may
+  still change, and two of its slices remain unbuilt. Do not build against it.
+
 ## [0.3.0] - 2026-08-10
 
 ### Added
