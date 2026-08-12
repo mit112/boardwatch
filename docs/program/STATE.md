@@ -61,31 +61,20 @@ masked behind the pointer cascade, and this machine cannot execute the matrix �
 that can close it. The Windows suite is also far slower (72% in 62 min against 16m23s locally), cause
 unknown, because no Windows run has yet finished.
 
-Evidence: `.agent/GATE-A-CI-EQUIVALENCE.md`, which records the gated sha and the full test-count
-accounting. Two `.md`-only commits followed that gate, owing `generalization` + `index-check`
-(D-116) — both green.
+Evidence: `.agent/GATE-A-CI-EQUIVALENCE.md`, which records the gated sha and the test-count accounting.
 
-**The track is now PUSHED.** `origin/main` was `88c5857` (T11) and the published 0.3.0 wheel
-(`dc1ffec`) is T1–T10; on 2026-08-12 Mit authorised the push and `88c5857..8c3dd9f` went to
-`origin/main` after a re-run `gitleaks` over the unpushed range (exit 0, captured unpiped, no leaks).
-**The remote reported "Bypassed rule violations — 6 of 6 required status checks are expected":** it
-went straight to `main` past branch protection, so CI ran *on* `main` rather than gating the push.
-Check that run before treating the remote as verified.
+**The track is now PUSHED.** `origin/main` was `88c5857` (T11); the published 0.3.0 wheel (`dc1ffec`)
+is T1–T10. Mit authorised the push on 2026-08-12. **The remote reported "Bypassed rule violations — 6
+of 6 required status checks are expected":** pushes go straight to `main` past branch protection, so
+CI runs *on* `main` rather than gating the push. Check the run before treating the remote as verified.
 
-**2. The review loop is CLOSED (D-137).** Five rounds: two lenses on T18's build (REWORK, REWORK, each
-finding a BLOCKING the other missed), one on its 10-commit fix round (REWORK), one on those fixes
-(REWORK — 2 BLOCKING), and round five (**APPROVE**, 14 claims verified, 11 of 12 mutations red). D-126's
-stopping rule is satisfied and **the exit criterion was written down before round five ran**. T19's guide
-has its own docs-only review: **APPROVE**, 0 BLOCKING, 37 claims verified. Reports:
-`.agent/GATE-A-CLOSING-REVIEW.md`, `-ROUND5-REVIEW.md`, `.agent/GUIDE-DOCS-REVIEW.md`,
-`.agent/T18-REVIEW-LENS-A.md`, `-BOUNDARY.md`, `.agent/T18-FIXROUND-REVIEW.md`. **Do not re-run any of
-them.**
+**2. The review loop is CLOSED (D-137).** Five rounds, each finding a defect in the one before it;
+round five APPROVE, 11 of 12 mutations red, exit criterion written down before it ran. T19's guide has
+its own docs-only review (APPROVE, 37 claims). Six reports in `.agent/`. **Do not re-run any of them.**
 
-**3. The acceptance clauses are demonstrated.** The design's Gate A section lists eleven; eight are driven
-end to end through the real CLI against the packaged synthetic example by `.agent/gate-a/acceptance.sh`
-(re-runnable, 8 PASS / 0 FAIL), and clauses 7 and 9 (crash matrix, import idempotency) are cited to the
-suite that owns them, because a script driving the CLI once cannot establish them. Clause-by-clause map:
-`.agent/GATE-A-ACCEPTANCE.md`.
+**3. The acceptance clauses are demonstrated.** Eight of the design's eleven are driven end to end
+through the real CLI by `.agent/gate-a/acceptance.sh` (8 PASS / 0 FAIL); clauses 7 and 9 are cited to
+the suite that owns them. Map: `.agent/GATE-A-ACCEPTANCE.md`.
 
 **The last open question is ANSWERED (D-143).** Mit ruled on 2026-08-12 that `add-evidence` writes the
 back-citation itself, default on. The premise the question had been framed on was false — `add_evidence`
