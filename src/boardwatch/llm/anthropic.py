@@ -11,8 +11,14 @@ from typing import Any
 
 import httpx
 
-from boardwatch.llm.client import LLMError, LLMTransientError
-from boardwatch.llm.retry import parse_retry_after, request_with_retry
+from boardwatch.llm.client import (
+    LaneDeathReason,
+    LLMError,
+    LLMLaneDeadError,
+    LLMTransientError,
+    lane_death_reason,
+)
+from boardwatch.llm.retry import parse_retry_after, request_with_retry, safe_json
 
 # Timeout for HTTP requests in seconds
 _TIMEOUT = 30.0
@@ -20,6 +26,16 @@ _TIMEOUT = 30.0
 # Retryable per D-040: rate limit + server-side transients. Anything else is
 # a non-retryable LLMError.
 _RETRYABLE_STATUSES = frozenset({429, 500, 502, 503, 504})
+
+# Anthropic's documented error types that mean the credential cannot serve any
+# further call. Closed catalog: anything else is an ordinary LLMError. Status
+# alone is insufficient -- 403 carries BOTH `billing_error` and
+# `permission_error`, which mean different things.
+_LANE_DEATH_TYPES = {
+    "billing_error": LaneDeathReason.CREDIT_EXHAUSTED,
+    "authentication_error": LaneDeathReason.CREDENTIAL_INVALID,
+    "permission_error": LaneDeathReason.MODEL_FORBIDDEN,
+}
 
 
 class AnthropicClient:
@@ -86,13 +102,19 @@ class AnthropicClient:
         def _do_request() -> str:
             response = client.post(url, json=payload, headers=headers, timeout=_TIMEOUT)
 
-            # Transient (retryable) vs. flat (non-retryable) HTTP errors
-            if response.status_code in _RETRYABLE_STATUSES:
-                raise LLMTransientError(
-                    f"HTTP {response.status_code}: {response.text}",
-                    retry_after=parse_retry_after(response),
-                )
+            # Lane death is checked FIRST: it is terminal, so it must not be
+            # retried even when it arrives on an otherwise-retryable status.
             if response.status_code < 200 or response.status_code >= 300:
+                reason = lane_death_reason(safe_json(response), table=_LANE_DEATH_TYPES)
+                if reason is not None:
+                    raise LLMLaneDeadError(
+                        f"HTTP {response.status_code}: {response.text}", reason=reason
+                    )
+                if response.status_code in _RETRYABLE_STATUSES:
+                    raise LLMTransientError(
+                        f"HTTP {response.status_code}: {response.text}",
+                        retry_after=parse_retry_after(response),
+                    )
                 raise LLMError(f"HTTP {response.status_code}: {response.text}")
 
             # Parse and validate the response

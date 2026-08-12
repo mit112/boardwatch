@@ -1,15 +1,19 @@
 """Lane-death classification, latching, and factory wiring (P3 slice 5, D-146)."""
 
+import time
+
 import httpx
 import pytest
+import respx
 
+from boardwatch.llm.anthropic import AnthropicClient
 from boardwatch.llm.client import (
     LaneDeathReason,
     LLMError,
     LLMLaneDeadError,
     lane_death_reason,
 )
-from boardwatch.llm.retry import safe_json
+from boardwatch.llm.retry import DEFAULT_ATTEMPTS, safe_json
 
 _TABLE = {
     "billing_error": LaneDeathReason.CREDIT_EXHAUSTED,
@@ -61,3 +65,58 @@ def test_safe_json_returns_none_instead_of_raising():
     assert safe_json(httpx.Response(403, json={"error": {"type": "x"}})) == {
         "error": {"type": "x"}
     }
+
+
+@pytest.fixture(autouse=True)
+def _no_real_sleeps(monkeypatch: pytest.MonkeyPatch) -> None:
+    # Retry backoff must never cost real wall-clock time in tests (D-040).
+    monkeypatch.setattr(time, "sleep", lambda _seconds: None)
+
+
+_ANTHROPIC_URL = "https://api.anthropic.com/v1/messages"
+
+# Hand-written from Anthropic's documented error bodies -- NOT generated from
+# the mapping under test, which would agree with itself (spec §7.1 test 1).
+_ANTHROPIC_CASES = [
+    (403, "billing_error", LaneDeathReason.CREDIT_EXHAUSTED),
+    (401, "authentication_error", LaneDeathReason.CREDENTIAL_INVALID),
+    (403, "permission_error", LaneDeathReason.MODEL_FORBIDDEN),
+]
+
+
+@pytest.mark.parametrize(("status", "error_type", "expected"), _ANTHROPIC_CASES)
+@respx.mock
+def test_anthropic_classifies_lane_death(status, error_type, expected):
+    route = respx.post(_ANTHROPIC_URL).mock(
+        return_value=httpx.Response(status, json={"error": {"type": error_type}})
+    )
+    with pytest.raises(LLMLaneDeadError) as caught:
+        AnthropicClient("m", "k").complete("hi")
+    assert caught.value.reason is expected
+    # Terminal, so it must not be retried.
+    assert route.call_count == 1
+
+
+def test_anthropic_cases_cover_every_reason():
+    # Read the catalog at RUN TIME. A hard-coded list would let the mapping
+    # silently cover a subset and still pass (D-142: a 4-class list passed
+    # 98/98 while covering 5 of 13).
+    assert {expected for _, _, expected in _ANTHROPIC_CASES} == set(LaneDeathReason)
+
+
+@respx.mock
+def test_anthropic_unknown_error_type_is_not_lane_death():
+    respx.post(_ANTHROPIC_URL).mock(
+        return_value=httpx.Response(400, json={"error": {"type": "invalid_request_error"}})
+    )
+    with pytest.raises(LLMError) as caught:
+        AnthropicClient("m", "k").complete("hi")
+    assert not isinstance(caught.value, LLMLaneDeadError)
+
+
+@respx.mock
+def test_anthropic_429_without_a_death_token_still_retries():
+    route = respx.post(_ANTHROPIC_URL).mock(return_value=httpx.Response(429))
+    with pytest.raises(LLMError):
+        AnthropicClient("m", "k").complete("hi")
+    assert route.call_count == DEFAULT_ATTEMPTS
