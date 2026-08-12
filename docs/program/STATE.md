@@ -29,6 +29,22 @@ old link points at a dead path on a new host.
 7 days of runs (the window must start after D-110, which changed which callers advance the queue), and
 "0 dead postings" needs a real run whose leads are actually probed.
 
+**SESSION 2026-08-12 ENDED EARLY (usage). Read `.agent/NEXT-SESSION-GATE-A.md` FIRST — it is the
+accurate handoff and this file's Gate A branch table below is now STALE.** In short: the integration
+branch `t18-cli` HEAD **`a64e6fa`** carries **all 19 Gate A slices** (main's fixes, T16 + its
+11-commit fix round, T18 + its 10-commit fix round, T19's contract checks, the `digest.py`
+quarantined fix, the rewritten CHANGELOG). A `make check` was **running on it when the session
+ended** — log `/Users/mitsheth/dev/projectY/bw-wt/gate-final.log`; read `GATE_EXIT` and the pytest
+summary, and re-run if that line is absent. The prior gate on `e4d79aa` was **exit 0 · 5,831 passed
+· 95.59%**. **Still owed:** the final gate result, an independent review of **T18's fix round**
+(D-126's stopping rule is NOT satisfied — both lenses found a qualifying BLOCKING), the authoring
+guide (agent was mid-flight on `t19-authoring-guide`), T19's docs-only reviewer, and DECISIONS /
+METRICS entries for this session. **Gate A is NOT met.**
+
+**OPEN QUESTION 3 for Mit, unresolved:** `evidence_link_asymmetry` is now a permanent outcome of
+every successful `add-evidence`, so §19's authoring flow cannot end clean on that shape. Same class
+as the BLOCKING just fixed. Not to be resolved by fiat.
+
 **Next action, in order:** (1) finish Gate A — T16's fix round and T18's build are both in flight on
 `t18-cli`'s lineage, then T19; **gate the integration branch once rather than per slice**, and review T18
 with two lenses (one on the tailor boundary) and T19 with a docs-only reviewer; (2) start accumulating
