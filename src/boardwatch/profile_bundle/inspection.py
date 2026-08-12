@@ -51,6 +51,7 @@ from pathlib import Path, PurePosixPath
 
 from pydantic import BaseModel, ValidationError
 
+from boardwatch.profile_bundle.authoring import AUTHORING_TEMP_PREFIX
 from boardwatch.profile_bundle.blobs import BLOB_TEMP_PREFIX, stored_digests
 from boardwatch.profile_bundle.canonical import (
     EVIDENCE_PATH,
@@ -220,6 +221,15 @@ def inventory(bundle_root: Path) -> OperationOutcome[InventoryReport]:
     drafts, interrupted, stray_drafts = _draft_names(bundle_root)
     findings.extend(
         _orphans(f"{DRAFTS_DIR}/", interrupted, "an interrupted draft installation, left in place")
+    )
+    findings.extend(
+        _orphans(
+            "",
+            _authoring_residue(bundle_root),
+            "a staged document an interrupted authoring command did not rename; it is safe to "
+            "delete, and until it is, every command that loads this draft refuses it as an "
+            "undeclared file",
+        )
     )
     findings.extend(
         _orphans(
@@ -484,6 +494,33 @@ def _local_sources(
         )
         for source_id in sorted(sidecar.resolved_source_ids() - declared)
     )
+
+
+def _authoring_residue(bundle_root: Path) -> tuple[str, ...]:
+    """Every staged authoring document left behind inside a draft, as a bundle-relative path.
+
+    `authoring` renames each staged document into place; a hard exit between two of those renames
+    leaves the rest as `.tmp-authoring-*` files. That window is accepted (§21 names it rather than
+    promising a rollback a killed process cannot perform) — but a bucket with no reader is a leak,
+    and this residue is not inert: it is an undeclared file inside the draft, so the loader refuses
+    the whole draft until it is gone, which hides whatever else the interrupted command left half
+    done.
+
+    Reported here rather than skipped in the loader. Skipping would make the draft usable again and
+    the residue invisible, trading a loud recoverable state for a quiet permanent one. `drafts/` is
+    otherwise deliberately not walked — a draft may hold anything the owner likes — and this looks
+    for exactly one prefix, the one `authoring` itself declares, so an operator's own `notes.txt` is
+    never described as ours.
+    """
+    directory = drafts_dir(bundle_root)
+    if not directory.is_dir():
+        return ()
+    found = [
+        path.relative_to(bundle_root).as_posix()
+        for path in sorted(directory.rglob(f"{AUTHORING_TEMP_PREFIX}*"))
+        if path.is_file()
+    ]
+    return tuple(found)
 
 
 def _orphans(prefix: str, names: Iterable[str], why: str) -> tuple[Diagnostic, ...]:

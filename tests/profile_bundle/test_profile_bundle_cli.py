@@ -518,7 +518,13 @@ def test_an_unreadable_blob_file_is_reported_as_io_not_as_a_defect(
 
     body = json.loads(result.output)
     (finding,) = body["diagnostics"]
+    # The CODE first: it is the one field a consumer branches on, and asserting only `cause` left
+    # this arm free to report `io_error` -- a could-not-complete member -- with 63 tests still green.
+    assert finding["code"] == "recheck_unavailable", result.output
+    assert IssueCode(finding["code"]) not in COULD_NOT_COMPLETE_CODES
     assert finding["details"].get("cause") == "io", result.output
+    # The strerror survives, path-free, so the operator learns it is theirs to fix.
+    assert "Permission denied" in finding["message"], result.output
     assert "This is a defect" not in result.output
     assert "error_type" not in finding["details"], result.output
     # And no absolute path: BundleIoError's own message carries one, so it must not be interpolated.

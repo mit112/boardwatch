@@ -138,7 +138,8 @@ RULING_INPUT: Final = PurePosixPath("--ruling-file")
 _EVIDENCE_ADAPTER: Final[TypeAdapter[AnyEvidence]] = TypeAdapter(EvidenceRecord)
 _RULING_ADAPTER: Final[TypeAdapter[RulingRecord]] = TypeAdapter(RulingRecord)
 
-_STAGING_PREFIX: Final = ".tmp-authoring-"
+#: Read back by `inspection._authoring_residue`, which is what gives the residue a drain.
+AUTHORING_TEMP_PREFIX: Final = ".tmp-authoring-"
 
 #: How an owner's decision leaves the group it rules on. `not_applicable` settles the group for the
 #: same reason `select_candidate` does — the owner has stated there is nothing left to decide — and
@@ -703,7 +704,7 @@ def _stage_beside(target: Path, raw: bytes) -> Path:
     the rename that follows is the part the filesystem makes atomic. Raises `OSError`; the caller
     names the file, because the path this failed on is not one a diagnostic may carry.
     """
-    handle, temporary = tempfile.mkstemp(dir=target.parent, prefix=_STAGING_PREFIX)
+    handle, temporary = tempfile.mkstemp(dir=target.parent, prefix=AUTHORING_TEMP_PREFIX)
     staged = Path(temporary)
     try:
         with os.fdopen(handle, "wb") as stream:

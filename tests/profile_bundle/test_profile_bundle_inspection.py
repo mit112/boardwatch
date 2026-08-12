@@ -14,6 +14,7 @@ from pathlib import Path, PurePosixPath
 
 import pytest
 
+from boardwatch.profile_bundle.authoring import AUTHORING_TEMP_PREFIX
 from boardwatch.profile_bundle.drafts import DRAFT_TEMP_PREFIX, init_draft
 from boardwatch.profile_bundle.errors import IssueCode
 from boardwatch.profile_bundle.inspection import conflicts_report, inspect_record, inventory
@@ -38,6 +39,7 @@ from boardwatch.profile_bundle.yaml_loader import load_yaml_bytes
 from tests.profile_bundle.conftest import (
     BLOB_SHA256,
     PromotedRevisionTree,
+    materialise,
     promote_next_revision,
     quoted_yaml,
 )
@@ -623,3 +625,41 @@ def test_no_read_command_adopts_a_leftover_directory(
     assert current_path(promoted_tree.bundle_root).read_bytes() == pointer
     assert json.loads(pointer)["bundle_digest"] == promoted_tree.bundle_digest
     assert _snapshot(promoted_tree.bundle_root) == before
+
+
+def test_inventory_reports_a_staged_authoring_document_left_by_an_interrupted_command(
+    tmp_path: Path,
+) -> None:
+    """The accepted crash window leaves residue, and a bucket with no reader is a leak.
+
+    A hard exit between two of `authoring`'s renames leaves the un-renamed documents as
+    `.tmp-authoring-*` files. §21 accepts that window — a killed process cannot run compensation —
+    but the residue is not inert: it is an undeclared file inside the draft, so the loader refuses
+    the whole draft until it is gone, which hides whatever else the interrupted command left half
+    done. `inventory` reported it in neither `temporary_entries` nor `undeclared_root_entries`,
+    while reporting the same shape one directory up, so nothing anywhere read the prefix back.
+
+    The prefix is imported from the writer that produces it, so this cannot drift from what
+    `authoring` actually writes — the same rule `BLOB_TEMP_PREFIX` and `DRAFT_TEMP_PREFIX` follow.
+    """
+    bundle = materialise(tmp_path / "career-profile")
+    residue = bundle.draft / f"{AUTHORING_TEMP_PREFIX}zb92d3p7"
+    residue.write_bytes(b"staged: bytes\n")
+    # An operator's own file in the same directory must NOT be described as ours.
+    (bundle.draft / "NOTES.txt").write_text("mine, not the tool's\n")
+
+    report = inventory(bundle.root)
+
+    named = [
+        finding.path
+        for finding in report.diagnostics
+        if finding.code == IssueCode.ORPHANED_ARTEFACT
+    ]
+    assert residue.relative_to(bundle.root).as_posix() in named, named
+    assert not any(path is not None and path.endswith("NOTES.txt") for path in named), named
+    # `information`, so a leftover never changes an exit code -- it is a report, not a refusal.
+    assert all(
+        finding.tier == "information"
+        for finding in report.diagnostics
+        if finding.code == IssueCode.ORPHANED_ARTEFACT
+    )

@@ -898,6 +898,37 @@ collection and cleanup deletion are **forbidden** in this phase.
 
 ## 15. Recovery
 
+### An authoring command was interrupted: `partial_edit_applied`
+
+`add-evidence` and `resolve-conflict` each change **two** documents — a record file and the manifest
+digest that describes it, or the two conflict documents. Both are written to temporary files first and
+then renamed into place, so anything that can be reported (a full disk, an unwritable directory) fails
+before the first rename and leaves the draft byte-identical.
+
+Two documents at different paths cannot be renamed as one operation, so a narrow window remains. If a
+later rename fails, the command says so rather than pretending nothing happened:
+
+```console
+$ boardwatch profile-bundle add-evidence --bundle <root> --draft baseline \
+    --evidence-file <file> --capture <file>
+profile-bundle add-evidence: findings
+error: partial_edit_applied (manifest.yaml): manifest.yaml could not be rewritten: Operation not permitted. The change is half applied: evidence/records.yaml was rewritten and this one was not, so the draft is inconsistent until you repair it or discard the draft. Retrying the same command will refuse, because the part that landed is already there
+EXIT=1
+```
+
+**Exit 1, not 3, on purpose.** Exit 3 means nothing usable happened and the caller may retry; here
+something did happen, and the retry would refuse with `duplicate_record_id` against the record that
+landed. `details.applied` lists the documents that were written.
+
+The way out is to fix the cause and re-run `validate`, which will report the inconsistency (typically
+`evidence_set_digest_mismatch`) — or to discard the draft and check out a fresh one, since a draft is
+never the only copy of anything promoted. Promotion recomputes the evidence digest itself, so a draft
+in this state is not permanently lost.
+
+If the process is killed outright between the two renames, the un-renamed document is left as a
+`.tmp-authoring-*` file inside the draft. That file is an undeclared entry, so every command that
+loads the draft refuses it until the file is gone; `inventory` names it and says it is safe to delete.
+
 ### The parent moved: `stale_draft_parent` → `rebase-draft`
 
 ```console

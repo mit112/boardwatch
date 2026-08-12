@@ -282,13 +282,21 @@ def _guarded(
     """
     try:
         return call()
-    except BundleIoError:
+    except BundleIoError as exc:
         # A `ProfileBundleError` whose cause is I/O, so it must not be reported as a defect and its
         # `cause` must not say `internal`. Caught ahead of the base class because `except` order is
         # the only thing that separates them, and the two arms disagree about what the operator
-        # should do: one is theirs to fix, the other is ours. Deliberately not interpolated —
-        # `BundleIoError` is built from `str(OSError)`, which appends the absolute path it hit.
+        # should do: one is theirs to fix, the other is ours.
+        #
+        # Its own message is deliberately NOT interpolated — it is built from `str(OSError)`, which
+        # appends the absolute path it hit. The reason is recovered from the chained exception
+        # instead, where `io_reason` renders the strerror alone: "Permission denied" tells an
+        # operator this is theirs to fix, and dropping it left the file case saying strictly less
+        # than the directory case for the same underlying errno.
+        reason = io_reason(exc.__cause__) if isinstance(exc.__cause__, OSError) else None
         io_message = f"{unable}: the bundle could not be read or written"
+        if reason is not None:
+            io_message = f"{io_message} ({reason})"
         if after_write:
             return outcome_with(
                 None, (diagnostic(IssueCode.RECHECK_UNAVAILABLE, io_message, cause="io"),)
