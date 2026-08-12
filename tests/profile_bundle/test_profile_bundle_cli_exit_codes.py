@@ -283,6 +283,31 @@ def test_an_unreadable_drafts_directory_could_not_complete(
     assert str(tmp_path) not in result.output, result.output
 
 
+def test_a_mistyped_bundle_path_is_a_finding_on_every_reading_command(
+    env: Env, tmp_path: Path
+) -> None:
+    """One fact, one code, across the surface. These four each used to answer differently — two
+    named a missing revision, one named a missing draft, and `inventory` reported clean at exit 0 —
+    so an operator who mistyped `--bundle` was sent looking inside a bundle that was not there."""
+    absent = str(tmp_path / "no-such-bundle")
+    commands = (
+        ["inventory"],
+        ["validate"],
+        ["conflicts"],
+        ["rebase-draft", "--draft", "initial"],
+    )
+
+    for command in commands:
+        result = run(env, [*command, "--bundle", absent, "--json"])
+        assert result.exit_code == 1, (command, result.output)
+        body = payload(result)
+        assert body["outcome"] == "findings", (command, result.output)
+        assert [finding["code"] for finding in body["diagnostics"]] == [  # type: ignore[index,union-attr]
+            "bundle_not_found"
+        ], (command, result.output)
+    assert not (tmp_path / "no-such-bundle").exists()
+
+
 def test_a_bundle_root_that_is_a_file_could_not_complete(env: Env, tmp_path: Path) -> None:
     not_a_bundle = tmp_path / "file-not-a-directory"
     not_a_bundle.write_text("", encoding="utf-8")

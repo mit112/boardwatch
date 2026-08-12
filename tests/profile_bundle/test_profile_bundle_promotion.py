@@ -643,7 +643,7 @@ def test_a_path_that_is_not_a_bundle_is_refused_without_being_created(tmp_path: 
     outcome = promote(tmp_path / "not-a-bundle", _request())
 
     assert outcome.exit_code == 1
-    assert _codes(outcome) == [IssueCode.DRAFT_NOT_FOUND]
+    assert _codes(outcome) == [IssueCode.BUNDLE_NOT_FOUND]
     assert not (tmp_path / "not-a-bundle").exists()
 
 

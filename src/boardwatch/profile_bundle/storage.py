@@ -105,7 +105,7 @@ class SelectedRevision:
     bundle_digest: str
 
 
-def require_confined_root(bundle_root: Path) -> None:
+def require_confined_root(bundle_root: Path, *, must_exist: bool = True) -> None:
     """Refuse a bundle root that reaches outside itself through any path its identity is read from.
 
     §6 says the active revision and all required evidence are self-contained under one root, and §7
@@ -123,7 +123,21 @@ def require_confined_root(bundle_root: Path) -> None:
     is the blob bytes read into `evidence_set_digest`. Closing that window needs `openat`/
     `O_NOFOLLOW` per component, which nothing here attempts; the check narrows the exposure to the
     interval rather than eliminating it.
+
+    `must_exist` carries the only distinction between reading a bundle and creating one, and it is
+    stated here because every reading surface already enters through this function: a reading
+    surface added later inherits the refusal instead of restating it. `init_draft` passes `False`,
+    the root not yet being there being the normal case for the command whose job is to create it.
+    The refusing value is the default deliberately — a writer that forgets the argument gets the
+    safe answer, and the alternative default let `inventory` report a mistyped `--bundle` as a
+    clean, empty bundle at exit 0.
     """
+    if must_exist and not bundle_root.is_dir():
+        raise SelectionError(
+            IssueCode.BUNDLE_NOT_FOUND,
+            "the path given as the bundle root is not a directory; nothing was read and nothing "
+            "was created, so check the argument before looking for a missing revision or draft",
+        )
     resolved_root = bundle_root.resolve()
     for member in sorted(ROOT_MEMBERS):
         _require_derived_location(bundle_root / member, bundle_root, resolved_root)

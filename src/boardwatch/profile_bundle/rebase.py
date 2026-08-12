@@ -147,7 +147,7 @@ def rebase_draft(bundle_root: Path, *, name: str) -> OperationOutcome[DraftHandl
     # would otherwise leave a new empty directory behind as the only trace of a failed command.
     if not bundle_root.is_dir():
         return _refusal(
-            IssueCode.NO_CURRENT_REVISION,
+            IssueCode.BUNDLE_NOT_FOUND,
             "there is no bundle at the requested path, so there is no revision to rebase onto",
         )
     try:

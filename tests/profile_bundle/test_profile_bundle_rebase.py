@@ -1140,7 +1140,7 @@ def test_a_bundle_root_that_does_not_exist_is_refused_without_being_created(
     outcome = rebase_draft(tmp_path / "not-a-bundle", name=DRAFT_NAME)
 
     assert outcome.exit_code == 1
-    assert _codes(outcome) == [IssueCode.NO_CURRENT_REVISION]
+    assert _codes(outcome) == [IssueCode.BUNDLE_NOT_FOUND]
     assert not (tmp_path / "not-a-bundle").exists()
 
 

@@ -203,7 +203,9 @@ def init_draft(bundle_root: Path, *, name: str) -> OperationOutcome[DraftHandle]
     a second parentless draft could otherwise be promoted as a revision 1 that replaced history.
     """
     draft_name = require_draft_name(name)
-    if (refusal := _unconfined(bundle_root)) is not None:
+    # The one caller that runs before the root exists: `_ensure_skeleton` below creates it, so an
+    # absent root is this command's normal input rather than a mistyped argument.
+    if (refusal := _unconfined(bundle_root, must_exist=False)) is not None:
         return refusal
     if current_path(bundle_root).exists():
         return _refusal(
@@ -618,10 +620,12 @@ def _refusal(code: IssueCode, message: str) -> OperationOutcome[DraftHandle]:
     return outcome_with(None, (diagnostic(code, message),))
 
 
-def _unconfined(bundle_root: Path) -> OperationOutcome[DraftHandle] | None:
+def _unconfined(
+    bundle_root: Path, *, must_exist: bool = True
+) -> OperationOutcome[DraftHandle] | None:
     """`require_confined_root` as a refusal, so both commands enter through the one check."""
     try:
-        require_confined_root(bundle_root)
+        require_confined_root(bundle_root, must_exist=must_exist)
     except SelectionError as exc:
         return _refusal(exc.code, str(exc))
     return None

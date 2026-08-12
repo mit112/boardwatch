@@ -193,6 +193,11 @@ class IssueCode(StrEnum):
     MISSING_APPROVAL_STAMP = "missing_approval_stamp"
     STALE_APPROVAL_STAMP = "stale_approval_stamp"
     DRAFT_NOT_FOUND = "draft_not_found"
+    #: The path named as the bundle root is not a directory. Distinct from every code below it
+    #: because those describe something absent *inside* a bundle, and answering "there is no
+    #: CURRENT" or "choose another draft name" about a path that does not exist sends the owner
+    #: looking for a missing revision instead of at the argument they mistyped.
+    BUNDLE_NOT_FOUND = "bundle_not_found"
     DRAFT_ALREADY_EXISTS = "draft_already_exists"
     CURRENT_ALREADY_EXISTS = "current_already_exists"
     NO_CURRENT_REVISION = "no_current_revision"
@@ -260,6 +265,7 @@ STATE_REFUSAL_CODES: frozenset[IssueCode] = frozenset(
         IssueCode.MISSING_APPROVAL_STAMP,
         IssueCode.STALE_APPROVAL_STAMP,
         IssueCode.DRAFT_NOT_FOUND,
+        IssueCode.BUNDLE_NOT_FOUND,
         IssueCode.DRAFT_ALREADY_EXISTS,
         IssueCode.CURRENT_ALREADY_EXISTS,
         IssueCode.NO_CURRENT_REVISION,

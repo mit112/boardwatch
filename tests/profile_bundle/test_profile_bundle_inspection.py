@@ -92,6 +92,22 @@ def test_inventory_on_a_bundle_that_has_never_promoted_is_clean(tmp_path: Path) 
     assert report.drafts == ("initial",)
 
 
+def test_inventory_on_a_root_that_does_not_exist_is_refused_rather_than_clean(
+    tmp_path: Path,
+) -> None:
+    """The contrast with the test above, and the reason `bundle_not_found` exists: an empty bundle
+    and an absent one are different answers. Reporting a mistyped `--bundle` as a clean, empty
+    bundle at exit 0 tells the operator their bundle holds nothing, which is true of a path that
+    holds nothing because it is not there."""
+    outcome = inventory(tmp_path / "no-such-bundle")
+
+    assert outcome.category == "findings"
+    assert outcome.exit_code == 1
+    assert [finding.code for finding in outcome.diagnostics] == [IssueCode.BUNDLE_NOT_FOUND]
+    assert outcome.value is None
+    assert not (tmp_path / "no-such-bundle").exists()
+
+
 def test_inventory_reports_a_corrupt_selection_without_touching_it(
     promoted_tree: PromotedRevisionTree,
 ) -> None:

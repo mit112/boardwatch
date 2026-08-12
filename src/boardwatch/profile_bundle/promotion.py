@@ -231,7 +231,7 @@ def promote(
     # would otherwise leave a new empty directory behind as the only trace of a failed command.
     if not bundle_root.is_dir():
         return _refusal(
-            IssueCode.DRAFT_NOT_FOUND,
+            IssueCode.BUNDLE_NOT_FOUND,
             "there is no bundle at the requested path, so there is no draft to promote",
         )
     try:
