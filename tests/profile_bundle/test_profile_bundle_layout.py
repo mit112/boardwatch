@@ -9,11 +9,12 @@ empty" from being indistinguishable from "the catalog is gone".
 
 from __future__ import annotations
 
+import os
 from pathlib import Path, PurePosixPath
 
 import pytest
 
-from boardwatch.profile_bundle.errors import BundleLayoutError
+from boardwatch.profile_bundle.errors import BundleLayoutError, IssueCode
 from boardwatch.profile_bundle.layout import (
     ENTITY_DOCUMENT_DIRECTORIES,
     FIXED_DOCUMENTS,
@@ -23,6 +24,7 @@ from boardwatch.profile_bundle.layout import (
     missing_fixed_documents,
     owner_for_path,
 )
+from boardwatch.profile_bundle.validation.context import parse_error_diagnostics
 
 DECLARED_TAILORING_REFUSALS = (
     "policy/persona.yaml",
@@ -186,6 +188,30 @@ def test_symlinked_document_is_refused_before_its_bytes_are_read(tmp_path: Path)
     (tmp_path / "facts" / "identity.yaml").symlink_to(outside)
     with pytest.raises(BundleLayoutError):
         discover_source_files(tmp_path, final_revision=False)
+
+
+def test_fifo_document_is_refused_before_its_bytes_are_read(tmp_path: Path) -> None:
+    """A FIFO at a declared document's path must be refused, never opened.
+
+    `discover_source_files` only classifies each entry; nothing here calls `open()`, so this test
+    cannot hang even if the guard regresses — it would instead fail `pytest.raises` outright,
+    because an unguarded `discover_source_files` returns the FIFO as an ordinary `SourceFile`
+    without reading it. The hang, if any, happens one layer up, in whichever caller then tries to
+    read the bytes this function handed back.
+    """
+    _write_tree(tmp_path, _complete_tree())
+    fifo_path = tmp_path / "facts" / "education.yaml"
+    fifo_path.unlink()
+    os.mkfifo(fifo_path)
+    with pytest.raises(BundleLayoutError) as excinfo:
+        discover_source_files(tmp_path, final_revision=False)
+    assert "facts/education.yaml" in str(excinfo.value)
+    assert "not a regular file" in str(excinfo.value)
+    # The field a consumer actually branches on: the diagnostic code this exception maps to at the
+    # command boundary, not just the message a human reads.
+    diagnostics = parse_error_diagnostics(excinfo.value)
+    assert len(diagnostics) == 1
+    assert diagnostics[0].code == IssueCode.UNKNOWN_FILE
 
 
 def test_symlinked_directory_is_refused(tmp_path: Path) -> None:

@@ -19,6 +19,7 @@ validation, because only the parse knows what the file actually contains.
 from __future__ import annotations
 
 import re
+import stat
 from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
 from enum import StrEnum
@@ -177,6 +178,15 @@ def discover_source_files(root: Path, *, final_revision: bool) -> tuple[SourceFi
     A final revision permits exactly one non-source file, `COMPLETE`; a draft permits none.
     Symlinks are refused before any bytes are read: a symlinked document would let content from
     outside the bundle enter its digest, and the bundle's self-containment claim would be false.
+
+    Every entry this returns is later opened for reading — by `load_documents`, by promotion's
+    verbatim copy, by `checkout`'s copy of a parent's tree — and none of those readers takes a
+    timeout. A FIFO or a socket is neither a symlink nor a directory, so it would otherwise reach
+    `found` and the first of those readers would block in `open()` forever, holding the bundle lock
+    for `promote`. The regular-file check is one `lstat` per entry, the same shape
+    `storage._require_stored_blob` uses for the blob store and for the same reason: the entry has
+    already been proven not to be a symlink, so the only remaining question is whether it is content
+    with bytes to read at all.
     """
     found: list[SourceFile] = []
     for abspath in sorted(root.rglob("*")):
@@ -195,6 +205,11 @@ def discover_source_files(root: Path, *, final_revision: bool) -> tuple[SourceFi
                 continue
             raise BundleLayoutError(
                 f"{COMPLETE_FILE} is permitted only inside a final revision, not in a draft"
+            )
+        if not stat.S_ISREG(abspath.lstat().st_mode):
+            raise BundleLayoutError(
+                f"{relative}: is not a regular file; a bundle document is read as bytes, and a "
+                "directory, device or named pipe has none to give"
             )
         found.append(
             SourceFile(logical_path=relative, abspath=abspath, kind=owner_for_path(relative))
