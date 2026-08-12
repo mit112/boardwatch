@@ -15,9 +15,12 @@ which is what makes an accidental consolidation fail here rather than in a user'
 
 from __future__ import annotations
 
+import ast
 import json
 import unicodedata
 from pathlib import Path
+
+import pytest
 
 from boardwatch.eligibility.catalog import _version_of as catalog_version_of
 from boardwatch.eligibility.hashing import canonical as eligibility_canonical
@@ -98,17 +101,77 @@ def test_the_three_version_of_helpers_disagree_with_the_bundle_serializer() -> N
     assert persona_version_of(PAYLOAD) != bundle
 
 
+CANONICAL_MODULE = "boardwatch.profile_bundle.canonical"
+BUNDLE_PACKAGE = "boardwatch.profile_bundle"
+
+
+def reaches_the_bundle_serializer(source: str) -> bool:
+    """Whether `source` gets hold of the bundle's private serializer, by any spelling.
+
+    Two lenses, because neither sees the other's cases. The dotted substring catches a name
+    assembled for `importlib` and any attribute path a parser would not recognise as an import;
+    the AST catches `from boardwatch.profile_bundle import canonical`, which contains no dotted
+    path at all and is the form every other sibling module is imported by in
+    `cli/profile_bundle_cmd.py`. A guard written against only the first catches the one instance
+    that was removed and not the class it belongs to.
+    """
+    if f"{BUNDLE_PACKAGE}.canonical" in source:
+        return True
+    for node in ast.walk(ast.parse(source)):
+        if isinstance(node, ast.Import) and any(
+            alias.name == CANONICAL_MODULE or alias.name.startswith(f"{CANONICAL_MODULE}.")
+            for alias in node.names
+        ):
+            return True
+        if isinstance(node, ast.ImportFrom) and node.module is not None:
+            if node.module == CANONICAL_MODULE or node.module.startswith(f"{CANONICAL_MODULE}."):
+                return True
+            if node.module == BUNDLE_PACKAGE and any(
+                alias.name == "canonical" for alias in node.names
+            ):
+                return True
+    return False
+
+
+@pytest.mark.parametrize(
+    ("source", "reaches"),
+    [
+        ("from boardwatch.profile_bundle.canonical import digest_of", True),
+        ("import boardwatch.profile_bundle.canonical", True),
+        # The spelling the substring lens cannot see, and the one a next author would reach for:
+        # it is how `cli/profile_bundle_cmd.py` imports every other sibling in the package.
+        ("from boardwatch.profile_bundle import canonical", True),
+        ("from boardwatch.profile_bundle import canonical as bundle_hash", True),
+        ("def later():\n    from boardwatch.profile_bundle import canonical\n", True),
+        ("importlib.import_module('boardwatch.profile_bundle.canonical')", True),
+        # Controls: reaching the package, or a differently-named module in it, is not this.
+        ("from boardwatch.profile_bundle import authoring, drafts", False),
+        ("import boardwatch.profile_bundle", False),
+        ("from boardwatch.eligibility.hashing import canonical", False),
+        ("canonical = {'not': 'an import'}", False),
+    ],
+)
+def test_the_guard_sees_every_spelling_of_the_forbidden_import(source: str, reaches: bool) -> None:
+    """The guard's own positive controls, so it is not merely agreeing with the tree it scans.
+
+    A detector asserted only against a clean repository passes for every reason including being
+    unable to fire, which is exactly how the previous version of this check went blind to the one
+    import form the CLI already uses.
+    """
+    assert reaches_the_bundle_serializer(source) is reaches
+
+
 def test_no_existing_module_imports_the_bundle_serializer() -> None:
-    """The one-directional dependency, checked over source text rather than an import graph so a
-    lazily-imported reference inside a function is caught too."""
-    forbidden = "profile_bundle.canonical"
+    """The one-directional dependency: nothing outside the package touches the private serializer.
+
+    Its bytes are identity, and a second caller elsewhere is how a shared hash quietly acquires a
+    second meaning.
+    """
     offenders = []
     for path in (REPO_ROOT / "src" / "boardwatch").rglob("*.py"):
-        if path.parts[-2:] == ("profile_bundle", "canonical.py"):
-            continue
         if "profile_bundle" in path.parts:
             continue
-        if forbidden in path.read_text(encoding="utf-8"):
+        if reaches_the_bundle_serializer(path.read_text(encoding="utf-8")):
             offenders.append(path.relative_to(REPO_ROOT).as_posix())
     assert offenders == []
 
