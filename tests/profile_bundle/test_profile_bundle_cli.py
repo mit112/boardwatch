@@ -265,9 +265,9 @@ def _inline_evidence(text: str) -> dict[str, object]:
 
 #: The fact the captured attestation supports. An `owner_attestation` must support at least one
 #: fact (the evidence model says so) and §12 requires that fact to cite the evidence back — an edit
-#: `add_evidence` deliberately never makes, since it only appends to `evidence/records.yaml`. So
-#: `evidence_link_asymmetry` is the standing, operator-owed finding of this flow, and it is what the
-#: revalidation must report *instead of* anything about digest integrity.
+#: `add_evidence` now makes in the same operation (D-143), so this flow ends clean rather than
+#: leaving `evidence_link_asymmetry` for the operator. The revalidation must therefore report
+#: *nothing at all*, and in particular nothing about digest integrity.
 SUPPORTED_FACT = "fact.example.name.001"
 
 
@@ -280,7 +280,13 @@ def test_add_evidence_records_the_capture_and_revalidates(
     landed" and "what the draft still owes". The code set is asserted whole rather than by
     membership: the defect this pins was `add_evidence` writing an evidence set its own manifest no
     longer described, which reported `evidence_set_digest_mismatch` — §21's "evidence mutated after
-    promotion" — on every successful capture, so an extra code here is the failure mode.
+    promotion" — on every successful capture, so an extra code here is the failure mode. That is
+    what the empty set below is for, and asserting it whole is why it caught D-143's change to this
+    flow instead of passing through it.
+
+    Since D-143 the set is empty rather than `{evidence_link_asymmetry}`: the back-citation the fact
+    owes is written by the same operation, so a capture supporting a fact ends clean at exit 0 and
+    the gate it incurs is reported instead.
     """
     text = "The owner attests to the professional name recorded in this bundle."
     record = _write(tmp_path / "e.yaml", _inline_evidence(text), "evidence-record.yaml")
@@ -293,19 +299,24 @@ def test_add_evidence_records_the_capture_and_revalidates(
          "--capture", str(capture), "--json"],
     )
     body = json.loads(result.output)
-    assert {finding["code"] for finding in body["diagnostics"]} == {
-        "evidence_link_asymmetry"
-    }, result.output
+    assert {finding["code"] for finding in body["diagnostics"]} == set(), result.output
     # The outcome the codes imply, asserted rather than assumed. Without it the always-exit-1
     # answer of a capture that never restated its evidence-set digest was invisible to the suite.
-    assert result.exit_code == 1, result.output
+    assert result.exit_code == 0, result.output
+    # The back-citation is the reason the set above is empty, so it is asserted here rather than
+    # inferred from the absence of a finding: a fix that stopped REPORTING the asymmetry without
+    # writing the citation would pass every line above.
+    assert "evidence.example.cli.001" in synthetic_bundle.read("facts/identity.yaml")
+    assert {
+        (gate["action"], gate["target_record_id"]) for gate in body["result"]["owner_gates"]
+    } == {
+        ("approve_evidence_sufficiency", "evidence.example.cli.001"),
+        ("confirm_fact", SUPPORTED_FACT),
+    }, result.output
     assert body["result"]["evidence_id"] == "evidence.example.cli.001"
     assert body["result"]["capture_kind"] == "inline"
     assert body["result"]["blob_digest"] is None
     assert "evidence.example.cli.001" in synthetic_bundle.read("evidence/records.yaml")
-    assert [gate["action"] for gate in body["result"]["owner_gates"]] == [
-        "approve_evidence_sufficiency"
-    ]
 
 
 def test_add_evidence_refuses_a_secret_without_touching_the_draft(
