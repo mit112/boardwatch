@@ -41,6 +41,11 @@ both wanting their own context window.
 that (D-017). Every branch is local; `docs/superpowers/` holds
 the design and plan and is untracked — copy it into any worktree you create.
 
+**The branches survive; the worktrees do not.** `t16-promotion` and `t18-cli` are ordinary refs in
+this repo, so `git log t18-cli` works from anywhere. Their worktrees were checked out under a
+session-specific scratchpad that a later session will not have, so start with `git worktree prune`
+and re-create from the branch — do not conclude from a missing directory that the work is gone.
+
 | Branch | Head | Stands where |
 |---|---|---|
 | `t13-followup` | — | **MERGED** to main at `b87fa06`, gate exit 0 · 5,436 passed · 95.64%. Branch retained but done. |
