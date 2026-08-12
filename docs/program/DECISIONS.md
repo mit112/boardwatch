@@ -177,7 +177,7 @@ and is a no-op when the index is already right. `make index-check` reports drift
 | D-141 | DECISIONS.md | 4036 | The third site of the blocking-`open()` class is closed, at the layout boundary |
 | D-142 | DECISIONS.md | 4079 | D-138 delivered eight of twelve commands, and said twelve. The review that caught it, and what the surviving mutation cost |
 | D-143 | DECISIONS.md | 4148 | `add-evidence` writes the back-citation, closing Gate A's last open question |
-| D-144 | DECISIONS.md | 4226 | Grounding reads `supports` alone; citing a source is not being backed by it |
+| D-144 | DECISIONS.md | 4231 | Grounding reads `supports` alone; citing a source is not being backed by it |
 
 ---
 
@@ -4219,7 +4219,12 @@ document only `metric.*`, so filtering the target set by those prefixes cannot a
 test. It only short-circuits a scan that returns empty anyway. By this program's own rule a check that
 cannot fire is deleted, and the guarantee is already tested where it lands (the skill/claim case
 rewrites no document). Left in place in `cc489ac` rather than invalidating a gate already running on
-that sha; owed as a follow-up.
+that sha.
+
+**Closed.** Deleted in `f06fa67`, after a third confirmation independent of both the mutation and the
+reviewer's reading: `FactId` and `MetricId` are `id_pattern("fact")` and `id_pattern("metric")`, so
+the prefix is enforced by the model and a fact-bearing document cannot hold anything else. The rule it
+expressed stays in the docstring.
 
 ---
 

@@ -110,11 +110,15 @@ the closed review loop as evidence about the slices reviewed, not about the subs
 
 **Gate B stays prohibited until Gate A is met.** Start any Gate A session with `git worktree prune`.
 
-**Next action, in order:** (1) drop the `prefix_of(target) in ("fact", "metric")` filter in
-`_documents_citing_back` — a mutation proved it **cannot change behaviour** (29 passed with it removed),
-and by this program's rule a check that cannot fire is deleted; it is a one-line follow-up owing its own
-gate; (2) start accumulating real daily runs; (3) P2 item 8 or P3 slice 5, both owner-gated, both
-wanting their own context window.
+**The review's follow-ups are all closed.** The inert `prefix_of` filter is deleted (D-115's rule; three
+independent confirmations it could not fire — the surviving mutation, `RECORD_KIND_PREFIXES`, and
+`FactId`/`MetricId` being `id_pattern("fact")`/`id_pattern("metric")`), and `add-evidence` now names the
+documents it rewrote (`cited_back`, printed and in `--json`) — it had become an up-to-thirteen-file edit
+reporting none of them, which `owner_gates` does not cover because an ordinary fact incurs no gate.
+
+**Next action, in order:** (1) confirm CI is green on the pushed head — the Windows jobs are the thing
+to check, see below; (2) start accumulating real daily runs; (3) P2 item 8 or P3 slice 5, both
+owner-gated, both wanting their own context window and Mit's input.
 
 ---
 
