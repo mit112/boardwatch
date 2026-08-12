@@ -200,16 +200,15 @@ def test_a_draft_name_inventory_reports_is_accepted_by_the_commands_that_address
         result = run(env, [*args, "--json"])
         assert result.exit_code != 2, f"{args}: {result.output}"
 
-    # …and `promote` is where the wide grammar currently stops. `promotion.promote` applies
-    # `require_draft_name` to a draft it is only addressing, so a name this command layer accepted
-    # is refused one level down. Pinned as it behaves rather than as it should: the narrow check is
-    # a known finding against T16, and this test is what will go red when it is fixed. What T18
-    # owes is that the escape is *contained* — a typed refusal, no traceback, no absolute path.
+    # `promote` used to be where the wide grammar stopped: it applied `require_draft_name` to a
+    # draft it was only addressing, so a name this command layer accepted escaped as an uncaught
+    # `BundlePathError` — contained by T18 as an `internal_error` at exit 3, but still a name the
+    # drain could not get back in through. T16's fix round closed it at the source, so the refusal
+    # that comes back is now about the *draft* rather than about its name.
     refused = payload(run(env, ["promote", "--draft", derived, "--summary", "x", "--json"]))
     (finding,) = refused["diagnostics"]  # type: ignore[misc]
-    assert refused["exit_code"] == 3
-    assert finding["code"] == "internal_error"  # type: ignore[index]
-    assert finding["details"] == {"error_type": "BundlePathError"}  # type: ignore[index]
+    assert refused["exit_code"] == 1
+    assert finding["code"] == "draft_not_found"  # type: ignore[index]
 
 
 # --------------------------------------------------------------------------------------
