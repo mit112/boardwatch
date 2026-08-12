@@ -13,6 +13,7 @@ from boardwatch.llm.client import (
     LLMLaneDeadError,
     lane_death_reason,
 )
+from boardwatch.llm.openai_compat import OpenAICompatClient
 from boardwatch.llm.retry import DEFAULT_ATTEMPTS, safe_json
 
 _TABLE = {
@@ -120,3 +121,63 @@ def test_anthropic_429_without_a_death_token_still_retries():
     with pytest.raises(LLMError):
         AnthropicClient("m", "k").complete("hi")
     assert route.call_count == DEFAULT_ATTEMPTS
+
+
+_OPENAI_URL = "https://api.example.com/v1/chat/completions"
+
+
+def _openai() -> OpenAICompatClient:
+    return OpenAICompatClient("https://api.example.com/v1", "m", "k")
+
+
+@respx.mock
+def test_openai_compat_401_is_credential_death():
+    route = respx.post(_OPENAI_URL).mock(return_value=httpx.Response(401))
+    with pytest.raises(LLMLaneDeadError) as caught:
+        _openai().complete("hi")
+    assert caught.value.reason is LaneDeathReason.CREDENTIAL_INVALID
+    assert route.call_count == 1
+
+
+@respx.mock
+def test_openai_compat_402_is_credit_exhausted():
+    # DeepSeek signals an exhausted balance as HTTP 402.
+    respx.post(_OPENAI_URL).mock(return_value=httpx.Response(402))
+    with pytest.raises(LLMLaneDeadError) as caught:
+        _openai().complete("hi")
+    assert caught.value.reason is LaneDeathReason.CREDIT_EXHAUSTED
+
+
+@respx.mock
+def test_openai_compat_429_with_insufficient_quota_is_terminal_not_retried():
+    # OpenAI signals an exhausted balance as 429 + code `insufficient_quota`.
+    # Left to the status check alone this is retried 4x per posting and then
+    # swallowed -- the silent-success defect at 4x the call volume.
+    route = respx.post(_OPENAI_URL).mock(
+        return_value=httpx.Response(429, json={"error": {"code": "insufficient_quota"}})
+    )
+    with pytest.raises(LLMLaneDeadError) as caught:
+        _openai().complete("hi")
+    assert caught.value.reason is LaneDeathReason.CREDIT_EXHAUSTED
+    assert route.call_count == 1
+
+
+@respx.mock
+def test_openai_compat_429_without_the_token_still_retries():
+    # The narrowing must remove exactly one terminal case from the retryable
+    # set -- ordinary rate limiting keeps D-040's backoff.
+    route = respx.post(_OPENAI_URL).mock(return_value=httpx.Response(429))
+    with pytest.raises(LLMError) as caught:
+        _openai().complete("hi")
+    assert not isinstance(caught.value, LLMLaneDeadError)
+    assert route.call_count == DEFAULT_ATTEMPTS
+
+
+@respx.mock
+def test_openai_compat_bare_403_is_not_lane_death():
+    # Deliberate: on an arbitrary proxy a 403 does not prove credential death,
+    # and mis-latching would suppress a lane that is merely misrouted.
+    respx.post(_OPENAI_URL).mock(return_value=httpx.Response(403))
+    with pytest.raises(LLMError) as caught:
+        _openai().complete("hi")
+    assert not isinstance(caught.value, LLMLaneDeadError)

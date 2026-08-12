@@ -10,8 +10,14 @@ from typing import Any
 
 import httpx
 
-from boardwatch.llm.client import LLMError, LLMTransientError
-from boardwatch.llm.retry import parse_retry_after, request_with_retry
+from boardwatch.llm.client import (
+    LaneDeathReason,
+    LLMError,
+    LLMLaneDeadError,
+    LLMTransientError,
+    lane_death_reason,
+)
+from boardwatch.llm.retry import parse_retry_after, request_with_retry, safe_json
 
 # Timeout for HTTP requests in seconds
 _TIMEOUT = 30.0
@@ -19,6 +25,16 @@ _TIMEOUT = 30.0
 # Retryable per D-040: rate limit + server-side transients. Anything else is
 # a non-retryable LLMError.
 _RETRYABLE_STATUSES = frozenset({429, 500, 502, 503, 504})
+
+# This adapter reaches ANY openai-compatible endpoint (settings.provider is a
+# free-form string and base_url is arbitrary), so its catalog admits only
+# unambiguous signals. Bare 403 is deliberately absent: on an arbitrary proxy
+# it does not prove the credential is dead.
+_LANE_DEATH_CODES = {"insufficient_quota": LaneDeathReason.CREDIT_EXHAUSTED}
+_LANE_DEATH_STATUSES = {
+    401: LaneDeathReason.CREDENTIAL_INVALID,
+    402: LaneDeathReason.CREDIT_EXHAUSTED,
+}
 
 
 class OpenAICompatClient:
@@ -83,13 +99,22 @@ class OpenAICompatClient:
         def _do_request() -> str:
             response = client.post(url, json=payload, headers=headers, timeout=_TIMEOUT)
 
-            # Transient (retryable) vs. flat (non-retryable) HTTP errors
-            if response.status_code in _RETRYABLE_STATUSES:
-                raise LLMTransientError(
-                    f"HTTP {response.status_code}: {response.text}",
-                    retry_after=parse_retry_after(response),
-                )
             if response.status_code < 200 or response.status_code >= 300:
+                # Body first: OpenAI sends `insufficient_quota` on 429, which is
+                # terminal and must not be retried. A 429 WITHOUT it stays
+                # transient, so D-040's backoff is narrowed by exactly one case.
+                reason = lane_death_reason(safe_json(response), table=_LANE_DEATH_CODES)
+                if reason is None:
+                    reason = _LANE_DEATH_STATUSES.get(response.status_code)
+                if reason is not None:
+                    raise LLMLaneDeadError(
+                        f"HTTP {response.status_code}: {response.text}", reason=reason
+                    )
+                if response.status_code in _RETRYABLE_STATUSES:
+                    raise LLMTransientError(
+                        f"HTTP {response.status_code}: {response.text}",
+                        retry_after=parse_retry_after(response),
+                    )
                 raise LLMError(f"HTTP {response.status_code}: {response.text}")
 
             # Parse and validate the response
