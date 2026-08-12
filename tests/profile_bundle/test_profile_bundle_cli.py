@@ -253,12 +253,20 @@ def _inline_evidence(text: str) -> dict[str, object]:
         "reviewed_at": "2026-08-11",
         "sufficiency_review": {"state": "owner_approved"},
         "redactions": [],
-        "supports_record_ids": ["fact.example.name.001"],
+        "supports_record_ids": [SUPPORTED_FACT],
         "contradicts_record_ids": [],
         "contextualizes_record_ids": [],
         "evidence_class": "owner_attestation",
         "attested_at": "2026-08-11",
     }
+
+
+#: The fact the captured attestation supports. An `owner_attestation` must support at least one
+#: fact (the evidence model says so) and §12 requires that fact to cite the evidence back — an edit
+#: `add_evidence` deliberately never makes, since it only appends to `evidence/records.yaml`. So
+#: `evidence_link_asymmetry` is the standing, operator-owed finding of this flow, and it is what the
+#: revalidation must report *instead of* anything about digest integrity.
+SUPPORTED_FACT = "fact.example.name.001"
 
 
 def test_add_evidence_records_the_capture_and_revalidates(
@@ -267,7 +275,10 @@ def test_add_evidence_records_the_capture_and_revalidates(
     """§19 step 6: an authoring command ends by revalidating the draft it changed.
 
     The revalidation's findings share the command's exit code, so one answer says both "the change
-    landed" and "the draft is still promotable".
+    landed" and "what the draft still owes". The code set is asserted whole rather than by
+    membership: the defect this pins was `add_evidence` writing an evidence set its own manifest no
+    longer described, which reported `evidence_set_digest_mismatch` — §21's "evidence mutated after
+    promotion" — on every successful capture, so an extra code here is the failure mode.
     """
     text = "The owner attests to the professional name recorded in this bundle."
     record = _write(tmp_path / "e.yaml", _inline_evidence(text), "evidence-record.yaml")
@@ -280,6 +291,12 @@ def test_add_evidence_records_the_capture_and_revalidates(
          "--capture", str(capture), "--json"],
     )
     body = json.loads(result.output)
+    assert {finding["code"] for finding in body["diagnostics"]} == {
+        "evidence_link_asymmetry"
+    }, result.output
+    # The outcome the codes imply, asserted rather than assumed. Without it the always-exit-1
+    # answer of a capture that never restated its evidence-set digest was invisible to the suite.
+    assert result.exit_code == 1, result.output
     assert body["result"]["evidence_id"] == "evidence.example.cli.001"
     assert body["result"]["capture_kind"] == "inline"
     assert body["result"]["blob_digest"] is None
@@ -315,6 +332,12 @@ def test_add_evidence_refuses_a_secret_without_touching_the_draft(
 def test_resolve_conflict_settles_the_group_and_names_the_gate(
     env: Env, synthetic_bundle: SyntheticBundle, tmp_path: Path
 ) -> None:
+    """And leaves the manifest alone, because a ruling changes nothing the evidence set covers.
+
+    `canonical.evidence_set_digest` reads `evidence/records.yaml` and the blobs it names; a ruling
+    touches neither, so the recompute `add_evidence` owes has no counterpart here. That is where the
+    guarantee lands, and the empty diagnostic set below is what says so.
+    """
     ruling = _write(
         tmp_path / "r.yaml",
         {
@@ -329,16 +352,22 @@ def test_resolve_conflict_settles_the_group_and_names_the_gate(
         },
         "ruling-record.yaml",
     )
+    manifest_before = synthetic_bundle.manifest_path.read_text(encoding="utf-8")
     result = run(
         env,
         ["resolve-conflict", *_bundle_args(synthetic_bundle), "--ruling-file", str(ruling),
          "--json"],
     )
     body = json.loads(result.output)
+    assert body["diagnostics"] == [], result.output
+    assert result.exit_code == 0, result.output
     assert body["result"]["conflict_state"] == "resolved"
     assert "authorize_conflict_ruling" in {
         gate["action"] for gate in body["result"]["owner_gates"]
     }
+    assert (
+        synthetic_bundle.manifest_path.read_text(encoding="utf-8") == manifest_before
+    ), "a ruling must not rewrite the manifest"
 
 
 def test_migrate_reports_already_current_on_a_promoted_bundle(
