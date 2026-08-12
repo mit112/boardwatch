@@ -34,7 +34,7 @@ accurate handoff and this file's Gate A branch table below is now STALE.** In sh
 branch `t18-cli` HEAD **`a64e6fa`** carries **all 19 Gate A slices** (main's fixes, T16 + its
 11-commit fix round, T18 + its 10-commit fix round, T19's contract checks, the `digest.py`
 quarantined fix, the rewritten CHANGELOG). A `make check` was **running on it when the session
-ended** — log `/Users/mitsheth/dev/projectY/bw-wt/gate-final.log`; read `GATE_EXIT` and the pytest
+ended** — log `gate-final.log` in the sibling `bw-wt/` worktree directory; read `GATE_EXIT` and the pytest
 summary, and re-run if that line is absent. The prior gate on `e4d79aa` was **exit 0 · 5,831 passed
 · 95.59%**. **Still owed:** the final gate result, an independent review of **T18's fix round**
 (D-126's stopping rule is NOT satisfied — both lenses found a qualifying BLOCKING), the authoring
