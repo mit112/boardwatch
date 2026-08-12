@@ -177,11 +177,19 @@ def _require_derived_location(path: Path, bundle_root: Path, resolved_root: Path
     revision directory as a draft. A dangling link is refused as well, since `resolve()` does not
     require the target to exist and a path resolving to nothing elsewhere is still not this path.
 
+    A symlink **loop** has to be refused by a separate clause, because the equality cannot decide
+    it and the interpreters this project supports disagree about what happens: on CPython 3.11 and
+    3.12 `resolve()` raises `RuntimeError` — neither a `ProfileBundleError` nor an `OSError`, so
+    nothing catches it on the way out of a command, and its message carries the absolute path — on
+    3.13 it returns the loop's own path, which then *satisfies* the equality and admits the escape
+    outright. Both answers are wrong and neither is available to check for, so the clause is stated
+    over the thing that is the same on both: the path is a link. Every path in the checked set has
+    had its ancestors checked one loop earlier, so a member being a link at all is already a
+    refusal; the equality remains the general rule for a path whose resolution differs without it.
+    `resolve()`'s failures are translated for the same reason a loop is refused rather than raised.
+
     The reported path is relative to the root, so a diagnostic never carries a machine-specific
-    prefix. That is also why `resolve()`'s own failures are translated rather than raised through:
-    an ELOOP surfaces as `RuntimeError`, which is neither a `ProfileBundleError` nor an `OSError`
-    and so is caught by nothing on the way out of a command — and its message carries the absolute
-    path. A path that cannot be resolved is, by the sentence above, not the file the layout names.
+    prefix.
     """
     relative = path.relative_to(bundle_root)
     try:
@@ -193,7 +201,7 @@ def _require_derived_location(path: Path, bundle_root: Path, resolved_root: Path
             "self-contained under one root, so every path its identity is computed from must be "
             "the file or directory the layout names",
         ) from exc
-    if resolved != resolved_root / relative:
+    if path.is_symlink() or resolved != resolved_root / relative:
         raise SelectionError(
             IssueCode.SYMLINK_REFUSED,
             f"{relative.as_posix()} does not resolve to its own place in this bundle; a bundle is "
