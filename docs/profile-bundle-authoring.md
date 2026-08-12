@@ -596,7 +596,7 @@ target-content digest. Because the evidence record embeds no approval ID, that b
 There is no numeric confidence score anywhere in the model: the system records the evidence class and
 whether it meets the fact's explicit contract, and leaves adequacy to the owner's review.
 
-### `add-evidence` is two steps, not one
+### `add-evidence` writes the back-citation for you
 
 ```bash
 boardwatch profile-bundle add-evidence \
@@ -605,41 +605,40 @@ boardwatch profile-bundle add-evidence \
   --capture <the bytes the record describes>
 ```
 
-`add_evidence` appends to `evidence/records.yaml` and nothing else. Section 12 requires
-record-to-evidence and evidence-to-record links to agree **exactly**, and only facts and metrics carry
-`evidence_ids` — so when the captured record supports a **fact** or a **metric**, that record must be
-edited to cite the new evidence back, and validation reports the gap until you do:
+Section 12 requires record-to-evidence and evidence-to-record links to agree **exactly**, and only
+facts and metrics carry `evidence_ids`. `add_evidence` writes **both directions in one operation**:
+it appends to `evidence/records.yaml`, restates the manifest's `evidence_set_digest` over the
+evidence set that makes, and cites the new evidence back from every fact and metric the record
+names. A capture supporting a fact is therefore clean at exit 0 (D-143):
 
 ```console
 $ ... add-evidence --draft work --evidence-file <attestation> --capture <capture>
-profile-bundle add-evidence: findings
+profile-bundle add-evidence: clean
 added evidence.example-labs.location.002 to drafts/work (inline capture)
-owner approval required: none
-error: evidence_link_asymmetry (evidence/records.yaml evidence.example-labs.location.002): evidence.example-labs.location.002 supports fact.example-labs.location.001, which does not cite it
-    direction: evidence_to_record
-    relationship: supports
-    supported_record_id: fact.example-labs.location.001
-EXIT=1
-```
+owner approval required:
+  confirm_fact fact.example-labs.location.001 -> owner_confirmed
+EXIT=0
 
-Step two is an ordinary draft edit — add the new evidence ID to that fact's `evidence_ids` — after
-which the draft is clean:
-
-```console
 $ boardwatch profile-bundle validate --bundle <root> --draft work
 profile-bundle validate: clean
 0 error, 0 blocker, 0 warning, 0 information
-candidate digest: sha256:b790fdf9...
+candidate digest: sha256:0af6d246...
 EXIT=0
 ```
 
-**Say it plainly: `add-evidence` does not write the back-citation for you, so a capture supporting a
-fact or a metric ends at exit 1 until you make the second edit.** Whether the command *should* write
-it is an open question for the owner and is deliberately not resolved here. There is no command that
-performs the second step; it is a text edit.
+**The `confirm_fact` gate is the thing to notice.** The back-citation changes the fact, and a changed
+fact owes an owner confirmation at promotion. That is not a cost auto-linking introduced — the hand
+edit this replaces changed the same field of the same fact and owed the same stamp — but you are now
+told at the moment you incur it rather than at promotion.
 
-The caveat is narrower than "every capture", and the boundary is measured rather than assumed.
-Evidence naming a **skill** or a **claim** is a legitimate one-way link, and comes back clean:
+Three boundaries, each measured rather than assumed:
+
+- **All three relationships are linked**, not just `supports`. Validation compares against the union
+  of `supports`, `contradicts` and `contextualizes`, so a record that contradicts or contextualizes a
+  fact is cited back from it too.
+- **Only facts and metrics are touched.** Evidence naming a **skill** or a **claim** is a legitimate
+  one-way link under §12 — those kinds carry no `evidence_ids` — so nothing is rewritten and the
+  capture is clean:
 
 ```console
 $ ... add-evidence --draft recovery --evidence-file <supports skill.example-language> --capture <file>
@@ -647,17 +646,16 @@ profile-bundle add-evidence: clean
 added evidence.example-language.repository.001 to drafts/recovery (inline capture)
 owner approval required: none
 EXIT=0
-
-$ ... add-evidence --draft recovery --evidence-file <supports claim.example.summary.001> --capture <file>
-profile-bundle add-evidence: clean
-added evidence.example.claim-support.001 to drafts/recovery (inline capture)
-EXIT=0
-
-$ ... add-evidence --draft recovery --evidence-file <supports metric.packet-pantry.throughput.001> --capture <file>
-profile-bundle add-evidence: findings
-error: evidence_link_asymmetry ...: evidence.example.metric-support.001 supports metric.packet-pantry.throughput.001, which does not cite it
-EXIT=1
 ```
+
+- **A record the draft does not hold is left alone.** That is a broken reference, validation already
+  reports it as one, and citing a record that is not there would not repair it.
+
+The write order is `evidence/records.yaml`, then the fact and metric documents, then `manifest.yaml`
+— the pointer target before the pointer. This matters only when a rename fails part-way, which
+`partial_edit_applied` names (below): a failure between the first two leaves the evidence recorded
+and the citation missing, which is repairable by an ordinary draft edit, rather than a fact citing an
+evidence ID no document holds.
 
 Evidence naming any other record kind is reported as a **wrong reference kind**, not doubly as an
 asymmetry about the same edit.
@@ -914,10 +912,12 @@ collection and cleanup deletion are **forbidden** in this phase.
 
 ### An authoring command was interrupted: `partial_edit_applied`
 
-`add-evidence` and `resolve-conflict` each change **two** documents — a record file and the manifest
-digest that describes it, or the two conflict documents. Both are written to temporary files first and
-then renamed into place, so anything that can be reported (a full disk, an unwritable directory) fails
-before the first rename and leaves the draft byte-identical.
+`add-evidence` and `resolve-conflict` each change **several** documents at once — `resolve-conflict`
+the two conflict documents, and `add-evidence` the evidence record, the manifest digest that describes
+it, and every fact or metric document it cites the new evidence back from (so three or more, not two).
+All of them are written to temporary files first and then renamed into place, so anything that can be
+reported (a full disk, an unwritable directory) fails before the first rename and leaves the draft
+byte-identical.
 
 Two documents at different paths cannot be renamed as one operation, so a narrow window remains. If a
 later rename fails, the command says so rather than pretending nothing happened:
@@ -1180,8 +1180,8 @@ An agent updating this bundle follows exactly this, and stops where it says stop
 2. Inspect the affected entity, facts, evidence and conflicts.
 3. Check out, or reuse, an explicit draft.
 4. Make the smallest relevant change.
-5. Add evidence and provenance **in the same draft** — including the back-citation the fact or metric
-   owes (§10).
+5. Add evidence and provenance **in the same draft**. `add-evidence` writes the back-citation the
+   fact or metric owes as part of the same operation (§10), so this is one step, not two.
 6. Run complete validation.
 7. Present the changed record IDs, the eligibility changes, the diagnostics, the owner-gated
    transitions, and the candidate digest.
@@ -1205,7 +1205,7 @@ All twelve accept `--bundle PATH` and `--json`.
 | `inventory` | — | nothing |
 | `conflicts` | — | nothing |
 | `migrate` | — | nothing at schema v1 |
-| `add-evidence` | `--draft`, `--evidence-file`, `--capture` (all required) | `evidence/records.yaml`, the manifest, and possibly one blob |
+| `add-evidence` | `--draft`, `--evidence-file`, `--capture` (all required) | `evidence/records.yaml`, each fact/metric document it cites back from, the manifest, and possibly one blob |
 | `resolve-conflict` | `--draft`, `--ruling-file` (both required) | `conflicts/rulings.yaml` and the one ruled group |
 | `approve` | `--draft NAME` (required) | one approval stamp under `approvals/` |
 | `promote` | `--draft`, `--summary` (required), `--actor` | one immutable revision, and `CURRENT` |

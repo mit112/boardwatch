@@ -49,9 +49,15 @@ three post-merge fixes (D-138, D-141, D-142) are on `main`. All four gates, re-r
 | acceptance | **8 PASS / 0 FAIL**, re-run after the fixes |
 
 Evidence: `.agent/GATE-A-CI-EQUIVALENCE.md`, which records the gated sha and the full test-count
-accounting. **Nothing on this track is pushed** — `origin/main` is `88c5857` (T11) and the published
-0.3.0 wheel (`dc1ffec`) is T1–T10, so everything from T12 onward is local. One `.md`-only commit
-followed the gate, owing `generalization` + `index-check` (D-116) — both green.
+accounting. Two `.md`-only commits followed that gate, owing `generalization` + `index-check`
+(D-116) — both green.
+
+**The track is now PUSHED.** `origin/main` was `88c5857` (T11) and the published 0.3.0 wheel
+(`dc1ffec`) is T1–T10; on 2026-08-12 Mit authorised the push and `88c5857..8c3dd9f` went to
+`origin/main` after a re-run `gitleaks` over the unpushed range (exit 0, captured unpiped, no leaks).
+**The remote reported "Bypassed rule violations — 6 of 6 required status checks are expected":** it
+went straight to `main` past branch protection, so CI ran *on* `main` rather than gating the push.
+Check that run before treating the remote as verified.
 
 **2. The review loop is CLOSED (D-137).** Five rounds: two lenses on T18's build (REWORK, REWORK, each
 finding a BLOCKING the other missed), one on its 10-commit fix round (REWORK), one on those fixes
@@ -68,8 +74,12 @@ end to end through the real CLI against the packaged synthetic example by `.agen
 suite that owns them, because a script driving the CLI once cannot establish them. Clause-by-clause map:
 `.agent/GATE-A-ACCEPTANCE.md`.
 
-**What remains before "Gate A met" can be written down:** the owner's call on **open question 3 below**
-(`evidence_link_asymmetry` after `add-evidence` on a fact or metric). That is the whole list.
+**The last open question is ANSWERED (D-143).** Mit ruled on 2026-08-12 that `add-evidence` writes the
+back-citation itself, default on; it is built, and `cc489ac` carries the code, the tests and the guide
+correction. The premise the question had been framed on was false — `add_evidence` was **already** a
+multi-document write (evidence *and* manifest), and the guide's §9 said otherwise while the same guide's
+Editing section said the truth. **Gate A's standing therefore turns on the gate re-run over `cc489ac`,
+not on any remaining owner input.**
 
 **Two silent-success defects were found and fixed *after* the review loop closed** (D-138/D-142,
 D-141), which is the useful thing to know about this subsystem's remaining risk: both were "no flags"
@@ -79,8 +89,10 @@ the closed review loop as evidence about the slices reviewed, not about the subs
 
 **Gate B stays prohibited until Gate A is met.** Start any Gate A session with `git worktree prune`.
 
-**Next action, in order:** (1) get Mit's ruling on `evidence_link_asymmetry` and write down whether Gate A
-is met; (2) start accumulating real daily runs; (3) P2 item 8 or P3 slice 5, both owner-gated, both
+**Next action, in order:** (1) drop the `prefix_of(target) in ("fact", "metric")` filter in
+`_documents_citing_back` — a mutation proved it **cannot change behaviour** (29 passed with it removed),
+and by this program's rule a check that cannot fire is deleted; it is a one-line follow-up owing its own
+gate; (2) start accumulating real daily runs; (3) P2 item 8 or P3 slice 5, both owner-gated, both
 wanting their own context window.
 
 ---
@@ -122,23 +134,10 @@ defensible as a fail-open. Options: leave it; make it fatal; keep it non-fatal b
 **2. Should any family other than `work_auth` default to `blocker` severity** (e.g. `clearance`)? Owner-gated
 since D-035, unchanged by everything since.
 
-**3. Should `add-evidence` write the back-citation itself?** *(The last thing standing between Gate A and
-"met".)* `evidence_link_asymmetry` stands after a successful capture: §12 requires a fact to cite the
-evidence that supports it, and `add_evidence` only appends to the evidence document, so the owner must then
-edit the fact. Same class as the BLOCKING T18's fix round closed — a correct operation leaving a standing
-error.
-
-**Scope, measured, and narrower than this entry first claimed:** bidirectional citation is required only
-for **`fact` and `metric`** records, because only they carry `evidence_ids`. Evidence naming a `skill` or
-a `claim` is a legitimate one-way link under §12 and reports nothing. Driven through the CLI: fact → exit
-1, metric → exit 1, **skill → clean exit 0, claim → clean exit 0**. So the question is whether facts and
-metrics should be auto-linked, not whether every capture is affected.
-
-**The authoring guide is not blocked on this** — `docs/profile-bundle-authoring.md` documents the two-step
-flow as it actually behaves and says the question is open. Neither T18 reviewer raised the issue (lens A
-hand-fixed it in a probe and moved on).
-
-*(A fourth — whether docs-only commits owe a full `make check` — was **resolved** by D-116.)*
+*(Two others are **resolved**: whether docs-only commits owe a full `make check`, by D-116; and whether
+`add-evidence` should write the back-citation itself, **ruled by Mit on 2026-08-12 — yes, default on** —
+built as D-143. The guide now documents the one-step flow, verified through the real CLI: a capture
+supporting a fact is clean at exit 0 and reports the `confirm_fact` gate the back-citation incurs.)*
 
 ---
 
