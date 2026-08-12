@@ -19,8 +19,8 @@ authority. **Rewrite it, never prepend to it.** Keep it near 170 lines; the long
 ## Current standing
 
 **Two tracks are live.** The **P0–P7 replacement program** is at P6, whose build is complete and whose
-last two gate clauses need the system *run*. The **canonical career-profile bundle (Gate A)** is merged
-into `main`, green on the whole CI surface, and reviewed — but **not met**, on one owner ruling.
+last two gate clauses need the system *run*. The **canonical career-profile bundle (Gate A)** is merged,
+pushed, reviewed, green on all twelve CI jobs — and **MET**, as of 2026-08-12.
 
 ### The P0–P7 program
 
@@ -34,9 +34,10 @@ section of `STANDING-FACTS.md` before touching either.
 "0 dead postings" needs a real run whose leads are actually probed. Accumulating those runs is gated on
 Mit's `resume.yaml` fix below.
 
-### Gate A — merged, green, reviewed, and NOT met
+### Gate A — MET (2026-08-12)
 
-**Three separate claims, kept separate on purpose. Do not collapse them into "Gate A is met".**
+**Met because every clause below has a measurement saying so, not because the work feels done.** The
+three claims are still kept separate, because that is what makes the verdict checkable.
 
 **1. The code is complete, merged and green.** All nineteen slices, every review round's fixes, and the
 three post-merge fixes (D-138, D-141, D-142) are on `main`. All four gates, re-run on the result:
@@ -48,18 +49,17 @@ three post-merge fixes (D-138, D-141, D-142) are on `main`. All four gates, re-r
 | `perf` (CI-only) | **exit 0** · top-path 0.245–0.268 s (unchanged since) |
 | acceptance | **8 PASS / 0 FAIL**, re-run after the fixes |
 
-**The Gate A subsystem had never run on Windows at all, and that is now the open item (D-145).** All
-six macOS/Linux `test` jobs pass, with `gitleaks`, `perf` and `generalization`. Windows failed in two
-layers: collection aborted on `os.geteuid` (`1 deselected, 2 errors` — *no test ran*, for ~180
-commits), and behind it about **130 failures**, of which roughly a hundred came from one line —
-`conftest._seal_revision` writing `CURRENT`/`COMPLETE` with `write_text`, whose `\r\n` no byte-exact
-reader accepts. **Production was never affected**; promotion writes binary. Fixed in `32a109f` and
-`dbb57ef`, together with POSIX-only tests (`SIGKILL`, `mkfifo`, mode bits) that are now skipped.
+**CI is GREEN on all twelve jobs (`8475319`), Windows included — measured, and it is the first time
+this range has ever passed there (D-145).** The subsystem had never run on Windows at all: collection
+aborted on `os.geteuid` for ~180 commits, and behind that sat ~130 failures, of which roughly a hundred
+came from one line — a test fixture writing `CURRENT`/`COMPLETE` with `write_text`, whose `\r\n` no
+byte-exact reader accepts. **Production was never affected**; promotion writes binary. Two fix rounds
+(`32a109f`, `dbb57ef`, `f8d89e6`) took it ~130 → 2 → 0; the second round fixed all eighteen sites of
+the pattern rather than the one that failed, because the passing ones were getting a byte mismatch
+from CRLF instead of the defect they were written for.
 
-**Do not record Windows as green.** The run that produced that list was cancelled at 72%, failures were
-masked behind the pointer cascade, and this machine cannot execute the matrix — CI is the only thing
-that can close it. The Windows suite is also far slower (72% in 62 min against 16m23s locally), cause
-unknown, because no Windows run has yet finished.
+The Windows suite runs **5,883 passed / 48 skipped in 1:18:03** — about four to five times the local
+16-minute gate. Slow, not hanging: do not read a long Windows job as a hang without comparing elapsed.
 
 Evidence: `.agent/GATE-A-CI-EQUIVALENCE.md`, which records the gated sha and the test-count accounting.
 
@@ -104,7 +104,8 @@ standing in for cleared, in code that six reviews and four gates had passed. One
 fix returned REWORK because the fix reached eight of twelve commands while claiming all twelve. Treat
 the closed review loop as evidence about the slices reviewed, not about the subsystem being defect-free.
 
-**Gate B stays prohibited until Gate A is met.** Start any Gate A session with `git worktree prune`.
+**Gate B is no longer prohibited by Gate A** — but it is breadth, and "breadth is last" still governs
+it; nothing about it is scheduled. Start any Gate A session with `git worktree prune`.
 
 **The review's follow-ups are all closed.** The inert `prefix_of` filter is deleted (D-115's rule; three
 independent confirmations it could not fire — the surviving mutation, `RECORD_KIND_PREFIXES`, and
@@ -112,9 +113,10 @@ independent confirmations it could not fire — the surviving mutation, `RECORD_
 documents it rewrote (`cited_back`, printed and in `--json`) — it had become an up-to-thirteen-file edit
 reporting none of them, which `owner_gates` does not cover because an ordinary fact incurs no gate.
 
-**Next action, in order:** (1) confirm CI is green on the pushed head — the Windows jobs are the thing
-to check, see below; (2) start accumulating real daily runs; (3) P2 item 8 or P3 slice 5, both
-owner-gated, both wanting their own context window and Mit's input.
+**Next action, in order:** (1) start accumulating real daily runs — the two open P6 clauses need them,
+and they are gated on Mit's `resume.yaml` fix, which he deprioritised; (2) P2 item 8 or P3 slice 5,
+both owner-gated, both wanting their own context window and Mit's input. **Gate A needs nothing
+further.**
 
 ---
 
@@ -131,7 +133,7 @@ owner-gated, both wanting their own context window and Mit's input.
 | P6 Liveness + dedup | **BUILD COMPLETE — all six items**, all three slices merged, reviewed and pushed (D-110, D-111, D-113) | **NOT MET — 2 of 4 clauses met**, below |
 | 14-day acceptance | not started | — |
 | P7 Breadth | not started | — |
-| *Gate A (parallel track)* | *complete, merged to `main`, gate green* | ***NOT MET*** — *one owner ruling; has moved no program gate* |
+| *Gate A (parallel track)* | *complete, merged, pushed, CI green on all twelve jobs* | ***MET*** (D-143 closed the last question) — *has moved no program gate* |
 
 ### Gate P6, clause by clause
 
