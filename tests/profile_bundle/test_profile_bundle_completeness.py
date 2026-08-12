@@ -877,7 +877,11 @@ def test_an_ancestor_that_is_a_draft_is_a_blocker(chained_tree: PromotedRevision
     assert [f.details["reason"] for f in ancestry_completeness(ctx)] == ["not_a_revision"]
 
 
-@pytest.mark.skipif(os.geteuid() == 0, reason="root reads a mode-000 file, so the guard cannot fire")
+@pytest.mark.skipif(
+    os.name != "posix" or os.geteuid() == 0,
+    reason="root reads a mode-000 file, and Windows has no geteuid and no mode bits that deny "
+    "a read, so the guard cannot fire either way",
+)
 def test_an_ancestor_manifest_that_cannot_be_read_is_a_blocker(
     chained_tree: PromotedRevisionTree,
 ) -> None:
@@ -904,7 +908,11 @@ def test_an_ancestor_manifest_that_cannot_be_read_is_a_blocker(
         path.chmod(0o644)
 
 
-@pytest.mark.skipif(os.geteuid() == 0, reason="root reads a mode-000 file, so the guard cannot fire")
+@pytest.mark.skipif(
+    os.name != "posix" or os.geteuid() == 0,
+    reason="root reads a mode-000 file, and Windows has no geteuid and no mode bits that deny "
+    "a read, so the guard cannot fire either way",
+)
 def test_a_deep_audit_of_an_unreadable_ancestor_document_carries_no_filesystem_path(
     chained_tree: PromotedRevisionTree,
 ) -> None:

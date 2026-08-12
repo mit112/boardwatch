@@ -572,7 +572,11 @@ def test_a_supplied_parent_snapshot_is_used_instead_of_the_one_on_disk(
     )
 
 
-@pytest.mark.skipif(os.geteuid() == 0, reason="root reads a mode-000 file, so the guard cannot fire")
+@pytest.mark.skipif(
+    os.name != "posix" or os.geteuid() == 0,
+    reason="root reads a mode-000 file, and Windows has no geteuid and no mode bits that deny "
+    "a read, so the guard cannot fire either way",
+)
 @pytest.mark.parametrize(
     ("filename", "code"),
     [

@@ -409,7 +409,7 @@ def test_a_revalidation_that_could_not_run_does_not_report_that_nothing_happened
     The blob store is what is made unreadable: `resolve_conflict` never opens it, so the authoring
     step completes and only the revalidation fails. That is the whole point of the case.
     """
-    if os.geteuid() == 0:  # pragma: no cover - root ignores the mode bits entirely
+    if os.name != "posix" or os.geteuid() == 0:  # pragma: no cover - not a POSIX mode bit
         pytest.skip("running as root, so an unreadable directory is still readable")
     ruling = _ruling_file(tmp_path)
     blobs = synthetic_bundle.blob.parent
@@ -514,7 +514,7 @@ def test_an_unreadable_blob_file_is_reported_as_io_not_as_a_defect(
     straight out and lands on the `OSError` arm, which was always right. Only the file case is
     wrapped in `BundleIoError`, which is why it was the one reported wrongly.
     """
-    if os.geteuid() == 0:  # pragma: no cover - root ignores the mode bits entirely
+    if os.name != "posix" or os.geteuid() == 0:  # pragma: no cover - not a POSIX mode bit
         pytest.skip("running as root, so an unreadable file is still readable")
     ruling = _ruling_file(tmp_path)
     synthetic_bundle.blob.chmod(0o000)
