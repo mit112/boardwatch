@@ -135,8 +135,9 @@ def _require_stored_blob(path: Path, bundle_root: Path) -> None:
 
     One `lstat` rather than `_require_derived_location`'s `resolve()`, and not as an optimisation
     for its own sake: `resolve()` walks every component of an absolute path, so checking the store's
-    thousands of entries that way re-walks the same ancestors thousands of times — 8.7 s at 20,000
-    blobs, on every command that reads the bundle. The two are equivalent here anyway. The store's
+    thousands of entries that way re-walks the same ancestors thousands of times — 976 ms against
+    430 ms at 20,000 blobs, on every command that reads the bundle. The two are equivalent.
+    The store's
     own path and each of its ancestors have already been checked one loop earlier, so the only way
     an entry can fail the equality is by being a link itself, which is what `S_ISLNK` says.
 
