@@ -2225,8 +2225,10 @@ CI then failed on **all three Windows jobs** while macOS and Linux passed. `os.g
 on Windows and three `@pytest.mark.skipif(os.geteuid() == 0, …)` decorators evaluate at import, so
 collection raises before any test runs; two further calls sat in test bodies. `88c5857`, the previous
 remote head, was green, so this entered with the Gate A range and **no local `make check` on macOS
-could ever have seen it**. Fixed in `32a109f`; necessary, not verified sufficient, because this
-machine cannot run the Windows matrix.
+could ever have seen it**. Fixed in `32a109f`; necessary and **provably not sufficient to
+declare Windows green**: the completed job log reads `1 deselected, 2 errors in 14.96s`, so collection
+aborted and **no test has ever executed on Windows in this range**. Removing the blocker is what lets
+CI find out; only CI can.
 
 ### Gates
 
@@ -2234,7 +2236,9 @@ machine cannot run the Windows matrix.
 |---|---|
 | `make check` @ `cc489ac` | **exit 2** · 5,925 passed · **1 failed** · 16m34s |
 | `make check` @ `cd76bb8` | **exit 0** · 5,928 passed · 1 deselected · 16m35s |
-| `gitleaks` (`origin/main..HEAD`) | **exit 0** · no leaks |
+| `make check` @ `7038989` (final) | **exit 0** · 5,930 passed · 1 deselected · **95.65%** · 16m23s |
+| `gitleaks` (`origin/main..HEAD`) | **exit 0** · no leaks, captured unpiped |
+| CI on the pushed `8c3dd9f` | **9 of 12 green** · the three Windows jobs error at COLLECTION |
 
 The red gate is the point: the failing test was `test_add_evidence_records_the_capture_and_revalidates`,
 which asserts the revalidation's code set **whole**. The change was developed against the authoring

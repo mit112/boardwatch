@@ -43,10 +43,16 @@ three post-merge fixes (D-138, D-141, D-142) are on `main`. All four gates, re-r
 
 | Gate | Result |
 |---|---|
-| `make check` | **exit 0** · 5,919 passed · 1 deselected · **95.65%** · 16m22s |
-| `gitleaks` (`origin/main..HEAD`) | **exit 0** · 165 commits · no leaks |
-| `perf` (CI-only) | **exit 0** · top-path 0.245–0.268 s |
+| `make check` | **exit 0** · 5,930 passed · 1 deselected · **95.65%** · 16m23s |
+| `gitleaks` (`origin/main..HEAD`) | **exit 0** · no leaks, captured unpiped |
+| `perf` (CI-only) | **exit 0** · top-path 0.245–0.268 s (unchanged since) |
 | acceptance | **8 PASS / 0 FAIL**, re-run after the fixes |
+
+**CI on the pushed `8c3dd9f` is 9 of 12 green.** `gitleaks`, `perf`, `generalization`, and all six
+macOS/Linux `test` jobs pass; **the three Windows jobs error at collection** — `os.geteuid` does not
+exist there. Fixed locally in `32a109f`, unpushed. The job log reads `1 deselected, 2 errors`, so **no
+test has ever run on Windows in this range**; removing the blocker is what lets CI find out whether the
+suite passes there, and only CI can.
 
 Evidence: `.agent/GATE-A-CI-EQUIVALENCE.md`, which records the gated sha and the full test-count
 accounting. Two `.md`-only commits followed that gate, owing `generalization` + `index-check`
