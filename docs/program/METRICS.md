@@ -1661,7 +1661,12 @@ two fix rounds, dispatched three wide rather than five. Recorded in D-128.
 | T16 | `t16-promotion`, reset onto `main` | **Build dispatched later in this session.** It had been byte-identical to the pre-fix `t15-rebase` and so carried all 6 of T15's BLOCKING defects, which is why it was gated behind T15 rather than started earlier. |
 
 Gate A is **16 of 19 slices merged**. T16, T18, T19 remain; Gate A is NOT met and Gate B stays
-prohibited. T1–T12 are pushed and shipped in the 0.3.0 wheel; everything from T13 onward is unpushed.
+prohibited. **[Corrected 2026-08-12 — the sentence that stood here was the one D-133 retracted.]**
+`origin/main` is `88c5857` and carries **T11** (`git cat-file -e origin/main:…/imports.py` fails);
+`v0.3.0` is `dc1ffec`, whose `profile_bundle` tree has no `imports.py`, `approvals.py`,
+`effective.py` or `enumerators.py`, so the wheel is **T1–T10**. **Everything from T12 onward is
+unpushed.** The retraction commit `999b443` amended `DECISIONS.md` and `STATE.md` and never touched
+this file — the fourth recurrence of the class D-133 named, found by the docs reviewer it recommended.
 
 ### Review yield: 7 BLOCKING and 12 SHOULD-FIX in code whose suites were green
 

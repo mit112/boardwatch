@@ -3560,7 +3560,7 @@ entirely. And there are **three** overrides now, not two — T18 added one after
 | Site | Code | Declared → emitted | Move |
 |---|---|---|---|
 | `promotion.py:459` | `corrupt_blob_quarantine` | `blocker` → `warning` | down 1 |
-| `authoring.py:773` | `corrupt_blob_quarantine` | `blocker` → `error` | **up** 1 |
+| `authoring.py` (approve's quarantine diagnostic) | `corrupt_blob_quarantine` | `blocker` → `error` | **up** 1 |
 | `validation/referential.py:371` | `broken_reference` | `error` → `warning` | down 2 |
 
 That table is the argument. **One code appears at three different tiers in three operations**, and the

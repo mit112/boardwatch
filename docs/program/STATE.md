@@ -45,7 +45,7 @@ gated together. `t18-cli` is local only; **nothing on this track is pushed.**
 Containment verified with `git merge-base --is-ancestor`, not from any note: `t13-followup`,
 `t14-storage`, `t15-rebase`, `t16-promotion` **plus its 11-commit fix round** (`735dfe7`),
 `t16-validate-quarantine`, `t17-schema`, T18 **plus its 10-commit fix round** (`c7d88b4`), and
-`t19-contract`. **`main` is NOT an ancestor of `a64e6fa`** — `main` holds three docs-only commits the
+`t19-contract`. **`main` is NOT an ancestor of `a64e6fa`** — `main` holds docs-only commits the
 gate did not see, which owe only `generalization` + `index-check` under D-116. All Gate A **code** is
 inside the gate. `t19-authoring-guide` is an alias for an already-merged ancestor: **no commits, no
 stash, nothing lost** — safe to delete.
