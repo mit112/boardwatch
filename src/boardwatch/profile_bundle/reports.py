@@ -122,7 +122,14 @@ def outcome_for_report(report: ValidationReport) -> OperationOutcome[ValidationR
     return outcome_with(report, report.diagnostics)
 
 
-def _diagnostic_json(finding: Diagnostic) -> dict[str, JsonValue]:
+def diagnostic_json(finding: Diagnostic) -> dict[str, JsonValue]:
+    """One diagnostic's machine form.
+
+    Public because the command layer renders diagnostics for eleven commands that have no
+    `ValidationReport`, and a second spelling of this mapping would let a field appear under one
+    command and not another — which is how `details` (and so `record_ids`) would go missing from
+    exactly the refusals that carry it.
+    """
     return {
         "tier": finding.tier,
         "code": finding.code,
@@ -150,7 +157,7 @@ def report_json(report: ValidationReport) -> str:
         "outcome": outcome.category,
         "exit_code": outcome.exit_code,
         "counts": report.counts.as_json(),
-        "diagnostics": [_diagnostic_json(finding) for finding in report.ordered],
+        "diagnostics": [diagnostic_json(finding) for finding in report.ordered],
     }
     return (
         json.dumps(payload, sort_keys=True, separators=(",", ":"), ensure_ascii=False) + "\n"
@@ -164,6 +171,16 @@ def _plural(count: int, noun: str) -> str:
 def _location(finding: Diagnostic) -> str:
     where = " ".join(part for part in (finding.path, finding.record_id) if part)
     return f" ({where})" if where else ""
+
+
+def diagnostic_line(finding: Diagnostic) -> str:
+    """One diagnostic's human form: tier, code, where, and what.
+
+    Public for the same reason `diagnostic_json` is: the command layer prints diagnostics for
+    commands that never build a `ValidationReport`, and one operator reading two shapes of the same
+    finding would have to learn which command produced which.
+    """
+    return f"{finding.tier}: {finding.code}{_location(finding)}: {finding.message}"
 
 
 def report_text(report: ValidationReport) -> str:
@@ -186,10 +203,7 @@ def report_text(report: ValidationReport) -> str:
             )
         )
     )
-    lines.extend(
-        f"{finding.tier}: {finding.code}{_location(finding)}: {finding.message}"
-        for finding in report.ordered
-    )
+    lines.extend(diagnostic_line(finding) for finding in report.ordered)
     return "\n".join(lines) + "\n"
 
 
@@ -215,6 +229,8 @@ __all__ = [
     "ValidationCounts",
     "ValidationReport",
     "count_diagnostics",
+    "diagnostic_json",
+    "diagnostic_line",
     "empty_report",
     "outcome_for_report",
     "report_json",
