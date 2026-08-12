@@ -108,6 +108,27 @@ def test_inventory_on_a_root_that_does_not_exist_is_refused_rather_than_clean(
     assert not (tmp_path / "no-such-bundle").exists()
 
 
+@pytest.mark.parametrize("kind", ["file", "symlink-loop"])
+def test_inventory_on_a_root_that_is_not_a_directory_is_refused(tmp_path: Path, kind: str) -> None:
+    """The arm a nonexistent path does not reach. `require_confined_root` asks `is_dir()` rather
+    than `exists()` precisely for these two: a regular file exists and is not a bundle, and a
+    symlink loop exists in the sense `exists()` cares about while `resolve()` either raises or —
+    on 3.13 — answers with the loop itself. Without this the guard could be weakened to `exists()`
+    and `inventory` would go back to reporting a file as a clean, empty bundle at exit 0."""
+    root = tmp_path / "not-a-bundle"
+    if kind == "file":
+        root.write_text("", encoding="utf-8")
+    else:
+        root.symlink_to(root)
+
+    outcome = inventory(root)
+
+    assert outcome.category == "findings"
+    assert outcome.exit_code == 1
+    assert [finding.code for finding in outcome.diagnostics] == [IssueCode.BUNDLE_NOT_FOUND]
+    assert outcome.value is None
+
+
 def test_inventory_reports_a_corrupt_selection_without_touching_it(
     promoted_tree: PromotedRevisionTree,
 ) -> None:

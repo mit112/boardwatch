@@ -20,7 +20,7 @@ from __future__ import annotations
 import hashlib
 import os
 import shutil
-from pathlib import PurePosixPath
+from pathlib import Path, PurePosixPath
 
 import pytest
 
@@ -269,6 +269,31 @@ def test_an_absent_draft_is_a_state_refusal(synthetic_bundle: SyntheticBundle) -
     )
     assert outcome.exit_code == 1
     assert _codes(outcome) == {"draft_not_found"}
+
+
+def test_an_absent_bundle_is_named_rather_than_reported_as_an_absent_draft(
+    tmp_path: Path,
+) -> None:
+    """The distinction the test above does not make. These commands answer before they reach any
+    function that confines the root, so `draft_not_found` was their answer for a bundle that does
+    not exist — and its remedy, "check out a draft", sends the owner to `checkout` for a bundle
+    they never created (D-138)."""
+    absent = tmp_path / "no-such-bundle"
+    text = "Nothing to add this to."
+
+    addition = add_evidence(
+        absent,
+        draft_name="initial",
+        evidence_document=_inline_record(text),
+        capture=text.encode("utf-8"),
+    )
+    ruling = resolve_conflict(absent, draft_name="initial", ruling_document=b"rulings: []\n")
+
+    assert addition.exit_code == 1
+    assert _codes(addition) == {"bundle_not_found"}
+    assert ruling.exit_code == 1
+    assert _codes(ruling) == {"bundle_not_found"}
+    assert not absent.exists()
 
 
 def test_an_unparseable_evidence_document_is_refused(

@@ -320,6 +320,16 @@ def _draft(bundle_root: Path, name: str) -> Path:
     only copy of a draft whose rebase went wrong, and so exactly the tree an owner would be
     authoring into. `paths.draft_root` applies it.
     """
+    # Before the draft, because `drafts/<name> does not exist` about a bundle that does not exist
+    # sends the owner to `checkout` for a bundle they have not created (D-138). This restates
+    # `require_confined_root`'s check rather than calling it, for the same reason `promote` does:
+    # these three commands answer before they reach any function that confines the root.
+    if not bundle_root.is_dir():
+        raise _refusal(
+            IssueCode.BUNDLE_NOT_FOUND,
+            "there is no bundle at this path, so there is no draft to author into; `init` creates "
+            "one, and --bundle names an existing one somewhere else",
+        )
     try:
         tree = draft_root(bundle_root, name)
     except BundlePathError as exc:

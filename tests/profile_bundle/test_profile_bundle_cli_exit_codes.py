@@ -286,14 +286,20 @@ def test_an_unreadable_drafts_directory_could_not_complete(
 def test_a_mistyped_bundle_path_is_a_finding_on_every_reading_command(
     env: Env, tmp_path: Path
 ) -> None:
-    """One fact, one code, across the surface. These four each used to answer differently — two
-    named a missing revision, one named a missing draft, and `inventory` reported clean at exit 0 —
-    so an operator who mistyped `--bundle` was sent looking inside a bundle that was not there."""
+    """One fact, one code, across the surface. Measured at the parent commit, these answered
+    differently: `inventory` reported **clean at exit 0**, and `validate`, `conflicts`,
+    `rebase-draft`, `inspect` and `migrate` all reported `no_current_revision` — "no revision has
+    been promoted yet" — about a directory that does not exist. `validate --draft` answered
+    `draft_not_found`, from a different check than the other five, which is why it is listed
+    separately here: it reaches no function that confines the root."""
     absent = str(tmp_path / "no-such-bundle")
     commands = (
         ["inventory"],
         ["validate"],
+        ["validate", "--draft", "initial"],
         ["conflicts"],
+        ["migrate"],
+        ["inspect", "some-record"],
         ["rebase-draft", "--draft", "initial"],
     )
 

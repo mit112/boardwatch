@@ -133,10 +133,14 @@ def require_confined_root(bundle_root: Path, *, must_exist: bool = True) -> None
     clean, empty bundle at exit 0.
     """
     if must_exist and not bundle_root.is_dir():
+        # `is_dir()`, not `exists()`: a regular file, a device or a dangling symlink at the root is
+        # equally not a bundle, and answering "no revision has been promoted yet" about one is the
+        # defect D-138 closed. It also runs before `resolve()` below, so a symlink loop at the root
+        # is refused here rather than raising `RuntimeError` past every caller's handlers.
         raise SelectionError(
             IssueCode.BUNDLE_NOT_FOUND,
-            "the path given as the bundle root is not a directory; nothing was read and nothing "
-            "was created, so check the argument before looking for a missing revision or draft",
+            "there is no bundle at this path; nothing was read and nothing was created. `init` "
+            "creates one, and --bundle names an existing one somewhere else",
         )
     resolved_root = bundle_root.resolve()
     for member in sorted(ROOT_MEMBERS):

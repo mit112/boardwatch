@@ -547,6 +547,14 @@ def _draft_tree(bundle_root: Path, draft: str) -> OperationOutcome[Path]:
     here — `_existing_draft` already applied the segment grammar it checks — so the `OSError` arm is
     the whole reason this is a function.
     """
+    # `validate --draft` is a reading surface that reaches no function confining the root, so it
+    # needs the root's own answer before the draft's (D-138).
+    if not bundle_root.is_dir():
+        return _refusal(
+            IssueCode.BUNDLE_NOT_FOUND,
+            "there is no bundle at this path, so there is no draft to validate; `init` creates "
+            "one, and --bundle names an existing one somewhere else",
+        )
     tree = draft_root(bundle_root, draft)
     if not tree.is_dir():
         return _refusal(
