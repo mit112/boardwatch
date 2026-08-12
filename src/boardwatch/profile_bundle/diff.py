@@ -77,6 +77,17 @@ _APPEND_ONLY_SEQUENCES: Final[Mapping[type[BaseModel], str]] = {
 }
 
 
+def is_append_only(document: DocumentModel) -> bool:
+    """Whether this document's history is appended to rather than merged record by record.
+
+    Read from the same mapping `merge_document` dispatches on, so a caller deciding whether it may
+    skip the merge cannot come to hold a second, staler list of which documents those are. It is a
+    caller's question and not merge's own: `merge_document` sees two documents that already differ,
+    while the reason to ask is that they might *not*.
+    """
+    return type(document) in _APPEND_ONLY_SEQUENCES
+
+
 @dataclass(frozen=True)
 class RecordDiff:
     """Which records changed between two trees, by stable ID."""

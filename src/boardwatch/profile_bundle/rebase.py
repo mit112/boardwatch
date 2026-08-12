@@ -65,6 +65,7 @@ from boardwatch.profile_bundle.diff import (
     DocumentMergeConflict,
     RecordIdCollision,
     diff_records,
+    is_append_only,
     merge_document,
     merge_values,
     record_contents,
@@ -339,6 +340,16 @@ def _merge_plan(
     A document only one side still has is dropped only when the *other* side left it exactly as the
     base had it. Anything else is a one-sided deletion facing an edit, and it is refused rather than
     resolved by absence — see `_deletion_conflict` for why the record-ID overlap gate cannot see it.
+
+    Taking one side's document whole, rather than merging, is an optimisation for the case where a
+    merge could only reproduce it — and it must not fire for an append-only ledger the selected
+    revision happens not to have touched. That is the *ordinary* case for `conflicts/rulings.yaml`,
+    because a promotion appends a change record and an approval stamp but almost never a ruling; a
+    draft that dropped an inherited entry would then install with nothing said, and §17's guarantee
+    that the selected revision's entries are the result's prefix would hold only where some
+    unrelated edit happened to route the document through `merge_document`. The other short-cut —
+    the draft left the document as the base had it, so the revision's copy wins — is safe for the
+    same ledgers: the draft appended nothing, so the revision's sequence *is* the result.
     """
     merged: dict[PurePosixPath, DocumentModel] = {}
     sources: dict[PurePosixPath, _Source] = {}
@@ -372,7 +383,9 @@ def _merge_plan(
                 )
             continue
         if our_document == their_document or (
-            inherited is not None and their_document == inherited
+            inherited is not None
+            and their_document == inherited
+            and not is_append_only(our_document)
         ):
             merged[logical] = our_document
             sources[logical] = draft_dir / logical

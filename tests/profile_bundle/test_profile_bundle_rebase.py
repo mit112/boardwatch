@@ -50,7 +50,7 @@ from boardwatch.profile_bundle.models.documents import (
     ProjectFactsDocument,
     SkillInventoryDocument,
 )
-from boardwatch.profile_bundle.models.history import ApprovalLedger
+from boardwatch.profile_bundle.models.history import ApprovalLedger, ConflictRulings
 from boardwatch.profile_bundle.models.manifests import DraftManifest, RevisionManifest
 from boardwatch.profile_bundle.paths import (
     LOCK_FILE,
@@ -608,12 +608,19 @@ def test_a_duplicate_record_id_in_the_draft_refuses_instead_of_collapsing_it(
 
 
 APPROVALS_PATH = PurePosixPath("history/approvals.yaml")
+RULINGS_PATH = PurePosixPath("conflicts/rulings.yaml")
 
 
 def _approval_ids(root: Path, *, mode: str) -> list[str]:
     document = load_documents(root, mode=mode).by_path[APPROVALS_PATH]
     assert isinstance(document, ApprovalLedger)
     return [stamp.approval_stamp_id for stamp in document.approvals]
+
+
+def _ruling_ids(root: Path, *, mode: str) -> list[str]:
+    document = load_documents(root, mode=mode).by_path[RULINGS_PATH]
+    assert isinstance(document, ConflictRulings)
+    return [ruling.ruling_id for ruling in document.rulings]
 
 
 def test_a_manifest_field_changed_on_both_sides_refuses(scene: Scene) -> None:
@@ -696,6 +703,34 @@ def test_the_rebased_draft_carries_the_selected_revisions_ledgers_as_a_prefix(sc
 
     installed = _approval_ids(scene.draft, mode="draft")
     assert installed[: len(carried)] == carried
+
+
+def test_a_ruling_the_draft_dropped_is_refused_though_the_revision_left_it_untouched(
+    scene: Scene,
+) -> None:
+    """The append-only rule must not depend on the revision having touched the same ledger.
+
+    A promotion appends a change record and an approval stamp; it almost never appends a *ruling*.
+    So `conflicts/rulings.yaml` is byte-identical in the parent and the selected revision on the
+    ordinary path, and a plan that takes the draft's copy wholesale in that case would drop an
+    owner's ruling with exit 0 and nothing said. Asserted against the revision's own bytes rather
+    than against the merge, so the test states the scene it needs instead of assuming it.
+    """
+    inherited = _ruling_ids(scene.current.revision_dir, mode="revision")
+    assert inherited, "the example bundle must carry a ruling for this scene to exist"
+    assert (scene.current.revision_dir / RULINGS_PATH).read_bytes() == (
+        scene.parent.revision_dir / RULINGS_PATH
+    ).read_bytes()
+    _edit_document(scene.draft, RULINGS_PATH, lambda data: data["rulings"].clear())
+    before = _snapshot(scene.bundle_root)
+
+    outcome = rebase_draft(scene.bundle_root, name=DRAFT_NAME)
+
+    assert outcome.exit_code == 1
+    assert _codes(outcome) == [IssueCode.DRAFT_REBASE_CONFLICT]
+    assert outcome.diagnostics[0].path == RULINGS_PATH.as_posix()
+    assert outcome.diagnostics[0].record_id == inherited[0]
+    assert _snapshot(scene.bundle_root) == before
 
 
 def test_a_merged_document_that_fails_its_own_validator_is_a_typed_refusal(scene: Scene) -> None:
