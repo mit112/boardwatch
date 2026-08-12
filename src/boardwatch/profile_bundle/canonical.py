@@ -230,8 +230,8 @@ def _computed_blob_digests(
     a bundle whose blobs are all present, and stops policing exactly the leaves whose bytes are
     gone — which is what §6's recovery exception waives, and no more than that.
 
-    Whether a digest belongs in `quarantined` is `blobs.quarantined_blobs`' answer, not one this
-    module recomputes; passing an intact blob's digest in would silently excuse it.
+    Which digests belong in `quarantined` is the blob store's answer — `quarantined_blobs` — and not
+    one this module recomputes; passing an intact blob's digest in would silently excuse it.
     """
     return {
         declared: (
