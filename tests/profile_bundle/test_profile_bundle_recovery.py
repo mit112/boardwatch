@@ -285,6 +285,7 @@ def test_the_broken_blob_is_never_moved_or_deleted(broken: Scene) -> None:
     before = sorted(
         entry.name for entry in (broken.bundle_root / "blobs" / "sha256").iterdir()
     )
+    parent_before = _snapshot(broken.first)
     assert checkout_current(broken.bundle_root, name=REPAIR_DRAFT).exit_code == 1
     draft = draft_root(broken.bundle_root, REPAIR_DRAFT)
     _recapture(broken.bundle_root, draft)
@@ -299,7 +300,7 @@ def test_the_broken_blob_is_never_moved_or_deleted(broken: Scene) -> None:
 
     after = sorted(entry.name for entry in (broken.bundle_root / "blobs" / "sha256").iterdir())
     assert after == sorted({*before, RECAPTURED_SHA256})
-    assert _snapshot(broken.first) == _snapshot(broken.first)
+    assert _snapshot(broken.first) == parent_before, "the parent revision is immutable (§7, §21)"
 
 
 # --------------------------------------------------------------------------------------
@@ -398,9 +399,13 @@ def test_a_parent_whose_ledger_was_rewritten_still_blocks(tmp_path: Path) -> Non
 def test_a_broken_blob_does_not_excuse_an_edited_parent_document(tmp_path: Path) -> None:
     """The exception skips the parent's blob integrity, not its documents.
 
-    Worth its own test because the two are checked by the same computation: skipping the digest
-    recomputation for a quarantined parent is exactly what could have let an edited document
-    through. The ledger prefix comparison is what still catches it, and it needs no blob bytes.
+    Worth its own test because the two used to be checked by the same computation: skipping the
+    digest recomputation for a quarantined parent is exactly what let an edited document through.
+    The recomputation now runs with the quarantined blob's declared digest standing in for its leaf,
+    so it speaks here for the same reason it speaks with the blob intact — an edit inside an
+    immutable revision means this is not the revision that was promoted. The prefix comparison the
+    draft's own ledgers are held to is a separate rule about a separate tree, and is pinned in
+    `test_profile_bundle_promotion.py`.
     """
     scene = _promoted_revision_one(tmp_path)
     _prepared_repair(scene)
@@ -415,8 +420,49 @@ def test_a_broken_blob_does_not_excuse_an_edited_parent_document(tmp_path: Path)
     outcome = promote(scene.bundle_root, _request(REPAIR_DRAFT))
 
     assert outcome.exit_code == 1
-    assert IssueCode.LEDGER_PREFIX_CHANGED in _codes(outcome)
+    assert _codes(outcome) == [IssueCode.BUNDLE_DIGEST_MISMATCH]
     assert _snapshot(scene.bundle_root) == before
+
+
+def test_a_broken_blob_does_not_excuse_an_edited_parent_policy_document(broken: Scene) -> None:
+    """The same claim for a document no ledger prefix and no approval decision looks at.
+
+    The test above cannot say whether the parent's digest was recomputed: `history/changes.yaml` is
+    one of the three ledgers the prefix comparison covers, and that comparison needs no blob bytes,
+    so it refuses either way. `policy/units.yaml` carries no record ID, sits in no ledger and is in
+    no approval decision, which leaves the parent's own bundle digest as the only thing that can
+    speak about it — and the parent's digest is what the quarantine used to switch off entirely.
+
+    The draft here is the *recaptured* one, so the promotion is otherwise ready to succeed: without
+    the recomputation this scene installs revision 2 with exit 0, declaring a `parent_bundle_digest`
+    the parent's bytes no longer produce. Its negative control is
+    `test_a_broken_blob_can_be_checked_out_recaptured_approved_and_promoted`, which is this scene
+    without the tamper and does promote.
+    """
+    assert checkout_current(broken.bundle_root, name=REPAIR_DRAFT).exit_code == 1
+    draft = draft_root(broken.bundle_root, REPAIR_DRAFT)
+    _recapture(broken.bundle_root, draft)
+    approve_draft(
+        broken.bundle_root,
+        draft,
+        parent=broken.first,
+        stamp_id="approval-stamp.000002",
+        approved_at=PROMOTED_AT,
+    )
+    # After the approval, so the owner approved the content they actually saw.
+    _edit(
+        broken.first,
+        PurePosixPath("policy/units.yaml"),
+        lambda data: data["units"][0].update({"display_name": "forged under a lost blob"}),
+    )
+    before = _snapshot(broken.bundle_root)
+
+    outcome = promote(broken.bundle_root, _request(REPAIR_DRAFT))
+
+    assert outcome.exit_code == 1
+    assert _codes(outcome) == [IssueCode.BUNDLE_DIGEST_MISMATCH]
+    assert _snapshot(broken.bundle_root) == before
+    assert _manifest_of(broken.first).revision == 1
 
 
 def test_a_draft_that_still_cites_the_broken_blob_cannot_be_promoted(broken: Scene) -> None:

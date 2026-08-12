@@ -128,7 +128,7 @@ from boardwatch.profile_bundle.paths import (
     current_path,
     digest_token,
     draft_root,
-    require_draft_name,
+    require_draft_segment,
     revision_root,
     revisions_dir,
 )
@@ -222,8 +222,11 @@ def promote(
     """Promote `drafts/<name>` into the next immutable revision and select it (§6, §19)."""
     # Confinement first and outside the lock, exactly as `rebase-draft` does it: a name that could
     # escape `drafts/` would decide where the staging tree and the pointer go, and that must not be
-    # settled while holding a lock another writer is waiting on.
-    draft_name = require_draft_name(request.draft_name)
+    # settled while holding a lock another writer is waiting on. The segment grammar, because this
+    # addresses a draft that already exists: every name `inventory` lists under `drafts/` must be
+    # one this command will take, and the shorter operator-facing cap refuses the rebase backup of
+    # a long draft name — the one directory that is the only copy of a pre-rebase draft.
+    draft_name = require_draft_segment(request.draft_name)
     # Before the lock, because `filelock` creates the lockfile's directory: a mistyped `--bundle`
     # would otherwise leave a new empty directory behind as the only trace of a failed command.
     if not bundle_root.is_dir():
@@ -296,6 +299,20 @@ def _prepare(
         return _refusal(exc.code, str(exc))
 
     draft_dir = draft_root(bundle_root, name)
+    if draft_dir.is_symlink():
+        # Before `is_dir()`, which follows the link and answers for its target. Nothing else covers
+        # this one path: `require_confined_root` checks the root's own members, so it reaches
+        # `drafts` and not `drafts/<name>`, and `discover_source_files` refuses links it walks
+        # *past* rather than the tree's own root. That leaves the directory whose bytes become an
+        # immutable revision as the one path with no rule, while `inventory` already classifies a
+        # symlinked draft as a stray artefact and leaves it out of the drafts it reports — so
+        # promoting one installs a revision from a directory no other command calls a draft.
+        return _refusal(
+            IssueCode.SYMLINK_REFUSED,
+            f"drafts/{name} is a symlink; a bundle is self-contained under one root, so the "
+            "content a revision is computed from must be inside it",
+            path=f"drafts/{name}",
+        )
     if not draft_dir.is_dir():
         return _refusal(
             IssueCode.DRAFT_NOT_FOUND, f"drafts/{name} does not exist; there is nothing to promote"
@@ -333,10 +350,11 @@ def _prepare(
             return resolved
         parent, parent_findings = resolved
 
-    if parent is not None:
-        ledger_findings = _ledgers_extend_the_parent(draft, parent.documents)
-        if ledger_findings:
-            return outcome_with(None, ledger_findings)
+    ledger_findings = _ledgers_extend_the_parent(
+        draft, None if parent is None else parent.documents
+    )
+    if ledger_findings:
+        return outcome_with(None, ledger_findings)
 
     derived = _derive(bundle_root, request, draft, parent, blobs)
     if isinstance(derived, OperationOutcome):
@@ -386,6 +404,13 @@ def _parent(
     will not parse, a schema this build does not support, a manifest that disagrees with the
     directory naming it, and a mutated document that no longer produces the parent's own digest.
 
+    "Skips only the recomputation that needs those bytes" is literal: the digest is recomputed with
+    the quarantined blobs' declared digests standing in for their leaves, which is exactly the value
+    an intact blob would have contributed and nothing more. Skipping the whole comparison instead
+    would leave every parent document a ledger prefix does not cover — the manifest, the policy
+    catalogs, every entity file — free to be edited under cover of one broken blob, and the child
+    would then cement a `parent_bundle_digest` naming a directory that no longer produces it.
+
     The quarantine is reported as a warning rather than under its declared blocker tier. The tier is
     a statement about *this* operation: a blocker would refuse the promotion, and refusing it would
     leave an owner with a bundle no supported command can repair. `checkout` reports the identical
@@ -409,7 +434,21 @@ def _parent(
             IssueCode.MISSING_REQUIRED_FILE,
             f"the parent revision's evidence set could not be read: {exc}",
         )
-    quarantined = quarantined_blobs(selection.bundle_root, referenced)
+    try:
+        quarantined = quarantined_blobs(selection.bundle_root, referenced)
+    except BundleIoError:
+        # Caught here rather than at `promote`'s outer arm, and deliberately not interpolated, for
+        # `validation/completeness.py`'s reason: `BundleIoError` is built from `str(OSError)`, which
+        # appends the absolute path it failed on, and `report_json` emits `message` verbatim — so
+        # stringifying it would put a `$HOME` path in a report an operator pastes elsewhere.
+        # Recovering the logical file from that message would mean parsing it, which this package
+        # refuses to do anywhere; the fault is named by its logical path instead.
+        return _refusal(
+            IssueCode.IO_ERROR,
+            "the parent revision's blob store could not be read, so nothing about its evidence "
+            "could be established and nothing was promoted",
+            path=EVIDENCE_PATH.as_posix(),
+        )
     findings = tuple(
         diagnostic(
             IssueCode.CORRUPT_BLOB_QUARANTINE,
@@ -423,14 +462,17 @@ def _parent(
         )
         for declared, reason in quarantined
     )
-    if not quarantined:
-        computed = bundle_digest(documents, FilesystemBlobReader(blobs_dir(selection.bundle_root)))
-        if computed != manifest.bundle_digest:
-            return _refusal(
-                IssueCode.BUNDLE_DIGEST_MISMATCH,
-                "the selected revision's documents no longer produce the digest its manifest "
-                "carries, so it cannot be the parent of a new revision",
-            )
+    computed = bundle_digest(
+        documents,
+        FilesystemBlobReader(blobs_dir(selection.bundle_root)),
+        quarantined=frozenset(declared for declared, _ in quarantined),
+    )
+    if computed != manifest.bundle_digest:
+        return _refusal(
+            IssueCode.BUNDLE_DIGEST_MISMATCH,
+            "the selected revision's documents no longer produce the digest its manifest "
+            "carries, so it cannot be the parent of a new revision",
+        )
     return (
         ParentSnapshot(
             root=selection.root,
@@ -444,7 +486,7 @@ def _parent(
 
 
 def _ledgers_extend_the_parent(
-    draft: BundleDocuments, parent: BundleDocuments
+    draft: BundleDocuments, parent: BundleDocuments | None
 ) -> tuple[Diagnostic, ...]:
     """§6 step 4 and §17: the parent's ledgers must survive into the draft untouched.
 
@@ -453,6 +495,12 @@ def _ledgers_extend_the_parent(
     that already carries an extra entry is authoring history rather than proposing content, and the
     two ledgers must be *exactly* the parent's. `conflicts/rulings.yaml` is ordinary owner content
     that a draft may legitimately add to, so only the prefix is required.
+
+    A first promotion has no parent, and the same comparison against no entries is the rule there
+    rather than an absence of one: revision 1 inherits nothing, so its draft must carry nothing in
+    `history/` for promotion to append the first change record and the first stamp to. Running this
+    only for a parented draft left the models' own validators as the first thing to see a
+    pre-authored entry, and they raise where §21 has no exit code for an exception.
 
     Comparison is by `record_digest`, the same canonical form every other prefix check in the
     package uses, so "unchanged" means the same thing here as it does in `validate_history`.
@@ -464,18 +512,19 @@ def _ledgers_extend_the_parent(
         (PurePosixPath("conflicts/rulings.yaml"), True),
     ):
         ours = _ledger_entries(draft, path)
-        theirs = _ledger_entries(parent, path)
+        theirs: tuple[str, ...] | None = () if parent is None else _ledger_entries(parent, path)
         if ours is None or theirs is None:
             # A missing declared file is `validate_structural`'s finding, reported against the
             # staged tree with every other structural fault rather than as a prefix failure here.
             continue
         if ours[: len(theirs)] != theirs or (not appendable and len(ours) != len(theirs)):
+            inherited = "empty" if parent is None else "the parent revision's entries"
             findings.append(
                 diagnostic(
                     IssueCode.LEDGER_PREFIX_CHANGED,
-                    f"the draft's {path} is not the parent revision's entries "
-                    f"{'followed by its own additions' if appendable else 'unchanged'}; these "
-                    "ledgers are append-only and promotion is what appends to them",
+                    f"the draft's {path} must be {inherited}"
+                    f"{' followed by its own additions' if appendable else ''}; these ledgers are "
+                    "append-only and promotion is what appends to them",
                     path=path.as_posix(),
                 )
             )
@@ -583,22 +632,9 @@ def _derive(
             ),
         )
 
-    change = ChangeRecord.model_validate(
-        {
-            "change_id": f"change.{revision:06d}",
-            "revision": revision,
-            "parent_bundle_digest": parent_digest,
-            "actor": request.actor,
-            # §17: derived from the matching approval stamp, never trusted from the request. The
-            # stamp was found under the candidate digest and its `approved_via` is a controlling
-            # terminal, so the authority behind this revision is the owner's whoever ran the
-            # command.
-            "authorized_by": Actor.OWNER,
-            "summary": request.summary,
-            "changed_record_ids": changed,
-            "created_at": request.created_at,
-        }
-    )
+    change = _change_record(request, revision, parent_digest, changed)
+    if isinstance(change, Diagnostic):
+        return outcome_with(None, (change,))
 
     ledgers = _appended_ledgers(draft, change, stamp)
     if isinstance(ledgers, Diagnostic):
@@ -631,6 +667,45 @@ def _derive(
     values["bundle_digest"] = digest
     manifest = RevisionManifest.model_validate(values)
     return manifest, BundleDocuments(manifest=manifest, by_path=by_path)
+
+
+def _change_record(
+    request: PromotionRequest,
+    revision: int,
+    parent_digest: str | None,
+    changed: tuple[str, ...],
+) -> ChangeRecord | Diagnostic:
+    """The one change record this promotion appends, or why the request cannot produce one.
+
+    `PromotionRequest` is a plain dataclass, so this is the first thing that sees what the operator
+    typed: a blank or whitespace-only summary and a `created_at` with no UTC offset are both refused
+    here, by `ChangeRecord`'s own field types rather than by a second copy of their rules. Left
+    uncaught they leave a function typed `-> OperationOutcome[...]` as a `ValidationError`, and §21
+    has no exit code for that.
+    """
+    try:
+        return ChangeRecord.model_validate(
+            {
+                "change_id": f"change.{revision:06d}",
+                "revision": revision,
+                "parent_bundle_digest": parent_digest,
+                "actor": request.actor,
+                # §17: derived from the matching approval stamp, never trusted from the request.
+                # The stamp was found under the candidate digest and its `approved_via` is a
+                # controlling terminal, so the authority behind this revision is the owner's
+                # whoever ran the command.
+                "authorized_by": Actor.OWNER,
+                "summary": request.summary,
+                "changed_record_ids": changed,
+                "created_at": request.created_at,
+            }
+        )
+    except ValueError as exc:
+        return diagnostic(
+            IssueCode.MODEL_VALIDATION_ERROR,
+            f"this promotion's change record is not a valid one: {exc}",
+            path=CHANGE_LEDGER_PATH.as_posix(),
+        )
 
 
 def _approval_stamp(bundle_root: Path, candidate: str) -> ApprovalStamp | Diagnostic:
@@ -689,7 +764,14 @@ def _approval_stamp(bundle_root: Path, candidate: str) -> ApprovalStamp | Diagno
 def _appended_ledgers(
     draft: BundleDocuments, change: ChangeRecord, stamp: ApprovalStamp
 ) -> dict[PurePosixPath, DocumentModel] | Diagnostic:
-    """The two history documents with exactly one entry appended to each (§17)."""
+    """The two history documents with exactly one entry appended to each (§17).
+
+    The append is where the two ledgers' own rules are enforced — contiguous revisions, one stamp
+    ID used once — and they are enforced by constructing the models rather than by restating them
+    here, so a rule added to either ledger is inherited instead of drifting. What this owes is the
+    translation: `ApprovalLedger` refuses a stamp ID the parent's ledger already holds, and that is
+    an ordinary thing for the tool that filed the stamp to have chosen, not an internal error.
+    """
     changes = draft.by_path.get(CHANGE_LEDGER_PATH)
     approvals = draft.by_path.get(APPROVAL_LEDGER_PATH)
     if not isinstance(changes, ChangeLedger) or not isinstance(approvals, ApprovalLedger):
@@ -699,10 +781,18 @@ def _appended_ledgers(
             "documents under history/ before promoting",
             path="history",
         )
-    return {
-        CHANGE_LEDGER_PATH: ChangeLedger(changes=(*changes.changes, change)),
-        APPROVAL_LEDGER_PATH: ApprovalLedger(approvals=(*approvals.approvals, stamp)),
-    }
+    try:
+        return {
+            CHANGE_LEDGER_PATH: ChangeLedger(changes=(*changes.changes, change)),
+            APPROVAL_LEDGER_PATH: ApprovalLedger(approvals=(*approvals.approvals, stamp)),
+        }
+    except ValueError as exc:
+        return diagnostic(
+            IssueCode.MODEL_VALIDATION_ERROR,
+            f"this promotion's change record and approval stamp do not extend the draft's history/ "
+            f"ledgers: {exc}",
+            path="history",
+        )
 
 
 # --------------------------------------------------------------------------------------
@@ -784,6 +874,15 @@ def _reread(
     handed over rather than rediscovered. Only `_DEFERRED_TO_A_LATER_STEP` is tolerated, and both of
     its members are re-asserted after the artefact they are about exists.
 
+    The tier filter passes over `information` as well, which is three codes and not a third silent
+    deferral. `completeness_counts` and `orphaned_artefact` are reports about a bundle rather than
+    faults in this tree. The third, `candidate_digest_unverified`, is §20.6's "I made no claim", and
+    it cannot arise here: it is emitted when the candidate view could not be recomputed, whose three
+    causes are a missing blob — which the digest recomputation above raises on before validation
+    runs — a final `change_id` that does not match the manifest, which this promotion derived
+    together, and an ancestor that could not be read, which is why the parent is handed over.
+    Listing it in `_DEFERRED_TO_A_LATER_STEP` would be a tolerance for something that cannot happen.
+
     There is deliberately no third check comparing the re-read models with the ones the derivation
     produced (D-115). The digest is computed *from* those models, so any difference between them
     changes it — except in the two manifest fields the leaf excludes, `bundle_digest` (blanked) and
@@ -842,8 +941,13 @@ def _install(staged: Path, target: Path) -> Diagnostic | None:
     marker included, and any difference retains both directories and leaves `CURRENT` alone. §21
     forbids deleting either one, and there is nothing to choose between them anyway: this attempt
     cannot say which of two disagreeing trees the owner meant.
+
+    "Already in place" is `exists() or is_symlink()`, because `exists()` follows a link and answers
+    `False` for a dangling one. Renaming onto that path fails inside the `os.rename`, which unwinds
+    through `_commit`'s `finally` and removes the staged tree — the one refusal that discarded it,
+    reported as an I/O failure rather than as the conflict it is.
     """
-    if not target.exists():
+    if not (target.exists() or target.is_symlink()):
         os.rename(staged, target)
         return None
     try:

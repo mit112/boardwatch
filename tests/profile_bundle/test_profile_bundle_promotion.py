@@ -24,33 +24,45 @@ from __future__ import annotations
 
 import copy
 import json
+import os
 import shutil
 import subprocess
 import sys
 import time
 from collections.abc import Callable, Iterator
 from dataclasses import dataclass
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta, timezone
 from pathlib import Path, PurePosixPath
 from typing import Any
 
 import pytest
 
 from boardwatch.profile_bundle import promotion as promotion_module
-from boardwatch.profile_bundle.canonical import CHANGE_LEDGER_PATH, bundle_digest
+from boardwatch.profile_bundle.canonical import (
+    APPROVAL_LEDGER_PATH,
+    CHANGE_LEDGER_PATH,
+    bundle_digest,
+)
 from boardwatch.profile_bundle.drafts import checkout_current
 from boardwatch.profile_bundle.errors import IssueCode
 from boardwatch.profile_bundle.inspection import inventory
-from boardwatch.profile_bundle.models.history import Actor, ApprovalLedger, ChangeLedger
+from boardwatch.profile_bundle.models.history import (
+    Actor,
+    ApprovalLedger,
+    ChangeLedger,
+    ChangeRecord,
+)
 from boardwatch.profile_bundle.models.manifests import RevisionManifest
 from boardwatch.profile_bundle.paths import (
     LOCK_FILE,
     approval_path,
+    blob_path,
     complete_marker_path,
     current_path,
     digest_token,
     draft_root,
     lock_path,
+    rebase_backup_name,
     revision_root,
     revisions_dir,
 )
@@ -71,6 +83,7 @@ from boardwatch.profile_bundle.validation.digest import (
 from boardwatch.profile_bundle.validation.run import validate_bundle
 from boardwatch.profile_bundle.yaml_loader import load_yaml_bytes
 from tests.profile_bundle.conftest import (
+    BLOB_SHA256,
     EXAMPLE_PROFILE_ID,
     PromotedRevisionTree,
     approve_draft,
@@ -179,6 +192,35 @@ def _rename_skill(name: str) -> Callable[[Any], None]:
         data["skills"][0]["canonical_name"] = name
 
     return mutate
+
+
+#: Which key each history ledger keeps its entries under, so a test can append to either one.
+_LEDGER_FIELD = {CHANGE_LEDGER_PATH: "changes", APPROVAL_LEDGER_PATH: "approvals"}
+
+
+def _pre_authored_entry(scene: Scene, ledger: PurePosixPath) -> Any:
+    """An entry a hand-editor could have put in a first draft's `history/`, valid on its own.
+
+    The approval stamp is the scene's real one, read back from `approvals/` rather than invented, so
+    the draft is refused for authoring history and not for authoring something malformed.
+    """
+    if ledger == APPROVAL_LEDGER_PATH:
+        path = approval_path(scene.bundle_root, scene.candidate)
+        return load_yaml_bytes(
+            path.read_bytes(), logical_path=PurePosixPath(f"approvals/{path.name}")
+        )
+    return ChangeRecord.model_validate(
+        {
+            "change_id": "change.000001",
+            "revision": 1,
+            "parent_bundle_digest": None,
+            "actor": Actor.OWNER,
+            "authorized_by": Actor.OWNER,
+            "summary": "A revision nobody promoted",
+            "changed_record_ids": (),
+            "created_at": PROMOTED_AT,
+        }
+    ).model_dump(mode="json")
 
 
 def _snapshot(root: Path) -> dict[str, bytes]:
@@ -475,6 +517,12 @@ def test_a_pointer_that_is_not_in_the_canonical_form_is_refused(scene: Scene) ->
 
 
 def test_a_pointer_carrying_an_extra_key_is_refused(scene: Scene) -> None:
+    """By the model rather than by the canonical-form comparison, which it never reaches.
+
+    Pinned because `read_current`'s docstring offers the extra key as an example of the one
+    comparison, and it is the one example that is a different rule; an unmatched `pytest.raises`
+    here would let the two drift without anything noticing.
+    """
     _promoted(scene)
     pointer = read_current(scene.bundle_root)
     payload = {**pointer.model_dump(mode="json"), "note": "hand written"}
@@ -482,7 +530,7 @@ def test_a_pointer_carrying_an_extra_key_is_refused(scene: Scene) -> None:
         json.dumps(payload, sort_keys=True, separators=(",", ":")) + "\n", encoding="utf-8"
     )
 
-    with pytest.raises(PointerError):
+    with pytest.raises(PointerError, match="extra_forbidden"):
         read_current(scene.bundle_root)
 
 
@@ -499,6 +547,95 @@ def test_a_draft_that_is_not_there_is_a_typed_state_refusal(scene: Scene) -> Non
     assert outcome.exit_code == 1
     assert _codes(outcome) == [IssueCode.DRAFT_NOT_FOUND]
     assert _snapshot(scene.bundle_root) == before
+
+
+@pytest.mark.parametrize("outside", [True, False])
+def test_a_symlinked_draft_is_refused_rather_than_promoted(
+    scene: Scene, tmp_path: Path, outside: bool
+) -> None:
+    """A revision's content must come from inside the root, and a draft is where it comes from.
+
+    Both arms are the same rule about the same path: what makes `drafts/<name>` unpromotable is
+    that it is a link, not where the link goes. The `outside` arm is the one that matters — the
+    promoted revision would be a copy of bytes nobody can see from the bundle root, and it would
+    hash and validate perfectly afterwards, so there is no later check that could notice. The inside
+    arm shows the refusal does not depend on the target escaping.
+
+    `inventory` already refuses to call either one a draft, which is what makes accepting it here a
+    disagreement between two commands rather than a merely permissive rule.
+    """
+    linked = (tmp_path / "outside-draft") if outside else (scene.draft.parent / "twin")
+    shutil.copytree(scene.draft, linked)
+    link = scene.draft.parent / "linked"
+    link.symlink_to(linked, target_is_directory=True)
+    before = _snapshot(scene.bundle_root)
+
+    outcome = promote(scene.bundle_root, _request("linked"))
+
+    assert outcome.exit_code == 1
+    assert _codes(outcome) == [IssueCode.SYMLINK_REFUSED]
+    assert not revisions_dir(scene.bundle_root).exists()
+    assert _snapshot(scene.bundle_root) == before
+    listing = inventory(scene.bundle_root)
+    assert listing.value is not None
+    assert "linked" not in listing.value.drafts
+
+
+def test_a_rebase_backup_inventory_lists_can_be_promoted(tmp_path: Path) -> None:
+    """Every draft name `inventory` reports must be one this command will take.
+
+    A rebase backup is a draft directory and `inventory` lists it as one, but it is derived from a
+    draft name plus an 83-character suffix, so for any draft longer than a dozen characters it
+    exceeds the operator-facing cap. Addressing it with that cap raised `BundlePathError` out of a
+    function typed to return an outcome — on the one directory that is the only copy of a pre-rebase
+    draft. The name here is built by the helper that emits it rather than spelled out, so it stays
+    the length that helper actually produces.
+    """
+    bundle_root = tmp_path / "career-profile"
+    bundle_root.mkdir()
+    name = rebase_backup_name("a-long-draft-name", "sha256:" + "0" * 64)
+    bundle = materialise(bundle_root, draft_name=name)
+    _approve(bundle_root, bundle.draft)
+    listing = inventory(bundle_root)
+    assert listing.value is not None
+    assert name in listing.value.drafts, "inventory must not list a name promote will not take"
+
+    outcome = promote(bundle_root, _request(name))
+
+    assert outcome.exit_code == 0, outcome.diagnostics
+    assert outcome.value is not None
+    assert read_current_once(bundle_root).bundle_digest == outcome.value.bundle_digest
+
+
+def test_no_diagnostic_carries_the_absolute_path_an_oserror_appended(scene: Scene) -> None:
+    """A diagnostic is JSON an operator may paste elsewhere; an absolute `$HOME` path is not theirs
+    to publish and is not the same on the next machine.
+
+    `BundleIoError` is built from `str(OSError)`, which appends the filename it failed on, so the
+    refusal names the logical path and drops the message rather than interpolating it. The scene is
+    the parent's blob store made unreadable, which is the one route a `BundleIoError` takes into
+    `promote` that carries a path at all.
+    """
+    if os.name != "posix" or os.geteuid() == 0:
+        pytest.skip("permission bits do not restrict this user")
+    first = _promoted(scene)
+    assert checkout_current(scene.bundle_root, name=SECOND_DRAFT).exit_code == 0
+    draft = draft_root(scene.bundle_root, SECOND_DRAFT)
+    _edit(draft, SKILLS_PATH, _rename_skill("Revision Two"))
+    _approve(scene.bundle_root, draft, parent=first, stamp_id="approval-stamp.000002")
+    blob = blob_path(scene.bundle_root, BLOB_SHA256)
+    blob.chmod(0o000)
+    try:
+        outcome = promote(scene.bundle_root, _request(SECOND_DRAFT))
+    finally:
+        blob.chmod(0o400)
+
+    assert outcome.exit_code == 3
+    assert _codes(outcome) == [IssueCode.IO_ERROR]
+    assert outcome.diagnostics[0].path == "evidence/records.yaml"
+    for finding in outcome.diagnostics:
+        assert str(scene.bundle_root) not in finding.message
+        assert BLOB_SHA256 not in finding.message
 
 
 def test_a_path_that_is_not_a_bundle_is_refused_without_being_created(tmp_path: Path) -> None:
@@ -597,6 +734,97 @@ def test_a_draft_that_appended_to_the_change_ledger_itself_is_refused(scene: Sce
     assert _codes(outcome) == [IssueCode.LEDGER_PREFIX_CHANGED]
     assert outcome.diagnostics[0].path == CHANGE_LEDGER_PATH.as_posix()
     assert _snapshot(scene.bundle_root) == before
+
+
+@pytest.mark.parametrize("ledger", [CHANGE_LEDGER_PATH, APPROVAL_LEDGER_PATH])
+def test_a_first_promotion_whose_draft_pre_authored_history_is_refused(
+    scene: Scene, ledger: PurePosixPath
+) -> None:
+    """The same rule for revision 1, where there is no parent to compare against.
+
+    Revision 1 inherits nothing, so "the parent's entries unchanged" means "empty" — and promotion
+    appends the first change record and the first stamp itself. Running the comparison only for a
+    parented draft left the ledger models as the first thing to see a pre-authored entry, and they
+    raise, which leaves `promote` as a `ValidationError` rather than one of §21's exit codes.
+
+    The negative control is every other test in this file: the same scene without the pre-authored
+    entry promotes.
+    """
+    document = load_yaml_bytes((scene.draft / ledger).read_bytes(), logical_path=ledger)
+    document[_LEDGER_FIELD[ledger]].append(_pre_authored_entry(scene, ledger))
+    (scene.draft / ledger).write_bytes(quoted_yaml(document, logical_path=ledger))
+    # Re-approved because `history/changes.yaml` is inside the candidate view: without this the
+    # draft would simply have no stamp, and the refusal would be about the approval instead.
+    _approve(scene.bundle_root, scene.draft)
+    before = _snapshot(scene.bundle_root)
+
+    outcome = promote(scene.bundle_root, _request())
+
+    assert outcome.exit_code == 1
+    assert _codes(outcome) == [IssueCode.LEDGER_PREFIX_CHANGED]
+    assert outcome.diagnostics[0].path == ledger.as_posix()
+    assert _snapshot(scene.bundle_root) == before
+
+
+def test_a_stamp_id_the_parent_ledger_already_holds_is_a_typed_refusal(scene: Scene) -> None:
+    """Nothing in `src/` generates a stamp ID, so a repeat is the filing tool's to make.
+
+    `ApprovalLedger` refuses a duplicate `approval_stamp_id`, and promotion is what hands it the
+    stamp, so the refusal is promotion's to report rather than to raise through.
+    """
+    first = _promoted(scene)
+    assert checkout_current(scene.bundle_root, name=SECOND_DRAFT).exit_code == 0
+    draft = draft_root(scene.bundle_root, SECOND_DRAFT)
+    _edit(draft, SKILLS_PATH, _rename_skill("Revision Two"))
+    _approve(scene.bundle_root, draft, parent=first, stamp_id="approval-stamp.000001")
+    before = _snapshot(scene.bundle_root)
+
+    outcome = promote(scene.bundle_root, _request(SECOND_DRAFT))
+
+    assert outcome.exit_code == 1
+    assert _codes(outcome) == [IssueCode.MODEL_VALIDATION_ERROR]
+    assert outcome.diagnostics[0].path == "history"
+    assert _snapshot(scene.bundle_root) == before
+
+
+@pytest.mark.parametrize(
+    "overrides",
+    [
+        {"summary": ""},
+        {"summary": "   "},
+        {"created_at": PROMOTED_AT.replace(tzinfo=None)},
+    ],
+    ids=["blank-summary", "whitespace-summary", "naive-timestamp"],
+)
+def test_a_request_the_change_record_refuses_is_a_typed_refusal(
+    scene: Scene, overrides: dict[str, Any]
+) -> None:
+    """`PromotionRequest` is a plain dataclass, so `ChangeRecord` is the first thing to see these.
+
+    Its field types are the rules and they are not restated here — what is asserted is that the
+    refusal reaches the operator as an outcome. The negative control is the test below, whose
+    request differs only in carrying an offset `ChangeRecord` accepts.
+    """
+    before = _snapshot(scene.bundle_root)
+
+    outcome = promote(scene.bundle_root, _request(**overrides))
+
+    assert outcome.exit_code == 1
+    assert _codes(outcome) == [IssueCode.MODEL_VALIDATION_ERROR]
+    assert outcome.diagnostics[0].path == CHANGE_LEDGER_PATH.as_posix()
+    assert _snapshot(scene.bundle_root) == before
+
+
+def test_a_created_at_in_another_offset_is_normalised_and_promoted(scene: Scene) -> None:
+    """The negative control for the refusals above: an aware timestamp is accepted, not refused."""
+    elsewhere = PROMOTED_AT.astimezone(timezone(timedelta(hours=5, minutes=30)))
+    assert elsewhere.utcoffset() != timedelta(0)
+
+    outcome = promote(scene.bundle_root, _request(created_at=elsewhere))
+
+    assert outcome.exit_code == 0, outcome.diagnostics
+    assert outcome.value is not None
+    assert _changes(outcome.value.root).changes[0].created_at == PROMOTED_AT
 
 
 def test_a_draft_that_rewrote_a_promoted_change_is_refused(scene: Scene) -> None:
@@ -736,6 +964,30 @@ def test_a_target_without_its_marker_is_a_conflict_that_retains_both(scene: Scen
     assert outcome.diagnostics[0].details["reason"] == TargetConflictReason.MARKER_MISSING.value
     assert _snapshot(root) == before
     assert len(_temporaries(scene.bundle_root)) == 1
+    assert not current_path(scene.bundle_root).exists()
+
+
+def test_a_dangling_symlink_at_the_digest_name_is_a_conflict_that_retains_both(
+    scene: Scene, tmp_path: Path
+) -> None:
+    """`exists()` follows a link and answers `False` for a dangling one.
+
+    So this took the rename arm, the rename failed `ENOTDIR`, and the unwind through `_commit`'s
+    `finally` removed the staged tree — the one refusal that discarded it, reported as an I/O
+    failure rather than as the target conflict every other occupied digest name gets. The exit code
+    was already right; what was wrong is that the staged tree did not survive to be compared.
+    """
+    root = _torn_before_the_pointer(scene)
+    shutil.rmtree(root)
+    root.symlink_to(tmp_path / "nowhere", target_is_directory=True)
+
+    outcome = promote(scene.bundle_root, _request())
+
+    assert outcome.exit_code == 3
+    assert _codes(outcome) == [IssueCode.PROMOTION_TARGET_CONFLICT]
+    assert outcome.diagnostics[0].details["reason"] == TargetConflictReason.MARKER_MISSING.value
+    assert root.is_symlink(), "§21: the thing already at the digest name is never removed"
+    assert len(_temporaries(scene.bundle_root)) == 1, "the staged tree is retained for comparison"
     assert not current_path(scene.bundle_root).exists()
 
 

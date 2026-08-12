@@ -322,17 +322,27 @@ def tree_contents(root: Path) -> dict[str, bytes] | None:
     only by an empty declared directory is not reported as identical.
 
     `rglob` follows a symlinked root silently, so the root is checked before it is walked.
+
+    One `lstat` per entry, classifying it the same way the blob store's entries are classified: a
+    directory or a regular file is content to compare, and everything else makes the answer `None`.
+    The regular-file half is not a tidier spelling of the symlink refusal. A FIFO is neither
+    a symlink nor a directory, so it fell through to `read_bytes()`, whose `open()` blocks until a
+    writer that never comes — and `promote` reaches this over a `revisions/sha256-<digest>/`
+    directory it did not write, while holding the bundle lock, so every other writer is refused for
+    as long as nobody notices the hang.
     """
     if root.is_symlink() or not root.is_dir():
         return None
     contents: dict[str, bytes] = {}
     for path in sorted(root.rglob("*")):
         relative = path.relative_to(root).as_posix()
-        if path.is_symlink():
+        mode = path.lstat().st_mode
+        if stat.S_ISDIR(mode):
+            contents[relative + "/"] = b""
+            continue
+        if not stat.S_ISREG(mode):
             return None
-        contents[relative + "/" if path.is_dir() else relative] = (
-            b"" if path.is_dir() else path.read_bytes()
-        )
+        contents[relative] = path.read_bytes()
     return contents
 
 
