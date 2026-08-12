@@ -190,6 +190,7 @@ def test_symlinked_document_is_refused_before_its_bytes_are_read(tmp_path: Path)
         discover_source_files(tmp_path, final_revision=False)
 
 
+@pytest.mark.skipif(os.name != "posix", reason="mkfifo is POSIX-only")
 def test_fifo_document_is_refused_before_its_bytes_are_read(tmp_path: Path) -> None:
     """A FIFO at a declared document's path must be refused, never opened.
 

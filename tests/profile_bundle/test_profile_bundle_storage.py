@@ -208,6 +208,7 @@ def test_a_symlink_loop_in_a_declared_member_is_a_typed_refusal(
     assert str(promoted_tree.bundle_root) not in str(raised.value)
 
 
+@pytest.mark.skipif(os.name != "posix", reason="mkfifo is POSIX-only")
 def test_a_blob_store_entry_that_is_not_a_regular_file_is_refused(
     promoted_tree: PromotedRevisionTree,
 ) -> None:

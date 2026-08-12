@@ -125,8 +125,14 @@ def _codes(outcome: OperationOutcome[object]) -> set[str]:
 
 
 def _tree(bundle: SyntheticBundle) -> dict[str, bytes]:
+    """Every file under the bundle, keyed by its **posix** relative path.
+
+    `as_posix()` rather than `str()`: the keys are compared against written-out document paths, and
+    `str()` yields `drafts\\baseline\\manifest.yaml` on Windows. Callers that only diff one tree
+    against another never noticed; the one that names a path did, on CI.
+    """
     return {
-        str(path.relative_to(bundle.root)): path.read_bytes()
+        path.relative_to(bundle.root).as_posix(): path.read_bytes()
         for path in sorted(bundle.root.rglob("*"))
         if path.is_file()
     }
@@ -833,6 +839,9 @@ def test_every_ruling_decision_has_a_resulting_conflict_state() -> None:
     assert set(_STATE_AFTER) == set(RulingDecision)
 
 
+@pytest.mark.skipif(
+    os.name != "posix", reason="mode bits do not deny directory writes on Windows"
+)
 def test_a_manifest_write_that_cannot_start_leaves_the_evidence_document_alone(
     synthetic_bundle: SyntheticBundle,
 ) -> None:

@@ -25,6 +25,7 @@ through — and then a full `validate_bundle` of whatever they returned. Asserti
 
 from __future__ import annotations
 
+import os
 import signal
 import subprocess
 import sys
@@ -81,6 +82,13 @@ BEFORE_THE_POINTER = (
     "after_current_write",
     "before_replace",
 )
+
+#: Every case here kills a real child with `SIGKILL`, which Windows has no equivalent of —
+#: `signal.SIGKILL` does not exist there at all. The crash-consistency claim these tests make
+#: is about POSIX process death, so the file is skipped rather than weakened into something
+#: that would pass without exercising it.
+pytestmark = pytest.mark.skipif(os.name != "posix", reason="SIGKILL is POSIX-only")
+
 
 #: The child kills itself at the named point. Boundaries the promotion reaches through its own
 #: helpers are hooked on those helpers; the rest are hooked on the syscalls, because a rename and a

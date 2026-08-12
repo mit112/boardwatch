@@ -453,13 +453,17 @@ def _seal_revision(
     revision_dir = revision_root(bundle_root, digest)
     revision_dir.parent.mkdir(parents=True, exist_ok=True)
     staging.rename(revision_dir)
-    complete_marker_path(revision_dir).write_text(f"{digest}\n", encoding="utf-8")
-    current_path(bundle_root).write_text(
+    # `write_bytes`, never `write_text`: both files are compared byte for byte against what
+    # `current_pointer_bytes` and the complete-marker reader emit, and `write_text` translates the
+    # trailing "\n" to "\r\n" on Windows. Production writes them through `open("wb")` for the same
+    # reason. This fixture used `write_text` and so wrote a pointer no reader would accept, which is
+    # why one line here failed ~100 tests on the Windows matrix with `current_pointer_mismatch`.
+    complete_marker_path(revision_dir).write_bytes(f"{digest}\n".encode())
+    current_path(bundle_root).write_bytes(
         json.dumps(
             {"bundle_digest": digest, "revision": revision}, sort_keys=True, separators=(",", ":")
-        )
-        + "\n",
-        encoding="utf-8",
+        ).encode("utf-8")
+        + b"\n"
     )
     return PromotedRevisionTree(
         bundle_root=bundle_root,
