@@ -20,6 +20,7 @@ from datetime import datetime
 from pathlib import PurePosixPath
 
 from boardwatch.profile_bundle.canonical import digest_of, normalized, record_digest
+from boardwatch.profile_bundle.errors import ProfileBundleError
 from boardwatch.profile_bundle.index import BundleIndex, build_index
 from boardwatch.profile_bundle.models.documents import BundleDocuments
 from boardwatch.profile_bundle.models.history import (
@@ -200,10 +201,24 @@ def build_approval_stamp(
     edited again is what a bundle's history is made of, and §6's evidence-recapture recovery cannot
     complete without it.
 
-    The scope is the stamp ID's own tail, and one stamp per revision plus `ApprovalLedger`'s
-    uniqueness rule is what makes the result unique by construction rather than by convention.
+    The scope is the stamp ID's own tail, and it must carry no `.` — which is what makes the result
+    unique by construction rather than by convention. `ID_TAIL` admits `.` inside a stamp ID's tail
+    and inside a record ID alike, so with a dotted scope the three components are joined by a
+    character that occurs inside all of them and the boundaries are no longer recoverable: a stamp
+    scoped `000001.confirm_fact.fact` approving `claim.w` derives the same ID as one scoped `000001`
+    approving `fact.approve_claim.claim.w`, and `ApprovalLedger` accepts both because their stamp
+    IDs differ. With a dot-free scope the first segment after `approval.` is the scope, so two
+    stamps can only collide by sharing one, which is `ApprovalLedger`'s duplicate rule; and within
+    one stamp the scope is constant while the action tokens are a closed catalog with no `.`, so the
+    pair cannot be re-bracketed either.
     """
     scope = stamp_id.removeprefix("approval-stamp.")
+    if "." in scope:
+        raise ProfileBundleError(
+            f"approval stamp ID {stamp_id!r} has a dotted tail; that tail is the scope every "
+            "approval ID derived here carries, and a dotted one cannot be told apart from the "
+            "action and target it is joined to, so two stamps could derive one approval ID"
+        )
     counts: Counter[tuple[str, str]] = Counter()
     entries: list[ApprovalEntry] = []
     for decision in decisions:
