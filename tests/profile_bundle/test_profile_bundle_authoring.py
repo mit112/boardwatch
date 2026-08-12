@@ -463,6 +463,33 @@ def test_a_capture_supporting_a_fact_writes_the_back_citation(
     assert outcome.value.cited_back == ("facts/identity.yaml",)
 
 
+def test_a_blob_capture_writes_the_back_citation_too(
+    synthetic_bundle: SyntheticBundle,
+) -> None:
+    """The other capture kind, because an unreached arm is not a passed arm.
+
+    `_documents_citing_back` reads only the record's link tuples and never touches `record.capture`,
+    so the two kinds should not differ — but the review that checked this change reached every other
+    arm with inline captures alone and said so. This runs the one it could not.
+    """
+    raw = b"# Attested note\n\nStored by digest, and it supports a fact.\n"
+    outcome = add_evidence(
+        synthetic_bundle.root,
+        draft_name=synthetic_bundle.draft_name,
+        evidence_document=_blob_record(raw),
+        capture=raw,
+    )
+
+    assert outcome.category == "clean", outcome.diagnostics
+    assert outcome.value is not None
+    assert outcome.value.blob_outcome == "written"
+    assert "evidence.example.blob.001" in _cited_by(
+        synthetic_bundle, "facts/identity.yaml", "fact.example.name.001"
+    )
+    assert outcome.value.cited_back == ("facts/identity.yaml",)
+    assert _asymmetries(synthetic_bundle) == []
+
+
 def test_a_capture_supporting_a_metric_writes_the_back_citation(
     synthetic_bundle: SyntheticBundle,
 ) -> None:
