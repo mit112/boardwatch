@@ -34,41 +34,59 @@ old link points at a dead path on a new host.
 "0 dead postings" needs a real run whose leads are actually probed. Accumulating those runs is gated on
 Mit's `resume.yaml` fix below.
 
-### Gate A — code-complete, gate green, NOT met
+### Gate A — code complete, all four gates green, review loop CLOSED, acceptance demonstrated
 
-**The integration branch `t18-cli` HEAD `a64e6fa` carries all nineteen Gate A slices, and its
-`make check` is GREEN: exit 0 · 5,906 passed · 1 deselected · 95.63% · 16m42s · Python 3.13.12.**
-Evidence and the four facts binding that log to that sha: `.agent/GATE-A-FINAL-GATE.md` (D-135).
-This retires the branch-by-branch table that stood here — every slice's code is in one place and
-gated together. `t18-cli` is local only; **nothing on this track is pushed.**
+**Three separate claims, kept separate on purpose. Do not collapse them into "Gate A is met".**
 
-Containment verified with `git merge-base --is-ancestor`, not from any note: `t13-followup`,
-`t14-storage`, `t15-rebase`, `t16-promotion` **plus its 11-commit fix round** (`735dfe7`),
-`t16-validate-quarantine`, `t17-schema`, T18 **plus its 10-commit fix round** (`c7d88b4`), and
-`t19-contract`. **`main` is NOT an ancestor of `a64e6fa`** — `main` holds docs-only commits the
-gate did not see, which owe only `generalization` + `index-check` under D-116. All Gate A **code** is
-inside the gate. `t19-authoring-guide` is an alias for an already-merged ancestor: **no commits, no
-stash, nothing lost** — safe to delete.
+**1. The code is complete and green.** `t18-cli` HEAD **`17574c3`** carries all nineteen slices and
+every review round's fixes. All four gates, on that sha:
 
-**A green gate is not a review.** Still owed, and the reason Gate A is not met:
+| Gate | Result |
+|---|---|
+| `make check` | **exit 0** · 5,913 passed · 1 deselected · 95.59% · 16m35s · Python 3.13.12 |
+| `gitleaks` (`origin/main..t18-cli`, and `..main`) | **exit 0** · no leaks |
+| `perf` (CI-only) | **exit 0** |
 
-1. **T18's fix round owes an INDEPENDENT REVIEW.** D-126's stopping rule is not satisfied — **both**
-   T18 lenses found a qualifying BLOCKING. T14/T15's and T16's fix rounds were each independently
-   reviewed and **every one found something**.
-2. **The authoring guide is entirely unwritten** — `docs/profile-bundle-authoring.md` does not exist
-   (T19 Step 2, with `docs/configuration.md` and `README.md`). **It is blocked on open question 3
-   below**, because §19's authoring flow is exactly what that question is about.
-3. **T19 owes a separate docs-only reviewer**, which must check the Gate A claim itself.
+Evidence: `.agent/GATE-A-CI-EQUIVALENCE.md`. This is the first time the *whole* CI surface has been
+run locally against this track. `t18-cli` is **local only; nothing on this track is pushed.**
 
-**`.agent/NEXT-SESSION-GATE-A.md` remains the ordered plan for items 2–4 of its own owed list**; its
-item 1 (read the gate result) is done and superseded by `.agent/GATE-A-FINAL-GATE.md`. Start any Gate A
-session with `git worktree prune`. Worktrees live under `../bw-wt/` (`integrate`, `t18fix`, `guide`);
-`docs/superpowers/` holds the design and plan, is **untracked**, and must be copied into any new worktree.
+**2. The review loop is CLOSED (D-137).** Five rounds: two lenses on T18's build (REWORK, REWORK,
+each finding a BLOCKING the other missed), one on its 10-commit fix round (REWORK), one on those
+fixes (REWORK — 2 BLOCKING), and round five (**APPROVE**, 14 claims verified, 11 of 12 mutations
+red). D-126's stopping rule is satisfied. **The exit criterion was written down before round five
+ran** — by round four the severity curve was not decaying, and "review until APPROVE" does not
+terminate. T19's guide has its own docs-only review: **APPROVE**, 0 BLOCKING, 37 claims verified.
+Reports: `.agent/GATE-A-CLOSING-REVIEW.md`, `-ROUND5-REVIEW.md`, `.agent/GUIDE-DOCS-REVIEW.md`,
+`.agent/T18-REVIEW-LENS-A.md`, `-BOUNDARY.md`, `.agent/T18-FIXROUND-REVIEW.md`.
 
-**Gate A is NOT met and Gate B stays prohibited until Gate A is implemented AND independently
-reviewed.** `origin/main` is `88c5857` (T11); the published 0.3.0 wheel (`dc1ffec`) is T1–T10 —
-verified with `git cat-file -e` and `git ls-tree`, not from a note (D-133 corrects D-130's escalation
-to "T1–T12", which was wrong). **Everything from T12 onward is unpushed.**
+**3. The acceptance clauses are demonstrated.** The design's Gate A section lists eleven; eight are
+driven end to end through the real CLI against the packaged synthetic example by
+`.agent/gate-a/acceptance.sh` (re-runnable, 8 PASS / 0 FAIL), and clauses 7 and 9 (crash matrix,
+import idempotency) are cited to the suite that owns them because a script driving the CLI once
+cannot establish them. Evidence and the clause-by-clause map: `.agent/GATE-A-ACCEPTANCE.md`.
+**One number recorded exactly:** the example validates at **8 blocker, 0 error, exit 1**, which
+satisfies Gate A (its clause is that the layers *run*) and **not** Gate B's separate "zero
+undispositioned blockers".
+
+**What remains before "Gate A met" can be written down:** the owner's call on **open question 3
+below** (`evidence_link_asymmetry` after `add-evidence` on a fact or metric), and merging `t18-cli`
+into `main`. `git merge-tree` reports that merge clean. Run
+`gitleaks git --log-opts=origin/main..HEAD` before any push (D-117).
+
+Containment verified with `git merge-base --is-ancestor`, not from a note: `t13-followup`,
+`t14-storage`, `t15-rebase`, `t16-promotion` + its 11-commit fix round, `t16-validate-quarantine`,
+`t17-schema`, `t18-fixround`, `t19-contract`, `t19-guide`. **`main` is NOT an ancestor of
+`17574c3`** — it holds docs-only commits the gate did not see, which owe only `generalization` +
+`index-check` (D-116).
+
+Start any Gate A session with `git worktree prune`. Only `../bw-wt/integrate` remains; the rest were
+reclaimed as their branches merged. `docs/superpowers/` holds the design and plan, is **untracked**,
+and must be copied into any new worktree.
+
+**Gate B stays prohibited until Gate A is met.** `origin/main` is `88c5857` (T11); the published
+0.3.0 wheel (`dc1ffec`) is T1–T10 — verified with `git cat-file -e` and `git ls-tree`, not from a note
+(D-133 corrects D-130's escalation to "T1–T12", which was wrong). **Everything from T12 onward is
+unpushed.**
 
 **Next action, in order:** (1) review T18's fix round — one lens on the tailor boundary; (2) get Mit's
 ruling on `evidence_link_asymmetry`, then write the authoring guide and dispatch its docs-only reviewer;
@@ -114,13 +132,21 @@ defensible as a fail-open. Options: leave it; make it fatal; keep it non-fatal b
 **2. Should any family other than `work_auth` default to `blocker` severity** (e.g. `clearance`)? Owner-gated
 since D-035, unchanged by everything since.
 
-**3. `evidence_link_asymmetry` is now a permanent outcome of every successful `add-evidence`.** An
-`owner_attestation` must support a fact, §12 requires that fact to cite it back, and `add_evidence` only
-appends to the evidence document — so a capture supporting a fact *always* leaves that finding until the
-owner edits the fact. **§19's authoring flow therefore cannot end clean on this shape**, which is why the
-authoring guide is blocked on this. Same class as the BLOCKING T18's fix round just closed: a correct
-operation leaving a standing error. Neither T18 reviewer raised it (lens A hand-fixed it in a probe and
-moved on).
+**3. Should `add-evidence` write the back-citation itself?** `evidence_link_asymmetry` stands after a
+successful capture: §12 requires a fact to cite the evidence that supports it, and `add_evidence` only
+appends to the evidence document, so the owner must then edit the fact. Same class as the BLOCKING T18's
+fix round closed — a correct operation leaving a standing error.
+
+**Scope, measured, and narrower than this entry first claimed:** bidirectional citation is required only
+for **`fact` and `metric`** records, because only they carry `evidence_ids`. Evidence naming a `skill` or
+a `claim` is a legitimate one-way link under §12 and reports nothing. Driven through the CLI: fact → exit
+1, metric → exit 1, **skill → clean exit 0, claim → clean exit 0**. So the question is whether facts and
+metrics should be auto-linked, not whether every capture is affected. The earlier "every successful
+`add-evidence`" phrasing was wrong.
+
+**The authoring guide is no longer blocked on this** — it documents the two-step flow as it actually
+behaves and says the question is open. Neither T18 reviewer raised the issue (lens A hand-fixed it in a
+probe and moved on).
 
 *(A fourth — whether docs-only commits owe a full `make check` — was **resolved** by D-116.)*
 
@@ -132,7 +158,7 @@ moved on).
 |---|---|---|
 | **T18's fix round is unreviewed** | The one thing standing between Gate A and "implemented and independently reviewed". D-126's stopping rule is explicitly not satisfied. Brief two lenses, one on the tailor boundary. | Gate A |
 | **The authoring guide is unwritten** | Blocked on open question 3, not on effort. Under D-116 it owes only `generalization` + `index-check`: `.md` is outside `DATA_SUFFIXES` and no test reads a real repo doc — both measured. | Gate A / Mit |
-| **T16's two BLOCKINGs have fixes committed, inside the green gate** | The `promotion._parent` `if not quarantined:` guard (line 426 pre-fix; the guard is gone now) that let one quarantined blob disable the *entire* parent digest recomputation, and the symlinked draft root promoting outside content into an immutable revision. Both closed by T16's 11-commit fix round (`735dfe7`), which is in `a64e6fa`, and that fix round was independently reviewed. Do not re-open from the old blocker text — read D-132. | closed |
+| **T16's two BLOCKINGs have fixes committed, inside the green gate** | The `promotion._parent` `if not quarantined:` guard (line 426 pre-fix; the guard is gone now) that let one quarantined blob disable the *entire* parent digest recomputation, and the symlinked draft root promoting outside content into an immutable revision. Both closed by T16's 11-commit fix round (`735dfe7`), which is contained in the gated integration head, and that fix round was independently reviewed. Do not re-open from the old blocker text — read D-132. | closed |
 | **Three `resume.yaml` bullets exceed the 220-char layout gate** | Forces an untailored-master degrade on every posting, which is what blocks accumulating real runs. The file also lacks Knowledge Forge, has stale `skill_groups`, and an empty extracurricular block. **Mit pins `resume_max_pages=1` — do not advise setting it to 2.** Mit deprioritized this 2026-08-11; do not gate other work behind it. | Mit (content) |
 | **The 03:10 launchd job re-fires a task that shipped 209 commits ago** | `com.mitsheth.boardwatch-p6.plist` is a *daily* `StartCalendarInterval` job carrying the *one-shot* "execute P6 Slice 1" prompt, asserting `main` at `fb0386a`. It has now misfired **twice** — 2026-08-11 and 2026-08-12 (D-123, D-135). Benign and self-detecting in five read-only commands, **not** self-correcting, and it spends a real usage window each night. Fix: `launchctl bootout gui/$UID/com.mitsheth.boardwatch-p6`, or repoint `~/.claude/scheduled/p6-slice1-run.sh` at a fresh prompt. | Mit (automation) |
 | **No local pre-push check for the TWO CI-only jobs** | **`gitleaks` and `perf` — two, not three.** `generalization` IS inside `make check` (`Makefile:2`, the identical command CI runs); this row said three until 2026-08-12. `gitleaks` is installed on this machine (8.30.1) but not wired into project tooling. **All four gates are green on the Gate A tree `a64e6fa`** — `.agent/GATE-A-CI-EQUIVALENCE.md` (D-117) | mitigated, not wired |
