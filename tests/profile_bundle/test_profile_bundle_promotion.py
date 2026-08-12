@@ -501,6 +501,38 @@ def test_a_draft_that_is_not_there_is_a_typed_state_refusal(scene: Scene) -> Non
     assert _snapshot(scene.bundle_root) == before
 
 
+@pytest.mark.parametrize("outside", [True, False])
+def test_a_symlinked_draft_is_refused_rather_than_promoted(
+    scene: Scene, tmp_path: Path, outside: bool
+) -> None:
+    """A revision's content must come from inside the root, and a draft is where it comes from.
+
+    Both arms are the same rule about the same path: what makes `drafts/<name>` unpromotable is
+    that it is a link, not where the link goes. The `outside` arm is the one that matters — the
+    promoted revision would be a copy of bytes nobody can see from the bundle root, and it would
+    hash and validate perfectly afterwards, so there is no later check that could notice. The inside
+    arm shows the refusal does not depend on the target escaping.
+
+    `inventory` already refuses to call either one a draft, which is what makes accepting it here a
+    disagreement between two commands rather than a merely permissive rule.
+    """
+    linked = (tmp_path / "outside-draft") if outside else (scene.draft.parent / "twin")
+    shutil.copytree(scene.draft, linked)
+    link = scene.draft.parent / "linked"
+    link.symlink_to(linked, target_is_directory=True)
+    before = _snapshot(scene.bundle_root)
+
+    outcome = promote(scene.bundle_root, _request("linked"))
+
+    assert outcome.exit_code == 1
+    assert _codes(outcome) == [IssueCode.SYMLINK_REFUSED]
+    assert not revisions_dir(scene.bundle_root).exists()
+    assert _snapshot(scene.bundle_root) == before
+    listing = inventory(scene.bundle_root)
+    assert listing.value is not None
+    assert "linked" not in listing.value.drafts
+
+
 def test_a_path_that_is_not_a_bundle_is_refused_without_being_created(tmp_path: Path) -> None:
     """`filelock` would create the directory to hold the lockfile; a mistyped path must not."""
     outcome = promote(tmp_path / "not-a-bundle", _request())

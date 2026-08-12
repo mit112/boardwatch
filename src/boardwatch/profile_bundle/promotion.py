@@ -296,6 +296,20 @@ def _prepare(
         return _refusal(exc.code, str(exc))
 
     draft_dir = draft_root(bundle_root, name)
+    if draft_dir.is_symlink():
+        # Before `is_dir()`, which follows the link and answers for its target. Nothing else covers
+        # this one path: `require_confined_root` checks the root's own members, so it reaches
+        # `drafts` and not `drafts/<name>`, and `discover_source_files` refuses links it walks
+        # *past* rather than the tree's own root. That leaves the directory whose bytes become an
+        # immutable revision as the one path with no rule, while `inventory` already classifies a
+        # symlinked draft as a stray artefact and leaves it out of the drafts it reports — so
+        # promoting one installs a revision from a directory no other command calls a draft.
+        return _refusal(
+            IssueCode.SYMLINK_REFUSED,
+            f"drafts/{name} is a symlink; a bundle is self-contained under one root, so the "
+            "content a revision is computed from must be inside it",
+            path=f"drafts/{name}",
+        )
     if not draft_dir.is_dir():
         return _refusal(
             IssueCode.DRAFT_NOT_FOUND, f"drafts/{name} does not exist; there is nothing to promote"
