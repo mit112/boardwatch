@@ -1935,3 +1935,18 @@ re-proving the same tree.
 The T18 build worktree is deliberately left on **3.13** while the repo's venv is 3.12. A worktree on a
 different matrix entry is free cross-version coverage for a gate that otherwise only ever runs one,
 and it has already paid for itself once today.
+
+
+### Late in the session — the numbers the record above was written without
+
+| Branch | Result |
+|---|---|
+| `t16-promotion` (T16 + its 11-commit fix round, `735dfe7`) | 1,822 passed · ruff · mypy `--strict` clean. **`make check` NOT run.** |
+| `t18-cli` (main's fixes + T16 **as built** + T18's 9 commits, `d64af3c`) | **`make check` GATE_EXIT=0 · 5,811 passed · 1 deselected · 95.55% · 16m08s** |
+
+So `main`'s eight fix commits are gate-verified, through `t18-cli` rather than on `main` itself.
+**T16's fix round is not in that gate** — `t18-cli` merged T16 before those commits existed. Re-merge
+and re-gate; that is the one number this session did not get.
+
+Read from `GATE_EXIT` and the pytest summary. `All checks passed!` appears early from the lint step
+while pytest is still running and is not the verdict — the trap held again on this run.
