@@ -329,9 +329,11 @@ stops being visible, and an unmeasured thing then reads as a measured one.
 | `warning` | Advisory. | no |
 | `information` | A report about the bundle root, a run's own arithmetic, or a check that did **not** happen. | no |
 
-The tier comes from the issue code, which is a closed catalog of 122 members: 106 error, 13 blocker,
-3 information. A code cannot be invented at the call site, and out-of-catalog is a failure rather
-than a new bucket.
+The tier comes from the issue code, which is a **closed catalog**: a code cannot be invented at the
+call site, and out-of-catalog is a failure rather than a new bucket. `errors.IssueCode` is the
+catalog and `errors.tier_of` assigns every member a tier; no exact membership count is quoted here,
+because a number in this file cannot be pinned by a test — a test that read this document would void
+the rule that lets documentation ship without the full gate — so it could only go stale silently.
 
 The tier is a property of the **operation** as well as the code: the same condition is an error
 during promotion and a blocker during read-only completeness (a broken ancestor is the standing
@@ -490,7 +492,8 @@ Hard limits, enforced by validation rather than advised:
 
 - media type is one of `text/plain`, `text/markdown`, `application/json`, `text/csv`;
 - each capture is at most 1 MiB;
-- one active revision's inline bytes plus its unique referenced blob bytes total at most 50 MiB.
+- one active revision's inline bytes plus its unique referenced blob bytes total at most
+  50 MiB (`blobs.MAX_REVISION_EVIDENCE_BYTES`, so the figure has one owner rather than two).
 
 ```console
 $ ... add-evidence --evidence-file <file> --capture <big-file>
@@ -534,6 +537,11 @@ A newer, stronger installed ruleset scans older revisions **additionally**, and 
 blockers requiring recapture — it never retroactively invalidates the revision or rewrites the old
 manifest's assertion. A recorded ruleset version this build does not retain is exit 3
 (`unsupported_secret_scan_ruleset_version`), never a clean scan.
+
+**As shipped, only one ruleset version exists, so the stronger-ruleset comparison cannot currently
+fire.** It is described because the manifest records the version precisely so that it can, and
+because a reader who found the code and not this sentence would reasonably wonder whether it had ever
+run. It has not.
 
 Absolute home and user-directory paths are rejected in all revision YAML and in every decoded
 capture. Note the difference from a secret hit — this one is found by the **revalidation** that
@@ -918,6 +926,12 @@ The backup path is `drafts/<name>.pre-rebase-<token>/`, where the token is
 `sha256-<64-hex-old-parent-digest>`, or `root` for a parentless revision-1 draft. If that path already
 exists it must be byte-identical to the old draft, or rebase returns `draft_backup_conflict` and
 performs no write.
+
+The same code has a second trigger: a draft whose name is already a derived backup cannot have a
+backup derived from it, because the second suffix would exceed the per-component name limit. Rebasing
+a `…pre-rebase-…` directory is therefore a typed refusal naming the way out rather than an exception —
+re-parent it under a shorter name first. That path matters because such a directory is often the only
+surviving copy of a draft whose rebase went wrong.
 
 An overlap is refused with the exact record IDs, and nothing is written — a rebase never resolves a
 record conflict on the owner's behalf:
