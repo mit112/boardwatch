@@ -30,18 +30,27 @@ import sys
 import time
 from collections.abc import Callable, Iterator
 from dataclasses import dataclass
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta, timezone
 from pathlib import Path, PurePosixPath
 from typing import Any
 
 import pytest
 
 from boardwatch.profile_bundle import promotion as promotion_module
-from boardwatch.profile_bundle.canonical import CHANGE_LEDGER_PATH, bundle_digest
+from boardwatch.profile_bundle.canonical import (
+    APPROVAL_LEDGER_PATH,
+    CHANGE_LEDGER_PATH,
+    bundle_digest,
+)
 from boardwatch.profile_bundle.drafts import checkout_current
 from boardwatch.profile_bundle.errors import IssueCode
 from boardwatch.profile_bundle.inspection import inventory
-from boardwatch.profile_bundle.models.history import Actor, ApprovalLedger, ChangeLedger
+from boardwatch.profile_bundle.models.history import (
+    Actor,
+    ApprovalLedger,
+    ChangeLedger,
+    ChangeRecord,
+)
 from boardwatch.profile_bundle.models.manifests import RevisionManifest
 from boardwatch.profile_bundle.paths import (
     LOCK_FILE,
@@ -179,6 +188,35 @@ def _rename_skill(name: str) -> Callable[[Any], None]:
         data["skills"][0]["canonical_name"] = name
 
     return mutate
+
+
+#: Which key each history ledger keeps its entries under, so a test can append to either one.
+_LEDGER_FIELD = {CHANGE_LEDGER_PATH: "changes", APPROVAL_LEDGER_PATH: "approvals"}
+
+
+def _pre_authored_entry(scene: Scene, ledger: PurePosixPath) -> Any:
+    """An entry a hand-editor could have put in a first draft's `history/`, valid on its own.
+
+    The approval stamp is the scene's real one, read back from `approvals/` rather than invented, so
+    the draft is refused for authoring history and not for authoring something malformed.
+    """
+    if ledger == APPROVAL_LEDGER_PATH:
+        path = approval_path(scene.bundle_root, scene.candidate)
+        return load_yaml_bytes(
+            path.read_bytes(), logical_path=PurePosixPath(f"approvals/{path.name}")
+        )
+    return ChangeRecord.model_validate(
+        {
+            "change_id": "change.000001",
+            "revision": 1,
+            "parent_bundle_digest": None,
+            "actor": Actor.OWNER,
+            "authorized_by": Actor.OWNER,
+            "summary": "A revision nobody promoted",
+            "changed_record_ids": (),
+            "created_at": PROMOTED_AT,
+        }
+    ).model_dump(mode="json")
 
 
 def _snapshot(root: Path) -> dict[str, bytes]:
@@ -629,6 +667,97 @@ def test_a_draft_that_appended_to_the_change_ledger_itself_is_refused(scene: Sce
     assert _codes(outcome) == [IssueCode.LEDGER_PREFIX_CHANGED]
     assert outcome.diagnostics[0].path == CHANGE_LEDGER_PATH.as_posix()
     assert _snapshot(scene.bundle_root) == before
+
+
+@pytest.mark.parametrize("ledger", [CHANGE_LEDGER_PATH, APPROVAL_LEDGER_PATH])
+def test_a_first_promotion_whose_draft_pre_authored_history_is_refused(
+    scene: Scene, ledger: PurePosixPath
+) -> None:
+    """The same rule for revision 1, where there is no parent to compare against.
+
+    Revision 1 inherits nothing, so "the parent's entries unchanged" means "empty" — and promotion
+    appends the first change record and the first stamp itself. Running the comparison only for a
+    parented draft left the ledger models as the first thing to see a pre-authored entry, and they
+    raise, which leaves `promote` as a `ValidationError` rather than one of §21's exit codes.
+
+    The negative control is every other test in this file: the same scene without the pre-authored
+    entry promotes.
+    """
+    document = load_yaml_bytes((scene.draft / ledger).read_bytes(), logical_path=ledger)
+    document[_LEDGER_FIELD[ledger]].append(_pre_authored_entry(scene, ledger))
+    (scene.draft / ledger).write_bytes(quoted_yaml(document, logical_path=ledger))
+    # Re-approved because `history/changes.yaml` is inside the candidate view: without this the
+    # draft would simply have no stamp, and the refusal would be about the approval instead.
+    _approve(scene.bundle_root, scene.draft)
+    before = _snapshot(scene.bundle_root)
+
+    outcome = promote(scene.bundle_root, _request())
+
+    assert outcome.exit_code == 1
+    assert _codes(outcome) == [IssueCode.LEDGER_PREFIX_CHANGED]
+    assert outcome.diagnostics[0].path == ledger.as_posix()
+    assert _snapshot(scene.bundle_root) == before
+
+
+def test_a_stamp_id_the_parent_ledger_already_holds_is_a_typed_refusal(scene: Scene) -> None:
+    """Nothing in `src/` generates a stamp ID, so a repeat is the filing tool's to make.
+
+    `ApprovalLedger` refuses a duplicate `approval_stamp_id`, and promotion is what hands it the
+    stamp, so the refusal is promotion's to report rather than to raise through.
+    """
+    first = _promoted(scene)
+    assert checkout_current(scene.bundle_root, name=SECOND_DRAFT).exit_code == 0
+    draft = draft_root(scene.bundle_root, SECOND_DRAFT)
+    _edit(draft, SKILLS_PATH, _rename_skill("Revision Two"))
+    _approve(scene.bundle_root, draft, parent=first, stamp_id="approval-stamp.000001")
+    before = _snapshot(scene.bundle_root)
+
+    outcome = promote(scene.bundle_root, _request(SECOND_DRAFT))
+
+    assert outcome.exit_code == 1
+    assert _codes(outcome) == [IssueCode.MODEL_VALIDATION_ERROR]
+    assert outcome.diagnostics[0].path == "history"
+    assert _snapshot(scene.bundle_root) == before
+
+
+@pytest.mark.parametrize(
+    "overrides",
+    [
+        {"summary": ""},
+        {"summary": "   "},
+        {"created_at": PROMOTED_AT.replace(tzinfo=None)},
+    ],
+    ids=["blank-summary", "whitespace-summary", "naive-timestamp"],
+)
+def test_a_request_the_change_record_refuses_is_a_typed_refusal(
+    scene: Scene, overrides: dict[str, Any]
+) -> None:
+    """`PromotionRequest` is a plain dataclass, so `ChangeRecord` is the first thing to see these.
+
+    Its field types are the rules and they are not restated here — what is asserted is that the
+    refusal reaches the operator as an outcome. The negative control is the test below, whose
+    request differs only in carrying an offset `ChangeRecord` accepts.
+    """
+    before = _snapshot(scene.bundle_root)
+
+    outcome = promote(scene.bundle_root, _request(**overrides))
+
+    assert outcome.exit_code == 1
+    assert _codes(outcome) == [IssueCode.MODEL_VALIDATION_ERROR]
+    assert outcome.diagnostics[0].path == CHANGE_LEDGER_PATH.as_posix()
+    assert _snapshot(scene.bundle_root) == before
+
+
+def test_a_created_at_in_another_offset_is_normalised_and_promoted(scene: Scene) -> None:
+    """The negative control for the refusals above: an aware timestamp is accepted, not refused."""
+    elsewhere = PROMOTED_AT.astimezone(timezone(timedelta(hours=5, minutes=30)))
+    assert elsewhere.utcoffset() != timedelta(0)
+
+    outcome = promote(scene.bundle_root, _request(created_at=elsewhere))
+
+    assert outcome.exit_code == 0, outcome.diagnostics
+    assert outcome.value is not None
+    assert _changes(outcome.value.root).changes[0].created_at == PROMOTED_AT
 
 
 def test_a_draft_that_rewrote_a_promoted_change_is_refused(scene: Scene) -> None:

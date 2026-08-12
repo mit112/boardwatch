@@ -347,10 +347,11 @@ def _prepare(
             return resolved
         parent, parent_findings = resolved
 
-    if parent is not None:
-        ledger_findings = _ledgers_extend_the_parent(draft, parent.documents)
-        if ledger_findings:
-            return outcome_with(None, ledger_findings)
+    ledger_findings = _ledgers_extend_the_parent(
+        draft, None if parent is None else parent.documents
+    )
+    if ledger_findings:
+        return outcome_with(None, ledger_findings)
 
     derived = _derive(bundle_root, request, draft, parent, blobs)
     if isinstance(derived, OperationOutcome):
@@ -468,7 +469,7 @@ def _parent(
 
 
 def _ledgers_extend_the_parent(
-    draft: BundleDocuments, parent: BundleDocuments
+    draft: BundleDocuments, parent: BundleDocuments | None
 ) -> tuple[Diagnostic, ...]:
     """§6 step 4 and §17: the parent's ledgers must survive into the draft untouched.
 
@@ -477,6 +478,12 @@ def _ledgers_extend_the_parent(
     that already carries an extra entry is authoring history rather than proposing content, and the
     two ledgers must be *exactly* the parent's. `conflicts/rulings.yaml` is ordinary owner content
     that a draft may legitimately add to, so only the prefix is required.
+
+    A first promotion has no parent, and the same comparison against no entries is the rule there
+    rather than an absence of one: revision 1 inherits nothing, so its draft must carry nothing in
+    `history/` for promotion to append the first change record and the first stamp to. Running this
+    only for a parented draft left the models' own validators as the first thing to see a
+    pre-authored entry, and they raise where §21 has no exit code for an exception.
 
     Comparison is by `record_digest`, the same canonical form every other prefix check in the
     package uses, so "unchanged" means the same thing here as it does in `validate_history`.
@@ -488,18 +495,19 @@ def _ledgers_extend_the_parent(
         (PurePosixPath("conflicts/rulings.yaml"), True),
     ):
         ours = _ledger_entries(draft, path)
-        theirs = _ledger_entries(parent, path)
+        theirs: tuple[str, ...] | None = () if parent is None else _ledger_entries(parent, path)
         if ours is None or theirs is None:
             # A missing declared file is `validate_structural`'s finding, reported against the
             # staged tree with every other structural fault rather than as a prefix failure here.
             continue
         if ours[: len(theirs)] != theirs or (not appendable and len(ours) != len(theirs)):
+            inherited = "empty" if parent is None else "the parent revision's entries"
             findings.append(
                 diagnostic(
                     IssueCode.LEDGER_PREFIX_CHANGED,
-                    f"the draft's {path} is not the parent revision's entries "
-                    f"{'followed by its own additions' if appendable else 'unchanged'}; these "
-                    "ledgers are append-only and promotion is what appends to them",
+                    f"the draft's {path} must be {inherited}"
+                    f"{' followed by its own additions' if appendable else ''}; these ledgers are "
+                    "append-only and promotion is what appends to them",
                     path=path.as_posix(),
                 )
             )
@@ -607,22 +615,9 @@ def _derive(
             ),
         )
 
-    change = ChangeRecord.model_validate(
-        {
-            "change_id": f"change.{revision:06d}",
-            "revision": revision,
-            "parent_bundle_digest": parent_digest,
-            "actor": request.actor,
-            # §17: derived from the matching approval stamp, never trusted from the request. The
-            # stamp was found under the candidate digest and its `approved_via` is a controlling
-            # terminal, so the authority behind this revision is the owner's whoever ran the
-            # command.
-            "authorized_by": Actor.OWNER,
-            "summary": request.summary,
-            "changed_record_ids": changed,
-            "created_at": request.created_at,
-        }
-    )
+    change = _change_record(request, revision, parent_digest, changed)
+    if isinstance(change, Diagnostic):
+        return outcome_with(None, (change,))
 
     ledgers = _appended_ledgers(draft, change, stamp)
     if isinstance(ledgers, Diagnostic):
@@ -655,6 +650,45 @@ def _derive(
     values["bundle_digest"] = digest
     manifest = RevisionManifest.model_validate(values)
     return manifest, BundleDocuments(manifest=manifest, by_path=by_path)
+
+
+def _change_record(
+    request: PromotionRequest,
+    revision: int,
+    parent_digest: str | None,
+    changed: tuple[str, ...],
+) -> ChangeRecord | Diagnostic:
+    """The one change record this promotion appends, or why the request cannot produce one.
+
+    `PromotionRequest` is a plain dataclass, so this is the first thing that sees what the operator
+    typed: a blank or whitespace-only summary and a `created_at` with no UTC offset are both refused
+    here, by `ChangeRecord`'s own field types rather than by a second copy of their rules. Left
+    uncaught they leave a function typed `-> OperationOutcome[...]` as a `ValidationError`, and §21
+    has no exit code for that.
+    """
+    try:
+        return ChangeRecord.model_validate(
+            {
+                "change_id": f"change.{revision:06d}",
+                "revision": revision,
+                "parent_bundle_digest": parent_digest,
+                "actor": request.actor,
+                # §17: derived from the matching approval stamp, never trusted from the request.
+                # The stamp was found under the candidate digest and its `approved_via` is a
+                # controlling terminal, so the authority behind this revision is the owner's
+                # whoever ran the command.
+                "authorized_by": Actor.OWNER,
+                "summary": request.summary,
+                "changed_record_ids": changed,
+                "created_at": request.created_at,
+            }
+        )
+    except ValueError as exc:
+        return diagnostic(
+            IssueCode.MODEL_VALIDATION_ERROR,
+            f"this promotion's change record is not a valid one: {exc}",
+            path=CHANGE_LEDGER_PATH.as_posix(),
+        )
 
 
 def _approval_stamp(bundle_root: Path, candidate: str) -> ApprovalStamp | Diagnostic:
@@ -713,7 +747,14 @@ def _approval_stamp(bundle_root: Path, candidate: str) -> ApprovalStamp | Diagno
 def _appended_ledgers(
     draft: BundleDocuments, change: ChangeRecord, stamp: ApprovalStamp
 ) -> dict[PurePosixPath, DocumentModel] | Diagnostic:
-    """The two history documents with exactly one entry appended to each (§17)."""
+    """The two history documents with exactly one entry appended to each (§17).
+
+    The append is where the two ledgers' own rules are enforced — contiguous revisions, one stamp
+    ID used once — and they are enforced by constructing the models rather than by restating them
+    here, so a rule added to either ledger is inherited instead of drifting. What this owes is the
+    translation: `ApprovalLedger` refuses a stamp ID the parent's ledger already holds, and that is
+    an ordinary thing for the tool that filed the stamp to have chosen, not an internal error.
+    """
     changes = draft.by_path.get(CHANGE_LEDGER_PATH)
     approvals = draft.by_path.get(APPROVAL_LEDGER_PATH)
     if not isinstance(changes, ChangeLedger) or not isinstance(approvals, ApprovalLedger):
@@ -723,10 +764,18 @@ def _appended_ledgers(
             "documents under history/ before promoting",
             path="history",
         )
-    return {
-        CHANGE_LEDGER_PATH: ChangeLedger(changes=(*changes.changes, change)),
-        APPROVAL_LEDGER_PATH: ApprovalLedger(approvals=(*approvals.approvals, stamp)),
-    }
+    try:
+        return {
+            CHANGE_LEDGER_PATH: ChangeLedger(changes=(*changes.changes, change)),
+            APPROVAL_LEDGER_PATH: ApprovalLedger(approvals=(*approvals.approvals, stamp)),
+        }
+    except ValueError as exc:
+        return diagnostic(
+            IssueCode.MODEL_VALIDATION_ERROR,
+            f"this promotion's change record and approval stamp do not extend the draft's history/ "
+            f"ledgers: {exc}",
+            path="history",
+        )
 
 
 # --------------------------------------------------------------------------------------
