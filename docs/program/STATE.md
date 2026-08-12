@@ -47,7 +47,7 @@ the design and plan and is untracked — copy it into any worktree you create.
 | `t13-followup` | — | **MERGED** to main at `b87fa06`, gate exit 0 · 5,436 passed · 95.64%. Branch retained but done. |
 | `t14-storage` | **merged** | **MERGED** to main at `aff1dc0`. Round-2 review found 1 BLOCKING + 4 SHOULD-FIX (REWORK); fixed in 5 commits, one per finding. Gate **exit 0 · 5,534 passed · 95.73% · 11m54s**. Detail in D-128. Its fix round is now **independently reviewed** (REWORK): the blocking fix genuinely closes the escape at every depth and keeps a symlinked bundle root allowed, but it regressed a symlink loop into an uncaught `RuntimeError` and admits a FIFO. |
 | `t15-rebase` | **merged** | **MERGED** to main at `f74be0e`. Two concurrent lenses, both REWORK: 6 distinct BLOCKING + 6 SHOULD-FIX, none covered by its own 54 green tests. Fixed in 12 commits; two design departures ruled in D-129. Branch gate **exit 0 · 5,611 passed · 95.83%**. Detail in D-128. Its fix round is now **independently reviewed** (REWORK): five of the six blocking fixes hold under fresh adversarial probes, the sixth — the append-only ledger merge — is closed on one arm only (blocker table). |
-| `t16-promotion` | 4 commits on `main` | **BUILT (all 9 plan steps), gated (exit 0 · 5,729 passed · 95.84% · 16m12s) and now REVIEWED BY THREE LENSES — REWORK, REWORK, APPROVE. NOT merged; a fix round is in flight.** Both independent lenses found **the same BLOCKING separately**: `promotion.py:426` `_parent` uses `if not quarantined:`, so one quarantined blob switches off the **entire** parent digest recomputation and a parent whose non-ledger documents were edited is silently extended. Also a symlinked draft root promoting outside content into an immutable revision, four uncaught `pydantic.ValidationError`s, a `$HOME` leak and a FIFO hang in `tree_contents`. The concurrency pass returned APPROVE on 20 enumerated write boundaries, 15 real races and a working §6 recapture. Detail in D-132. Reports: `scratchpad/T16-REVIEW-LENS-A.md`, `-LENS-B.md`, `-CONCURRENCY.md`. |
+| `t16-promotion` | 4 commits on `main` | **BUILT (all 9 plan steps), gated (exit 0 · 5,729 passed · 95.84% · 16m12s) and now REVIEWED BY THREE LENSES — REWORK, REWORK, APPROVE. NOT merged; a fix round is in flight.** Both independent lenses found **the same BLOCKING separately**: `promotion.py:426` `_parent` uses `if not quarantined:`, so one quarantined blob switches off the **entire** parent digest recomputation and a parent whose non-ledger documents were edited is silently extended. Also a symlinked draft root promoting outside content into an immutable revision, four uncaught `pydantic.ValidationError`s, a `$HOME` leak and a FIFO hang in `tree_contents`. The concurrency pass returned APPROVE on 20 enumerated write boundaries, 15 real races and a working §6 recapture. Detail in D-132. Reports: `.agent/T16-REVIEW-LENS-A.md`, `-LENS-B.md`, `-CONCURRENCY.md`. |
 | `t17-schema` | **merged** | **MERGED** to main at `27879bb`. Light review: APPROVE, no BLOCKING and no SHOULD-FIX in its own diff. |
 | `t18-cli` | integration base | **T16 merged forward onto the corrected `main`, verified 1,806 passed / ruff / mypy clean, and T18 is BUILDING on it.** This is the branch that will be gated: it carries `main`'s fixes, T16 and T18 together, so one `make check` covers all three instead of three. Its worktree venv is **Python 3.13** deliberately (see below). |
 | T19 | — | Not started. The authoring contract and the final Gate A gate. It must update `CHANGELOG.md`'s `[Unreleased]` entry, which still calls the package inert with no CLI surface — false the moment T18 lands. |
@@ -69,8 +69,9 @@ entry is free cross-version coverage — keep `t18-wt` on 3.13.** `uv run --pyth
 root **silently replaces `.venv`**; repair with `uv venv --clear --python 3.12 && uv sync --reinstall
 --all-groups`.
 
-**T16 is the only branch left to merge forward, and it already sits on `main`.** The traps that cost
-this program real time are recorded in D-128; the three a merge must still act on:
+**T16 has been merged forward onto the corrected `main`** — that merge is `t18-cli`, and it is green.
+The traps that cost this program real time are recorded in D-128; the three any future merge must
+still act on:
 
 1. **Sweep every `quoted_yaml(` call** in any branch being merged — `logical_path` is required, new test
    files never conflict, and the failure appears only at runtime. **A line-based grep gives false
@@ -85,12 +86,13 @@ bare import binds whichever `conftest.py` loaded first; under the full suite tha
 `tests/unit/conftest.py`. This shipped in T15, survived two review lenses and a fix round, and is
 invisible to any narrow run — it is the concrete reason `make check` is the only gate.
 
-**Dispatch state.** `scratchpad/RESUME-AT-0910.md` is the queue the previous session left; the T14
-review, both T15 lenses and the T17 review are now **consumed**. What remains from it is the T16 build
-brief (`scratchpad/BRIEF-T16.md`) and its carried debt (`scratchpad/CARRIED-DEBT.md`), then T18 and T19.
-Review records are `scratchpad/T14-REVIEW-ROUND2.md`, `T15-REVIEW-LENS-A.md`, `T15-REVIEW-LENS-B.md`
-and `T17-REVIEW.md`; Lens A's runnable probes are archived at `scratchpad/T15-lensa-probes/` and are the
-executable statement of six defects, so re-run them after any change to the rebase.
+**Dispatch state.** The T14, T15, T16 and T17 reviews are all **consumed** — T16's three lenses were
+the last of them, and none is owed again. What remains is T18's two review lenses (one on the tailor
+boundary) and T19's docs-only reviewer. **The review records that outlive a session live in `.agent/`**
+(`T14-T15-FIXROUND-REVIEW.md`, `T16-REVIEW-LENS-A.md`, `-LENS-B.md`, `-CONCURRENCY.md`); briefs and
+runnable probes live only in the session scratchpad and do not survive it, so copy anything worth
+keeping into `.agent/` before ending. `.agent/` is gitignored working material, not a source of truth
+for released behaviour.
 
 **This file remains well over its ~170-line target and is OWED a trim** (no count here on purpose —
 D-017). The next trim should compress the P6 narrative, now fully recorded in D-110/D-111/D-113, not the
@@ -229,7 +231,7 @@ since D-035, unchanged by everything since.
 | Item | Detail | Owner |
 |---|---|---|
 | **The T14/T15 fix-round review's six findings are FIXED on `main`** | The BLOCKING `_merge_plan` short-cut that bypassed the append-only merge, the symlink loop, the `record_ids` violation of D-129 clause 1, the draft-name asymmetry, the per-blob `realpath` cost and the FIFO hang. Six commits, one per finding, each with a test that fails without it. Detail and the corrected measurements in **D-131** — do not re-open from the old blocker text. | complete |
-| **BLOCKING on `t16-promotion`: one quarantined blob disables the whole parent digest check** | `promotion.py:426`. `_parent`'s guard is `if not quarantined:`, where §6 waives only blob-integrity and completeness. A parent whose **non-ledger** documents were edited after promotion is silently extended and the child cements a false ancestry — exit 0, and no command distinguishes the two worlds. Found **separately by both independent lenses**. The shipped test covers `history/changes.yaml`, which the ledger-prefix check catches without blob bytes at all, so the arm it covers is not the arm that is open. Fix round in flight. Evidence: `scratchpad/T16-REVIEW-LENS-A.md` findings 2 and 2a. | Gate A |
+| **BLOCKING on `t16-promotion`: one quarantined blob disables the whole parent digest check** | `promotion.py:426`. `_parent`'s guard is `if not quarantined:`, where §6 waives only blob-integrity and completeness. A parent whose **non-ledger** documents were edited after promotion is silently extended and the child cements a false ancestry — exit 0, and no command distinguishes the two worlds. Found **separately by both independent lenses**. The shipped test covers `history/changes.yaml`, which the ledger-prefix check catches without blob bytes at all, so the arm it covers is not the arm that is open. Fix round in flight. Evidence: `.agent/T16-REVIEW-LENS-A.md` findings 2 and 2a. | Gate A |
 | **A symlinked draft root promotes outside content into an immutable revision** | `promotion.py:298`. Exit 0, no diagnostic — while `inventory` classifies that same path as `orphaned_artefact` and omits it from `drafts`, so the two commands disagree about what it is. The same rule one level deeper *is* enforced. Lens A finding 7; in the same fix round. | Gate A |
 | **Three `resume.yaml` bullets exceed the 220-char layout gate** | Forces an untailored-master degrade on every posting, which is what blocks accumulating real runs. The file also lacks Knowledge Forge, has stale `skill_groups`, and an empty extracurricular block. **Mit pins `resume_max_pages=1` — do not advise setting it to 2.** | Mit (content) |
 | **The 03:10 launchd job re-fires a task that already shipped** | `com.mitsheth.boardwatch-p6.plist` is a *daily* `StartCalendarInterval` job carrying the *one-shot* "execute P6 Slice 1" prompt, which asserts `main` at `fb0386a` — now an ancestor 110 commits back. It misfired on 2026-08-11 and will misfire nightly. Benign and self-detecting (the session-start ritual catches it in a few read-only commands), **not** self-correcting. Fix: `launchctl bootout gui/$UID/com.mitsheth.boardwatch-p6`, or repoint `~/.claude/scheduled/p6-slice1-run.sh` at a fresh prompt (D-123) | Mit (automation) |
