@@ -398,11 +398,13 @@ def test_production_has_exactly_one_approval_stamp_writer() -> None:
         if "approval_stamp_bytes(" in path.read_text(encoding="utf-8")
     )
     assert callers == [
-        # The command that asks the owner …
-        "boardwatch/cli/profile_bundle_cmd.py",
-        # … and the module that defines the form. `promotion` reads stamps back but never emits
-        # one, which is why it is not here.
+        # The module that defines the form …
         "boardwatch/profile_bundle/approvals.py",
+        # … and the one function that files it. The command layer asks the owner and calls this;
+        # it never touches the stamp itself, because the candidate digest is computed with the
+        # bundle's private serializer, which `test_profile_bundle_hash_isolation` keeps inside the
+        # package. `promotion` reads stamps back but never emits one, which is why it is not here.
+        "boardwatch/profile_bundle/authoring.py",
     ], callers
 
 

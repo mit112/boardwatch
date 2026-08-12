@@ -2,9 +2,10 @@
 
 This module is a **translation**, and deliberately nothing else. Every decision about the bundle is
 made under `boardwatch.profile_bundle`; what lives here is argument parsing, the two renderings,
-and the exit code. The one exception is the approval prompt, which is an operator interaction and
-therefore has nowhere else to live — and even that calls the pure `build_approval_stamp` for the
-document it files.
+and the exit code. The one exception is the approval *question*, which is an operator interaction
+and has nowhere else to live — everything else about an approval, including the candidate digest
+and the stamp, is `authoring`'s, because the digest is computed with the bundle's private
+serializer and `test_profile_bundle_hash_isolation` keeps that one-directional.
 
 ## Three rules this file is answerable for
 
@@ -31,31 +32,18 @@ contract's most consequential rows with no machine rendering at all.
 from __future__ import annotations
 
 import json
-import os
 import sys
-import tempfile
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import UTC, date, datetime
-from pathlib import Path, PurePosixPath
+from pathlib import Path
 from typing import Any, Final, NoReturn, Protocol, TypeVar
 
 import typer
 
 from boardwatch.core.settings import load_settings
 from boardwatch.profile_bundle import authoring, drafts, inspection, migrations, promotion, rebase
-from boardwatch.profile_bundle.approvals import (
-    ApprovalDecision,
-    approval_stamp_bytes,
-    build_approval_stamp,
-    required_approval_decisions,
-)
-from boardwatch.profile_bundle.blobs import quarantined_blobs
-from boardwatch.profile_bundle.canonical import (
-    FilesystemBlobReader,
-    candidate_content_digest,
-    referenced_blob_digests,
-)
+from boardwatch.profile_bundle.approvals import ApprovalDecision
 from boardwatch.profile_bundle.errors import (
     BundlePathError,
     Diagnostic,
@@ -69,13 +57,9 @@ from boardwatch.profile_bundle.errors import (
 )
 from boardwatch.profile_bundle.index import build_index
 from boardwatch.profile_bundle.layout import FIXED_DOCUMENTS, DocumentKind
-from boardwatch.profile_bundle.models.documents import BundleDocuments
 from boardwatch.profile_bundle.models.history import Actor
-from boardwatch.profile_bundle.models.manifests import DraftManifest, RevisionManifest
+from boardwatch.profile_bundle.models.manifests import RevisionManifest
 from boardwatch.profile_bundle.paths import (
-    approval_path,
-    approvals_dir,
-    blobs_dir,
     draft_root,
     require_draft_name,
     require_draft_segment,
@@ -92,12 +76,10 @@ from boardwatch.profile_bundle.storage import (
     SelectedRevision,
     SelectionError,
     read_current_once,
-    selected_documents,
 )
 from boardwatch.profile_bundle.validation import (
     ParentSnapshot,
     load_documents,
-    parse_error_diagnostics,
     validate_bundle,
 )
 
@@ -304,15 +286,6 @@ def _bundle_root(ctx: typer.Context, override: Path | None) -> Path:
     """
     return resolve_bundle_root(load_settings(data_dir=ctx.obj).config_dir, override)
 
-
-def _selected(bundle_root: Path) -> SelectedRevision | None:
-    """The selected revision, or `None` when this bundle has never been promoted."""
-    try:
-        return read_current_once(bundle_root)
-    except SelectionError as exc:
-        if exc.code is IssueCode.NO_CURRENT_REVISION:
-            return None
-        raise
 
 
 def _parent_snapshot(bundle_root: Path, tree: Path, mode: str) -> ParentSnapshot | None:
@@ -885,13 +858,6 @@ def approval_terminal() -> ApprovalTerminal:
     return _StandardTerminal()
 
 
-@dataclass(frozen=True)
-class _Approval:
-    candidate_digest: str
-    stamp_id: str
-    decisions: tuple[ApprovalDecision, ...]
-
-
 @profile_bundle_app.command("approve")
 def approve(
     ctx: typer.Context,
@@ -908,31 +874,35 @@ def approve(
     """
     root = _bundle_root(ctx, bundle)
     outcome = _guarded(lambda: _approve(root, draft, terminal=approval_terminal()))
-    approval = outcome.value
+    filed = outcome.value
     rendered = (
         _nothing()
-        if approval is None
+        if filed is None
         else _Rendered(
             result={
-                "candidate_digest": approval.candidate_digest,
-                "approval_stamp_id": approval.stamp_id,
-                "owner_gates": _gate_json(approval.decisions),
+                "candidate_digest": filed.candidate_digest,
+                "approval_stamp_id": filed.stamp_id,
+                "owner_gates": _gate_json(filed.decisions),
             },
             lines=(
-                f"approved candidate {approval.candidate_digest}",
-                f"stamp: {approval.stamp_id}",
-                *_gate_lines(approval.decisions),
+                f"approved candidate {filed.candidate_digest}",
+                f"stamp: {filed.stamp_id}",
+                *_gate_lines(filed.decisions),
             ),
         )
     )
     _emit("approve", outcome, rendered, as_json=json_output)
 
 
-def _approve(bundle_root: Path, draft: str, *, terminal: ApprovalTerminal) -> (
-    OperationOutcome[_Approval]
-):
-    # Before anything is read: the refusal is about how this process was started, not about the
-    # bundle, and a piped caller must get the same answer whatever state the bundle is in.
+def _approve(
+    bundle_root: Path, draft: str, *, terminal: ApprovalTerminal
+) -> OperationOutcome[authoring.FiledApproval]:
+    """Ask, then file. Everything about the bundle is `authoring`'s; the question is this layer's.
+
+    The terminal is consulted first, before anything is read: the refusal is about how this process
+    was started rather than about the bundle, so a piped caller gets the same answer whatever state
+    the bundle is in.
+    """
     if not terminal.is_controlling():
         return outcome_with(
             None,
@@ -946,128 +916,24 @@ def _approve(bundle_root: Path, draft: str, *, terminal: ApprovalTerminal) -> (
             ),
         )
 
-    tree = draft_root(bundle_root, draft)
-    if not tree.is_dir():
-        return _refusal(
-            IssueCode.DRAFT_NOT_FOUND, f"drafts/{draft} does not exist; there is nothing to approve"
-        )
-    try:
-        documents = load_documents(tree, mode="draft")
-    except ProfileBundleError as exc:
-        # The draft's own parse failures, reported as themselves. Letting them reach `_guarded`
-        # would turn "this document will not parse" into "please file a bug".
-        return outcome_with(None, parse_error_diagnostics(exc))
-    manifest = documents.manifest
-    if not isinstance(manifest, DraftManifest):
-        return _refusal(
-            IssueCode.DRAFT_MANIFEST_INVALID,
-            f"drafts/{draft} holds a revision manifest; only a draft can be approved",
-        )
+    proposed = authoring.approval_candidate(bundle_root, draft_name=draft)
+    candidate = proposed.value
+    if candidate is None:
+        return outcome_with(None, proposed.diagnostics)
 
-    try:
-        selection = _selected(bundle_root)
-    except SelectionError as exc:
-        # Every selection failure except "no revision yet" is a bundle whose selected revision
-        # cannot be resolved, and it carries its own typed code. `_selected` folds only that one
-        # case into `None`.
-        return outcome_with(None, (diagnostic(exc.code, str(exc)),))
-    selected_digest = None if selection is None else selection.bundle_digest
-    if manifest.parent_bundle_digest != selected_digest:
-        # Refused rather than stamped: the candidate digest a stale draft produces is one no
-        # promotion will ever look for, so the stamp would be a file with no drain. `rebase-draft`
-        # is the way forward, and it changes the digest — which is what makes the old stamp stale.
-        return _refusal(
-            IssueCode.STALE_DRAFT_PARENT,
-            f"drafts/{draft} was checked out of "
-            f"{manifest.parent_bundle_digest or 'no revision'} but this bundle now selects "
-            f"{selected_digest or 'no revision'}; rebase-draft moves it onto the current one",
-        )
-
-    try:
-        parent_documents = None if selection is None else selected_documents(selection)
-    except SelectionError as exc:
-        return outcome_with(None, (diagnostic(exc.code, str(exc)),))
-    except ProfileBundleError as exc:
-        return outcome_with(None, parse_error_diagnostics(exc))
-    envelope = None
-    if parent_documents is not None:
-        parent_manifest = parent_documents.manifest
-        if not isinstance(parent_manifest, RevisionManifest):  # pragma: no cover - refused above
-            return _refusal(
-                IssueCode.DRAFT_MANIFEST_INVALID,
-                "the selected revision does not carry a revision manifest",
-            )
-        envelope = parent_manifest.envelope
-
-    quarantine = _quarantine(bundle_root, documents)
-    if quarantine:
-        return outcome_with(None, quarantine)
-
-    candidate = candidate_content_digest(
-        documents, FilesystemBlobReader(blobs_dir(bundle_root)), envelope
-    )
-    decisions = required_approval_decisions(documents, parent_documents)
-    revision = 1 if selection is None else selection.revision + 1
-
-    terminal.show(_prompt_text(draft, candidate, decisions))
+    terminal.show(_prompt_text(candidate))
     if terminal.ask(f"Type {CONFIRMATION_WORD!r} to approve") != CONFIRMATION_WORD:
         return _refusal(
             IssueCode.APPROVAL_DECLINED,
             "the confirmation did not match, so nothing was approved and nothing was written",
         )
-
-    stamp = build_approval_stamp(
-        stamp_id=f"approval-stamp.{revision:06d}",
-        candidate_digest=candidate,
-        approved_at=datetime.now(UTC),
-        decisions=decisions,
-    )
-    path = approval_path(bundle_root, candidate)
-    written = _write_stamp(
-        bundle_root,
-        path,
-        approval_stamp_bytes(stamp, logical_path=PurePosixPath(f"approvals/{path.name}")),
-    )
-    if written is not None:
-        return outcome_with(None, (written,))
-    return OperationOutcome.clean(
-        _Approval(
-            candidate_digest=candidate,
-            stamp_id=stamp.approval_stamp_id,
-            decisions=decisions,
-        )
+    # The package reads no clock, so the moment the owner answered is this layer's to supply.
+    return authoring.file_approval_stamp(
+        bundle_root, candidate=candidate, approved_at=datetime.now(UTC)
     )
 
 
-def _quarantine(bundle_root: Path, documents: BundleDocuments) -> tuple[Diagnostic, ...]:
-    """A capture the draft names that the store cannot produce intact.
-
-    Approving one would bind the owner's decision to bytes nobody can read back, and the candidate
-    digest could not be computed from them anyway. Reported here rather than left to the digest
-    computation because `MissingBlobError` escaping as an exception is the shape §21 has no exit
-    code for.
-    """
-    try:
-        referenced = referenced_blob_digests(documents)
-    except ProfileBundleError as exc:
-        return parse_error_diagnostics(exc)
-    return tuple(
-        diagnostic(
-            IssueCode.CORRUPT_BLOB_QUARANTINE,
-            f"the draft cites blob sha256:{declared}, which this bundle cannot produce intact "
-            f"({reason.value}); recapture the evidence before approving",
-            path="evidence/records.yaml",
-            tier="error",
-            blob=declared,
-            reason=reason.value,
-        )
-        for declared, reason in quarantined_blobs(bundle_root, referenced)
-    )
-
-
-def _prompt_text(
-    draft: str, candidate: str, decisions: Sequence[ApprovalDecision]
-) -> str:
+def _prompt_text(candidate: authoring.ApprovalCandidate) -> str:
     """What the owner reads before answering.
 
     The decisions arrive already ordered by `required_approval_decisions` — by action then target —
@@ -1075,15 +941,17 @@ def _prompt_text(
     list the stamp records.
     """
     lines = [
-        f"Approving drafts/{draft}.",
-        f"Candidate content digest: {candidate}",
+        f"Approving drafts/{candidate.draft_name}.",
+        f"Candidate content digest: {candidate.candidate_digest}",
         "",
     ]
-    if decisions:
-        lines.append(f"{len(decisions)} owner-gated transition(s) in this candidate:")
+    if candidate.decisions:
+        lines.append(
+            f"{len(candidate.decisions)} owner-gated transition(s) in this candidate:"
+        )
         lines.extend(
             f"  {decision.action.value} {decision.target_record_id} -> {decision.resulting_state}"
-            for decision in decisions
+            for decision in candidate.decisions
         )
     else:
         lines.append(
@@ -1091,31 +959,6 @@ def _prompt_text(
         )
     lines.append("")
     return "\n".join(lines)
-
-
-def _write_stamp(bundle_root: Path, path: Path, raw: bytes) -> Diagnostic | None:
-    """File the stamp atomically. `None` means it landed."""
-    logical = f"approvals/{path.name}"
-    try:
-        approvals_dir(bundle_root).mkdir(parents=True, exist_ok=True)
-        handle, temporary = tempfile.mkstemp(dir=path.parent, prefix=".tmp-approval-")
-        staged = Path(temporary)
-        try:
-            with os.fdopen(handle, "wb") as stream:
-                stream.write(raw)
-                stream.flush()
-                os.fsync(stream.fileno())
-            os.replace(staged, path)
-        except BaseException:
-            staged.unlink(missing_ok=True)
-            raise
-    except OSError as exc:
-        return diagnostic(
-            IssueCode.IO_ERROR,
-            f"{logical} could not be written: {io_reason(exc)}",
-            path=logical,
-        )
-    return None
 
 
 # --------------------------------------------------------------------------------------

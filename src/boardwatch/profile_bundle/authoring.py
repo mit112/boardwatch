@@ -1,9 +1,15 @@
-"""Adding one evidence record and one owner ruling to a draft (design §12, §13, §19).
+"""The owner-initiated writes that are not promotion (design §12, §13, §19).
 
-These are the only two Gate A operations that put new owner content into a draft, and both append
-to documents promotion later checks as prefixes. They live here rather than in the command layer
-because the command layer is a translation: everything below decides what happens to the bundle,
-and nothing here imports `typer`, reads a clock, or prints.
+Three operations: capture an evidence record, rule on a conflict, and file the owner's approval of
+a candidate. They live here rather than in the command layer because the command layer is a
+translation: everything below decides what happens to the bundle, and nothing here imports
+`typer`, reads a clock, or prints.
+
+That boundary is not a preference. `test_profile_bundle_hash_isolation` makes the bundle's
+canonical serializer one-directional — nothing outside this package may reference it — because it
+is a private serializer whose bytes are identity, and a second caller elsewhere is how a shared
+hash quietly acquires a second meaning. The candidate digest an approval binds is computed with
+that serializer, so the whole approval flow except the terminal question belongs here.
 
 ## A refusal writes nothing
 
@@ -40,18 +46,30 @@ import tempfile
 import unicodedata
 from collections.abc import Mapping
 from dataclasses import dataclass
+from datetime import datetime
 from pathlib import Path, PurePosixPath
 from typing import Final, Literal, TypeVar
 
 from pydantic import TypeAdapter, ValidationError
 
-from boardwatch.profile_bundle.approvals import ApprovalDecision, required_approval_decisions
+from boardwatch.profile_bundle.approvals import (
+    ApprovalDecision,
+    approval_stamp_bytes,
+    build_approval_stamp,
+    required_approval_decisions,
+)
 from boardwatch.profile_bundle.blobs import (
     MAX_CAPTURE_BYTES,
     BlobDigestMismatchError,
+    quarantined_blobs,
     write_blob,
 )
-from boardwatch.profile_bundle.canonical import EVIDENCE_PATH
+from boardwatch.profile_bundle.canonical import (
+    EVIDENCE_PATH,
+    FilesystemBlobReader,
+    candidate_content_digest,
+    referenced_blob_digests,
+)
 from boardwatch.profile_bundle.errors import (
     BundleIoError,
     BundlePathError,
@@ -78,11 +96,27 @@ from boardwatch.profile_bundle.models.history import (
     RulingDecision,
     RulingRecord,
 )
-from boardwatch.profile_bundle.paths import draft_root
+from boardwatch.profile_bundle.models.manifests import (
+    DraftManifest,
+    RevisionManifest,
+    StableManifestEnvelope,
+)
+from boardwatch.profile_bundle.paths import (
+    approval_path,
+    approvals_dir,
+    blobs_dir,
+    draft_root,
+)
 from boardwatch.profile_bundle.secret_scan import (
     CURRENT_RULESET_VERSION,
     InvalidUtf8CaptureError,
     scan_capture,
+)
+from boardwatch.profile_bundle.storage import (
+    SelectedRevision,
+    SelectionError,
+    read_current_once,
+    selected_documents,
 )
 from boardwatch.profile_bundle.validation import load_documents, parse_error_diagnostics
 from boardwatch.profile_bundle.yaml_loader import load_yaml_bytes
@@ -526,23 +560,223 @@ def _write_document(tree: Path, logical: PurePosixPath, model: DocumentModel) ->
             path=logical.as_posix(),
         ) from exc
     try:
-        handle, temporary = tempfile.mkstemp(dir=target.parent, prefix=_STAGING_PREFIX)
-        staged = Path(temporary)
-        try:
-            with os.fdopen(handle, "wb") as stream:
-                stream.write(raw)
-                stream.flush()
-                os.fsync(stream.fileno())
-            os.replace(staged, target)
-        except BaseException:
-            staged.unlink(missing_ok=True)
-            raise
+        _atomic_write(target, raw)
     except OSError as exc:
         raise _refusal(
             IssueCode.IO_ERROR,
             f"{logical} could not be rewritten: {io_reason(exc)}",
             path=logical.as_posix(),
         ) from exc
+
+
+def _atomic_write(target: Path, raw: bytes) -> None:
+    """Stage beside the destination, fsync, rename. Raises `OSError`; the caller names the file.
+
+    One definition for both writers: a document rewritten in place could be truncated by a crash,
+    and an approval stamp half-written is one `promote` refuses to parse at exactly the moment the
+    owner believes they have approved.
+    """
+    handle, temporary = tempfile.mkstemp(dir=target.parent, prefix=_STAGING_PREFIX)
+    staged = Path(temporary)
+    try:
+        with os.fdopen(handle, "wb") as stream:
+            stream.write(raw)
+            stream.flush()
+            os.fsync(stream.fileno())
+        os.replace(staged, target)
+    except BaseException:
+        staged.unlink(missing_ok=True)
+        raise
+
+
+# --------------------------------------------------------------------------------------
+# The owner's approval of a candidate (§13)
+# --------------------------------------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class ApprovalCandidate:
+    """What the owner is being asked to approve, computed but not yet stamped.
+
+    Split from the filing so the command layer can put the controlling-terminal question between
+    the two without ever holding the serializer. §13 keeps that question at the command layer and
+    everything else here.
+    """
+
+    draft_name: str
+    candidate_digest: str
+    stamp_id: str
+    decisions: tuple[ApprovalDecision, ...]
+
+
+@dataclass(frozen=True)
+class FiledApproval:
+    """One approval stamp, on disk, under the candidate digest it binds."""
+
+    candidate_digest: str
+    stamp_id: str
+    decisions: tuple[ApprovalDecision, ...]
+
+
+def approval_candidate(
+    bundle_root: Path, *, draft_name: str
+) -> OperationOutcome[ApprovalCandidate]:
+    """The candidate digest and owner-gated transitions of `drafts/<name>`. Writes nothing.
+
+    Refuses a draft whose parent has moved. The digest such a draft produces is one no promotion
+    will ever look for, so a stamp filed for it would be a file with no drain — and `rebase-draft`,
+    which is the way forward, changes the digest anyway.
+    """
+    try:
+        tree = _draft(bundle_root, draft_name)
+        documents = _load(tree)
+        manifest = documents.manifest
+        if not isinstance(manifest, DraftManifest):
+            raise _refusal(
+                IssueCode.DRAFT_MANIFEST_INVALID,
+                f"drafts/{draft_name} holds a revision manifest; only a draft can be approved",
+            )
+        selection = _selected(bundle_root)
+        selected_digest = None if selection is None else selection.bundle_digest
+        if manifest.parent_bundle_digest != selected_digest:
+            raise _refusal(
+                IssueCode.STALE_DRAFT_PARENT,
+                f"drafts/{draft_name} was checked out of "
+                f"{manifest.parent_bundle_digest or 'no revision'} but this bundle now selects "
+                f"{selected_digest or 'no revision'}; rebase-draft moves it onto the current one",
+            )
+        parent = _parent_documents(selection)
+        _no_quarantined_capture(bundle_root, documents)
+        digest = candidate_content_digest(
+            documents,
+            FilesystemBlobReader(blobs_dir(bundle_root)),
+            None if parent is None else _envelope(parent),
+        )
+    except _Refused as refusal:
+        return outcome_with(None, refusal.diagnostics)
+    except ProfileBundleError as exc:
+        return outcome_with(None, parse_error_diagnostics(exc))
+
+    revision = 1 if selection is None else selection.revision + 1
+    return OperationOutcome.clean(
+        ApprovalCandidate(
+            draft_name=draft_name,
+            candidate_digest=digest,
+            # One stamp per promoted revision (§13), numbered by the revision it will become.
+            # `build_approval_stamp` uses the tail as the scope that makes every approval ID unique
+            # across the ledger, so this is identity rather than decoration.
+            stamp_id=f"approval-stamp.{revision:06d}",
+            decisions=required_approval_decisions(documents, parent),
+        )
+    )
+
+
+def file_approval_stamp(
+    bundle_root: Path, *, candidate: ApprovalCandidate, approved_at: datetime
+) -> OperationOutcome[FiledApproval]:
+    """Write the owner's stamp for `candidate`, atomically, under its digest.
+
+    `approved_at` is passed in for the same reason promotion's `created_at` is: nothing in this
+    package reads a clock. Calling this is the act of approving, so the command layer must have
+    asked the owner first — there is no check here that it did, because §13 says the durable
+    control is the digest binding and the stamp's reviewability, not a guard this package could
+    enforce against a process with write permission.
+    """
+    stamp = build_approval_stamp(
+        stamp_id=candidate.stamp_id,
+        candidate_digest=candidate.candidate_digest,
+        approved_at=approved_at,
+        decisions=candidate.decisions,
+    )
+    path = approval_path(bundle_root, candidate.candidate_digest)
+    logical = PurePosixPath(f"approvals/{path.name}")
+    try:
+        approvals_dir(bundle_root).mkdir(parents=True, exist_ok=True)
+        _atomic_write(path, approval_stamp_bytes(stamp, logical_path=logical))
+    except OSError as exc:
+        return outcome_with(
+            None,
+            (
+                diagnostic(
+                    IssueCode.IO_ERROR,
+                    f"{logical} could not be written: {io_reason(exc)}",
+                    path=logical.as_posix(),
+                ),
+            ),
+        )
+    return OperationOutcome.clean(
+        FiledApproval(
+            candidate_digest=candidate.candidate_digest,
+            stamp_id=stamp.approval_stamp_id,
+            decisions=candidate.decisions,
+        )
+    )
+
+
+def _selected(bundle_root: Path) -> SelectedRevision | None:
+    """The selected revision, or `None` for a bundle that has never been promoted.
+
+    Only "there is no `CURRENT`" becomes `None`; every other selection failure is a bundle whose
+    selected revision cannot be resolved, and it carries its own typed code.
+    """
+    try:
+        return read_current_once(bundle_root)
+    except SelectionError as exc:
+        if exc.code is IssueCode.NO_CURRENT_REVISION:
+            return None
+        raise _Refused((diagnostic(exc.code, str(exc)),)) from exc
+
+
+def _parent_documents(selection: SelectedRevision | None) -> BundleDocuments | None:
+    if selection is None:
+        return None
+    try:
+        return selected_documents(selection)
+    except SelectionError as exc:
+        raise _Refused((diagnostic(exc.code, str(exc)),)) from exc
+
+
+def _envelope(parent: BundleDocuments) -> StableManifestEnvelope:
+    manifest = parent.manifest
+    # `selected_documents` already refuses a draft manifest in a selected revision, so this is a
+    # narrowing rather than a second check.
+    if not isinstance(manifest, RevisionManifest):  # pragma: no cover
+        raise _refusal(
+            IssueCode.DRAFT_MANIFEST_INVALID,
+            "the selected revision does not carry a revision manifest",
+        )
+    return manifest.envelope
+
+
+def _no_quarantined_capture(bundle_root: Path, documents: BundleDocuments) -> None:
+    """A capture the draft names that the store cannot produce intact.
+
+    Approving one would bind the owner's decision to bytes nobody can read back, and the candidate
+    digest could not be computed from them anyway — `candidate_content_digest` raises, which is the
+    shape §21 has no exit code for. §6's recovery path is checkout, recapture, promote.
+    """
+    referenced = referenced_blob_digests(documents)
+    quarantined = quarantined_blobs(bundle_root, referenced)
+    if not quarantined:
+        return
+    raise _Refused(
+        tuple(
+            diagnostic(
+                IssueCode.CORRUPT_BLOB_QUARANTINE,
+                f"the draft cites blob sha256:{declared}, which this bundle cannot produce intact "
+                f"({reason.value}); recapture the evidence before approving",
+                path=EVIDENCE_PATH.as_posix(),
+                # An error here rather than its declared blocker tier: this operation's result is
+                # an approval, and an approval of unreadable bytes is not a usable one. `checkout`
+                # reports the same condition as a blocker because there the draft is still the
+                # thing the owner asked for.
+                tier="error",
+                blob=declared,
+                reason=reason.value,
+            )
+            for declared, reason in quarantined
+        )
+    )
 
 
 def _refusal(
@@ -556,8 +790,12 @@ def _refusal(
 
 
 __all__ = [
+    "ApprovalCandidate",
     "ConflictResolution",
     "EvidenceAddition",
+    "FiledApproval",
     "add_evidence",
+    "approval_candidate",
+    "file_approval_stamp",
     "resolve_conflict",
 ]
