@@ -937,7 +937,12 @@ def _approve(bundle_root: Path, draft: str, *, terminal: ApprovalTerminal) -> (
         return _refusal(
             IssueCode.DRAFT_NOT_FOUND, f"drafts/{draft} does not exist; there is nothing to approve"
         )
-    documents = load_documents(tree, mode="draft")
+    try:
+        documents = load_documents(tree, mode="draft")
+    except ProfileBundleError as exc:
+        # The draft's own parse failures, reported as themselves. Letting them reach `_guarded`
+        # would turn "this document will not parse" into "please file a bug".
+        return outcome_with(None, parse_error_diagnostics(exc))
     manifest = documents.manifest
     if not isinstance(manifest, DraftManifest):
         return _refusal(
@@ -945,7 +950,13 @@ def _approve(bundle_root: Path, draft: str, *, terminal: ApprovalTerminal) -> (
             f"drafts/{draft} holds a revision manifest; only a draft can be approved",
         )
 
-    selection = _selected(bundle_root)
+    try:
+        selection = _selected(bundle_root)
+    except SelectionError as exc:
+        # Every selection failure except "no revision yet" is a bundle whose selected revision
+        # cannot be resolved, and it carries its own typed code. `_selected` folds only that one
+        # case into `None`.
+        return outcome_with(None, (diagnostic(exc.code, str(exc)),))
     selected_digest = None if selection is None else selection.bundle_digest
     if manifest.parent_bundle_digest != selected_digest:
         # Refused rather than stamped: the candidate digest a stale draft produces is one no
@@ -958,7 +969,12 @@ def _approve(bundle_root: Path, draft: str, *, terminal: ApprovalTerminal) -> (
             f"{selected_digest or 'no revision'}; rebase-draft moves it onto the current one",
         )
 
-    parent_documents = None if selection is None else selected_documents(selection)
+    try:
+        parent_documents = None if selection is None else selected_documents(selection)
+    except SelectionError as exc:
+        return outcome_with(None, (diagnostic(exc.code, str(exc)),))
+    except ProfileBundleError as exc:
+        return outcome_with(None, parse_error_diagnostics(exc))
     envelope = None
     if parent_documents is not None:
         parent_manifest = parent_documents.manifest

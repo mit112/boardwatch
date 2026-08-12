@@ -417,3 +417,22 @@ def test_the_clock_the_stamp_records_is_the_command_layer_s(
         load_yaml_bytes(path.read_bytes(), logical_path=PurePosixPath(f"approvals/{path.name}"))
     )
     assert before <= stamp.approved_at <= datetime.now(UTC)
+
+
+def test_a_draft_that_will_not_parse_is_reported_as_itself(
+    env: Path, synthetic_bundle: SyntheticBundle, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A document the loader refuses is a finding about the draft, not an internal failure.
+
+    Without the typed arm this reaches the command boundary's last-resort handler and comes back as
+    `internal_error` — "please file a bug" for a file the owner mistyped.
+    """
+    synthetic_bundle.write("skills/inventory.yaml", "skills: [ this is not\n")
+    terminal = FakeTerminal()
+    result = approve(env, synthetic_bundle, terminal, monkeypatch, extra=["--json"])
+    assert result.exit_code == 1
+    codes = {finding["code"] for finding in json.loads(result.output)["diagnostics"]}
+    assert "internal_error" not in codes, codes
+    assert codes <= {"invalid_yaml", "restricted_yaml_violation", "model_validation_error"}, codes
+    assert terminal.asked == []
+    assert not approvals_dir(synthetic_bundle.root).exists()
