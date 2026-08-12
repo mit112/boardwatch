@@ -870,6 +870,16 @@ def _with_revalidation(
     `duplicate_record_id` against the record this command already committed. The diagnostic still
     names the I/O failure; the envelope's `outcome` says what happened to the draft, which is what
     §21 means by carrying the category explicitly.
+
+    **Which could-not-complete code the override actually serves, since guessing it wrong is easy.**
+    The guard's own failures are typed `RECHECK_UNAVAILABLE`, so they no longer rely on this at all.
+    What is left is a code `validate_bundle` itself emits that happens to be a member of
+    `COULD_NOT_COMPLETE_CODES`: `unsupported_secret_scan_ruleset_version`, from
+    `validation/evidence.py`, which a draft revalidation does reach. Exit 1 is right for it — the
+    recheck *ran* and reported a real finding about a draft that really changed, which is not
+    "nothing happened". It is **not** `unsupported_schema_version`: `authoring._load` refuses an
+    unsupported schema before either write, so that code cannot arrive here, and an earlier version
+    of this reasoning naming it was wrong.
     """
     tree = draft_root(bundle_root, draft)
     revalidated = _guarded(
