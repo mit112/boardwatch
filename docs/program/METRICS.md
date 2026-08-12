@@ -54,30 +54,31 @@ reports drift without writing, and `make check` depends on it (D-109).
 | METRICS-ARCHIVE.md | 1047 | Session — 2026-08-08 (P5 run #2 — disjunctive fix, Gate P5 MET at 100%; D-073) |
 | METRICS-ARCHIVE.md | 1084 | Session — 2026-08-08 (D-071b final eligibility gate build — no answer-key number changes) |
 | METRICS-ARCHIVE.md | 1120 | Gate P2 — 2026-08-08 · field-tier mechanism (P2 item 4, D-075). **MET AS RECONCILED** |
-| METRICS.md | 84 | Run log |
-| METRICS.md | 112 | Acceptance run |
-| METRICS.md | 123 | Session — 2026-08-09/10 · P6 Slice 1 design + plan. **No build, no gate movement.** |
-| METRICS.md | 149 | Session — 2026-08-10 · P6 Slice 1 BUILT (unattended run). Branch `p6-slice1`, not merged. |
-| METRICS.md | 359 | 2026-08-10 — P6 Slice 1 on the LIVE store (first real backfill) + Gate P6 clause 4 |
-| METRICS.md | 398 | Session 2026-08-10 (later) — P6 Slice 2: the durable decision ledger, its drain, and job regrouping |
-| METRICS.md | 491 | Session — 2026-08-10 (later) · D-109, the program-index gate. No phase gate moved. |
-| METRICS.md | 532 | Session — 2026-08-10 (later still) · The P6 Slice 2 review (D-110). No phase gate moved. |
-| METRICS.md | 622 | Session — 2026-08-10 (later still ×2) · P6 Slice 3, items 5 and 6 (D-111). Gate P6 unchanged: still 2 of 4. |
-| METRICS.md | 735 | Session — 2026-08-10 (later still ×3) · 0.3.0 cut and tagged (D-112). No phase gate moved. |
-| METRICS.md | 786 | Session — 2026-08-10 (later still ×4) · The Slice 3 external review (D-113) + the CI dependency fix (D-114). No phase gate moved. |
-| METRICS.md | 906 | Session — 2026-08-10 (later still ×5) · Gate A career-profile bundle, slices T1–T9 (D-115). No phase gate moved. |
-| METRICS.md | 995 | Session — 2026-08-10 (later still ×6) · The held commits are PUSHED; CI's first honest read (D-116, D-117). No phase gate moved. |
-| METRICS.md | 1070 | Session — 2026-08-10 (later still ×7) · Gate A slice T10, semantic validation (D-118). No phase gate moved. |
-| METRICS.md | 1251 | Session — 2026-08-10 · Gate A fix history reconciliation; independent T1–T10 review still owed. No phase gate moved. |
-| METRICS.md | 1275 | Session — 2026-08-10 · Independent Gate A T1–T10 review sign-off; T11 permitted. |
-| METRICS.md | 1313 | Session — 2026-08-11 · Gate A T11 implemented and reviewed. No phase gate moved. |
-| METRICS.md | 1343 | Session — 2026-08-11 (later) · Gate A T12 implemented, NOT independently reviewed. No phase gate moved. |
-| METRICS.md | 1404 | Session — 2026-08-11 (later ×2) · Gate A T12 reviewed TWICE, both REWORK, both rounds fixed. No phase gate moved. |
-| METRICS.md | 1452 | Session — 2026-08-11 (later ×3) · Gate A T12 reviewed a THIRD time, REWORK again. T13 partially built on a branch. No phase gate moved. |
-| METRICS.md | 1507 | Session — 2026-08-11 (later ×4) · T12 fixed through five reviews; T13 built. No phase gate moved. |
-| METRICS.md | 1573 | Session — 2026-08-11 (later ×5) · T13 merged; T14 reviewed and partly fixed; T15 and T17 built. No phase gate moved. |
-| METRICS.md | 1645 | Session — 2026-08-11 (later ×6) · T14 reviewed, fixed and MERGED; T15 reviewed twice and fixed; T17 reviewed. No phase gate moved. |
-| METRICS.md | 1378 | Session — 2026-08-11 (later still) · The T12 independent review (D-121) and its fix. No phase gate moved. |
+| METRICS.md | 85 | Run log |
+| METRICS.md | 113 | Acceptance run |
+| METRICS.md | 124 | Session — 2026-08-09/10 · P6 Slice 1 design + plan. **No build, no gate movement.** |
+| METRICS.md | 150 | Session — 2026-08-10 · P6 Slice 1 BUILT (unattended run). Branch `p6-slice1`, not merged. |
+| METRICS.md | 360 | 2026-08-10 — P6 Slice 1 on the LIVE store (first real backfill) + Gate P6 clause 4 |
+| METRICS.md | 399 | Session 2026-08-10 (later) — P6 Slice 2: the durable decision ledger, its drain, and job regrouping |
+| METRICS.md | 492 | Session — 2026-08-10 (later) · D-109, the program-index gate. No phase gate moved. |
+| METRICS.md | 533 | Session — 2026-08-10 (later still) · The P6 Slice 2 review (D-110). No phase gate moved. |
+| METRICS.md | 623 | Session — 2026-08-10 (later still ×2) · P6 Slice 3, items 5 and 6 (D-111). Gate P6 unchanged: still 2 of 4. |
+| METRICS.md | 736 | Session — 2026-08-10 (later still ×3) · 0.3.0 cut and tagged (D-112). No phase gate moved. |
+| METRICS.md | 787 | Session — 2026-08-10 (later still ×4) · The Slice 3 external review (D-113) + the CI dependency fix (D-114). No phase gate moved. |
+| METRICS.md | 907 | Session — 2026-08-10 (later still ×5) · Gate A career-profile bundle, slices T1–T9 (D-115). No phase gate moved. |
+| METRICS.md | 996 | Session — 2026-08-10 (later still ×6) · The held commits are PUSHED; CI's first honest read (D-116, D-117). No phase gate moved. |
+| METRICS.md | 1071 | Session — 2026-08-10 (later still ×7) · Gate A slice T10, semantic validation (D-118). No phase gate moved. |
+| METRICS.md | 1252 | Session — 2026-08-10 · Gate A fix history reconciliation; independent T1–T10 review still owed. No phase gate moved. |
+| METRICS.md | 1276 | Session — 2026-08-10 · Independent Gate A T1–T10 review sign-off; T11 permitted. |
+| METRICS.md | 1314 | Session — 2026-08-11 · Gate A T11 implemented and reviewed. No phase gate moved. |
+| METRICS.md | 1344 | Session — 2026-08-11 (later) · Gate A T12 implemented, NOT independently reviewed. No phase gate moved. |
+| METRICS.md | 1405 | Session — 2026-08-11 (later ×2) · Gate A T12 reviewed TWICE, both REWORK, both rounds fixed. No phase gate moved. |
+| METRICS.md | 1453 | Session — 2026-08-11 (later ×3) · Gate A T12 reviewed a THIRD time, REWORK again. T13 partially built on a branch. No phase gate moved. |
+| METRICS.md | 1508 | Session — 2026-08-11 (later ×4) · T12 fixed through five reviews; T13 built. No phase gate moved. |
+| METRICS.md | 1574 | Session — 2026-08-11 (later ×5) · T13 merged; T14 reviewed and partly fixed; T15 and T17 built. No phase gate moved. |
+| METRICS.md | 1646 | Session — 2026-08-11 (later ×6) · T14 reviewed, fixed and MERGED; T15 reviewed twice and fixed; T17 reviewed. No phase gate moved. |
+| METRICS.md | 1785 | Session — 2026-08-11 (later ×7) · The T14 and T15 FIX ROUNDS independently reviewed: REWORK. No phase gate moved. |
+| METRICS.md | 1379 | Session — 2026-08-11 (later still) · The T12 independent review (D-121) and its fix. No phase gate moved. |
 
 ---
 
@@ -1778,3 +1779,70 @@ revisions**: numbering restarted at `001` per stamp while §8 requires global un
 approved in two revisions made the second unpromotable — which blocks §6's recapture recovery outright.
 And **no `profile_bundle` module was importable first in a fresh interpreter**, invisible to pytest and
 the CLI because both import `validation` early; only a bare-interpreter crash worker walked into it.
+
+---
+
+## Session — 2026-08-11 (later ×7) · The T14 and T15 FIX ROUNDS independently reviewed: REWORK. No phase gate moved.
+
+Both fix rounds had been merged on the orchestrator's own targeted verification. This session gave
+them the review round they never had, read-only: nothing tracked was modified, nothing committed,
+nothing pushed, and `make check` was never run (a gate and a build agent held the machine at load
+16–21 throughout).
+
+**Mutation testing without touching the worktree.** `src/` was copied to a scratchpad directory and
+selected with `PYTHONPATH`, so each reverted check ran against a copy while the shared worktree
+stayed clean. The driver restores the pristine file from the repo before every case, asserts the
+anchor is present *and unique*, and asserts the edit was not a no-op — a no-op replacement and a
+passing check are indistinguishable otherwise. `git status` was `?? docs/superpowers/` before,
+during and after.
+
+**16 of 16 mutations RED**, each caught by exactly the test written for it and by no other:
+
+| Round | Mutations | Result |
+|---|---|---|
+| T14 | 4 (store path, store entries, the equality, the second `selection = None` arm) | all RED |
+| T14 | 1 (the predicate reverted to `is_symlink()` over the same *set*) | GREEN — an equivalence, not a gap |
+| T15 | 11 (backup-root symlink, both deletion arms, the `ValidationError` translation, the append-only dispatch and each of its two refusals separately, the collision raise, both draft-name caps, the lock message) | all RED |
+
+So the round's stated question — *does every new check have a test that fails without it?* — is
+answered **yes for both rounds**. The three new T14 tests find the blob store by hashing every file
+under the root and keeping the one whose name is its own sha256, so they read no constant the check
+reads. That is the fix for "a test derived from a constant agrees with itself", done properly.
+
+**What the round still found: 1 BLOCKING, 5 SHOULD-FIX, 4 NOTE.** All are in `STATE.md`'s blocker
+table with `scratchpad/T14-T15-FIXROUND-REVIEW.md` as the evidence. The blocking one is the
+transferable lesson:
+
+> **A fix verified only against the reviewer's own reproduction closes the arm the reproduction
+> used.** T15's append-only ledger merge is correct, and `_merge_plan` reaches it only when the
+> selected revision *also* touched the ledger — which is the arm Lens A's probe happened to
+> exercise. For `conflicts/rulings.yaml` the other arm is the ordinary case, and there a draft that
+> drops an inherited ruling installs at exit 0 with no diagnostic. Re-running the reviewer's probe
+> could not have found this; driving `_merge_plan` directly, with the three append-only documents
+> enumerated from `_APPEND_ONLY_SEQUENCES` rather than from the probe, did.
+
+Its mirror, found the same way: the fix's *positive* test —
+`test_the_rebased_draft_carries_the_selected_revisions_ledgers_as_a_prefix` — survives deleting the
+entire fix (mutation T15-M5), because an untouched draft ledger merges identically either way. The
+suite pins the two refusals and not the property they exist to protect, which is precisely why the
+property being false on the common path went unnoticed.
+
+**Two probe-hygiene facts worth carrying.** A probe whose "edit" was `model_copy(update=...)` on a
+field the model does not have changed nothing and reported "no refusal" — a probe agreeing with
+itself; it was caught only because every case carried a negative control. And a FIFO in the blob
+store made `inventory` hang: 5.5 minutes elapsed against 2.4 s of CPU, `sample` showing the main
+thread parked in `__open`. **No output is not a pass** — the elapsed-versus-CPU check is what
+distinguishes a hang from a slow machine.
+
+**Measured cost of the T14 fix, recorded because `perf` is a CI job `make check` never runs:**
+
+| blobs in the store | `require_confined_root` |
+|---|---|
+| 0 | 2.9 ms |
+| 100 | 63.8 ms |
+| 1,000 | 503.4 ms |
+| 5,000 | 3,366 ms |
+| 20,000 | 8,738 ms |
+
+Upper bounds (load average 16–21), but linear in the store, on every command that resolves a
+selection. `is_symlink()` over the same 5,000 entries: 296 ms against 1,800 ms for the equality.
