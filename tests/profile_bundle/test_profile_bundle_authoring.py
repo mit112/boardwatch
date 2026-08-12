@@ -441,3 +441,45 @@ def test_every_ruling_decision_has_a_resulting_conflict_state() -> None:
     fails the moment either grows without the other.
     """
     assert set(_STATE_AFTER) == set(RulingDecision)
+
+
+def test_a_manifest_write_that_cannot_start_leaves_the_evidence_document_alone(
+    synthetic_bundle: SyntheticBundle,
+) -> None:
+    """A two-document edit must not commit half of itself and then report that nothing happened.
+
+    `add_evidence` changes `evidence/records.yaml` and the `evidence_set_digest` in `manifest.yaml`
+    that describes it. Written one at a time, a failure on the second left the first durable, the
+    manifest stale — the exact `evidence_set_digest_mismatch` the second write exists to prevent —
+    and the command answered `could_not_complete`, which §21 defines as nothing usable having
+    happened. An operator taking that at its word and retrying then landed on `duplicate_record_id`.
+
+    The two writes are not even the same failure domain: `mkstemp` stages beside each destination,
+    so the evidence document needs `evidence/` writable and the manifest needs the draft root. This
+    makes the draft root unwritable and leaves `evidence/` alone, which is the narrowest way to fail
+    the second write and only the second.
+
+    Read-only rather than the more obvious "delete the manifest", because a missing manifest fails
+    earlier, at load, and would pass whether or not the writes are staged together.
+    """
+    draft = draft_root(synthetic_bundle.root, synthetic_bundle.draft_name)
+    text = "A note that is entirely unremarkable."
+    before = _tree(synthetic_bundle)
+
+    mode = draft.stat().st_mode
+    draft.chmod(0o555)
+    try:
+        outcome = add_evidence(
+            synthetic_bundle.root,
+            draft_name=synthetic_bundle.draft_name,
+            evidence_document=_inline_record(text),
+            capture=text.encode("utf-8"),
+        )
+    finally:
+        draft.chmod(mode)
+
+    assert outcome.exit_code == 3
+    assert _codes(outcome) == {"io_error"}
+    # The blob store is the one documented exception and an inline capture writes no blob, so the
+    # whole draft must be byte-identical — not merely "the manifest is consistent with the records".
+    assert _tree(synthetic_bundle) == before

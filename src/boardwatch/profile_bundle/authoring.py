@@ -222,8 +222,7 @@ def add_evidence(
             }
         )
         restated = _manifest_restating_the_evidence_set(bundle_root, documents, appended)
-        _write_document(tree, EVIDENCE_PATH, appended)
-        _write_document(tree, MANIFEST_PATH, restated)
+        _write_documents(tree, {EVIDENCE_PATH: appended, MANIFEST_PATH: restated})
     except _Refused as refusal:
         return outcome_with(None, refusal.diagnostics)
 
@@ -287,8 +286,9 @@ def resolve_conflict(
         # The ruling first: a ledger entry no group names yet is a decision waiting to be applied,
         # which the next validation reports plainly. A group naming a ruling the ledger does not
         # hold is a broken reference to a decision nobody can read.
-        _write_document(tree, CONFLICT_RULINGS_PATH, new_rulings)
-        _write_document(tree, CONFLICT_GROUPS_PATH, new_groups)
+        _write_documents(
+            tree, {CONFLICT_RULINGS_PATH: new_rulings, CONFLICT_GROUPS_PATH: new_groups}
+        )
     except _Refused as refusal:
         return outcome_with(None, refusal.diagnostics)
 
@@ -589,23 +589,55 @@ def _gates(
 
 def _write_document(tree: Path, logical: PurePosixPath, model: DocumentModel) -> None:
     """Replace one document atomically, through the writer whose output the loader reads back."""
-    target = tree / logical
+    _write_documents(tree, {logical: model})
+
+
+def _write_documents(tree: Path, models: Mapping[PurePosixPath, DocumentModel]) -> None:
+    """Replace several documents together: stage every one, then rename them all.
+
+    Writing them one at a time is what a caller reads as a single edit but the filesystem does not.
+    `add_evidence` changes the evidence document *and* the manifest digest that describes it, and
+    `resolve_conflict` changes two conflict documents; if the second write failed, the first was
+    already durable and the command reported `could_not_complete` — telling an operator nothing
+    happened while leaving exactly the inconsistency the second write existed to prevent.
+
+    It is not one directory's permissions either. `mkstemp` stages beside each destination, so
+    `evidence/records.yaml` needs `evidence/` writable while `manifest.yaml` needs the draft root —
+    two independent failure domains, which ENOSPC reaches at different moments.
+
+    Staging everything first moves every failure that can be reported *before* the first rename, so
+    a refusal leaves the tree untouched. What remains is a crash between renames, which is the same
+    window §21 already accepts for `rebase-draft`'s two renames and answers the same way: the
+    operator is told which shapes are possible rather than promised a rollback a killed process
+    cannot perform.
+    """
+    staged: list[tuple[Path, Path]] = []
     try:
-        raw = document_bytes(model.model_dump(mode="json"), logical_path=logical)
-    except ProfileBundleError as exc:
-        raise _refusal(
-            IssueCode.INTERNAL_ERROR,
-            f"the updated {logical} could not be emitted as a bundle document",
-            path=logical.as_posix(),
-        ) from exc
-    try:
-        _atomic_write(target, raw)
-    except OSError as exc:
-        raise _refusal(
-            IssueCode.IO_ERROR,
-            f"{logical} could not be rewritten: {io_reason(exc)}",
-            path=logical.as_posix(),
-        ) from exc
+        for logical, model in models.items():
+            target = tree / logical
+            try:
+                raw = document_bytes(model.model_dump(mode="json"), logical_path=logical)
+            except ProfileBundleError as exc:
+                raise _refusal(
+                    IssueCode.INTERNAL_ERROR,
+                    f"the updated {logical} could not be emitted as a bundle document",
+                    path=logical.as_posix(),
+                ) from exc
+            try:
+                staged.append((_stage_beside(target, raw), target))
+            except OSError as exc:
+                raise _refusal(
+                    IssueCode.IO_ERROR,
+                    f"{logical} could not be rewritten: {io_reason(exc)}",
+                    path=logical.as_posix(),
+                ) from exc
+    except BaseException:
+        for temporary, _ in staged:
+            temporary.unlink(missing_ok=True)
+        raise
+
+    for temporary, target in staged:
+        os.replace(temporary, target)
 
 
 def _atomic_write(target: Path, raw: bytes) -> None:
@@ -615,6 +647,22 @@ def _atomic_write(target: Path, raw: bytes) -> None:
     and an approval stamp half-written is one `promote` refuses to parse at exactly the moment the
     owner believes they have approved.
     """
+    staged = _stage_beside(target, raw)
+    try:
+        os.replace(staged, target)
+    except BaseException:
+        staged.unlink(missing_ok=True)
+        raise
+
+
+def _stage_beside(target: Path, raw: bytes) -> Path:
+    """Write `raw` to a fsynced temporary file in `target`'s directory and return it, unrenamed.
+
+    Split out of `_atomic_write` so several documents can reach the point of no return together:
+    everything that can fail for an ordinary reason — permissions, a full disk — fails here, while
+    the rename that follows is the part the filesystem makes atomic. Raises `OSError`; the caller
+    names the file, because the path this failed on is not one a diagnostic may carry.
+    """
     handle, temporary = tempfile.mkstemp(dir=target.parent, prefix=_STAGING_PREFIX)
     staged = Path(temporary)
     try:
@@ -622,10 +670,10 @@ def _atomic_write(target: Path, raw: bytes) -> None:
             stream.write(raw)
             stream.flush()
             os.fsync(stream.fileno())
-        os.replace(staged, target)
     except BaseException:
         staged.unlink(missing_ok=True)
         raise
+    return staged
 
 
 # --------------------------------------------------------------------------------------
