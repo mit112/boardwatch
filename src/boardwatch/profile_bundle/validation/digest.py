@@ -166,8 +166,10 @@ def read_current(bundle_root: Path) -> CurrentPointer:
     The contract is canonical JSON with exactly these two keys and one trailing newline, and it is
     enforced by re-emitting the parsed pointer through `current_pointer_bytes` and requiring the
     file to be those bytes. Stated that way rather than as a second description of the form, so the
-    reader cannot drift from the writer: an added key, a reordering, or `json.dumps(indent=4)` all
-    fail one comparison instead of three separate rules that each have to be remembered.
+    reader cannot drift from the writer: a reordering and `json.dumps(indent=4)` both fail that one
+    comparison instead of two separate rules that each have to be remembered. An added key is the
+    exception and fails earlier, in `CurrentPointer.model_validate`, because `StrictModel` forbids
+    extras — so it never reaches a comparison that would have caught it anyway.
 
     Trailing content is refused rather than stripped for the same reason it always was: a pointer
     with extra bytes after the object is a torn write, and treating it as valid is how an

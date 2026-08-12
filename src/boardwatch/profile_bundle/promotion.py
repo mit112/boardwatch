@@ -874,6 +874,15 @@ def _reread(
     handed over rather than rediscovered. Only `_DEFERRED_TO_A_LATER_STEP` is tolerated, and both of
     its members are re-asserted after the artefact they are about exists.
 
+    The tier filter passes over `information` as well, which is three codes and not a third silent
+    deferral. `completeness_counts` and `orphaned_artefact` are reports about a bundle rather than
+    faults in this tree. The third, `candidate_digest_unverified`, is §20.6's "I made no claim", and
+    it cannot arise here: it is emitted when the candidate view could not be recomputed, whose three
+    causes are a missing blob — which the digest recomputation above raises on before validation
+    runs — a final `change_id` that does not match the manifest, which this promotion derived
+    together, and an ancestor that could not be read, which is why the parent is handed over.
+    Listing it in `_DEFERRED_TO_A_LATER_STEP` would be a tolerance for something that cannot happen.
+
     There is deliberately no third check comparing the re-read models with the ones the derivation
     produced (D-115). The digest is computed *from* those models, so any difference between them
     changes it — except in the two manifest fields the leaf excludes, `bundle_digest` (blanked) and
@@ -932,8 +941,13 @@ def _install(staged: Path, target: Path) -> Diagnostic | None:
     marker included, and any difference retains both directories and leaves `CURRENT` alone. §21
     forbids deleting either one, and there is nothing to choose between them anyway: this attempt
     cannot say which of two disagreeing trees the owner meant.
+
+    "Already in place" is `exists() or is_symlink()`, because `exists()` follows a link and answers
+    `False` for a dangling one. Renaming onto that path fails inside the `os.rename`, which unwinds
+    through `_commit`'s `finally` and removes the staged tree — the one refusal that discarded it,
+    reported as an I/O failure rather than as the conflict it is.
     """
-    if not target.exists():
+    if not (target.exists() or target.is_symlink()):
         os.rename(staged, target)
         return None
     try:

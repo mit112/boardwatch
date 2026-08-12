@@ -517,6 +517,12 @@ def test_a_pointer_that_is_not_in_the_canonical_form_is_refused(scene: Scene) ->
 
 
 def test_a_pointer_carrying_an_extra_key_is_refused(scene: Scene) -> None:
+    """By the model rather than by the canonical-form comparison, which it never reaches.
+
+    Pinned because `read_current`'s docstring offers the extra key as an example of the one
+    comparison, and it is the one example that is a different rule; an unmatched `pytest.raises`
+    here would let the two drift without anything noticing.
+    """
     _promoted(scene)
     pointer = read_current(scene.bundle_root)
     payload = {**pointer.model_dump(mode="json"), "note": "hand written"}
@@ -524,7 +530,7 @@ def test_a_pointer_carrying_an_extra_key_is_refused(scene: Scene) -> None:
         json.dumps(payload, sort_keys=True, separators=(",", ":")) + "\n", encoding="utf-8"
     )
 
-    with pytest.raises(PointerError):
+    with pytest.raises(PointerError, match="extra_forbidden"):
         read_current(scene.bundle_root)
 
 
@@ -958,6 +964,30 @@ def test_a_target_without_its_marker_is_a_conflict_that_retains_both(scene: Scen
     assert outcome.diagnostics[0].details["reason"] == TargetConflictReason.MARKER_MISSING.value
     assert _snapshot(root) == before
     assert len(_temporaries(scene.bundle_root)) == 1
+    assert not current_path(scene.bundle_root).exists()
+
+
+def test_a_dangling_symlink_at_the_digest_name_is_a_conflict_that_retains_both(
+    scene: Scene, tmp_path: Path
+) -> None:
+    """`exists()` follows a link and answers `False` for a dangling one.
+
+    So this took the rename arm, the rename failed `ENOTDIR`, and the unwind through `_commit`'s
+    `finally` removed the staged tree — the one refusal that discarded it, reported as an I/O
+    failure rather than as the target conflict every other occupied digest name gets. The exit code
+    was already right; what was wrong is that the staged tree did not survive to be compared.
+    """
+    root = _torn_before_the_pointer(scene)
+    shutil.rmtree(root)
+    root.symlink_to(tmp_path / "nowhere", target_is_directory=True)
+
+    outcome = promote(scene.bundle_root, _request())
+
+    assert outcome.exit_code == 3
+    assert _codes(outcome) == [IssueCode.PROMOTION_TARGET_CONFLICT]
+    assert outcome.diagnostics[0].details["reason"] == TargetConflictReason.MARKER_MISSING.value
+    assert root.is_symlink(), "§21: the thing already at the digest name is never removed"
+    assert len(_temporaries(scene.bundle_root)) == 1, "the staged tree is retained for comparison"
     assert not current_path(scene.bundle_root).exists()
 
 
