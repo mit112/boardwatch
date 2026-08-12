@@ -27,7 +27,8 @@ followed — keep incidents out of this file.
 
 | File | What it is |
 |---|---|
-| `docs/program/STATE.md` | **Read first.** Current standing. Rewritten every session. |
+| `docs/program/STATE.md` | **Read first.** Current standing. Rewritten every session. Kept near 170 lines. |
+| `docs/program/STANDING-FACTS.md` | Facts a fresh session should not re-derive, in six sections. Read the section for the subsystem you are about to touch — not the whole file. |
 | `docs/program/PROGRAM.md` | Phases, measurable gates, scope, departures from job-apps' roadmap. |
 | `docs/program/DECISIONS.md` | Append-only decision log. Context · choice · alternatives rejected. Holds D-077 onward, and **the index for both decision files**. |
 | `docs/program/DECISIONS-ARCHIVE.md` | D-001 … D-076, verbatim. **Closed** — never append here. |
