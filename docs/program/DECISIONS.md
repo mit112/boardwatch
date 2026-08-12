@@ -3634,7 +3634,7 @@ commits beyond the integration base, its worktree is clean, there is no stash, a
 ### The 03:10 job misfired a second time, and the self-check caught it in five commands
 
 `com.mitsheth.boardwatch-p6.plist` is a daily `StartCalendarInterval` job carrying the **one-shot**
-"execute P6 Slice 1" prompt. It asserts `main` at `fb0386a`, now **209 commits** back; P6 Slice 1,
+"execute P6 Slice 1" prompt. It asserts `main` at `fb0386a`, now **hundreds of commits** back and drifting daily; P6 Slice 1,
 2 and 3 all shipped long ago. D-123 recorded the first misfire on 2026-08-11 and ruled that such a
 prompt must self-check or be deleted after it runs. **The self-check worked** — `git merge-base
 --is-ancestor`, the presence of `identity_queries.py`, `identities_cmd.py`, both migrations and the
