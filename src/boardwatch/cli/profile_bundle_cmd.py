@@ -863,10 +863,16 @@ class _StandardTerminal:
         return True
 
     def show(self, text: str) -> None:
-        typer.echo(text)
+        """On stderr, because the operator interaction is not the command's answer.
+
+        `_emit` owns stdout. With the prompt on the same stream, `--json` had no working arm at all:
+        left on the terminal it printed pages of prompt text ahead of the JSON document, and
+        redirected so the document could be captured, `is_controlling` refused the run.
+        """
+        typer.echo(text, err=True)
 
     def ask(self, prompt: str) -> str:
-        return str(typer.prompt(prompt, default="", show_default=False))
+        return str(typer.prompt(prompt, default="", show_default=False, err=True))
 
 
 def approval_terminal() -> ApprovalTerminal:
