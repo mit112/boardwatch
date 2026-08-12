@@ -90,6 +90,11 @@ bare import binds whichever `conftest.py` loaded first; under the full suite tha
 `tests/unit/conftest.py`. This shipped in T15, survived two review lenses and a fix round, and is
 invisible to any narrow run — it is the concrete reason `make check` is the only gate.
 
+**The next session's ordered plan is `.agent/NEXT-SESSION-GATE-A.md`** — collect the two build
+agents' commits, finish T16's fix round against `.agent/T16-REVIEW-*.md`, merge `t16-promotion`
+into `t18-cli`, then **one** `make check` on `t18-cli`. Start with `git worktree prune`: the
+worktrees were session-scoped and are gone, the branches are not.
+
 **Dispatch state.** The T14, T15, T16 and T17 reviews are all **consumed** — T16's three lenses were
 the last of them, and none is owed again. What remains is T18's two review lenses (one on the tailor
 boundary) and T19's docs-only reviewer. **The review records that outlive a session live in `.agent/`**
