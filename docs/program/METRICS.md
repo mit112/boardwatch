@@ -54,35 +54,36 @@ reports drift without writing, and `make check` depends on it (D-109).
 | METRICS-ARCHIVE.md | 1047 | Session — 2026-08-08 (P5 run #2 — disjunctive fix, Gate P5 MET at 100%; D-073) |
 | METRICS-ARCHIVE.md | 1084 | Session — 2026-08-08 (D-071b final eligibility gate build — no answer-key number changes) |
 | METRICS-ARCHIVE.md | 1120 | Gate P2 — 2026-08-08 · field-tier mechanism (P2 item 4, D-075). **MET AS RECONCILED** |
-| METRICS.md | 89 | Run log |
-| METRICS.md | 117 | Acceptance run |
-| METRICS.md | 128 | Session — 2026-08-09/10 · P6 Slice 1 design + plan. **No build, no gate movement.** |
-| METRICS.md | 154 | Session — 2026-08-10 · P6 Slice 1 BUILT (unattended run). Branch `p6-slice1`, not merged. |
-| METRICS.md | 364 | 2026-08-10 — P6 Slice 1 on the LIVE store (first real backfill) + Gate P6 clause 4 |
-| METRICS.md | 403 | Session 2026-08-10 (later) — P6 Slice 2: the durable decision ledger, its drain, and job regrouping |
-| METRICS.md | 496 | Session — 2026-08-10 (later) · D-109, the program-index gate. No phase gate moved. |
-| METRICS.md | 537 | Session — 2026-08-10 (later still) · The P6 Slice 2 review (D-110). No phase gate moved. |
-| METRICS.md | 627 | Session — 2026-08-10 (later still ×2) · P6 Slice 3, items 5 and 6 (D-111). Gate P6 unchanged: still 2 of 4. |
-| METRICS.md | 740 | Session — 2026-08-10 (later still ×3) · 0.3.0 cut and tagged (D-112). No phase gate moved. |
-| METRICS.md | 791 | Session — 2026-08-10 (later still ×4) · The Slice 3 external review (D-113) + the CI dependency fix (D-114). No phase gate moved. |
-| METRICS.md | 911 | Session — 2026-08-10 (later still ×5) · Gate A career-profile bundle, slices T1–T9 (D-115). No phase gate moved. |
-| METRICS.md | 1000 | Session — 2026-08-10 (later still ×6) · The held commits are PUSHED; CI's first honest read (D-116, D-117). No phase gate moved. |
-| METRICS.md | 1075 | Session — 2026-08-10 (later still ×7) · Gate A slice T10, semantic validation (D-118). No phase gate moved. |
-| METRICS.md | 1256 | Session — 2026-08-10 · Gate A fix history reconciliation; independent T1–T10 review still owed. No phase gate moved. |
-| METRICS.md | 1280 | Session — 2026-08-10 · Independent Gate A T1–T10 review sign-off; T11 permitted. |
-| METRICS.md | 1318 | Session — 2026-08-11 · Gate A T11 implemented and reviewed. No phase gate moved. |
-| METRICS.md | 1348 | Session — 2026-08-11 (later) · Gate A T12 implemented, NOT independently reviewed. No phase gate moved. |
-| METRICS.md | 1409 | Session — 2026-08-11 (later ×2) · Gate A T12 reviewed TWICE, both REWORK, both rounds fixed. No phase gate moved. |
-| METRICS.md | 1457 | Session — 2026-08-11 (later ×3) · Gate A T12 reviewed a THIRD time, REWORK again. T13 partially built on a branch. No phase gate moved. |
-| METRICS.md | 1512 | Session — 2026-08-11 (later ×4) · T12 fixed through five reviews; T13 built. No phase gate moved. |
-| METRICS.md | 1578 | Session — 2026-08-11 (later ×5) · T13 merged; T14 reviewed and partly fixed; T15 and T17 built. No phase gate moved. |
-| METRICS.md | 1650 | Session — 2026-08-11 (later ×6) · T14 reviewed, fixed and MERGED; T15 reviewed twice and fixed; T17 reviewed. No phase gate moved. |
-| METRICS.md | 1794 | Session — 2026-08-11 (later ×7) · The T14 and T15 FIX ROUNDS independently reviewed: REWORK. No phase gate moved. |
-| METRICS.md | 1860 | Session — 2026-08-11 (later ×8) · The T14/T15 fix-round findings FIXED; T16 reviewed by three lenses. No phase gate moved. |
-| METRICS.md | 1964 | Session 2026-08-12 (03:10 unattended) · the final Gate A integration gate — exit 0 · 5,906 passed · 95.63%. No phase gate moved. |
-| METRICS.md | 1996 | Session — 2026-08-12 (working session) · T18 reviewed by two lenses and fixed; all nineteen slices merged into one tree. No phase gate moved. |
-| METRICS.md | 2050 | Session — 2026-08-12 (later) · Gate A's review loop CLOSED at round five; all four gates green. No phase gate moved. |
-| METRICS.md | 1383 | Session — 2026-08-11 (later still) · The T12 independent review (D-121) and its fix. No phase gate moved. |
+| METRICS.md | 90 | Run log |
+| METRICS.md | 118 | Acceptance run |
+| METRICS.md | 129 | Session — 2026-08-09/10 · P6 Slice 1 design + plan. **No build, no gate movement.** |
+| METRICS.md | 155 | Session — 2026-08-10 · P6 Slice 1 BUILT (unattended run). Branch `p6-slice1`, not merged. |
+| METRICS.md | 365 | 2026-08-10 — P6 Slice 1 on the LIVE store (first real backfill) + Gate P6 clause 4 |
+| METRICS.md | 404 | Session 2026-08-10 (later) — P6 Slice 2: the durable decision ledger, its drain, and job regrouping |
+| METRICS.md | 497 | Session — 2026-08-10 (later) · D-109, the program-index gate. No phase gate moved. |
+| METRICS.md | 538 | Session — 2026-08-10 (later still) · The P6 Slice 2 review (D-110). No phase gate moved. |
+| METRICS.md | 628 | Session — 2026-08-10 (later still ×2) · P6 Slice 3, items 5 and 6 (D-111). Gate P6 unchanged: still 2 of 4. |
+| METRICS.md | 741 | Session — 2026-08-10 (later still ×3) · 0.3.0 cut and tagged (D-112). No phase gate moved. |
+| METRICS.md | 792 | Session — 2026-08-10 (later still ×4) · The Slice 3 external review (D-113) + the CI dependency fix (D-114). No phase gate moved. |
+| METRICS.md | 912 | Session — 2026-08-10 (later still ×5) · Gate A career-profile bundle, slices T1–T9 (D-115). No phase gate moved. |
+| METRICS.md | 1001 | Session — 2026-08-10 (later still ×6) · The held commits are PUSHED; CI's first honest read (D-116, D-117). No phase gate moved. |
+| METRICS.md | 1076 | Session — 2026-08-10 (later still ×7) · Gate A slice T10, semantic validation (D-118). No phase gate moved. |
+| METRICS.md | 1257 | Session — 2026-08-10 · Gate A fix history reconciliation; independent T1–T10 review still owed. No phase gate moved. |
+| METRICS.md | 1281 | Session — 2026-08-10 · Independent Gate A T1–T10 review sign-off; T11 permitted. |
+| METRICS.md | 1319 | Session — 2026-08-11 · Gate A T11 implemented and reviewed. No phase gate moved. |
+| METRICS.md | 1349 | Session — 2026-08-11 (later) · Gate A T12 implemented, NOT independently reviewed. No phase gate moved. |
+| METRICS.md | 1410 | Session — 2026-08-11 (later ×2) · Gate A T12 reviewed TWICE, both REWORK, both rounds fixed. No phase gate moved. |
+| METRICS.md | 1458 | Session — 2026-08-11 (later ×3) · Gate A T12 reviewed a THIRD time, REWORK again. T13 partially built on a branch. No phase gate moved. |
+| METRICS.md | 1513 | Session — 2026-08-11 (later ×4) · T12 fixed through five reviews; T13 built. No phase gate moved. |
+| METRICS.md | 1579 | Session — 2026-08-11 (later ×5) · T13 merged; T14 reviewed and partly fixed; T15 and T17 built. No phase gate moved. |
+| METRICS.md | 1651 | Session — 2026-08-11 (later ×6) · T14 reviewed, fixed and MERGED; T15 reviewed twice and fixed; T17 reviewed. No phase gate moved. |
+| METRICS.md | 1795 | Session — 2026-08-11 (later ×7) · The T14 and T15 FIX ROUNDS independently reviewed: REWORK. No phase gate moved. |
+| METRICS.md | 1861 | Session — 2026-08-11 (later ×8) · The T14/T15 fix-round findings FIXED; T16 reviewed by three lenses. No phase gate moved. |
+| METRICS.md | 1965 | Session 2026-08-12 (03:10 unattended) · the final Gate A integration gate — exit 0 · 5,906 passed · 95.63%. No phase gate moved. |
+| METRICS.md | 1997 | Session — 2026-08-12 (working session) · T18 reviewed by two lenses and fixed; all nineteen slices merged into one tree. No phase gate moved. |
+| METRICS.md | 2051 | Session — 2026-08-12 (later) · Gate A's review loop CLOSED at round five; all four gates green. No phase gate moved. |
+| METRICS.md | 2125 | Session — 2026-08-12 (bonus window) · Gate A MERGED into main; two silent-success defects found and fixed after it. No phase gate moved. |
+| METRICS.md | 1384 | Session — 2026-08-11 (later still) · The T12 independent review (D-121) and its fix. No phase gate moved. |
 
 ---
 
@@ -2118,3 +2119,88 @@ into a tracked file, one a stale index, one a ruff failure. All three were caugh
 follow-up, and the habit changed to putting the commit inside an `if` guarded by the check. `STATE.md`
 is 332 lines against a ~170 target. Six worktrees were live at peak; disk fell 39 GB → 19 GB and was
 reclaimed as branches merged.
+
+---
+
+## Session — 2026-08-12 (bonus window) · Gate A MERGED into main; two silent-success defects found and fixed after it. No phase gate moved.
+
+Detail in D-138 … D-142. The session Mit asked to spend on "anything extra we could/should be doing"
+after the Gate A checkpoint. It merged the track, then went looking for defects in it and found two.
+
+### Gate A merged, and all four gates re-run on the result
+
+`main` `70a6d76` — nineteen slices, five review rounds, plus this session's three fixes.
+
+| Gate | Result |
+|---|---|
+| `make check` | **exit 0** · 5,919 passed · 1 deselected · **95.65%** · 16m22s |
+| `gitleaks` (`origin/main..HEAD`) | **exit 0** · 165 commits · no leaks |
+| `perf` (CI-only) | **exit 0** · top-path 0.245–0.268 s |
+| acceptance (`.agent/gate-a/acceptance.sh`) | **8 PASS / 0 FAIL**, re-run after the fixes |
+
+The integration merge moved only three `.md` files relative to the already-gated tree, so it owed
+`generalization` + `index-check` (D-116) — both green. **Gate A is still NOT met**: the merge is done,
+and the only remaining item is Mit's `evidence_link_asymmetry` ruling.
+
+**The test count is accounted for end to end**: 5,913 → +2 → +1 → +3 = **5,919**. Coverage 95.59% →
+95.65%.
+
+### Two defects, both "no flags" standing in for cleared
+
+- **A mistyped `--bundle` had four different answers, and `inventory`'s was `clean` at exit 0** (D-138).
+  Three commands mis-explained it as `no_current_revision`; `promote` said `draft_not_found`. Now
+  `bundle_not_found` on all twelve, exit 1.
+- **A FIFO in place of a bundle document hung `validate --draft` and `promote` forever** (D-141),
+  `promote` while holding the bundle lock. Measured at `timeout 20` → **exit 124, no output**; after
+  the fix, exit 1 in about a second. This was the **third and last** site of that class. The defect
+  underneath it: `discover_source_files` classified entries by elimination, so its last branch made
+  every filesystem object nobody had thought of into a document.
+
+### The review of this session's own fix: REWORK, and what it caught
+
+**1 MAJOR · 3 MINOR · 0 BLOCKING · 7 checks clean.** Numbers worth keeping:
+
+- **The fix reached 8 of 12 commands and claimed 12.** `add-evidence`, `resolve-conflict` and `approve`
+  take mandatory click `FILE` arguments, so the author's probe died at argument parsing before reaching
+  the bundle; `validate --draft` answered through a different function. **A probe that cannot reach an
+  arm prints the same nothing as an arm that passes.** The claim shipped in the code, in D-138 and in
+  `STANDING-FACTS.md` before it was corrected (D-142).
+- **1 of 5 mutations came back GREEN**, and it mattered: `is_dir()` weakened to `exists()` left
+  **1,954 tests passing** while restoring the original defect for a regular-file root. Both of the
+  fix's new tests had used a *nonexistent* path.
+- **1 of 5 was a behavioural no-op**, which is its own finding: `STATE_REFUSAL_CODES` has **no
+  production reader**, so all thirteen memberships are documentation.
+- **An unclaimed fix**: at the parent, a symlink loop at the root escaped as `RuntimeError` past every
+  handler, **leaking an absolute path**.
+
+### `STATE.md` cut 340 → 149 lines (D-139)
+
+Its own header asked for ~170 and it was double that, which is *why* three of its rows had gone false
+(T18's fix round recorded as unreviewed after five rounds closed it; the guide as unwritten after it
+was written and reviewed; a gate cited against a superseded sha). The 168 lines of reference material
+moved verbatim to `docs/program/STANDING-FACTS.md`, six sections behind a "read this before touching X"
+table — D-108's pattern, third application.
+
+### Corrections this session made to standing facts
+
+- **D-116's premise was false and its conclusion survives** (D-140). Two tests *do* read the real
+  `docs/` tree — `test_real_tree.py` asserts `run(REPO_ROOT) == []`, and `test_program_index.py`
+  asserts the index checker exits 0 there. Each asserts exactly what one of the two owed commands
+  asserts, which is the real reason the docs-only discount is sound. The expiry condition is now one
+  you can grep for.
+- **D-138's "across the surface" is corrected to eight of twelve**, and the refusal is documented as
+  living at **three** sites rather than one.
+
+### Cost, and two process failures
+
+- **A bullet count is not a diff.** The `STATE.md` split's commit message claimed "nothing was dropped
+  — 140 → 174 bullets" and had lost one fact; the seven added masked it. `comm -23` over normalised
+  bullet leads found it immediately, with no false positives. The claim was retracted in the commit
+  that restored the fact.
+- **A read-only review lens has no write tool.** It was briefed to append each finding on confirmation,
+  which was unfollowable; it ran **56 minutes with nothing on disk**, and D-138 shipped citing a report
+  path that did not exist. The orchestrator transcribed the findings afterwards.
+- One gate was started speculatively beside the running reviewer and had to be killed at 58% when the
+  review returned REWORK; under that contention it was running at roughly half speed (58% in 37
+  minutes, against 16m22s for the whole run once alone). The re-run is the one recorded above.
+- The `EXIT=0` read off a piped `head` recurred once more, in a doc transcript. Re-measured unpiped.

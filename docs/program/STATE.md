@@ -38,20 +38,20 @@ Mit's `resume.yaml` fix below.
 
 **Three separate claims, kept separate on purpose. Do not collapse them into "Gate A is met".**
 
-**1. The code is complete, merged and green.** All nineteen slices and every review round's fixes are on
-`main`. All four gates, on the integration head that was gated:
+**1. The code is complete, merged and green.** All nineteen slices, every review round's fixes, and the
+three post-merge fixes (D-138, D-141, D-142) are on `main`. All four gates, re-run on the result:
 
 | Gate | Result |
 |---|---|
-| `make check` | **exit 0** · 5,913 passed · 1 deselected · 95.59% · 16m35s · Python 3.13.12 |
-| `gitleaks` (`origin/main..t18-cli`, and `..main`) | **exit 0** · no leaks |
-| `perf` (CI-only) | **exit 0** |
+| `make check` | **exit 0** · 5,919 passed · 1 deselected · **95.65%** · 16m22s |
+| `gitleaks` (`origin/main..HEAD`) | **exit 0** · 165 commits · no leaks |
+| `perf` (CI-only) | **exit 0** · top-path 0.245–0.268 s |
+| acceptance | **8 PASS / 0 FAIL**, re-run after the fixes |
 
-Evidence: `.agent/GATE-A-CI-EQUIVALENCE.md`. First time the *whole* CI surface has been run locally
-against this track. **Nothing on this track is pushed** — `origin/main` is `88c5857` (T11) and the
-published 0.3.0 wheel (`dc1ffec`) is T1–T10, so everything from T12 onward is local. The merge into
-`main` moved only `.md` files relative to the gated tree, which owes `generalization` + `index-check`
-(D-116); a full gate is owed again for anything merged after it.
+Evidence: `.agent/GATE-A-CI-EQUIVALENCE.md`, which records the gated sha and the full test-count
+accounting. **Nothing on this track is pushed** — `origin/main` is `88c5857` (T11) and the published
+0.3.0 wheel (`dc1ffec`) is T1–T10, so everything from T12 onward is local. One `.md`-only commit
+followed the gate, owing `generalization` + `index-check` (D-116) — both green.
 
 **2. The review loop is CLOSED (D-137).** Five rounds: two lenses on T18's build (REWORK, REWORK, each
 finding a BLOCKING the other missed), one on its 10-commit fix round (REWORK), one on those fixes
@@ -70,6 +70,12 @@ suite that owns them, because a script driving the CLI once cannot establish the
 
 **What remains before "Gate A met" can be written down:** the owner's call on **open question 3 below**
 (`evidence_link_asymmetry` after `add-evidence` on a fact or metric). That is the whole list.
+
+**Two silent-success defects were found and fixed *after* the review loop closed** (D-138/D-142,
+D-141), which is the useful thing to know about this subsystem's remaining risk: both were "no flags"
+standing in for cleared, in code that six reviews and four gates had passed. One review of the first
+fix returned REWORK because the fix reached eight of twelve commands while claiming all twelve. Treat
+the closed review loop as evidence about the slices reviewed, not about the subsystem being defect-free.
 
 **Gate B stays prohibited until Gate A is met.** Start any Gate A session with `git worktree prune`.
 
