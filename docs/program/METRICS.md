@@ -83,7 +83,7 @@ reports drift without writing, and `make check` depends on it (D-109).
 | METRICS.md | 1998 | Session — 2026-08-12 (working session) · T18 reviewed by two lenses and fixed; all nineteen slices merged into one tree. No phase gate moved. |
 | METRICS.md | 2052 | Session — 2026-08-12 (later) · Gate A's review loop CLOSED at round five; all four gates green. No phase gate moved. |
 | METRICS.md | 2126 | Session — 2026-08-12 (bonus window) · Gate A MERGED into main; two silent-success defects found and fixed after it. No phase gate moved. |
-| METRICS.md | 2211 | Session — 2026-08-12 (continuation) · Gate A's last open question ruled and built; the track PUSHED; a Windows regression the push exposed. No phase gate moved. |
+| METRICS.md | 2211 | Session — 2026-08-12 (continuation) · **Gate A MET.** Its last open question ruled and built (D-143), the track PUSHED, and the Windows matrix taken from never-ran to green (D-145). |
 | METRICS.md | 1385 | Session — 2026-08-11 (later still) · The T12 independent review (D-121) and its fix. No phase gate moved. |
 
 ---
@@ -2208,7 +2208,7 @@ table — D-108's pattern, third application.
 
 ---
 
-## Session — 2026-08-12 (continuation) · Gate A's last open question ruled and built; the track PUSHED; a Windows regression the push exposed. No phase gate moved.
+## Session — 2026-08-12 (continuation) · **Gate A MET.** Its last open question ruled and built (D-143), the track PUSHED, and the Windows matrix taken from never-ran to green (D-145).
 
 Two owner rulings at session start, both acted on: `add-evidence` writes the back-citation (D-143),
 and the unpushed track goes to `origin/main`.
@@ -2292,13 +2292,19 @@ reader accepts; production writes binary and was never affected). Full account i
 | mode-bit denial | 1 | skipped |
 | path separator in a test helper | 1 | `as_posix()` — introduced this session |
 
-**After the first fix round, a Windows job finished for the first time: 5,881 passed, 47 skipped,
-2 failed, 1:05:37.** So it is ~4x slower than the local run and was never hanging. Both survivors
-were the same two classes: another COMPLETE marker written with `write_text` (promotion compares
-retained against staged **byte for byte**, so `\r\n` differed), and another `chmod(0o000)` that
-Windows still reads. All eighteen marker/pointer writes are now `write_bytes`; the mode-bit test is
-skipped. **Fix the class, not the instance** — both rounds found one failing site of a pattern with
-many, and the passing sites were the dangerous ones.
+**Closed: CI is green on all twelve jobs (`8475319`).** Two fix rounds, ~130 → 2 → 0.
+
+| Round | Windows result |
+|---|---|
+| before | `1 deselected, 2 errors` — collection aborted, **no test ran** |
+| after `dbb57ef` | 5,881 passed · 47 skipped · **2 failed** · 1:05:37 |
+| after `f8d89e6` | **5,883 passed · 48 skipped · 0 failed · 1:18:03** |
+
+The Windows suite is ~4–5x the 16-minute local gate. Slow, not hanging — worth knowing before reading
+a long Windows job as a hang. Both round-two survivors repeated classes already fixed once, which is
+why that round converted **all eighteen** marker/pointer writes rather than the one that failed: the
+passing sites were the dangerous ones, taking a byte mismatch from CRLF instead of from the defect
+they were written for.
 
 ### Cost
 
