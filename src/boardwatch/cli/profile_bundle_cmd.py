@@ -446,13 +446,11 @@ def validate(
 
     root = _bundle_root(ctx, bundle)
     if draft is not None:
-        tree = draft_root(root, draft)
+        located = _guarded(lambda: _draft_tree(root, draft))
+        if located.value is None:
+            _emit("validate", located, _nothing(), as_json=json_output)
+        tree = located.value
         mode = "draft"
-        if not tree.is_dir():
-            outcome = _refusal(
-                IssueCode.DRAFT_NOT_FOUND, f"drafts/{draft} does not exist; nothing to validate"
-            )
-            _emit("validate", outcome, _nothing(), as_json=json_output)
     else:
         selection = _guarded(lambda: _selected_outcome(root))
         if selection.value is None:
@@ -479,6 +477,24 @@ def validate(
         as_json=json_output,
         as_of=report.as_of if report is not None else None,
     )
+
+
+def _draft_tree(bundle_root: Path, draft: str) -> OperationOutcome[Path]:
+    """The named draft's directory, or the typed refusal that says there is none.
+
+    Called through `_guarded` rather than inline, because `Path.is_dir()` re-raises every `OSError`
+    that is not "it does not exist": an unreadable `drafts/` arrives here as a `PermissionError`,
+    and one escaping this layer would be a raw traceback carrying the operator's absolute path, at
+    exit 1 where §21 requires 3, and with no JSON at all under `--json`. `draft_root` cannot raise
+    here — `_existing_draft` already applied the segment grammar it checks — so the `OSError` arm is
+    the whole reason this is a function.
+    """
+    tree = draft_root(bundle_root, draft)
+    if not tree.is_dir():
+        return _refusal(
+            IssueCode.DRAFT_NOT_FOUND, f"drafts/{draft} does not exist; nothing to validate"
+        )
+    return OperationOutcome.clean(tree)
 
 
 def _selected_outcome(bundle_root: Path) -> OperationOutcome[SelectedRevision]:

@@ -22,6 +22,7 @@ is the part of §21 a usage error could quietly violate.
 from __future__ import annotations
 
 import json
+import os
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -238,6 +239,44 @@ def test_lock_contention_could_not_complete(
     body = payload(result)
     assert body["outcome"] == "could_not_complete"
     assert {finding["code"] for finding in body["diagnostics"]} == {"bundle_lock_held"}  # type: ignore[index,union-attr]
+
+
+@pytest.mark.skipif(os.name != "posix", reason="mode bits do not deny directory reads on Windows")
+def test_an_unreadable_drafts_directory_could_not_complete(
+    env: Env, synthetic_bundle: SyntheticBundle, tmp_path: Path
+) -> None:
+    """`validate --draft` has to probe the draft directory, and that probe is I/O.
+
+    `Path.is_dir()` re-raises every `OSError` that is not "it does not exist", so an unreadable
+    `drafts/` reaches it as a `PermissionError`. Run outside the command layer's guard it escaped as
+    a Rich traceback printing the operator's absolute path, exited 1 — the code §21 reserves for "the
+    check completed and found errors" — and emitted nothing parseable under `--json`.
+
+    Both arms are asserted, because the fix strengthens the boundary rather than the input: a
+    genuinely absent draft is still a finding about the bundle, not an I/O failure.
+    """
+    if os.geteuid() == 0:  # pragma: no cover - root ignores the mode bits entirely
+        pytest.skip("running as root, so an unreadable directory is still readable")
+    bundle = ["--bundle", str(synthetic_bundle.root)]
+
+    absent = run(env, ["validate", *bundle, "--draft", "no-such-draft", "--json"])
+    assert absent.exit_code == 1, absent.output
+    assert {finding["code"] for finding in payload(absent)["diagnostics"]} == {  # type: ignore[index,union-attr]
+        "draft_not_found"
+    }
+
+    drafts = synthetic_bundle.draft.parent
+    drafts.chmod(0o000)
+    try:
+        result = run(env, ["validate", *bundle, "--draft", synthetic_bundle.draft_name, "--json"])
+    finally:
+        drafts.chmod(0o755)
+
+    assert result.exit_code == 3, result.output
+    body = payload(result)
+    assert body["outcome"] == "could_not_complete"
+    assert {finding["code"] for finding in body["diagnostics"]} == {"io_error"}  # type: ignore[index,union-attr]
+    assert str(tmp_path) not in result.output, result.output
 
 
 def test_a_bundle_root_that_is_a_file_could_not_complete(env: Env, tmp_path: Path) -> None:
