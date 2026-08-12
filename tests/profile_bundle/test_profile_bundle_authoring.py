@@ -30,8 +30,10 @@ from boardwatch.profile_bundle.errors import (
     IssueCode,
     OperationOutcome,
 )
+from boardwatch.profile_bundle.index import record_id_of
 from boardwatch.profile_bundle.models.history import ApprovalAction, RulingDecision
 from boardwatch.profile_bundle.paths import blob_path, blobs_dir, draft_root
+from boardwatch.profile_bundle.validation import build_context, validate_referential
 from tests.profile_bundle.conftest import SyntheticBundle, parse_documents, quoted_yaml
 
 EVIDENCE_INPUT = PurePosixPath("evidence-record.yaml")
@@ -126,7 +128,9 @@ def _tree(bundle: SyntheticBundle) -> dict[str, bytes]:
 # --------------------------------------------------------------------------------------
 
 
-def test_an_inline_capture_is_appended_and_stores_no_blob(synthetic_bundle: SyntheticBundle) -> None:
+def test_an_inline_capture_is_appended_and_stores_no_blob(
+    synthetic_bundle: SyntheticBundle,
+) -> None:
     text = "The owner attests to the professional name recorded in this bundle."
     before = sorted(blobs_dir(synthetic_bundle.root).iterdir())
     outcome = add_evidence(
@@ -249,9 +253,7 @@ def test_an_evidence_id_the_draft_already_holds_is_refused(
     outcome = add_evidence(
         synthetic_bundle.root,
         draft_name=synthetic_bundle.draft_name,
-        evidence_document=_inline_record(
-            text, evidence_id="evidence.packet-pantry.benchmark.001"
-        ),
+        evidence_document=_inline_record(text, evidence_id="evidence.packet-pantry.benchmark.001"),
         capture=text.encode("utf-8"),
     )
     assert outcome.exit_code == 1
@@ -318,6 +320,14 @@ def test_adding_owner_approved_evidence_reports_the_gate_it_creates(
 
     Derived by diffing the draft against itself-before, so it is the same derivation
     `validate_history` uses rather than a second statement of which transitions are gated.
+
+    **Both** gates are reported, and the second one is the point: the back-citation this capture
+    writes into `fact.example.name.001` (D-143) changes that fact, and a changed fact owes
+    `confirm_fact` at promotion. It is not a burden auto-linking invented — the hand edit that used
+    to be step two changed the same field of the same fact and owed the same stamp. What changed is
+    that the owner is told at the moment they incur it rather than at promotion, which is exactly
+    what `_gates` exists for: the command cannot report a gate promotion will not require, or miss
+    one it will.
     """
     text = "An attested note whose sufficiency the owner has approved."
     outcome = add_evidence(
@@ -329,7 +339,278 @@ def test_adding_owner_approved_evidence_reports_the_gate_it_creates(
     assert outcome.value is not None
     assert [
         (decision.action, decision.target_record_id) for decision in outcome.value.owner_gates
-    ] == [(ApprovalAction.APPROVE_EVIDENCE_SUFFICIENCY, "evidence.example.new.001")]
+    ] == [
+        (ApprovalAction.APPROVE_EVIDENCE_SUFFICIENCY, "evidence.example.new.001"),
+        (ApprovalAction.CONFIRM_FACT, "fact.example.name.001"),
+    ]
+
+
+# --------------------------------------------------------------------------------------
+# add_evidence writes the back-citation (D-143)
+# --------------------------------------------------------------------------------------
+#
+# §12 requires the two link directions to agree exactly. `add_evidence` used to write only the
+# evidence side, so a capture supporting a fact left the draft failing `evidence_link_asymmetry`
+# until the owner hand-edited the fact. These tests pin the three things a narrower fix would miss:
+# all three relationships, both citing kinds, and any of the twelve fact-bearing documents.
+
+
+def _linking_record(
+    text: str,
+    *,
+    supports: list[str] | None = None,
+    contradicts: list[str] | None = None,
+    contextualizes: list[str] | None = None,
+    evidence_id: str = "evidence.example.link.001",
+    evidence_class: str = "owner_attestation",
+) -> bytes:
+    """An inline record whose three link tuples the caller chooses.
+
+    The class matters and is not decoration: each one carries its own model validator about what it
+    must link to — an `owner_attestation` must support at least one fact, a `measured_result` at
+    least one metric — so a test about *which* links get cited back has to pick a class whose own
+    rules its links already satisfy.
+    """
+    extra: dict[str, object] = {
+        "owner_attestation": {"attested_at": "2026-08-11"},
+        "measured_result": {},
+        "secondary_summary": {
+            "source_id": "source.synthetic-notes",
+            "locator": {"kind": "section", "value": "Prototype stack"},
+            "authoritative": False,
+        },
+    }[evidence_class]
+    return quoted_yaml(
+        {
+            "evidence_id": evidence_id,
+            "title": "Attestation whose links are under test",
+            "capture": {"kind": "inline", "text": text, "media_type": "text/plain"},
+            "captured_at": "2026-08-11T09:00:00Z",
+            "reviewed_at": "2026-08-11",
+            "sufficiency_review": {"state": "owner_approved"},
+            "redactions": [],
+            "supports_record_ids": supports or [],
+            "contradicts_record_ids": contradicts or [],
+            "contextualizes_record_ids": contextualizes or [],
+            "evidence_class": evidence_class,
+            **extra,
+        },
+        logical_path=EVIDENCE_INPUT,
+    )
+
+
+def _asymmetries(bundle: SyntheticBundle) -> list[str]:
+    """Every `evidence_link_asymmetry` the real referential check reports over the draft.
+
+    Through `validate_referential` rather than by re-reading the YAML, because the property that
+    matters is that the check this closes no longer fires — not that a field the test chose changed.
+    """
+    ctx = build_context(draft_root(bundle.root, bundle.draft_name), mode="draft")
+    return [
+        finding.details.get("supported_record_id") or finding.details.get("record_id", "")
+        for finding in validate_referential(ctx)
+        if finding.code == IssueCode.EVIDENCE_LINK_ASYMMETRY.value
+    ]
+
+
+def _cited_by(bundle: SyntheticBundle, relative: str, record_id: str) -> tuple[str, ...]:
+    """One record's `evidence_ids`, read back through the production loader."""
+    documents = parse_documents(draft_root(bundle.root, bundle.draft_name))
+    document = documents.by_path[PurePosixPath(relative)]
+    holder = getattr(document, "facts", None) or getattr(document, "metrics", ())
+    (record,) = [item for item in holder if record_id_of(item) == record_id]
+    return tuple(record.evidence_ids)
+
+
+def test_a_capture_supporting_a_fact_writes_the_back_citation(
+    synthetic_bundle: SyntheticBundle,
+) -> None:
+    """The whole point of D-143: a correct operation leaves no standing error behind it."""
+    text = "The owner attests to the professional name recorded in this bundle."
+    assert _asymmetries(synthetic_bundle) == []
+
+    outcome = add_evidence(
+        synthetic_bundle.root,
+        draft_name=synthetic_bundle.draft_name,
+        evidence_document=_linking_record(text, supports=["fact.example.name.001"]),
+        capture=text.encode("utf-8"),
+    )
+
+    assert outcome.category == "clean", outcome.diagnostics
+    assert "evidence.example.link.001" in _cited_by(
+        synthetic_bundle, "facts/identity.yaml", "fact.example.name.001"
+    )
+    assert _asymmetries(synthetic_bundle) == []
+
+
+def test_a_capture_supporting_a_metric_writes_the_back_citation(
+    synthetic_bundle: SyntheticBundle,
+) -> None:
+    """Metrics carry `evidence_ids` too, and the guide's example only ever showed a fact."""
+    text = "The owner attests to the throughput figure recorded in this bundle."
+    outcome = add_evidence(
+        synthetic_bundle.root,
+        draft_name=synthetic_bundle.draft_name,
+        evidence_document=_linking_record(
+            text,
+            supports=["metric.packet-pantry.throughput.001"],
+            evidence_class="measured_result",
+        ),
+        capture=text.encode("utf-8"),
+    )
+
+    assert outcome.category == "clean", outcome.diagnostics
+    assert "evidence.example.link.001" in _cited_by(
+        synthetic_bundle, "metrics/records.yaml", "metric.packet-pantry.throughput.001"
+    )
+    assert _asymmetries(synthetic_bundle) == []
+
+
+def test_contradicting_and_contextualizing_records_are_cited_back_too(
+    synthetic_bundle: SyntheticBundle,
+) -> None:
+    """`_evidence_links_are_symmetric` reads the UNION of three relationships, not `supports`.
+
+    A fix that linked only `supports` passes the two tests above and leaves the other two arms
+    reporting the very asymmetry it was written to close. One record carries all three, which also
+    keeps it a legal `owner_attestation` — that class must support at least one fact.
+    """
+    text = "The owner attests to a reading that cuts against one fact and colours another."
+    outcome = add_evidence(
+        synthetic_bundle.root,
+        draft_name=synthetic_bundle.draft_name,
+        evidence_document=_linking_record(
+            text,
+            supports=["fact.example.name.001"],
+            contradicts=["fact.example-prize.name.001"],
+            contextualizes=["fact.example-paper.title.001"],
+        ),
+        capture=text.encode("utf-8"),
+    )
+
+    assert outcome.category == "clean", outcome.diagnostics
+    assert "evidence.example.link.001" in _cited_by(
+        synthetic_bundle, "facts/identity.yaml", "fact.example.name.001"
+    )
+    assert "evidence.example.link.001" in _cited_by(
+        synthetic_bundle, "facts/awards.yaml", "fact.example-prize.name.001"
+    )
+    assert "evidence.example.link.001" in _cited_by(
+        synthetic_bundle, "facts/publications.yaml", "fact.example-paper.title.001"
+    )
+    assert _asymmetries(synthetic_bundle) == []
+
+
+def test_a_fact_outside_the_identity_document_is_found(
+    synthetic_bundle: SyntheticBundle,
+) -> None:
+    """Twelve document classes bear facts, and one lives in a nested directory.
+
+    The lookup asks `isinstance(document, FactBearingDocument)` rather than naming paths, so this
+    guards the failure mode that shipped once already (D-142): a fix that reaches the arms the probe
+    happened to touch and claims the whole surface.
+    """
+    text = "The owner attests to the employer named in this bundle."
+    outcome = add_evidence(
+        synthetic_bundle.root,
+        draft_name=synthetic_bundle.draft_name,
+        evidence_document=_linking_record(text, supports=["fact.example-labs.organization.001"]),
+        capture=text.encode("utf-8"),
+    )
+
+    assert outcome.category == "clean", outcome.diagnostics
+    assert "evidence.example.link.001" in _cited_by(
+        synthetic_bundle,
+        "facts/experience/employment.example-labs.yaml",
+        "fact.example-labs.organization.001",
+    )
+    assert _asymmetries(synthetic_bundle) == []
+
+
+def test_a_capture_naming_only_a_skill_or_a_claim_rewrites_no_record_document(
+    synthetic_bundle: SyntheticBundle,
+) -> None:
+    """Skills and claims carry no `evidence_ids`; a one-way link there is legitimate under §12.
+
+    Asserting the tree, not just the exit code: citing back into a record that cannot cite would
+    invent an error, and the cheapest way to get that wrong is to link by prefix-blindness.
+    """
+    text = "The owner attests to the language skill and the summary claim in this bundle."
+    before = _tree(synthetic_bundle)
+
+    outcome = add_evidence(
+        synthetic_bundle.root,
+        draft_name=synthetic_bundle.draft_name,
+        evidence_document=_linking_record(
+            text,
+            supports=["skill.example-language"],
+            contextualizes=["claim.example.summary.001"],
+            evidence_class="secondary_summary",
+        ),
+        capture=text.encode("utf-8"),
+    )
+
+    assert outcome.category == "clean", outcome.diagnostics
+    after = _tree(synthetic_bundle)
+    changed = {path for path in after if after[path] != before.get(path)}
+    assert changed == {
+        f"drafts/{synthetic_bundle.draft_name}/evidence/records.yaml",
+        f"drafts/{synthetic_bundle.draft_name}/manifest.yaml",
+    }
+    assert _asymmetries(synthetic_bundle) == []
+
+
+def test_a_record_the_draft_does_not_hold_is_left_to_the_broken_reference_check(
+    synthetic_bundle: SyntheticBundle,
+) -> None:
+    """A dangling target is a broken reference, and inventing a citation would not repair it."""
+    text = "The owner attests to something this bundle does not record."
+    outcome = add_evidence(
+        synthetic_bundle.root,
+        draft_name=synthetic_bundle.draft_name,
+        evidence_document=_linking_record(text, supports=["fact.example.absent.999"]),
+        capture=text.encode("utf-8"),
+    )
+
+    assert outcome.category == "clean", outcome.diagnostics
+    ctx = build_context(
+        draft_root(synthetic_bundle.root, synthetic_bundle.draft_name), mode="draft"
+    )
+    codes = {finding.code for finding in validate_referential(ctx)}
+    assert IssueCode.EVIDENCE_LINK_ASYMMETRY.value not in codes
+    assert codes, "a dangling target must still be reported by some referential check"
+
+
+def test_a_record_that_already_cites_the_evidence_is_not_rewritten(
+    synthetic_bundle: SyntheticBundle,
+) -> None:
+    """Idempotence, and the reason `evidence_ids` is rebuilt from a set rather than appended to."""
+    text = "The owner attests to the professional name recorded in this bundle."
+    add_evidence(
+        synthetic_bundle.root,
+        draft_name=synthetic_bundle.draft_name,
+        evidence_document=_linking_record(text, supports=["fact.example.name.001"]),
+        capture=text.encode("utf-8"),
+    )
+    cited = _cited_by(synthetic_bundle, "facts/identity.yaml", "fact.example.name.001")
+
+    second = "A second attestation naming the same fact."
+    outcome = add_evidence(
+        synthetic_bundle.root,
+        draft_name=synthetic_bundle.draft_name,
+        evidence_document=_linking_record(
+            second,
+            supports=["fact.example.name.001"],
+            evidence_id="evidence.example.link.002",
+        ),
+        capture=second.encode("utf-8"),
+    )
+
+    assert outcome.category == "clean", outcome.diagnostics
+    after = _cited_by(synthetic_bundle, "facts/identity.yaml", "fact.example.name.001")
+    assert set(after) == {*cited, "evidence.example.link.002"}
+    assert list(after) == sorted(set(after)), "`evidence_ids` is UniqueSorted"
+    assert _asymmetries(synthetic_bundle) == []
 
 
 # --------------------------------------------------------------------------------------
@@ -478,10 +759,11 @@ def test_every_ruling_decision_has_a_resulting_conflict_state() -> None:
 def test_a_manifest_write_that_cannot_start_leaves_the_evidence_document_alone(
     synthetic_bundle: SyntheticBundle,
 ) -> None:
-    """A two-document edit must not commit half of itself and then report that nothing happened.
+    """A multi-document edit must not commit half of itself and then report that nothing happened.
 
-    `add_evidence` changes `evidence/records.yaml` and the `evidence_set_digest` in `manifest.yaml`
-    that describes it. Written one at a time, a failure on the second left the first durable, the
+    `add_evidence` changes `evidence/records.yaml`, the `evidence_set_digest` in `manifest.yaml`
+    that describes it, and — since D-143 — each fact or metric document the capture cites back into.
+    Written one at a time, a failure on the last left the earlier ones durable, the
     manifest stale — the exact `evidence_set_digest_mismatch` the second write exists to prevent —
     and the command answered `could_not_complete`, which §21 defines as nothing usable having
     happened. An operator taking that at its word and retrying then landed on `duplicate_record_id`.
@@ -520,7 +802,11 @@ def test_a_manifest_write_that_cannot_start_leaves_the_evidence_document_alone(
 def test_a_rename_that_fails_after_the_first_one_names_the_half_applied_state(
     synthetic_bundle: SyntheticBundle, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """The second arm of the two-document write, and the one the first fix moved rather than closed.
+    """The second arm of the multi-document write, and the one the first fix moved rather than closed.
+
+    It also pins the write ORDER `add_evidence` states: `applied` below is exactly
+    `evidence/records.yaml`, so the evidence record is the first rename — the pointer target before
+    the pointer that cites it (D-143).
 
     Staging both documents before renaming either removes every failure that can be *avoided*, but
     `os.replace` itself can still fail: `mkstemp` needs the directory writable while the rename
@@ -578,6 +864,7 @@ def test_a_first_rename_that_fails_leaves_the_tree_untouched_and_no_residue(
     fix that reported the half-applied code unconditionally would pass the test above and be wrong
     here.
     """
+
     def always_fail(src, dst, **kwargs):  # type: ignore[no-untyped-def]
         raise PermissionError(1, "Operation not permitted")
 

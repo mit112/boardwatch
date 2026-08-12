@@ -50,7 +50,7 @@ from datetime import datetime
 from pathlib import Path, PurePosixPath
 from typing import Final, Literal, TypeVar
 
-from pydantic import TypeAdapter, ValidationError
+from pydantic import BaseModel, TypeAdapter, ValidationError
 
 from boardwatch.profile_bundle.approvals import (
     ApprovalDecision,
@@ -85,10 +85,14 @@ from boardwatch.profile_bundle.errors import (
     io_reason,
     outcome_with,
 )
+from boardwatch.profile_bundle.index import record_id_of
+from boardwatch.profile_bundle.models.base import prefix_of
 from boardwatch.profile_bundle.models.documents import (
     BundleDocuments,
     DocumentModel,
     EvidenceRecordsDocument,
+    FactBearingDocument,
+    MetricRecordsDocument,
 )
 from boardwatch.profile_bundle.models.evidence import AnyEvidence, EvidenceRecord
 from boardwatch.profile_bundle.models.history import (
@@ -222,8 +226,14 @@ def add_evidence(
                 ]
             }
         )
+        citing_back = _documents_citing_back(documents, record)
         restated = _manifest_restating_the_evidence_set(bundle_root, documents, appended)
-        _write_documents(tree, {EVIDENCE_PATH: appended, MANIFEST_PATH: restated})
+        # The evidence record before the records that cite it, for the reason `resolve_conflict`
+        # writes its ruling first: the pointer target goes down before the pointer. A rename that
+        # fails between the two leaves exactly the `evidence_link_asymmetry` this used to leave
+        # always — legible, and repaired by the hand edit that used to be step two. The other order
+        # would leave a fact citing an evidence ID no document holds, which is strictly worse.
+        _write_documents(tree, {EVIDENCE_PATH: appended, **citing_back, MANIFEST_PATH: restated})
     except _Refused as refusal:
         return outcome_with(None, refusal.diagnostics)
 
@@ -234,7 +244,7 @@ def add_evidence(
             capture_kind=record.capture.kind,
             blob_digest=blob_digest,
             blob_outcome=blob_outcome,
-            owner_gates=_gates(documents, {EVIDENCE_PATH: appended}),
+            owner_gates=_gates(documents, {EVIDENCE_PATH: appended, **citing_back}),
         )
     )
 
@@ -269,9 +279,9 @@ def resolve_conflict(
         new_groups = ConflictGroups.model_validate(
             {
                 "conflicts": [
-                    (
-                        updated if group.conflict_id == target.conflict_id else group
-                    ).model_dump(mode="json")
+                    (updated if group.conflict_id == target.conflict_id else group).model_dump(
+                        mode="json"
+                    )
                     for group in groups.conflicts
                 ]
             }
@@ -349,15 +359,11 @@ def _load(tree: Path) -> BundleDocuments:
         raise _Refused(parse_error_diagnostics(exc)) from exc
 
 
-def _parse(
-    raw: bytes, adapter: TypeAdapter[_T], *, logical_path: PurePosixPath
-) -> _T:
+def _parse(raw: bytes, adapter: TypeAdapter[_T], *, logical_path: PurePosixPath) -> _T:
     try:
         payload = load_yaml_bytes(raw, logical_path=logical_path)
     except RestrictedYamlError as exc:
-        raise _Refused(
-            (diagnostic(exc.code, str(exc), path=logical_path.as_posix()),)
-        ) from exc
+        raise _Refused((diagnostic(exc.code, str(exc), path=logical_path.as_posix()),)) from exc
     try:
         return adapter.validate_python(payload)
     except ValidationError as exc:
@@ -550,6 +556,79 @@ def _capture_bytes(
             record_id=record.evidence_id,
         ) from exc
     return (result.digest, result.outcome)
+
+
+def _documents_citing_back(
+    documents: BundleDocuments, record: AnyEvidence
+) -> dict[PurePosixPath, DocumentModel]:
+    """Every fact/metric document rewritten so the records this capture names cite it back (§12).
+
+    §12 requires the two directions to agree exactly, and `add_evidence` writes only the evidence
+    side, so before this existed a capture supporting a fact left the draft failing
+    `evidence_link_asymmetry` and the owner had to make the second edit by hand. Writing it here is
+    the owner's ruling (D-143): a correct operation must not leave a standing error behind it.
+
+    Three things this reads that a narrower version would miss:
+
+    - **The union of all three relationships**, not `supports` alone.
+      `_evidence_links_are_symmetric` compares against `supports | contradicts | contextualizes`,
+      so linking only the first leaves the other two reporting the very asymmetry this closes.
+    - **Only `fact` and `metric`.** They are the only kinds carrying `evidence_ids`; evidence
+      naming a skill or a claim is a legitimate one-way link, and evidence naming anything else is
+      a *wrong kind* reported as one. Citing back into either would invent an error.
+    - **Any fact-bearing document**, asked by type rather than by name. There are twelve, and
+      `FactBearingDocument` is public precisely so this question does not become a list that goes
+      stale when a thirteenth arrives.
+
+    A target the draft does not hold is left alone: that is a broken reference, validation already
+    reports it as one, and citing a record that is not there would not repair it.
+    """
+    named = {
+        target
+        for group in (
+            record.supports_record_ids,
+            record.contradicts_record_ids,
+            record.contextualizes_record_ids,
+        )
+        for target in group
+        if prefix_of(target) in ("fact", "metric")
+    }
+    if not named:
+        return {}
+
+    changed: dict[PurePosixPath, DocumentModel] = {}
+    field: str
+    holder: tuple[BaseModel, ...]
+    for path, document in documents.by_path.items():
+        if isinstance(document, FactBearingDocument):
+            field = "facts"
+            holder = document.facts
+        elif isinstance(document, MetricRecordsDocument):
+            field = "metrics"
+            holder = document.metrics
+        else:
+            continue
+        payload = document.model_dump(mode="json")
+        rows = payload[field]
+        rewritten = False
+        for position, item in enumerate(holder):
+            if record_id_of(item) not in named:
+                continue
+            # `evidence_ids` is `UniqueSorted`: the model refuses any other order, and a set keeps
+            # a re-offered ID from appearing twice. Comparing the rebuilt list against the one
+            # already there makes re-capturing the same link a no-op structurally, rather than by a
+            # separate "does it already cite this" test that could disagree with the rebuild.
+            cited = sorted({*rows[position]["evidence_ids"], record.evidence_id})
+            if cited == rows[position]["evidence_ids"]:
+                continue
+            rows[position] = {**rows[position], "evidence_ids": cited}
+            rewritten = True
+        if rewritten:
+            # Rebuilt through `model_validate` rather than `model_copy`, so every document and
+            # record validator runs against the result. `model_copy` would install the tuple
+            # unchecked, which is how an unsorted or duplicated citation would reach the disk.
+            changed[path] = type(document).model_validate(payload)
+    return changed
 
 
 def _manifest_restating_the_evidence_set(
