@@ -9,8 +9,13 @@ a reader that satisfied three of them would still hand back a coherent-looking w
 from __future__ import annotations
 
 import json
+import os
 import shutil
+import signal
+from collections.abc import Iterator
+from contextlib import contextmanager
 from pathlib import Path
+from types import FrameType
 
 import pytest
 
@@ -31,8 +36,10 @@ from boardwatch.profile_bundle.paths import (
 )
 from boardwatch.profile_bundle.storage import (
     SelectionError,
+    identical_trees,
     read_current_once,
     selected_documents,
+    tree_contents,
 )
 from tests.profile_bundle.conftest import PromotedRevisionTree, example_source_root
 
@@ -264,3 +271,94 @@ def _count_pointer_reads(monkeypatch: pytest.MonkeyPatch) -> list[int]:
 
     monkeypatch.setattr(storage, "read_current", counting)
     return seen
+
+
+# --------------------------------------------------------------------------------------
+# The tree comparison two commands stake a deletion on
+# --------------------------------------------------------------------------------------
+
+
+def _pair(tmp_path: Path) -> tuple[Path, Path]:
+    """Two byte-identical trees, each with a document and a nested directory."""
+    made: list[Path] = []
+    for name in ("left", "right"):
+        root = tmp_path / name
+        (root / "skills").mkdir(parents=True)
+        (root / "skills" / "inventory.yaml").write_bytes(b"skills: []\n")
+        made.append(root)
+    return made[0], made[1]
+
+
+def test_two_trees_holding_the_same_bytes_are_identical(tmp_path: Path) -> None:
+    """The positive control for everything below: without it, refusing everything would pass."""
+    left, right = _pair(tmp_path)
+
+    assert identical_trees(left, right)
+    assert tree_contents(left) == {"skills/": b"", "skills/inventory.yaml": b"skills: []\n"}
+
+
+def test_a_symlinked_entry_is_not_the_bytes_it_points_at(tmp_path: Path) -> None:
+    """`promote` and `rebase-draft` both DELETE on this answer, so a link must not compare equal.
+
+    Nothing else would catch it: the two trees hold the same bytes under the same relative paths,
+    and the winner of that comparison is the one that is kept. `promote` would exit 0 having
+    selected a revision holding a symlinked document, which `load_documents` then refuses to read at
+    all, and it would have discarded the real tree it staged.
+    """
+    left, right = _pair(tmp_path)
+    document = right / "skills" / "inventory.yaml"
+    elsewhere = tmp_path / "outside.yaml"
+    elsewhere.write_bytes(document.read_bytes())
+    document.unlink()
+    document.symlink_to(elsewhere)
+    assert document.read_bytes() == (left / "skills" / "inventory.yaml").read_bytes()
+
+    assert tree_contents(right) is None
+    assert not identical_trees(left, right)
+    assert not identical_trees(right, left)
+
+
+def test_a_symlinked_root_is_not_the_tree_it_points_at(tmp_path: Path) -> None:
+    """The root is the case an implementation that only checked entries would compare equal to
+    itself, and the caller about to delete the loser would delete the only copy."""
+    left, right = _pair(tmp_path)
+    link = tmp_path / "link"
+    link.symlink_to(right, target_is_directory=True)
+
+    assert tree_contents(link) is None
+    assert not identical_trees(link, right)
+    assert not identical_trees(right, link)
+
+
+def test_a_named_pipe_is_not_content_and_does_not_block_the_comparison(tmp_path: Path) -> None:
+    """A FIFO is neither a symlink nor a directory, so it used to reach `read_bytes()`.
+
+    `open()` on a FIFO with no writer blocks forever, and `promote` reaches this comparison over a
+    `revisions/sha256-<digest>/` directory it did not write, while holding the bundle lock — so the
+    hang is not one stuck command but every writer refused until an operator notices. The deadline
+    below is what makes the old behaviour a failure rather than a suite that never finishes.
+    """
+    left, right = _pair(tmp_path)
+    os.mkfifo(right / "skills" / "blocked.fifo")
+
+    with _deadline(10.0):
+        assert tree_contents(right) is None
+        assert not identical_trees(left, right)
+        assert not identical_trees(right, left)
+
+
+@contextmanager
+def _deadline(seconds: float) -> Iterator[None]:
+    """Turn a block into a failure. `open()` on a FIFO is interruptible, and the handler raises, so
+    Python does not retry it the way PEP 475 otherwise would."""
+
+    def fire(signum: int, frame: FrameType | None) -> None:
+        raise TimeoutError(f"still running after {seconds}s")
+
+    previous = signal.signal(signal.SIGALRM, fire)
+    signal.setitimer(signal.ITIMER_REAL, seconds)
+    try:
+        yield
+    finally:
+        signal.setitimer(signal.ITIMER_REAL, 0)
+        signal.signal(signal.SIGALRM, previous)
