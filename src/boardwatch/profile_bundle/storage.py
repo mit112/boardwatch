@@ -183,10 +183,19 @@ def _require_derived_location(path: Path, bundle_root: Path, resolved_root: Path
     nothing catches it on the way out of a command, and its message carries the absolute path — on
     3.13 it returns the loop's own path, which then *satisfies* the equality and admits the escape
     outright. Both answers are wrong and neither is available to check for, so the clause is stated
-    over the thing that is the same on both: the path is a link. Every path in the checked set has
-    had its ancestors checked one loop earlier, so a member being a link at all is already a
-    refusal; the equality remains the general rule for a path whose resolution differs without it.
-    `resolve()`'s failures are translated for the same reason a loop is refused rather than raised.
+    over the thing that is the same on both: the path is a link. `resolve()`'s failures are
+    translated for the same reason a loop is refused rather than raised.
+
+    **`is_symlink()` decides every path in the current checked set on its own, and the equality is
+    therefore not pinned by any test** — weakening it to a boundary rule leaves the whole suite
+    green (measured). That is deliberate rather than overlooked, and it is the one place here that
+    departs from "a check that cannot fire is deleted": every path checked today is either a direct
+    child of the root or sits one component below a child checked earlier in the same call, so a
+    path that is not itself a link cannot resolve elsewhere. The equality states the rule for a path
+    a later slice derives *deeper* than that, where no ancestor check stands in front of it —
+    and a boundary rule is not the same rule, because it admits a member aliasing another member
+    inside the root, under which `inventory` reports a revision directory as a draft. Delete it only
+    together with a check that the derived set is still one component deep.
 
     The reported path is relative to the root, so a diagnostic never carries a machine-specific
     prefix.
