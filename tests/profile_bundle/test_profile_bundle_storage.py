@@ -180,12 +180,14 @@ def test_a_member_that_aliases_another_member_inside_the_root_is_refused(
 def test_a_symlink_loop_in_a_declared_member_is_a_typed_refusal(
     promoted_tree: PromotedRevisionTree,
 ) -> None:
-    """A path that cannot be resolved is refused, not raised through.
+    """A symlink loop is refused on every interpreter this project supports.
 
-    `Path.resolve()` raises `RuntimeError` on an ELOOP — neither `ProfileBundleError` nor
-    `OSError`, so nothing on the way out of `inventory`, `validate` or `checkout` catches it. By the
-    check's own words an unresolvable path is not the file the layout names, which is the same
-    refusal every other escape gets.
+    They do different things with it and both are wrong: on CPython 3.11 and 3.12 `Path.resolve()` raises
+    `RuntimeError`, which is neither a `ProfileBundleError` nor an `OSError` and so reaches the
+    operator as a traceback carrying the absolute bundle path; on 3.13 it returns the loop's own
+    path, which satisfies an equality against the derived location and admits the escape entirely.
+    Asserted as one outcome rather than parametrised by version, because the refusal is the contract
+    and the version is the thing that must not show through it. CI runs 3.11, 3.12 and 3.13.
     """
     drafts = drafts_dir(promoted_tree.bundle_root)
     if drafts.exists():
