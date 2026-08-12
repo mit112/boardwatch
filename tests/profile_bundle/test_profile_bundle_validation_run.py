@@ -24,7 +24,6 @@ import pytest
 
 from boardwatch.profile_bundle.errors import IssueCode
 from boardwatch.profile_bundle.paths import BLOBS_DIR, revision_root
-from boardwatch.profile_bundle.reports import report_json
 from boardwatch.profile_bundle.validation import run as run_module
 from boardwatch.profile_bundle.validation.run import validate_bundle
 from boardwatch.profile_bundle.yaml_loader import load_yaml_bytes
@@ -194,17 +193,23 @@ def test_a_run_without_completeness_reports_no_as_of(
 ) -> None:
     """Reporting a date the run never used would be a measurement nobody took (D-012): the
     time-dependent checks did not execute, so there is no date to attribute the result to."""
-    assert report_json(revision_outcome(promoted_tree).value).count('"as_of":null') == 1
+    assert revision_outcome(promoted_tree).value.as_of is None
 
 
-def test_the_same_bytes_produce_identical_report_bytes(
+def test_the_same_bytes_produce_an_identical_report(
     promoted_tree: PromotedRevisionTree,
 ) -> None:
     """Two runs that accumulated the same findings in different traversal orders must diff as
-    nothing. Without this, comparing yesterday's report to today's shows traversal noise."""
-    first = report_json(revision_outcome(promoted_tree, completeness=True, as_of=AS_OF).value)
-    second = report_json(revision_outcome(promoted_tree, completeness=True, as_of=AS_OF).value)
-    assert first == second
+    nothing. Without this, comparing yesterday's report to today's shows traversal noise.
+
+    Compared as `ordered` rather than as serialized bytes: this layer owns which findings there are
+    and what order they come in, and the byte-level guarantee is the command's — pinned by
+    `test_profile_bundle_reports.py::test_json_is_byte_identical_across_runs`.
+    """
+    first = revision_outcome(promoted_tree, completeness=True, as_of=AS_OF).value
+    second = revision_outcome(promoted_tree, completeness=True, as_of=AS_OF).value
+    assert first.ordered == second.ordered
+    assert (first.counts, first.candidate_digest) == (second.counts, second.candidate_digest)
 
 
 # --------------------------------------------------------------------------------------
@@ -230,7 +235,6 @@ def test_requested_completeness_reports_the_date_it_used(
 ) -> None:
     report = revision_outcome(promoted_tree, completeness=True, as_of=AS_OF).value
     assert report.as_of == AS_OF
-    assert f'"as_of":"{AS_OF.isoformat()}"' in report_json(report)
 
 
 def test_completeness_without_a_date_is_refused_rather_than_defaulted(
@@ -294,7 +298,6 @@ def test_a_skipped_completeness_run_reports_no_as_of(
     (promoted_tree.revision_dir / "policy" / "predicates.yaml").unlink()
     report = revision_outcome(promoted_tree, completeness=True, as_of=AS_OF).value
     assert report.as_of is None
-    assert '"as_of":null' in report_json(report)
 
 
 def test_a_deep_history_audit_without_completeness_is_refused(
