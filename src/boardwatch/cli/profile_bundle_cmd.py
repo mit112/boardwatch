@@ -259,7 +259,10 @@ _AFTER_PROMOTION: Final = (
 
 
 def _guarded(
-    call: Callable[[], OperationOutcome[_T]], *, unable: str = _NOTHING_WRITTEN
+    call: Callable[[], OperationOutcome[_T]],
+    *,
+    unable: str = _NOTHING_WRITTEN,
+    after_write: bool = False,
 ) -> OperationOutcome[_T]:
     """Run one library call, turning a typed escape into §21's could-not-complete.
 
@@ -267,25 +270,44 @@ def _guarded(
     declares and nothing else — a bare `except Exception` here would swallow a genuine defect in
     this file and report it as an unreadable bundle. The exception's message is deliberately not
     printed: some of them are built from a stringified `OSError`, which carries an absolute path.
+
+    `after_write=True` is for the guards that run once a change is already durable, where
+    `IO_ERROR`/`INTERNAL_ERROR` would be the wrong *type* and not merely the wrong wording: both are
+    members of `COULD_NOT_COMPLETE_CODES`, so an automated caller reads exit 3, concludes nothing
+    happened, and retries into `duplicate_record_id`. Putting that distinction only in `unable`'s
+    prose left the one thing a consumer can branch on still saying the opposite, which is the
+    string-matching this package refuses to do anywhere else. `details.cause` keeps the kind the
+    original code would have carried.
     """
     try:
         return call()
     except ProfileBundleError as exc:
+        message = (
+            f"{unable}. This is a defect — please report the error type below with what you ran"
+        )
+        if after_write:
+            return outcome_with(
+                None,
+                (
+                    diagnostic(
+                        IssueCode.RECHECK_UNAVAILABLE,
+                        message,
+                        error_type=type(exc).__name__,
+                        cause="internal",
+                    ),
+                ),
+            )
         return outcome_with(
             None,
-            (
-                diagnostic(
-                    IssueCode.INTERNAL_ERROR,
-                    f"{unable}. This is a defect — please report the error type below with what "
-                    "you ran",
-                    error_type=type(exc).__name__,
-                ),
-            ),
+            (diagnostic(IssueCode.INTERNAL_ERROR, message, error_type=type(exc).__name__),),
         )
     except OSError as exc:
-        return outcome_with(
-            None, (diagnostic(IssueCode.IO_ERROR, f"{unable}: {io_reason(exc)}"),)
-        )
+        reason = f"{unable}: {io_reason(exc)}"
+        if after_write:
+            return outcome_with(
+                None, (diagnostic(IssueCode.RECHECK_UNAVAILABLE, reason, cause="io"),)
+            )
+        return outcome_with(None, (diagnostic(IssueCode.IO_ERROR, reason),))
 
 
 # --------------------------------------------------------------------------------------
@@ -845,6 +867,7 @@ def _with_revalidation(
             parent=_parent_snapshot(bundle_root, tree, "draft"),
         ),
         unable=_AFTER_THE_WRITE,
+        after_write=True,
     )
     return OperationOutcome.from_diagnostics(
         outcome.value, (*outcome.diagnostics, *revalidated.diagnostics)
@@ -1045,7 +1068,9 @@ def promote(
     # Read back rather than reported from the value promotion returned: `SelectedRevision` carries
     # where the revision is and what it hashes to, by design, and counting the deliverable through
     # a different path than the one that produced it is the rule this project keeps paying for.
-    read_back = _guarded(lambda: _promoted_manifest(selected), unable=_AFTER_PROMOTION)
+    read_back = _guarded(
+        lambda: _promoted_manifest(selected), unable=_AFTER_PROMOTION, after_write=True
+    )
     _emit(
         "promote",
         OperationOutcome.from_diagnostics(

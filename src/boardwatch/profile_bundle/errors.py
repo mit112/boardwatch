@@ -201,6 +201,12 @@ class IssueCode(StrEnum):
     APPROVAL_DECLINED = "approval_declined"
     IO_ERROR = "io_error"
     INTERNAL_ERROR = "internal_error"
+    #: The change was applied and then could not be re-checked. Deliberately NOT a member of
+    #: `COULD_NOT_COMPLETE_CODES`: exit 3 means nothing happened and the caller may retry, and here
+    #: something did happen — the retry would land on a duplicate ID. `details.cause` keeps the
+    #: underlying kind (`io` or `internal`) that `IO_ERROR`/`INTERNAL_ERROR` would have carried, so
+    #: the distinction stays typed rather than becoming a sentence a consumer has to read.
+    RECHECK_UNAVAILABLE = "recheck_unavailable"
 
 
 #: Codes reported as completeness blockers: the revision stays valid, the record is unusable.

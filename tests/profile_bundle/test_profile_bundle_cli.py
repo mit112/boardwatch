@@ -28,6 +28,7 @@ import typer.main
 from typer.testing import CliRunner
 
 from boardwatch.cli.app import app
+from boardwatch.profile_bundle.errors import COULD_NOT_COMPLETE_CODES, IssueCode
 from boardwatch.profile_bundle.models.manifests import DraftManifest
 from boardwatch.profile_bundle.paths import BUNDLE_DIR_NAME, drafts_dir
 from boardwatch.profile_bundle.paths import draft_root as draft_root_for
@@ -382,10 +383,17 @@ def test_a_revalidation_that_could_not_run_does_not_report_that_nothing_happened
 ) -> None:
     """§19 step 6 runs after the write. Its failure is not the command's failure.
 
-    `outcome_with`'s could-not-complete precedence would make the revalidation's `io_error` the
-    whole command's category, so the answer was `could_not_complete` at exit 3 — §21's "nothing
-    usable happened, retry" — beside a populated `result` and a ruling that had durably landed. A
-    caller that retried on 3 would hit `duplicate_record_id` against its own ruling.
+    `outcome_with`'s could-not-complete precedence would make the revalidation's failure the whole
+    command's category, so the answer was `could_not_complete` at exit 3 — §21's "nothing usable
+    happened, retry" — beside a populated `result` and a ruling that had durably landed. A caller
+    that retried on 3 would hit `duplicate_record_id` against its own ruling.
+
+    **The distinction has to be typed, which is what this pins.** The first fix put it in the
+    diagnostic's prose and left the code as `io_error`, a member of `COULD_NOT_COMPLETE_CODES` — so
+    the only thing a consumer can branch on still said the opposite of the envelope, and telling the
+    two apart meant reading English. `recheck_unavailable` is not in that set, and `details.cause`
+    keeps the kind the old code carried. The assertion below is against the catalog rather than
+    against the literal 1, so it cannot agree with a future change that puts the code back.
 
     The blob store is what is made unreadable: `resolve_conflict` never opens it, so the authoring
     step completes and only the revalidation fails. That is the whole point of the case.
@@ -405,10 +413,15 @@ def test_a_revalidation_that_could_not_run_does_not_report_that_nothing_happened
         blobs.chmod(0o755)
 
     body = json.loads(result.output)
-    assert {finding["code"] for finding in body["diagnostics"]} == {"io_error"}, result.output
+    (finding,) = body["diagnostics"]
+    assert finding["code"] == "recheck_unavailable", result.output
+    assert finding["details"]["cause"] == "io", result.output
     assert body["outcome"] == "findings", result.output
     assert result.exit_code == 1, result.output
     assert body["result"]["ruling_id"] == "ruling.packet-pantry.end-date.001"
+    # The envelope's category must follow from the CATALOG, not from this command's own opinion:
+    # the code it reports is one the package does not classify as could-not-complete.
+    assert IssueCode(finding["code"]) not in COULD_NOT_COMPLETE_CODES
     # The claim the message makes is checked against what is on disk, not taken on trust.
     assert "nothing was written" not in result.output
     assert "ruling.packet-pantry.end-date.001" in synthetic_bundle.read("conflicts/rulings.yaml")
