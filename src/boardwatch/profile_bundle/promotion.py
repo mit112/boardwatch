@@ -128,7 +128,7 @@ from boardwatch.profile_bundle.paths import (
     current_path,
     digest_token,
     draft_root,
-    require_draft_name,
+    require_draft_segment,
     revision_root,
     revisions_dir,
 )
@@ -222,8 +222,11 @@ def promote(
     """Promote `drafts/<name>` into the next immutable revision and select it (§6, §19)."""
     # Confinement first and outside the lock, exactly as `rebase-draft` does it: a name that could
     # escape `drafts/` would decide where the staging tree and the pointer go, and that must not be
-    # settled while holding a lock another writer is waiting on.
-    draft_name = require_draft_name(request.draft_name)
+    # settled while holding a lock another writer is waiting on. The segment grammar, because this
+    # addresses a draft that already exists: every name `inventory` lists under `drafts/` must be
+    # one this command will take, and the shorter operator-facing cap refuses the rebase backup of
+    # a long draft name — the one directory that is the only copy of a pre-rebase draft.
+    draft_name = require_draft_segment(request.draft_name)
     # Before the lock, because `filelock` creates the lockfile's directory: a mistyped `--bundle`
     # would otherwise leave a new empty directory behind as the only trace of a failed command.
     if not bundle_root.is_dir():

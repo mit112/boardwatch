@@ -62,6 +62,7 @@ from boardwatch.profile_bundle.paths import (
     digest_token,
     draft_root,
     lock_path,
+    rebase_backup_name,
     revision_root,
     revisions_dir,
 )
@@ -572,6 +573,32 @@ def test_a_symlinked_draft_is_refused_rather_than_promoted(
     listing = inventory(scene.bundle_root)
     assert listing.value is not None
     assert "linked" not in listing.value.drafts
+
+
+def test_a_rebase_backup_inventory_lists_can_be_promoted(tmp_path: Path) -> None:
+    """Every draft name `inventory` reports must be one this command will take.
+
+    A rebase backup is a draft directory and `inventory` lists it as one, but it is derived from a
+    draft name plus an 83-character suffix, so for any draft longer than a dozen characters it
+    exceeds the operator-facing cap. Addressing it with that cap raised `BundlePathError` out of a
+    function typed to return an outcome — on the one directory that is the only copy of a pre-rebase
+    draft. The name here is built by the helper that emits it rather than spelled out, so it stays
+    the length that helper actually produces.
+    """
+    bundle_root = tmp_path / "career-profile"
+    bundle_root.mkdir()
+    name = rebase_backup_name("a-long-draft-name", "sha256:" + "0" * 64)
+    bundle = materialise(bundle_root, draft_name=name)
+    _approve(bundle_root, bundle.draft)
+    listing = inventory(bundle_root)
+    assert listing.value is not None
+    assert name in listing.value.drafts, "inventory must not list a name promote will not take"
+
+    outcome = promote(bundle_root, _request(name))
+
+    assert outcome.exit_code == 0, outcome.diagnostics
+    assert outcome.value is not None
+    assert read_current_once(bundle_root).bundle_digest == outcome.value.bundle_digest
 
 
 def test_no_diagnostic_carries_the_absolute_path_an_oserror_appended(scene: Scene) -> None:
