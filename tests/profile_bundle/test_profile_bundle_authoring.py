@@ -572,3 +572,36 @@ def test_a_first_rename_that_fails_leaves_the_tree_untouched_and_no_residue(
     assert _tree(synthetic_bundle) == before
     draft = draft_root(synthetic_bundle.root, synthetic_bundle.draft_name)
     assert list(draft.rglob(".tmp-authoring-*")) == []
+
+
+def test_a_ruling_is_committed_before_the_group_that_names_it(
+    synthetic_bundle: SyntheticBundle, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """`resolve_conflict` states an order and, until this test, nothing held it.
+
+    The comment at the call site gives the reason: a ledger entry no group names yet is a decision
+    waiting to be applied, which the next validation reports plainly, while a group naming a ruling
+    the ledger does not hold is a broken reference to a decision nobody can read. Those two crash
+    outcomes are not equally bad, so the order is load-bearing — and it is carried by nothing more
+    durable than a `Mapping`'s iteration order, which reversing left the entire suite green.
+
+    Pinned at the rename, not at the argument: the order that matters is the order the filesystem
+    sees, and staging happens before any of it.
+    """
+    real_replace = os.replace
+    renamed: list[str] = []
+
+    def record(src, dst, **kwargs):  # type: ignore[no-untyped-def]
+        renamed.append(os.path.basename(dst))
+        return real_replace(src, dst, **kwargs)
+
+    monkeypatch.setattr(os, "replace", record)
+    outcome = resolve_conflict(
+        synthetic_bundle.root,
+        draft_name=synthetic_bundle.draft_name,
+        ruling_document=_ruling(),
+    )
+    monkeypatch.undo()
+
+    assert outcome.exit_code == 0, _codes(outcome)
+    assert renamed == ["rulings.yaml", "groups.yaml"], renamed
