@@ -36,7 +36,7 @@ both wanting their own context window.
 
 ### Gate A branch table — where every unmerged slice stands (2026-08-11)
 
-**Nothing below is pushed, and no sha here is `main`'s** — `git log --oneline -1` is the authority for
+**No sha here is `main`'s** — `git log --oneline -1` is the authority for
 that (D-017). Every branch is local; `docs/superpowers/` holds
 the design and plan and is untracked — copy it into any worktree you create.
 
@@ -44,12 +44,12 @@ the design and plan and is untracked — copy it into any worktree you create.
 |---|---|---|
 | `t13-followup` | — | **MERGED** to main at `b87fa06`, gate exit 0 · 5,436 passed · 95.64%. Branch retained but done. |
 | `t14-storage` | **merged** | **MERGED** to main at `aff1dc0`. Round-2 review found 1 BLOCKING + 4 SHOULD-FIX (REWORK); fixed in 5 commits, one per finding. Gate **exit 0 · 5,534 passed · 95.73% · 11m54s**. Detail in D-128. Its fix round had the orchestrator's targeted verification, **not a full independent review round** — the blocking fix was checked by mutating the predicate and re-running the reviewer's probes. |
-| `t15-rebase` | **merged** | **MERGED** to main at `f74be0e`. Two concurrent lenses, both REWORK: 6 distinct BLOCKING + 8 SHOULD-FIX, none covered by its own 54 green tests. Fixed in 12 commits; two design departures ruled in D-129. Branch gate **exit 0 · 5,611 passed · 95.83%**. Detail in D-128. |
+| `t15-rebase` | **merged** | **MERGED** to main at `f74be0e`. Two concurrent lenses, both REWORK: 6 distinct BLOCKING + 6 SHOULD-FIX, none covered by its own 54 green tests. Fixed in 12 commits; two design departures ruled in D-129. Branch gate **exit 0 · 5,611 passed · 95.83%**. Detail in D-128. |
 | `t16-promotion` | at `main` | **Build IN FLIGHT.** Branch reset onto `main` (it had no work of its own and was byte-identical to the pre-fix `t15-rebase`). Brief `scratchpad/BRIEF-T16.md`; carried debt `scratchpad/CARRIED-DEBT.md`. Highest-risk slice: crash-consistent promotion, exact-target reuse, corrupt-parent recovery. |
 | `t17-schema` | **merged** | **MERGED** to main at `27879bb`. Light review: APPROVE, no BLOCKING and no SHOULD-FIX in its own diff. |
 | T18, T19 | — | Not started. T18 is the `profile-bundle` CLI, the first non-inert surface. T19 is the authoring contract and the final Gate A gate. |
 
-**Combined gate on `main` with T14+T15+T17: exit 0 · 5,620 passed · 95.83%.** Gate A is **15 of 19 slices merged**; T16, T18 and T19 remain. **Gate A is NOT met and Gate B stays prohibited.** Nothing on this track is pushed.
+**Combined gate on `main` with T14+T15+T17: exit 0 · 5,620 passed · 95.83%.** Gate A is **16 of 19 slices merged**; T16, T18 and T19 remain. **Gate A is NOT met and Gate B stays prohibited.** **T1–T12 ARE pushed and shipped inside the 0.3.0 wheel**; what is unpushed is everything from T13 onward.
 
 **Owed: an independent review of T14's and T15's FIX ROUNDS.** Both were merged on the orchestrator's targeted verification (mutating each predicate, re-running the reviewers' archived probes) rather than a fresh review round of their own. The blocking fixes are sound as far as that goes; what is unestablished is whether every *new* check has a test that fails without it.
 
@@ -94,9 +94,9 @@ reviewed" twice and declined both times.** The basis holds because the package i
 command, no bundle-to-`Resume` bridge, a test asserts both directions, nothing in a shipped code path
 reaches it. Publishing changed the release, **not** the review's standing.
 
-**A PARALLEL TRACK exists: the canonical career-profile bundle, Gate A — 16 of 19 slices built, 14
-merged (D-115, D-118, D-120, D-125, D-127).** T15 and T17 are built but unreviewed, T16/T18/T19 are
-not started. Not a P0–P7 phase; it has moved no program gate. Its design and plan live
+**A PARALLEL TRACK exists: the canonical career-profile bundle, Gate A — 16 of 19 slices merged
+(T1–T15 and T17; D-115, D-118, D-120, D-125, D-127, D-128, D-129).** T16 is in build; T18 and T19 are
+not started. **The branch table above is the authority for per-slice standing.** Not a P0–P7 phase; it has moved no program gate. Its design and plan live
 **untracked** under `docs/superpowers/` — read them there, and **copy that directory into any worktree you
 create**, where they otherwise vanish. `src/boardwatch/profile_bundle/` holds the typed outcomes, the
 restricted YAML loader, the closed 33-document grammar, every record model, the JSON Schema export, a
@@ -119,7 +119,7 @@ then fail every re-enumeration. All of it is fixed, with **28 of 28 distinct mut
 the gate green at **exit 0, 5,260 tests, 95.41%**. **D-126 states the exit criterion so this loop is
 not reopened by reflex: a slice's review ends when a round finds no BLOCKING defect that is either a
 silent identity/data-integrity fault or a legitimate input the system refuses.** Round four found
-neither. That rule is per-slice and evidence-based — T13 has never been reviewed and owes its first. The conformance lens alone found a `SourceSpec` docstring claiming a
+neither. That rule is per-slice and evidence-based. The conformance lens alone found a `SourceSpec` docstring claiming a
 guarantee that landed nowhere — a sentence **D-122 had already recorded as false**.
 
 **Read D-125 before touching locators, and D-120 before touching identity derivation.** The four
@@ -213,9 +213,6 @@ since D-035, unchanged by everything since.
 | Item | Detail | Owner |
 |---|---|---|
 | **Three `resume.yaml` bullets exceed the 220-char layout gate** | Forces an untailored-master degrade on every posting, which is what blocks accumulating real runs. The file also lacks Knowledge Forge, has stale `skill_groups`, and an empty extracurricular block. **Mit pins `resume_max_pages=1` — do not advise setting it to 2.** | Mit (content) |
-| **T14 is in review-fix; T15 is building** | T14 (one-read storage, drafts, inspection, and the first production YAML emitter) is on `t14-storage`. **Both its reviews returned REWORK**, converging independently on three findings. Two BLOCKINGs are this project's signature defect restated: the load-failure→`IssueCode` mapping was copied twice out of `parse_error_diagnostics` (so a schema-99 bundle reads as `unknown_file`/exit 1), and an *unmeasured* blob-reference set is reported as a measured *empty* one. A third: every declared root directory can be symlinked out of the bundle, and `init` still exits 0. | T14 |
-| **A forged revision whose parent is DELETED validates clean on the default path** | exit 0, no diagnostics, `candidate_digest: null`. §21 sanctions the tier and `--completeness` catches it, so this is a boundary rather than a defect — but `validate` alone cannot distinguish "verified" from "no claim made". Being closed by an information-tier diagnostic that names the reason. | T13 |
-| **`block_active_use_after_value_date` only understands `date` values** | A predicate whose value type is `year_month` or `date_range`, with `expires_at: null`, is never blocked at any `as_of`. `legal_value_types` is versioned USER data, so **a second user's catalog reaches this without anyone touching code** — a multi-tenancy hole, not a typo. Being closed by refusing the pairing at catalog-validation time. | T13 |
 | **The 03:10 launchd job re-fires a task that already shipped** | `com.mitsheth.boardwatch-p6.plist` is a *daily* `StartCalendarInterval` job carrying the *one-shot* "execute P6 Slice 1" prompt, which asserts `main` at `fb0386a` — now an ancestor 110 commits back. It misfired on 2026-08-11 and will misfire nightly. Benign and self-detecting (the session-start ritual catches it in a few read-only commands), **not** self-correcting. Fix: `launchctl bootout gui/$UID/com.mitsheth.boardwatch-p6`, or repoint `~/.claude/scheduled/p6-slice1-run.sh` at a fresh prompt (D-123) | Mit (automation) |
 | **No local pre-push check for the three CI-only jobs** | `gitleaks`, `perf` and `generalization` run in CI and not under `make check`; `gitleaks` is not installed by project tooling. `gitleaks git --log-opts=origin/main..HEAD` is the cheap mitigation (D-117) | open |
 | **Five Gate A fix commits are independently reviewed** | The current `origin/main` contains `1de10c7`, `20ff50c`, `8d32294`, `9d78450`, and `bbec2c0`; each exact diff and the untracked design correction were checked against the original findings with executable reproductions and negative controls. Their prior `make check` results were not used as sign-off. | complete |

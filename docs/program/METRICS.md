@@ -1652,12 +1652,12 @@ two fix rounds, dispatched three wide rather than five. Recorded in D-128.
 | Slice | Where | Numbers |
 |---|---|---|
 | T14 | **merged to `main`** at `aff1dc0` | Round-2 review: **1 BLOCKING, 4 SHOULD-FIX**, REWORK. Fix round 5 commits, one per finding. Gate: **exit 0 · 5,534 passed · 95.73% · 11m54s**. |
-| T15 | **merged to `main`** at `f74be0e` | Reviewed by **two concurrent lenses, both REWORK**: **6 distinct BLOCKING, 8 SHOULD-FIX**, none covered by its own 54 green tests. Fix round 12 commits + 1 merge fix. Gate: **exit 0 · 5,611 passed · 95.83% · 13m18s**. |
+| T15 | **merged to `main`** at `f74be0e` | Reviewed by **two concurrent lenses, both REWORK**: **6 distinct BLOCKING, 6 SHOULD-FIX**, none covered by its own 54 green tests. Fix round 12 commits + 1 merge fix. Gate: **exit 0 · 5,611 passed · 95.83% · 13m18s**. |
 | T17 | **merged to `main`** at `27879bb` | Light review: **APPROVE**, no BLOCKING and no SHOULD-FIX in its own diff. 9 tests green post-merge. |
-| T16 | `t16-promotion`, still identical to pre-fix `t15-rebase` | **Not started, and now explicitly gated** behind T15 — it carried all 6 of T15's BLOCKING defects. Must take `main`, not the branch it currently matches. |
+| T16 | `t16-promotion`, reset onto `main` | **Build dispatched later in this session.** It had been byte-identical to the pre-fix `t15-rebase` and so carried all 6 of T15's BLOCKING defects, which is why it was gated behind T15 rather than started earlier. |
 
-Gate A is **15 of 19 slices merged**. T16, T18, T19 remain; Gate A is NOT met and Gate B stays
-prohibited. Nothing on this track is pushed — `origin/main` is untouched.
+Gate A is **16 of 19 slices merged**. T16, T18, T19 remain; Gate A is NOT met and Gate B stays
+prohibited. T1–T12 are pushed and shipped in the 0.3.0 wheel; everything from T13 onward is unpushed.
 
 ### Review yield: 7 BLOCKING and 12 SHOULD-FIX in code whose suites were green
 
@@ -1694,9 +1694,9 @@ the inside-root alias stays refused, and a symlinked bundle root stays correctly
    `exit $ec` and must not be piped.
 3. **Two worktree venvs were silently corrupted mid-session**: the `.py` files under
    `alembic/autogenerate/compare/` disappeared from `t14-wt` and `t15-wt` at the identical mtime,
-   leaving `ImportError: ... (unknown location)` and pytest exit 4. `uv` hardlinks package files from a
-   shared global cache, so **every worktree venv shares inodes and one cache disturbance breaks them
-   all together**. Repaired with `uv sync --reinstall --all-groups`. T14's gate had finished 5 minutes
+   leaving `ImportError: ... (unknown location)` and pytest exit 4. **The cause was the disk being full**
+   (see the ENOSPC section below); an initial attribution to `uv` hardlinking from a shared cache was
+   wrong and is retracted. Repaired with `uv sync --reinstall --all-groups`. T14's gate had finished 5 minutes
    before the corruption, checked by timestamp rather than assumed, so that result stands.
 
 **A partial `uv sync` makes it worse:** `uv sync --reinstall-package alembic` fixed alembic and pruned
