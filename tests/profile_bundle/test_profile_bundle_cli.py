@@ -16,6 +16,7 @@ Three properties live here, and each is the kind that only a command-level test 
 from __future__ import annotations
 
 import json
+import os
 import shutil
 import subprocess
 import sys
@@ -329,16 +330,9 @@ def test_add_evidence_refuses_a_secret_without_touching_the_draft(
     assert secret not in result.output
 
 
-def test_resolve_conflict_settles_the_group_and_names_the_gate(
-    env: Env, synthetic_bundle: SyntheticBundle, tmp_path: Path
-) -> None:
-    """And leaves the manifest alone, because a ruling changes nothing the evidence set covers.
-
-    `canonical.evidence_set_digest` reads `evidence/records.yaml` and the blobs it names; a ruling
-    touches neither, so the recompute `add_evidence` owes has no counterpart here. That is where the
-    guarantee lands, and the empty diagnostic set below is what says so.
-    """
-    ruling = _write(
+def _ruling_file(tmp_path: Path) -> Path:
+    """One valid owner ruling on a conflict group the comprehensive example declares."""
+    return _write(
         tmp_path / "r.yaml",
         {
             "ruling_id": "ruling.packet-pantry.end-date.001",
@@ -352,6 +346,18 @@ def test_resolve_conflict_settles_the_group_and_names_the_gate(
         },
         "ruling-record.yaml",
     )
+
+
+def test_resolve_conflict_settles_the_group_and_names_the_gate(
+    env: Env, synthetic_bundle: SyntheticBundle, tmp_path: Path
+) -> None:
+    """And leaves the manifest alone, because a ruling changes nothing the evidence set covers.
+
+    `canonical.evidence_set_digest` reads `evidence/records.yaml` and the blobs it names; a ruling
+    touches neither, so the recompute `add_evidence` owes has no counterpart here. That is where the
+    guarantee lands, and the empty diagnostic set below is what says so.
+    """
+    ruling = _ruling_file(tmp_path)
     manifest_before = synthetic_bundle.manifest_path.read_text(encoding="utf-8")
     result = run(
         env,
@@ -368,6 +374,44 @@ def test_resolve_conflict_settles_the_group_and_names_the_gate(
     assert (
         synthetic_bundle.manifest_path.read_text(encoding="utf-8") == manifest_before
     ), "a ruling must not rewrite the manifest"
+
+
+@pytest.mark.skipif(os.name != "posix", reason="mode bits do not deny directory reads on Windows")
+def test_a_revalidation_that_could_not_run_does_not_report_that_nothing_happened(
+    env: Env, synthetic_bundle: SyntheticBundle, tmp_path: Path
+) -> None:
+    """§19 step 6 runs after the write. Its failure is not the command's failure.
+
+    `outcome_with`'s could-not-complete precedence would make the revalidation's `io_error` the
+    whole command's category, so the answer was `could_not_complete` at exit 3 — §21's "nothing
+    usable happened, retry" — beside a populated `result` and a ruling that had durably landed. A
+    caller that retried on 3 would hit `duplicate_record_id` against its own ruling.
+
+    The blob store is what is made unreadable: `resolve_conflict` never opens it, so the authoring
+    step completes and only the revalidation fails. That is the whole point of the case.
+    """
+    if os.geteuid() == 0:  # pragma: no cover - root ignores the mode bits entirely
+        pytest.skip("running as root, so an unreadable directory is still readable")
+    ruling = _ruling_file(tmp_path)
+    blobs = synthetic_bundle.blob.parent
+    blobs.chmod(0o000)
+    try:
+        result = run(
+            env,
+            ["resolve-conflict", *_bundle_args(synthetic_bundle), "--ruling-file", str(ruling),
+             "--json"],
+        )
+    finally:
+        blobs.chmod(0o755)
+
+    body = json.loads(result.output)
+    assert {finding["code"] for finding in body["diagnostics"]} == {"io_error"}, result.output
+    assert body["outcome"] == "findings", result.output
+    assert result.exit_code == 1, result.output
+    assert body["result"]["ruling_id"] == "ruling.packet-pantry.end-date.001"
+    # The claim the message makes is checked against what is on disk, not taken on trust.
+    assert "nothing was written" not in result.output
+    assert "ruling.packet-pantry.end-date.001" in synthetic_bundle.read("conflicts/rulings.yaml")
 
 
 def test_migrate_reports_already_current_on_a_promoted_bundle(

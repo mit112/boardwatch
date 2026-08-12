@@ -240,7 +240,21 @@ def _nothing() -> _Rendered:
     return _Rendered(result={}, lines=())
 
 
-def _guarded(call: Callable[[], OperationOutcome[_T]]) -> OperationOutcome[_T]:
+#: What `_guarded` says happened when the call it wrapped could not complete. Every library entry
+#: point checks before it writes and stages what it does write, so the default is true of a
+#: command's own work. It is NOT true of the two calls that run *after* one has committed — §19
+#: step 6's revalidation and `promote`'s read-back — and an unconditional "nothing was written"
+#: above a populated result is the command contradicting itself.
+_NOTHING_WRITTEN: Final = "the command could not complete; nothing was written"
+_AFTER_THE_WRITE: Final = "the change was written, but the draft could not be re-checked"
+_AFTER_PROMOTION: Final = (
+    "the revision was promoted and selected, but its manifest could not be read back"
+)
+
+
+def _guarded(
+    call: Callable[[], OperationOutcome[_T]], *, unable: str = _NOTHING_WRITTEN
+) -> OperationOutcome[_T]:
     """Run one library call, turning a typed escape into §21's could-not-complete.
 
     `ProfileBundleError` is the package's own base class, so this catches exactly the failures it
@@ -256,20 +270,15 @@ def _guarded(call: Callable[[], OperationOutcome[_T]]) -> OperationOutcome[_T]:
             (
                 diagnostic(
                     IssueCode.INTERNAL_ERROR,
-                    "the command could not complete; nothing was written. This is a defect — "
-                    "please report the error type below with what you ran",
+                    f"{unable}. This is a defect — please report the error type below with what "
+                    "you ran",
                     error_type=type(exc).__name__,
                 ),
             ),
         )
     except OSError as exc:
         return outcome_with(
-            None,
-            (
-                diagnostic(
-                    IssueCode.IO_ERROR, f"the command could not complete: {io_reason(exc)}"
-                ),
-            ),
+            None, (diagnostic(IssueCode.IO_ERROR, f"{unable}: {io_reason(exc)}"),)
         )
 
 
@@ -810,6 +819,16 @@ def _with_revalidation(
     The validation's findings join the command's own, so one exit code answers "did the change land
     and is the draft still promotable". Run here rather than inside `authoring` so there is one
     definition of how a draft's parent is resolved, and it is the one `validate` uses.
+
+    Only reached once the write has landed — both callers emit the refusal themselves when the
+    authoring step produced no value — which is why the composition is
+    `OperationOutcome.from_diagnostics` and not `errors.outcome_with`. `outcome_with`'s
+    could-not-complete precedence is right for a command's own work: a run that could not read the
+    bundle has not found one error, it has found nothing at all. It is wrong here. Exit 3 tells an
+    automated caller that nothing happened and it may retry, and the retry lands on
+    `duplicate_record_id` against the record this command already committed. The diagnostic still
+    names the I/O failure; the envelope's `outcome` says what happened to the draft, which is what
+    §21 means by carrying the category explicitly.
     """
     tree = draft_root(bundle_root, draft)
     revalidated = _guarded(
@@ -818,9 +837,12 @@ def _with_revalidation(
             bundle_root=bundle_root,
             mode="draft",
             parent=_parent_snapshot(bundle_root, tree, "draft"),
-        )
+        ),
+        unable=_AFTER_THE_WRITE,
     )
-    return outcome_with(outcome.value, (*outcome.diagnostics, *revalidated.diagnostics))
+    return OperationOutcome.from_diagnostics(
+        outcome.value, (*outcome.diagnostics, *revalidated.diagnostics)
+    )
 
 
 # --------------------------------------------------------------------------------------
