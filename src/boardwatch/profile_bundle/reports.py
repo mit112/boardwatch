@@ -1,24 +1,33 @@
-"""The one validation report, and its two renderings (design §19, §20, §21).
+"""The one validation report, and the per-diagnostic renderings both of a command's answers use
+(design §19, §20, §21).
 
-Human text and JSON are both pure functions of a single `ValidationReport`. That is deliberate:
+Every layer's diagnostics land in a single `ValidationReport`, and `diagnostic_json` and
+`diagnostic_line` are the two shapes any one of them is ever shown in. That pairing is deliberate:
 a field only the human rendering shows is a fact no script can act on, and a field only the JSON
-carries is one no operator ever reads. Every layer's diagnostics land here and nowhere else.
+carries is one no operator ever reads.
 
 Three properties this module is responsible for:
 
-- **Deterministic bytes.** Diagnostics are ordered by `Diagnostic.sort_key`, keys are sorted, and
-  separators are compact. Two runs that accumulated the same findings in different orders produce
-  identical output, so diffing two reports shows what changed rather than how they were traversed.
-- **A closed shape.** The JSON object's keys are pinned by test. A diagnostic carries record IDs
+- **Deterministic ordering.** `ValidationReport.ordered` sorts by `Diagnostic.sort_key`, so two
+  runs that accumulated the same findings in different orders produce identical output and diffing
+  two reports shows what changed rather than how they were traversed.
+- **A closed shape.** `diagnostic_json`'s keys are pinned by test. A diagnostic carries record IDs
   and byte ranges and never captured evidence bytes or contact values (`errors.Diagnostic` says so);
   a closed schema is what stops a future field from quietly carrying one into a report an operator
   pastes into a bug tracker.
 - **A stated outcome.** §21 separates "the check completed and found things" from "the check could
-  not complete". Both the exit code and the human line say which, because silence and success have
-  cost this program real time.
+  not complete", and `outcome_for_report` is the one definition of which.
 
-This serializer is **not** `canonical.py`'s. That one computes identity and must never change its
-bytes; this one formats a report and may grow a field under `report_schema`.
+**The whole-report renderings live in `cli/profile_bundle_cmd.py`, not here.** This module once
+carried `report_json` and `report_text` as well, and the command layer rendered the same report a
+second time into the envelope every one of the twelve commands emits. Two spellings of one rule is
+this project's named recurring defect and these two had already drifted — the human forms disagreed
+on pluralisation and the machine forms on whether the counts were nested — while the pair here was
+unreachable from any command. D-115: they are deleted, and the properties they held are pinned on
+the surface an operator can actually reach.
+
+The `json.dumps` settings that rendering uses are `_emit`'s, not this module's, and are not
+`canonical.py`'s either: that one computes identity and must never change its bytes.
 """
 
 from __future__ import annotations
@@ -140,71 +149,55 @@ def diagnostic_json(finding: Diagnostic) -> dict[str, JsonValue]:
     }
 
 
-def report_json(report: ValidationReport) -> str:
-    """Deterministic machine output: sorted keys, compact separators, one trailing newline.
-
-    `ensure_ascii=False` because the bundle is Unicode-first and NFC-normalised throughout;
-    escaping would make a diagnostic about a non-ASCII record unreadable in the one place an
-    operator actually reads it. The bytes stay deterministic either way.
-    """
-    outcome = outcome_for_report(report)
-    payload: dict[str, JsonValue] = {
-        "report_schema": REPORT_SCHEMA,
-        "schema_version": report.schema_version,
-        "bundle_digest": report.bundle_digest,
-        "candidate_digest": report.candidate_digest,
-        "as_of": report.as_of.isoformat() if report.as_of is not None else None,
-        "outcome": outcome.category,
-        "exit_code": outcome.exit_code,
-        "counts": report.counts.as_json(),
-        "diagnostics": [diagnostic_json(finding) for finding in report.ordered],
-    }
-    return (
-        json.dumps(payload, sort_keys=True, separators=(",", ":"), ensure_ascii=False) + "\n"
-    )
-
-
-def _plural(count: int, noun: str) -> str:
-    return f"{count} {noun}" if count == 1 else f"{count} {noun}s"
-
-
 def _location(finding: Diagnostic) -> str:
     where = " ".join(part for part in (finding.path, finding.record_id) if part)
     return f" ({where})" if where else ""
 
 
+def _detail_value(value: JsonValue) -> str:
+    """A string is itself; everything else is its JSON form.
+
+    So an empty list renders `[]` and never a phrase. D-129 turns on `record_ids` being empty
+    meaning "the conflicting unit has no addressable records", and any gloss — "none", "no
+    records" — reads as reassurance about exactly the case where a whole document is in conflict.
+    """
+    if isinstance(value, str):
+        return value
+    return json.dumps(value, sort_keys=True, ensure_ascii=False)
+
+
+def _details(finding: Diagnostic) -> str:
+    """Every `details` entry, one indented line each, ordered by key.
+
+    Rendered rather than dropped because `details` is where the locator lives for the findings that
+    have no single record: D-129 fixes `path` plus `details.field` as the whole address of a
+    field-level conflict, and `rebase` reports a record overlap by putting every colliding ID in
+    `details.record_ids` while the message carries only a count. A human rendering without them
+    tells the operator how many records collided and never which — the one fact they have to act
+    on — while the machine rendering of the same finding carries them.
+
+    Indented continuation lines rather than a suffix: `record_ids` is unbounded, and the alternative
+    is one 3 KB line. `_emit` joins diagnostics with newlines already, so a
+    multi-line rendering needs nothing from either.
+    """
+    return "".join(
+        f"\n    {key}: {_detail_value(finding.details[key])}" for key in sorted(finding.details)
+    )
+
+
 def diagnostic_line(finding: Diagnostic) -> str:
-    """One diagnostic's human form: tier, code, where, and what.
+    """One diagnostic's human form: tier, code, where, what, and its typed details.
 
     Public for the same reason `diagnostic_json` is: the command layer prints diagnostics for
     commands that never build a `ValidationReport`, and one operator reading two shapes of the same
-    finding would have to learn which command produced which.
+    finding would have to learn which command produced which. That is also why `details` is here
+    rather than in the command layer — a field that reached one rendering and not the other is a
+    fact only half the readers can act on.
     """
-    return f"{finding.tier}: {finding.code}{_location(finding)}: {finding.message}"
-
-
-def report_text(report: ValidationReport) -> str:
-    """Human output, derived from the same model.
-
-    Plain text rather than Rich markup: the command layer owns presentation, and a report that can
-    only be produced through a console is one no test can compare byte for byte.
-    """
-    outcome = outcome_for_report(report)
-    lines = [f"profile-bundle validate: {outcome.category}"]
-    if report.as_of is not None:
-        lines.append(f"as-of: {report.as_of.isoformat()}")
-    lines.append(
-        ", ".join(
-            (
-                _plural(report.counts.error, "error"),
-                _plural(report.counts.blocker, "blocker"),
-                _plural(report.counts.warning, "warning"),
-                f"{report.counts.information} information",
-            )
-        )
+    return (
+        f"{finding.tier}: {finding.code}{_location(finding)}: {finding.message}"
+        f"{_details(finding)}"
     )
-    lines.extend(diagnostic_line(finding) for finding in report.ordered)
-    return "\n".join(lines) + "\n"
 
 
 def empty_report(diagnostics: Iterable[Diagnostic]) -> ValidationReport:
@@ -233,6 +226,4 @@ __all__ = [
     "diagnostic_line",
     "empty_report",
     "outcome_for_report",
-    "report_json",
-    "report_text",
 ]

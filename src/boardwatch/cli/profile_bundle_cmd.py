@@ -22,11 +22,17 @@ serializer and `test_profile_bundle_hash_isolation` keeps that one-directional.
 
 ## Why every command has `--json`
 
-Design §19 shows the flag on the four read-only commands, because those are the ones an agent reads
-back. But §21's exit contract covers the whole family, and its exit-1 and exit-3 rows —
-`stale_draft_parent`, `bundle_lock_held`, `promotion_target_conflict` — only ever arise in
-`promote`, `rebase-draft` and `approve`. A machine surface on four commands would leave the exit
-contract's most consequential rows with no machine rendering at all.
+Design §19 shows the flag on three commands — `validate`, `inventory`, `conflicts`; `inspect` is
+listed with no flag at all — because those are the ones an agent reads back. But §21's exit
+contract covers the whole family, and its exit-1 and exit-3 rows — `stale_draft_parent`,
+`bundle_lock_held`, `promotion_target_conflict` — only ever arise in `promote`, `rebase-draft` and
+`approve`. A machine surface on three commands would leave the exit contract's most consequential
+rows with no machine rendering at all.
+
+Both T18 review lenses ruled the uniform envelope right and §19's list under-specified: §19 opens
+"The **proposed** command surface is", while §21 is normative and explicitly family-wide. T19 owns
+amending §19 to show `[--json]` on all twelve, along with `--deep-history`, which §7 names and §19
+gives no surface.
 """
 
 from __future__ import annotations
@@ -240,7 +246,21 @@ def _nothing() -> _Rendered:
     return _Rendered(result={}, lines=())
 
 
-def _guarded(call: Callable[[], OperationOutcome[_T]]) -> OperationOutcome[_T]:
+#: What `_guarded` says happened when the call it wrapped could not complete. Every library entry
+#: point checks before it writes and stages what it does write, so the default is true of a
+#: command's own work. It is NOT true of the two calls that run *after* one has committed — §19
+#: step 6's revalidation and `promote`'s read-back — and an unconditional "nothing was written"
+#: above a populated result is the command contradicting itself.
+_NOTHING_WRITTEN: Final = "the command could not complete; nothing was written"
+_AFTER_THE_WRITE: Final = "the change was written, but the draft could not be re-checked"
+_AFTER_PROMOTION: Final = (
+    "the revision was promoted and selected, but its manifest could not be read back"
+)
+
+
+def _guarded(
+    call: Callable[[], OperationOutcome[_T]], *, unable: str = _NOTHING_WRITTEN
+) -> OperationOutcome[_T]:
     """Run one library call, turning a typed escape into §21's could-not-complete.
 
     `ProfileBundleError` is the package's own base class, so this catches exactly the failures it
@@ -256,20 +276,15 @@ def _guarded(call: Callable[[], OperationOutcome[_T]]) -> OperationOutcome[_T]:
             (
                 diagnostic(
                     IssueCode.INTERNAL_ERROR,
-                    "the command could not complete; nothing was written. This is a defect — "
-                    "please report the error type below with what you ran",
+                    f"{unable}. This is a defect — please report the error type below with what "
+                    "you ran",
                     error_type=type(exc).__name__,
                 ),
             ),
         )
     except OSError as exc:
         return outcome_with(
-            None,
-            (
-                diagnostic(
-                    IssueCode.IO_ERROR, f"the command could not complete: {io_reason(exc)}"
-                ),
-            ),
+            None, (diagnostic(IssueCode.IO_ERROR, f"{unable}: {io_reason(exc)}"),)
         )
 
 
@@ -446,13 +461,11 @@ def validate(
 
     root = _bundle_root(ctx, bundle)
     if draft is not None:
-        tree = draft_root(root, draft)
+        located = _guarded(lambda: _draft_tree(root, draft))
+        if located.value is None:
+            _emit("validate", located, _nothing(), as_json=json_output)
+        tree = located.value
         mode = "draft"
-        if not tree.is_dir():
-            outcome = _refusal(
-                IssueCode.DRAFT_NOT_FOUND, f"drafts/{draft} does not exist; nothing to validate"
-            )
-            _emit("validate", outcome, _nothing(), as_json=json_output)
     else:
         selection = _guarded(lambda: _selected_outcome(root))
         if selection.value is None:
@@ -479,6 +492,24 @@ def validate(
         as_json=json_output,
         as_of=report.as_of if report is not None else None,
     )
+
+
+def _draft_tree(bundle_root: Path, draft: str) -> OperationOutcome[Path]:
+    """The named draft's directory, or the typed refusal that says there is none.
+
+    Called through `_guarded` rather than inline, because `Path.is_dir()` re-raises every `OSError`
+    that is not "it does not exist": an unreadable `drafts/` arrives here as a `PermissionError`,
+    and one escaping this layer would be a raw traceback carrying the operator's absolute path, at
+    exit 1 where §21 requires 3, and with no JSON at all under `--json`. `draft_root` cannot raise
+    here — `_existing_draft` already applied the segment grammar it checks — so the `OSError` arm is
+    the whole reason this is a function.
+    """
+    tree = draft_root(bundle_root, draft)
+    if not tree.is_dir():
+        return _refusal(
+            IssueCode.DRAFT_NOT_FOUND, f"drafts/{draft} does not exist; nothing to validate"
+        )
+    return OperationOutcome.clean(tree)
 
 
 def _selected_outcome(bundle_root: Path) -> OperationOutcome[SelectedRevision]:
@@ -794,6 +825,16 @@ def _with_revalidation(
     The validation's findings join the command's own, so one exit code answers "did the change land
     and is the draft still promotable". Run here rather than inside `authoring` so there is one
     definition of how a draft's parent is resolved, and it is the one `validate` uses.
+
+    Only reached once the write has landed — both callers emit the refusal themselves when the
+    authoring step produced no value — which is why the composition is
+    `OperationOutcome.from_diagnostics` and not `errors.outcome_with`. `outcome_with`'s
+    could-not-complete precedence is right for a command's own work: a run that could not read the
+    bundle has not found one error, it has found nothing at all. It is wrong here. Exit 3 tells an
+    automated caller that nothing happened and it may retry, and the retry lands on
+    `duplicate_record_id` against the record this command already committed. The diagnostic still
+    names the I/O failure; the envelope's `outcome` says what happened to the draft, which is what
+    §21 means by carrying the category explicitly.
     """
     tree = draft_root(bundle_root, draft)
     revalidated = _guarded(
@@ -802,9 +843,12 @@ def _with_revalidation(
             bundle_root=bundle_root,
             mode="draft",
             parent=_parent_snapshot(bundle_root, tree, "draft"),
-        )
+        ),
+        unable=_AFTER_THE_WRITE,
     )
-    return outcome_with(outcome.value, (*outcome.diagnostics, *revalidated.diagnostics))
+    return OperationOutcome.from_diagnostics(
+        outcome.value, (*outcome.diagnostics, *revalidated.diagnostics)
+    )
 
 
 # --------------------------------------------------------------------------------------
@@ -847,10 +891,16 @@ class _StandardTerminal:
         return True
 
     def show(self, text: str) -> None:
-        typer.echo(text)
+        """On stderr, because the operator interaction is not the command's answer.
+
+        `_emit` owns stdout. With the prompt on the same stream, `--json` had no working arm at all:
+        left on the terminal it printed pages of prompt text ahead of the JSON document, and
+        redirected so the document could be captured, `is_controlling` refused the run.
+        """
+        typer.echo(text, err=True)
 
     def ask(self, prompt: str) -> str:
-        return str(typer.prompt(prompt, default="", show_default=False))
+        return str(typer.prompt(prompt, default="", show_default=False, err=True))
 
 
 def approval_terminal() -> ApprovalTerminal:
@@ -990,21 +1040,67 @@ def promote(
     )
     outcome = _guarded(lambda: promotion.promote(root, request))
     selected = outcome.value
-    rendered = (
-        _nothing()
-        if selected is None
-        else _Rendered(
-            result={
-                "revision": selected.revision,
-                "bundle_digest": selected.bundle_digest,
-            },
-            lines=(
-                f"promoted revision {selected.revision}",
-                f"bundle digest: {selected.bundle_digest}",
-            ),
-        )
+    if selected is None:
+        _emit("promote", outcome, _nothing(), as_json=json_output)
+    # Read back rather than reported from the value promotion returned: `SelectedRevision` carries
+    # where the revision is and what it hashes to, by design, and counting the deliverable through
+    # a different path than the one that produced it is the rule this project keeps paying for.
+    read_back = _guarded(lambda: _promoted_manifest(selected), unable=_AFTER_PROMOTION)
+    _emit(
+        "promote",
+        OperationOutcome.from_diagnostics(
+            selected, (*outcome.diagnostics, *read_back.diagnostics)
+        ),
+        _promotion_rendered(selected, read_back.value),
+        as_json=json_output,
     )
-    _emit("promote", outcome, rendered, as_json=json_output)
+
+
+def _promoted_manifest(selected: SelectedRevision) -> OperationOutcome[RevisionManifest]:
+    """The manifest of the revision just written, read from the tree rather than from memory."""
+    manifest = load_documents(selected.root, mode="revision").manifest
+    if not isinstance(manifest, RevisionManifest):  # pragma: no cover
+        # `promotion` builds a `RevisionManifest`, writes it, and re-verifies the tree's digest
+        # from disk before `CURRENT` names it, so this narrowing is the type system's rather than a
+        # second check on promotion's work.
+        return _refusal(
+            IssueCode.DRAFT_MANIFEST_INVALID,
+            "the promoted revision does not carry a revision manifest",
+        )
+    return OperationOutcome.clean(manifest)
+
+
+def _promotion_rendered(
+    selected: SelectedRevision, manifest: RevisionManifest | None
+) -> _Rendered:
+    """A promotion's answer, with the approval that authorised it.
+
+    `promote` is the one irreversible success in the family, and CLAUDE.md's rule for a cleared
+    result is that it carries its own evidence chain — here, which stamp, binding which candidate
+    digest. §7 has promotion write both into the manifest and §13 makes that pair the authority for
+    the revision, so reporting only the revision number left an operator to open `manifest.yaml`
+    themselves to find out what cleared it.
+
+    `None` when the manifest could not be read back, never `""`: the sentinels a *draft* uses for
+    these two fields are empty strings, and reporting one here would say the revision was promoted
+    without an approval rather than that this run could not read which.
+    """
+    stamp = None if manifest is None else manifest.approval_stamp_id
+    candidate = None if manifest is None else manifest.approved_candidate_digest
+    return _Rendered(
+        result={
+            "revision": selected.revision,
+            "bundle_digest": selected.bundle_digest,
+            "approval_stamp_id": stamp,
+            "approved_candidate_digest": candidate,
+        },
+        lines=(
+            f"promoted revision {selected.revision}",
+            f"bundle digest: {selected.bundle_digest}",
+            f"authorised by: {stamp or 'unread'} "
+            f"binding candidate {candidate or 'unread'}",
+        ),
+    )
 
 
 __all__ = ["ApprovalTerminal", "approval_terminal", "profile_bundle_app"]

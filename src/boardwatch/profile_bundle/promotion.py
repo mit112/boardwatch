@@ -439,7 +439,7 @@ def _parent(
     except BundleIoError:
         # Caught here rather than at `promote`'s outer arm, and deliberately not interpolated, for
         # `validation/completeness.py`'s reason: `BundleIoError` is built from `str(OSError)`, which
-        # appends the absolute path it failed on, and `report_json` emits `message` verbatim — so
+        # appends the absolute path it failed on, and every rendering emits `message` verbatim — so
         # stringifying it would put a `$HOME` path in a report an operator pastes elsewhere.
         # Recovering the logical file from that message would mean parsing it, which this package
         # refuses to do anywhere; the fault is named by its logical path instead.

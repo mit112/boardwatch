@@ -66,8 +66,11 @@ from boardwatch.profile_bundle.blobs import (
 )
 from boardwatch.profile_bundle.canonical import (
     EVIDENCE_PATH,
+    MANIFEST_PATH,
     FilesystemBlobReader,
+    MissingBlobError,
     candidate_content_digest,
+    evidence_set_digest,
     referenced_blob_digests,
 )
 from boardwatch.profile_bundle.errors import (
@@ -97,6 +100,7 @@ from boardwatch.profile_bundle.models.history import (
     RulingRecord,
 )
 from boardwatch.profile_bundle.models.manifests import (
+    BundleManifest,
     DraftManifest,
     RevisionManifest,
     StableManifestEnvelope,
@@ -217,7 +221,9 @@ def add_evidence(
                 ]
             }
         )
+        restated = _manifest_restating_the_evidence_set(bundle_root, documents, appended)
         _write_document(tree, EVIDENCE_PATH, appended)
+        _write_document(tree, MANIFEST_PATH, restated)
     except _Refused as refusal:
         return outcome_with(None, refusal.diagnostics)
 
@@ -533,6 +539,39 @@ def _capture_bytes(
             record_id=record.evidence_id,
         ) from exc
     return (result.digest, result.outcome)
+
+
+def _manifest_restating_the_evidence_set(
+    bundle_root: Path, before: BundleDocuments, appended: EvidenceRecordsDocument
+) -> BundleManifest:
+    """The manifest with `evidence_set_digest` recomputed over the evidence set this capture makes.
+
+    `evidence_set_digest` is the one manifest field that is a statement about content, so the writer
+    that changes the content owns it — the same rule `drafts._initial_manifest` and `rebase` apply.
+    Without it every successful capture leaves the draft failing
+    `validation.digest._the_evidence_set_digest_is_recomputed`, which is the code §21 reserves for
+    evidence mutated after promotion, and no command repairs it.
+
+    Computed before either document is written so a capture that cannot state a digest refuses with
+    the draft untouched. `resolve_conflict` needs no equivalent: `canonical.evidence_set_digest`
+    reads the evidence document and the blobs it names, and a ruling changes neither.
+    """
+    after = BundleDocuments(
+        manifest=before.manifest, by_path={**before.by_path, EVIDENCE_PATH: appended}
+    )
+    try:
+        digest = evidence_set_digest(after, FilesystemBlobReader(blobs_dir(bundle_root)))
+    except MissingBlobError as exc:
+        # The same refusal `rebase` makes for the same reason: a draft whose blob store cannot serve
+        # a capture it already cites has no evidence-set digest to state. Recapturing that blob is
+        # §6's recovery, and it is a prerequisite of approval anyway.
+        raise _refusal(
+            IssueCode.MISSING_BLOB,
+            f"blob sha256:{exc.bare_digest} is not in this bundle, so the draft cannot state an "
+            "evidence-set digest; restore or recapture that evidence first",
+            path=EVIDENCE_PATH.as_posix(),
+        ) from exc
+    return before.manifest.model_copy(update={"evidence_set_digest": digest})
 
 
 def _gates(

@@ -20,6 +20,7 @@ digest, or in a form the loader cannot read, fails there rather than here.
 
 from __future__ import annotations
 
+import io
 import json
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
@@ -309,6 +310,44 @@ def test_promote_accepts_exactly_what_approve_filed(
     assert body["result"]["bundle_digest"].startswith("sha256:")
 
 
+@pytest.mark.parametrize("machine", [True, False])
+def test_promote_reports_the_approval_that_authorised_the_revision(
+    env: Path, synthetic_bundle: SyntheticBundle, monkeypatch: pytest.MonkeyPatch, machine: bool
+) -> None:
+    """The family's one irreversible success has to say what cleared it.
+
+    "No flags" is not "cleared" anywhere else in this program, and a promotion is no exception:
+    §7 has promotion write the approving stamp's ID and the approved candidate digest into the
+    manifest, §13 makes that pair the authority for the revision, and reporting only the revision
+    number left an operator to open `manifest.yaml` themselves to find out which approval it was.
+
+    The candidate digest is computed before either command runs, by the in-memory route
+    `expected_candidate` uses, so the assertion is not two calls into the code that produced it.
+    Both renderings are covered: a promotion consumes its draft, so each gets its own bundle.
+    """
+    candidate = expected_candidate(synthetic_bundle)
+    approved = json.loads(
+        approve(env, synthetic_bundle, FakeTerminal(), monkeypatch, extra=["--json"]).output
+    )
+    stamp_id = approved["result"]["approval_stamp_id"]
+    promoted = run(
+        env,
+        synthetic_bundle,
+        [
+            "promote", "--draft", synthetic_bundle.draft_name, "--summary", "authorised",
+            *(["--json"] if machine else []),
+        ],
+    )
+    assert promoted.exit_code == 0, promoted.output
+    if machine:
+        result = json.loads(promoted.output)["result"]
+        assert result["approved_candidate_digest"] == candidate
+        assert result["approval_stamp_id"] == stamp_id
+    else:
+        assert candidate in promoted.output, promoted.output
+        assert stamp_id in promoted.output, promoted.output
+
+
 def test_editing_the_draft_after_approval_makes_the_stamp_stale(
     env: Path, synthetic_bundle: SyntheticBundle, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -485,3 +524,64 @@ def test_the_real_adapter_answers_no_for_anything_that_is_not_plainly_a_terminal
     monkeypatch.setattr(profile_bundle_cmd.sys, "stdin", replacement)
     monkeypatch.setattr(profile_bundle_cmd.sys, "stdout", Terminal())
     assert profile_bundle_cmd.approval_terminal().is_controlling() is (state == "tty")
+
+
+def test_the_operator_interaction_never_lands_on_stdout(
+    capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Stdout carries the command's answer, and `approve --json` is a document a script parses.
+
+    With the prompt on stdout the two arms were mutually exclusive: on a terminal the JSON was
+    preceded by the whole prompt on the same stream, and redirecting stdout so it could be captured
+    made `is_controlling` refuse the run. There was no third option, so the one command §21 gives
+    `approval_declined` and `approval_requires_controlling_tty` had no usable machine rendering.
+
+    Exercised against the production adapter — it is the only implementation, and the fake the rest
+    of this file uses appends to a list rather than writing to a stream at all.
+    """
+    terminal = profile_bundle_cmd.approval_terminal()
+    monkeypatch.setattr("sys.stdin", io.StringIO(f"{profile_bundle_cmd.CONFIRMATION_WORD}\n"))
+
+    terminal.show("Candidate content digest: sha256:" + "0" * 64)
+    answer = terminal.ask(f"Type {profile_bundle_cmd.CONFIRMATION_WORD!r} to approve")
+
+    captured = capsys.readouterr()
+    assert answer == profile_bundle_cmd.CONFIRMATION_WORD
+    # `typer.prompt` hands the prompt's LAST character to `input()` whatever `err` says — a
+    # deliberate readline workaround in the library. One space is all stdout may carry, and
+    # `json.loads` skips leading whitespace, so the machine rendering stays parseable.
+    assert captured.out.strip() == "", repr(captured.out)
+    assert "Candidate content digest" in captured.err
+    assert profile_bundle_cmd.CONFIRMATION_WORD in captured.err
+
+
+def test_approve_json_writes_a_parseable_document_to_stdout(
+    env: Path, synthetic_bundle: SyntheticBundle, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The whole point of the stream split, through the command rather than the adapter.
+
+    Only the controlling-terminal question is replaced; the prompt text, the confirmation read and
+    the envelope are all the production path, so the assertion is that those three can coexist on
+    one invocation — which is exactly what they could not do while the prompt shared stdout.
+    """
+    monkeypatch.setattr(
+        profile_bundle_cmd._StandardTerminal, "is_controlling", lambda self: True
+    )
+    result = CliRunner().invoke(
+        app,
+        [
+            "--data-dir", str(env), "profile-bundle", "approve",
+            "--draft", synthetic_bundle.draft_name,
+            "--bundle", str(synthetic_bundle.root), "--json",
+        ],
+        input=f"{profile_bundle_cmd.CONFIRMATION_WORD}\n",
+    )
+    assert result.exit_code == 0, result.output
+    assert "Candidate content digest" in result.stderr
+    assert "Candidate content digest" not in result.stdout, result.stdout
+    # The runner simulates terminal echo by writing the answer it fed in back to stdout, which a
+    # real tty driver would do outside the process. Everything after it is the command's answer.
+    document = result.stdout[result.stdout.index("{") :]
+    body = json.loads(document)
+    assert body["command"] == "approve"
+    assert body["result"]["candidate_digest"] == expected_candidate(synthetic_bundle)

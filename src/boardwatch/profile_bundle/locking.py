@@ -78,7 +78,7 @@ def bundle_lock(bundle_root: Path) -> Iterator[Path]:
         ) from exc
     except OSError as exc:
         # `strerror` rather than `str(exc)`: the stringified error embeds the absolute lockfile
-        # path, and a diagnostic that reached `report_json` would carry the operator's home
+        # path, and a diagnostic that reached either rendering would carry the operator's home
         # directory into anything they pasted.
         raise BundleIoError(f"{LOCK_FILE} could not be opened: {exc.strerror}") from exc
     try:

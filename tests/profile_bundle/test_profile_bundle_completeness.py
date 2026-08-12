@@ -896,7 +896,7 @@ def test_an_ancestor_manifest_that_cannot_be_read_is_a_blocker(
         )
         found = ancestry_completeness(ctx)
         assert [f.details["reason"] for f in found] == ["unreadable"]
-        # `report_json` emits `message` verbatim, and `reports.py` states that a diagnostic never
+        # Both renderings emit `message` verbatim, and `reports.py` states that a diagnostic never
         # carries a value like this. `str(OSError)` appends the absolute path it failed on, so the
         # reason has to be taken from the exception without it.
         assert str(chained_tree.bundle_root) not in found[0].message
@@ -912,7 +912,7 @@ def test_a_deep_audit_of_an_unreadable_ancestor_document_carries_no_filesystem_p
 
     The deep audit loads the ancestor's DOCUMENTS, and that read raises a `BundleIoError` built from
     `str(OSError)` — which appends the absolute path it failed on. Interpolating the exception whole
-    put a `$HOME` path into an `unverifiable_ancestor` message, which `report_json` emits verbatim.
+    put a `$HOME` path into an `unverifiable_ancestor` message, which both renderings emit verbatim.
     Only `deep=True` reaches this route, so the shallow test above could not see it.
     """
     parent_digest = chained_tree.documents.manifest.parent_bundle_digest
