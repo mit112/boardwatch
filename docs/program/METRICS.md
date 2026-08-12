@@ -1810,7 +1810,7 @@ under the root and keeping the one whose name is its own sha256, so they read no
 reads. That is the fix for "a test derived from a constant agrees with itself", done properly.
 
 **What the round still found: 1 BLOCKING, 5 SHOULD-FIX, 4 NOTE.** All are in `STATE.md`'s blocker
-table with `scratchpad/T14-T15-FIXROUND-REVIEW.md` as the evidence. The blocking one is the
+table with `.agent/T14-T15-FIXROUND-REVIEW.md` as the evidence. The blocking one is the
 transferable lesson:
 
 > **A fix verified only against the reviewer's own reproduction closes the arm the reproduction
