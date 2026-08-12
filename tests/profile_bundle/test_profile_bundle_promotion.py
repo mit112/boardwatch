@@ -505,8 +505,8 @@ def test_a_pointer_that_is_not_in_the_canonical_form_is_refused(scene: Scene) ->
     """The T13 reader accepted this; the writer now decides what canonical means."""
     _promoted(scene)
     pointer = read_current(scene.bundle_root)
-    current_path(scene.bundle_root).write_text(
-        json.dumps(pointer.model_dump(mode="json"), indent=4) + "\n", encoding="utf-8"
+    current_path(scene.bundle_root).write_bytes(
+        (json.dumps(pointer.model_dump(mode="json"), indent=4) + "\n").encode("utf-8")
     )
 
     with pytest.raises(PointerError, match="canonical"):
@@ -526,8 +526,8 @@ def test_a_pointer_carrying_an_extra_key_is_refused(scene: Scene) -> None:
     _promoted(scene)
     pointer = read_current(scene.bundle_root)
     payload = {**pointer.model_dump(mode="json"), "note": "hand written"}
-    current_path(scene.bundle_root).write_text(
-        json.dumps(payload, sort_keys=True, separators=(",", ":")) + "\n", encoding="utf-8"
+    current_path(scene.bundle_root).write_bytes(
+        (json.dumps(payload, sort_keys=True, separators=(",", ":")) + "\n").encode("utf-8")
     )
 
     with pytest.raises(PointerError, match="extra_forbidden"):
@@ -1020,7 +1020,9 @@ def test_a_target_with_an_extra_file_is_a_conflict(scene: Scene) -> None:
 
 def test_a_target_whose_marker_names_another_revision_is_a_conflict(scene: Scene) -> None:
     root = _torn_before_the_pointer(scene)
-    complete_marker_path(root).write_text("sha256:" + "d" * 64 + "\n", encoding="utf-8")
+    complete_marker_path(root).write_bytes(
+        ("sha256:" + "d" * 64 + "\n").encode("utf-8")
+    )
 
     outcome = promote(scene.bundle_root, _request())
 
@@ -1050,8 +1052,11 @@ def test_a_retained_temporary_does_not_block_a_later_promotion(scene: Scene) -> 
     root = _torn_before_the_pointer(scene)
     complete_marker_path(root).unlink()
     assert promote(scene.bundle_root, _request()).exit_code == 3
-    complete_marker_path(root).write_text(
-        f"{_manifest_of(root).bundle_digest}\n", encoding="utf-8"
+    # `write_bytes`: promotion compares the retained directory against the staged one byte for
+    # byte, and `write_text` writes "\r\n" on Windows, so this marker differed from the one
+    # promotion writes and the later promotion refused with `promotion_target_conflict`.
+    complete_marker_path(root).write_bytes(
+        f"{_manifest_of(root).bundle_digest}\n".encode()
     )
 
     outcome = promote(scene.bundle_root, _request())

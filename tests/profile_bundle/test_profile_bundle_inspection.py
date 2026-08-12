@@ -393,11 +393,12 @@ def test_inventory_selects_nothing_when_the_manifest_identity_check_fails(
     `selected is None`: a revision whose manifest names another digest is not the selected one."""
     stolen = revisions_dir(promoted_tree.bundle_root) / digest_token(OTHER_DIGEST)
     promoted_tree.revision_dir.rename(stolen)
-    complete_marker_path(stolen).write_text(f"{OTHER_DIGEST}\n", encoding="utf-8")
-    current_path(promoted_tree.bundle_root).write_text(
-        json.dumps({"bundle_digest": OTHER_DIGEST, "revision": promoted_tree.revision},
-                   sort_keys=True, separators=(",", ":")) + "\n",
-        encoding="utf-8",
+    complete_marker_path(stolen).write_bytes(
+        (f"{OTHER_DIGEST}\n").encode()
+    )
+    current_path(promoted_tree.bundle_root).write_bytes(
+        (json.dumps({"bundle_digest": OTHER_DIGEST, "revision": promoted_tree.revision},
+                   sort_keys=True, separators=(",", ":")) + "\n").encode("utf-8")
     )
     outcome = inventory(promoted_tree.bundle_root)
     assert str(IssueCode.CURRENT_POINTER_MISMATCH) in {d.code for d in outcome.diagnostics}
@@ -649,7 +650,9 @@ def test_no_read_command_adopts_a_leftover_directory(
     one. `CURRENT` must therefore be byte-identical after all three commands have run."""
     leftover = revisions_dir(promoted_tree.bundle_root) / digest_token("sha256:" + "d" * 64)
     leftover.mkdir()
-    complete_marker_path(leftover).write_text("sha256:" + "d" * 64 + "\n", encoding="utf-8")
+    complete_marker_path(leftover).write_bytes(
+        ("sha256:" + "d" * 64 + "\n").encode("utf-8")
+    )
     (blobs_dir(promoted_tree.bundle_root) / "not-a-digest").write_bytes(b"x")
     drafts_dir(promoted_tree.bundle_root).mkdir(exist_ok=True)
     pointer = current_path(promoted_tree.bundle_root).read_bytes()

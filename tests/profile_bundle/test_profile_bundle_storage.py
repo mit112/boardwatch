@@ -48,8 +48,8 @@ OTHER_DIGEST = "sha256:" + "f" * 64
 
 
 def _write_pointer(bundle_root: Path, payload: object) -> None:
-    current_path(bundle_root).write_text(
-        json.dumps(payload, sort_keys=True, separators=(",", ":")) + "\n", encoding="utf-8"
+    current_path(bundle_root).write_bytes(
+        (json.dumps(payload, sort_keys=True, separators=(",", ":")) + "\n").encode("utf-8")
     )
 
 
@@ -104,8 +104,8 @@ def test_a_selected_directory_without_its_marker_is_refused(
 
 
 def test_a_marker_naming_another_digest_is_refused(promoted_tree: PromotedRevisionTree) -> None:
-    complete_marker_path(promoted_tree.revision_dir).write_text(
-        f"{OTHER_DIGEST}\n", encoding="utf-8"
+    complete_marker_path(promoted_tree.revision_dir).write_bytes(
+        (f"{OTHER_DIGEST}\n").encode()
     )
     with pytest.raises(SelectionError) as raised:
         read_current_once(promoted_tree.bundle_root)
@@ -115,7 +115,7 @@ def test_a_marker_naming_another_digest_is_refused(promoted_tree: PromotedRevisi
 def test_a_symlinked_pointer_is_refused(promoted_tree: PromotedRevisionTree, tmp_path: Path) -> None:
     """Confinement: a symlinked `CURRENT` selects a revision named by a file outside the root."""
     outside = tmp_path / "elsewhere-CURRENT"
-    outside.write_text(current_path(promoted_tree.bundle_root).read_text(encoding="utf-8"))
+    outside.write_bytes(current_path(promoted_tree.bundle_root).read_bytes())
     current_path(promoted_tree.bundle_root).unlink()
     current_path(promoted_tree.bundle_root).symlink_to(outside)
     with pytest.raises(SelectionError) as raised:
@@ -259,7 +259,9 @@ def test_a_manifest_that_disagrees_with_the_pointer_is_refused(
     pointer that selects the wrong one must be refused rather than served."""
     stolen = revisions_dir(promoted_tree.bundle_root) / digest_token(OTHER_DIGEST)
     promoted_tree.revision_dir.rename(stolen)
-    complete_marker_path(stolen).write_text(f"{OTHER_DIGEST}\n", encoding="utf-8")
+    complete_marker_path(stolen).write_bytes(
+        (f"{OTHER_DIGEST}\n").encode()
+    )
     _write_pointer(promoted_tree.bundle_root, {"bundle_digest": OTHER_DIGEST, "revision": 1})
     with pytest.raises(SelectionError) as raised:
         selected_documents(read_current_once(promoted_tree.bundle_root))

@@ -206,7 +206,9 @@ def test_a_complete_marker_that_is_not_the_exact_contract_is_reported(
     a reader that strips before matching would accept a torn write that stopped mid-flush, and the
     marker exists precisely to distinguish a finished promotion from an interrupted one.
     """
-    complete_marker_path(promoted_tree.revision_dir).write_text(content, encoding="utf-8")
+    complete_marker_path(promoted_tree.revision_dir).write_bytes(
+        (content).encode("utf-8")
+    )
     assert IssueCode.COMPLETE_MARKER_MISSING in codes(promoted_tree)
 
 
@@ -214,8 +216,8 @@ def test_a_complete_marker_naming_another_digest_is_a_directory_mismatch(
     promoted_tree: PromotedRevisionTree,
 ) -> None:
     """Present but disagreeing is a different fact from absent, so it gets a different code."""
-    complete_marker_path(promoted_tree.revision_dir).write_text(
-        "sha256:" + "c" * 64 + "\n", encoding="utf-8"
+    complete_marker_path(promoted_tree.revision_dir).write_bytes(
+        ("sha256:" + "c" * 64 + "\n").encode("utf-8")
     )
     found = codes(promoted_tree)
     assert IssueCode.MANIFEST_DIRECTORY_MISMATCH in found
@@ -418,7 +420,9 @@ def test_a_current_file_outside_its_contract_is_refused(
     from a future format becomes a silently accepted one, and this is the file promotion replaces
     atomically as its commit point.
     """
-    current_path(promoted_tree.bundle_root).write_text(content, encoding="utf-8")
+    current_path(promoted_tree.bundle_root).write_bytes(
+        (content).encode("utf-8")
+    )
     with pytest.raises(PointerError):
         read_current(promoted_tree.bundle_root)
 
@@ -434,7 +438,9 @@ def test_an_unreadable_current_pointer_is_reported_not_raised(
 ) -> None:
     """The layer reports; it does not propagate. A validation run that raised on a corrupt pointer
     would lose every other finding it had already accumulated."""
-    current_path(promoted_tree.bundle_root).write_text("{}", encoding="utf-8")
+    current_path(promoted_tree.bundle_root).write_bytes(
+        b"{}"
+    )
     assert IssueCode.CURRENT_POINTER_MISMATCH in codes(promoted_tree)
 
 

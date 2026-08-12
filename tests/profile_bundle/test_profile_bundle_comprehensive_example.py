@@ -463,6 +463,8 @@ def test_an_entity_file_whose_basename_disagrees_with_its_id_is_a_layout_error(
 
 
 def test_a_draft_may_not_carry_a_complete_marker(synthetic_bundle: SyntheticBundle) -> None:
-    (synthetic_bundle.draft / "COMPLETE").write_text("sha256:" + "0" * 64 + "\n", encoding="utf-8")
+    (synthetic_bundle.draft / "COMPLETE").write_bytes(
+        ("sha256:" + "0" * 64 + "\n").encode("utf-8")
+    )
     with pytest.raises(BundleLayoutError):
         discover_source_files(synthetic_bundle.draft, final_revision=False)

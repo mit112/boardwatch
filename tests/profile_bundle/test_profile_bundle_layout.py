@@ -173,7 +173,9 @@ def test_discovery_refuses_an_undeclared_file(tmp_path: Path, stray: str) -> Non
 
 def test_complete_marker_is_permitted_only_in_a_final_revision(tmp_path: Path) -> None:
     _write_tree(tmp_path, _complete_tree())
-    (tmp_path / "COMPLETE").write_text("sha256:" + "0" * 64 + "\n", encoding="utf-8")
+    (tmp_path / "COMPLETE").write_bytes(
+        ("sha256:" + "0" * 64 + "\n").encode("utf-8")
+    )
     found = discover_source_files(tmp_path, final_revision=True)
     assert "COMPLETE" not in {str(entry.logical_path) for entry in found}
     with pytest.raises(BundleLayoutError):

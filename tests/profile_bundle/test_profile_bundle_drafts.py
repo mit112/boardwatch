@@ -359,11 +359,12 @@ def test_checkout_refuses_a_revision_that_is_not_the_one_selected(
     other = "sha256:" + "e" * 64
     stolen = revisions_dir(promoted_tree.bundle_root) / digest_token(other)
     promoted_tree.revision_dir.rename(stolen)
-    complete_marker_path(stolen).write_text(f"{other}\n", encoding="utf-8")
-    current_path(promoted_tree.bundle_root).write_text(
-        json.dumps({"bundle_digest": other, "revision": 1}, sort_keys=True, separators=(",", ":"))
-        + "\n",
-        encoding="utf-8",
+    complete_marker_path(stolen).write_bytes(
+        (f"{other}\n").encode()
+    )
+    current_path(promoted_tree.bundle_root).write_bytes(
+        (json.dumps({"bundle_digest": other, "revision": 1}, sort_keys=True, separators=(",", ":"))
+        + "\n").encode("utf-8")
     )
     outcome = checkout_current(promoted_tree.bundle_root, name="work")
     assert outcome.exit_code == 1
@@ -371,6 +372,9 @@ def test_checkout_refuses_a_revision_that_is_not_the_one_selected(
     assert not draft_root(promoted_tree.bundle_root, "work").exists()
 
 
+@pytest.mark.skipif(
+    os.name != "posix", reason="a mode-000 file is still readable on Windows"
+)
 def test_checkout_that_cannot_read_a_blob_installs_no_draft(
     promoted_tree: PromotedRevisionTree,
 ) -> None:
