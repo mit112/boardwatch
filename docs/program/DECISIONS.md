@@ -3394,7 +3394,7 @@ does not.
 *2026-08-11. Three concurrent reviewers against the same four commits, per `BRIEF-REVIEW-COMMON.md`'s
 effort table, which allots T16 "two lenses plus a concurrency-specific pass" because promotion is
 where an owner's approval becomes an immutable revision. Verdicts: **REWORK, REWORK, APPROVE**.
-Reports at `scratchpad/T16-REVIEW-LENS-A.md`, `-LENS-B.md`, `-CONCURRENCY.md`.*
+Reports at `.agent/T16-REVIEW-LENS-A.md`, `-LENS-B.md`, `-CONCURRENCY.md`.*
 
 T16's own gate was **exit 0, 5,729 passed, 95.84%**, and its build ran a 23-mutation sweep. That is
 the third proof this session that **a green gate is not sign-off**: the reviews found a silent
