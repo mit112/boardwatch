@@ -135,7 +135,7 @@ moved on).
 | **T16's two BLOCKINGs have fixes committed, inside the green gate** | The `promotion.py:426` `if not quarantined:` guard that let one quarantined blob disable the *entire* parent digest recomputation, and the symlinked draft root promoting outside content into an immutable revision. Both closed by T16's 11-commit fix round (`735dfe7`), which is in `a64e6fa`, and that fix round was independently reviewed. Do not re-open from the old blocker text — read D-132. | closed |
 | **Three `resume.yaml` bullets exceed the 220-char layout gate** | Forces an untailored-master degrade on every posting, which is what blocks accumulating real runs. The file also lacks Knowledge Forge, has stale `skill_groups`, and an empty extracurricular block. **Mit pins `resume_max_pages=1` — do not advise setting it to 2.** Mit deprioritized this 2026-08-11; do not gate other work behind it. | Mit (content) |
 | **The 03:10 launchd job re-fires a task that shipped 209 commits ago** | `com.mitsheth.boardwatch-p6.plist` is a *daily* `StartCalendarInterval` job carrying the *one-shot* "execute P6 Slice 1" prompt, asserting `main` at `fb0386a`. It has now misfired **twice** — 2026-08-11 and 2026-08-12 (D-123, D-135). Benign and self-detecting in five read-only commands, **not** self-correcting, and it spends a real usage window each night. Fix: `launchctl bootout gui/$UID/com.mitsheth.boardwatch-p6`, or repoint `~/.claude/scheduled/p6-slice1-run.sh` at a fresh prompt. | Mit (automation) |
-| **No local pre-push check for the three CI-only jobs** | `gitleaks`, `perf` and `generalization` run in CI and not under `make check`; `gitleaks` is not installed by project tooling. `gitleaks git --log-opts=origin/main..HEAD` is the cheap mitigation (D-117) | open |
+| **No local pre-push check for the TWO CI-only jobs** | **`gitleaks` and `perf` — two, not three.** `generalization` IS inside `make check` (`Makefile:2`, the identical command CI runs); this row said three until 2026-08-12. `gitleaks` is installed on this machine (8.30.1) but not wired into project tooling. **All four gates are green on the Gate A tree `a64e6fa`** — `.agent/GATE-A-CI-EQUIVALENCE.md` (D-117) | mitigated, not wired |
 | **P2 item 8 — the onboarding gatherer** | The thing that would make the field tier fire for anyone. D-054 forbids us authoring non-tech field content, so it must be gathered per user. Needs its own brainstorm | owner-gated |
 | **P3 Slice 5 — LLM economics** | Substantial and design-heavy; use a fresh context window | P3 |
 | **P3 item 8 — cross-OS two-writer WAL test** | A same-OS test proves nothing; needs a Docker-Linux-container + macOS-host harness. The documented-stance half shipped (D-041) | P3 |
@@ -157,8 +157,9 @@ decision before changing the behaviour it describes.
   `head`/`tail` (SIGPIPE gives a false negative — observed live giving a false `EXIT=0`), end a
   backgrounded gate with `exit $ec`. `All checks passed!` is the *lint* step and appears while pytest is
   still running; only `GATE_EXIT` and the pytest summary are the verdict.
-- **Green locally ≠ green CI** (D-117). `gitleaks`, `perf` and `generalization` are CI jobs `make check` never
-  runs. `gitleaks git --log-opts=origin/main..HEAD` before a push is the cheap mitigation, not yet wired in.
+- **Green locally ≠ green CI** (D-117), but the gap is **`gitleaks` and `perf` only**. `generalization` is
+  inside `make check` and runs CI's exact command; the "three CI-only jobs" phrasing was wrong.
+  `gitleaks git --log-opts=origin/main..HEAD` before a push is the cheap mitigation, not yet wired in.
 - **Re-check an agent's branch for late commits before gating.** A fix agent reported 10 commits after 9 had
   been merged; the gate was killed at 42% and restarted because the tree being gated was not the tree meant.
 - **After appending to `DECISIONS.md`/`METRICS.md`, add the index row and run `make reindex`** — line numbers
