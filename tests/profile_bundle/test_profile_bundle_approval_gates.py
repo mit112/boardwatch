@@ -70,3 +70,37 @@ def test_an_approval_entry_cannot_cross_target_kind_or_resulting_state() -> None
             approved_at=datetime(2026, 8, 10, 12, tzinfo=UTC),
             decisions=[decision],
         )
+
+
+def test_two_stamps_approving_one_record_do_not_reuse_an_approval_id() -> None:
+    """§8 makes approval IDs unique across the bundle, and `validate_structural` checks them there.
+
+    A record the owner edits and re-approves is the ordinary case, so numbering per action and
+    target alone — restarting at `001` in every stamp — made the second revision unpromotable:
+    `duplicate_approval_id` fired on a ledger both stamps of which were correct. The scope has to
+    come from something that differs between stamps, and the stamp's own ID is the only thing that
+    does by contract.
+    """
+    decision = ApprovalDecision(
+        action=ApprovalAction.CONFIRM_FACT,
+        target_record_id="fact.example.name.001",
+        target_content_digest="sha256:" + "a" * 64,
+        resulting_state="owner_confirmed",
+    )
+    first = build_approval_stamp(
+        stamp_id="approval-stamp.000001",
+        candidate_digest="sha256:" + "b" * 64,
+        approved_at=datetime(2026, 8, 10, 12, tzinfo=UTC),
+        decisions=[decision],
+    )
+    second = build_approval_stamp(
+        stamp_id="approval-stamp.000002",
+        candidate_digest="sha256:" + "c" * 64,
+        approved_at=datetime(2026, 8, 11, 12, tzinfo=UTC),
+        decisions=[decision],
+    )
+
+    assert first.entries[0].approval_id != second.entries[0].approval_id
+    assert not {entry.approval_id for entry in first.entries} & {
+        entry.approval_id for entry in second.entries
+    }

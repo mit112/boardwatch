@@ -19,10 +19,9 @@ carry these tests.
 
 from __future__ import annotations
 
-import json
 import os
 import shutil
-from pathlib import PurePosixPath
+from pathlib import Path, PurePosixPath
 from typing import Any
 
 import pytest
@@ -43,6 +42,7 @@ from boardwatch.profile_bundle.validation import (
 from boardwatch.profile_bundle.validation.digest import (
     CurrentPointer,
     PointerError,
+    current_pointer_bytes,
     read_complete,
     read_current,
     validate_digest,
@@ -222,13 +222,22 @@ def test_a_complete_marker_naming_another_digest_is_a_directory_mismatch(
     assert IssueCode.COMPLETE_MARKER_MISSING not in found
 
 
+def _write_pointer(bundle_root: Path, digest: str, revision: int) -> None:
+    """Write a pointer through the emitter that owns its byte form.
+
+    Hand-rolled JSON would be refused as non-canonical now that `CURRENT` has a writer, and these
+    tests are about which revision the pointer NAMES — a pointer refused for its punctuation would
+    let them pass while measuring something else entirely.
+    """
+    current_path(bundle_root).write_bytes(
+        current_pointer_bytes(CurrentPointer(bundle_digest=digest, revision=revision))
+    )
+
+
 def test_a_current_pointer_naming_another_digest_is_reported(
     promoted_tree: PromotedRevisionTree,
 ) -> None:
-    current_path(promoted_tree.bundle_root).write_text(
-        json.dumps({"bundle_digest": "sha256:" + "d" * 64, "revision": 1}) + "\n",
-        encoding="utf-8",
-    )
+    _write_pointer(promoted_tree.bundle_root, "sha256:" + "d" * 64, 1)
     assert IssueCode.CURRENT_POINTER_MISMATCH in codes(promoted_tree)
 
 
@@ -237,10 +246,7 @@ def test_a_current_pointer_naming_another_revision_number_is_reported(
 ) -> None:
     """The digest agreeing is not enough: `CURRENT.revision` is what `promote` increments, and a
     pointer that names the right tree under the wrong number makes the next revision collide."""
-    current_path(promoted_tree.bundle_root).write_text(
-        json.dumps({"bundle_digest": promoted_tree.bundle_digest, "revision": 7}) + "\n",
-        encoding="utf-8",
-    )
+    _write_pointer(promoted_tree.bundle_root, promoted_tree.bundle_digest, 7)
     assert IssueCode.CURRENT_POINTER_MISMATCH in codes(promoted_tree)
 
 
@@ -254,10 +260,7 @@ def test_a_revision_that_is_not_the_selected_one_is_not_a_pointer_mismatch(
     pointer here disagrees on BOTH the digest and the number, which is what a later revision being
     selected looks like.
     """
-    current_path(promoted_tree.bundle_root).write_text(
-        json.dumps({"bundle_digest": "sha256:" + "9" * 64, "revision": 2}) + "\n",
-        encoding="utf-8",
-    )
+    _write_pointer(promoted_tree.bundle_root, "sha256:" + "9" * 64, 2)
     assert IssueCode.CURRENT_POINTER_MISMATCH not in codes(promoted_tree)
 
 
