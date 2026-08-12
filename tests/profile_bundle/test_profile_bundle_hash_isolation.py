@@ -25,6 +25,7 @@ from boardwatch.eligibility.hashing import digest as eligibility_digest
 from boardwatch.extract.taxonomy import _version_of as taxonomy_version_of
 from boardwatch.profile_bundle.canonical import canonical_json_bytes, digest_of
 from boardwatch.tailor.persona import _version_of as persona_version_of
+from tests.profile_bundle.import_graph import imports_of
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 
@@ -99,17 +100,25 @@ def test_the_three_version_of_helpers_disagree_with_the_bundle_serializer() -> N
 
 
 def test_no_existing_module_imports_the_bundle_serializer() -> None:
-    """The one-directional dependency, checked over source text rather than an import graph so a
-    lazily-imported reference inside a function is caught too."""
-    forbidden = "profile_bundle.canonical"
-    offenders = []
-    for path in (REPO_ROOT / "src" / "boardwatch").rglob("*.py"):
-        if path.parts[-2:] == ("profile_bundle", "canonical.py"):
-            continue
-        if "profile_bundle" in path.parts:
-            continue
-        if forbidden in path.read_text(encoding="utf-8"):
-            offenders.append(path.relative_to(REPO_ROOT).as_posix())
+    """The one-directional dependency, read from the AST rather than from source text.
+
+    This used to grep for the literal `profile_bundle.canonical`, which admitted the one bridge
+    it existed to refuse: `from boardwatch.profile_bundle import canonical` reaches the module
+    without ever containing that string. `imports_of` resolves every spelling to the same dotted
+    target, and `ast.walk` still descends into function bodies, so a lazily-imported reference
+    inside a function is caught exactly as before.
+
+    Residual limit, stated rather than hidden: `from boardwatch import profile_bundle` followed
+    by attribute access is not matched here, because `cli/profile_bundle_cmd.py` legitimately
+    imports the package. The tailor side of that boundary is closed by prefix in
+    `test_profile_bundle_tailor_isolation.py`.
+    """
+    forbidden = "boardwatch.profile_bundle.canonical"
+    offenders = [
+        path.relative_to(REPO_ROOT).as_posix()
+        for path in (REPO_ROOT / "src" / "boardwatch").rglob("*.py")
+        if "profile_bundle" not in path.parts and forbidden in imports_of(path)
+    ]
     assert offenders == []
 
 

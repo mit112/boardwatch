@@ -115,6 +115,23 @@ def test_no_production_tailor_module_reaches_the_profile_bundle() -> None:
     assert offenders == []
 
 
+def test_the_bundle_never_reaches_the_tailor_or_the_store_either() -> None:
+    """The other direction, and the package docstring's own claim: `boardwatch.profile_bundle`
+    "never imports `boardwatch.store`" and "never imports `boardwatch.tailor`". Until now that
+    was prose. A bundle that could see the store would owe a table and a migration; one that
+    could see the tailor would be the Gate B bridge written backwards."""
+    roots = sorted(SRC_ROOT.glob("boardwatch/profile_bundle/**/*.py"))
+    assert len(roots) >= 40
+    closure = reachable_from(roots)
+    assert "boardwatch.profile_bundle.canonical" in closure.modules
+    escapes = sorted(
+        target
+        for target in closure.targets
+        if target.startswith(("boardwatch.tailor", "boardwatch.store"))
+    )
+    assert escapes == []
+
+
 def test_no_production_tailor_file_names_the_bundle_package_in_text_either() -> None:
     """The AST check cannot see `importlib.import_module("boardwatch.profile_bundle")`, so the
     root files are additionally held free of the name in any form. Scoped to the roots, because
