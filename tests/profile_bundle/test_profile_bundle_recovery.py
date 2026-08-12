@@ -482,3 +482,65 @@ def test_a_draft_that_still_cites_the_broken_blob_cannot_be_promoted(broken: Sce
     assert _snapshot(broken.bundle_root) == before
     assert current_path(broken.bundle_root).exists()
     assert _manifest_of(broken.first).revision == 1
+
+
+def test_validate_reports_a_document_edited_under_cover_of_a_quarantined_blob(
+    broken: Scene,
+) -> None:
+    """The read-only half of the forgery `promote` refuses.
+
+    `promote` recomputes the parent's digest with the quarantined blob's declaration standing in,
+    so it catches this. `validate` could not: `bundle_digest` raised on the unreadable blob, the
+    recomputation returned "not recomputable", and the check said nothing — so a revision whose
+    documents were edited under cover of one broken blob validated exactly like a revision waiting
+    for a legitimate recapture. There was no command an operator could run to tell the two apart.
+
+    `policy/units.yaml` for `test_a_broken_blob_does_not_excuse_an_edited_parent_policy_document`'s
+    reason: no record ID, no ledger, no approval decision, so the revision's own bundle digest is
+    the only thing that can speak about it.
+    """
+    _edit(
+        broken.first,
+        PurePosixPath("policy/units.yaml"),
+        lambda data: data["units"][0].update({"display_name": "forged under a lost blob"}),
+    )
+
+    outcome = validate_bundle(
+        broken.first,
+        bundle_root=broken.bundle_root,
+        mode="revision",
+        as_of=AS_OF,
+    )
+
+    mismatches = [
+        finding
+        for finding in outcome.diagnostics
+        if finding.code == IssueCode.BUNDLE_DIGEST_MISMATCH
+    ]
+    assert len(mismatches) == 1
+    assert mismatches[0].details["declared"] == broken.first_digest
+
+
+def test_validate_reports_no_digest_mismatch_for_an_untampered_quarantined_revision(
+    broken: Scene,
+) -> None:
+    """The negative control, and the reason the substitution is exact rather than lenient.
+
+    `write_blob` verifies a blob's bytes before it becomes visible, so an intact blob's computed
+    hash is its declared one and standing the declaration in reproduces the revision's digest to
+    the byte. A legitimate recovery therefore reports nothing here, which is what keeps the broken
+    blob `validation/evidence.py`'s finding alone instead of surfacing a second time under a digest
+    code — the double-reporting `_computed`'s docstring exists to prevent.
+    """
+    outcome = validate_bundle(
+        broken.first,
+        bundle_root=broken.bundle_root,
+        mode="revision",
+        as_of=AS_OF,
+    )
+
+    assert not [
+        finding
+        for finding in outcome.diagnostics
+        if finding.code == IssueCode.BUNDLE_DIGEST_MISMATCH
+    ]

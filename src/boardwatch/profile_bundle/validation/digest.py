@@ -56,12 +56,14 @@ from typing import Final, Literal
 
 from pydantic import PositiveInt, TypeAdapter, ValidationError
 
+from boardwatch.profile_bundle.blobs import quarantined_blobs
 from boardwatch.profile_bundle.canonical import (
     CanonicalizationError,
     MissingBlobError,
     bundle_digest,
     candidate_digest_from_revision,
     evidence_set_digest,
+    referenced_blob_digests,
 )
 from boardwatch.profile_bundle.errors import (
     BundlePathError,
@@ -563,9 +565,36 @@ def _parent_envelope(
 
 
 def _bundle_digest_of(ctx: ValidationContext) -> str | None:
+    """The revision's recomputed digest, with quarantined blobs' declarations standing in.
+
+    Without the substitution a single broken blob makes `bundle_digest` raise, `_computed` return
+    `None`, and this check say nothing at all — so a revision whose *documents* were edited under
+    cover of one unreadable blob validated exactly like a revision awaiting a legitimate recapture.
+    That is the half of the promotion-time forgery `promote` refuses but no read-only command could
+    report, which is what made a forged parent and a recoverable one indistinguishable once the
+    blob was gone.
+
+    The substitution is the same one `promotion._parent` makes and is exact for the same reason:
+    `write_blob` verifies before a blob becomes visible, so an intact blob's computed hash is its
+    declared one. A legitimate recovery therefore still reproduces the revision's digest and reports
+    nothing, and only a mutated document diverges — so this does not re-report the broken blob,
+    which stays `validation/evidence.py`'s finding alone, as `_computed`'s docstring requires.
+
+    A tree handed in without a bundle root has no store to classify against, so it keeps the old
+    behaviour: the digest is not recomputable and another layer owns the failure.
+    """
     blobs = ctx.blobs
     assert blobs is not None  # `validate_digest` returns early without a reader
-    return _computed(lambda: bundle_digest(ctx.documents, blobs))
+    if ctx.bundle_root is None:
+        return _computed(lambda: bundle_digest(ctx.documents, blobs))
+    try:
+        referenced = referenced_blob_digests(ctx.documents)
+    except CanonicalizationError:
+        return None
+    quarantined = frozenset(
+        declared for declared, _ in quarantined_blobs(ctx.bundle_root, referenced)
+    )
+    return _computed(lambda: bundle_digest(ctx.documents, blobs, quarantined=quarantined))
 
 
 def _computed(compute: Callable[[], str]) -> str | None:
