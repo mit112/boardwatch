@@ -44,10 +44,12 @@ from boardwatch.profile_bundle.models.manifests import RevisionManifest
 from boardwatch.profile_bundle.paths import (
     LOCK_FILE,
     current_path,
+    digest_token,
     draft_root,
     revisions_dir,
 )
 from boardwatch.profile_bundle.promotion import (
+    CURRENT_TEMP_PREFIX,
     PROMOTION_TEMP_PREFIX,
     PromotionRequest,
     promote,
@@ -429,7 +431,13 @@ def test_a_retry_after_a_torn_document_write_does_not_reuse_the_torn_bytes(
 
     assert outcome.exit_code == 0, outcome.diagnostics
     assert outcome.value is not None
-    assert _snapshot(outcome.value.root) == _snapshot(outcome.value.root)
+    torn_tree = (
+        revisions_dir(scene.bundle_root) / torn[0] / digest_token(outcome.value.bundle_digest)
+    )
+    assert torn_tree.is_dir(), "the killed attempt staged the same digest name"
+    assert _snapshot(outcome.value.root) != _snapshot(torn_tree), (
+        "the installed revision must be the retry's own bytes, not the half-written ones"
+    )
     assert load_documents(outcome.value.root, mode="revision").by_path[SKILLS_PATH] == (
         load_documents(scene.draft, mode="draft").by_path[SKILLS_PATH]
     )
@@ -445,6 +453,6 @@ def test_the_pointer_is_never_absent_between_the_two_selections(scene: Scene) ->
     staged = [
         entry.name
         for entry in scene.bundle_root.iterdir()
-        if entry.name.startswith(".tmp-current-")
+        if entry.name.startswith(CURRENT_TEMP_PREFIX)
     ]
     assert len(staged) == 1, "the staged pointer is expected to survive the kill"

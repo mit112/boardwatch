@@ -285,6 +285,7 @@ def test_the_broken_blob_is_never_moved_or_deleted(broken: Scene) -> None:
     before = sorted(
         entry.name for entry in (broken.bundle_root / "blobs" / "sha256").iterdir()
     )
+    parent_before = _snapshot(broken.first)
     assert checkout_current(broken.bundle_root, name=REPAIR_DRAFT).exit_code == 1
     draft = draft_root(broken.bundle_root, REPAIR_DRAFT)
     _recapture(broken.bundle_root, draft)
@@ -299,7 +300,7 @@ def test_the_broken_blob_is_never_moved_or_deleted(broken: Scene) -> None:
 
     after = sorted(entry.name for entry in (broken.bundle_root / "blobs" / "sha256").iterdir())
     assert after == sorted({*before, RECAPTURED_SHA256})
-    assert _snapshot(broken.first) == _snapshot(broken.first)
+    assert _snapshot(broken.first) == parent_before, "the parent revision is immutable (§7, §21)"
 
 
 # --------------------------------------------------------------------------------------
