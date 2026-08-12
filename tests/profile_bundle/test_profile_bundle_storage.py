@@ -330,6 +330,7 @@ def test_a_symlinked_root_is_not_the_tree_it_points_at(tmp_path: Path) -> None:
     assert not identical_trees(right, link)
 
 
+@pytest.mark.skipif(os.name != "posix", reason="mkfifo and SIGALRM are POSIX")
 def test_a_named_pipe_is_not_content_and_does_not_block_the_comparison(tmp_path: Path) -> None:
     """A FIFO is neither a symlink nor a directory, so it used to reach `read_bytes()`.
 
