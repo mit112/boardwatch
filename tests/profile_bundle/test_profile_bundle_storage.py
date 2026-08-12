@@ -9,6 +9,7 @@ a reader that satisfied three of them would still hand back a coherent-looking w
 from __future__ import annotations
 
 import json
+import os
 import shutil
 from pathlib import Path
 
@@ -22,6 +23,7 @@ from boardwatch.profile_bundle.paths import (
     LOCAL_SOURCES_FILE,
     LOCK_FILE,
     ROOT_MEMBERS,
+    blobs_dir,
     complete_marker_path,
     current_path,
     digest_token,
@@ -173,6 +175,49 @@ def test_a_member_that_aliases_another_member_inside_the_root_is_refused(
         read_current_once(promoted_tree.bundle_root)
     assert raised.value.code is IssueCode.SYMLINK_REFUSED
     assert DRAFTS_DIR in str(raised.value)
+
+
+def test_a_symlink_loop_in_a_declared_member_is_a_typed_refusal(
+    promoted_tree: PromotedRevisionTree,
+) -> None:
+    """A path that cannot be resolved is refused, not raised through.
+
+    `Path.resolve()` raises `RuntimeError` on an ELOOP — neither `ProfileBundleError` nor
+    `OSError`, so nothing on the way out of `inventory`, `validate` or `checkout` catches it. By the
+    check's own words an unresolvable path is not the file the layout names, which is the same
+    refusal every other escape gets.
+    """
+    drafts = drafts_dir(promoted_tree.bundle_root)
+    if drafts.exists():
+        shutil.rmtree(drafts)
+    os.symlink(DRAFTS_DIR, drafts)
+
+    with pytest.raises(SelectionError) as raised:
+        read_current_once(promoted_tree.bundle_root)
+    assert raised.value.code is IssueCode.SYMLINK_REFUSED
+    assert DRAFTS_DIR in str(raised.value)
+    # The `RuntimeError` this replaces carried the absolute bundle path in its message.
+    assert str(promoted_tree.bundle_root) not in str(raised.value)
+
+
+def test_a_blob_store_entry_that_is_not_a_regular_file_is_refused(
+    promoted_tree: PromotedRevisionTree,
+) -> None:
+    """A FIFO resolves to its own place, so an equality against that place admits it — and the
+    first command to read the store then blocks in `open()` with no timeout and no diagnostic.
+
+    Named-pipe bytes are also not content anything can address by digest, so this is the same
+    sentence as every other confinement refusal rather than a new rule: the store holds the files
+    the layout names, and a pipe is not one.
+    """
+    store = blobs_dir(promoted_tree.bundle_root)
+    store.mkdir(parents=True, exist_ok=True)
+    os.mkfifo(store / ("sha256-" + "b" * 64))
+
+    with pytest.raises(SelectionError) as raised:
+        read_current_once(promoted_tree.bundle_root)
+    assert raised.value.code is IssueCode.UNKNOWN_FILE
+    assert str(promoted_tree.bundle_root) not in str(raised.value)
 
 
 def test_the_pointer_is_read_exactly_once(

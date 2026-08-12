@@ -504,12 +504,14 @@ def _install(
                 "the rebased draft did not read back as the tree the merge produced, so it was "
                 "discarded rather than installed",
             )
-        # An exact backup already holds these bytes, so the draft is moved to a temporary name and
-        # removed after the install. A deliberate departure from §21's "no command deletes drafts":
-        # what is removed is not a draft but a copy this command made two statements ago under the
-        # temporary prefix, and `_identical_trees` proved its bytes are retained at the backup path
-        # first. The alternative — leaving it — adds a full-size `.tmp-draft-` tree that no command
-        # drains and `inventory` reports forever: a leak traded for a provably lossless delete.
+        # An exact backup already holds these bytes, so the draft is moved aside and removed after
+        # the install. What is renamed and deleted here is the operator's OWN pre-rebase draft: the
+        # temporary prefix is applied by this path moments before deleting, and marks nothing about
+        # where the directory came from. A deliberate departure from §21's "no command deletes
+        # drafts", licensed by one fact only — `_identical_trees` proved at `reuse` that these exact
+        # bytes are retained at the backup path. Provenance is not the licence; the proof is. The
+        # alternative — leaving it — adds a full-size `.tmp-draft-` tree that no command drains and
+        # that `inventory` reports forever as an interrupted installation that never happened.
         # `ignore_errors` because the install has already succeeded: a failure here leaves residue
         # that `inventory` reports, and failing the operation would be the worse answer.
         vacated = (

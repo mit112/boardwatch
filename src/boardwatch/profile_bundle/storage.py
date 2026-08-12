@@ -48,6 +48,7 @@ bytes that decide `bundle_digest` live in `blobs/sha256/`.
 
 from __future__ import annotations
 
+import stat
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -126,7 +127,40 @@ def require_confined_root(bundle_root: Path) -> None:
         # Each entry on its own: a single blob file is enough to decide `bundle_digest`, and the
         # store's own path being confined says nothing about what its entries point at.
         for entry in sorted(store.iterdir()):
-            _require_derived_location(entry, bundle_root, resolved_root)
+            _require_stored_blob(entry, bundle_root)
+
+
+def _require_stored_blob(path: Path, bundle_root: Path) -> None:
+    """A blob store entry must be a regular file that is not a link.
+
+    One `lstat` rather than `_require_derived_location`'s `resolve()`, and not as an optimisation
+    for its own sake: `resolve()` walks every component of an absolute path, so checking the store's
+    thousands of entries that way re-walks the same ancestors thousands of times — 8.7 s at 20,000
+    blobs, on every command that reads the bundle. The two are equivalent here anyway. The store's
+    own path and each of its ancestors have already been checked one loop earlier, so the only way
+    an entry can fail the equality is by being a link itself, which is what `S_ISLNK` says.
+
+    The regular-file half is not equivalent and is the reason this is a refusal rather than a
+    cheaper spelling of the same one: a FIFO or a socket resolves to exactly its own place, so it
+    satisfies the equality — and then the first command to read the store blocks in `open()`
+    forever, with no timeout and nothing reported. Neither is content anything can address by
+    digest.
+    """
+    relative = path.relative_to(bundle_root)
+    mode = path.lstat().st_mode
+    if stat.S_ISLNK(mode):
+        raise SelectionError(
+            IssueCode.SYMLINK_REFUSED,
+            f"{relative.as_posix()} does not resolve to its own place in this bundle; a bundle is "
+            "self-contained under one root, so every path its identity is computed from must be "
+            "the file or directory the layout names and not a link to somewhere else",
+        )
+    if not stat.S_ISREG(mode):
+        raise SelectionError(
+            IssueCode.UNKNOWN_FILE,
+            f"{relative.as_posix()} is not a regular file; the blob store holds content addressed "
+            "by its own digest, and a directory, device or named pipe has no bytes to address",
+        )
 
 
 def _require_derived_location(path: Path, bundle_root: Path, resolved_root: Path) -> None:
@@ -144,10 +178,22 @@ def _require_derived_location(path: Path, bundle_root: Path, resolved_root: Path
     require the target to exist and a path resolving to nothing elsewhere is still not this path.
 
     The reported path is relative to the root, so a diagnostic never carries a machine-specific
-    prefix.
+    prefix. That is also why `resolve()`'s own failures are translated rather than raised through:
+    an ELOOP surfaces as `RuntimeError`, which is neither a `ProfileBundleError` nor an `OSError`
+    and so is caught by nothing on the way out of a command — and its message carries the absolute
+    path. A path that cannot be resolved is, by the sentence above, not the file the layout names.
     """
     relative = path.relative_to(bundle_root)
-    if path.resolve() != resolved_root / relative:
+    try:
+        resolved = path.resolve()
+    except (OSError, RuntimeError) as exc:
+        raise SelectionError(
+            IssueCode.SYMLINK_REFUSED,
+            f"{relative.as_posix()} cannot be resolved to a place in this bundle; a bundle is "
+            "self-contained under one root, so every path its identity is computed from must be "
+            "the file or directory the layout names",
+        ) from exc
+    if resolved != resolved_root / relative:
         raise SelectionError(
             IssueCode.SYMLINK_REFUSED,
             f"{relative.as_posix()} does not resolve to its own place in this bundle; a bundle is "
