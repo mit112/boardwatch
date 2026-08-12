@@ -1760,3 +1760,21 @@ them as their branches merge rather than at the end of the program.
 
 Re-run clean: **exit 0 · 5,620 passed · 95.83% · 38m18s**. The wall-clock is inflated ~3x by a build
 agent running concurrently; the same gate took 11m54s and 13m18s uncontended.
+
+### T16 built and gated, not merged (same session, later)
+
+`t16-promotion` (crash-consistent promotion, exact-target reuse, corrupt-parent recovery), 4 commits:
+**exit 0 · 5,729 passed · 95.84% · 16m12s**. **Not merged — reviewed by nobody**, and it owes two
+lenses plus a concurrency pass per the effort table.
+
+A 23-mutation sweep run one at a time: **21 RED, 1 ambiguous anchor (RED on re-run), 1 GREEN**. The
+green one was a staged-tree model-by-model comparison that could not fire — the digest is computed
+*from* those models, so any difference moves it — deleted per D-115 with tests pinning each half where
+it lands. Digest order was checked through two independent routes, one of them promoting revision 2 on
+top of a **production-promoted** revision 1.
+
+It found two pre-existing defects. **`build_approval_stamp` generated colliding approval IDs across
+revisions**: numbering restarted at `001` per stamp while §8 requires global uniqueness, so any record
+approved in two revisions made the second unpromotable — which blocks §6's recapture recovery outright.
+And **no `profile_bundle` module was importable first in a fresh interpreter**, invisible to pytest and
+the CLI because both import `validation` early; only a bare-interpreter crash worker walked into it.
