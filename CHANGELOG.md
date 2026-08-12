@@ -19,9 +19,10 @@ All notable changes to this project are documented here. The format follows
   the same four exit tiers (0 clean, 1 findings, 2 usage error, 3 could not complete).
 
   The shape of the thing: you author YAML records into a **draft**; `validate` runs the structural,
-  referential, evidence, semantic, completeness and digest layers over it and reports what every layer
-  found rather than the first failure; `approve` records the owner's decision against the draft's exact
-  content, on a controlling terminal; `promote` turns it into an immutable, content-addressed
+  referential, evidence, semantic, history, imports and digest layers over it — plus four more under
+  `--completeness` — and reports what every layer found rather than the first failure; `approve`
+  records the owner's decision against the draft's exact content, on a controlling terminal;
+  `promote` turns it into an immutable, content-addressed
   **revision** and selects it. Editing an approved draft invalidates the stamp, because the stamp is
   bound to the content digest and not to the draft's name. Evidence blobs are captured by digest and
   secret-scanned on capture.
