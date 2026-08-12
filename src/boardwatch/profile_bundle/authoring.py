@@ -228,12 +228,21 @@ def add_evidence(
         )
         citing_back = _documents_citing_back(documents, record)
         restated = _manifest_restating_the_evidence_set(bundle_root, documents, appended)
-        # The evidence record before the records that cite it, for the reason `resolve_conflict`
-        # writes its ruling first: the pointer target goes down before the pointer. A rename that
-        # fails between the two leaves exactly the `evidence_link_asymmetry` this used to leave
-        # always — legible, and repaired by the hand edit that used to be step two. The other order
-        # would leave a fact citing an evidence ID no document holds, which is strictly worse.
-        _write_documents(tree, {EVIDENCE_PATH: appended, **citing_back, MANIFEST_PATH: restated})
+        # Evidence, then the manifest that describes it, then the records that cite it.
+        #
+        # The evidence record goes first for the reason `resolve_conflict` writes its ruling first:
+        # the pointer target before the pointer, so no intermediate state holds a fact citing an
+        # evidence ID no document has.
+        #
+        # The manifest goes SECOND rather than last, which is the part that is easy to get wrong.
+        # `evidence_set_digest` describes the evidence document alone, so it is stale from the
+        # moment the first rename lands. Left until the end it gives every citing document its own
+        # failure position reporting `evidence_set_digest_mismatch` — the code §21 reserves for
+        # evidence mutated after promotion, which no command repairs — on top of the citation that
+        # did not land. Written second, each remaining position carries exactly one error class,
+        # `evidence_link_asymmetry`, which is the state this used to leave on every capture and
+        # which an ordinary draft edit repairs.
+        _write_documents(tree, {EVIDENCE_PATH: appended, MANIFEST_PATH: restated, **citing_back})
     except _Refused as refusal:
         return outcome_with(None, refusal.diagnostics)
 
@@ -599,7 +608,11 @@ def _documents_citing_back(
     changed: dict[PurePosixPath, DocumentModel] = {}
     field: str
     holder: tuple[BaseModel, ...]
-    for path, document in documents.by_path.items():
+    # `items()` rather than `by_path.items()`: it sorts, and this mapping's order becomes the rename
+    # order and the `applied` list of a `PARTIAL_EDIT_APPLIED` diagnostic. Insertion order is only
+    # incidentally stable — it comes from `layout.discover_source_files` walking `sorted(rglob)` —
+    # and a diagnostic whose order depends on discovery order is what `paths()` exists to prevent.
+    for path, document in documents.items():
         if isinstance(document, FactBearingDocument):
             field = "facts"
             holder = document.facts
@@ -614,10 +627,12 @@ def _documents_citing_back(
         for position, item in enumerate(holder):
             if record_id_of(item) not in named:
                 continue
-            # `evidence_ids` is `UniqueSorted`: the model refuses any other order, and a set keeps
-            # a re-offered ID from appearing twice. Comparing the rebuilt list against the one
-            # already there makes re-capturing the same link a no-op structurally, rather than by a
-            # separate "does it already cite this" test that could disagree with the rebuild.
+            # `evidence_ids` is `UniqueSorted`, which sorts silently and refuses only duplicates —
+            # so sorting here is what keeps these bytes equal to what the model would emit, and the
+            # set is what stops a re-offered ID being refused as a duplicate. Comparing the rebuilt
+            # list against the one already there makes re-capturing the same link a no-op
+            # structurally, rather than by a separate "does it already cite this" test that could
+            # disagree with the rebuild.
             cited = sorted({*rows[position]["evidence_ids"], record.evidence_id})
             if cited == rows[position]["evidence_ids"]:
                 continue

@@ -31,9 +31,18 @@ from boardwatch.profile_bundle.errors import (
     OperationOutcome,
 )
 from boardwatch.profile_bundle.index import record_id_of
+from boardwatch.profile_bundle.models.base import prefix_of
+from boardwatch.profile_bundle.models.documents import (
+    FactBearingDocument,
+    MetricRecordsDocument,
+)
 from boardwatch.profile_bundle.models.history import ApprovalAction, RulingDecision
 from boardwatch.profile_bundle.paths import blob_path, blobs_dir, draft_root
-from boardwatch.profile_bundle.validation import build_context, validate_referential
+from boardwatch.profile_bundle.validation import (
+    build_context,
+    validate_digest,
+    validate_referential,
+)
 from tests.profile_bundle.conftest import SyntheticBundle, parse_documents, quoted_yaml
 
 EVIDENCE_INPUT = PurePosixPath("evidence-record.yaml")
@@ -527,6 +536,67 @@ def test_a_fact_outside_the_identity_document_is_found(
     assert _asymmetries(synthetic_bundle) == []
 
 
+def test_every_record_bearing_document_class_is_reached(
+    synthetic_bundle: SyntheticBundle,
+) -> None:
+    """The catalog is derived from the code, not from the documents these tests happen to touch.
+
+    `_documents_citing_back` asks `isinstance(document, FactBearingDocument)` so that the twelve
+    fact-bearing classes do not become a list that goes stale. Nothing pinned that: replacing the
+    isinstance with a hard-coded tuple of the four classes the other tests exercise passes all 98
+    tests that touch `add_evidence` while reaching 5 of 13 documents. That is the shape of D-142 —
+    a fix that reaches the arms the probe happened to touch and claims the whole surface — so the
+    expected set here is read off `FactBearingDocument.__subclasses__()` at run time.
+
+    The first assertion is the load-bearing one: if the packaged example stopped instantiating one
+    of the classes, the loop below would quietly cover fewer arms and still pass.
+    """
+    draft = draft_root(synthetic_bundle.root, synthetic_bundle.draft_name)
+    catalog = {*FactBearingDocument.__subclasses__(), MetricRecordsDocument}
+
+    targets: dict[PurePosixPath, tuple[type[object], str]] = {}
+    for path, document in parse_documents(draft).items():
+        if isinstance(document, FactBearingDocument):
+            holder: tuple[object, ...] = document.facts
+        elif isinstance(document, MetricRecordsDocument):
+            holder = document.metrics
+        else:
+            continue
+        if holder:
+            targets[path] = (type(document), record_id_of(holder[0]))  # type: ignore[arg-type]
+
+    assert {kind for kind, _ in targets.values()} == catalog, (
+        "the packaged example no longer instantiates every record-bearing class, so this test "
+        "would silently cover fewer arms than the catalog has"
+    )
+
+    missed: list[str] = []
+    for position, (path, (_, record_id)) in enumerate(sorted(targets.items())):
+        evidence_id = f"evidence.example.reach-{position:03d}.001"
+        text = f"The owner attests to {record_id}."
+        outcome = add_evidence(
+            synthetic_bundle.root,
+            draft_name=synthetic_bundle.draft_name,
+            evidence_document=_linking_record(
+                text,
+                supports=[record_id],
+                evidence_id=evidence_id,
+                evidence_class=(
+                    "measured_result" if prefix_of(record_id) == "metric" else "owner_attestation"
+                ),
+            ),
+            capture=text.encode("utf-8"),
+        )
+        if outcome.category != "clean":
+            missed.append(f"{path}: {record_id}: refused {_codes(outcome)}")
+        elif evidence_id not in _cited_by(synthetic_bundle, path.as_posix(), record_id):
+            missed.append(f"{path}: {record_id}: no back-citation written")
+
+    assert missed == [], missed
+    assert len(targets) == len(catalog) == 13
+    assert _asymmetries(synthetic_bundle) == []
+
+
 def test_a_capture_naming_only_a_skill_or_a_claim_rewrites_no_record_document(
     synthetic_bundle: SyntheticBundle,
 ) -> None:
@@ -852,6 +922,51 @@ def test_a_rename_that_fails_after_the_first_one_names_the_half_applied_state(
     # would hide this very state behind a dotfile no diagnostic names.
     draft = draft_root(synthetic_bundle.root, synthetic_bundle.draft_name)
     assert list(draft.rglob(".tmp-authoring-*")) == []
+
+
+def test_the_manifest_is_committed_before_the_records_that_cite_the_evidence(
+    synthetic_bundle: SyntheticBundle, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The write order is a claim about which half-applied states are repairable, so it is pinned.
+
+    `evidence_set_digest` describes the evidence document alone, so it goes stale the instant the
+    first rename lands. Written LAST it would give every citing document a failure position that
+    reports `evidence_set_digest_mismatch` — §21's "evidence mutated after promotion", which no
+    command repairs — on top of the citation it did not write. Written second, each remaining
+    position carries exactly one error class, and that class is the ordinary
+    `evidence_link_asymmetry` an owner can fix with a draft edit.
+
+    Only "evidence is first" was pinned before, so reordering the other two passed the whole suite.
+    """
+    real_replace = os.replace
+    calls: list[int] = []
+
+    def fail_after_the_second(src, dst, **kwargs):  # type: ignore[no-untyped-def]
+        calls.append(1)
+        if len(calls) <= 2:
+            return real_replace(src, dst, **kwargs)
+        raise PermissionError(1, "Operation not permitted")
+
+    monkeypatch.setattr(os, "replace", fail_after_the_second)
+    text = "A note whose citing document will not land."
+    outcome = add_evidence(
+        synthetic_bundle.root,
+        draft_name=synthetic_bundle.draft_name,
+        evidence_document=_linking_record(text, supports=["fact.example.name.001"]),
+        capture=text.encode("utf-8"),
+    )
+    monkeypatch.undo()
+
+    assert _codes(outcome) == {"partial_edit_applied"}
+    (finding,) = outcome.diagnostics
+    assert finding.details["applied"] == ["evidence/records.yaml", "manifest.yaml"]
+
+    # The point of the order: the draft owes the citation and nothing about digest integrity.
+    ctx = build_context(draft_root(synthetic_bundle.root, synthetic_bundle.draft_name), mode="draft")
+    assert IssueCode.EVIDENCE_SET_DIGEST_MISMATCH.value not in {
+        finding.code for finding in validate_digest(ctx)
+    }
+    assert _asymmetries(synthetic_bundle) == ["fact.example.name.001"]
 
 
 def test_a_first_rename_that_fails_leaves_the_tree_untouched_and_no_residue(
