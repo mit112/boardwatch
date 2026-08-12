@@ -2292,8 +2292,13 @@ reader accepts; production writes binary and was never affected). Full account i
 | mode-bit denial | 1 | skipped |
 | path separator in a test helper | 1 | `as_posix()` — introduced this session |
 
-**Not closed.** The run was cancelled at 72%, so failures masked by the cascade are unknown, and the
-Windows suite is far slower than the 16m23s local run — no Windows job has ever finished.
+**After the first fix round, a Windows job finished for the first time: 5,881 passed, 47 skipped,
+2 failed, 1:05:37.** So it is ~4x slower than the local run and was never hanging. Both survivors
+were the same two classes: another COMPLETE marker written with `write_text` (promotion compares
+retained against staged **byte for byte**, so `\r\n` differed), and another `chmod(0o000)` that
+Windows still reads. All eighteen marker/pointer writes are now `write_bytes`; the mode-bit test is
+skipped. **Fix the class, not the instance** — both rounds found one failing site of a pattern with
+many, and the passing sites were the dangerous ones.
 
 ### Cost
 

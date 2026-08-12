@@ -4334,6 +4334,23 @@ matrix by construction. This is a second instance of the same shape as D-117's `
 finding, and worse: those two can be run by hand here, and Windows cannot. **A long-unpushed range
 should expect its first CI run to be a discovery, not a confirmation.**
 
-Also observed and unresolved: the Windows suite is **far slower** — 72% in 62 minutes against 16m23s
-for the whole run locally. Whether that is inherent or a pathology is unknown, because no Windows run
-has yet finished.
+### Measured outcome of the first fix round
+
+A Windows job then ran to completion for the first time: **5,881 passed, 47 skipped, 2 failed, in
+1:05:37.** So the suite is genuinely slow there — roughly four times the 16m23s local run — and was
+never hanging. From ~130 failures to two.
+
+Both survivors were the same two classes again, which is the useful part:
+
+- `test_a_retained_temporary_does_not_block_a_later_promotion` wrote a COMPLETE marker with
+  `write_text`. Promotion compares the retained directory against the staged one **byte for byte**, so
+  the `\r\n` made them differ and the later promotion refused with `promotion_target_conflict`. The
+  fixture fix had closed one instance of this; the class had eighteen. All eighteen marker and pointer
+  writes in the suite are now `write_bytes` (`f8d89e6`) — the transform is identical on POSIX, and the
+  sites that were *passing* are the reason for doing it, because a negative test expecting a byte
+  mismatch was getting one from CRLF rather than from the defect it was written for.
+- `test_checkout_that_cannot_read_a_blob_installs_no_draft` chmods a blob to `0o000`, which Windows
+  still reads. Skipped on non-POSIX, like the other mode-bit tests.
+
+**Fix the class, not the instance.** Both rounds here found one failing site of a pattern that had
+many, and in both the passing sites were the dangerous ones.
