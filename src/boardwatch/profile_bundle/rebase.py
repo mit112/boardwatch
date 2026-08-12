@@ -73,6 +73,7 @@ from boardwatch.profile_bundle.diff import (
 from boardwatch.profile_bundle.drafts import DRAFT_TEMP_PREFIX, DraftHandle
 from boardwatch.profile_bundle.errors import (
     BundleIoError,
+    BundlePathError,
     Diagnostic,
     IssueCode,
     OperationOutcome,
@@ -90,7 +91,7 @@ from boardwatch.profile_bundle.paths import (
     draft_root,
     drafts_dir,
     rebase_backup_root,
-    require_draft_name,
+    require_draft_segment,
     revision_root,
 )
 from boardwatch.profile_bundle.storage import (
@@ -136,8 +137,11 @@ def rebase_draft(bundle_root: Path, *, name: str) -> OperationOutcome[DraftHandl
     """
     # Confinement first, and outside the lock: a name that could escape `drafts/` would place the
     # backup and the staging tree wherever it liked, and that decision must not be made while
-    # holding a lock that makes another writer wait.
-    draft_name = require_draft_name(name)
+    # holding a lock that makes another writer wait. The segment grammar, because every name
+    # `inventory` lists under `drafts/` must be one this command will take — including the backup of
+    # a maximum-length draft, which is the only copy of that draft and the one thing an operator
+    # would be rebasing after a rebase went wrong.
+    draft_name = require_draft_segment(name)
     # Before the lock, because `filelock` creates the lockfile's directory: a mistyped `--bundle`
     # would otherwise leave a new empty directory behind as the only trace of a failed command.
     if not bundle_root.is_dir():
@@ -183,7 +187,20 @@ def _rebase_locked(bundle_root: Path, name: str) -> OperationOutcome[DraftHandle
     if draft_manifest.parent_bundle_digest == selection.bundle_digest:
         return OperationOutcome.clean(_handle(name, draft_dir, draft_manifest))
 
-    backup = rebase_backup_root(bundle_root, name, draft_manifest.parent_bundle_digest)
+    try:
+        backup = rebase_backup_root(bundle_root, name, draft_manifest.parent_bundle_digest)
+    except BundlePathError:
+        # A name that is itself derived — a backup of a backup — has no room left for another
+        # suffix inside the per-component limit. Reported rather than raised, because this arrives
+        # from `inventory`'s own list and a crash out of a function typed to return an outcome is
+        # the shape this project treats as a defect. Copying it to a shorter name is the way out.
+        return _refusal(
+            IssueCode.DRAFT_BACKUP_CONFLICT,
+            f"drafts/{name} is already a derived name, so no backup name can be derived from it "
+            "without exceeding the length a single path component may have; copy it to a shorter "
+            "name and rebase that",
+            path=f"drafts/{name}",
+        )
     reuse = backup.exists()
     if reuse and not _identical_trees(draft_dir, backup):
         return _refusal(

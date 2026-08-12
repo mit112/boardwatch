@@ -164,7 +164,15 @@ def blobs_dir(bundle_root: Path) -> Path:
 
 
 def draft_root(bundle_root: Path, name: str) -> Path:
-    return drafts_dir(bundle_root) / require_draft_name(name)
+    """The directory `drafts/<name>`, for any name that directory could legally have.
+
+    The segment cap rather than the shorter operator-facing one, because this addresses a directory
+    that may already exist and `inventory` lists derived names under `drafts/` as drafts. Callers
+    that are *requesting* a new name — `init_draft`, `checkout_current` — apply
+    `require_draft_name` themselves before building the path, so the shorter cap still governs what
+    can be created.
+    """
+    return drafts_dir(bundle_root) / require_draft_segment(name)
 
 
 def rebase_backup_name(name: str, old_parent_digest: str | None) -> str:

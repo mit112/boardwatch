@@ -19,6 +19,7 @@ from boardwatch.profile_bundle.errors import IssueCode
 from boardwatch.profile_bundle.inspection import conflicts_report, inspect_record, inventory
 from boardwatch.profile_bundle.models.history import ConflictRecord
 from boardwatch.profile_bundle.paths import (
+    MAX_DRAFT_NAME_LENGTH,
     approval_path,
     blob_path,
     blobs_dir,
@@ -31,6 +32,7 @@ from boardwatch.profile_bundle.paths import (
     rebase_backup_root,
     revisions_dir,
 )
+from boardwatch.profile_bundle.rebase import rebase_draft
 from boardwatch.profile_bundle.validation import validate_bundle
 from boardwatch.profile_bundle.yaml_loader import load_yaml_bytes
 from tests.profile_bundle.conftest import (
@@ -183,6 +185,32 @@ def test_inventory_reads_a_rebase_backup_of_a_long_draft_name_as_a_draft(
     assert report is not None
     assert backup.name in report.drafts
     assert f"drafts/{backup.name}" not in {finding.path for finding in outcome.diagnostics}
+
+
+def test_every_draft_name_inventory_reports_is_a_name_the_draft_commands_accept(
+    promoted_tree: PromotedRevisionTree,
+) -> None:
+    """A report that names something no command will take is a dead end, not a report.
+
+    The longest name `inventory` can list is a maximum-length draft's backup, and re-parenting that
+    backup is the one recovery available when a rebase went wrong — so it is the case that most
+    needs to be addressable. Driven over every name the report actually produced rather than over a
+    length this test picked, so a later change to either grammar is caught by the pair disagreeing.
+    """
+    longest = "a" * MAX_DRAFT_NAME_LENGTH
+    (draft_root(promoted_tree.bundle_root, longest)).mkdir(parents=True)
+    rebase_backup_root(promoted_tree.bundle_root, longest, "sha256:" + "a" * 64).mkdir()
+    rebase_backup_root(promoted_tree.bundle_root, "short", None).mkdir()
+
+    report = inventory(promoted_tree.bundle_root).value
+
+    assert report is not None
+    assert len(report.drafts) == 3
+    for name in report.drafts:
+        # Raising here is the defect: `rebase_draft` is typed to return an outcome, and a
+        # `BundlePathError` out of it is a name the report offered and the API refuses.
+        assert draft_root(promoted_tree.bundle_root, name).name == name
+        assert rebase_draft(promoted_tree.bundle_root, name=name).exit_code in (0, 1)
 
 
 def test_an_in_flight_blob_write_is_not_reported_as_an_artefact(

@@ -379,13 +379,19 @@ def test_checkout_that_cannot_read_a_blob_installs_no_draft(
     A blob that is missing or fails its digest is §6's recovery path and still produces a draft; a
     blob whose bytes could not be read at all is not a state anyone can recover from by editing the
     draft, and a caller retrying on exit 3 would otherwise be met with `draft_already_exists`.
+
+    Unreadable by permission rather than by kind: a store entry that is not a regular file is now
+    refused by confinement before any command opens it, so a directory here would pin that refusal
+    instead of this one.
     """
     stored = blob_path(promoted_tree.bundle_root, BLOB_SHA256)
-    stored.chmod(0o600)
-    stored.unlink()
-    stored.mkdir()
     before = _tree_snapshot(promoted_tree.bundle_root)
-    outcome = checkout_current(promoted_tree.bundle_root, name="work")
+    original_mode = stored.stat().st_mode
+    stored.chmod(0o000)
+    try:
+        outcome = checkout_current(promoted_tree.bundle_root, name="work")
+    finally:
+        stored.chmod(original_mode)
     assert outcome.exit_code == 3
     assert [d.code for d in outcome.diagnostics] == [str(IssueCode.IO_ERROR)]
     assert outcome.value is None
