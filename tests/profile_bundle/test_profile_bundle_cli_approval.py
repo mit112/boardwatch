@@ -456,3 +456,30 @@ def test_a_draft_citing_a_capture_the_store_cannot_produce_is_refused(
     assert codes == {"corrupt_blob_quarantine"}, codes
     assert terminal.asked == []
     assert not approvals_dir(synthetic_bundle.root).exists()
+
+
+@pytest.mark.parametrize("state", ["detached", "closed", "tty"])
+def test_the_real_adapter_answers_no_for_anything_that_is_not_plainly_a_terminal(
+    monkeypatch: pytest.MonkeyPatch, state: str
+) -> None:
+    """The production adapter, exercised directly across the states a daemon reaches.
+
+    Boardwatch runs unattended under a LaunchAgent, where `sys.stdin` is `None` or closed. Either
+    would raise out of a bare `sys.stdin.isatty()` and reach the operator as a traceback; §13 fixes
+    the fail-safe direction, so both answer "not a terminal".
+
+    The `tty` case is the control: without it a adapter that always answered `False` would pass.
+    """
+
+    class Closed:
+        def isatty(self) -> bool:
+            raise ValueError("I/O operation on closed file")
+
+    class Terminal:
+        def isatty(self) -> bool:
+            return True
+
+    replacement = {"detached": None, "closed": Closed(), "tty": Terminal()}[state]
+    monkeypatch.setattr(profile_bundle_cmd.sys, "stdin", replacement)
+    monkeypatch.setattr(profile_bundle_cmd.sys, "stdout", Terminal())
+    assert profile_bundle_cmd.approval_terminal().is_controlling() is (state == "tty")

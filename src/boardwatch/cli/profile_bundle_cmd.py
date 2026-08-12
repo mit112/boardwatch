@@ -858,7 +858,20 @@ class ApprovalTerminal(Protocol):
 @dataclass(frozen=True)
 class _StandardTerminal:
     def is_controlling(self) -> bool:
-        return sys.stdin.isatty() and sys.stdout.isatty()
+        """Both streams, and anything that is not a plain "yes" counts as "no".
+
+        A detached process has `sys.stdin is None` and a closed one raises from `isatty()`; this
+        project runs unattended under a LaunchAgent, so both are states it actually reaches. The
+        fail-safe direction is fixed by §13: a run that cannot establish it has the owner's
+        attention has not got it.
+        """
+        for stream in (sys.stdin, sys.stdout):
+            try:
+                if stream is None or not stream.isatty():
+                    return False
+            except (AttributeError, ValueError):
+                return False
+        return True
 
     def show(self, text: str) -> None:
         typer.echo(text)
