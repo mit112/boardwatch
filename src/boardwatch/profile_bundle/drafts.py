@@ -65,16 +65,11 @@ import shutil
 import tempfile
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
-from enum import StrEnum
 from pathlib import Path, PurePosixPath
 from typing import Final
 
 from boardwatch.profile_bundle import secret_scan
-from boardwatch.profile_bundle.blobs import (
-    BlobDigestMismatchError,
-    BlobNotFoundError,
-    read_blob,
-)
+from boardwatch.profile_bundle.blobs import quarantined_blobs
 from boardwatch.profile_bundle.canonical import (
     EVIDENCE_PATH,
     CanonicalizationError,
@@ -184,13 +179,6 @@ _ENTITY_DIRECTORIES: Final[tuple[PurePosixPath, ...]] = (
     PurePosixPath("facts/experience"),
     PurePosixPath("facts/projects"),
 )
-
-
-class BlobQuarantineReason(StrEnum):
-    """Why a referenced blob could not be used. A closed catalog, never a free-text explanation."""
-
-    MISSING = "missing"
-    DIGEST_MISMATCH = "digest_mismatch"
 
 
 @dataclass(frozen=True)
@@ -504,34 +492,23 @@ def _draft_manifest_of(
 def _blob_quarantine(bundle_root: Path, documents: BundleDocuments) -> tuple[Diagnostic, ...]:
     """Report every referenced blob that is absent or does not hash to the digest naming it.
 
-    `read_blob` is the one reader that verifies, and its two typed failures are exactly the two
-    reasons §6 admits for the recovery path — so the classification comes from the exception type,
-    never from its message. Its third, `BundleIoError`, is deliberately not caught: a store that
-    cannot be read is not a quarantine an owner can recapture their way out of, and letting it
-    propagate is what keeps the refusal ahead of the installation.
+    The classification is `blobs.quarantined_blobs` — shared with promotion, which asks the same
+    question about the parent revision and must not answer it differently. Only the sentence is
+    this command's: what an owner does next depends on which command found the quarantine.
     """
-    findings: list[Diagnostic] = []
-    for declared in referenced_blob_digests(documents):
-        reason: BlobQuarantineReason | None = None
-        try:
-            read_blob(bundle_root, declared)
-        except BlobNotFoundError:
-            reason = BlobQuarantineReason.MISSING
-        except BlobDigestMismatchError:
-            reason = BlobQuarantineReason.DIGEST_MISMATCH
-        if reason is None:
-            continue
-        findings.append(
-            diagnostic(
-                IssueCode.CORRUPT_BLOB_QUARANTINE,
-                f"blob sha256:{declared} is quarantined ({reason.value}); the draft was created so "
-                "the evidence can be recaptured, and nothing was moved or deleted",
-                path=EVIDENCE_PATH.as_posix(),
-                reason=reason.value,
-                blob=declared,
-            )
+    return tuple(
+        diagnostic(
+            IssueCode.CORRUPT_BLOB_QUARANTINE,
+            f"blob sha256:{declared} is quarantined ({reason.value}); the draft was created so "
+            "the evidence can be recaptured, and nothing was moved or deleted",
+            path=EVIDENCE_PATH.as_posix(),
+            reason=reason.value,
+            blob=declared,
         )
-    return tuple(findings)
+        for declared, reason in quarantined_blobs(
+            bundle_root, referenced_blob_digests(documents)
+        )
+    )
 
 
 # --------------------------------------------------------------------------------------
@@ -653,7 +630,6 @@ def _unconfined(bundle_root: Path) -> OperationOutcome[DraftHandle] | None:
 __all__ = [
     "DEFAULT_CAREER_FIELD",
     "DEFAULT_PROFILE_ID",
-    "BlobQuarantineReason",
     "DraftHandle",
     "checkout_current",
     "init_draft",

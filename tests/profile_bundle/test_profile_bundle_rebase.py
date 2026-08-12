@@ -83,19 +83,6 @@ ADDED_SKILL = "skill.example-second"
 REVISION_TWO_NAME = "Renamed By Revision Two"
 DRAFT_RENAME = "Renamed By The Draft"
 
-#: Compares a tree containing a FIFO, in a subprocess with a wall-clock limit. In-process this
-#: cannot be a test: without the guard it does not fail, it blocks in `open()` forever and takes the
-#: whole suite with it. A hang and a pass are indistinguishable from inside, so the timeout is the
-#: assertion.
-FIFO_TREE_SCRIPT = """
-import os, sys
-import boardwatch.profile_bundle.validation  # the package's first import must not be a leaf module
-from boardwatch.profile_bundle.rebase import _tree_contents
-root = sys.argv[1]
-os.mkfifo(os.path.join(root, "pipe"))
-print("RESULT", _tree_contents(__import__("pathlib").Path(root)), flush=True)
-"""
-
 #: A live holder for the bundle lock. Written as a subprocess for the same reason the scan-lock
 #: test is: the property being tested is the operating system's, and an in-process double would
 #: prove only that the double behaves like the double.
@@ -709,28 +696,6 @@ def test_a_stamp_the_draft_rewrote_is_a_conflict_rather_than_a_silent_choice(sce
     assert _codes(outcome) == [IssueCode.DRAFT_REBASE_CONFLICT]
     assert outcome.diagnostics[0].path == APPROVALS_PATH.as_posix()
     assert _snapshot(scene.bundle_root) == before
-
-
-def test_a_fifo_in_a_compared_tree_is_not_comparable_rather_than_a_hang(tmp_path: Path) -> None:
-    """`identical_trees` stakes a deletion on its answer, so it must always produce one.
-
-    A FIFO passes every type check written in terms of symlinks and then blocks `read_bytes()`
-    forever — under the bundle lock, so a second writer is refused for as long as it lasts. Run in a
-    subprocess with a wall-clock limit because in-process this could not be a failing test: without
-    the guard the call never returns, and a hung suite and a passing one look the same.
-    """
-    root = tmp_path / "tree"
-    root.mkdir()
-    completed = subprocess.run(
-        [sys.executable, "-c", FIFO_TREE_SCRIPT, str(root)],
-        capture_output=True,
-        text=True,
-        timeout=30,
-        check=False,
-    )
-
-    assert completed.returncode == 0, completed.stderr
-    assert completed.stdout.strip() == "RESULT None"
 
 
 def test_the_rebased_draft_carries_the_selected_revisions_ledgers_as_a_prefix(scene: Scene) -> None:

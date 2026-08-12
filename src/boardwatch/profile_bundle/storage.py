@@ -44,6 +44,15 @@ The set of those paths is *derived*, never listed again: the root's own entries 
 `ROOT_MEMBERS` and the blob store comes from `paths.blobs_dir`, because the store sits one component
 below the member named `blobs` and a check written over the names alone reached `blobs/` while the
 bytes that decide `bundle_digest` live in `blobs/sha256/`.
+
+## Why the tree comparison lives here
+
+`identical_trees` answers one question — are these two directories the same bytes under the same
+relative paths — and two commands stake a *deletion* on the answer: `rebase-draft` removes the draft
+it has proved is retained at the backup path, and `promote` discards its own temporary directory
+only when the digest target already holds exactly that tree (§6 step 7). A second implementation is
+not a duplication nit; it is a second definition of what "already retained" means, and each of the
+two callers deletes something on the strength of it.
 """
 
 from __future__ import annotations
@@ -304,11 +313,56 @@ def selected_documents(selection: SelectedRevision) -> BundleDocuments:
     return documents
 
 
+def identical_trees(left: Path, right: Path) -> bool:
+    """Whether two real directories hold exactly the same relative paths and bytes.
+
+    A symlink on either side makes the answer `False` rather than "follow it and compare": a
+    symlinked directory is not these bytes, it is a pointer at somebody else's. That includes the
+    *root* — a path symlinked at its own comparand would otherwise compare equal by construction,
+    and a caller about to delete the loser would delete the only copy.
+    """
+    left_contents = tree_contents(left)
+    return left_contents is not None and left_contents == tree_contents(right)
+
+
+def tree_contents(root: Path) -> dict[str, bytes] | None:
+    """Every relative path under `root` and its bytes, or `None` if `root` is not a real directory.
+
+    Directories are entries too, keyed with a trailing `/` and empty bytes, so a tree that differs
+    only by an empty declared directory is not reported as identical.
+
+    `rglob` follows a symlinked root silently, so the root is checked before it is walked.
+
+    One `lstat` per entry, classifying it the same way the blob store's entries are classified: a
+    directory or a regular file is content to compare, and everything else makes the answer `None`.
+    The regular-file half is not a tidier spelling of the symlink refusal. A FIFO is neither
+    a symlink nor a directory, so it fell through to `read_bytes()`, whose `open()` blocks until a
+    writer that never comes — and `promote` reaches this over a `revisions/sha256-<digest>/`
+    directory it did not write, while holding the bundle lock, so every other writer is refused for
+    as long as nobody notices the hang.
+    """
+    if root.is_symlink() or not root.is_dir():
+        return None
+    contents: dict[str, bytes] = {}
+    for path in sorted(root.rglob("*")):
+        relative = path.relative_to(root).as_posix()
+        mode = path.lstat().st_mode
+        if stat.S_ISDIR(mode):
+            contents[relative + "/"] = b""
+            continue
+        if not stat.S_ISREG(mode):
+            return None
+        contents[relative] = path.read_bytes()
+    return contents
+
+
 __all__ = [
     "SelectedRevision",
     "SelectionError",
+    "identical_trees",
     "read_current",
     "read_current_once",
     "require_confined_root",
     "selected_documents",
+    "tree_contents",
 ]

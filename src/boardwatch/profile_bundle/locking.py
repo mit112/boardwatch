@@ -15,10 +15,16 @@ immediately, and a killed holder leaves its lockfile behind. §6 is explicit tha
 never break or remove a lock based only on PID age, timestamp, or file existence" — so a leftover
 `career-profile.lock` means nothing at all, and nothing here reads it, ages it, or deletes it. That
 is what makes a stale file harmless: the next acquire succeeds because the kernel says the lock is
-free, not because a heuristic decided the file was old enough. It also means the file's presence or
-absence is not a signal in either direction, and no caller may treat it as one. Nothing here depends
-on *who* unlinks the file, or on whether anybody does — that differs between `filelock` versions the
-declared floor admits, and it is exactly the kind of detail a lock must not rest on.
+free, not because a heuristic decided the file was old enough. It also means the file's presence is
+not a signal that anybody holds it, and no caller may treat it as one. Nothing here depends on *who*
+unlinks the file, or on whether anybody does — that differs between `filelock` versions the declared
+floor admits, and it is exactly the kind of detail a lock must not rest on.
+
+Absence is not symmetric with presence, and saying so matters: exclusion is by path, so deleting the
+lockfile *while a holder is inside its critical section* lets the next acquire create a new file and
+succeed, and two writers proceed. That is inherent to a path-named lock rather than a defect here —
+nothing in `src/` unlinks the file while holding it, and `filelock`'s own release does so only after
+the critical section — but no future caller may unlink it as a repair.
 
 **`filelock`, not `flock`.** §6 names Boardwatch's existing cross-platform dependency, which the
 scan coordinator already uses. Introducing a POSIX-only primitive here would contradict the
@@ -72,7 +78,7 @@ def bundle_lock(bundle_root: Path) -> Iterator[Path]:
         ) from exc
     except OSError as exc:
         # `strerror` rather than `str(exc)`: the stringified error embeds the absolute lockfile
-        # path, and a diagnostic that reached `report_json` would carry the operator's home
+        # path, and a diagnostic that reached either rendering would carry the operator's home
         # directory into anything they pasted.
         raise BundleIoError(f"{LOCK_FILE} could not be opened: {exc.strerror}") from exc
     try:

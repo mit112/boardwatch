@@ -23,7 +23,9 @@ import hashlib
 import os
 import stat
 import tempfile
+from collections.abc import Iterable
 from dataclasses import dataclass
+from enum import StrEnum
 from pathlib import Path
 from typing import Final, Literal
 
@@ -197,6 +199,40 @@ def read_blob(bundle_root: Path, digest: str) -> bytes:
     if not target.exists():
         raise BlobNotFoundError(bare)
     return _read_exact(target, bare)
+
+
+class BlobQuarantineReason(StrEnum):
+    """Why a referenced blob could not be used. A closed catalog, never a free-text explanation."""
+
+    MISSING = "missing"
+    DIGEST_MISMATCH = "digest_mismatch"
+
+
+def quarantined_blobs(
+    bundle_root: Path, digests: Iterable[str]
+) -> tuple[tuple[str, BlobQuarantineReason], ...]:
+    """Every digest in `digests` the store cannot serve, with the reason typed.
+
+    §6 admits exactly one recovery path, and it turns on this distinction: a blob that is absent or
+    fails its digest can be recaptured into a NEW blob and the replacement promoted, while a store
+    that cannot be read at all is not something an owner can recapture their way out of. So
+    `BundleIoError` is deliberately not caught here — it propagates to a caller that reports "could
+    not complete" — and the two recoverable cases are classified from `read_blob`'s exception TYPES
+    rather than from any message.
+
+    Lives here rather than beside either caller because both `checkout` and `promote` need the same
+    answer to the same question, and two spellings of "which blobs are broken" is two chances to
+    disagree about whether a bundle is repairable.
+    """
+    found: list[tuple[str, BlobQuarantineReason]] = []
+    for declared in digests:
+        try:
+            read_blob(bundle_root, declared)
+        except BlobNotFoundError:
+            found.append((declared, BlobQuarantineReason.MISSING))
+        except BlobDigestMismatchError:
+            found.append((declared, BlobQuarantineReason.DIGEST_MISMATCH))
+    return tuple(found)
 
 
 def blob_size(bundle_root: Path, digest: str) -> int:

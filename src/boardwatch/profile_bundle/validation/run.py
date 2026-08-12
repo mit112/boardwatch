@@ -51,7 +51,6 @@ from boardwatch.profile_bundle.reports import (
     empty_report,
     outcome_for_report,
 )
-from boardwatch.profile_bundle.storage import SelectionError, require_confined_root
 from boardwatch.profile_bundle.validation.completeness import (
     ancestry_completeness,
     validate_completeness,
@@ -110,6 +109,16 @@ def validate_bundle(
     plain `validate` reports. Requesting completeness without a date raises: that is a programming
     error at the call boundary, not something a bundle did, so it is not a diagnostic.
     """
+    # Imported here rather than at module scope, and this is the one import in the package that is:
+    # `storage` reads `validation.context`, which executes this package's `__init__`, which imports
+    # this module. A module-level import therefore made `storage` — and every module that reads it,
+    # which is all four commands — impossible to import FIRST in a fresh interpreter. Nothing caught
+    # it because a test session and the CLI both happen to import `validation` earlier. Deferring
+    # the lower-level module's import to call time breaks the cycle without moving either
+    # responsibility, and `test_profile_bundle_promotion.py` pins the outside fact: every module in
+    # the package imports on its own.
+    from boardwatch.profile_bundle.storage import SelectionError, require_confined_root
+
     if completeness and as_of is None:
         raise ValueError(
             "completeness validation needs an explicit as_of date; this package reads no clock, so "

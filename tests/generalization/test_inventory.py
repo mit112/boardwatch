@@ -127,6 +127,27 @@ def test_living_product_data_must_not_be_pinned() -> None:
         assert al.SHIPPED_DATA[path].pin == "none"
 
 
+def test_the_pin_exemption_set_is_closed() -> None:
+    """`check_inventory` requires a sha256 pin for every in-scope data file EXCEPT the paths in
+    `UNPINNED_PATHS`, so growing that set is the one way a data file ships unpinned with the
+    gate still green. Bounding it makes that a red test rather than a line in a diff, in the
+    same shape as the single-company-enumeration tripwire below.
+
+    Both members are living product data with their own validators: the public starter registry
+    and the curated taxonomy. Both are user-overridable, and both take community edits, which is
+    the churn a content pin would put in the path of."""
+    assert UNPINNED_PATHS == frozenset(
+        {
+            al.CANONICAL_REGISTRY_PATH,
+            "src/boardwatch/extract/taxonomy.yaml",
+        }
+    )
+    scope = inventory_scope(discover(REPO_ROOT))
+    for path in UNPINNED_PATHS:
+        assert path in scope, path
+        assert al.SHIPPED_DATA[path].pin == "none", path
+
+
 def test_every_fixture_pin_matches_the_file_on_disk() -> None:
     repo = discover(REPO_ROOT)
     for path, entry in al.SHIPPED_DATA.items():

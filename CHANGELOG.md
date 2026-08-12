@@ -8,19 +8,39 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
-- **The canonical career-profile bundle (`boardwatch.profile_bundle`) — present but INERT.** There is
-  no CLI surface and no supported entry point yet, so nothing in this package is reachable from a
-  terminal and no user-facing behaviour changes. It is documented here only because the package is
-  already inside the published `0.3.0` wheel, where the `[0.3.0]` notes below do not enumerate it, and
-  a package a user can see in a wheel but not in a changelog is worse than one they can see in both.
+- **The canonical career-profile bundle — `boardwatch profile-bundle`.** A private, revisioned,
+  filesystem-only store for the career facts a résumé is assembled from. It lives at
+  `{config_dir}/career-profile`, with `--bundle PATH` overriding that; it is machine-local, is not a
+  `Settings` field, and does not participate in lead selection.
 
-  Merged so far: the restricted YAML loader and emitter, one-read storage and revision selection,
-  drafts (`init` / `checkout`), inspection and inventory reporting, semantic and digest validation,
-  completeness, record-level draft rebase with a shared writer lock, and the schema-v1 head with a
-  migration that has nothing to migrate.
+  Twelve commands are now reachable from a terminal — `init`, `checkout`, `rebase-draft`, `validate`,
+  `inspect`, `inventory`, `conflicts`, `migrate`, `add-evidence`, `resolve-conflict`, `approve`,
+  `promote` — each with a `--json` machine report alongside the human rendering, and each returning
+  the same four exit tiers (0 clean, 1 findings, 2 usage error, 3 could not complete).
 
-  **Treat it as unsupported and unstable.** Its acceptance gate is not met, its on-disk grammar may
-  still change, and two of its slices remain unbuilt. Do not build against it.
+  The shape of the thing: you author YAML records into a **draft**; `validate` runs the structural,
+  referential, evidence, semantic, history, imports and digest layers over it — plus four more under
+  `--completeness` — and reports what every layer found rather than the first failure; `approve`
+  records the owner's decision against the draft's exact content, on a controlling terminal;
+  `promote` turns it into an immutable, content-addressed
+  **revision** and selects it. Editing an approved draft invalidates the stamp, because the stamp is
+  bound to the content digest and not to the draft's name. Evidence blobs are captured by digest and
+  secret-scanned on capture.
+
+  It also ships, as package data, the JSON Schema generated from the typed models and a complete
+  synthetic example bundle, so the authoring contract is readable without running the code.
+
+  **The existing tailoring path is untouched.** `boardwatch tailor` still reads
+  `{config_dir}/resume.yaml`; there is no bundle-to-résumé bridge in this release, deliberately, and a
+  test over the import graph holds that boundary in both directions. The package also adds no table and
+  no Alembic migration, and ships its own canonical serializer rather than reusing the ones that feed
+  `policy_version`.
+
+  **Still unsupported and unstable.** Its acceptance gate has not been declared met, and its on-disk
+  grammar, digests and JSON reports may still change. Nothing outside the package should depend on them
+  yet. Note also that part of this package was already inside the published `0.3.0` wheel, where the
+  `[0.3.0]` notes below do not enumerate it; it was unreachable there, with no command and no entry
+  point.
 
 ## [0.3.0] - 2026-08-10
 

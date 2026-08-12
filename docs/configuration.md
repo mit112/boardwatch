@@ -113,6 +113,28 @@ consumed even on a cache hit (a deliberate choice, so behaviour stays determinis
 runs), which means re-running the same posting does **not** extend it; raise
 `llm.max_calls_per_run` in `config.toml` if a résumé's bullet count routinely exceeds it.
 
+## Career-profile bundle
+
+`boardwatch profile-bundle` introduces no config keys either. Its root is resolved at the
+command boundary from `config_dir`, with a per-invocation override:
+
+| Path | Purpose |
+|---|---|
+| `{config_dir}/career-profile/` | The bundle root — revisions, drafts, evidence blobs, approval stamps. Default for all twelve `profile-bundle` commands. |
+| `{config_dir}/career-profile/local-sources.yaml` | Machine-local map of logical source IDs to absolute roots. Root-only: excluded from every revision, from both digests, and from every export. |
+
+`--bundle PATH` overrides the root on any `profile-bundle` command. The path is machine-local
+and deliberately **not** a `Settings` field: it does not participate in lead selection and does
+not change `policy_version`, so relocating a bundle (an encrypted backup volume, say) needs no
+config change — just `--bundle`.
+
+`config_dir` itself follows the usual resolution, `BOARDWATCH_CONFIG_DIR` then the platform
+config directory, so the macOS default root is `~/Library/Application Support/boardwatch/career-profile/`.
+
+The bundle is separate from `{config_dir}/resume.yaml` and does not feed it. `boardwatch tailor`
+reads `resume.yaml` and nothing else; there is no bundle-to-résumé bridge in this release. See
+[the authoring guide](profile-bundle-authoring.md) for the format, the exit contract, and recovery.
+
 ## Settings menu
 
 `boardwatch settings` is a read-only view of every opt-in feature (the `[llm]` and

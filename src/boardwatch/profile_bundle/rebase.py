@@ -48,7 +48,6 @@ from __future__ import annotations
 
 import os
 import shutil
-import stat
 import tempfile
 import uuid
 from collections.abc import Mapping, Sequence
@@ -98,6 +97,7 @@ from boardwatch.profile_bundle.paths import (
 from boardwatch.profile_bundle.storage import (
     SelectedRevision,
     SelectionError,
+    identical_trees,
     read_current_once,
     selected_documents,
 )
@@ -203,7 +203,7 @@ def _rebase_locked(bundle_root: Path, name: str) -> OperationOutcome[DraftHandle
             path=f"drafts/{name}",
         )
     reuse = backup.exists()
-    if reuse and not _identical_trees(draft_dir, backup):
+    if reuse and not identical_trees(draft_dir, backup):
         return _refusal(
             IssueCode.DRAFT_BACKUP_CONFLICT,
             f"drafts/{backup.name} already exists and does not hold this draft byte for byte; "
@@ -526,7 +526,7 @@ def _install(
         # the install. What is renamed and deleted here is the operator's OWN pre-rebase draft: the
         # temporary prefix is applied by this path moments before deleting, and marks nothing about
         # where the directory came from. A deliberate departure from §21's "no command deletes
-        # drafts", licensed by one fact only — `_identical_trees` proved at `reuse` that these exact
+        # drafts", licensed by one fact only — `identical_trees` proved at `reuse` that these exact
         # bytes are retained at the backup path. Provenance is not the licence; the proof is. The
         # alternative — leaving it — adds a full-size `.tmp-draft-` tree that no command drains and
         # that `inventory` reports forever as an interrupted installation that never happened.
@@ -565,44 +565,6 @@ def _emit(staging: Path, logical: PurePosixPath, document: DocumentModel) -> Non
     (staging / logical).write_bytes(
         document_bytes(document.model_dump(mode="json"), logical_path=logical)
     )
-
-
-def _identical_trees(left: Path, right: Path) -> bool:
-    """Whether two real directories hold exactly the same relative paths and bytes.
-
-    A symlink on either side makes the answer `False` rather than "follow it and compare": a
-    symlinked backup is not this draft's bytes, it is a pointer at somebody else's. That includes
-    the *root* — a backup path symlinked at the draft would otherwise compare equal to it by
-    construction, and the caller would then delete the only copy of the pre-rebase draft.
-    """
-    left_contents = _tree_contents(left)
-    return left_contents is not None and left_contents == _tree_contents(right)
-
-
-def _tree_contents(root: Path) -> dict[str, bytes] | None:
-    """Every relative path under `root` and its bytes, or `None` if `root` is not a real directory.
-
-    `rglob` follows a symlinked root silently, so the root is checked before it is walked.
-
-    Anything that is neither a directory nor a regular file makes the answer `None` for the same
-    reason a symlink does — it is not these bytes. A FIFO is the case that matters: it satisfies
-    every type check written in terms of symlinks, and `read_bytes()` on one then blocks forever,
-    holding the bundle lock, with no timeout and nothing reported. `None` is the fail-safe answer
-    here: the only caller stakes a *deletion* on a `True`, so "not comparable" and "not identical"
-    must reach it as the same word.
-    """
-    if root.is_symlink() or not root.is_dir():
-        return None
-    contents: dict[str, bytes] = {}
-    for path in sorted(root.rglob("*")):
-        relative = path.relative_to(root).as_posix()
-        mode = path.lstat().st_mode
-        if not stat.S_ISDIR(mode) and not stat.S_ISREG(mode):
-            return None
-        contents[relative + "/" if stat.S_ISDIR(mode) else relative] = (
-            b"" if stat.S_ISDIR(mode) else path.read_bytes()
-        )
-    return contents
 
 
 # --------------------------------------------------------------------------------------

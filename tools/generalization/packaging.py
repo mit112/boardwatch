@@ -10,6 +10,8 @@ from __future__ import annotations
 import subprocess
 import tempfile
 import zipfile
+from collections.abc import Iterator
+from contextlib import contextmanager
 from pathlib import Path
 
 from tools.generalization.discovery import Repo
@@ -51,8 +53,13 @@ def missing_from_wheel(expected: set[str], shipped: set[str]) -> list[Violation]
     ]
 
 
-def _build_wheel_namelist(root: Path) -> set[str]:
-    """Build a wheel into a temp dir and return its member names.
+@contextmanager
+def built_wheel(root: Path) -> Iterator[zipfile.ZipFile]:
+    """Build a wheel into a temp dir and open it for reading.
+
+    Exposed because the member NAMES are not the only thing worth asserting about the
+    artifact: a data file can ship and still be the wrong bytes. Callers that need content
+    read it through here, so there is one wheel builder rather than a second copy in a test.
 
     Raises on any failure: a rule that could not inspect the artifact has not passed, it
     has broken, and __main__ turns that into exit 2.
@@ -71,7 +78,13 @@ def _build_wheel_namelist(root: Path) -> set[str]:
         if len(wheels) != 1:
             raise RuntimeError(f"expected exactly one wheel, found {len(wheels)}")
         with zipfile.ZipFile(wheels[0]) as archive:
-            return set(archive.namelist())
+            yield archive
+
+
+def _build_wheel_namelist(root: Path) -> set[str]:
+    """Build a wheel into a temp dir and return its member names."""
+    with built_wheel(root) as archive:
+        return set(archive.namelist())
 
 
 def check_wheel_completeness(repo: Repo) -> list[Violation]:

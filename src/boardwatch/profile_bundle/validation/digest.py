@@ -56,12 +56,14 @@ from typing import Final, Literal
 
 from pydantic import PositiveInt, TypeAdapter, ValidationError
 
+from boardwatch.profile_bundle.blobs import quarantined_blobs
 from boardwatch.profile_bundle.canonical import (
     CanonicalizationError,
     MissingBlobError,
     bundle_digest,
     candidate_digest_from_revision,
     evidence_set_digest,
+    referenced_blob_digests,
 )
 from boardwatch.profile_bundle.errors import (
     BundlePathError,
@@ -139,35 +141,61 @@ class CurrentPointer(StrictModel):
     revision: PositiveInt
 
 
+def current_pointer_bytes(pointer: CurrentPointer) -> bytes:
+    """The one byte form of `CURRENT`: canonical JSON and exactly one trailing newline.
+
+    Promotion writes these bytes and `read_current` requires them, so the contract has one owner.
+    The alternative — a writer that emits a form and a reader that describes the same form in its
+    own words — is how "canonical" becomes a word in a design document rather than a property of a
+    file, which is exactly the state this replaces.
+
+    Deliberately NOT `canonical.canonical_json_bytes`: that serializer is the bundle's *identity*
+    algorithm, and `CURRENT` is excluded from every digest. Routing a pointer through it would
+    couple the pointer's spelling to a hash contract it takes no part in, so that widening one would
+    silently move the other.
+    """
+    return (
+        json.dumps(
+            pointer.model_dump(mode="json"), sort_keys=True, separators=(",", ":")
+        ).encode("utf-8")
+        + b"\n"
+    )
+
+
 def read_current(bundle_root: Path) -> CurrentPointer:
     """Parse `CURRENT`, refusing anything outside its exact contract.
 
-    The contract is canonical JSON with exactly these two keys and one trailing newline. Trailing
-    content is refused rather than stripped: a pointer with extra bytes after the object is a torn
-    write, and treating it as valid is how an interrupted promotion becomes the selected revision.
+    The contract is canonical JSON with exactly these two keys and one trailing newline, and it is
+    enforced by re-emitting the parsed pointer through `current_pointer_bytes` and requiring the
+    file to be those bytes. Stated that way rather than as a second description of the form, so the
+    reader cannot drift from the writer: a reordering and `json.dumps(indent=4)` both fail that one
+    comparison instead of two separate rules that each have to be remembered. An added key is the
+    exception and fails earlier, in `CurrentPointer.model_validate`, because `StrictModel` forbids
+    extras — so it never reaches a comparison that would have caught it anyway.
 
-    The reader is more permissive than the contract in one respect that is not yet load-bearing:
-    `json.loads` accepts any whitespace inside the object, so a pointer written with
-    `json.dumps(indent=4)` is read back happily although the design says canonical JSON. Nothing in
-    `src/` writes this file yet. **T16 owes the canonical writer, and a test that a whitespaced
-    pointer is refused** — the two belong in the same change, because a check with no writer beside
-    it has no way to say what the canonical form is.
+    Trailing content is refused rather than stripped for the same reason it always was: a pointer
+    with extra bytes after the object is a torn write, and treating it as valid is how an
+    interrupted promotion becomes the selected revision.
     """
     path = current_path(bundle_root)
     try:
-        raw = path.read_text(encoding="utf-8")
+        raw = path.read_bytes()
     except OSError as exc:
         raise PointerError(f"{CURRENT_PATH} is unreadable: {io_reason(exc)}") from exc
-    if not raw.endswith("\n") or raw.rstrip("\n") != raw[:-1]:
-        raise PointerError(f"{CURRENT_PATH} must end with exactly one newline")
     try:
-        payload = json.loads(raw)
-    except ValueError as exc:
+        payload = json.loads(raw.decode("utf-8"))
+    except (UnicodeDecodeError, ValueError) as exc:
         raise PointerError(f"{CURRENT_PATH} is not valid JSON: {exc}") from exc
     try:
-        return CurrentPointer.model_validate(payload)
+        pointer = CurrentPointer.model_validate(payload)
     except ValidationError as exc:
         raise PointerError(f"{CURRENT_PATH} is not a valid pointer: {exc}") from exc
+    if raw != current_pointer_bytes(pointer):
+        raise PointerError(
+            f"{CURRENT_PATH} is not in the canonical pointer form: it must be exactly the compact "
+            "key-sorted JSON object this bundle writes, followed by one newline"
+        )
+    return pointer
 
 
 def read_complete(revision_dir: Path) -> str:
@@ -537,9 +565,36 @@ def _parent_envelope(
 
 
 def _bundle_digest_of(ctx: ValidationContext) -> str | None:
+    """The revision's recomputed digest, with quarantined blobs' declarations standing in.
+
+    Without the substitution a single broken blob makes `bundle_digest` raise, `_computed` return
+    `None`, and this check say nothing at all — so a revision whose *documents* were edited under
+    cover of one unreadable blob validated exactly like a revision awaiting a legitimate recapture.
+    That is the half of the promotion-time forgery `promote` refuses but no read-only command could
+    report, which is what made a forged parent and a recoverable one indistinguishable once the
+    blob was gone.
+
+    The substitution is the same one `promotion._parent` makes and is exact for the same reason:
+    `write_blob` verifies before a blob becomes visible, so an intact blob's computed hash is its
+    declared one. A legitimate recovery therefore still reproduces the revision's digest and reports
+    nothing, and only a mutated document diverges — so this does not re-report the broken blob,
+    which stays `validation/evidence.py`'s finding alone, as `_computed`'s docstring requires.
+
+    A tree handed in without a bundle root has no store to classify against, so it keeps the old
+    behaviour: the digest is not recomputable and another layer owns the failure.
+    """
     blobs = ctx.blobs
     assert blobs is not None  # `validate_digest` returns early without a reader
-    return _computed(lambda: bundle_digest(ctx.documents, blobs))
+    if ctx.bundle_root is None:
+        return _computed(lambda: bundle_digest(ctx.documents, blobs))
+    try:
+        referenced = referenced_blob_digests(ctx.documents)
+    except CanonicalizationError:
+        return None
+    quarantined = frozenset(
+        declared for declared, _ in quarantined_blobs(ctx.bundle_root, referenced)
+    )
+    return _computed(lambda: bundle_digest(ctx.documents, blobs, quarantined=quarantined))
 
 
 def _computed(compute: Callable[[], str]) -> str | None:
@@ -562,6 +617,7 @@ __all__ = [
     "CandidateDigestGap",
     "CurrentPointer",
     "PointerError",
+    "current_pointer_bytes",
     "read_ancestor_manifest",
     "read_complete",
     "read_current",
