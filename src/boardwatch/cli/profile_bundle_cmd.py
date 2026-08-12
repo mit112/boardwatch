@@ -22,11 +22,17 @@ serializer and `test_profile_bundle_hash_isolation` keeps that one-directional.
 
 ## Why every command has `--json`
 
-Design §19 shows the flag on the four read-only commands, because those are the ones an agent reads
-back. But §21's exit contract covers the whole family, and its exit-1 and exit-3 rows —
-`stale_draft_parent`, `bundle_lock_held`, `promotion_target_conflict` — only ever arise in
-`promote`, `rebase-draft` and `approve`. A machine surface on four commands would leave the exit
-contract's most consequential rows with no machine rendering at all.
+Design §19 shows the flag on three commands — `validate`, `inventory`, `conflicts`; `inspect` is
+listed with no flag at all — because those are the ones an agent reads back. But §21's exit
+contract covers the whole family, and its exit-1 and exit-3 rows — `stale_draft_parent`,
+`bundle_lock_held`, `promotion_target_conflict` — only ever arise in `promote`, `rebase-draft` and
+`approve`. A machine surface on three commands would leave the exit contract's most consequential
+rows with no machine rendering at all.
+
+Both T18 review lenses ruled the uniform envelope right and §19's list under-specified: §19 opens
+"The **proposed** command surface is", while §21 is normative and explicitly family-wide. T19 owns
+amending §19 to show `[--json]` on all twelve, along with `--deep-history`, which §7 names and §19
+gives no surface.
 """
 
 from __future__ import annotations
