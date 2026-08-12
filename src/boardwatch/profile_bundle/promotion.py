@@ -431,7 +431,21 @@ def _parent(
             IssueCode.MISSING_REQUIRED_FILE,
             f"the parent revision's evidence set could not be read: {exc}",
         )
-    quarantined = quarantined_blobs(selection.bundle_root, referenced)
+    try:
+        quarantined = quarantined_blobs(selection.bundle_root, referenced)
+    except BundleIoError:
+        # Caught here rather than at `promote`'s outer arm, and deliberately not interpolated, for
+        # `validation/completeness.py`'s reason: `BundleIoError` is built from `str(OSError)`, which
+        # appends the absolute path it failed on, and `report_json` emits `message` verbatim — so
+        # stringifying it would put a `$HOME` path in a report an operator pastes elsewhere.
+        # Recovering the logical file from that message would mean parsing it, which this package
+        # refuses to do anywhere; the fault is named by its logical path instead.
+        return _refusal(
+            IssueCode.IO_ERROR,
+            "the parent revision's blob store could not be read, so nothing about its evidence "
+            "could be established and nothing was promoted",
+            path=EVIDENCE_PATH.as_posix(),
+        )
     findings = tuple(
         diagnostic(
             IssueCode.CORRUPT_BLOB_QUARANTINE,

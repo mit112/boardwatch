@@ -24,6 +24,7 @@ from __future__ import annotations
 
 import copy
 import json
+import os
 import shutil
 import subprocess
 import sys
@@ -55,6 +56,7 @@ from boardwatch.profile_bundle.models.manifests import RevisionManifest
 from boardwatch.profile_bundle.paths import (
     LOCK_FILE,
     approval_path,
+    blob_path,
     complete_marker_path,
     current_path,
     digest_token,
@@ -80,6 +82,7 @@ from boardwatch.profile_bundle.validation.digest import (
 from boardwatch.profile_bundle.validation.run import validate_bundle
 from boardwatch.profile_bundle.yaml_loader import load_yaml_bytes
 from tests.profile_bundle.conftest import (
+    BLOB_SHA256,
     EXAMPLE_PROFILE_ID,
     PromotedRevisionTree,
     approve_draft,
@@ -569,6 +572,37 @@ def test_a_symlinked_draft_is_refused_rather_than_promoted(
     listing = inventory(scene.bundle_root)
     assert listing.value is not None
     assert "linked" not in listing.value.drafts
+
+
+def test_no_diagnostic_carries_the_absolute_path_an_oserror_appended(scene: Scene) -> None:
+    """A diagnostic is JSON an operator may paste elsewhere; an absolute `$HOME` path is not theirs
+    to publish and is not the same on the next machine.
+
+    `BundleIoError` is built from `str(OSError)`, which appends the filename it failed on, so the
+    refusal names the logical path and drops the message rather than interpolating it. The scene is
+    the parent's blob store made unreadable, which is the one route a `BundleIoError` takes into
+    `promote` that carries a path at all.
+    """
+    if os.name != "posix" or os.geteuid() == 0:
+        pytest.skip("permission bits do not restrict this user")
+    first = _promoted(scene)
+    assert checkout_current(scene.bundle_root, name=SECOND_DRAFT).exit_code == 0
+    draft = draft_root(scene.bundle_root, SECOND_DRAFT)
+    _edit(draft, SKILLS_PATH, _rename_skill("Revision Two"))
+    _approve(scene.bundle_root, draft, parent=first, stamp_id="approval-stamp.000002")
+    blob = blob_path(scene.bundle_root, BLOB_SHA256)
+    blob.chmod(0o000)
+    try:
+        outcome = promote(scene.bundle_root, _request(SECOND_DRAFT))
+    finally:
+        blob.chmod(0o400)
+
+    assert outcome.exit_code == 3
+    assert _codes(outcome) == [IssueCode.IO_ERROR]
+    assert outcome.diagnostics[0].path == "evidence/records.yaml"
+    for finding in outcome.diagnostics:
+        assert str(scene.bundle_root) not in finding.message
+        assert BLOB_SHA256 not in finding.message
 
 
 def test_a_path_that_is_not_a_bundle_is_refused_without_being_created(tmp_path: Path) -> None:
