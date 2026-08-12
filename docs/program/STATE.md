@@ -20,7 +20,6 @@ per-session retrospectives, which belong in `DECISIONS.md` / `CHANGELOG.md` / `M
 
 **P6's build is COMPLETE — all six items — and its commits are PUSHED.** Detail in D-095, D-103…D-107,
 D-110 (ledger), D-111 + D-113 (applied state, liveness). Schema head is **`p6_job_dispositions`**.
-
 **Read D-110 before touching the ledger, D-111 and D-113 before touching liveness.** The one most likely
 to be undone by accident: `Fetcher` sets `follow_redirects=True`, so a `302 → 404` chain arrives as a bare
 404, and `FetchFailure.redirected` is the only thing distinguishing a posting that is gone from one whose
@@ -94,10 +93,11 @@ runnable probes live only in the session scratchpad and do not survive it, so co
 keeping into `.agent/` before ending. `.agent/` is gitignored working material, not a source of truth
 for released behaviour.
 
-**This file remains well over its ~170-line target and is OWED a trim** (no count here on purpose —
-D-017). The next trim should compress the P6 narrative, now fully recorded in D-110/D-111/D-113, not the
-standing-facts list. **The Gate A branch table is deliberately exempt**: it is the only record of the
-unmerged local branches, and it collapses to one line the moment they land.
+**This file is still over its ~170-line target** (no count here on purpose — D-017). The P6, T12 and T13
+narratives have been compressed into their decision entries; what is left is the **Gate A branch table**,
+which is deliberately exempt — it is the only record of the unmerged local branches and collapses to one
+line the moment they land — and the standing-facts list, which is what a fresh session actually needs.
+Trim the branch table when Gate A closes, not before.
 
 **A green `make check` is NOT a green CI** (D-117). `gitleaks`, `perf` and `generalization` are separate CI
 jobs `make check` never runs, and pushing turned `gitleaks` red for the first time in the project's history
@@ -126,19 +126,11 @@ wired to nothing** — no CLI command, and deliberately no bundle-to-`Resume` br
 directions). Its commits being on `origin/main` is **not** sign-off. **Gate B stays prohibited until
 Gate A is implemented AND independently reviewed.**
 
-**T1–T12 are implemented and independently reviewed. T12's review loop is CLOSED (D-126) — it was
-reviewed FIVE times, every finding is fixed, and no sixth round is owed.** Rounds one, two and three each returned REWORK
-(D-121, D-122, D-124) and each is fixed (D-125). Rounds four and five ran **concurrently against the
-same commit with different lenses** — one hunting runtime forgeries, one checking conformance against
-the design's own words — and both returned REWORK. **Both independently found the same gap** the
-author and a 20-mutation suite had missed: the byte-free adapter grammar reached record locators and
-stopped, so an approved scope could name a shape no heading stack resolves to, validate clean, and
-then fail every re-enumeration. All of it is fixed, with **28 of 28 distinct mutations caught** and
-the gate green at **exit 0, 5,260 tests, 95.41%**. **D-126 states the exit criterion so this loop is
-not reopened by reflex: a slice's review ends when a round finds no BLOCKING defect that is either a
-silent identity/data-integrity fault or a legitimate input the system refuses.** Round four found
-neither. That rule is per-slice and evidence-based. The conformance lens alone found a `SourceSpec` docstring claiming a
-guarantee that landed nowhere — a sentence **D-122 had already recorded as false**.
+**T1–T12 are implemented and independently reviewed. T12's review loop is CLOSED (D-126) — five
+rounds, every finding fixed, 28 of 28 mutations caught, no sixth round owed.** Detail in D-121…D-126.
+**D-126 states the exit criterion so no loop here is reopened by reflex: a slice's review ends when a
+round finds no BLOCKING defect that is either a silent identity/data-integrity fault or a legitimate
+input the system refuses.** Per-slice and evidence-based.
 
 **Read D-125 before touching locators, and D-120 before touching identity derivation.** The four
 things most likely to be undone by accident:
@@ -156,23 +148,18 @@ things most likely to be undone by accident:
 - **The résumé adapter's stage order and `~N` locator preservation are load-bearing for stored IDs**,
   and four checks were deleted in T12 for being unable to fire.
 
-**T13 is MERGED to `main`** (gate `5aa8d1c`: exit 0, 5,416 passed, 95.61%): `reports.py`, `validation/digest.py`, the
-promoted-revision fixture, `validation/completeness.py` and `validation/run.py`. Its review found one BLOCKING — the §20.6 clause binding an owner's approval to promoted content was
-skipped for **every revision from 2 onward**, so a re-sealed tree carrying documents nobody approved
-validated clean. Fixed and verified three ways (pre-fix / post-fix / fix mutated out). **Mit ruled that `METRIC_REVIEW_MISSING` is DELETED and metrics
-get no review interval** (`review_interval_days` is a `PredicateSpec` column, a metric has no
-predicate, and `reviewed_at` is required, so the check could not fire — D-115). A metric's freshness
-is its `reviewed_at` date alone. The build also fixed two pre-existing defects: `validate_history`
-derived owner gates against `parent=None`, reporting ~35 spurious `missing_owner_approval` errors on
-**every revision ≥ 2**, and `parse_error_diagnostics` had no arm for `UnsupportedSchemaVersionError`.
+**T13 is MERGED to `main`** (D-127). Two facts from it that a later slice can undo: **Mit ruled that
+`METRIC_REVIEW_MISSING` is DELETED and metrics get no review interval** — a metric's freshness is its
+`reviewed_at` date alone (D-115) — and §20.6's clause binding an owner's approval to promoted content
+must fire for **every** revision, not only the first.
 
-**The live store has NOT had Slice 2 applied.** Migrated and backfilled for Slice 1 only (head
-`p6_posting_identities`, 117,254 identity rows, `identities verify` exit 0, 147 groups / 186 surplus /
-0.79%); Slice 2 was verified on an **isolated copy**. Re-verified read-only three times on 2026-08-10:
-**no `job_dispositions` table**, `postings` 24,073 and `count(distinct job_id)` **24,073 — exactly 1:1**,
-the cheap proof, since a regrouped store would read 23,887. `identities regroup` would move 186 postings
-onto 147 canonical jobs and needs the `p6_job_dispositions` migration first; **Mit declined it on
-2026-08-10** — not blocked, just not now. The 769 MB backup sits beside it.
+**The live store has NOT had Slice 2 applied**, and that is a standing fact, not a to-do. Migrated and
+backfilled for Slice 1 only (head `p6_posting_identities`, 117,254 identity rows, `identities verify`
+exit 0). The cheap proof, re-verified read-only three times on 2026-08-10: **no `job_dispositions`
+table**, and `postings` 24,073 against `count(distinct job_id)` **24,073 — exactly 1:1**, where a
+regrouped store would read 23,887. `identities regroup` would move 186 postings onto 147 canonical jobs
+and needs the `p6_job_dispositions` migration first; **Mit declined it on 2026-08-10** — not blocked,
+just not now. The 769 MB backup sits beside it.
 
 **Not demonstrated on real data:** the ledger end to end, and the liveness probe against real leads. A
 `boardwatch top 5` against the 23,455-posting copy ran past 20 minutes and was stopped — it pays for
