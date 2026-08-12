@@ -568,6 +568,24 @@ API-lane run.
 
 ---
 
+## Career-profile bundle (unstable, not wired to anything yet)
+
+`boardwatch profile-bundle` is a private, revisioned, filesystem-only store for the career
+facts a résumé is assembled from: typed YAML records, evidence captured by digest, owner
+approval bound to a content digest, and immutable content-addressed revisions. It lives at
+`{config_dir}/career-profile` (override with `--bundle PATH`) and nothing leaves your machine.
+
+**It is not connected to anything.** `boardwatch tailor` still reads
+`{config_dir}/resume.yaml`; there is deliberately no bundle-to-résumé bridge yet, and the
+bundle's on-disk grammar, digests and JSON reports may still change. Use it only if you want
+to try the authoring model.
+
+See [docs/profile-bundle-authoring.md](docs/profile-bundle-authoring.md) for the format, the
+twelve commands, the 0/1/2/3 exit contract, and recovery from a stale draft or a corrupt
+evidence blob.
+
+---
+
 ## Supported boards
 
 | Provider        | Public endpoint boardwatch reads                                          | Auth |
