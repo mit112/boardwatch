@@ -83,10 +83,20 @@
   `PARTIAL_EDIT_APPLIED`, deliberately **outside** `COULD_NOT_COMPLETE_CODES` because exit 3 would invite a
   retry guaranteed to refuse. The `rebase-draft` precedent for "two renames are fine" is **withdrawn** —
   those rename directories and stage no temporaries.
-- **A missing bundle root is `bundle_not_found`, one fact with one code across the surface** (D-138). The
-  refusal lives in `require_confined_root`, which every reading surface already enters; `must_exist` defaults
-  to refusing and `init_draft` is the single opt-out. `promote` and `rebase-draft` keep their own pre-lock
-  `is_dir()` checks because `filelock` would otherwise create the directory.
+- **A missing bundle root is `bundle_not_found` on all twelve commands** (D-138, D-142). It is stated in
+  **three** places, not one, and that is the fact worth knowing: `require_confined_root` (which
+  `must_exist=True` makes the default for every reading surface, `init_draft` being the single opt-out),
+  the pre-lock `is_dir()` checks in `promote` and `rebase-draft` (which must precede `filelock`, or it
+  creates the directory), and `authoring._draft` plus the CLI's `_draft_tree` — because `add-evidence`,
+  `resolve-conflict`, `approve` and `validate --draft` **reach no function that confines the root**.
+  D-138 originally claimed one shared entry point covered the surface; it covered eight of twelve.
+- **The guard asks `is_dir()`, never `exists()`.** A regular file, a device or a dangling symlink at the
+  root all exist and are not bundles, and under `exists()` `inventory` reports a file root as a clean,
+  empty bundle at exit 0. `is_dir()` also answers `False` for a symlink loop, which is why the refusal
+  precedes `resolve()` — a loop used to escape as `RuntimeError` past every handler, carrying an absolute
+  path. Both arms are pinned; only the file arm kills the `exists()` mutation.
+- **`STATE_REFUSAL_CODES` has no production reader.** All thirteen members are documentation, so a code's
+  membership in it cannot be wrong in a way any test can see. Do not treat that set as a mechanism.
 - **The YAML `!!`-tag content-addressing bypass is CLOSED, not open.** `compose_node` refuses every explicit
   node tag; verified by probe (`!!omap` duplicate-key smuggling and `!!python/object/apply` both refused,
   plain YAML still loads) and by mutation (disabling the guard turns 12 tests red).
