@@ -69,6 +69,7 @@ from boardwatch.profile_bundle.errors import (
 )
 from boardwatch.profile_bundle.index import build_index
 from boardwatch.profile_bundle.layout import FIXED_DOCUMENTS, DocumentKind
+from boardwatch.profile_bundle.models.documents import BundleDocuments
 from boardwatch.profile_bundle.models.history import Actor
 from boardwatch.profile_bundle.models.manifests import DraftManifest, RevisionManifest
 from boardwatch.profile_bundle.paths import (
@@ -1025,7 +1026,7 @@ def _approve(bundle_root: Path, draft: str, *, terminal: ApprovalTerminal) -> (
     )
 
 
-def _quarantine(bundle_root: Path, documents: Any) -> tuple[Diagnostic, ...]:
+def _quarantine(bundle_root: Path, documents: BundleDocuments) -> tuple[Diagnostic, ...]:
     """A capture the draft names that the store cannot produce intact.
 
     Approving one would bind the owner's decision to bytes nobody can read back, and the candidate

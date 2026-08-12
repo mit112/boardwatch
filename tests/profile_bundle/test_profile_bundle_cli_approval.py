@@ -436,3 +436,23 @@ def test_a_draft_that_will_not_parse_is_reported_as_itself(
     assert codes <= {"invalid_yaml", "restricted_yaml_violation", "model_validation_error"}, codes
     assert terminal.asked == []
     assert not approvals_dir(synthetic_bundle.root).exists()
+
+
+def test_a_draft_citing_a_capture_the_store_cannot_produce_is_refused(
+    env: Path, synthetic_bundle: SyntheticBundle, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The candidate digest is computed from the capture bytes, so a missing one has no digest.
+
+    Without this check the missing blob escapes as a typed exception the command boundary can only
+    report as `internal_error` — a bug report for a bundle whose evidence simply needs recapturing.
+    §6's recovery path is `checkout`, recapture, promote; approving on the way through would bind
+    the owner's decision to bytes nobody can read back.
+    """
+    synthetic_bundle.blob.unlink()
+    terminal = FakeTerminal()
+    result = approve(env, synthetic_bundle, terminal, monkeypatch, extra=["--json"])
+    assert result.exit_code == 1
+    codes = {finding["code"] for finding in json.loads(result.output)["diagnostics"]}
+    assert codes == {"corrupt_blob_quarantine"}, codes
+    assert terminal.asked == []
+    assert not approvals_dir(synthetic_bundle.root).exists()
