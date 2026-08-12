@@ -24,8 +24,16 @@
 - **A docs-only commit owes `make generalization index-check`; anything else owes full `make check`** (D-116,
   resolving D-014). The boundary is the file extension, and `DATA_SUFFIXES` has **eleven** members —
   `.yaml .yml .json .jsonl .csv .tsv .toml .tex .typ .txt .mako`. `.md` is outside it; `.toml`, `.txt` and
-  `.tex` are **not**, so they get no discount. **Void if a new test ever reads a `docs/` file** — which is
-  also why a doc here never quotes an exact catalog count, since no test can pin it.
+  `.tex` are **not**, so they get no discount.
+- **Two tests DO read the real `docs/` tree, and that is why the discount is sound** (correcting D-116's
+  stated premise, which was "no test reads a `docs/` file" — D-140). `tests/generalization/test_real_tree.py`
+  asserts `run(REPO_ROOT) == []`, and `tests/unit/test_program_index.py` runs the index checker with `cwd` at
+  the repo root and asserts it exits 0. Each asserts **exactly** what one of the two owed commands asserts,
+  so the short set is not a gap. **The discount breaks the day a test asserts something about a doc that
+  `generalization` and `index-check` do not** — a link checker, a line-count cap, a spell check. Check for
+  that before relying on it, rather than re-reading the premise.
+- A doc in this program never quotes an exact catalog count, because no test can pin one and a stale number
+  in a read-first file is worse than no number.
 - **`make check` is the only gate for this repo's correctness** — pytest + ruff + mypy green is *not* green.
   Run it in a **detached worktree pinned to a sha**, capture the real exit code, never pipe it through
   `head`/`tail` (SIGPIPE gives a false negative — observed live giving a false `EXIT=0`), end a
