@@ -48,6 +48,7 @@ from __future__ import annotations
 
 import os
 import shutil
+import stat
 import tempfile
 import uuid
 from collections.abc import Mapping, Sequence
@@ -582,16 +583,24 @@ def _tree_contents(root: Path) -> dict[str, bytes] | None:
     """Every relative path under `root` and its bytes, or `None` if `root` is not a real directory.
 
     `rglob` follows a symlinked root silently, so the root is checked before it is walked.
+
+    Anything that is neither a directory nor a regular file makes the answer `None` for the same
+    reason a symlink does — it is not these bytes. A FIFO is the case that matters: it satisfies
+    every type check written in terms of symlinks, and `read_bytes()` on one then blocks forever,
+    holding the bundle lock, with no timeout and nothing reported. `None` is the fail-safe answer
+    here: the only caller stakes a *deletion* on a `True`, so "not comparable" and "not identical"
+    must reach it as the same word.
     """
     if root.is_symlink() or not root.is_dir():
         return None
     contents: dict[str, bytes] = {}
     for path in sorted(root.rglob("*")):
         relative = path.relative_to(root).as_posix()
-        if path.is_symlink():
+        mode = path.lstat().st_mode
+        if not stat.S_ISDIR(mode) and not stat.S_ISREG(mode):
             return None
-        contents[relative + "/" if path.is_dir() else relative] = (
-            b"" if path.is_dir() else path.read_bytes()
+        contents[relative + "/" if stat.S_ISDIR(mode) else relative] = (
+            b"" if stat.S_ISDIR(mode) else path.read_bytes()
         )
     return contents
 
