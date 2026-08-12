@@ -21,9 +21,9 @@ import hashlib
 import shutil
 from pathlib import PurePosixPath
 
-from boardwatch.profile_bundle.authoring import add_evidence, resolve_conflict
+from boardwatch.profile_bundle.authoring import _STATE_AFTER, add_evidence, resolve_conflict
 from boardwatch.profile_bundle.errors import OperationOutcome
-from boardwatch.profile_bundle.models.history import ApprovalAction
+from boardwatch.profile_bundle.models.history import ApprovalAction, RulingDecision
 from boardwatch.profile_bundle.paths import blob_path, blobs_dir, draft_root
 from tests.profile_bundle.conftest import SyntheticBundle, parse_documents, quoted_yaml
 
@@ -430,3 +430,14 @@ def test_neither_command_touches_a_draft_it_was_not_named(
         for path in sorted(other.rglob("*"))
         if path.is_file()
     } == snapshot
+
+
+def test_every_ruling_decision_has_a_resulting_conflict_state() -> None:
+    """`_STATE_AFTER` is a total mapping over `RulingDecision`, and nothing else makes it stay one.
+
+    `resolve_conflict` subscripts it directly, so a member added at schema v2 would raise `KeyError`
+    — a shape `_guarded` does not catch, §21 has no exit code for, and the operator would meet as a
+    traceback. Both sides are read from the modules that own them rather than restated here, so this
+    fails the moment either grows without the other.
+    """
+    assert set(_STATE_AFTER) == set(RulingDecision)
