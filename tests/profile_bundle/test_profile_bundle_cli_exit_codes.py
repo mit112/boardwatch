@@ -29,8 +29,10 @@ import pytest
 from typer.testing import CliRunner
 
 from boardwatch.cli.app import app
+from boardwatch.profile_bundle.errors import IssueCode, diagnostic
 from boardwatch.profile_bundle.locking import bundle_lock
 from boardwatch.profile_bundle.paths import BUNDLE_DIR_NAME
+from boardwatch.profile_bundle.reports import diagnostic_json, diagnostic_line
 from tests.profile_bundle.conftest import SyntheticBundle
 
 #: Every command's JSON must carry these, whatever happened. `result` may be empty — a refusal has
@@ -312,3 +314,53 @@ def test_no_diagnostic_names_an_absolute_path(
         body = payload(run(env, [*args, "--json"]))
         rendered = json.dumps(body["diagnostics"])
         assert str(tmp_path) not in rendered, f"{args}: {rendered}"
+
+
+def test_a_diagnostic_s_details_survive_the_command_layer(
+    env: Env, synthetic_bundle: SyntheticBundle
+) -> None:
+    """`details` is where machine-readable context lives, including `record_ids` (D-129).
+
+    A command layer that rendered only tier, code, path and message would drop exactly the field a
+    script needs, and the human rendering would look identical either way.
+    """
+    result = run(
+        env,
+        [
+            "promote",
+            "--bundle",
+            str(synthetic_bundle.root),
+            "--draft",
+            synthetic_bundle.draft_name,
+            "--summary",
+            "unapproved",
+            "--json",
+        ],
+    )
+    (finding,) = payload(result)["diagnostics"]  # type: ignore[misc]
+    assert finding["details"]["candidate_content_digest"].startswith("sha256:")  # type: ignore[index]
+
+
+def test_an_empty_record_ids_list_is_never_glossed_as_no_records(
+    env: Env, synthetic_bundle: SyntheticBundle
+) -> None:
+    """D-129: empty `record_ids` means the conflicting unit has no addressable records.
+
+    `path`, with `details.field` where there is one, is then the whole locator. Rendering it as
+    "no records were affected" would be reassurance about precisely the case where a whole document
+    is in conflict, so both renderings must carry the locator and neither may add a gloss.
+    """
+    finding = diagnostic(
+        IssueCode.DRAFT_REBASE_CONFLICT,
+        "policy/predicates.yaml changed on both sides; the conflict is the document itself",
+        path="policy/predicates.yaml",
+        record_ids=[],
+        field="catalog_version",
+    )
+    machine = diagnostic_json(finding)
+    assert machine["details"] == {"record_ids": [], "field": "catalog_version"}
+
+    human = diagnostic_line(finding)
+    assert "policy/predicates.yaml" in human
+    assert "no record" not in human.lower()
+    assert "not affected" not in human.lower()
