@@ -310,6 +310,44 @@ def test_promote_accepts_exactly_what_approve_filed(
     assert body["result"]["bundle_digest"].startswith("sha256:")
 
 
+@pytest.mark.parametrize("machine", [True, False])
+def test_promote_reports_the_approval_that_authorised_the_revision(
+    env: Path, synthetic_bundle: SyntheticBundle, monkeypatch: pytest.MonkeyPatch, machine: bool
+) -> None:
+    """The family's one irreversible success has to say what cleared it.
+
+    "No flags" is not "cleared" anywhere else in this program, and a promotion is no exception:
+    §7 has promotion write the approving stamp's ID and the approved candidate digest into the
+    manifest, §13 makes that pair the authority for the revision, and reporting only the revision
+    number left an operator to open `manifest.yaml` themselves to find out which approval it was.
+
+    The candidate digest is computed before either command runs, by the in-memory route
+    `expected_candidate` uses, so the assertion is not two calls into the code that produced it.
+    Both renderings are covered: a promotion consumes its draft, so each gets its own bundle.
+    """
+    candidate = expected_candidate(synthetic_bundle)
+    approved = json.loads(
+        approve(env, synthetic_bundle, FakeTerminal(), monkeypatch, extra=["--json"]).output
+    )
+    stamp_id = approved["result"]["approval_stamp_id"]
+    promoted = run(
+        env,
+        synthetic_bundle,
+        [
+            "promote", "--draft", synthetic_bundle.draft_name, "--summary", "authorised",
+            *(["--json"] if machine else []),
+        ],
+    )
+    assert promoted.exit_code == 0, promoted.output
+    if machine:
+        result = json.loads(promoted.output)["result"]
+        assert result["approved_candidate_digest"] == candidate
+        assert result["approval_stamp_id"] == stamp_id
+    else:
+        assert candidate in promoted.output, promoted.output
+        assert stamp_id in promoted.output, promoted.output
+
+
 def test_editing_the_draft_after_approval_makes_the_stamp_stale(
     env: Path, synthetic_bundle: SyntheticBundle, monkeypatch: pytest.MonkeyPatch
 ) -> None:

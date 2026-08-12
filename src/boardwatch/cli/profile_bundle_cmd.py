@@ -1034,21 +1034,67 @@ def promote(
     )
     outcome = _guarded(lambda: promotion.promote(root, request))
     selected = outcome.value
-    rendered = (
-        _nothing()
-        if selected is None
-        else _Rendered(
-            result={
-                "revision": selected.revision,
-                "bundle_digest": selected.bundle_digest,
-            },
-            lines=(
-                f"promoted revision {selected.revision}",
-                f"bundle digest: {selected.bundle_digest}",
-            ),
-        )
+    if selected is None:
+        _emit("promote", outcome, _nothing(), as_json=json_output)
+    # Read back rather than reported from the value promotion returned: `SelectedRevision` carries
+    # where the revision is and what it hashes to, by design, and counting the deliverable through
+    # a different path than the one that produced it is the rule this project keeps paying for.
+    read_back = _guarded(lambda: _promoted_manifest(selected), unable=_AFTER_PROMOTION)
+    _emit(
+        "promote",
+        OperationOutcome.from_diagnostics(
+            selected, (*outcome.diagnostics, *read_back.diagnostics)
+        ),
+        _promotion_rendered(selected, read_back.value),
+        as_json=json_output,
     )
-    _emit("promote", outcome, rendered, as_json=json_output)
+
+
+def _promoted_manifest(selected: SelectedRevision) -> OperationOutcome[RevisionManifest]:
+    """The manifest of the revision just written, read from the tree rather than from memory."""
+    manifest = load_documents(selected.root, mode="revision").manifest
+    if not isinstance(manifest, RevisionManifest):  # pragma: no cover
+        # `promotion` builds a `RevisionManifest`, writes it, and re-verifies the tree's digest
+        # from disk before `CURRENT` names it, so this narrowing is the type system's rather than a
+        # second check on promotion's work.
+        return _refusal(
+            IssueCode.DRAFT_MANIFEST_INVALID,
+            "the promoted revision does not carry a revision manifest",
+        )
+    return OperationOutcome.clean(manifest)
+
+
+def _promotion_rendered(
+    selected: SelectedRevision, manifest: RevisionManifest | None
+) -> _Rendered:
+    """A promotion's answer, with the approval that authorised it.
+
+    `promote` is the one irreversible success in the family, and CLAUDE.md's rule for a cleared
+    result is that it carries its own evidence chain — here, which stamp, binding which candidate
+    digest. §7 has promotion write both into the manifest and §13 makes that pair the authority for
+    the revision, so reporting only the revision number left an operator to open `manifest.yaml`
+    themselves to find out what cleared it.
+
+    `None` when the manifest could not be read back, never `""`: the sentinels a *draft* uses for
+    these two fields are empty strings, and reporting one here would say the revision was promoted
+    without an approval rather than that this run could not read which.
+    """
+    stamp = None if manifest is None else manifest.approval_stamp_id
+    candidate = None if manifest is None else manifest.approved_candidate_digest
+    return _Rendered(
+        result={
+            "revision": selected.revision,
+            "bundle_digest": selected.bundle_digest,
+            "approval_stamp_id": stamp,
+            "approved_candidate_digest": candidate,
+        },
+        lines=(
+            f"promoted revision {selected.revision}",
+            f"bundle digest: {selected.bundle_digest}",
+            f"authorised by: {stamp or 'unread'} "
+            f"binding candidate {candidate or 'unread'}",
+        ),
+    )
 
 
 __all__ = ["ApprovalTerminal", "approval_terminal", "profile_bundle_app"]
