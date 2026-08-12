@@ -86,7 +86,6 @@ from boardwatch.profile_bundle.errors import (
     outcome_with,
 )
 from boardwatch.profile_bundle.index import record_id_of
-from boardwatch.profile_bundle.models.base import prefix_of
 from boardwatch.profile_bundle.models.documents import (
     BundleDocuments,
     DocumentModel,
@@ -582,12 +581,19 @@ def _documents_citing_back(
     - **The union of all three relationships**, not `supports` alone.
       `_evidence_links_are_symmetric` compares against `supports | contradicts | contextualizes`,
       so linking only the first leaves the other two reporting the very asymmetry this closes.
-    - **Only `fact` and `metric`.** They are the only kinds carrying `evidence_ids`; evidence
-      naming a skill or a claim is a legitimate one-way link, and evidence naming anything else is
-      a *wrong kind* reported as one. Citing back into either would invent an error.
     - **Any fact-bearing document**, asked by type rather than by name. There are twelve, and
       `FactBearingDocument` is public precisely so this question does not become a list that goes
       stale when a thirteenth arrives.
+
+    **Only facts and metrics are touched, and no filter here says so** — the lookup below does. They
+    are the only kinds carrying `evidence_ids`, and the only records these documents hold: `FactId`
+    and `MetricId` are `id_pattern("fact")` and `id_pattern("metric")`, so a fact-bearing document
+    holds only `fact.*` and the metrics document only `metric.*`. An earlier version filtered the
+    target set by those two prefixes; removing it changed no behaviour under mutation, because it
+    could not — a `skill.*` target matches nothing whether or not it was filtered out first. D-115's
+    rule applies: a check that cannot fire is deleted rather than left reading as coverage. The
+    guarantee is tested where it lands, by the case that captures evidence naming only a skill and a
+    claim and asserts no record document is rewritten.
 
     A target the draft does not hold is left alone: that is a broken reference, validation already
     reports it as one, and citing a record that is not there would not repair it.
@@ -600,7 +606,6 @@ def _documents_citing_back(
             record.contextualizes_record_ids,
         )
         for target in group
-        if prefix_of(target) in ("fact", "metric")
     }
     if not named:
         return {}
