@@ -173,14 +173,50 @@ def _location(finding: Diagnostic) -> str:
     return f" ({where})" if where else ""
 
 
+def _detail_value(value: JsonValue) -> str:
+    """A string is itself; everything else is its JSON form.
+
+    So an empty list renders `[]` and never a phrase. D-129 turns on `record_ids` being empty
+    meaning "the conflicting unit has no addressable records", and any gloss — "none", "no
+    records" — reads as reassurance about exactly the case where a whole document is in conflict.
+    """
+    if isinstance(value, str):
+        return value
+    return json.dumps(value, sort_keys=True, ensure_ascii=False)
+
+
+def _details(finding: Diagnostic) -> str:
+    """Every `details` entry, one indented line each, ordered by key.
+
+    Rendered rather than dropped because `details` is where the locator lives for the findings that
+    have no single record: D-129 fixes `path` plus `details.field` as the whole address of a
+    field-level conflict, and `rebase` reports a record overlap by putting every colliding ID in
+    `details.record_ids` while the message carries only a count. A human rendering without them
+    tells the operator how many records collided and never which — the one fact they have to act
+    on — while the machine rendering of the same finding carries them.
+
+    Indented continuation lines rather than a suffix: `record_ids` is unbounded, and the alternative
+    is one 3 KB line. `_emit` and `report_text` both join diagnostics with newlines, so a
+    multi-line rendering needs nothing from either.
+    """
+    return "".join(
+        f"\n    {key}: {_detail_value(finding.details[key])}" for key in sorted(finding.details)
+    )
+
+
 def diagnostic_line(finding: Diagnostic) -> str:
-    """One diagnostic's human form: tier, code, where, and what.
+    """One diagnostic's human form: tier, code, where, what, and its typed details.
 
     Public for the same reason `diagnostic_json` is: the command layer prints diagnostics for
     commands that never build a `ValidationReport`, and one operator reading two shapes of the same
-    finding would have to learn which command produced which.
+    finding would have to learn which command produced which. That is also why `details` is here
+    rather than in the command layer — a field that reached one rendering and not the other is a
+    fact only half the readers can act on.
     """
-    return f"{finding.tier}: {finding.code}{_location(finding)}: {finding.message}"
+    return (
+        f"{finding.tier}: {finding.code}{_location(finding)}: {finding.message}"
+        f"{_details(finding)}"
+    )
 
 
 def report_text(report: ValidationReport) -> str:

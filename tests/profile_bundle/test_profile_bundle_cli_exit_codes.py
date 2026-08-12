@@ -34,7 +34,11 @@ from boardwatch.profile_bundle.errors import IssueCode, diagnostic
 from boardwatch.profile_bundle.locking import bundle_lock
 from boardwatch.profile_bundle.paths import BUNDLE_DIR_NAME
 from boardwatch.profile_bundle.reports import diagnostic_json, diagnostic_line
-from tests.profile_bundle.conftest import SyntheticBundle
+from tests.profile_bundle.conftest import (
+    PromotedRevisionTree,
+    SyntheticBundle,
+    materialise,
+)
 
 #: Every command's JSON must carry these, whatever happened. `result` may be empty — a refusal has
 #: no result — but the key is always there, so a consumer never has to branch on its absence.
@@ -411,5 +415,41 @@ def test_an_empty_record_ids_list_is_never_glossed_as_no_records(
 
     human = diagnostic_line(finding)
     assert "policy/predicates.yaml" in human
+    # The half this test used to take on trust. `record_id` is `None` for a field-level conflict,
+    # so without `details.field` the human rendering carries half of D-129's locator and the
+    # operator is told a document is in conflict without being told over what.
+    assert "catalog_version" in human, human
+    assert "record_ids: []" in human, human
     assert "no record" not in human.lower()
     assert "not affected" not in human.lower()
+
+
+def test_a_conflict_naming_many_records_names_them_in_both_renderings(
+    env: Env, promoted_tree: PromotedRevisionTree
+) -> None:
+    """§19: a rebase conflict "returns `draft_rebase_conflict` with the exact record IDs".
+
+    The message carries only a count on purpose — one finding for a hundred records, because the
+    operator's next action is the same for all of them — so `details.record_ids` is the only place
+    the identities live. Driven through the command rather than built by hand: this is the shape
+    where a human reading the same answer as a script used to be told how many collided and never
+    which.
+
+    A parentless draft beside a promoted revision 1 is the maximal case: with no common ancestor
+    every record in the example counts as changed on both sides.
+    """
+    root = promoted_tree.bundle_root
+    parentless = materialise(root, draft_name="parentless")
+    result = run(
+        env,
+        ["rebase-draft", "--bundle", str(root), "--draft", parentless.draft_name, "--json"],
+    )
+    assert result.exit_code == 1, result.output
+    (finding,) = payload(result)["diagnostics"]  # type: ignore[misc]
+    assert finding["code"] == "draft_rebase_conflict"  # type: ignore[index]
+    collided = finding["details"]["record_ids"]  # type: ignore[index]
+    assert len(collided) > 1, collided
+
+    human = run(env, ["rebase-draft", "--bundle", str(root), "--draft", parentless.draft_name])
+    for record_id in collided:
+        assert record_id in human.output, f"{record_id} is in the JSON but not the human answer"
