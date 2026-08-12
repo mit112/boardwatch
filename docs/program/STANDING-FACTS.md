@@ -103,9 +103,13 @@
   shipped in T15 and survived two lenses and a fix round; it is invisible to any narrow run.
 - **The packaged example validates at 8 blocker, 0 error, exit 1.** That satisfies Gate A, whose clause is
   that the layers *run*, and **not** Gate B's separate "zero undispositioned blockers".
-- **A FIFO in place of a bundle document still hangs `validate --draft` and `promote` forever** — the third
-  site of that class, upstream of T18. The first two are fixed (`storage._require_stored_blob` for a blob
-  store entry, `storage.identical_trees` for a compared tree); this one is recorded, not chased.
+- **All three sites of the blocking-`open()` class are now closed.** A non-regular file is refused for a
+  blob store entry (`storage._require_stored_blob`), for a compared tree (`storage.identical_trees`) and for
+  a bundle **document** (`layout.discover_source_files`, D-141) — the last being the one that hung
+  `validate --draft` and `promote` forever, `promote` while holding the bundle lock. The guard belongs at
+  `discover_source_files` because every reader downstream of it (`load_documents`, promotion's verbatim
+  copy, `checkout`'s tree copy) opens what it returns and none of them takes a timeout. **A fourth site is
+  any new code that opens a path the layout did not hand it.**
 - Upstream of T18 and deliberately not chased: a typo'd `--bundle` made `inventory` report clean at exit 0
   (**fixed**, D-138); `context.py:92` and `blobs.py:175` are deferred pre-existing `$HOME` leaks.
 - `docs/superpowers/` holds the design and plan, is **untracked**, and must be copied into any new worktree.
