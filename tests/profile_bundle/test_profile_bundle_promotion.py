@@ -818,7 +818,13 @@ def test_a_retained_temporary_does_not_block_a_later_promotion(scene: Scene) -> 
 def test_a_staged_tree_that_does_not_read_back_is_never_installed(
     scene: Scene, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """The writer's own claim to have written the right bytes is not evidence."""
+    """The writer's own claim to have written the right bytes is not evidence.
+
+    The guarantee lands on the digest recomputed from the bytes on disk: the digest is computed
+    from the models, so a document that reads back as anything else produces a different one. A
+    separate model-by-model comparison was removed because it could never be the check that
+    refused — mutating it away left this test green, which is what showed it was covering nothing.
+    """
     before = _snapshot(scene.bundle_root)
     real = promotion_module.document_bytes
 
@@ -1088,3 +1094,32 @@ def test_a_draft_missing_its_history_documents_cannot_be_promoted(scene: Scene) 
     assert _codes(outcome) == [IssueCode.MISSING_REQUIRED_FILE]
     assert outcome.diagnostics[0].path == "history"
     assert _snapshot(scene.bundle_root) == before
+
+
+def test_a_manifest_field_the_digest_cannot_police_is_still_refused(
+    scene: Scene, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The other half of the from-disk check, and the reason there is no model comparison.
+
+    `canonical._manifest_with` blanks `bundle_digest` and overwrites `evidence_set_digest` before
+    hashing the manifest leaf, so forging either of them moves no digest at all. That is precisely
+    what `validate_digest`'s own two comparisons exist for, and running the real `validate_bundle`
+    over the staged tree is what brings them to bear here — so nothing installs a revision whose
+    manifest claims an identity its content does not have.
+    """
+    real = promotion_module.document_bytes
+
+    def forge(payload: Any, *, logical_path: PurePosixPath) -> bytes:
+        if logical_path == PurePosixPath("manifest.yaml"):
+            payload = {**payload, "evidence_set_digest": "sha256:" + "f" * 64}
+        return real(payload, logical_path=logical_path)
+
+    monkeypatch.setattr(promotion_module, "document_bytes", forge)
+    before = _snapshot(scene.bundle_root)
+
+    outcome = promote(scene.bundle_root, _request())
+
+    assert outcome.exit_code == 1
+    assert IssueCode.EVIDENCE_SET_DIGEST_MISMATCH in _codes(outcome)
+    assert _snapshot(scene.bundle_root) == before
+    assert _temporaries(scene.bundle_root) == []

@@ -774,28 +774,28 @@ def _reread(
 ) -> None | OperationOutcome[SelectedRevision]:
     """Step 6: read the whole staged tree back from disk and validate what is actually there.
 
-    Two separate claims, and the writer's own report is evidence for neither.
+    Two claims, and the writer's own report is evidence for neither.
 
-    The tree must **be** what the derivation produced — compared document by document, because a
-    truncated write, a wrong emitter or a copied file that is not the file it was meant to be would
-    otherwise be discovered by whoever reads the revision next, years later.
+    The tree must **produce the digest that is about to name it**, recomputed from the bytes that
+    landed — which also covers the blob bytes, since a blob leaf is part of that digest and the
+    store takes no lock.
 
     The tree must **validate**, through the same `validate_bundle` a reader runs, with the parent
     handed over rather than rediscovered. Only `_DEFERRED_TO_A_LATER_STEP` is tolerated, and both of
     its members are re-asserted after the artefact they are about exists.
+
+    There is deliberately no third check comparing the re-read models with the ones the derivation
+    produced (D-115). The digest is computed *from* those models, so any difference between them
+    changes it — except in the two manifest fields the leaf excludes, `bundle_digest` (blanked) and
+    `evidence_set_digest` (overwritten), and those are exactly what `validate_digest`'s own two
+    comparisons exist for. A model-by-model comparison could therefore never be the check that
+    refused anything, and shipping it would read as coverage;
+    `test_profile_bundle_promotion.py` names where each half actually lands.
     """
     try:
         documents = load_documents(staged, mode="revision")
     except ProfileBundleError as exc:
         return outcome_with(None, parse_error_diagnostics(exc))
-    if documents.manifest != prepared.manifest or dict(documents.by_path) != dict(
-        prepared.documents.by_path
-    ):
-        return _refusal(
-            IssueCode.INTERNAL_ERROR,
-            "the staged revision did not read back as the tree the promotion produced, so it was "
-            "discarded rather than installed",
-        )
     computed = bundle_digest(documents, prepared.blobs)
     if computed != prepared.bundle_digest:
         return _refusal(
