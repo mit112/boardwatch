@@ -18,11 +18,18 @@ and each has a test that fails without it:
 from __future__ import annotations
 
 import hashlib
+import os
 import shutil
 from pathlib import PurePosixPath
 
+import pytest
+
 from boardwatch.profile_bundle.authoring import _STATE_AFTER, add_evidence, resolve_conflict
-from boardwatch.profile_bundle.errors import OperationOutcome
+from boardwatch.profile_bundle.errors import (
+    COULD_NOT_COMPLETE_CODES,
+    IssueCode,
+    OperationOutcome,
+)
 from boardwatch.profile_bundle.models.history import ApprovalAction, RulingDecision
 from boardwatch.profile_bundle.paths import blob_path, blobs_dir, draft_root
 from tests.profile_bundle.conftest import SyntheticBundle, parse_documents, quoted_yaml
@@ -483,3 +490,85 @@ def test_a_manifest_write_that_cannot_start_leaves_the_evidence_document_alone(
     # The blob store is the one documented exception and an inline capture writes no blob, so the
     # whole draft must be byte-identical — not merely "the manifest is consistent with the records".
     assert _tree(synthetic_bundle) == before
+
+
+def test_a_rename_that_fails_after_the_first_one_names_the_half_applied_state(
+    synthetic_bundle: SyntheticBundle, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The second arm of the two-document write, and the one the first fix moved rather than closed.
+
+    Staging both documents before renaming either removes every failure that can be *avoided*, but
+    `os.replace` itself can still fail: `mkstemp` needs the directory writable while the rename
+    additionally needs the existing target unlinkable, so an immutable target file separates them.
+    Left bare, that loop reproduced exactly the fault the staging was added to prevent — first
+    document durable, second stale — and reported it as `could_not_complete`, "nothing was written".
+
+    A rename already performed cannot be undone by a process that may not survive to try, so the
+    window is *named* rather than closed: `partial_edit_applied`, which is deliberately not a
+    could-not-complete code, because exit 3 would invite a retry guaranteed to refuse.
+
+    `os.replace` is monkeypatched rather than made to fail for real: `chflags uchg` is macOS-only and
+    `chattr +i` needs root, and the property under test is this function's error handling, not the
+    filesystem's.
+    """
+    real_replace = os.replace
+    calls: list[int] = []
+
+    def fail_after_the_first(src, dst, **kwargs):  # type: ignore[no-untyped-def]
+        calls.append(1)
+        if len(calls) == 1:
+            return real_replace(src, dst, **kwargs)
+        raise PermissionError(1, "Operation not permitted")
+
+    monkeypatch.setattr(os, "replace", fail_after_the_first)
+    text = "A note whose second write will not land."
+    outcome = add_evidence(
+        synthetic_bundle.root,
+        draft_name=synthetic_bundle.draft_name,
+        evidence_document=_inline_record(text),
+        capture=text.encode("utf-8"),
+    )
+    monkeypatch.undo()
+
+    # Not exit 3: something DID happen, and a caller told otherwise retries into a duplicate ID.
+    assert outcome.exit_code == 1
+    assert _codes(outcome) == {"partial_edit_applied"}
+    assert IssueCode.PARTIAL_EDIT_APPLIED not in COULD_NOT_COMPLETE_CODES
+    (finding,) = outcome.diagnostics
+    assert finding.details["applied"] == ["evidence/records.yaml"]
+    # The staged file for the rename that failed must not survive: an undeclared file under the
+    # draft makes every later command refuse with `unknown_file` before reading anything, which
+    # would hide this very state behind a dotfile no diagnostic names.
+    draft = draft_root(synthetic_bundle.root, synthetic_bundle.draft_name)
+    assert list(draft.rglob(".tmp-authoring-*")) == []
+
+
+def test_a_first_rename_that_fails_leaves_the_tree_untouched_and_no_residue(
+    synthetic_bundle: SyntheticBundle, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The other side of the new boundary: nothing committed, so the old truthful answer stands.
+
+    This is the arm that must NOT report `partial_edit_applied` — no document landed, so
+    could-not-complete is correct and the operator may retry. Asserting both arms is the point: a
+    fix that reported the half-applied code unconditionally would pass the test above and be wrong
+    here.
+    """
+    def always_fail(src, dst, **kwargs):  # type: ignore[no-untyped-def]
+        raise PermissionError(1, "Operation not permitted")
+
+    before = _tree(synthetic_bundle)
+    monkeypatch.setattr(os, "replace", always_fail)
+    text = "A note whose first write will not land."
+    outcome = add_evidence(
+        synthetic_bundle.root,
+        draft_name=synthetic_bundle.draft_name,
+        evidence_document=_inline_record(text),
+        capture=text.encode("utf-8"),
+    )
+    monkeypatch.undo()
+
+    assert outcome.exit_code == 3
+    assert _codes(outcome) == {"io_error"}
+    assert _tree(synthetic_bundle) == before
+    draft = draft_root(synthetic_bundle.root, synthetic_bundle.draft_name)
+    assert list(draft.rglob(".tmp-authoring-*")) == []

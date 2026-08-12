@@ -605,13 +605,23 @@ def _write_documents(tree: Path, models: Mapping[PurePosixPath, DocumentModel]) 
     `evidence/records.yaml` needs `evidence/` writable while `manifest.yaml` needs the draft root —
     two independent failure domains, which ENOSPC reaches at different moments.
 
-    Staging everything first moves every failure that can be reported *before* the first rename, so
-    a refusal leaves the tree untouched. What remains is a crash between renames, which is the same
-    window §21 already accepts for `rebase-draft`'s two renames and answers the same way: the
-    operator is told which shapes are possible rather than promised a rollback a killed process
-    cannot perform.
+    Staging everything first moves every failure that *can* be avoided before the first rename, so
+    an ordinary refusal — a full disk, an unwritable directory — leaves the tree untouched.
+
+    **`os.replace` can still fail, and it is guarded rather than assumed away.** `mkstemp` needs the
+    directory writable; the rename additionally needs the existing target unlinkable, so an
+    immutable file (`chflags uchg`, `chattr +i`) separates the two and fails only at the rename. The
+    first version of this function left that loop bare, which reproduced the very fault it was
+    written to fix — the first document durable, the second stale — and reported it worse, as a raw
+    `OSError` the CLI translated into "nothing was written". The window cannot be closed, because a
+    rename already performed cannot be undone by a process that may not survive to try; it can only
+    be **named**, which is what `PARTIAL_EDIT_APPLIED` is for.
+
+    Not the same case as `rebase-draft`'s two renames, and this docstring used to claim it was:
+    those rename *directories* and stage no temporary files, so neither the residue below nor a
+    half-applied document set is covered by what §21 accepts there.
     """
-    staged: list[tuple[Path, Path]] = []
+    staged: list[tuple[Path, Path, PurePosixPath]] = []
     try:
         for logical, model in models.items():
             target = tree / logical
@@ -624,7 +634,7 @@ def _write_documents(tree: Path, models: Mapping[PurePosixPath, DocumentModel]) 
                     path=logical.as_posix(),
                 ) from exc
             try:
-                staged.append((_stage_beside(target, raw), target))
+                staged.append((_stage_beside(target, raw), target, logical))
             except OSError as exc:
                 raise _refusal(
                     IssueCode.IO_ERROR,
@@ -632,12 +642,42 @@ def _write_documents(tree: Path, models: Mapping[PurePosixPath, DocumentModel]) 
                     path=logical.as_posix(),
                 ) from exc
     except BaseException:
-        for temporary, _ in staged:
+        for temporary, _, _ in staged:
             temporary.unlink(missing_ok=True)
         raise
 
-    for temporary, target in staged:
-        os.replace(temporary, target)
+    for position, (temporary, target, logical) in enumerate(staged):
+        try:
+            os.replace(temporary, target)
+        except OSError as exc:
+            # From `position` rather than `position + 1`: this rename failed, so its own staged file
+            # is still on disk too. Leaving them behind is not a cosmetic leak — an undeclared file
+            # under the draft makes every later `validate` and authoring command refuse with
+            # `unknown_file` before it reads anything, which would hide the half-applied state below
+            # behind a dotfile no diagnostic names.
+            for leftover, _, _ in staged[position:]:
+                leftover.unlink(missing_ok=True)
+            if position == 0:
+                raise _refusal(
+                    IssueCode.IO_ERROR,
+                    f"{logical} could not be rewritten: {io_reason(exc)}",
+                    path=logical.as_posix(),
+                ) from exc
+            applied = [name.as_posix() for _, _, name in staged[:position]]
+            raise _Refused(
+                (
+                    diagnostic(
+                        IssueCode.PARTIAL_EDIT_APPLIED,
+                        f"{logical} could not be rewritten: {io_reason(exc)}. The change is half "
+                        f"applied: {', '.join(applied)} was rewritten and this one was not, so "
+                        "the draft is inconsistent until you repair it or discard the draft. "
+                        "Retrying the same command will refuse, because the part that landed is "
+                        "already there",
+                        path=logical.as_posix(),
+                        applied=applied,
+                    ),
+                )
+            ) from exc
 
 
 def _atomic_write(target: Path, raw: bytes) -> None:

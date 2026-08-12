@@ -207,6 +207,13 @@ class IssueCode(StrEnum):
     #: underlying kind (`io` or `internal`) that `IO_ERROR`/`INTERNAL_ERROR` would have carried, so
     #: the distinction stays typed rather than becoming a sentence a consumer has to read.
     RECHECK_UNAVAILABLE = "recheck_unavailable"
+    #: A multi-document edit committed some of its documents and then could not commit the rest.
+    #: Also NOT a member of `COULD_NOT_COMPLETE_CODES`, and for a sharper reason than
+    #: `RECHECK_UNAVAILABLE`: exit 3 would invite a retry that is guaranteed to refuse, because the
+    #: part that landed is already there. A rename already performed cannot be rolled back by a
+    #: process that may not survive to try, so this names the state rather than pretending to undo
+    #: it.
+    PARTIAL_EDIT_APPLIED = "partial_edit_applied"
 
 
 #: Codes reported as completeness blockers: the revision stays valid, the record is unusable.
