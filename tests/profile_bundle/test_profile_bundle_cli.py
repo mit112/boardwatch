@@ -16,17 +16,26 @@ Three properties live here, and each is the kind that only a command-level test 
 from __future__ import annotations
 
 import json
+import shutil
 import subprocess
 import sys
 from dataclasses import dataclass
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 
 import pytest
 import typer.main
 from typer.testing import CliRunner
 
 from boardwatch.cli.app import app
+from boardwatch.profile_bundle.models.manifests import DraftManifest
 from boardwatch.profile_bundle.paths import BUNDLE_DIR_NAME, drafts_dir
+from boardwatch.profile_bundle.paths import draft_root as draft_root_for
+from tests.profile_bundle.conftest import (
+    PromotedRevisionTree,
+    SyntheticBundle,
+    parse_documents,
+    quoted_yaml,
+)
 
 #: Design §19's command surface, transcribed. The outside fact this file pins.
 EXPECTED_COMMANDS = (
@@ -219,3 +228,176 @@ def test_a_fresh_draft_is_told_where_to_author_its_identity(env: Env) -> None:
     assert identity[0]["code"] == "missing_required_file"
     assert "an absent catalog is not an empty one" in identity[0]["message"]
     assert "author" not in identity[0]["message"].lower()
+
+
+# --------------------------------------------------------------------------------------
+# Authoring, through the command layer
+# --------------------------------------------------------------------------------------
+
+
+def _bundle_args(bundle: SyntheticBundle) -> list[str]:
+    return ["--bundle", str(bundle.root), "--draft", bundle.draft_name]
+
+
+def _write(path: Path, payload: object, logical: str) -> Path:
+    path.write_bytes(quoted_yaml(payload, logical_path=PurePosixPath(logical)))
+    return path
+
+
+def _inline_evidence(text: str) -> dict[str, object]:
+    return {
+        "evidence_id": "evidence.example.cli.001",
+        "title": "A note added through the command layer",
+        "capture": {"kind": "inline", "text": text, "media_type": "text/plain"},
+        "captured_at": "2026-08-11T09:00:00Z",
+        "reviewed_at": "2026-08-11",
+        "sufficiency_review": {"state": "owner_approved"},
+        "redactions": [],
+        "supports_record_ids": ["fact.example.name.001"],
+        "contradicts_record_ids": [],
+        "contextualizes_record_ids": [],
+        "evidence_class": "owner_attestation",
+        "attested_at": "2026-08-11",
+    }
+
+
+def test_add_evidence_records_the_capture_and_revalidates(
+    env: Env, synthetic_bundle: SyntheticBundle, tmp_path: Path
+) -> None:
+    """§19 step 6: an authoring command ends by revalidating the draft it changed.
+
+    The revalidation's findings share the command's exit code, so one answer says both "the change
+    landed" and "the draft is still promotable".
+    """
+    text = "The owner attests to the professional name recorded in this bundle."
+    record = _write(tmp_path / "e.yaml", _inline_evidence(text), "evidence-record.yaml")
+    capture = tmp_path / "c.txt"
+    capture.write_text(text, encoding="utf-8")
+
+    result = run(
+        env,
+        ["add-evidence", *_bundle_args(synthetic_bundle), "--evidence-file", str(record),
+         "--capture", str(capture), "--json"],
+    )
+    body = json.loads(result.output)
+    assert body["result"]["evidence_id"] == "evidence.example.cli.001"
+    assert body["result"]["capture_kind"] == "inline"
+    assert body["result"]["blob_digest"] is None
+    assert "evidence.example.cli.001" in synthetic_bundle.read("evidence/records.yaml")
+    assert [gate["action"] for gate in body["result"]["owner_gates"]] == [
+        "approve_evidence_sufficiency"
+    ]
+
+
+def test_add_evidence_refuses_a_secret_without_touching_the_draft(
+    env: Env, synthetic_bundle: SyntheticBundle, tmp_path: Path
+) -> None:
+    secret = "AKIA" + "B" * 16
+    text = f"Deployment note that leaked {secret} into the log."
+    record = _write(tmp_path / "e.yaml", _inline_evidence(text), "evidence-record.yaml")
+    capture = tmp_path / "c.txt"
+    capture.write_text(text, encoding="utf-8")
+    before = synthetic_bundle.read("evidence/records.yaml")
+
+    result = run(
+        env,
+        ["add-evidence", *_bundle_args(synthetic_bundle), "--evidence-file", str(record),
+         "--capture", str(capture), "--json"],
+    )
+    assert result.exit_code == 1
+    body = json.loads(result.output)
+    assert {finding["code"] for finding in body["diagnostics"]} == {"secret_detected"}
+    assert body["result"] == {}
+    assert synthetic_bundle.read("evidence/records.yaml") == before
+    assert secret not in result.output
+
+
+def test_resolve_conflict_settles_the_group_and_names_the_gate(
+    env: Env, synthetic_bundle: SyntheticBundle, tmp_path: Path
+) -> None:
+    ruling = _write(
+        tmp_path / "r.yaml",
+        {
+            "ruling_id": "ruling.packet-pantry.end-date.001",
+            "conflict_id": "conflict.packet-pantry.end-date",
+            "decision": "select_candidate",
+            "selected_fact_id": "fact.packet-pantry.end-date.002",
+            "rejected_fact_ids": ["fact.packet-pantry.end-date.001"],
+            "rationale": "The later date is when the work actually stopped.",
+            "owner_evidence_id": "evidence.packet-pantry.owner-ruling.001",
+            "decided_at": "2026-08-11",
+        },
+        "ruling-record.yaml",
+    )
+    result = run(
+        env,
+        ["resolve-conflict", *_bundle_args(synthetic_bundle), "--ruling-file", str(ruling),
+         "--json"],
+    )
+    body = json.loads(result.output)
+    assert body["result"]["conflict_state"] == "resolved"
+    assert "authorize_conflict_ruling" in {
+        gate["action"] for gate in body["result"]["owner_gates"]
+    }
+
+
+def test_migrate_reports_already_current_on_a_promoted_bundle(
+    env: Env, promoted_tree: PromotedRevisionTree
+) -> None:
+    result = run(env, ["migrate", "--bundle", str(promoted_tree.bundle_root), "--json"])
+    assert result.exit_code == 0, result.output
+    assert json.loads(result.output)["result"] == {
+        "status": "already_current",
+        "schema_version": 1,
+    }
+
+
+def test_rebase_draft_drains_a_stale_draft_onto_the_selected_revision(
+    env: Env, chained_tree: PromotedRevisionTree
+) -> None:
+    """`rebase-draft` is the drain design §19 requires for a draft whose parent moved.
+
+    The backup path is deterministic, so the check is that the old draft is still there under the
+    derived name — nothing an owner authored is deleted by the command that moves it.
+    """
+    root = chained_tree.bundle_root
+    parent_digest = chained_tree.documents.manifest.parent_bundle_digest
+    assert parent_digest is not None
+    stale = draft_root_for(root, "stale")
+    shutil.copytree(
+        root / "revisions" / f"sha256-{parent_digest.removeprefix('sha256:')}", stale
+    )
+    (stale / "COMPLETE").unlink(missing_ok=True)
+    _as_draft(stale, parent_digest, chained_tree.revision - 1)
+
+    result = run(env, ["rebase-draft", "--bundle", str(root), "--draft", "stale", "--json"])
+    assert result.exit_code == 0, result.output
+    body = json.loads(result.output)
+    assert body["result"]["parent_bundle_digest"] == chained_tree.bundle_digest
+    backup = draft_root_for(root, f"stale.pre-rebase-sha256-{parent_digest.removeprefix('sha256:')}")
+    assert backup.is_dir(), sorted(p.name for p in (root / "drafts").iterdir())
+
+
+def _as_draft(tree: Path, parent_digest: str, parent_revision: int) -> None:
+    """Turn a copied revision tree into a draft of that revision."""
+    manifest = parse_documents(tree, final_revision=True).manifest
+    values = manifest.model_dump(mode="json")
+    for derived in ("revision", "created_at", "created_by"):
+        values.pop(derived, None)
+    values.update(
+        {
+            "state": "draft",
+            "draft_of_revision": parent_revision,
+            "parent_bundle_digest": parent_digest,
+            "bundle_digest": "",
+            "approved_candidate_digest": "",
+            "approval_stamp_id": "",
+            "change_id": "",
+        }
+    )
+    (tree / "manifest.yaml").write_bytes(
+        quoted_yaml(
+            DraftManifest.model_validate(values).model_dump(mode="json"),
+            logical_path=PurePosixPath("manifest.yaml"),
+        )
+    )

@@ -466,7 +466,9 @@ def validate(
             "--deep-history is the ancestor audit inside completeness, so it needs --completeness",
             param_hint="--deep-history",
         )
-    effective = (requested or datetime.now(UTC).date()) if completeness else None
+    # The **local** date (§20): "today" for an operator is the day they are having, and a UTC
+    # default would report a different one for anybody west of Greenwich after their afternoon.
+    effective = (requested or datetime.now().astimezone().date()) if completeness else None
 
     root = _bundle_root(ctx, bundle)
     if draft is not None:
@@ -699,34 +701,41 @@ def _gate_json(gates: Sequence[ApprovalDecision]) -> list[JsonValue]:
     ]
 
 
-def _read_input(path: Path, option: str) -> bytes:
-    """The operator's own file. A failure names the option, never their absolute path."""
-    try:
-        return path.read_bytes()
-    except OSError as exc:
-        raise typer.BadParameter(io_reason(exc), param_hint=option) from exc
-
-
 @profile_bundle_app.command("add-evidence")
 def add_evidence(
     ctx: typer.Context,
     draft: str = DRAFT_OPTION,
     evidence_file: Path = typer.Option(  # noqa: B008
-        ..., "--evidence-file", help="A strict evidence record, as YAML."
+        ...,
+        "--evidence-file",
+        exists=True,
+        dir_okay=False,
+        readable=True,
+        help="A strict evidence record, as YAML.",
     ),
     capture: Path = typer.Option(  # noqa: B008
-        ..., "--capture", help="The capture bytes the record describes."
+        ...,
+        "--capture",
+        exists=True,
+        dir_okay=False,
+        readable=True,
+        help="The capture bytes the record describes.",
     ),
     bundle: Path | None = BUNDLE_OPTION,
     json_output: bool = JSON_OPTION,
 ) -> None:
     """Capture one evidence record into a draft, then revalidate it."""
     root = _bundle_root(ctx, bundle)
-    document = _read_input(evidence_file, "--evidence-file")
-    raw = _read_input(capture, "--capture")
+    # Read inside the guard: Click has already refused a path that is absent, a directory, or
+    # unreadable — before execution, which is what §21's exit 2 is for — so what is left here is
+    # the file changing under us, and that is an I/O failure the shared arm reports without the
+    # absolute path a stringified `OSError` carries.
     outcome = _guarded(
         lambda: authoring.add_evidence(
-            root, draft_name=draft, evidence_document=document, capture=raw
+            root,
+            draft_name=draft,
+            evidence_document=evidence_file.read_bytes(),
+            capture=capture.read_bytes(),
         )
     )
     added = outcome.value
@@ -761,16 +770,22 @@ def resolve_conflict(
     ctx: typer.Context,
     draft: str = DRAFT_OPTION,
     ruling_file: Path = typer.Option(  # noqa: B008
-        ..., "--ruling-file", help="A strict owner ruling record, as YAML."
+        ...,
+        "--ruling-file",
+        exists=True,
+        dir_okay=False,
+        readable=True,
+        help="A strict owner ruling record, as YAML.",
     ),
     bundle: Path | None = BUNDLE_OPTION,
     json_output: bool = JSON_OPTION,
 ) -> None:
     """Append one owner ruling to a draft and update only the group it rules on."""
     root = _bundle_root(ctx, bundle)
-    document = _read_input(ruling_file, "--ruling-file")
     outcome = _guarded(
-        lambda: authoring.resolve_conflict(root, draft_name=draft, ruling_document=document)
+        lambda: authoring.resolve_conflict(
+            root, draft_name=draft, ruling_document=ruling_file.read_bytes()
+        )
     )
     ruled = outcome.value
     if ruled is None:
