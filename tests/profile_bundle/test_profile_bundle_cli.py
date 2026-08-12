@@ -487,3 +487,39 @@ def _as_draft(tree: Path, parent_digest: str, parent_revision: int) -> None:
             logical_path=PurePosixPath("manifest.yaml"),
         )
     )
+
+
+def test_an_unreadable_blob_file_is_reported_as_io_not_as_a_defect(
+    env: Env, synthetic_bundle: SyntheticBundle, tmp_path: Path
+) -> None:
+    """`BundleIoError` is a `ProfileBundleError`, so `except` ORDER is all that separates them.
+
+    Caught by the base-class arm, an unreadable blob became `cause: internal` with "This is a defect
+    — please report the error type" — telling the owner their filesystem permissions were our bug.
+    The two arms disagree about whose problem it is, so the distinction cannot rest on which
+    `except` happened to match first.
+
+    A blob *file* rather than the store directory: `chmod 000` on the directory raises `OSError`
+    straight out and lands on the `OSError` arm, which was always right. Only the file case is
+    wrapped in `BundleIoError`, which is why it was the one reported wrongly.
+    """
+    if os.geteuid() == 0:  # pragma: no cover - root ignores the mode bits entirely
+        pytest.skip("running as root, so an unreadable file is still readable")
+    ruling = _ruling_file(tmp_path)
+    synthetic_bundle.blob.chmod(0o000)
+    try:
+        result = run(
+            env,
+            ["resolve-conflict", *_bundle_args(synthetic_bundle), "--ruling-file", str(ruling),
+             "--json"],
+        )
+    finally:
+        synthetic_bundle.blob.chmod(0o644)
+
+    body = json.loads(result.output)
+    (finding,) = body["diagnostics"]
+    assert finding["details"].get("cause") == "io", result.output
+    assert "This is a defect" not in result.output
+    assert "error_type" not in finding["details"], result.output
+    # And no absolute path: BundleIoError's own message carries one, so it must not be interpolated.
+    assert str(synthetic_bundle.root) not in result.output

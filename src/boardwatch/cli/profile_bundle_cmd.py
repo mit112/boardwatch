@@ -51,6 +51,7 @@ from boardwatch.core.settings import load_settings
 from boardwatch.profile_bundle import authoring, drafts, inspection, migrations, promotion, rebase
 from boardwatch.profile_bundle.approvals import ApprovalDecision
 from boardwatch.profile_bundle.errors import (
+    BundleIoError,
     BundlePathError,
     Diagnostic,
     IssueCode,
@@ -281,6 +282,18 @@ def _guarded(
     """
     try:
         return call()
+    except BundleIoError:
+        # A `ProfileBundleError` whose cause is I/O, so it must not be reported as a defect and its
+        # `cause` must not say `internal`. Caught ahead of the base class because `except` order is
+        # the only thing that separates them, and the two arms disagree about what the operator
+        # should do: one is theirs to fix, the other is ours. Deliberately not interpolated —
+        # `BundleIoError` is built from `str(OSError)`, which appends the absolute path it hit.
+        io_message = f"{unable}: the bundle could not be read or written"
+        if after_write:
+            return outcome_with(
+                None, (diagnostic(IssueCode.RECHECK_UNAVAILABLE, io_message, cause="io"),)
+            )
+        return outcome_with(None, (diagnostic(IssueCode.IO_ERROR, io_message),))
     except ProfileBundleError as exc:
         message = (
             f"{unable}. This is a defect — please report the error type below with what you ran"

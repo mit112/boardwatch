@@ -585,3 +585,40 @@ def test_approve_json_writes_a_parseable_document_to_stdout(
     body = json.loads(document)
     assert body["command"] == "approve"
     assert body["result"]["candidate_digest"] == expected_candidate(synthetic_bundle)
+
+
+def test_a_promotion_whose_read_back_fails_is_not_reported_as_nothing_done(
+    tmp_path: Path, synthetic_bundle: SyntheticBundle, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """`promote`'s manifest read-back is the second after-write guard, and nothing pinned it.
+
+    Removing `after_write=True` from this call site left the whole suite green, so the claim that a
+    promotion already on disk is never reported as "nothing happened" rested on nothing at all. By
+    the time the read-back runs, the revision directory is written and `CURRENT` points at it — so
+    `could_not_complete` would tell an automated caller to retry a promotion that has already
+    happened, and the retry refuses.
+
+    The read-back is replaced rather than made to fail for real: it exists precisely to count the
+    deliverable through a second path, and there is no ordinary filesystem state that breaks only
+    that read while leaving the promotion it just performed intact.
+    """
+    approve(tmp_path, synthetic_bundle, FakeTerminal(), monkeypatch)
+
+    def unreadable(_selected: object) -> ApprovalStamp:
+        raise OSError(13, "Permission denied")
+
+    monkeypatch.setattr(profile_bundle_cmd, "_promoted_manifest", unreadable)
+    promoted = run(
+        tmp_path,
+        synthetic_bundle,
+        ["promote", "--draft", synthetic_bundle.draft_name, "--summary", "read-back", "--json"],
+    )
+    monkeypatch.undo()
+
+    body = json.loads(promoted.output)
+    codes = {finding["code"] for finding in body["diagnostics"]}
+    assert codes == {"recheck_unavailable"}, promoted.output
+    assert body["outcome"] != "could_not_complete", promoted.output
+    assert promoted.exit_code != 3, promoted.output
+    # The promotion really did happen, which is the whole reason the category must not say otherwise.
+    assert (synthetic_bundle.root / "CURRENT").is_file()
