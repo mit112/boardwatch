@@ -47,6 +47,18 @@ def parse_retry_after(response: httpx.Response) -> float | None:
         return None
 
 
+def safe_json(response: httpx.Response) -> object:
+    """Parse a response body as JSON, or None when it is not JSON.
+
+    Lives here rather than in `client.py` because it is httpx-coupled and
+    `client.py` is the provider-neutral protocol module.
+    """
+    try:
+        return response.json()
+    except ValueError:
+        return None
+
+
 def request_with_retry(fn: Callable[[], _T], *, attempts: int = DEFAULT_ATTEMPTS) -> _T:
     """Run `fn`, retrying ONLY on `LLMTransientError`.
 
