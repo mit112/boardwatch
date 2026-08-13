@@ -132,12 +132,25 @@ independent confirmations it could not fire — the surviving mutation, `RECORD_
 documents it rewrote (`cited_back`, printed and in `--json`) — it had become an up-to-thirteen-file edit
 reporting none of them, which `owner_gates` does not cover because an ordinary fact incurs no gate.
 
-**Next action — open with a RENDER, not an edit.** Mit's stated priority is finishing and releasing,
-and the résumé track is **reactivated** (his 2026-08-11 deprioritisation no longer applies). He has not
-yet seen a boardwatch-produced résumé and wants to before any content work: `boardwatch top` to pick a
-posting, then `boardwatch tailor run <posting_id>`. **Tell him what he is looking at** — with three
-bullets over the 220-char gate, `validate_layout` fail-safes to the untailored master, so the first
-render is the system's floor, not its tailoring.
+**The render HAPPENED, and Mit has seen it (2026-08-13).** `tailor run 19541` produced
+`{config_dir}/tailored/untailored-19541.pdf` — 1 page, letter, CGPA correctly 8.5/10. It is the system's
+**floor**: `degraded: untailored fallback, reason=bullet_too_long`. Two separate things caused that, and
+the second is easy to miss — the layout gate degraded it, *and* the JD (a data-platform role: Airflow,
+Snowflake, ETL, Java) matched an iOS/Swift résumé so poorly that **11 of 13 bullets scored "no jd
+skills"** and the plan was `kept 13 · dropped 0 · swaps 0`. **Nobody has yet seen boardwatch actually
+reposition a résumé.** To see it, pick a posting that fits the profile — the choice of 19541 was made for
+a clean title, not for fit. `tailor run` is fast (< 45 s); only `top` was slow, which D-154 fixes.
+
+**CI was RED on one job and is fixed (D-153).** `test (3.12, ubuntu-latest)` failed on both `e629ea1` and
+`c633b33` — not a flake — while the local gate was green seven times, because rich resolves a table's
+width from a dumb-terminal fallback that **sits above the `COLUMNS` lookup**, folding a rule_id across
+lines. `TERM` is now pinned repo-wide in `tests/conftest.py`. **The lesson worth keeping: a green local
+gate says nothing about a matrix job whose environment differs** — same Python (3.12.12), different env.
+The fix is unverified on CI until the next push runs.
+
+**Next action — a fresh, broad roadmap review, which is Mit's explicit call (2026-08-13).** Take stock of
+the whole program, including the résumé track, rather than continuing item by item. **The résumé content
+work gets its own dedicated session** — do not start it as a side task.
 
 **Do NOT port content in from job-apps.** Its 2026-08-12 build
 (`~/dev/Job apps/resumes/2026-08-12/PathAI_Software_Engineer_1_-_Fullstack/`) is a **benchmark
@@ -216,7 +229,7 @@ built as D-143 and documented in the guide's one-step flow.)*
 
 | Item | Detail | Owner |
 |---|---|---|
-| **Three `resume.yaml` bullets exceed the 220-char layout gate** | Forces an untailored-master degrade on every posting, which is what blocks accumulating real runs. The file also lacks Knowledge Forge, has stale `skill_groups`, and an empty extracurricular block. **Mit pins `resume_max_pages=1` — do not advise setting it to 2.** Mit deprioritized this 2026-08-11; do not gate other work behind it. | Mit (content) |
+| **Three `resume.yaml` bullets exceed the 220-char layout gate** | Forces an untailored-master degrade on every posting, which is what blocks accumulating real runs. The file also lacks Knowledge Forge, has stale `skill_groups`, and an empty extracurricular block. **Mit pins `resume_max_pages=1` — do not advise setting it to 2.** Re-measured 2026-08-13 against the live file: `nio-coop` b0 **245**, `streaksync` b0 **234**, b1 **232**; two more sit close at 218 and 215. Mit's call: this gets **its own dedicated session**, not a side task | Mit (content) |
 | **No local pre-push check for the TWO CI-only jobs** | **`gitleaks` and `perf` — two, not three.** `generalization` IS inside `make check` (`Makefile:2`, the identical command CI runs). `gitleaks` is installed on this machine (8.30.1) but not wired into project tooling; all four gates are green on the Gate A tree — `.agent/GATE-A-CI-EQUIVALENCE.md` (D-117) | mitigated, not wired |
 | **`add-evidence` takes no bundle lock, and D-143 widened the race** | Only `promote`/`rebase`/`approve` take `bundle_lock`. Two concurrent captures used to race on 2 files and now race on up to 13; a lost update leaves the losing capture a silent `evidence_link_asymmetry` rather than a lost evidence record. Pre-existing in kind (`promotion.py:246` says so), wider in blast radius. Adding a lock is a decision about ordering against `promote`, untestable under contention here. **Raise it before anyone runs two authoring agents against one bundle.** Detail: `.agent/D143-ADVERSARIAL-REVIEW.md` | owner-gated |
 | **P2 item 8 — the onboarding gatherer** | The thing that would make the field tier fire for anyone. D-054 forbids us authoring non-tech field content, so it must be gathered per user. Needs its own brainstorm | owner-gated |
@@ -225,4 +238,6 @@ built as D-143 and documented in the guide's one-step flow.)*
 | **`boardwatch export --format csv` to stdout crashes on Windows** | `cli/export_cmd.py:70` writes to bare `sys.stdout`, whose encoding for a redirected stream on Windows is the ANSI codepage (cp1252 on 3.11–3.13), so any non-ASCII company name raises `UnicodeEncodeError`. Reproduced, not inferred. The `--out` path at `:73` is already correct (`newline=""`, utf-8), and `write_jsonl` is safe (`ensure_ascii=True`). **CI cannot see this** — Linux and macOS default to UTF-8. Fix is to wrap stdout; parked with open question 3 | open Q3 |
 | **`pdfinfo` is a hard dependency wearing a soft failure** | `cli/doctor_cmd.py:79-88` says so verbatim. Missing tectonic is loud (`BINARY_MISSING` → the run fails); missing `pdfinfo` returns `None` at `reports/tailor.py:170-171` and is laundered into `COMPILE_FAILED`, surfacing only as "every lead failed to tailor (N/N)" — the true cause never named. Hits `boardwatch run`, the daily driver, on every OS. No test covers tectonic-present/pdfinfo-absent | open Q3 |
 | **P3 item 8 — cross-OS two-writer WAL test** | A same-OS test proves nothing; needs a Docker-Linux-container + macOS-host harness. The documented-stance half shipped (D-041) | P3 |
-| **A `SIGKILL`ed run leaves a dangling `runs` row** | `try/finally` covers exceptions and Ctrl-C, not SIGKILL. Largely drained by the age-based reaper (D-046); a heartbeat-column reaper is the deferred correct fix | P3 |
+| **A `SIGKILL`ed run leaves a dangling `runs` row** | `try/finally` covers exceptions and Ctrl-C, not SIGKILL. Largely drained by the age-based reaper (D-046); a heartbeat-column reaper is the deferred correct fix. **Observed live 2026-08-13, not just theorised**: three rows sat in `status='running'` with `finished_at` NULL (ids 15–17), one of them (07:45:57Z) predating anything that session ran. `top` is what opens them, and a `timeout`-killed `top` leaves one | P3 |
+| **`boardwatch doctor` takes minutes; two stages are each capable of it** | `doctor_cmd.py:120` → `scan/health.py:41-70` probes **all 135 watched boards serially** with 1.0 s per-host pacing, a 30 s timeout and 3 retries — the shared-host boards alone force ≥ 85 s of sleep and each dead board adds up to 90 s. It also runs `PRAGMA integrity_check` on an 803 MB database, and `subprocess.run(["tectonic","--version"])` at `doctor_cmd.py:55` carries **no timeout**. The docstring's budget ("~15 boards ≈ seconds when healthy") is stale by ~9x. **Which stage consumes the time was not measured** — `doctor --offline` discriminates | unscheduled |
+| **`boardwatch top` advances the queue by default** | It records `seen` unless `--no-record` is passed, so exploratory ranking mutates dedup state — directly relevant to the clean 7-day window Gate P6's duplicate-leakage clause needs. Also: `ANALYZE` has never run on the live store (`sqlite_stat1` absent), so every query plan is chosen with zero statistics | P6 / unscheduled |
