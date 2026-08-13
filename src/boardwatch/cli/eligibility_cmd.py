@@ -46,6 +46,7 @@ from boardwatch.eligibility.oracle import (
 from boardwatch.eligibility.preflight import current_identity, run_eligibility
 from boardwatch.eligibility.scoring import SHIP_AUDIT_COVERAGE_BAR, load_labeled_set, score
 from boardwatch.llm.cache import ResponseCache
+from boardwatch.llm.client import LaneDeathReason, LLMLaneDeadError
 from boardwatch.llm.factory import build_client
 from boardwatch.llm.payload import preview_text
 from boardwatch.pipeline.runner import DEFAULT_TOP_N
@@ -345,7 +346,12 @@ def extract_cmd(
             base_url=preview_base_url,
         )
     )
-    evaluated = 0
+    # Two counters, deliberately. `attempted` is what bounds the loop; keying the
+    # cap to successes instead would let unclassified failures run the ENTIRE
+    # posting set, removing the only working call ceiling in the codebase.
+    attempted = 0
+    extracted = 0
+    lane_death: LaneDeathReason | None = None
     # This lane is invoked standalone, so it owns its run: a degenerate pipeline run whose
     # only stage is the LLM extraction. Minting rather than writing NULL is what keeps
     # `run_id IS NULL` meaning "predates attribution" and nothing else.
@@ -360,28 +366,43 @@ def extract_cmd(
     # `runs` into a command log. The two rules differ because the invocations differ.
     run_id: int | None = None
     for current in ordered:
-        if evaluated >= settings.llm.max_calls_per_run:
+        if attempted >= settings.llm.max_calls_per_run:
             break
         if run_id is None:
             run_id = ensure_run(app_ctx.engine, None)
-        with app_ctx.engine.begin() as conn:
-            extract_and_record(
-                conn,
-                posting_version_id=current.posting_version_id,
-                jd_text=current.body_text,
-                facts=facts,
-                policy=policy,
-                catalog=catalog,
-                client=client,
-                cache=cache,
-                provider=settings.llm.provider,
-                model=settings.llm.model,
-                run_id=run_id,
-            )
-        evaluated += 1
+        attempted += 1
+        try:
+            with app_ctx.engine.begin() as conn:
+                evaluation_id = extract_and_record(
+                    conn,
+                    posting_version_id=current.posting_version_id,
+                    jd_text=current.body_text,
+                    facts=facts,
+                    policy=policy,
+                    catalog=catalog,
+                    client=client,
+                    cache=cache,
+                    provider=settings.llm.provider,
+                    model=settings.llm.model,
+                    run_id=run_id,
+                )
+        except LLMLaneDeadError as exc:
+            lane_death = exc.reason
+            break
+        if evaluation_id is not None:
+            extracted += 1
     if run_id is not None:
         finish_run(app_ctx.engine, run_id)
-    console.print(f"extracted {evaluated} postings")
+    console.print(f"extracted {extracted} of {attempted} attempted")
+    if lane_death is not None:
+        console.print(
+            f"LLM lane stopped: the credential is unusable ({lane_death}). "
+            "Remaining postings were not called."
+        )
+        # Fatal only when death was observed AND nothing landed: a partial run
+        # is a real partial success, and zero-landed alone is a routine outcome.
+        if extracted == 0:
+            raise typer.Exit(code=1)
 
 
 @eligibility_app.command("summary")

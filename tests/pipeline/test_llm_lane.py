@@ -19,8 +19,10 @@ from boardwatch.eligibility.catalog import load_rules
 from boardwatch.eligibility.extract_llm import LANE_VERSION, extract_and_record
 from boardwatch.eligibility.facts import Facts, Policy
 from boardwatch.llm.cache import ResponseCache
+from boardwatch.llm.client import LaneDeathReason, LLMError, LLMLaneDeadError
 from boardwatch.llm.factory import build_client
 from boardwatch.llm.prompt import PROMPT_VERSION
+from boardwatch.llm.run_client import RunScopedClient
 from boardwatch.store import tables
 from boardwatch.store.db import ensure_schema, get_engine
 from boardwatch.store.eligibility import get_evaluations, get_requirements
@@ -385,7 +387,7 @@ def test_extract_runs_and_writes_an_advisory_llm_row(
 
     result = _invoke(cli_env, ["eligibility", "extract"])
     assert result.exit_code == 0
-    assert "extracted 1 postings" in result.output
+    assert "extracted 1 of 1 attempted" in result.output
     assert client.calls == 1
 
     with engine.connect() as conn:
@@ -495,3 +497,136 @@ def test_load_llm_audit_ignores_final_gate_rows(
     # The advisory lane never writes 'ineligible' (structurally non-blocking); the gate
     # row does. Getting 'ineligible' back here would mean the scope missed the gate row.
     assert view.verdict != "ineligible"
+
+
+def _seed_extract_env(cli_env: Path, count: int, *, prefix: str) -> Path:
+    """Make `eligibility extract` actually reach its loop, with `count` open postings.
+
+    Three things are load-bearing here:
+
+    - `_write_llm_config(eligibility_extraction=True)`, or the command short-circuits on
+      the feature gate before building a client.
+    - `init`, which writes the profile row. Without one the command exits 1 via
+      `_no_profile()` before the loop, and every test below would pass or fail for the
+      wrong reason.
+    - **Distinct `body_text` per posting.** The response-cache key folds in the JD text,
+      the profile hash and the rules hash, but NOT `posting_version_id` — so identical
+      bodies share one cache entry, and posting 2 would be served from cache instead of
+      reaching the client. A fresh data dir (which `cli_env` gives, being tmp_path
+      scoped) is necessary for a cold cache but not sufficient.
+    """
+    _write_llm_config(cli_env.parent / "cfg", eligibility_extraction=True)
+    assert _invoke(cli_env, ["init"], CLI_INIT_INPUT).exit_code == 0
+    engine = get_engine(cli_env)
+    for index in range(count):
+        _seed_posting_version(
+            engine, f"{JD_5YR} Posting number {index}.", slug=f"{prefix}-{index}"
+        )
+    return cli_env
+
+
+@pytest.fixture()
+def cli_env_with_postings(cli_env: Path) -> Path:
+    """Two open postings — the second is what the partial-success test has to reach."""
+    return _seed_extract_env(cli_env, 2, prefix="acme-lane")
+
+
+@pytest.fixture()
+def cli_env_with_many_postings(cli_env: Path) -> Path:
+    """Strictly more open postings than llm.max_calls_per_run (50), so "stopped at the
+    cap" is distinguishable from "ran out of work". With 50 or fewer the cap-regression
+    test passes either way and guards nothing."""
+    return _seed_extract_env(cli_env, 55, prefix="acme-cap")
+
+
+class _DeadClient:
+    """Every call reports the credential is unusable."""
+
+    def __init__(self) -> None:
+        self.calls = 0
+
+    def complete(self, prompt: str, *, system: str | None = None) -> str:
+        self.calls += 1
+        raise LLMLaneDeadError("no credit", reason=LaneDeathReason.CREDIT_EXHAUSTED)
+
+
+class _AlwaysFailingClient:
+    """Ordinary, unclassified failure -- the swallowed kind."""
+
+    def __init__(self) -> None:
+        self.calls = 0
+
+    def complete(self, prompt: str, *, system: str | None = None) -> str:
+        self.calls += 1
+        raise LLMError("network went away")
+
+
+def test_dead_credential_stops_after_one_call_and_exits_1(
+    monkeypatch: pytest.MonkeyPatch, cli_env_with_postings: Path
+) -> None:
+    # The fixture seeds 2 postings into a FRESH data dir: the cache is consulted before
+    # the client, so a warm cache would mask the death. Reaching only the first proves
+    # the loop stopped rather than ran out of work.
+    client = RunScopedClient(_DeadClient())
+    monkeypatch.setattr(
+        "boardwatch.cli.eligibility_cmd.build_client", lambda settings: client
+    )
+    result = _invoke(cli_env_with_postings, ["eligibility", "extract"])
+    flat = result.output.replace("\n", "")
+    assert result.exit_code == 1
+    assert "extracted 0 of 1 attempted" in flat
+    assert "credit_exhausted" in flat
+    # The load-bearing assertion. The message alone passes with the defect present.
+    assert client.calls_attempted == 1
+
+
+def test_partial_success_before_death_exits_0(
+    monkeypatch: pytest.MonkeyPatch, cli_env_with_postings: Path
+) -> None:
+    class _DiesOnSecond:
+        def __init__(self) -> None:
+            self.calls = 0
+
+        def complete(self, prompt: str, *, system: str | None = None) -> str:
+            self.calls += 1
+            if self.calls == 1:
+                return '{"requirements": []}'
+            raise LLMLaneDeadError("no credit", reason=LaneDeathReason.CREDIT_EXHAUSTED)
+
+    monkeypatch.setattr(
+        "boardwatch.cli.eligibility_cmd.build_client",
+        lambda settings: RunScopedClient(_DiesOnSecond()),
+    )
+    result = _invoke(cli_env_with_postings, ["eligibility", "extract"])
+    flat = result.output.replace("\n", "")
+    assert result.exit_code == 0
+    assert "extracted 1 of 2 attempted" in flat
+
+
+def test_cap_survives_unclassified_failures(
+    monkeypatch: pytest.MonkeyPatch, cli_env_with_many_postings: Path
+) -> None:
+    # REGRESSION GUARD for the two-counter split. `cli_env_with_many_postings`
+    # seeds more than llm.max_calls_per_run open postings. If the cap were
+    # keyed to successes, every one of them would be called.
+    client = _AlwaysFailingClient()
+    monkeypatch.setattr(
+        "boardwatch.cli.eligibility_cmd.build_client", lambda settings: client
+    )
+    result = _invoke(cli_env_with_many_postings, ["eligibility", "extract"])
+    assert result.exit_code == 0  # unclassified failure is NOT lane death
+    assert client.calls == 50  # llm.max_calls_per_run default
+
+
+def test_all_unclassified_failures_still_exit_0(
+    monkeypatch: pytest.MonkeyPatch, cli_env_with_postings: Path
+) -> None:
+    # Zero-landed alone must never be fatal -- only death-observed AND zero.
+    monkeypatch.setattr(
+        "boardwatch.cli.eligibility_cmd.build_client",
+        lambda settings: _AlwaysFailingClient(),
+    )
+    result = _invoke(cli_env_with_postings, ["eligibility", "extract"])
+    flat = result.output.replace("\n", "")
+    assert result.exit_code == 0
+    assert "extracted 0 of" in flat

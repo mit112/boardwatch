@@ -27,7 +27,7 @@ from boardwatch.eligibility.ground import GroundedSpan, ground
 from boardwatch.eligibility.hashing import build_identity
 from boardwatch.eligibility.resolve import declared_fields
 from boardwatch.llm.cache import ResponseCache
-from boardwatch.llm.client import ModelClient
+from boardwatch.llm.client import LLMLaneDeadError, ModelClient
 from boardwatch.llm.payload import build_payload
 from boardwatch.llm.prompt import PROMPT_VERSION
 from boardwatch.store.eligibility import (
@@ -102,10 +102,13 @@ def extract_and_record(
     """Run the LLM lane once and record an advisory `engine_kind='llm'` audit row.
 
     Returns the new evaluation id, or None if the lane was skipped: `client` is None
-    (the tier is off or uncredentialed), or the provider call raised. A cache hit
-    reuses the prior raw response instead of re-calling the provider; a miss calls
-    `client.complete` and populates the cache. The verdict is capped to `"eligible"`
-    or `"uncertain"` and can never be `"ineligible"`.
+    (the tier is off or uncredentialed), or the provider call raised. The one
+    exception is `LLMLaneDeadError`, which PROPAGATES rather than returning None: a
+    dead credential fails every later posting identically, so the caller has to stop
+    the loop instead of reading it as one more skip. A cache hit reuses the prior raw
+    response instead of re-calling the provider; a miss calls `client.complete` and
+    populates the cache. The verdict is capped to `"eligible"` or `"uncertain"` and
+    can never be `"ineligible"`.
 
     `provider`/`model` are the caller's OWN record of which adapter it built (e.g. from
     `settings.llm`), recorded verbatim in the audit row. They are not read off `client`:
@@ -142,9 +145,14 @@ def extract_and_record(
     if raw is None:
         try:
             raw = client.complete(payload["user"], system=payload["system"])
+        except LLMLaneDeadError:
+            # The credential cannot serve any later posting either, so this must
+            # NOT be swallowed as a skip: the caller has to stop the loop.
+            raise
         except Exception:
-            # Any provider/adapter failure (network, HTTP, malformed body) degrades this
-            # opt-in lane to a skipped run. The deterministic lane never sees this.
+            # Any other provider/adapter failure (network, HTTP, malformed body)
+            # degrades this opt-in lane to a skipped run. The deterministic lane
+            # never sees this.
             return None
         cache.put(cache_key, raw)
 
