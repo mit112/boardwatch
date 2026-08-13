@@ -69,9 +69,18 @@ plan needs are absent**. **Where the spec and the preflight disagree, the prefli
 carries a correction table so this is never re-litigated. Do **not** revise the spec to revision 4;
 D-158 closed that loop on purpose.
 
+**The plan has had its mechanical check; it does NOT need a design review.** All 30 Python blocks
+parse (the only 2 failures are self-announced splice fragments), every pre-existing symbol they
+import was verified to exist with the signature used, and all 24 `ProjectionIssue` members plus every
+cross-task name were checked for consistency. Two real defects were found and fixed (`431e68f`): a
+boolean expression wearing the costume of a filter, and a stub whose comment described a different
+class. **A full design review was considered and declined** — the expensive check already happened in
+the right place, the preflight, before the plan was written.
+
 **Next action: execute the plan, starting at Task 1** (extract `effective_skills`) — or run slice PM
 first if Mit wants the matrix recorded before any scorer code exists. Either order works; PM blocks
-only Task 22's *selection*, not the code. **Gate B (populating the real bundle) has NOT started**;
+only Task 22's *selection*, not the code. Mit's stated intent: **implementation happens in a new
+session.** **Gate B (populating the real bundle) has NOT started**;
 `{config_dir}/career-profile` does not exist. Everything is designed against the synthetic example
 bundle that ships as package data.
 
