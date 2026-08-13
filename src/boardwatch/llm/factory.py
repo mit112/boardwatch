@@ -15,6 +15,7 @@ from boardwatch.core.settings import Settings
 from boardwatch.llm.anthropic import AnthropicClient
 from boardwatch.llm.client import ModelClient
 from boardwatch.llm.openai_compat import OpenAICompatClient
+from boardwatch.llm.run_client import RunScopedClient
 
 
 def build_client(settings: Settings) -> ModelClient | None:
@@ -26,6 +27,11 @@ def build_client(settings: Settings) -> ModelClient | None:
     credential present, a missing `model` (or, for a non-Anthropic provider, a missing
     `base_url`) is a configuration error and raises rather than degrading, so a
     misconfigured opt-in tier fails loudly instead of silently never calling out.
+
+    The result is wrapped in `RunScopedClient` so a dead credential latches for
+    the rest of the invocation (D-146). Callers that need the death reason
+    narrow the result with `isinstance(client, RunScopedClient)`; `ModelClient`
+    itself is unchanged and still guarantees only `.complete`.
     """
     if not settings.llm.enabled:
         return None
@@ -37,10 +43,12 @@ def build_client(settings: Settings) -> ModelClient | None:
             raise ValueError(
                 "llm.model is required when llm.enabled and llm.provider == 'anthropic'"
             )
-        return AnthropicClient(settings.llm.model, api_key)
+        return RunScopedClient(AnthropicClient(settings.llm.model, api_key))
     if settings.llm.base_url is None or settings.llm.model is None:
         raise ValueError(
             "llm.base_url and llm.model are required when llm.enabled and "
             "llm.provider is not 'anthropic'"
         )
-    return OpenAICompatClient(settings.llm.base_url, settings.llm.model, api_key)
+    return RunScopedClient(
+        OpenAICompatClient(settings.llm.base_url, settings.llm.model, api_key)
+    )

@@ -1,11 +1,14 @@
 """Lane-death classification, latching, and factory wiring (P3 slice 5, D-146)."""
 
 import time
+from pathlib import Path
 
 import httpx
 import pytest
 import respx
 
+from boardwatch.core.secrets import LLM_API_KEY_ENV
+from boardwatch.core.settings import LLMTier, Settings
 from boardwatch.llm.anthropic import AnthropicClient
 from boardwatch.llm.client import (
     LaneDeathReason,
@@ -13,8 +16,10 @@ from boardwatch.llm.client import (
     LLMLaneDeadError,
     lane_death_reason,
 )
+from boardwatch.llm.factory import build_client
 from boardwatch.llm.openai_compat import OpenAICompatClient
 from boardwatch.llm.retry import DEFAULT_ATTEMPTS, safe_json
+from boardwatch.llm.run_client import RunScopedClient
 
 _TABLE = {
     "billing_error": LaneDeathReason.CREDIT_EXHAUSTED,
@@ -197,3 +202,107 @@ def test_openai_compat_bare_403_is_not_lane_death():
     with pytest.raises(LLMError) as caught:
         _openai().complete("hi")
     assert not isinstance(caught.value, LLMLaneDeadError)
+
+
+class _CountingClient:
+    """Records how many calls reached the underlying adapter."""
+
+    def __init__(self, exc: Exception | None = None) -> None:
+        self.calls = 0
+        self._exc = exc
+
+    def complete(self, prompt: str, *, system: str | None = None) -> str:
+        self.calls += 1
+        if self._exc is not None:
+            raise self._exc
+        return "ok"
+
+
+def test_wrapper_delegates_while_healthy():
+    inner = _CountingClient()
+    client = RunScopedClient(inner)
+    assert client.complete("hi") == "ok"
+    assert inner.calls == 1
+    assert client.dead_reason is None
+
+
+def test_wrapper_latches_and_stops_touching_the_network():
+    inner = _CountingClient(
+        LLMLaneDeadError("dead", reason=LaneDeathReason.CREDIT_EXHAUSTED)
+    )
+    client = RunScopedClient(inner)
+    for _ in range(5):
+        with pytest.raises(LLMLaneDeadError) as caught:
+            client.complete("hi")
+        assert caught.value.reason is LaneDeathReason.CREDIT_EXHAUSTED
+    # Asserted on the INNER counter, never the wrapper's self-report: a
+    # component's self-report is not verification (CLAUDE.md).
+    assert inner.calls == 1
+    assert client.dead_reason is LaneDeathReason.CREDIT_EXHAUSTED
+    assert client.calls_attempted == 1
+
+
+def test_wrapper_does_not_latch_on_ordinary_failures():
+    inner = _CountingClient(LLMError("boom"))
+    client = RunScopedClient(inner)
+    for _ in range(3):
+        with pytest.raises(LLMError):
+            client.complete("hi")
+    assert inner.calls == 3
+    assert client.dead_reason is None
+
+
+def _settings(tmp_path: Path, **llm) -> Settings:
+    return Settings(
+        data_dir=tmp_path / "data",
+        config_dir=tmp_path / "cfg",
+        llm=LLMTier(enabled=True, model="m", **llm),
+    )
+
+
+@pytest.mark.parametrize(
+    ("provider", "base_url", "url"),
+    [
+        ("anthropic", None, _ANTHROPIC_URL),
+        ("openai", "https://api.example.com/v1", _OPENAI_URL),
+    ],
+)
+@respx.mock
+def test_build_client_wraps_every_adapter_branch(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, provider, base_url, url
+):
+    # Routed through the REAL build_client with the HTTP layer stubbed. Do NOT
+    # monkeypatch build_client here: doing so is what lets the whole wrapper be
+    # reverted with every other test still green (spec §7.0).
+    monkeypatch.setenv(LLM_API_KEY_ENV, "a-real-key")
+    route = respx.post(url).mock(
+        return_value=httpx.Response(401, json={"error": {"type": "authentication_error"}})
+    )
+    kwargs = {"provider": provider}
+    if base_url is not None:
+        kwargs["base_url"] = base_url
+    client = build_client(_settings(tmp_path, **kwargs))
+    assert client is not None
+
+    for _ in range(2):
+        with pytest.raises(LLMLaneDeadError):
+            client.complete("hi")
+    # One network call for two completes -- the latch is installed in production.
+    assert route.call_count == 1
+
+
+def test_build_client_still_returns_none_when_disabled(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+):
+    monkeypatch.setenv(LLM_API_KEY_ENV, "a-real-key")
+    settings = Settings(
+        data_dir=tmp_path / "data", config_dir=tmp_path / "cfg", llm=LLMTier(enabled=False)
+    )
+    assert build_client(settings) is None
+
+
+def test_build_client_still_returns_none_without_a_key(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+):
+    monkeypatch.delenv(LLM_API_KEY_ENV, raising=False)
+    assert build_client(_settings(tmp_path, provider="anthropic")) is None
