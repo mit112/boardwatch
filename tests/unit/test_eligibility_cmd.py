@@ -241,6 +241,24 @@ def test_abstain_lists_every_catalog_rule_on_an_empty_database(env: Path) -> Non
     assert "0%" not in result.output
 
 
+def test_setting_COLUMNS_reaches_the_module_level_console(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The premise the three width-controlling tests below rest on, pinned on its own.
+
+    Since rich 15.0.0 `Console.__init__` reads `COLUMNS` eagerly into `self._width`, and
+    `Console.size` returns `self._width` verbatim when it is set. `cli/eligibility_cmd.py`
+    builds its `Console` at import, so an ambient `COLUMNS` freezes that console's width for
+    the whole process and every later `monkeypatch.setenv("COLUMNS", ...)` silently does
+    nothing — the tests below then assert against whatever width the RUNNER happened to
+    supply. `tests/conftest.py` pops `COLUMNS`/`LINES` at import to keep `_width` None, which
+    is the only state in which `Console.size`'s live lookup is reachable. Without that pop
+    this fails under `COLUMNS=80`, which is exactly how ubuntu/3.12 went red in CI.
+    """
+    from boardwatch.cli.eligibility_cmd import console
+
+    monkeypatch.setenv("COLUMNS", "137")
+    assert console.width == 137
+
+
 def test_abstain_names_rules_that_have_never_been_detected(
     env: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

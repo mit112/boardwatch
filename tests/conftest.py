@@ -46,9 +46,24 @@ from boardwatch.store.tables import companies, jobs, posting_versions, postings,
 # that makes `is_terminal` true by another route (an explicit `force_terminal`).
 #
 # No test in the repo asserts on ANSI output, so nothing wants the suppressed behaviour.
+#
+# `COLUMNS` and `LINES` are popped for a SECOND, independent reason, and popping them is what
+# makes a per-test `monkeypatch.setenv("COLUMNS", ...)` mean anything at all. Since rich 15.0.0
+# `Console.__init__` resolves width EAGERLY — it reads `COLUMNS` itself and stores the result in
+# `self._width` — and `Console.size` then returns `self._width` verbatim, never re-reading the
+# environment. So a console built at import under an ambient `COLUMNS` is frozen at that width
+# for the life of the process, and every later `setenv` is a no-op. Popping here, before the
+# module-level consoles exist, leaves `_width` None, which is the only state in which
+# `Console.size`'s live `COLUMNS` lookup is reachable.
+#
+# This is not hypothetical: `COLUMNS=80 uv run pytest -k abstain` reproduces the ubuntu/3.12 CI
+# failure byte-for-byte, because the console freezes at 80 and the 35-character
+# `work_auth:eu_authorization_required` folds inside a 25-character table column.
 # ---------------------------------------------------------------------------------------
 os.environ.pop("FORCE_COLOR", None)
 os.environ.pop("TTY_COMPATIBLE", None)
+os.environ.pop("COLUMNS", None)
+os.environ.pop("LINES", None)
 os.environ["TERM"] = "xterm"
 
 
