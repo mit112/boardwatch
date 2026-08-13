@@ -41,7 +41,8 @@ class LLMTier(BaseModel):
     Carries only non-secret knobs; the credential is never a field here (it comes from
     the environment via core.secrets), which keeps secrets out of every serialize path.
     Includes extraction knobs (eligibility_extraction, base_url) and call budgets
-    (max_calls_per_run) for LLM-assisted eligibility assessment.
+    (max_calls_per_run). max_calls_per_run bounds calls per invocation of the eligibility
+    lane and per résumé in the tailor lane — it is not a per-run total (D-146).
     """
 
     model_config = ConfigDict(frozen=True)

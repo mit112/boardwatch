@@ -42,6 +42,21 @@ All notable changes to this project are documented here. The format follows
   `[0.3.0]` notes below do not enumerate it; it was unreachable there, with no command and no entry
   point.
 
+### Changed
+
+- **`boardwatch eligibility extract` and `boardwatch tailor --tier-b` now exit 1 when an LLM
+  credential dies mid-run and nothing landed** (P3 slice 5, D-146). Previously a dead credential was
+  swallowed silently: `eligibility extract` burned up to `max_calls_per_run` doomed calls, wrote zero
+  eligibility rows, printed `"extracted N postings"`, and exited 0; `tailor --tier-b` recorded every
+  dropped bullet as the undifferentiated `drop_reason="error"` and exited 0 regardless. Both commands
+  now classify credential death (exhausted credit, invalid credential, or a key lacking model access)
+  from the provider's error body at the point of failure, stop making further calls for the rest of
+  the invocation, and report which reason. The new exit 1 fires **only** when death was observed
+  **and** nothing landed — a credential that dies partway through, or a healthy run that keeps zero
+  results because nothing qualified, both still exit 0 exactly as before. This is a public CLI
+  contract change: a caller relying on the old always-0 exit code from these two commands will now see
+  1 in the dead-credential-with-zero-output case.
+
 ## [0.3.0] - 2026-08-10
 
 ### Added

@@ -110,75 +110,76 @@ and is a no-op when the index is already right. `make index-check` reports drift
 | D-074 | DECISIONS-ARCHIVE.md | 3009 | Final eligibility gate lane SHIPPED (persistent, agent-lane, fail-open); Gate P5 unchanged |
 | D-075 | DECISIONS-ARCHIVE.md | 3084 | Gate P2 reconciled: three individually-correct verdicts (may coincide); ≥3-field mechanism via fixtures |
 | D-076 | DECISIONS-ARCHIVE.md | 3153 | P2 item 4's final whole-branch review: what it caught, and four rulings it forced |
-| D-077 | DECISIONS.md | 185 | P6 Slice 1: the design is settled and the plan is written; no code exists yet |
-| D-078 | DECISIONS.md | 275 | P6 Slice 1: the plan's test fixtures are now real; eleven defects, all found by running code |
-| D-079 | DECISIONS.md | 364 | P6 Slice 1 annotates only; `postings.job_id` is not mutated |
-| D-080 | DECISIONS.md | 378 | `content_hash` alone may never suppress |
-| D-081 | DECISIONS.md | 392 | `exact_quad` is the sole suppressing kind, and its yield is stated honestly |
-| D-082 | DECISIONS.md | 410 | `cross_host` ships annotate-only, reversing an earlier draft |
-| D-083 | DECISIONS.md | 431 | No location evidence ⇒ no location-bearing identity, never a `"[]"` sentinel |
-| D-084 | DECISIONS.md | 446 | Three host classes, not two; matching is exact-or-dot-suffix |
-| D-085 | DECISIONS.md | 460 | Allowlist URL normalization, not a denylist |
-| D-086 | DECISIONS.md | 474 | Survivor election never consults score; `posting_id` is a load-bearing tiebreak |
-| D-087 | DECISIONS.md | 489 | Instrumentation is completeness-gated, not existence-gated |
-| D-088 | DECISIONS.md | 503 | `assisted` stays `None` in this slice |
-| D-089 | DECISIONS.md | 518 | Identities are upserted on every observation; a kind that stops being produced is deleted |
-| D-090 | DECISIONS.md | 535 | The ranker is completeness-gated for reproducibility, not safety |
-| D-091 | DECISIONS.md | 553 | The recount recomputes in Python, and claims staleness only |
-| D-092 | DECISIONS.md | 568 | Identities are backfilled by an explicit command, not by the migration |
-| D-093 | DECISIONS.md | 582 | Slice 1 does NOT meet Gate P6, and makes only one of its four clauses measurable |
-| D-094 | DECISIONS.md | 596 | P6 Slice 1 BUILT (unattended run): five more plan defects, three of them tests that could not fail |
-| D-095 | DECISIONS.md | 724 | P6 Slice 1 reviewed by three independent reviewers; fourteen findings fixed, two rejected |
-| D-096 | DECISIONS.md | 789 | The C++/C# fix folds punctuation into words; it does NOT add a raw-title comparison |
-| D-097 | DECISIONS.md | 833 | `_verify_quad` rejected nothing on the live corpus; "string-verified" is not precision evidence |
-| D-098 | DECISIONS.md | 862 | Suppression reports when it is OFF; wiring backfill into the pipeline is Slice 2 |
-| D-099 | DECISIONS.md | 898 | Gate batching stays allowed; the per-task fast-check set must include the schema guards |
-| D-100 | DECISIONS.md | 924 | P6 Slice 1 merged to `main`; Gate P6 clause 3 is MET, not merely measurable |
-| D-101 | DECISIONS.md | 956 | Gate P6 clause 4 is MET: 20/20 sampled suppressions are genuine duplicates |
-| D-102 | DECISIONS.md | 986 | D-072 (model-tier benchmark) is deferred indefinitely |
-| D-103 | DECISIONS.md | 1008 | P6 Slice 2: the ledger is a current-state row per job, `seen` suppresses on a TTL, and the policy stamp never auto-reopens |
-| D-104 | DECISIONS.md | 1080 | Job regrouping: the survivor's job wins, and a tracked group is refused whole |
-| D-105 | DECISIONS.md | 1123 | Identity writes move into the scan path, closing D-098 — and D-098's cost argument did not apply |
-| D-106 | DECISIONS.md | 1154 | Two consequences the build forced: what earns a permanent `skipped`, and the zero-output guard |
-| D-107 | DECISIONS.md | 1180 | P6 Slice 2 BUILT and verified on real data; `cross_host` dereference deferred by measured absence |
-| D-108 | DECISIONS.md | 1229 | The decision log and the metrics log are archive-split; the reading protocol moves into the index |
-| D-109 | DECISIONS.md | 1288 | Index drift fails the gate, and the fixer lives in `tools/` |
-| D-110 | DECISIONS.md | 1366 | The Slice 2 review: only a caller that delivers a lead may consume the queue |
-| D-111 | DECISIONS.md | 1483 | P6 Slice 3: applied-state suppression, and liveness sized to what the corpus actually is |
-| D-112 | DECISIONS.md | 1652 | 0.3.0 is cut, the changelog gets ONE triple, and the tag is the owner's to push |
-| D-113 | DECISIONS.md | 1756 | The Slice 3 external review: a followed redirect can forge a gone-status |
-| D-114 | DECISIONS.md | 1844 | CI installs tectonic and pdfinfo on all three OSes; skipping the gate was refused |
-| D-115 | DECISIONS.md | 1912 | Gate A of the career-profile bundle: 9 of 19 slices, and a rule for checks that cannot fire |
-| D-116 | DECISIONS.md | 1994 | A docs-only commit owes the two fast gates, not the full suite; the tectonic pin gets a detector |
-| D-117 | DECISIONS.md | 2041 | 0.3.0's tag moves rather than 0.3.1 being cut; gitleaks fixed by cleaning bytes, not allowlisting |
-| D-118 | DECISIONS.md | 2091 | Gate A slice T10: effectiveness derived in one place, and two more §20.4 rows with no check |
-| D-119 | DECISIONS.md | 2188 | 0.3.0 is PUBLISHED: the tag moved onto a CI-green commit, and ships two known BLOCKERs deliberately |
-| D-120 | DECISIONS.md | 2256 | Gate A slice T12: the résumé emission order is fixed, and three more checks that cannot fire |
-| D-121 | DECISIONS.md | 2339 | The T12 review: a green gate and a perfect mutation score hid five BLOCKING defects |
-| D-122 | DECISIONS.md | 2400 | The T12 re-review: one defect the fix created, two contracts never enforced, and a decline that was wrong |
-| D-123 | DECISIONS.md | 2523 | A recurring trigger holding a one-shot prompt re-fires a task that already shipped |
-| D-124 | DECISIONS.md | 2568 | The third T12 review: the locator grammar keeps failing because it restates the emitter instead of deriving from it |
-| D-125 | DECISIONS.md | 2633 | The T12 round-three fix, and two more reviews of it: a forbidden segment is escaped, never refused |
-| D-126 | DECISIONS.md | 2765 | T12's review loop is CLOSED, with a stated exit criterion |
-| D-127 | DECISIONS.md | 2821 | Gate A slices T13 and T14: an approval bound to nothing, and the first code that WRITES a bundle |
-| D-128 | DECISIONS.md | 2942 | Gate A T14 round 2, T15 and T17: what three green suites could not see |
-| D-129 | DECISIONS.md | 3131 | The two Gate A design departures are RULED: the design text was wrong, not the code |
-| D-130 | DECISIONS.md | 3196 | Correcting D-128 and D-129: what the fix rounds actually established, and what the rebase actually deletes |
-| D-131 | DECISIONS.md | 3271 | The T14/T15 fix-round review's findings are fixed: a merge short-cut that skipped the append-only rule, and five residues |
-| D-132 | DECISIONS.md | 3406 | Gate A slice T16 reviewed by three lenses: the highest-risk slice, and the one defect two of them found separately |
-| D-133 | DECISIONS.md | 3483 | Correcting D-130 and D-131: what is actually pushed, and five statements a docs review caught in this session's own records |
-| D-134 | DECISIONS.md | 3555 | A finding's tier is a property of the operation, not of the code alone |
-| D-135 | DECISIONS.md | 3612 | The Gate A integration gate is green on all nineteen slices, and the 03:10 job misfired a second time |
-| D-136 | DECISIONS.md | 3685 | Gate A slices T18 and T19: two lenses, a ten-commit fix round, and an integration merge where two green branches wrote one rule twice |
-| D-137 | DECISIONS.md | 3801 | Gate A's review loop CLOSES at round five, and a two-document write is named rather than made atomic |
-| D-138 | DECISIONS.md | 3886 | A missing bundle root is its own fact, and `inventory` reporting it as clean was the defect |
-| D-139 | DECISIONS.md | 3941 | `STATE.md` splits its standing facts out, because a read-first file at twice its stated length is read past |
-| D-140 | DECISIONS.md | 3989 | D-116's conclusion survives, its premise does not: two tests do read the real `docs/` tree |
-| D-141 | DECISIONS.md | 4037 | The third site of the blocking-`open()` class is closed, at the layout boundary |
-| D-142 | DECISIONS.md | 4080 | D-138 delivered eight of twelve commands, and said twelve. The review that caught it, and what the surviving mutation cost |
-| D-143 | DECISIONS.md | 4149 | `add-evidence` writes the back-citation, closing Gate A's last open question |
-| D-144 | DECISIONS.md | 4232 | Grounding reads `supports` alone; citing a source is not being backed by it |
-| D-145 | DECISIONS.md | 4290 | The Gate A subsystem never ran on Windows, and one `write_text` hid it |
+| D-077 | DECISIONS.md | 186 | P6 Slice 1: the design is settled and the plan is written; no code exists yet |
+| D-078 | DECISIONS.md | 276 | P6 Slice 1: the plan's test fixtures are now real; eleven defects, all found by running code |
+| D-079 | DECISIONS.md | 365 | P6 Slice 1 annotates only; `postings.job_id` is not mutated |
+| D-080 | DECISIONS.md | 379 | `content_hash` alone may never suppress |
+| D-081 | DECISIONS.md | 393 | `exact_quad` is the sole suppressing kind, and its yield is stated honestly |
+| D-082 | DECISIONS.md | 411 | `cross_host` ships annotate-only, reversing an earlier draft |
+| D-083 | DECISIONS.md | 432 | No location evidence ⇒ no location-bearing identity, never a `"[]"` sentinel |
+| D-084 | DECISIONS.md | 447 | Three host classes, not two; matching is exact-or-dot-suffix |
+| D-085 | DECISIONS.md | 461 | Allowlist URL normalization, not a denylist |
+| D-086 | DECISIONS.md | 475 | Survivor election never consults score; `posting_id` is a load-bearing tiebreak |
+| D-087 | DECISIONS.md | 490 | Instrumentation is completeness-gated, not existence-gated |
+| D-088 | DECISIONS.md | 504 | `assisted` stays `None` in this slice |
+| D-089 | DECISIONS.md | 519 | Identities are upserted on every observation; a kind that stops being produced is deleted |
+| D-090 | DECISIONS.md | 536 | The ranker is completeness-gated for reproducibility, not safety |
+| D-091 | DECISIONS.md | 554 | The recount recomputes in Python, and claims staleness only |
+| D-092 | DECISIONS.md | 569 | Identities are backfilled by an explicit command, not by the migration |
+| D-093 | DECISIONS.md | 583 | Slice 1 does NOT meet Gate P6, and makes only one of its four clauses measurable |
+| D-094 | DECISIONS.md | 597 | P6 Slice 1 BUILT (unattended run): five more plan defects, three of them tests that could not fail |
+| D-095 | DECISIONS.md | 725 | P6 Slice 1 reviewed by three independent reviewers; fourteen findings fixed, two rejected |
+| D-096 | DECISIONS.md | 790 | The C++/C# fix folds punctuation into words; it does NOT add a raw-title comparison |
+| D-097 | DECISIONS.md | 834 | `_verify_quad` rejected nothing on the live corpus; "string-verified" is not precision evidence |
+| D-098 | DECISIONS.md | 863 | Suppression reports when it is OFF; wiring backfill into the pipeline is Slice 2 |
+| D-099 | DECISIONS.md | 899 | Gate batching stays allowed; the per-task fast-check set must include the schema guards |
+| D-100 | DECISIONS.md | 925 | P6 Slice 1 merged to `main`; Gate P6 clause 3 is MET, not merely measurable |
+| D-101 | DECISIONS.md | 957 | Gate P6 clause 4 is MET: 20/20 sampled suppressions are genuine duplicates |
+| D-102 | DECISIONS.md | 987 | D-072 (model-tier benchmark) is deferred indefinitely |
+| D-103 | DECISIONS.md | 1009 | P6 Slice 2: the ledger is a current-state row per job, `seen` suppresses on a TTL, and the policy stamp never auto-reopens |
+| D-104 | DECISIONS.md | 1081 | Job regrouping: the survivor's job wins, and a tracked group is refused whole |
+| D-105 | DECISIONS.md | 1124 | Identity writes move into the scan path, closing D-098 — and D-098's cost argument did not apply |
+| D-106 | DECISIONS.md | 1155 | Two consequences the build forced: what earns a permanent `skipped`, and the zero-output guard |
+| D-107 | DECISIONS.md | 1181 | P6 Slice 2 BUILT and verified on real data; `cross_host` dereference deferred by measured absence |
+| D-108 | DECISIONS.md | 1230 | The decision log and the metrics log are archive-split; the reading protocol moves into the index |
+| D-109 | DECISIONS.md | 1289 | Index drift fails the gate, and the fixer lives in `tools/` |
+| D-110 | DECISIONS.md | 1367 | The Slice 2 review: only a caller that delivers a lead may consume the queue |
+| D-111 | DECISIONS.md | 1484 | P6 Slice 3: applied-state suppression, and liveness sized to what the corpus actually is |
+| D-112 | DECISIONS.md | 1653 | 0.3.0 is cut, the changelog gets ONE triple, and the tag is the owner's to push |
+| D-113 | DECISIONS.md | 1757 | The Slice 3 external review: a followed redirect can forge a gone-status |
+| D-114 | DECISIONS.md | 1845 | CI installs tectonic and pdfinfo on all three OSes; skipping the gate was refused |
+| D-115 | DECISIONS.md | 1913 | Gate A of the career-profile bundle: 9 of 19 slices, and a rule for checks that cannot fire |
+| D-116 | DECISIONS.md | 1995 | A docs-only commit owes the two fast gates, not the full suite; the tectonic pin gets a detector |
+| D-117 | DECISIONS.md | 2042 | 0.3.0's tag moves rather than 0.3.1 being cut; gitleaks fixed by cleaning bytes, not allowlisting |
+| D-118 | DECISIONS.md | 2092 | Gate A slice T10: effectiveness derived in one place, and two more §20.4 rows with no check |
+| D-119 | DECISIONS.md | 2189 | 0.3.0 is PUBLISHED: the tag moved onto a CI-green commit, and ships two known BLOCKERs deliberately |
+| D-120 | DECISIONS.md | 2257 | Gate A slice T12: the résumé emission order is fixed, and three more checks that cannot fire |
+| D-121 | DECISIONS.md | 2340 | The T12 review: a green gate and a perfect mutation score hid five BLOCKING defects |
+| D-122 | DECISIONS.md | 2401 | The T12 re-review: one defect the fix created, two contracts never enforced, and a decline that was wrong |
+| D-123 | DECISIONS.md | 2524 | A recurring trigger holding a one-shot prompt re-fires a task that already shipped |
+| D-124 | DECISIONS.md | 2569 | The third T12 review: the locator grammar keeps failing because it restates the emitter instead of deriving from it |
+| D-125 | DECISIONS.md | 2634 | The T12 round-three fix, and two more reviews of it: a forbidden segment is escaped, never refused |
+| D-126 | DECISIONS.md | 2766 | T12's review loop is CLOSED, with a stated exit criterion |
+| D-127 | DECISIONS.md | 2822 | Gate A slices T13 and T14: an approval bound to nothing, and the first code that WRITES a bundle |
+| D-128 | DECISIONS.md | 2943 | Gate A T14 round 2, T15 and T17: what three green suites could not see |
+| D-129 | DECISIONS.md | 3132 | The two Gate A design departures are RULED: the design text was wrong, not the code |
+| D-130 | DECISIONS.md | 3197 | Correcting D-128 and D-129: what the fix rounds actually established, and what the rebase actually deletes |
+| D-131 | DECISIONS.md | 3272 | The T14/T15 fix-round review's findings are fixed: a merge short-cut that skipped the append-only rule, and five residues |
+| D-132 | DECISIONS.md | 3407 | Gate A slice T16 reviewed by three lenses: the highest-risk slice, and the one defect two of them found separately |
+| D-133 | DECISIONS.md | 3484 | Correcting D-130 and D-131: what is actually pushed, and five statements a docs review caught in this session's own records |
+| D-134 | DECISIONS.md | 3556 | A finding's tier is a property of the operation, not of the code alone |
+| D-135 | DECISIONS.md | 3613 | The Gate A integration gate is green on all nineteen slices, and the 03:10 job misfired a second time |
+| D-136 | DECISIONS.md | 3686 | Gate A slices T18 and T19: two lenses, a ten-commit fix round, and an integration merge where two green branches wrote one rule twice |
+| D-137 | DECISIONS.md | 3802 | Gate A's review loop CLOSES at round five, and a two-document write is named rather than made atomic |
+| D-138 | DECISIONS.md | 3887 | A missing bundle root is its own fact, and `inventory` reporting it as clean was the defect |
+| D-139 | DECISIONS.md | 3942 | `STATE.md` splits its standing facts out, because a read-first file at twice its stated length is read past |
+| D-140 | DECISIONS.md | 3990 | D-116's conclusion survives, its premise does not: two tests do read the real `docs/` tree |
+| D-141 | DECISIONS.md | 4038 | The third site of the blocking-`open()` class is closed, at the layout boundary |
+| D-142 | DECISIONS.md | 4081 | D-138 delivered eight of twelve commands, and said twelve. The review that caught it, and what the surviving mutation cost |
+| D-143 | DECISIONS.md | 4150 | `add-evidence` writes the back-citation, closing Gate A's last open question |
+| D-144 | DECISIONS.md | 4233 | Grounding reads `supports` alone; citing a source is not being backed by it |
+| D-145 | DECISIONS.md | 4291 | The Gate A subsystem never ran on Windows, and one `write_text` hid it |
+| D-146 | DECISIONS.md | 4361 | LLM lane-death is one typed error, classified at the raise site, latched per invocation — scoped to the two lanes that call out |
 
 ---
 
@@ -4354,3 +4355,169 @@ Both survivors were the same two classes again, which is the useful part:
 
 **Fix the class, not the instance.** Both rounds here found one failing site of a pattern that had
 many, and in both the passing sites were the dangerous ones.
+
+---
+
+## D-146 — LLM lane-death is one typed error, classified at the raise site, latched per invocation — scoped to the two lanes that call out
+
+*2026-08-12. P3 slice 5, scoped to the two lanes that construct an LLM client. Commits `566050a`,
+`72924aa`, `58e61cf`, `8bb444a`, `39bd307`, `4d822dc`, `a7b504e`, `185a66b`, `ced1b90` on
+`p3-slice5-llm-lane-death`, merged at `ba13dea`. Reviewed each round; see the design's own §10 for
+the record.*
+
+### Context
+
+`eligibility/extract_llm.py` caught **every** exception from `client.complete()` and returned `None`;
+its caller, `cli/eligibility_cmd.py`, ignored the return value, incremented one counter
+unconditionally, and printed `"extracted N postings"` at exit 0. With a dead credential and a cold
+cache over ≥50 open postings this meant up to `max_calls_per_run` doomed HTTP calls, zero eligibility
+rows written, a report claiming success, and exit 0 — the "no flags ≠ cleared" silent-success class
+the program has already paid for three times (D-138, D-141, D-142). `tailor/rewrite/lane.py` has the
+same shape at lower volume: two bare `except Exception` boundaries recorded the undifferentiated
+`drop_reason="error"` on a dead credential exactly as they would on an ordinary transient fault.
+
+### The design's stated justification was falsified during implementation
+
+The design spec (§5.1) justified raise-site classification with: "Anthropic returns HTTP 403 for both
+`billing_error` and `permission_error`, which mean different things... so any classifier keyed on the
+status code conflates them." **This is false.** Provider-error-body research done during this slice
+(`.superpowers/sdd/2026-08-12-p3-slice5-llm-lane-death/provider-error-bodies.md`) reconfirmed, by
+quoting Anthropic's current official error-codes page in full, that `billing_error` is paired with
+**402** and `permission_error` with **403** — each exactly once, on two different statuses, never both
+on 403. No source found anywhere pairs `billing_error` with 403. The code originally shipped with the
+false pairing (`billing_error`/403) and was corrected in-slice (`a7b504e`, before `185a66b`); the
+mapping now live in `llm/anthropic.py` is `billing_error`/402 → `CREDIT_EXHAUSTED`,
+`authentication_error`/401 → `CREDENTIAL_INVALID`, `permission_error`/403 → `MODEL_FORBIDDEN`.
+
+**The true justification for reading the error body instead of the status** does not depend on the
+403 double-meaning at all: `error.type` is the provider's own typed signal, carried in a contract
+Anthropic documents and versions, whereas the HTTP status is a coarser channel that an intermediary
+(a gateway, a corporate proxy, a load balancer) can rewrite without touching the JSON body underneath
+it. A classifier keyed on status alone inherits whatever the network path between boardwatch and the
+provider does to that status; a classifier keyed on the documented body field does not. This is
+recorded here because a quietly corrected document would leave the false claim as the only rationale
+anyone re-reads; the correction is the more useful fact to carry forward, and the spec and plan
+themselves are left as authored — this entry is where the true position lives.
+
+### Decision
+
+**One error class, not three.** A dead quota, a revoked key, and a key lacking model access all fail
+every remaining call identically; they differ only in why. `LaneDeathReason` is a closed `StrEnum`
+(`CREDIT_EXHAUSTED`, `CREDENTIAL_INVALID`, `MODEL_FORBIDDEN`); `LLMLaneDeadError(LLMError)` carries
+one in a typed field.
+
+**Classification happens at the raise site, from the response body's `error.type` — never from the
+HTTP status alone and never by string-matching a message downstream** (CLAUDE.md), because the body
+is the provider's own typed signal and the status is a channel an intermediary can rewrite (see
+above). Anthropic maps `billing_error`/402 → `CREDIT_EXHAUSTED`, `authentication_error`/401 →
+`CREDENTIAL_INVALID`, `permission_error`/403 → `MODEL_FORBIDDEN`, checked **before** the
+retryable-status branch (locked by a direct test after a surviving mutant showed the ordering was
+unverified). The openai-compat catalog is deliberately **narrower**, admitting only unambiguous
+signals: HTTP 401 → `CREDENTIAL_INVALID`, HTTP 402 → `CREDIT_EXHAUSTED`, and body `code`/`type` ==
+`insufficient_quota` **or** `credit_balance_exhausted` at **any** status → `CREDIT_EXHAUSTED` (checked
+ahead of the retryable-status branch too, because OpenAI signals an exhausted balance as 429 with
+that code — left to the status check alone, the commonest death mode would be classified transient,
+retried, and swallowed at 4× the call volume). `credit_balance_exhausted` was added alongside
+`insufficient_quota`, not in place of it: OpenAI's docs now lead with the newer code, but real
+captured error bodies people quote still carry `insufficient_quota` verbatim, so both tokens are
+live and the change is verified additive. **Bare HTTP 403 is deliberately unmapped for
+openai-compat** — on an arbitrary proxy it is not proof of credential death, and mis-latching would
+suppress a lane that is merely misrouted. An unrecognized `error.type` stays a plain `LLMError`:
+out-of-catalog is a failure, never a new bucket (CLAUDE.md).
+
+**The classifier is total, never the thing that raises.** Every malformed shape — invalid JSON, empty
+body, non-object root, `error` as a string, missing `type`, non-string `type` — degrades to `None`
+(plain `LLMError`) rather than raising, because a `TypeError` escaping the classifier would land in
+`extract_llm.py`'s blanket `except` and reproduce the very silent success this removes.
+
+**A wrapper, not threaded state.** `RunScopedClient` (`llm/run_client.py`) implements `ModelClient`
+and wraps a real adapter: once a death reason is recorded, every later `complete()` raises without
+touching the network. It is installed by `build_client` (`llm/factory.py`), the single construction
+point both consumers already call once per invocation, so the wrapper's lifetime is exactly one
+invocation and **no call site changes**. `build_client`'s annotation stays `-> ModelClient | None`;
+the two constructing callers (`cli/tailor_cmd.py`, `cli/eligibility_cmd.py`) narrow with `isinstance`
+where they need the concrete type to read `dead_reason`.
+
+**Consumers keep two counters, not one.** `cli/eligibility_cmd.py`'s `attempted` increments once per
+posting sent to extraction and is what the loop caps at `max_calls_per_run` — it must keep advancing
+even when every call fails unclassified, or the cap silently disappears. `extracted` increments only
+on a landed evaluation and is what the exit condition reads. `tailor/rewrite/lane.py`'s two
+containment boundaries record `drop_reason="lane_dead"` instead of `"error"`.
+
+**Exit 1 only under death observed ∧ zero landed** — zero `extracted` in the eligibility lane, zero
+rewrites kept in the tailor lane — never zero-landed alone: `lane.py` has thirteen `kept=False` paths
+against one `kept=True`, so a healthy credential legitimately keeps zero rewrites whenever every
+candidate is not-entailed, echoed `unchanged`, or filtered, and an eligibility run whose calls all
+fail unclassified (network, malformed body) must also keep exiting 0.
+
+**Deliberately not built:** a run-scoped call ceiling — the eligibility lane already has a working
+per-invocation cap, and `boardwatch tailor` handles one posting so per-lead and per-run coincide
+there; only the misleading `max_calls_per_run` **name** is fixed, by docstring. And wiring Tier B into
+`pipeline/runner.py` — an owner decision, recorded as a gap (design §8), not fixed by fiat.
+
+### Accepted limitation: the Azure false-latch
+
+Azure OpenAI returns HTTP 429 with `error.type == error.code == "insufficient_quota"` for a
+**recoverable** per-deployment TPM/RPM throttle — a rate limit, not billing exhaustion — and this body
+is structurally indistinguishable from genuine OpenAI credit exhaustion under the mapping above.
+Provider research (`provider-error-bodies.md` §3) looked for a discriminator and found none
+established: no `Retry-After` header and no `innererror` field is reported anywhere in the sourced
+material as reliably present on the throttle case, and Microsoft's own explanation states plainly that
+Azure quota is scoped separately from Azure credit balance, so a live $5,000 credit balance does not
+prevent this 429. **The mapping was deliberately kept as-is.** Removing `insufficient_quota` from the
+openai-compat catalog to avoid this false-latch would restore the worse defect this slice exists to
+fix — OpenAI's own commonest death mode (credit exhaustion signaled the same way) would go back to
+being retried four times per call and then silently swallowed. The blast radius of keeping it is
+bounded: this is the advisory Tier-B/eligibility-LLM lane only, Tier A (the deterministic engine) is
+untouched, and the effect is confined to one invocation — a transient Azure throttle latches the lane
+dead for the rest of that one run and can make it exit 1 reporting the credential unusable, but the
+next invocation starts clean. Recorded as an accepted, owner-gated limitation with its evidence, not
+as a resolved question — if Azure's contract ever documents a discriminator, add it then.
+
+### Gap: `lane_dead` is not in the funnel's closed drop-reason catalog
+
+`reports/run_funnel.py`'s `FabricationCounters` catalog (five mirror sites: the `:295`-area docstring,
+the dataclass fields, the `elif reason == ...` fold, the JSON serialization, and the markdown render)
+does not have a `lane_dead` branch, so a `drop_reason="lane_dead"` row would fall into `other` and
+trigger the literal `**FAILURE — N rewrite rows carried a drop_reason the closed catalog does not
+name**` line — this project's rule that an out-of-catalog value is a failure, never a new bucket,
+working exactly as designed against an omission rather than a real defect.
+
+**It is unreachable today, independently verified**, not merely assumed: `pipeline/runner.py`
+(`:522`-`:529`) calls `run_tailor` with no `client`, `cache`, or `tb_override` argument, so
+`reports/tailor.py`'s `tb = TierBResult(accepted=[], rows=[], calls_made=0)` sentinel is never
+replaced — `llm_rows` stays `None` and the `if result.rewrites is not None` guard (`runner.py:590`)
+never fires, so the pipeline's funnel never sees a `lane_dead` row. The only other caller that can
+produce rewrites is the agent lane (`boardwatch tailor rewrite`, no API client, no funnel write). So
+today, no code path reaches the gap.
+
+**Whoever wires Tier B into `pipeline/runner.py` must add the `lane_dead` catalog row and its test in
+the same change** — this is not deferred as a nice-to-have, it is a precondition of that wiring, and
+is recorded here alongside the wiring gap itself (design §8) so the two are not discovered separately.
+
+### Deferred, evidence-backed follow-up
+
+A status-fallback table for Anthropic — 401/402/403 each mapping to exactly one `error.type` per the
+corrected documentation above — would close the known gap that a non-JSON or malformed error body
+(the classifier's total-not-raising fallback path) never latches even when the status alone would be
+sufficient to know a 401 is `CREDENTIAL_INVALID`. Deliberately not built in this slice: it adds a
+second classification path with its own correctness burden for a case (malformed body) that provider
+research did not surface as commonly observed. Recorded here so the evidence is attached when someone
+picks it up.
+
+### Alternatives rejected
+
+- **Three separate exception types**, one per reason. Rejected: all three fail every remaining call
+  identically and differ only in why, so one class carrying a typed `reason` field says the same
+  thing with less machinery for every catch site to handle.
+- **Threading run-scoped state through `run_tailor`** (a parameter or context object passed down the
+  call graph). Rejected: `ModelClient` is already a `Protocol`, so a wrapper is a drop-in requiring no
+  signature changes anywhere; threaded state would touch every function between the CLI and the
+  network call for no guarantee the wrapper doesn't already give.
+- **Provider-specific classification tables with provider identity plumbed into the adapter.**
+  Rejected in this narrower form: `openai_compat.py` serves an arbitrary endpoint by design
+  (`settings.provider` free-form, `base_url` arbitrary), so a per-provider table needs provider
+  identity threaded into an adapter that currently carries none, to catalogue a signal (bare 403)
+  whose own justification argues against cataloguing it — an arbitrary proxy's 403 proves nothing,
+  which argues for leaving it unmapped rather than tabulating it. If a future provider's documented
+  contract justifies more, add it then with the evidence.
