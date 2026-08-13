@@ -568,17 +568,27 @@ def test_dead_credential_stops_after_one_call_and_exits_1(
     # The fixture seeds 2 postings into a FRESH data dir: the cache is consulted before
     # the client, so a warm cache would mask the death. Reaching only the first proves
     # the loop stopped rather than ran out of work.
-    client = RunScopedClient(_DeadClient())
+    inner = _DeadClient()
+    client = RunScopedClient(inner)
     monkeypatch.setattr(
         "boardwatch.cli.eligibility_cmd.build_client", lambda settings: client
     )
     result = _invoke(cli_env_with_postings, ["eligibility", "extract"])
     flat = result.output.replace("\n", "")
     assert result.exit_code == 1
+    # `attempted` is what catches a missing `break`. Delete the break in eligibility_cmd
+    # and the loop reaches posting 2, so this reads "0 of 2" and fails.
     assert "extracted 0 of 1 attempted" in flat
     assert "credit_exhausted" in flat
-    # The load-bearing assertion. The message alone passes with the defect present.
+    # NOT a second copy of the line above. `calls_attempted` is the WRAPPER's own tally, and
+    # it stays 1 with the break deleted — `RunScopedClient.complete` raises on the latched
+    # reason BEFORE incrementing — so on its own it would pass with that defect present. It
+    # catches the opposite one: a lane that stopped counting rather than stopped calling.
     assert client.calls_attempted == 1
+    # The independent counter: how many times the provider was really reached. Kept by the
+    # fake, not self-reported by the code under test, so a wrapper that mis-tallies cannot
+    # make this agree with it.
+    assert inner.calls == 1
 
 
 def _run_rows(data_dir: Path) -> list[tuple[str, object, object]]:
