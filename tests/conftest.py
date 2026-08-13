@@ -16,6 +16,27 @@ from boardwatch.store.db import ensure_schema, get_engine
 from boardwatch.store.queries import save_profile
 from boardwatch.store.tables import companies, jobs, posting_versions, postings, runs
 
+
+@pytest.fixture(autouse=True)
+def _non_dumb_terminal(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Pin `TERM` so rich resolves console width from `COLUMNS`, not from a dumb-terminal
+    fallback.
+
+    `Console.size` returns a hard-coded (80, 25) when `is_dumb_terminal` — `TERM` in
+    ("dumb", "unknown") AND `is_terminal` — and that branch sits ABOVE the `COLUMNS`
+    lookup, so it silently overrides it. `is_terminal` is true whenever `FORCE_COLOR` or
+    `TTY_COMPATIBLE=1` is set, which a CI runner may do even though nothing is a tty. A
+    runner supplying both therefore renders every table at 80 columns regardless of what
+    a test asked for, folding long cells across lines and breaking any substring
+    assertion over them. This is why `test_abstain_names_rules_that_have_never_been_detected`
+    failed on ubuntu/3.12 alone while passing on the eight other matrix jobs and locally.
+
+    Autouse and repo-wide because the exposure is not specific to that test: every
+    assertion over rich-rendered CLI output inherits it.
+    """
+    monkeypatch.setenv("TERM", "xterm")
+
+
 # ---------------------------------------------------------------------------------------
 # P6 dedup seeding (Tasks 5-8).
 #
