@@ -27,6 +27,11 @@ All notable changes to this project are documented here. The format follows
   bound to the content digest and not to the draft's name. Evidence blobs are captured by digest and
   secret-scanned on capture.
 
+  `add-evidence` writes the back-citation itself, default on: attaching an evidence record also updates
+  every fact-bearing document that cites it, and the command **names the documents it rewrote** —
+  `cited_back`, printed and in `--json`. Without it the command had become an up-to-thirteen-file edit
+  that reported none of them.
+
   It also ships, as package data, the JSON Schema generated from the typed models and a complete
   synthetic example bundle, so the authoring contract is readable without running the code.
 
