@@ -240,6 +240,7 @@ def run_cmd(
                 "eligibility LLM lane; a cache hit still spends budget, so re-running with "
                 "no config change will not help)."
             )
+        lane_death_fatal = False
         if any(r["drop_reason"] == "lane_dead" for r in result.rewrites):
             # The rows prove death OCCURRED; they cannot say WHICH reason — drop_reason is a
             # free-form string, and duplicating the typed reason into it would be classifying
@@ -254,10 +255,15 @@ def run_cmd(
             # Both conjuncts are required. Zero kept ALONE is a routine healthy outcome —
             # every candidate judged not-entailed, echoed back unchanged, or filtered — and
             # must stay exit 0. Only death observed AND nothing salvaged is a failed run.
-            if not any(r["kept"] for r in result.rewrites):
-                raise typer.Exit(code=1)
+            lane_death_fatal = not any(r["kept"] for r in result.rewrites)
         if not result.dry_run and result.llm_pdf_path is not None:
             console.print(f"tier B pdf: {result.llm_pdf_path}")
+        # After the path is printed, not before. The exit-1 run still WRITES the
+        # `resume_tailored_llm` artifact — raising above this line suppressed the only line
+        # naming a file that exists on disk, so the user was told the run failed and never
+        # told where its output went.
+        if lane_death_fatal:
+            raise typer.Exit(code=1)
 
 
 @rewrite_app.command("request")

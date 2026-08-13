@@ -433,6 +433,10 @@ def test_lane_death_records_lane_dead_and_keeps_tier_a(
     # the only place call 2 can have died is `lane.py`'s judge boundary.
     assert flat.count("fallback:lane_dead") == 2
     assert "fallback:provenance" not in flat
+    # The exit-1 run still WROTE a resume_tailored_llm artifact, so the line naming it must
+    # survive the failure. Raising above the printer suppressed the only pointer to a file
+    # that exists on disk.
+    assert "tier B pdf:" in flat
 
 
 def test_lane_death_after_a_kept_rewrite_is_a_partial_success(
