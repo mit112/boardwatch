@@ -107,6 +107,22 @@ def test_a_missing_approval_stamp_refuses_to_emit(projection_env_unapproved) -> 
     assert exc.value.violation.issue is ProjectionIssue.MISSING_PROJECTION_APPROVAL
 
 
+def test_an_unpromoted_bundle_is_wrapped_as_a_typed_refusal(
+    projection_env_unpromoted_bundle,  # noqa: F811
+) -> None:
+    """`bundle_root` here was never promoted (no `CURRENT` pointer at all), so
+    `read_current_once` raises `profile_bundle.storage.SelectionError` for real. `project_pool`
+    must not let that different exception hierarchy escape uniform `ProjectionError` handling."""
+    with pytest.raises(ProjectionError) as exc:
+        project_pool(
+            projection_env_unpromoted_bundle.bundle_root,
+            projection_env_unpromoted_bundle.declaration,
+            config_dir=projection_env_unpromoted_bundle.config_dir,
+            as_of=AS_OF,
+        )
+    assert exc.value.violation.issue is ProjectionIssue.BUNDLE_UNREADABLE
+
+
 def test_editing_a_template_literal_reopens_the_gate(projection_env) -> None:  # noqa: F811
     """Approved, then edited: the digest moves and the old stamp no longer matches."""
     text = projection_env.declaration.read_text(encoding="utf-8")

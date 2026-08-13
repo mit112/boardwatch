@@ -27,6 +27,8 @@ class ProjectionIssue(StrEnum):
     FALLBACK_ID_NOT_A_CANDIDATE = "fallback_id_not_a_candidate"
     FALLBACK_ID_DUPLICATED = "fallback_id_duplicated"
     FALLBACK_OVERLAPS_PINNED = "fallback_overlaps_pinned"
+    # -- bundle -------------------------------------------------------------------------
+    BUNDLE_UNREADABLE = "bundle_unreadable"
     # -- bundle references ------------------------------------------------------------
     UNKNOWN_BUNDLE_ID = "unknown_bundle_id"
     FACT_NOT_RESUME_SURFACED = "fact_not_resume_surfaced"

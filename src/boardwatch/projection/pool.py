@@ -36,7 +36,11 @@ from datetime import date
 from pathlib import Path
 
 from boardwatch.profile_bundle.models.claims import ClaimRecord
-from boardwatch.profile_bundle.storage import read_current_once, selected_documents
+from boardwatch.profile_bundle.storage import (
+    SelectionError,
+    read_current_once,
+    selected_documents,
+)
 from boardwatch.profile_bundle.validation.context import ValidationContext, context_from_documents
 from boardwatch.projection.contract import check_references
 from boardwatch.projection.declaration import EntryDeclaration, load_declaration, projection_digest
@@ -46,6 +50,12 @@ from boardwatch.projection.grammar import render_skill, resolve_template
 from boardwatch.projection.shell import load_shell
 from boardwatch.projection.stamp import stamp_exists
 from boardwatch.tailor.model import Bullet, Entry, Resume, SkillGroup
+
+
+def _entry_id(entity_id: str) -> str:
+    """The one derivation rule the brief states once: `entry_id = "entry." + entity_id`.
+    Extracted so the four sites that need it cannot drift from one another."""
+    return "entry." + entity_id
 
 
 @dataclass(frozen=True)
@@ -70,8 +80,10 @@ def project_pool(
 ) -> ProjectionPool:
     """Assemble the JD-blind pool from the bundle's current revision and `declaration_path`.
 
-    Every refusal is a `ProjectionError` from one of the six modules this composes; nothing here
-    invents a new one.
+    Every refusal is a `ProjectionError`: most propagate from one of the six modules this
+    composes, and the owner-gate check and an unreadable bundle are raised here directly — both
+    from the same closed `ProjectionIssue` catalog, so nothing here invents an exception outside
+    it.
     """
     declaration = load_declaration(declaration_path)
     digest = projection_digest(declaration)
@@ -86,8 +98,15 @@ def project_pool(
 
     shell_path = config_dir / declaration.shell_source
 
-    selection = read_current_once(bundle_root)
-    documents = selected_documents(selection)
+    try:
+        selection = read_current_once(bundle_root)
+        documents = selected_documents(selection)
+    except SelectionError as exc:
+        raise_violation(
+            ProjectionIssue.BUNDLE_UNREADABLE,
+            f"the bundle at {bundle_root} could not be read to produce a pool: {exc}",
+            where=str(bundle_root),
+        )
     ctx = context_from_documents(
         documents, root=selection.root, mode="revision", bundle_root=bundle_root
     )
@@ -129,12 +148,12 @@ def project_pool(
 
     return ProjectionPool(
         resume=resume,
-        pinned_entry_ids=tuple("entry." + entity_id for entity_id in declaration.pinned_ids),
+        pinned_entry_ids=tuple(_entry_id(entity_id) for entity_id in declaration.pinned_ids),
         candidate_entry_ids=tuple(
-            "entry." + entity_id for entity_id in declaration.candidate_ids
+            _entry_id(entity_id) for entity_id in declaration.candidate_ids
         ),
         no_match_fallback_ids=tuple(
-            "entry." + entity_id for entity_id in declaration.no_match_fallback
+            _entry_id(entity_id) for entity_id in declaration.no_match_fallback
         ),
         bundle_revision=str(selection.revision),
         bundle_digest=selection.bundle_digest,
@@ -177,9 +196,11 @@ def projection_candidate(
     this candidate exists to show.
 
     Raises the same typed `ProjectionError`s `project_pool` would for a malformed declaration or
-    an unresolvable reference, and lets a bundle-selection failure (`profile_bundle.storage`, e.g.
-    no revision ever promoted) propagate unwrapped, matching `project_pool`'s own behaviour — this
-    function adds no new exception boundary of its own.
+    an unresolvable reference. Unlike `project_pool`, this function still lets a bundle-selection
+    failure (`profile_bundle.storage.SelectionError`, e.g. no revision ever promoted) propagate
+    unwrapped — it adds no new exception boundary of its own. `project_pool` now wraps that same
+    failure as `BUNDLE_UNREADABLE`; whether this function should too is a separate decision, not
+    made here.
     """
     declaration = load_declaration(declaration_path)
     digest = projection_digest(declaration)
@@ -242,7 +263,7 @@ def _build_entry(
     ]
 
     return Entry(
-        entry_id="entry." + entry_decl.entity_id,
+        entry_id=_entry_id(entry_decl.entity_id),
         heading=render(entry_decl.heading, "heading"),
         bullets=bullets,
         kind=entry_decl.kind.value,

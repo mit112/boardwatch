@@ -78,7 +78,9 @@ class ProjectionEnv:
     declaration: Path
 
 
-def _build_projection_env(tmp_path: Path, *, approved: bool) -> ProjectionEnv:
+def _build_projection_env(
+    tmp_path: Path, *, approved: bool, promote_bundle: bool = True
+) -> ProjectionEnv:
     """`project_pool` reads the bundle through `read_current_once`, which needs a genuinely
     promoted revision (a `CURRENT` pointer, a `COMPLETE` marker) — not merely the materialised
     draft `context_over` builds. `promote_example_tree` (`tests/profile_bundle/conftest.py`) is
@@ -93,9 +95,16 @@ def _build_projection_env(tmp_path: Path, *, approved: bool) -> ProjectionEnv:
     Named `projection-bundle`, distinct from `materialised_bundle`'s own `career-profile`: a test
     that requests both this and `bundle_ctx` (as an independent oracle) must not collide on the
     same `tmp_path` subdirectory.
+
+    `promote_bundle=False` leaves `bundle_root` an empty directory instead: no `CURRENT` pointer
+    has ever been written, so `read_current_once` raises `profile_bundle.storage.SelectionError`
+    for real rather than one simulated by monkeypatching the raise.
     """
     bundle_root = tmp_path / "projection-bundle"
-    promote_example_tree(bundle_root)
+    if promote_bundle:
+        promote_example_tree(bundle_root)
+    else:
+        bundle_root.mkdir()
 
     config_dir = tmp_path / "config"
     config_dir.mkdir()
@@ -128,6 +137,13 @@ def projection_env(tmp_path: Path) -> ProjectionEnv:
 def projection_env_unapproved(tmp_path: Path) -> ProjectionEnv:
     """The same environment, minus the approval stamp."""
     return _build_projection_env(tmp_path, approved=False)
+
+
+@pytest.fixture
+def projection_env_unpromoted_bundle(tmp_path: Path) -> ProjectionEnv:
+    """The same environment, approved, but `bundle_root` has never been promoted: no `CURRENT`
+    pointer exists. Reaches `project_pool`'s wrap of `SelectionError` (`BUNDLE_UNREADABLE`)."""
+    return _build_projection_env(tmp_path, approved=True, promote_bundle=False)
 
 
 @pytest.fixture
