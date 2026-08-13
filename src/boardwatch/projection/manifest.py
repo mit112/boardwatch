@@ -11,18 +11,10 @@ close stale lineage** — `tailor run` never reads this file, so the sidecar mak
 from __future__ import annotations
 
 import json
-from typing import Annotated
 
-from pydantic import BaseModel, ConfigDict, StringConstraints
+from pydantic import BaseModel, ConfigDict
 
-#: Mirrors `profile_bundle.models.base.DecimalString`'s pattern, redefined here rather than
-#: imported: the only thing this module needs from that module is a two-line regex constant, and
-#: importing it would pull the bundle's pydantic model plumbing into a package that otherwise
-#: keeps its own scalar types local (see `manifest_bytes`'s docstring for the same reasoning
-#: applied to the serializer). Decimal, never float, for the reason `declaration.py` and
-#: `scoring.py` already state: `profile_bundle.canonical._normalize` raises on any float, because
-#: a score that lands in a lineage artifact must never depend on floating-point representation.
-DecimalString = Annotated[str, StringConstraints(pattern=r"^-?(?:0|[1-9][0-9]*)(?:\.[0-9]+)?$")]
+from boardwatch.profile_bundle.models.base import DecimalString
 
 #: Bumped whenever a field is added, removed, or its meaning changes. Nothing reads this yet — v1
 #: does not close stale lineage (see the module docstring) — it exists so a future reader can.
@@ -47,7 +39,10 @@ class ProjectionManifest(BaseModel):
     jd_skills: tuple[str, ...]
     pinned_entry_ids: tuple[str, ...]
     selected_entry_ids: tuple[str, ...]
-    #: entry/entity id -> its scorer output, as a decimal string — never a float (see above).
+    #: entry/entity id -> its scorer output, as a `DecimalString` — never a float, for the reason
+    #: `declaration.py` and `scoring.py` already state: `profile_bundle.canonical._normalize`
+    #: raises on any float, because a score that lands in a lineage artifact must never depend on
+    #: floating-point representation.
     scores: tuple[tuple[str, DecimalString], ...]
     #: claim_id -> the bullet_id it produced. `pool._build_entry` currently sets
     #: `bullet_id=claim_id`, so v1's pairs are the identity map; carried explicitly anyway so a
