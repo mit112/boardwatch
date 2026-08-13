@@ -1,15 +1,19 @@
 # Career-Profile Projection and JD-Aware Entry Selection
 
-**Status:** design, revision 2 — reworked after two independent external reviews returned REWORK
+**Status:** design, revision 3 — reworked after THREE external reviews, all REWORK
 **Date:** 2026-08-13 · **Owner:** boardwatch (Claude)
 
 Implements deferred gate 1 of `2026-08-10-canonical-career-profile-bundle-design.md` §23, and a
 capability that document did not anticipate: JD-aware selection of which experiences and projects appear
 at all.
 
-Program context: D-155. Review context: D-156. Revision 1 (`ce1efde`) was reviewed by two external
-reviewers running in-repo; both returned REWORK with executable probes. Every finding is dispositioned in
-§13.
+Program context: D-155. Review context: D-156, D-158.
+
+**Three external review rounds, all REWORK, all in-repo with executable probes.** Revision 1 (`ce1efde`)
+was reviewed by GPT and DeepSeek independently — 18 findings, dispositioned in **§13**. Revision 2
+(`79988e0`) was reviewed by GPT, which derived 24 premises of its own and failed 8 — dispositioned in
+**§13a**. **Three of round 2's defects were created by round 1's fixes**, which is why §6's scorer is now
+chosen by measurement rather than by this document.
 
 ---
 
@@ -84,6 +88,26 @@ Because of §2.8, v1 projects **`skill_groups`, `entries` and `extracurricular`*
 declared here rather than discovered later. This is the same reasoning already applied to the summary:
 projecting a field the renderer never reads is a faithfulness guarantee that cannot land.
 
+### But they cannot simply be omitted — the inert shell
+
+**`Resume.header` and `Resume.education` are required fields with no default** (`tailor/model.py:45-48`),
+and `load_resume` additionally rejects a header carrying no valid email
+(`tailor/load.py:59`). Revision 2 narrowed the scope without sourcing them, which made **no projected
+document constructible or loadable at all.** Found by external review; recorded because it is the exact
+shape of defect this scope decision invites.
+
+**The projected document carries an inert shell**, copied verbatim from the `header` and `education` of
+the user's existing authored `resume.yaml` (path declared in `projection.yaml` as `shell_source`). It is:
+
+- **model-only** — it satisfies the frozen model and the loader, and the renderer still ignores it;
+- **not authoritative for the PDF**, which continues to use the template's hardcoded values;
+- **part of `ProjectionPool` identity and the golden test**, so a shell change is visible rather than
+  silent.
+
+A missing or unreadable `shell_source`, or one whose header has no valid email, is **fatal** — the same
+direction as every other arm (§8). The shell is the one place v1 reads the file it is replacing, and that
+is a transitional dependency: when renderer ownership of header/education lands (§12), the shell goes.
+
 **Stated plainly: after v1, the bundle is not the source of truth for the owner's name, contact details,
 or education.** Those remain hand-edited in the template. Taking renderer ownership of them is a separate
 design (§12).
@@ -134,16 +158,49 @@ re-apply the persona and `apply_persona` raises `PersonaError` on any declared i
 (`persona.py:194-198`). A budget-selected résumé could never render. This is latent today only because
 both bundled personas ship `entries: null`, and multi-tenancy makes latent unacceptable.
 
+**That alone does not fix it, and revision 2 wrongly claimed it did.** If a persona declares
+`entries: [e1, e2]` and stage 2 omits `e2` — zero score, or dropped for budget — then `tailor run`'s
+downstream `apply_persona` still raises `PersonaError` on the missing id. Moving persona application did
+not remove the collision; it only moved where it happens.
+
+**v1 forbids the combination, with a typed preflight.** A non-null `persona.entries` on a persona that
+could be selected for a projected résumé is a **fatal configuration error, reported before any selection
+runs**, naming the persona and the ids. Both bundled personas ship `entries: null`, so nothing shipped is
+affected — but a custom persona would otherwise hit this and no selection test would catch it, because
+the bundled fixtures cannot reproduce it.
+
+Reconciling the two selection mechanisms properly (persona-declared entries *and* JD-scored candidates)
+is deferred, not solved — see §12. Forbidding is the honest v1 position: two mechanisms selecting entries
+is a drift hazard, and this design does not yet know which should win.
+
 Consequence: stage 2's budget compile measures a document without persona title and skill-group ordering,
 which is a *different* document from what finally renders. Handled in §6.
 
 ### CLI
 
 - `boardwatch profile-bundle project --out <path>` — **stage 1 only.** Serializes the pool for review.
-  JD-blind.
-- `boardwatch profile-bundle project --posting <id> --out <path>` — **stages 1 and 2.** Writes
+  JD-blind, and **opens no database**.
+- `boardwatch profile-bundle approve-projection` — the owner gate for `projection.yaml` (§5). No database.
+- `boardwatch resume project --posting <id> --out <path>` — **stages 1 and 2.** Writes
   `resume.projected.yaml` and `projection-manifest.json` beside it.
-- Both accept `--json` and `--check` (re-run and diff; **exits non-zero on drift** — see §4.2).
+- All accept `--json`; the two `project` commands accept `--check` (re-run and diff; **exits non-zero on
+  drift** — see §4.2).
+
+**Why `--posting` is NOT in the `profile-bundle` family.** Every existing `profile-bundle` command uses
+`load_settings` rather than `build_context` and deliberately **never opens the database** — the family
+says so in its own module docstring. But JD skills (`reports/tailor.py:327-356`) and `resume_max_pages`
+(`store/tables.py:203`) are database-owned. Left unspecified, an implementer either breaks that
+invariant, duplicates the current-posting query, or invents flags — and **a duplicated query can score a
+different JD version than tailoring does.**
+
+So the posting-aware command lives outside the family, and **the posting-context seam is one function**
+returning the JD skill set and page budget for a posting id, specified in P3 as the *single* route to
+those inputs. Both commands call the same projection package; only one of them touches the store.
+
+**The flow is two commands, deliberately.** `resume project --posting <id>` then
+`tailor run <id> --resume …`. Folding projection into `tailor run` would require `tailor` to know about
+the bundle, which is the wall this design keeps up. The costs, both accepted: the JD is read twice, and
+the résumé compiles twice.
 
 ---
 
@@ -207,17 +264,29 @@ No other form is admitted. A placeholder that is neither is fatal, naming the `p
 `FactValue` has nine typed shapes. Each admitted kind gets exactly one rendering, defined here so that
 formatting is not invented at implementation time:
 
-| Kind | Rendering |
-|---|---|
-| `string` | verbatim |
-| `decimal` | verbatim as stored (no rounding, no unit appended) |
-| `integer` | verbatim |
-| `year_month` | `YYYY-MM` verbatim |
-| `date_range` | the stored range's own display form, verbatim |
-| `boolean`, `list`, `skill_ref`, and any other kind | **not admitted in a template — fatal** |
+`FactValueKind` has **ten** members (`profile_bundle/models/facts.py:49-62`) — revision 2 said nine and
+invented a display form for one of them. The live union is `string · integer · decimal · boolean · date ·
+year_month · date_range · url · string_list · skill_ref`.
 
-Rendering is verbatim in every admitted case. Projection never reformats a stored value, because
-reformatting is authoring.
+| Kind | Rendering | Note |
+|---|---|---|
+| `string` | the stored string, unchanged | the only truly verbatim case |
+| `url` | the stored URL, unchanged | |
+| `decimal` | `str()` of the stored `Decimal` | no rounding, no unit appended |
+| `integer` | `str()` of the stored `int` | **not verbatim** — the model normalises, so a legal `+12` input loads as `12` |
+| `year_month` | `YYYY-MM` | |
+| `date` | `YYYY-MM-DD` | ISO, chosen here rather than left to the implementer |
+| `date_range` | `"{start} – {end}"` with ISO dates; **`end: null` renders the owner-declared `open_range_label`** from `projection.yaml` (no default — omitting it is fatal) | `DateRangeValue` has only `type`/`start`/`end` and **no display member**; there is no "own display form" to defer to |
+| `boolean`, `string_list`, `skill_ref` | **not admitted in a template — fatal** | a list or a boolean on a résumé line is authoring, not projection |
+
+**Rendering is projection-owned and specified here**, because it cannot be deferred: the alternative is
+that whoever implements it invents `2025-02-01 – Present` versus `Feb 2025 – Present` and the golden test
+blesses whichever convention they picked. Revision 2's "verbatim in every admitted case" was false for
+`integer` and undefined for `date_range`.
+
+**`open_range_label` is the owner's word, not ours** ("Present", "Current", "—"). That keeps the one piece
+of authored English out of code and inside the file the owner already reviews, consistent with the
+multi-tenancy rule. Date *formatting* is not authoring; the word for "still going" is.
 
 ## 4.2 Emitted artifacts
 
@@ -235,9 +304,20 @@ Two files are written together:
 `--check` re-projects and **exits non-zero** when the emitted document's digests differ from the current
 bundle or `projection.yaml`. Provenance is active, not informational.
 
-**Known residual, named:** `tailor run` does not read the manifest, so running it directly on a stale
-projected file still tailors the stale document. Closing that requires `tailor` to learn about the
-manifest, which crosses the wall. Carried as an open question (§12), not silently accepted.
+**v1 does NOT close stale lineage, and revision 2 was wrong to score that finding as fixed.** `tailor run`
+never reads the manifest, and artifact metadata records only master kind and validator version
+(`reports/tailor.py:685-708`). So: project revision A, promote revision B, run `tailor run --resume
+resume.projected.yaml`, and the stale document renders while the artifact cannot name the revision it came
+from. The sidecar makes staleness *inspectable*; it does not make it *detected*.
+
+**Where the real fix lands: slice P5.** When projection runs inside `boardwatch run`, the pipeline —
+which already knows about the store, the posting and the artifact ledger — validates the manifest and
+copies its lineage into artifact metadata. That requires no change to `tailor` and does not cross the
+wall, which is why forcing it into v1 through `tailor` would have been the wrong shape.
+
+Until then the honest statement is: **the projected flow is manual, and `--check` is the owner's
+responsibility.** The manifest should also carry the exact content-addressed bundle digest, not only the
+revision name.
 
 ---
 
@@ -280,6 +360,17 @@ refuses to emit until an approval stamp bound to the current `projection_digest`
 `projection.yaml` changes the digest and reopens the gate. `--check`'s diff shows exactly which template
 literals changed.
 
+**The stamp needs a command that can create it, and none exists.** `profile-bundle approve` takes
+`draft: str` and derives a *bundle candidate* digest (`cli/profile_bundle_cmd.py:979-1051`); it cannot
+stamp a `projection_digest`. Revision 2 specified the gate and no route through it — **a quarantine with
+no drain**, which this project's own rules forbid in the same change that creates the quarantine.
+
+**`boardwatch profile-bundle approve-projection` ships in slice P1, not as follow-up.** It mirrors
+`approve`: controlling terminal only, no `--yes`, no environment variable, no piped answer; it prints the
+composed template lines with their resolved values so the owner approves *what will be printed* rather
+than the template source; and it writes a stamp bound to the `projection_digest`, with a collision-free
+stamp id. Declining, and running without a TTY, each get a test.
+
 This does not prove a literal is honest — nothing can — but it guarantees no literal reaches a résumé
 without the owner having seen that exact text.
 
@@ -304,14 +395,43 @@ v1 scores **mean per-bullet JD coverage**:
 score(entry) = mean over its bullets of  |effective_skills(bullet.text, jd_skills, …) ∩ jd_skills|
 ```
 
-On the probe above: deep entry `2/1 = 2.0`, shallow entry `4/4 = 1.0`. It also survives the opposite
-failure — naive precision (`|∩| / |skills(entry)|`) would let a one-token entry score 1.0 and dominate;
-under mean coverage that entry scores 1.0 and loses to the deep entry's 2.0.
+On the probe above: deep entry `2/1 = 2.0`, shallow entry `4/4 = 1.0`.
+
+**But mean coverage has its own bias, measured by the round-2 review**, and this is the important part:
+
+```
+focused_one        mean/distinct = 2.0 / 2     ← wins
+comprehensive_six  mean/distinct = 1.5 / 9     ← loses, while covering 4.5x the JD
+```
+
+A one-bullet entry matching two JD skills beats a six-bullet entry matching nine. Worse, the metric scores
+**bullets that `build_plan` will delete**: a twelve-bullet entry with six matching bullets scores `0.5`,
+though the six survivors of the `MAX_BULLETS_PER_ENTRY = 6` cap are exactly the matching ones.
+
+### The scorer is chosen by measurement, not by this document
+
+**Two design rounds have produced two scorers and a probe has falsified both.** Round 1's `|∩|` lost to
+`4 > 2`; round 2's mean coverage loses to `2.0 > 1.5`. A third hand-picked formula would be falsified by a
+third probe, because "which formula picks the projects a human would pick" is an empirical question and
+this document keeps trying to answer it analytically.
+
+**So v1 does not name a winning scorer. It names the procedure that picks one:**
+
+1. **The owner-labeled selection matrix is built FIRST** — before P4 ships, not at P6. Ten real postings
+   spanning the owner's role families; for each, the owner's own ranked order of which candidate entries
+   should appear. Recorded before any scorer is tuned against it.
+2. **Candidate scorers are scored against it** by rank agreement. The starting set is at least: mean
+   per-bullet coverage; total distinct matched skills; mean over the **top-`MAX_BULLETS_PER_ENTRY`
+   bullets only** (which removes the truncation disagreement by construction); and a two-part
+   `(coverage, density)` lexicographic order.
+3. **The winner ships as v1's deterministic scorer**, with its measured agreement recorded in
+   `METRICS.md`. A scorer no better than the others is a finding, not a failure.
 
 Ties break by total distinct matched skills, then by declared order in `projection.yaml`.
 
-**This is a v1 heuristic, and its quality is measured (§10 P5), not asserted.** Keyword matching cannot
-observe depth; it can only avoid rewarding pure breadth.
+**This is what makes the v2 model lane honest too.** The same matrix is the baseline the re-ranker must
+beat, so both the deterministic choice and the model's contribution are measured against one owner-labeled
+ground truth rather than asserted.
 
 ### Admission floor
 
@@ -319,8 +439,20 @@ observe depth; it can only avoid rewarding pure breadth.
 highest-score-first until the page overflowed, so whenever everything fit, a mobile JD and a data JD
 produced *identical* résumés — v1 would not have decided anything.
 
-If no candidate scores above 0, the declared `no_match_fallback` list is used. That is this quarantine's
-drain: a JD matching nothing yields a deliberate, owner-declared résumé rather than a pinned-only stub.
+**`score > 0` is a zero filter, not a relevance threshold**, and the round-2 review is right that calling
+it one would be theatre: a bullet mentioning "documentation in Python" scores `1.0` against a Python JD,
+is admitted, and suppresses the fallback. **The real threshold is set from the labeled matrix above**,
+alongside the scorer — it is the same measurement, and picking a number here would be the same mistake as
+picking a formula here. Until that measurement exists, `> 0` is the placeholder and is documented as one.
+
+If no candidate clears the threshold, the declared `no_match_fallback` list is used. That is this
+quarantine's drain: a JD matching nothing yields a deliberate, owner-declared résumé rather than a
+pinned-only stub.
+
+**Fallback invariants, enforced at load (§7):** every id must be a **declared candidate**, ids must be
+**unique**, and the set must be **disjoint from pinned**. Without these, a pinned id in the fallback
+duplicates an entry and fails late as the frozen model's `duplicate entry_id` — with no projection
+context — and an undeclared id is a `KeyError` or a silent omission.
 
 ### Algorithm
 
@@ -384,15 +516,29 @@ Enforced before any document is written:
 | **Every claim's `subject_id` equals the entry's `entity_id`** | fatal |
 | **Every referenced skill carries `resume` in `allowed_surfaces`** | fatal |
 | No referenced fact sits in an unresolved conflict group | fatal |
+| **Every referenced fact is EFFECTIVE and unexpired** under an explicit projection `as_of` date | fatal |
+| **`no_match_fallback` ids are declared candidates, unique, and disjoint from pinned** | fatal |
+| **`shell_source` resolves, and its header carries a valid email** | fatal |
+| **No selectable persona declares a non-null `entries` list** | fatal, before selection runs |
 | Every `entity_id` / `claim_id` / `skill_id` exists in the bundle | fatal |
 | **No `entity_id` is declared more than once in `projection.yaml`** | fatal, naming the line |
 | `kind` is in the closed catalog `{experience, project}` | fatal, naming the line |
 | Bullet text equals `claim.text` byte-for-byte | fatal |
 | An approval stamp exists for the current `projection_digest` | fatal |
 
-The two bolded additions close a hole revision 1 had: an approved, résumé-surfaced claim belonging to
-*another* entity passed every rule and would have printed one project's accomplishment under another
-employer; and a skill valid but `application`-only could be named in `skill_groups`.
+Two of these close holes revision 1 had: an approved, résumé-surfaced claim belonging to *another* entity
+passed every rule and would have printed one project's accomplishment under another employer; and a skill
+valid but `application`-only could be named in `skill_groups`.
+
+**The effectiveness row is the subtlest, and it was missing from both earlier revisions.** Surface
+permission and conflict-freedom do **not** mean a fact is usable: effectiveness is derived separately
+(`profile_bundle/effective.py:76-147`) and expiry is only checked by dated completeness validation
+(`validation/completeness.py:219-293`). A stale or superseded fact can retain `allowed_surfaces: [resume]`
+with no conflict group — the shipped synthetic bundle contains exactly such a fact — and **a fact can
+expire with no bundle bytes changing at all.** Projection therefore requires the referenced transitive
+closure (template facts, claim support, metric support, skill support) to be effective and clear under an
+explicit `as_of`. It does **not** require unrelated bundle records to be completeness-clean; the gate is
+scoped to what this résumé actually cites.
 
 ### Identifier derivation
 
@@ -438,8 +584,21 @@ JDs** — otherwise "fatal in every arm" becomes "the user gets nothing."
   - **with a roomy budget, an unrelated zero-score candidate stays out** — this is the test that would
     have caught revision 1's missing admission floor;
   - a JD matching nothing yields exactly `no_match_fallback`.
-- **Scoring test pinning the demonstrated bias:** the shallow-four-bullet entry must lose to the focused
-  one-bullet entry.
+- **Scoring tests pinning BOTH demonstrated biases**, since each round's probe falsified the previous
+  round's scorer: the shallow four-bullet entry must lose to the focused one-bullet entry (round 1's
+  `4 > 2`), **and** the six-bullet entry covering nine JD skills must not lose to a one-bullet entry
+  covering two (round 2's `2.0 > 1.5`). Whatever scorer PM selects must satisfy both, or its failure to is
+  a recorded, owner-visible trade-off rather than a surprise.
+- **A truncation-agreement test:** the scorer must not penalise bullets `build_plan`'s
+  `MAX_BULLETS_PER_ENTRY` cap would keep.
+- **Fallback invariant tests:** undeclared id, duplicate id, pinned/candidate overlap, empty fallback —
+  each fatal, each with its own failing case.
+- **Inert-shell tests:** a missing `shell_source`, and one whose header carries no valid email, are each
+  fatal; the shell's contribution to `ProjectionPool` identity is pinned so a silent shell change fails.
+- **A persona preflight test:** a persona with non-null `entries` is rejected before selection runs. The
+  bundled personas cannot reproduce this (both ship `entries: null`), so the fixture must be authored.
+- **An effectiveness test:** a résumé-surfaced but stale or expired fact is refused, with the before/after
+  control that the same bytes pass before expiry and fail after.
 - **Budget tests:** a pool that overflows converges; a pinned-only overflow reports the typed failure with
   its knob; **a stubbed compile returning `COMPILE_FAILED` fails named and drops nothing.**
 - **A drift test that both scorers agree:** `build_plan` and projection must call the same
@@ -451,17 +610,19 @@ JDs** — otherwise "fatal in every arm" becomes "the user gets nothing."
 
 | Slice | Content | Gate |
 |---|---|---|
-| P0 | Extract public `effective_skills` from `plan.py`; `build_plan` calls it | Existing plan tests green, unchanged behaviour |
-| P1 | `projection.yaml` schema, loader, strict validation, approval stamp | Every §7 rule has a failing-then-passing test |
-| P2 | Stage 1 → `ProjectionPool`; serializer; manifest | Golden output + round-trip test green |
-| P3 | `project` CLI, `--json`, `--check` with non-zero drift exit | Exit tiers match the bundle CLI's convention |
-| P4 | Stage 2: scoring, admission floor, budget fit, four-arm gate handling | Selection matrix incl. roomy-budget negative control |
-| P5 | Pipeline integration — **committed by Mit, built after v1** (§12 Q1) | Projection runs inside `boardwatch run`; `resume.yaml` stops being the daily default only once §8's migration order is satisfied |
-| P6 | Model re-ranker, opt-in, fail-open | Beats the deterministic baseline on the labeled matrix |
+| P0 | Extract public `effective_skills` from `plan.py`; `build_plan` calls it | Existing plan tests green; **both early returns preserved** (empty `jd_skills`, all-zero coverage) |
+| P1 | `projection.yaml` schema, loader, strict validation, **`approve-projection`** | Every §7 rule has a failing-then-passing test; decline and non-TTY each tested |
+| P2 | Stage 1 → `ProjectionPool`; inert shell; serializer; manifest | Golden output + round-trip test green |
+| P3 | `profile-bundle project` and `resume project` CLIs; the posting-context seam | Exit tiers match the bundle CLI's convention; the bundle family still opens no database |
+| **PM** | **The owner-labeled selection matrix** — ten postings, owner's ranked expected candidates, recorded BEFORE any scorer is tuned | Labels exist and are committed. **Blocks P4.** |
+| P4 | Stage 2: scorer chosen by measurement against PM, admission threshold, budget fit, four-arm gate handling | The winning scorer's rank agreement recorded in `METRICS.md`; roomy-budget negative control green |
+| P5 | Pipeline integration — **committed by Mit, built after v1** (§12 Q1). **Owns manifest validation and artifact lineage** (§4.2) | Projection runs inside `boardwatch run`; a stale manifest is detected, not merely inspectable; `resume.yaml` stops being the daily default only once §8's migration order is satisfied |
+| P6 | Model re-ranker, opt-in, fail-open | Beats the winning deterministic scorer on PM |
 
-**P6's measurement is defined before P6 starts**, or its gate is unfalsifiable: an owner-labeled JD matrix
-— the §9 matrix JDs, each with the owner's own ranked expected candidate order — recorded first. "Beats"
-means a rank-agreement metric on that set. Labeling is a one-session owner task.
+**PM is new in revision 3 and it is the load-bearing change.** Two design rounds produced two scorers and
+a probe falsified both; the matrix is what ends that loop. It is a one-session owner task, it blocks P4
+rather than P6, and **it must be recorded before any scorer is tuned against it** — a matrix labeled after
+seeing a scorer's output is a test that agrees with itself.
 
 ---
 
@@ -500,7 +661,34 @@ means a rank-agreement metric on that set. Labeling is a one-session owner task.
 
 ---
 
-## 13. Review disposition (revision 1 → 2)
+## 13a. Round-2 review disposition (revision 2 → 3)
+
+GPT reviewed revision 2 in-repo, derived **24 premises of its own** rather than checking the design's
+stated seven, and found **8 FAIL — five of them premises this design never wrote down.** VERDICT: REWORK.
+
+**Three of the eight defects were introduced by revision 2's own fixes**, which is the pattern D-137
+recorded and the one this document's author was explicitly warned about:
+
+| Finding | Disposition in revision 3 |
+|---|---|
+| **Projected document has no source for mandatory loader fields** — `Resume` requires `header`/`education`, `load_resume` requires a valid email; revision 2's scope narrowing made **no document constructible** | **Fixed** — the inert shell, §3 |
+| **Persona fix leaves the same `PersonaError` live** — moving persona downstream did not remove the collision | **Fixed** — non-null `persona.entries` forbidden by typed preflight, §4; proper reconciliation deferred to §12 |
+| **Typed-value table depends on an API that does not exist** — `date_range` has no display form; ten kinds not nine; `integer` is not verbatim | **Fixed** — explicit projection-owned renderings, §4.1 |
+| **Fidelity contract can project locally blocked facts** — surface + conflict-free does not mean effective or unexpired | **Fixed** — effectiveness row under an explicit `as_of`, §7 |
+| **The approval gate has no drain** — no command can create a projection stamp | **Fixed** — `approve-projection` ships in P1, §5 |
+| **The manifest does not fix stale lineage** — `tailor run` never reads it | **Accepted, re-scoped** — §4.2 now states v1 does not close this; P5 owns it |
+| **The new scorer ranks density over coverage** and scores bullets `build_plan` deletes | **Fixed by procedure, not by formula** — PM, §6 and §10 |
+| **Fallback references have no closed invariants** | **Fixed** — §4.1, §7, §9 |
+| Posting-aware command's data boundary unspecified | **Fixed** — `resume project` sits outside the no-database family, §4 |
+
+**What generalises, and it is the reason PM exists.** Round 1 falsified round 0's scorer with a probe;
+round 2 falsified round 1's scorer with a probe. Both scorers were chosen analytically by the same author.
+**A question that keeps being answered wrongly on paper is a question that does not belong on paper** —
+the fix is not a third formula, it is a labeled corpus and a measurement.
+
+---
+
+## 13. Round-1 review disposition (revision 1 → 2)
 
 Two external reviewers, independently, in-repo, both REWORK. All seven of revision 1's §2 premises were
 confirmed by both; the defects were in what the design built on them.
