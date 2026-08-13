@@ -123,6 +123,22 @@ def test_anthropic_429_without_a_death_token_still_retries():
     assert route.call_count == DEFAULT_ATTEMPTS
 
 
+@respx.mock
+def test_anthropic_lane_death_on_a_retryable_status_is_not_retried():
+    # Deliberately synthetic: Anthropic does not document `billing_error` on a
+    # 429 (429 isn't in _ANTHROPIC_CASES for that reason). This pairing exists
+    # only to lock the ORDER of the two checks -- lane death must be read
+    # before the retryable-status branch, even when the status is one that
+    # would otherwise be retried. Do not "correct" this back to 403.
+    route = respx.post(_ANTHROPIC_URL).mock(
+        return_value=httpx.Response(429, json={"error": {"type": "billing_error"}})
+    )
+    with pytest.raises(LLMLaneDeadError) as caught:
+        AnthropicClient("m", "k").complete("hi")
+    assert caught.value.reason is LaneDeathReason.CREDIT_EXHAUSTED
+    assert route.call_count == 1
+
+
 _OPENAI_URL = "https://api.example.com/v1/chat/completions"
 
 
