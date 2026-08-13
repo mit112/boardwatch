@@ -10,12 +10,25 @@ from __future__ import annotations
 from datetime import UTC, datetime
 from pathlib import Path, PurePosixPath
 
+import pytest
+
+from boardwatch.profile_bundle.errors import BundlePathError
 from boardwatch.profile_bundle.yaml_loader import load_yaml_bytes
 from boardwatch.projection.stamp import ProjectionStamp, stamp_exists, stamp_path, write_stamp
 
 D1 = "sha256:" + "a" * 64
 D2 = "sha256:" + "b" * 64
 NOW = datetime(2026, 8, 13, 12, 0, tzinfo=UTC)
+
+#: Malformed digests the fix must reject: missing the `sha256:` prefix, hex too short, hex too
+#: long, and a path separator or `..` where hex is expected. `require_digest` (reached through
+#: `digest_token`) rejects all four by the same `^sha256:[0-9a-f]{64}$` regex — none of them match.
+MALFORMED_DIGESTS = [
+    pytest.param("a" * 64, id="missing_sha256_prefix"),
+    pytest.param("sha256:" + "a" * 63, id="hex_one_short"),
+    pytest.param("sha256:" + "a" * 65, id="hex_one_long"),
+    pytest.param("sha256:" + "a" * 60 + "/../", id="path_separator_and_dot_dot"),
+]
 
 
 def test_no_stamp_exists_before_one_is_written(tmp_path: Path) -> None:
@@ -70,3 +83,33 @@ def test_two_different_digests_produce_two_files_with_different_stamp_ids(tmp_pa
         load_yaml_bytes(path2.read_bytes(), logical_path=PurePosixPath(path2.name))
     )
     assert stamp1.projection_stamp_id != stamp2.projection_stamp_id
+
+
+@pytest.mark.parametrize("malformed", MALFORMED_DIGESTS)
+def test_stamp_path_rejects_a_malformed_digest(tmp_path: Path, malformed: str) -> None:
+    """A digest that does not match `^sha256:[0-9a-f]{64}$` must not become a path — it must be
+    refused with the same typed error `profile_bundle` raises for its own malformed digests, not
+    silently accepted."""
+    with pytest.raises(BundlePathError):
+        stamp_path(tmp_path, malformed)
+
+
+@pytest.mark.parametrize("malformed", MALFORMED_DIGESTS)
+def test_write_stamp_rejects_a_malformed_digest(tmp_path: Path, malformed: str) -> None:
+    with pytest.raises(BundlePathError):
+        write_stamp(tmp_path, digest=malformed, approved_at=NOW)
+
+
+def test_write_stamp_leaves_no_file_behind_for_a_malformed_digest(tmp_path: Path) -> None:
+    """The rejection happens before any I/O: a malformed digest must not leave a partially
+    written stamp, or even an empty `projection-approvals/` directory, behind."""
+    with pytest.raises(BundlePathError):
+        write_stamp(tmp_path, digest="not-a-digest", approved_at=NOW)
+    assert not (tmp_path / "projection-approvals").exists()
+
+
+def test_stamp_exists_rejects_a_malformed_digest(tmp_path: Path) -> None:
+    """`stamp_exists` delegates to `stamp_path`, so it inherits the same rejection rather than
+    answering `False` for a digest that was never a valid digest to begin with."""
+    with pytest.raises(BundlePathError):
+        stamp_exists(tmp_path, "not-a-digest")

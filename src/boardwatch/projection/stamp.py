@@ -27,6 +27,7 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict
 
+from boardwatch.profile_bundle.paths import digest_token
 from boardwatch.profile_bundle.yaml_writer import document_bytes
 
 #: `{config_dir}/projection-approvals/`. Its own directory, not inside the bundle: a projection
@@ -51,19 +52,6 @@ class ProjectionStamp(BaseModel):
     approved_via: Literal["controlling_terminal"] = "controlling_terminal"
 
 
-def _token(digest: str) -> str:
-    """`digest` with its `sha256:` scheme swapped for a dash, so the result is dot-free.
-
-    Dot-free matters for `projection_stamp_id` (below), which is built as
-    `"projection-approval." + token`: with exactly one dot, the prefix and the token can never be
-    re-bracketed against each other. This is the same property `approvals.py`'s
-    `build_approval_stamp` enforces at runtime for a *caller-supplied* scope
-    (`profile_bundle/approvals.py:202-213`) — here it holds by construction instead, because the
-    token is derived from a hex digest, which contains no `.` to begin with.
-    """
-    return "sha256-" + digest.removeprefix("sha256:")
-
-
 def stamp_path(config_dir: Path, digest: str) -> Path:
     """`{config_dir}/projection-approvals/sha256-<hex>.yaml`.
 
@@ -72,8 +60,13 @@ def stamp_path(config_dir: Path, digest: str) -> Path:
     with DIFFERENT content (different digests) must never alias to the SAME stamp file. That second
     half is what makes an edited-but-unapproved declaration have no stamp, rather than inheriting
     one it was never shown for.
+
+    `digest_token` (`profile_bundle/paths.py`) both derives the filename-safe token and validates
+    `digest` first via `require_digest` — a malformed digest (no `sha256:` prefix, wrong hex
+    length, or containing a path separator or `..`) raises `BundlePathError` here rather than
+    silently becoming a path.
     """
-    return config_dir / APPROVALS_DIR / f"{_token(digest)}.yaml"
+    return config_dir / APPROVALS_DIR / f"{digest_token(digest)}.yaml"
 
 
 def stamp_exists(config_dir: Path, digest: str) -> bool:
@@ -86,12 +79,18 @@ def write_stamp(config_dir: Path, *, digest: str, approved_at: datetime) -> Path
     path is a pure function of the digest: writing it again overwrites the same file rather than
     creating a second one.
 
+    `projection_stamp_id` is built as `"projection-approval." + digest_token(digest)`: with exactly
+    one dot, the prefix and the token can never be re-bracketed against each other. This is the same
+    property `approvals.py`'s `build_approval_stamp` enforces at runtime for a *caller-supplied*
+    scope (`profile_bundle/approvals.py:202-213`) — here it holds by construction instead, because
+    `digest_token`'s token is `require_digest`-validated hex with no `.` to begin with.
+
     Always `approved_via="controlling_terminal"` — there is no parameter for it, matching the
     property copied from `profile_bundle.approvals`: an approval is filed by the command layer that
     asked the owner on a controlling terminal, never constructed with an arbitrary provenance.
     """
     stamp = ProjectionStamp(
-        projection_stamp_id=f"projection-approval.{_token(digest)}",
+        projection_stamp_id=f"projection-approval.{digest_token(digest)}",
         projection_digest=digest,
         approved_at=approved_at,
     )
