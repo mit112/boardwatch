@@ -65,9 +65,18 @@ def test_same_host_requests_serialize(tmp_path: Path) -> None:
     assert all(gap >= PER_HOST_DELAY_FLOOR for gap in gaps), gaps
 
 
+# Sized for a contended machine, not for the fastest possible test. The suite runs under
+# `-n auto`, so the ~30 ms of runnable work between the two thread starts competes with one
+# worker per core; a threshold close to the serialized time turns that scheduling noise into
+# a red gate on a run where nothing is wrong. The threshold sits at the MIDPOINT of the two
+# outcomes, which is what maximises headroom on both sides.
+_OVERLAP_SLEEP = 1.0
+_OVERLAP_MAX = 1.5 * _OVERLAP_SLEEP  # overlapped ~1x, serialized >= 2x
+
+
 def test_different_hosts_overlap(tmp_path: Path) -> None:
     def slow(_request: httpx.Request) -> httpx.Response:
-        time.sleep(0.4)
+        time.sleep(_OVERLAP_SLEEP)
         return httpx.Response(200)
 
     with respx.mock:
@@ -84,7 +93,7 @@ def test_different_hosts_overlap(tmp_path: Path) -> None:
         for t in threads:
             t.join()
         elapsed = time.monotonic() - t0
-    assert elapsed < 0.7, elapsed  # serialized would be >= 0.8
+    assert elapsed < _OVERLAP_MAX, elapsed
 
 
 def test_retry_after_honored_on_429(tmp_path: Path) -> None:
