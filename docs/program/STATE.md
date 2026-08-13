@@ -61,10 +61,24 @@ bundle is NOT authoritative for Mit's name, contacts or education** (D-156).
 and nothing manages a page budget. That is why a data-platform JD rendered 13 iOS bullets — not a bad
 selection, **no selection**. The design adds pinned-core-plus-scored-candidates with a budget fit.
 
-**Next action: `writing-plans`, in a FRESH session.** Agreed deliberately — the plan must not be written by
-the context that wrote and twice-fixed the spec, and a spec-reviewed plan still needs its own preflight
-against the code. **Gate B (populating the real bundle) has NOT started**; `{config_dir}/career-profile`
-does not exist. Everything is designed against the synthetic example bundle that ships as package data.
+**The plan is WRITTEN and preflighted (D-160).** `docs/superpowers/plans/2026-08-13-career-profile-projection.md`
+— 23 tasks over P0–P4, PM as Mit's one-session task, P5/P6 declared but deliberately not decomposed.
+The preflight (`docs/superpowers/research/2026-08-13-projection-plan-preflight.md`) checked ~60 of the
+spec's claims: the load-bearing premise held, but **4 are false, 12 citations drifted, and 9 facts the
+plan needs are absent**. **Where the spec and the preflight disagree, the preflight wins** — the plan
+carries a correction table so this is never re-litigated. Do **not** revise the spec to revision 4;
+D-158 closed that loop on purpose.
+
+**Next action: execute the plan, starting at Task 1** (extract `effective_skills`) — or run slice PM
+first if Mit wants the matrix recorded before any scorer code exists. Either order works; PM blocks
+only Task 22's *selection*, not the code. **Gate B (populating the real bundle) has NOT started**;
+`{config_dir}/career-profile` does not exist. Everything is designed against the synthetic example
+bundle that ships as package data.
+
+Three plan facts worth not re-deriving: the package **must** be `src/boardwatch/projection/` at top
+level or the import wall fails on its first import; **no `Resume` serializer exists anywhere in the
+repo**, so Task 11 builds one; and the projection approval stamp needs **its own type** because a
+repo-wide `rglob` test allows exactly two callers of `approval_stamp_bytes(`.
 
 ### Gate A — MET (2026-08-12)
 

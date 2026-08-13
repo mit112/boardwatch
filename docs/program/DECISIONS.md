@@ -110,89 +110,90 @@ and is a no-op when the index is already right. `make index-check` reports drift
 | D-074 | DECISIONS-ARCHIVE.md | 3009 | Final eligibility gate lane SHIPPED (persistent, agent-lane, fail-open); Gate P5 unchanged |
 | D-075 | DECISIONS-ARCHIVE.md | 3084 | Gate P2 reconciled: three individually-correct verdicts (may coincide); ≥3-field mechanism via fixtures |
 | D-076 | DECISIONS-ARCHIVE.md | 3153 | P2 item 4's final whole-branch review: what it caught, and four rulings it forced |
-| D-077 | DECISIONS.md | 199 | P6 Slice 1: the design is settled and the plan is written; no code exists yet |
-| D-078 | DECISIONS.md | 289 | P6 Slice 1: the plan's test fixtures are now real; eleven defects, all found by running code |
-| D-079 | DECISIONS.md | 378 | P6 Slice 1 annotates only; `postings.job_id` is not mutated |
-| D-080 | DECISIONS.md | 392 | `content_hash` alone may never suppress |
-| D-081 | DECISIONS.md | 406 | `exact_quad` is the sole suppressing kind, and its yield is stated honestly |
-| D-082 | DECISIONS.md | 424 | `cross_host` ships annotate-only, reversing an earlier draft |
-| D-083 | DECISIONS.md | 445 | No location evidence ⇒ no location-bearing identity, never a `"[]"` sentinel |
-| D-084 | DECISIONS.md | 460 | Three host classes, not two; matching is exact-or-dot-suffix |
-| D-085 | DECISIONS.md | 474 | Allowlist URL normalization, not a denylist |
-| D-086 | DECISIONS.md | 488 | Survivor election never consults score; `posting_id` is a load-bearing tiebreak |
-| D-087 | DECISIONS.md | 503 | Instrumentation is completeness-gated, not existence-gated |
-| D-088 | DECISIONS.md | 517 | `assisted` stays `None` in this slice |
-| D-089 | DECISIONS.md | 532 | Identities are upserted on every observation; a kind that stops being produced is deleted |
-| D-090 | DECISIONS.md | 549 | The ranker is completeness-gated for reproducibility, not safety |
-| D-091 | DECISIONS.md | 567 | The recount recomputes in Python, and claims staleness only |
-| D-092 | DECISIONS.md | 582 | Identities are backfilled by an explicit command, not by the migration |
-| D-093 | DECISIONS.md | 596 | Slice 1 does NOT meet Gate P6, and makes only one of its four clauses measurable |
-| D-094 | DECISIONS.md | 610 | P6 Slice 1 BUILT (unattended run): five more plan defects, three of them tests that could not fail |
-| D-095 | DECISIONS.md | 738 | P6 Slice 1 reviewed by three independent reviewers; fourteen findings fixed, two rejected |
-| D-096 | DECISIONS.md | 803 | The C++/C# fix folds punctuation into words; it does NOT add a raw-title comparison |
-| D-097 | DECISIONS.md | 847 | `_verify_quad` rejected nothing on the live corpus; "string-verified" is not precision evidence |
-| D-098 | DECISIONS.md | 876 | Suppression reports when it is OFF; wiring backfill into the pipeline is Slice 2 |
-| D-099 | DECISIONS.md | 912 | Gate batching stays allowed; the per-task fast-check set must include the schema guards |
-| D-100 | DECISIONS.md | 938 | P6 Slice 1 merged to `main`; Gate P6 clause 3 is MET, not merely measurable |
-| D-101 | DECISIONS.md | 970 | Gate P6 clause 4 is MET: 20/20 sampled suppressions are genuine duplicates |
-| D-102 | DECISIONS.md | 1000 | D-072 (model-tier benchmark) is deferred indefinitely |
-| D-103 | DECISIONS.md | 1022 | P6 Slice 2: the ledger is a current-state row per job, `seen` suppresses on a TTL, and the policy stamp never auto-reopens |
-| D-104 | DECISIONS.md | 1094 | Job regrouping: the survivor's job wins, and a tracked group is refused whole |
-| D-105 | DECISIONS.md | 1137 | Identity writes move into the scan path, closing D-098 — and D-098's cost argument did not apply |
-| D-106 | DECISIONS.md | 1168 | Two consequences the build forced: what earns a permanent `skipped`, and the zero-output guard |
-| D-107 | DECISIONS.md | 1194 | P6 Slice 2 BUILT and verified on real data; `cross_host` dereference deferred by measured absence |
-| D-108 | DECISIONS.md | 1243 | The decision log and the metrics log are archive-split; the reading protocol moves into the index |
-| D-109 | DECISIONS.md | 1302 | Index drift fails the gate, and the fixer lives in `tools/` |
-| D-110 | DECISIONS.md | 1380 | The Slice 2 review: only a caller that delivers a lead may consume the queue |
-| D-111 | DECISIONS.md | 1497 | P6 Slice 3: applied-state suppression, and liveness sized to what the corpus actually is |
-| D-112 | DECISIONS.md | 1666 | 0.3.0 is cut, the changelog gets ONE triple, and the tag is the owner's to push |
-| D-113 | DECISIONS.md | 1770 | The Slice 3 external review: a followed redirect can forge a gone-status |
-| D-114 | DECISIONS.md | 1858 | CI installs tectonic and pdfinfo on all three OSes; skipping the gate was refused |
-| D-115 | DECISIONS.md | 1926 | Gate A of the career-profile bundle: 9 of 19 slices, and a rule for checks that cannot fire |
-| D-116 | DECISIONS.md | 2008 | A docs-only commit owes the two fast gates, not the full suite; the tectonic pin gets a detector |
-| D-117 | DECISIONS.md | 2055 | 0.3.0's tag moves rather than 0.3.1 being cut; gitleaks fixed by cleaning bytes, not allowlisting |
-| D-118 | DECISIONS.md | 2105 | Gate A slice T10: effectiveness derived in one place, and two more §20.4 rows with no check |
-| D-119 | DECISIONS.md | 2202 | 0.3.0 is PUBLISHED: the tag moved onto a CI-green commit, and ships two known BLOCKERs deliberately |
-| D-120 | DECISIONS.md | 2270 | Gate A slice T12: the résumé emission order is fixed, and three more checks that cannot fire |
-| D-121 | DECISIONS.md | 2353 | The T12 review: a green gate and a perfect mutation score hid five BLOCKING defects |
-| D-122 | DECISIONS.md | 2414 | The T12 re-review: one defect the fix created, two contracts never enforced, and a decline that was wrong |
-| D-123 | DECISIONS.md | 2537 | A recurring trigger holding a one-shot prompt re-fires a task that already shipped |
-| D-124 | DECISIONS.md | 2582 | The third T12 review: the locator grammar keeps failing because it restates the emitter instead of deriving from it |
-| D-125 | DECISIONS.md | 2647 | The T12 round-three fix, and two more reviews of it: a forbidden segment is escaped, never refused |
-| D-126 | DECISIONS.md | 2779 | T12's review loop is CLOSED, with a stated exit criterion |
-| D-127 | DECISIONS.md | 2835 | Gate A slices T13 and T14: an approval bound to nothing, and the first code that WRITES a bundle |
-| D-128 | DECISIONS.md | 2956 | Gate A T14 round 2, T15 and T17: what three green suites could not see |
-| D-129 | DECISIONS.md | 3145 | The two Gate A design departures are RULED: the design text was wrong, not the code |
-| D-130 | DECISIONS.md | 3210 | Correcting D-128 and D-129: what the fix rounds actually established, and what the rebase actually deletes |
-| D-131 | DECISIONS.md | 3285 | The T14/T15 fix-round review's findings are fixed: a merge short-cut that skipped the append-only rule, and five residues |
-| D-132 | DECISIONS.md | 3420 | Gate A slice T16 reviewed by three lenses: the highest-risk slice, and the one defect two of them found separately |
-| D-133 | DECISIONS.md | 3497 | Correcting D-130 and D-131: what is actually pushed, and five statements a docs review caught in this session's own records |
-| D-134 | DECISIONS.md | 3569 | A finding's tier is a property of the operation, not of the code alone |
-| D-135 | DECISIONS.md | 3626 | The Gate A integration gate is green on all nineteen slices, and the 03:10 job misfired a second time |
-| D-136 | DECISIONS.md | 3699 | Gate A slices T18 and T19: two lenses, a ten-commit fix round, and an integration merge where two green branches wrote one rule twice |
-| D-137 | DECISIONS.md | 3815 | Gate A's review loop CLOSES at round five, and a two-document write is named rather than made atomic |
-| D-138 | DECISIONS.md | 3900 | A missing bundle root is its own fact, and `inventory` reporting it as clean was the defect |
-| D-139 | DECISIONS.md | 3955 | `STATE.md` splits its standing facts out, because a read-first file at twice its stated length is read past |
-| D-140 | DECISIONS.md | 4003 | D-116's conclusion survives, its premise does not: two tests do read the real `docs/` tree |
-| D-141 | DECISIONS.md | 4051 | The third site of the blocking-`open()` class is closed, at the layout boundary |
-| D-142 | DECISIONS.md | 4094 | D-138 delivered eight of twelve commands, and said twelve. The review that caught it, and what the surviving mutation cost |
-| D-143 | DECISIONS.md | 4163 | `add-evidence` writes the back-citation, closing Gate A's last open question |
-| D-144 | DECISIONS.md | 4246 | Grounding reads `supports` alone; citing a source is not being backed by it |
-| D-145 | DECISIONS.md | 4304 | The Gate A subsystem never ran on Windows, and one `write_text` hid it |
-| D-146 | DECISIONS.md | 4374 | LLM lane-death is one typed error, classified at the raise site, latched per invocation — scoped to the two lanes that call out |
-| D-147 | DECISIONS.md | 4547 | Slice 5 merges as-is: four known residuals, recorded rather than fixed |
-| D-148 | DECISIONS.md | 4632 | D-147's R1 closed: one flag drives the tailor lane's ledger row and its exit code |
-| D-149 | DECISIONS.md | 4718 | The `STATE.md` trim is BLOCKED: three Gate A records disagree with the code or with each other |
-| D-150 | DECISIONS.md | 4805 | The suite runs across worker processes; `-n auto` lives at the call sites, not in `addopts` |
-| D-151 | DECISIONS.md | 4914 | Windows leaves the per-push path for a nightly schedule; it is not dropped |
-| D-152 | DECISIONS.md | 4979 | Retraction: the archived CGPA claim is inverted; job-apps was never the stale copy |
-| D-153 | DECISIONS.md | 5018 | A rich table's width can ignore `COLUMNS`, so terminal env is pinned for the whole suite |
-| D-154 | DECISIONS.md | 5105 | `eligibility_inputs` gains an identity index; `top`'s pending anti-join cost 141 s per run |
-| D-155 | DECISIONS.md | 5169 | The program reorients onto the bundle-to-résumé path; `resume.yaml` becomes an import source, not an artifact to hand-fix |
-| D-156 | DECISIONS.md | 5257 | v1 projection is not authoritative for header, education or summary, because the renderer never reads them |
-| D-157 | DECISIONS.md | 5352 | Corrections that unblock D-149: the manifest write order, and Windows closed by CI |
-| D-158 | DECISIONS.md | 5436 | The projection scorer is chosen by measurement, because two design rounds picked two scorers and a probe falsified both |
-| D-159 | DECISIONS.md | 5524 | `COLUMNS` is baked into a `Console` at import, so three width-controlling tests never controlled anything |
+| D-077 | DECISIONS.md | 200 | P6 Slice 1: the design is settled and the plan is written; no code exists yet |
+| D-078 | DECISIONS.md | 290 | P6 Slice 1: the plan's test fixtures are now real; eleven defects, all found by running code |
+| D-079 | DECISIONS.md | 379 | P6 Slice 1 annotates only; `postings.job_id` is not mutated |
+| D-080 | DECISIONS.md | 393 | `content_hash` alone may never suppress |
+| D-081 | DECISIONS.md | 407 | `exact_quad` is the sole suppressing kind, and its yield is stated honestly |
+| D-082 | DECISIONS.md | 425 | `cross_host` ships annotate-only, reversing an earlier draft |
+| D-083 | DECISIONS.md | 446 | No location evidence ⇒ no location-bearing identity, never a `"[]"` sentinel |
+| D-084 | DECISIONS.md | 461 | Three host classes, not two; matching is exact-or-dot-suffix |
+| D-085 | DECISIONS.md | 475 | Allowlist URL normalization, not a denylist |
+| D-086 | DECISIONS.md | 489 | Survivor election never consults score; `posting_id` is a load-bearing tiebreak |
+| D-087 | DECISIONS.md | 504 | Instrumentation is completeness-gated, not existence-gated |
+| D-088 | DECISIONS.md | 518 | `assisted` stays `None` in this slice |
+| D-089 | DECISIONS.md | 533 | Identities are upserted on every observation; a kind that stops being produced is deleted |
+| D-090 | DECISIONS.md | 550 | The ranker is completeness-gated for reproducibility, not safety |
+| D-091 | DECISIONS.md | 568 | The recount recomputes in Python, and claims staleness only |
+| D-092 | DECISIONS.md | 583 | Identities are backfilled by an explicit command, not by the migration |
+| D-093 | DECISIONS.md | 597 | Slice 1 does NOT meet Gate P6, and makes only one of its four clauses measurable |
+| D-094 | DECISIONS.md | 611 | P6 Slice 1 BUILT (unattended run): five more plan defects, three of them tests that could not fail |
+| D-095 | DECISIONS.md | 739 | P6 Slice 1 reviewed by three independent reviewers; fourteen findings fixed, two rejected |
+| D-096 | DECISIONS.md | 804 | The C++/C# fix folds punctuation into words; it does NOT add a raw-title comparison |
+| D-097 | DECISIONS.md | 848 | `_verify_quad` rejected nothing on the live corpus; "string-verified" is not precision evidence |
+| D-098 | DECISIONS.md | 877 | Suppression reports when it is OFF; wiring backfill into the pipeline is Slice 2 |
+| D-099 | DECISIONS.md | 913 | Gate batching stays allowed; the per-task fast-check set must include the schema guards |
+| D-100 | DECISIONS.md | 939 | P6 Slice 1 merged to `main`; Gate P6 clause 3 is MET, not merely measurable |
+| D-101 | DECISIONS.md | 971 | Gate P6 clause 4 is MET: 20/20 sampled suppressions are genuine duplicates |
+| D-102 | DECISIONS.md | 1001 | D-072 (model-tier benchmark) is deferred indefinitely |
+| D-103 | DECISIONS.md | 1023 | P6 Slice 2: the ledger is a current-state row per job, `seen` suppresses on a TTL, and the policy stamp never auto-reopens |
+| D-104 | DECISIONS.md | 1095 | Job regrouping: the survivor's job wins, and a tracked group is refused whole |
+| D-105 | DECISIONS.md | 1138 | Identity writes move into the scan path, closing D-098 — and D-098's cost argument did not apply |
+| D-106 | DECISIONS.md | 1169 | Two consequences the build forced: what earns a permanent `skipped`, and the zero-output guard |
+| D-107 | DECISIONS.md | 1195 | P6 Slice 2 BUILT and verified on real data; `cross_host` dereference deferred by measured absence |
+| D-108 | DECISIONS.md | 1244 | The decision log and the metrics log are archive-split; the reading protocol moves into the index |
+| D-109 | DECISIONS.md | 1303 | Index drift fails the gate, and the fixer lives in `tools/` |
+| D-110 | DECISIONS.md | 1381 | The Slice 2 review: only a caller that delivers a lead may consume the queue |
+| D-111 | DECISIONS.md | 1498 | P6 Slice 3: applied-state suppression, and liveness sized to what the corpus actually is |
+| D-112 | DECISIONS.md | 1667 | 0.3.0 is cut, the changelog gets ONE triple, and the tag is the owner's to push |
+| D-113 | DECISIONS.md | 1771 | The Slice 3 external review: a followed redirect can forge a gone-status |
+| D-114 | DECISIONS.md | 1859 | CI installs tectonic and pdfinfo on all three OSes; skipping the gate was refused |
+| D-115 | DECISIONS.md | 1927 | Gate A of the career-profile bundle: 9 of 19 slices, and a rule for checks that cannot fire |
+| D-116 | DECISIONS.md | 2009 | A docs-only commit owes the two fast gates, not the full suite; the tectonic pin gets a detector |
+| D-117 | DECISIONS.md | 2056 | 0.3.0's tag moves rather than 0.3.1 being cut; gitleaks fixed by cleaning bytes, not allowlisting |
+| D-118 | DECISIONS.md | 2106 | Gate A slice T10: effectiveness derived in one place, and two more §20.4 rows with no check |
+| D-119 | DECISIONS.md | 2203 | 0.3.0 is PUBLISHED: the tag moved onto a CI-green commit, and ships two known BLOCKERs deliberately |
+| D-120 | DECISIONS.md | 2271 | Gate A slice T12: the résumé emission order is fixed, and three more checks that cannot fire |
+| D-121 | DECISIONS.md | 2354 | The T12 review: a green gate and a perfect mutation score hid five BLOCKING defects |
+| D-122 | DECISIONS.md | 2415 | The T12 re-review: one defect the fix created, two contracts never enforced, and a decline that was wrong |
+| D-123 | DECISIONS.md | 2538 | A recurring trigger holding a one-shot prompt re-fires a task that already shipped |
+| D-124 | DECISIONS.md | 2583 | The third T12 review: the locator grammar keeps failing because it restates the emitter instead of deriving from it |
+| D-125 | DECISIONS.md | 2648 | The T12 round-three fix, and two more reviews of it: a forbidden segment is escaped, never refused |
+| D-126 | DECISIONS.md | 2780 | T12's review loop is CLOSED, with a stated exit criterion |
+| D-127 | DECISIONS.md | 2836 | Gate A slices T13 and T14: an approval bound to nothing, and the first code that WRITES a bundle |
+| D-128 | DECISIONS.md | 2957 | Gate A T14 round 2, T15 and T17: what three green suites could not see |
+| D-129 | DECISIONS.md | 3146 | The two Gate A design departures are RULED: the design text was wrong, not the code |
+| D-130 | DECISIONS.md | 3211 | Correcting D-128 and D-129: what the fix rounds actually established, and what the rebase actually deletes |
+| D-131 | DECISIONS.md | 3286 | The T14/T15 fix-round review's findings are fixed: a merge short-cut that skipped the append-only rule, and five residues |
+| D-132 | DECISIONS.md | 3421 | Gate A slice T16 reviewed by three lenses: the highest-risk slice, and the one defect two of them found separately |
+| D-133 | DECISIONS.md | 3498 | Correcting D-130 and D-131: what is actually pushed, and five statements a docs review caught in this session's own records |
+| D-134 | DECISIONS.md | 3570 | A finding's tier is a property of the operation, not of the code alone |
+| D-135 | DECISIONS.md | 3627 | The Gate A integration gate is green on all nineteen slices, and the 03:10 job misfired a second time |
+| D-136 | DECISIONS.md | 3700 | Gate A slices T18 and T19: two lenses, a ten-commit fix round, and an integration merge where two green branches wrote one rule twice |
+| D-137 | DECISIONS.md | 3816 | Gate A's review loop CLOSES at round five, and a two-document write is named rather than made atomic |
+| D-138 | DECISIONS.md | 3901 | A missing bundle root is its own fact, and `inventory` reporting it as clean was the defect |
+| D-139 | DECISIONS.md | 3956 | `STATE.md` splits its standing facts out, because a read-first file at twice its stated length is read past |
+| D-140 | DECISIONS.md | 4004 | D-116's conclusion survives, its premise does not: two tests do read the real `docs/` tree |
+| D-141 | DECISIONS.md | 4052 | The third site of the blocking-`open()` class is closed, at the layout boundary |
+| D-142 | DECISIONS.md | 4095 | D-138 delivered eight of twelve commands, and said twelve. The review that caught it, and what the surviving mutation cost |
+| D-143 | DECISIONS.md | 4164 | `add-evidence` writes the back-citation, closing Gate A's last open question |
+| D-144 | DECISIONS.md | 4247 | Grounding reads `supports` alone; citing a source is not being backed by it |
+| D-145 | DECISIONS.md | 4305 | The Gate A subsystem never ran on Windows, and one `write_text` hid it |
+| D-146 | DECISIONS.md | 4375 | LLM lane-death is one typed error, classified at the raise site, latched per invocation — scoped to the two lanes that call out |
+| D-147 | DECISIONS.md | 4548 | Slice 5 merges as-is: four known residuals, recorded rather than fixed |
+| D-148 | DECISIONS.md | 4633 | D-147's R1 closed: one flag drives the tailor lane's ledger row and its exit code |
+| D-149 | DECISIONS.md | 4719 | The `STATE.md` trim is BLOCKED: three Gate A records disagree with the code or with each other |
+| D-150 | DECISIONS.md | 4806 | The suite runs across worker processes; `-n auto` lives at the call sites, not in `addopts` |
+| D-151 | DECISIONS.md | 4915 | Windows leaves the per-push path for a nightly schedule; it is not dropped |
+| D-152 | DECISIONS.md | 4980 | Retraction: the archived CGPA claim is inverted; job-apps was never the stale copy |
+| D-153 | DECISIONS.md | 5019 | A rich table's width can ignore `COLUMNS`, so terminal env is pinned for the whole suite |
+| D-154 | DECISIONS.md | 5106 | `eligibility_inputs` gains an identity index; `top`'s pending anti-join cost 141 s per run |
+| D-155 | DECISIONS.md | 5170 | The program reorients onto the bundle-to-résumé path; `resume.yaml` becomes an import source, not an artifact to hand-fix |
+| D-156 | DECISIONS.md | 5258 | v1 projection is not authoritative for header, education or summary, because the renderer never reads them |
+| D-157 | DECISIONS.md | 5353 | Corrections that unblock D-149: the manifest write order, and Windows closed by CI |
+| D-158 | DECISIONS.md | 5437 | The projection scorer is chosen by measurement, because two design rounds picked two scorers and a probe falsified both |
+| D-159 | DECISIONS.md | 5525 | `COLUMNS` is baked into a `Console` at import, so three width-controlling tests never controlled anything |
+| D-160 | DECISIONS.md | 5630 | Preflighting a thrice-reviewed spec still found four false claims, and the plan argues from the preflight |
 
 ---
 
@@ -5179,14 +5180,14 @@ that never accumulated because three `resume.yaml` bullets (245 / 234 / 232 char
 layout gate) force an untailored degrade on every posting.
 
 The obvious move was to fix those bullets and unblock three gates with one content edit. Mit rejected it:
-the canonical career-profile bundle was built **for exactly this purpose** — to be the source rÃ©sumÃ©
+the canonical career-profile bundle was built **for exactly this purpose** — to be the source résumé
 tailoring reads — so time spent repairing a file the bundle is meant to replace is time spent on the wrong
 artifact.
 
 ### The premise that was false
 
-`STANDING-FACTS.md` carried *"Nothing is generating Mit's rÃ©sumÃ©s daily right now,"* and the ordering
-argument in `PROGRAM.md` §2 (output-side work first, because Mit gets zero rÃ©sumÃ©s a day) rested on it.
+`STANDING-FACTS.md` carried *"Nothing is generating Mit's résumés daily right now,"* and the ordering
+argument in `PROGRAM.md` §2 (output-side work first, because Mit gets zero résumés a day) rested on it.
 Measured against the filesystem instead of recalled:
 
 | Date | job-apps folders | PDFs |
@@ -5197,7 +5198,7 @@ Measured against the filesystem instead of recalled:
 | 2026-08-12 | 4 | 18 |
 
 `STAGE1_ONLY=1` **is** in the launchd plist, so the automated 08:30 run does stop after discovery — but
-rÃ©sumÃ©s are being produced anyway. **job-apps is delivering Mit's daily minimum.** The line is corrected in
+résumés are being produced anyway. **job-apps is delivering Mit's daily minimum.** The line is corrected in
 `STANDING-FACTS.md`; the "LIVE GAP" urgency it fed is retired.
 
 This matters beyond bookkeeping: with no live gap, freezing P3, P6 and the 14-day acceptance clock costs
@@ -5207,7 +5208,7 @@ nothing, which is what makes the reorientation affordable.
 
 **1. `resume.yaml` is not hand-fixed. It is imported.** The design's §18.1 already names it a first-class
 source: `source_kind: boardwatch_resume`, adapter `boardwatch-resume-v1`, version 1, scope `complete_file`
-— one of exactly four kinds in the closed catalog, reading *"exactly Boardwatch's current logical rÃ©sumÃ©
+— one of exactly four kinds in the closed catalog, reading *"exactly Boardwatch's current logical résumé
 shape."* Verified against Mit's real file through the shipped enumerator, not inferred:
 
 ```
@@ -5243,7 +5244,7 @@ a decision rather than drift.
 ### What generalises
 
 - **An ordering argument outlives the fact it rested on.** `PROGRAM.md` §2's whole output-side-first
-  rationale was "Mit gets zero rÃ©sumÃ©s a day." That stopped being true and nothing re-checked it, because
+  rationale was "Mit gets zero résumés a day." That stopped being true and nothing re-checked it, because
   the sentence had been promoted to a standing fact. **A standing fact about the outside world needs a
   re-measurement date, not just a citation.**
 - **The cheapest unblock is not automatically the right one.** Three gates for one content edit is a real
@@ -5623,3 +5624,109 @@ reach the assertion.
 - **A single-job CI failure across two sessions is worth a full reproduction, not a third guess.** Two
   fixes were shipped on deduction. The reproduction took one environment variable, and it should have been
   the first move after the second failure, not after the sixth.
+
+---
+
+## D-160 — Preflighting a thrice-reviewed spec still found four false claims, and the plan argues from the preflight
+
+*2026-08-13, writing the projection implementation plan in fresh context. Preflight record:
+`docs/superpowers/research/2026-08-13-projection-plan-preflight.md`. Plan:
+`docs/superpowers/plans/2026-08-13-career-profile-projection.md`.*
+
+### Context
+
+The projection spec reached revision 3 after three external review rounds, all REWORK (D-156, D-158).
+Its §2 opens *"Verified against the code on 2026-08-13."* The plan was nevertheless preflighted
+against the code before task 1, on the strength of one prior result: a spec-reviewed 1208-line plan in
+this repo still carried six defects plus one repo-wide issue, and preflighting is what found them.
+
+About sixty claims were checked. **The load-bearing premise held** — `LatexRenderer.emit` never reads
+`Resume.header` or `Resume.education`, re-verified through every helper *and* the template
+(`resume_base.tex:72-80`, `:87-93`), so D-156's scope narrowing stands. **Four other claims are
+false, twelve citations have drifted or name a path that does not exist, and nine facts the plan
+needs are absent from the spec.**
+
+### Choice
+
+**Where the spec and the preflight disagree, the preflight wins**, and the plan carries a correction
+table naming every instance rather than silently implementing the corrected version. Eight
+corrections are load-bearing enough to record here:
+
+1. **An out-of-catalog `Entry.kind` is silently dropped from the PDF, not routed to Experience.**
+   Both section filters are equality tests (`tailor/render/latex.py:155`, `:170`), so a third value
+   matches neither and the entry and all its bullets vanish with no error. The spec argued the
+   weaker "renders silently". The closed catalog is therefore more load-bearing than it claimed, and
+   the test asserts **absence from the rendered source**.
+2. **No `Resume` serializer exists anywhere in the repo.** Verified three ways. `model_dump_json()`
+   appears at exactly two sites, both hashing; `scaffold_template()` writes a static string. The
+   spec's `resume.projected.yaml` needs new code, routed through `yaml_writer.document_bytes`
+   because `yaml.safe_dump` emits documents the restricted loader refuses.
+3. **The projection approval stamp gets its own type; `ApprovalStamp` may not be reused.**
+   `test_profile_bundle_cli_approval.py:427-447` asserts by `rglob` over `src/` that exactly two
+   files call `approval_stamp_bytes(`, `ApprovedVia` is a closed one-member enum in the shipped JSON
+   schema, and `candidate_content_digest` means *bundle candidate* — reusing it would let a bundle
+   approval satisfy a projection gate. Keep the properties, not the type.
+4. **The effectiveness gate passes vacuously if the surface gate runs through
+   `eligible_fact_surfaces`**, which returns `frozenset()` for a non-effective fact. Use
+   `effective_fact_ids` for effectiveness and the predicate catalog for surfaces, separately. Expiry
+   is a third gate and needs `completeness._declared_expiry` promoted to public — `effective.py` has
+   **no `as_of` parameter on any function**, deliberately.
+5. **`effective_skills`'s signature is `(text, jd_skills, table, taxonomy)`** — the repo calls it
+   `table`, and `build_plan`'s order puts `taxonomy` last. The spec had both name and order wrong.
+6. **The drift test cannot claim the shared callable is the repo's only coverage implementation.**
+   There are four, and they are not equivalent: only `plan.py:77` unions the equivalence-swap
+   images. Folding `reports/tailor.py:255`/`:271` in would change their emitted audit values.
+7. **The package must live at `src/boardwatch/projection/`, top level.** Under `boardwatch/tailor/`
+   it would join `TAILOR_ROOTS` and fail the wall on its first import. And because the walk is
+   transitive, **no module in the 58-module tailor closure may import it** — notably
+   `reports/tailor.py`, `core/settings.py`, `cli/context.py`. `cli/app.py` is outside the closure,
+   which is what makes the CLI registration legal and what makes slice P5 the risk.
+8. **The spec's §9 expiry before/after control is impossible with the fact it has in mind.**
+   `fact.packet-pantry.legacy-language.001` is genuinely stale, résumé-surfaced and conflict-free —
+   the claim checks out — but it fails on `verification_state`, so no choice of `as_of` moves it. The
+   fact that can is `fact.example-credential.expiry.001`. Two fixtures, two code paths.
+
+Two miscited records are also corrected: §8's D-141 is a silent *hang*, not a silent success (D-138
+fits); §9's "98 tests / 5 of 13" figure is `METRICS.md:2266` and says **documents**, not "classes"
+— D-149 is the blocked STATE trim and is unrelated.
+
+### Alternatives rejected
+
+- **Trust §2's "verified" line and write the plan from the spec.** Rejected on the prior result, and
+  the preflight then falsified two claims that sentence covered.
+- **Revise the spec to revision 4.** Rejected: D-158 closed the design loop deliberately, and three
+  of round 2's eight defects were created by round 1's fixes. A correction table in the plan gives
+  the executor the right facts without reopening a loop that was stopped on purpose. The plan states
+  that where the two disagree, the preflight wins.
+- **Fold the corrections silently into the tasks.** Rejected — an executor reading the spec alongside
+  the plan, as `writing-plans` intends, would hit the contradiction with no way to resolve it.
+
+### Consequence
+
+The plan is 23 tasks over P0–P4, with PM as the owner's one-session task and P5/P6 declared but not
+decomposed. Two tasks exist purely because of gate mechanics the spec could not have known: the
+example declaration is registered as pinned `SHIPPED_DATA` **before** the code that reads it, because
+R7 fails the build on any new data file without a reviewed entry and two hardcoded counters break on
+the first one added; and R5 bans a `resume` or `cv` path segment on any data file, including a
+directory segment, so fixtures are named `master_resume.yaml` and `projection.golden.txt`.
+
+**P4 names no winning scorer.** It builds four candidates behind one interface, and both falsifying
+probes (`4 > 2`, `2.0 > 1.5`) are **authored as fixtures rather than cited**, because neither exists
+anywhere in the repo — they lived in external reviewers' contexts.
+
+### What generalises
+
+- **A spec's own "verified against the code" line is a claim, not evidence, and review rounds do not
+  audit it.** Three reviewers passed §2's premises; the four false claims were mostly *outside* the
+  premise list, which is the D-156 lesson recurring one level up. Preflight the citations, not just
+  the reasoning.
+- **Line numbers in a spec rot faster than its arguments.** Twelve of about sixty citations had
+  drifted or named a path that never existed (`render/latex.py`), while the surrounding claims were
+  true. Confirm one with `grep -n` before copying it into anything executable.
+- **A test the design specifies can be impossible while the fact it rests on is real.** The stale
+  fact exists exactly as promised and still cannot demonstrate the transition asked of it. Check that
+  a specified fixture can *exercise the arm*, not just that it exists — the same shape as D-142's
+  probe that could not reach its arm.
+- **Fan-out cost is model choice times width, and subagents inherit the parent model silently.**
+  Five preflight agents were dispatched on the parent's model when four were mechanical retrieval.
+  Under a budget, set the model per agent at dispatch; there is no second chance once they are running.
