@@ -25,7 +25,9 @@ pushed, reviewed, green on all twelve CI jobs — and **MET**, as of 2026-08-12.
 ### The P0–P7 program
 
 **P6's build is COMPLETE — all six items — and its commits are PUSHED.** Detail in D-095, D-103…D-107,
-D-110 (ledger), D-111 + D-113 (applied state, liveness). Schema head is **`p6_job_dispositions`**.
+D-110 (ledger), D-111 + D-113 (applied state, liveness). P6's own last migration is
+`p6_job_dispositions`; the schema head has since moved to **`perf_eligibility_inputs_identity`** (D-154,
+an index only — no table, no column, no backfill).
 **Read D-110 before touching the ledger, D-111 and D-113 before touching liveness**, and the liveness
 section of `STANDING-FACTS.md` before touching either.
 
