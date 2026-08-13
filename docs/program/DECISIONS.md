@@ -4712,7 +4712,7 @@ for the track that owns them — it does not resolve them.*
 
 ### Context
 
-`STATE.md` is 199 lines against a stated target near 170. A docs reviewer named the Gate A narration as
+`STATE.md` is 200 lines against a stated target near 170. A docs reviewer named the Gate A narration as
 the trim candidates on the premise that all of it is **already held in D-137…D-145**. Before deleting
 anything, each candidate block was checked against the entry that supposedly holds it. **The premise is
 false in three places.** Deleting on it would have destroyed the only true record of two facts and made
@@ -4740,12 +4740,15 @@ green is real and is recorded in `METRICS.md` against `8475319`; what is wrong i
 trimming the block would leave METRICS as the sole record while D-145 still prohibits the claim.
 **Which is right is not in doubt — CI closed it, exactly as D-145 required.** The log needs to say so.
 
-**3. `cited_back` is shipped, user-visible, and recorded nowhere but `STATE.md`.** `grep -rn cited_back
-docs/ CHANGELOG.md` returns exactly one hit, `STATE.md:133`. The behaviour is real
-(`authoring.py:188,262`, `cli/profile_bundle_cmd.py:808,815-816`, four tests, commit `3cd5e87`), and
-`CHANGELOG.md`'s `[Unreleased]` bundle entry enumerates the twelve commands and the `--json` envelope
-without mentioning it. CHANGELOG is authoritative for what shipped, so this is a gap in the
-authoritative file, not only a trim hazard.
+**3. `cited_back` is shipped, user-visible, and `CHANGELOG.md` never mentions it.** `grep -rn cited_back
+docs/ CHANGELOG.md` returns `docs/profile-bundle-authoring.md:631` (added by the same commit,
+`3cd5e87`) and `STATE.md:130` — zero hits in `CHANGELOG.md`. Outside the authoring doc, `STATE.md` is the
+only prose record. The behaviour is real (`authoring.py:188,262`, `cli/profile_bundle_cmd.py:808,815-816`,
+four tests, commit `3cd5e87`), and `CHANGELOG.md`'s `[Unreleased]` bundle entry enumerates the twelve
+commands and the `--json` envelope without mentioning it. CHANGELOG is authoritative for what shipped, so
+this is a gap in the authoritative file, not only a trim hazard. *(Corrected before merge: this finding
+originally claimed `cited_back` was "recorded nowhere but `STATE.md`" — the grep behind that was scoped
+to miss `profile-bundle-authoring.md`'s own pre-existing hit.)*
 
 ### Decision
 

@@ -2426,7 +2426,10 @@ assertion added there without mutating would have looked redundant while proving
 `STATE.md` was 187 lines against a target near 170 and is now 200. The Gate A narration was the
 reviewer's trim candidate on the premise that it is all already held in D-137…D-145. **The premise is
 false in three places** (D-149): D-143 states a write order `authoring.py:236,251` contradicts, D-145
-explicitly forbids the Windows-green claim it is cited for, and `cited_back` is recorded nowhere else in
-`docs/` or `CHANGELOG.md`. Each was confirmed by reading the code, not a summary of it. Nothing was
-deleted; D-149 lists the four things the trim owes first. One false claim was corrected in place —
-`__subclasses__()` is the test's mechanism, production asks `isinstance(document, FactBearingDocument)`.
+explicitly forbids the Windows-green claim it is cited for, and `CHANGELOG.md` never mentions
+`cited_back` at all — outside `docs/profile-bundle-authoring.md`, `STATE.md` is the only prose record.
+Each was confirmed by reading the code, not a summary of it. Nothing was deleted; D-149 lists the four
+things the trim owes first. One false claim was corrected in place — `__subclasses__()` is the test's
+mechanism, production asks `isinstance(document, FactBearingDocument)`. *(D-149's third finding was
+itself corrected before merge: a mis-scoped grep had missed `profile-bundle-authoring.md`'s own
+pre-existing `cited_back` hit.)*
