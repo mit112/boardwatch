@@ -6,7 +6,7 @@ from typing import TypeVar
 
 from boardwatch.extract.taxonomy import Taxonomy
 from boardwatch.llm.cache import ResponseCache
-from boardwatch.llm.client import ModelClient
+from boardwatch.llm.client import LLMLaneDeadError, ModelClient
 from boardwatch.tailor.canonical import build_canonical_vocab
 from boardwatch.tailor.equivalences import EquivalenceTable
 from boardwatch.tailor.model import Resume
@@ -84,6 +84,24 @@ def run_tier_b_core(
                         judge_verdict=None,
                         kept=False,
                         drop_reason="budget",
+                    )
+                )
+                continue
+            except LLMLaneDeadError:
+                # The credential is dead for the rest of this invocation. No re-raise: the
+                # run-scoped wrapper makes every later bullet free, and the invocation-level
+                # state lives there. Recorded distinctly from "error" so the CLI can tell a
+                # dead credential from a flaky one.
+                rows.append(
+                    RewriteRow(
+                        bullet_id=b.bullet_id,
+                        entry_id=entry.entry_id,
+                        a_text=a_text,
+                        b_text=a_text,
+                        filter_pass=False,
+                        judge_verdict=None,
+                        kept=False,
+                        drop_reason="lane_dead",
                     )
                 )
                 continue
@@ -280,6 +298,24 @@ def run_tier_b_core(
                         judge_verdict=None,
                         kept=False,
                         drop_reason="budget",
+                    )
+                )
+                continue
+            except LLMLaneDeadError:
+                # Same containment as the propose boundary above, but this candidate cleared
+                # every pre-judge veto, so the row keeps it (b_text=candidate, filter_pass=True)
+                # exactly as the sibling "error" row below does. It is still not kept: an
+                # unadjudicated reword is never applied.
+                rows.append(
+                    RewriteRow(
+                        bullet_id=b.bullet_id,
+                        entry_id=entry.entry_id,
+                        a_text=a_text,
+                        b_text=candidate,
+                        filter_pass=True,
+                        judge_verdict=None,
+                        kept=False,
+                        drop_reason="lane_dead",
                     )
                 )
                 continue
