@@ -4434,9 +4434,16 @@ body, non-object root, `error` as a string, missing `type`, non-string `type` �
 and wraps a real adapter: once a death reason is recorded, every later `complete()` raises without
 touching the network. It is installed by `build_client` (`llm/factory.py`), the single construction
 point both consumers already call once per invocation, so the wrapper's lifetime is exactly one
-invocation and **no call site changes**. `build_client`'s annotation stays `-> ModelClient | None`;
-the two constructing callers (`cli/tailor_cmd.py`, `cli/eligibility_cmd.py`) narrow with `isinstance`
-where they need the concrete type to read `dead_reason`.
+invocation and **no call site changes**. `build_client`'s annotation stays `-> ModelClient | None`.
+
+**The two lanes reach the reason by different routes, and that is not an inconsistency.**
+`cli/tailor_cmd.py` narrows the client with `isinstance(client, RunScopedClient)` to read
+`dead_reason` off the wrapper, because Tier B's containment boundaries swallow the exception into a
+`drop_reason="lane_dead"` row — by the time the CLI is printing, no exception is left to read.
+`cli/eligibility_cmd.py` never imports `RunScopedClient` at all: nothing in its loop swallows the
+error, so it catches `LLMLaneDeadError` directly and reads `exc.reason`. Reading the typed attribute
+off the propagated exception is the better route where it is available; the wrapper property exists
+for the lane where the exception does not survive.
 
 **Consumers keep two counters, not one.** `cli/eligibility_cmd.py`'s `attempted` increments once per
 posting sent to extraction and is what the loop caps at `max_calls_per_run` — it must keep advancing
