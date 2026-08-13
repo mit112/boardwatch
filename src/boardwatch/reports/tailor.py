@@ -31,7 +31,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from sqlalchemy import Engine, select
+from sqlalchemy import Connection, Engine, select
 
 from boardwatch.core.settings import Settings
 from boardwatch.extract.preflight import run_preflight
@@ -310,6 +310,35 @@ def _trace(
     }
 
 
+def jd_skills_for(conn: Connection, posting_id: int, *, taxonomy: Taxonomy) -> set[str] | None:
+    """The JD's extracted skill set for `posting_id`, keyed to `taxonomy.version`.
+
+    `None` on a cache miss — no extraction row at this posting/content_hash/taxonomy
+    version — distinct from an empty set, which means the JD genuinely matched no skills.
+    A caller that needs Tier A's old behaviour (miss and empty treated alike) coalesces
+    explicitly at its own call site; this function itself never blurs the two. Runs on
+    the caller's own connection and opens no transaction of its own.
+    """
+    row = conn.execute(
+        select(extractions.c.json)
+        .select_from(
+            extractions.join(
+                postings,
+                (extractions.c.posting_id == postings.c.id)
+                & (extractions.c.content_hash == postings.c.content_hash),
+            )
+        )
+        .where(
+            extractions.c.posting_id == posting_id,
+            extractions.c.kind == "taxonomy",
+            extractions.c.engine_version == taxonomy.version,
+        )
+    ).first()
+    if row is None:
+        return None
+    return set(row.json.get("skills", []))
+
+
 def _plan_tier_a(
     engine: Engine, settings: Settings, posting_id: int, *, resume_path: Path
 ) -> _TierAPlan:
@@ -338,22 +367,12 @@ def _plan_tier_a(
                 f"posting {posting_id} is not open (status={prow.status!r})"
             )
         jd_title = str(prow.title or "")  # NULL/blank title => empty => default persona
-        row = conn.execute(
-            select(extractions.c.json)
-            .select_from(
-                extractions.join(
-                    postings,
-                    (extractions.c.posting_id == postings.c.id)
-                    & (extractions.c.content_hash == postings.c.content_hash),
-                )
-            )
-            .where(
-                extractions.c.posting_id == posting_id,
-                extractions.c.kind == "taxonomy",
-                extractions.c.engine_version == taxonomy.version,
-            )
-        ).first()
-    jd_skills: set[str] = set((row.json if row else {}).get("skills", []))
+        found = jd_skills_for(conn, posting_id, taxonomy=taxonomy)
+    # A cache miss (no extraction row) coalesces to empty here — the compatibility
+    # guarantee for every existing Tier A caller. The posting-context seam
+    # (projection/posting.py) is the one caller that needs the miss itself, and calls
+    # jd_skills_for directly rather than through this coalesce.
+    jd_skills: set[str] = found if found is not None else set()
 
     master = load_resume(Path(resume_path))
     # Shape the résumé through the persona lens BEFORE planning: the JD title selects the
