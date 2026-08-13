@@ -34,6 +34,13 @@
   that before relying on it, rather than re-reading the premise.
 - A doc in this program never quotes an exact catalog count, because no test can pin one and a stale number
   in a read-first file is worse than no number.
+- **The gate runs in parallel and costs ~4½ minutes, not ~17** (D-150). `-n auto` is passed by
+  `Makefile`'s `test:` target and `ci.yml`'s test job — **deliberately not in `addopts`**, because the
+  `perf` job shares that config and measures wall-clock timings. `release.yml` inherits it through
+  `make check`, which is intended. Two consequences worth knowing before reading a gate log: pytest is
+  **~99% of the gate** (the other four phases cost about two seconds combined, so optimising them is
+  worthless), and **xdist's summary drops the `1 deselected` tally** — reconcile counts against the
+  `[N items]` figure instead. For a readable traceback while debugging, run serial with `-n 0`.
 - **`make check` is the only gate for this repo's correctness** — pytest + ruff + mypy green is *not* green.
   Run it in a **detached worktree pinned to a sha**, capture the real exit code, never pipe it through
   `head`/`tail` (SIGPIPE gives a false negative — observed live giving a false `EXIT=0`), end a
