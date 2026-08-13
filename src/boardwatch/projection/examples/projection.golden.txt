@@ -1,0 +1,28 @@
+header:
+- Example Candidate
+- candidate@example.com
+education:
+- Example University
+skill_groups:
+- label: Languages
+  items:
+  - Example Language
+entries:
+- entry_id: entry.employment.example-labs
+  heading: Example Labs
+  bullets:
+  - bullet_id: claim.example-labs.ownership.001
+    text: Led the ingestion service and its on-call rotation.
+    tech_tags: []
+  kind: experience
+  title: Software Engineer
+  dates: 2025-06-01 – 2026-05-31
+- entry_id: entry.project.packet-pantry
+  heading: Packet Pantry
+  bullets:
+  - bullet_id: claim.packet-pantry.backend.001
+    text: Built a retry-safe ingestion path and measured its sustained local throughput.
+    tech_tags: []
+  kind: project
+  title: Packet Pantry
+extracurricular: []
