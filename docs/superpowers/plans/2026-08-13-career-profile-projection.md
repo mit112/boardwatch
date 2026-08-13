@@ -1221,10 +1221,13 @@ from boardwatch.projection.grammar import resolve_template
 class _Entity:
     entity_type = "project"
     display_name = "Packet Pantry"
-    status = None  # a person entity has no status at all
+    status = "live_public"
 
 
 class _Person:
+    """`PersonEntity` genuinely has no `status` field (`models/entities.py:143-145`), so the stub
+    genuinely omits it rather than setting it to None — `getattr` must miss, not find a null."""
+
     entity_type = "person"
     display_name = "Example Candidate"
 
@@ -1258,6 +1261,14 @@ def test_an_unresolvable_predicate_is_fatal_not_blank() -> None:
         resolve_template("{employment.title}", entity=_Entity(), facts_by_predicate={},
                          open_range_label="Present", where="projection.yaml:12")
     assert exc.value.violation.issue is ProjectionIssue.UNRESOLVED_PLACEHOLDER
+
+
+def test_status_resolves_on_an_entity_that_has_one() -> None:
+    """The positive control for the test below. Without it, a `resolve_template` that refused
+    `{@status}` unconditionally would pass — a check that cannot fire reads as coverage."""
+    out = resolve_template("{@status}", entity=_Entity(), facts_by_predicate={},
+                           open_range_label="Present", where="w")
+    assert out == "live_public"
 
 
 def test_status_on_a_person_entity_is_a_named_refusal_not_an_attribute_error() -> None:
@@ -3175,18 +3186,34 @@ def test_round_two_bias_the_comprehensive_entry_must_not_lose_to_the_narrow_one(
     assert comprehensive >= focused, f"{name}: comp={comprehensive} focused={focused}"
 
 
+#: Six bullets that each match a JD skill, then six that match nothing. `MAX_BULLETS_PER_ENTRY`
+#: is 6, so `build_plan` keeps exactly the first six — the scorer must agree with that cap.
+MATCHING_SIX = [
+    "Built airflow DAGs",
+    "Wrote dbt models",
+    "Ran spark jobs",
+    "Tuned sql warehouses",
+    "Used kafka streams",
+    "Provisioned aws infrastructure",
+]
+FILLER_SIX = [f"Wrote internal documentation, part {i}" for i in range(6)]
+
+
 def test_no_scorer_penalises_a_bullet_the_cap_would_keep() -> None:
     """The truncation-agreement requirement. A twelve-bullet entry whose six matching bullets are
-    exactly the survivors of `MAX_BULLETS_PER_ENTRY` must not be scored down for the six it loses."""
-    twelve = _entry(
-        "entry.twelve",
-        *[t for t in COMPREHENSIVE_SIX.bullets and
-          ["Built airflow DAGs", "Wrote dbt models", "Ran spark jobs", "Tuned sql",
-           "Used kafka", "Provisioned aws"] + ["Filler prose"] * 6],
-    )
-    six = _entry("entry.six", *[b.text for b in twelve.bullets[:6]])
-    scorer = SCORERS["mean_top_k"]
+    exactly the survivors of `MAX_BULLETS_PER_ENTRY` must not be scored down for the six it loses.
+    """
+    twelve = _entry("entry.twelve", *(MATCHING_SIX + FILLER_SIX))
+    six = _entry("entry.six", *MATCHING_SIX)
     table, taxonomy = EquivalenceTable((), "v"), _taxonomy()
+
+    # The premise: the filler really does match nothing, or the two entries are trivially equal
+    # and this test would pass without the cap-awareness it exists to check.
+    from boardwatch.tailor.plan import effective_skills
+
+    assert all(not (effective_skills(t, JD, table, taxonomy) & JD) for t in FILLER_SIX)
+
+    scorer = SCORERS["mean_top_k"]
     assert scorer(twelve, JD, table, taxonomy) == scorer(six, JD, table, taxonomy)
 ```
 
