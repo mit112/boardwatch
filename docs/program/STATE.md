@@ -72,9 +72,15 @@ review was considered and declined — the expensive check happened in the right
 
 ### Execution — IN PROGRESS on branch `projection-v1`
 
-Branch `projection-v1`, forked from `main` at `b200112`. **Tasks 1 and 2 are committed and reviewed
-clean** (`6c4d539`, `be9e928`), each `make check` exit 0. Task 3 was written but **left uncommitted**
-when the session ended on usage — its code is in the working tree, untracked.
+Branch `projection-v1`, forked from `main` at `b200112`. **Unpushed.** Working tree clean, `make check`
+**exit 0** at `HEAD` (5,995 passed, 95.63%).
+
+| Commit | Task | Standing |
+|---|---|---|
+| `6c4d539` | 1 — public `effective_skills` | committed, **reviewed clean** |
+| `be9e928` | 2 — package root + closed `ProjectionIssue` catalog | committed, **reviewed clean** |
+| `ee2cb49` | 3 — the declaration model | committed, **NOT REVIEWED** |
+| `f339112` | — program docs (this file + D-161) | — |
 
 Working ledger: `.superpowers/sdd/2026-08-13-career-profile-projection/progress.md`. It is
 **gitignored working material**, so anything in it that must survive belongs here or in `DECISIONS.md`.
@@ -86,9 +92,11 @@ It holds an 11-ruling pre-flight scan table; two rulings were withdrawn by verif
 illegal. Projection digests through `yaml_writer.document_bytes` instead. **Do not re-derive this and
 do not "fix" it by exempting the test.**
 
-**Next action: resume at Task 3** — check whether the uncommitted `declaration.py` already carries
-D-161's ruling, then continue to Task 4. Or run slice PM first; either order works, since PM blocks
-only Task 22's *selection*, not any code.
+**Next action: review Task 3** (`review-package <plan> be9e928 ee2cb49`), then continue to Task 4. The
+reviewer must be told that three ledger rulings are **authorised deviations from the brief, not
+defects**: two added issue codes (`DECLARATION_UNREADABLE`, `MALFORMED_DECLARATION`), `shell_source`
+resolution deferred to Task 12, and the D-161 digest route. Or run slice PM first; either order works,
+since PM blocks only Task 22's *selection*, not any code.
 
 **Gate B (populating the real bundle) has NOT started**; `{config_dir}/career-profile` does not exist.
 Everything is built against the synthetic example bundle that ships as package data.
@@ -131,7 +139,7 @@ D-157 is the correction of record); `add_evidence` takes no bundle lock; and sta
 | 14-day acceptance | not started | — frozen; the clock measures a frozen system and starts after P6 |
 | P7 Breadth | not started | — |
 | *Gate A (parallel)* | *complete, merged, pushed, CI green* | ***MET*** — *has moved no program gate* |
-| *Projection (active)* | *spec revision 3; 23-task plan written + preflighted + mechanically checked (D-160); **Tasks 1–2 shipped on `projection-v1`**, Task 3 uncommitted* | *P0 gate MET (Task 1); P1–P4 gates not met* |
+| *Projection (active)* | *spec revision 3; 23-task plan written + preflighted + mechanically checked (D-160); **Tasks 1–3 committed on `projection-v1`** (unpushed), Task 3 unreviewed* | *P0 gate MET (Task 1); P1–P4 gates not met* |
 
 ### Gate P6, clause by clause
 
