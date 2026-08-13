@@ -456,7 +456,7 @@ JDs** — otherwise "fatal in every arm" becomes "the user gets nothing."
 | P2 | Stage 1 → `ProjectionPool`; serializer; manifest | Golden output + round-trip test green |
 | P3 | `project` CLI, `--json`, `--check` with non-zero drift exit | Exit tiers match the bundle CLI's convention |
 | P4 | Stage 2: scoring, admission floor, budget fit, four-arm gate handling | Selection matrix incl. roomy-budget negative control |
-| P5 | Pipeline integration decision (§12 Q1) | Owner ruling recorded, or opt-in slice shipped |
+| P5 | Pipeline integration — **committed by Mit, built after v1** (§12 Q1) | Projection runs inside `boardwatch run`; `resume.yaml` stops being the daily default only once §8's migration order is satisfied |
 | P6 | Model re-ranker, opt-in, fail-open | Beats the deterministic baseline on the labeled matrix |
 
 **P6's measurement is defined before P6 starts**, or its gate is unfalsifiable: an owner-labeled JD matrix
@@ -480,11 +480,13 @@ means a rank-agreement metric on that set. Labeling is a one-session owner task.
 
 ## 12. Open questions
 
-1. **Does the daily `boardwatch run` invoke projection?** Today it reads static `resume.yaml`
-   (`run_cmd.py:80`), so a mechanism that never runs daily delivers nothing daily — the owner's intent is
-   the yardstick. Options: an opt-in `boardwatch run --project` slice that projects per lead before
-   `run_tailor`, or an explicit ruling that v1 is manual-only. **This is a hole until ruled on**, which is
-   why it is P5 rather than an assumption.
+1. ~~**Does the daily `boardwatch run` invoke projection?**~~ **RULED by Mit, 2026-08-13: it will be
+   built, after v1.** Not manual-only forever, and not part of v1. Today the pipeline reads static
+   `resume.yaml` (`run_cmd.py:80`), so until that slice lands the projection is exercised by hand, one
+   posting at a time — which is the right order anyway: §8 requires `resume.yaml` stay the pipeline
+   default until projection is proven on real JDs, and hand-running is how it gets proven. Carried as
+   slice P5 in §10 with its shape still open (an opt-in `boardwatch run --project`, or projection as a
+   pipeline stage). **What is settled is that it happens; what is open is its form.**
 2. **Should `tailor run` validate the projection manifest?** It would close the stale-document path, and
    it crosses the wall this design otherwise keeps up.
 3. **Does the persona's `entries` list survive stage 2?** Two mechanisms selecting entries is a drift
@@ -518,7 +520,7 @@ confirmed by both; the defects were in what the design built on them.
 | Contacts are not facts | GPT + DeepSeek | **Dissolved by scope** — §3 |
 | Scoring bias (probe: 4 > 2) | DeepSeek | **Fixed** — mean per-bullet coverage, §6 |
 | Budget loop ignores three of four gate arms | DeepSeek | **Fixed** — §6 |
-| Pipeline never wired | DeepSeek | **Open question 1**, gated at P5 — not silently accepted |
+| Pipeline never wired | DeepSeek | **Accepted and scheduled** — Mit ruled 2026-08-13 that it gets built after v1; slice P5, form still open |
 | `kind` is not a closed catalog | DeepSeek | **Fixed** — §4.1, §7 |
 | P6 gate has no measurement | DeepSeek | **Fixed** — labeled matrix defined, §10 |
 | Budget loop reading ambiguous; greedy | DeepSeek | **Fixed** — one reading pinned, greediness named, §6 |
