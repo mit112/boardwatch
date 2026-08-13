@@ -16,7 +16,12 @@ from boardwatch.projection.errors import ProjectionIssue, raise_violation
 
 
 def check_references(declaration: ProjectionDeclaration, ctx: ValidationContext) -> None:
-    """Every id resolves, every claim is the owner's and this entity's, every skill may surface."""
+    """Every id resolves, every claim is the owner's and this entity's, every skill may surface.
+
+    The fact résumé-surfaced row is deliberately NOT here: `EntryDeclaration` has no fact-id
+    field for this module to check against. It is enforced later, in `resume_facts_for` (a later
+    task), which reads the bundle's facts directly rather than through this declaration.
+    """
     claims = {c.claim_id: c for c in ctx.index.claims}
     skills = {s.skill_id: s for s in ctx.index.skills}
 
