@@ -4,6 +4,7 @@ At the tree root rather than under tests/unit/ because tests/cli/test_identities
 needs the same corpus.
 """
 
+import os
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from datetime import datetime, timedelta
@@ -16,25 +17,39 @@ from boardwatch.store.db import ensure_schema, get_engine
 from boardwatch.store.queries import save_profile
 from boardwatch.store.tables import companies, jobs, posting_versions, postings, runs
 
-
-@pytest.fixture(autouse=True)
-def _non_dumb_terminal(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Pin `TERM` so rich resolves console width from `COLUMNS`, not from a dumb-terminal
-    fallback.
-
-    `Console.size` returns a hard-coded (80, 25) when `is_dumb_terminal` — `TERM` in
-    ("dumb", "unknown") AND `is_terminal` — and that branch sits ABOVE the `COLUMNS`
-    lookup, so it silently overrides it. `is_terminal` is true whenever `FORCE_COLOR` or
-    `TTY_COMPATIBLE=1` is set, which a CI runner may do even though nothing is a tty. A
-    runner supplying both therefore renders every table at 80 columns regardless of what
-    a test asked for, folding long cells across lines and breaking any substring
-    assertion over them. This is why `test_abstain_names_rules_that_have_never_been_detected`
-    failed on ubuntu/3.12 alone while passing on the eight other matrix jobs and locally.
-
-    Autouse and repo-wide because the exposure is not specific to that test: every
-    assertion over rich-rendered CLI output inherits it.
-    """
-    monkeypatch.setenv("TERM", "xterm")
+# ---------------------------------------------------------------------------------------
+# Make rich agree that captured test output is not a terminal.
+#
+# Executed at conftest IMPORT time, deliberately, NOT in a fixture: `Console.__init__`
+# resolves `_color_system` eagerly, and this program builds module-level consoles
+# (`cli/eligibility_cmd.py:66`, `cli/top_cmd.py:50`, ...) at import. A fixture runs too late
+# to change what those already baked in.
+#
+# Nothing here is a tty, but rich's `is_terminal` is True whenever `FORCE_COLOR` is set to
+# anything non-empty or `TTY_COMPATIBLE=1` — and a CI runner may set either. That one
+# property gates TWO unrelated behaviours, so a runner supplying it breaks assertions two
+# different ways:
+#
+# * Width. `Console.size` returns a hard-coded (80, 25) when `is_dumb_terminal`
+#   (`is_terminal` AND `TERM` in ("dumb", "unknown")), and that branch sits ABOVE the
+#   `COLUMNS` lookup, silently overriding it. Long cells fold across lines and substring
+#   assertions over them fail. This is why
+#   `test_abstain_names_rules_that_have_never_been_detected` failed on ubuntu/3.12 alone
+#   while passing on the eight other matrix jobs and locally.
+# * Colour. With a colour system resolved, `ReprHighlighter` — on by default, and NOT
+#   disabled by `markup=False` — wraps leading integers in escape codes. That breaks plain
+#   substring assertions and makes `--json` output unparseable.
+#
+# `is_terminal` is what gets normalised, because it is the single root of both. Pinning only
+# `TERM` fixes width and CAUSES the colour failures; that was a first attempt at this and it
+# went red under `TERM=xterm FORCE_COLOR=1`. `TERM` is pinned too, as defence for anything
+# that makes `is_terminal` true by another route (an explicit `force_terminal`).
+#
+# No test in the repo asserts on ANSI output, so nothing wants the suppressed behaviour.
+# ---------------------------------------------------------------------------------------
+os.environ.pop("FORCE_COLOR", None)
+os.environ.pop("TTY_COMPATIBLE", None)
+os.environ["TERM"] = "xterm"
 
 
 # ---------------------------------------------------------------------------------------
