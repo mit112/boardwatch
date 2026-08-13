@@ -312,9 +312,15 @@ class FabricationCounters:
 
     Tier B is the LLM-assisted lane, the only one that can fabricate — Tier A is structural and
     cannot. `judge_rejected` and `overmatch_filtered` are the two truth gates: the fail-closed
-    entailment judge and the deterministic overmatch filter. `budget`/`error`/`no_candidate`
-    are non-fabrication fallbacks. `other` counts any `drop_reason` the closed catalog does not
-    name and is a defect if non-zero.
+    entailment judge and the deterministic overmatch filter. `budget`/`error`/`no_candidate`/
+    `lane_dead` are non-fabrication fallbacks. `other` counts any `drop_reason` the closed
+    catalog does not name and is a defect if non-zero.
+
+    `lane_dead` (P3 slice 5, D-146) counts bullets dropped because the LLM credential was
+    already dead for the rest of the invocation — no call was made for most of them, so it is
+    the one fallback that is not evidence about the bullet at all. Counted apart from `error`
+    for exactly that reason: `error` means the provider failed on THIS bullet and the next may
+    succeed, `lane_dead` means nothing further was attempted.
 
     Not instrumented for Tier A: its own fail-safe (`TierASafetyError`) has no counter yet, and
     `bullets_seen` counts only bullets that reached the Tier-B lane. Zero here means Tier B did
@@ -361,6 +367,7 @@ class FabricationCounters:
     budget: int
     error: int
     no_candidate: int
+    lane_dead: int
     provenance_rejected: int
     lift_rejected: int
     banned_register_rejected: int
@@ -382,7 +389,7 @@ def build_fabrication_counters(
     """Fold per-bullet Tier-B rewrite rows into the closed outcome catalog. Pure."""
     kept = unchanged = judge = overmatch = budget = error = no_candidate = provenance = 0
     lift = banned_register = buzzword = verb_diversity = requirement_echo = other = 0
-    filter_structural = 0
+    filter_structural = lane_dead = 0
     for row in rewrite_rows:
         if row.get("kept"):
             kept += 1
@@ -403,6 +410,8 @@ def build_fabrication_counters(
             error += 1
         elif reason == "no_candidate":
             no_candidate += 1
+        elif reason == "lane_dead":
+            lane_dead += 1
         elif reason == "provenance":
             provenance += 1
         elif reason == "overmatch":
@@ -427,6 +436,7 @@ def build_fabrication_counters(
         budget=budget,
         error=error,
         no_candidate=no_candidate,
+        lane_dead=lane_dead,
         provenance_rejected=provenance,
         lift_rejected=lift,
         banned_register_rejected=banned_register,
@@ -944,6 +954,7 @@ def funnel_to_dict(funnel: RunFunnel) -> dict[str, object]:
             "budget": funnel.fabrication.budget,
             "error": funnel.fabrication.error,
             "no_candidate": funnel.fabrication.no_candidate,
+            "lane_dead": funnel.fabrication.lane_dead,
             "provenance_rejected": funnel.fabrication.provenance_rejected,
             "lift_rejected": funnel.fabrication.lift_rejected,
             "banned_register_rejected": funnel.fabrication.banned_register_rejected,
@@ -1375,7 +1386,8 @@ def funnel_to_markdown(funnel: RunFunnel) -> str:
         f"truth gate ({fab.judge_rejected} judge, {fab.overmatch_filtered} overmatch) · "
         f"{fab.kept} kept · {fab.unchanged} unchanged",
         "",
-        f"fallbacks: {fab.budget} budget · {fab.error} error · {fab.no_candidate} no_candidate",
+        f"fallbacks: {fab.budget} budget · {fab.error} error · {fab.no_candidate} no_candidate "
+        f"· {fab.lane_dead} lane_dead (the credential was dead; no call was made)",
         "",
         f"{fab.provenance_rejected} rewrites reverted to Tier-A for lack of provenance "
         "(a conservative veto, not a caught fabrication — excluded from `rejected` above)",

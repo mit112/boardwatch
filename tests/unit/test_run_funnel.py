@@ -13,6 +13,7 @@ preserve — not-instrumented folded into 0, `cache_hit_unattributed` folded int
 
 from __future__ import annotations
 
+import ast
 import json
 from pathlib import Path
 
@@ -37,6 +38,8 @@ from boardwatch.store.run_funnel_queries import (
     TailoredArtifactCounts,
 )
 from boardwatch.tailor.coverage import CoverageReport
+from boardwatch.tailor.rewrite import filter as rewrite_filter
+from boardwatch.tailor.rewrite import lane, verb_diversity
 
 BUNDLED = Path("does-not-exist")  # no override dir: load_rules falls back to the bundled catalog
 
@@ -963,7 +966,89 @@ def test_stub_rate_over_an_empty_corpus_is_none_never_zero() -> None:
     assert any("not instrumented" in line for line in body.splitlines() if "rate" in line)
 
 
+def _filter_reject_reasons() -> set[str]:
+    """Every reason `passes_overmatch_filter` can put in a `FilterResult`, read from its
+    source. `lane.py` interpolates these behind the `filter:` prefix, so the funnel's
+    prefix branch is only proven total if the set comes from the filter itself."""
+    tree = ast.parse(Path(rewrite_filter.__file__).read_text(encoding="utf-8"))
+    out: set[str] = set()
+    for node in ast.walk(tree):
+        if (
+            isinstance(node, ast.Call)
+            and isinstance(node.func, ast.Name)
+            and node.func.id == "FilterResult"
+        ):
+            for arg in node.args:
+                if isinstance(arg, ast.Constant) and isinstance(arg.value, str):
+                    out.add(arg.value)
+    return out
+
+
+def _emitted_drop_reasons() -> set[str]:
+    """Derive the `drop_reason` values the Tier-B emitters can actually produce.
+
+    Read from the emitters' own source at call time, never restated here: a hard-coded list
+    agrees with itself, so adding a fourteenth literal to `lane.py` would leave a test named
+    "every drop reason" green while covering thirteen. Both emitter modules are located
+    through their imported module objects, so a move or a rename fails loudly rather than
+    silently matching nothing.
+
+    Two shapes appear at the `drop_reason=` keyword: a plain string constant, and one
+    f-string (`f"filter:{fr.reason}"`). The f-string is expanded by taking its literal
+    prefix and crossing it with the filter's own reason catalog; `None` (a kept row) is not
+    a drop reason and is skipped.
+    """
+    reasons: set[str] = set()
+    saw_interpolated = False
+    for module in (lane, verb_diversity):
+        tree = ast.parse(Path(module.__file__).read_text(encoding="utf-8"))
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.keyword) or node.arg != "drop_reason":
+                continue
+            value = node.value
+            if isinstance(value, ast.Constant):
+                if isinstance(value.value, str):
+                    reasons.add(value.value)
+                continue
+            assert isinstance(value, ast.JoinedStr), ast.dump(value)
+            prefix = "".join(
+                part.value
+                for part in value.values
+                if isinstance(part, ast.Constant) and isinstance(part.value, str)
+            )
+            assert prefix, "an interpolated drop_reason with no literal prefix is unmappable"
+            saw_interpolated = True
+            reasons |= {f"{prefix}{r}" for r in _filter_reject_reasons()}
+    # The derivation is only a check if it actually found things; an empty or truncated walk
+    # would otherwise pass this test by classifying nothing.
+    assert saw_interpolated, "the filter: f-string arm was not reached — did lane.py change?"
+    assert len(reasons) >= 15, sorted(reasons)
+    return reasons
+
+
 def test_fabrication_counters_classify_every_drop_reason() -> None:
+    """Every `drop_reason` the Tier-B emitters can produce lands in a named bucket.
+
+    `other` is the closed catalog's tripwire — a non-zero value renders a literal FAILURE
+    line in the artifact — so this asserts `other == 0` over the DERIVED set of emitted
+    reasons rather than over a list retyped here. Adding a new `drop_reason=` literal to
+    `lane.py` or `verb_diversity.py` without a funnel branch fails this test.
+    """
+    emitted = _emitted_drop_reasons()
+    rows: list[dict[str, object]] = [
+        {"kept": False, "drop_reason": reason} for reason in sorted(emitted)
+    ]
+    report = funnel(rewrite_rows=rows)
+    fab = report.fabrication
+    assert fab.bullets_seen == len(emitted)
+    assert fab.other == 0, sorted(emitted)
+    # The two reasons this slice's own work turns on, named explicitly so a derivation that
+    # silently stopped finding them cannot pass the count assertion above by luck.
+    assert "lane_dead" in emitted and fab.lane_dead == 1
+    assert "verb_repeat" in emitted and fab.verb_diversity_rejected == 1
+
+
+def test_fabrication_counters_separate_the_truth_gates_from_the_fallbacks() -> None:
     """The two truth gates (judge, overmatch filter) are the fabrication signal B4 measures;
     they must be counted apart from the non-fabrication fallbacks."""
     rows: list[dict[str, object]] = [
@@ -974,15 +1059,21 @@ def test_fabrication_counters_classify_every_drop_reason() -> None:
         {"kept": False, "drop_reason": "budget"},
         {"kept": False, "drop_reason": "error"},
         {"kept": False, "drop_reason": "no_candidate"},
+        {"kept": False, "drop_reason": "lane_dead"},
     ]
     report = funnel(rewrite_rows=rows)
     fab = report.fabrication
-    assert (fab.bullets_seen, fab.kept, fab.unchanged) == (7, 1, 1)
+    assert (fab.bullets_seen, fab.kept, fab.unchanged) == (8, 1, 1)
     assert (fab.judge_rejected, fab.overmatch_filtered, fab.rejected) == (1, 1, 2)
     assert (fab.budget, fab.error, fab.no_candidate, fab.other) == (1, 1, 1, 0)
+    # `lane_dead` is NOT `error`: the provider was never called for these bullets.
+    assert fab.lane_dead == 1
+    assert funnel_to_dict(report)["fabrication"]["lane_dead"] == 1
     body = funnel_to_markdown(report)
     line = next(line for line in body.splitlines() if "rejected by a truth gate" in line)
     assert "2 rejected" in line and "1 judge" in line and "1 overmatch" in line
+    fallbacks = next(line for line in body.splitlines() if line.startswith("fallbacks:"))
+    assert "1 lane_dead" in fallbacks
 
 
 def test_structural_filter_rejects_are_excluded_from_the_b4_numerator() -> None:
