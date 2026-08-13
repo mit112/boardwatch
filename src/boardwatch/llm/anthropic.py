@@ -28,9 +28,13 @@ _TIMEOUT = 30.0
 _RETRYABLE_STATUSES = frozenset({429, 500, 502, 503, 504})
 
 # Anthropic's documented error types that mean the credential cannot serve any
-# further call. Closed catalog: anything else is an ordinary LLMError. Status
-# alone is insufficient -- 403 carries BOTH `billing_error` and
-# `permission_error`, which mean different things.
+# further call. Closed catalog: anything else is an ordinary LLMError. Keyed on
+# `error.type`, never on HTTP status: `type` is the provider's own typed
+# signal, while the status is a coarser channel an intermediary (gateway,
+# proxy, load balancer) can rewrite in transit -- the body is the authoritative
+# source. Documented status pairings, for reference only (the dispatch below
+# does not depend on them): `authentication_error` 401, `billing_error` 402,
+# `permission_error` 403.
 _LANE_DEATH_TYPES = {
     "billing_error": LaneDeathReason.CREDIT_EXHAUSTED,
     "authentication_error": LaneDeathReason.CREDENTIAL_INVALID,

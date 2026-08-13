@@ -84,7 +84,7 @@ _ANTHROPIC_URL = "https://api.anthropic.com/v1/messages"
 # Hand-written from Anthropic's documented error bodies -- NOT generated from
 # the mapping under test, which would agree with itself (spec §7.1 test 1).
 _ANTHROPIC_CASES = [
-    (403, "billing_error", LaneDeathReason.CREDIT_EXHAUSTED),
+    (402, "billing_error", LaneDeathReason.CREDIT_EXHAUSTED),
     (401, "authentication_error", LaneDeathReason.CREDENTIAL_INVALID),
     (403, "permission_error", LaneDeathReason.MODEL_FORBIDDEN),
 ]
