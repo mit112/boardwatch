@@ -196,6 +196,82 @@ def test_compile_failed_mid_growth_fails_named_and_drops_nothing() -> None:
     assert exc_info.value.violation.issue is ProjectionIssue.COMPILE_INFRASTRUCTURE_FAILURE
 
 
+# -- fix round 1, finding 2: BINARY_MISSING, the other fatal arm, was untested ----------------
+
+
+def _binary_missing_once_grown(resume: Resume) -> GateResult:
+    """OK for the pinned-only prefix; `BINARY_MISSING` the moment anything is added — the
+    sibling fatal arm to `COMPILE_FAILED` in `_fatal_if_infrastructure`'s tuple. A regression
+    that dropped `BINARY_MISSING` from that tuple would go undetected without this test, since
+    only `COMPILE_FAILED` was previously exercised."""
+    if len(resume.entries) <= 1:
+        return GateResult(GateReason.OK, True, None, 1, "")
+    return GateResult(GateReason.BINARY_MISSING, False, None, None, "pdfinfo not found")
+
+
+def test_binary_missing_mid_growth_fails_named_and_drops_nothing() -> None:
+    with pytest.raises(ProjectionError) as exc_info:
+        select(
+            POOL,
+            _context(JD_DATA),
+            SCORER,
+            table=TABLE,
+            taxonomy=TAXONOMY,
+            compile_prefix=_binary_missing_once_grown,
+        )
+    assert exc_info.value.violation.issue is ProjectionIssue.COMPILE_INFRASTRUCTURE_FAILURE
+
+
+# -- fix round 1, finding 1: an unhandled (non-OK, non-fatal, non-overflow) gate reason must
+# fail named, never be silently admitted by falling through the compile gate's implicit else ---
+
+
+def _layout_reason_once_grown(resume: Resume) -> GateResult:
+    """OK for the pinned-only prefix; `BULLET_TOO_LONG` the moment anything is added — a
+    layout-validation reason that `evaluate_compile` never itself returns (only
+    `validate_layout`/`validate_slots` do), but `Compiler = Callable[[Resume], GateResult]`
+    types accept any `GateResult`, so a caller could wire one in."""
+    if len(resume.entries) <= 1:
+        return GateResult(GateReason.OK, True, None, 1, "")
+    return GateResult(GateReason.BULLET_TOO_LONG, False, None, None, "bullet exceeds width")
+
+
+def test_unhandled_gate_reason_mid_growth_fails_named_and_drops_nothing() -> None:
+    """A layout-validating compiler's reason must never be admitted by elimination: it is
+    neither `OK`, nor a fatal infrastructure arm, nor `PAGE_LIMIT_EXCEEDED`, so it must raise
+    rather than fall through the implicit "it fits, keep growing" branch."""
+    with pytest.raises(ProjectionError) as exc_info:
+        select(
+            POOL,
+            _context(JD_DATA),
+            SCORER,
+            table=TABLE,
+            taxonomy=TAXONOMY,
+            compile_prefix=_layout_reason_once_grown,
+        )
+    assert exc_info.value.violation.issue is ProjectionIssue.COMPILE_INFRASTRUCTURE_FAILURE
+
+
+def _always_layout_reason(resume: Resume) -> GateResult:
+    return GateResult(GateReason.TOO_MANY_BULLETS, False, None, len(resume.entries), "")
+
+
+def test_unhandled_gate_reason_on_pinned_only_fails_named() -> None:
+    """Same guard, at the pinned-only site: even before any candidate is ranked or scored, a
+    layout-validating compiler's reason must fail named rather than pass the pinned prefix
+    through as though it fit."""
+    with pytest.raises(ProjectionError) as exc_info:
+        select(
+            POOL,
+            _context(JD_DATA),
+            SCORER,
+            table=TABLE,
+            taxonomy=TAXONOMY,
+            compile_prefix=_always_layout_reason,
+        )
+    assert exc_info.value.violation.issue is ProjectionIssue.COMPILE_INFRASTRUCTURE_FAILURE
+
+
 # -- required case 6: a pinned-only overflow names the typed failure + the knob ---------------
 
 

@@ -91,6 +91,30 @@ def _fatal_if_infrastructure(gate: GateResult, *, where: str) -> None:
         )
 
 
+def _reject_unless_ok(gate: GateResult, *, where: str) -> None:
+    """Admit by assertion, never by elimination. By the time a caller reaches this check,
+    `_fatal_if_infrastructure` has already ruled out `BINARY_MISSING`/`COMPILE_FAILED` and the
+    caller's own `PAGE_LIMIT_EXCEEDED` check has run — but `Compiler = Callable[[Resume],
+    GateResult]` accepts any `GateResult`, and `GateReason` has eight members, not four:
+    `evaluate_compile` produces the four this module names, but the same type is also returned
+    by `validate_layout`/`validate_slots` (`BULLET_TOO_LONG`, `TOO_MANY_BULLETS`,
+    `ESCAPING_MISMATCH`, `TEMPLATE_ARTIFACT`, `CONTACT_BLOCK_MISSING_NAME`,
+    `CONTACT_BLOCK_INVALID_EMAIL`). A compiler wired to one of those would otherwise fall
+    through an implicit else and be silently admitted as "it fits." Anything that is not
+    exactly `OK` here is unclassified for this module's purposes and must fail named, not pass
+    through."""
+    if gate.reason is not GateReason.OK:
+        raise_violation(
+            ProjectionIssue.COMPILE_INFRASTRUCTURE_FAILURE,
+            f"compile gate returned {gate.reason.value!r}, which this module does not "
+            "recognise as success or as one of its two handled failure arms "
+            "(BINARY_MISSING/COMPILE_FAILED, PAGE_LIMIT_EXCEEDED); an unclassified gate reason "
+            "is a property of the compiler wired in, not of the owner's content, so it is "
+            "treated as infrastructure failure rather than budget overflow or silent success",
+            where=where,
+        )
+
+
 def _subset_resume(pool: ProjectionPool, keep: frozenset[str]) -> Resume:
     """`pool.resume` filtered to `keep`, preserving the declaration's own entry order — the
     order `pool.resume.entries` already carries, not insertion order into `keep`."""
@@ -140,6 +164,7 @@ def _grow(
         _fatal_if_infrastructure(gate, where=where)
         if gate.reason is GateReason.PAGE_LIMIT_EXCEEDED:
             break
+        _reject_unless_ok(gate, where=where)
         admitted.append(candidate_id)
         last_gate = gate
     return admitted, last_gate
@@ -170,6 +195,7 @@ def select(
             "resume_max_pages setting, or unpin an entry",
             where=where,
         )
+    _reject_unless_ok(pinned_gate, where=where)
 
     # `EntryScorer.__call__` is typed to `set[str]` (scoring.py); `frozenset` is not a subtype
     # of `set`, so `PostingContext.jd_skills` is converted once, here (mirrors agreement.py's
