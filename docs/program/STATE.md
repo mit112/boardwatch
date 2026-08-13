@@ -43,6 +43,12 @@ on a client existing — so `boardwatch run` makes zero LLM calls in the tailor 
 no per-day call volume to bound until the pipeline is wired. That wiring is an owner decision, carried
 below as a live blocker, not built here.
 
+**D-147's residuals are closed except R4 (D-148).** `tailor run --tier-b` no longer closes its `runs`
+row `ok` on an exit-1 run: `lane_death_fatal` is computed once in `run_tailor` above the ledger write
+and the CLI reads it off `TailorResult`, so the two cannot disagree. **An unclassified provider failure
+still finishes `ok`** — deliberate, and the arm most likely to be "fixed" into a regression. R2/R3 are
+corrected. **R4 stays open by choice**, as a design change; it is carried in the gaps table below.
+
 ### Gate A — MET (2026-08-12)
 
 **Met because every clause below has a measurement saying so, not because the work feels done.** The
@@ -100,7 +106,9 @@ What the last one found is worth carrying:
   caught one CLI test asserting the old outcome; a narrow run over the authoring file could not.
 - **"Any of the twelve fact-bearing documents" was not test-locked.** A hard-coded four-class list passed
   all 98 tests reaching `add_evidence` while covering 5 of 13 — D-142's shape inside the fix citing D-142.
-  The catalog is now read off `FactBearingDocument.__subclasses__()` at run time.
+  The catalog is no longer a list at all: production asks `isinstance(document, FactBearingDocument)`
+  (`authoring.py:628`) and the test derives its expected set from `FactBearingDocument.__subclasses__()`
+  at run time. `__subclasses__()` is the TEST's mechanism, not production's (D-149).
 - **The write order was wrong and its comment argued for it at length.** The manifest now goes second;
   written last it gave every citing document a failure position carrying `evidence_set_digest_mismatch`.
 - **D-144**, the one that outlived the change that surfaced it: grounding checks read `evidence_ids` raw,
@@ -122,11 +130,15 @@ independent confirmations it could not fire — the surviving mutation, `RECORD_
 documents it rewrote (`cited_back`, printed and in `--json`) — it had become an up-to-thirteen-file edit
 reporting none of them, which `owner_gates` does not cover because an ordinary fact incurs no gate.
 
-**Next action, in order:** (1) close D-147's four residuals — R1 is the load-bearing one, and it is the
-defect D-146 exists to remove, still live in the sibling lane; (2) start accumulating real daily runs —
-the two open P6 clauses need them, and they are gated on Mit's `resume.yaml` fix, which he
-deprioritised; (3) P2 item 8, owner-gated, wanting its own context window and Mit's input. **Gate A
-needs nothing further, and P3 slice 5 is shipped (D-146, D-147).**
+**Next action, in order:** (1) start accumulating real daily runs — the two open P6 clauses need them,
+and they are gated on Mit's `resume.yaml` fix, which he deprioritised; (2) P2 item 8, owner-gated,
+wanting its own context window and Mit's input; (3) the shared `DropReason` catalog (D-147 R4) if
+someone wants it — a design change, not a cleanup, and nothing depends on it. **Gate A needs nothing
+further, and P3 slice 5 is shipped and its residuals closed (D-146, D-147, D-148).**
+
+**This file is over its length target and the Gate A trim is BLOCKED — read D-149 first.** The premise
+that the narration is already held in D-137…D-145 is false in three places; D-149 lists the four things
+the trim owes before a line is deleted.
 
 ---
 
@@ -183,6 +195,6 @@ supporting a fact is clean at exit 0 and reports the `confirm_fact` gate the bac
 | **`add-evidence` takes no bundle lock, and D-143 widened the race** | Only `promote`/`rebase`/`approve` take `bundle_lock`. Two concurrent captures used to race on 2 files and now race on up to 13; a lost update leaves the losing capture a silent `evidence_link_asymmetry` rather than a lost evidence record. Pre-existing in kind (`promotion.py:246` says so), wider in blast radius. Adding a lock is a decision about ordering against `promote`, untestable under contention here. **Raise it before anyone runs two authoring agents against one bundle.** Detail: `.agent/D143-ADVERSARIAL-REVIEW.md` | owner-gated |
 | **P2 item 8 — the onboarding gatherer** | The thing that would make the field tier fire for anyone. D-054 forbids us authoring non-tech field content, so it must be gathered per user. Needs its own brainstorm | owner-gated |
 | **Tier B has never run under `boardwatch run`** | `pipeline/runner.py` never constructs an LLM client, so item 10's per-day call volume is zero today and no ceiling is needed until this is wired (D-146, design §8). Whether and how to wire it is Mit's call, not fixed by fiat | owner-gated |
-| **`tailor run --tier-b` durable ledger can read `ok` on an exit-1 run** | `reports/tailor.py:727-728` calls `finish_run` with the default `status=RUN_OK` before `cli/tailor_cmd.py:265-266`'s exit-1 decision runs, so a dead-credential run that exits 1 still leaves a durable `runs` row claiming success — the shape D-146 fixed for `eligibility extract`, not yet ported to `tailor run` (D-147, R1) | P3 |
+| **The funnel's drop-reason catalog is enumerated by hand in two places** | `tests/unit/test_run_funnel.py` AST-parses the emitters for `drop_reason=` literals, but its module list is a hard-coded pair — a third emitter escapes a test whose name promises every drop reason. Complete today. The fix is a shared frozen `DropReason` catalog both `tailor/rewrite/lane.py` and `reports/run_funnel.py` read, rewriting ~13 call sites: a design change, deliberately not folded into D-148 (D-147 R4) | P3, unscheduled |
 | **P3 item 8 — cross-OS two-writer WAL test** | A same-OS test proves nothing; needs a Docker-Linux-container + macOS-host harness. The documented-stance half shipped (D-041) | P3 |
 | **A `SIGKILL`ed run leaves a dangling `runs` row** | `try/finally` covers exceptions and Ctrl-C, not SIGKILL. Largely drained by the age-based reaper (D-046); a heartbeat-column reaper is the deferred correct fix | P3 |

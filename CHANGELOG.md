@@ -55,10 +55,12 @@ All notable changes to this project are documented here. The format follows
   **and** nothing landed — a credential that dies partway through, or a healthy run that keeps zero
   results because nothing qualified, both still exit 0 exactly as before. This is a public CLI
   contract change: a caller relying on the old always-0 exit code from these two commands will now see
-  1 in the dead-credential-with-zero-output case. On that exit-1 path `eligibility extract` also
-  records its run row as `status="failed"` with the lane-death reason in `errors_json`, instead of the
-  `"ok"` it previously wrote on every path; a run that merely hit an unclassified provider outage
-  still finishes `"ok"` attributing zero rows, unchanged.
+  1 in the dead-credential-with-zero-output case. On that exit-1 path **both** commands also record
+  their run row as `status="failed"` with the lane-death reason in `errors_json`, instead of the `"ok"`
+  previously written on every path (D-148 for `tailor run --tier-b`, which does this only for a run it
+  owns — under `boardwatch run` the pipeline owns the terminal status, and one dead-credential lead must
+  not fail the whole run); a run that merely hit an unclassified provider outage still finishes `"ok"`
+  attributing zero rows, unchanged.
 - **The per-run funnel artifact names `lane_dead` in its fabrication drop-reason catalog**, as a new
   `fabrication.lane_dead` key in the JSON and a new entry on the `fallbacks:` line in the Markdown.
   It is additive, so `artifact_version` stays `4`. Reaching it needs Tier B wired into
