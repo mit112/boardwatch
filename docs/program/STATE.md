@@ -179,6 +179,21 @@ defensible as a fail-open. Options: leave it; make it fatal; surface it in the r
 
 **2. Should any family other than `work_auth` default to `blocker` severity** (e.g. `clearance`)? Owner-gated since D-035, unchanged since.
 
+**3. What is boardwatch's Windows story?** Investigated 2026-08-13, **not acted on — Mit parked it
+pending a decision on the path forward.** The finding: the core *is* deliberately cross-platform
+(`filelock` over `flock`, `platformdirs`, `as_posix()` normalization, no `fcntl`/`pwd`/`os.fork` in
+`src/`), so the Windows gate is not theater — but `pyproject.toml:23` publishes
+`Operating System :: OS Independent` while "Windows" appears **zero times** in README, CHANGELOG,
+SECURITY or `docs/configuration.md`. Four caveats would have to be named rather than papered over:
+`pdfinfo` has no package-manager route there *and fails silently everywhere*; desktop notifications are
+unavailable (webhook instead); there is no Task Scheduler recipe; and 48 test cases are skipped on
+Windows, leaving crash-atomicity and the permission-error taxonomy unverified. **One real bug** is
+carried in the gaps table below. Options: document partial support with caveats; invest to close the
+gaps; or drop the Windows matrix and say so in the classifiers. *(Two premises previously stated here
+were false and are retracted: the unattended runner is **not** a LaunchAgent — there is no scheduling
+code in `src/` at all, and the README documents cron, launchd and systemd — and `os.geteuid` never
+existed outside `tests/`.)*
+
 *(Two others are **resolved**: whether docs-only commits owe a full `make check` (D-116); and whether
 `add-evidence` should write the back-citation itself — **ruled by Mit on 2026-08-12, yes, default on**,
 built as D-143 and documented in the guide's one-step flow.)*
@@ -195,5 +210,7 @@ built as D-143 and documented in the guide's one-step flow.)*
 | **P2 item 8 — the onboarding gatherer** | The thing that would make the field tier fire for anyone. D-054 forbids us authoring non-tech field content, so it must be gathered per user. Needs its own brainstorm | owner-gated |
 | **Tier B has never run under `boardwatch run`** | `pipeline/runner.py` never constructs an LLM client, so item 10's per-day call volume is zero today and no ceiling is needed until this is wired (D-146, design §8). Whether and how to wire it is Mit's call, not fixed by fiat | owner-gated |
 | **The funnel's drop-reason catalog is enumerated by hand in two places** | `tests/unit/test_run_funnel.py` AST-parses the emitters for `drop_reason=` literals, but its module list is a hard-coded pair — a third emitter escapes a test whose name promises every drop reason. Complete today. The fix is a shared frozen `DropReason` catalog both `tailor/rewrite/lane.py` and `reports/run_funnel.py` read, rewriting ~13 call sites: a design change, deliberately not folded into D-148 (D-147 R4) | P3, unscheduled |
+| **`boardwatch export --format csv` to stdout crashes on Windows** | `cli/export_cmd.py:70` writes to bare `sys.stdout`, whose encoding for a redirected stream on Windows is the ANSI codepage (cp1252 on 3.11–3.13), so any non-ASCII company name raises `UnicodeEncodeError`. Reproduced, not inferred. The `--out` path at `:73` is already correct (`newline=""`, utf-8), and `write_jsonl` is safe (`ensure_ascii=True`). **CI cannot see this** — Linux and macOS default to UTF-8. Fix is to wrap stdout; parked with open question 3 | open Q3 |
+| **`pdfinfo` is a hard dependency wearing a soft failure** | `cli/doctor_cmd.py:79-88` says so verbatim. Missing tectonic is loud (`BINARY_MISSING` → the run fails); missing `pdfinfo` returns `None` at `reports/tailor.py:170-171` and is laundered into `COMPILE_FAILED`, surfacing only as "every lead failed to tailor (N/N)" — the true cause never named. Hits `boardwatch run`, the daily driver, on every OS. No test covers tectonic-present/pdfinfo-absent | open Q3 |
 | **P3 item 8 — cross-OS two-writer WAL test** | A same-OS test proves nothing; needs a Docker-Linux-container + macOS-host harness. The documented-stance half shipped (D-041) | P3 |
 | **A `SIGKILL`ed run leaves a dangling `runs` row** | `try/finally` covers exceptions and Ctrl-C, not SIGKILL. Largely drained by the age-based reaper (D-046); a heartbeat-column reaper is the deferred correct fix | P3 |
