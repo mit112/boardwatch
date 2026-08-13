@@ -187,7 +187,7 @@ and is a no-op when the index is already right. `make index-check` reports drift
 | D-151 | DECISIONS.md | 4909 | Windows leaves the per-push path for a nightly schedule; it is not dropped |
 | D-152 | DECISIONS.md | 4974 | Retraction: the archived CGPA claim is inverted; job-apps was never the stale copy |
 | D-153 | DECISIONS.md | 5013 | A rich table's width can ignore `COLUMNS`, so terminal env is pinned for the whole suite |
-| D-154 | DECISIONS.md | 5069 | `eligibility_inputs` gains an identity index; `top`'s pending anti-join cost 141 s per run |
+| D-154 | DECISIONS.md | 5100 | `eligibility_inputs` gains an identity index; `top`'s pending anti-join cost 141 s per run |
 
 ---
 
@@ -5041,9 +5041,28 @@ Reproduced locally, byte-for-byte identical to the CI assertion, with
 
 ### The choice
 
-Pin `TERM=xterm` in an **autouse fixture in `tests/conftest.py`** (repo-wide: that conftest covers
-`tests/unit`, `tests/cli`, `tests/pipeline`, `tests/profile_bundle`). Verified both directions: the
-condition fails 1 of 4 before the fixture and passes 4 of 4 after.
+Normalise **`is_terminal`** — `os.environ.pop("FORCE_COLOR")`, `os.environ.pop("TTY_COMPATIBLE")`, plus
+`TERM=xterm` as defence — at **conftest import time** in `tests/conftest.py`, not in a fixture.
+Repo-wide: that conftest is an ancestor of every collected test.
+
+**The first attempt at this was wrong and a review caught it before the push.** It pinned only
+`TERM=xterm` in an autouse fixture. That fixed the width failure and *caused three new ones*, because
+`is_dumb_terminal` gates **colour as well as width**: with a colour system resolved, `ReprHighlighter`
+(on by default, and **not** disabled by `markup=False`) wraps leading integers in escape codes. Under
+`TERM=xterm FORCE_COLOR=1` that broke `tests/pipeline/test_applied_state_suppression.py:124` and `:142`
+on substring assertions and killed `test_the_JSON_path_names_every_bucket_too` with a
+**`JSONDecodeError`** — ANSI codes inside `--json` output. The review named the first two; the JSON arm
+was found by running it.
+
+**A fixture cannot fix this, which is the load-bearing detail.** `Console.__init__` resolves
+`_color_system` **eagerly**, and this program builds module-level consoles at import
+(`cli/eligibility_cmd.py:66`, `cli/top_cmd.py:50`). Under ambient `TERM=xterm FORCE_COLOR=1` those bake
+colour in before any fixture runs, so deleting the env later cannot undo it — measured: 4 failures with
+the env deleted in a fixture, 0 with it deleted at import.
+
+Verified across **five** hostile environments, all 47 relevant tests passing in each:
+`TERM=xterm FORCE_COLOR=1`, `TERM=dumb FORCE_COLOR=1`, `TTY_COMPATIBLE=1 TERM=dumb`,
+`TTY_COMPATIBLE=1 TERM=xterm`, `FORCE_COLOR=true`.
 
 Alternatives rejected:
 
@@ -5051,8 +5070,13 @@ Alternatives rejected:
   rich-rendered CLI output inherits it, and the next one written would be equally fragile.
 - **Construct the command's `Console` with an explicit width in the test.** `Console(width=160)` alone
   does **not** work: the early return needs width *and* height, so the dumb-terminal branch still wins.
-- **Clear `FORCE_COLOR`/`TTY_COMPATIBLE` instead.** Two variables to chase rather than one, and it would
-  suppress colour behaviour that other tests may legitimately want.
+- **Pin `TERM` alone.** Tried, and red — see above. Recorded because it is the obvious fix and the one a
+  future session would reach for.
+- ~~**Clear `FORCE_COLOR`/`TTY_COMPATIBLE` instead** — two variables to chase, and it would suppress
+  colour behaviour other tests may want.~~ **Retracted: this was the correct fix all along.** The stated
+  reason had no test behind it — a grep for `ANSI`/`no_color`/`NO_COLOR`/`FORCE_COLOR`/`TTY_COMPATIBLE`
+  finds no test in the repo asserting on ANSI output at all. `is_terminal` is the single root of both
+  axes, so normalising it is one decision, not two.
 
 ### What generalises
 
@@ -5062,6 +5086,13 @@ Alternatives rejected:
   padded to 80, so the question became "what ignores `COLUMNS`", not "what ran alongside it".
 - **A green local gate says nothing about a matrix job whose env differs.** Local is the same Python
   (3.12.12) as the failing job; only the environment differed.
+- **One env property gated two unrelated behaviours, and fixing the first broke the second.** The
+  author's fix passed the full gate locally because the hostile variable was not set locally — the same
+  blind spot this very entry describes, walked into while writing it. What caught it was a review with a
+  different lens, and what completed it was enumerating the arms: the review named two failures, running
+  it found a third (the `--json` `JSONDecodeError`).
+- **Eager resolution defeats fixture-time repair.** Anything a library computes in `__init__` is fixed
+  before any fixture runs, so module-level singletons must be normalised at import time.
 - **The exact env var that runner set is still unread.** The deduction is sound — the padding proves
   width 80, and only `is_dumb_terminal` yields 80 against `COLUMNS=160` — but which of `FORCE_COLOR` or
   `TTY_COMPATIBLE` it supplied was never confirmed, and the fix is immune to both.

@@ -5,9 +5,13 @@ Pure performance; no schema semantics change and no backfill. `eligibility/prefl
 two identity hashes, but the table carried only its primary key and the `input_fingerprint`
 unique index. With no index on the correlated column SQLite has to satisfy the EXISTS from the
 other side: it re-scans `uq_eligibility_deterministic` and rowid-probes into this table once
-per candidate row. Measured against a live 24,073-posting store that is ~5.8 ms per open
-posting, so `boardwatch top` paid a ~134 s floor on EVERY invocation before printing a lead,
-even when no posting was pending.
+per candidate row.
+
+Measured on a copy of a live 24,073-posting store, timing the real `_pending`: **141.54 s before,
+0.14 s after**, with 4,655 rows pending on both sides — so the index changes speed and not results.
+The per-posting cost that explains it is ~5.8 ms. The measurement was taken with a NON-empty pending
+queue; that an empty queue pays a similar floor is an inference from the query plan, not something
+measured here.
 
 Creating an index is safe to re-run against any store: it derives entirely from existing rows.
 """

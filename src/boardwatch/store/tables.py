@@ -241,9 +241,10 @@ eligibility_inputs = Table(
     # Serves the correlated `evaluated` anti-join in eligibility/preflight.py, which every
     # `boardwatch top` runs before it prints anything. Without it the only usable index is
     # `uq_eligibility_deterministic` on the OTHER table, so SQLite re-scans that index and
-    # rowid-probes into this one once PER open posting: ~5.8 ms x 23,455 postings, a ~134 s
-    # floor even when nothing is pending. Column order matches the subquery's predicates —
-    # correlated equality on posting_version_id first, then the two identity hashes.
+    # rowid-probes into this one once PER open posting. Measured on a copy of a live
+    # 24,073-posting store: 141.54 s, against 0.14 s with this index. Column order matches
+    # the subquery's predicates — correlated equality on posting_version_id first, then the
+    # two identity hashes.
     Index("ix_eligibility_inputs_version_identity",
           "posting_version_id", "profile_hash", "rules_hash"),
 )
