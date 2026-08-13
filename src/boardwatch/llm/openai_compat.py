@@ -40,6 +40,16 @@ _LANE_DEATH_CODES = {
     "insufficient_quota": LaneDeathReason.CREDIT_EXHAUSTED,
     "credit_balance_exhausted": LaneDeathReason.CREDIT_EXHAUSTED,
 }
+# The status fallback, consulted only when the body classified nothing. Note the asymmetry
+# with `anthropic.py`, which maps ZERO statuses: D-146's reason for keying on the body is that
+# the status is a channel an intermediary can rewrite, and that argument is STRONGER here --
+# this adapter reaches an arbitrary `base_url`, so an arbitrary proxy is in the path by design,
+# while the Anthropic adapter always talks to one fixed endpoint. The asymmetry is deliberate
+# anyway: openai-compatible servers are a whole ecosystem of implementations, many of which
+# send a bare 401/402 with no machine-readable `error.code` at all, so keying on the body
+# alone would leave the commonest dead-credential shape unclassified. 401 and 402 are the two
+# statuses unambiguous enough to survive a rewrite -- unlike 403, excluded just above -- and
+# the cost of a wrong latch is bounded to one invocation of an advisory lane.
 _LANE_DEATH_STATUSES = {
     401: LaneDeathReason.CREDENTIAL_INVALID,
     402: LaneDeathReason.CREDIT_EXHAUSTED,
