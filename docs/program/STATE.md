@@ -35,7 +35,7 @@ section of `STANDING-FACTS.md` before touching either.
 Mit's `resume.yaml` fix below.
 
 **P3 slice 5 shipped (D-146), scoped to the two lanes that actually construct an LLM client** — a
-dead credential in `boardwatch eligibility extract` or `boardwatch tailor --tier-b` now stops calling
+dead credential in `boardwatch eligibility extract` or `boardwatch tailor run <id> --tier-b` now stops calling
 out, reports a typed reason, and exits 1 only when nothing landed. Item 10's "~300 calls/day
 unattended" premise is **retracted as false against the code**: `pipeline/runner.py` never constructs
 an LLM client, `runner.py:522` passes none to `run_tailor`, and `reports/tailor.py:459` gates Tier B
