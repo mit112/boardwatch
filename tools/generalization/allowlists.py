@@ -122,6 +122,18 @@ SHIPPED_DATA: dict[str, DataEntry] = {
         "~/dev/Job apps/resume_base.tex, genericized for this repo",
         pin="sha256:793a4c415d371f358e55cf5e3241da8185c224dcfdce3dfe697d5679f41957cc",
     ),
+    "src/boardwatch/projection/examples/projection.example.yaml": DataEntry(
+        kind="fixture",
+        reason=(
+            "The example editorial declaration for bundle-to-résumé projection, over the "
+            "synthetic career-profile bundle. Synthetic throughout, so the golden projection "
+            "test runs in CI with no owner content."
+        ),
+        provenance="synthetic",
+        source="authored for this task, over the synthetic "
+        "profile_bundle/examples/comprehensive fixture",
+        pin="sha256:27d1aed7a0ff4da552717af3cb5c83baecf08e7aa86bbcdd4887c8832d7cfd7b",
+    ),
     "tests/fixtures/ashby/dead.json": DataEntry(
         kind="fixture",
         reason=_FIXTURE,

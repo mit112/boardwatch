@@ -1,0 +1,36 @@
+# The example editorial declaration, over the synthetic bundle that ships as package data.
+# Synthetic throughout: no owner content, so it runs in CI and the generalization checker stays
+# clean. `shell_source` is deliberately relative: `load_declaration` performs no resolution or
+# filesystem check on this path; the projection pool resolves it against `config_dir` later,
+# because that is the first place a `config_dir` is in scope (see declaration.py).
+projection_version: 1
+shell_source: master_resume.yaml
+open_range_label: Present
+
+skill_groups:
+  - label: Languages
+    skills:
+      - skill.example-language
+
+entries:
+  - entity_id: employment.example-labs
+    kind: experience
+    pinned: true
+    heading: '{@display_name}'
+    title: '{employment.title}'
+    dates: '{employment.date_range}'
+    claims:
+      - claim.example-labs.ownership.001
+
+  - entity_id: project.packet-pantry
+    kind: project
+    pinned: false
+    heading: '{@display_name}'
+    title: '{@display_name}'
+    claims:
+      - claim.packet-pantry.backend.001
+
+no_match_fallback:
+  - project.packet-pantry
+
+extracurricular: []
