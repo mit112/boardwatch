@@ -122,10 +122,11 @@ independent confirmations it could not fire — the surviving mutation, `RECORD_
 documents it rewrote (`cited_back`, printed and in `--json`) — it had become an up-to-thirteen-file edit
 reporting none of them, which `owner_gates` does not cover because an ordinary fact incurs no gate.
 
-**Next action, in order:** (1) start accumulating real daily runs — the two open P6 clauses need them,
-and they are gated on Mit's `resume.yaml` fix, which he deprioritised; (2) P2 item 8 or P3 slice 5,
-both owner-gated, both wanting their own context window and Mit's input. **Gate A needs nothing
-further.**
+**Next action, in order:** (1) close D-147's four residuals — R1 is the load-bearing one, and it is the
+defect D-146 exists to remove, still live in the sibling lane; (2) start accumulating real daily runs —
+the two open P6 clauses need them, and they are gated on Mit's `resume.yaml` fix, which he
+deprioritised; (3) P2 item 8, owner-gated, wanting its own context window and Mit's input. **Gate A
+needs nothing further, and P3 slice 5 is shipped (D-146, D-147).**
 
 ---
 
