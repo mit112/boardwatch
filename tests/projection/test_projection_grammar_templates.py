@@ -2,10 +2,15 @@
 
 from __future__ import annotations
 
+from datetime import date
+from typing import get_args
+
 import pytest
 
+from boardwatch.profile_bundle.models.base import PredicateId
+from boardwatch.profile_bundle.models.entities import ProjectEntity, ProjectStatus
 from boardwatch.projection.errors import ProjectionError, ProjectionIssue
-from boardwatch.projection.grammar import resolve_template
+from boardwatch.projection.grammar import _PREDICATE_RE, resolve_template
 
 
 class _Entity:
@@ -96,3 +101,70 @@ def test_status_on_a_person_entity_is_a_named_refusal_not_an_attribute_error() -
             where="projection.yaml:12",
         )
     assert exc.value.violation.issue is ProjectionIssue.UNRESOLVED_PLACEHOLDER
+
+
+def test_the_predicate_pattern_is_derived_from_predicate_id_not_restated() -> None:
+    """`_PREDICATE_RE` must track `PredicateId`'s own constraint pattern
+    (`profile_bundle/models/base.py`), not a hand-copied string. If `PredicateId` is ever revised,
+    a restated pattern here would keep enforcing the stale rule with nothing to catch the drift —
+    this reads the emitter's own constant, so the two cannot diverge silently."""
+    canonical_pattern = get_args(PredicateId)[1].pattern
+    assert _PREDICATE_RE.pattern == canonical_pattern
+
+
+def test_status_resolves_from_a_genuine_str_enum_member_not_a_stand_in() -> None:
+    """Every stub above sets `status` to a plain `str`. On the real bundle, `@status` is always a
+    `StrEnum` member (`ProjectStatus`, etc.). Pin the production shape directly rather than relying
+    on a stand-in that could pass even if the renderer only worked for `str`."""
+    entity = ProjectEntity(
+        entity_id="project.example",
+        entity_type="project",
+        display_name="Packet Pantry",
+        created_at=date(2025, 1, 1),
+        reviewed_at=date(2025, 1, 1),
+        status=ProjectStatus.LIVE_PUBLIC,
+    )
+    out = resolve_template(
+        "{@status}",
+        entity=entity,
+        facts_by_predicate={},
+        open_range_label="Present",
+        where="w",
+    )
+    assert out == "live_public"
+
+
+def test_an_unknown_display_field_is_malformed_not_unresolved() -> None:
+    """`{@bogus}` names an `@`-field the catalog does not admit at all — distinct from `{@status}`
+    merely being absent on a particular entity, which is `UNRESOLVED_PLACEHOLDER` instead."""
+    with pytest.raises(ProjectionError) as exc:
+        resolve_template(
+            "{@bogus}",
+            entity=_Entity(),
+            facts_by_predicate={},
+            open_range_label="Present",
+            where="projection.yaml:12",
+        )
+    assert exc.value.violation.issue is ProjectionIssue.MALFORMED_PLACEHOLDER
+
+
+def test_an_empty_template_resolves_to_an_empty_string() -> None:
+    out = resolve_template(
+        "",
+        entity=_Entity(),
+        facts_by_predicate={},
+        open_range_label="Present",
+        where="w",
+    )
+    assert out == ""
+
+
+def test_a_whitespace_only_template_is_preserved_verbatim() -> None:
+    out = resolve_template(
+        "   ",
+        entity=_Entity(),
+        facts_by_predicate={},
+        open_range_label="Present",
+        where="w",
+    )
+    assert out == "   "

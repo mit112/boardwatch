@@ -20,8 +20,9 @@ from __future__ import annotations
 
 import re
 from collections.abc import Mapping
-from typing import Any
+from typing import Any, get_args
 
+from boardwatch.profile_bundle.models.base import PredicateId
 from boardwatch.profile_bundle.models.facts import (
     DateRangeValue,
     DateValue,
@@ -56,7 +57,10 @@ ADMITTED_KINDS: frozenset[FactValueKind] = frozenset(
 
 #: `{predicate}` or `{@field}`. Nothing else is admitted.
 _PLACEHOLDER_RE = re.compile(r"\{([^{}]*)\}")
-_PREDICATE_RE = re.compile(r"^[a-z][a-z0-9_]*(?:\.[a-z][a-z0-9_]*)+$")
+#: The same pattern `PredicateId` enforces on-model (`profile_bundle/models/base.py`), derived via
+#: `get_args` rather than restated — a hand-copied pattern would keep enforcing a stale rule with
+#: nothing to catch the drift if `PredicateId` is ever revised.
+_PREDICATE_RE = re.compile(get_args(PredicateId)[1].pattern)
 _FIELD_RE = re.compile(r"^@([a-z][a-z0-9_]*)$")
 
 #: Entity display fields the `{@…}` namespace admits. `status` is NOT universal — `PersonEntity`
@@ -135,7 +139,11 @@ def resolve_template(
                     "particular is absent on `person` by design",
                     where=where,
                 )
-            return str(getattr(resolved, "value", resolved))
+            # Every genuine `@`-field value is either a plain `str` (`display_name`) or a
+            # `StrEnum` member (`status`), and `StrEnum.__str__` already returns the bare value —
+            # not `ClassName.MEMBER`. A `.value` unwrap changes nothing for either shape, so there
+            # is nothing here for one to defend against; `str(resolved)` alone is the whole thing.
+            return str(resolved)
         if _PREDICATE_RE.match(token) is None:
             raise_violation(
                 ProjectionIssue.MALFORMED_PLACEHOLDER,

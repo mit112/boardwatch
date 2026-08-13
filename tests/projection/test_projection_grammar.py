@@ -6,6 +6,7 @@ from datetime import date
 
 import pytest
 
+from boardwatch.profile_bundle.models.base import Surface, VerificationState
 from boardwatch.profile_bundle.models.facts import (
     BooleanValue,
     DateRangeValue,
@@ -19,8 +20,9 @@ from boardwatch.profile_bundle.models.facts import (
     UrlValue,
     YearMonthValue,
 )
+from boardwatch.profile_bundle.models.skills import SkillRecord
 from boardwatch.projection.errors import ProjectionError, ProjectionIssue
-from boardwatch.projection.grammar import ADMITTED_KINDS, render_value
+from boardwatch.projection.grammar import ADMITTED_KINDS, render_skill, render_value
 
 #: One case per admitted kind. Also feeds the coverage-derivation test below, so the parametrize
 #: list and the "did we actually cover ten arms" check read the same fixtures rather than two
@@ -94,3 +96,17 @@ def test_an_unadmitted_kind_is_fatal(value: object) -> None:
     with pytest.raises(ProjectionError) as exc:
         render_value(value, open_range_label="Present", where="projection.yaml: entry.x")  # type: ignore[arg-type]
     assert exc.value.violation.issue is ProjectionIssue.FACT_VALUE_KIND_NOT_ADMITTED
+
+
+def test_render_skill_returns_the_canonical_name() -> None:
+    """`render_skill` had no direct assertion — it was only implicitly touched via `SKILL_REF`'s
+    refusal path through `render_value`, which never actually calls it. Exercise it directly."""
+    skill = SkillRecord(
+        skill_id="skill.example-language",
+        canonical_name="Example Language",
+        category="language",
+        supporting_fact_ids=("fact.example-1",),
+        verification_state=VerificationState.VERIFIED,
+        allowed_surfaces=(Surface.RESUME,),
+    )
+    assert render_skill(skill) == "Example Language"
