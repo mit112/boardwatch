@@ -20,7 +20,6 @@ from boardwatch.core.settings import Settings
 from boardwatch.extract.taxonomy import load_taxonomy
 from boardwatch.projection.errors import ProjectionError, ProjectionIssue
 from boardwatch.projection.posting import PostingContext, posting_context
-from boardwatch.reports.tailor import NoCurrentVersionError
 from boardwatch.store.db import ensure_schema, get_engine
 from boardwatch.store.queries import save_profile
 from boardwatch.store.tables import companies, extractions, jobs, posting_versions, postings
@@ -163,10 +162,10 @@ def test_a_closed_posting_refuses(tmp_path: Path) -> None:
     posting_id = _seed(engine, settings, status="closed")
     try:
         posting_context(engine, settings, posting_id)
-    except NoCurrentVersionError:
-        pass
+    except ProjectionError as exc:
+        assert exc.violation.issue is ProjectionIssue.POSTING_NOT_OPEN
     else:
-        raise AssertionError("expected NoCurrentVersionError")
+        raise AssertionError("expected ProjectionError(POSTING_NOT_OPEN)")
 
 
 def test_a_posting_with_no_current_version_refuses(tmp_path: Path) -> None:
@@ -175,10 +174,10 @@ def test_a_posting_with_no_current_version_refuses(tmp_path: Path) -> None:
     posting_id = _seed(engine, settings, with_version=False)
     try:
         posting_context(engine, settings, posting_id)
-    except NoCurrentVersionError:
-        pass
+    except ProjectionError as exc:
+        assert exc.violation.issue is ProjectionIssue.POSTING_NO_CURRENT_VERSION
     else:
-        raise AssertionError("expected NoCurrentVersionError")
+        raise AssertionError("expected ProjectionError(POSTING_NO_CURRENT_VERSION)")
 
 
 def test_a_missing_extraction_raises_no_jd_extraction(

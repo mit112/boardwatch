@@ -48,6 +48,9 @@ class ProjectionIssue(StrEnum):
     PINNED_SET_EXCEEDS_BUDGET = "pinned_set_exceeds_budget"
     COMPILE_INFRASTRUCTURE_FAILURE = "compile_infrastructure_failure"
     NO_JD_EXTRACTION = "no_jd_extraction"
+    # -- posting ------------------------------------------------------------------------
+    POSTING_NOT_OPEN = "posting_not_open"
+    POSTING_NO_CURRENT_VERSION = "posting_no_current_version"
 
 
 @dataclass(frozen=True)
