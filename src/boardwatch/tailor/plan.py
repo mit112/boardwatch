@@ -62,6 +62,22 @@ def _applicable_swaps(
     return out
 
 
+def effective_skills(
+    text: str, jd_skills: set[str], table: EquivalenceTable, taxonomy: Taxonomy
+) -> set[str]:
+    """The skills `text` demonstrates, including equivalence images this JD makes reachable.
+
+    The single primitive `build_plan` and `boardwatch.projection` both score with. Extracted from
+    `build_plan`'s `cover` closure, which took a `Bullet` because it read a precomputed swap map;
+    this takes the text, so a caller holding an entry rather than a bullet can score it too.
+
+    Parameter order mirrors `build_plan`'s — `table` then `taxonomy` — so the two cannot be
+    transposed at a call site.
+    """
+    swaps = _applicable_swaps(text, jd_skills, table)
+    return taxonomy.extract(text) | {to for _, to in swaps}
+
+
 def build_plan(
     resume: Resume, jd_skills: set[str], table: EquivalenceTable, taxonomy: Taxonomy
 ) -> TailorPlan:
@@ -74,8 +90,9 @@ def build_plan(
     }
 
     def cover(b: Bullet) -> int:
-        eff = taxonomy.extract(b.text) | {to for _, to in swaps_by_bullet[b.bullet_id]}
-        return len(eff & jd_skills)
+        import boardwatch.tailor.plan as _self
+
+        return len(_self.effective_skills(b.text, jd_skills, table, taxonomy) & jd_skills)
 
     coverage = {b.bullet_id: cover(b) for e in resume.entries for b in e.bullets}
     if not any(coverage.values()):
