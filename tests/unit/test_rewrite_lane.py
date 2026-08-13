@@ -1,5 +1,6 @@
 from boardwatch.extract.taxonomy import load_taxonomy
 from boardwatch.llm.cache import ResponseCache
+from boardwatch.llm.client import LaneDeathReason, LLMLaneDeadError
 from boardwatch.tailor.equivalences import EquivalenceTable
 from boardwatch.tailor.model import Bullet, Entry, Resume
 from boardwatch.tailor.rewrite.lane import run_tier_b
@@ -214,3 +215,52 @@ def test_cache_identity_includes_provider_and_base_url(tmp_path):
     )
     assert client_same_identity.calls == 0
     assert r_same_identity.accepted[0].text == "Built the Python service"
+
+
+class DiesAfterBodies:
+    """Serves a scripted transcript, then reports the credential is unusable."""
+
+    def __init__(self, bodies: list[str]) -> None:
+        self.bodies = list(bodies)
+        self.calls = 0
+
+    def complete(self, prompt: str, *, system: str | None = None) -> str:
+        self.calls += 1
+        if not self.bodies:
+            raise LLMLaneDeadError("revoked", reason=LaneDeathReason.CREDENTIAL_INVALID)
+        return self.bodies.pop(0)
+
+
+def test_lane_death_at_the_propose_boundary_records_the_source_text(tmp_path):
+    # Nothing was proposed, so the row carries the Tier-A text and filter_pass=False --
+    # the same shape as the sibling "error" row at that boundary.
+    res = run_tier_b(
+        _resume(), DiesAfterBodies([]), ResponseCache(tmp_path / "c"),
+        jd_skills=set(), taxonomy=load_taxonomy(tmp_path), table=_TABLE, model="m", budget=50,
+    )
+    assert res.accepted == []
+    row = res.rows[0]
+    assert row.drop_reason == "lane_dead"
+    assert row.b_text == "Built the service in Python"
+    assert row.filter_pass is False
+    assert row.kept is False
+
+
+def test_lane_death_at_the_judge_boundary_keeps_the_candidate(tmp_path):
+    # The candidate cleared every pre-judge veto and only the ADJUDICATION was lost, so
+    # the row must mirror its own neighbour (the judge-site "error" row): the candidate
+    # text and filter_pass=True. Mirroring the PROPOSE site here would discard the
+    # candidate and misreport the filter -- invisible to every CLI-level assertion.
+    client = DiesAfterBodies(["Built the Python service"])
+    res = run_tier_b(
+        _resume(), client, ResponseCache(tmp_path / "c"),
+        jd_skills=set(), taxonomy=load_taxonomy(tmp_path), table=_TABLE, model="m", budget=50,
+    )
+    assert client.calls == 2  # propose succeeded; the judge call is the one that died
+    assert res.accepted == []
+    row = res.rows[0]
+    assert row.drop_reason == "lane_dead"
+    assert row.b_text == "Built the Python service"
+    assert row.filter_pass is True
+    assert row.judge_verdict is None
+    assert row.kept is False

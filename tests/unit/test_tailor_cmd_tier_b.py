@@ -19,6 +19,8 @@ from typer.testing import CliRunner
 from boardwatch.cli.app import app
 from boardwatch.core.settings import Settings
 from boardwatch.extract.taxonomy import load_taxonomy
+from boardwatch.llm.client import LaneDeathReason, LLMLaneDeadError
+from boardwatch.llm.run_client import RunScopedClient
 from boardwatch.store.db import DB_FILENAME, ensure_schema, get_engine
 from boardwatch.store.tables import (
     artifacts,
@@ -342,3 +344,192 @@ def test_tier_b_report_tags_unchanged_and_excludes_it_from_fell_back(
     flat = result.stdout.replace("\n", "")
     assert "Tier B (LLM): reworded 0 · unchanged 2 · fell back 0" in flat
     assert "fallback:unchanged" not in flat
+
+
+# --- lane death: both containment boundaries, and a reason the CLI can name --------------
+
+
+# A provenance-passing reword of the scaffold's FIRST bullet ("Built a Python service
+# handling 2M requests/day on Kubernetes"), reusing the scripted bodies above. Load-bearing:
+# a reply that is NOT provenanced is vetoed at lane.py's provenance gate BEFORE the judge
+# call, so `die_on=2` would spend call 2 on the SECOND bullet's propose and exercise the
+# propose boundary twice while still passing every assertion below.
+_PROVENANCED_REWORD = "Built the Python service handling 2M requests/day on Kubernetes"
+
+
+class _DiesOnNthCall:
+    """Succeeds for `n - 1` calls, then reports the credential is unusable."""
+
+    def __init__(self, n: int, reply: str = _PROVENANCED_REWORD) -> None:
+        self._n = n
+        self._reply = reply
+        self.calls = 0
+
+    def complete(self, prompt: str, *, system: str | None = None) -> str:
+        self.calls += 1
+        if self.calls >= self._n:
+            raise LLMLaneDeadError("revoked", reason=LaneDeathReason.CREDENTIAL_INVALID)
+        return self._reply
+
+
+class _DiesAfterBodies:
+    """Serves a scripted transcript, then reports the credential is unusable."""
+
+    def __init__(self, bodies: list[str]) -> None:
+        self.bodies = list(bodies)
+        self.calls = 0
+
+    def complete(self, prompt: str, *, system: str | None = None) -> str:
+        self.calls += 1
+        if not self.bodies:
+            raise LLMLaneDeadError("revoked", reason=LaneDeathReason.CREDENTIAL_INVALID)
+        return self.bodies.pop(0)
+
+
+class _AlwaysSucceeds:
+    """Never fails. Used to warm the response cache and to drive the budget path."""
+
+    def __init__(self, reply: str = _PROVENANCED_REWORD) -> None:
+        self._reply = reply
+        self.calls = 0
+
+    def complete(self, prompt: str, *, system: str | None = None) -> str:
+        self.calls += 1
+        return self._reply
+
+
+@pytest.mark.parametrize("die_on", [1, 2], ids=["propose-boundary", "judge-boundary"])
+def test_lane_death_records_lane_dead_and_keeps_tier_a(
+    env: Env, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, die_on: int
+) -> None:
+    _write_tier_b_config(env)
+    inner = _DiesOnNthCall(die_on)
+    client = RunScopedClient(inner)
+    monkeypatch.setattr("boardwatch.cli.tailor_cmd.build_client", lambda settings: client)
+    _run(env, ["tailor", "init"])
+    posting_id = _seed_open_posting(env)
+    out = tmp_path / "artifacts"
+
+    result = _run(env, ["tailor", "run", str(posting_id), "--tier-b", "--out", str(out)])
+
+    flat = result.stdout.replace("\n", "")
+    # `lane_dead` reaches stdout through the EXISTING per-row printer (tag =
+    # f"fallback:{drop_reason}"), so this assertion would still pass with the new CLI
+    # block deleted. The load-bearing pair is the reason and the exit code below.
+    assert "lane_dead" in flat
+    assert "credential_invalid" in flat
+    assert result.exit_code == 1  # death observed AND zero kept
+    # Tier A is untouched: the lane is advisory rewording layered over an intact Tier-A
+    # résumé, and a dead credential must never delete or downgrade a real result.
+    assert "guarantee: PASS" in flat
+    assert _artifact_count(env) > 0
+    # The provider is touched exactly `die_on` times however many bullets remain: the
+    # wrapper latches on the first death and short-circuits every later call.
+    assert inner.calls == die_on
+    assert client.dead_reason is LaneDeathReason.CREDENTIAL_INVALID
+    # Both bullets fall back for lane death and for nothing else. For `die_on=2` this is
+    # what proves the JUDGE boundary fired: call 1's candidate cleared every pre-judge
+    # veto (no `fallback:provenance` row) and bullet 1 still fell back as `lane_dead`, so
+    # the only place call 2 can have died is `lane.py`'s judge boundary.
+    assert flat.count("fallback:lane_dead") == 2
+    assert "fallback:provenance" not in flat
+
+
+def test_lane_death_after_a_kept_rewrite_is_a_partial_success(
+    env: Env, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # The OTHER conjunct of the exit rule. Death is observed and reported, but the first
+    # bullet was already reworded and judged ENTAILED before the credential went, so the
+    # invocation is a partial success and must exit 0 -- exit 1 is death AND zero kept.
+    _write_tier_b_config(env)
+    inner = _DiesAfterBodies([_PROVENANCED_REWORD, "ENTAILED"])
+    client = RunScopedClient(inner)
+    monkeypatch.setattr("boardwatch.cli.tailor_cmd.build_client", lambda settings: client)
+    _run(env, ["tailor", "init"])
+    posting_id = _seed_open_posting(env)
+    out = tmp_path / "artifacts"
+
+    result = _run(env, ["tailor", "run", str(posting_id), "--tier-b", "--out", str(out)])
+
+    flat = result.stdout.replace("\n", "")
+    assert result.exit_code == 0, result.stdout
+    # Death is still named -- a partial success is not a silent one.
+    assert "credential_invalid" in flat
+    assert "Tier B (LLM): reworded 1 · unchanged 0 · fell back 1" in flat
+    assert flat.count("fallback:lane_dead") == 1
+    # bullet 1 propose + judge, then bullet 2's propose is the call that dies.
+    assert inner.calls == 3
+    assert client.dead_reason is LaneDeathReason.CREDENTIAL_INVALID
+
+
+def test_healthy_run_keeping_zero_rewrites_still_exits_0(
+    env: Env, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # lane.py drops a rewrite down many more paths than it keeps one, so zero-kept is a
+    # routine HEALTHY outcome -- a live credential legitimately keeps nothing whenever
+    # every candidate is judged not-entailed, echoed back unchanged, or filtered. Exiting
+    # non-zero on it would break normal use: exit 1 requires death observed AND zero kept.
+    #
+    # Driven through the BUDGET path rather than the judge: with the cap at 1 the first
+    # propose spends the only call and every later call drops with drop_reason="budget",
+    # kept=False. Deterministic, and it needs no knowledge of the judge's vocabulary.
+    _write_tier_b_config(env, max_calls_per_run=1)
+    healthy = RunScopedClient(_AlwaysSucceeds())
+    monkeypatch.setattr("boardwatch.cli.tailor_cmd.build_client", lambda settings: healthy)
+    _run(env, ["tailor", "init"])
+    posting_id = _seed_open_posting(env)
+    out = tmp_path / "artifacts"
+
+    result = _run(env, ["tailor", "run", str(posting_id), "--tier-b", "--out", str(out)])
+
+    flat = result.stdout.replace("\n", "")
+    assert result.exit_code == 0, result.stdout
+    assert "Tier B (LLM): reworded 0 · unchanged 0 · fell back 2" in flat
+    assert "lane_dead" not in flat
+    assert healthy.dead_reason is None
+
+
+def test_warm_cache_work_still_lands_after_death(
+    env: Env, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # The cache is consulted BEFORE the client (lane.py's `call`), so cached bullets keep
+    # landing after the latch trips. That is the specified policy: a mixed invocation is a
+    # partial success and exits 0, and a fully-warm one never probes the credential at all.
+    #
+    # Warm the cache by running once with a healthy client that reworded BOTH bullets, then
+    # re-run against a dead one -- simpler and more faithful than hand-computing cache keys,
+    # and it makes "work lands" falsifiable: the second run must still report `reworded 2`.
+    # Both invocations share `env.data_dir` (via `_run`'s `--data-dir`), which is what makes
+    # the cache warm on the second pass.
+    _write_tier_b_config(env)
+    healthy = RunScopedClient(
+        _FakeClient(
+            [
+                _PROVENANCED_REWORD,
+                "ENTAILED",
+                "Cut p99 latency 40% by rewriting the hot path with Rust",
+                "ENTAILED",
+            ]
+        )
+    )
+    monkeypatch.setattr("boardwatch.cli.tailor_cmd.build_client", lambda settings: healthy)
+    _run(env, ["tailor", "init"])
+    posting_id = _seed_open_posting(env)
+    out = tmp_path / "artifacts"
+    first = _run(env, ["tailor", "run", str(posting_id), "--tier-b", "--out", str(out)])
+    assert first.exit_code == 0, first.stdout
+    assert "Tier B (LLM): reworded 2 · unchanged 0 · fell back 0" in first.stdout.replace("\n", "")
+    assert healthy.calls_attempted == 4
+
+    dead = RunScopedClient(_DiesOnNthCall(1))
+    monkeypatch.setattr("boardwatch.cli.tailor_cmd.build_client", lambda settings: dead)
+    second = _run(env, ["tailor", "run", str(posting_id), "--tier-b", "--out", str(out)])
+
+    flat = second.stdout.replace("\n", "")
+    assert second.exit_code == 0, second.stdout
+    # The rewrites still LAND -- served entirely from the cache, which is checked before the
+    # client, so the dead credential was never probed and never latched.
+    assert "Tier B (LLM): reworded 2 · unchanged 0 · fell back 0" in flat
+    assert dead.calls_attempted == 0
+    assert dead.dead_reason is None
+    assert "lane_dead" not in flat
