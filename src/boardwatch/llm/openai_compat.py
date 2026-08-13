@@ -30,7 +30,16 @@ _RETRYABLE_STATUSES = frozenset({429, 500, 502, 503, 504})
 # free-form string and base_url is arbitrary), so its catalog admits only
 # unambiguous signals. Bare 403 is deliberately absent: on an arbitrary proxy
 # it does not prove the credential is dead.
-_LANE_DEATH_CODES = {"insufficient_quota": LaneDeathReason.CREDIT_EXHAUSTED}
+#
+# Two live tokens for the same exhausted-balance condition: OpenAI's current
+# docs lead with `credit_balance_exhausted` as the `error.code` for 429
+# credit exhaustion, but real captured bodies (community-quoted and the Azure
+# OpenAI TPM/RPM-throttle body alike) still carry `insufficient_quota` in both
+# `type` and `code`. This is additive, not a rename -- keep both.
+_LANE_DEATH_CODES = {
+    "insufficient_quota": LaneDeathReason.CREDIT_EXHAUSTED,
+    "credit_balance_exhausted": LaneDeathReason.CREDIT_EXHAUSTED,
+}
 _LANE_DEATH_STATUSES = {
     401: LaneDeathReason.CREDENTIAL_INVALID,
     402: LaneDeathReason.CREDIT_EXHAUSTED,

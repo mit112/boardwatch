@@ -184,6 +184,22 @@ def test_openai_compat_429_with_insufficient_quota_is_terminal_not_retried():
 
 
 @respx.mock
+def test_openai_compat_429_with_credit_balance_exhausted_is_terminal_not_retried():
+    # OpenAI's current docs lead with `error.code == "credit_balance_exhausted"`
+    # for exhausted balance, additive alongside the older `insufficient_quota`
+    # token real bodies still carry.
+    route = respx.post(_OPENAI_URL).mock(
+        return_value=httpx.Response(
+            429, json={"error": {"code": "credit_balance_exhausted"}}
+        )
+    )
+    with pytest.raises(LLMLaneDeadError) as caught:
+        _openai().complete("hi")
+    assert caught.value.reason is LaneDeathReason.CREDIT_EXHAUSTED
+    assert route.call_count == 1
+
+
+@respx.mock
 def test_openai_compat_429_without_the_token_still_retries():
     # The narrowing must remove exactly one terminal case from the retryable
     # set -- ordinary rate limiting keeps D-040's backoff.
