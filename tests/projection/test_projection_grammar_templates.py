@@ -3,14 +3,19 @@
 from __future__ import annotations
 
 from datetime import date
-from typing import get_args
 
 import pytest
 
-from boardwatch.profile_bundle.models.base import PredicateId
+from boardwatch.profile_bundle.models.base import (
+    Surface,
+    UsageContext,
+    VerificationBasis,
+    VerificationState,
+)
 from boardwatch.profile_bundle.models.entities import ProjectEntity, ProjectStatus
+from boardwatch.profile_bundle.models.facts import FactRecord, StringValue
 from boardwatch.projection.errors import ProjectionError, ProjectionIssue
-from boardwatch.projection.grammar import _PREDICATE_RE, resolve_template
+from boardwatch.projection.grammar import resolve_template
 
 
 class _Entity:
@@ -103,13 +108,64 @@ def test_status_on_a_person_entity_is_a_named_refusal_not_an_attribute_error() -
     assert exc.value.violation.issue is ProjectionIssue.UNRESOLVED_PLACEHOLDER
 
 
-def test_the_predicate_pattern_is_derived_from_predicate_id_not_restated() -> None:
-    """`_PREDICATE_RE` must track `PredicateId`'s own constraint pattern
-    (`profile_bundle/models/base.py`), not a hand-copied string. If `PredicateId` is ever revised,
-    a restated pattern here would keep enforcing the stale rule with nothing to catch the drift —
-    this reads the emitter's own constant, so the two cannot diverge silently."""
-    canonical_pattern = get_args(PredicateId)[1].pattern
-    assert _PREDICATE_RE.pattern == canonical_pattern
+def test_a_valid_dotted_predicate_is_accepted_and_resolves() -> None:
+    """`employment.title` is the predicate shape the grammar must admit. Round-tripped through a
+    real `FactRecord` so acceptance is proven by an actual render, not merely by the absence of
+    `MALFORMED_PLACEHOLDER`."""
+    fact = FactRecord(
+        fact_id="fact.example-1",
+        subject_id="employment.example",
+        predicate="employment.title",
+        value=StringValue(type="string", value="Founding Engineer"),
+        verification_state=VerificationState.OWNER_CONFIRMED,
+        verification_basis=VerificationBasis.OWNER_ATTESTED,
+        usage_context=UsageContext.PROFESSIONAL,
+        evidence_ids=(),
+        allowed_surfaces=(Surface.RESUME,),
+        conflict_group_id=None,
+        reviewed_at=date(2025, 1, 1),
+        expires_at=None,
+        supersedes_fact_ids=(),
+        import_lineage=None,
+        notes=None,
+    )
+    out = resolve_template(
+        "{employment.title}",
+        entity=_Entity(),
+        facts_by_predicate={"employment.title": fact},
+        open_range_label="Present",
+        where="w",
+    )
+    assert out == "Founding Engineer"
+
+
+@pytest.mark.parametrize(
+    "token",
+    [
+        "employment",
+        "_employment.title",
+        "1employment.title",
+        "employment.Title",
+        "employment.title.",
+    ],
+    ids=["no_dot", "leading_underscore", "leading_digit", "uppercase_segment", "trailing_dot"],
+)
+def test_a_malformed_predicate_shape_is_rejected(token: str) -> None:
+    """These literal shapes are facts about what a predicate token looks like, independent of both
+    `PredicateId` and its derivation in `grammar.py` — pinning them here is what actually catches a
+    future widening of either. Each is asserted through `resolve_template`, the real code path,
+    not by poking the regex directly."""
+    with pytest.raises(ProjectionError) as exc:
+        resolve_template(
+            f"{{{token}}}",
+            entity=_Entity(),
+            facts_by_predicate={},
+            open_range_label="Present",
+            where="projection.yaml:12",
+        )
+    assert exc.value.violation.issue is ProjectionIssue.MALFORMED_PLACEHOLDER, (
+        f"{token!r} was expected to be rejected as malformed"
+    )
 
 
 def test_status_resolves_from_a_genuine_str_enum_member_not_a_stand_in() -> None:
