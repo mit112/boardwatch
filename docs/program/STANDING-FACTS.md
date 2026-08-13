@@ -208,8 +208,12 @@
 - `bwd` lives in gitignored `.agent/bin/bw-daily`, so its `top --no-record` fix is local to this machine.
 - Foreground `sleep` is blocked in this harness; background a waiter instead. zsh does **not** word-split an
   unquoted parameter expansion, so a `for spec in "a --b" ...; do cmd $spec; done` loop passes one argument.
-- **Live urgency.** `STAGE1_ONLY=1` is active in job-apps' launchd plist; its 08:30 run stops after discovery.
-  Nothing is generating Mit's résumés daily right now.
+- **There is NO live urgency — job-apps is delivering.** `STAGE1_ONLY=1` is in job-apps' launchd plist, so
+  its 08:30 run does stop after discovery, but résumés are produced anyway. Measured 2026-08-13 against
+  `~/dev/Job apps/resumes/`: 08-09 **3 folders / 8 PDFs**, 08-10 **3 / 28**, 08-11 **5 / 24**, 08-12
+  **4 / 18**. The former claim here — "nothing is generating Mit's résumés daily" — was **false**, and
+  `PROGRAM.md` §2's output-side-first ordering argument rested on it (D-155). **Re-measure before citing:
+  this is a fact about another repo's cron behaviour and it decays.**
 
 ---
 
