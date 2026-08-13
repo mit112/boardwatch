@@ -33,7 +33,10 @@ jobs:
       - run: uv sync --frozen
       - run: uv run ruff check .
       - run: uv run mypy --strict src tools
-      - run: uv run pytest
+      # `-n auto` here and in the Makefile, deliberately NOT in pyproject's addopts: the perf job
+      # below measures wall-clock timings, and inheriting workers would corrupt the numbers it
+      # exists to produce. Keeping it at the call sites leaves perf, and ad-hoc narrow runs, serial.
+      - run: uv run pytest -n auto
 
   gitleaks:
     name: gitleaks

@@ -5,7 +5,7 @@ lint:
 type:
 	uv run mypy --strict src tools
 test:
-	uv run pytest
+	uv run pytest -n auto
 generalization:
 	uv run python -m tools.generalization
 index-check:
