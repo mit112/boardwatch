@@ -504,8 +504,9 @@ over an entirely un-reworded résumé. The Tier A résumé is still produced and
 way, and so is the Tier B artifact. A credential that dies partway through, after at least
 one rewrite was kept, still exits 0 — that is a real partial success.
 
-Tier B costs **2 LLM calls per bullet** (propose, then judge), drawn from the same
-`llm.max_calls_per_run` budget (default 50, shared with the eligibility LLM lane) — so
+Tier B costs **2 LLM calls per bullet** (propose, then judge), bounded by
+`llm.max_calls_per_run` (default 50) — applied **per résumé**, not shared with the
+eligibility LLM lane, which applies the same number per invocation of its own — so
 roughly 25 bullets per run before the tail starts falling back with `drop_reason:
 "budget"`. That budget is consumed even on a cache hit, by design, so re-running the same
 posting does not extend it; raise `llm.max_calls_per_run` in `config.toml` instead. See

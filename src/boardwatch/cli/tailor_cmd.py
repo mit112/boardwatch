@@ -236,9 +236,9 @@ def run_cmd(
         if any(r["drop_reason"] == "budget" for r in result.rewrites):
             console.print(
                 "Tier B call budget exhausted before every bullet was reworded — raise "
-                "llm.max_calls_per_run (Tier B spends 2 calls per bullet, shared with the "
-                "eligibility LLM lane; a cache hit still spends budget, so re-running with "
-                "no config change will not help)."
+                "llm.max_calls_per_run (Tier B spends 2 calls per bullet, and the budget is "
+                "per résumé, not shared with the eligibility LLM lane; a cache hit still "
+                "spends budget, so re-running with no config change will not help)."
             )
         lane_death_fatal = False
         if any(r["drop_reason"] == "lane_dead" for r in result.rewrites):

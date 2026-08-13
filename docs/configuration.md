@@ -106,9 +106,12 @@ calls aren't API-metered, so it's sized wide enough to never truncate a legitima
 and acts only as a soft cap on how many bullets get proposed and judged in one pass.
 
 **`max_calls_per_run` in a Tier B context.** Tier B spends 2 calls per surviving bullet
-(one to propose a rewrite, one for the entailment judge) out of the *same*
-`llm.max_calls_per_run` budget the eligibility LLM lane shares — default 50, so about 25
-bullets per run before the rest fall back with `drop_reason: "budget"`. The budget is
+(one to propose a rewrite, one for the entailment judge) against `llm.max_calls_per_run` —
+default 50, so about 25 bullets per run before the rest fall back with
+`drop_reason: "budget"`. Despite the name, this is **not a shared pool**: the number is a
+ceiling applied *separately* to each **résumé** in the tailor lane and to each **invocation**
+of the eligibility LLM lane, so the two never draw the same calls down and a single
+`boardwatch` invocation can legitimately spend more than 50 in total. The budget is
 consumed even on a cache hit (a deliberate choice, so behaviour stays deterministic across
 runs), which means re-running the same posting does **not** extend it; raise
 `llm.max_calls_per_run` in `config.toml` if a résumé's bullet count routinely exceeds it.
