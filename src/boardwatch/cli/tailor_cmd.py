@@ -19,7 +19,6 @@ from boardwatch.core.settings import Settings, load_settings
 from boardwatch.extract.taxonomy import load_taxonomy
 from boardwatch.llm.cache import ResponseCache
 from boardwatch.llm.factory import build_client
-from boardwatch.llm.run_client import RunScopedClient
 from boardwatch.reports.resume_gate import LeadArtifactError, RenderToolMissingError
 from boardwatch.reports.tailor import (
     NoCurrentVersionError,
@@ -240,29 +239,24 @@ def run_cmd(
                 "per résumé, not shared with the eligibility LLM lane; a cache hit still "
                 "spends budget, so re-running with no config change will not help)."
             )
-        lane_death_fatal = False
         if any(r["drop_reason"] == "lane_dead" for r in result.rewrites):
-            # The rows prove death OCCURRED; they cannot say WHICH reason — drop_reason is a
-            # free-form string, and duplicating the typed reason into it would be classifying
-            # behaviour by string content. Read the reason off the client this command
-            # constructed and therefore knows the concrete type of.
-            reason = client.dead_reason if isinstance(client, RunScopedClient) else None
+            # The typed reason and the fatal flag are both read off the result, not
+            # recomputed here: `run_tailor` closes the durable `runs` row before returning,
+            # so recomputing the flag is what let an exit-1 run leave a row saying `ok`
+            # (D-147 R1). One computation, both consumers.
             console.print(
-                f"Tier B stopped: the LLM credential is unusable ({reason}). "
+                f"Tier B stopped: the LLM credential is unusable "
+                f"({result.lane_death_reason}). "
                 "Remaining bullets kept their Tier A text; the Tier A file above "
                 "is unaffected."
             )
-            # Both conjuncts are required. Zero kept ALONE is a routine healthy outcome —
-            # every candidate judged not-entailed, echoed back unchanged, or filtered — and
-            # must stay exit 0. Only death observed AND nothing salvaged is a failed run.
-            lane_death_fatal = not any(r["kept"] for r in result.rewrites)
         if not result.dry_run and result.llm_pdf_path is not None:
             console.print(f"tier B pdf: {result.llm_pdf_path}")
         # After the path is printed, not before. The exit-1 run still WRITES the
         # `resume_tailored_llm` artifact — raising above this line suppressed the only line
         # naming a file that exists on disk, so the user was told the run failed and never
         # told where its output went.
-        if lane_death_fatal:
+        if result.lane_death_fatal:
             raise typer.Exit(code=1)
 
 

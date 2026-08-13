@@ -13,7 +13,7 @@ from datetime import datetime
 from pathlib import Path
 
 import pytest
-from sqlalchemy import insert
+from sqlalchemy import insert, select
 from typer.testing import CliRunner
 
 from boardwatch.cli.app import app
@@ -22,6 +22,7 @@ from boardwatch.extract.taxonomy import load_taxonomy
 from boardwatch.llm.client import LaneDeathReason, LLMLaneDeadError
 from boardwatch.llm.run_client import RunScopedClient
 from boardwatch.store.db import DB_FILENAME, ensure_schema, get_engine
+from boardwatch.store.queries import RUN_FAILED, RUN_OK
 from boardwatch.store.tables import (
     artifacts,
     companies,
@@ -29,6 +30,7 @@ from boardwatch.store.tables import (
     jobs,
     posting_versions,
     postings,
+    runs,
 )
 
 runner = CliRunner()
@@ -107,6 +109,24 @@ def _artifact_count(env: Env) -> int:
     ensure_schema(engine)
     with engine.connect() as conn:
         return conn.execute(artifacts.select()).all().__len__()
+
+
+def _run_rows(env: Env) -> list[tuple[str, object, object]]:
+    """Every durable `runs` row as (status, errors_json, finished_at), oldest first.
+
+    The STATUS VALUE is the point, not the row's existence: `boardwatch tailor run` mints
+    and closes its own run, and before D-147 R1 it closed every one of them `ok` — including
+    the exit-1 dead-credential run, whose ephemeral report said the opposite.
+    """
+    engine = get_engine(env.data_dir)
+    ensure_schema(engine)
+    with engine.connect() as conn:
+        return [
+            (str(status), errors, finished_at)
+            for status, errors, finished_at in conn.execute(
+                select(runs.c.status, runs.c.errors_json, runs.c.finished_at).order_by(runs.c.id)
+            ).all()
+        ]
 
 
 # --- gate: resume_tailoring off (the default) ------------------------------------------
@@ -437,6 +457,18 @@ def test_lane_death_records_lane_dead_and_keeps_tier_a(
     # survive the failure. Raising above the printer suppressed the only pointer to a file
     # that exists on disk.
     assert "tier B pdf:" in flat
+    # D-147 R1: the DURABLE record has to agree with that exit code. Asserting the status
+    # VALUE, not that a row exists — the row always existed, saying `ok`.
+    rows = _run_rows(env)
+    assert len(rows) == 1
+    status, errors, finished_at = rows[0]
+    assert status == RUN_FAILED
+    # Closed, not abandoned as `running`: the reaper must not have to guess at this row.
+    assert finished_at is not None
+    # The typed reason reaches the payload. It is read off the run-scoped client's
+    # `dead_reason` attribute, never parsed back out of a `drop_reason` string.
+    assert errors is not None
+    assert "credential_invalid" in " ".join(errors)
 
 
 def test_lane_death_after_a_kept_rewrite_is_a_partial_success(
@@ -464,6 +496,10 @@ def test_lane_death_after_a_kept_rewrite_is_a_partial_success(
     # bullet 1 propose + judge, then bullet 2's propose is the call that dies.
     assert inner.calls == 3
     assert client.dead_reason is LaneDeathReason.CREDENTIAL_INVALID
+    # A partial success really did succeed partially, so the ledger says `ok`. With the
+    # failed-row assertion above this pins BOTH sides of the conjunction: death alone does
+    # not fail the run, and (below) zero-landed alone does not either.
+    assert [(status, errors) for status, errors, _ in _run_rows(env)] == [(RUN_OK, None)]
 
 
 def test_healthy_run_keeping_zero_rewrites_still_exits_0(
@@ -491,6 +527,8 @@ def test_healthy_run_keeping_zero_rewrites_still_exits_0(
     assert "Tier B (LLM): reworded 0 · unchanged 0 · fell back 2" in flat
     assert "lane_dead" not in flat
     assert healthy.dead_reason is None
+    # The other conjunct in the ledger too: zero kept without death is a successful run.
+    assert [(status, errors) for status, errors, _ in _run_rows(env)] == [(RUN_OK, None)]
 
 
 def test_warm_cache_work_still_lands_after_death(
@@ -537,3 +575,48 @@ def test_warm_cache_work_still_lands_after_death(
     assert dead.calls_attempted == 0
     assert dead.dead_reason is None
     assert "lane_dead" not in flat
+    # Two invocations, two owned runs, both successful — the second one especially: a dead
+    # credential that was never probed must not colour its run row.
+    assert [(status, errors) for status, errors, _ in _run_rows(env)] == [
+        (RUN_OK, None),
+        (RUN_OK, None),
+    ]
+
+
+class _AlwaysFailsUnclassified:
+    """Every call fails, and NOT with a lane death: a plain provider error, which the lane
+    contains as `drop_reason="error"`. The arm that distinguishes "the credential is dead"
+    from "the provider is having a bad day"."""
+
+    def __init__(self) -> None:
+        self.calls = 0
+
+    def complete(self, prompt: str, *, system: str | None = None) -> str:
+        self.calls += 1
+        raise RuntimeError("502 from the gateway")
+
+
+def test_unclassified_provider_failure_keeps_the_run_ok(
+    env: Env, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # The THIRD arm, and the one most likely to be "fixed" into a regression. Every bullet
+    # fell back and nothing was reworded, but no lane death was ever classified, so this is
+    # a healthy run with a flaky provider: exit 0 AND a durable `ok`. Failing it here would
+    # turn every provider hiccup into a failed run, which D-146 explicitly declined to do.
+    _write_tier_b_config(env)
+    flaky = RunScopedClient(_AlwaysFailsUnclassified())
+    monkeypatch.setattr("boardwatch.cli.tailor_cmd.build_client", lambda settings: flaky)
+    _run(env, ["tailor", "init"])
+    posting_id = _seed_open_posting(env)
+    out = tmp_path / "artifacts"
+
+    result = _run(env, ["tailor", "run", str(posting_id), "--tier-b", "--out", str(out)])
+
+    flat = result.stdout.replace("\n", "")
+    assert result.exit_code == 0, result.stdout
+    assert "fallback:error" in flat
+    assert "lane_dead" not in flat
+    # The wrapper only latches on a typed lane death, so an unclassified failure leaves it
+    # healthy and every remaining bullet is still attempted.
+    assert flaky.dead_reason is None
+    assert [(status, errors) for status, errors, _ in _run_rows(env)] == [(RUN_OK, None)]
