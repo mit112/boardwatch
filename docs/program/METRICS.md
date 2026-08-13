@@ -3109,3 +3109,72 @@ A's source design had lived on one machine only.
 
 Housekeeping: worktree `../bw-wt/d153-fix` removed and pruned; its branch
 `fix/ubuntu-312-abstain` deleted (fully merged at `265fef9`).
+
+### The plan's mechanical check — a review was declined, this was run instead
+
+A full design review of the 3,287-line plan was **considered and declined**: the expensive check had
+already happened in the right place (the preflight, before writing), and the spec's own review loop had
+been stopped at three rounds for not converging. What was run instead was a purely mechanical pass, on
+a deliberately cheaper model, with no design opinions in scope.
+
+| Check | Result |
+|---|---|
+| Python blocks extracted | **30** |
+| Parse failures | **2 — both self-announced splice fragments** (the `cover` closure replacement, the `SHIPPED_DATA` dict entry) |
+| **Real defects found** | **2** |
+| Pre-existing symbols verified to exist with the signature used | all — incl. `LatexRenderer(config_dir=None)`, `TaxonomyPattern`'s five fields, positional `EquivalenceTable((), "v")`, `context_from_documents`'s keyword-only signature, all ten `facts` value classes |
+| `ProjectionIssue` members defined / referenced | **24 defined, 17 referenced, 0 undefined** |
+| Cross-task name mismatches | **0** |
+
+The two defects, both in test code the plan tells an engineer to copy verbatim:
+
+1. **A boolean expression wearing the costume of a filter.** The truncation-agreement fixture was built
+   through `COMPREHENSIVE_SIX.bullets and [...]`, which produced the intended list only because the
+   left operand can never be falsy. An AST scan for `BoolOp` as a comprehension's `iter` confirmed it
+   was the **only** instance across all 30 blocks. Rewritten with named constants, and the test now
+   asserts its own premise first — that the filler bullets match nothing — because without that the two
+   entries could be trivially equal and it would pass while checking nothing about the bullet cap.
+2. **A stub whose comment described a different class.** `_Entity.status = None` carried the comment
+   *"a person entity has no status at all"*, which is true of `_Person`, not of it. Now a real status,
+   plus a **positive control** asserting `{@status}` resolves on an entity that has one — without it, a
+   resolver refusing `{@status}` unconditionally would satisfy the refusal test.
+
+Independently corroborated, through a second path, four of the preflight's citation corrections:
+`_applicable_swaps` ends at `plan.py:62`, the `cover` closure is `:76-78`, the two early returns are
+`:68-69` and `:81-82`, and `latex.py`'s section filters are equality tests at exactly `:155` and `:170`.
+
+### CI — every run from this session
+
+| Commit | Run | Result |
+|---|---|---|
+| `950578f` | 31698148914 | **success** — the ubuntu/3.12 fix, 9/9 |
+| `f8991c6` | 31698443218 | **success** |
+| `27e240c` | 31701165428 | **success** — the plan |
+| `7fe7f6d` | 31701347261 | **success** |
+| `431e68f` | 31703069203 | **success** |
+| `6f97bf3` | 31703138438 | **success** — 9/9 |
+
+**`test (3.12, ubuntu-latest)` is green on six consecutive runs**, which is materially stronger
+evidence for D-159 than the single run this session set out to check.
+
+**A measurement-route note worth carrying.** The first CI waiter was a bounded `for` loop followed by an
+*unconditional* status dump. It exhausted ~25 minutes with two jobs still running and printed a tidy
+table of seven `success` rows — output that looked exactly like a pass. The rewritten waiter records
+`loop_observed_completion=yes|no` to disk and gates the dump on it, so a timeout can no longer be read
+as a result. An empty output file at least announces its own uselessness; that one announced the
+opposite.
+
+### Documents and gates
+
+`make generalization` and `make program_index --check` exit 0 on every commit — the two checks a
+markdown-only change can affect; `lint`/`type`/`test` cannot see a `.md` file. `gitleaks` over each
+pushed range: exit 0, bound to a real exit code rather than read off its own log line.
+
+Six commits pushed, `f8991c6..6f97bf3`. D-160 appended.
+
+`STATE.md` ends at **178 lines**, against its own "keep it near 170" target. The two closed
+ubuntu/3.12 rows were compressed to their standing rather than their narrative, but that was
+net-neutral on length — two long rows became two shorter ones, so the file did not shrink. **A first
+draft of this section claimed 173 lines; that number was written before it was measured and is
+retracted here.** The next session that touches `STATE.md` should rewrite rather than extend it; the
+Gate A section is the obvious candidate, since Gate A is MET and its detail lives in D-157 and above.
