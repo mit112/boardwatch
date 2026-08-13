@@ -478,7 +478,8 @@ boardwatch tailor run <posting-id> --tier-b     # alias: --llm
 ```
 
 `--tier-b` requires all of the following, and does nothing (writes nothing, exits 1)
-if any is missing:
+if any is missing — this is a pre-flight on your configuration, checked before any work
+starts, and is a different exit 1 from the credential-death one described below:
 
 - `llm.resume_tailoring = true` **and** `llm.enabled = true` — `resume_tailoring` is the
   only key Tier B adds, and it lives on the same `[llm]` block as the opt-in LLM
@@ -493,8 +494,15 @@ Per bullet, Tier B proposes a reworded version, then runs it through a determini
 overmatch filter and a fail-closed entailment judge (the judge sees only the two bullet
 texts — original and reworded — and never the job description). A bullet is only kept
 reworded if it passes both; otherwise Tier B silently falls back to the Tier A text for
-that bullet, so a `--tier-b` run degrades to Tier A on any single bullet without failing
-the whole command. The CLI reports how many bullets were reworded vs. fell back, and why.
+that bullet, so a `--tier-b` run degrades to Tier A per bullet rather than abandoning the
+résumé. The CLI reports how many bullets were reworded vs. fell back, and why.
+
+**One case exits 1: a dead credential that kept nothing.** If the LLM credential turns out
+to be unusable (exhausted credit, an invalid credential, or a key without access to the
+model) **and** zero rewrites were kept, `--tier-b` exits 1 rather than reporting success
+over an entirely un-reworded résumé. The Tier A résumé is still produced and on disk either
+way, and so is the Tier B artifact. A credential that dies partway through, after at least
+one rewrite was kept, still exits 0 — that is a real partial success.
 
 Tier B costs **2 LLM calls per bullet** (propose, then judge), drawn from the same
 `llm.max_calls_per_run` budget (default 50, shared with the eligibility LLM lane) — so
