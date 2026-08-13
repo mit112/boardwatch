@@ -10,9 +10,9 @@ A further, non-obvious trap: `project.packet-pantry` already has an EFFECTIVE `t
 fact ahead of the stale one in index order, so `resume_facts_for`'s first-wins `setdefault` masks
 the stale fact from the output even if the effectiveness check were deleted outright — the earlier
 fact already claims the predicate's slot in the returned mapping regardless of what happens to the
-later one. `test_a_stale_fact_is_refused_at_any_date` below therefore does NOT by itself prove the
-effectiveness gate is what excludes the stale fact (confirmed by mutation — see the task report);
-`test_an_isolated_stale_fact_is_refused_because_it_is_not_effective` uses a synthetic subject with
+later one, so a real-bundle query alone cannot prove the effectiveness gate is what excludes the
+stale fact (confirmed by mutation — see the task report); the isolated fixture below,
+`test_an_isolated_stale_fact_is_refused_because_it_is_not_effective`, uses a synthetic subject with
 no colliding sibling to close that gap.
 
 Three more cases isolate the rows the two fixtures above cannot reach on their own:
@@ -151,17 +151,6 @@ def test_the_stale_fact_is_resume_surfaced_and_conflict_free(bundle_ctx) -> None
     assert "resume" in [s.value for s in fact.allowed_surfaces]
     assert fact.conflict_group_id is None
     assert fact.fact_id not in effective_fact_ids(bundle_ctx)
-
-
-def test_a_stale_fact_is_refused_at_any_date(bundle_ctx) -> None:  # noqa: F811
-    """A real-bundle regression guard: querying `project.packet-pantry` never surfaces the stale
-    fact's id, at any `as_of`. NOT a proof that the effectiveness gate is what excludes it — see
-    `test_an_isolated_stale_fact_is_refused_because_it_is_not_effective` for that; this fixture's
-    predicate already has a separate effective fact ahead of it in index order, which alone would
-    keep `STALE` out of the returned mapping's values."""
-    for when in (date(2020, 1, 1), date(2026, 8, 13), date(2030, 1, 1)):
-        facts = resume_facts_for("project.packet-pantry", bundle_ctx, as_of=when)
-        assert STALE not in {f.fact_id for f in facts.values()}, when
 
 
 def test_an_isolated_stale_fact_is_refused_because_it_is_not_effective(
