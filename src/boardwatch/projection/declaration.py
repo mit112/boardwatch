@@ -64,6 +64,8 @@ class EntryDeclaration(_Strict):
 
 class ProjectionDeclaration(_Strict):
     projection_version: int
+    #: Declared here, unresolved. `load_declaration` performs no filesystem check on this path;
+    #: the projection pool resolves it against `config_dir`, which is only in scope there (R3).
     shell_source: Path
     open_range_label: str = Field(min_length=1)
     skill_groups: tuple[SkillGroupDeclaration, ...] = ()
@@ -102,8 +104,12 @@ def load_declaration(path: Path) -> ProjectionDeclaration:
         )
 
     # Checked before model validation so the owner gets the specific refusal rather than
-    # pydantic's "field required" for a field whose absence is a deliberate design rule.
-    if not raw.get("open_range_label"):
+    # pydantic's "field required" for a field whose absence is a deliberate design rule. Only a
+    # genuinely absent, empty, or whitespace-only string counts as missing here — a wrong-typed
+    # value such as `open_range_label: 0` is falsy but present, and its truthful refusal is
+    # pydantic's own type error below, not this one.
+    label = raw.get("open_range_label")
+    if label is None or (isinstance(label, str) and not label.strip()):
         raise_violation(
             ProjectionIssue.MISSING_OPEN_RANGE_LABEL,
             "open_range_label has no default: the word for 'still going' is the owner's, "

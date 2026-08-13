@@ -84,6 +84,63 @@ def test_a_missing_open_range_label_is_fatal(tmp_path: Path) -> None:
     assert exc.value.violation.issue is ProjectionIssue.MISSING_OPEN_RANGE_LABEL
 
 
+def test_a_non_string_open_range_label_is_malformed_not_missing(tmp_path: Path) -> None:
+    """`open_range_label: 0` is falsy but present. The old guard (`not raw.get(...)`) misreported
+    this as a missing label; it is really a type error, and pydantic's own `str` validation is
+    the truthful refusal."""
+    body = MINIMAL.replace("open_range_label: Present", "open_range_label: 0")
+    with pytest.raises(ProjectionError) as exc:
+        load_declaration(_write(tmp_path, body))
+    assert exc.value.violation.issue is ProjectionIssue.MALFORMED_DECLARATION
+
+
+def test_a_missing_declaration_file_is_unreadable(tmp_path: Path) -> None:
+    """`load_declaration` never reads a path that is not a file (`declaration.py:85`)."""
+    path = tmp_path / "does-not-exist.yaml"
+    with pytest.raises(ProjectionError) as exc:
+        load_declaration(path)
+    assert exc.value.violation.issue is ProjectionIssue.DECLARATION_UNREADABLE
+
+
+def test_invalid_yaml_is_a_malformed_declaration(tmp_path: Path) -> None:
+    """An unclosed flow sequence is invalid YAML, caught as `yaml.YAMLError` before any mapping
+    check runs (`declaration.py:93`)."""
+    path = tmp_path / "projection.yaml"
+    path.write_text("projection_version: [1, 2\n", encoding="utf-8")
+    with pytest.raises(ProjectionError) as exc:
+        load_declaration(path)
+    assert exc.value.violation.issue is ProjectionIssue.MALFORMED_DECLARATION
+
+
+def test_a_non_mapping_document_is_a_malformed_declaration(tmp_path: Path) -> None:
+    """Valid YAML that parses to a list, not a mapping, trips the `isinstance(raw, dict)` guard
+    (`declaration.py:97`), distinct from the invalid-YAML guard above."""
+    path = tmp_path / "projection.yaml"
+    path.write_text("- just\n- a\n- list\n", encoding="utf-8")
+    with pytest.raises(ProjectionError) as exc:
+        load_declaration(path)
+    assert exc.value.violation.issue is ProjectionIssue.MALFORMED_DECLARATION
+
+
+def test_a_pydantic_validation_error_is_a_malformed_declaration(tmp_path: Path) -> None:
+    """A well-formed mapping that is missing a required field (`shell_source` has no default)
+    passes every pre-model guard and fails only at `ProjectionDeclaration.model_validate`
+    (`declaration.py:119`)."""
+    path = tmp_path / "projection.yaml"
+    path.write_text(
+        "projection_version: 1\n"
+        "open_range_label: Present\n"
+        "skill_groups: []\n"
+        "entries: []\n"
+        "no_match_fallback: []\n"
+        "extracurricular: []\n",
+        encoding="utf-8",
+    )
+    with pytest.raises(ProjectionError) as exc:
+        load_declaration(path)
+    assert exc.value.violation.issue is ProjectionIssue.MALFORMED_DECLARATION
+
+
 def test_the_digest_changes_when_a_template_literal_changes(tmp_path: Path) -> None:
     """This is what reopens the owner gate. Editing a literal must not keep the old approval."""
     first = projection_digest(load_declaration(_write(tmp_path, MINIMAL)))
