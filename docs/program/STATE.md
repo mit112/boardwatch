@@ -132,11 +132,23 @@ independent confirmations it could not fire — the surviving mutation, `RECORD_
 documents it rewrote (`cited_back`, printed and in `--json`) — it had become an up-to-thirteen-file edit
 reporting none of them, which `owner_gates` does not cover because an ordinary fact incurs no gate.
 
-**Next action, in order:** (1) start accumulating real daily runs — the two open P6 clauses need them,
-and they are gated on Mit's `resume.yaml` fix, which he deprioritised; (2) P2 item 8, owner-gated,
-wanting its own context window and Mit's input; (3) the shared `DropReason` catalog (D-147 R4) if
-someone wants it — a design change, not a cleanup, and nothing depends on it. **Gate A needs nothing
-further, and P3 slice 5 is shipped and its residuals closed (D-146, D-147, D-148).**
+**Next action — open with a RENDER, not an edit.** Mit's stated priority is finishing and releasing,
+and the résumé track is **reactivated** (his 2026-08-11 deprioritisation no longer applies). He has not
+yet seen a boardwatch-produced résumé and wants to before any content work: `boardwatch top` to pick a
+posting, then `boardwatch tailor run <posting_id>`. **Tell him what he is looking at** — with three
+bullets over the 220-char gate, `validate_layout` fail-safes to the untailored master, so the first
+render is the system's floor, not its tailoring.
+
+**Do NOT port content in from job-apps.** Its 2026-08-12 build
+(`~/dev/Job apps/resumes/2026-08-12/PathAI_Software_Engineer_1_-_Fullstack/`) is a **benchmark
+boardwatch must at least match and then exceed** — not a source. Substantial content discovery already
+happened on this side and must not be re-done; parity-chasing was retired once already (D-008).
+
+Then, in order: (1) the daily runs the two open P6 clauses need, which the résumé work unblocks;
+(2) P2 item 8, owner-gated, wanting its own context window and Mit's input; (3) the shared `DropReason`
+catalog (D-147 R4) if someone wants it — a design change, not a cleanup, and nothing depends on it.
+**Gate A needs nothing further, and P3 slice 5 is shipped and its residuals closed (D-146, D-147,
+D-148).**
 
 **This file is over its length target and the Gate A trim is BLOCKED — read D-149 first.** The premise
 that the narration is already held in D-137…D-145 is false in three places; D-149 lists the four things
