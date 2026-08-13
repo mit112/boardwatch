@@ -34,17 +34,22 @@ section of `STANDING-FACTS.md` before touching either.
 "0 dead postings" needs a real run whose leads are actually probed. Accumulating those runs is gated on
 Mit's `resume.yaml` fix below.
 
-**P3 slice 5 shipped (D-146), scoped to the two lanes that actually construct an LLM client, and is now
-PUSHED** (`origin/main` `8c1b78f`, 21 commits; one further commit, `0134632`, docs-only, sits unpushed
-on `main` so it would not start a second CI run mid-flight). A dead credential in
-`boardwatch eligibility extract` or `boardwatch tailor run <id> --tier-b` now stops calling out, reports
-a typed reason, and exits 1 only when nothing landed. Item 10's "~300 calls/day unattended" premise is
-**retracted as false against the code**: `pipeline/runner.py` never constructs an LLM client,
-`runner.py:522` passes none to `run_tailor`, and `reports/tailor.py:459` gates Tier B on a client
-existing — so `boardwatch run` makes zero LLM calls in the tailor lane today. **CI on `8c1b78f` is
-GREEN on all twelve jobs, Windows included — measured, not inferred.** D-147's four residuals are built,
-gated and independently reviewed on **`d147-residuals`** (worktree `../bw-wt/d147`), still unmerged —
-closes R1–R3, adds D-148/D-149; R4 stays open by choice, its own decision.
+**P3 slice 5 shipped (D-146), scoped to the two lanes that actually construct an LLM client, and is
+PUSHED.** A dead credential in `boardwatch eligibility extract` or `boardwatch tailor run <id> --tier-b`
+now stops calling out, reports a typed reason, and exits 1 only when nothing landed. Item 10's
+"~300 calls/day unattended" premise is **retracted as false against the code**: `pipeline/runner.py`
+never constructs an LLM client, `runner.py:522` passes none to `run_tailor`, and
+`reports/tailor.py:459` gates Tier B on a client existing — so `boardwatch run` makes zero LLM calls in
+the tailor lane today. **CI on the slice-5 push (`8c1b78f`) is GREEN on all twelve jobs, Windows
+included — measured, not inferred.** That sha is recorded because it is the tree CI actually ran, not
+because it is `main`'s head.
+
+**D-147's residuals are MERGED, and closed except R4 (D-148).** `tailor run --tier-b` no longer closes
+its `runs` row `ok` on an exit-1 run: `lane_death_fatal` is computed once in `run_tailor` above the
+ledger write and the CLI reads it off `TailorResult`, so the two cannot disagree. **An unclassified
+provider failure still finishes `ok`** — deliberate, and the arm most likely to be "fixed" into a
+regression. R2/R3 are corrected. **R4 stays open by choice**, as a design change; it is carried in the
+gaps table below.
 
 ### Gate A — MET (2026-08-12)
 
@@ -103,7 +108,9 @@ What the last one found is worth carrying:
   caught one CLI test asserting the old outcome; a narrow run over the authoring file could not.
 - **"Any of the twelve fact-bearing documents" was not test-locked.** A hard-coded four-class list passed
   all 98 tests reaching `add_evidence` while covering 5 of 13 — D-142's shape inside the fix citing D-142.
-  The catalog is now read off `FactBearingDocument.__subclasses__()` at run time.
+  The catalog is no longer a list at all: production asks `isinstance(document, FactBearingDocument)`
+  (`authoring.py:628`) and the test derives its expected set from `FactBearingDocument.__subclasses__()`
+  at run time. `__subclasses__()` is the TEST's mechanism, not production's (D-149).
 - **The write order was wrong and its comment argued for it at length.** The manifest now goes second;
   written last it gave every citing document a failure position carrying `evidence_set_digest_mismatch`.
 - **D-144**, the one that outlived the change that surfaced it: grounding checks read `evidence_ids` raw,
@@ -125,11 +132,15 @@ independent confirmations it could not fire — the surviving mutation, `RECORD_
 documents it rewrote (`cited_back`, printed and in `--json`) — it had become an up-to-thirteen-file edit
 reporting none of them, which `owner_gates` does not cover because an ordinary fact incurs no gate.
 
-**Next action, in order:** (1) merge `d147-residuals` — built, gated, independently reviewed, and a
-fast-forward off `main`'s head — leaving R4 open by choice; (2) start accumulating real daily runs —
-the two open P6 clauses need them, and they are gated on Mit's `resume.yaml` fix, which he
-deprioritised; (3) P2 item 8, owner-gated, wanting its own context window and Mit's input. **Gate A
-needs nothing further.**
+**Next action, in order:** (1) start accumulating real daily runs — the two open P6 clauses need them,
+and they are gated on Mit's `resume.yaml` fix, which he deprioritised; (2) P2 item 8, owner-gated,
+wanting its own context window and Mit's input; (3) the shared `DropReason` catalog (D-147 R4) if
+someone wants it — a design change, not a cleanup, and nothing depends on it. **Gate A needs nothing
+further, and P3 slice 5 is shipped and its residuals closed (D-146, D-147, D-148).**
+
+**This file is over its length target and the Gate A trim is BLOCKED — read D-149 first.** The premise
+that the narration is already held in D-137…D-145 is false in three places; D-149 lists the four things
+the trim owes before a line is deleted.
 
 ---
 
@@ -140,7 +151,7 @@ needs nothing further.**
 | P0 Instrumentation | **COMPLETE** — all nine items 0–8 | **MET** (D-030); item 5 supplements without re-anchoring (D-031) |
 | P1 Résumé artifact gate | **COMPLETE** — P1a + P1b | **MET** (D-032; D-033 closes item 3c without changing the standing) |
 | P2 Profile + keystone | **items 1–7 shipped.** Item 4 ships a *mechanism*, inert for the bundled `[software]` catalog; item 7 is done for `work_auth` only. Item 8 NOT STARTED | **MET AS RECONCILED** (D-075) — evidence is test fixtures, not a live run; the "three different verdicts" clause is deferred to item 8, not retired |
-| P3 Unattended one command | **COMPLETE** for everything needing neither Mit's domain input nor Docker | **NOT MET** — 7 consecutive unattended runs, plus the cross-OS two-writer test. Slice 5 shipped + pushed (D-146); `d147-residuals` reviewed, unmerged, R4 open |
+| P3 Unattended one command | **COMPLETE** for everything needing neither Mit's domain input nor Docker | **NOT MET** — 7 consecutive unattended runs, plus the cross-OS two-writer test. Slice 5 shipped + pushed (D-146); its residuals merged (D-148), R4 open by choice |
 | P4 Craft gate | **COMPLETE** — items 1–7 | **NOT MET** — the blind craft review is the owner's, and has not been run |
 | P5 Eligibility decides | **COMPLETE** — D-073 + D-074 | **MET** — INELIGIBLE precision 16/16, 0 span violations, `eligibility score` exits 0 |
 | P6 Liveness + dedup | **BUILD COMPLETE — all six items**, all three slices merged, reviewed and pushed (D-110, D-111, D-113) | **NOT MET — 2 of 4 clauses met**, below |
@@ -183,6 +194,6 @@ built as D-143 and documented in the guide's one-step flow.)*
 | **`add-evidence` takes no bundle lock, and D-143 widened the race** | Only `promote`/`rebase`/`approve` take `bundle_lock`. Two concurrent captures used to race on 2 files and now race on up to 13; a lost update leaves the losing capture a silent `evidence_link_asymmetry` rather than a lost evidence record. Pre-existing in kind (`promotion.py:246` says so), wider in blast radius. Adding a lock is a decision about ordering against `promote`, untestable under contention here. **Raise it before anyone runs two authoring agents against one bundle.** Detail: `.agent/D143-ADVERSARIAL-REVIEW.md` | owner-gated |
 | **P2 item 8 — the onboarding gatherer** | The thing that would make the field tier fire for anyone. D-054 forbids us authoring non-tech field content, so it must be gathered per user. Needs its own brainstorm | owner-gated |
 | **Tier B has never run under `boardwatch run`** | `pipeline/runner.py` never constructs an LLM client, so item 10's per-day call volume is zero today and no ceiling is needed until this is wired (D-146, design §8). Whether and how to wire it is Mit's call, not fixed by fiat | owner-gated |
-| **`tailor run --tier-b` durable ledger can read `ok` on an exit-1 run** | `reports/tailor.py:727-728` calls `finish_run` with the default `status=RUN_OK` before `cli/tailor_cmd.py:265-266`'s exit-1 decision runs, so a dead-credential run that exits 1 still leaves a durable `runs` row claiming success — the shape D-146 fixed for `eligibility extract`, not yet ported to `tailor run` (D-147, R1). Fixed on unmerged `d147-residuals`; still live on `main` until merged | P3 |
+| **The funnel's drop-reason catalog is enumerated by hand in two places** | `tests/unit/test_run_funnel.py` AST-parses the emitters for `drop_reason=` literals, but its module list is a hard-coded pair — a third emitter escapes a test whose name promises every drop reason. Complete today. The fix is a shared frozen `DropReason` catalog both `tailor/rewrite/lane.py` and `reports/run_funnel.py` read, rewriting ~13 call sites: a design change, deliberately not folded into D-148 (D-147 R4) | P3, unscheduled |
 | **P3 item 8 — cross-OS two-writer WAL test** | A same-OS test proves nothing; needs a Docker-Linux-container + macOS-host harness. The documented-stance half shipped (D-041) | P3 |
 | **A `SIGKILL`ed run leaves a dangling `runs` row** | `try/finally` covers exceptions and Ctrl-C, not SIGKILL. Largely drained by the age-based reaper (D-046); a heartbeat-column reaper is the deferred correct fix | P3 |

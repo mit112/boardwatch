@@ -58,9 +58,14 @@ from boardwatch.tailor.coverage import CoverageReport
 # How many distinct missing requirement terms the coverage summary lists, most-frequent first.
 _TOP_MISSING = 10
 
-# v4 added the top-level `liveness` block (P6 item 6). It stays 4 through D-113's additive
-# `liveness.gone_after_redirect` key: every bump so far has signalled a new top-level SECTION, and
-# D-031 set the precedent for declining one on a non-structural change.
+# v4 added the top-level `liveness` block (P6 item 6). It stays 4 through two keys added inside
+# blocks that already existed — D-113's `liveness.gone_after_redirect` and D-146's
+# `fabrication.lane_dead`: every bump so far has signalled a new top-level SECTION, and D-113 is
+# the precedent for declining one on an additive key. **Not** D-031, which declines a bump for a
+# change that does not extend the artifact at all (`boardwatch verify` consumes it). Holding at 4
+# is safe because no consumer reads these blocks strictly: `cli/verify_cmd.py` pulls named keys out
+# of the frozen JSON and tolerates whatever else is there — no schema, no golden fixture, no
+# full-dict equality on `fabrication` anywhere (D-147 R3).
 ARTIFACT_VERSION = 4
 
 # The stored verdict that carries the keystone invariant's ABSTAIN. Named here once so the

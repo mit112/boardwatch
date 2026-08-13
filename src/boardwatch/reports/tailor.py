@@ -37,7 +37,8 @@ from boardwatch.core.settings import Settings
 from boardwatch.extract.preflight import run_preflight
 from boardwatch.extract.taxonomy import Taxonomy, load_taxonomy
 from boardwatch.llm.cache import ResponseCache
-from boardwatch.llm.client import ModelClient
+from boardwatch.llm.client import LaneDeathReason, ModelClient
+from boardwatch.llm.run_client import RunScopedClient
 from boardwatch.reports.resume_gate import (
     GateReason,
     GateResult,
@@ -55,6 +56,8 @@ from boardwatch.store.artifacts import (
     record_artifact,
 )
 from boardwatch.store.queries import (
+    RUN_FAILED,
+    RUN_OK,
     CurrentVersion,
     current_posting_versions,
     ensure_run,
@@ -151,6 +154,12 @@ class TailorResult:
     coverage: CoverageReport | None = None
     # P4 item 7: the persona lens applied for this JD (also recorded in the artifact meta_json).
     persona_id: str | None = None
+    # D-147 R1. Computed inside `run_tailor` because that is where the durable `runs` row is
+    # closed, and reported here so the CLI's exit code reads the SAME flag the ledger wrote
+    # instead of recomputing it from `rewrites` — a command that exits 1 while its own run
+    # row says `ok` makes the honest report the ephemeral one (D-146's shape).
+    lane_death_fatal: bool = False
+    lane_death_reason: LaneDeathReason | None = None
 
 
 def _pdf_page_count(pdf: Path) -> int | None:
@@ -451,6 +460,10 @@ def run_tailor(
     llm_source: str | None = None
     llm_rows: list[dict[str, Any]] | None = None
     llm_hash: str | None = None
+    # Declared out here, like `degraded` below, so a dry run and a run with no Tier B at all
+    # both report the honest "no death observed" default.
+    lane_death_fatal = False
+    lane_death_reason: LaneDeathReason | None = None
     # Non-Optional sentinel (rather than `TierBResult | None`) so `tb.calls_made` below
     # needs no null-check: it is only ever read from the `client is not None` or
     # `tb_override is not None` write path, where `tb` has always been replaced by a
@@ -506,6 +519,23 @@ def run_tailor(
             }
             for r in tb.rows
         ]
+        if any(r.drop_reason == "lane_dead" for r in tb.rows):
+            # Both conjuncts are required. Zero kept ALONE is a routine healthy outcome —
+            # every candidate judged not-entailed, echoed back unchanged, or filtered — and
+            # an `error` row is an unclassified provider failure, which stays a successful
+            # run deliberately. Only death observed AND nothing salvaged is a failed run.
+            lane_death_fatal = not any(r.kept for r in tb.rows)
+            # The rows prove death OCCURRED; they cannot say WHICH reason — `drop_reason` is
+            # a free-form string, and duplicating the typed reason into it would be
+            # classifying behaviour by string content. Read it off the client instead, whose
+            # concrete type this call knows. The `isinstance` guard is about the TYPE, not
+            # the lane: only the run-scoped wrapper carries `dead_reason`, and an unwrapped
+            # `ModelClient` cannot answer. The agent lane never reaches here at all — its
+            # `propose`/`judge` are dict lookups (`agent_lane.py`) that cannot raise
+            # `LLMLaneDeadError`, so no `tb_override` row can be `lane_dead`.
+            lane_death_reason = (
+                client.dead_reason if isinstance(client, RunScopedClient) else None
+            )
 
     pdf_path: Path | None = None
     art_id: int | None = None
@@ -725,7 +755,21 @@ def run_tailor(
                 )
 
         if owns_run:
-            finish_run(engine, run_id)
+            # Only when this lane minted the run. Under `boardwatch run` the pipeline owns
+            # the terminal status and one dead-credential lead must not fail the whole run.
+            finish_run(
+                engine,
+                run_id,
+                errors=(
+                    [
+                        f"tailor run {posting_id} --tier-b: llm lane dead "
+                        f"({lane_death_reason}); 0 of {len(tb.rows)} bullets reworded"
+                    ]
+                    if lane_death_fatal
+                    else None
+                ),
+                status=RUN_FAILED if lane_death_fatal else RUN_OK,
+            )
 
     return TailorResult(
         posting_id=posting_id,
@@ -746,4 +790,6 @@ def run_tailor(
         degrade_reason=degrade_reason,
         coverage=coverage,
         persona_id=persona_id,
+        lane_death_fatal=lane_death_fatal,
+        lane_death_reason=lane_death_reason,
     )
