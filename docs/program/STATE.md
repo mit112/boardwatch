@@ -146,9 +146,16 @@ a clean title, not for fit. `tailor run` is fast (< 45 s); only `top` was slow, 
 **CI was RED on one job and is fixed (D-153).** `test (3.12, ubuntu-latest)` failed on both `e629ea1` and
 `c633b33` — not a flake — while the local gate was green seven times, because rich resolves a table's
 width from a dumb-terminal fallback that **sits above the `COLUMNS` lookup**, folding a rule_id across
-lines. `TERM` is now pinned repo-wide in `tests/conftest.py`. **The lesson worth keeping: a green local
-gate says nothing about a matrix job whose environment differs** — same Python (3.12.12), different env.
-The fix is unverified on CI until the next push runs.
+lines. **Three runs failed on that one job and never on ubuntu-3.11 or 3.13**, so it is deterministic, not
+a flake. Fixed by normalising `is_terminal` at conftest **import** time (`FORCE_COLOR`/`TTY_COMPATIBLE`
+cleared) — a fixture cannot do it, because `Console.__init__` resolves colour eagerly and this program
+builds module-level consoles at import. **The first attempt pinned only `TERM` and traded one failure for
+three**, including a `JSONDecodeError` from escape codes inside `--json`; a review caught it before the
+push. **The lesson worth keeping: a green local gate says nothing about a matrix job whose environment
+differs** — same Python (3.12.12), different env.
+
+**D-153 is NOT yet confirmed.** Run **`31686855081`** (`cb4db79`) was in progress at session end; whether
+ubuntu-3.12 actually goes green is unmeasured. **Check that run first.**
 
 **Next action — a fresh, broad roadmap review, which is Mit's explicit call (2026-08-13).** Take stock of
 the whole program, including the résumé track, rather than continuing item by item. **The résumé content
