@@ -41,8 +41,8 @@ on `main` so it would not start a second CI run mid-flight). A dead credential i
 a typed reason, and exits 1 only when nothing landed. Item 10's "~300 calls/day unattended" premise is
 **retracted as false against the code**: `pipeline/runner.py` never constructs an LLM client,
 `runner.py:522` passes none to `run_tailor`, and `reports/tailor.py:459` gates Tier B on a client
-existing — so `boardwatch run` makes zero LLM calls in the tailor lane today. **CI on `8c1b78f` was
-still running at session end, Windows outstanding — not yet green.** D-147's four residuals are built,
+existing — so `boardwatch run` makes zero LLM calls in the tailor lane today. **CI on `8c1b78f` is
+GREEN on all twelve jobs, Windows included — measured, not inferred.** D-147's four residuals are built,
 gated and independently reviewed on **`d147-residuals`** (worktree `../bw-wt/d147`), still unmerged —
 closes R1–R3, adds D-148/D-149; R4 stays open by choice, its own decision.
 
