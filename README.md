@@ -501,7 +501,7 @@ résumé. The CLI reports how many bullets were reworded vs. fell back, and why.
 to be unusable (exhausted credit, an invalid credential, or a key without access to the
 model) **and** zero rewrites were kept, `--tier-b` exits 1 rather than reporting success
 over an entirely un-reworded résumé. The Tier A résumé is still produced and on disk either
-way, and so is the Tier B artifact. A credential that dies partway through, after at least
+way. A credential that dies partway through, after at least
 one rewrite was kept, still exits 0 — that is a real partial success.
 
 Tier B costs **2 LLM calls per bullet** (propose, then judge), bounded by
