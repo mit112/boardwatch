@@ -2943,3 +2943,58 @@ All four discharged, so **`STATE.md`'s Gate A trim is unblocked and done**: the 
 now recorded outside `STATE.md`; D-145's Windows prohibition is discharged citing the CI run that closed
 it; `cited_back` is in `CHANGELOG.md`; and the review-loop caveat is carried verbatim into the rewritten
 file. **`STATE.md` went 255 → 146 lines**, under its ~170 target for the first time since D-139.
+
+### Later the same session — round-2 review, revision 3, and the CI root cause (D-158, D-159)
+
+**Round-2 external review of the projection design.** GPT, in-repo, with the improved brief (D-156's
+lesson: make the reviewer *derive* the premises). The brief change was measurable:
+
+| Round | Premises | Failed | Unstated by the design |
+|---|---:|---:|---:|
+| 1 (7 supplied) | 7 | **0** | — |
+| 2 (derive your own) | **24** | **8** | **5** |
+
+VERDICT: REWORK, 8 BLOCKING. **Three of the eight were created by revision 2's own fixes.** The worst,
+verified independently: `Resume.header` and `Resume.education` are required fields with no default
+(`tailor/model.py:45-48`) and `load_resume` rejects a header with no valid email (`load.py:59`), so
+D-156's scope narrowing left **no projected document constructible or loadable**.
+
+Also verified before accepting: `DateRangeValue` carries only `type`/`start`/`end` with **no display
+member** (revision 2 invented one); `FactValueKind` has **ten** members, not nine; and
+`profile-bundle approve` takes `draft: str` only, so revision 2's approval gate had **no command able to
+create its stamp** — a quarantine with no drain.
+
+**Revision 3 (`4d7e4e9`) does not name a scorer (D-158).** Slice PM — an owner-labeled ten-posting matrix
+recorded before any tuning — moves ahead of P4 and picks the scorer by rank agreement.
+
+### The ubuntu/3.12 CI root cause — FOUND after six failures and two wrong fixes (D-159)
+
+rich 15's `Console.__init__` resolves width **eagerly** from `COLUMNS`; `cli/eligibility_cmd.py:66` builds
+its console at **module import**. So `monkeypatch.setenv("COLUMNS", …)` was a **no-op** and three
+width-controlling tests had never controlled anything.
+
+| | |
+|---|---|
+| Reproduction | `COLUMNS=80 uv run pytest tests/unit/test_eligibility_cmd.py -k abstain --no-cov -n 0` → **byte-for-byte identical to CI**, 1 failed / 3 passed, in **1.52 s** |
+| Why one id only | at width 80 the rule column is 25 chars: `clearance:doe_q_required` (24) fits, `work_auth:eu_authorization_required` (35) folds |
+| Falsified | dependency drift (three ubuntu jobs' package lists **md5-identical**, `rich==15.0.0`); the interpreter asymmetry (3.12 uses the runner's own 3.12.3 — tested in `ubuntu:24.04` under Docker, passes); and the `--json` hypothesis (`abstain_cmd(ctx)` takes **no options**) |
+| Residual, unclosed | what supplies `COLUMNS≈80` to that one job. Red began at exactly `e629ea1`, the `-n auto` commit (D-150). The fix does not depend on it |
+
+### Gates and push
+
+| Run | Result |
+|---|---|
+| `make check` (revision 3 docs) | **exit 0** · 5,979 passed · 95.71% · 350.19s |
+| `make check` (**merged** CI fix) | **exit 0** · **5,980 passed** · 95.71% · 263.36s |
+| `make generalization index-check` (post-gate docs commit) | exit 0 |
+| `gitleaks origin/main..HEAD` | **exit 0**, 9 commits, no leaks |
+| Push | `a012596..950578f`, explicit sha, **10 commits** |
+
+**5,979 → 5,980 is the cross-check**: exactly one more test, matching the one added. CI run
+**`31698148914`** was in progress at session end — `generalization`, `perf` and `gitleaks` green, **the six
+test jobs unreported. Whether ubuntu/3.12 goes green is UNMEASURED.**
+
+### Documents
+
+`STATE.md` **255 → 146 lines** (target ~170), rewritten fresh; D-149's four trim prerequisites cleared by
+D-157. Five decisions appended: D-155 … D-159.

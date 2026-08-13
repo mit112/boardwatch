@@ -37,10 +37,18 @@ the 14-day clock therefore costs nothing**, which is what makes the reorientatio
 **81 source records** (header 2 · education 2 · skill-groups 58 · entry metadata 6 · bullets 13) — Gate B's
 denominator for that source. The importer exists (~1,400 lines) but **has no CLI command**.
 
-**The projection design is at revision 2**, spec at
-`docs/superpowers/specs/2026-08-13-career-profile-projection-design.md`. Two external reviewers ran
-in-repo with executable probes; **both returned REWORK**; all eighteen findings are dispositioned in the
-spec's §13. Reviews kept at `.agent/REVIEW-R1-{GPT,DEEPSEEK}.md`.
+**The projection design is at revision 3**, spec at
+`docs/superpowers/specs/2026-08-13-career-profile-projection-design.md`. **Three external review rounds,
+all REWORK**, all in-repo with executable probes: rounds 1 (GPT + DeepSeek, 18 findings → §13) and 2 (GPT,
+8 BLOCKING → §13a). Reviews at `.agent/REVIEW-R1-{GPT,DEEPSEEK}.md`.
+
+**The loop was stopped deliberately, not because it converged.** Three of round 2's eight defects were
+created by round 1's fixes, and the residual uncertainty is concentrated in one thing review cannot
+settle: **two rounds picked two scorers and a probe falsified both** (`4 > 2`, then `2.0 > 1.5`). So
+revision 3 names **no scorer** (D-158). **The next owner task is slice PM** — ten real postings with Mit's
+own ranked expected candidate entries, recorded **before** any scorer is tuned against them. It is one
+session, it blocks P4, and it is what ends the loop. **Do not open the next session by picking a third
+scorer.**
 
 **The finding that shaped it, and it must not be re-derived: `LatexRenderer.emit` never reads
 `Resume.header` or `Resume.education`.** The layout gate says so in its own docstring — *"Increment 1's
