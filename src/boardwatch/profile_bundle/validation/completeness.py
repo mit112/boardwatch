@@ -293,7 +293,7 @@ def _effective_facts_have_not_passed_their_value_date(
         )
 
 
-def _declared_expiry(fact: FactRecord) -> tuple[date, ExpiryDeclaration] | None:
+def declared_expiry(fact: FactRecord) -> tuple[date, ExpiryDeclaration] | None:
     """The date after which this fact's value stops being active, and which declaration states it.
 
     The §10.4 row is "block active use after **value date**", and for `certification.expiry` the
@@ -306,6 +306,10 @@ def _declared_expiry(fact: FactRecord) -> tuple[date, ExpiryDeclaration] | None:
     revive a lapsed credential by writing a column date after the one the credential itself carries,
     which is the same hole in a different place. `declared_by` is typed so a consumer classifies on
     `details` rather than on the message.
+
+    Public because projection needs the same answer: reading only `expires_at` left a credential
+    that lapsed years ago effective forever, and a résumé built from the bundle would have asserted
+    it. Re-deriving the pairing in another package would be a second implementation of one rule.
     """
     value = fact.value.value if isinstance(fact.value, DateValue) else None
     column = fact.expires_at
@@ -316,6 +320,10 @@ def _declared_expiry(fact: FactRecord) -> tuple[date, ExpiryDeclaration] | None:
     if column < value:
         return (column, "expires_at")
     return (value, "both")
+
+
+#: Retained so this module's existing call sites read unchanged.
+_declared_expiry = declared_expiry
 
 
 def _unresolved_conflicts_block_their_candidates(ctx: ValidationContext) -> Iterator[Diagnostic]:
@@ -602,5 +610,6 @@ __all__ = [
     "AncestorFault",
     "ancestry_completeness",
     "completeness_counts",
+    "declared_expiry",
     "validate_completeness",
 ]
