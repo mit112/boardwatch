@@ -142,6 +142,70 @@ def project_pool(
     )
 
 
+@dataclass(frozen=True)
+class ProjectionCandidate:
+    """What the owner is shown before approving: `declaration_path`'s digest, and every declared
+    entry with its templates already resolved against the bundle's CURRENT revision.
+
+    Mirrors `profile_bundle.authoring.ApprovalCandidate`'s split from filing — computed here,
+    written by `stamp.write_stamp` only after the owner agrees on a controlling terminal.
+    **Unlike `project_pool`, `projection_candidate` performs no owner-gate check.** It computes
+    the very thing the gate is checked against, so requiring an existing stamp here would make
+    the gate permanently unreachable — no command could ever produce the first one.
+    """
+
+    projection_digest: str
+    entries: tuple[Entry, ...]
+
+
+def projection_candidate(
+    bundle_root: Path, declaration_path: Path, *, as_of: date
+) -> ProjectionCandidate:
+    """Resolve `declaration_path`'s entries against the bundle's CURRENT revision, for the owner
+    to review before approving.
+
+    No `config_dir` parameter: unlike `project_pool`, this never resolves `shell_source` (it has
+    no template to show) and never checks a stamp (`stamp_exists`/`write_stamp` are the only
+    `config_dir`-keyed operations in this package), so there is nothing here that would use it.
+
+    Shares every resolution step with `project_pool` — the same bundle revision, the same
+    `check_references`, the same per-entry `resolve_template` call through `_build_entry` — so
+    what the owner is shown is the identical rendering `project_pool` would later produce for this
+    same digest, not a second, drifting rendering path. Deliberately does not resolve
+    `shell_source` or `skill_groups`: neither carries a template placeholder
+    (`SkillGroupDeclaration.label` is a plain string), so neither is part of the template hole
+    this candidate exists to show.
+
+    Raises the same typed `ProjectionError`s `project_pool` would for a malformed declaration or
+    an unresolvable reference, and lets a bundle-selection failure (`profile_bundle.storage`, e.g.
+    no revision ever promoted) propagate unwrapped, matching `project_pool`'s own behaviour — this
+    function adds no new exception boundary of its own.
+    """
+    declaration = load_declaration(declaration_path)
+    digest = projection_digest(declaration)
+
+    selection = read_current_once(bundle_root)
+    documents = selected_documents(selection)
+    ctx = context_from_documents(
+        documents, root=selection.root, mode="revision", bundle_root=bundle_root
+    )
+
+    check_references(declaration, ctx)
+
+    claims_by_id = {c.claim_id: c for c in ctx.index.claims}
+    entries = tuple(
+        _build_entry(
+            entry_decl,
+            ctx=ctx,
+            claims_by_id=claims_by_id,
+            open_range_label=declaration.open_range_label,
+            as_of=as_of,
+        )
+        for entry_decl in declaration.entries
+    )
+    return ProjectionCandidate(projection_digest=digest, entries=entries)
+
+
 def _build_entry(
     entry_decl: EntryDeclaration,
     *,

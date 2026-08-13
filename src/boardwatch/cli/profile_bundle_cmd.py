@@ -47,6 +47,7 @@ from typing import Any, Final, NoReturn, Protocol, TypeVar
 
 import typer
 
+from boardwatch.cli import projection_cmd
 from boardwatch.core.settings import load_settings
 from boardwatch.profile_bundle import authoring, drafts, inspection, migrations, promotion, rebase
 from boardwatch.profile_bundle.approvals import ApprovalDecision
@@ -1077,6 +1078,16 @@ def _prompt_text(candidate: authoring.ApprovalCandidate) -> str:
         )
     lines.append("")
     return "\n".join(lines)
+
+
+# `approve-projection` is defined in `cli/projection_cmd.py`, not here, and registered by
+# function reference rather than its own `@profile_bundle_app.command(...)` decorator — the same
+# pattern `cli/app.py` uses for every command whose module it does not own (`app.command("scan")
+# (_scan)`, etc.). It lives in its own module because it approves `{config_dir}/projection.yaml`,
+# not the bundle, and `projection_cmd.py` must not import anything from this module (see that
+# module's own docstring for why); this file may freely import it, since the dependency runs only
+# one way.
+profile_bundle_app.command("approve-projection")(projection_cmd.approve_projection)
 
 
 # --------------------------------------------------------------------------------------

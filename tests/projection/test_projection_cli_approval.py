@@ -1,0 +1,207 @@
+"""`approve-projection`: a controlling terminal, or nothing is approved.
+
+Every test drives the real Typer app (`boardwatch.cli.app.app`) through `CliRunner`, exactly as
+`tests/profile_bundle/test_profile_bundle_cli_approval.py` does for `approve`. The only thing any
+test replaces is the `ApprovalTerminal` — everything downstream (digest, resolution, the stamp
+file) is the production code, so a test cannot approve anything by a route a script could not also
+take.
+
+`example_declaration` (`tests/projection/conftest.py`) sets `BOARDWATCH_CONFIG_DIR` and
+materialises a promoted synthetic bundle at the CLI's own default bundle location
+(`config_dir / "career-profile"`), so a test that passes no `--bundle` still resolves one. It
+returns the declaration's path; `path.parent` is the config dir a test needs to check what the
+command did — or did not — write.
+"""
+
+from __future__ import annotations
+
+from dataclasses import dataclass, field
+from pathlib import Path
+
+import pytest
+from typer.testing import CliRunner
+
+from boardwatch.cli import projection_cmd
+from boardwatch.cli.app import app
+from boardwatch.projection.stamp import APPROVALS_DIR
+
+
+@dataclass
+class FakeTerminal:
+    """The only thing a test replaces. It answers; it decides nothing."""
+
+    controlling: bool = True
+    answer: str = "approve"
+    shown: list[str] = field(default_factory=list)
+
+    def is_controlling(self) -> bool:
+        return self.controlling
+
+    def show(self, text: str) -> None:
+        self.shown.append(text)
+
+    def ask(self, prompt: str) -> str:
+        return self.answer
+
+
+def _run(
+    terminal: FakeTerminal,
+    monkeypatch: pytest.MonkeyPatch,
+    decl: Path,
+    *extra_args: str,
+):
+    monkeypatch.setattr(projection_cmd, "approval_terminal", lambda: terminal)
+    return CliRunner().invoke(
+        app, ["profile-bundle", "approve-projection", "--declaration", str(decl), *extra_args]
+    )
+
+
+def test_a_non_controlling_terminal_writes_nothing(monkeypatch, example_declaration) -> None:
+    result = _run(FakeTerminal(controlling=False), monkeypatch, example_declaration)
+    assert result.exit_code == 1
+    assert not (example_declaration.parent / APPROVALS_DIR).exists()
+
+
+def test_declining_writes_nothing(monkeypatch, example_declaration) -> None:
+    result = _run(FakeTerminal(answer="no"), monkeypatch, example_declaration)
+    assert result.exit_code == 1
+    assert not (example_declaration.parent / APPROVALS_DIR).exists()
+
+
+@pytest.mark.parametrize("answer", ["y", "yes", "APPROVE", " approve", "approve ", ""])
+def test_only_the_exact_word_approves(monkeypatch, example_declaration, answer) -> None:
+    result = _run(FakeTerminal(answer=answer), monkeypatch, example_declaration)
+    assert result.exit_code == 1
+    assert not (example_declaration.parent / APPROVALS_DIR).exists()
+
+
+def test_approving_writes_exactly_one_stamp(monkeypatch, example_declaration) -> None:
+    result = _run(FakeTerminal(), monkeypatch, example_declaration)
+    assert result.exit_code == 0
+    assert len(list((example_declaration.parent / APPROVALS_DIR).iterdir())) == 1
+
+
+def test_the_owner_is_shown_resolved_values_not_template_source(
+    monkeypatch, example_declaration
+) -> None:
+    """The gate's whole point: approving `{@display_name}` tells the owner nothing."""
+    terminal = FakeTerminal()
+    _run(terminal, monkeypatch, example_declaration)
+    shown = "\n".join(terminal.shown)
+    assert "{@display_name}" not in shown
+    assert "Packet Pantry" in shown
+
+
+@pytest.mark.parametrize(
+    "variable",
+    [
+        "CI",
+        "BOARDWATCH_YES",
+        "BOARDWATCH_ASSUME_YES",
+        "BOARDWATCH_NON_INTERACTIVE",
+        "DEBIAN_FRONTEND",
+    ],
+)
+def test_no_environment_variable_bypasses_the_prompt(
+    monkeypatch, example_declaration, variable
+) -> None:
+    """The spellings are written out rather than derived, because the property is an absence.
+
+    This test replaces nothing — it drives the REAL `approval_terminal()`, whose
+    `_StandardTerminal.is_controlling()` reads `CliRunner`'s own non-tty stdin/stdout, not any of
+    these variables. It exists to catch a *future* bypass, not to exercise a guard that exists
+    today; see the report for the mutation that proves it can still fail.
+    """
+    monkeypatch.setenv(variable, "1")
+    result = CliRunner().invoke(
+        app,
+        ["profile-bundle", "approve-projection", "--declaration", str(example_declaration)],
+    )
+    assert result.exit_code != 0
+    assert not (example_declaration.parent / APPROVALS_DIR).exists()
+
+
+@pytest.mark.parametrize("state", ["detached", "closed", "tty"])
+def test_the_real_adapter_answers_no_for_anything_not_plainly_a_terminal(
+    monkeypatch, state
+) -> None:
+    """The production adapter across the states a LaunchAgent actually reaches. The `tty` case is
+    the control: without it, an adapter that always answered False would pass."""
+
+    class Closed:
+        def isatty(self) -> bool:
+            raise ValueError("I/O operation on closed file")
+
+    class Terminal:
+        def isatty(self) -> bool:
+            return True
+
+    replacement = {"detached": None, "closed": Closed(), "tty": Terminal()}[state]
+    monkeypatch.setattr(projection_cmd.sys, "stdin", replacement)
+    monkeypatch.setattr(projection_cmd.sys, "stdout", Terminal())
+    assert projection_cmd.approval_terminal().is_controlling() is (state == "tty")
+
+
+# --------------------------------------------------------------------------------------
+# Beyond the brief's sample: code paths this task's own implementation introduces that the
+# brief's reference test never exercised (see the report for why each exists).
+# --------------------------------------------------------------------------------------
+
+
+def test_the_declaration_option_defaults_to_config_dir_projection_yaml(
+    monkeypatch, example_declaration
+) -> None:
+    """`example_declaration` already writes the packaged example to
+    `config_dir / "projection.yaml"` — the declared default — so omitting `--declaration`
+    entirely must resolve the identical file and succeed exactly like passing it explicitly."""
+    terminal = FakeTerminal()
+    monkeypatch.setattr(projection_cmd, "approval_terminal", lambda: terminal)
+    result = CliRunner().invoke(app, ["profile-bundle", "approve-projection"])
+    assert result.exit_code == 0
+    assert len(list((example_declaration.parent / APPROVALS_DIR).iterdir())) == 1
+
+
+def test_an_explicit_bundle_override_that_has_no_revision_refuses(
+    tmp_path, monkeypatch, example_declaration
+) -> None:
+    """`example_declaration`'s default bundle location resolves fine; a caller-supplied
+    `--bundle` pointing somewhere with no promoted revision must still be the one consulted —
+    proving the override is read, not silently ignored in favour of the working default."""
+    no_bundle_here = tmp_path / "nowhere"
+    result = _run(
+        FakeTerminal(), monkeypatch, example_declaration, "--bundle", str(no_bundle_here)
+    )
+    assert result.exit_code == 1
+    assert not (example_declaration.parent / APPROVALS_DIR).exists()
+
+
+def test_an_unresolvable_declaration_reference_refuses_without_writing_a_stamp(
+    monkeypatch, example_declaration
+) -> None:
+    """`projection_candidate` (new in this task) runs `check_references` against the bundle
+    before the owner is ever asked. A declaration naming an entity the bundle does not have must
+    refuse cleanly, leaving no stamp — the brief's sample never authored a broken declaration."""
+    text = example_declaration.read_text(encoding="utf-8")
+    broken = text.replace(
+        "no_match_fallback:",
+        "  - entity_id: employment.does-not-exist\n"
+        "    kind: experience\n"
+        "    pinned: true\n"
+        "    heading: '{@display_name}'\n"
+        "\nno_match_fallback:",
+        1,
+    )
+    assert broken != text, "the fixture's own text no longer contains the anchor being edited"
+    example_declaration.write_text(broken, encoding="utf-8")
+
+    result = _run(FakeTerminal(), monkeypatch, example_declaration)
+    assert result.exit_code == 1
+    assert not (example_declaration.parent / APPROVALS_DIR).exists()
+    # `exit_code == 1` alone does not discriminate a typed refusal from an unhandled crash:
+    # `CliRunner` reports exit code 1 for BOTH a clean `typer.Exit(code=1)` and an uncaught
+    # `KeyError` from `_build_entry` reading a reference `check_references` should have caught
+    # first — the mutation below proves it. `SystemExit` is what a clean `typer.Exit` raises;
+    # printing the typed issue text is what a caught `ProjectionError` does and a crash does not.
+    assert isinstance(result.exception, SystemExit)
+    assert "unknown_bundle_id" in result.output
+    assert "employment.does-not-exist" in result.output

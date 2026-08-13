@@ -13,6 +13,7 @@ from pathlib import Path
 
 import pytest
 
+from boardwatch.profile_bundle.paths import BUNDLE_DIR_NAME
 from boardwatch.profile_bundle.validation.context import ValidationContext, context_from_documents
 from boardwatch.projection.declaration import load_declaration, projection_digest
 from boardwatch.projection.stamp import write_stamp
@@ -127,3 +128,31 @@ def projection_env(tmp_path: Path) -> ProjectionEnv:
 def projection_env_unapproved(tmp_path: Path) -> ProjectionEnv:
     """The same environment, minus the approval stamp."""
     return _build_projection_env(tmp_path, approved=False)
+
+
+@pytest.fixture
+def example_declaration(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
+    """The packaged example declaration, resolvable end to end with no `--bundle`/`--declaration`
+    override: a promoted synthetic bundle at `config_dir / "career-profile"` (the CLI's own
+    default via `resolve_bundle_root`), a valid header/education shell beside it, and
+    `BOARDWATCH_CONFIG_DIR` pointed at that same directory. Unapproved — no stamp is written —
+    because these tests are about the command that creates the first one.
+
+    Returns the declaration's path (`config_dir / "projection.yaml"`); `path.parent` is the
+    config dir, for a test that needs to look at what the command wrote (or didn't).
+    """
+    config_dir = tmp_path / "config"
+    config_dir.mkdir()
+    monkeypatch.setenv("BOARDWATCH_CONFIG_DIR", str(config_dir))
+
+    promote_example_tree(config_dir / BUNDLE_DIR_NAME)
+    (config_dir / "master_resume.yaml").write_text(_SHELL_BODY, encoding="utf-8")
+
+    traversable = resources.files("boardwatch.projection.examples").joinpath(
+        "projection.example.yaml"
+    )
+    with resources.as_file(traversable) as packaged:
+        declaration_text = packaged.read_text(encoding="utf-8")
+    declaration_path = config_dir / "projection.yaml"
+    declaration_path.write_text(declaration_text, encoding="utf-8")
+    return declaration_path
