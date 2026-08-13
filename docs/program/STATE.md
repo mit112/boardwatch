@@ -45,8 +45,13 @@ preflight disagree the preflight wins**; the plan carries a correction table for
 **The loop was stopped deliberately, not because it converged.** Three of round 2's eight defects were
 created by round 1's fixes, and the residual uncertainty is one thing review cannot settle: **two rounds
 picked two scorers and a probe falsified both** (`4 > 2`, then `2.0 > 1.5`). So revision 3 names **no
-scorer** (D-158). **Slice PM is the owner task** — ten real postings ranked by Mit **before** any scorer
-is tuned against them. **Do not open a session by picking a third scorer.**
+scorer** (D-158). **Do not open a session by picking a third scorer.**
+
+**D-163 makes this stronger, by measurement: all four candidates are falsified by one probe or the other,
+and the four are really two families.** `coverage_then_density`'s primary key *is* `total_distinct`, and
+`mean_top_k` degenerates into `mean_per_bullet` at or below `MAX_BULLETS_PER_ENTRY` (**6**). No scorer
+survives both probes, so **the four cannot break their own tie — Slice PM (Task 20) is the only arbiter
+that exists.** Ten real postings ranked by Mit, before any scorer is tuned against them.
 
 **The finding that shaped it, and it must not be re-derived: `LatexRenderer.emit` never reads
 `Resume.header` or `Resume.education`.** The layout gate says so in its own docstring — *"Increment 1's
@@ -70,58 +75,59 @@ D-158 closed that loop on purpose.
 **The plan has had its mechanical check and did NOT need a design review** (D-160). A full design
 review was considered and declined — the expensive check happened in the right place, the preflight.
 
-### Execution — IN PROGRESS on branch `projection-v1`
+### Execution — 16 of 23 tasks done, branch `projection-v1`, UNPUSHED
 
-Branch `projection-v1`, forked from `main` at `b200112`. **Unpushed.** Working tree clean, `make check`
-**exit 0** at `HEAD` (5,995 passed, 95.63%).
+Forked from `main` at `b200112`; **31 commits**, working tree clean. `main` untouched. **Halted on a
+session usage limit, not on a defect.**
 
-| Commit | Task | Standing |
-|---|---|---|
-| `6c4d539` | 1 — public `effective_skills` | committed, **reviewed clean** |
-| `be9e928` | 2 — package root + closed `ProjectionIssue` catalog | committed, **reviewed clean** |
-| `ee2cb49` | 3 — the declaration model | committed, **NOT REVIEWED** |
-| `f339112` | — program docs (this file + D-161) | — |
+**Complete and reviewed clean: Tasks 1–9, 11, 12, 15, 16, 17, 21, 22.** The projection package now holds
+`errors.py`, `declaration.py`, `grammar.py`, `contract.py`, `shell.py`, `stamp.py`, `serialize.py`,
+`posting.py`, `scoring.py`, `effectiveness.py`, `pool.py`, `manifest.py`, `persona_preflight.py`,
+`agreement.py`, a shipped example declaration, a pinned golden, and the `approve-projection` CLI.
 
-Working ledger: `.superpowers/sdd/2026-08-13-career-profile-projection/progress.md`. It is
-**gitignored working material**, so anything in it that must survive belongs here or in `DECISIONS.md`.
-It holds an 11-ruling pre-flight scan table; two rulings were withdrawn by verification.
+| Outstanding | Standing |
+|---|---|
+| Task 13 (`eca403c`) | **one Important open** — `manifest.py:18-25` restates `DecimalString`; import it from `profile_bundle.models.base` instead. One line |
+| Task 10 (`c8ec5e4`) | **built, never reviewed.** Package ready at `review-c7f17c5..c8ec5e4.diff` |
+| Task 14 (`b2bc14f`) | **built, reviewer died on the limit.** Package ready at `review-c7859af..b2bc14f.diff` |
+| Tasks 18, 19, 23 | **not started** |
+| Task 20 | **Mit's** — the owner-labeled matrix, not dispatchable |
 
-**The finding that cost the session: there is a THIRD import wall, and the plan names two** (D-161).
-`test_profile_bundle_hash_isolation.py` forbids any module outside `profile_bundle/` from importing
-`profile_bundle.canonical`, with **no allowlist** — so the plan's literal Task 3 (`digest_of`) is
-illegal. Projection digests through `yaml_writer.document_bytes` instead. **Do not re-derive this and
-do not "fix" it by exempting the test.**
+**Next actions, in order:** review Task 10 and Task 14 from the packages already on disk; fix Task 13's
+one-line import; then build 23 → 18 → 19. Finally the whole-branch review, then Mit decides on merge.
 
-**Next action: review Task 3** (`review-package <plan> be9e928 ee2cb49`), then continue to Task 4. The
-reviewer must be told that three ledger rulings are **authorised deviations from the brief, not
-defects**: two added issue codes (`DECLARATION_UNREADABLE`, `MALFORMED_DECLARATION`), `shell_source`
-resolution deferred to Task 12, and the D-161 digest route. Or run slice PM first; either order works,
-since PM blocks only Task 22's *selection*, not any code.
+Working ledger: `.superpowers/sdd/2026-08-13-career-profile-projection/progress.md` — **gitignored**, so
+anything that must survive belongs here or in `DECISIONS.md`. It carries every ruling with what each costs
+if wrong.
 
 **Gate B (populating the real bundle) has NOT started**; `{config_dir}/career-profile` does not exist.
 Everything is built against the synthetic example bundle that ships as package data.
 
-Four plan facts worth not re-deriving: the package **must** be `src/boardwatch/projection/` at top
-level or the tailor wall fails on its first import; **no `Resume` serializer exists anywhere in the
-repo**, so Task 11 builds one; the projection approval stamp needs **its own type** because a
-repo-wide `rglob` test allows exactly two callers of `approval_stamp_bytes(`; and the import-wall
-suite reports **21 passed**, not the 13 the plan predicts.
+**Four import walls exist, in three test files, and no document enumerates them** (D-161, D-162). Each was
+found by tripping it. **Before wiring a new module into a package, grep `tests/` for what constrains that
+package's imports** — a symbol-existence check cannot find a prohibition, and an `__all__` check cannot
+find a reference.
+
+**The plan's production code held up; its sample tests did not.** Seven briefs shipped defective reference
+tests — falsified arithmetic, a fixture the prescribed loader rejects, a test asserting only that a file
+exists, a bare `pytest.xfail()` call that aborts before its assertion, fixtures silently dropped by
+first-wins `setdefault`, and a CLI test where a `KeyError` crash and a clean refusal share an exit code.
+**Treat the briefs' tests as untrustworthy; their production code as sound.**
 
 ### Gate A — MET (2026-08-12). Detail lives in D-157; do not reopen.
 
-Every clause has a measurement saying so. Merged, pushed, green on **all twelve CI jobs at `8475319`,
-Windows included** — cite that run and D-157, **not** D-145, which prohibits the claim and was discharged
-by it. Numbers in `METRICS.md`. The review loop is CLOSED at round five (D-137), six reports in `.agent/`
-— **do not re-run any of them.** Gate A has moved no program gate.
-
-Three facts that outlive the detail: **the manifest is written SECOND, not last** (D-143's order is wrong,
-D-157 is the correction of record); `add_evidence` takes no bundle lock; and start any Gate A session with
+Every clause has a measurement. Merged, pushed, green on **all twelve CI jobs at `8475319`, Windows
+included** — cite that run and D-157, **not** D-145, which prohibits the claim and was discharged by it.
+Review loop CLOSED at round five (D-137), six reports in `.agent/` — **do not re-run any.** Gate A has
+moved no program gate. Three facts outlive the detail: **the manifest is written SECOND, not last**
+(D-157 corrects D-143); `add_evidence` takes no bundle lock; start any Gate A session with
 `git worktree prune`.
 
 > **A closed review loop is evidence about the slices reviewed, not about the subsystem being
-> defect-free.** Two silent-success defects (D-138/D-142, D-141) were found *after* it closed, in code six
-> reviews and four gates had passed. **D-161 is the same lesson again** — a symbol-existence check cannot
-> find a prohibition.
+> defect-free.** Two silent-success defects (D-138/D-142, D-141) surfaced *after* it closed, in code six
+> reviews and four gates had passed. **D-161 and D-162 are the same lesson twice more** — a
+> symbol-existence check cannot find a prohibition, and four import walls sit in three test files that no
+> document enumerates.
 
 ---
 
@@ -139,7 +145,7 @@ D-157 is the correction of record); `add_evidence` takes no bundle lock; and sta
 | 14-day acceptance | not started | — frozen; the clock measures a frozen system and starts after P6 |
 | P7 Breadth | not started | — |
 | *Gate A (parallel)* | *complete, merged, pushed, CI green* | ***MET*** — *has moved no program gate* |
-| *Projection (active)* | *spec revision 3; 23-task plan written + preflighted + mechanically checked (D-160); **Tasks 1–3 committed on `projection-v1`** (unpushed), Task 3 unreviewed* | *P0 gate MET (Task 1); P1–P4 gates not met* |
+| *Projection (active)* | ***16 of 23 tasks complete and reviewed** on `projection-v1` (31 commits, unpushed); 13 needs a one-line fix, 10 and 14 await review, 18/19/23 not started, 20 is Mit's* | *P0 gate MET (Task 1); P1–P4 gates not met* |
 
 ### Gate P6, clause by clause
 
@@ -158,12 +164,10 @@ D-157 is the correction of record); `add_evidence` takes no bundle lock; and sta
    Also defensible as a fail-open. Options: leave it; make it fatal; surface it in the run's `errors`.
 2. **Should any family other than `work_auth` default to `blocker` severity** (e.g. `clearance`)?
    Owner-gated since D-035.
-3. **What is boardwatch's Windows story?** Investigated 2026-08-13, **parked**. The core *is* deliberately
-   cross-platform, so the gate is not theater — but `pyproject.toml:23` publishes `OS Independent` while
-   "Windows" appears **zero times** in README, CHANGELOG, SECURITY or `docs/configuration.md`. Four caveats
-   would have to be named: `pdfinfo` has no package-manager route there *and fails silently everywhere*;
-   no desktop notifications (webhook instead); no Task Scheduler recipe; 48 tests skipped, leaving
-   crash-atomicity and the permission-error taxonomy unverified. One real bug in the gaps table.
+3. **What is boardwatch's Windows story?** Investigated 2026-08-13, **parked**. The core is deliberately
+   cross-platform so the gate is not theater, but `pyproject.toml:23` publishes `OS Independent` while
+   "Windows" appears **zero times** in the docs. Four caveats would have to be named (`pdfinfo`, desktop
+   notifications, Task Scheduler, 48 skipped tests); one real bug is in the gaps table below.
 4. **The projection spec's own six open questions** (§12), of which two matter soonest: whether
    `tailor run` should validate the projection manifest (it would close the stale-document path but
    crosses the `profile_bundle`↔`tailor` wall), and whether persona's `entries` list survives stage 2.
@@ -177,7 +181,6 @@ whether the daily pipeline gets projection — **yes, after v1**, ruled 2026-08-
 
 | Item | Detail | Owner |
 |---|---|---|
-| **The ubuntu/3.12 CI failure — CLOSED (D-159)** | Root cause, fix and falsified hypotheses in D-159; do not re-derive. **Green on six consecutive runs.** **D-153 is partial, not wrong.** Residual carried deliberately: nothing explains what supplied `COLUMNS≈80` to that one job, and the fix does not depend on the answer | **CLOSED**, residual unscheduled |
 | **A push run is 9 CI jobs, not 12** | D-151 took Windows off the per-push path (`ci.yml:21-33`): scheduled and `workflow_dispatch` get all three OSes, a push gets ubuntu + macOS, a PR gets ubuntu only. Any "all twelve green" claim describes a *scheduled* run | standing fact |
 | **`resume.yaml` content is Gate B input, NOT a blocker** | Three bullets over the 220-char gate (245 / 234 / 232, two more at 218 / 215), missing Knowledge Forge and Saayam For All, stale `skill_groups`, empty `extracurricular`. **Do not open a session to shorten bullets** — D-155 makes this bundle content. Mit pins `resume_max_pages=1`; never advise 2 | Mit (via Gate B) |
 | **No local pre-push check for the TWO CI-only jobs** | **`gitleaks` and `perf` — two, not three.** `generalization` IS inside `make check`. `gitleaks` is installed (8.30.1) but not wired into project tooling | mitigated |
