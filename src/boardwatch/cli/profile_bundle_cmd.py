@@ -38,16 +38,27 @@ gives no surface.
 from __future__ import annotations
 
 import json
-import sys
+
+# `sys` is not read anywhere below: `_StandardTerminal.is_controlling` now lives in
+# `cli/_approval.py`. The import stays so `monkeypatch.setattr(profile_bundle_cmd.sys, "stdin", …)`
+# (`tests/profile_bundle/test_profile_bundle_cli_approval.py`) still finds a `sys` attribute here —
+# it patches the one shared `sys` module, which `_approval.py`'s `sys.stdin`/`sys.stdout` reads too.
+import sys  # noqa: F401
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import UTC, date, datetime
 from pathlib import Path
-from typing import Any, Final, NoReturn, Protocol, TypeVar
+from typing import Any, Final, NoReturn, TypeVar
 
 import typer
 
 from boardwatch.cli import projection_cmd
+from boardwatch.cli._approval import (
+    CONFIRMATION_WORD,
+    ApprovalTerminal,
+    _StandardTerminal,  # noqa: F401 -- see `import sys` above: same test-attribute seam
+    approval_terminal,
+)
 from boardwatch.core.settings import load_settings
 from boardwatch.profile_bundle import authoring, drafts, inspection, migrations, promotion, rebase
 from boardwatch.profile_bundle.approvals import ApprovalDecision
@@ -95,11 +106,6 @@ from boardwatch.profile_bundle.validation import (
 #: §19's surface, so a default has to live somewhere, and the command layer is where a default that
 #: is purely a convenience belongs.
 DEFAULT_DRAFT_NAME: Final = "baseline"
-
-#: What the owner types to approve. An exact word rather than a y/n, so a stray keypress cannot
-#: file an approval — and not the digest itself, which is 64 characters an owner would paste rather
-#: than read.
-CONFIRMATION_WORD: Final = "approve"
 
 #: The one document `init` deliberately leaves for the owner to author. Read out of the grammar
 #: rather than spelled again, so a change to the layout moves the signpost with it.
@@ -923,58 +929,6 @@ def _with_revalidation(
 # --------------------------------------------------------------------------------------
 # Approval: the one operator interaction in the family
 # --------------------------------------------------------------------------------------
-
-
-class ApprovalTerminal(Protocol):
-    """The seam between the approval decision and the person making it.
-
-    Exactly one implementation exists in production, and this protocol is the only thing a test
-    replaces. Everything else on the approval path — the candidate digest, the derived decisions,
-    the stamp, the bytes and where they land — is the production code, so a test cannot approve
-    anything by a route a script could not also take.
-    """
-
-    def is_controlling(self) -> bool: ...
-
-    def show(self, text: str) -> None: ...
-
-    def ask(self, prompt: str) -> str: ...
-
-
-@dataclass(frozen=True)
-class _StandardTerminal:
-    def is_controlling(self) -> bool:
-        """Both streams, and anything that is not a plain "yes" counts as "no".
-
-        A detached process has `sys.stdin is None` and a closed one raises from `isatty()`; this
-        project runs unattended under a LaunchAgent, so both are states it actually reaches. The
-        fail-safe direction is fixed by §13: a run that cannot establish it has the owner's
-        attention has not got it.
-        """
-        for stream in (sys.stdin, sys.stdout):
-            try:
-                if stream is None or not stream.isatty():
-                    return False
-            except (AttributeError, ValueError):
-                return False
-        return True
-
-    def show(self, text: str) -> None:
-        """On stderr, because the operator interaction is not the command's answer.
-
-        `_emit` owns stdout. With the prompt on the same stream, `--json` had no working arm at all:
-        left on the terminal it printed pages of prompt text ahead of the JSON document, and
-        redirected so the document could be captured, `is_controlling` refused the run.
-        """
-        typer.echo(text, err=True)
-
-    def ask(self, prompt: str) -> str:
-        return str(typer.prompt(prompt, default="", show_default=False, err=True))
-
-
-def approval_terminal() -> ApprovalTerminal:
-    """The production terminal. There is no second way to reach the stamp writer."""
-    return _StandardTerminal()
 
 
 @profile_bundle_app.command("approve")

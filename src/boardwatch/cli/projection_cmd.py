@@ -1,16 +1,15 @@
 """`approve-projection`: a controlling terminal, or nothing is approved.
 
 Registered onto `profile_bundle_app` by `cli/profile_bundle_cmd.py`, never the other way — that
-module imports this one to register the command, so this module must not import anything back
-from it. That is why the four units below are a deliberate **copy** of
-`profile_bundle_cmd.py:927-1079`'s approval seam (`ApprovalTerminal`, `_StandardTerminal`,
-`approval_terminal`, `CONFIRMATION_WORD`) rather than a shared import: importing them here would
-close the cycle. The copy is intentional, not a restatement missed by oversight — see the module
-docstrings on each unit below for what is identical and why.
+module imports this one to register the command, so this module must not import anything back from
+it. `CONFIRMATION_WORD` and `approval_terminal` come from `cli/_approval.py`, the shared leaf
+module both command modules import; a leaf import satisfies the one-way registration direction
+without duplicating the seam.
 
 **No `--yes`, no environment variable and no piped answer.** The refusal is structural: there is
 no code path in this module that reads an environment variable to decide whether to prompt, and
-`_StandardTerminal.is_controlling()` is what a detached or redirected process actually reaches.
+`approval_terminal()`'s `is_controlling()` is what a detached or redirected process actually
+reaches.
 
 The command shows the owner every declared entry's templated fields already resolved against the
 bundle's CURRENT revision — `projection.pool.projection_candidate` — never the template source, so
@@ -35,14 +34,18 @@ it, not a new one.
 
 from __future__ import annotations
 
-import sys
-from dataclasses import dataclass
+# `sys` is not read anywhere below: `_StandardTerminal.is_controlling` lives in `cli/_approval.py`.
+# The import stays so `monkeypatch.setattr(projection_cmd.sys, "stdin", …)`
+# (`tests/projection/test_projection_cli_approval.py`) still finds a `sys` attribute here — it
+# patches the one shared `sys` module, which `_approval.py`'s `sys.stdin`/`sys.stdout` reads too.
+import sys  # noqa: F401
 from datetime import UTC, date, datetime
 from pathlib import Path
-from typing import TYPE_CHECKING, Final, Protocol
+from typing import TYPE_CHECKING
 
 import typer
 
+from boardwatch.cli._approval import CONFIRMATION_WORD, approval_terminal
 from boardwatch.core.settings import load_settings
 from boardwatch.profile_bundle.errors import ProfileBundleError
 from boardwatch.profile_bundle.paths import resolve_bundle_root
@@ -54,11 +57,6 @@ if TYPE_CHECKING:
     # itself, never at module level. See the module docstring.
     from boardwatch.projection.pool import ProjectionCandidate
 
-#: Identical value to `profile_bundle_cmd.CONFIRMATION_WORD`, but not the same object: importing
-#: it would create the import cycle the module docstring explains. Exact comparison, no strip, no
-#: casefold — pinned by `test_only_the_exact_word_approves`.
-CONFIRMATION_WORD: Final = "approve"
-
 DECLARATION_OPTION = typer.Option(  # noqa: B008
     None,
     "--declaration",
@@ -67,54 +65,6 @@ DECLARATION_OPTION = typer.Option(  # noqa: B008
 BUNDLE_OPTION = typer.Option(  # noqa: B008
     None, "--bundle", help="Bundle root (default: <config dir>/career-profile)."
 )
-
-
-class ApprovalTerminal(Protocol):
-    """The seam between the approval decision and the person making it.
-
-    Copied from `profile_bundle_cmd.ApprovalTerminal` (see the module docstring for why it is a
-    copy, not an import). Exactly one implementation exists in production, and this protocol is
-    the only thing a test replaces.
-    """
-
-    def is_controlling(self) -> bool: ...
-
-    def show(self, text: str) -> None: ...
-
-    def ask(self, prompt: str) -> str: ...
-
-
-@dataclass(frozen=True)
-class _StandardTerminal:
-    """Copied from `profile_bundle_cmd._StandardTerminal` byte-for-byte in behaviour: both
-    streams checked, `(AttributeError, ValueError)` caught, the prompt on stderr."""
-
-    def is_controlling(self) -> bool:
-        """Both streams, and anything that is not a plain "yes" counts as "no".
-
-        A detached process has `sys.stdin is None` and a closed one raises from `isatty()`; a
-        run under a LaunchAgent reaches both states. The fail-safe direction: a run that cannot
-        establish it has the owner's attention has not got it.
-        """
-        for stream in (sys.stdin, sys.stdout):
-            try:
-                if stream is None or not stream.isatty():
-                    return False
-            except (AttributeError, ValueError):
-                return False
-        return True
-
-    def show(self, text: str) -> None:
-        """On stderr, because the operator interaction is not the command's answer."""
-        typer.echo(text, err=True)
-
-    def ask(self, prompt: str) -> str:
-        return str(typer.prompt(prompt, default="", show_default=False, err=True))
-
-
-def approval_terminal() -> ApprovalTerminal:
-    """The production terminal. There is no second way to reach the stamp writer."""
-    return _StandardTerminal()
 
 
 def _prompt_text(candidate: ProjectionCandidate) -> str:
