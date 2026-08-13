@@ -53,6 +53,8 @@ from boardwatch.pipeline.runner import DEFAULT_TOP_N
 from boardwatch.reports.abstain import build_abstain_report
 from boardwatch.store.abstain_queries import count_requirement_dispositions
 from boardwatch.store.queries import (
+    RUN_FAILED,
+    RUN_OK,
     current_posting_versions,
     ensure_run,
     finish_run,
@@ -391,17 +393,34 @@ def extract_cmd(
             break
         if evaluation_id is not None:
             extracted += 1
+    # Fatal only when death was observed AND nothing landed: a partial run is a real partial
+    # success, and zero-landed alone is a routine outcome. Computed once, above the ledger
+    # write, because the same flag has to drive BOTH the durable status and the exit code —
+    # a command that exits 1 while its own run row says `ok` makes the honest report the
+    # ephemeral one. It is narrower than "the run wrote nothing": an unclassified provider
+    # outage still finishes `ok` attributing zero rows, which the comment above deliberately
+    # blesses. Only the case where the command itself declares failure is recorded as failure.
+    lane_death_fatal = lane_death is not None and extracted == 0
     if run_id is not None:
-        finish_run(app_ctx.engine, run_id)
+        finish_run(
+            app_ctx.engine,
+            run_id,
+            # The reason is read off the typed exception attribute, never parsed back out of
+            # a message; this string is the ledger's rendering of it, not its classification.
+            errors=(
+                [f"eligibility extract: llm lane dead ({lane_death}); 0 of {attempted} extracted"]
+                if lane_death_fatal
+                else None
+            ),
+            status=RUN_FAILED if lane_death_fatal else RUN_OK,
+        )
     console.print(f"extracted {extracted} of {attempted} attempted")
     if lane_death is not None:
         console.print(
             f"LLM lane stopped: the credential is unusable ({lane_death}). "
             "Remaining postings were not called."
         )
-        # Fatal only when death was observed AND nothing landed: a partial run
-        # is a real partial success, and zero-landed alone is a routine outcome.
-        if extracted == 0:
+        if lane_death_fatal:
             raise typer.Exit(code=1)
 
 

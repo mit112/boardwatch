@@ -26,6 +26,7 @@ from boardwatch.llm.run_client import RunScopedClient
 from boardwatch.store import tables
 from boardwatch.store.db import ensure_schema, get_engine
 from boardwatch.store.eligibility import get_evaluations, get_requirements
+from boardwatch.store.queries import RUN_FAILED, RUN_OK
 
 CLI_INIT_INPUT = "3\nacme\nBackend engineer: Python, Go, PostgreSQL.\n\n\n\nn\nn\n"
 
@@ -580,6 +581,64 @@ def test_dead_credential_stops_after_one_call_and_exits_1(
     assert client.calls_attempted == 1
 
 
+def _run_rows(data_dir: Path) -> list[tuple[str, object, object]]:
+    with get_engine(data_dir).connect() as conn:
+        return [
+            (str(status), errors, finished_at)
+            for status, errors, finished_at in conn.execute(
+                select(
+                    tables.runs.c.status,
+                    tables.runs.c.errors_json,
+                    tables.runs.c.finished_at,
+                ).order_by(tables.runs.c.id)
+            ).all()
+        ]
+
+
+def test_dead_credential_records_a_failed_run_row(
+    monkeypatch: pytest.MonkeyPatch, cli_env_with_postings: Path
+) -> None:
+    """The DURABLE ledger, not the terminal. `finish_run` was called with its
+    `status=RUN_OK` default on every path, so the invocation the command exits 1 for left a
+    row reading `ok`, no errors, zero evaluations — the honest report was the ephemeral one.
+    Asserting a row EXISTS would have passed with that defect present; the status is the
+    assertion."""
+    monkeypatch.setattr(
+        "boardwatch.cli.eligibility_cmd.build_client",
+        lambda settings: RunScopedClient(_DeadClient()),
+    )
+    result = _invoke(cli_env_with_postings, ["eligibility", "extract"])
+    assert result.exit_code == 1
+    rows = _run_rows(cli_env_with_postings)
+    assert len(rows) == 1
+    status, errors, finished_at = rows[0]
+    assert status == RUN_FAILED
+    # Closed, not abandoned as `running` — the reaper must not have to guess at this row.
+    assert finished_at is not None
+    # The typed reason reaches the payload. `LaneDeathReason` is read off the exception
+    # attribute upstream; this only checks it was carried through, not that it was parsed.
+    assert errors is not None
+    assert LaneDeathReason.CREDIT_EXHAUSTED.value in errors[0]
+
+
+def test_a_provider_outage_that_is_not_lane_death_still_finishes_ok(
+    monkeypatch: pytest.MonkeyPatch, cli_env_with_postings: Path
+) -> None:
+    """The narrowness of the clause above. An unclassified failure is NOT the command
+    declaring failure — it exits 0 — so its run row stays `ok` attributing zero rows, which
+    `extract`'s minting comment deliberately blesses. Widening `failed` to "wrote nothing"
+    would turn every flaky provider into a failed run."""
+    monkeypatch.setattr(
+        "boardwatch.cli.eligibility_cmd.build_client",
+        lambda settings: _AlwaysFailingClient(),
+    )
+    result = _invoke(cli_env_with_postings, ["eligibility", "extract"])
+    assert result.exit_code == 0
+    assert [(status, errors) for status, errors, _ in _run_rows(cli_env_with_postings)] == [
+        (RUN_OK, None)
+    ]
+
+
 def test_partial_success_before_death_exits_0(
     monkeypatch: pytest.MonkeyPatch, cli_env_with_postings: Path
 ) -> None:
@@ -601,6 +660,12 @@ def test_partial_success_before_death_exits_0(
     flat = result.output.replace("\n", "")
     assert result.exit_code == 0
     assert "extracted 1 of 2 attempted" in flat
+    # A partial success really did succeed partially, so the ledger says `ok`. Together with
+    # the failed-row test above this pins BOTH sides of the conjunction: death alone does not
+    # fail the run, and zero-landed alone does not either.
+    assert [(status, errors) for status, errors, _ in _run_rows(cli_env_with_postings)] == [
+        (RUN_OK, None)
+    ]
 
 
 def test_cap_survives_unclassified_failures(
