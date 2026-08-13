@@ -3,6 +3,10 @@ on:
   push:
     branches: [main]
   pull_request:
+  # Windows runs here rather than on every push (D-151). 07:00 UTC is ~03:00 ET.
+  schedule:
+    - cron: "0 7 * * *"
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -14,10 +18,19 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        # Full 3-OS matrix only on push to main (the pre-permanent safety net).
-        # PRs run ubuntu-only to conserve Free-tier minutes (macOS bills 10x,
-        # Windows 2x). OS-specific risk is re-verified at the main merge.
-        os: ${{ github.event_name == 'push' && fromJSON('["ubuntu-latest", "macos-latest", "windows-latest"]') || fromJSON('["ubuntu-latest"]') }}
+        # Windows is OFF the per-push path (D-151): it is the slowest job by far, so it set the
+        # wall clock of every push while serving no current user. It runs nightly and on demand
+        # instead, which caps a Windows regression at ~24h of drift rather than the ~180 commits
+        # that accumulated ~130 failures in D-145. Do NOT drop it entirely — that is the rot this
+        # cadence exists to prevent, and re-greening it is expensive.
+        # macOS stays on push: it is the platform boardwatch is actually run on.
+        # PRs stay ubuntu-only to conserve minutes (macOS bills 10x, Windows 2x).
+        os: >-
+          ${{ (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch')
+              && fromJSON('["ubuntu-latest", "macos-latest", "windows-latest"]')
+              || (github.event_name == 'push'
+                  && fromJSON('["ubuntu-latest", "macos-latest"]')
+                  || fromJSON('["ubuntu-latest"]')) }}
         python: ["3.11", "3.12", "3.13"]
     runs-on: ${{ matrix.os }}
     steps:
