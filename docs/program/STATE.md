@@ -172,9 +172,12 @@ catalog (D-147 R4) if someone wants it — a design change, not a cleanup, and n
 **Gate A needs nothing further, and P3 slice 5 is shipped and its residuals closed (D-146, D-147,
 D-148).**
 
-**This file is over its length target and the Gate A trim is BLOCKED — read D-149 first.** The premise
-that the narration is already held in D-137…D-145 is false in three places; D-149 lists the four things
-the trim owes before a line is deleted.
+**This file is well over its length target — ~250 lines against ~170 — and the Gate A trim is BLOCKED;
+read D-149 first.** The premise that the narration is already held in D-137…D-145 is false in three
+places; D-149 lists the four things the trim owes before a line is deleted. The 2026-08-13 sessions added
+roughly 25 lines on top of that, so the overrun is now the largest it has been. **The broad roadmap
+review this file points to is the right moment to rewrite it** — a rewrite is not the blocked trim, and
+whatever survives should be written fresh rather than edited in place.
 
 ---
 
