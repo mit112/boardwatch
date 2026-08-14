@@ -49,8 +49,9 @@ class ProjectionIssue(StrEnum):
     #: The approval on file is for the right `projection_digest`, but the stamp's own
     #: `bundle_digest` no longer matches the bundle's CURRENT revision. The declaration the owner
     #: reviewed did not change, but the bundle facts it resolved against did — so the literal
-    #: résumé text the owner approved may not be the text that would render today. Raised only by
-    #: `cli/projection_cmd.py`'s `project --check`, never by `project_pool` itself (R30).
+    #: résumé text the owner approved may not be the text that would render today. Raised by
+    #: `project_pool` itself, unconditionally, on every path that reaches it (D-167) — there is
+    #: no opt-in flag gating this check.
     STALE_PROJECTION_APPROVAL = "stale_projection_approval"
     # -- selection --------------------------------------------------------------------
     PINNED_SET_EXCEEDS_BUDGET = "pinned_set_exceeds_budget"

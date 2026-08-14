@@ -18,12 +18,14 @@ rather than asserting which code path inside `select` produced it (that is Task 
 
 from __future__ import annotations
 
+import copy
 import json
 from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from importlib import resources
 from pathlib import Path
+from typing import Any
 
 import pytest
 from sqlalchemy import insert
@@ -40,7 +42,11 @@ from boardwatch.store.db import ensure_schema, get_engine
 from boardwatch.store.queries import save_profile
 from boardwatch.store.tables import companies, extractions, jobs, posting_versions, postings
 from boardwatch.tailor.load import load_resume
-from tests.profile_bundle.conftest import PromotedRevisionTree, promote_example_tree
+from tests.profile_bundle.conftest import (
+    PromotedRevisionTree,
+    promote_example_tree,
+    promote_next_revision,
+)
 
 NOW = datetime(2026, 8, 2, 12, 0, 0)
 
@@ -320,10 +326,25 @@ def test_manifest_carries_the_pool_lineage_and_a_score_for_every_candidate(env: 
     # "which score each candidate got", not just the admitted ones.
     scores = dict(manifest["scores"])
     assert scores == {"entry.project.packet-pantry": "0"}
+
+    # Independent oracle: every claim id every SELECTED entry declares, read from a fresh parse
+    # of the declaration file itself — never from `claim_to_bullet` under test. Before the fix,
+    # `claim_to_bullet` was built as `(bullet.bullet_id, bullet.bullet_id)`, so this comparison
+    # would have passed by coincidence even if `_build_entry` had stopped setting
+    # `bullet_id=claim_id`; comparing against a value this test derives independently would not.
+    declaration = load_declaration(env.declaration)
+    selected_entity_ids = {"employment.example-labs", "project.packet-pantry"}
+    expected_claims = {
+        claim_id
+        for entry_decl in declaration.entries
+        if entry_decl.entity_id in selected_entity_ids
+        for claim_id in entry_decl.claims
+    }
     claim_pairs = dict(manifest["claim_to_bullet"])
     assert claim_pairs  # non-empty: at least the pinned entry's own claim/bullet
+    assert set(claim_pairs) == expected_claims
     for claim_id, bullet_id in claim_pairs.items():
-        assert claim_id == bullet_id  # pool._build_entry's identity map, today
+        assert bullet_id == claim_id  # pool._build_entry's identity map, today
 
 
 # --------------------------------------------------------------------------------------
@@ -378,6 +399,33 @@ def test_refuses_without_bundle_approval(unapproved_env: Env) -> None:
     assert "missing_projection_approval" in result.output
 
 
+def _add_second_skill(data: Any) -> None:
+    """An ADDITION, not an edit — mirrors `test_projection_cli_project.py`'s own
+    `_add_second_skill` — so it changes the bundle's content digest without invalidating any
+    reference `projection.example.yaml` makes."""
+    clone = copy.deepcopy(data["skills"][0])
+    clone["skill_id"] = "skill.resume-project-cli-test-added"
+    clone["canonical_name"] = "Resume Project CLI Test Skill"
+    clone["aliases"] = ["resume-project-cli-test-skill"]
+    data["skills"].append(clone)
+
+
+def test_refuses_when_the_bundle_has_moved_since_approval(env: Env) -> None:
+    """D-167/C2: the bundle-digest comparison is unconditional inside `project_pool`, so `resume
+    project` — the command that actually writes a résumé — must refuse here too, not only
+    `profile-bundle project`. Before the fix, this command never read the stamp back at all, so a
+    bundle promoted after approval would silently reach the résumé with template text the owner
+    never reviewed."""
+    promote_next_revision(env.tree, mutate=_add_second_skill)
+
+    result = run(env, ["--posting", str(env.posting_id), "--scorer", "total_distinct"])
+
+    assert result.exit_code != 0
+    assert "stale_projection_approval" in result.output
+    out_dir = env.data_dir / "projected" / str(env.posting_id)
+    assert not out_dir.exists(), "nothing should be written once the stamp is refused"
+
+
 def test_refuses_a_closed_posting(closed_posting_env: Env) -> None:
     result = run(
         closed_posting_env,
@@ -391,6 +439,46 @@ def test_refuses_an_unknown_posting_id(env: Env) -> None:
     result = run(env, ["--posting", "999999", "--scorer", "total_distinct"])
     assert result.exit_code != 0
     assert "posting_no_current_version" in result.output
+
+
+# --------------------------------------------------------------------------------------
+# Whole-branch review C1: `reject_entry_declaring_personas` (Task 15) was wired to no production
+# path — its only callers were its own tests. `resume_project` is the command that actually
+# reaches `apply_persona` later (via `tailor run`), so this is the command that must refuse first.
+# --------------------------------------------------------------------------------------
+
+_PERSONA_DECLARES_ENTRIES = """
+personas:
+  - id: general_swe
+    title: "Software Engineer"
+    default: true
+    role_families: [backend]
+    skill_group_order: []
+    entries: [entry.x, entry.y]
+"""
+
+
+def test_refuses_a_persona_declaring_entries_before_selection_runs(env: Env) -> None:
+    """An owner override at `{config_dir}/personas.yaml` that declares `entries` must be refused
+    here, cleanly, rather than surviving to crash inside `apply_persona` during a later
+    `tailor run` (Task 15's own module docstring)."""
+    (env.config_dir / "personas.yaml").write_text(_PERSONA_DECLARES_ENTRIES, encoding="utf-8")
+
+    result = run(env, ["--posting", str(env.posting_id), "--scorer", "total_distinct"])
+
+    # A clean typed refusal, not an uncaught crash: `SystemExit` is what a clean `typer.Exit`
+    # raises; an uncaught `ProjectionError` would leave `result.exception` as that exception
+    # instead, and `exit_code != 0` alone cannot tell the two apart.
+    assert isinstance(result.exception, SystemExit), (
+        f"expected a clean refusal, got an uncaught {result.exception!r}"
+    )
+    assert result.exit_code != 0
+    assert "persona_declares_entries" in result.output
+    assert "general_swe" in result.output
+
+    # Nothing was written: the refusal happens before `project_pool`/`select` ever run.
+    out_dir = env.data_dir / "projected" / str(env.posting_id)
+    assert not out_dir.exists()
 
 
 # --------------------------------------------------------------------------------------

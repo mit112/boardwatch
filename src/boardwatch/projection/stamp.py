@@ -49,8 +49,8 @@ class ProjectionStamp(BaseModel):
     against at approval time, not just to the declaration's own content. `projection_digest` alone
     cannot carry this: it hashes `projection.yaml` only (`declaration.py`'s own docstring), so an
     unedited declaration re-approves silently even when the bundle facts it resolves against have
-    moved — the owner would be approving text they never saw. `project --check` is what reads this
-    field back to detect exactly that drift.
+    moved — the owner would be approving text they never saw. `project_pool` is what reads this
+    field back, unconditionally, to detect exactly that drift (D-167).
     """
 
     model_config = ConfigDict(frozen=True, extra="forbid")

@@ -73,9 +73,9 @@ def test_the_written_stamp_content_matches_the_requested_digest(tmp_path: Path) 
 
 
 def test_read_stamp_returns_the_bundle_digest_it_was_written_with(tmp_path: Path) -> None:
-    """`read_stamp` is the read side `project --check` uses; it must not merely find the file, it
-    must recover the exact `bundle_digest` `write_stamp` bound — not the projection digest, and
-    not a default."""
+    """`read_stamp` is the read side `project_pool` uses, unconditionally (D-167); it must not
+    merely find the file, it must recover the exact `bundle_digest` `write_stamp` bound — not
+    the projection digest, and not a default."""
     write_stamp(tmp_path, digest=D1, bundle_digest=BD1, approved_at=NOW)
     stamp = read_stamp(tmp_path, D1)
     assert stamp.projection_digest == D1

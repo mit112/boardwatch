@@ -61,8 +61,8 @@ from boardwatch.profile_bundle.errors import (
 )
 from boardwatch.profile_bundle.paths import resolve_bundle_root
 from boardwatch.profile_bundle.reports import REPORT_SCHEMA, diagnostic_json, diagnostic_line
-from boardwatch.projection.errors import ProjectionError, ProjectionIssue, raise_violation
-from boardwatch.projection.stamp import read_stamp, write_stamp
+from boardwatch.projection.errors import ProjectionError, ProjectionIssue
+from boardwatch.projection.stamp import write_stamp
 
 if TYPE_CHECKING:
     # Type-only: `boardwatch.projection.pool` is imported for real inside `approve_projection`
@@ -79,14 +79,6 @@ BUNDLE_OPTION = typer.Option(  # noqa: B008
     None, "--bundle", help="Bundle root (default: <config dir>/career-profile)."
 )
 JSON_OPTION = typer.Option(False, "--json", help="Emit the deterministic machine report.")  # noqa: B008
-CHECK_OPTION = typer.Option(  # noqa: B008
-    False,
-    "--check",
-    help=(
-        "Also verify the owner's approval still covers the CURRENT bundle revision, not just "
-        "the declaration; exits non-zero on drift."
-    ),
-)
 
 
 def _prompt_text(candidate: ProjectionCandidate) -> str:
@@ -182,13 +174,14 @@ def approve_projection(
 
 
 def _projection_diagnostic(violation: ProjectionViolation) -> Diagnostic:
-    """Fold one `ProjectionViolation` into the bundle family's `Diagnostic` shape (R27/R30).
+    """Fold one `ProjectionViolation` into the bundle family's `Diagnostic` shape (R27).
 
     `ProjectionIssue` stays the authoritative catalog for projection's own business outcomes and
     is never taught into `profile_bundle.errors` member by member. `STALE_PROJECTION_APPROVAL`
     reuses the bundle's own `STALE_APPROVAL_STAMP`: the identical shape of failure — an approval's
-    bound content diverged from what is current — just for `project --check`'s stamp rather than
-    the bundle's own `ApprovalStamp`. Every other member funnels into the one new
+    bound content diverged from what is current — just for projection's own stamp rather than
+    the bundle's own `ApprovalStamp`. `project_pool` raises it unconditionally now (D-167), on
+    every path that reaches it, not behind a flag. Every other member funnels into the one new
     `PROJECTION_REFUSED` code; `details.projection_issue` carries the specific member so nothing
     is lost at the fold.
 
@@ -231,18 +224,16 @@ def _projection_diagnostic(violation: ProjectionViolation) -> Diagnostic:
 def _boundary_outcome(exc: ProjectionError | ProfileBundleError) -> OperationOutcome[Any]:
     """The §21 outcome one refusal implies, at this command's boundary.
 
-    `project_pool` never raises anything but `ProjectionError` (unlike `projection_candidate`,
-    which this command does not call — see its own docstring on why), so the plain
-    `ProfileBundleError` arm is for a `read_stamp` failure surviving past `project_pool`'s own
-    `stamp_exists` gate. That gate only proves a file existed at this path at the moment it was
-    checked — never that its bytes still parse, or still satisfy the CURRENT `ProjectionStamp`
-    model. `read_stamp` (`projection/stamp.py`) guards exactly that: a stamp written by an older
-    schema revision (missing a field a newer `ProjectionStamp` now requires — this is not a
-    theoretical race, it is what anyone who ran `approve-projection` before `bundle_digest` became
-    required has sitting on disk), one whose bytes fail to parse, or one removed in the gap
-    between the two calls all become `ProfileBundleError` there rather than escaping uncaught.
-    This arm reports that as `INTERNAL_ERROR` rather than folding it into `PROJECTION_REFUSED`,
-    since none of those is a projection business outcome.
+    `project_pool` now calls `read_stamp` (`projection/stamp.py`) itself, unconditionally
+    (D-167), to compare the stamp's `bundle_digest` against the bundle actually being read — so
+    the plain `ProfileBundleError` arm is for that call failing inside `project_pool`, not merely
+    surviving past it. A stamp written by an older schema revision (missing a field a newer
+    `ProjectionStamp` now requires — this is not a theoretical race, it is what anyone who ran
+    `approve-projection` before `bundle_digest` became required has sitting on disk), one whose
+    bytes fail to parse, or one removed in the gap between the two calls all become
+    `ProfileBundleError` there rather than escaping uncaught. This arm reports that as
+    `INTERNAL_ERROR` rather than folding it into `PROJECTION_REFUSED`, since none of those is a
+    projection business outcome.
     """
     if isinstance(exc, ProjectionError):
         finding = _projection_diagnostic(exc.violation)
@@ -292,23 +283,17 @@ def project(
     declaration: Path | None = DECLARATION_OPTION,
     bundle: Path | None = BUNDLE_OPTION,
     json_output: bool = JSON_OPTION,
-    check: bool = CHECK_OPTION,
 ) -> None:
     """Serialize the JD-blind Stage 1 pool for the owner's review, JD-blind and no database.
 
-    Always calls `projection.pool.project_pool`, checked or not: its owner-gate check
-    (`stamp_exists`) runs on every invocation, so an edited-but-unapproved `projection.yaml`
-    already exits non-zero without `--check` (`MISSING_PROJECTION_APPROVAL`, folded to
-    `PROJECTION_REFUSED` below) — a `--check` that only repeated that gate would never fire
-    differently from plain `project` and so would be a check that could never change an outcome.
-
-    `--check`'s own, otherwise-unreachable job is the other half of drift `project_pool` cannot
-    see: the approval stamp binds `projection_digest` (the declaration's own digest) but, until
-    now, nothing bound the bundle revision the owner actually reviewed against. `--check` compares
-    the freshly-computed `pool.bundle_digest` against the `bundle_digest`
-    `approve_projection` recorded in the stamp, and refuses (`STALE_PROJECTION_APPROVAL`, folded
-    to the bundle's own `STALE_APPROVAL_STAMP`) when the bundle has moved since — the one case an
-    unedited, still-approved declaration would otherwise hide entirely.
+    `projection.pool.project_pool` runs the owner gate unconditionally now (D-167): `stamp_exists`
+    proves `projection.yaml`'s own digest was approved, and `read_stamp` then compares the stamp's
+    `bundle_digest` against the bundle actually being read, refusing (`STALE_PROJECTION_APPROVAL`,
+    folded to the bundle's own `STALE_APPROVAL_STAMP`) when the bundle has moved since approval —
+    the one case an unedited, still-approved declaration would otherwise hide entirely. There used
+    to be a `--check` flag gating that second half; it was deleted (D-167) once the comparison
+    became unconditional, because an opt-in flag on a consent control is the wrong shape and a
+    check that cannot fire differently from plain `project` is a check that is deleted, not kept.
     """
     config_dir = load_settings(data_dir=ctx.obj).config_dir
     declaration_path = declaration if declaration is not None else config_dir / "projection.yaml"
@@ -317,24 +302,12 @@ def project(
 
     # Deferred: see the module docstring on why `projection.pool` is never imported at module
     # level here; the same reasoning covers `projection.serialize`, reached only through this one
-    # command. `projection.stamp` (`read_stamp`/`write_stamp`) is already a module-level import
-    # above: it is also `approve_projection`'s, and it does not transitively reach
-    # `boardwatch.store` (unlike `projection.pool`).
+    # command.
     from boardwatch.projection.pool import project_pool
     from boardwatch.projection.serialize import resume_document_bytes
 
     try:
         pool = project_pool(bundle_root, declaration_path, config_dir=config_dir, as_of=as_of)
-        if check:
-            stamp = read_stamp(config_dir, pool.projection_digest)
-            if stamp.bundle_digest != pool.bundle_digest:
-                raise_violation(
-                    ProjectionIssue.STALE_PROJECTION_APPROVAL,
-                    "the owner's approval was reviewed against a different bundle revision; the "
-                    "resolved template values may no longer match the bundle's current facts. "
-                    "Run approve-projection again after reviewing the current text",
-                    where=pool.projection_digest,
-                )
     except (ProjectionError, ProfileBundleError) as exc:
         _emit_project(_boundary_outcome(exc), {}, (), as_json=json_output, as_of=as_of)
 
@@ -382,8 +355,9 @@ SCORER_OPTION = typer.Option(  # noqa: B008
         "Entry scorer ranking candidates against the JD's skills. Required, no default: every "
         "candidate in SCORERS (projection/scoring.py) is falsified by one rank-agreement probe "
         "or the other (D-163), so none is chosen until the owner-labeled selection matrix rules "
-        "— naming one here is a deliberate, visible choice, not a silently-picked winner. An "
-        "unknown name is refused with the live list of registered choices."
+        "— naming one here is a deliberate, visible choice, not a silently-picked winner. Choices "
+        "today: coverage_then_density, mean_per_bullet, mean_top_k, total_distinct. An unknown "
+        "name is refused with the live list of registered choices."
     ),
 )
 RESUME_OUT_OPTION = typer.Option(  # noqa: B008
@@ -415,6 +389,19 @@ def resume_project(
     # never imported at this module's top level either.
     from boardwatch.projection.scoring import SCORERS
 
+    config_dir = load_settings(data_dir=ctx.obj).config_dir
+
+    # The cheapest possible refusal point: neither the bundle nor the database is needed to
+    # tell whether a persona declares `entries` (Task 15's own collision), so this runs before
+    # `project_pool` reads anything and before `--scorer` is even validated.
+    from boardwatch.projection.persona_preflight import reject_entry_declaring_personas
+
+    try:
+        reject_entry_declaring_personas(config_dir)
+    except ProjectionError as exc:
+        typer.echo(str(exc), err=True)
+        raise typer.Exit(code=1) from exc
+
     if scorer_name not in SCORERS:
         typer.echo(
             f"unknown scorer {scorer_name!r}; choices: {', '.join(sorted(SCORERS))}",
@@ -429,12 +416,13 @@ def resume_project(
     # database is somehow forbidden for this one.
     from boardwatch.cli.context import build_context
     from boardwatch.extract.taxonomy import load_taxonomy
+    from boardwatch.projection.declaration import load_declaration
     from boardwatch.projection.manifest import (
         MANIFEST_SCHEMA_VERSION,
         ProjectionManifest,
         manifest_bytes,
     )
-    from boardwatch.projection.pool import project_pool
+    from boardwatch.projection.pool import _entry_id, project_pool
     from boardwatch.projection.posting import posting_context
     from boardwatch.projection.select import select
     from boardwatch.projection.serialize import resume_document_bytes
@@ -454,7 +442,11 @@ def resume_project(
     try:
         pool = project_pool(bundle_root, declaration_path, config_dir=config_dir, as_of=as_of)
         posting = posting_context(app_ctx.engine, settings, posting_id)
-    except ProjectionError as exc:
+    except (ProjectionError, ProfileBundleError) as exc:
+        # `project_pool` now calls `read_stamp` unconditionally (D-167), which raises
+        # `ProfileBundleError`, not `ProjectionError`, for a stamp that fails to parse or
+        # validate against the current schema — the same widening `project`'s own boundary
+        # already has (`_boundary_outcome`).
         typer.echo(str(exc), err=True)
         raise typer.Exit(code=1) from exc
 
@@ -510,12 +502,25 @@ def resume_project(
         (entry_id, str(scorer(entries_by_id[entry_id], jd_skills_set, table, taxonomy)))
         for entry_id in pool.candidate_entry_ids
     )
-    # `pool._build_entry` sets bullet_id=claim_id (identity map today); carried explicitly per
-    # manifest.py's own docstring, scoped to the bullets that actually reached this résumé.
+    # `claim_id` is re-derived independently here, from a second parse of the declaration file
+    # itself, rather than read off `bullet.bullet_id` a second time — a tuple built as
+    # `(bullet.bullet_id, bullet.bullet_id)` records only that one attribute agrees with itself,
+    # never with the declaration's own claim ids. `pool._build_entry` builds each entry's bullets
+    # in `entry_decl.claims` order (identity map today, `bullet_id=claim_id`), so zipping the two
+    # in that same order pairs each declared claim with the bullet it produced; if `_build_entry`
+    # ever stopped setting `bullet_id=claim_id`, this pairing would genuinely diverge instead of
+    # trivially agreeing (manifest.py's own docstring on why the field is carried explicitly).
+    reloaded_declaration = load_declaration(declaration_path)
+    claims_by_entry_id = {
+        _entry_id(entry_decl.entity_id): entry_decl.claims
+        for entry_decl in reloaded_declaration.entries
+    }
     claim_to_bullet = tuple(
-        (bullet.bullet_id, bullet.bullet_id)
+        (claim_id, bullet.bullet_id)
         for entry in selection.resume.entries
-        for bullet in entry.bullets
+        for claim_id, bullet in zip(
+            claims_by_entry_id[entry.entry_id], entry.bullets, strict=True
+        )
     )
     manifest = ProjectionManifest(
         manifest_schema=MANIFEST_SCHEMA_VERSION,

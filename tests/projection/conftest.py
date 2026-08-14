@@ -106,8 +106,8 @@ def _build_projection_env(
     else:
         bundle_root.mkdir()
         # No revision was ever promoted, so there is no real digest to bind the stamp to; this
-        # value is never compared — `project_pool` raises `BUNDLE_UNREADABLE` before `--check`
-        # would ever read it back.
+        # value is never compared — `project_pool` raises `BUNDLE_UNREADABLE` from
+        # `read_current_once` before it ever reaches its own `read_stamp` call (D-167).
         bundle_digest = "sha256:" + "0" * 64
 
     config_dir = tmp_path / "config"

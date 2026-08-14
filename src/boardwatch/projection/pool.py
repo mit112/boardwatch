@@ -19,7 +19,9 @@ operand — matching every other `config_dir / <declared path>` site in this cod
 
 Every other step calls straight into the six modules this task integrates, never restating their
 checks: `read_current_once` / `selected_documents` / `context_from_documents` read the bundle's
-CURRENT, promoted revision (`effectiveness.py`'s own premise); `stamp_exists` is the owner gate;
+CURRENT, promoted revision (`effectiveness.py`'s own premise); `stamp_exists` + `read_stamp`
+together are the owner gate — the first proves a digest was approved at all, the second proves
+that approval still names the bundle revision actually being read, unconditionally (D-167);
 `check_references` is §7's fidelity contract; `resume_facts_for` + `resolve_template` render each
 entry's templates; `render_skill` maps a skill id to display text; `load_shell` supplies the inert
 header/education. `Bullet.text` is copied from `ClaimRecord.text` byte for byte — never templated —
@@ -48,7 +50,7 @@ from boardwatch.projection.effectiveness import resume_facts_for
 from boardwatch.projection.errors import ProjectionIssue, raise_violation
 from boardwatch.projection.grammar import render_skill, resolve_template
 from boardwatch.projection.shell import load_shell
-from boardwatch.projection.stamp import stamp_exists
+from boardwatch.projection.stamp import read_stamp, stamp_exists
 from boardwatch.tailor.model import Bullet, Entry, Resume, SkillGroup
 
 
@@ -84,6 +86,17 @@ def project_pool(
     composes, and the owner-gate check and an unreadable bundle are raised here directly — both
     from the same closed `ProjectionIssue` catalog, so nothing here invents an exception outside
     it.
+
+    **The bundle-digest comparison is unconditional (D-167), not behind an opt-in flag.**
+    `stamp_exists` alone proves only that `declaration_path`'s own content was reviewed; it says
+    nothing about which bundle revision the owner was looking at when they approved it. Every
+    call here — `profile-bundle project` and `resume project` alike — reads the stamp back via
+    `read_stamp` and refuses if its `bundle_digest` no longer matches the bundle actually being
+    read, so a résumé is never produced from resolved literals the owner never saw. `read_stamp`
+    raises `ProfileBundleError`, not `ProjectionError`, for a stamp that fails to parse or
+    validate against the current schema — that is deliberately allowed to propagate unwrapped
+    here, exactly as `stale_projection_approval`'s propagation already worked before this
+    function absorbed it; every caller of `project_pool` must catch both.
     """
     declaration = load_declaration(declaration_path)
     digest = projection_digest(declaration)
@@ -107,6 +120,17 @@ def project_pool(
             f"the bundle at {bundle_root} could not be read to produce a pool: {exc}",
             where=str(bundle_root),
         )
+
+    stamp = read_stamp(config_dir, digest)
+    if stamp.bundle_digest != selection.bundle_digest:
+        raise_violation(
+            ProjectionIssue.STALE_PROJECTION_APPROVAL,
+            "the owner's approval was reviewed against a different bundle revision; the "
+            "resolved template values may no longer match the bundle's current facts. Run "
+            "approve-projection again after reviewing the current text",
+            where=digest,
+        )
+
     ctx = context_from_documents(
         documents, root=selection.root, mode="revision", bundle_root=bundle_root
     )

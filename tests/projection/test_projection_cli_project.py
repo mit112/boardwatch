@@ -5,12 +5,14 @@ Every test drives the real Typer app (`boardwatch.cli.app.app`) through `CliRunn
 cover the two owner-gate states: `approved_env` (a promoted bundle, a matching stamp) and
 `unapproved_env` (the same bundle, no stamp at all).
 
-`--check`'s whole point (R30) is the case an unedited, still-approved declaration cannot otherwise
-reveal: the bundle moving out from under an approval that never recorded which revision it was
-made against. `promote_next_revision` (`tests.profile_bundle.conftest`) is what produces a second,
-genuinely different bundle digest at the same `bundle_root` without touching `projection.yaml` at
-all — the one scenario `project_pool`'s own owner-gate check (keyed on `projection_digest` alone)
-cannot see.
+There used to be a `--check` flag here for the case an unedited, still-approved declaration cannot
+otherwise reveal: the bundle moving out from under an approval that never recorded which revision
+it was made against. D-167 made that comparison unconditional inside `project_pool` itself and
+deleted the flag: an opt-in check on a consent control is the wrong shape, and once the comparison
+fires on every call, a flag that only ever repeated it is a check that cannot fire differently —
+this repo's own rule for deleting one. `promote_next_revision` (`tests.profile_bundle.conftest`) is
+what produces a second, genuinely different bundle digest at the same `bundle_root` without
+touching `projection.yaml` at all — the scenario this file's bundle-drift tests exercise.
 """
 
 from __future__ import annotations
@@ -146,16 +148,16 @@ def test_json_envelope_carries_all_seven_keys(approved_env: Env) -> None:
     assert set(body.keys()) == REQUIRED_JSON_KEYS
 
 
-def test_check_exits_nonzero_after_the_declaration_is_edited(approved_env: Env) -> None:
+def test_exits_nonzero_after_the_declaration_is_edited(approved_env: Env) -> None:
     """The declaration's own digest changed, so the stamp bound to the OLD digest no longer
-    matches — `project_pool`'s owner gate fires this, not `--check`'s own bundle comparison (see
-    the sibling test below, which proves the two are distinguishable)."""
+    matches — `project_pool`'s owner gate (`stamp_exists`) fires this, distinct from the
+    bundle-drift comparison the sibling tests below exercise."""
     text = approved_env.declaration.read_text(encoding="utf-8")
     edited = text.replace("open_range_label: Present", "open_range_label: Ongoing")
     assert edited != text, "the fixture's own anchor text was not found"
     approved_env.declaration.write_text(edited, encoding="utf-8")
 
-    result = run(approved_env, ["--check", "--json"])
+    result = run(approved_env, ["--json"])
     assert result.exit_code != 0
     body = payload(result)
     assert body["outcome"] == "findings"
@@ -166,30 +168,32 @@ def test_check_exits_nonzero_after_the_declaration_is_edited(approved_env: Env) 
 
 
 def test_no_boardwatch_db_is_created_anywhere_under_the_data_dir(approved_env: Env) -> None:
-    for args in (["--json"], ["--check"], ["--check", "--json"], []):
+    for args in (["--json"], []):
         run(approved_env, args)
         assert not approved_env.database.exists(), f"{args} created {approved_env.database.name}"
     assert not approved_env.data_dir.exists(), "project should not create the data directory"
 
 
 # --------------------------------------------------------------------------------------
-# R30: --check's own, otherwise-unreachable job — bundle drift an unedited declaration hides
+# D-167: the bundle-digest comparison is unconditional inside `project_pool` — bundle drift an
+# unedited declaration hides is refused on every path, not behind an opt-in flag.
 # --------------------------------------------------------------------------------------
 
 
-def test_check_exits_zero_when_neither_bundle_nor_declaration_changed(approved_env: Env) -> None:
-    result = run(approved_env, ["--check", "--json"])
+def test_exits_zero_when_neither_bundle_nor_declaration_changed(approved_env: Env) -> None:
+    result = run(approved_env, ["--json"])
     assert result.exit_code == 0, result.output
     assert payload(result)["outcome"] == "clean"
 
 
-def test_check_exits_nonzero_when_only_the_bundle_changed(approved_env: Env) -> None:
-    """The declaration is byte-for-byte what was approved; only the bundle moved. Plain
-    `project_pool` cannot see this at all (its owner gate keys on `projection_digest` alone) — this
-    is the one case `--check`'s own stamp-vs-pool `bundle_digest` comparison exists for."""
+def test_exits_nonzero_when_only_the_bundle_changed(approved_env: Env) -> None:
+    """The declaration is byte-for-byte what was approved; only the bundle moved.
+    `project_pool` reads the stamp back and compares its `bundle_digest` against the bundle
+    actually being read, unconditionally (D-167) — this used to be `--check`'s own,
+    otherwise-unreachable job; now plain `project` refuses here on its own."""
     promote_next_revision(approved_env.tree, mutate=_add_second_skill)
 
-    result = run(approved_env, ["--check", "--json"])
+    result = run(approved_env, ["--json"])
     assert result.exit_code != 0
     body = payload(result)
     assert body["outcome"] == "findings"
@@ -197,18 +201,6 @@ def test_check_exits_nonzero_when_only_the_bundle_changed(approved_env: Env) -> 
     assert IssueCode.STALE_APPROVAL_STAMP.value in codes
     issues = [d["details"].get("projection_issue") for d in body["diagnostics"]]
     assert "stale_projection_approval" in issues
-
-
-def test_plain_project_exits_zero_when_only_the_bundle_changed(approved_env: Env) -> None:
-    """The other half of the same scenario, WITHOUT `--check`: proves `--check` is not a no-op
-    that merely repeats what plain `project` already does. If this test could not be written —
-    if plain `project` also refused here — `--check` would never change any outcome, exactly the
-    "a check that cannot fire is deleted" trap R30 exists to avoid."""
-    promote_next_revision(approved_env.tree, mutate=_add_second_skill)
-
-    result = run(approved_env, ["--json"])
-    assert result.exit_code == 0, result.output
-    assert payload(result)["outcome"] == "clean"
 
 
 # --------------------------------------------------------------------------------------
@@ -286,13 +278,13 @@ def test_plain_text_output_never_leaks_an_absolute_bundle_path(unapproved_env: E
 # --------------------------------------------------------------------------------------
 
 
-def test_check_with_a_legacy_stamp_missing_bundle_digest_is_a_typed_refusal_not_a_crash(
+def test_a_legacy_stamp_missing_bundle_digest_is_a_typed_refusal_not_a_crash(
     approved_env: Env,
 ) -> None:
     """The reviewer's own repro: a stamp written before `bundle_digest` was required — exactly
     what anyone who ran `approve-projection` before this commit has on disk — must not surface as
-    a bare `pydantic.ValidationError`. `--check` is the only `project` path that reads the stamp
-    back (`read_stamp`), so it is the only path that can reach this."""
+    a bare `pydantic.ValidationError`. `project_pool` reads the stamp back (`read_stamp`) on
+    every call now (D-167), so plain `project` reaches this with no flag needed."""
     digest = projection_digest(load_declaration(approved_env.declaration))
     path = stamp_path(approved_env.config_dir, digest)
     logical = PurePosixPath(f"{APPROVALS_DIR}/{path.name}")
@@ -302,7 +294,7 @@ def test_check_with_a_legacy_stamp_missing_bundle_digest_is_a_typed_refusal_not_
     del legacy["bundle_digest"]
     path.write_bytes(document_bytes(legacy, logical_path=logical))
 
-    result = run(approved_env, ["--check", "--json"])
+    result = run(approved_env, ["--json"])
 
     # `exit_code != 0` alone cannot discriminate a typed refusal from an uncaught crash — both
     # report the same code through `CliRunner`. `SystemExit` is what a clean `typer.Exit` raises;
