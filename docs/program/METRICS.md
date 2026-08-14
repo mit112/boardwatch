@@ -3612,7 +3612,7 @@ résumé-surfaced, validating skill (§6.8 stop condition at the validation laye
 | Commits on `gate-b-extraction-slice-a` | promotion slice (`candidate_promotion.py` + `authoring.promote_candidates` + `promote-candidates` CLI) + D-182/STATE/METRICS |
 | New tests | **7** in `test_candidate_promotion.py` (headline · draft validates · unresolved/no-evidence · status derivation · re-run refuses · owner-confirm reaches a résumé skill · CLI E2E) |
 | Subagents dispatched | **2** — validation-surface recon, promote/CLI-flow recon (both landed) |
-| Full local gate | **PENDING — running** |
+| Full local gate | **green — `make check` EXIT=0, 6301 passed / 4 xfailed, 225s** |
 | Design process | brainstorming (one owner fork resolved) → TDD; no new spec-review round (D-178) |
 | Merged / pushed | **no** — branch still unmerged for Mit's big-checkpoint review (his standing preference) |
 
