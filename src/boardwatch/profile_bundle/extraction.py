@@ -28,6 +28,7 @@ from dataclasses import dataclass, field
 from datetime import date
 
 from boardwatch.profile_bundle.enumerators import EnumeratedSourceRecord
+from boardwatch.profile_bundle.errors import IssueCode
 from boardwatch.profile_bundle.imports import ProposedCandidate
 from boardwatch.profile_bundle.models.facts import (
     DateRangeValue,
@@ -47,10 +48,39 @@ VALUE_NOT_TYPEABLE = "value_not_typeable"
 FREE_TEXT_DEFERRED = "free_text_deferred"
 NO_PREDICATE_EXISTS = "no_predicate_exists"
 
+#: The closed drain reasons as a set, so a deferral's declared reason is checked against the
+#: emitter's own constants rather than a restatement of them.
+DRAIN_REASONS: frozenset[str] = frozenset(
+    {
+        NO_MAPPING_FOR_LOCATOR,
+        UNSUPPORTED_ENTRY_KIND,
+        SPAN_NOT_GROUNDED,
+        VALUE_NOT_TYPEABLE,
+        FREE_TEXT_DEFERRED,
+        NO_PREDICATE_EXISTS,
+    }
+)
+
+#: The closed vocabularies a mapping's non-predicate fields draw on. They are the interpreter's own
+#: `_build_value` / `_resolve_kind` / slot-routing branches, so a mapping naming anything outside
+#: them is refused up front instead of reaching a `NotImplementedError` or a bare `KeyError`.
+VALUE_TYPES: frozenset[str] = frozenset({"string", "skill_ref", "year_month", "date_range"})
+SLOT_GROUPS: frozenset[str] = frozenset({"metadata", "contribution"})
+KIND_SOURCES: frozenset[str] = frozenset({"self", "condition"})
+VALUE_SELECTORS: frozenset[str] = frozenset({"range_start", "range_end"})
+
 
 class ExtractionMappingError(Exception):
     """A mapping that cannot be a legal member of its adapter/catalog — a build/validation error,
-    never a per-record runtime surprise (§6.2a "catalog-checked, once, before extraction")."""
+    never a per-record runtime surprise (§6.2a "catalog-checked, once, before extraction").
+
+    Carries the `IssueCode` its violation *is*, typed at the raise site, so a caller renders a
+    diagnostic without classifying the message text.
+    """
+
+    def __init__(self, message: str, *, code: IssueCode) -> None:
+        super().__init__(message)
+        self.code = code
 
 
 class _ValueNotTypeable(Exception):
@@ -361,7 +391,9 @@ def _resolve_kind(
             return None
         kind = _field_value(parent.atomic_value, "kind")
         return str(kind) if kind is not None else None
-    raise ExtractionMappingError(f"unknown kind_source {rule.kind_source!r}")
+    raise ExtractionMappingError(
+        f"unknown kind_source {rule.kind_source!r}", code=IssueCode.MODEL_VALIDATION_ERROR
+    )
 
 
 def run_extraction(
@@ -456,7 +488,12 @@ def named_predicates(mapping: ExtractionMapping) -> frozenset[str]:
     return frozenset(predicates)
 
 
-def validate_mapping_against_catalog(mapping: ExtractionMapping, catalog: PredicateCatalog) -> None:
+def validate_mapping_against_catalog(
+    mapping: ExtractionMapping,
+    catalog: PredicateCatalog,
+    *,
+    require_known_predicates: bool = True,
+) -> None:
     """Refuse a mapping that cannot be a legal member of the seeded catalog — once, before any
     extraction runs (§6.2a). This is what turns the revision-5 misrouting (a `project` entry's facts
     landing on `employment.*`) into a caught *class* rather than a per-entry
@@ -466,39 +503,108 @@ def validate_mapping_against_catalog(mapping: ExtractionMapping, catalog: Predic
     its `legal_subject_kinds` must admit that entry kind's subject kind. Two slots of one kind's one
     group, or two literal rules with the same pattern, emitting the same predicate is an ambiguous
     mapping the author must resolve (§6.2a).
+
+    Every non-predicate field is checked against its closed vocabulary too, because the mapping is
+    owner-editable bundle data: an unknown `value_type` or `kind_source` that reached the
+    interpreter would surface as an unhandled `NotImplementedError` or `ExtractionMappingError`
+    mid-run rather than as a refusal before any record is read.
+
+    `require_known_predicates=False` relaxes exactly one arm, for the host-bundle check: a catalog
+    may legitimately be a *subset* of the one a builtin mapping was written against (the example
+    bundle's is, deliberately — D-179), and a rule naming a predicate that catalog does not carry
+    simply cannot fire there. Such a rule is skipped rather than refused; if a record does reach it,
+    typing the proposal against the catalog refuses downstream. The misrouting arm — a predicate the
+    catalog *does* carry, on a subject kind it does not admit — is enforced either way, because that
+    is the guarantee §6.2a exists to make.
     """
     by_id = catalog.by_id
 
     for rule in mapping.literal_rules:
         if rule.predicate not in by_id:
-            raise ExtractionMappingError(f"literal rule names unknown predicate {rule.predicate!r}")
+            if not require_known_predicates:
+                continue
+            raise ExtractionMappingError(
+                f"literal rule names unknown predicate {rule.predicate!r}",
+                code=IssueCode.UNKNOWN_PREDICATE,
+            )
+        if rule.value_type not in VALUE_TYPES:
+            raise ExtractionMappingError(
+                f"literal rule names unknown value_type {rule.value_type!r} "
+                f"(known: {sorted(VALUE_TYPES)})",
+                code=IssueCode.MODEL_VALIDATION_ERROR,
+            )
     literal_by_predicate: dict[tuple[str, str], int] = {}
     for rule in mapping.literal_rules:
         key = (rule.locator_pattern, rule.predicate)
         literal_by_predicate[key] = literal_by_predicate.get(key, 0) + 1
         if literal_by_predicate[key] > 1:
             raise ExtractionMappingError(
-                f"two literal rules emit {rule.predicate!r} for {rule.locator_pattern!r}"
+                f"two literal rules emit {rule.predicate!r} for {rule.locator_pattern!r}",
+                code=IssueCode.MODEL_VALIDATION_ERROR,
+            )
+
+    for routed in mapping.model_routed_rules:
+        if routed.kind_source not in KIND_SOURCES:
+            raise ExtractionMappingError(
+                f"model-routed rule names unknown kind_source {routed.kind_source!r} "
+                f"(known: {sorted(KIND_SOURCES)})",
+                code=IssueCode.MODEL_VALIDATION_ERROR,
+            )
+        if routed.emits_group not in SLOT_GROUPS:
+            raise ExtractionMappingError(
+                f"model-routed rule names unknown emits_group {routed.emits_group!r} "
+                f"(known: {sorted(SLOT_GROUPS)})",
+                code=IssueCode.MODEL_VALIDATION_ERROR,
+            )
+
+    for deferral in mapping.deferrals:
+        if deferral.reason not in DRAIN_REASONS:
+            raise ExtractionMappingError(
+                f"deferral for {deferral.locator_pattern!r} names unknown reason "
+                f"{deferral.reason!r} (known: {sorted(DRAIN_REASONS)})",
+                code=IssueCode.MODEL_VALIDATION_ERROR,
             )
 
     for kind_name, spec in mapping.entry_kind_model.items():
         seen_in_group: dict[str, set[str]] = {}
         for slot in spec.slots:
             predicate = by_id.get(slot.predicate)
-            if predicate is None:
+            if predicate is None and require_known_predicates:
                 raise ExtractionMappingError(
-                    f"entry kind {kind_name!r} slot names unknown predicate {slot.predicate!r}"
+                    f"entry kind {kind_name!r} slot names unknown predicate {slot.predicate!r}",
+                    code=IssueCode.UNKNOWN_PREDICATE,
                 )
-            admitted = {kind.value for kind in predicate.legal_subject_kinds}
-            if spec.subject_kind not in admitted:
+            if predicate is not None:
+                admitted = {kind.value for kind in predicate.legal_subject_kinds}
+                if spec.subject_kind not in admitted:
+                    raise ExtractionMappingError(
+                        f"{slot.predicate!r} does not admit subject kind {spec.subject_kind!r} "
+                        f"(entry kind {kind_name!r}); its legal subjects are {sorted(admitted)}",
+                        code=IssueCode.PREDICATE_SUBJECT_KIND_ILLEGAL,
+                    )
+            if slot.value_type not in VALUE_TYPES:
                 raise ExtractionMappingError(
-                    f"{slot.predicate!r} does not admit subject kind {spec.subject_kind!r} "
-                    f"(entry kind {kind_name!r}); its legal subjects are {sorted(admitted)}"
+                    f"entry kind {kind_name!r} slot names unknown value_type "
+                    f"{slot.value_type!r} (known: {sorted(VALUE_TYPES)})",
+                    code=IssueCode.MODEL_VALIDATION_ERROR,
+                )
+            if slot.group not in SLOT_GROUPS:
+                raise ExtractionMappingError(
+                    f"entry kind {kind_name!r} slot names unknown group {slot.group!r} "
+                    f"(known: {sorted(SLOT_GROUPS)})",
+                    code=IssueCode.MODEL_VALIDATION_ERROR,
+                )
+            if slot.value_selector is not None and slot.value_selector not in VALUE_SELECTORS:
+                raise ExtractionMappingError(
+                    f"entry kind {kind_name!r} slot names unknown value_selector "
+                    f"{slot.value_selector!r} (known: {sorted(VALUE_SELECTORS)})",
+                    code=IssueCode.MODEL_VALIDATION_ERROR,
                 )
             group = seen_in_group.setdefault(slot.group, set())
             if slot.predicate in group:
                 raise ExtractionMappingError(
-                    f"entry kind {kind_name!r} group {slot.group!r} emits {slot.predicate!r} twice"
+                    f"entry kind {kind_name!r} group {slot.group!r} emits {slot.predicate!r} twice",
+                    code=IssueCode.MODEL_VALIDATION_ERROR,
                 )
             group.add(slot.predicate)
 

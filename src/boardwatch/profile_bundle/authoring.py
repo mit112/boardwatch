@@ -96,7 +96,9 @@ from boardwatch.profile_bundle.errors import (
 from boardwatch.profile_bundle.extraction import (
     ExtractionFailure,
     ExtractionMapping,
+    ExtractionMappingError,
     run_extraction,
+    validate_mapping_against_catalog,
 )
 from boardwatch.profile_bundle.extraction_mapping import mappings_from_document
 from boardwatch.profile_bundle.imports import (
@@ -542,6 +544,7 @@ def extract_source(
         resolved = _source_bytes(bundle_root, spec, source_bytes)
         enumerated = _enumerated(spec, resolved, _approved_scope(ledger, spec))
         mapping = _mapping_for(mappings, enumerated.enumerator_id)
+        _checked_mapping(mapping, catalog, enumerated.enumerator_id)
 
         result = run_extraction(enumerated.records, mapping)
         fresh = _extracted_candidates(enumerated, result.proposals, catalog)
@@ -847,6 +850,35 @@ def _mapping_for(mappings: ExtractionMappingsDocument, adapter_id: str) -> Extra
             record_id=adapter_id,
         )
     return resolved
+
+
+def _checked_mapping(
+    mapping: ExtractionMapping, catalog: PredicateCatalog, adapter_id: str
+) -> None:
+    """Refuse a seeded mapping that is not a legal member of the seeded catalog, once, before any
+    record is read (§6.2a "catalog-checked, once, before extraction").
+
+    `policy/extraction-mappings.yaml` is owner-editable bundle data, so this is the gate that keeps
+    a misrouted mapping — a `project` entry's slots naming `employment.*` — from reaching the
+    interpreter and landing candidates on an illegal subject, which would surface only at promotion
+    as `PREDICATE_SUBJECT_KIND_ILLEGAL`. The violation's own `IssueCode` is typed at the raise site,
+    so nothing here classifies a message.
+
+    Predicates this bundle's catalog does not carry are not refused here: a host catalog may be a
+    deliberate subset of the one the builtin mapping was written against (D-179), and a rule that
+    cannot fire is not this gate's business — typing a proposal refuses it downstream if one ever
+    does. Misrouting is enforced regardless.
+    """
+    try:
+        validate_mapping_against_catalog(mapping, catalog, require_known_predicates=False)
+    except ExtractionMappingError as exc:
+        raise _refusal(
+            exc.code,
+            f"{EXTRACTION_MAPPINGS_PATH} declares a mapping for adapter {adapter_id!r} that the "
+            f"seeded catalog does not admit: {exc}",
+            path=EXTRACTION_MAPPINGS_PATH.as_posix(),
+            record_id=adapter_id,
+        ) from exc
 
 
 def _extracted_candidates(

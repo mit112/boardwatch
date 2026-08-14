@@ -38,6 +38,7 @@ SOURCES = PurePosixPath("policy/sources.yaml")
 LEDGER = PurePosixPath("imports/source-ledger.yaml")
 CANDIDATES = PurePosixPath("imports/candidates.yaml")
 REPORT = PurePosixPath("imports/extraction-report.yaml")
+MAPPINGS = PurePosixPath("policy/extraction-mappings.yaml")
 
 RESUME_SOURCE_ID = "source.synthetic-resume"
 
@@ -330,6 +331,71 @@ def test_extract_refuses_an_undeclared_source_the_import_way(env: Env, resume_fi
     body = json.loads(result.output)
     assert body["result"] == {}
     assert [item["code"] for item in body["diagnostics"]] == ["broken_reference"]
+
+
+def _misroute_project_slots(env: Env) -> None:
+    """Rewrite the seeded mapping so the `project` entry kind emits an `employment.*` predicate.
+
+    This is the revision-5 misrouting authored by hand into the bundle, which is legal to do
+    because `policy/extraction-mappings.yaml` is owner-editable data.
+    """
+    path = env.draft / "policy" / "extraction-mappings.yaml"
+    document = load_yaml_bytes(path.read_bytes(), logical_path=MAPPINGS)
+    assert isinstance(document, dict)
+    adapter = document["adapters"][0]
+    project = next(entry for entry in adapter["entry_kind_model"] if entry["kind"] == "project")
+    misrouted = next(slot for slot in project["slots"] if slot["predicate"] == "project.name")
+    misrouted["predicate"] = "employment.organization"
+    path.write_bytes(quoted_yaml(document, logical_path=MAPPINGS))
+
+
+def test_extract_refuses_a_mapping_the_seeded_catalog_does_not_admit(
+    env: Env, resume_file: Path
+) -> None:
+    """A misrouted mapping is refused before any record is read (§6.2a, D-181).
+
+    `project.name` swapped for `employment.organization` on the `project` entry kind is a mapping
+    the catalog cannot admit — `employment.organization`'s legal subject is `employment`, not
+    `project`. Unwired, the interpreter accepted this and landed the candidate on an illegal
+    subject, surfacing only at promotion as the very `predicate_subject_kind_illegal` the
+    catalog check exists to pre-empt. The refusal carries that same typed code, at `extract`'s
+    usual findings tier, and nothing is written.
+    """
+    assert import_resume(env, resume_file).exit_code == 0
+    before = _resume_candidate_ids(env)
+    _misroute_project_slots(env)
+
+    result = extract_resume(env, resume_file, extra=["--json"])
+
+    assert result.exit_code == 1, result.output
+    body = json.loads(result.output)
+    assert body["result"] == {}
+    assert [item["code"] for item in body["diagnostics"]] == ["predicate_subject_kind_illegal"]
+    # refused *before* extraction, so the candidate documents are exactly as `import` left them
+    assert _resume_candidate_ids(env) == before
+
+
+def test_extract_refuses_a_mapping_naming_a_value_type_the_interpreter_cannot_build(
+    env: Env, resume_file: Path
+) -> None:
+    """A closed-vocabulary field is checked with the predicates, not left to fail mid-run.
+
+    `value_type` is owner-editable data reaching a closed branch set in `_build_value`; an unknown
+    one used to escape the catalog check and surface as an unhandled `NotImplementedError` partway
+    through a multi-write command.
+    """
+    assert import_resume(env, resume_file).exit_code == 0
+    path = env.draft / "policy" / "extraction-mappings.yaml"
+    document = load_yaml_bytes(path.read_bytes(), logical_path=MAPPINGS)
+    assert isinstance(document, dict)
+    document["adapters"][0]["literal_rules"][0]["value_type"] = "telephone_number"
+    path.write_bytes(quoted_yaml(document, logical_path=MAPPINGS))
+
+    result = extract_resume(env, resume_file, extra=["--json"])
+
+    assert result.exit_code == 1, result.output
+    body = json.loads(result.output)
+    assert [item["code"] for item in body["diagnostics"]] == ["model_validation_error"]
 
 
 def _resume_scoped(env: Env) -> tuple[SourceLedger, ExtractionReport]:
