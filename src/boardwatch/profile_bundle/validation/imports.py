@@ -50,6 +50,7 @@ from boardwatch.profile_bundle.models.imports import (
     Disposition,
     ExclusionLedger,
     ExclusionReason,
+    ExtractionReport,
     SourceLedger,
     SourceLedgerSource,
 )
@@ -59,6 +60,7 @@ LEDGER_PATH = "imports/source-ledger.yaml"
 EXCLUSIONS_PATH = "imports/exclusions.yaml"
 CANDIDATES_PATH = "imports/candidates.yaml"
 SOURCES_PATH = "policy/sources.yaml"
+EXTRACTION_REPORT_PATH = "imports/extraction-report.yaml"
 
 
 @dataclass(frozen=True)
@@ -462,6 +464,74 @@ def _dispositions_agree_with_the_exclusion_document(
             excluded=excluded,
             exclusions=counted,
         )
+
+
+def validate_extraction_report(
+    ledger: SourceLedger, report: ExtractionReport
+) -> tuple[Diagnostic, ...]:
+    """§6.3a: exactly one closed reason for every `review_required` record, and none for any other.
+
+    The extraction report is the drain's durable carrier — it explains the *resulting* unresolved
+    state and never asserts a disposition, which stays derived from candidates and exclusions
+    (`_dispositions_agree_with_the_exclusion_document`). This is that same reconciliation for the
+    `review_required` quarantine: a review_required record the report leaves unexplained, a reason
+    attached to an already-dispositioned record, and a reason naming a record the ledger does not
+    enumerate all break the 1:1 accounting the report must hold. "Two reasons for one record" is not
+    reachable here — the model refuses a duplicate `source_record_id` at parse time.
+
+    A pure function on the two documents, not a `ValidationContext` check, because reaching it from
+    `validate_imports` needs the report on `ctx.index`, which needs the document-kind, layout, and
+    schema-v2 registration this lane deliberately does not touch.
+
+    TODO(schema-v2): register document kind for `imports/extraction-report.yaml` and wire this into
+    `validate_imports` alongside `_dispositions_agree_with_the_exclusion_document` once
+    `ctx.index.extraction_report` exists.
+    """
+    findings: list[Diagnostic] = []
+    disposition_by_record = {
+        record.source_record_id: record.disposition for record in ledger.records
+    }
+    explained = report.by_record
+
+    for record in ledger.records:
+        entry = explained.get(record.source_record_id)
+        if record.disposition is Disposition.REVIEW_REQUIRED:
+            if entry is None:
+                findings.append(
+                    diagnostic(
+                        IssueCode.IMPORT_DENOMINATOR_MISMATCH,
+                        f"{record.source_record_id} is review_required but "
+                        f"{EXTRACTION_REPORT_PATH} gives no reason; the drain must carry exactly "
+                        "one closed reason for every unresolved record",
+                        path=EXTRACTION_REPORT_PATH,
+                        record_id=record.source_record_id,
+                    )
+                )
+        elif entry is not None:
+            findings.append(
+                diagnostic(
+                    IssueCode.IMPORT_DENOMINATOR_MISMATCH,
+                    f"{record.source_record_id} is dispositioned {record.disposition.value} but "
+                    f"{EXTRACTION_REPORT_PATH} carries reason {entry.reason.value!r}; §6.3a "
+                    "forbids a report entry for an imported or excluded record",
+                    path=EXTRACTION_REPORT_PATH,
+                    record_id=record.source_record_id,
+                )
+            )
+
+    for entry in report.entries:
+        if entry.source_record_id not in disposition_by_record:
+            findings.append(
+                diagnostic(
+                    IssueCode.IMPORT_DENOMINATOR_MISMATCH,
+                    f"{entry.source_record_id} carries an extraction-report reason but "
+                    f"{LEDGER_PATH} does not enumerate it",
+                    path=EXTRACTION_REPORT_PATH,
+                    record_id=entry.source_record_id,
+                )
+            )
+
+    return tuple(findings)
 
 
 def _imported_records_name_their_own_candidates(ctx: ValidationContext) -> Iterator[Diagnostic]:

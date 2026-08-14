@@ -270,3 +270,61 @@ class ExclusionLedger(StrictModel):
     @property
     def by_record(self) -> dict[str, ExclusionRecord]:
         return {exclusion.source_record_id: exclusion for exclusion in self.exclusions}
+
+
+class ExtractionReportReason(StrEnum):
+    """The closed reasons a `review_required` record stays unresolved (§6.3a).
+
+    The report is the drain's durable carrier: exactly one reason is attached to every
+    `review_required` record, and none to an `imported` or `excluded` one. It explains the resulting
+    unresolved state and never asserts a disposition — disposition stays derived from candidates and
+    exclusions. Out-of-catalog is a failure, never a new bucket.
+    """
+
+    NO_MAPPING_FOR_LOCATOR = "no_mapping_for_locator"
+    UNSUPPORTED_ENTRY_KIND = "unsupported_entry_kind"
+    SPAN_NOT_GROUNDED = "span_not_grounded"
+    VALUE_NOT_TYPEABLE = "value_not_typeable"
+    FREE_TEXT_DEFERRED = "free_text_deferred"
+    NO_PREDICATE_EXISTS = "no_predicate_exists"
+
+
+class ExtractionReportEntry(StrictModel):
+    """One `review_required` record and the closed reason it stays unresolved (§6.3a)."""
+
+    source_record_id: SourceRecordId
+    reason: ExtractionReportReason
+
+
+class ExtractionReport(StrictModel):
+    """`imports/extraction-report.yaml`.
+
+    Keyed by `source_record_id` and bound into the candidate digest, it explains every
+    `review_required` record without asserting disposition (§6.3a). A fresh bundle has no sources,
+    so the seed is empty.
+    """
+
+    report_version: PositiveInt
+    entries: tuple[ExtractionReportEntry, ...]
+
+    @model_validator(mode="after")
+    def _one_reason_per_record(self) -> ExtractionReport:
+        seen: set[str] = set()
+        for entry in self.entries:
+            if entry.source_record_id in seen:
+                raise ValueError(
+                    f"{entry.source_record_id!r} is explained twice; two reasons for one record "
+                    "makes the reason-by-reason totals overcount the denominator"
+                )
+            seen.add(entry.source_record_id)
+        return self
+
+    def counts_by_reason(self) -> dict[ExtractionReportReason, int]:
+        counts = dict.fromkeys(ExtractionReportReason, 0)
+        for entry in self.entries:
+            counts[entry.reason] += 1
+        return counts
+
+    @property
+    def by_record(self) -> dict[str, ExtractionReportEntry]:
+        return {entry.source_record_id: entry for entry in self.entries}
