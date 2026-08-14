@@ -33,18 +33,20 @@ produces Mit's résumés daily (measured: 8/28/24/18 PDFs on 08-09…08-12) — 
 
 ### The active track — Gate B, bundle to résumé
 
-> **NEXT = Mit approves `projection.yaml` (TTY) → first real render.** The Stage-1 pipeline now PRODUCES a
-> projected résumé end-to-end on the real bundle (proven, non-destructively — see the scratchpad
-> `RENDER-HANDOFF.md` + `PROJECTED_RESUME.yaml`). Two renderer features shipped this session: **D-187** skill_groups
-> synthesized from the bundle catalog (one versioned place), and **D-188** `bullet_predicates` — an entry's bullets
-> come from facts, not only claims, so `employment.accomplishment` facts render directly. Result on Mit's bundle:
-> synthesized skills (4 groups/10) + **3 experience entries with 7 real accomplishment bullets**. What's left is
-> Mit's: (a) `approve-projection` (TTY-only, `!` does NOT satisfy it) then `profile-bundle project` (JD-blind master
-> render, **no `--scorer`**; that only gates `resume project`, Task 20, D-168); (b) **project bullets** — all 3
-> projects render 0 bullets because their `project.contribution` facts are the 6 `unresolved` Gate-B blockers (repo
-> evidence makes them effective → bullets appear); (c) **education** — no education facts in the bundle (both
-> `owner_excluded`), so the shell supplies it (D-156: renderer is template-hardcoded for header/education).
-> The claims/`ClaimRecord` path (Path 1) is deferred, available if tailoring later needs wording/metric control.
+> **NEXT = Mit approves `projection.yaml` (TTY) → first real render.** A real 1-page **PDF résumé was produced
+> from the bundle this session** (scratchpad `mit-resume-full.pdf` + `RENDER-HANDOFF.md`), the first boardwatch has
+> ever rendered with Mit's content: his header + both degrees + synthesized skills (4 groups/10) + **3 experience
+> entries with 7 real accomplishment bullets** + a Projects section. Built non-destructively (bundle read-only) via
+> a preview template carrying Mit's header/education (D-156). Three renderer changes shipped + pushed: **D-187**
+> skill_groups synthesized from the bundle catalog; **D-188** `bullet_predicates` (bullets from facts, not only
+> claims); and a **LaTeX fix** (`809a62d`) so a 0-bullet entry renders heading-only instead of crashing tectonic.
+> What's left is Mit's: `approve-projection` (TTY-only, `!` does NOT satisfy it) then `profile-bundle project`
+> (JD-blind, **no `--scorer`**; that only gates `resume project`, Task 20, D-168). **Two rough edges both trace to
+> the SAME root — Gate B's 9 evidence blockers**: (a) the 3 projects render 0 bullets (their `project.contribution`
+> facts are the 6 `unresolved` `repository_verified` blockers → repo evidence makes them effective); (b) the first
+> experience heading overflows because it uses `{@display_name}` (the employer name, `employment.organization`, is
+> `unresolved` — the 3 `private_document_verified` blockers). **Closing Gate B's 9 is the highest-leverage step to a
+> polished résumé.** Education is absent (both `owner_excluded`), so the shell supplies it. Path 1 (claims) deferred.
 
 **MERGED and at `revision 2`, all on the real bundle (D-184/185/186).** Gate B is on `main`; the merge review's
 one blocker — `validate_mapping_against_catalog` had **no production call site**, so a misrouted mapping
