@@ -35,7 +35,8 @@ the 14-day clock therefore costs nothing**, which is what makes the reorientatio
 **`resume.yaml` is an import source, never hand-fixed (D-155).** The bundle design already names it:
 `source_kind: boardwatch_resume`, adapter `boardwatch-resume-v1`. Run against the live file it enumerates
 **81 source records** (header 2 · education 2 · skill-groups 58 · entry metadata 6 · bullets 13) — Gate B's
-denominator for that source. The importer exists (~1,400 lines) but **has no CLI command**.
+denominator for that source. The importer (~1,400 lines across `enumerators.py` + `imports.py`) now has a
+CLI command: **`profile-bundle import`** (D-170). It writes `imports/source-ledger.yaml` and nothing else.
 
 **The projection design is at revision 3** (`docs/superpowers/specs/…-projection-design.md`), after three
 external review rounds, all REWORK. **Do NOT bump it to revision 4** — D-158 closed that loop on purpose,
@@ -68,11 +69,13 @@ plan needs are absent**.
 **The plan has had its mechanical check and did NOT need a design review** (D-160). A full design
 review was considered and declined — the expensive check happened in the right place, the preflight.
 
-### Execution — BUILD COMPLETE. Branch `projection-v1`, UNPUSHED, awaiting Mit's merge decision
+### Execution — MERGED AND PUSHED (2026-08-14). Mit approved the merge
 
-Forked from `main` at `b200112`; working tree clean, `main` untouched. **All 22 dispatchable tasks are
-complete and reviewed clean.** Task 20 is Mit's — ten real postings ranked by hand — and blocks only
-Task 22's *selection*, never any code.
+`projection-v1` fast-forwarded into `main` and pushed; `origin/main` carries all 46 commits. The
+pre-merge gate was green four ways at the merged tree — exit 0, `All checks passed!`, **6,218 passed / 4
+xfailed in 275s**, coverage **95.81%**, all five stages present — and `gitleaks` was clean over the range.
+**All 22 dispatchable tasks are complete and reviewed clean.** Task 20 is Mit's — ten real postings ranked
+by hand — and blocks only Task 22's *selection*, never any code.
 
 The package holds `errors.py`, `declaration.py`, `grammar.py`, `contract.py`, `shell.py`, `stamp.py`,
 `serialize.py`, `posting.py`, `scoring.py`, `effectiveness.py`, `pool.py`, `manifest.py`,
@@ -89,8 +92,9 @@ could never fire (D-169); and the approval's bundle binding sat on the *review* 
 `resume project`, which actually writes the résumé, approved by existence-check alone (D-167). Both
 fixed; the fix wave was re-reviewed clean and rated **merge-ready**.
 
-**Next action: Mit decides on merge.** The branch is not pushed and `main` is untouched, deliberately.
-Nothing is blocked on further engineering.
+**The merge decision is taken and executed.** Nothing is blocked on further engineering. The plan
+workspace `.superpowers/sdd/2026-08-13-career-profile-projection/` (82 files, gitignored) is still
+intact — it holds every ruling and ~30 review packages, and is deletable whenever Mit is done with it.
 
 **Carried, and deliberately open:** the shell's *content* is bound by no digest — `shell_source` is
 hashed as a filename, and the shell lives outside the bundle, so editing it changes the projected
@@ -101,8 +105,17 @@ Working ledger: `.superpowers/sdd/2026-08-13-career-profile-projection/progress.
 anything that must survive belongs here or in `DECISIONS.md`. It carries every ruling with what each costs
 if wrong.
 
-**Gate B (populating the real bundle) has NOT started**; `{config_dir}/career-profile` does not exist.
-Everything is built against the synthetic example bundle that ships as package data.
+**Gate B has STARTED — its first mechanical blocker is cleared, and no data has moved yet.**
+`profile-bundle import` exists (D-170), so a real source can now reach a draft's ledger without
+transcribing 81 records by hand. **`{config_dir}/career-profile` still does not exist**, nothing has been
+imported, and everything remains built against the synthetic example that ships as package data. The next
+concrete step is Mit's: `profile-bundle init`, declare `resume.yaml` as a source in `policy/sources.yaml`,
+then `import`. **Expect every one of the 81 records to land `review_required` at exit 0** — dispositioning
+them is the Gate B work, and `validate --completeness` is what lists them.
+
+**Still missing for a promotable bundle: candidate extraction.** `build_candidate_package` needs
+*proposals*, and nothing produces them, so `imports/candidates.yaml` stays owner-authored and no record
+can reach `imported` yet. That is the next real design question on this track, not a defect.
 
 **Four import walls exist, in three test files, and no document enumerates them** (D-161, D-162). Each was
 found by tripping it. **Before wiring a new module into a package, grep `tests/` for what constrains that
@@ -146,7 +159,8 @@ moved no program gate. Three facts outlive the detail: **the manifest is written
 | 14-day acceptance | not started | — frozen; the clock measures a frozen system and starts after P6 |
 | P7 Breadth | not started | — |
 | *Gate A (parallel)* | *complete, merged, pushed, CI green* | ***MET*** — *has moved no program gate* |
-| *Projection (active)* | ***BUILD COMPLETE** — all 22 dispatchable tasks complete and reviewed on `projection-v1`, unpushed; whole-branch review clean, gate exit 0. Task 20 is Mit's* | *P0–P4 build gates met; **merge is Mit's call**, and Gate B has not started* |
+| *Projection (active)* | ***MERGED AND PUSHED** — all 22 dispatchable tasks complete and reviewed; whole-branch review clean, gate exit 0 at the merged tree. Task 20 is Mit's* | *P0–P4 build gates met* |
+| *Gate B (active)* | *`profile-bundle import` shipped (D-170) — the importer's missing entry point* | ***NOT MET** — nothing imported, no real bundle exists, and candidate extraction does not exist* |
 
 ### Gate P6, clause by clause
 
