@@ -49,9 +49,9 @@ from boardwatch.profile_bundle.storage import (
 from boardwatch.profile_bundle.validation.context import ValidationContext, context_from_documents
 from boardwatch.projection.contract import check_references
 from boardwatch.projection.declaration import EntryDeclaration, load_declaration, projection_digest
-from boardwatch.projection.effectiveness import resume_facts_for
+from boardwatch.projection.effectiveness import resume_bullet_facts_for, resume_facts_for
 from boardwatch.projection.errors import ProjectionIssue, raise_violation
-from boardwatch.projection.grammar import render_skill, resolve_template
+from boardwatch.projection.grammar import render_skill, render_value, resolve_template
 from boardwatch.projection.shell import load_shell
 from boardwatch.projection.stamp import read_stamp, stamp_exists
 from boardwatch.tailor.model import Bullet, Entry, Resume, SkillGroup
@@ -331,6 +331,31 @@ def _build_entry(
         Bullet(bullet_id=claim_id, text=claims_by_id[claim_id].text, tech_tags=[])
         for claim_id in entry_decl.claims
     ]
+
+    # Fact-derived bullets (D-188): each declared predicate's résumé-surfaced facts, in predicate-
+    # declaration order then index order. `render_value` refuses a non-line kind (a `skill_ref` or
+    # list), and a predicate resolving to nothing is a loud refusal rather than a dropped bullet.
+    for predicate in entry_decl.bullet_predicates:
+        facts = resume_bullet_facts_for(entry_decl.entity_id, predicate, ctx, as_of=as_of)
+        if not facts:
+            raise_violation(
+                ProjectionIssue.BULLET_PREDICATE_NO_FACTS,
+                f"no résumé-surfaced {predicate!r} fact on this entity, so the declared bullet "
+                "source resolves to nothing",
+                where=f"entries: {entry_decl.entity_id}.bullet_predicates: {predicate}",
+            )
+        bullets.extend(
+            Bullet(
+                bullet_id=fact.fact_id,
+                text=render_value(
+                    fact.value,
+                    open_range_label=open_range_label,
+                    where=f"entries: {entry_decl.entity_id}.{predicate}",
+                ),
+                tech_tags=[],
+            )
+            for fact in facts
+        )
 
     return Entry(
         entry_id=_entry_id(entry_decl.entity_id),

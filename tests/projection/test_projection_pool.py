@@ -20,7 +20,11 @@ from boardwatch.profile_bundle.models.skills import SkillRecord
 from boardwatch.profile_bundle.storage import read_current_once
 from boardwatch.projection.declaration import load_declaration, projection_digest
 from boardwatch.projection.errors import ProjectionError, ProjectionIssue
-from boardwatch.projection.pool import _synthesized_skill_groups, project_pool
+from boardwatch.projection.pool import (
+    _synthesized_skill_groups,
+    project_pool,
+    projection_candidate,
+)
 from boardwatch.projection.stamp import write_stamp
 from boardwatch.tailor.model import SkillGroup
 from tests.projection.conftest import bundle_ctx  # noqa: F401  (fixture re-export)
@@ -286,3 +290,114 @@ def test_the_shell_source_resolves_against_config_dir_not_the_bundle_root(
     )
     assert pool.resume.header == ["Example Candidate", "candidate@example.com"]
     assert pool.resume.education == ["Example University"]
+
+
+# --------------------------------------------------------------------------------------
+# Fact-derived bullets (Path 2, D-188): an entry declaring `bullet_predicates` renders the
+# entity's résumé-surfaced facts of those predicates as bullets, so the accomplishment/
+# contribution text the bundle already holds reaches the page without a ClaimRecord. Exercised
+# through `projection_candidate`, which resolves entries with no approval stamp.
+# --------------------------------------------------------------------------------------
+
+
+def _write_declaration(path: Path, entries: list[dict]) -> None:
+    path.write_text(
+        yaml.safe_dump(
+            {
+                "projection_version": 1,
+                "shell_source": "master_resume.yaml",
+                "open_range_label": "Present",
+                "entries": entries,
+            },
+            sort_keys=False,
+        ),
+        encoding="utf-8",
+    )
+
+
+def test_bullet_predicates_render_entity_facts_in_predicate_then_index_order(
+    projection_env,  # noqa: F811
+    tmp_path: Path,
+) -> None:
+    """`employment.example-labs` carries one `employment.responsibility` and one
+    `employment.accomplishment` fact, both résumé-surfaced. Declaring both predicates yields two
+    bullets in predicate-declaration order, each bullet's id its fact id and its text the fact
+    value verbatim — no ClaimRecord involved."""
+    decl = tmp_path / "projection.yaml"
+    _write_declaration(
+        decl,
+        [
+            {
+                "entity_id": "employment.example-labs",
+                "kind": "experience",
+                "pinned": True,
+                "heading": "{@display_name}",
+                "bullet_predicates": [
+                    "employment.responsibility",
+                    "employment.accomplishment",
+                ],
+            }
+        ],
+    )
+    candidate = projection_candidate(projection_env.bundle_root, decl, as_of=AS_OF)
+
+    (entry,) = candidate.entries
+    assert [b.bullet_id for b in entry.bullets] == [
+        "fact.example-labs.responsibility.001",
+        "fact.example-labs.accomplishment.001",
+    ]
+    assert [b.text for b in entry.bullets] == [
+        "Owned the ingestion service and its on-call rotation",
+        "Reduced duplicate ingestion work by adding an idempotency key",
+    ]
+    assert all(b.tech_tags == [] for b in entry.bullets)
+
+
+def test_a_bullet_predicate_the_entity_has_no_fact_for_is_refused(
+    projection_env,  # noqa: F811
+    tmp_path: Path,
+) -> None:
+    """A declared bullet predicate that resolves to zero résumé-surfaced facts is a typed refusal,
+    not a silently bulletless entry — the projected document is Tier A's ground truth, so a
+    mistyped predicate must fail loudly rather than drop the owner's accomplishments."""
+    decl = tmp_path / "projection.yaml"
+    _write_declaration(
+        decl,
+        [
+            {
+                "entity_id": "employment.example-labs",
+                "kind": "experience",
+                "pinned": True,
+                "heading": "{@display_name}",
+                "bullet_predicates": ["certification.expiry"],
+            }
+        ],
+    )
+    with pytest.raises(ProjectionError) as exc:
+        projection_candidate(projection_env.bundle_root, decl, as_of=AS_OF)
+    assert exc.value.violation.issue is ProjectionIssue.BULLET_PREDICATE_NO_FACTS
+
+
+def test_a_skill_ref_bullet_predicate_is_refused_as_unrenderable(
+    projection_env,  # noqa: F811
+    tmp_path: Path,
+) -> None:
+    """`technology.used` carries a `skill_ref`, not a résumé line. Declaring it as a bullet
+    predicate must be refused by the same value-kind gate that guards template rendering — a list
+    or reference on a bullet line is authoring, not projection."""
+    decl = tmp_path / "projection.yaml"
+    _write_declaration(
+        decl,
+        [
+            {
+                "entity_id": "project.packet-pantry",
+                "kind": "project",
+                "pinned": False,
+                "heading": "{@display_name}",
+                "bullet_predicates": ["technology.used"],
+            }
+        ],
+    )
+    with pytest.raises(ProjectionError) as exc:
+        projection_candidate(projection_env.bundle_root, decl, as_of=AS_OF)
+    assert exc.value.violation.issue is ProjectionIssue.FACT_VALUE_KIND_NOT_ADMITTED

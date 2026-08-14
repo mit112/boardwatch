@@ -33,6 +33,7 @@ alive — the context is frozen.
 
 from __future__ import annotations
 
+from collections.abc import Iterator
 from datetime import date
 
 from boardwatch.profile_bundle.effective import effective_fact_ids, is_application_only
@@ -43,17 +44,15 @@ from boardwatch.profile_bundle.validation.completeness import declared_expiry
 from boardwatch.profile_bundle.validation.context import ValidationContext
 
 
-def resume_facts_for(
-    entity_id: str, ctx: ValidationContext, *, as_of: date
-) -> dict[str, FactRecord]:
-    """Predicate → fact, for the facts about `entity_id` a résumé may cite at `as_of`.
+def _resume_facts(entity_id: str, ctx: ValidationContext, *, as_of: date) -> Iterator[FactRecord]:
+    """Every fact about `entity_id` a résumé may cite at `as_of`, in index order.
 
-    Keyed by predicate because that is what the `{predicate}` grammar looks up. A predicate with
-    two usable facts keeps the first in index order; a genuine ambiguity there is a bundle
-    cardinality problem, which the bundle's own validation owns, not projection's.
+    The four gates — effective, résumé-surfaced, not application-only, unexpired — are the shared
+    definition of "citable on a résumé". `resume_facts_for` (one per predicate, for `{predicate}`
+    templates) and `resume_bullet_facts_for` (all of one predicate, for fact-derived bullets)
+    differ only in how they consume this stream, never in what they admit.
     """
     effective = effective_fact_ids(ctx)
-    out: dict[str, FactRecord] = {}
     for fact in ctx.index.facts:
         if fact.subject_id != entity_id:
             continue
@@ -65,8 +64,37 @@ def resume_facts_for(
             continue
         if _past_its_value_date(fact, ctx, as_of=as_of):
             continue
+        yield fact
+
+
+def resume_facts_for(
+    entity_id: str, ctx: ValidationContext, *, as_of: date
+) -> dict[str, FactRecord]:
+    """Predicate → fact, for the facts about `entity_id` a résumé may cite at `as_of`.
+
+    Keyed by predicate because that is what the `{predicate}` grammar looks up. A predicate with
+    two usable facts keeps the first in index order; a genuine ambiguity there is a bundle
+    cardinality problem, which the bundle's own validation owns, not projection's.
+    """
+    out: dict[str, FactRecord] = {}
+    for fact in _resume_facts(entity_id, ctx, as_of=as_of):
         out.setdefault(fact.predicate, fact)
     return out
+
+
+def resume_bullet_facts_for(
+    entity_id: str, predicate: str, ctx: ValidationContext, *, as_of: date
+) -> list[FactRecord]:
+    """Every résumé-citable fact of `predicate` about `entity_id`, in index order.
+
+    Unlike `resume_facts_for`'s first-wins mapping, this keeps ALL of a multi-valued predicate's
+    facts, so `employment.accomplishment` or `project.contribution` renders as several bullets
+    (D-188). An empty list is a truthful report of "no such fact", not an error: the pool decides
+    whether a declared bullet predicate resolving to nothing is a refusal.
+    """
+    return [
+        fact for fact in _resume_facts(entity_id, ctx, as_of=as_of) if fact.predicate == predicate
+    ]
 
 
 def _past_its_value_date(fact: FactRecord, ctx: ValidationContext, *, as_of: date) -> bool:

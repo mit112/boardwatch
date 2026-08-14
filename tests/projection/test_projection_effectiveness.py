@@ -33,7 +33,7 @@ from __future__ import annotations
 from datetime import date
 
 from boardwatch.profile_bundle.effective import effective_fact_ids
-from boardwatch.projection.effectiveness import resume_facts_for
+from boardwatch.projection.effectiveness import resume_bullet_facts_for, resume_facts_for
 from tests.projection.conftest import bundle_ctx, context_over, materialised_bundle  # noqa: F401
 
 STALE = "fact.packet-pantry.legacy-language.001"
@@ -259,3 +259,90 @@ def test_a_never_expiring_predicates_stray_date_does_not_exclude_the_fact(
 
     facts = resume_facts_for("project.synthetic-note-fixture", ctx, as_of=date(2026, 8, 13))
     assert "fact.synthetic-note-fixture.legacy-note.001" in {f.fact_id for f in facts.values()}
+
+
+# --------------------------------------------------------------------------------------
+# `resume_bullet_facts_for` — the list gatherer behind fact-derived bullets (Path 2). Unlike
+# `resume_facts_for`'s first-wins dict, it keeps EVERY effective, résumé-surfaced fact of one
+# predicate, in index order, so a multi-valued predicate like `employment.accomplishment` can
+# render as several bullets.
+# --------------------------------------------------------------------------------------
+
+#: Two more `employment.accomplishment` facts appended to `employment.example-labs`: one résumé
+#: surfaced (must appear, AFTER the shipped `.001` in index order) and one that declares only
+#: `public` (must be excluded, isolating the surface gate — the shipped fixture has one
+#: accomplishment, so index order and the filter are otherwise unreachable here).
+_EXTRA_ACCOMPLISHMENTS = """
+- fact_id: fact.example-labs.accomplishment.002
+  subject_id: employment.example-labs
+  predicate: employment.accomplishment
+  value:
+    type: string
+    value: A second résumé-surfaced accomplishment
+  verification_state: owner_confirmed
+  verification_basis: owner_attested
+  usage_context: professional
+  evidence_ids:
+  - evidence.example.owner-attestation.001
+  allowed_surfaces:
+  - resume
+  - public
+  conflict_group_id: null
+  reviewed_at: '2026-08-10'
+  expires_at: null
+  supersedes_fact_ids: []
+  import_lineage: null
+  notes: null
+- fact_id: fact.example-labs.accomplishment.003
+  subject_id: employment.example-labs
+  predicate: employment.accomplishment
+  value:
+    type: string
+    value: A non-résumé accomplishment that must not surface
+  verification_state: owner_confirmed
+  verification_basis: owner_attested
+  usage_context: professional
+  evidence_ids:
+  - evidence.example.owner-attestation.001
+  allowed_surfaces:
+  - public
+  conflict_group_id: null
+  reviewed_at: '2026-08-10'
+  expires_at: null
+  supersedes_fact_ids: []
+  import_lineage: null
+  notes: null
+"""
+
+
+def test_bullet_facts_are_every_surfaced_fact_of_a_predicate_in_index_order(
+    materialised_bundle,  # noqa: F811
+) -> None:
+    """Keeps all résumé-surfaced facts of the predicate in index order; drops the `public`-only
+    one. This is the difference from `resume_facts_for`, whose `setdefault` would return just the
+    first."""
+    materialised_bundle.write(
+        "facts/experience/employment.example-labs.yaml",
+        materialised_bundle.read("facts/experience/employment.example-labs.yaml")
+        + _EXTRA_ACCOMPLISHMENTS,
+    )
+    ctx = context_over(materialised_bundle)
+
+    facts = resume_bullet_facts_for(
+        "employment.example-labs", "employment.accomplishment", ctx, as_of=date(2026, 8, 13)
+    )
+    assert [f.fact_id for f in facts] == [
+        "fact.example-labs.accomplishment.001",
+        "fact.example-labs.accomplishment.002",
+    ]
+
+
+def test_bullet_facts_are_empty_when_the_entity_has_no_fact_of_that_predicate(
+    bundle_ctx,  # noqa: F811
+) -> None:
+    """A predicate the entity does not carry yields no bullets — the caller (the pool) is what
+    decides an empty result is a refusal, so the gatherer just reports the truth."""
+    facts = resume_bullet_facts_for(
+        "employment.example-labs", "certification.expiry", bundle_ctx, as_of=date(2026, 8, 13)
+    )
+    assert facts == []

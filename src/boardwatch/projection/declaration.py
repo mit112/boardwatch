@@ -60,6 +60,11 @@ class EntryDeclaration(_Strict):
     dates: str | None = None
     location: str | None = None
     claims: tuple[str, ...] = ()
+    #: Predicate ids whose facts render as this entry's bullets, in this order (D-188). The
+    #: bundle already holds the accomplishment/contribution text as multi-valued facts; naming the
+    #: predicate here — declared, never derived, like `kind` — turns them into bullets without a
+    #: ClaimRecord. Empty means the entry's bullets come only from `claims`.
+    bullet_predicates: tuple[str, ...] = ()
 
 
 class ProjectionDeclaration(_Strict):

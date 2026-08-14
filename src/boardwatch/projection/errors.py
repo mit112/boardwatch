@@ -40,6 +40,10 @@ class ProjectionIssue(StrEnum):
     CLAIM_SUBJECT_MISMATCH = "claim_subject_mismatch"
     SKILL_NOT_RESUME_SURFACED = "skill_not_resume_surfaced"
     BULLET_TEXT_ALTERED = "bullet_text_altered"
+    #: An entry declared a `bullet_predicates` entry that resolves to no résumé-surfaced fact on
+    #: the entity. A silently bulletless entry would drop the owner's accomplishments into a
+    #: document that becomes Tier A's ground truth, so a mistyped or empty predicate fails loudly.
+    BULLET_PREDICATE_NO_FACTS = "bullet_predicate_no_facts"
     # -- shell ------------------------------------------------------------------------
     SHELL_SOURCE_UNREADABLE = "shell_source_unreadable"
     # -- persona ----------------------------------------------------------------------

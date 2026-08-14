@@ -33,16 +33,18 @@ produces Mit's résumés daily (measured: 8/28/24/18 PDFs on 08-09…08-12) — 
 
 ### The active track — Gate B, bundle to résumé
 
-> **NEXT = author + approve `projection.yaml`, then a master render.** Mit's skill-groupings question is
-> RESOLVED (D-187): `skill_groups` is now **optional** and, when omitted, `project_pool` synthesizes it from the
-> bundle's `policy/skill-categories.yaml` — the taxonomy lives in ONE versioned place, bound by the bundle digest.
-> So `projection.yaml` omits `skill_groups` entirely. What's left is Mit's **editorial** content (`shell_source`
-> header/education, `open_range_label`, which entries in what order) then `approve-projection` (TTY-only, Mit's).
-> **`profile-bundle project` is the JD-blind master render and needs NO `--scorer`** — that only gates `resume
-> project` (Stage-2, posting-aware), which Task 20 still blocks (D-168). **But the bundle holds ZERO claims**
-> (`claims/bullet-candidates.yaml` + `summary-candidates.yaml` both `[]`): a projected résumé today would carry the
-> synthesized skills section and entry headings/titles/dates but **no accomplishment bullets**. A claims-promotion
-> slice (bullets → `ClaimRecord`s) is unbuilt and stands between the graph and a real résumé (D-187).
+> **NEXT = Mit approves `projection.yaml` (TTY) → first real render.** The Stage-1 pipeline now PRODUCES a
+> projected résumé end-to-end on the real bundle (proven, non-destructively — see the scratchpad
+> `RENDER-HANDOFF.md` + `PROJECTED_RESUME.yaml`). Two renderer features shipped this session: **D-187** skill_groups
+> synthesized from the bundle catalog (one versioned place), and **D-188** `bullet_predicates` — an entry's bullets
+> come from facts, not only claims, so `employment.accomplishment` facts render directly. Result on Mit's bundle:
+> synthesized skills (4 groups/10) + **3 experience entries with 7 real accomplishment bullets**. What's left is
+> Mit's: (a) `approve-projection` (TTY-only, `!` does NOT satisfy it) then `profile-bundle project` (JD-blind master
+> render, **no `--scorer`**; that only gates `resume project`, Task 20, D-168); (b) **project bullets** — all 3
+> projects render 0 bullets because their `project.contribution` facts are the 6 `unresolved` Gate-B blockers (repo
+> evidence makes them effective → bullets appear); (c) **education** — no education facts in the bundle (both
+> `owner_excluded`), so the shell supplies it (D-156: renderer is template-hardcoded for header/education).
+> The claims/`ClaimRecord` path (Path 1) is deferred, available if tailoring later needs wording/metric control.
 
 **MERGED and at `revision 2`, all on the real bundle (D-184/185/186).** Gate B is on `main`; the merge review's
 one blocker — `validate_mapping_against_catalog` had **no production call site**, so a misrouted mapping
@@ -117,9 +119,10 @@ explain its one `review_required` record.
    builtin-catalog-backed grounding `ValidationContext`, a heavier fixture than D-183 built.
 2. **Education (2 lines) is the agent lane, Slice C** (`free_text_deferred`), declared not decomposed. Both
    lines are `owner_excluded` in revision 1, so they are recorded as deferred, not silently dropped.
-3. **Claims promotion (bullets → `ClaimRecord`s) is unbuilt (D-187).** The bundle has entities/facts/skills but
-   **zero claims**, so a projected résumé has no accomplishment bullets. This — not the scorer — is the real gap
-   between the graph and a résumé worth sending. Analogous to D-182 but for the 13 résumé bullets.
+3. **Project bullets are Gate-B-blocked, not code.** Experience bullets now render from facts (D-188); the 3
+   projects render 0 bullets because their `project.contribution` facts are `unresolved` (the 6 `repository_verified`
+   Gate-B blockers). Mit's repo evidence makes them effective → bullets appear. The claims/`ClaimRecord` path (Path 1,
+   D-188) stays deferred — available if tailoring later needs wording or metric grounding; it is NOT the render gate.
 
 *(Done 2026-08-14f: `facts/identity.yaml` authored — Mit Sheth, 5 typed contacts — and the promoted revision
 cut. Both were the top two owed items.)*
