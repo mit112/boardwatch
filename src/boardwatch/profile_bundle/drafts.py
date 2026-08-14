@@ -68,7 +68,7 @@ from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
 from typing import Final
 
-from boardwatch.profile_bundle import predicate_catalog, secret_scan
+from boardwatch.profile_bundle import extraction_mapping, predicate_catalog, secret_scan
 from boardwatch.profile_bundle.blobs import quarantined_blobs
 from boardwatch.profile_bundle.canonical import (
     EVIDENCE_PATH,
@@ -115,6 +115,7 @@ from boardwatch.profile_bundle.models.history import (
 from boardwatch.profile_bundle.models.imports import (
     CandidatePackage,
     ExclusionLedger,
+    ExtractionReport,
     SourceLedger,
 )
 from boardwatch.profile_bundle.models.manifests import DraftManifest, RevisionManifest
@@ -329,6 +330,10 @@ def _empty_documents() -> Mapping[PurePosixPath, DocumentModel]:
     """
     ruleset = secret_scan.builtin_ruleset(secret_scan.CURRENT_RULESET_VERSION)
     predicates = predicate_catalog.builtin_catalog(predicate_catalog.CURRENT_CATALOG_VERSION)
+    # Like `policy/secret-scan.yaml`, the extraction mapping is seeded NON-EMPTY: an empty mapping
+    # would let a fresh bundle enumerate a source it can never disposition — §2.1's defect one layer
+    # over. Read from the module at call time so a build retaining a newer head seeds the newer head.
+    extraction_mappings = extraction_mapping.builtin_extraction_mappings_document()
     empty_facts: dict[str, object] = {"facts": [], "entities": []}
     version = INITIAL_CATALOG_VERSION
     return {
@@ -380,6 +385,7 @@ def _empty_documents() -> Mapping[PurePosixPath, DocumentModel]:
             {"assertion_tags_version": version, "assertion_tags": []}
         ),
         PurePosixPath("policy/secret-scan.yaml"): ruleset,
+        PurePosixPath("policy/extraction-mappings.yaml"): extraction_mappings,
         PurePosixPath("relations/records.yaml"): RelationRecordsDocument.model_validate(
             {"relations": []}
         ),
@@ -391,6 +397,10 @@ def _empty_documents() -> Mapping[PurePosixPath, DocumentModel]:
         ),
         PurePosixPath("imports/exclusions.yaml"): ExclusionLedger.model_validate(
             {"exclusions_version": version, "exclusions": []}
+        ),
+        # Seeded EMPTY: a fresh bundle has no sources, so no records to explain (§6.3a).
+        PurePosixPath("imports/extraction-report.yaml"): ExtractionReport.model_validate(
+            {"report_version": version, "entries": []}
         ),
         PurePosixPath("application/gated-facts.yaml"): GatedFactsDocument.model_validate(
             {"facts": []}

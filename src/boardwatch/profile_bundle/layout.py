@@ -64,10 +64,12 @@ class DocumentKind(StrEnum):
     SKILL_CATEGORY_CATALOG = "skill_category_catalog"
     ASSERTION_TAG_CATALOG = "assertion_tag_catalog"
     SECRET_SCAN_RULESET = "secret_scan_ruleset"
+    EXTRACTION_MAPPINGS = "extraction_mappings"
     RELATION_RECORDS = "relation_records"
     SOURCE_LEDGER = "source_ledger"
     IMPORT_CANDIDATES = "import_candidates"
     IMPORT_EXCLUSIONS = "import_exclusions"
+    EXTRACTION_REPORT = "extraction_report"
     GATED_FACTS = "gated_facts"
     CHANGE_LEDGER = "change_ledger"
     APPROVAL_LEDGER = "approval_ledger"
@@ -98,10 +100,12 @@ FIXED_DOCUMENTS: Final[Mapping[PurePosixPath, DocumentKind]] = {
     PurePosixPath("policy/skill-categories.yaml"): DocumentKind.SKILL_CATEGORY_CATALOG,
     PurePosixPath("policy/assertion-tags.yaml"): DocumentKind.ASSERTION_TAG_CATALOG,
     PurePosixPath("policy/secret-scan.yaml"): DocumentKind.SECRET_SCAN_RULESET,
+    PurePosixPath("policy/extraction-mappings.yaml"): DocumentKind.EXTRACTION_MAPPINGS,
     PurePosixPath("relations/records.yaml"): DocumentKind.RELATION_RECORDS,
     PurePosixPath("imports/source-ledger.yaml"): DocumentKind.SOURCE_LEDGER,
     PurePosixPath("imports/candidates.yaml"): DocumentKind.IMPORT_CANDIDATES,
     PurePosixPath("imports/exclusions.yaml"): DocumentKind.IMPORT_EXCLUSIONS,
+    PurePosixPath("imports/extraction-report.yaml"): DocumentKind.EXTRACTION_REPORT,
     PurePosixPath("application/gated-facts.yaml"): DocumentKind.GATED_FACTS,
     PurePosixPath("history/changes.yaml"): DocumentKind.CHANGE_LEDGER,
     PurePosixPath("history/approvals.yaml"): DocumentKind.APPROVAL_LEDGER,

@@ -94,23 +94,25 @@ def test_model_for_kind_returns_the_wrapper() -> None:
     assert model_for_kind(DocumentKind.IDENTITY) is IdentityDocument
 
 
-def test_schema_head_is_one_and_the_supported_set_is_exactly_one() -> None:
-    """Design §7: schema v1 is the bootstrap release and supports exactly `{1}`. No invented v0."""
-    assert CURRENT_SCHEMA_VERSION == 1
-    assert SUPPORTED_SCHEMA_VERSIONS == frozenset({1})
-    assert 0 not in SUPPORTED_SCHEMA_VERSIONS
+def test_schema_head_is_two_and_the_supported_set_is_exactly_the_head() -> None:
+    """The v2 head supports exactly `{2}`. v2 adds two documents and ships no `1 -> 2` migration
+    yet, so a v1 tree is refused fail-safe rather than read — widening the set to `{1, 2}` is the
+    change that owes the previous-version fixture and the forward transform (§6.7)."""
+    assert CURRENT_SCHEMA_VERSION == 2
+    assert SUPPORTED_SCHEMA_VERSIONS == frozenset({2})
+    assert 1 not in SUPPORTED_SCHEMA_VERSIONS
 
 
 def test_a_supported_version_passes_through() -> None:
-    assert require_supported_schema(1) == 1
+    assert require_supported_schema(2) == 2
 
 
-@pytest.mark.parametrize("found", [0, 2, 99])
+@pytest.mark.parametrize("found", [0, 1, 99])
 def test_an_unsupported_version_raises_the_typed_refusal(found: int) -> None:
     with pytest.raises(UnsupportedSchemaVersionError) as excinfo:
         require_supported_schema(found)
     assert excinfo.value.found == found
-    assert excinfo.value.supported == (1,)
+    assert excinfo.value.supported == (2,)
 
 
 def test_the_schema_is_json_serialisable_and_stable_across_calls() -> None:

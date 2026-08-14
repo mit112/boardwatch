@@ -10,6 +10,54 @@
       "title": "Actor",
       "type": "string"
     },
+    "AdapterExtractionMapping": {
+      "additionalProperties": false,
+      "description": "One adapter's whole deterministic mapping (extraction.py `ExtractionMapping`).",
+      "properties": {
+        "adapter_id": {
+          "pattern": "^[a-z][a-z0-9]*(?:[-_][a-z0-9]+)*$",
+          "title": "Adapter Id",
+          "type": "string"
+        },
+        "deferrals": {
+          "items": {
+            "$ref": "#/$defs/DeferralModel"
+          },
+          "title": "Deferrals",
+          "type": "array"
+        },
+        "entry_kind_model": {
+          "items": {
+            "$ref": "#/$defs/EntryKindModelEntry"
+          },
+          "title": "Entry Kind Model",
+          "type": "array"
+        },
+        "literal_rules": {
+          "items": {
+            "$ref": "#/$defs/LiteralRuleModel"
+          },
+          "title": "Literal Rules",
+          "type": "array"
+        },
+        "model_routed_rules": {
+          "items": {
+            "$ref": "#/$defs/ModelRoutedRuleModel"
+          },
+          "title": "Model Routed Rules",
+          "type": "array"
+        }
+      },
+      "required": [
+        "adapter_id",
+        "literal_rules",
+        "model_routed_rules",
+        "entry_kind_model",
+        "deferrals"
+      ],
+      "title": "AdapterExtractionMapping",
+      "type": "object"
+    },
     "AffiliationEntity": {
       "additionalProperties": false,
       "properties": {
@@ -1315,6 +1363,26 @@
       "title": "DecimalValue",
       "type": "object"
     },
+    "DeferralModel": {
+      "additionalProperties": false,
+      "description": "A locator that deliberately matches no producing rule and carries a specific drain reason\n(extraction.py `Deferral`).",
+      "properties": {
+        "locator_pattern": {
+          "title": "Locator Pattern",
+          "type": "string"
+        },
+        "reason": {
+          "title": "Reason",
+          "type": "string"
+        }
+      },
+      "required": [
+        "locator_pattern",
+        "reason"
+      ],
+      "title": "DeferralModel",
+      "type": "object"
+    },
     "Disposition": {
       "description": "Every enumerated record gets exactly one (§18). `review_required` is a Gate B blocker:\nan undispositioned record is the \"unexplained record\" the gate requires to be zero.",
       "enum": [
@@ -1637,6 +1705,34 @@
       "title": "EntityKind",
       "type": "string"
     },
+    "EntryKindModelEntry": {
+      "additionalProperties": false,
+      "description": "One entry kind, keyed by its inner `kind` field (extraction.py `EntryKindSpec`).",
+      "properties": {
+        "kind": {
+          "title": "Kind",
+          "type": "string"
+        },
+        "slots": {
+          "items": {
+            "$ref": "#/$defs/SlotModel"
+          },
+          "title": "Slots",
+          "type": "array"
+        },
+        "subject_kind": {
+          "title": "Subject Kind",
+          "type": "string"
+        }
+      },
+      "required": [
+        "kind",
+        "subject_kind",
+        "slots"
+      ],
+      "title": "EntryKindModelEntry",
+      "type": "object"
+    },
     "EvidenceAlternative": {
       "additionalProperties": false,
       "description": "One independently sufficient way to meet a predicate's minimum evidence standard.\n\n§10.4: \"Each listed minimum evidence class is independently sufficient unless the entry lists a\ncombination.\" An alternative is therefore a set of classes that must ALL be present, and a\npredicate lists one alternative per acceptable route.",
@@ -1827,6 +1923,87 @@
       ],
       "title": "ExpirySpec",
       "type": "object"
+    },
+    "ExtractionMappingsDocument": {
+      "additionalProperties": false,
+      "description": "`policy/extraction-mappings.yaml`.\n\nSeeded NON-EMPTY (a version plus the one resume adapter): unlike the enumeration-owned import\ndocuments, the extraction mapping is build-supplied catalog content written into the revision so\na bundle's extraction behaviour is fixed by its own rows.",
+      "properties": {
+        "adapters": {
+          "items": {
+            "$ref": "#/$defs/AdapterExtractionMapping"
+          },
+          "title": "Adapters",
+          "type": "array"
+        },
+        "mappings_version": {
+          "exclusiveMinimum": 0,
+          "title": "Mappings Version",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "mappings_version",
+        "adapters"
+      ],
+      "title": "ExtractionMappingsDocument",
+      "type": "object"
+    },
+    "ExtractionReport": {
+      "additionalProperties": false,
+      "description": "`imports/extraction-report.yaml`.\n\nKeyed by `source_record_id` and bound into the candidate digest, it explains every\n`review_required` record without asserting disposition (§6.3a). A fresh bundle has no sources,\nso the seed is empty.",
+      "properties": {
+        "entries": {
+          "items": {
+            "$ref": "#/$defs/ExtractionReportEntry"
+          },
+          "title": "Entries",
+          "type": "array"
+        },
+        "report_version": {
+          "exclusiveMinimum": 0,
+          "title": "Report Version",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "report_version",
+        "entries"
+      ],
+      "title": "ExtractionReport",
+      "type": "object"
+    },
+    "ExtractionReportEntry": {
+      "additionalProperties": false,
+      "description": "One `review_required` record and the closed reason it stays unresolved (§6.3a).",
+      "properties": {
+        "reason": {
+          "$ref": "#/$defs/ExtractionReportReason"
+        },
+        "source_record_id": {
+          "pattern": "^(?:source\\-record)\\.[a-z0-9]+(?:[._-][a-z0-9]+)*$",
+          "title": "Source Record Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "source_record_id",
+        "reason"
+      ],
+      "title": "ExtractionReportEntry",
+      "type": "object"
+    },
+    "ExtractionReportReason": {
+      "description": "The closed reasons a `review_required` record stays unresolved (§6.3a).\n\nThe report is the drain's durable carrier: exactly one reason is attached to every\n`review_required` record, and none to an `imported` or `excluded` one. It explains the resulting\nunresolved state and never asserts a disposition — disposition stays derived from candidates and\nexclusions. Out-of-catalog is a failure, never a new bucket.",
+      "enum": [
+        "no_mapping_for_locator",
+        "unsupported_entry_kind",
+        "span_not_grounded",
+        "value_not_typeable",
+        "free_text_deferred",
+        "no_predicate_exists"
+      ],
+      "title": "ExtractionReportReason",
+      "type": "string"
     },
     "FactRecord": {
       "additionalProperties": false,
@@ -2139,6 +2316,42 @@
         "value"
       ],
       "title": "IntegerValue",
+      "type": "object"
+    },
+    "LiteralRuleModel": {
+      "additionalProperties": false,
+      "description": "One literal mapping rule (extraction.py `ExtractionRule`).",
+      "properties": {
+        "display_from": {
+          "title": "Display From",
+          "type": "string"
+        },
+        "locator_pattern": {
+          "title": "Locator Pattern",
+          "type": "string"
+        },
+        "predicate": {
+          "pattern": "^[a-z][a-z0-9_]*(?:\\.[a-z][a-z0-9_]*)+$",
+          "title": "Predicate",
+          "type": "string"
+        },
+        "value_from": {
+          "title": "Value From",
+          "type": "string"
+        },
+        "value_type": {
+          "title": "Value Type",
+          "type": "string"
+        }
+      },
+      "required": [
+        "locator_pattern",
+        "predicate",
+        "value_from",
+        "value_type",
+        "display_from"
+      ],
+      "title": "LiteralRuleModel",
       "type": "object"
     },
     "LocalSourcesSidecar": {
@@ -2512,6 +2725,31 @@
         "qualifier"
       ],
       "title": "MetricValue",
+      "type": "object"
+    },
+    "ModelRoutedRuleModel": {
+      "additionalProperties": false,
+      "description": "A rule whose predicate and value come from the entry_kind_model (extraction.py\n`ModelRoutedRule`).",
+      "properties": {
+        "emits_group": {
+          "title": "Emits Group",
+          "type": "string"
+        },
+        "kind_source": {
+          "title": "Kind Source",
+          "type": "string"
+        },
+        "locator_pattern": {
+          "title": "Locator Pattern",
+          "type": "string"
+        }
+      },
+      "required": [
+        "locator_pattern",
+        "kind_source",
+        "emits_group"
+      ],
+      "title": "ModelRoutedRuleModel",
       "type": "object"
     },
     "OwnerAttestationAuthority": {
@@ -4256,6 +4494,66 @@
       "title": "SkillRefValue",
       "type": "object"
     },
+    "SlotModel": {
+      "additionalProperties": false,
+      "description": "One fully specified emission of an entry-kind model (extraction.py `Slot`).\n\n`value_from` is a scalar field name (or `.`), or an O3c coalesce priority list. The union parses\na YAML scalar to a `str` and a YAML list to a `tuple`, matching the interpreter's dataclass.",
+      "properties": {
+        "display_from": {
+          "title": "Display From",
+          "type": "string"
+        },
+        "group": {
+          "title": "Group",
+          "type": "string"
+        },
+        "predicate": {
+          "pattern": "^[a-z][a-z0-9_]*(?:\\.[a-z][a-z0-9_]*)+$",
+          "title": "Predicate",
+          "type": "string"
+        },
+        "value_from": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "items": {
+                "minLength": 1,
+                "pattern": "\\S",
+                "type": "string"
+              },
+              "type": "array"
+            }
+          ],
+          "title": "Value From"
+        },
+        "value_selector": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Value Selector"
+        },
+        "value_type": {
+          "title": "Value Type",
+          "type": "string"
+        }
+      },
+      "required": [
+        "group",
+        "value_from",
+        "value_type",
+        "predicate",
+        "display_from"
+      ],
+      "title": "SlotModel",
+      "type": "object"
+    },
     "SourceCatalog": {
       "additionalProperties": false,
       "properties": {
@@ -4763,6 +5061,12 @@
     "evidence_records": {
       "$ref": "#/$defs/EvidenceRecordsDocument"
     },
+    "extraction_mappings": {
+      "$ref": "#/$defs/ExtractionMappingsDocument"
+    },
+    "extraction_report": {
+      "$ref": "#/$defs/ExtractionReport"
+    },
     "gated_facts": {
       "$ref": "#/$defs/GatedFactsDocument"
     },
@@ -4855,10 +5159,12 @@
     "skill_category_catalog",
     "assertion_tag_catalog",
     "secret_scan_ruleset",
+    "extraction_mappings",
     "relation_records",
     "source_ledger",
     "import_candidates",
     "import_exclusions",
+    "extraction_report",
     "gated_facts",
     "change_ledger",
     "approval_ledger",
@@ -4866,5 +5172,5 @@
   ],
   "title": "boardwatch career-profile bundle",
   "type": "object",
-  "x-bundle-schema-version": 1
+  "x-bundle-schema-version": 2
 }

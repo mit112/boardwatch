@@ -63,11 +63,13 @@ from boardwatch.profile_bundle.models.history import (
 from boardwatch.profile_bundle.models.imports import (
     CandidatePackage,
     ExclusionLedger,
+    ExtractionReport,
     SourceLedger,
 )
 from boardwatch.profile_bundle.models.manifests import DraftManifest, RevisionManifest
 from boardwatch.profile_bundle.models.policy import (
     AssertionTagCatalog,
+    ExtractionMappingsDocument,
     PredicateCatalog,
     RelationCatalog,
     SecretRuleset,
@@ -77,11 +79,17 @@ from boardwatch.profile_bundle.models.policy import (
 )
 from boardwatch.profile_bundle.models.sidecars import LocalSourcesSidecar
 
-CURRENT_SCHEMA_VERSION: Final = 1
+CURRENT_SCHEMA_VERSION: Final = 2
 
-#: Exactly `{1}`. Not a range, not "anything at or below the head": a bundle written by a newer
-#: build must be refused with a typed outcome, not misread as an unknown enum value.
-SUPPORTED_SCHEMA_VERSIONS: Final[frozenset[int]] = frozenset({1})
+#: Exactly `{CURRENT_SCHEMA_VERSION}`. Not a range, not "anything at or below the head": a bundle
+#: written by a newer build must be refused with a typed outcome, not misread as an unknown enum
+#: value. v2 adds two documents (`policy/extraction-mappings.yaml`, `imports/extraction-report.yaml`)
+#: and changes no v1 model. A `1 -> 2` forward migration is deliberately NOT shipped yet: no v1
+#: bundle exists, so a v1 tree is refused fail-safe (`unsupported_schema_version`, exit 3) rather
+#: than migrated by a transform whose only exerciser would be a fabricated previous-version fixture
+#: (schema.py's own bootstrap argument). Widening this set to `{1, 2}` is the change that then owes
+#: the fixture and the transform — the tripwire pins that (`test_..._owed_at_v2`).
+SUPPORTED_SCHEMA_VERSIONS: Final[frozenset[int]] = frozenset({CURRENT_SCHEMA_VERSION})
 
 SCHEMA_RESOURCE_PACKAGE: Final = "boardwatch.profile_bundle.resources"
 SCHEMA_RESOURCE_NAME: Final = "career-profile.schema.json"
@@ -115,10 +123,12 @@ DOCUMENT_MODELS: Final[dict[DocumentKind, type[BaseModel]]] = {
     DocumentKind.SKILL_CATEGORY_CATALOG: SkillCategoryCatalog,
     DocumentKind.ASSERTION_TAG_CATALOG: AssertionTagCatalog,
     DocumentKind.SECRET_SCAN_RULESET: SecretRuleset,
+    DocumentKind.EXTRACTION_MAPPINGS: ExtractionMappingsDocument,
     DocumentKind.RELATION_RECORDS: RelationRecordsDocument,
     DocumentKind.SOURCE_LEDGER: SourceLedger,
     DocumentKind.IMPORT_CANDIDATES: CandidatePackage,
     DocumentKind.IMPORT_EXCLUSIONS: ExclusionLedger,
+    DocumentKind.EXTRACTION_REPORT: ExtractionReport,
     DocumentKind.GATED_FACTS: GatedFactsDocument,
     DocumentKind.CHANGE_LEDGER: ChangeLedger,
     DocumentKind.APPROVAL_LEDGER: ApprovalLedger,
@@ -182,10 +192,12 @@ class _BundleSchemaRoot(BaseModel):
     skill_category_catalog: SkillCategoryCatalog
     assertion_tag_catalog: AssertionTagCatalog
     secret_scan_ruleset: SecretRuleset
+    extraction_mappings: ExtractionMappingsDocument
     relation_records: RelationRecordsDocument
     source_ledger: SourceLedger
     import_candidates: CandidatePackage
     import_exclusions: ExclusionLedger
+    extraction_report: ExtractionReport
     gated_facts: GatedFactsDocument
     change_ledger: ChangeLedger
     approval_ledger: ApprovalLedger
