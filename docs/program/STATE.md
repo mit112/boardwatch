@@ -92,9 +92,10 @@ could never fire (D-169); and the approval's bundle binding sat on the *review* 
 `resume project`, which actually writes the résumé, approved by existence-check alone (D-167). Both
 fixed; the fix wave was re-reviewed clean and rated **merge-ready**.
 
-**The merge decision is taken and executed.** Nothing is blocked on further engineering. The plan
-workspace `.superpowers/sdd/2026-08-13-career-profile-projection/` (82 files, gitignored) is still
-intact — it holds every ruling and ~30 review packages, and is deletable whenever Mit is done with it.
+**The merge decision is taken and executed**, and CI was green on all nine jobs of the push. Nothing is
+blocked on further engineering. The plan workspace `.superpowers/sdd/2026-08-13-career-profile-projection/`
+was **deleted** after that green CI, which is the SDD skill's cleanup step; its rulings survive in D-165
+through D-170, and the review packages are gone on purpose.
 
 **Carried, and deliberately open:** the shell's *content* is bound by no digest — `shell_source` is
 hashed as a filename, and the shell lives outside the bundle, so editing it changes the projected

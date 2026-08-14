@@ -43,7 +43,7 @@ SECOND_SOURCE_ID = "source.synthetic-resume-two"
 #: rather than asserted from the adapter, so the test pins a number the adapter has to reach rather
 #: than agreeing with whatever it produces.
 RESUME_DOCUMENT: dict[str, Any] = {
-    "header": ["Ada Lovelace", "ada@example.invalid"],
+    "header": ["Ada Lovelace", "ada@example.com"],
     "education": ["Example University, BSc"],
     "skill_groups": [{"label": "Languages", "items": ["Python", "Rust"]}],
     "entries": [
@@ -132,7 +132,7 @@ def second_resume_file(tmp_path: Path) -> Path:
     path = tmp_path / "resume-two.yaml"
     path.write_bytes(
         quoted_yaml(
-            {**RESUME_DOCUMENT, "header": ["Grace Hopper", "grace@example.invalid"]},
+            {**RESUME_DOCUMENT, "header": ["Grace Hopper", "grace@example.com"]},
             logical_path=PurePosixPath("resume-two.yaml"),
         )
     )
