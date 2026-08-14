@@ -442,7 +442,7 @@ def resume_project(
     from boardwatch.reports.tailor import _default_runner
     from boardwatch.tailor.equivalences import load_equivalences
     from boardwatch.tailor.model import Resume
-    from boardwatch.tailor.render.latex import LatexRenderer
+    from boardwatch.tailor.render.latex import LatexRenderer, TemplateArtifactError
 
     app_ctx = build_context(ctx.obj)
     settings = app_ctx.settings
@@ -482,7 +482,17 @@ def resume_project(
                 taxonomy=taxonomy,
                 compile_prefix=compile_prefix,
             )
-        except ProjectionError as exc:
+        except (ProjectionError, TemplateArtifactError) as exc:
+            # `compile_prefix` calls `renderer.emit(resume)` inside `select`, which resolves
+            # and validates `{config_dir}/resume_template.tex` (`_validate_template`) — a
+            # user-supplied custom template is explicitly supported here (`LatexRenderer(
+            # config_dir=config_dir)`, above), so a leftover `%%..%%`/TODO/placeholder marker
+            # in it is a typed refusal, not a traceback. Mirrors `tailor_cmd.py`'s own
+            # `(RenderToolMissingError, TemplateArtifactError, LeadArtifactError)` catch around
+            # its compile call; `RenderToolMissingError`/`LeadArtifactError` are not added here
+            # because neither is reachable from this path — both are raised by `run_tailor`
+            # itself after inspecting a `GateResult`, never by `evaluate_compile`, `to_pdf`, or
+            # `_default_runner`, which only ever return one, never raise it.
             typer.echo(str(exc), err=True)
             raise typer.Exit(code=1) from exc
 

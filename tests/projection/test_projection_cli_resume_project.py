@@ -19,6 +19,7 @@ rather than asserting which code path inside `select` produced it (that is Task 
 from __future__ import annotations
 
 import json
+from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from importlib import resources
@@ -144,6 +145,7 @@ def _make_env(
     *,
     approve: bool = True,
     posting_status: str = "open",
+    declaration_patch: Callable[[str], str] | None = None,
 ) -> Env:
     config_dir = tmp_path / "cfg"
     config_dir.mkdir(parents=True)
@@ -157,6 +159,8 @@ def _make_env(
     )
     with resources.as_file(traversable) as packaged:
         declaration_text = packaged.read_text(encoding="utf-8")
+    if declaration_patch is not None:
+        declaration_text = declaration_patch(declaration_text)
     declaration_path = config_dir / "projection.yaml"
     declaration_path.write_text(declaration_text, encoding="utf-8")
 
@@ -194,6 +198,26 @@ def unapproved_env(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Env:
 @pytest.fixture
 def closed_posting_env(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Env:
     return _make_env(tmp_path, monkeypatch, posting_status="closed")
+
+
+def _drop_the_lone_candidate_from_fallback(text: str) -> str:
+    """Same packaged declaration, except `packet-pantry` is named in NO fallback either — so
+    with this file's default JD skills (which already clear no scorer's `ADMISSION_FLOOR`,
+    per `test_pinned_entry_is_always_present...`'s own note), nothing admits the candidate: it
+    is dropped from the résumé entirely, unlike every other fixture in this file, where it
+    always reaches the résumé one way or another."""
+    patched = text.replace(
+        "no_match_fallback:\n  - project.packet-pantry\n", "no_match_fallback: []\n"
+    )
+    assert patched != text  # the substitution actually matched the packaged text
+    return patched
+
+
+@pytest.fixture
+def dropped_candidate_env(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Env:
+    return _make_env(
+        tmp_path, monkeypatch, declaration_patch=_drop_the_lone_candidate_from_fallback
+    )
 
 
 def run(env: Env, args: list[str]):  # type: ignore[no-untyped-def]
@@ -367,3 +391,68 @@ def test_refuses_an_unknown_posting_id(env: Env) -> None:
     result = run(env, ["--posting", "999999", "--scorer", "total_distinct"])
     assert result.exit_code != 0
     assert "posting_no_current_version" in result.output
+
+
+# --------------------------------------------------------------------------------------
+# Fix round 1, Finding 1: `renderer.emit(resume)` (inside `select`'s `compile_prefix`)
+# resolves and validates a user-supplied `{config_dir}/resume_template.tex`, and a leftover
+# artifact there raises `TemplateArtifactError` — a bare `RuntimeError`, not `ProjectionError`.
+# --------------------------------------------------------------------------------------
+
+
+def test_a_leftover_template_artifact_in_a_custom_template_is_a_typed_refusal_not_a_crash(
+    env: Env,
+) -> None:
+    """A custom template is explicitly supported (`LatexRenderer(config_dir=config_dir)`), and
+    `_validate_template` (`tailor/render/latex.py`) raises `TemplateArtifactError` for a leftover
+    TODO/FIXME/lorem-ipsum token, a `<placeholder>`, or a stray `%%..%%` marker. Before this fix
+    only `except ProjectionError` guarded `select(...)`, so this would have propagated as an
+    unhandled traceback. `exit_code != 0` alone cannot tell a typed refusal from an uncaught
+    crash — both report the same code through `CliRunner` — so `result.exception` is asserted
+    to be the clean `SystemExit` a `typer.Exit` raises, not the real `TemplateArtifactError`."""
+    bad_template = "%%SECTIONS_START%%\n%%SECTIONS_END%%\nTODO: finish this template\n"
+    (env.config_dir / "resume_template.tex").write_text(bad_template, encoding="utf-8")
+
+    result = run(env, ["--posting", str(env.posting_id), "--scorer", "total_distinct"])
+
+    assert isinstance(result.exception, SystemExit), (
+        f"expected a clean refusal, got an uncaught {result.exception!r}"
+    )
+    assert result.exit_code != 0
+    assert "TODO" in result.output
+
+
+# --------------------------------------------------------------------------------------
+# Fix round 1, Finding 2: `claim_to_bullet` is scoped to `selection.resume.entries` (the
+# FINAL résumé), not `pool.resume.entries` (every declared entry) — a scoping choice no
+# existing fixture could discriminate, because every one of them keeps every entry.
+# --------------------------------------------------------------------------------------
+
+
+def test_a_dropped_candidates_claim_is_absent_while_the_survivors_claim_is_present(
+    dropped_candidate_env: Env,
+) -> None:
+    """`dropped_candidate_env` names the lone candidate in no fallback, and the fixture's own
+    default JD skills clear no scorer's floor either — so the candidate is admitted by NEITHER
+    path and never reaches the résumé. If `claim_to_bullet` were built from `pool.resume.entries`
+    instead, the dropped candidate's claim would still appear (`pool.resume.entries` holds every
+    DECLARED entry, selected or not); asserting both directions catches that, since an
+    absence-only assertion could pass on an empty map."""
+    result = run(
+        dropped_candidate_env,
+        ["--posting", str(dropped_candidate_env.posting_id), "--scorer", "total_distinct"],
+    )
+    assert result.exit_code == 0, result.output
+
+    manifest_path = (
+        dropped_candidate_env.data_dir
+        / "projected"
+        / str(dropped_candidate_env.posting_id)
+        / "projection-manifest.json"
+    )
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    assert manifest["selected_entry_ids"] == ["entry.employment.example-labs"]
+
+    claim_pairs = dict(manifest["claim_to_bullet"])
+    assert "claim.example-labs.ownership.001" in claim_pairs
+    assert "claim.packet-pantry.backend.001" not in claim_pairs
