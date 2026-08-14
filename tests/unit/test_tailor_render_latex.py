@@ -110,6 +110,33 @@ def test_emit_heading_only_entry_does_not_crash():
     assert r"\resumeSubheading{Engineer -- Acme -- 2020}{}{}{}" in src  # one-line fallback
 
 
+def test_emit_zero_bullet_entry_omits_its_item_list():
+    """An entry with no bullets must render its subheading but NO \\resumeItemListStart/End pair.
+    An itemize with zero \\item is a LaTeX compile error ("missing \\item"), so a bulletless entry
+    inside a non-empty section — e.g. a projected project whose contribution facts are not yet
+    effective — would otherwise crash the PDF. The section-level guard did not cover the per-entry
+    case."""
+    from boardwatch.tailor.render.latex import LatexRenderer
+
+    r = Resume(
+        header=["N", "e@example.com"],
+        education=["ed"],
+        skill_groups=[SkillGroup(label="L", items=["Python"])],
+        entries=[
+            Entry(entry_id="e1", heading="Acme", kind="experience", title="SWE", dates="2020",
+                  bullets=[Bullet(bullet_id="b1", text="Did a thing")]),
+            Entry(entry_id="e2", heading="SideCo", kind="experience", title="Proj", dates="2021",
+                  bullets=[]),
+        ],
+    )
+    src = LatexRenderer().emit(r)
+    # The exact empty-itemize pattern that makes tectonic fail with "missing \\item".
+    assert "\\resumeItemListStart\n\n\\resumeItemListEnd" not in src
+    # The bulleted entry still opens its list; the bulletless one still shows its subheading.
+    assert r"\resumeItem{Did a thing}" in src
+    assert "{Proj}{2021}" in src
+
+
 def test_emit_extracurricular_section_when_present():
     from boardwatch.tailor.render.latex import LatexRenderer
 

@@ -147,37 +147,40 @@ def _bullet_lines(e: Entry, reworded: frozenset[str]) -> str:
     return "\n".join(lines)
 
 
-def _experience(entries: list[Entry], reworded: frozenset[str]) -> str:
-    # An empty \resumeSubHeadingListStart...End (an itemize with zero \item) is a LaTeX
-    # error ("Something's wrong--perhaps a missing \item"), not a blank section — so a
-    # résumé with no "experience" entries must omit the whole section, mirroring
-    # `_extracurricular`'s guard.
-    matching = [e for e in entries if e.kind == "experience"]
-    if not matching:
-        return ""
-    lines = ["\\section{Experience}", "\\resumeSubHeadingListStart"]
-    for e in matching:
-        lines.append(_subheading(e))
+def _entry_block(e: Entry, reworded: frozenset[str]) -> list[str]:
+    # The subheading always renders; the item list is emitted ONLY when the entry has bullets. An
+    # itemize with zero \item is a LaTeX error ("Something's wrong--perhaps a missing \item"), so a
+    # bulletless entry (e.g. a projected project whose contribution facts are not yet effective)
+    # omits the \resumeItemListStart/End pair — the same guard `_experience`/`_projects` apply at
+    # the section level, now applied per entry too.
+    lines = [_subheading(e)]
+    if e.bullets:
         lines.append("\\resumeItemListStart")
         lines.append(_bullet_lines(e, reworded))
         lines.append("\\resumeItemListEnd")
+    return lines
+
+
+def _entry_section(name: str, entries: list[Entry], kind: str, reworded: frozenset[str]) -> str:
+    # An empty \resumeSubHeadingListStart...End (an itemize with zero \item) is a LaTeX error, not
+    # a blank section — so a résumé with no entries of this kind must omit the whole section,
+    # mirroring `_extracurricular`'s guard.
+    matching = [e for e in entries if e.kind == kind]
+    if not matching:
+        return ""
+    lines = [f"\\section{{{name}}}", "\\resumeSubHeadingListStart"]
+    for e in matching:
+        lines.extend(_entry_block(e, reworded))
     lines.append("\\resumeSubHeadingListEnd")
     return "\n".join(lines) + "\n"
+
+
+def _experience(entries: list[Entry], reworded: frozenset[str]) -> str:
+    return _entry_section("Experience", entries, "experience", reworded)
 
 
 def _projects(entries: list[Entry], reworded: frozenset[str]) -> str:
-    # Same empty-itemize hazard as `_experience` above.
-    matching = [e for e in entries if e.kind == "project"]
-    if not matching:
-        return ""
-    lines = ["\\section{Projects}", "\\resumeSubHeadingListStart"]
-    for e in matching:
-        lines.append(_subheading(e))
-        lines.append("\\resumeItemListStart")
-        lines.append(_bullet_lines(e, reworded))
-        lines.append("\\resumeItemListEnd")
-    lines.append("\\resumeSubHeadingListEnd")
-    return "\n".join(lines) + "\n"
+    return _entry_section("Projects", entries, "project", reworded)
 
 
 def _extracurricular(resume: Resume) -> str:
