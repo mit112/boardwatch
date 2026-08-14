@@ -159,10 +159,15 @@ against a **parsed atomic field**, not "record bytes" — the enumerator retains
 catalog-reachability invariant was **incoherent**; and the schema bump is feasible but was understated, since
 `migrate_bundle` loads through current models before transforming and parsing is not version-dispatched.
 
-**Open for Mit:** the mapping's carrier. D-172 said a `SourceSpec` field; `SourceSpec` is keyed per *source*
-while a mapping is per *adapter*, and `init` declares no sources so a per-source field cannot be seeded.
-Proposed instead: `policy/extraction-mappings.yaml` seeded from a builtin, mirroring `policy/secret-scan.yaml`.
-**Location is settled; only the carrier is in question.**
+**Nothing is open for Mit on this design.** The mapping's carrier was settled by **D-174**:
+`policy/extraction-mappings.yaml`, keyed by adapter and seeded at `init` from a versioned builtin, replacing
+the `SourceSpec` field D-172 named — `SourceSpec` is keyed per *source* while a mapping is per *adapter*,
+`init` declares no sources so a per-source field cannot be seeded, and the package-level builtin is what makes
+Slice A's reachability invariant checkable at all. **v2 therefore adds TWO documents** — that one and
+`imports/extraction-report.yaml` — so the closed grammar widens by two in one bump.
+
+**Review round 3 is scoped and pending:** do revision 4's four corrections hold, and is §6.2a's mapping
+contract sufficient to plan from? Not a fresh sweep.
 
 The two findings from round 1 still worth carrying:
 

@@ -1,10 +1,10 @@
 # Gate B candidate extraction — design
 
-**Status:** revision 4. Two external review rounds, both NOT READY. Round 2's findings are applied here,
-including four defects that revision 2's *fixes* introduced. No code written. **One departure from D-172 is
-proposed in §6.2 and needs the owner's veto or assent.**
+**Status:** revision 4. Two external review rounds, both NOT READY; a third is scoped in §9. Round 2's
+findings are applied here, including four defects that revision 2's *fixes* introduced. No code written.
 **Date:** 2026-08-14.
-**Narrows** D-170 ruling 1 (§7). **Amends** D-172 ruling 1 (§7a) and proposes amending ruling 2 (§6.2).
+**Narrows** D-170 ruling 1 (§7). **Amends** D-172 ruling 1 (§7a) and ruling 2's carrier (§6.2, assented
+2026-08-14, D-174). No open owner decisions.
 
 Every claim carries a `file:line`. Claims not verified are marked **UNVERIFIED**.
 
@@ -91,7 +91,7 @@ capped at `owner_confirmed` by `validation/semantic.py:294-324`; and excluding t
 | D4 | **All 58 skill items become candidate assertions, not exclusions.** The evidenced-vs-familiarity difference is **NOT** recorded at this layer (§6.4) |
 | D5 | Ship a starter predicate catalog as package data, audited first |
 | D6 | **Gate B is met at a promoted revision** (D-172 ruling 1, amended mechanically in §7a) |
-| D7 | **The mapping lives inside the bundle** (D-172 ruling 2; its *carrier* is questioned in §6.2) |
+| D7 | **The mapping lives inside the bundle** (D-172 ruling 2), **carried by `policy/extraction-mappings.yaml`** keyed by adapter and seeded at `init` (D-174, amending that ruling's carrier — §6.2) |
 
 ## 5. Slice A — the seeded predicate catalog
 
@@ -164,13 +164,14 @@ Against the live `resume.yaml` (81 records), via `boardwatch-resume-v1` (`enumer
 One record may yield several candidates; `SourceLedgerRecord.candidate_ids` is a tuple and entry metadata is
 the case needing it.
 
-### 6.2 The mapping — carrier, and a proposed departure from D-172
+### 6.2 The mapping — inside the bundle, in its own document
 
-**D-172 ruling 2 decided the mapping lives inside the bundle. That stands and is right.** It also named the
-carrier as a `SourceSpec` field. **I believe the field is the wrong shape, and propose a separate document
-instead. This needs the owner's assent or veto; the location is unchanged either way.**
+**D-172 ruling 2 decided the mapping lives inside the bundle. That stands.** It named the carrier as a
+`SourceSpec` field; **D-174 amends that carrier to `policy/extraction-mappings.yaml`** (owner assent,
+2026-08-14). The location never changed.
 
-Why the field is wrong. `SourceSpec` is keyed per *source* — `source_id`, `source_kind`, `portable_locator`
+Why the field was the wrong shape. `SourceSpec` is keyed per *source* — `source_id`, `source_kind`,
+`portable_locator`
 (`policy.py:356+`, three fields). A mapping is inherently per *adapter*: every source of kind
 `boardwatch_resume` shares one locator grammar. Putting it on `SourceSpec` duplicates one mapping across
 every source of a kind, which is exactly the trap `SourceLedgerSource`'s docstring names — *"`source_kind`
@@ -179,7 +180,7 @@ one field is two chances to disagree."* It also has no seeding point: `init` dec
 per-source field cannot be seeded, and a fresh bundle would have no mapping — reproducing §2.1's defect one
 layer over.
 
-**Proposed: `policy/extraction-mappings.yaml`, keyed by adapter id, seeded non-empty at `init` from a builtin
+**Decided: `policy/extraction-mappings.yaml`, keyed by adapter id, seeded non-empty at `init` from a builtin
 — exactly the `policy/secret-scan.yaml` pattern.** Content in the bundle, so reproducibility is preserved;
 seeded, so extraction works out of the box; keyed by adapter, so one mapping has one home; and package-level
 builtins make §5.2's invariant 4 evaluable.
@@ -398,8 +399,12 @@ nothing and reports `span_not_grounded`.
 **stops after it** for a replan checkpoint. An audit that can change policy cannot sit at task 1 of a fully
 pre-planned sequence; invariants 1 and 2 of §5.2 already fail today, so at least two rows change.
 
-**Owner decision outstanding:** §6.2's carrier — `policy/extraction-mappings.yaml` versus the `SourceSpec`
-field D-172 named. Location is settled; only the carrier is in question.
+**No owner decisions outstanding.** §6.2's carrier was settled by D-174.
+
+**Review round 3 is scoped, not a fresh sweep:** do revision 4's four corrections hold, and is §6.2a's
+mapping contract sufficient to plan from? Four of round 2's findings were defects introduced by revision 2's
+own fixes, so there is no reason to assume revision 4 is the first clean one — but a re-sweep of settled
+ground would re-derive rather than converge.
 
 **Plan tasks, deliberately not designed here (§6.2a):** the `dates` grammar, and skill-id derivation from a
 skill item.
