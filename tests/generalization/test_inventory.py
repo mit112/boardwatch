@@ -53,15 +53,15 @@ def test_scope_covers_data_files_repo_wide() -> None:
     assert "src/boardwatch/profile_bundle/resources/career-profile.schema.json" in scope
     assert "src/boardwatch/profile_bundle/examples/comprehensive/manifest.yaml" in scope
     assert "src/boardwatch/profile_bundle/resources/predicate-catalog-v1.yaml" in scope
-    assert len(scope) == 77
+    assert len(scope) == 79
 
 
 def test_every_bundle_example_file_is_pinned_and_synthetic() -> None:
-    """The example is 33 files of one artifact, so a bulk-added table row could hide an unpinned or
+    """The example is 35 files of one artifact, so a bulk-added table row could hide an unpinned or
     non-synthetic addition. Both properties are asserted over whatever is actually in scope."""
     prefix = "src/boardwatch/profile_bundle/examples/"
     scope = {path for path in inventory_scope(discover(REPO_ROOT)) if path.startswith(prefix)}
-    assert len(scope) == 33
+    assert len(scope) == 35
     for path in sorted(scope):
         entry = al.SHIPPED_DATA[path]
         assert entry.kind == "fixture", path

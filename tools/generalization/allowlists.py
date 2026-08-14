@@ -102,7 +102,7 @@ SHIPPED_DATA: dict[str, DataEntry] = {
         "§19). Describes record SHAPES only — no person, organisation, metric or claim value. A "
         "parity test asserts the committed bytes equal schema.schema_json() exactly, so this pin "
         "and that test together stop the shipped contract from drifting from the models.",
-        pin="sha256:024927129b868f1696428f823aa78e761f5f7f820c89554385c4542e7ca72128",
+        pin="sha256:92214ec3264432bd2d7bd3a6080f1d5a3faadc83afcc7bcb39906f963c619f05",
     ),
     "src/boardwatch/profile_bundle/resources/predicate-catalog-v1.yaml": DataEntry(
         kind="taxonomy",
@@ -385,14 +385,18 @@ _BUNDLE_EXAMPLE_PINS: dict[str, str] = {
         "sha256:72441cc66ff2abad028751d89edeeef3f52772075c9bb1542efd020828d7f5dd",
     "imports/exclusions.yaml":
         "sha256:9b9af24f0e1361ea69c81d79de39d971828d9e9a49a145bcbd6c1160ba714bad",
+    "imports/extraction-report.yaml":
+        "sha256:e7f2fbf1c8d76b479bc71286a56863d2ca423a7d6af1f291101a629b80f3ddf4",
     "imports/source-ledger.yaml":
         "sha256:54944a319fcae78bb170d9ba7bdb04aaa0972038f57499f6b6aa1acc0ea1c450",
     "manifest.yaml":
-        "sha256:8eb558c71706ca78f33d4ff44666a1edc984ed4df7dec0a36c060f0e9e7263ea",
+        "sha256:793af34cc74f4ae504259e6d02a039b7d00038eb8c1d7ea8763fb0f7c5467541",
     "metrics/records.yaml":
         "sha256:0e43342b74ab39230e7c3cd06cab040d4619ebdebf3d50269c497f697a259f42",
     "policy/assertion-tags.yaml":
         "sha256:7b6611700c8b75f6ecd603170e994cf24b4fa9decce3b19de2074cf50cbc35a7",
+    "policy/extraction-mappings.yaml":
+        "sha256:3d073bcd17648f97a69c5145fdb1eda367d8a969177661ff5382b4ed443d25e2",
     "policy/predicates.yaml":
         "sha256:bbae76d1f85baae28e5ffecfb343becb2525a0a7aa72e31d391b1124fb399cc7",
     "policy/relations.yaml":
