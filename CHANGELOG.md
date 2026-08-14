@@ -13,10 +13,19 @@ All notable changes to this project are documented here. The format follows
   `{config_dir}/career-profile`, with `--bundle PATH` overriding that; it is machine-local, is not a
   `Settings` field, and does not participate in lead selection.
 
-  Twelve commands are now reachable from a terminal — `init`, `checkout`, `rebase-draft`, `validate`,
-  `inspect`, `inventory`, `conflicts`, `migrate`, `add-evidence`, `resolve-conflict`, `approve`,
-  `promote` — each with a `--json` machine report alongside the human rendering, and each returning
-  the same four exit tiers (0 clean, 1 findings, 2 usage error, 3 could not complete).
+  These commands are reachable from a terminal — `init`, `checkout`, `rebase-draft`, `validate`,
+  `inspect`, `inventory`, `conflicts`, `migrate`, `import`, `add-evidence`, `resolve-conflict`,
+  `approve`, `promote` — each with a `--json` machine report alongside the human rendering, and each
+  returning the same four exit tiers (0 clean, 1 findings, 2 usage error, 3 could not complete).
+
+- **`profile-bundle import`** enumerates one owner-approved source into a draft's
+  `imports/source-ledger.yaml`, through the deterministic adapters that shipped with the bundle and
+  had no entry point until now. `--from PATH` names the source document, or it is resolved through
+  the machine-local `local-sources.yaml` sidecar. It writes the ledger and nothing else: candidates
+  and exclusions stay owner-authored, so every disposition is derived from what the draft already
+  holds and a re-import cannot reset a decision the owner made. Re-importing an unchanged source
+  writes no byte, and a source keeps both its position in the ledger and the scope it was approved
+  under.
 
   The shape of the thing: you author YAML records into a **draft**; `validate` runs the structural,
   referential, evidence, semantic, history, imports and digest layers over it — plus four more under

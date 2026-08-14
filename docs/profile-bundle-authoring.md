@@ -38,7 +38,7 @@ The bundle root is resolved at the command boundary, not stored as a setting:
 | | Path |
 |---|---|
 | Default | `{config_dir}/career-profile` |
-| Override | `--bundle PATH`, accepted by all twelve commands |
+| Override | `--bundle PATH`, accepted by every command in the group |
 
 `config_dir` is `BOARDWATCH_CONFIG_DIR` if set, else the platform config directory — on macOS,
 `~/Library/Application Support/boardwatch`. So the default macOS root is
@@ -400,8 +400,9 @@ unchanged and are not a repository-wide contract.
 
 ### The JSON contract
 
-Every one of the twelve commands accepts `--json` and emits one line: a deterministic document with
-sorted keys and no spaces.
+Every command in the group accepts `--json` and emits one line: a deterministic document with
+sorted keys and no spaces. The one exception is `approve-projection`, which is a live
+question-and-answer at a terminal and specifies no JSON schema for that exchange.
 
 ```json
 {
@@ -1088,9 +1089,33 @@ Everything here is **inventory-only**:
 
 ## 16. Imports
 
-Import is present in Gate A as typed models, deterministic enumerators and validation — **not** as a
-CLI command. You author `imports/source-ledger.yaml`, `imports/candidates.yaml` and
-`imports/exclusions.yaml` into a draft, and validation enforces the arithmetic.
+`import` enumerates one owner-approved source into a draft's `imports/source-ledger.yaml`:
+
+```bash
+# the source's bytes, named explicitly
+boardwatch profile-bundle import --draft work --source source.my-resume --from ~/resume.yaml
+
+# or resolved through local-sources.yaml, beneath the root it maps the source to
+boardwatch profile-bundle import --draft work --source source.my-resume
+```
+
+**It writes the ledger and nothing else.** `imports/candidates.yaml` and `imports/exclusions.yaml`
+stay owner-authored, and validation enforces the arithmetic over all three. That split is what keeps
+the command from dispositioning a record on your behalf: `build_source_ledger` derives every
+disposition from the candidates and exclusions already in the draft, so a record you excluded stays
+excluded across a re-import, and a record nothing else accounts for is `review_required`.
+
+Two consequences worth knowing before the first run:
+
+- **A first import of a real source reports every record as `review_required`, and that is correct.**
+  Dispositioning them is the Gate B work, not a defect.
+- **It is a completeness finding, so `import` itself exits 0.** The revalidation every authoring
+  command ends with does not run the completeness tier; the undispositioned count is in the
+  command's own result, and `validate --completeness` is what reports them one by one.
+
+The scope is read from the ledger, never widened here. A source already enumerated keeps exactly the
+scope it carries; a first import may only derive `complete_file`, because a `selected_sections`
+source's locators are the owner's decision about what may be read (§18, below).
 
 Four closed v1 source adapters, each pinned to a scope:
 
@@ -1199,7 +1224,7 @@ An agent updating this bundle follows exactly this, and stops where it says stop
 
 ## 19. Command reference
 
-All twelve accept `--bundle PATH` and `--json`.
+Every command accepts `--bundle PATH`, and every one but `approve-projection` accepts `--json`.
 
 | Command | Options | Writes |
 |---|---|---|
@@ -1211,6 +1236,7 @@ All twelve accept `--bundle PATH` and `--json`.
 | `inventory` | — | nothing |
 | `conflicts` | — | nothing |
 | `migrate` | — | nothing at schema v1 |
+| `import` | `--draft`, `--source` (both required), `--from PATH` | `imports/source-ledger.yaml`, and nothing else |
 | `add-evidence` | `--draft`, `--evidence-file`, `--capture` (all required) | `evidence/records.yaml`, each fact/metric document it cites back from, the manifest, and possibly one blob |
 | `resolve-conflict` | `--draft`, `--ruling-file` (both required) | `conflicts/rulings.yaml` and the one ruled group |
 | `approve` | `--draft NAME` (required) | one approval stamp under `approvals/` |

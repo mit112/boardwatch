@@ -1,9 +1,9 @@
 """The owner-initiated writes that are not promotion (design §12, §13, §19).
 
-Three operations: capture an evidence record, rule on a conflict, and file the owner's approval of
-a candidate. They live here rather than in the command layer because the command layer is a
-translation: everything below decides what happens to the bundle, and nothing here imports
-`typer`, reads a clock, or prints.
+Capture an evidence record, rule on a conflict, enumerate a source into the import ledger, and file
+the owner's approval of a candidate. They live here rather than in the command layer because the
+command layer is a translation: everything below decides what happens to the bundle, and nothing
+here imports `typer`, reads a clock, or prints.
 
 That boundary is not a preference. `test_profile_bundle_hash_isolation` makes the bundle's
 canonical serializer one-directional — nothing outside this package may reference it — because it
@@ -48,7 +48,7 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path, PurePosixPath
-from typing import Final, Literal, TypeVar
+from typing import Any, Final, Literal, TypeVar
 
 from pydantic import BaseModel, TypeAdapter, ValidationError
 
@@ -73,6 +73,10 @@ from boardwatch.profile_bundle.canonical import (
     evidence_set_digest,
     referenced_blob_digests,
 )
+from boardwatch.profile_bundle.enumerators import (
+    SOURCE_KIND_ADAPTERS,
+    EnumerationError,
+)
 from boardwatch.profile_bundle.errors import (
     BundleIoError,
     BundlePathError,
@@ -84,6 +88,12 @@ from boardwatch.profile_bundle.errors import (
     diagnostic,
     io_reason,
     outcome_with,
+)
+from boardwatch.profile_bundle.imports import (
+    CandidateImportError,
+    EnumeratedSource,
+    build_source_ledger,
+    enumerate_source,
 )
 from boardwatch.profile_bundle.index import record_id_of
 from boardwatch.profile_bundle.models.documents import (
@@ -102,17 +112,30 @@ from boardwatch.profile_bundle.models.history import (
     RulingDecision,
     RulingRecord,
 )
+from boardwatch.profile_bundle.models.imports import (
+    ApprovedScope,
+    CandidatePackage,
+    CompleteFileScope,
+    Disposition,
+    ExclusionLedger,
+    ExclusionRecord,
+    SourceLedger,
+)
 from boardwatch.profile_bundle.models.manifests import (
     BundleManifest,
     DraftManifest,
     RevisionManifest,
     StableManifestEnvelope,
 )
+from boardwatch.profile_bundle.models.policy import SourceCatalog, SourceSpec
+from boardwatch.profile_bundle.models.sidecars import LocalSourcesSidecar
 from boardwatch.profile_bundle.paths import (
+    LOCAL_SOURCES_FILE,
     approval_path,
     approvals_dir,
     blobs_dir,
     draft_root,
+    local_sources_path,
 )
 from boardwatch.profile_bundle.secret_scan import (
     CURRENT_RULESET_VERSION,
@@ -131,12 +154,17 @@ from boardwatch.profile_bundle.yaml_writer import document_bytes
 
 CONFLICT_GROUPS_PATH: Final = PurePosixPath("conflicts/groups.yaml")
 CONFLICT_RULINGS_PATH: Final = PurePosixPath("conflicts/rulings.yaml")
+SOURCE_LEDGER_PATH: Final = PurePosixPath("imports/source-ledger.yaml")
+IMPORT_CANDIDATES_PATH: Final = PurePosixPath("imports/candidates.yaml")
+IMPORT_EXCLUSIONS_PATH: Final = PurePosixPath("imports/exclusions.yaml")
+SOURCE_CATALOG_PATH: Final = PurePosixPath("policy/sources.yaml")
 
-#: The names the operator's two input files are reported under. They are not bundle documents, so
-#: they have no path inside the tree — and naming the operator's own filesystem path in a
-#: diagnostic would put an absolute path into JSON they may paste elsewhere.
+#: The names the operator's input files are reported under. They are not bundle documents, so they
+#: have no path inside the tree — and naming the operator's own filesystem path in a diagnostic
+#: would put an absolute path into JSON they may paste elsewhere.
 EVIDENCE_INPUT: Final = PurePosixPath("--evidence-file")
 RULING_INPUT: Final = PurePosixPath("--ruling-file")
+SOURCE_INPUT: Final = PurePosixPath("--from")
 
 _EVIDENCE_ADAPTER: Final[TypeAdapter[AnyEvidence]] = TypeAdapter(EvidenceRecord)
 _RULING_ADAPTER: Final[TypeAdapter[RulingRecord]] = TypeAdapter(RulingRecord)
@@ -186,6 +214,27 @@ class EvidenceAddition:
     #: `owner_confirmed` is rewritten without incurring a gate. An edit nothing names is one nobody
     #: can review.
     cited_back: tuple[str, ...]
+
+
+@dataclass(frozen=True)
+class SourceImport:
+    """What `import` did, in the terms Gate B counts in."""
+
+    draft_name: str
+    source_id: str
+    enumerator_id: str
+    source_content_digest: str
+    #: Records this source contributes — its share of the denominator, not the whole of it.
+    record_count: int
+    #: This source's records by disposition. Every member of `Disposition` is present, including
+    #: the zeroes: a count that disappears when it is zero is one nobody can see go wrong, which is
+    #: the same reason the eligibility engine never folds `ABSTAIN` into a neighbour.
+    counts: Mapping[str, int]
+    #: The whole ledger's record count after the import — the Gate B denominator.
+    denominator: int
+    #: Whether the ledger's content actually moved. A re-import of an unchanged source writes
+    #: nothing, so the operator can tell "already current" from "just updated".
+    changed: bool
 
 
 @dataclass(frozen=True)
@@ -332,9 +381,303 @@ def resolve_conflict(
     )
 
 
+def import_source(
+    bundle_root: Path,
+    *,
+    draft_name: str,
+    source_id: str,
+    source_bytes: bytes | None,
+) -> OperationOutcome[SourceImport]:
+    """Enumerate one owner-approved source into `drafts/<name>/imports/source-ledger.yaml` (§18).
+
+    `source_bytes` is what `--from` carried, or `None` to resolve the source through the root-only
+    `local-sources.yaml` sidecar. The enumerator itself still only ever sees bytes — §18's rule that
+    the importer must not resolve a personal path is about the *adapter*, and the sidecar is the one
+    file designed to hold exactly that path, excluded from every revision and both digests so it
+    cannot reach a promoted document.
+
+    **Only the ledger is written.** Candidates and exclusions stay owner-authored, so this cannot
+    dispose of a record on the owner's behalf: `build_source_ledger` derives every disposition from
+    the candidates and exclusions already in the draft, which is why a re-import of a source the
+    owner has since excluded keeps that exclusion instead of resetting it to `review_required`.
+    """
+    try:
+        tree = _draft(bundle_root, draft_name)
+        documents = _load(tree)
+        spec = _declared_source(documents, source_id)
+        ledger = _source_ledger(documents)
+        resolved = _source_bytes(bundle_root, spec, source_bytes)
+        enumerated = _enumerated(spec, resolved, _approved_scope(ledger, spec))
+        rebuilt = _ledger_with(
+            ledger, enumerated, _candidate_package(documents), _exclusions(documents)
+        )
+        changed = rebuilt != ledger
+        if changed:
+            _write_document(tree, SOURCE_LEDGER_PATH, rebuilt)
+    except _Refused as refusal:
+        return outcome_with(None, refusal.diagnostics)
+
+    mine = [row for row in rebuilt.records if row.source_id == source_id]
+    return OperationOutcome.clean(
+        SourceImport(
+            draft_name=draft_name,
+            source_id=source_id,
+            enumerator_id=enumerated.enumerator_id,
+            source_content_digest=enumerated.source_content_digest,
+            record_count=len(mine),
+            counts={
+                disposition.value: sum(1 for row in mine if row.disposition is disposition)
+                for disposition in Disposition
+            },
+            denominator=rebuilt.record_count,
+            changed=changed,
+        )
+    )
+
+
 # --------------------------------------------------------------------------------------
 # Steps. Each returns its value or raises `_Refused`.
 # --------------------------------------------------------------------------------------
+
+
+def _declared_source(documents: BundleDocuments, source_id: str) -> SourceSpec:
+    """The source's row in `policy/sources.yaml`, which is what makes it owner-approved.
+
+    Refused rather than invented: the catalog is where an owner states that a source may be read at
+    all, so importing one it does not declare would let the command approve its own input.
+    """
+    catalog = documents.by_path.get(SOURCE_CATALOG_PATH)
+    if not isinstance(catalog, SourceCatalog):
+        raise _refusal(
+            IssueCode.MISSING_REQUIRED_FILE,
+            f"the draft has no {SOURCE_CATALOG_PATH}, so no source is approved for import",
+            path=SOURCE_CATALOG_PATH.as_posix(),
+        )
+    for spec in catalog.sources:
+        if spec.source_id == source_id:
+            return spec
+    raise _refusal(
+        IssueCode.BROKEN_REFERENCE,
+        f"{source_id} is not declared in {SOURCE_CATALOG_PATH}; add it there first, because the "
+        "catalog is where a source becomes one this bundle may read",
+        path=SOURCE_CATALOG_PATH.as_posix(),
+        record_id=source_id,
+    )
+
+
+def _source_ledger(documents: BundleDocuments) -> SourceLedger:
+    document = documents.by_path.get(SOURCE_LEDGER_PATH)
+    if not isinstance(document, SourceLedger):
+        raise _refusal(
+            IssueCode.MISSING_REQUIRED_FILE,
+            f"the draft has no {SOURCE_LEDGER_PATH}, so there is nowhere to enumerate into",
+            path=SOURCE_LEDGER_PATH.as_posix(),
+        )
+    return document
+
+
+def _candidate_package(documents: BundleDocuments) -> CandidatePackage:
+    document = documents.by_path.get(IMPORT_CANDIDATES_PATH)
+    if not isinstance(document, CandidatePackage):
+        raise _refusal(
+            IssueCode.MISSING_REQUIRED_FILE,
+            f"the draft has no {IMPORT_CANDIDATES_PATH}, so no record's disposition can be derived",
+            path=IMPORT_CANDIDATES_PATH.as_posix(),
+        )
+    return document
+
+
+def _exclusions(documents: BundleDocuments) -> dict[str, ExclusionRecord]:
+    document = documents.by_path.get(IMPORT_EXCLUSIONS_PATH)
+    if not isinstance(document, ExclusionLedger):
+        raise _refusal(
+            IssueCode.MISSING_REQUIRED_FILE,
+            f"the draft has no {IMPORT_EXCLUSIONS_PATH}, so no record's disposition can be derived",
+            path=IMPORT_EXCLUSIONS_PATH.as_posix(),
+        )
+    return {record.source_record_id: record for record in document.exclusions}
+
+
+def _approved_scope(ledger: SourceLedger, spec: SourceSpec) -> ApprovedScope:
+    """The scope this source is approved under — reused from the ledger, never widened here.
+
+    §18: "Widening an approved source's scope needs a new owner approval, because the scope is a
+    property of the ledger rather than of the enumerator." So a source already in the ledger keeps
+    exactly the scope it carries, and a first import may only derive the one scope that contains no
+    owner choice: `complete_file`. A `selected_sections` source's locators ARE the owner's decision
+    about what may be read, and deriving them would be this command approving its own input.
+    """
+    for source in ledger.sources:
+        if source.source_id == spec.source_id:
+            return source.approved_scope
+    binding = SOURCE_KIND_ADAPTERS[spec.source_kind]
+    if binding.scope_kind != "complete_file":
+        raise _refusal(
+            IssueCode.IMPORT_SCOPE_INVALID,
+            f"{spec.source_id} is a {spec.source_kind.value} source, which is approved with a "
+            f"{binding.scope_kind} scope; author its locators into "
+            f"{SOURCE_LEDGER_PATH} first, because which sections may be read is yours to decide",
+            path=SOURCE_LEDGER_PATH.as_posix(),
+            record_id=spec.source_id,
+        )
+    return CompleteFileScope(kind="complete_file")
+
+
+def _source_bytes(bundle_root: Path, spec: SourceSpec, provided: bytes | None) -> bytes:
+    """The source document's bytes: what `--from` carried, or what the sidecar resolves.
+
+    The sidecar maps a source to a machine-local *root*, and the document sits beneath it at the
+    source's `portable_locator`. Joining them here rather than storing a whole path is what keeps
+    the revisioned half portable: `policy/sources.yaml` states where a document sits inside a tree,
+    and only the non-revisioned sidecar knows where that tree is on this machine.
+
+    No absolute path reaches a diagnostic from any branch, including the I/O one — `io_reason`
+    reports the failure without the filename an `OSError` stringifies with.
+    """
+    if provided is not None:
+        return provided
+    root = _local_sources(bundle_root).get(spec.source_id)
+    if root is None:
+        raise _refusal(
+            IssueCode.MISSING_REQUIRED_FILE,
+            f"{spec.source_id} has no machine-local root: pass --from, or map the source to its "
+            "root in local-sources.yaml, which is the file that exists to reopen an original "
+            "document and is excluded from every revision",
+            path=LOCAL_SOURCES_FILE,
+            record_id=spec.source_id,
+        )
+    path = Path(root).joinpath(*PurePosixPath(spec.portable_locator).parts)
+    try:
+        return path.read_bytes()
+    except OSError as exc:
+        raise _refusal(
+            IssueCode.IO_ERROR,
+            f"{spec.source_id} could not be read at its portable locator "
+            f"{spec.portable_locator!r} beneath the root local-sources.yaml maps it to: "
+            f"{io_reason(exc)}",
+            path=LOCAL_SOURCES_FILE,
+            record_id=spec.source_id,
+        ) from exc
+
+
+def _local_sources(bundle_root: Path) -> Mapping[str, str]:
+    """The sidecar's source-ID to absolute-root mapping, or empty when it is absent.
+
+    Absent is not an error — `init` writes `{}` and a bundle whose sources are always passed with
+    `--from` never needs it. A sidecar that will not parse *is* an error, because it is a file this
+    machine cannot read at all, and silently treating it as empty would send the operator to
+    `--from` for a mapping they had already written.
+    """
+    path = local_sources_path(bundle_root)
+    if not path.exists():
+        return {}
+    try:
+        raw = load_yaml_bytes(path.read_bytes(), logical_path=PurePosixPath(LOCAL_SOURCES_FILE))
+    except RestrictedYamlError as exc:
+        raise _refusal(exc.code, str(exc), path=LOCAL_SOURCES_FILE) from exc
+    except OSError as exc:
+        raise _refusal(
+            IssueCode.IO_ERROR, f"{LOCAL_SOURCES_FILE}: {io_reason(exc)}", path=LOCAL_SOURCES_FILE
+        ) from exc
+    try:
+        return LocalSourcesSidecar.model_validate(raw).roots
+    except ValidationError as exc:
+        raise _refusal(
+            IssueCode.MODEL_VALIDATION_ERROR,
+            f"{LOCAL_SOURCES_FILE} is not a source-ID to absolute-root mapping: "
+            f"{exc.error_count()} field error(s)",
+            path=LOCAL_SOURCES_FILE,
+        ) from exc
+
+
+def _enumerated(spec: SourceSpec, source_bytes: bytes, scope: ApprovedScope) -> EnumeratedSource:
+    """Run the adapter. Its refusals are reported, never partially applied.
+
+    `EnumerationError` and `CandidateImportError` both mean the source is not the shape the adapter
+    was approved for; a half-enumerated source would be counted against the Gate B denominator
+    while describing less than it claims, which is why they raise rather than report.
+    """
+    try:
+        return enumerate_source(spec, source_bytes, scope=scope)
+    except (EnumerationError, CandidateImportError) as exc:
+        raise _refusal(
+            IssueCode.MODEL_VALIDATION_ERROR,
+            f"{spec.source_id} could not be enumerated: {exc}",
+            path=SOURCE_INPUT.as_posix(),
+            record_id=spec.source_id,
+        ) from exc
+
+
+def _ledger_with(
+    ledger: SourceLedger,
+    enumerated: EnumeratedSource,
+    package: CandidatePackage,
+    exclusions: Mapping[str, ExclusionRecord],
+) -> SourceLedger:
+    """Splice this source's rows into the ledger, leaving every other source's bytes alone.
+
+    Rebuilt through `build_source_ledger` rather than by editing rows, so the disposition rule has
+    one home. The splice keeps the re-imported source at its existing position — replacing its
+    block in place rather than appending — because the ledger is a document an owner reads, and a
+    re-import that reordered the sources of a 24,000-record bundle would produce a diff nobody can
+    review for a change that touched one source.
+
+    The result is validated as a whole, which is what makes the merge safe: `SourceLedger`'s own
+    validator requires each source's `source_record_ids` to equal its records in adapter order, so
+    a splice that dropped or misordered a row cannot be written.
+    """
+    try:
+        fresh = build_source_ledger(
+            [enumerated],
+            package,
+            exclusions=exclusions,
+            ledger_version=ledger.ledger_version,
+        )
+    except CandidateImportError as exc:
+        raise _refusal(
+            IssueCode.MODEL_VALIDATION_ERROR,
+            f"{enumerated.source_id} could not be assembled into a ledger: {exc}",
+            path=SOURCE_LEDGER_PATH.as_posix(),
+            record_id=enumerated.source_id,
+        ) from exc
+
+    sources = [source.model_dump(mode="json") for source in ledger.sources]
+    replacement = fresh.sources[0].model_dump(mode="json")
+    for position, source in enumerate(sources):
+        if source["source_id"] == enumerated.source_id:
+            sources[position] = replacement
+            break
+    else:
+        sources.append(replacement)
+
+    records: list[dict[str, Any]] = []
+    placed = False
+    for row in ledger.records:
+        if row.source_id == enumerated.source_id:
+            if not placed:
+                records.extend(item.model_dump(mode="json") for item in fresh.records)
+                placed = True
+            continue
+        records.append(row.model_dump(mode="json"))
+    if not placed:
+        records.extend(item.model_dump(mode="json") for item in fresh.records)
+
+    try:
+        return SourceLedger.model_validate(
+            {
+                "ledger_version": ledger.ledger_version,
+                "sources": sources,
+                "records": records,
+            }
+        )
+    except ValidationError as exc:
+        raise _refusal(
+            IssueCode.MODEL_VALIDATION_ERROR,
+            f"{SOURCE_LEDGER_PATH} would not be valid after this import: "
+            f"{exc.error_count()} field error(s)",
+            path=SOURCE_LEDGER_PATH.as_posix(),
+            record_id=enumerated.source_id,
+        ) from exc
 
 
 def _draft(bundle_root: Path, name: str) -> Path:

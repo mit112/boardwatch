@@ -1,6 +1,8 @@
-"""`boardwatch profile-bundle`: the fourteen commands design §7 and §19 name, counting
-`approve-projection` (Task 10) and `project` (Task 18), both defined in `cli/projection_cmd.py` and
-registered here by function reference.
+"""`boardwatch profile-bundle`: the commands design §7 and §19 name, plus `approve-projection`
+(Task 10) and `project` (Task 18) — both defined in `cli/projection_cmd.py` and registered here by
+function reference — and `import`, which gives Gate A's enumerators the entry point §16 left them
+without. Deliberately not counted here: a number in a docstring goes stale the next time the group
+grows, and no test can pin it.
 
 This module is a **translation**, and deliberately nothing else. Every decision about the bundle is
 made under `boardwatch.profile_bundle`; what lives here is argument parsing, the two renderings,
@@ -33,7 +35,7 @@ rows with no machine rendering at all.
 
 Both T18 review lenses ruled the uniform envelope right and §19's list under-specified: §19 opens
 "The **proposed** command surface is", while §21 is normative and explicitly family-wide. T19 owns
-amending §19 to show `[--json]` on all twelve, along with `--deep-history`, which §7 names and §19
+amending §19 to show `[--json]` family-wide, along with `--deep-history`, which §7 names and §19
 gives no surface.
 
 **One documented exception.** `approve-projection` ships without `--json` — a deliberate choice,
@@ -840,6 +842,59 @@ def add_evidence(
         rendered,
         as_json=json_output,
     )
+
+
+@profile_bundle_app.command("import")
+def import_source(
+    ctx: typer.Context,
+    draft: str = DRAFT_OPTION,
+    source: str = typer.Option(  # noqa: B008
+        ..., "--source", help="The source ID, as declared in policy/sources.yaml."
+    ),
+    from_path: Path | None = typer.Option(  # noqa: B008
+        None,
+        "--from",
+        exists=True,
+        dir_okay=False,
+        readable=True,
+        help="The source document (default: resolved through local-sources.yaml).",
+    ),
+    bundle: Path | None = BUNDLE_OPTION,
+    json_output: bool = JSON_OPTION,
+) -> None:
+    """Enumerate one approved source into a draft's import ledger, then revalidate it."""
+    root = _bundle_root(ctx, bundle)
+    outcome = _guarded(
+        lambda: authoring.import_source(
+            root,
+            draft_name=draft,
+            source_id=source,
+            source_bytes=None if from_path is None else from_path.read_bytes(),
+        )
+    )
+    imported = outcome.value
+    if imported is None:
+        _emit("import", outcome, _nothing(), as_json=json_output)
+    counts = imported.counts
+    rendered = _Rendered(
+        result={
+            "draft": imported.draft_name,
+            "source_id": imported.source_id,
+            "enumerator_id": imported.enumerator_id,
+            "source_content_digest": imported.source_content_digest,
+            "record_count": imported.record_count,
+            "counts_by_disposition": dict(counts),
+            "denominator": imported.denominator,
+            "changed": imported.changed,
+        },
+        lines=(
+            f"{'enumerated' if imported.changed else 'unchanged'}: {imported.source_id} "
+            f"contributes {imported.record_count} record(s) to drafts/{imported.draft_name} "
+            f"({imported.denominator} in the ledger)",
+            "  " + ", ".join(f"{name}: {count}" for name, count in sorted(counts.items())),
+        ),
+    )
+    _emit("import", _with_revalidation(root, draft, outcome), rendered, as_json=json_output)
 
 
 @profile_bundle_app.command("resolve-conflict")
