@@ -19,10 +19,12 @@ authority. **Rewrite it, never prepend to it.** Keep it near 170 lines.
 
 **The headline number: 0.** Zero job applications have ever come out of boardwatch (`applications` has 0
 rows), zero unattended days, zero acceptance days. Against that: 3 published releases, ~46k lines of source,
-6,294 tests at 95.6%, 62 CLI commands, 6 ATS providers, an 800 MB / 24,073-posting store. **New this session
-(2026-08-14):** the career-profile candidate lane moved from 0 → **78 of 81 résumé records `imported`** (D-181),
-and those candidates were then **promoted into the renderable graph** — 6 entities, 47 facts, 10 grounded skills
-on the live résumé (D-182). Milestones on the bundle→résumé path, not an application.
+6,308 tests, **63** leaf CLI commands (counted, 17 of them `profile-bundle`), 6 ATS providers, an 800 MB /
+24,073-posting store. **New on 2026-08-14:** the
+career-profile lane went 0 → **78 of 81 résumé records `imported`** (D-181) → a renderable graph (D-182) →
+**two promoted revisions on the real bundle**, whose résumé surface carries 38 facts, 10 skills and 5 contacts
+(D-185, D-186). Milestones on the bundle→résumé path; **nothing has rendered a résumé yet**, and no application
+has ever been sent.
 
 **The program reoriented on 2026-08-13 (D-155):** remaining work runs through the **canonical career-profile
 bundle**, not the old `resume.yaml` path. Freezing P3, P6 and the 14-day clock costs nothing, because job-apps
@@ -31,48 +33,37 @@ produces Mit's résumés daily (measured: 8/28/24/18 PDFs on 08-09…08-12) — 
 
 ### The active track — Gate B, bundle to résumé
 
-> **MERGED (D-184) AND THE FIRST REVISION IS CUT (D-185), 2026-08-14f.** Gate B is on `main` at `a6222e3`
-> (24 commits, all 9 CI jobs green). The merge review found one blocker — `validate_mapping_against_catalog`
-> had **no production call site**, so a misrouted mapping extracted clean at exit 0 — fixed and pinned by two
-> tests confirmed to fail without it.
->
-> **`revision 2` is CURRENT**: `sha256:9917b67b…`, stamp `approval-stamp.000002` (revision 1 was
-> `sha256:9d8a202d…`). The selected revision validates **0 error, 0 blocker** and its **résumé surface carries
-> 38 facts, 10 skills and 5 contacts**. The whole lane ran on Mit's live `resume.yaml` against
-> the real bundle at `{config_dir}/career-profile` — every prior Gate B number came from a scratch tree.
-> `import` now exits **0** (the `missing_required_file` finding is gone), `extract` gives **78/81**,
-> `promote-candidates` gives **6 entities / 47 facts / 10 skills**, `review_required` is **0**.
->
-> **Gate B is NOT mechanically MET: 9 `missing_review_state` blockers, and they are EVIDENCE, not code.**
-> 38 facts are owner-confirmed against one attestation; the remaining 9 cannot be — 3 `employment.organization`
-> need `private_document_verified` (an employer record) and 6 `project.contribution` need
-> `repository_verified`, whose *only* legal basis is a repository, so the owner's word is inadmissible by
-> construction. **Evidence is mandatory, proven not assumed**: confirming all 47 while citing nothing yields
-> 47 `evidence_contract_unmet` errors.
+> **NEXT SESSION = the render.** `projection.yaml` (at `{config_dir}`, absent today) is the last artifact
+> between revision 2 and a PDF. **Answer this first, it is Mit's:** promotion already derived
+> `policy/skill-categories.yaml` *inside* the revisioned bundle, but `projection.yaml` sits *outside* it and
+> wants skill ids grouped under labels — so the groupings would live in two places with only one versioned.
+> Read `projection/declaration.py` to learn whether v1 can reference the bundle's categories before
+> hand-authoring a duplicate. Then `approve-projection` (TTY-only, Mit's) and a render. Note `--scorer` has no
+> default (D-168) and Task 20 is unbuilt.
 
-**`resume.yaml` is an import source, never hand-fixed (D-155)**, via adapter `boardwatch-resume-v1`.
-`profile-bundle import` shipped (D-170); it writes `imports/source-ledger.yaml` and nothing else.
+**MERGED and at `revision 2`, all on the real bundle (D-184/185/186).** Gate B is on `main`; the merge review's
+one blocker — `validate_mapping_against_catalog` had **no production call site**, so a misrouted mapping
+extracted clean at exit 0 — is fixed and pinned by two tests confirmed to fail without it.
 
-**The denominator is MEASURED, not derived (2026-08-14).** The shipped command ran against the live
-`resume.yaml` read-only, with `--bundle` on a scratch tree so `{config_dir}` was untouched: **exactly 81
-records, all `review_required`, 0 candidates**, scope `complete_file`, buckets **header 2 · education 2 ·
-skill-groups 58 · entry metadata 6 · bullets 13** — counted from the ledger file by a separate parser, not
-from the command's self-report.
+**`revision 2` is CURRENT** (`sha256:9917b67b…`, stamp `000002`; revision 1 was `sha256:9d8a202d…`). It
+validates **0 error, 0 blocker** and its **résumé surface carries 38 facts, 10 skills, 5 contacts**. The whole
+lane ran on Mit's live `resume.yaml` against `{config_dir}/career-profile` — every *earlier* Gate B number came
+from a scratch tree. `import` exits **0**, `extract` gives **78/81**, `promote-candidates` gives **6 entities /
+47 facts / 10 skills**, `review_required` is **0** (3 records excluded: 1 `no_candidate_assertion`, 2
+`owner_excluded` for education). Live draft is **`skills-surfaced`**; `baseline` is spent (see (d) below).
 
-**Exit was 1, not the documented 0**, with exactly one finding: `error: missing_required_file
-(facts/identity.yaml)`. `init` omits that file on purpose and the grammar requires it, so exit 1 on a first
-import is expected and is **not** about the records. `docs/profile-bundle-authoring.md` and this file both
-said exit 0; both are corrected. **Authoring `facts/identity.yaml` is Mit's next concrete step** — a display
-name and review dates only he has, which is why `init` refuses to invent them.
+**Gate B is NOT mechanically MET: 9 `missing_review_state` blockers, and they are EVIDENCE, not code.** 38 facts
+are owner-confirmed against one attestation; the other 9 cannot be — 3 `employment.organization` need
+`private_document_verified` (an employer record) and 6 `project.contribution` need `repository_verified`, whose
+*only* legal basis is a repository, so the owner's word is inadmissible by construction. **Evidence is
+mandatory, proven not assumed**: confirming all 47 while citing nothing yields 47 `evidence_contract_unmet`
+errors. Widening those two predicates in the catalog would clear the gate — versioned data, legitimate, and
+deliberately not taken.
 
-**Candidate extraction SHIPPED end to end (D-181) — the number moved from 0.** On branch
-**`gate-b-extraction-slice-a`** (unmerged, local; `make check` EXIT=0, 6301 passed), against the live
-`resume.yaml` on a fresh v2 bundle, counted through a separate ledger parse: **78 of 81 records reach
-`imported`**, **3 stay `review_required`** with the designed drain (2 education `free_text_deferred`, email
-`no_predicate_exists`). The `entry_kind_model` interpreter (O1–O6), two new v2 documents, the schema-v2 bump,
-and `profile-bundle extract` — full detail in D-181. Design doc:
-`docs/superpowers/specs/2026-08-14-gate-b-candidate-extraction-design.md` (rev 7; the five-round review loop is
-closed, do not reopen, D-172…181).
+**`resume.yaml` is an import source, never hand-fixed (D-155)**, via adapter `boardwatch-resume-v1`. The
+denominator is **81 records**, measured not derived: header 2 · education 2 · skill-groups 58 · entry metadata
+6 · bullets 13. Design doc: `docs/superpowers/specs/2026-08-14-gate-b-candidate-extraction-design.md` (rev 7;
+the five-round review loop is closed, do not reopen, D-172…181).
 
 **Deliberate departure (D-181, held D-182): `SUPPORTED_SCHEMA_VERSIONS={2}`, no `1→2` migration.** No v1 bundle
 exists, so a v1 tree is refused fail-safe (exit 3) rather than migrated by a transform whose only exerciser
