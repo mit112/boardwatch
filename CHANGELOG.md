@@ -46,8 +46,13 @@ All notable changes to this project are documented here. The format follows
   `profile-bundle approve-projection`.** The bridge from the bundle to a rendered résumé, in two stages
   with the owner's editorial choices in one declaration file.
 
-  `{config_dir}/projection.yaml` is that declaration: it names bundle skill ids grouped under labels you
-  choose, and the shell document supplying the parts the bundle is deliberately not authoritative for.
+  `{config_dir}/projection.yaml` is that declaration: it groups bundle skill ids under labels you choose,
+  names which entries appear in what order, and points at the shell document supplying the parts the bundle
+  is deliberately not authoritative for. **Omitting `skill_groups` entirely synthesizes them from the
+  bundle's own `policy/skill-categories.yaml`**, so the owner's skill taxonomy lives in one versioned place
+  rather than being restated, unversioned, in the declaration. **An entry's bullets come from its `claims`,
+  from `bullet_predicates` (predicate ids whose résumé-surfaced facts render directly as bullets — so an
+  `employment.accomplishment` fact reaches the page without a `ClaimRecord`), or both.**
   **v1 projects `skill_groups`, `entries` and `extracurricular` only — not your name, contacts or
   education.** That is not an omission: the LaTeX renderer never reads `Resume.header` or
   `Resume.education`, so projecting them could not change a PDF.
