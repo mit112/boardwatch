@@ -106,6 +106,22 @@ Working ledger: `.superpowers/sdd/2026-08-13-career-profile-projection/progress.
 anything that must survive belongs here or in `DECISIONS.md`. It carries every ruling with what each costs
 if wrong.
 
+**`main` is at `64cf63c` and pushed.** Three commits after the merge: the import command, the program
+log, and one fix.
+
+**CI status at session end, stated precisely because two of the three are not what they look like:**
+
+| Push | Run | Standing |
+|---|---|---|
+| `ee20abd` (the merge) | 31772590912 | **GREEN, all nine jobs.** Measured |
+| `12dda1d` (import + log) | 31774326397 | **`generalization` FAILED** — the `example.invalid` address. Superseded by the fix |
+| `64cf63c` (the fix) | 31774640890 | **UNKNOWN.** `generalization`, `gitleaks`, `perf` observed green; the six test jobs were still running when the `gh` API rate-limited this account |
+
+**The `gh run watch` on the last run exited 1, and that exit code means nothing** — it is the rate limit,
+not a failing job. Do not read it as a red CI. The tree passed a full local `make check` (6,231 passed,
+4 xfailed, exit 0), so green is the expectation; **it is an expectation, not a measurement. Re-check run
+31774640890 before citing it.**
+
 **Gate B has STARTED — its first mechanical blocker is cleared, and no data has moved yet.**
 `profile-bundle import` exists (D-170), so a real source can now reach a draft's ledger without
 transcribing 81 records by hand. **`{config_dir}/career-profile` still does not exist**, nothing has been

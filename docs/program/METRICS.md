@@ -3431,3 +3431,14 @@ named for. Asking *which* assertion fires is what caught it; the assertions were
   `review_required` at exit 0. That is the designed first state, and the next design question.
 - **Task 20 remains unbuilt and is still the only arbiter for the scorer** (D-163, D-168).
 - **Zero applications still.** This session moved no phase gate and produced no résumé for a real posting.
+
+### A green gate that had not seen the change
+
+`make check` passed **twice** over the import work while the new test file was still **untracked**, and
+`generalization` then failed on CI for an `example.invalid` address. The checker walks git-tracked files,
+so the gate's coverage is defined by the index rather than by the working tree. Fixed in a third commit;
+`generalization` is confirmed green on the fix.
+
+**The rule this yields: `git add` a new file before the gate run you intend to trust.** It is a second,
+distinct way local-green diverges from CI-green — the first being that `gitleaks` and `perf` are CI-only.
+Here the job *is* inside `make check`, ran, reported OK, and had seen nothing.
