@@ -34,10 +34,15 @@ application sent.**
 
 ### The active track — Gate B, bundle to résumé
 
-> **NEXT = Mit closes Gate B's 9 evidence blockers, then approves `projection.yaml` (TTY) → first real
-> render.** The approve step is TTY-only; Claude's `!` does NOT satisfy the consent gate. After approve:
-> `profile-bundle project` (JD-blind master render, **no `--scorer`** — that only gates `resume project`,
-> Task 20). To regenerate a *preview* PDF without the TTY gate, see memory `render-preview-without-tty-approve`.
+> **NEXT = Mit runs `profile-bundle approve-projection` (TTY) → `profile-bundle project` → first real
+> render.** `{config_dir}/projection.yaml` is now **authored, validated and installed** (2026-08-14): 6 pinned
+> entries (3 experience with `bullet_predicates: [employment.accomplishment]`, 3 projects with empty
+> `bullet_predicates` — a zero-fact predicate is a FATAL render error, `pool.py`), `shell_source: resume.yaml`,
+> `skill_groups` omitted (synthesized). It resolves clean via `projection_candidate` and rendered a **1-page
+> preview PDF** (7 experience bullets, 4 synthesized skill groups, 3 project headings). Digest to approve:
+> `sha256:f2c673d6…`. The approve step is TTY-only; Claude's `!` does NOT satisfy the consent gate. `project`
+> is JD-blind, **no `--scorer`** (that only gates `resume project`, Task 20). Preview recipe:
+> memory `render-preview-without-tty-approve`.
 
 **Revision 2 is CURRENT** — `sha256:9917b67b…`, stamp `000002` (revision 1 was `sha256:9d8a202d…`). It
 validates **0 error, 9 blocker** and its **résumé surface carries 38 facts, 10 skills, 5 contacts** (D-185,
@@ -53,9 +58,13 @@ D-186). The whole lane ran on Mit's live `resume.yaml` against `{config_dir}/car
 - **6 `project.contribution`** — `fact.crop-rf.contribution.001/002`, `fact.gamified-learning.contribution.001/002`,
   `fact.streaksync.contribution.001/002` — need `repository_verified` (3 repos cover all 6).
 
-Clearing them needs no code and **automatically unblocks two rough edges**: (a) the 3 projects gain their
-bullets (their contribution facts become effective; experience bullets already render from facts via D-188);
-(b) employer headings switch from the overflowing `{@display_name}` to a clean `{employment.organization}`.
+Clearing them needs no code and **unblocks the 3 projects' bullets** (their contribution facts become
+effective; experience bullets already render from facts via D-188). **It does NOT fix the employer-heading
+overflow** — corrected 2026-08-14 by authoring + rendering a real preview from the installed
+`projection.yaml`: all three `employment.organization` fact *values* are the entire "Title — Org — Dates —
+Location" line, identical to `display_name`, so `{employment.organization}` renders the *same* overflow as the
+current `{@display_name}`. A clean employer heading needs each org fact's VALUE re-authored to just the
+employer name — a **data fix, separate from the evidence blockers.**
 **Evidence is mandatory, proven not assumed** — confirming all 47 while citing nothing yields 47
 `evidence_contract_unmet` errors. The alternative, widening those two predicates to `owner_attested`
 (versioned data, legitimate), weakens a claim to pass a gate and was deliberately not taken — **Mit's call.**
