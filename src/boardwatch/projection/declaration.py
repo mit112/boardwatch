@@ -96,6 +96,16 @@ def load_declaration(path: Path) -> ProjectionDeclaration:
         raise_violation(
             ProjectionIssue.MALFORMED_DECLARATION, f"invalid YAML: {exc}", where=path.name
         )
+    except (OSError, UnicodeDecodeError) as exc:
+        # `path.is_file()` above proves existence at a moment, not read-success: a
+        # permission-denied file, a non-UTF-8 file, or one deleted in the gap still reaches
+        # `read_text`. Built from `type(exc).__name__`, never `str(exc)` — `OSError.__str__`
+        # embeds this path's own absolute form, which the bundle family's diagnostics never leak.
+        raise_violation(
+            ProjectionIssue.DECLARATION_UNREADABLE,
+            f"the declaration could not be read ({type(exc).__name__})",
+            where=path.name,
+        )
     if not isinstance(raw, dict):
         raise_violation(
             ProjectionIssue.MALFORMED_DECLARATION,
