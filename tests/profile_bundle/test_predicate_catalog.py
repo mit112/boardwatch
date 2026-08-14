@@ -2,9 +2,10 @@
 
 The mechanical invariants catch the defect class the Task-1 audit found in an unaudited catalog: a
 dead enum member, an unreachable grounding guard, and an unavailable version silently supplying an
-empty vocabulary. Invariant 3 (§5.1's behavioural grounding assertion) and invariant 4 (package-level
-reachability against the builtin extraction mapping) are owed and tracked in STATE — the first needs a
-builtin-catalog-backed grounding context, the second needs the builtin mapping that Slice B seeds.
+empty vocabulary. Invariant 4 (package-level catalog<->mapping reachability against the builtin
+extraction mapping) now ships in `test_extraction_mapping.py`, where the mapping lives — both
+directions there. Invariant 3 (§5.1's behavioural grounding assertion) is still owed and tracked in
+STATE — it needs a builtin-catalog-backed grounding context.
 """
 
 from __future__ import annotations

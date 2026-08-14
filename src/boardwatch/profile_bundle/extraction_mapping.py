@@ -108,6 +108,70 @@ BUILTIN_EXTRACTION_MAPPINGS: Final[Mapping[str, ExtractionMapping]] = {
     RESUME_ADAPTER_ID: _RESUME_V1_MAPPING,
 }
 
+#: Catalog predicates that no builtin mapping reaches, each with the reason it is deliberately
+#: unreached rather than an accidental orphan (§5.2 invariant 4). The invariant treats a catalog
+#: predicate as reconciled when it is named by some builtin mapping OR listed here — so a NEW
+#: predicate nobody wires (§2.1's defect one layer over) fails the gate instead of sitting silently
+#: present. `not_reachable_from_builtin_mappings` in the design.
+#:
+#: The `boardwatch-resume-v1` enumerator (§6.1) surfaces five bucket kinds — header, entry metadata,
+#: entry bullets, skill items and education — so a catalog predicate no producing rule can populate
+#: from those buckets is declared unreached here. Education's three predicates are reached by the
+#: AGENT lane (§8), not by this deterministic mapping, which only defers `education/*`.
+NOT_REACHABLE_FROM_BUILTIN_MAPPINGS: Final[Mapping[str, str]] = {
+    "person.professional_headline": (
+        "the résumé header carries only a name (header/1) and an email (header/2, no predicate); "
+        "there is no headline bucket"
+    ),
+    "education.institution": (
+        "the education agent lane's target (§8), not this deterministic mapping's — the mapping "
+        "defers `education/*` (free_text_deferred) rather than producing a candidate"
+    ),
+    "education.credential": "as education.institution — the education agent lane's target (§8)",
+    "education.field": "as education.institution — the education agent lane's target (§8)",
+    "education.start_date": (
+        "the résumé's two education lines carry institution/credential/field only; no bucket "
+        "carries an education date"
+    ),
+    "education.end_date": "as education.start_date — no résumé bucket carries an education date",
+    "education.result": "no résumé bucket carries an education result (e.g. a GPA line)",
+    "employment.responsibility": (
+        "résumé bullets route to employment.accomplishment; there is no separate responsibility "
+        "bucket"
+    ),
+    "employment.team_size": "no résumé bucket carries a team size",
+    "project.summary": (
+        "no longer the metadata heading's target after §6.2a routed project.name; the résumé has "
+        "no project-summary bucket"
+    ),
+    "deployment.environment": "no résumé bucket carries a deployment environment",
+    "publication.title": "a publications surface the résumé enumerator has no bucket for",
+    "publication.venue": "as publication.title — no publications bucket",
+    "publication.date": "as publication.title — no publications bucket",
+    "entity.url": "the enumerator surfaces no per-entity URL bucket",
+    "recognition.name": "a recognition surface the résumé enumerator has no bucket for",
+    "recognition.issuer": "as recognition.name — no recognition bucket",
+    "award.date": "an awards surface the résumé enumerator has no bucket for",
+    "certification.issue_date": "a certifications surface the résumé enumerator has no bucket for",
+    "certification.expiry": "as certification.issue_date — no certifications bucket",
+    "affiliation.role": "an affiliations surface the résumé enumerator has no bucket for",
+    "affiliation.date_range": "as affiliation.role — no affiliations bucket",
+    "course.title": "a courses surface the résumé enumerator has no bucket for",
+    "presentation.title": "a presentations surface the résumé enumerator has no bucket for",
+    "presentation.date": "as presentation.title — no presentations bucket",
+    "presentation.venue": "as presentation.title — no presentations bucket",
+    "patent.title": "a patents surface the résumé enumerator has no bucket for",
+    "patent.filing_date": "as patent.title — no patents bucket",
+    "patent.grant_date": "as patent.title — no patents bucket",
+    "application.requires_sponsorship": (
+        "an application-only work-authorization fact, never sourced from a résumé; it belongs to "
+        "application/gated-facts.yaml (§16)"
+    ),
+    "application.authorized_regions": (
+        "as application.requires_sponsorship — an application-only fact, never résumé-sourced"
+    ),
+}
+
 
 # --------------------------------------------------------------------------------------------------
 # The persisted form: dataclasses <-> `policy/extraction-mappings.yaml` document (schema v2).

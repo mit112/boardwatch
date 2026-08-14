@@ -23,11 +23,13 @@ from boardwatch.profile_bundle.extraction import (
     ModelRoutedRule,
     Slot,
     extract_proposals,
+    named_predicates,
     run_extraction,
     validate_mapping_against_catalog,
 )
 from boardwatch.profile_bundle.extraction_mapping import (
     BUILTIN_EXTRACTION_MAPPINGS,
+    NOT_REACHABLE_FROM_BUILTIN_MAPPINGS,
     RESUME_ADAPTER_ID,
 )
 from boardwatch.profile_bundle.imports import EnumeratedSource, build_candidate_package
@@ -120,6 +122,38 @@ def test_a_slot_predicate_illegal_for_its_subject_kind_is_refused() -> None:
     )
     with pytest.raises(ExtractionMappingError, match="does not admit subject kind 'project'"):
         validate_mapping_against_catalog(bad, _CATALOG)
+
+
+# --- §5.2 invariant 4, reverse direction: catalog->mapping reachability ---------------------------
+#
+# The forward half above proves every predicate the mapping NAMES is catalog-legal. This half proves
+# the other package-level artifact stays reconciled: every catalog predicate is either named by some
+# builtin mapping or explicitly declared unreachable. It is what turns "a new predicate nobody wires"
+# — §2.1's defect one layer over — into a caught class rather than a row sitting silently present.
+
+
+def _all_named() -> set[str]:
+    return set().union(
+        *(named_predicates(mapping) for mapping in BUILTIN_EXTRACTION_MAPPINGS.values())
+    )
+
+
+def test_every_catalog_predicate_is_named_by_a_builtin_mapping_or_rostered() -> None:
+    catalog = {spec.predicate_id for spec in _CATALOG.predicates}
+    covered = _all_named() | set(NOT_REACHABLE_FROM_BUILTIN_MAPPINGS)
+    assert catalog <= covered, f"neither named nor rostered: {sorted(catalog - covered)}"
+
+
+def test_the_unreachable_roster_names_no_predicate_a_builtin_mapping_reaches() -> None:
+    """A predicate the mapping actually names must leave the roster, or the roster stops being an
+    honest account of what is unreached (mirrors the verification-basis roster's honesty check)."""
+    assert _all_named().isdisjoint(NOT_REACHABLE_FROM_BUILTIN_MAPPINGS)
+
+
+def test_the_unreachable_roster_names_only_catalog_predicates() -> None:
+    """A roster entry naming a predicate the catalog does not carry is a stale declaration."""
+    catalog = {spec.predicate_id for spec in _CATALOG.predicates}
+    assert set(NOT_REACHABLE_FROM_BUILTIN_MAPPINGS) <= catalog
 
 
 # --- the two literal buckets (unchanged behaviour) ------------------------------------------------

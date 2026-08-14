@@ -445,6 +445,17 @@ def _deferral_reason(mapping: ExtractionMapping, locator: str) -> str:
     return NO_MAPPING_FOR_LOCATOR
 
 
+def named_predicates(mapping: ExtractionMapping) -> frozenset[str]:
+    """Every catalog predicate id the mapping's producing rules name — literal rules and every
+    `entry_kind_model` slot. Deferrals name no predicate. This is the reachability half of §5.2
+    invariant 4: a catalog predicate is reachable iff it appears here for some builtin mapping.
+    """
+    predicates = {rule.predicate for rule in mapping.literal_rules}
+    for spec in mapping.entry_kind_model.values():
+        predicates.update(slot.predicate for slot in spec.slots)
+    return frozenset(predicates)
+
+
 def validate_mapping_against_catalog(mapping: ExtractionMapping, catalog: PredicateCatalog) -> None:
     """Refuse a mapping that cannot be a legal member of the seeded catalog — once, before any
     extraction runs (§6.2a). This is what turns the revision-5 misrouting (a `project` entry's facts
