@@ -13,10 +13,52 @@ All notable changes to this project are documented here. The format follows
   `{config_dir}/career-profile`, with `--bundle PATH` overriding that; it is machine-local, is not a
   `Settings` field, and does not participate in lead selection.
 
-  These commands are reachable from a terminal — `init`, `checkout`, `rebase-draft`, `validate`,
+  These fifteen commands are reachable from a terminal — `init`, `checkout`, `rebase-draft`, `validate`,
   `inspect`, `inventory`, `conflicts`, `migrate`, `import`, `add-evidence`, `resolve-conflict`,
-  `approve`, `promote` — each with a `--json` machine report alongside the human rendering, and each
-  returning the same four exit tiers (0 clean, 1 findings, 2 usage error, 3 could not complete).
+  `approve`, `approve-projection`, `project`, `promote` — each returning the same four exit tiers
+  (0 clean, 1 findings, 2 usage error, 3 could not complete), and each carrying a `--json` machine
+  report alongside the human rendering **except `approve-projection`**, which ships without one
+  deliberately: it is a consent prompt on a controlling terminal, and a machine-readable rendering of
+  a consent prompt invites a caller to answer it.
+
+- **The bundle-to-résumé projection — `resume project`, `profile-bundle project`, and
+  `profile-bundle approve-projection`.** The bridge from the bundle to a rendered résumé, in two stages
+  with the owner's editorial choices in one declaration file.
+
+  `{config_dir}/projection.yaml` is that declaration: it names bundle skill ids grouped under labels you
+  choose, and the shell document supplying the parts the bundle is deliberately not authoritative for.
+  **v1 projects `skill_groups`, `entries` and `extracurricular` only — not your name, contacts or
+  education.** That is not an omission: the LaTeX renderer never reads `Resume.header` or
+  `Resume.education`, so projecting them could not change a PDF.
+
+  `profile-bundle project` serializes the JD-blind Stage 1 pool for review, touching no database, so the
+  pool can be inspected before any posting is involved. `resume project --posting N --scorer NAME` runs
+  Stage 1 and then Stage 2, selecting which entries reach the résumé against that posting's JD skills and
+  a page budget, and writes `resume.projected.yaml` and `projection-manifest.json` beside each other
+  under `--out`. Rendering stays a second command — `tailor run <id> --resume <path>` — because folding
+  projection into `tailor run` would require `tailor` to know about the bundle, which is the one wall this
+  design keeps up. Two costs are accepted rather than optimised away: the JD is read twice, and the
+  résumé compiles twice, a scratch compile to fit the budget and the real artifact in `tailor run`.
+
+  **`--scorer` is required and has no default.** All four registered scorers
+  (`coverage_then_density`, `mean_per_bullet`, `mean_top_k`, `total_distinct`) are falsified by one
+  rank-agreement probe or the other, and they collapse into two behavioural families, so they cannot
+  break their own tie. Naming one is therefore a deliberate, visible choice rather than a silently
+  picked winner, and it stays that way until an owner-labeled selection matrix rules. An unknown name is
+  refused with the live list of registered choices.
+
+  `approve-projection` records the owner's approval of the declaration's exact resolved content on a
+  controlling terminal. The approval **binds the bundle it was made against**: the stamp carries the
+  bundle digest, and projection compares it against the bundle actually being read, refusing when the
+  bundle has moved since approval — the one case an unedited, still-approved declaration would otherwise
+  hide completely. That comparison is unconditional; a `--check` flag that used to gate it was deleted,
+  because an opt-in flag on a consent control is the wrong shape and a check that cannot behave
+  differently from the plain command is a check to delete rather than keep.
+
+  Carried, and known: the shell document's *content* is bound by no digest — it is hashed as a filename
+  and lives outside the bundle, so editing it changes the projected header and education with no
+  re-approval. The blast radius is small for exactly the reason above, the renderer reading neither
+  field.
 
 - **`profile-bundle import`** enumerates one owner-approved source into a draft's
   `imports/source-ledger.yaml`, through the deterministic adapters that shipped with the bundle and
