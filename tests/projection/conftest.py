@@ -102,9 +102,13 @@ def _build_projection_env(
     """
     bundle_root = tmp_path / "projection-bundle"
     if promote_bundle:
-        promote_example_tree(bundle_root)
+        bundle_digest = promote_example_tree(bundle_root).bundle_digest
     else:
         bundle_root.mkdir()
+        # No revision was ever promoted, so there is no real digest to bind the stamp to; this
+        # value is never compared — `project_pool` raises `BUNDLE_UNREADABLE` before `--check`
+        # would ever read it back.
+        bundle_digest = "sha256:" + "0" * 64
 
     config_dir = tmp_path / "config"
     config_dir.mkdir()
@@ -120,7 +124,12 @@ def _build_projection_env(
 
     if approved:
         digest = projection_digest(load_declaration(declaration_path))
-        write_stamp(config_dir, digest=digest, approved_at=datetime(2026, 8, 13, 12, tzinfo=UTC))
+        write_stamp(
+            config_dir,
+            digest=digest,
+            bundle_digest=bundle_digest,
+            approved_at=datetime(2026, 8, 13, 12, tzinfo=UTC),
+        )
 
     return ProjectionEnv(
         bundle_root=bundle_root, config_dir=config_dir, declaration=declaration_path

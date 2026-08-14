@@ -220,6 +220,18 @@ class IssueCode(StrEnum):
     #: it.
     PARTIAL_EDIT_APPLIED = "partial_edit_applied"
 
+    # -- projection boundary ---------------------------------------------------------
+    #: One member for the whole `boardwatch.projection` package's own closed `ProjectionIssue`
+    #: catalog (~30 members), deliberately NOT taught into this catalog one by one: `projection`
+    #: depends on `profile_bundle`, never the reverse, and `ProjectionIssue` stays the
+    #: authoritative vocabulary for projection's business outcomes. The specific member rides in
+    #: `details.projection_issue` so nothing is lost at the fold — see
+    #: `cli/projection_cmd.py`'s boundary map, the one place this is constructed. A projection
+    #: refusal whose shape already matches an existing code here reuses that code instead (a stale
+    #: projection approval reuses `STALE_APPROVAL_STAMP` below); this is the catch-all for every
+    #: other member.
+    PROJECTION_REFUSED = "projection_refused"
+
 
 #: Codes reported as completeness blockers: the revision stays valid, the record is unusable.
 _BLOCKER_CODES: frozenset[IssueCode] = frozenset(
@@ -272,6 +284,7 @@ STATE_REFUSAL_CODES: frozenset[IssueCode] = frozenset(
         IssueCode.RECORD_NOT_FOUND,
         IssueCode.APPROVAL_REQUIRES_CONTROLLING_TTY,
         IssueCode.APPROVAL_DECLINED,
+        IssueCode.PROJECTION_REFUSED,
     }
 )
 

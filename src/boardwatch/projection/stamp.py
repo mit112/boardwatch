@@ -28,6 +28,7 @@ from typing import Literal
 from pydantic import BaseModel, ConfigDict
 
 from boardwatch.profile_bundle.paths import digest_token
+from boardwatch.profile_bundle.yaml_loader import load_yaml_bytes
 from boardwatch.profile_bundle.yaml_writer import document_bytes
 
 #: `{config_dir}/projection-approvals/`. Its own directory, not inside the bundle: a projection
@@ -42,12 +43,20 @@ class ProjectionStamp(BaseModel):
     `approved_via` is a `Literal` rather than a shared enum, because the bundle's `ApprovedVia` is
     closed and schema-bound (see the module docstring) — this is deliberately its own one-value
     type, not a member borrowed from that one.
+
+    `bundle_digest` binds the approval to the bundle revision the declaration was resolved
+    against at approval time, not just to the declaration's own content. `projection_digest` alone
+    cannot carry this: it hashes `projection.yaml` only (`declaration.py`'s own docstring), so an
+    unedited declaration re-approves silently even when the bundle facts it resolves against have
+    moved — the owner would be approving text they never saw. `project --check` is what reads this
+    field back to detect exactly that drift.
     """
 
     model_config = ConfigDict(frozen=True, extra="forbid")
 
     projection_stamp_id: str
     projection_digest: str
+    bundle_digest: str
     approved_at: datetime
     approved_via: Literal["controlling_terminal"] = "controlling_terminal"
 
@@ -74,7 +83,9 @@ def stamp_exists(config_dir: Path, digest: str) -> bool:
     return stamp_path(config_dir, digest).is_file()
 
 
-def write_stamp(config_dir: Path, *, digest: str, approved_at: datetime) -> Path:
+def write_stamp(
+    config_dir: Path, *, digest: str, bundle_digest: str, approved_at: datetime
+) -> Path:
     """Write the stamp for exactly this digest. Idempotent — one digest, one file, because the
     path is a pure function of the digest: writing it again overwrites the same file rather than
     creating a second one.
@@ -92,6 +103,7 @@ def write_stamp(config_dir: Path, *, digest: str, approved_at: datetime) -> Path
     stamp = ProjectionStamp(
         projection_stamp_id=f"projection-approval.{digest_token(digest)}",
         projection_digest=digest,
+        bundle_digest=bundle_digest,
         approved_at=approved_at,
     )
     path = stamp_path(config_dir, digest)
@@ -99,3 +111,18 @@ def write_stamp(config_dir: Path, *, digest: str, approved_at: datetime) -> Path
     logical = PurePosixPath(f"{APPROVALS_DIR}/{path.name}")
     path.write_bytes(document_bytes(stamp.model_dump(mode="json"), logical_path=logical))
     return path
+
+
+def read_stamp(config_dir: Path, digest: str) -> ProjectionStamp:
+    """Read back the stamp written for `digest`, through the same restricted loader
+    `document_bytes` writes against (`profile_bundle.yaml_loader.load_yaml_bytes`) — the read side
+    of the exact round-trip `write_stamp` already verifies at write time.
+
+    Callers that already know a stamp for this digest exists (`project_pool`'s own gate just
+    confirmed it via `stamp_exists`) do not need to guard `FileNotFoundError` here; this function
+    adds no guard of its own; it reads back what a prior `write_stamp` for this digest produced.
+    """
+    path = stamp_path(config_dir, digest)
+    logical = PurePosixPath(f"{APPROVALS_DIR}/{path.name}")
+    raw = load_yaml_bytes(path.read_bytes(), logical_path=logical)
+    return ProjectionStamp.model_validate(raw)

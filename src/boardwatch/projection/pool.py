@@ -171,9 +171,16 @@ class ProjectionCandidate:
     **Unlike `project_pool`, `projection_candidate` performs no owner-gate check.** It computes
     the very thing the gate is checked against, so requiring an existing stamp here would make
     the gate permanently unreachable — no command could ever produce the first one.
+
+    `bundle_digest` is the bundle revision these entries were resolved against — carried so
+    `approve_projection` can bind the stamp to it (`stamp.ProjectionStamp.bundle_digest`). Reading
+    it here rather than deriving it separately at the call site keeps one fact computed once:
+    `projection_candidate` already reads `selection` to build `ctx`, so this is a field, not a new
+    computation.
     """
 
     projection_digest: str
+    bundle_digest: str
     entries: tuple[Entry, ...]
 
 
@@ -224,7 +231,9 @@ def projection_candidate(
         )
         for entry_decl in declaration.entries
     )
-    return ProjectionCandidate(projection_digest=digest, entries=entries)
+    return ProjectionCandidate(
+        projection_digest=digest, bundle_digest=selection.bundle_digest, entries=entries
+    )
 
 
 def _build_entry(

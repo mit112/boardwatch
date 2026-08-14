@@ -1,4 +1,6 @@
-"""`boardwatch profile-bundle`: the twelve commands design §7 and §19 name.
+"""`boardwatch profile-bundle`: the fourteen commands design §7 and §19 name, counting
+`approve-projection` (Task 10) and `project` (Task 18), both defined in `cli/projection_cmd.py` and
+registered here by function reference.
 
 This module is a **translation**, and deliberately nothing else. Every decision about the bundle is
 made under `boardwatch.profile_bundle`; what lives here is argument parsing, the two renderings,
@@ -33,6 +35,12 @@ Both T18 review lenses ruled the uniform envelope right and §19's list under-sp
 "The **proposed** command surface is", while §21 is normative and explicitly family-wide. T19 owns
 amending §19 to show `[--json]` on all twelve, along with `--deep-history`, which §7 names and §19
 gives no surface.
+
+**One documented exception.** `approve-projection` ships without `--json` — a deliberate choice,
+not an oversight: it is a live terminal question-and-answer (the owner types the confirmation word
+back), and no JSON schema for that exchange was ever specified, so adding one would have been
+unrequested configurability rather than filling a gap. `project`, this family's other new command,
+is a reporting command like `inspect`/`inventory` and carries the full envelope.
 """
 
 from __future__ import annotations
@@ -1042,6 +1050,12 @@ def _prompt_text(candidate: authoring.ApprovalCandidate) -> str:
 # module's own docstring for why); this file may freely import it, since the dependency runs only
 # one way.
 profile_bundle_app.command("approve-projection")(projection_cmd.approve_projection)
+
+# `project` is defined in `cli/projection_cmd.py` for the identical reason and registered the
+# identical way: it serializes `{config_dir}/projection.yaml`'s Stage 1 pool, not the bundle
+# itself, and the one-way import direction (this file imports `projection_cmd`, never the
+# reverse) is what `projection_cmd.py`'s own module docstring holds itself to.
+profile_bundle_app.command("project")(projection_cmd.project)
 
 
 # --------------------------------------------------------------------------------------
