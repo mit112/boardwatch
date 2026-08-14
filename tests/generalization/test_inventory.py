@@ -52,7 +52,8 @@ def test_scope_covers_data_files_repo_wide() -> None:
     assert "src/boardwatch/tailor/personas.yaml" in scope
     assert "src/boardwatch/profile_bundle/resources/career-profile.schema.json" in scope
     assert "src/boardwatch/profile_bundle/examples/comprehensive/manifest.yaml" in scope
-    assert len(scope) == 76
+    assert "src/boardwatch/profile_bundle/resources/predicate-catalog-v1.yaml" in scope
+    assert len(scope) == 77
 
 
 def test_every_bundle_example_file_is_pinned_and_synthetic() -> None:

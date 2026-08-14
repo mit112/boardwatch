@@ -68,7 +68,7 @@ from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
 from typing import Final
 
-from boardwatch.profile_bundle import secret_scan
+from boardwatch.profile_bundle import predicate_catalog, secret_scan
 from boardwatch.profile_bundle.blobs import quarantined_blobs
 from boardwatch.profile_bundle.canonical import (
     EVIDENCE_PATH,
@@ -328,6 +328,7 @@ def _empty_documents() -> Mapping[PurePosixPath, DocumentModel]:
     build that retains a newer head writes the newer head.
     """
     ruleset = secret_scan.builtin_ruleset(secret_scan.CURRENT_RULESET_VERSION)
+    predicates = predicate_catalog.builtin_catalog(predicate_catalog.CURRENT_CATALOG_VERSION)
     empty_facts: dict[str, object] = {"facts": [], "entities": []}
     version = INITIAL_CATALOG_VERSION
     return {
@@ -358,9 +359,7 @@ def _empty_documents() -> Mapping[PurePosixPath, DocumentModel]:
         EVIDENCE_PATH: EvidenceRecordsDocument.model_validate({"evidence": []}),
         PurePosixPath("conflicts/groups.yaml"): ConflictGroups.model_validate({"conflicts": []}),
         PurePosixPath("conflicts/rulings.yaml"): ConflictRulings.model_validate({"rulings": []}),
-        PurePosixPath("policy/predicates.yaml"): PredicateCatalog.model_validate(
-            {"predicates_version": version, "predicates": []}
-        ),
+        PurePosixPath("policy/predicates.yaml"): predicates,
         PurePosixPath("policy/units.yaml"): UnitCatalog.model_validate(
             {"units_version": version, "units": []}
         ),

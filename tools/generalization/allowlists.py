@@ -104,6 +104,17 @@ SHIPPED_DATA: dict[str, DataEntry] = {
         "and that test together stop the shipped contract from drifting from the models.",
         pin="sha256:024927129b868f1696428f823aa78e761f5f7f820c89554385c4542e7ca72128",
     ),
+    "src/boardwatch/profile_bundle/resources/predicate-catalog-v1.yaml": DataEntry(
+        kind="taxonomy",
+        reason="The builtin starter predicate catalog seeded into every fresh career-profile "
+        "bundle (Gate B Slice A, design §5). A generic, field-agnostic vocabulary of record "
+        "predicate CONTRACTS (subject kinds, value types, evidence, surfaces) — describes the "
+        "world, not one user, and carries no person, organisation or claim value. The audited "
+        "comprehensive-example rows plus two sanctioned changes (technology.used admits "
+        "incidental; a new project.name). Content-addressed into the bundle, so it is pinned "
+        "rather than exempted; docs/profile-bundle-predicate-catalog-audit.md records the audit.",
+        pin="sha256:66ede8814efce3e41203525fb3344ecf34e2870c9af9d649b09b26c02477e09b",
+    ),
     "src/boardwatch/store/migrations/script.py.mako": DataEntry(
         kind="template",
         reason="Alembic migration template",

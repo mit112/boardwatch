@@ -507,3 +507,21 @@ class UnsupportedSecretRulesetError(ProfileBundleError):
         )
         self.found = found
         self.supported = tuple(sorted(supported))
+
+
+class UnsupportedPredicateCatalogError(ProfileBundleError):
+    """A bundle records a starter predicate-catalog version this build does not retain.
+
+    Raised rather than returning an empty vocabulary, for the same reason as
+    `UnsupportedSecretRulesetError`: "this build cannot supply that catalog" and "the catalog is
+    empty" must never look alike — an empty catalog would silently leave every enumerated record
+    `review_required`.
+    """
+
+    def __init__(self, found: int, supported: Sequence[int]) -> None:
+        super().__init__(
+            f"predicate-catalog version {found} is unavailable "
+            f"(available: {sorted(supported)}); refusing to supply an empty vocabulary"
+        )
+        self.found = found
+        self.supported = tuple(sorted(supported))

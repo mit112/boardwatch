@@ -43,17 +43,22 @@ import is expected and is **not** about the records. `docs/profile-bundle-author
 said exit 0; both are corrected. **Authoring `facts/identity.yaml` is Mit's next concrete step** — a display
 name and review dates only he has, which is why `init` refuses to invent them.
 
-**Candidate extraction is DESIGNED (spec revision 7) and the BUILD HAS STARTED (D-178).** The spec
-(`docs/superpowers/specs/2026-08-14-gate-b-candidate-extraction-design.md`) is now the design we build FROM,
-not a review target — the five-round review loop is PAUSED (see the review paragraph below). First production
-code is on branch **`gate-b-extraction-slice-a`** (unmerged, local): `src/boardwatch/profile_bundle/extraction.py`
-— `locator_matches` (segment grammar incl. the literal non-head segment) and `extract_proposals`
-(literal-predicate rule → `ProposedCandidate`), 6 tests green, ruff+mypy clean (commit `d4a6e3e`). **Still no
-record reaches `imported`**: the thin slice is mid-build. Next: the mapping-document model + seeded
-`boardwatch-resume-v1` builtin; the `header/1` rule; wire `extract_proposals → build_candidate_package →`
-write `imports/candidates.yaml`; the `profile-bundle extract` CLI (store import wall); then run against the 81
-real records and count candidates through the ledger. Hard buckets (metadata-by-kind, project dates, bullets)
-settle their interface in code after.
+**Candidate extraction is DESIGNED (spec revision 7) and the BUILD IS UNDER WAY (D-178).** The spec
+(`docs/superpowers/specs/2026-08-14-gate-b-candidate-extraction-design.md`) is the design we build FROM, not a
+review target — the five-round loop is PAUSED (below). On branch **`gate-b-extraction-slice-a`** (unmerged,
+local): the interpreter core (`profile_bundle/extraction.py` — `locator_matches` + `extract_proposals`, commit
+`d4a6e3e`), and now **Slice A: the seeded starter predicate catalog (D-179).** `init` seeds
+`resources/predicate-catalog-v1.yaml` (42 predicates, content-addressed) into every fresh bundle via
+`predicate_catalog.builtin_catalog`, exactly as it seeds the secret-scan ruleset — **no schema bump**
+(`predicates.yaml` was already a v1 doc). The §5.2 audit gate ships invariants **1, 2, 5** as mechanical tests;
+**3 (§5.1 behavioural) and 4 (catalog↔mapping reachability) are OWED** — they need a builtin-catalog grounding
+context and the Slice-B mapping. Audit: `docs/profile-bundle-predicate-catalog-audit.md`. **Still no record
+reaches `imported`.** Next (Slice B): the `policy/extraction-mappings.yaml` document + `entry_kind_model`
+builtin — this needs the **schema v2 bump** (new `DocumentKind`/`FIXED_DOCUMENTS`/`DOCUMENT_MODELS`/`_empty_documents`
+seed + a real `migrate_bundle`); then the `header/1` + skill rules, wire `extract_proposals →
+build_candidate_package → candidates.yaml`, the `profile-bundle extract` CLI (store import wall), then run
+against the 81 real records and count candidates through the ledger. Hard buckets (metadata-by-kind, project
+dates, bullets) settle their interface in code after.
 
 **Five external review rounds, all NOT READY — and the loop is NOT converging** (findings 12 → 7 → 4 → **5**,
 severity all-blocking). Round 5 (of revision 6) returned **NOT READY / CONTINUE** with **5 blocking findings,
@@ -97,10 +102,12 @@ and bumping the manifest is owed, plus widening supported versions to {1,2} **an
 NOT owe a restricted raw-v1 loader or version-dispatched parsing** (round 3 / D-175): `load_documents` does
 not reject declared-but-absent documents, so adding documents does not break v1 parsing.
 
-**Two prerequisites the design found, both absences:** `init` seeds **zero** predicates and the only catalog in
-the repo is the 41-entry example; and the shipped catalog **forbids a familiarity-level skill** —
-`may_ground_skill` on 1 of 41, `usage_context: incidental` admitted by **0 of 41**, so `effective.py:220`'s
-guard can never fire. Admitting `incidental` on `technology.used` repairs both.
+**Two prerequisites the design found, both now CLOSED by Slice A (D-179):** `init` seeded **zero** predicates —
+now seeds the 42-row builtin (`predicate-catalog-v1.yaml`); and the catalog **forbade a familiarity-level
+skill** (`usage_context: incidental` admitted by 0 of 41) — the builtin now admits `incidental` on
+`technology.used`, so `effective.py`'s guard is reachable. The audit also found three **dead `VerificationBasis`
+members** the spec's invariant 1 missed (`measured`/`secondary_only`/`multiple_sources`, 0 of 42); rostered with
+reasons rather than admitted (D-179), so a NEW accidental orphan still fails the gate.
 
 **A correction that governs the skills question:** `models/skills.py:3-6`'s *"a generic skills list supports
 nothing"* is about **authority, not admissibility** — such naming cannot make a skill `verified`; it may still
@@ -159,7 +166,7 @@ program gate. Three facts outlive it: the manifest is written **SECOND, not last
 | P7 Breadth | not started | — |
 | *Gate A (parallel)* | *complete, merged, CI green* | ***MET*** — *has moved no program gate* |
 | *Projection* | ***MERGED AND PUSHED**, reviewed clean. Task 20 is Mit's* | *P0–P4 build gates met* |
-| *Gate B (active)* | *`import` shipped (D-170); extraction **spec at revision 7, review loop PAUSED (D-178), BUILD STARTED** on branch `gate-b-extraction-slice-a` (interpreter core, 6 tests, unmerged)* | ***NOT MET** — nothing imported to a real bundle yet; extraction mid-build* |
+| *Gate B (active)* | *`import` shipped (D-170); extraction build under way on `gate-b-extraction-slice-a` (unmerged): interpreter core + **Slice A seeded predicate catalog (D-179)**; Slice B (mapping + schema v2 + `extract`) next* | ***NOT MET** — nothing imported to a real bundle yet* |
 
 ### Gate P6, clause by clause
 
