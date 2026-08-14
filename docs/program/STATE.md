@@ -137,7 +137,11 @@ still running, so it reads as a green gate about four minutes early.
 transcribing 81 records by hand. **`{config_dir}/career-profile` still does not exist**, nothing has been
 imported, and everything remains built against the synthetic example that ships as package data. The next
 concrete step is Mit's: `profile-bundle init`, declare `resume.yaml` as a source in `policy/sources.yaml`,
-then `import`. **Expect every one of the 81 records to land `review_required` at exit 0** — dispositioning
+then `import`. **MEASURED 2026-08-14 against a scratch bundle and the live file: exactly 81 records, all
+`review_required`, at exit 1 — not exit 0.** The one finding is `error: missing_required_file
+(facts/identity.yaml)`, which `init` omits on purpose and the grammar requires; it is **not** about the
+records. The buckets confirm the design's table exactly (header 2 · education 2 · skill-groups 58 · metadata 6
+· bullets 13), counted from the ledger file rather than the command's self-report. Dispositioning
 them is the Gate B work, and `validate --completeness` is what lists them.
 
 **Still missing for a promotable bundle: candidate extraction. It is DESIGNED and REVIEWED, not built** —

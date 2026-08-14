@@ -1109,9 +1109,16 @@ Two consequences worth knowing before the first run:
 
 - **A first import of a real source reports every record as `review_required`, and that is correct.**
   Dispositioning them is the Gate B work, not a defect.
-- **It is a completeness finding, so `import` itself exits 0.** The revalidation every authoring
-  command ends with does not run the completeness tier; the undispositioned count is in the
-  command's own result, and `validate --completeness` is what reports them one by one.
+- **The undispositioned count is a completeness finding, so it does not affect the exit code.** The
+  revalidation every authoring command ends with does not run the completeness tier; the count is in
+  the command's own result, and `validate --completeness` is what reports them one by one.
+- **But your first `import` on a fresh bundle still exits 1, for an unrelated reason.** Measured
+  2026-08-14 against a real `resume.yaml`: 81 records, all `review_required`, and **exactly one**
+  finding — `error: missing_required_file (facts/identity.yaml)`. `init` creates a bundle without
+  that file on purpose (§7), the grammar requires it, and every authoring command revalidates the
+  structural tier. So exit 1 on a first import is expected and is **not** about your records. Author
+  `facts/identity.yaml` and it clears. An earlier version of this bullet said `import` "exits 0",
+  which was true of the completeness tier and false of the command.
 
 The scope is read from the ledger, never widened here. A source already enumerated keeps exactly the
 scope it carries; a first import may only derive `complete_file`, because a `selected_sections`

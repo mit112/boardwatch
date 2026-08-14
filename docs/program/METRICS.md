@@ -3485,6 +3485,34 @@ Here the job *is* inside `make check`, ran, reported OK, and had seen nothing.
 | Gate at the fixed tree | **exit 0**, 5 of 5 stages, **6232 passed / 4 xfailed**, coverage **95.76%** |
 | `gitleaks` over the push range | clean, run locally before the push |
 
+### The first real import, run against a scratch bundle (NOT the config dir)
+
+`--bundle PATH` overrides the location, so the shipped command ran against the live `resume.yaml`
+read-only with no write to `{config_dir}`. First execution of `profile-bundle import` on real data.
+
+| Measure | Value |
+|---|---|
+| Records enumerated | **81** — matches the derived claim exactly |
+| Dispositions | `review_required` **81**, `imported` 0, `excluded` 0 |
+| Candidate ids | **0** |
+| Buckets | header **2** · education **2** · skill-groups **58** · entry metadata **6** · bullets **13** |
+| Per-source id list vs records | equal, **order-equal** |
+| Scope · enumerator | `complete_file` · `boardwatch-resume-v1` v1 |
+| **Exit code** | **1**, not the documented 0 |
+| Findings | **exactly 1** — `error: missing_required_file (facts/identity.yaml)` |
+
+Counted from the ledger file by a separate parser, not from the command's own report.
+
+**The documented expectation was wrong, in a released doc.** `docs/profile-bundle-authoring.md` said
+"It is a completeness finding, so `import` itself exits 0" — true of the completeness tier, false of
+the command. `init` omits `facts/identity.yaml` on purpose, the grammar requires it, and every
+authoring command revalidates the structural tier. Both that doc and `STATE.md` are corrected.
+
+**What this buys:** D-173's Gate B predicate names 81 as the denominator. That number is now measured
+through the shipped command rather than derived by reading the adapter, so the predicate rests on an
+observation. Had it come back as anything else, the predicate would have needed revising before a plan
+hardened around it.
+
 ### What the numbers do not show
 
 - **A green CI run cannot verify this fix.** The bug passed by luck on 3.12-ubuntu at `2324a49`, so a
