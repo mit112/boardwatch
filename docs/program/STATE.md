@@ -20,8 +20,9 @@ authority. **Rewrite it, never prepend to it.** Keep it near 170 lines.
 **The headline number: 0.** Zero job applications have ever come out of boardwatch (`applications` has 0
 rows), zero unattended days, zero acceptance days. Against that: 3 published releases, ~46k lines of source,
 6,294 tests at 95.6%, 62 CLI commands, 6 ATS providers, an 800 MB / 24,073-posting store. **New this session
-(2026-08-14):** the career-profile candidate lane moved from 0 → **78 of 81 résumé records `imported`** (D-181)
-— a milestone on the bundle→résumé path, not an application.
+(2026-08-14):** the career-profile candidate lane moved from 0 → **78 of 81 résumé records `imported`** (D-181),
+and those candidates were then **promoted into the renderable graph** — 6 entities, 47 facts, 10 grounded skills
+on the live résumé (D-182). Milestones on the bundle→résumé path, not an application.
 
 **The program reoriented on 2026-08-13 (D-155):** remaining work runs through the **canonical career-profile
 bundle**, not the old `resume.yaml` path. Freezing P3, P6 and the 14-day clock costs nothing, because job-apps
@@ -66,19 +67,27 @@ fabricated fixture. Widening to `{1,2}` + the transform + a v1 fixture is the ad
 v1 bundle first needs upgrading; the tripwire `test_a_previous_schema_fixture_and_a_forward_migration_are_owed_at_v2`
 still pins it. This departs from D-176's stated trio, on purpose.
 
+**The promotion slice SHIPPED (D-182) — candidates now become the graph.** `profile-bundle promote-candidates
+--draft NAME --source SOURCE_ID` turns one source's imported candidates into entities + `FactRecord`s +
+`SkillRecord`s (`candidate_promotion.py`, import-wall pure; `authoring.promote_candidates` + CLI mirror `extract`).
+Grounded + owner-mediated (Mit's ruling): facts born `unresolved` with **no fabricated evidence**; a skill exists
+only where a bullet's `tech_tags` grounds it to an entity (10 of 58; the other 48 familiarity items stay
+candidates); categories derived from skill-group labels; **one-shot** (refuses `duplicate_record_id` if entities
+or skills already exist). A test proves the graph is exactly one owner confirm/attest/approve step from a
+grounded, résumé-surfaced, validating skill — §6.8's stop condition at the validation layer.
+
 **Owed next, in order:**
 1. **Mit's prerequisite** — author `facts/identity.yaml` (a display name + review dates only he has); `init`
-   omits it, so `extract` exits 1 with `missing_required_file` while still writing the candidates/ledger/report.
-   With identity present, `extract` exits 0.
+   omits it, so `extract`/`promote-candidates` exit 1 with `missing_required_file` while still writing their
+   output. With identity present they exit 0. (Unblocks `person.professional_name`, which promotion skips today.)
 2. **Wire `validate_extraction_report` into the aggregate `validate_imports` lane** (currently only called
    directly by `extract`). This enforces the drain invariant at promotion — and forces the example bundle's
    empty report to explain its own `review_required` records, a ripple to do carefully.
-3. **The promotion slice (§6.8)** — the only place candidates become `FactRecord`s/`SkillRecord`s, a
-   `skill_ref`'s `skill_id` becomes a validated reference (still unchecked, §6.4), and the
-   evidenced-vs-familiarity distinction is recorded. This is the path from `imported` to a rendered résumé.
-4. **§5.2 invariants 3 (§5.1 behavioural) and 4 (catalog↔mapping reachability)** — invariant 4 is now
+3. **§5.2 invariants 3 (§5.1 behavioural) and 4 (catalog↔mapping reachability)** — invariant 4 is now
    satisfiable (`validate_mapping_against_catalog` proves the builtin mapping is catalog-legal); ship the gate.
-5. **Education (2 lines) is the agent lane, Slice C** (`free_text_deferred`), declared not decomposed.
+4. **Education (2 lines) is the agent lane, Slice C** (`free_text_deferred`), declared not decomposed.
+5. **Then a promoted revision** — the owner confirms/attests/approves the promoted facts and `promote`s, which is
+   what makes Gate B mechanically MET (§7a) and a résumé render.
 
 **Two seams to know (D-181):** the builtin catalog and the comprehensive **example** catalog are independent
 (D-179), so the example bundle is **not** a valid extraction host for a résumé *with projects* — its
@@ -134,7 +143,7 @@ program gate. Three facts outlive it: the manifest is written **SECOND, not last
 | P7 Breadth | not started | — |
 | *Gate A (parallel)* | *complete, merged, CI green* | ***MET*** — *has moved no program gate* |
 | *Projection* | ***MERGED AND PUSHED**, reviewed clean. Task 20 is Mit's* | *P0–P4 build gates met* |
-| *Gate B (active)* | ***extraction SHIPPED (D-181)** on `gate-b-extraction-slice-a` (unmerged, gate-green): interpreter + schema v2 + `extract`; **78/81 records reach `imported`** on the live résumé* | ***progressing** — candidates land; promotion slice + validator wiring owed before a résumé renders* |
+| *Gate B (active)* | ***extraction + promotion SHIPPED (D-181, D-182)** on `gate-b-extraction-slice-a` (unmerged, gate-green): interpreter + schema v2 + `extract` (78/81 `imported`) + `promote-candidates` (6 entities, 47 facts, 10 grounded skills)* | ***progressing** — the graph exists; a promoted revision (owner confirm/attest/approve) is what makes Gate B mechanically MET* |
 
 ### Gate P6, clause by clause
 

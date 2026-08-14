@@ -46,7 +46,7 @@ import tempfile
 import unicodedata
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import date, datetime
 from pathlib import Path, PurePosixPath
 from typing import Any, Final, Literal, TypeVar
 
@@ -63,6 +63,10 @@ from boardwatch.profile_bundle.blobs import (
     BlobDigestMismatchError,
     quarantined_blobs,
     write_blob,
+)
+from boardwatch.profile_bundle.candidate_promotion import (
+    PromotionError,
+    build_promotion,
 )
 from boardwatch.profile_bundle.canonical import (
     EVIDENCE_PATH,
@@ -108,9 +112,12 @@ from boardwatch.profile_bundle.index import record_id_of
 from boardwatch.profile_bundle.models.documents import (
     BundleDocuments,
     DocumentModel,
+    EmploymentFactsDocument,
     EvidenceRecordsDocument,
     FactBearingDocument,
     MetricRecordsDocument,
+    ProjectFactsDocument,
+    SkillInventoryDocument,
 )
 from boardwatch.profile_bundle.models.evidence import AnyEvidence, EvidenceRecord
 from boardwatch.profile_bundle.models.history import (
@@ -141,6 +148,7 @@ from boardwatch.profile_bundle.models.manifests import (
 from boardwatch.profile_bundle.models.policy import (
     ExtractionMappingsDocument,
     PredicateCatalog,
+    SkillCategoryCatalog,
     SourceCatalog,
     SourceSpec,
 )
@@ -177,6 +185,8 @@ EXTRACTION_REPORT_PATH: Final = PurePosixPath("imports/extraction-report.yaml")
 EXTRACTION_MAPPINGS_PATH: Final = PurePosixPath("policy/extraction-mappings.yaml")
 PREDICATE_CATALOG_PATH: Final = PurePosixPath("policy/predicates.yaml")
 SOURCE_CATALOG_PATH: Final = PurePosixPath("policy/sources.yaml")
+SKILL_INVENTORY_PATH: Final = PurePosixPath("skills/inventory.yaml")
+SKILL_CATEGORIES_PATH: Final = PurePosixPath("policy/skill-categories.yaml")
 
 #: The names the operator's input files are reported under. They are not bundle documents, so they
 #: have no path inside the tree — and naming the operator's own filesystem path in a diagnostic
@@ -276,6 +286,24 @@ class SourceExtraction:
     report_reasons: Mapping[str, int]
     #: Whether any of the three documents actually moved. A re-extraction of an unchanged source
     #: writes nothing, so the operator can tell "already current" from "just rebuilt".
+    changed: bool
+
+
+@dataclass(frozen=True)
+class CandidatePromotion:
+    """What `promote-candidates` did for one source (§6.8)."""
+
+    draft_name: str
+    source_id: str
+    #: Entities created (one per promoted résumé entry).
+    entity_count: int
+    #: Facts across those entities — metadata, bullet, and the tech_tags-grounded technology use.
+    fact_count: int
+    #: `SkillRecord`s created — one per skill a bullet's tech_tags grounded to an entity.
+    skill_count: int
+    #: Categories added to `policy/skill-categories.yaml` (derived from skill-group labels).
+    category_count: int
+    #: Whether anything was written. A promotion that produced no documents wrote nothing.
     changed: bool
 
 
@@ -573,9 +601,143 @@ def extract_source(
     )
 
 
+def promote_candidates(
+    bundle_root: Path,
+    *,
+    draft_name: str,
+    source_id: str,
+    source_bytes: bytes | None,
+    as_of: date,
+) -> OperationOutcome[CandidatePromotion]:
+    """Promote one source's imported candidates into entities, facts, and skills (§6.8, D-182).
+
+    Deterministic, grounded, and owner-mediated: entities and their facts come from the imported
+    candidates; a skill's entity binding comes from a bullet's authored `tech_tags` (the source is
+    re-enumerated to recover them, as the candidates do not carry them); and every fact is born
+    `unresolved` with no fabricated evidence — the owner's confirm/attest/approve step is what
+    promotes and renders.
+
+    One-shot: refuses if the draft already holds entities or skills, because a re-run would clobber
+    the owner's edits to what it wrote. `as_of` is passed in, never read from a clock here.
+
+    Writes several documents (entity files, `skills/inventory.yaml`, and — when a promoted skill
+    names a category the catalog lacks — `policy/skill-categories.yaml`); the multi-file write
+    cannot be atomic (D-137), so a mid-write failure is named `PARTIAL_EDIT_APPLIED`.
+    """
+    try:
+        tree = _draft(bundle_root, draft_name)
+        documents = _load(tree)
+        spec = _declared_source(documents, source_id)
+        ledger = _source_ledger(documents)
+        catalog = _predicate_catalog(documents)
+        candidates = _candidate_package(documents)
+        categories = _skill_categories(documents)
+        _refuse_if_already_promoted(documents)
+        resolved = _source_bytes(bundle_root, spec, source_bytes)
+        enumerated = _enumerated(spec, resolved, _approved_scope(ledger, spec))
+
+        locator_by_record = {
+            row.source_record_id: row.normalized_locator
+            for row in ledger.records
+            if row.source_id == source_id
+        }
+        source_candidates = [
+            candidate
+            for candidate in candidates.candidates
+            if candidate.source_record_id in locator_by_record
+        ]
+        try:
+            plan = build_promotion(
+                candidates=source_candidates,
+                locator_by_record=locator_by_record,
+                tech_tags_by_bullet_locator=_tech_tags_by_bullet(enumerated),
+                catalog=catalog,
+                existing_categories=categories,
+                source_id=source_id,
+                source_content_digest=enumerated.source_content_digest,
+                as_of=as_of,
+            )
+        except PromotionError as exc:
+            raise _refusal(
+                IssueCode.MODEL_VALIDATION_ERROR,
+                f"{source_id} candidates could not be promoted: {exc}",
+                path=SKILL_INVENTORY_PATH.as_posix(),
+                record_id=source_id,
+            ) from exc
+
+        changed = bool(plan.documents)
+        if changed:
+            _write_documents(tree, plan.documents)
+    except _Refused as refusal:
+        return outcome_with(None, refusal.diagnostics)
+
+    return OperationOutcome.clean(
+        CandidatePromotion(
+            draft_name=draft_name,
+            source_id=source_id,
+            entity_count=plan.entity_count,
+            fact_count=plan.fact_count,
+            skill_count=plan.skill_count,
+            category_count=plan.category_count,
+            changed=changed,
+        )
+    )
+
+
 # --------------------------------------------------------------------------------------
 # Steps. Each returns its value or raises `_Refused`.
 # --------------------------------------------------------------------------------------
+
+
+def _skill_categories(documents: BundleDocuments) -> SkillCategoryCatalog:
+    document = documents.by_path.get(SKILL_CATEGORIES_PATH)
+    if not isinstance(document, SkillCategoryCatalog):
+        raise _refusal(
+            IssueCode.MISSING_REQUIRED_FILE,
+            f"the draft has no {SKILL_CATEGORIES_PATH}; a promoted skill needs a category catalog",
+            path=SKILL_CATEGORIES_PATH.as_posix(),
+        )
+    return document
+
+
+def _refuse_if_already_promoted(documents: BundleDocuments) -> None:
+    """Promotion is one-shot: a non-empty entity or skill set means it already ran (§6.8/D-182).
+
+    Re-running would recreate the same deterministic entity and fact IDs the owner has since edited
+    (confirmed a state, attached evidence), clobbering that work — so refuse rather than overwrite.
+    """
+    for path, document in documents.by_path.items():
+        if isinstance(document, EmploymentFactsDocument | ProjectFactsDocument):
+            raise _refusal(
+                IssueCode.DUPLICATE_RECORD_ID,
+                f"{path} already holds a promoted entity; clear the promoted facts and skills to "
+                "re-promote (promotion is one-shot so it never clobbers an owner's edits)",
+                path=path.as_posix(),
+            )
+        if isinstance(document, SkillInventoryDocument) and document.skills:
+            raise _refusal(
+                IssueCode.DUPLICATE_RECORD_ID,
+                f"{path} already holds promoted skills; clear the promoted facts and skills to "
+                "re-promote (promotion is one-shot so it never clobbers an owner's edits)",
+                path=path.as_posix(),
+            )
+
+
+def _tech_tags_by_bullet(enumerated: EnumeratedSource) -> dict[str, tuple[str, ...]]:
+    """Each bullet record's authored `tech_tags`, keyed by normalized locator (§6.8 grounding).
+
+    The candidates do not carry `tech_tags` — extraction maps a bullet to an accomplishment string
+    — so the source is re-enumerated and the atomic value read here, package-locally (the enumerator
+    imports no `tailor`, keeping the import wall intact).
+    """
+    tags: dict[str, tuple[str, ...]] = {}
+    for record in enumerated.records:
+        value = record.atomic_value
+        if isinstance(value, Mapping) and "tech_tags" in value:
+            raw = value["tech_tags"]
+            if isinstance(raw, Sequence) and not isinstance(raw, str | bytes):
+                tags[record.normalized_locator] = tuple(str(tag) for tag in raw)
+    return tags
 
 
 def _declared_source(documents: BundleDocuments, source_id: str) -> SourceSpec:
@@ -716,9 +878,7 @@ def _rebuild_candidates(
     source_record_ids: set[str],
 ) -> CandidatePackage:
     try:
-        return rebuild_source_candidates(
-            existing, fresh, source_record_ids=source_record_ids
-        )
+        return rebuild_source_candidates(existing, fresh, source_record_ids=source_record_ids)
     except CandidateImportError as exc:
         raise _refusal(
             IssueCode.MODEL_VALIDATION_ERROR,
@@ -753,9 +913,7 @@ def _rebuild_report(
         for entry in existing.entries
         if entry.source_record_id not in this_source_ids
     ]
-    entries = sorted(
-        [*kept_entries, *fresh_entries], key=lambda entry: entry["source_record_id"]
-    )
+    entries = sorted([*kept_entries, *fresh_entries], key=lambda entry: entry["source_record_id"])
     try:
         return ExtractionReport.model_validate(
             {"report_version": existing.report_version, "entries": entries}

@@ -247,9 +247,7 @@ def _emit(
             "result": dict(rendered.result),
             "diagnostics": [diagnostic_json(finding) for finding in outcome.diagnostics],
         }
-        typer.echo(
-            json.dumps(payload, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
-        )
+        typer.echo(json.dumps(payload, sort_keys=True, separators=(",", ":"), ensure_ascii=False))
     else:
         lines = [f"profile-bundle {command}: {outcome.category}"]
         if as_of is not None:
@@ -360,7 +358,6 @@ def _bundle_root(ctx: typer.Context, override: Path | None) -> Path:
     directory and the database, which no bundle command needs.
     """
     return resolve_bundle_root(load_settings(data_dir=ctx.obj).config_dir, override)
-
 
 
 def _parent_snapshot(bundle_root: Path, tree: Path, mode: str) -> ParentSnapshot | None:
@@ -755,8 +752,7 @@ def _gate_lines(gates: Sequence[ApprovalDecision]) -> tuple[str, ...]:
     return (
         "owner approval required:",
         *(
-            f"  {decision.action.value} {decision.target_record_id} -> "
-            f"{decision.resulting_state}"
+            f"  {decision.action.value} {decision.target_record_id} -> {decision.resulting_state}"
             for decision in gates
         ),
     )
@@ -828,11 +824,7 @@ def add_evidence(
             f"added {added.evidence_id} to drafts/{added.draft_name} "
             f"({added.capture_kind} capture"
             f"{'' if added.blob_digest is None else f', blob {added.blob_outcome}'})",
-            *(
-                (f"cited back from: {', '.join(added.cited_back)}",)
-                if added.cited_back
-                else ()
-            ),
+            *((f"cited back from: {', '.join(added.cited_back)}",) if added.cited_back else ()),
             *_gate_lines(added.owner_gates),
         ),
     )
@@ -957,6 +949,68 @@ def extract(
     _emit("extract", _with_revalidation(root, draft, outcome), rendered, as_json=json_output)
 
 
+@profile_bundle_app.command("promote-candidates")
+def promote_candidates(
+    ctx: typer.Context,
+    draft: str = DRAFT_OPTION,
+    source: str = typer.Option(  # noqa: B008
+        ..., "--source", help="The source ID whose imported candidates to promote."
+    ),
+    from_path: Path | None = typer.Option(  # noqa: B008
+        None,
+        "--from",
+        exists=True,
+        dir_okay=False,
+        readable=True,
+        help="The source document (default: resolved through local-sources.yaml).",
+    ),
+    bundle: Path | None = BUNDLE_OPTION,
+    json_output: bool = JSON_OPTION,
+) -> None:
+    """Promote one source's imported candidates into entities, facts, and grounded skills (§6.8).
+
+    Deterministic and owner-mediated: facts are born `unresolved` with no fabricated evidence, and a
+    skill is created only where a bullet's `tech_tags` grounds it to an entity. One-shot: it refuses
+    if the draft already holds promoted entities or skills.
+    """
+    root = _bundle_root(ctx, bundle)
+    outcome = _guarded(
+        lambda: authoring.promote_candidates(
+            root,
+            draft_name=draft,
+            source_id=source,
+            source_bytes=None if from_path is None else from_path.read_bytes(),
+            as_of=date.today(),
+        )
+    )
+    promoted = outcome.value
+    if promoted is None:
+        _emit("promote-candidates", outcome, _nothing(), as_json=json_output)
+    rendered = _Rendered(
+        result={
+            "draft": promoted.draft_name,
+            "source_id": promoted.source_id,
+            "entity_count": promoted.entity_count,
+            "fact_count": promoted.fact_count,
+            "skill_count": promoted.skill_count,
+            "category_count": promoted.category_count,
+            "changed": promoted.changed,
+        },
+        lines=(
+            f"{'promoted' if promoted.changed else 'unchanged'}: {promoted.source_id} -> "
+            f"{promoted.entity_count} entit(y/ies), {promoted.fact_count} fact(s), "
+            f"{promoted.skill_count} skill(s) in drafts/{promoted.draft_name}",
+            "  facts are born unresolved; confirm, attest, and approve them to promote and render",
+        ),
+    )
+    _emit(
+        "promote-candidates",
+        _with_revalidation(root, draft, outcome),
+        rendered,
+        as_json=json_output,
+    )
+
+
 @profile_bundle_app.command("resolve-conflict")
 def resolve_conflict(
     ctx: typer.Context,
@@ -991,8 +1045,7 @@ def resolve_conflict(
             "owner_gates": _gate_json(ruled.owner_gates),
         },
         lines=(
-            f"appended {ruled.ruling_id}; {ruled.conflict_id} is now "
-            f"{ruled.conflict_state.value}",
+            f"appended {ruled.ruling_id}; {ruled.conflict_id} is now {ruled.conflict_state.value}",
             *_gate_lines(ruled.owner_gates),
         ),
     )
@@ -1142,9 +1195,7 @@ def _prompt_text(candidate: authoring.ApprovalCandidate) -> str:
         "",
     ]
     if candidate.decisions:
-        lines.append(
-            f"{len(candidate.decisions)} owner-gated transition(s) in this candidate:"
-        )
+        lines.append(f"{len(candidate.decisions)} owner-gated transition(s) in this candidate:")
         lines.extend(
             f"  {decision.action.value} {decision.target_record_id} -> {decision.resulting_state}"
             for decision in candidate.decisions
@@ -1212,9 +1263,7 @@ def promote(
     )
     _emit(
         "promote",
-        OperationOutcome.from_diagnostics(
-            selected, (*outcome.diagnostics, *read_back.diagnostics)
-        ),
+        OperationOutcome.from_diagnostics(selected, (*outcome.diagnostics, *read_back.diagnostics)),
         _promotion_rendered(selected, read_back.value),
         as_json=json_output,
     )
@@ -1234,9 +1283,7 @@ def _promoted_manifest(selected: SelectedRevision) -> OperationOutcome[RevisionM
     return OperationOutcome.clean(manifest)
 
 
-def _promotion_rendered(
-    selected: SelectedRevision, manifest: RevisionManifest | None
-) -> _Rendered:
+def _promotion_rendered(selected: SelectedRevision, manifest: RevisionManifest | None) -> _Rendered:
     """A promotion's answer, with the approval that authorised it.
 
     `promote` is the one irreversible success in the family, and CLAUDE.md's rule for a cleared
@@ -1261,8 +1308,7 @@ def _promotion_rendered(
         lines=(
             f"promoted revision {selected.revision}",
             f"bundle digest: {selected.bundle_digest}",
-            f"authorised by: {stamp or 'unread'} "
-            f"binding candidate {candidate or 'unread'}",
+            f"authorised by: {stamp or 'unread'} binding candidate {candidate or 'unread'}",
         ),
     )
 
