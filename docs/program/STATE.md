@@ -49,16 +49,26 @@ constructs a `ProposedCandidate` (two sites, both in one test file), so no recor
 slices: a seeded predicate catalog; deterministic extraction with span grounding; then an agent lane for the 2
 free-text education records. **No code written, and none should be until the review closes.**
 
-**Four external review rounds, all NOT READY.** Round 4 (of revision 5) returned **NOT READY / CONTINUE** with
-**4 blocking findings, all accepted** (D-176): entry metadata was mapped to `employment.*` even for `project`
-entries (fails subject-kind validation); the bullet `condition` assumed a closed `kind` domain the code does
-not enforce; §6.7's residual omitted bumping `CURRENT_SCHEMA_VERSION` to 2; and §6.2a falsely claimed §8 holds
-a proposal contract. **Count is falling (12 → 7 → 4) but severity is not, and findings 1+2 are one root
-cause** — entry `kind` → subject kind → legal predicate was never modelled, only patched per case. **Revision
-6 is being authored in a FRESH context** to model that relation *once* (both metadata and bullet predicates
-derive from it), plus the mechanical fixes. One owner decision taken (D-176): an unmapped `kind` is a typed
-failure with a drain, **not** a closed `Entry.kind` enum (which would touch the Gate A model). **A round-5
-review is owed.**
+**Five external review rounds, all NOT READY — and the loop is NOT converging** (findings 12 → 7 → 4 → **5**,
+severity all-blocking). Round 5 (of revision 6) returned **NOT READY / CONTINUE** with **5 blocking findings,
+all accepted** (D-177): project identity was mapped to the wrong field (`heading`→summary instead of
+`title`→a name — `latex.py:110` shows `title` is the displayed name); the "one model" bullet predicate lookup
+is **not representable** in the flat rule schema; project `dates` can't yield two `year_month` values; rev 6's
+new Gate-B/Slice-C claim is incomplete (ignores `header/2`) and overstated (exclusions work); and §6.7
+understates the v2 doc-add plumbing. **Root cause: the rule interface has been designed reactively** — each
+round surfaces an operation the flat `{locator_pattern, predicate, value_from, value_type, display_from,
+condition}` schema can't express. **Revision 7 (a COMPLETE rule-interface redesign — a closed operation set
+O1–O6, a real `entry_kind_model` object both metadata and bullet predicates resolve through, and a
+completeness proof over every bucket) is authored and committed.**
+
+**THE REVIEW LOOP IS PAUSED — we are BUILDING now (D-178).** Five rounds did not converge, and the recurring
+class is exactly what code settles and prose cannot. Revision 7 is the design we **build from**, not a review
+target; **"no production code until the review closes" is reversed.** The thin first slice: the Task-1
+predicate audit, then the rule schema + the two easiest buckets (`skill-groups` → `technology.used`,
+`header/1` → `person.professional_name`) end-to-end against the 81 real records under TDD, proving candidates
+land (counted through the ledger). Hard buckets (project dates, bullet-by-kind) settle their interface in
+code, gated by `make check` + the keystone invariant. **Where the spec and the code disagree, the code and
+its tests win.**
 
 **Round 2's real value: FOUR of its findings were defects revision 2's own FIXES introduced** — the clearest
 evidence this program has for starting fix rounds in fresh context. Each had been asserted confidently:
