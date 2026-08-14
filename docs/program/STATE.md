@@ -47,25 +47,18 @@ said exit 0; both are corrected. **Authoring `facts/identity.yaml` is Mit's next
 name and review dates only he has, which is why `init` refuses to invent them.
 
 **Candidate extraction SHIPPED end to end (D-181) — the number moved from 0.** On branch
-**`gate-b-extraction-slice-a`** (unmerged, local; `make check` EXIT=0, 6294 passed), against the live
+**`gate-b-extraction-slice-a`** (unmerged, local; `make check` EXIT=0, 6301 passed), against the live
 `resume.yaml` on a fresh v2 bundle, counted through a separate ledger parse: **78 of 81 records reach
-`imported`** (name, 58 skills, 6 metadata → 19 entry-head candidates + 13 bullets), **3 stay `review_required`**
-with the designed drain (2 education `free_text_deferred`, email `no_predicate_exists`). **First time any record
-has ever reached `imported`** (was 0, always). Four commits: the `entry_kind_model` interpreter
-(`extraction.py`, O1–O6 as code — metadata/bullets route through one object, project name coalesce, project
-dates split into two `year_month`, bullets routed by parent kind, the `dates` grammar, typed drain reasons);
-the two new v2 documents (`imports/extraction-report.yaml` drain + `policy/extraction-mappings.yaml` mapping,
-seeded from the builtin); the **schema-v2 bump** (both docs registered in every site, example regenerated,
-`career-profile.schema.json` re-pinned); and **`profile-bundle extract --draft NAME --source SOURCE_ID`**
-(authoritative per-source, inside the store import wall). Design doc:
-`docs/superpowers/specs/2026-08-14-gate-b-candidate-extraction-design.md` (rev 7 — the five-round review loop
-that produced it is closed; do not reopen, see D-172…181).
+`imported`**, **3 stay `review_required`** with the designed drain (2 education `free_text_deferred`, email
+`no_predicate_exists`). The `entry_kind_model` interpreter (O1–O6), two new v2 documents, the schema-v2 bump,
+and `profile-bundle extract` — full detail in D-181. Design doc:
+`docs/superpowers/specs/2026-08-14-gate-b-candidate-extraction-design.md` (rev 7; the five-round review loop is
+closed, do not reopen, D-172…181).
 
-**Deliberate departure (D-181): `SUPPORTED_SCHEMA_VERSIONS={2}`, no `1→2` migration.** No v1 bundle exists, so
-a v1 tree is refused fail-safe (exit 3) rather than migrated by a transform whose only exerciser would be a
-fabricated fixture. Widening to `{1,2}` + the transform + a v1 fixture is the additive change owed when a real
-v1 bundle first needs upgrading; the tripwire `test_a_previous_schema_fixture_and_a_forward_migration_are_owed_at_v2`
-still pins it. This departs from D-176's stated trio, on purpose.
+**Deliberate departure (D-181, held D-182): `SUPPORTED_SCHEMA_VERSIONS={2}`, no `1→2` migration.** No v1 bundle
+exists, so a v1 tree is refused fail-safe (exit 3) rather than migrated by a transform whose only exerciser
+would be a fabricated fixture. Widening to `{1,2}` is the additive change owed when a real v1 bundle first needs
+upgrading; the tripwire `test_a_previous_schema_fixture_and_a_forward_migration_are_owed_at_v2` still pins it.
 
 **The promotion slice SHIPPED (D-182) — candidates now become the graph.** `profile-bundle promote-candidates
 --draft NAME --source SOURCE_ID` turns one source's imported candidates into entities + `FactRecord`s +
