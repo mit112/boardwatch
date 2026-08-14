@@ -69,17 +69,21 @@ candidates); categories derived from skill-group labels; **one-shot** (refuses `
 or skills already exist). A test proves the graph is exactly one owner confirm/attest/approve step from a
 grounded, résumé-surfaced, validating skill — §6.8's stop condition at the validation layer.
 
+**Shipped this session too (D-183), both gate-hardening, no new surface:** §5.2 audit **invariant 4**
+(catalog↔mapping reachability) — the reverse half beside its existing forward half, rostering the 31 catalog
+predicates the résumé mapping does not reach; and the **`validate_extraction_report` wiring**, now in the imports
+**COMPLETENESS** lane (not `validate_imports` as previously stated — a post-import bundle is valid-but-incomplete,
+so wiring it into validity broke `import`; the repo won, D-183). The example bundle's empty report was fixed to
+explain its one `review_required` record.
+
 **Owed next, in order:**
 1. **Mit's prerequisite** — author `facts/identity.yaml` (a display name + review dates only he has); `init`
    omits it, so `extract`/`promote-candidates` exit 1 with `missing_required_file` while still writing their
    output. With identity present they exit 0. (Unblocks `person.professional_name`, which promotion skips today.)
-2. **Wire `validate_extraction_report` into the aggregate `validate_imports` lane** (currently only called
-   directly by `extract`). This enforces the drain invariant at promotion — and forces the example bundle's
-   empty report to explain its own `review_required` records, a ripple to do carefully.
-3. **§5.2 invariants 3 (§5.1 behavioural) and 4 (catalog↔mapping reachability)** — invariant 4 is now
-   satisfiable (`validate_mapping_against_catalog` proves the builtin mapping is catalog-legal); ship the gate.
-4. **Education (2 lines) is the agent lane, Slice C** (`free_text_deferred`), declared not decomposed.
-5. **Then a promoted revision** — the owner confirms/attests/approves the promoted facts and `promote`s, which is
+2. **§5.2 invariant 3** (§5.1's behavioural grounding assertion) — the last owed audit invariant; needs a
+   builtin-catalog-backed grounding `ValidationContext`, a heavier fixture than D-183 built.
+3. **Education (2 lines) is the agent lane, Slice C** (`free_text_deferred`), declared not decomposed.
+4. **Then a promoted revision** — the owner confirms/attests/approves the promoted facts and `promote`s, which is
    what makes Gate B mechanically MET (§7a) and a résumé render.
 
 **Two seams to know (D-181):** the builtin catalog and the comprehensive **example** catalog are independent
