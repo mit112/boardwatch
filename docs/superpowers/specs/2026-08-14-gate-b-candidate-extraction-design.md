@@ -1,7 +1,9 @@
 # Gate B candidate extraction — design
 
-**Status:** revision 4. Two external review rounds, both NOT READY; a third is scoped in §9. Round 2's
-findings are applied here, including four defects that revision 2's *fixes* introduced. No code written.
+**Status:** revision 5. Three external review rounds, all NOT READY (round 3 exited NOT READY / CONTINUE);
+a fourth is scoped in §9. Revision 5 applies round 3's seven accepted findings — two of which resolve design
+forks inside already-decided policy, and several of which correct defects revision 4's own *fixes*
+introduced. No code written.
 **Date:** 2026-08-14.
 **Narrows** D-170 ruling 1 (§7). **Amends** D-172 ruling 1 (§7a) and ruling 2's carrier (§6.2, assented
 2026-08-14, D-174). No open owner decisions.
@@ -23,6 +25,9 @@ A fix round is where this project has historically introduced its worst defects,
 | **2** | grounding in "the record's own bytes" | **False.** `EnumeratedSourceRecord` keeps a parsed `atomic_value`; there is no byte substrate (§6.3) |
 | **2** | Slice A invariant 4 (catalog reachability) | **Incoherent.** The catalog is package-wide, the mapping bundle-owned; nothing to check against (§5) |
 | **2** | "a schema bump, affordable" | **Understated.** The loader and migrator are not version-dispatched (§6.7) |
+| **4** | §7a predicate 6 — the report "accounts for every non-`imported` record" | **Contradicts §6.3a.** Non-imported includes `excluded`, which §6.3a forbids from the report; the predicate must scope to `review_required` (§7a) |
+| **4** | §6.2a keyed conditionals on an `atomic_value` `kind`, allowed one output per locator, and built the typed value "from the named field" | **Unexpressible.** The bullet record has no `kind`; entry metadata owes four candidates but one-output + "ties are an error" forbids it; a single education scalar cannot yield three predicates (§6.2a) |
+| **4** | §6.2a called the locator grammar "already defined by `emits_locator`", "a literal head, `*` for one segment" | **Loose + too weak.** `emits_locator` is a per-head shape validator, not a wildcard grammar, and `header/*` cannot select `header/1` while leaving `header/2` unresolved (§6.2a) |
 
 ---
 
@@ -190,20 +195,60 @@ builtins make §5.2's invariant 4 evaluable.
 The review's standing objection is that naming a location leaves the consequential semantics to be invented
 in the plan, where they would leak into Python. The contract, therefore:
 
-- **A rule** is `{locator_pattern, predicate, value_from, value_type, display_from}`.
-- **`locator_pattern`** matches against `normalized_locator` using the adapter's own segment grammar — the
-  vocabulary `emits_locator` already defines (`enumerators.py:463-487`): a literal head, `*` for one
-  segment. No regex; a regex over locators is a second grammar that will drift from the emitter.
-- **`value_from` / `display_from`** name a field of `atomic_value` (`item`, `text`, `heading`, `dates`, …) or
-  `.` for a scalar record. Naming the field is what makes §6.3's grounding checkable.
+**Which records this deterministic contract covers.** Per §6.1: bullets, entry metadata, skill items, and
+`header/1` (the professional name). Education (the 2 free-text lines) is **agent-lane (§8), explicitly OUT of
+this deterministic contract** — a single education scalar (`enumerators.py:510-511`) carries institution,
+credential and field together, and splitting one line into three predicates is judgement, not a field
+selection. §8 has its own proposal contract (request JSON → agent fills → grounding-check → ingest); the
+deterministic mapping never attempts education, and an education record carries `free_text_deferred` in the
+extraction report until Slice C. `header/2` (the email) matches no rule and ends `no_predicate_exists`.
+
+- **A rule** is `{locator_pattern, predicate, value_from, value_type, display_from, condition}`, where
+  `condition` is optional and absent on every unconditional rule.
+- **`locator_pattern`** is a small, segment-wise pattern the mapping interpreter defines, matched against
+  `normalized_locator`. Each segment is either a **literal** (matches that segment exactly) or `*` (matches
+  any one segment). **Literal non-head segments are legal and required:** `entries/*/metadata` already needs
+  the literal `metadata`, and `header/1` needs a literal index so it selects the professional name while
+  leaving `header/2` (the email) unmatched — a `header/*` pattern would wrongly claim the email. This is
+  **not** `emits_locator`: that function is a hardcoded per-head *shape* validator (`_is_index` /
+  `is_emitted_segment`, `enumerators.py:463-490`), not a wildcard-pattern grammar. The relationship is
+  one-way — every `locator_pattern` must only match shapes `emits_locator` admits (validated once against the
+  adapter), so a pattern cannot name a locator the adapter never emits. No regex; a regex over locators is a
+  second grammar that would drift from the emitter.
+- **`value_from` / `display_from`** name a field of `atomic_value` (`item`, `text`, `heading`, `dates`,
+  `title`, `location`, …) or `.` for a scalar record. Naming the field is what makes §6.3's grounding
+  checkable. A named field that is **absent or null** (entry `title`/`dates`/`subtitle`/`location` are
+  `str | None`, `tailor/model.py:39-42`) yields **no candidate** — never an error.
 - **`value_type`** is a `FactValueKind`; construction from the named field is by kind, and a kind whose
   construction can fail (`date_range`, `year_month`, `date`) reports `value_not_typeable` rather than
   raising (§6.3a).
-- **Precedence is longest-literal-prefix first, then declaration order**, and ties are a *validation error*
-  rather than a silent pick — an ambiguous mapping is a defect, not a policy.
-- **Conditional-by-entry-kind** is expressed as a rule whose `locator_pattern` is qualified by an
-  `atomic_value` field equality (`kind == "experience"`), not as code. This is the one place the contract
-  admits a predicate on content, and it exists because §6.1's bullets genuinely need it.
+- **`condition`**, when present, gates a rule on a fact the record does not itself carry, resolved by a
+  **defined cross-record lookup** rather than by code. The only use is bullets: the bullet record's
+  `atomic_value` is `{bullet_id, text, tech_tags}` with **no `kind`** (`tailor/model.py:12-16`), while the
+  predicate split (`employment.accomplishment` vs `project.contribution`, §6.1) depends on the **parent
+  entry's** `kind`. The parent is reached deterministically — a bullet locator `entries/<id>/bullets/<id>`
+  yields its parent's metadata locator `entries/<id>/metadata` by dropping the `bullets/<id>` tail, and that
+  metadata record's `atomic_value` **does** carry `kind` (the enumerator dumps the entry excluding bullets,
+  `enumerators.py:529-533`; `Entry.kind` is `"experience" | "project"`, `tailor/model.py:38`). Metadata is
+  emitted before any bullet (`enumerators.py:492-497,529-539`), so the parent is always resolvable. The two
+  bullet rules therefore carry `condition: parent_entry.kind == "experience"` (→ `employment.accomplishment`)
+  and `== "project"` (→ `project.contribution`). **Chosen over widening the bullet's `atomic_value` to carry
+  `kind`:** that would change the Gate A adapter contract and the digest basis — exactly what §6.3 rejects —
+  and D-170 keeps derivation, not widening, as the grain. The lookup reads records already emitted and
+  changes no adapter.
+- **A locator may match several rules that produce DIFFERENT candidates** — different predicate, different
+  `value_from`. This is **multi-output emission**, not ambiguity, and it is the case §6.1 knows it needs
+  (line 164): one `entries/*/metadata` locator emits up to four candidates — `employment.organization`,
+  `employment.title` (from `title`), `employment.date_range` (from `dates`), `entity.location` (from
+  `location`) — via four rules that share that pattern but name different fields and predicates. Null fields
+  drop out per the `value_from` rule above, so an entry with no `location` simply emits fewer.
+- **Ambiguity, redefined, is evaluated per `(locator, predicate)` group:** two rules that produce the **same
+  predicate** for the same locator are a *validation error* — an ambiguous mapping the author must resolve —
+  **except** that a rule whose `locator_pattern` is **strictly more literal-specific** (a longer literal
+  prefix) wins over a less specific one for that predicate. Two rules of **equal** specificity producing the
+  same predicate for the same locator is the genuine, reachable tie that fails validation. Declaration order
+  is **not** a tiebreaker: making it one (revision 4's rule) rendered "ties are a validation error" a dead
+  branch, because a total order can never tie.
 
 **Deliberately NOT specified here, and why:** the date grammar for `dates`, and skill-id derivation from a
 skill item. Both are implementable detail whose shape does not change any interface in this document, and
@@ -316,20 +361,32 @@ path it was written for.
 
 ### 6.7 Schema v2 — what it costs, stated properly
 
-Revision 2 called the bump "affordable". It is *feasible*, and the mechanics were understated:
-`migrate_bundle` loads the selected revision **through current document models** before transforming
-anything (`migrations.py:83`), and document parsing is not schema-version-dispatched
-(`validation/context.py:130`). A new required document or field therefore makes v1 content fail parsing
-*before* the 1→2 transform can run.
+Revision 2 called the bump "affordable"; revision 4 overstated the residual as needing a restricted raw-v1
+loader or version-aware dispatch. Neither is true for **this** bump, because v2 only **adds** two documents
+and changes **no** v1 model:
 
-v2 adds **two documents** and changes no existing model: `policy/extraction-mappings.yaml` (§6.2) and
-`imports/extraction-report.yaml` (§6.3a). What the plan must specify:
+- `load_documents` parses only the files that are **present** and does **not** reject a declared-but-absent
+  document (`validation/context.py:95`, docstring lines 102-104). The missing-file check lives one layer up,
+  in `_missing_declared_documents` (`validation/structural.py:88`), which `migrate_bundle` never runs.
+- So a v1 tree parses cleanly under v2 models: the two new documents are simply absent, not malformed, and
+  `require_supported_schema` (`schema.py:142`) lets it through once v1 is in the supported set.
 
-- a **restricted raw-v1 loader** for migration, or version-aware dispatch in document reading — the design
-  requires one of the two and does not choose;
-- the exact v1 fixture the transform runs against;
-- that migration **creates a v2 draft without rewriting v1 revisions** (history is append-only, §14);
-- both new documents seeded, so a migrated v2 draft is not born incomplete.
+The real residual is narrower, and exactly two things:
+
+1. **`migrate_bundle` is a stub.** It returns `already_current` and writes nothing (`migrations.py:83`); at
+   v2 it needs a real `1 -> 2` transform that **seeds the two new documents** — `policy/extraction-mappings.yaml`
+   (§6.2) and `imports/extraction-report.yaml` (§6.3a) — from their builtins and **bumps the manifest**,
+   writing the result as a **v2 draft that never rewrites a v1 revision** (history is append-only; a rewrite
+   would break every descendant's `parent_bundle_digest`, `migrations.py:31-39`).
+2. **The supported set must widen to `{1, 2}`.** `SUPPORTED_SCHEMA_VERSIONS` is `frozenset({1})` and
+   `CURRENT_SCHEMA_VERSION` is `1` today (`schema.py:80,84`); growing the set is already pinned by the
+   tripwire `test_a_previous_schema_fixture_and_a_forward_migration_are_owed_at_v2`, which fails the moment
+   the set grows and forces the bump to ship the previous-version fixture and the forward transform
+   (`migrations.py:20-28`).
+
+The plan must also name the **exact v1 fixture** the transform runs against, and seed **both** new documents
+so a migrated v2 draft is not born incomplete. **No raw-v1 loader and no version-dispatched parsing are
+required** — that mandate is withdrawn.
 
 Affordable in *schedule* terms because no private bundle exists yet, and because Gate A is not declared met
 so the grammar may still change (`docs/profile-bundle-authoring.md:24-26`). Not affordable in *effort* terms
@@ -375,7 +432,9 @@ met, for a source, when all of:**
    `resume.yaml`;
 4. its **`review_required` count is zero**;
 5. the **approval and candidate digest binding validates**;
-6. the **extraction report accounts for every non-`imported` record** (§6.3a).
+6. the **extraction report carries exactly one reason for every `review_required` record, and none for any
+   other** (§6.3a). Scoped to `review_required` deliberately: §6.3a forbids a report entry for an `imported`
+   or `excluded` record, so "every non-`imported`" would demand entries §6.3a rejects.
 
 **Revision-level approval is reported as a BOOLEAN.** There is no per-record accepted count and the report
 must not imply one — approval is one digest decision over the whole revision. Revision 2's "records the owner
@@ -401,10 +460,13 @@ pre-planned sequence; invariants 1 and 2 of §5.2 already fail today, so at leas
 
 **No owner decisions outstanding.** §6.2's carrier was settled by D-174.
 
-**Review round 3 is scoped, not a fresh sweep:** do revision 4's four corrections hold, and is §6.2a's
-mapping contract sufficient to plan from? Four of round 2's findings were defects introduced by revision 2's
-own fixes, so there is no reason to assume revision 4 is the first clean one — but a re-sweep of settled
-ground would re-derive rather than converge.
+**Review round 4 is scoped, not a fresh sweep:** round 3 exited NOT READY / CONTINUE with seven accepted
+findings, all applied in revision 5. Two of them fixed defects revision 4's own §6.2a *fixes* introduced, so
+revision 5 does **not** get to declare itself the first clean one. Round 4's charge is narrow: do revision
+5's §6.2a contract — multi-output emission, the `(locator, predicate)` ambiguity rule, the bullet
+`condition` cross-record lookup, the literal-segment grammar — and the narrowed §6.7 residual hold, and is
+the contract now sufficient to plan from? A re-sweep of settled ground (D-170/172/173/174, the grounding
+model, the drain) would re-derive rather than converge and is out of scope.
 
 **Plan tasks, deliberately not designed here (§6.2a):** the `dates` grammar, and skill-id derivation from a
 skill item.
