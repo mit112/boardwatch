@@ -31,14 +31,23 @@ produces Mit's résumés daily (measured: 8/28/24/18 PDFs on 08-09…08-12) — 
 
 ### The active track — Gate B, bundle to résumé
 
-> **The merge review is DONE (D-184, 2026-08-14f).** It found one blocker — `validate_mapping_against_catalog`
-> had **no production call site**, so a misrouted mapping extracted clean at exit 0 — and that is fixed and
-> pinned by two tests confirmed to fail without it. `CHANGELOG.md` (which said "fifteen commands", now
-> seventeen) is fixed too. Two findings are **owed and need Mit's call**, both verified *latent, not live*:
-> the silent partial-emission drop and the skill-id collision, below. **The four-lens fresh-context review was
-> aborted deliberately** — each reviewer inherited the global fan-out doctrine and began spawning its own
-> subagents; a reviewer prompt for a big diff must forbid delegation explicitly. What that narrower
-> single-reviewer pass did *not* cover is listed in D-184 and is owed if ever wanted.
+> **MERGED (D-184) AND THE FIRST REVISION IS CUT (D-185), 2026-08-14f.** Gate B is on `main` at `a6222e3`
+> (24 commits, all 9 CI jobs green). The merge review found one blocker — `validate_mapping_against_catalog`
+> had **no production call site**, so a misrouted mapping extracted clean at exit 0 — fixed and pinned by two
+> tests confirmed to fail without it.
+>
+> **`revision 1` exists**: `sha256:9d8a202d…`, stamp `approval-stamp.000001`, `CURRENT` names it, and the
+> selected revision validates **0 error, 0 blocker**. The whole lane ran on Mit's live `resume.yaml` against
+> the real bundle at `{config_dir}/career-profile` — every prior Gate B number came from a scratch tree.
+> `import` now exits **0** (the `missing_required_file` finding is gone), `extract` gives **78/81**,
+> `promote-candidates` gives **6 entities / 47 facts / 10 skills**, `review_required` is **0**.
+>
+> **Gate B is NOT mechanically MET: 9 `missing_review_state` blockers, and they are EVIDENCE, not code.**
+> 38 facts are owner-confirmed against one attestation; the remaining 9 cannot be — 3 `employment.organization`
+> need `private_document_verified` (an employer record) and 6 `project.contribution` need
+> `repository_verified`, whose *only* legal basis is a repository, so the owner's word is inadmissible by
+> construction. **Evidence is mandatory, proven not assumed**: confirming all 47 while citing nothing yields
+> 47 `evidence_contract_unmet` errors.
 
 **`resume.yaml` is an import source, never hand-fixed (D-155)**, via adapter `boardwatch-resume-v1`.
 `profile-bundle import` shipped (D-170); it writes `imports/source-ledger.yaml` and nothing else.
@@ -86,7 +95,17 @@ so wiring it into validity broke `import`; the repo won, D-183). The example bun
 explain its one `review_required` record.
 
 **Owed next, in order:**
-0. **Two review findings needing Mit's design call (D-184), both latent today, neither with an obvious fix.**
+-1. **Gate B's last nine are Mit's documents, not code (D-185).** 3 employer records (Nakshatra, NIO, SAKEC) and
+   repository evidence for the 6 `project.contribution` facts (StreakSync, crop-rf, gamified-learning). The
+   alternative is a catalog edit widening those two predicates to `owner_attested` — legitimate, since the
+   catalog is versioned data, but it weakens a claim to pass a gate and was deliberately not taken.
+0. **Three findings from the first real run (D-185).** (a) **A promoted skill can never surface** —
+   `promote-candidates` writes `allowed_surfaces=()` and is one-shot, and setting it by hand still leaves
+   `surface_coverage` counting 0 skills, so D-182's "one owner step from a résumé-surfaced skill" is not
+   reachable through the CLI. (b) **`add-evidence` cannot take an inline capture**, so an owner attestation must
+   be hand-authored, which leaves `manifest.yaml`'s `evidence_set_digest` stale until repaired. (c) Promoting
+   `header/1`'s `person.professional_name` is a small unbuilt slice — identity.yaml does **not** unblock it.
+0b. **Two review findings needing Mit's design call (D-184), both latent today, neither with an obvious fix.**
    (a) **A partial emission silently drops fields**: `run_extraction` records a drain reason only when a record
    produces *no* candidate, so an entry with a malformed date emits its other facts, reaches `imported`, and
    loses the date with nothing recording it — so **"78 of 81 imported" does not mean 78 fully extracted**. The
@@ -94,14 +113,13 @@ explain its one `review_required` record.
    All six of Mit's live entries parse, so nothing is lost today. (b) **A skill-id collision silently merges two
    skills** — `C++` and `C#` both slug to `skill.c` and the loser leaves the graph with no diagnostic; Mit's 58
    items yield 58 distinct slugs, so this is a multi-tenancy defect, not a Mit defect.
-1. **Mit's prerequisite** — author `facts/identity.yaml` (a display name + review dates only he has); `init`
-   omits it, so `extract`/`promote-candidates` exit 1 with `missing_required_file` while still writing their
-   output. With identity present they exit 0. (Unblocks `person.professional_name`, which promotion skips today.)
-2. **§5.2 invariant 3** (§5.1's behavioural grounding assertion) — the last owed audit invariant; needs a
+1. **§5.2 invariant 3** (§5.1's behavioural grounding assertion) — the last owed audit invariant; needs a
    builtin-catalog-backed grounding `ValidationContext`, a heavier fixture than D-183 built.
-3. **Education (2 lines) is the agent lane, Slice C** (`free_text_deferred`), declared not decomposed.
-4. **Then a promoted revision** — the owner confirms/attests/approves the promoted facts and `promote`s, which is
-   what makes Gate B mechanically MET (§7a) and a résumé render.
+2. **Education (2 lines) is the agent lane, Slice C** (`free_text_deferred`), declared not decomposed. Both
+   lines are `owner_excluded` in revision 1, so they are recorded as deferred, not silently dropped.
+
+*(Done 2026-08-14f: `facts/identity.yaml` authored — Mit Sheth, 5 typed contacts — and the promoted revision
+cut. Both were the top two owed items.)*
 
 **Two seams to know (D-181):** the builtin catalog and the comprehensive **example** catalog are independent
 (D-179), so the example bundle is **not** a valid extraction host for a résumé *with projects* — its
@@ -157,7 +175,7 @@ program gate. Three facts outlive it: the manifest is written **SECOND, not last
 | P7 Breadth | not started | — |
 | *Gate A (parallel)* | *complete, merged, CI green* | ***MET*** — *has moved no program gate* |
 | *Projection* | ***MERGED AND PUSHED**, reviewed clean. Task 20 is Mit's* | *P0–P4 build gates met* |
-| *Gate B (active)* | ***extraction + promotion SHIPPED (D-181, D-182)** on `gate-b-extraction-slice-a` (unmerged, gate-green): interpreter + schema v2 + `extract` (78/81 `imported`) + `promote-candidates` (6 entities, 47 facts, 10 grounded skills)* | ***progressing** — the graph exists; a promoted revision (owner confirm/attest/approve) is what makes Gate B mechanically MET* |
+| *Gate B (active)* | ***MERGED to `main`, CI green** (D-184). **`revision 1` is cut** (D-185): the real bundle holds 7 entities, 47 facts, 10 skills, 38 effective, `review_required` 0* | ***NOT MET — 9 blockers**, all `missing_review_state`: 3 `employment.organization` need an employer record, 6 `project.contribution` need repository evidence. Evidence, not code* |
 
 ### Gate P6, clause by clause
 
