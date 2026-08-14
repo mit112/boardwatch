@@ -26,6 +26,15 @@ from boardwatch.profile_bundle.extraction import (
     ModelRoutedRule,
     Slot,
 )
+from boardwatch.profile_bundle.models.policy import (
+    AdapterExtractionMapping,
+    DeferralModel,
+    EntryKindModelEntry,
+    ExtractionMappingsDocument,
+    LiteralRuleModel,
+    ModelRoutedRuleModel,
+    SlotModel,
+)
 
 #: The résumé adapter every `boardwatch_resume` source shares (the enumerator's id family).
 RESUME_ADAPTER_ID: Final = "boardwatch-resume-v1"
@@ -98,3 +107,127 @@ _RESUME_V1_MAPPING: Final = ExtractionMapping(
 BUILTIN_EXTRACTION_MAPPINGS: Final[Mapping[str, ExtractionMapping]] = {
     RESUME_ADAPTER_ID: _RESUME_V1_MAPPING,
 }
+
+
+# --------------------------------------------------------------------------------------------------
+# The persisted form: dataclasses <-> `policy/extraction-mappings.yaml` document (schema v2).
+#
+# The interpreter (`extraction.py`) reads dataclasses; the bundle stores a pydantic document. These
+# two converters are the only bridge, so `run_extraction` can consume a seeded/loaded bundle and the
+# controller's schema-v2 seed can be reconstructed from the builtin. Serialisation is deterministic:
+# adapters sort by id and every rule/slot keeps its declared order, so identical content addresses.
+# --------------------------------------------------------------------------------------------------
+
+
+def _slot_model(slot: Slot) -> SlotModel:
+    return SlotModel(
+        group=slot.group,
+        value_from=slot.value_from,
+        value_type=slot.value_type,
+        predicate=slot.predicate,
+        display_from=slot.display_from,
+        value_selector=slot.value_selector,
+    )
+
+
+def _adapter_mapping(adapter_id: str, mapping: ExtractionMapping) -> AdapterExtractionMapping:
+    return AdapterExtractionMapping(
+        adapter_id=adapter_id,
+        literal_rules=tuple(
+            LiteralRuleModel(
+                locator_pattern=rule.locator_pattern,
+                predicate=rule.predicate,
+                value_from=rule.value_from,
+                value_type=rule.value_type,
+                display_from=rule.display_from,
+            )
+            for rule in mapping.literal_rules
+        ),
+        model_routed_rules=tuple(
+            ModelRoutedRuleModel(
+                locator_pattern=rule.locator_pattern,
+                kind_source=rule.kind_source,
+                emits_group=rule.emits_group,
+            )
+            for rule in mapping.model_routed_rules
+        ),
+        entry_kind_model=tuple(
+            EntryKindModelEntry(
+                kind=kind,
+                subject_kind=spec.subject_kind,
+                slots=tuple(_slot_model(slot) for slot in spec.slots),
+            )
+            for kind, spec in sorted(mapping.entry_kind_model.items())
+        ),
+        deferrals=tuple(
+            DeferralModel(locator_pattern=deferral.locator_pattern, reason=deferral.reason)
+            for deferral in mapping.deferrals
+        ),
+    )
+
+
+def extraction_mappings_document(
+    mappings: Mapping[str, ExtractionMapping], *, version: int = CURRENT_MAPPING_VERSION
+) -> ExtractionMappingsDocument:
+    """Serialise the interpreter's dataclasses to the persisted document (adapters sorted by id)."""
+    return ExtractionMappingsDocument(
+        mappings_version=version,
+        adapters=tuple(
+            _adapter_mapping(adapter_id, mappings[adapter_id]) for adapter_id in sorted(mappings)
+        ),
+    )
+
+
+def _slot_dataclass(slot: SlotModel) -> Slot:
+    return Slot(
+        group=slot.group,
+        value_from=slot.value_from,
+        value_type=slot.value_type,
+        predicate=slot.predicate,
+        display_from=slot.display_from,
+        value_selector=slot.value_selector,
+    )
+
+
+def _adapter_dataclass(adapter: AdapterExtractionMapping) -> ExtractionMapping:
+    return ExtractionMapping(
+        literal_rules=tuple(
+            ExtractionRule(
+                locator_pattern=rule.locator_pattern,
+                predicate=rule.predicate,
+                value_from=rule.value_from,
+                value_type=rule.value_type,
+                display_from=rule.display_from,
+            )
+            for rule in adapter.literal_rules
+        ),
+        model_routed_rules=tuple(
+            ModelRoutedRule(
+                locator_pattern=rule.locator_pattern,
+                kind_source=rule.kind_source,
+                emits_group=rule.emits_group,
+            )
+            for rule in adapter.model_routed_rules
+        ),
+        entry_kind_model={
+            entry.kind: EntryKindSpec(
+                subject_kind=entry.subject_kind,
+                slots=tuple(_slot_dataclass(slot) for slot in entry.slots),
+            )
+            for entry in adapter.entry_kind_model
+        },
+        deferrals=tuple(
+            Deferral(locator_pattern=deferral.locator_pattern, reason=deferral.reason)
+            for deferral in adapter.deferrals
+        ),
+    )
+
+
+def mappings_from_document(doc: ExtractionMappingsDocument) -> dict[str, ExtractionMapping]:
+    """Parse the persisted document back into the interpreter's dataclasses, keyed by adapter id."""
+    return {adapter.adapter_id: _adapter_dataclass(adapter) for adapter in doc.adapters}
+
+
+def builtin_extraction_mappings_document() -> ExtractionMappingsDocument:
+    """The builtin mapping as the persisted document — the schema-v2 seed and migration source."""
+    return extraction_mappings_document(BUILTIN_EXTRACTION_MAPPINGS)

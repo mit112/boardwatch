@@ -643,6 +643,111 @@ def _refuse_duplicate_keys(keys: Iterable[str], label: str, document: str) -> No
         seen.add(key)
 
 
+# ======================================================================================
+# policy/extraction-mappings.yaml
+# ======================================================================================
+#
+# The persisted form of the deterministic extraction mapping the interpreter reads (§6.2/§6.2a;
+# D-172/D-174). These models mirror the frozen dataclasses in `extraction.py` one-to-one; the
+# converters that translate between the two live in `extraction_mapping.py`, which owns the builtin
+# content. `entry_kind_model` is a TUPLE keyed by an inner `kind` field, not a dict, so the document
+# stays order-stable and content-addressable like every other catalog here.
+
+
+class SlotModel(StrictModel):
+    """One fully specified emission of an entry-kind model (extraction.py `Slot`).
+
+    `value_from` is a scalar field name (or `.`), or an O3c coalesce priority list. The union parses
+    a YAML scalar to a `str` and a YAML list to a `tuple`, matching the interpreter's dataclass.
+    """
+
+    group: str
+    value_from: str | tuple[NonBlankStr, ...]
+    value_type: str
+    predicate: PredicateId
+    display_from: str
+    value_selector: str | None = None
+
+
+class EntryKindModelEntry(StrictModel):
+    """One entry kind, keyed by its inner `kind` field (extraction.py `EntryKindSpec`)."""
+
+    kind: str
+    subject_kind: str
+    slots: tuple[SlotModel, ...]
+
+
+class LiteralRuleModel(StrictModel):
+    """One literal mapping rule (extraction.py `ExtractionRule`)."""
+
+    locator_pattern: str
+    predicate: PredicateId
+    value_from: str
+    value_type: str
+    display_from: str
+
+
+class ModelRoutedRuleModel(StrictModel):
+    """A rule whose predicate and value come from the entry_kind_model (extraction.py
+    `ModelRoutedRule`)."""
+
+    locator_pattern: str
+    kind_source: str
+    emits_group: str
+
+
+class DeferralModel(StrictModel):
+    """A locator that deliberately matches no producing rule and carries a specific drain reason
+    (extraction.py `Deferral`)."""
+
+    locator_pattern: str
+    reason: str
+
+
+class AdapterExtractionMapping(StrictModel):
+    """One adapter's whole deterministic mapping (extraction.py `ExtractionMapping`)."""
+
+    adapter_id: LowerSlug
+    literal_rules: tuple[LiteralRuleModel, ...]
+    model_routed_rules: tuple[ModelRoutedRuleModel, ...]
+    entry_kind_model: tuple[EntryKindModelEntry, ...]
+    deferrals: tuple[DeferralModel, ...]
+
+    @model_validator(mode="after")
+    def _entry_kinds_are_unique(self) -> AdapterExtractionMapping:
+        _refuse_duplicate_keys(
+            (entry.kind for entry in self.entry_kind_model),
+            "entry kind",
+            f"policy/extraction-mappings[{self.adapter_id}]",
+        )
+        return self
+
+
+class ExtractionMappingsDocument(StrictModel):
+    """`policy/extraction-mappings.yaml`.
+
+    Seeded NON-EMPTY (a version plus the one resume adapter): unlike the enumeration-owned import
+    documents, the extraction mapping is build-supplied catalog content written into the revision so
+    a bundle's extraction behaviour is fixed by its own rows.
+    """
+
+    mappings_version: PositiveInt
+    adapters: tuple[AdapterExtractionMapping, ...]
+
+    @model_validator(mode="after")
+    def _adapter_ids_are_unique(self) -> ExtractionMappingsDocument:
+        _refuse_duplicate_keys(
+            (adapter.adapter_id for adapter in self.adapters),
+            "adapter_id",
+            "policy/extraction-mappings",
+        )
+        return self
+
+    @property
+    def by_adapter(self) -> dict[str, AdapterExtractionMapping]:
+        return {adapter.adapter_id: adapter for adapter in self.adapters}
+
+
 #: The claim types each owning file admits, exposed here so the document layer and the tests read
 #: the same source rather than two copies of §15's sentence.
 CLAIM_TYPE_OWNERS: Final[dict[str, frozenset[ClaimType]]] = {
