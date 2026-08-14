@@ -18,6 +18,7 @@ from boardwatch.cli.ledger_cmd import ledger_app
 from boardwatch.cli.notify_cmd import notify as _notify
 from boardwatch.cli.profile_bundle_cmd import profile_bundle_app
 from boardwatch.cli.profile_cmd import profile_app
+from boardwatch.cli.projection_cmd import resume_app
 from boardwatch.cli.run_cmd import run as _run
 from boardwatch.cli.scan_cmd import scan as _scan
 from boardwatch.cli.settings_cmd import settings_app
@@ -72,3 +73,4 @@ app.command("stats")(_stats)
 app.command("run")(_run)
 app.command("verify")(_verify)
 app.add_typer(profile_bundle_app, name="profile-bundle")
+app.add_typer(resume_app, name="resume")
