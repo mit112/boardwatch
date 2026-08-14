@@ -99,7 +99,7 @@ reports drift without writing, and `make check` depends on it (D-109).
 | METRICS.md | 3270 | Session — 2026-08-13 (projection execution, cont.) · 16 of 23 tasks complete; halted on a usage limit, not a defect. No phase gate moved. |
 | METRICS.md | 3334 | Session — 2026-08-13 (projection execution, final) · BUILD COMPLETE: 22 of 23 tasks, whole-branch review clean, gate exit 0. No phase gate moved. |
 | METRICS.md | 3384 | Session — 2026-08-14 (merge + Gate B's first command) · `projection-v1` MERGED AND PUSHED; `profile-bundle import` shipped (D-170). No phase gate moved. |
-| METRICS.md | 3449 | Session — 2026-08-14b (CI recovered) · the UNKNOWN run had FAILED; cause fixed (D-171). No phase gate moved. |
+| METRICS.md | 3449 | Session — 2026-08-14b (CI recovered + extraction designed) · the UNKNOWN run had FAILED (D-171); design to revision 4 (D-172/173/174); the 81-record denominator MEASURED. No phase gate moved. |
 
 ---
 
@@ -3446,7 +3446,7 @@ Here the job *is* inside `make check`, ran, reported OK, and had seen nothing.
 
 ---
 
-## Session — 2026-08-14b (CI recovered) · the UNKNOWN run had FAILED; cause fixed (D-171). No phase gate moved.
+## Session — 2026-08-14b (CI recovered + extraction designed) · the UNKNOWN run had FAILED (D-171); design to revision 4 (D-172/173/174); the 81-record denominator MEASURED. No phase gate moved.
 
 ### The run the previous session could not read
 
@@ -3524,3 +3524,23 @@ hardened around it.
   `init` seeds **0** predicates (the only catalog in the repo is the 41-entry example), and **58 of the 81**
   source records are a generic skills list, which §14 says supports nothing.
 - **Zero applications still.** No phase gate moved.
+
+### Session totals
+
+| Measure | Value |
+|---|---|
+| Commits pushed | **11** |
+| Decisions appended | **4** — D-171, D-172, D-173, D-174 |
+| Design revisions | **3** — revision 2, 3, 4 of the extraction spec |
+| External review rounds | **2**, both NOT READY; round 3 scoped and pending |
+| Review findings accepted | **12 of 12** across both rounds; **0** rejected |
+| Of those, defects introduced by my own fix round | **4** |
+| Documented claims falsified by measurement | **6** — the CI width hypothesis, `docs/superpowers/` being untracked, the dangling-rows count (twice), `import` exiting 0, and `All checks passed!` as a gate verdict |
+| Released docs corrected | **2** — `profile-bundle-authoring.md`, `CHANGELOG.md` |
+| `STATE.md` | **311 → 182 lines**, against its own ~170 target |
+| Local gate runs | **1** full (`exit 0`, 6232 passed / 4 xfailed, 95.76%); ~10 docs-only stage pairs |
+| CI | the fix run **green 9/9**; 4 runs COMPLETED SUCCESS, remainder queued with **0** failed jobs |
+| Lines of production code written | **0** |
+
+**The last row is the point.** A session that recovered CI, designed a subsystem, and corrected six false
+claims shipped no `src/` change at all — and moved no phase gate. Zero applications, unchanged.
