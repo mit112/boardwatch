@@ -141,14 +141,30 @@ then `import`. **Expect every one of the 81 records to land `review_required` at
 them is the Gate B work, and `validate --completeness` is what lists them.
 
 **Still missing for a promotable bundle: candidate extraction. It is DESIGNED and REVIEWED, not built** —
-`docs/superpowers/specs/2026-08-14-gate-b-candidate-extraction-design.md`, **revision 3**. Nothing in `src/`
+`docs/superpowers/specs/2026-08-14-gate-b-candidate-extraction-design.md`, **revision 4** after TWO review rounds (both NOT READY; round 2 said CONTINUE). Nothing in `src/`
 constructs a `ProposedCandidate`; the only two construction sites are in one test file, so no record can reach
 `imported`. Three slices: a seeded predicate catalog, deterministic extraction with span grounding, then an
 agent lane for the two free-text education records. **No code written. The next step is an implementation
 plan, whose task 1 is the predicate audit — and the plan must not presume the audit's outcome.**
 
-**The external review returned NOT READY on revision 1, with two blockers, and all six findings are now
-addressed** (four in revision 2, two by Mit's rulings in D-172). The two worth carrying:
+**Two review rounds, both NOT READY. Round 2's value was that FOUR of its findings were defects revision 2's
+own FIXES introduced** (D-173) — the clearest evidence yet for starting fix rounds in fresh context. Severity
+did not fall between rounds, which reads as an underspecified design rather than a converging loop, so
+revision 4 specifies the mapping's data contract rather than only its location.
+
+**Corrected in revision 4, each having been asserted confidently and been wrong:** approval is a
+revision-level BOOLEAN, not a per-record "accepted" count; re-extraction does **not** produce the same
+candidate IDs, so stale candidates need retiring (extraction is now authoritative per source); grounding is
+against a **parsed atomic field**, not "record bytes" — the enumerator retains no byte substrate; Slice A's
+catalog-reachability invariant was **incoherent**; and the schema bump is feasible but was understated, since
+`migrate_bundle` loads through current models before transforming and parsing is not version-dispatched.
+
+**Open for Mit:** the mapping's carrier. D-172 said a `SourceSpec` field; `SourceSpec` is keyed per *source*
+while a mapping is per *adapter*, and `init` declares no sources so a per-source field cannot be seeded.
+Proposed instead: `policy/extraction-mappings.yaml` seeded from a builtin, mirroring `policy/secret-scan.yaml`.
+**Location is settled; only the carrier is in question.**
+
+The two findings from round 1 still worth carrying:
 
 - **Revision 1 falsely claimed a skill candidate carries an evidenced-versus-`incidental` context.**
   `CandidateRecord` has no `usage_context`, subject, verification state, evidence or surfaces — those are
