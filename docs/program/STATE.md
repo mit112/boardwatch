@@ -31,6 +31,11 @@ produces Mit's résumés daily (measured: 8/28/24/18 PDFs on 08-09…08-12) — 
 
 ### The active track — Gate B, bundle to résumé
 
+> **NEXT SESSION = review and merge (Mit's decision, 2026-08-14e).** The branch is gate-green and coherent;
+> Mit chose to open the next session with the fresh-context Opus-5 whole-branch review (run manually — external
+> reviewers are never driven in-session), then merge `gate-b-extraction-slice-a` → `main` if clean. Do the
+> review *before* picking up any owed item below.
+
 **`resume.yaml` is an import source, never hand-fixed (D-155)**, via adapter `boardwatch-resume-v1`.
 `profile-bundle import` shipped (D-170); it writes `imports/source-ledger.yaml` and nothing else.
 
