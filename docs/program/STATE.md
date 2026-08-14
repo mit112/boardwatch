@@ -43,11 +43,17 @@ import is expected and is **not** about the records. `docs/profile-bundle-author
 said exit 0; both are corrected. **Authoring `facts/identity.yaml` is Mit's next concrete step** — a display
 name and review dates only he has, which is why `init` refuses to invent them.
 
-**Candidate extraction is DESIGNED, not built:**
-`docs/superpowers/specs/2026-08-14-gate-b-candidate-extraction-design.md`, **revision 4**. Nothing in `src/`
-constructs a `ProposedCandidate` (two sites, both in one test file), so no record can reach `imported`. Three
-slices: a seeded predicate catalog; deterministic extraction with span grounding; then an agent lane for the 2
-free-text education records. **No code written, and none should be until the review closes.**
+**Candidate extraction is DESIGNED (spec revision 7) and the BUILD HAS STARTED (D-178).** The spec
+(`docs/superpowers/specs/2026-08-14-gate-b-candidate-extraction-design.md`) is now the design we build FROM,
+not a review target — the five-round review loop is PAUSED (see the review paragraph below). First production
+code is on branch **`gate-b-extraction-slice-a`** (unmerged, local): `src/boardwatch/profile_bundle/extraction.py`
+— `locator_matches` (segment grammar incl. the literal non-head segment) and `extract_proposals`
+(literal-predicate rule → `ProposedCandidate`), 6 tests green, ruff+mypy clean (commit `d4a6e3e`). **Still no
+record reaches `imported`**: the thin slice is mid-build. Next: the mapping-document model + seeded
+`boardwatch-resume-v1` builtin; the `header/1` rule; wire `extract_proposals → build_candidate_package →`
+write `imports/candidates.yaml`; the `profile-bundle extract` CLI (store import wall); then run against the 81
+real records and count candidates through the ledger. Hard buckets (metadata-by-kind, project dates, bullets)
+settle their interface in code after.
 
 **Five external review rounds, all NOT READY — and the loop is NOT converging** (findings 12 → 7 → 4 → **5**,
 severity all-blocking). Round 5 (of revision 6) returned **NOT READY / CONTINUE** with **5 blocking findings,
@@ -153,7 +159,7 @@ program gate. Three facts outlive it: the manifest is written **SECOND, not last
 | P7 Breadth | not started | — |
 | *Gate A (parallel)* | *complete, merged, CI green* | ***MET*** — *has moved no program gate* |
 | *Projection* | ***MERGED AND PUSHED**, reviewed clean. Task 20 is Mit's* | *P0–P4 build gates met* |
-| *Gate B (active)* | *`import` shipped (D-170); extraction **designed to revision 4**, round 3 pending, **no code*** | ***NOT MET** — nothing imported to a real bundle, extraction unbuilt* |
+| *Gate B (active)* | *`import` shipped (D-170); extraction **spec at revision 7, review loop PAUSED (D-178), BUILD STARTED** on branch `gate-b-extraction-slice-a` (interpreter core, 6 tests, unmerged)* | ***NOT MET** — nothing imported to a real bundle yet; extraction mid-build* |
 
 ### Gate P6, clause by clause
 
