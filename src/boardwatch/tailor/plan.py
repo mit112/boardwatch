@@ -90,9 +90,12 @@ def build_plan(
     }
 
     def cover(b: Bullet) -> int:
-        import boardwatch.tailor.plan as _self
-
-        return len(_self.effective_skills(b.text, jd_skills, table, taxonomy) & jd_skills)
+        # A bare module-level name, not a closure variable: `effective_skills` resolves through
+        # this module's own `__dict__` at CALL time, so `monkeypatch.setattr(plan_mod,
+        # "effective_skills", fake)` (`test_tailor_plan_effective_skills.py`) is picked up
+        # identically to the `import ... as _self` indirection this replaces — that indirection
+        # bought nothing a bare call did not already have.
+        return len(effective_skills(b.text, jd_skills, table, taxonomy) & jd_skills)
 
     coverage = {b.bullet_id: cover(b) for e in resume.entries for b in e.bullets}
     if not any(coverage.values()):

@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import dataclasses
+
 import pytest
 
 from boardwatch.projection.errors import (
@@ -30,5 +32,5 @@ def test_a_violation_carries_its_typed_issue_not_a_message_to_grep() -> None:
 
 def test_the_violation_record_is_frozen() -> None:
     v = ProjectionViolation(issue=ProjectionIssue.UNRESOLVED_PLACEHOLDER, message="m", where="w")
-    with pytest.raises(Exception) as _exc:
+    with pytest.raises(dataclasses.FrozenInstanceError):
         v.message = "other"  # type: ignore[misc]

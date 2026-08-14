@@ -12,7 +12,16 @@ The shell is therefore copied verbatim from the owner's existing authored résum
 
 - model-only — it satisfies the frozen model and the loader, and the renderer still ignores it;
 - NOT authoritative for the PDF, which keeps using the template's hardcoded values;
-- part of `ProjectionPool` identity, so a shell change is visible rather than silent.
+- part of `ProjectionPool.resume` itself, so a shell change IS visible in the projected document
+  (`pool.resume.header`/`.education`) and in `resume_document_bytes`'s serialized YAML.
+
+**But `shell_source`'s CONTENT is not covered by any digest in v1.** `projection_digest` hashes
+the parsed `ProjectionDeclaration`, which carries `shell_source` as a `Path` — the filename it was
+declared with, not the bytes at that path — and `shell_source` lives in `config_dir`, outside the
+bundle, so `bundle_digest` cannot see it either. Editing `{config_dir}/master_resume.yaml` changes
+`pool.resume.header`/`.education` with no digest moving and no re-approval required. Blast radius
+is small — the renderer ignores both fields, so the PDF is unaffected — but `load_resume`'s
+validation and the serialized YAML both see whatever the shell says today, unpinned.
 
 This is the one place v1 reads the file it is replacing, and it is transitional: when renderer
 ownership of header/education lands, the shell goes.

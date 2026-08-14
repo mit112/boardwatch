@@ -202,7 +202,11 @@ def select(
     # own note at its one call site).
     jd_skills = set(context.jd_skills)
     ranked = _ranked_candidates(pool, jd_skills, scorer, table, taxonomy)
-    used_fallback = not ranked
+    # Not simply `not ranked`: that would report `used_fallback=True` even when the declaration's
+    # own `no_match_fallback` is empty, growing nothing from it — a run that used no fallback at
+    # all. `used_fallback` means the fallback LIST was actually consulted, not merely that ranking
+    # came up empty.
+    used_fallback = not ranked and bool(pool.no_match_fallback_ids)
     growth_order = ranked if ranked else list(pool.no_match_fallback_ids)
 
     admitted, last_gate = _grow(

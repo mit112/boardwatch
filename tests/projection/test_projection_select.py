@@ -172,6 +172,36 @@ def test_a_jd_matching_nothing_yields_exactly_the_no_match_fallback() -> None:
     assert result.selected_candidate_ids == POOL.no_match_fallback_ids
 
 
+def test_used_fallback_is_false_when_the_fallback_list_is_itself_empty() -> None:
+    """`used_fallback` means the fallback list was actually consulted, not merely that ranking
+    came up empty (M2). With `no_match_fallback_ids=()`, growth has nothing to grow from — a run
+    that used no fallback at all — and this must not be misreported as `True`."""
+    pool = ProjectionPool(
+        resume=Resume(
+            header=["Example Candidate"],
+            education=[],
+            skill_groups=[],
+            entries=[CORE, DATA_1, DATA_2],
+        ),
+        pinned_entry_ids=("entry.core",),
+        candidate_entry_ids=("entry.data1", "entry.data2"),
+        no_match_fallback_ids=(),
+        bundle_revision="1",
+        bundle_digest="sha256:pool-no-fallback",
+        projection_digest="sha256:decl-no-fallback",
+    )
+    result = select(
+        pool,
+        _context(JD_NONE),
+        SCORER,
+        table=TABLE,
+        taxonomy=TAXONOMY,
+        compile_prefix=_budget_compiler(10),
+    )
+    assert result.used_fallback is False
+    assert result.selected_candidate_ids == ()
+
+
 # -- required case 5: COMPILE_FAILED is fatal, fails named, drops nothing --------------------
 
 
@@ -201,9 +231,13 @@ def test_compile_failed_mid_growth_fails_named_and_drops_nothing() -> None:
 
 def _binary_missing_once_grown(resume: Resume) -> GateResult:
     """OK for the pinned-only prefix; `BINARY_MISSING` the moment anything is added — the
-    sibling fatal arm to `COMPILE_FAILED` in `_fatal_if_infrastructure`'s tuple. A regression
-    that dropped `BINARY_MISSING` from that tuple would go undetected without this test, since
-    only `COMPILE_FAILED` was previously exercised."""
+    sibling fatal arm to `COMPILE_FAILED` in `_fatal_if_infrastructure`'s tuple. A mutation that
+    drops `BINARY_MISSING` from that tuple does NOT go undetected without this test: `_grow`
+    falls through to `_reject_unless_ok`, whose "anything that is not exactly OK" catch-all backs
+    it up and raises the identical `COMPILE_INFRASTRUCTURE_FAILURE` regardless. This test still
+    earns its place — it pins the fatal-and-drops-nothing behaviour itself against the sibling
+    arm, `COMPILE_FAILED` — but the guard backstopping a regression here is `_reject_unless_ok`,
+    not this test."""
     if len(resume.entries) <= 1:
         return GateResult(GateReason.OK, True, None, 1, "")
     return GateResult(GateReason.BINARY_MISSING, False, None, None, "pdfinfo not found")
