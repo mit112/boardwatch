@@ -33,13 +33,16 @@ produces Mit's résumés daily (measured: 8/28/24/18 PDFs on 08-09…08-12) — 
 
 ### The active track — Gate B, bundle to résumé
 
-> **NEXT SESSION = the render.** `projection.yaml` (at `{config_dir}`, absent today) is the last artifact
-> between revision 2 and a PDF. **Answer this first, it is Mit's:** promotion already derived
-> `policy/skill-categories.yaml` *inside* the revisioned bundle, but `projection.yaml` sits *outside* it and
-> wants skill ids grouped under labels — so the groupings would live in two places with only one versioned.
-> Read `projection/declaration.py` to learn whether v1 can reference the bundle's categories before
-> hand-authoring a duplicate. Then `approve-projection` (TTY-only, Mit's) and a render. Note `--scorer` has no
-> default (D-168) and Task 20 is unbuilt.
+> **NEXT = author + approve `projection.yaml`, then a master render.** Mit's skill-groupings question is
+> RESOLVED (D-187): `skill_groups` is now **optional** and, when omitted, `project_pool` synthesizes it from the
+> bundle's `policy/skill-categories.yaml` — the taxonomy lives in ONE versioned place, bound by the bundle digest.
+> So `projection.yaml` omits `skill_groups` entirely. What's left is Mit's **editorial** content (`shell_source`
+> header/education, `open_range_label`, which entries in what order) then `approve-projection` (TTY-only, Mit's).
+> **`profile-bundle project` is the JD-blind master render and needs NO `--scorer`** — that only gates `resume
+> project` (Stage-2, posting-aware), which Task 20 still blocks (D-168). **But the bundle holds ZERO claims**
+> (`claims/bullet-candidates.yaml` + `summary-candidates.yaml` both `[]`): a projected résumé today would carry the
+> synthesized skills section and entry headings/titles/dates but **no accomplishment bullets**. A claims-promotion
+> slice (bullets → `ClaimRecord`s) is unbuilt and stands between the graph and a real résumé (D-187).
 
 **MERGED and at `revision 2`, all on the real bundle (D-184/185/186).** Gate B is on `main`; the merge review's
 one blocker — `validate_mapping_against_catalog` had **no production call site**, so a misrouted mapping
@@ -114,6 +117,9 @@ explain its one `review_required` record.
    builtin-catalog-backed grounding `ValidationContext`, a heavier fixture than D-183 built.
 2. **Education (2 lines) is the agent lane, Slice C** (`free_text_deferred`), declared not decomposed. Both
    lines are `owner_excluded` in revision 1, so they are recorded as deferred, not silently dropped.
+3. **Claims promotion (bullets → `ClaimRecord`s) is unbuilt (D-187).** The bundle has entities/facts/skills but
+   **zero claims**, so a projected résumé has no accomplishment bullets. This — not the scorer — is the real gap
+   between the graph and a résumé worth sending. Analogous to D-182 but for the 13 résumé bullets.
 
 *(Done 2026-08-14f: `facts/identity.yaml` authored — Mit Sheth, 5 typed contacts — and the promoted revision
 cut. Both were the top two owed items.)*

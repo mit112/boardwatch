@@ -37,7 +37,10 @@ from dataclasses import dataclass
 from datetime import date
 from pathlib import Path
 
+from boardwatch.profile_bundle.models.base import Surface
 from boardwatch.profile_bundle.models.claims import ClaimRecord
+from boardwatch.profile_bundle.models.policy import SkillCategoryCatalog
+from boardwatch.profile_bundle.models.skills import SkillRecord
 from boardwatch.profile_bundle.storage import (
     SelectionError,
     read_current_once,
@@ -58,6 +61,33 @@ def _entry_id(entity_id: str) -> str:
     """The one derivation rule the brief states once: `entry_id = "entry." + entity_id`.
     Extracted so the four sites that need it cannot drift from one another."""
     return "entry." + entity_id
+
+
+def _synthesized_skill_groups(
+    skills: tuple[SkillRecord, ...], categories: SkillCategoryCatalog | None
+) -> list[SkillGroup]:
+    """Derive `skill_groups` from the bundle when the declaration omits them (D-187).
+
+    One group per category that has a résumé-surfaced skill, labelled by the category
+    `display_name`, emitted in the catalog's own order; within a group, skills keep inventory
+    order. Only résumé-surfaced skills appear (mirroring the explicit path's `check_references`
+    contract), and a category with none is omitted so no empty section reaches the page.
+
+    `categories is None` cannot occur for a promoted bundle — `policy/skill-categories.yaml` is a
+    required document (`validation/structural.py`) — so the empty return only narrows the optional
+    type, exactly as semantic validation's own category check guards `if categories is not None`.
+    """
+    if categories is None:
+        return []
+    by_category: dict[str, list[SkillRecord]] = {}
+    for skill in skills:
+        if Surface.RESUME in skill.allowed_surfaces:
+            by_category.setdefault(skill.category, []).append(skill)
+    return [
+        SkillGroup(label=spec.display_name, items=[render_skill(s) for s in members])
+        for spec in categories.categories
+        if (members := by_category.get(spec.category_id))
+    ]
 
 
 @dataclass(frozen=True)
@@ -142,13 +172,20 @@ def project_pool(
     claims_by_id = {c.claim_id: c for c in ctx.index.claims}
     skills_by_id = {s.skill_id: s for s in ctx.index.skills}
 
-    skill_groups = [
-        SkillGroup(
-            label=group.label,
-            items=[render_skill(skills_by_id[skill_id]) for skill_id in group.skills],
-        )
-        for group in declaration.skill_groups
-    ]
+    # An explicit `skill_groups` block is the owner taking full control of grouping, order and
+    # inclusion; omitting it defers to the bundle's own category taxonomy so the grouping lives in
+    # exactly ONE versioned place — `policy/skill-categories.yaml`, bound by the bundle digest —
+    # rather than being restated, unversioned and drift-prone, in `projection.yaml` (D-187).
+    if declaration.skill_groups:
+        skill_groups = [
+            SkillGroup(
+                label=group.label,
+                items=[render_skill(skills_by_id[skill_id]) for skill_id in group.skills],
+            )
+            for group in declaration.skill_groups
+        ]
+    else:
+        skill_groups = _synthesized_skill_groups(ctx.index.skills, ctx.index.skill_categories)
 
     entries = [
         _build_entry(

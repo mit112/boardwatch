@@ -8,14 +8,21 @@ trio, and a decoy planted at the WRONG resolution target to prove the RIGHT one 
 
 from __future__ import annotations
 
-from datetime import date
+from datetime import UTC, date, datetime
 from pathlib import Path
 
 import pytest
+import yaml
 
+from boardwatch.profile_bundle.models.base import Surface, VerificationState
+from boardwatch.profile_bundle.models.policy import SkillCategoryCatalog, SkillCategorySpec
+from boardwatch.profile_bundle.models.skills import SkillRecord
+from boardwatch.profile_bundle.storage import read_current_once
 from boardwatch.projection.declaration import load_declaration, projection_digest
 from boardwatch.projection.errors import ProjectionError, ProjectionIssue
-from boardwatch.projection.pool import project_pool
+from boardwatch.projection.pool import _synthesized_skill_groups, project_pool
+from boardwatch.projection.stamp import write_stamp
+from boardwatch.tailor.model import SkillGroup
 from tests.projection.conftest import bundle_ctx  # noqa: F401  (fixture re-export)
 
 AS_OF = date(2026, 8, 13)
@@ -137,6 +144,85 @@ def test_editing_a_template_literal_reopens_the_gate(projection_env) -> None:  #
             as_of=AS_OF,
         )
     assert exc.value.violation.issue is ProjectionIssue.MISSING_PROJECTION_APPROVAL
+
+
+# --------------------------------------------------------------------------------------
+# Synthesizing `skill_groups` from the bundle when the declaration omits them (D-187): the
+# owner's category taxonomy lives in ONE versioned place (`policy/skill-categories.yaml`),
+# not restated unversioned in `projection.yaml`.
+# --------------------------------------------------------------------------------------
+
+
+def test_omitting_skill_groups_synthesizes_them_from_the_bundle_catalog(
+    projection_env,  # noqa: F811
+) -> None:
+    """With no `skill_groups` block, the pool derives one group per category that has a
+    résumé-surfaced skill — labelled by the category `display_name`, in the catalog's own order.
+    The example bundle's `technique` category holds no skill, so it is omitted (no empty section);
+    only `programming-language` (Example Language) survives."""
+    raw = yaml.safe_load(projection_env.declaration.read_text(encoding="utf-8"))
+    assert raw.pop("skill_groups", None) is not None, "fixture stopped declaring skill_groups"
+    projection_env.declaration.write_text(yaml.safe_dump(raw, sort_keys=False), encoding="utf-8")
+
+    # The digest moved with the edit, so the fixture's stamp no longer applies: re-approve the
+    # skill_groups-free declaration against the same promoted bundle.
+    digest = projection_digest(load_declaration(projection_env.declaration))
+    bundle_digest = read_current_once(projection_env.bundle_root).bundle_digest
+    write_stamp(
+        projection_env.config_dir,
+        digest=digest,
+        bundle_digest=bundle_digest,
+        approved_at=datetime(2026, 8, 13, 12, tzinfo=UTC),
+    )
+
+    pool = project_pool(
+        projection_env.bundle_root,
+        projection_env.declaration,
+        config_dir=projection_env.config_dir,
+        as_of=AS_OF,
+    )
+    assert pool.resume.skill_groups == [
+        SkillGroup(label="Programming languages", items=["Example Language"])
+    ]
+
+
+def test_synthesis_follows_catalog_order_filters_non_resume_and_drops_empty_categories() -> None:
+    """The ordering and inclusion rules, pinned where the one-skill example bundle cannot reach
+    them: groups in catalog order (not alphabetical, not skill order), skills in inventory order,
+    only résumé-surfaced skills, and a category with none omitted."""
+    categories = SkillCategoryCatalog(
+        catalog_version=1,
+        career_field="example-field",
+        categories=(
+            SkillCategorySpec(category_id="tools", display_name="Tools", aliases=()),
+            SkillCategorySpec(category_id="languages", display_name="Languages", aliases=()),
+            SkillCategorySpec(category_id="empty-cat", display_name="Empty", aliases=()),
+        ),
+    )
+
+    def skill(sid: str, name: str, cat: str, *surfaces: Surface) -> SkillRecord:
+        return SkillRecord(
+            skill_id=sid,
+            canonical_name=name,
+            category=cat,
+            supporting_fact_ids=("fact.x.001",),
+            verification_state=VerificationState.VERIFIED,
+            allowed_surfaces=tuple(surfaces),
+        )
+
+    skills = (
+        skill("skill.python", "Python", "languages", Surface.RESUME),
+        skill("skill.aws", "AWS", "tools", Surface.RESUME),
+        skill("skill.swift", "Swift", "languages", Surface.RESUME),
+        skill("skill.secret", "Secret", "tools", Surface.PUBLIC),
+    )
+
+    groups = _synthesized_skill_groups(skills, categories)
+
+    assert groups == [
+        SkillGroup(label="Tools", items=["AWS"]),
+        SkillGroup(label="Languages", items=["Python", "Swift"]),
+    ]
 
 
 # --------------------------------------------------------------------------------------
