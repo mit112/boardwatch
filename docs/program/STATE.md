@@ -106,21 +106,31 @@ Working ledger: `.superpowers/sdd/2026-08-13-career-profile-projection/progress.
 anything that must survive belongs here or in `DECISIONS.md`. It carries every ruling with what each costs
 if wrong.
 
-**`main` is at `64cf63c` and pushed.** Three commits after the merge: the import command, the program
-log, and one fix.
-
-**CI status at session end, stated precisely because two of the three are not what they look like:**
+**CI was RED for four commits, and the cause is fixed (D-171).** Run 31774640890 (`64cf63c`) — the one the
+previous session left UNKNOWN — had **failed on all three ubuntu test jobs**, and `2324a49` failed on two of
+three. One test: `test_top_help_lists_the_new_flag`, asserting `"--new" in result.stdout` over a `--help`
+render.
 
 | Push | Run | Standing |
 |---|---|---|
 | `ee20abd` (the merge) | 31772590912 | **GREEN, all nine jobs.** Measured |
-| `12dda1d` (import + log) | 31774326397 | **`generalization` FAILED** — the `example.invalid` address. Superseded by the fix |
-| `64cf63c` (the fix) | 31774640890 | **UNKNOWN.** `generalization`, `gitleaks`, `perf` observed green; the six test jobs were still running when the `gh` API rate-limited this account |
+| `12dda1d` | 31774326397 | **`generalization` FAILED** — the `example.invalid` address |
+| `64cf63c` | 31774640890 | **FAILED** — 3 of 3 ubuntu test jobs; macOS, `generalization`, `gitleaks`, `perf` green |
+| `2324a49` | 31775389477 | **FAILED** — `3.13`/`3.11` ubuntu; **`3.12` ubuntu PASSED**, over identical tests |
+| `1add630` (the fix) | see `git log` | pushed 2026-08-14 |
 
-**The `gh run watch` on the last run exited 1, and that exit code means nothing** — it is the rate limit,
-not a failing job. Do not read it as a red CI. The tree passed a full local `make check` (6,231 passed,
-4 xfailed, exit 0), so green is the expectation; **it is an expectation, not a measurement. Re-check run
-31774640890 before citing it.**
+**That 3.12 row is the whole diagnosis: the failure is a race, not an OS split and not a regression.** typer
+imports `rich_utils` *function-locally*, so its `FORCE_TERMINAL` — true whenever `GITHUB_ACTIONS` is set —
+bakes at the first help render in an xdist worker. A dozen fixtures `delenv` that var and had been winning
+the race by luck; `e3f8fa9`'s 13 new tests changed sharding and it started losing. `tests/conftest.py` now
+pops `GITHUB_ACTIONS` and `PY_COLORS` at import alongside rich's two, and a test pins
+`FORCE_TERMINAL is not True`. **A green run alone cannot verify this** — it passed by luck before; the
+pinning test is what makes a green run mean something.
+
+**Two measurement lessons from it.** A rate-limited `gh` REST quota is not a missing measurement —
+**GraphQL was untouched and answered instantly**; the previous session's UNKNOWN was avoidable. And
+`All checks passed!` is the **`generalization` stage's** banner, not the gate's: it prints while pytest is
+still running, so it reads as a green gate about four minutes early.
 
 **Gate B has STARTED — its first mechanical blocker is cleared, and no data has moved yet.**
 `profile-bundle import` exists (D-170), so a real source can now reach a draft's ledger without

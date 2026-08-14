@@ -129,7 +129,9 @@
   any new code that opens a path the layout did not hand it.**
 - Upstream of T18 and deliberately not chased: a typo'd `--bundle` made `inventory` report clean at exit 0
   (**fixed**, D-138); `context.py:92` and `blobs.py:175` are deferred pre-existing `$HOME` leaks.
-- `docs/superpowers/` holds the design and plan, is **untracked**, and must be copied into any new worktree.
+- `docs/superpowers/` holds the design and plan and is **tracked** (12 files under `git ls-files`), so a new
+  worktree already has it. The directory that is untracked is the dotfile **`.superpowers/`**, excluded via
+  `.git/info/exclude`, and that is the one a worktree needs copied in (D-171 corrects the conflation).
 
 ---
 
