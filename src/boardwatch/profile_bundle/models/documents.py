@@ -60,6 +60,7 @@ from boardwatch.profile_bundle.models.history import (
 from boardwatch.profile_bundle.models.imports import (
     CandidatePackage,
     ExclusionLedger,
+    ExtractionReport,
     SourceLedger,
 )
 from boardwatch.profile_bundle.models.manifests import (
@@ -70,6 +71,7 @@ from boardwatch.profile_bundle.models.manifests import (
 from boardwatch.profile_bundle.models.metrics import MetricRecord
 from boardwatch.profile_bundle.models.policy import (
     AssertionTagCatalog,
+    ExtractionMappingsDocument,
     PredicateCatalog,
     RelationCatalog,
     SecretRuleset,
@@ -276,10 +278,12 @@ DocumentModel = (
     | SkillCategoryCatalog
     | AssertionTagCatalog
     | SecretRuleset
+    | ExtractionMappingsDocument
     | RelationRecordsDocument
     | SourceLedger
     | CandidatePackage
     | ExclusionLedger
+    | ExtractionReport
     | GatedFactsDocument
     | ChangeLedger
     | ApprovalLedger
