@@ -37,21 +37,16 @@ the 14-day clock therefore costs nothing**, which is what makes the reorientatio
 **81 source records** (header 2 · education 2 · skill-groups 58 · entry metadata 6 · bullets 13) — Gate B's
 denominator for that source. The importer exists (~1,400 lines) but **has no CLI command**.
 
-**The projection design is at revision 3** (`docs/superpowers/specs/…-projection-design.md`), after
-**three external review rounds, all REWORK**. Reviews at `.agent/REVIEW-R1-{GPT,DEEPSEEK}.md`.
-**Do NOT bump it to revision 4** — D-158 closed that loop on purpose, and **where the spec and the
-preflight disagree the preflight wins**; the plan carries a correction table for all eight.
+**The projection design is at revision 3** (`docs/superpowers/specs/…-projection-design.md`), after three
+external review rounds, all REWORK. **Do NOT bump it to revision 4** — D-158 closed that loop on purpose,
+and **where the spec and the preflight disagree the preflight wins**; the plan carries a correction table.
 
-**The loop was stopped deliberately, not because it converged.** Three of round 2's eight defects were
-created by round 1's fixes, and the residual uncertainty is one thing review cannot settle: **two rounds
-picked two scorers and a probe falsified both** (`4 > 2`, then `2.0 > 1.5`). So revision 3 names **no
-scorer** (D-158). **Do not open a session by picking a third scorer.**
-
-**D-163 makes this stronger, by measurement: all four candidates are falsified by one probe or the other,
-and the four are really two families.** `coverage_then_density`'s primary key *is* `total_distinct`, and
-`mean_top_k` degenerates into `mean_per_bullet` at or below `MAX_BULLETS_PER_ENTRY` (**6**). No scorer
-survives both probes, so **the four cannot break their own tie — Slice PM (Task 20) is the only arbiter
-that exists.** Ten real postings ranked by Mit, before any scorer is tuned against them.
+**No scorer is picked, and none may be picked by inspection** (D-158, D-163). All four candidates are
+falsified by one probe or the other, and they are really two families: `coverage_then_density`'s primary
+key *is* `total_distinct`, and `mean_top_k` degenerates into `mean_per_bullet` at or below
+`MAX_BULLETS_PER_ENTRY` (**6**). **The four cannot break their own tie — Task 20 is the only arbiter that
+exists**: ten real postings ranked by Mit, before any scorer is tuned against them. **Do not open a
+session by picking a third scorer.** `--scorer` is required with no default until then (D-168).
 
 **The finding that shaped it, and it must not be re-derived: `LatexRenderer.emit` never reads
 `Resume.header` or `Resume.education`.** The layout gate says so in its own docstring — *"Increment 1's
