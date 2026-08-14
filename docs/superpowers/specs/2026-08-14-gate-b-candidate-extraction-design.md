@@ -1,7 +1,8 @@
 # Gate B candidate extraction — design
 
-**Status:** revision 2. Externally reviewed once, verdict NOT READY; four of six findings applied here, two
-are owner decisions in §9. No code written.
+**Status:** revision 3. Externally reviewed once (NOT READY); all six findings now addressed — four applied in
+revision 2, the two owner decisions taken in revision 3 and recorded as **D-172**. No code written. The
+predicate audit is task 1 of the plan and has not been performed.
 **Date:** 2026-08-14.
 **Supersedes nothing.** Narrows D-170 ruling 1; see §7.
 
@@ -207,9 +208,22 @@ mapping exists anywhere today** (verified: `predicate_id` appears in exactly two
 `models/policy.py` and `imports.py`; `enumerators.py` never references it).
 
 The mapping ships as versioned data keyed by adapter id, so a user whose career is not software supplies
-their own without new code. **UNVERIFIED:** whether it belongs in `policy/sources.yaml`'s `SourceSpec` (no
-new document, but a schema bump) or as a package-data resource beside the starter catalog. Resolve before
-implementation — a new bundle document would break the closed 33-document grammar.
+their own without new code.
+
+**DECIDED (owner, 2026-08-14): it lives INSIDE the bundle, as a field on `SourceSpec` in
+`policy/sources.yaml`** — not as package data. Cost: a schema bump, which is affordable precisely because
+Gate A is not declared met and the on-disk grammar is still allowed to change
+(`docs/profile-bundle-authoring.md:24-26`).
+
+The deciding argument is reproducibility, and it is the store's whole purpose. Package data is versioned with
+*boardwatch*, not with the bundle, so upgrading the program would silently change the rules an existing
+revision was built under and that revision could no longer be explained from the bundle alone. A
+content-addressed store whose revisions cannot account for how they were produced has given up the property
+it exists for. In the bundle, the mapping is part of the approved, digest-bound content.
+
+Two consequences to carry into the plan: a `SourceSpec` field bumps `schema_version` and therefore owes a
+migration (`migrations.py`, §17 of the authoring doc is append-only); and **no new document is created**, so
+the closed grammar is untouched.
 
 ### 6.3 Grounding, per bucket
 
@@ -341,8 +355,26 @@ extractor writes candidates directly, so **a deterministic extractor that emits 
 locator drives `review_required` to zero by itself.** If Gate B is read off that number, it measures
 extractor coverage and calls it owner disposition.
 
-This design does **not** resolve that by itself, because the resolution is a definition the owner owns
-(question 2). What it does commit to:
+**DECIDED (owner, 2026-08-14): Gate B is met at a PROMOTED REVISION, not at a clean draft.** The existing
+`approve` step is the owner-acceptance boundary — it runs on a controlling terminal, binds to the draft's
+exact content digest, and `promote` is refused without a matching stamp. So machine-written candidates
+already require the owner's sign-off before they can become a revision, and the gate now points at the thing
+that requires it.
+
+**How this differs from what the review asked for, stated plainly so it can be re-argued.** The review asked
+for an acceptance transition *before extracted output can cause `imported`*. This does not do that: in a
+draft, a record still flips to `imported` on candidate presence alone. What changes is that a draft's
+disposition counts are a **working state and not the gate**. The alternative — a fourth disposition, or an
+acceptance flag on the ledger record — was rejected because disposition is derived by construction
+(`imports.py:430-452`) and giving the ledger an authored acceptance field would hand it a second source of
+truth about the one number Gate B is measured against, which is what `record_count` is deliberately not a
+field to avoid (`models/imports.py:15-16`).
+
+The residual limit, unresolved by design: approval means "I approve this exact content", never "I read all 81
+candidates." No bundle mechanism proves reading, for any document. Raising that bar would require sampling —
+audit N records, require all N correct — which is a separate decision and a heavier gate.
+
+What the design commits to regardless of the above:
 
 - **The two quantities are never reported as one number.** The `extract` report states records-with-candidates
   separately from records the owner has accepted, and Slice B's gate asserts both (§6.5).
@@ -364,20 +396,25 @@ already structural: an agent proposal whose span is not in the record's bytes pr
 
 ## 9. Open questions
 
-**Two are owner decisions and block planning. They are not deferrable to implementation.**
+**The two that blocked planning are now DECIDED by the owner (2026-08-14), and recorded in D-172:**
 
-1. **Where the locator→predicate mapping lives** (§6.2) — `SourceSpec` field versus package-data resource.
-   This is the multi-tenancy boundary, not a detail: it decides version binding, override behaviour, and
-   whether a historical revision can reproduce the mapping it was built under. **Recommendation:
-   `SourceSpec`**, because package data is not versioned with the bundle and a past revision could then not
-   be reproduced from the bundle alone. Cost: a schema bump.
-2. **What Gate B is, precisely, and what it is bound to** (§7a). Today it is *"a real person's canonical
-   baseline, and the bundle-to-`Resume` bridge"* (`docs/profile-bundle-authoring.md:18-22`) — no number, no
-   procedure. **Recommendation: bind it to a promoted revision**, so the existing `approve` step is the
-   owner-acceptance boundary.
+1. **The locator→predicate mapping lives inside the bundle**, as a `SourceSpec` field — §6.2. Owes a
+   `schema_version` bump and a migration.
+2. **Gate B is met at a promoted revision**, so `approve` is the owner-acceptance boundary — §7a. The
+   completeness blocker `import_record_undispositioned` remains what *lists* the work; it is no longer read
+   as the gate.
 
-*Not blocking:* whether `header/2` (an email) argues for a contact predicate or is correctly left
-undispositioned as `no_predicate_exists` (§6.3a).
+**What remains genuinely open:**
+
+3. **The predicate audit has not been performed.** §5 states its invariants and its per-row account, and both
+   are falsifiable, but the reading itself is task 1 of the plan and **the plan must not presume its
+   outcome.** Invariants 1 and 2 already fail on the example catalog, so at least two rows change.
+4. Whether `header/2` (an email) argues for a contact predicate, or is correctly left undispositioned as
+   `no_predicate_exists` (§6.3a). Not blocking — one record.
+5. The promotion slice named in §6.4 is unwritten and unnamed. It owns subjects, facts, skill records,
+   contexts, evidence, surfaces, and the referential check that a candidate's `skill_id` exists. **Nothing
+   from this source can reach a résumé until it exists**, so it is a prerequisite of the *track*, though not
+   of this design.
 
 ## 10. What must not be re-derived
 

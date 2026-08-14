@@ -140,12 +140,28 @@ concrete step is Mit's: `profile-bundle init`, declare `resume.yaml` as a source
 then `import`. **Expect every one of the 81 records to land `review_required` at exit 0** — dispositioning
 them is the Gate B work, and `validate --completeness` is what lists them.
 
-**Still missing for a promotable bundle: candidate extraction. It is now DESIGNED, not built, and the
-design is AWAITING MIT'S REVIEW** — `docs/superpowers/specs/2026-08-14-gate-b-candidate-extraction-design.md`
-(2026-08-14). Nothing in `src/` constructs a `ProposedCandidate`; the only two construction sites are in one
-test file, so no record can reach `imported`. **No code has been written and none should be until the review
-lands**; an external reviewer was given the spec at Mit's request. Three slices: a seeded predicate catalog,
-deterministic extraction with span grounding, then an agent lane for the two free-text education records.
+**Still missing for a promotable bundle: candidate extraction. It is DESIGNED and REVIEWED, not built** —
+`docs/superpowers/specs/2026-08-14-gate-b-candidate-extraction-design.md`, **revision 3**. Nothing in `src/`
+constructs a `ProposedCandidate`; the only two construction sites are in one test file, so no record can reach
+`imported`. Three slices: a seeded predicate catalog, deterministic extraction with span grounding, then an
+agent lane for the two free-text education records. **No code written. The next step is an implementation
+plan, whose task 1 is the predicate audit — and the plan must not presume the audit's outcome.**
+
+**The external review returned NOT READY on revision 1, with two blockers, and all six findings are now
+addressed** (four in revision 2, two by Mit's rulings in D-172). The two worth carrying:
+
+- **Revision 1 falsely claimed a skill candidate carries an evidenced-versus-`incidental` context.**
+  `CandidateRecord` has no `usage_context`, subject, verification state, evidence or surfaces — those are
+  fact-layer properties. **Extraction produces candidate assertions only; nothing it emits is renderable**,
+  and the promotion slice that owns the semantics is unwritten and unnamed (spec §9.5).
+- **`review_required` was a quarantine with no drain.** The ledger has no reason field, so span failure,
+  absent mapping, unparsable value and deliberate non-assertion were indistinguishable. Now a closed reason
+  catalog reported by `extract` **outside** the bundle, each with a route out; `span_not_grounded` is
+  explicitly a defect signal, not owner work.
+
+**Also found, still open: a candidate's `skill_ref` is not referentially validated at all.** The import
+validators never check a candidate's `skill_id` against the skill inventory — referential validation covers
+canonical facts only.
 
 **Two prerequisites the design found, both absences no document named:**
 
@@ -159,11 +175,15 @@ deterministic extraction with span grounding, then an agent lane for the two fre
    recorded honestly, *and* `effective.py:220`'s guard against an incidental fact grounding a skill **can
    never fire**. Admitting `incidental` on `technology.used` repairs both.
 
-**Mit's rulings on it (2026-08-14):** deterministic extraction first with an agent lane only for free text;
-**strict span grounding** — no span in the record's own bytes ⇒ no candidate and the record stays
+**Mit's rulings on it (2026-08-14, D-172):** deterministic extraction first with an agent lane only for free
+text; **strict span grounding** — no span in the record's own bytes ⇒ no candidate and the record stays
 `review_required`; the extractor writes `imports/candidates.yaml` **directly**, which narrows D-170 ruling 1
-(its stated reason, "no extractor exists", expires) and **owes its own decision entry**; all 58 skill items
-become **claims, not exclusions**; and the starter catalog **ships, audited first**.
+(its stated reason, "no extractor exists", expires); all 58 skill items become **candidate assertions, not
+exclusions**; the starter catalog **ships, audited first**; **Gate B is met at a PROMOTED REVISION**, so
+`approve` is the owner-acceptance boundary and a draft's disposition counts are a working state, not the gate;
+and the **locator→predicate mapping lives INSIDE the bundle** as a `SourceSpec` field — owing a
+`schema_version` bump and a migration — because package data is versioned with the program, not the bundle,
+and a revision must be able to explain how it was produced.
 
 **A correction that governs the skills question:** `models/skills.py:3-6`'s *"a generic skills list supports
 nothing"* is about **authority, not admissibility** — it means such naming cannot make a skill `verified`,
