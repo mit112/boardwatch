@@ -36,8 +36,9 @@ produces Mit's résumés daily (measured: 8/28/24/18 PDFs on 08-09…08-12) — 
 > had **no production call site**, so a misrouted mapping extracted clean at exit 0 — fixed and pinned by two
 > tests confirmed to fail without it.
 >
-> **`revision 1` exists**: `sha256:9d8a202d…`, stamp `approval-stamp.000001`, `CURRENT` names it, and the
-> selected revision validates **0 error, 0 blocker**. The whole lane ran on Mit's live `resume.yaml` against
+> **`revision 2` is CURRENT**: `sha256:9917b67b…`, stamp `approval-stamp.000002` (revision 1 was
+> `sha256:9d8a202d…`). The selected revision validates **0 error, 0 blocker** and its **résumé surface carries
+> 38 facts, 10 skills and 5 contacts**. The whole lane ran on Mit's live `resume.yaml` against
 > the real bundle at `{config_dir}/career-profile` — every prior Gate B number came from a scratch tree.
 > `import` now exits **0** (the `missing_required_file` finding is gone), `extract` gives **78/81**,
 > `promote-candidates` gives **6 entities / 47 facts / 10 skills**, `review_required` is **0**.
@@ -99,12 +100,17 @@ explain its one `review_required` record.
    repository evidence for the 6 `project.contribution` facts (StreakSync, crop-rf, gamified-learning). The
    alternative is a catalog edit widening those two predicates to `owner_attested` — legitimate, since the
    catalog is versioned data, but it weakens a claim to pass a gate and was deliberately not taken.
-0. **Three findings from the first real run (D-185).** (a) **A promoted skill can never surface** —
-   `promote-candidates` writes `allowed_surfaces=()` and is one-shot, and setting it by hand still leaves
-   `surface_coverage` counting 0 skills, so D-182's "one owner step from a résumé-surfaced skill" is not
-   reachable through the CLI. (b) **`add-evidence` cannot take an inline capture**, so an owner attestation must
-   be hand-authored, which leaves `manifest.yaml`'s `evidence_set_digest` stale until repaired. (c) Promoting
-   `header/1`'s `person.professional_name` is a small unbuilt slice — identity.yaml does **not** unblock it.
+0. **Carried findings (D-185, D-186).** (a) **RESOLVED in revision 2 — and D-185's claim is retracted (D-186).**
+   The skills surface. A `SkillRecord` carries its **own** `verification_state`, which confirming the supporting
+   facts never touches; `_surface_coverage` needs that **and** the surface. Only two narrow facts survive: **no
+   CLI command confirms a skill** (hand edit; `promote-candidates` is one-shot), and skills are absent from the
+   `ApprovalAction` catalog so the edit is not owner-gated. (b) **`add-evidence` cannot take an inline
+   capture**, so an owner attestation must be hand-authored, which leaves `manifest.yaml`'s
+   `evidence_set_digest` stale until repaired. (c) Promoting `header/1`'s `person.professional_name` is a small
+   unbuilt slice — identity.yaml does **not** unblock it. (d) **The bootstrap draft is a one-time dead end**:
+   a draft with *no* parent that promotes the first revision can afterwards be neither approved
+   (`stale_draft_parent`) nor rebased (`draft_rebase_conflict` on every record) — `checkout` a fresh draft.
+   `baseline` is spent; the live draft is `skills-surfaced`.
 0b. **Two review findings needing Mit's design call (D-184), both latent today, neither with an obvious fix.**
    (a) **A partial emission silently drops fields**: `run_extraction` records a drain reason only when a record
    produces *no* candidate, so an entry with a malformed date emits its other facts, reaches `imported`, and
