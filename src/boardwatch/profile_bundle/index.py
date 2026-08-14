@@ -69,6 +69,7 @@ from boardwatch.profile_bundle.models.imports import (
     CandidateRecord,
     ExclusionLedger,
     ExclusionRecord,
+    ExtractionReport,
     SourceLedger,
     SourceLedgerRecord,
 )
@@ -168,6 +169,7 @@ class BundleIndex:
     assertion_tags: AssertionTagCatalog | None
     secret_ruleset: SecretRuleset | None
     source_ledger: SourceLedger | None
+    extraction_report: ExtractionReport | None
 
     #: record ID -> the evidence IDs that record cites. Built from the RECORD side, so the
     #: bidirectional check has an independent view of each direction.
@@ -355,6 +357,9 @@ def build_index(documents: BundleDocuments) -> BundleIndex:
         assertion_tags=_typed(documents, "policy/assertion-tags.yaml", AssertionTagCatalog),
         secret_ruleset=_typed(documents, "policy/secret-scan.yaml", SecretRuleset),
         source_ledger=_typed(documents, "imports/source-ledger.yaml", SourceLedger),
+        extraction_report=_typed(
+            documents, "imports/extraction-report.yaml", ExtractionReport
+        ),
         evidence_links=links,
         kinds=kinds,
     )

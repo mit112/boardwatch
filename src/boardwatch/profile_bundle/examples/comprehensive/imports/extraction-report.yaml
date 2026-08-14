@@ -1,2 +1,4 @@
-'report_version': 1
-'entries': []
+report_version: 1
+entries:
+- source_record_id: source-record.5e0521371b368f834f16acafdc2d96a63e6ce94c330e8c51bf5eb2d9e09256ce
+  reason: no_mapping_for_locator

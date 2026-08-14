@@ -386,7 +386,7 @@ _BUNDLE_EXAMPLE_PINS: dict[str, str] = {
     "imports/exclusions.yaml":
         "sha256:9b9af24f0e1361ea69c81d79de39d971828d9e9a49a145bcbd6c1160ba714bad",
     "imports/extraction-report.yaml":
-        "sha256:e7f2fbf1c8d76b479bc71286a56863d2ca423a7d6af1f291101a629b80f3ddf4",
+        "sha256:d07739139cac7fe2b7e68e0751723662c03f27fbe838e09b5fdcb85825337764",
     "imports/source-ledger.yaml":
         "sha256:54944a319fcae78bb170d9ba7bdb04aaa0972038f57499f6b6aa1acc0ea1c450",
     "manifest.yaml":

@@ -121,7 +121,11 @@ def imports_completeness(ctx: ValidationContext) -> tuple[Diagnostic, ...]:
         return ()
     return tuple(
         finding
-        for check in (_undispositioned_records, _approved_sources_that_were_never_enumerated)
+        for check in (
+            _undispositioned_records,
+            _approved_sources_that_were_never_enumerated,
+            _the_extraction_report_reconciles_with_dispositions,
+        )
         for finding in check(ctx)
     )
 
@@ -466,6 +470,28 @@ def _dispositions_agree_with_the_exclusion_document(
         )
 
 
+def _the_extraction_report_reconciles_with_dispositions(
+    ctx: ValidationContext,
+) -> Iterator[Diagnostic]:
+    """§6.3a: the drain's durable carrier explains exactly the review_required records — the mirror
+    of `_dispositions_agree_with_the_exclusion_document` for the report side.
+
+    A COMPLETENESS check, not a validity one, because "every review_required record carries a closed
+    reason" is a property of a *finished* extraction: a freshly imported, not-yet-extracted bundle
+    has review_required records and no report, and is valid-but-incomplete (its records are the
+    `_undispositioned_records` completeness blocker). Enforced here so the drain invariant binds
+    where Gate B is measured and at promotion, without failing `import`'s validity revalidation.
+
+    An absent report is read as an empty one — the same fail-safe as an absent exclusions document.
+    """
+    ledger = ctx.index.source_ledger
+    assert ledger is not None
+    report = ctx.index.extraction_report
+    if report is None:
+        report = ExtractionReport(report_version=1, entries=())
+    yield from validate_extraction_report(ledger, report)
+
+
 def validate_extraction_report(
     ledger: SourceLedger, report: ExtractionReport
 ) -> tuple[Diagnostic, ...]:
@@ -479,13 +505,9 @@ def validate_extraction_report(
     enumerate all break the 1:1 accounting the report must hold. "Two reasons for one record" is not
     reachable here — the model refuses a duplicate `source_record_id` at parse time.
 
-    A pure function on the two documents, not a `ValidationContext` check, because reaching it from
-    `validate_imports` needs the report on `ctx.index`, which needs the document-kind, layout, and
-    schema-v2 registration this lane deliberately does not touch.
-
-    TODO(schema-v2): register document kind for `imports/extraction-report.yaml` and wire this into
-    `validate_imports` alongside `_dispositions_agree_with_the_exclusion_document` once
-    `ctx.index.extraction_report` exists.
+    A pure function on the two documents so the reconciliation itself stays unit-testable in
+    isolation. `_the_extraction_report_reconciles_with_dispositions` wires it into the imports
+    COMPLETENESS lane over `ctx.index.extraction_report` (not validity — see that check).
     """
     findings: list[Diagnostic] = []
     disposition_by_record = {

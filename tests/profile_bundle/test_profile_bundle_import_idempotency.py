@@ -747,6 +747,41 @@ def test_the_comprehensive_example_has_no_import_errors(
     assert findings(synthetic_bundle) == ()
 
 
+def test_the_completeness_lane_flags_a_review_required_record_the_report_leaves_unexplained(
+    synthetic_bundle: SyntheticBundle,
+) -> None:
+    """§6.3a: the drain must carry exactly one closed reason for every review_required record. Empty
+    the report and the example's one review_required record loses its reason. This is a COMPLETENESS
+    finding, not a validity one — a not-yet-extracted bundle is valid-but-incomplete — so it is
+    reached through `imports_completeness`, the mirror of the exclusion-side reconciliation."""
+
+    def blank_report(data: Any) -> None:
+        data["entries"] = []
+
+    edit_document(synthetic_bundle, "imports/extraction-report.yaml", blank_report)
+    ctx = build_context(
+        synthetic_bundle.draft,
+        mode="draft",
+        blobs=blob_reader(),
+        bundle_root=synthetic_bundle.root,
+    )
+    assert IssueCode.IMPORT_DENOMINATOR_MISMATCH in codes(imports_completeness(ctx))
+
+
+def test_validate_imports_does_not_flag_an_unextracted_bundles_review_required_records(
+    synthetic_bundle: SyntheticBundle,
+) -> None:
+    """The drain reconciliation must not make a not-yet-extracted bundle *invalid*: `import`
+    revalidates at the validity tier, so an unexplained review_required record there would break
+    the import command. It is a completeness blocker, never a validity error."""
+
+    def blank_report(data: Any) -> None:
+        data["entries"] = []
+
+    edit_document(synthetic_bundle, "imports/extraction-report.yaml", blank_report)
+    assert IssueCode.IMPORT_DENOMINATOR_MISMATCH not in codes(findings(synthetic_bundle))
+
+
 def test_the_example_actually_exercises_the_layer_it_is_checking(
     synthetic_bundle: SyntheticBundle,
 ) -> None:
