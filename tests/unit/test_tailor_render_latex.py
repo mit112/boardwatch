@@ -137,6 +137,18 @@ def test_emit_zero_bullet_entry_omits_its_item_list():
     assert "{Proj}{2021}" in src
 
 
+def test_emit_omits_skills_section_when_there_are_no_skill_groups():
+    """A résumé with no skill groups omits the Skills section, mirroring the empty-section guard
+    the experience/project/extracurricular emitters already apply. A field whose résumé carries no
+    skills list (a multi-tenancy case) must not leave a stray empty "Skills" header."""
+    from boardwatch.tailor.render.latex import LatexRenderer
+
+    src = LatexRenderer().emit(_r().model_copy(update={"skill_groups": []}))
+    assert r"\section{Skills}" not in src
+    # present when there are groups
+    assert r"\section{Skills}" in LatexRenderer().emit(_r())
+
+
 def test_emit_extracurricular_section_when_present():
     from boardwatch.tailor.render.latex import LatexRenderer
 

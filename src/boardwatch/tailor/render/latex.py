@@ -124,6 +124,11 @@ def _subheading(e: Entry) -> str:
 
 
 def _skills(resume: Resume) -> str:
+    # A résumé with no skill groups omits the section, like `_experience`/`_projects`/
+    # `_extracurricular` — otherwise a field whose résumé carries no skills list would render a
+    # stray, empty "Skills" header.
+    if not resume.skill_groups:
+        return ""
     body = "".join(
         f"\\textbf{{{escape(g.label)}}}: {', '.join(escape(item) for item in g.items)}\\\\\n"
         for g in resume.skill_groups
