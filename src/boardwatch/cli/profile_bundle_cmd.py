@@ -897,6 +897,66 @@ def import_source(
     _emit("import", _with_revalidation(root, draft, outcome), rendered, as_json=json_output)
 
 
+@profile_bundle_app.command("extract")
+def extract(
+    ctx: typer.Context,
+    draft: str = DRAFT_OPTION,
+    source: str = typer.Option(  # noqa: B008
+        ..., "--source", help="The source ID to extract, as declared in policy/sources.yaml."
+    ),
+    from_path: Path | None = typer.Option(  # noqa: B008
+        None,
+        "--from",
+        exists=True,
+        dir_okay=False,
+        readable=True,
+        help="The source document (default: resolved through local-sources.yaml).",
+    ),
+    bundle: Path | None = BUNDLE_OPTION,
+    json_output: bool = JSON_OPTION,
+) -> None:
+    """Deterministically extract one source's candidates, re-deriving its ledger and report."""
+    root = _bundle_root(ctx, bundle)
+    outcome = _guarded(
+        lambda: authoring.extract_source(
+            root,
+            draft_name=draft,
+            source_id=source,
+            source_bytes=None if from_path is None else from_path.read_bytes(),
+        )
+    )
+    extracted = outcome.value
+    if extracted is None:
+        _emit("extract", outcome, _nothing(), as_json=json_output)
+    counts = extracted.counts
+    reasons = extracted.report_reasons
+    rendered = _Rendered(
+        result={
+            "draft": extracted.draft_name,
+            "source_id": extracted.source_id,
+            "enumerator_id": extracted.enumerator_id,
+            "source_content_digest": extracted.source_content_digest,
+            "record_count": extracted.record_count,
+            "counts_by_disposition": dict(counts),
+            "report_reasons": dict(reasons),
+            "denominator": extracted.denominator,
+            "changed": extracted.changed,
+        },
+        lines=(
+            f"{'extracted' if extracted.changed else 'unchanged'}: {extracted.source_id} "
+            f"contributes {extracted.record_count} record(s) to drafts/{extracted.draft_name} "
+            f"({extracted.denominator} in the ledger)",
+            "  " + ", ".join(f"{name}: {count}" for name, count in sorted(counts.items())),
+            "  review reasons: "
+            + (
+                ", ".join(f"{name}: {count}" for name, count in sorted(reasons.items()) if count)
+                or "none"
+            ),
+        ),
+    )
+    _emit("extract", _with_revalidation(root, draft, outcome), rendered, as_json=json_output)
+
+
 @profile_bundle_app.command("resolve-conflict")
 def resolve_conflict(
     ctx: typer.Context,

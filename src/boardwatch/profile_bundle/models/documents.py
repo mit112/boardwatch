@@ -283,6 +283,7 @@ DocumentModel = (
     | SourceLedger
     | CandidatePackage
     | ExclusionLedger
+    | ExtractionMappingsDocument
     | ExtractionReport
     | GatedFactsDocument
     | ChangeLedger

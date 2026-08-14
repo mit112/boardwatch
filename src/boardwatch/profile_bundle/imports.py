@@ -24,7 +24,7 @@ from __future__ import annotations
 
 import hashlib
 import unicodedata
-from collections.abc import Mapping, Sequence
+from collections.abc import Mapping, Sequence, Set
 from dataclasses import dataclass
 from typing import Any, Final
 
@@ -406,6 +406,65 @@ def merge_candidate_package(
         appended_occurrences=tuple(sorted(appended)),
         unchanged=tuple(sorted(unchanged)),
     )
+
+
+# --------------------------------------------------------------------------------------
+# Authoritative per-source rebuild (§6.6)
+# --------------------------------------------------------------------------------------
+
+
+def rebuild_source_candidates(
+    existing: CandidatePackage,
+    fresh: CandidatePackage,
+    *,
+    source_record_ids: Set[str],
+) -> CandidatePackage:
+    """Replace one source's candidates with a fresh extraction, authoritatively (§6.6).
+
+    `merge_candidate_package` is append-only, so a re-extraction that produced a *different*
+    candidate ID — corrected material yields a new identity — would leave the superseded candidate
+    behind and let a record name both. Extraction is authoritative per source instead: every
+    candidate whose `source_record_id` is one of this source's records is dropped and rebuilt from
+    `fresh`, while every other source's candidate is carried over untouched.
+
+    `source_record_ids` is this source's record IDs — both those the fresh enumeration produced and
+    any the old ledger still carried, so a record that vanished from the source takes its stale
+    candidates with it. Occurrence lineage is preserved only for a candidate ID that *survives* the
+    rebuild: a re-extraction seeing the same assertion appends nothing, but a superseded assertion's
+    occurrences are not retained, which is exactly what "the same assertion seen again" means.
+    """
+    if existing.candidates_version != fresh.candidates_version:
+        raise CandidateImportError(
+            f"cannot rebuild candidates_version {fresh.candidates_version} into "
+            f"{existing.candidates_version}"
+        )
+
+    prior_this_source = {
+        candidate.candidate_id: candidate.model_dump(mode="json")
+        for candidate in existing.candidates
+        if candidate.source_record_id in source_record_ids
+    }
+    built: dict[str, dict[str, Any]] = {
+        candidate.candidate_id: candidate.model_dump(mode="json")
+        for candidate in existing.candidates
+        if candidate.source_record_id not in source_record_ids
+    }
+    for candidate in fresh.candidates:
+        payload = candidate.model_dump(mode="json")
+        prior = prior_this_source.get(candidate.candidate_id)
+        if prior is not None:
+            seen = {
+                (item["source_content_digest"], item["record_content_digest"])
+                for item in prior["occurrences"]
+            }
+            merged = list(prior["occurrences"])
+            for item in payload["occurrences"]:
+                if (item["source_content_digest"], item["record_content_digest"]) not in seen:
+                    merged.append(item)
+            payload["occurrences"] = merged
+        built[candidate.candidate_id] = payload
+
+    return _package(built, existing.candidates_version)
 
 
 # --------------------------------------------------------------------------------------

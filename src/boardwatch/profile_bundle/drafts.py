@@ -331,8 +331,9 @@ def _empty_documents() -> Mapping[PurePosixPath, DocumentModel]:
     ruleset = secret_scan.builtin_ruleset(secret_scan.CURRENT_RULESET_VERSION)
     predicates = predicate_catalog.builtin_catalog(predicate_catalog.CURRENT_CATALOG_VERSION)
     # Like `policy/secret-scan.yaml`, the extraction mapping is seeded NON-EMPTY: an empty mapping
-    # would let a fresh bundle enumerate a source it can never disposition — §2.1's defect one
-    # layer over. Read from the module at call time so a build retaining a newer head seeds it.
+    # would let a fresh bundle enumerate a source it can never disposition — §2.1's defect one layer
+    # over. Read from the module at call time so a build retaining a newer head seeds the newer
+    # head.
     extraction_mappings = extraction_mapping.builtin_extraction_mappings_document()
     empty_facts: dict[str, object] = {"facts": [], "entities": []}
     version = INITIAL_CATALOG_VERSION

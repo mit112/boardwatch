@@ -83,8 +83,9 @@ CURRENT_SCHEMA_VERSION: Final = 2
 
 #: Exactly `{CURRENT_SCHEMA_VERSION}`. Not a range, not "anything at or below the head": a bundle
 #: written by a newer build must be refused with a typed outcome, not misread as an unknown enum
-#: value. v2 adds two documents (`policy/extraction-mappings.yaml`, `imports/extraction-report`)
-#: and changes no v1 model. A `1 -> 2` forward migration is deliberately NOT shipped yet: no v1
+#: value. v2 adds two documents (`policy/extraction-mappings.yaml`,
+#: `imports/extraction-report.yaml`) and changes no v1 model. A `1 -> 2` forward migration is
+#: deliberately NOT shipped yet: no v1
 #: bundle exists, so a v1 tree is refused fail-safe (`unsupported_schema_version`, exit 3) rather
 #: than migrated by a transform whose only exerciser would be a fabricated previous-version fixture
 #: (schema.py's own bootstrap argument). Widening this set to `{1, 2}` is the change that then owes

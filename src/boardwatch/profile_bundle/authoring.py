@@ -44,7 +44,7 @@ from __future__ import annotations
 import os
 import tempfile
 import unicodedata
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path, PurePosixPath
@@ -89,11 +89,20 @@ from boardwatch.profile_bundle.errors import (
     io_reason,
     outcome_with,
 )
+from boardwatch.profile_bundle.extraction import (
+    ExtractionFailure,
+    ExtractionMapping,
+    run_extraction,
+)
+from boardwatch.profile_bundle.extraction_mapping import mappings_from_document
 from boardwatch.profile_bundle.imports import (
     CandidateImportError,
     EnumeratedSource,
+    ProposedCandidate,
+    build_candidate_package,
     build_source_ledger,
     enumerate_source,
+    rebuild_source_candidates,
 )
 from boardwatch.profile_bundle.index import record_id_of
 from boardwatch.profile_bundle.models.documents import (
@@ -119,6 +128,8 @@ from boardwatch.profile_bundle.models.imports import (
     Disposition,
     ExclusionLedger,
     ExclusionRecord,
+    ExtractionReport,
+    ExtractionReportReason,
     SourceLedger,
 )
 from boardwatch.profile_bundle.models.manifests import (
@@ -127,7 +138,12 @@ from boardwatch.profile_bundle.models.manifests import (
     RevisionManifest,
     StableManifestEnvelope,
 )
-from boardwatch.profile_bundle.models.policy import SourceCatalog, SourceSpec
+from boardwatch.profile_bundle.models.policy import (
+    ExtractionMappingsDocument,
+    PredicateCatalog,
+    SourceCatalog,
+    SourceSpec,
+)
 from boardwatch.profile_bundle.models.sidecars import LocalSourcesSidecar
 from boardwatch.profile_bundle.paths import (
     LOCAL_SOURCES_FILE,
@@ -157,6 +173,9 @@ CONFLICT_RULINGS_PATH: Final = PurePosixPath("conflicts/rulings.yaml")
 SOURCE_LEDGER_PATH: Final = PurePosixPath("imports/source-ledger.yaml")
 IMPORT_CANDIDATES_PATH: Final = PurePosixPath("imports/candidates.yaml")
 IMPORT_EXCLUSIONS_PATH: Final = PurePosixPath("imports/exclusions.yaml")
+EXTRACTION_REPORT_PATH: Final = PurePosixPath("imports/extraction-report.yaml")
+EXTRACTION_MAPPINGS_PATH: Final = PurePosixPath("policy/extraction-mappings.yaml")
+PREDICATE_CATALOG_PATH: Final = PurePosixPath("policy/predicates.yaml")
 SOURCE_CATALOG_PATH: Final = PurePosixPath("policy/sources.yaml")
 
 #: The names the operator's input files are reported under. They are not bundle documents, so they
@@ -234,6 +253,29 @@ class SourceImport:
     denominator: int
     #: Whether the ledger's content actually moved. A re-import of an unchanged source writes
     #: nothing, so the operator can tell "already current" from "just updated".
+    changed: bool
+
+
+@dataclass(frozen=True)
+class SourceExtraction:
+    """What `extract` did for one source, in the terms Gate B counts in."""
+
+    draft_name: str
+    source_id: str
+    enumerator_id: str
+    source_content_digest: str
+    #: Records this source contributes — its share of the denominator, not the whole of it.
+    record_count: int
+    #: This source's records by disposition after the rebuild, every member of `Disposition`
+    #: present including the zeroes (the same reason `SourceImport.counts` keeps them).
+    counts: Mapping[str, int]
+    #: The whole ledger's record count after the extraction — the Gate B denominator.
+    denominator: int
+    #: This source's `review_required` records by the closed drain reason the report attaches
+    #: (§6.3a). Sums to this source's `review_required` count; empty when every record resolved.
+    report_reasons: Mapping[str, int]
+    #: Whether any of the three documents actually moved. A re-extraction of an unchanged source
+    #: writes nothing, so the operator can tell "already current" from "just rebuilt".
     changed: bool
 
 
@@ -435,6 +477,102 @@ def import_source(
     )
 
 
+def extract_source(
+    bundle_root: Path,
+    *,
+    draft_name: str,
+    source_id: str,
+    source_bytes: bytes | None,
+) -> OperationOutcome[SourceExtraction]:
+    """Deterministically extract one source's candidates, re-deriving the ledger and report (§6.5).
+
+    Re-enumerates the source (the ledger stores only its record IDs, not their atomic values), runs
+    the seeded `policy/extraction-mappings.yaml` interpreter over it, and writes three documents
+    that cannot disagree: `imports/candidates.yaml` (this source's candidates rebuilt per §6.6),
+    `imports/source-ledger.yaml` (dispositions re-derived), and
+    `imports/extraction-report.yaml` (one closed drain reason per `review_required` record, §6.3a).
+
+    Authoritative per source: every candidate and report entry belonging to this source is replaced,
+    and every other source's candidates and entries are untouched. Occurrence lineage survives for a
+    candidate ID the rebuild reproduces; a superseded one is not retained
+    (`rebuild_source_candidates`).
+
+    The three writes cannot be made atomic (D-137), so a mid-write failure is named
+    `PARTIAL_EDIT_APPLIED` by `_write_documents`, deliberately outside the could-not-complete tier a
+    retry would refuse.
+    """
+    try:
+        tree = _draft(bundle_root, draft_name)
+        documents = _load(tree)
+        spec = _declared_source(documents, source_id)
+        ledger = _source_ledger(documents)
+        catalog = _predicate_catalog(documents)
+        mappings = _extraction_mappings(documents)
+        existing_candidates = _candidate_package(documents)
+        existing_report = _extraction_report(documents)
+        exclusions = _exclusions(documents)
+        resolved = _source_bytes(bundle_root, spec, source_bytes)
+        enumerated = _enumerated(spec, resolved, _approved_scope(ledger, spec))
+        mapping = _mapping_for(mappings, enumerated.enumerator_id)
+
+        result = run_extraction(enumerated.records, mapping)
+        fresh = _extracted_candidates(enumerated, result.proposals, catalog)
+
+        # Every ID that is or was one of this source's records: the fresh enumeration plus whatever
+        # the old ledger still carried, so a record that vanished takes its stale candidates and
+        # report entry with it.
+        this_source_ids = {record.source_record_id for record in enumerated.records}
+        this_source_ids |= {
+            row.source_record_id for row in ledger.records if row.source_id == source_id
+        }
+
+        rebuilt_candidates = _rebuild_candidates(
+            existing_candidates, fresh, source_record_ids=this_source_ids
+        )
+        rebuilt_ledger = _ledger_with(ledger, enumerated, rebuilt_candidates, exclusions)
+        rebuilt_report = _rebuild_report(
+            existing_report, result.failures, rebuilt_ledger, this_source_ids
+        )
+
+        changed = (
+            rebuilt_candidates != existing_candidates
+            or rebuilt_ledger != ledger
+            or rebuilt_report != existing_report
+        )
+        if changed:
+            # Candidates first (the evidence a disposition derives from), then the ledger that
+            # dispositions against them, then the report that explains what is left review_required.
+            _write_documents(
+                tree,
+                {
+                    IMPORT_CANDIDATES_PATH: rebuilt_candidates,
+                    SOURCE_LEDGER_PATH: rebuilt_ledger,
+                    EXTRACTION_REPORT_PATH: rebuilt_report,
+                },
+            )
+    except _Refused as refusal:
+        return outcome_with(None, refusal.diagnostics)
+
+    mine = [row for row in rebuilt_ledger.records if row.source_id == source_id]
+    my_ids = {row.source_record_id for row in mine}
+    return OperationOutcome.clean(
+        SourceExtraction(
+            draft_name=draft_name,
+            source_id=source_id,
+            enumerator_id=enumerated.enumerator_id,
+            source_content_digest=enumerated.source_content_digest,
+            record_count=len(mine),
+            counts={
+                disposition.value: sum(1 for row in mine if row.disposition is disposition)
+                for disposition in Disposition
+            },
+            denominator=rebuilt_ledger.record_count,
+            report_reasons=_reason_counts(rebuilt_report, my_ids),
+            changed=changed,
+        )
+    )
+
+
 # --------------------------------------------------------------------------------------
 # Steps. Each returns its value or raises `_Refused`.
 # --------------------------------------------------------------------------------------
@@ -496,6 +634,148 @@ def _exclusions(documents: BundleDocuments) -> dict[str, ExclusionRecord]:
             path=IMPORT_EXCLUSIONS_PATH.as_posix(),
         )
     return {record.source_record_id: record for record in document.exclusions}
+
+
+def _predicate_catalog(documents: BundleDocuments) -> PredicateCatalog:
+    document = documents.by_path.get(PREDICATE_CATALOG_PATH)
+    if not isinstance(document, PredicateCatalog):
+        raise _refusal(
+            IssueCode.MISSING_REQUIRED_FILE,
+            f"the draft has no {PREDICATE_CATALOG_PATH}, so extracted values cannot be typed",
+            path=PREDICATE_CATALOG_PATH.as_posix(),
+        )
+    return document
+
+
+def _extraction_mappings(documents: BundleDocuments) -> ExtractionMappingsDocument:
+    document = documents.by_path.get(EXTRACTION_MAPPINGS_PATH)
+    if not isinstance(document, ExtractionMappingsDocument):
+        raise _refusal(
+            IssueCode.MISSING_REQUIRED_FILE,
+            f"the draft has no {EXTRACTION_MAPPINGS_PATH}, so there is no mapping to extract with",
+            path=EXTRACTION_MAPPINGS_PATH.as_posix(),
+        )
+    return document
+
+
+def _extraction_report(documents: BundleDocuments) -> ExtractionReport:
+    document = documents.by_path.get(EXTRACTION_REPORT_PATH)
+    if not isinstance(document, ExtractionReport):
+        raise _refusal(
+            IssueCode.MISSING_REQUIRED_FILE,
+            f"the draft has no {EXTRACTION_REPORT_PATH}, so the drain has no durable carrier",
+            path=EXTRACTION_REPORT_PATH.as_posix(),
+        )
+    return document
+
+
+def _mapping_for(mappings: ExtractionMappingsDocument, adapter_id: str) -> ExtractionMapping:
+    """The seeded mapping for this source's adapter, or the refusal that says none is declared.
+
+    Keyed by adapter id, which is the enumerator id every source of a kind shares, so a source with
+    no declared mapping is a gap the seed must fill rather than a per-record surprise.
+    """
+    resolved = mappings_from_document(mappings).get(adapter_id)
+    if resolved is None:
+        raise _refusal(
+            IssueCode.BROKEN_REFERENCE,
+            f"{EXTRACTION_MAPPINGS_PATH} declares no mapping for adapter {adapter_id!r}; "
+            "the deterministic lane cannot extract a source whose adapter it does not map",
+            path=EXTRACTION_MAPPINGS_PATH.as_posix(),
+            record_id=adapter_id,
+        )
+    return resolved
+
+
+def _extracted_candidates(
+    enumerated: EnumeratedSource,
+    proposals: Sequence[ProposedCandidate],
+    catalog: PredicateCatalog,
+) -> CandidatePackage:
+    """Type and identify this source's proposals; refuses rather than half-builds, like import."""
+    try:
+        return build_candidate_package(
+            [enumerated],
+            proposals,
+            predicates=catalog,
+            candidates_version=1,
+        )
+    except CandidateImportError as exc:
+        raise _refusal(
+            IssueCode.MODEL_VALIDATION_ERROR,
+            f"{enumerated.source_id} extraction proposals could not be typed: {exc}",
+            path=IMPORT_CANDIDATES_PATH.as_posix(),
+            record_id=enumerated.source_id,
+        ) from exc
+
+
+def _rebuild_candidates(
+    existing: CandidatePackage,
+    fresh: CandidatePackage,
+    *,
+    source_record_ids: set[str],
+) -> CandidatePackage:
+    try:
+        return rebuild_source_candidates(
+            existing, fresh, source_record_ids=source_record_ids
+        )
+    except CandidateImportError as exc:
+        raise _refusal(
+            IssueCode.MODEL_VALIDATION_ERROR,
+            f"{IMPORT_CANDIDATES_PATH} would not be valid after this extraction: {exc}",
+            path=IMPORT_CANDIDATES_PATH.as_posix(),
+        ) from exc
+
+
+def _rebuild_report(
+    existing: ExtractionReport,
+    failures: Sequence[ExtractionFailure],
+    rebuilt_ledger: SourceLedger,
+    this_source_ids: set[str],
+) -> ExtractionReport:
+    """Replace this source's report entries; keep every other source's (§6.3a, §6.6).
+
+    A failure only becomes a report entry when the rebuilt ledger left its record `review_required`:
+    a record the owner excluded is `excluded`, and §6.3a forbids a report entry for it, while a
+    record that produced a candidate is `imported` and never appears in `failures` at all. Entries
+    are sorted by record ID so the document does not depend on extraction order.
+    """
+    disposition_by_record = {
+        row.source_record_id: row.disposition for row in rebuilt_ledger.records
+    }
+    fresh_entries = [
+        {"source_record_id": failure.source_record_id, "reason": failure.reason}
+        for failure in failures
+        if disposition_by_record.get(failure.source_record_id) is Disposition.REVIEW_REQUIRED
+    ]
+    kept_entries = [
+        {"source_record_id": entry.source_record_id, "reason": entry.reason.value}
+        for entry in existing.entries
+        if entry.source_record_id not in this_source_ids
+    ]
+    entries = sorted(
+        [*kept_entries, *fresh_entries], key=lambda entry: entry["source_record_id"]
+    )
+    try:
+        return ExtractionReport.model_validate(
+            {"report_version": existing.report_version, "entries": entries}
+        )
+    except ValidationError as exc:
+        raise _refusal(
+            IssueCode.MODEL_VALIDATION_ERROR,
+            f"{EXTRACTION_REPORT_PATH} would not be valid after this extraction: "
+            f"{exc.error_count()} field error(s)",
+            path=EXTRACTION_REPORT_PATH.as_posix(),
+        ) from exc
+
+
+def _reason_counts(report: ExtractionReport, record_ids: set[str]) -> dict[str, int]:
+    """This source's report entries by reason, every closed reason present including the zeroes."""
+    counts = {reason.value: 0 for reason in ExtractionReportReason}
+    for entry in report.entries:
+        if entry.source_record_id in record_ids:
+            counts[entry.reason.value] += 1
+    return counts
 
 
 def _approved_scope(ledger: SourceLedger, spec: SourceSpec) -> ApprovedScope:
