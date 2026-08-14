@@ -13,13 +13,34 @@ All notable changes to this project are documented here. The format follows
   `{config_dir}/career-profile`, with `--bundle PATH` overriding that; it is machine-local, is not a
   `Settings` field, and does not participate in lead selection.
 
-  These fifteen commands are reachable from a terminal — `init`, `checkout`, `rebase-draft`, `validate`,
-  `inspect`, `inventory`, `conflicts`, `migrate`, `import`, `add-evidence`, `resolve-conflict`,
-  `approve`, `approve-projection`, `project`, `promote` — each returning the same four exit tiers
+  These seventeen commands are reachable from a terminal — `init`, `checkout`, `rebase-draft`,
+  `validate`, `inspect`, `inventory`, `conflicts`, `migrate`, `import`, `extract`,
+  `promote-candidates`, `add-evidence`, `resolve-conflict`, `approve`, `approve-projection`,
+  `project`, `promote` — each returning the same four exit tiers
   (0 clean, 1 findings, 2 usage error, 3 could not complete), and each carrying a `--json` machine
   report alongside the human rendering **except `approve-projection`**, which ships without one
   deliberately: it is a consent prompt on a controlling terminal, and a machine-readable rendering of
   a consent prompt invites a caller to answer it.
+
+- **Deterministic candidate extraction — `profile-bundle extract`.** Reads one declared source's
+  enumerated records through the bundle's own `policy/extraction-mappings.yaml` and proposes
+  candidates, so a record moves from `review_required` to `imported` without anyone retyping it.
+  The mapping is data, not code: it is seeded into the bundle at `init` and checked against the
+  bundle's predicate catalog before any record is read, so a rule that would land a fact on a
+  subject kind the catalog does not admit is refused rather than promoted into an illegal graph.
+
+  Every record that produces no candidate gets exactly one closed reason in
+  `imports/extraction-report.yaml` — the drain — and that report must explain every
+  `review_required` record for the bundle to be *complete*. Nothing is inferred and nothing is
+  guessed: a line the deterministic lane cannot type is deferred with a reason, never approximated.
+
+- **Candidate promotion — `profile-bundle promote-candidates`.** Turns one source's imported
+  candidates into the renderable graph: entities, `FactRecord`s, and the `SkillRecord`s whose
+  `skill_id` is a real reference. It is grounded and owner-mediated by construction — **every fact
+  is born `unresolved` with no evidence and no attestation**, and a skill exists only where a
+  bullet's authored `tech_tags` ties it to an entity. Confirming, attesting and approving those
+  facts stays the owner's step, because synthesising it would be fabrication. Promotion is one-shot:
+  it refuses rather than clobber a draft that already holds entities or skills.
 
 - **The bundle-to-résumé projection — `resume project`, `profile-bundle project`, and
   `profile-bundle approve-projection`.** The bridge from the bundle to a rendered résumé, in two stages
