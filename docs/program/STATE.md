@@ -49,12 +49,16 @@ constructs a `ProposedCandidate` (two sites, both in one test file), so no recor
 slices: a seeded predicate catalog; deterministic extraction with span grounding; then an agent lane for the 2
 free-text education records. **No code written, and none should be until the review closes.**
 
-**Three external review rounds, all NOT READY.** Round 3 (scoped: do revision 4's four corrections hold, is
-§6.2a sufficient to plan from) returned **NOT READY / CONTINUE**: corrections b/c/d + the §6.8 promotion
-bounding hold, but **7 findings, all accepted** — predicate 6 contradicts §6.3a, §6.7 overstated the schema
-bump (D-175, above), and §6.2a cannot yet express bullets / entry-metadata / education / header or its own
-precedence rule. **Revision 5 is being authored in a FRESH context** (3 of 7 were rev-4-introduced defects);
-no new owner decision. **A round-4 review is owed.**
+**Four external review rounds, all NOT READY.** Round 4 (of revision 5) returned **NOT READY / CONTINUE** with
+**4 blocking findings, all accepted** (D-176): entry metadata was mapped to `employment.*` even for `project`
+entries (fails subject-kind validation); the bullet `condition` assumed a closed `kind` domain the code does
+not enforce; §6.7's residual omitted bumping `CURRENT_SCHEMA_VERSION` to 2; and §6.2a falsely claimed §8 holds
+a proposal contract. **Count is falling (12 → 7 → 4) but severity is not, and findings 1+2 are one root
+cause** — entry `kind` → subject kind → legal predicate was never modelled, only patched per case. **Revision
+6 is being authored in a FRESH context** to model that relation *once* (both metadata and bullet predicates
+derive from it), plus the mechanical fixes. One owner decision taken (D-176): an unmapped `kind` is a typed
+failure with a drain, **not** a closed `Entry.kind` enum (which would touch the Gate A model). **A round-5
+review is owed.**
 
 **Round 2's real value: FOUR of its findings were defects revision 2's own FIXES introduced** — the clearest
 evidence this program has for starting fix rounds in fresh context. Each had been asserted confidently:
@@ -72,9 +76,10 @@ locator→predicate mapping lives in **`policy/extraction-mappings.yaml`**, keye
 from a versioned builtin. **v2 adds TWO documents** (that plus `imports/extraction-report.yaml`), so the
 closed grammar widens by two in one bump — and the bump is feasible but **not cheap**: `migrate_bundle`
 (`migrations.py:83`) is a **stub** returning `already_current`, so a real transform seeding both new documents
-and bumping the manifest is owed, plus widening supported versions to {1,2}. **It does NOT owe a restricted
-raw-v1 loader or version-dispatched parsing** (round 3 / D-175): `load_documents` does not reject
-declared-but-absent documents, so adding documents does not break v1 parsing.
+and bumping the manifest is owed, plus widening supported versions to {1,2} **and setting
+`CURRENT_SCHEMA_VERSION = 2`** so fresh `init` bundles are born v2 (D-176) — three items, not two. **It does
+NOT owe a restricted raw-v1 loader or version-dispatched parsing** (round 3 / D-175): `load_documents` does
+not reject declared-but-absent documents, so adding documents does not break v1 parsing.
 
 **Two prerequisites the design found, both absences:** `init` seeds **zero** predicates and the only catalog in
 the repo is the 41-entry example; and the shipped catalog **forbids a familiarity-level skill** —

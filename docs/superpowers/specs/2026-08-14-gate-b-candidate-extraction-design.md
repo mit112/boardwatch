@@ -1,12 +1,14 @@
 # Gate B candidate extraction — design
 
-**Status:** revision 5. Three external review rounds, all NOT READY (round 3 exited NOT READY / CONTINUE);
-a fourth is scoped in §9. Revision 5 applies round 3's seven accepted findings — two of which resolve design
-forks inside already-decided policy, and several of which correct defects revision 4's own *fixes*
-introduced. No code written.
+**Status:** revision 6. Four external review rounds, all NOT READY; a fifth is scoped in §9. Revision 6
+applies round 4's findings. Rounds 3 and 4 each found that the *previous* fix introduced a new defect of the
+same class, so revision 6 fixes one root cause — entry-`kind`→predicate routing modelled in one place and
+forgotten in another — rather than patching four findings apart. The one owner decision it needed (an
+unsupported entry kind, finding 2) is already made and implemented below (§6.3a). No code written.
 **Date:** 2026-08-14.
 **Narrows** D-170 ruling 1 (§7). **Amends** D-172 ruling 1 (§7a) and ruling 2's carrier (§6.2, assented
-2026-08-14, D-174). No open owner decisions.
+2026-08-14, D-174). Respects, and does not relitigate, D-170 / D-172 / D-173 / D-174 / D-175. No open
+owner decisions.
 
 Every claim carries a `file:line`. Claims not verified are marked **UNVERIFIED**.
 
@@ -28,6 +30,10 @@ A fix round is where this project has historically introduced its worst defects,
 | **4** | §7a predicate 6 — the report "accounts for every non-`imported` record" | **Contradicts §6.3a.** Non-imported includes `excluded`, which §6.3a forbids from the report; the predicate must scope to `review_required` (§7a) |
 | **4** | §6.2a keyed conditionals on an `atomic_value` `kind`, allowed one output per locator, and built the typed value "from the named field" | **Unexpressible.** The bullet record has no `kind`; entry metadata owes four candidates but one-output + "ties are an error" forbids it; a single education scalar cannot yield three predicates (§6.2a) |
 | **4** | §6.2a called the locator grammar "already defined by `emits_locator`", "a literal head, `*` for one segment" | **Loose + too weak.** `emits_locator` is a per-head shape validator, not a wildcard grammar, and `header/*` cannot select `header/1` while leaving `header/2` unresolved (§6.2a) |
+| **5** | `entries/*/metadata` maps unconditionally to `employment.organization`/`.title`/`.date_range`/`entity.location` | **Fails for `kind: project`.** Those predicates are `legal_subject_kinds: [employment]` only (`predicates.yaml:215,241,270`); a project entry's facts land on a `project` subject and `semantic.py:149-165` raises `PREDICATE_SUBJECT_KIND_ILLEGAL`, so promotion refuses and Gate B predicate 2 can never hold. Rev 5 split *bullets* by kind but left *metadata* unsplit — the same concept modelled once and forgotten once (§6.2a) |
+| **5** | `Entry.kind` is `"experience" \| "project"` and every entry routes to one of them | **False + non-total.** `Entry.kind` is an open `str = "experience"` (`tailor/model.py:38`); an entry whose kind is neither has no route, so it would fall to a silent `review_required` with no reason, or be misfiled as `no_mapping_for_locator` though a rule *did* match (§6.3a) |
+| **5** | §6.7 residual is "exactly two things" (transform + widen `SUPPORTED_SCHEMA_VERSIONS`) | **Omits a third.** `CURRENT_SCHEMA_VERSION` must also become 2 (`schema.py:80`): `_initial_manifest` stamps it into every fresh `init` manifest (`drafts.py:404,415`), and D-174 has `init` seed the new mapping document, so a fresh bundle must be born v2 — not v1 lacking the seeded doc (§6.7) |
+| **5** | §6.2a: "§8 has its own proposal contract (request JSON → agent fills → grounding-check → ingest)" | **Overstated.** §8 is declared, not decomposed; it cites the rewrite handshake (`agent_lane.py:61`, `agent_io.py`) only as *precedent*, with no education request/response model or ingest command. Also implied Gate B was reachable in Slice B, though the 2 education records stay `free_text_deferred` until Slice C (§6.2a, §7a) |
 
 ---
 
@@ -161,7 +167,7 @@ Against the live `resume.yaml` (81 records), via `boardwatch-resume-v1` (`enumer
 | Locator | n | `atomic_value` | Predicate(s) | Route |
 |---|---|---|---|---|
 | `entries/<id>/bullets/<id>` | 13 | `{bullet_id, text, tech_tags}` | `employment.accomplishment` / `project.contribution` by entry `kind` | deterministic |
-| `entries/<id>/metadata` | 6 | `{entry_id, heading, kind, title, dates, subtitle, location}` | `employment.organization`, `.title`, `.date_range`, `entity.location` | deterministic; `dates` parsed |
+| `entries/<id>/metadata` | 6 | `{entry_id, heading, kind, title, dates, subtitle, location}` | **by entry `kind`** (§6.2a): `experience` → `employment.organization`, `.title`, `.date_range`, `entity.location`; `project` → `project.summary`, `project.start_date`+`.end_date`, `entity.location`; any other kind → `unsupported_entry_kind` | deterministic; `dates` parsed |
 | `skill-groups/<label>/<n>` | 58 | `{label, item}` | `technology.used` | deterministic |
 | `education/<n>` | 2 | `str` | `education.institution` + `.credential` + `.field` | agent lane (§8) |
 | `header/<n>` | 2 | `str` | `person.professional_name`; the email has none | 1 deterministic, 1 unresolved |
@@ -199,9 +205,64 @@ in the plan, where they would leak into Python. The contract, therefore:
 `header/1` (the professional name). Education (the 2 free-text lines) is **agent-lane (§8), explicitly OUT of
 this deterministic contract** — a single education scalar (`enumerators.py:510-511`) carries institution,
 credential and field together, and splitting one line into three predicates is judgement, not a field
-selection. §8 has its own proposal contract (request JSON → agent fills → grounding-check → ingest); the
-deterministic mapping never attempts education, and an education record carries `free_text_deferred` in the
-extraction report until Slice C. `header/2` (the email) matches no rule and ends `no_predicate_exists`.
+selection. That agent lane's **proposal contract is DEFERRED to Slice C — §8 is declared, not
+decomposed** (it cites the rewrite handshake, `agent_lane.py:61` / `agent_io.py`, only as
+*precedent*, and defines no education request/response model, multiplicity, typed value, or ingest command;
+do not decompose Slice C now — education is last and the bundle is useful without it). The deterministic
+mapping never attempts education, and an education record carries `free_text_deferred` in the extraction
+report until Slice C. `header/2` (the email) matches no rule and ends `no_predicate_exists`.
+
+**The `entry-kind → subject-kind → legal predicates` model — the root of BOTH the metadata split and the
+bullet split.** Revision 5 split *bullets* by kind but mapped *metadata* unconditionally to `employment.*`;
+that fails for `kind: project`, because those predicates are `legal_subject_kinds: [employment]` only
+(`predicates.yaml:215,241,270`) and `semantic.py:149-165` raises `PREDICATE_SUBJECT_KIND_ILLEGAL` when a
+project entry's facts land on a `project` subject. Both splits are therefore derived from one model, not two
+ad-hoc rules:
+
+*Entry kind → subject kind.* `experience` → `employment`; `project` → `project`. The map is **total over
+`str`**: `Entry.kind` is an open `str` defaulting to `"experience"` (`tailor/model.py:38`), **not** a closed
+enum, and constraining it is out of bounds (it would change the Gate A adapter/résumé model). Any kind that
+is neither `experience` nor `project` resolves to **no subject kind**, and every candidate that entry would
+have produced — metadata *and* bullets — reports `unsupported_entry_kind` (§6.3a): a typed failure with a
+drain, never a silent `review_required` and never `no_mapping_for_locator` (a rule *did* match the locator).
+
+*Per-(subject-kind, source field) → predicate,* every cell holding only a predicate whose
+`legal_subject_kinds` admits that cell's subject kind (verified against the seeded catalog):
+
+| source field | `experience` (subject `employment`) | `project` (subject `project`) |
+|---|---|---|
+| `heading` | `employment.organization` — string (`:213-218`) | `project.summary` — string, card. one (`:378-385`) |
+| `title` | `employment.title` — string (`:239-245`) | **no candidate** — the catalog has no `project.title`/`.name`/`.organization` (only `project.summary`/`.start_date`/`.end_date`/`.contribution`) |
+| `dates` | `employment.date_range` — one `date_range` (`:268-273`) | `project.start_date` **+** `project.end_date` — **two** `year_month` (`:408-414`, `:441-447`) |
+| `location` | `entity.location` — string (`:677-687`) | `entity.location` — string (`:677-687`) |
+| `subtitle` | **no candidate** — no predicate | **no candidate** — no predicate |
+| bullet (contribution) | `employment.accomplishment` — string (`:323-329`) | `project.contribution` — string (`:474-481`) |
+
+Three asymmetries fall out of the catalog and are decided here, not assumed:
+
+- **`heading` → `project.summary`.** Projects have no name/title/organization predicate; the only
+  `project`-legal string predicates are `project.summary` (card. one, `:378-385`) and `entity.location`
+  (which means *location*). The always-present `heading` is the entry's primary display string, so it maps to
+  `project.summary`. This is an accepted **semantic approximation** ("summary" connotes a description,
+  "heading" a name) — taken because the catalog offers nothing closer and leaving project headings unmapped
+  would push every project entry to `review_required` on a *field*, which finding 2 reserves for unsupported
+  *kinds*. Flagged in §9.
+- **`title` on a project → no candidate.** No `project.title` exists. A present-but-unmapped field emits no
+  candidate — the same outcome as a null field, and as `subtitle` for both kinds. The metadata record still
+  reaches `imported` on its other fields, so this is per-*field*, not a per-*record* `review_required`.
+- **`dates` on a project → two candidates.** There is no `project.date_range`; `project.start_date`/`.end_date`
+  are each `year_month`, card. one. So a project entry's `dates` is parsed and split into two candidates
+  (multi-output emission, not ambiguity — different predicates). A component that will not construct
+  `year_month` reports `value_not_typeable` (§6.3a). `entity.location` is the one predicate legal for **both**
+  subject kinds (`legal_subject_kinds: [education, employment, project, presentation, affiliation]`,
+  `:679-684`), so `location` maps identically either way — but still through the model, keyed by subject.
+
+*Catalog-checked, once, before extraction.* Every cell's predicate must exist in the seeded catalog and its
+`legal_subject_kinds` must admit that cell's subject kind, or the map is a **build/validation error** — not a
+promotion-time `PREDICATE_SUBJECT_KIND_ILLEGAL` discovered per entry. This is what makes the revision-5
+misrouting a caught *class* rather than a per-entry surprise; it sits beside §5.2's package-level reachability
+invariant. Both the metadata rules and the bullet rule below are **projections of this one table** — adding a
+predicate to a kind is a table edit, never a new bespoke rule.
 
 - **A rule** is `{locator_pattern, predicate, value_from, value_type, display_from, condition}`, where
   `condition` is optional and absent on every unconditional rule.
@@ -223,25 +284,31 @@ extraction report until Slice C. `header/2` (the email) matches no rule and ends
   construction can fail (`date_range`, `year_month`, `date`) reports `value_not_typeable` rather than
   raising (§6.3a).
 - **`condition`**, when present, gates a rule on a fact the record does not itself carry, resolved by a
-  **defined cross-record lookup** rather than by code. The only use is bullets: the bullet record's
-  `atomic_value` is `{bullet_id, text, tech_tags}` with **no `kind`** (`tailor/model.py:12-16`), while the
-  predicate split (`employment.accomplishment` vs `project.contribution`, §6.1) depends on the **parent
-  entry's** `kind`. The parent is reached deterministically — a bullet locator `entries/<id>/bullets/<id>`
-  yields its parent's metadata locator `entries/<id>/metadata` by dropping the `bullets/<id>` tail, and that
-  metadata record's `atomic_value` **does** carry `kind` (the enumerator dumps the entry excluding bullets,
-  `enumerators.py:529-533`; `Entry.kind` is `"experience" | "project"`, `tailor/model.py:38`). Metadata is
-  emitted before any bullet (`enumerators.py:492-497,529-539`), so the parent is always resolvable. The two
-  bullet rules therefore carry `condition: parent_entry.kind == "experience"` (→ `employment.accomplishment`)
-  and `== "project"` (→ `project.contribution`). **Chosen over widening the bullet's `atomic_value` to carry
-  `kind`:** that would change the Gate A adapter contract and the digest basis — exactly what §6.3 rejects —
-  and D-170 keeps derivation, not widening, as the grain. The lookup reads records already emitted and
-  changes no adapter.
+  **defined cross-record lookup** rather than by code. Its only job is to supply the **parent entry's
+  `kind`** so the bullet rule can consult the model above — it is *not* a bespoke pair of predicate
+  conditions. The bullet record's `atomic_value` is `{bullet_id, text, tech_tags}` with **no `kind`**
+  (`tailor/model.py:12-16`), while the bullet's subject kind (hence its contribution predicate) depends on the
+  **parent entry's** `kind`. The parent is reached deterministically — a bullet locator
+  `entries/<id>/bullets/<id>` yields its parent's metadata locator `entries/<id>/metadata` by dropping the
+  `bullets/<id>` tail, and that metadata record's `atomic_value` **does** carry `kind` (the enumerator dumps
+  the entry excluding bullets, `enumerators.py:529-533`; `Entry.kind` is an open `str`, `tailor/model.py:38`).
+  Metadata is emitted before any bullet (`enumerators.py:492-497,529-539`), so the parent is always
+  resolvable. The single bullet rule carries `condition: parent_entry.kind`, and its predicate is the
+  **contribution cell of the model** for the subject kind that `parent_entry.kind` resolves to —
+  `employment.accomplishment` for `experience`, `project.contribution` for `project`, and — because the model
+  is total — `unsupported_entry_kind` for any other parent kind (the same routing metadata gets, so a bullet
+  can never resolve to a predicate its parent's metadata could not). **Chosen over widening the bullet's
+  `atomic_value` to carry `kind`:** that would change the Gate A adapter contract and the digest basis —
+  exactly what §6.3 rejects — and D-170 keeps derivation, not widening, as the grain. The lookup reads records
+  already emitted and changes no adapter.
 - **A locator may match several rules that produce DIFFERENT candidates** — different predicate, different
   `value_from`. This is **multi-output emission**, not ambiguity, and it is the case §6.1 knows it needs
-  (line 164): one `entries/*/metadata` locator emits up to four candidates — `employment.organization`,
-  `employment.title` (from `title`), `employment.date_range` (from `dates`), `entity.location` (from
-  `location`) — via four rules that share that pattern but name different fields and predicates. Null fields
-  drop out per the `value_from` rule above, so an entry with no `location` simply emits fewer.
+  (metadata row): one `entries/*/metadata` locator emits the candidates the model gives for the entry's
+  subject kind — for an `experience` entry up to four (`employment.organization`/`.title`/`.date_range`/
+  `entity.location`), for a `project` entry up to four (`project.summary`/`project.start_date`/`.end_date`/
+  `entity.location`, `title` and `subtitle` contributing none) — via rules that are all projections of that
+  one table, sharing the pattern but naming different fields and predicates. Null fields drop out per the
+  `value_from` rule above, so an entry with no `location` simply emits fewer.
 - **Ambiguity, redefined, is evaluated per `(locator, predicate)` group:** two rules that produce the **same
   predicate** for the same locator are a *validation error* — an ambiguous mapping the author must resolve —
   **except** that a rule whose `locator_pattern` is **strictly more literal-specific** (a longer literal
@@ -298,6 +365,7 @@ validator ties it to that state rather than letting it assert one.
 | Reason | Meaning | Drain |
 |---|---|---|
 | `no_mapping_for_locator` | no rule matches the locator | extend the mapping (§6.2), re-extract |
+| `unsupported_entry_kind` | a rule matched, but the entry's `kind` resolves to no subject kind in the §6.2a model (neither `experience` nor `project`) — so its metadata and bullets have no legal predicate | **owner decision**: extend the Gate A résumé adapter and the §6.2a kind→predicate map to cover the new kind (with catalog-legal predicates), or correct/exclude the entry with a reason. Distinct from `no_mapping_for_locator` (a rule *did* match the locator) and never a silent `review_required` — an open `Entry.kind` (`tailor/model.py:38`) makes this the total contract's escape hatch, not an enum constraint |
 | `span_not_grounded` | display value absent from the named field | **a defect signal, not owner work** — the rule or extractor is wrong; fix, re-extract |
 | `value_not_typeable` | the named field will not construct the declared kind | agent lane, or the owner corrects the source |
 | `free_text_deferred` | prose needing judgement — the 2 education lines | Slice C |
@@ -371,18 +439,25 @@ and changes **no** v1 model:
 - So a v1 tree parses cleanly under v2 models: the two new documents are simply absent, not malformed, and
   `require_supported_schema` (`schema.py:142`) lets it through once v1 is in the supported set.
 
-The real residual is narrower, and exactly two things:
+The real residual is narrower, and exactly three things:
 
 1. **`migrate_bundle` is a stub.** It returns `already_current` and writes nothing (`migrations.py:83`); at
    v2 it needs a real `1 -> 2` transform that **seeds the two new documents** — `policy/extraction-mappings.yaml`
    (§6.2) and `imports/extraction-report.yaml` (§6.3a) — from their builtins and **bumps the manifest**,
    writing the result as a **v2 draft that never rewrites a v1 revision** (history is append-only; a rewrite
    would break every descendant's `parent_bundle_digest`, `migrations.py:31-39`).
-2. **The supported set must widen to `{1, 2}`.** `SUPPORTED_SCHEMA_VERSIONS` is `frozenset({1})` and
-   `CURRENT_SCHEMA_VERSION` is `1` today (`schema.py:80,84`); growing the set is already pinned by the
-   tripwire `test_a_previous_schema_fixture_and_a_forward_migration_are_owed_at_v2`, which fails the moment
-   the set grows and forces the bump to ship the previous-version fixture and the forward transform
+2. **The supported set must widen to `{1, 2}`.** `SUPPORTED_SCHEMA_VERSIONS` is `frozenset({1})`
+   (`schema.py:84`); growing the set is already pinned by the tripwire
+   `test_a_previous_schema_fixture_and_a_forward_migration_are_owed_at_v2`, which fails the moment the set
+   grows and forces the bump to ship the previous-version fixture and the forward transform
    (`migrations.py:20-28`).
+3. **`CURRENT_SCHEMA_VERSION` must become 2.** It is `1` today (`schema.py:80`), and revision 5 omitted this,
+   calling the residual "two things". It is load-bearing: `_initial_manifest` (`drafts.py:404`) stamps
+   `CURRENT_SCHEMA_VERSION` into the manifest of every fresh `init` (`drafts.py:415`), and D-174 has `init`
+   seed the new mapping document (`policy/extraction-mappings.yaml`). If the constant stayed `1`, a freshly
+   `init`-ed bundle would be born **v1** while carrying a v2-only document — a tree that neither the migrator
+   (which only sees existing v1 trees) nor `require_supported_schema` reconciles. A fresh bundle must be born
+   **v2** so its seeded mapping is a legal member of its own schema.
 
 The plan must also name the **exact v1 fixture** the transform runs against, and seed **both** new documents
 so a migrated v2 draft is not born incomplete. **No raw-v1 loader and no version-dispatched parsing are
@@ -436,6 +511,14 @@ met, for a source, when all of:**
    other** (§6.3a). Scoped to `review_required` deliberately: §6.3a forbids a report entry for an `imported`
    or `excluded` record, so "every non-`imported`" would demand entries §6.3a rejects.
 
+**Gate B cannot be MET until Slice C ships.** Predicate 4 requires a `review_required` count of zero, but the
+2 education records carry `free_text_deferred` (§6.3a) — a `review_required` reason — until the agent lane of
+§8 is built in Slice C (§6.2a). So Slice B alone drives `review_required` down to those 2 and no further;
+Gate B's zero is reachable only once Slice C promotes the education records out of `free_text_deferred`. This
+is a real ordering constraint, not a defect: revision 5 implied Gate B was reachable in Slice B, which it is
+not. (An owner who excludes both education records with a reason would also clear predicate 4, but that is a
+disposition choice, not the deterministic path.)
+
 **Revision-level approval is reported as a BOOLEAN.** There is no per-record accepted count and the report
 must not imply one — approval is one digest decision over the whole revision. Revision 2's "records the owner
 has accepted" is withdrawn.
@@ -460,16 +543,37 @@ pre-planned sequence; invariants 1 and 2 of §5.2 already fail today, so at leas
 
 **No owner decisions outstanding.** §6.2's carrier was settled by D-174.
 
-**Review round 4 is scoped, not a fresh sweep:** round 3 exited NOT READY / CONTINUE with seven accepted
-findings, all applied in revision 5. Two of them fixed defects revision 4's own §6.2a *fixes* introduced, so
-revision 5 does **not** get to declare itself the first clean one. Round 4's charge is narrow: do revision
-5's §6.2a contract — multi-output emission, the `(locator, predicate)` ambiguity rule, the bullet
-`condition` cross-record lookup, the literal-segment grammar — and the narrowed §6.7 residual hold, and is
-the contract now sufficient to plan from? A re-sweep of settled ground (D-170/172/173/174, the grounding
-model, the drain) would re-derive rather than converge and is out of scope.
+**Review round 5 is scoped, not a fresh sweep — and revision 6 does not declare itself clean.** Rounds 3 and
+4 each found that the *previous* revision's fix introduced a new defect of the same class (round 4: metadata
+was mapped unconditionally to `employment.*` even as bullets were split by kind — one concept modelled once
+and forgotten once). Revision 6 answers that by rooting **both** splits in the single §6.2a kind→subject→
+predicate model, but a revision that just consolidated a repeatedly-reintroduced defect has not earned a
+first-clean claim. Round 5's charge is narrow: (1) does the §6.2a model hold against the seeded catalog —
+especially the project side (`heading`→`project.summary` approximation, `title`→none, `dates`→two
+`year_month`) and `entity.location` being legal for both subject kinds; (2) does the bullet split genuinely
+*derive* from that one table rather than reintroduce a bespoke pair of conditions; (3) is
+`unsupported_entry_kind`'s drain sound and the contract total over an open `Entry.kind`; (4) is §6.7's
+three-item residual complete. A re-sweep of settled ground (D-170/172/173/174/175, the grounding model, the
+drain, the ambiguity/literal-segment grammar) would re-derive rather than converge and is out of scope.
 
-**Plan tasks, deliberately not designed here (§6.2a):** the `dates` grammar, and skill-id derivation from a
-skill item.
+**Plan tasks, deliberately not designed here (§6.2a):** the `dates` grammar — which now feeds *both* the
+`date_range` construction for `experience` entries and the `year_month` split into `project.start_date`/
+`.end_date` for `project` entries — and skill-id derivation from a skill item.
+
+**Flagged for round 5 — a possible same-class gap (§6.2a):** a project's `dates` field maps to **two**
+predicates (`project.start_date` + `project.end_date`, each `year_month`), but both rules share
+`value_from: dates` and `value_type: year_month` and differ only in `predicate`. The contract has no element
+telling the constructor to take the range's *start* for one and its *end* for the other, so as written it
+cannot deterministically yield two different values from the one string field — the same "one source field →
+multiple typed values" class that pushed education to the agent lane. Either the `dates` grammar (a plan
+task) must be defined to decompose the range and the rule must be able to select a component, or the contract
+needs a value-selector element. Round 5 should confirm and the next revision close it; it is not resolved
+here.
+
+**Accepted limitation, flagged not resolved (§6.2a):** `heading`→`project.summary` is a semantic
+approximation, because the catalog carries no project name/title predicate. If round 5 or the owner judges a
+project's name deserves a first-class predicate, that is a catalog change (a Slice A audit row), not a change
+to this contract's shape.
 
 **Still open, not blocking:** whether `header/2` (an email) argues for a contact predicate or is correctly
 `no_predicate_exists`.
