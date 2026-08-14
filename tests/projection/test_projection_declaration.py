@@ -75,6 +75,20 @@ def test_a_duplicated_entity_id_is_fatal(tmp_path: Path) -> None:
     assert exc.value.violation.issue is ProjectionIssue.DUPLICATE_ENTITY_ID
 
 
+def test_a_duplicated_bullet_predicate_is_fatal(tmp_path: Path) -> None:
+    """A predicate listed twice would emit two bullets sharing one `fact_id` as their `bullet_id`,
+    which then collide in the downstream `bullet_id`-keyed maps (`tailor/plan.py`) and silently
+    collapse to one — the same class of loss `_reject_duplicate_entities` exists to prevent."""
+    body = MINIMAL.replace(
+        "claims: [claim.packet-pantry.backend.001]",
+        "claims: []\n"
+        "    bullet_predicates: [project.contribution, project.contribution]",
+    )
+    with pytest.raises(ProjectionError) as exc:
+        load_declaration(_write(tmp_path, body))
+    assert exc.value.violation.issue is ProjectionIssue.DUPLICATE_BULLET_PREDICATE
+
+
 def test_a_missing_open_range_label_is_fatal(tmp_path: Path) -> None:
     """No default: `end: null` has to render as the owner's own word, and inventing one would
     put authored English in code."""

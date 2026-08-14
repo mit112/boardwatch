@@ -20,6 +20,10 @@ class ProjectionIssue(StrEnum):
     MALFORMED_DECLARATION = "malformed_declaration"
     UNKNOWN_ENTRY_KIND = "unknown_entry_kind"
     DUPLICATE_ENTITY_ID = "duplicate_entity_id"
+    #: An entry lists the same predicate twice in `bullet_predicates`, which would emit two bullets
+    #: carrying one fact's id as their shared `bullet_id` — colliding in the downstream
+    #: `bullet_id`-keyed maps and silently collapsing to one bullet.
+    DUPLICATE_BULLET_PREDICATE = "duplicate_bullet_predicate"
     UNRESOLVED_PLACEHOLDER = "unresolved_placeholder"
     MALFORMED_PLACEHOLDER = "malformed_placeholder"
     MISSING_OPEN_RANGE_LABEL = "missing_open_range_label"

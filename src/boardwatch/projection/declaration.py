@@ -140,6 +140,7 @@ def load_declaration(path: Path) -> ProjectionDeclaration:
         raise_violation(ProjectionIssue.MALFORMED_DECLARATION, str(exc), where=path.name)
 
     _reject_duplicate_entities(declaration, path)
+    _reject_duplicate_bullet_predicates(declaration, path)
     _reject_bad_fallback(declaration, path)
     return declaration
 
@@ -172,6 +173,22 @@ def _reject_duplicate_entities(declaration: ProjectionDeclaration, path: Path) -
                 where=f"{path.name}: {entry.entity_id}",
             )
         seen.add(entry.entity_id)
+
+
+def _reject_duplicate_bullet_predicates(declaration: ProjectionDeclaration, path: Path) -> None:
+    """A predicate listed twice on one entry would render every one of its facts twice, and each
+    pair would share a `bullet_id` (the `fact_id`) — a collision the `bullet_id`-keyed pipeline
+    downstream resolves by silently keeping one. Refused at authoring, like a duplicate entity."""
+    for entry in declaration.entries:
+        seen: set[str] = set()
+        for predicate in entry.bullet_predicates:
+            if predicate in seen:
+                raise_violation(
+                    ProjectionIssue.DUPLICATE_BULLET_PREDICATE,
+                    f"{predicate} is listed more than once, so its facts would each render twice",
+                    where=f"{path.name}: {entry.entity_id}",
+                )
+            seen.add(predicate)
 
 
 def _reject_bad_fallback(declaration: ProjectionDeclaration, path: Path) -> None:
