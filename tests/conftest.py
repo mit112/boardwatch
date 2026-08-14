@@ -59,9 +59,28 @@ from boardwatch.store.tables import companies, jobs, posting_versions, postings,
 # This is not hypothetical: `COLUMNS=80 uv run pytest -k abstain` reproduces the ubuntu/3.12 CI
 # failure byte-for-byte, because the console freezes at 80 and the 35-character
 # `work_auth:eu_authorization_required` folds inside a 25-character table column.
+#
+# `GITHUB_ACTIONS` and `PY_COLORS` are popped for a THIRD reason, and they are not rich's at all
+# — they are typer's. `typer/rich_utils.py` bakes a module constant at IMPORT time:
+#
+#     FORCE_TERMINAL = True if getenv("GITHUB_ACTIONS") or getenv("FORCE_COLOR")
+#                      or getenv("PY_COLORS") else None
+#
+# and passes it as `force_terminal=` to the console it builds for every `--help` render. So on
+# any GitHub Actions runner, help output is styled no matter what rich would have decided, and
+# `ReprHighlighter` splits an option name across escape codes — which is why
+# `assert "--new" in result.stdout` failed on all three ubuntu jobs while the flag rendered
+# perfectly. Popping only rich's two vars left typer's third trigger live: the normalisation was
+# two-thirds complete. `GITHUB_ACTIONS=true uv run pytest -k top_help_lists` reproduces it
+# locally, byte-for-byte, and is the check to run before trusting this block.
+#
+# Nothing in `src/` reads `GITHUB_ACTIONS`, so popping it takes no behaviour away; a dozen test
+# modules already `monkeypatch.delenv` it one fixture at a time for this same reason.
 # ---------------------------------------------------------------------------------------
 os.environ.pop("FORCE_COLOR", None)
 os.environ.pop("TTY_COMPATIBLE", None)
+os.environ.pop("GITHUB_ACTIONS", None)
+os.environ.pop("PY_COLORS", None)
 os.environ.pop("COLUMNS", None)
 os.environ.pop("LINES", None)
 os.environ["TERM"] = "xterm"

@@ -259,6 +259,25 @@ def test_setting_COLUMNS_reaches_the_module_level_console(monkeypatch: pytest.Mo
     assert console.width == 137
 
 
+def test_typer_does_not_force_a_terminal_for_help_rendering() -> None:
+    """The same premise one layer up, for typer's own help console rather than rich's.
+
+    `typer/rich_utils.py` bakes `FORCE_TERMINAL = True if getenv("GITHUB_ACTIONS") or
+    getenv("FORCE_COLOR") or getenv("PY_COLORS") else None` at IMPORT time and passes it to the
+    console it builds for every `--help` render. Baked at import means the pop in
+    `tests/conftest.py` only works because it runs BEFORE anything imports typer — an ordering
+    nothing else pins, and rich's own vars did not need because it reads those live.
+
+    So this asserts the outcome, not the environment: a styled help render splits an option name
+    across escape codes, and `assert "--new" in result.stdout` then fails on a flag that rendered
+    perfectly. That is exactly how all three ubuntu jobs went red at `64cf63c` while all three
+    macOS jobs passed.
+    """
+    import typer.rich_utils
+
+    assert typer.rich_utils.FORCE_TERMINAL is not True
+
+
 def test_abstain_names_rules_that_have_never_been_detected(
     env: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
