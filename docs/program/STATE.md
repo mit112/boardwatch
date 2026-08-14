@@ -68,33 +68,39 @@ selection, **no selection**. The design adds pinned-core-plus-scored-candidates 
 — 23 tasks over P0–P4, PM as Mit's one-session task, P5/P6 declared but deliberately not decomposed.
 The preflight (`docs/superpowers/research/2026-08-13-projection-plan-preflight.md`) checked ~60 of the
 spec's claims: the load-bearing premise held, but **4 are false, 12 citations drifted, and 9 facts the
-plan needs are absent**. **Where the spec and the preflight disagree, the preflight wins** — the plan
-carries a correction table so this is never re-litigated. Do **not** revise the spec to revision 4;
-D-158 closed that loop on purpose.
+plan needs are absent**.
 
 **The plan has had its mechanical check and did NOT need a design review** (D-160). A full design
 review was considered and declined — the expensive check happened in the right place, the preflight.
 
-### Execution — 16 of 23 tasks done, branch `projection-v1`, UNPUSHED
+### Execution — BUILD COMPLETE. Branch `projection-v1`, UNPUSHED, awaiting Mit's merge decision
 
-Forked from `main` at `b200112`; **31 commits**, working tree clean. `main` untouched. **Halted on a
-session usage limit, not on a defect.**
+Forked from `main` at `b200112`; working tree clean, `main` untouched. **All 22 dispatchable tasks are
+complete and reviewed clean.** Task 20 is Mit's — ten real postings ranked by hand — and blocks only
+Task 22's *selection*, never any code.
 
-**Complete and reviewed clean: Tasks 1–9, 11, 12, 15, 16, 17, 21, 22.** The projection package now holds
-`errors.py`, `declaration.py`, `grammar.py`, `contract.py`, `shell.py`, `stamp.py`, `serialize.py`,
-`posting.py`, `scoring.py`, `effectiveness.py`, `pool.py`, `manifest.py`, `persona_preflight.py`,
-`agreement.py`, a shipped example declaration, a pinned golden, and the `approve-projection` CLI.
+The package holds `errors.py`, `declaration.py`, `grammar.py`, `contract.py`, `shell.py`, `stamp.py`,
+`serialize.py`, `posting.py`, `scoring.py`, `effectiveness.py`, `pool.py`, `manifest.py`,
+`persona_preflight.py`, `agreement.py`, `select.py`, plus `cli/_approval.py` and three commands:
+`profile-bundle approve-projection`, `profile-bundle project`, and the new top-level `resume project`.
 
-| Outstanding | Standing |
-|---|---|
-| Task 13 (`eca403c`) | **one Important open** — `manifest.py:18-25` restates `DecimalString`; import it from `profile_bundle.models.base` instead. One line |
-| Task 10 (`c8ec5e4`) | **built, never reviewed.** Package ready at `review-c7f17c5..c8ec5e4.diff` |
-| Task 14 (`b2bc14f`) | **built, reviewer died on the limit.** Package ready at `review-c7859af..b2bc14f.diff` |
-| Tasks 18, 19, 23 | **not started** |
-| Task 20 | **Mit's** — the owner-labeled matrix, not dispatchable |
+**Gate green on the final tree: 6,212+ passed, 4 xfailed, coverage ≥95.8%, `make check` exit 0.** The 4
+xfailed are Task 21's deliberate scorer-bias probes, `strict=True`, so a scorer that stops being biased
+still fails loudly.
 
-**Next actions, in order:** review Task 10 and Task 14 from the packages already on disk; fix Task 13's
-one-line import; then build 23 → 18 → 19. Finally the whole-branch review, then Mit decides on merge.
+**The whole-branch review found two Criticals that all 22 task reviews missed, both in the seams between
+tasks** — the case for doing one at all. Task 15 shipped a persona guard **no task ever wired in**, so it
+could never fire (D-169); and the approval's bundle binding sat on the *review* command while
+`resume project`, which actually writes the résumé, approved by existence-check alone (D-167). Both
+fixed; the fix wave was re-reviewed clean and rated **merge-ready**.
+
+**Next action: Mit decides on merge.** The branch is not pushed and `main` is untouched, deliberately.
+Nothing is blocked on further engineering.
+
+**Carried, and deliberately open:** the shell's *content* is bound by no digest — `shell_source` is
+hashed as a filename, and the shell lives outside the bundle, so editing it changes the projected
+`header`/`education` with no re-approval. Small blast radius (D-156: the renderer reads neither field);
+`shell.py`'s docstring now says so plainly rather than claiming coverage nothing provides (D-167).
 
 Working ledger: `.superpowers/sdd/2026-08-13-career-profile-projection/progress.md` — **gitignored**, so
 anything that must survive belongs here or in `DECISIONS.md`. It carries every ruling with what each costs
@@ -145,7 +151,7 @@ moved no program gate. Three facts outlive the detail: **the manifest is written
 | 14-day acceptance | not started | — frozen; the clock measures a frozen system and starts after P6 |
 | P7 Breadth | not started | — |
 | *Gate A (parallel)* | *complete, merged, pushed, CI green* | ***MET*** — *has moved no program gate* |
-| *Projection (active)* | ***16 of 23 tasks complete and reviewed** on `projection-v1` (31 commits, unpushed); 13 needs a one-line fix, 10 and 14 await review, 18/19/23 not started, 20 is Mit's* | *P0 gate MET (Task 1); P1–P4 gates not met* |
+| *Projection (active)* | ***BUILD COMPLETE** — all 22 dispatchable tasks complete and reviewed on `projection-v1`, unpushed; whole-branch review clean, gate exit 0. Task 20 is Mit's* | *P0–P4 build gates met; **merge is Mit's call**, and Gate B has not started* |
 
 ### Gate P6, clause by clause
 
