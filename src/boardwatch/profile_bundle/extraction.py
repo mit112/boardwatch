@@ -9,12 +9,13 @@ identifies.
 
 from __future__ import annotations
 
+import re
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 
 from boardwatch.profile_bundle.enumerators import EnumeratedSourceRecord
 from boardwatch.profile_bundle.imports import ProposedCandidate
-from boardwatch.profile_bundle.models.facts import FactValue, StringValue
+from boardwatch.profile_bundle.models.facts import FactValue, SkillRefValue, StringValue
 
 
 @dataclass(frozen=True)
@@ -41,9 +42,29 @@ def _field(atomic_value: object, name: str) -> object:
     raise KeyError(name)
 
 
+_SKILL_ID_NON_SLUG = re.compile(r"[^a-z0-9]+")
+
+
+def _derive_skill_id(item: str) -> str:
+    """A deterministic, human-readable `skill.<slug>` id from a skill item string.
+
+    Lossy on purpose — `C++` and `C#` both slug to `skill.c` — because identity is content-addressed
+    and the verbatim item is preserved as `original_display_value`, so the real name is never lost,
+    and referential validation of the id against the inventory is the promotion slice's job (§6.4),
+    not this layer's. An item with no alphanumeric content yields no id — a `value_not_typeable`
+    case.
+    """
+    slug = _SKILL_ID_NON_SLUG.sub("-", item.lower()).strip("-")
+    if not slug:
+        raise ValueError(f"skill item {item!r} has no alphanumeric content to derive an id from")
+    return f"skill.{slug}"
+
+
 def _build_value(value_type: str, raw: object) -> FactValue:
     if value_type == "string":
         return StringValue(type="string", value=str(raw))
+    if value_type == "skill_ref":
+        return SkillRefValue(type="skill_ref", skill_id=_derive_skill_id(str(raw)))
     raise NotImplementedError(f"value_type {value_type!r} is not built yet")
 
 

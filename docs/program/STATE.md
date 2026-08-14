@@ -52,8 +52,12 @@ local): the interpreter core (`profile_bundle/extraction.py` — `locator_matche
 `predicate_catalog.builtin_catalog`, exactly as it seeds the secret-scan ruleset — **no schema bump**
 (`predicates.yaml` was already a v1 doc). The §5.2 audit gate ships invariants **1, 2, 5** as mechanical tests;
 **3 (§5.1 behavioural) and 4 (catalog↔mapping reachability) are OWED** — they need a builtin-catalog grounding
-context and the Slice-B mapping. Audit: `docs/profile-bundle-predicate-catalog-audit.md`. **Still no record
-reaches `imported`.** Next (Slice B): the `policy/extraction-mappings.yaml` document + `entry_kind_model`
+context and the Slice-B mapping. Audit: `docs/profile-bundle-predicate-catalog-audit.md`. **The two easiest
+buckets are PROVEN to land candidates at the library level (D-180):** `header/1` → `person.professional_name`
+and each skill item → `technology.used` (a `skill.<slug>` id + verbatim display) — **59 of 81 records** — via
+`extraction_mapping.py`'s builtin rules → `build_candidate_package` against the seeded catalog (no bundle doc,
+no CLI, no schema bump). **Still no record reaches `imported`** — persistence into the bundle + the CLI need the
+v2 bump. Next (Slice B): the `policy/extraction-mappings.yaml` document + `entry_kind_model`
 builtin — this needs the **schema v2 bump** (new `DocumentKind`/`FIXED_DOCUMENTS`/`DOCUMENT_MODELS`/`_empty_documents`
 seed + a real `migrate_bundle`); then the `header/1` + skill rules, wire `extract_proposals →
 build_candidate_package → candidates.yaml`, the `profile-bundle extract` CLI (store import wall), then run
