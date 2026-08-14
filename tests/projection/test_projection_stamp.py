@@ -12,9 +12,11 @@ from pathlib import Path, PurePosixPath
 
 import pytest
 
-from boardwatch.profile_bundle.errors import BundlePathError
+from boardwatch.profile_bundle.errors import BundlePathError, ProfileBundleError
 from boardwatch.profile_bundle.yaml_loader import load_yaml_bytes
+from boardwatch.profile_bundle.yaml_writer import document_bytes
 from boardwatch.projection.stamp import (
+    APPROVALS_DIR,
     ProjectionStamp,
     read_stamp,
     stamp_exists,
@@ -79,6 +81,31 @@ def test_read_stamp_returns_the_bundle_digest_it_was_written_with(tmp_path: Path
     assert stamp.projection_digest == D1
     assert stamp.bundle_digest == BD1
     assert stamp.bundle_digest != stamp.projection_digest
+
+
+def test_read_stamp_on_a_missing_file_raises_a_typed_error(tmp_path: Path) -> None:
+    """No stamp was ever written for `D1` here — `path.read_bytes()` raises a bare `OSError`
+    (`FileNotFoundError`). Fix-round-1 Finding 1: this must surface as a typed `ProfileBundleError`
+    the CLI boundary already catches, not escape as the raw exception."""
+    with pytest.raises(ProfileBundleError):
+        read_stamp(tmp_path, D1)
+
+
+def test_read_stamp_on_a_stamp_missing_bundle_digest_raises_a_typed_error(tmp_path: Path) -> None:
+    """The exact shape the reviewer reproduced live: a stamp written before `bundle_digest` was
+    required (this task's own schema change) — valid YAML that fails `ProjectionStamp.model_validate`
+    with a bare `pydantic.ValidationError`, not a read failure at all. Every caller who ran
+    `approve-projection` before this commit has this sitting on disk."""
+    path = write_stamp(tmp_path, digest=D1, bundle_digest=BD1, approved_at=NOW)
+    logical = PurePosixPath(f"{APPROVALS_DIR}/{path.name}")
+    raw = load_yaml_bytes(path.read_bytes(), logical_path=logical)
+    assert isinstance(raw, dict)
+    legacy = dict(raw)
+    del legacy["bundle_digest"]
+    path.write_bytes(document_bytes(legacy, logical_path=logical))
+
+    with pytest.raises(ProfileBundleError):
+        read_stamp(tmp_path, D1)
 
 
 def test_two_writes_of_one_digest_do_not_produce_two_files(tmp_path: Path) -> None:

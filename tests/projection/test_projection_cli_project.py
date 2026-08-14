@@ -20,7 +20,7 @@ import json
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from importlib import resources
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from typing import Any
 
 import pytest
@@ -29,8 +29,10 @@ from typer.testing import CliRunner
 from boardwatch.cli.app import app
 from boardwatch.profile_bundle.errors import IssueCode
 from boardwatch.profile_bundle.paths import BUNDLE_DIR_NAME
+from boardwatch.profile_bundle.yaml_loader import load_yaml_bytes
+from boardwatch.profile_bundle.yaml_writer import document_bytes
 from boardwatch.projection.declaration import load_declaration, projection_digest
-from boardwatch.projection.stamp import write_stamp
+from boardwatch.projection.stamp import APPROVALS_DIR, stamp_path, write_stamp
 from tests.profile_bundle.conftest import (
     PromotedRevisionTree,
     promote_example_tree,
@@ -276,3 +278,67 @@ def test_plain_text_output_never_leaks_an_absolute_bundle_path(unapproved_env: E
     assert IssueCode.PROJECTION_REFUSED.value in codes
     issues = [d["details"].get("projection_issue") for d in body["diagnostics"]]
     assert "bundle_unreadable" in issues
+
+
+# --------------------------------------------------------------------------------------
+# Fix round 1, Finding 1 (CRITICAL): a legacy or malformed stamp on disk must not crash
+# `read_stamp` — it must produce a typed diagnostic with a valid JSON envelope.
+# --------------------------------------------------------------------------------------
+
+
+def test_check_with_a_legacy_stamp_missing_bundle_digest_is_a_typed_refusal_not_a_crash(
+    approved_env: Env,
+) -> None:
+    """The reviewer's own repro: a stamp written before `bundle_digest` was required — exactly
+    what anyone who ran `approve-projection` before this commit has on disk — must not surface as
+    a bare `pydantic.ValidationError`. `--check` is the only `project` path that reads the stamp
+    back (`read_stamp`), so it is the only path that can reach this."""
+    digest = projection_digest(load_declaration(approved_env.declaration))
+    path = stamp_path(approved_env.config_dir, digest)
+    logical = PurePosixPath(f"{APPROVALS_DIR}/{path.name}")
+    raw = load_yaml_bytes(path.read_bytes(), logical_path=logical)
+    assert isinstance(raw, dict)
+    legacy = dict(raw)
+    del legacy["bundle_digest"]
+    path.write_bytes(document_bytes(legacy, logical_path=logical))
+
+    result = run(approved_env, ["--check", "--json"])
+
+    # `exit_code != 0` alone cannot discriminate a typed refusal from an uncaught crash — both
+    # report the same code through `CliRunner`. `SystemExit` is what a clean `typer.Exit` raises;
+    # an uncaught `ValidationError` would leave `result.exception` as that exception instead, and
+    # `result.output` would be a traceback (or empty), not JSON.
+    assert isinstance(result.exception, SystemExit), (
+        f"expected a clean refusal, got an uncaught {result.exception!r}"
+    )
+    assert result.exit_code != 0
+    body = payload(result)  # must parse as JSON: a crash leaves nothing valid on stdout
+    assert body["outcome"] == "could_not_complete"
+    codes = [d["code"] for d in body["diagnostics"]]
+    assert IssueCode.INTERNAL_ERROR.value in codes
+
+
+# --------------------------------------------------------------------------------------
+# Fix round 1, Finding 2 (Important): mere absence of shell_source, not just a malformed file,
+# reaches SHELL_SOURCE_UNREADABLE and must not leak an absolute path either.
+# --------------------------------------------------------------------------------------
+
+
+def test_plain_text_output_never_leaks_an_absolute_path_for_a_missing_shell_source(
+    approved_env: Env,
+) -> None:
+    """Family rule #2 again, for the second leaking call site: `shell.py`'s message interpolates
+    a caught `OSError`, whose `str()` embeds the shell file's absolute path. Mere absence — no
+    malformed-file fixture needed — reaches it: an operator who has not yet created their shell
+    file hits this on first run."""
+    (approved_env.config_dir / "master_resume.yaml").unlink()
+
+    result = run(approved_env, ["--json"])
+
+    assert result.exit_code != 0
+    assert str(approved_env.config_dir) not in result.output
+    body = payload(result)
+    codes = [d["code"] for d in body["diagnostics"]]
+    assert IssueCode.PROJECTION_REFUSED.value in codes
+    issues = [d["details"].get("projection_issue") for d in body["diagnostics"]]
+    assert "shell_source_unreadable" in issues

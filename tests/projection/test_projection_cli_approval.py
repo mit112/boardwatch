@@ -23,7 +23,10 @@ from typer.testing import CliRunner
 
 from boardwatch.cli import projection_cmd
 from boardwatch.cli.app import app
-from boardwatch.projection.stamp import APPROVALS_DIR
+from boardwatch.profile_bundle.paths import BUNDLE_DIR_NAME
+from boardwatch.profile_bundle.storage import read_current_once
+from boardwatch.projection.declaration import load_declaration, projection_digest
+from boardwatch.projection.stamp import APPROVALS_DIR, read_stamp
 
 
 @dataclass
@@ -140,6 +143,34 @@ def test_the_real_adapter_answers_no_for_anything_not_plainly_a_terminal(
     monkeypatch.setattr(projection_cmd.sys, "stdin", replacement)
     monkeypatch.setattr(projection_cmd.sys, "stdout", Terminal())
     assert projection_cmd.approval_terminal().is_controlling() is (state == "tty")
+
+
+def test_approving_records_the_bundle_digest_not_the_projection_digest(
+    monkeypatch, example_declaration
+) -> None:
+    """R30 required an end-to-end test that `approve-projection` threads
+    `candidate.bundle_digest` through to the written stamp — not `candidate.projection_digest`.
+    The pre-existing coverage in `test_projection_stamp.py` only calls `write_stamp`/`read_stamp`
+    directly with a hand-supplied constant, which verifies the storage round-trip but not that
+    `approve_projection` (`cli/projection_cmd.py`) actually threads the right field: the two
+    sit adjacent in its `write_stamp` call, so a copy/paste slip (`bundle_digest=
+    candidate.projection_digest`) would pass every test that never drives the real command.
+    """
+    result = _run(FakeTerminal(), monkeypatch, example_declaration)
+    assert result.exit_code == 0
+
+    config_dir = example_declaration.parent
+    digest = projection_digest(load_declaration(example_declaration))
+    stamp = read_stamp(config_dir, digest)
+
+    # Independent oracle: the CURRENT bundle digest read straight off disk, through the same
+    # route `project_pool` itself uses to compute `pool.bundle_digest` — never anything
+    # `approve_projection` computed, so this does not verify the writer against itself.
+    expected_bundle_digest = read_current_once(config_dir / BUNDLE_DIR_NAME).bundle_digest
+
+    assert stamp.projection_digest == digest
+    assert stamp.bundle_digest == expected_bundle_digest
+    assert stamp.bundle_digest != stamp.projection_digest
 
 
 # --------------------------------------------------------------------------------------

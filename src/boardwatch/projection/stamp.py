@@ -25,8 +25,9 @@ from datetime import datetime
 from pathlib import Path, PurePosixPath
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, ValidationError
 
+from boardwatch.profile_bundle.errors import ProfileBundleError
 from boardwatch.profile_bundle.paths import digest_token
 from boardwatch.profile_bundle.yaml_loader import load_yaml_bytes
 from boardwatch.profile_bundle.yaml_writer import document_bytes
@@ -118,11 +119,29 @@ def read_stamp(config_dir: Path, digest: str) -> ProjectionStamp:
     `document_bytes` writes against (`profile_bundle.yaml_loader.load_yaml_bytes`) — the read side
     of the exact round-trip `write_stamp` already verifies at write time.
 
-    Callers that already know a stamp for this digest exists (`project_pool`'s own gate just
-    confirmed it via `stamp_exists`) do not need to guard `FileNotFoundError` here; this function
-    adds no guard of its own; it reads back what a prior `write_stamp` for this digest produced.
+    Guards its own body. `stamp_exists` (`project_pool`'s own gate) proves only that a file
+    existed at this path at the moment it was checked — never that the bytes on disk still parse,
+    or still satisfy the CURRENT `ProjectionStamp` model. A stamp written before `bundle_digest`
+    was required (this task's own schema change) is exactly such a file: valid YAML that fails
+    `model_validate`, not a read failure at all. A file removed in the gap between the two calls
+    is a second, narrower way to reach the same arm. Both are converted to `ProfileBundleError`
+    here, one level up from `load_yaml_bytes`'s own catch-all
+    (`profile_bundle/yaml_loader.py`), which already raises that type for anything unexpected
+    *inside* the loader; this guard covers the two things outside the loader's own boundary — the
+    read (`OSError`) and the model validation (`ValidationError`) — so nothing escapes this
+    function as a bare, untyped exception.
+
+    `ProfileBundleError`, not `ProjectionError`: `ProjectionIssue` has no member for "this file
+    should have been well-formed and was not" — it is not a projection business outcome — and
+    `cli/projection_cmd.py`'s `_boundary_outcome` already has a dedicated arm for exactly this
+    type, reporting it as `INTERNAL_ERROR`.
     """
     path = stamp_path(config_dir, digest)
     logical = PurePosixPath(f"{APPROVALS_DIR}/{path.name}")
-    raw = load_yaml_bytes(path.read_bytes(), logical_path=logical)
-    return ProjectionStamp.model_validate(raw)
+    try:
+        raw = load_yaml_bytes(path.read_bytes(), logical_path=logical)
+        return ProjectionStamp.model_validate(raw)
+    except (OSError, ValidationError) as exc:
+        raise ProfileBundleError(
+            f"{logical}: stamp could not be read ({type(exc).__name__})"
+        ) from exc

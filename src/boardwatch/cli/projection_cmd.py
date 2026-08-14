@@ -192,13 +192,22 @@ def _projection_diagnostic(violation: ProjectionViolation) -> Diagnostic:
     `PROJECTION_REFUSED` code; `details.projection_issue` carries the specific member so nothing
     is lost at the fold.
 
-    `BUNDLE_UNREADABLE` is the one reachable member whose own message and `where`
-    (`pool.py`'s `str(bundle_root)`) can carry an absolute filesystem path — this family's second
-    rule forbids that in any diagnostic, so it gets a fixed, path-free message and no `where`
-    instead. Every other reachable member's message and `where` are built only from ids, predicate
-    names, digests, and bare filenames (`path.name`, never a full path) — confirmed by reading
-    every `raise_violation` call in `declaration.py`, `contract.py`, and `grammar.py` that
-    `project_pool` can reach.
+    Two reachable members leak an absolute filesystem path in their OWN message or `where`, and
+    are sanitized here rather than at their raise site (this family's second rule forbids that in
+    any diagnostic): `BUNDLE_UNREADABLE` (`pool.py`'s `f"the bundle at {bundle_root} could not be
+    read..."`, `where=str(bundle_root)` — both replaced) and `SHELL_SOURCE_UNREADABLE`
+    (`shell.py`'s message interpolates a caught `OSError`, whose `str()` embeds the shell file's
+    absolute path on a missing or unreadable file — message replaced; `where` is kept as-is, since
+    it is already `path.name`, a bare filename, not the leak).
+
+    Re-derived for this fix, not restated from the prior pass: `project_pool` (the only path
+    `project` calls) reaches exactly five modules that call `raise_violation` — `pool.py` itself,
+    `declaration.py`, `contract.py`, `grammar.py`, and `shell.py`. (`persona_preflight.py`,
+    `posting.py`, and `select.py` also call `raise_violation`, but are Stage 2 only, reached by
+    `resume_project`, never by this command.) Reading every call site in those five, the two
+    members above are the only ones whose message or `where` can carry an absolute path; every
+    other reachable call builds its message and `where` only from ids, predicate names, digests,
+    and bare filenames (`path.name`, never a full path).
     """
     code = (
         IssueCode.STALE_APPROVAL_STAMP
@@ -208,6 +217,9 @@ def _projection_diagnostic(violation: ProjectionViolation) -> Diagnostic:
     if violation.issue is ProjectionIssue.BUNDLE_UNREADABLE:
         message = "the bundle could not be read to produce a projection pool"
         where: str | None = None
+    elif violation.issue is ProjectionIssue.SHELL_SOURCE_UNREADABLE:
+        message = "shell_source is not a valid header/education shell"
+        where = violation.where
     else:
         message = violation.message
         where = violation.where
@@ -221,9 +233,16 @@ def _boundary_outcome(exc: ProjectionError | ProfileBundleError) -> OperationOut
 
     `project_pool` never raises anything but `ProjectionError` (unlike `projection_candidate`,
     which this command does not call — see its own docstring on why), so the plain
-    `ProfileBundleError` arm exists only for a `read_stamp` failure surviving past
-    `project_pool`'s own `stamp_exists` gate — reported as an internal error rather than folded
-    into `PROJECTION_REFUSED`, since it is not a projection business outcome at all.
+    `ProfileBundleError` arm is for a `read_stamp` failure surviving past `project_pool`'s own
+    `stamp_exists` gate. That gate only proves a file existed at this path at the moment it was
+    checked — never that its bytes still parse, or still satisfy the CURRENT `ProjectionStamp`
+    model. `read_stamp` (`projection/stamp.py`) guards exactly that: a stamp written by an older
+    schema revision (missing a field a newer `ProjectionStamp` now requires — this is not a
+    theoretical race, it is what anyone who ran `approve-projection` before `bundle_digest` became
+    required has sitting on disk), one whose bytes fail to parse, or one removed in the gap
+    between the two calls all become `ProfileBundleError` there rather than escaping uncaught.
+    This arm reports that as `INTERNAL_ERROR` rather than folding it into `PROJECTION_REFUSED`,
+    since none of those is a projection business outcome.
     """
     if isinstance(exc, ProjectionError):
         finding = _projection_diagnostic(exc.violation)
