@@ -19,7 +19,9 @@ authority. **Rewrite it, never prepend to it.** Keep it near 170 lines.
 
 **The headline number: 0.** Zero job applications have ever come out of boardwatch (`applications` has 0
 rows), zero unattended days, zero acceptance days. Against that: 3 published releases, ~46k lines of source,
-6,232 tests at 95.76%, 61 CLI commands, 6 ATS providers, an 800 MB / 24,073-posting store.
+6,294 tests at 95.6%, 62 CLI commands, 6 ATS providers, an 800 MB / 24,073-posting store. **New this session
+(2026-08-14):** the career-profile candidate lane moved from 0 → **78 of 81 résumé records `imported`** (D-181)
+— a milestone on the bundle→résumé path, not an application.
 
 **The program reoriented on 2026-08-13 (D-155):** remaining work runs through the **canonical career-profile
 bundle**, not the old `resume.yaml` path. Freezing P3, P6 and the 14-day clock costs nothing, because job-apps
@@ -43,85 +45,47 @@ import is expected and is **not** about the records. `docs/profile-bundle-author
 said exit 0; both are corrected. **Authoring `facts/identity.yaml` is Mit's next concrete step** — a display
 name and review dates only he has, which is why `init` refuses to invent them.
 
-**Candidate extraction is DESIGNED (spec revision 7) and the BUILD IS UNDER WAY (D-178).** The spec
-(`docs/superpowers/specs/2026-08-14-gate-b-candidate-extraction-design.md`) is the design we build FROM, not a
-review target — the five-round loop is PAUSED (below). On branch **`gate-b-extraction-slice-a`** (unmerged,
-local): the interpreter core (`profile_bundle/extraction.py` — `locator_matches` + `extract_proposals`, commit
-`d4a6e3e`), and now **Slice A: the seeded starter predicate catalog (D-179).** `init` seeds
-`resources/predicate-catalog-v1.yaml` (42 predicates, content-addressed) into every fresh bundle via
-`predicate_catalog.builtin_catalog`, exactly as it seeds the secret-scan ruleset — **no schema bump**
-(`predicates.yaml` was already a v1 doc). The §5.2 audit gate ships invariants **1, 2, 5** as mechanical tests;
-**3 (§5.1 behavioural) and 4 (catalog↔mapping reachability) are OWED** — they need a builtin-catalog grounding
-context and the Slice-B mapping. Audit: `docs/profile-bundle-predicate-catalog-audit.md`. **The two easiest
-buckets are PROVEN to land candidates at the library level (D-180):** `header/1` → `person.professional_name`
-and each skill item → `technology.used` (a `skill.<slug>` id + verbatim display) — **59 of 81 records** — via
-`extraction_mapping.py`'s builtin rules → `build_candidate_package` against the seeded catalog (no bundle doc,
-no CLI, no schema bump). **Still no record reaches `imported`** — persistence into the bundle + the CLI need the
-v2 bump. Next (Slice B): the `policy/extraction-mappings.yaml` document + `entry_kind_model`
-builtin — this needs the **schema v2 bump** (new `DocumentKind`/`FIXED_DOCUMENTS`/`DOCUMENT_MODELS`/`_empty_documents`
-seed + a real `migrate_bundle`); then the `header/1` + skill rules, wire `extract_proposals →
-build_candidate_package → candidates.yaml`, the `profile-bundle extract` CLI (store import wall), then run
-against the 81 real records and count candidates through the ledger. Hard buckets (metadata-by-kind, project
-dates, bullets) settle their interface in code after.
+**Candidate extraction SHIPPED end to end (D-181) — the number moved from 0.** On branch
+**`gate-b-extraction-slice-a`** (unmerged, local; `make check` EXIT=0, 6294 passed), against the live
+`resume.yaml` on a fresh v2 bundle, counted through a separate ledger parse: **78 of 81 records reach
+`imported`** (name, 58 skills, 6 metadata → 19 entry-head candidates + 13 bullets), **3 stay `review_required`**
+with the designed drain (2 education `free_text_deferred`, email `no_predicate_exists`). **First time any record
+has ever reached `imported`** (was 0, always). Four commits: the `entry_kind_model` interpreter
+(`extraction.py`, O1–O6 as code — metadata/bullets route through one object, project name coalesce, project
+dates split into two `year_month`, bullets routed by parent kind, the `dates` grammar, typed drain reasons);
+the two new v2 documents (`imports/extraction-report.yaml` drain + `policy/extraction-mappings.yaml` mapping,
+seeded from the builtin); the **schema-v2 bump** (both docs registered in every site, example regenerated,
+`career-profile.schema.json` re-pinned); and **`profile-bundle extract --draft NAME --source SOURCE_ID`**
+(authoritative per-source, inside the store import wall). Design doc:
+`docs/superpowers/specs/2026-08-14-gate-b-candidate-extraction-design.md` (rev 7 — the five-round review loop
+that produced it is closed; do not reopen, see D-172…181).
 
-**Five external review rounds, all NOT READY — and the loop is NOT converging** (findings 12 → 7 → 4 → **5**,
-severity all-blocking). Round 5 (of revision 6) returned **NOT READY / CONTINUE** with **5 blocking findings,
-all accepted** (D-177): project identity was mapped to the wrong field (`heading`→summary instead of
-`title`→a name — `latex.py:110` shows `title` is the displayed name); the "one model" bullet predicate lookup
-is **not representable** in the flat rule schema; project `dates` can't yield two `year_month` values; rev 6's
-new Gate-B/Slice-C claim is incomplete (ignores `header/2`) and overstated (exclusions work); and §6.7
-understates the v2 doc-add plumbing. **Root cause: the rule interface has been designed reactively** — each
-round surfaces an operation the flat `{locator_pattern, predicate, value_from, value_type, display_from,
-condition}` schema can't express. **Revision 7 (a COMPLETE rule-interface redesign — a closed operation set
-O1–O6, a real `entry_kind_model` object both metadata and bullet predicates resolve through, and a
-completeness proof over every bucket) is authored and committed.**
+**Deliberate departure (D-181): `SUPPORTED_SCHEMA_VERSIONS={2}`, no `1→2` migration.** No v1 bundle exists, so
+a v1 tree is refused fail-safe (exit 3) rather than migrated by a transform whose only exerciser would be a
+fabricated fixture. Widening to `{1,2}` + the transform + a v1 fixture is the additive change owed when a real
+v1 bundle first needs upgrading; the tripwire `test_a_previous_schema_fixture_and_a_forward_migration_are_owed_at_v2`
+still pins it. This departs from D-176's stated trio, on purpose.
 
-**THE REVIEW LOOP IS PAUSED — we are BUILDING now (D-178).** Five rounds did not converge, and the recurring
-class is exactly what code settles and prose cannot. Revision 7 is the design we **build from**, not a review
-target; **"no production code until the review closes" is reversed.** The thin first slice: the Task-1
-predicate audit, then the rule schema + the two easiest buckets (`skill-groups` → `technology.used`,
-`header/1` → `person.professional_name`) end-to-end against the 81 real records under TDD, proving candidates
-land (counted through the ledger). Hard buckets (project dates, bullet-by-kind) settle their interface in
-code, gated by `make check` + the keystone invariant. **Where the spec and the code disagree, the code and
-its tests win.**
+**Owed next, in order:**
+1. **Mit's prerequisite** — author `facts/identity.yaml` (a display name + review dates only he has); `init`
+   omits it, so `extract` exits 1 with `missing_required_file` while still writing the candidates/ledger/report.
+   With identity present, `extract` exits 0.
+2. **Wire `validate_extraction_report` into the aggregate `validate_imports` lane** (currently only called
+   directly by `extract`). This enforces the drain invariant at promotion — and forces the example bundle's
+   empty report to explain its own `review_required` records, a ripple to do carefully.
+3. **The promotion slice (§6.8)** — the only place candidates become `FactRecord`s/`SkillRecord`s, a
+   `skill_ref`'s `skill_id` becomes a validated reference (still unchecked, §6.4), and the
+   evidenced-vs-familiarity distinction is recorded. This is the path from `imported` to a rendered résumé.
+4. **§5.2 invariants 3 (§5.1 behavioural) and 4 (catalog↔mapping reachability)** — invariant 4 is now
+   satisfiable (`validate_mapping_against_catalog` proves the builtin mapping is catalog-legal); ship the gate.
+5. **Education (2 lines) is the agent lane, Slice C** (`free_text_deferred`), declared not decomposed.
 
-**Round 2's real value: FOUR of its findings were defects revision 2's own FIXES introduced** — the clearest
-evidence this program has for starting fix rounds in fresh context. Each had been asserted confidently:
-approval is a revision-level **boolean**, not a per-record "accepted" count; re-extraction does **not** yield
-the same candidate IDs, so stale candidates must retire; grounding is against a **parsed atomic field**, not
-"record bytes" (the enumerator retains no byte substrate); and Slice A's catalog-reachability invariant was
-**incoherent**. Severity did not fall between rounds — an underspecified design, not a converging loop.
-
-**Decisions taken and closed — do not relitigate (D-172, D-173, D-174):** deterministic extraction first with
-an agent lane only for free text; **strict span grounding** (no span ⇒ no candidate, record stays
-`review_required`); the extractor writes `imports/candidates.yaml` **directly**, narrowing D-170 ruling 1; all
-58 skill items become **candidate assertions, not exclusions**; the starter predicate catalog **ships, audited
-first**; **Gate B is met at a promoted revision** under a six-part mechanical predicate; and the
-locator→predicate mapping lives in **`policy/extraction-mappings.yaml`**, keyed by adapter, seeded at `init`
-from a versioned builtin. **v2 adds TWO documents** (that plus `imports/extraction-report.yaml`), so the
-closed grammar widens by two in one bump — and the bump is feasible but **not cheap**: `migrate_bundle`
-(`migrations.py:83`) is a **stub** returning `already_current`, so a real transform seeding both new documents
-and bumping the manifest is owed, plus widening supported versions to {1,2} **and setting
-`CURRENT_SCHEMA_VERSION = 2`** so fresh `init` bundles are born v2 (D-176) — three items, not two. **It does
-NOT owe a restricted raw-v1 loader or version-dispatched parsing** (round 3 / D-175): `load_documents` does
-not reject declared-but-absent documents, so adding documents does not break v1 parsing.
-
-**Two prerequisites the design found, both now CLOSED by Slice A (D-179):** `init` seeded **zero** predicates —
-now seeds the 42-row builtin (`predicate-catalog-v1.yaml`); and the catalog **forbade a familiarity-level
-skill** (`usage_context: incidental` admitted by 0 of 41) — the builtin now admits `incidental` on
-`technology.used`, so `effective.py`'s guard is reachable. The audit also found three **dead `VerificationBasis`
-members** the spec's invariant 1 missed (`measured`/`secondary_only`/`multiple_sources`, 0 of 42); rostered with
-reasons rather than admitted (D-179), so a NEW accidental orphan still fails the gate.
-
-**A correction that governs the skills question:** `models/skills.py:3-6`'s *"a generic skills list supports
-nothing"* is about **authority, not admissibility** — such naming cannot make a skill `verified`; it may still
-exist and render. Read as a prohibition it produced a recommendation to exclude all 58 skill items, which
-would have left `render/latex.py:126` emitting a `\section{Skills}` heading over an empty block. Owner-asserted
-skills are already legal and effective (`OWNER_ATTESTED`, `OWNER_CONFIRMED`, both in `EFFECTIVE_STATES`).
-
-**Still open, not this design's to close:** a candidate's `skill_ref` is **not referentially validated at
-all** — the import validators never check `skill_id` against the inventory; referential validation covers
-canonical facts only. Owned by the promotion slice, bounded in §6.8 but unwritten.
+**Two seams to know (D-181):** the builtin catalog and the comprehensive **example** catalog are independent
+(D-179), so the example bundle is **not** a valid extraction host for a résumé *with projects* — its
+`predicates.yaml` lacks `project.name`; a fresh `init` seeds the builtin catalog+mapping consistently and is the
+correct host. And a **degenerate** all-empty-metadata record of a supported kind drains as
+`no_mapping_for_locator` (a real résumé never emits one). Reviewed clean otherwise (no correctness/security
+blockers).
 
 ### Projection — MERGED, PUSHED, CI green. Rulings in D-165…D-170; do not reopen
 
@@ -170,7 +134,7 @@ program gate. Three facts outlive it: the manifest is written **SECOND, not last
 | P7 Breadth | not started | — |
 | *Gate A (parallel)* | *complete, merged, CI green* | ***MET*** — *has moved no program gate* |
 | *Projection* | ***MERGED AND PUSHED**, reviewed clean. Task 20 is Mit's* | *P0–P4 build gates met* |
-| *Gate B (active)* | *`import` shipped (D-170); extraction build under way on `gate-b-extraction-slice-a` (unmerged): interpreter core + **Slice A seeded predicate catalog (D-179)**; Slice B (mapping + schema v2 + `extract`) next* | ***NOT MET** — nothing imported to a real bundle yet* |
+| *Gate B (active)* | ***extraction SHIPPED (D-181)** on `gate-b-extraction-slice-a` (unmerged, gate-green): interpreter + schema v2 + `extract`; **78/81 records reach `imported`** on the live résumé* | ***progressing** — candidates land; promotion slice + validator wiring owed before a résumé renders* |
 
 ### Gate P6, clause by clause
 
