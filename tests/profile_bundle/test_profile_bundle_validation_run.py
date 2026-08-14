@@ -182,7 +182,7 @@ def test_the_report_identifies_the_revision_it_validated(
     promoted_tree: PromotedRevisionTree,
 ) -> None:
     report = revision_outcome(promoted_tree).value
-    assert report.schema_version == 1
+    assert report.schema_version == 2
     assert report.bundle_digest == promoted_tree.bundle_digest
     assert report.candidate_digest == promoted_tree.candidate_digest
     assert report.as_of is None

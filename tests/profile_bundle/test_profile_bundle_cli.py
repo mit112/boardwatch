@@ -445,7 +445,7 @@ def test_migrate_reports_already_current_on_a_promoted_bundle(
     assert result.exit_code == 0, result.output
     assert json.loads(result.output)["result"] == {
         "status": "already_current",
-        "schema_version": 1,
+        "schema_version": 2,
     }
 
 

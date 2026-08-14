@@ -82,7 +82,7 @@ def test_the_bundle_schema_and_example_are_in_the_r12_input_set() -> None:
     ):
         assert f"boardwatch/profile_bundle/examples/comprehensive/{document}" in found
     example = {p for p in found if p.startswith("boardwatch/profile_bundle/examples/")}
-    assert len(example) == 33
+    assert len(example) == 35
 
 
 def test_shipped_data_files_excludes_python_and_caches() -> None:
