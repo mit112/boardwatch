@@ -140,9 +140,37 @@ concrete step is Mit's: `profile-bundle init`, declare `resume.yaml` as a source
 then `import`. **Expect every one of the 81 records to land `review_required` at exit 0** — dispositioning
 them is the Gate B work, and `validate --completeness` is what lists them.
 
-**Still missing for a promotable bundle: candidate extraction.** `build_candidate_package` needs
-*proposals*, and nothing produces them, so `imports/candidates.yaml` stays owner-authored and no record
-can reach `imported` yet. That is the next real design question on this track, not a defect.
+**Still missing for a promotable bundle: candidate extraction. It is now DESIGNED, not built, and the
+design is AWAITING MIT'S REVIEW** — `docs/superpowers/specs/2026-08-14-gate-b-candidate-extraction-design.md`
+(2026-08-14). Nothing in `src/` constructs a `ProposedCandidate`; the only two construction sites are in one
+test file, so no record can reach `imported`. **No code has been written and none should be until the review
+lands**; an external reviewer was given the spec at Mit's request. Three slices: a seeded predicate catalog,
+deterministic extraction with span grounding, then an agent lane for the two free-text education records.
+
+**Two prerequisites the design found, both absences no document named:**
+
+1. **A fresh bundle has an empty vocabulary.** `init_draft` writes `predicates: []` (`drafts.py:361-363`)
+   and the only catalog in the repo is the 41-entry *example*, while `build_candidate_package` refuses an
+   out-of-catalog predicate. So extraction can produce **zero** candidates on a real bundle until a catalog
+   exists. The design seeds one, reusing the precedent `policy/secret-scan.yaml` already set as the declared
+   exception to "empty" (`drafts.py:321-329`).
+2. **The shipped catalog forbids a familiarity-level skill.** `may_ground_skill: true` on **1 of 41**
+   predicates; `usage_context: incidental` admitted by **0 of 41**. So a keyword-coverage skill cannot be
+   recorded honestly, *and* `effective.py:220`'s guard against an incidental fact grounding a skill **can
+   never fire**. Admitting `incidental` on `technology.used` repairs both.
+
+**Mit's rulings on it (2026-08-14):** deterministic extraction first with an agent lane only for free text;
+**strict span grounding** — no span in the record's own bytes ⇒ no candidate and the record stays
+`review_required`; the extractor writes `imports/candidates.yaml` **directly**, which narrows D-170 ruling 1
+(its stated reason, "no extractor exists", expires) and **owes its own decision entry**; all 58 skill items
+become **claims, not exclusions**; and the starter catalog **ships, audited first**.
+
+**A correction that governs the skills question:** `models/skills.py:3-6`'s *"a generic skills list supports
+nothing"* is about **authority, not admissibility** — it means such naming cannot make a skill `verified`,
+not that the skill may not exist or render. Read as a prohibition it produced a recommendation to exclude all
+58 skill items, which would have left `render/latex.py:126` emitting a `\section{Skills}` heading over an
+empty block. **Owner-asserted skills are already legal and effective**: `OWNER_ATTESTED` basis,
+`OWNER_CONFIRMED` state, and `EFFECTIVE_STATES` contains both.
 
 **Four import walls exist, in three test files, and no document enumerates them** (D-161, D-162). Each was
 found by tripping it. **Before wiring a new module into a package, grep `tests/` for what constrains that
@@ -187,7 +215,7 @@ moved no program gate. Three facts outlive the detail: **the manifest is written
 | P7 Breadth | not started | — |
 | *Gate A (parallel)* | *complete, merged, pushed, CI green* | ***MET*** — *has moved no program gate* |
 | *Projection (active)* | ***MERGED AND PUSHED** — all 22 dispatchable tasks complete and reviewed; whole-branch review clean, gate exit 0 at the merged tree. Task 20 is Mit's* | *P0–P4 build gates met* |
-| *Gate B (active)* | *`profile-bundle import` shipped (D-170) — the importer's missing entry point* | ***NOT MET** — nothing imported, no real bundle exists, and candidate extraction does not exist* |
+| *Gate B (active)* | *`profile-bundle import` shipped (D-170); candidate extraction **designed, awaiting Mit's review**, no code* | ***NOT MET** — nothing imported, no real bundle exists, and extraction is unbuilt* |
 
 ### Gate P6, clause by clause
 
