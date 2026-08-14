@@ -3346,7 +3346,8 @@ seam), `profile-bundle project`, and the top-level `resume project`.
 | Gate | Sha | Passed | xfailed | Coverage | Wall |
 |---|---|---|---|---|---|
 | baseline (prior session) | `50abced` | 6,171 | 4 | 95.76% | — |
-| final | `41f0c40` | **6,212** | 4 | **95.81%** | 5m11s |
+| 1 — all 22 tasks built | `41f0c40` | 6,212 | 4 | 95.81% | 5m11s |
+| 2 — fix wave + docs | `03b088d` | **6,218** | 4 | **95.81%** | 3m43s |
 
 Bound four ways rather than read off a notification: `MAKE_CHECK_EXIT=0` explicitly captured and re-raised,
 `All checks passed!` in the log, the pass/xfail line, and **all five stages present** (`generalization`,
@@ -3354,7 +3355,8 @@ Bound four ways rather than read off a notification: `MAKE_CHECK_EXIT=0` explici
 earlier aborted run showed pytest at 98% with no failures visible while ruff, mypy, generalization and
 index-check **had not started** — a truncated view of it would have read as a pass.
 
-A second gate run covers the fix wave (`45c69bc`) and the docs commit.
+Gate 2 is the authoritative one: it covers the whole-branch fix wave **and** this session's docs commit,
+so the tree it measured is the tree Mit would merge. `+47` tests over the session's baseline.
 
 ### Review outcomes
 
