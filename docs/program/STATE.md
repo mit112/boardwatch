@@ -31,10 +31,14 @@ produces Mit's résumés daily (measured: 8/28/24/18 PDFs on 08-09…08-12) — 
 
 ### The active track — Gate B, bundle to résumé
 
-> **NEXT SESSION = review and merge (Mit's decision, 2026-08-14e).** The branch is gate-green and coherent;
-> Mit chose to open the next session with the fresh-context Opus-5 whole-branch review (run manually — external
-> reviewers are never driven in-session), then merge `gate-b-extraction-slice-a` → `main` if clean. Do the
-> review *before* picking up any owed item below.
+> **The merge review is DONE (D-184, 2026-08-14f).** It found one blocker — `validate_mapping_against_catalog`
+> had **no production call site**, so a misrouted mapping extracted clean at exit 0 — and that is fixed and
+> pinned by two tests confirmed to fail without it. `CHANGELOG.md` (which said "fifteen commands", now
+> seventeen) is fixed too. Two findings are **owed and need Mit's call**, both verified *latent, not live*:
+> the silent partial-emission drop and the skill-id collision, below. **The four-lens fresh-context review was
+> aborted deliberately** — each reviewer inherited the global fan-out doctrine and began spawning its own
+> subagents; a reviewer prompt for a big diff must forbid delegation explicitly. What that narrower
+> single-reviewer pass did *not* cover is listed in D-184 and is owed if ever wanted.
 
 **`resume.yaml` is an import source, never hand-fixed (D-155)**, via adapter `boardwatch-resume-v1`.
 `profile-bundle import` shipped (D-170); it writes `imports/source-ledger.yaml` and nothing else.
@@ -82,6 +86,14 @@ so wiring it into validity broke `import`; the repo won, D-183). The example bun
 explain its one `review_required` record.
 
 **Owed next, in order:**
+0. **Two review findings needing Mit's design call (D-184), both latent today, neither with an obvious fix.**
+   (a) **A partial emission silently drops fields**: `run_extraction` records a drain reason only when a record
+   produces *no* candidate, so an entry with a malformed date emits its other facts, reaches `imported`, and
+   loses the date with nothing recording it — so **"78 of 81 imported" does not mean 78 fully extracted**. The
+   report attaches reasons only to `review_required` records, so the fix needs a design change, not a patch.
+   All six of Mit's live entries parse, so nothing is lost today. (b) **A skill-id collision silently merges two
+   skills** — `C++` and `C#` both slug to `skill.c` and the loser leaves the graph with no diagnostic; Mit's 58
+   items yield 58 distinct slugs, so this is a multi-tenancy defect, not a Mit defect.
 1. **Mit's prerequisite** — author `facts/identity.yaml` (a display name + review dates only he has); `init`
    omits it, so `extract`/`promote-candidates` exit 1 with `missing_required_file` while still writing their
    output. With identity present they exit 0. (Unblocks `person.professional_name`, which promotion skips today.)
