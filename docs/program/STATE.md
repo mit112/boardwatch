@@ -26,59 +26,47 @@ bundle**, not the old `resume.yaml` path. **P3, P6 and the 14-day clock are froz
 job-apps produces Mit's résumés daily (8/28/24/18 PDFs on 08-09…08-12). `resume.yaml` is now an **import
 source, never hand-fixed**, via adapter `boardwatch-resume-v1`.
 
-**On 2026-08-14 the bundle→résumé lane came alive:** 78 of 81 résumé records `imported` (D-181) → a
-renderable graph (D-182) → **revision 2 on the real bundle**, and boardwatch **rendered its first PDF
-résumé** — Mit's header + both degrees + synthesized skills (4 groups/10) + 3 experience entries with 7 real
-bullets. It was built non-destructively into a now-gone scratchpad; **nothing sendable has been produced, no
-application sent.**
+**On 2026-08-14 the bundle→résumé lane came alive, then was rebuilt into a MASTER RESERVOIR.** Full detail
+and the rebuild recipe: **memory `master-reservoir-built-from-wiki`** (read it before touching the bundle).
+Nothing sendable has been produced yet — **no application sent** — and Mit has not deemed the résumé
+application-worthy; individual bullets still get refined.
 
-### The active track — Gate B, bundle to résumé
+### The active track — the master reservoir (bundle → résumé)
 
-> **NEXT = Mit runs `profile-bundle approve-projection` (TTY) → `profile-bundle project` → first real
-> render.** `{config_dir}/projection.yaml` is now **authored, validated and installed** (2026-08-14): 6 pinned
-> entries (3 experience with `bullet_predicates: [employment.accomplishment]`, 3 projects with empty
-> `bullet_predicates` — a zero-fact predicate is a FATAL render error, `pool.py`), `shell_source: resume.yaml`,
-> `skill_groups` omitted (synthesized). It resolves clean via `projection_candidate` and rendered a **1-page
-> preview PDF** (7 experience bullets, 4 synthesized skill groups, 3 project headings). Digest to approve:
-> `sha256:f2c673d6…`. The approve step is TTY-only; Claude's `!` does NOT satisfy the consent gate. `project`
-> is JD-blind, **no `--scorer`** (that only gates `resume project`, Task 20). Preview recipe:
-> memory `render-preview-without-tty-approve`.
+> **The full loop is CLOSED**: `~/dev/portfolio-website/wiki` (the canonical knowledge base) → an **11-entity
+> master bundle** → promoted revision → **approved `projection.yaml`** → `profile-bundle project` serializes
+> the JD-blind pool and renders a **2-page PDF with every bullet showing**. The master is a **RESERVOIR**, not
+> a résumé: it holds the SUPERSET, and per-JD **Stage 2** (`resume project --posting --scorer`, gated on
+> Task 20) selects it down to one page. `resume.yaml` / `sections.tex` are thin per-JD OUTPUTS, **not** the
+> source — the wiki is.
 
-**Revision 2 is CURRENT** — `sha256:9917b67b…`, stamp `000002` (revision 1 was `sha256:9d8a202d…`). It
-validates **0 error, 9 blocker** and its **résumé surface carries 38 facts, 10 skills, 5 contacts** (D-185,
-D-186). The whole lane ran on Mit's live `resume.yaml` against `{config_dir}/career-profile`: `import` exits
-0, `extract` gives 78/81, `promote-candidates` gives 6 entities / 47 facts / 10 skills, `review_required` is
-0 (3 excluded: 1 `no_candidate_assertion`, 2 `owner_excluded` for education). Live draft: `skills-surfaced`.
+**Live bundle: `sha256:268b7c78…`, projection `sha256:5642175e…`** (both supersede every earlier digest;
+three intermediate bundles are backed up at `{config_dir}/career-profile.bak-*`). **11 entities** — 4
+experience (Saayam, NIO co-op, Nakshatra, SAKEC) + 7 projects (Hookrail, Knowledge Forge, StreakSync, Random
+Forest, FlickSwiper, BirthdayQuest, Fond). ~95 facts, **91 owner-confirmed**, 14 skills, **33 résumé bullets**
+(9 experience + 24 project), all wiki-grounded with real metrics. Validates **0 error**.
 
-**Gate B is NOT met, and the 9 blockers are EVIDENCE, not code.** All 9 are `missing_review_state` on
-`unresolved` facts whose predicate forbids owner attestation by construction (Mit's word is inadmissible):
+**Mit's Stage-2 selection ground truth (the Task-20 answer key):** SDE = {Hookrail, Knowledge Forge,
+StreakSync, Random Forest}; iOS = {StreakSync, FlickSwiper, BirthdayQuest, Fond}; Nakshatra = drop-if-space.
 
-- **3 `employment.organization`** — `fact.nakshatra.organization.001`, `fact.nio-coop.organization.001`,
-  `fact.sakec.organization.001` — need `private_document_verified` (an employer doc each).
-- **6 `project.contribution`** — `fact.crop-rf.contribution.001/002`, `fact.gamified-learning.contribution.001/002`,
-  `fact.streaksync.contribution.001/002` — need `repository_verified` (3 repos cover all 6).
+**Catalog change (Mit's "Option A"):** `project.contribution` was widened to `owner_attested` in **his bundle's**
+`policy/predicates.yaml` (the shipped builtin stays strict), so project bullets render on his attestation. This
+dropped Gate B to **7 blockers** — 4 `employment.organization` (`private_document`) + 3 `review_required`
+import items; the 11 project contributions are now resolved. "Option B" (LATER, new session): supply repo
+evidence per project AND use the repos to sharpen the bullets. Still true from before: **D-187** (`skill_groups`
+optional → synthesized) and **D-188** (`bullet_predicates` render bullets from facts); Path 1 (ClaimRecord)
+deferred.
 
-Clearing them needs no code and **unblocks the 3 projects' bullets** (their contribution facts become
-effective; experience bullets already render from facts via D-188). **It does NOT fix the employer-heading
-overflow** — corrected 2026-08-14 by authoring + rendering a real preview from the installed
-`projection.yaml`: all three `employment.organization` fact *values* are the entire "Title — Org — Dates —
-Location" line, identical to `display_name`, so `{employment.organization}` renders the *same* overflow as the
-current `{@display_name}`. A clean employer heading needs each org fact's VALUE re-authored to just the
-employer name — a **data fix, separate from the evidence blockers.**
-**Evidence is mandatory, proven not assumed** — confirming all 47 while citing nothing yields 47
-`evidence_contract_unmet` errors. The alternative, widening those two predicates to `owner_attested`
-(versioned data, legitimate), weakens a claim to pass a gate and was deliberately not taken — **Mit's call.**
-
-Two features shipped this session (both Mit's rulings, TDD'd + reviewed clean): **D-187** — `projection.yaml`'s
-`skill_groups` is now optional; omit it and one group is synthesized per bundle skill-category (taxonomy in
-one versioned place; the "groupings in two places" question is resolved, do not reopen). **D-188** — an
-entry's bullets may come from facts via `EntryDeclaration.bullet_predicates`, because Mit's bullets live in
-the bundle as `employment.accomplishment` / `project.contribution` facts and the bundle holds zero
-ClaimRecords. **Path 1 (claims/ClaimRecord) is deferred, not dead** — available if tailoring later needs
-wording or metric grounding; needs Mit's numeral→metric rulings, do not build without him.
-
-**Merge review, closed:** `validate_mapping_against_catalog` had no production call site (a misrouted mapping
-extracted clean at exit 0); fixed, pinned by two tests confirmed to fail without it (D-184).
+**Owed next (mostly owner-gated; the reservoir loop itself is DONE):**
+1. **Individual bullet refinement** — Mit's, ongoing, before the résumé is application-worthy.
+2. **An incremental-edit path** — every content change currently forces a full bundle rebuild + a fresh TTY
+   `approve` (one-shot `promote-candidates`). Build `checkout → edit one fact → approve` before Mit iterates
+   on metrics. This is the top workflow debt.
+3. **Option B** — ground project bullets against the real repos (new session).
+4. **Employer-heading overflow** — the 4 `employment.organization` values are the whole résumé line, so the
+   heading uses `{@display_name}` and overflows; a clean heading needs each org value re-authored (data fix).
+5. **Stage 2 / Task 20** — the scorer that turns the reservoir into per-JD résumés; needs Mit's posting
+   rankings (his SDE/iOS sets above are the start).
 
 **Owed next (all owner-gated or frozen — do not start unilaterally):**
 1. **Gate B's 9** — Mit's documents (above). Highest-leverage step to a sendable résumé.
@@ -138,7 +126,7 @@ check cannot find a prohibition (D-161/D-162).
 | P7 Breadth | not started | — |
 | *Gate A (parallel)* | *complete, merged, CI green* | ***MET*** — *has moved no program gate* |
 | *Projection* | ***MERGED AND PUSHED**, reviewed clean. Task 20 is Mit's* | *P0–P4 build gates met* |
-| *Gate B (active)* | ***MERGED to `main`, CI green** (D-184). **revision 2 cut** (D-185/186): 7 entities, 47 facts, 10 skills, 38 effective, `review_required` 0* | ***NOT MET — 9 blockers**, all `missing_review_state`: 3 `employment.organization` need an employer record, 6 `project.contribution` need repository evidence. Evidence, not code* |
+| *Gate B / master reservoir (active)* | ***DONE loop** (2026-08-14): 11-entity master built from `~/dev/portfolio-website/wiki` (4 exp + 7 projects, 33 bullets), promoted, **projection approved**, 2-page render with every bullet. Bundle `268b7c78`, projection `5642175e`. See memory `master-reservoir-built-from-wiki`* | ***7 blockers left** (4 `employment.organization` + 3 import items); project contributions resolved via the `owner_attested` widening. Résumé not yet application-worthy — bullets still refined; Stage 2 (per-JD) needs Task 20* |
 
 ### Gate P6, clause by clause
 
