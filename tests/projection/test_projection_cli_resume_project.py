@@ -226,6 +226,30 @@ def dropped_candidate_env(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> En
     )
 
 
+def _use_bullet_predicates_instead_of_claims(text: str) -> str:
+    """The packaged example declares bullets via explicit `claims:`; the LIVE master-reservoir
+    declaration declares them via `bullet_predicates:` (D-188) instead, and every other fixture in
+    this file uses only the `claims:` form. This rewrites both entries to the predicate form over
+    the same synthetic bundle, whose `employment.accomplishment` and `project.contribution` facts
+    are both résumé-surfaced."""
+    patched = text.replace(
+        "    claims:\n      - claim.example-labs.ownership.001\n",
+        "    bullet_predicates:\n      - employment.accomplishment\n",
+    ).replace(
+        "    claims:\n      - claim.packet-pantry.backend.001\n",
+        "    bullet_predicates:\n      - project.contribution\n",
+    )
+    assert patched != text and "claims:" not in patched  # both substitutions matched
+    return patched
+
+
+@pytest.fixture
+def predicate_env(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Env:
+    return _make_env(
+        tmp_path, monkeypatch, declaration_patch=_use_bullet_predicates_instead_of_claims
+    )
+
+
 def run(env: Env, args: list[str]):  # type: ignore[no-untyped-def]
     return CliRunner().invoke(app, ["--data-dir", str(env.data_dir), "resume", "project", *args])
 
@@ -550,3 +574,42 @@ def test_a_dropped_candidates_claim_is_absent_while_the_survivors_claim_is_prese
     claim_pairs = dict(manifest["claim_to_bullet"])
     assert "claim.example-labs.ownership.001" in claim_pairs
     assert "claim.packet-pantry.backend.001" not in claim_pairs
+
+
+# --------------------------------------------------------------------------------------
+# The live declaration renders bullets from `bullet_predicates` (D-188), not `claims` — the
+# path the first real emission crashed on and no other fixture in this file exercises.
+# --------------------------------------------------------------------------------------
+
+
+def test_a_predicate_declarations_bullets_map_to_their_source_fact_ids(
+    predicate_env: Env,
+) -> None:
+    """Regression for the first real emission's crash. A `bullet_predicates` entry declares no
+    `claims`, so `entry_decl.claims` is empty while the entry still has fact-derived bullets;
+    building `claim_to_bullet` by zipping the (empty) claims against those bullets with
+    `strict=True` raised `ValueError: zip() argument 2 is longer than argument 1`. The mapping is
+    now read from each bullet's own id, which `pool._build_entry` sets to the source fact id for
+    the predicate path.
+
+    Independent oracle: the two expected ids are read from the synthetic bundle's own fact files,
+    not from the manifest under test — `fact.example-labs.accomplishment.001` and
+    `fact.packet-pantry.contribution.001` are its only résumé-surfaced facts for those predicates,
+    so a claims-path regression (which would key on `claim.*` ids) fails this outright."""
+    result = run(
+        predicate_env,
+        ["--posting", str(predicate_env.posting_id), "--scorer", "total_distinct"],
+    )
+    assert result.exit_code == 0, result.output
+
+    manifest_path = (
+        predicate_env.data_dir
+        / "projected"
+        / str(predicate_env.posting_id)
+        / "projection-manifest.json"
+    )
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    assert dict(manifest["claim_to_bullet"]) == {
+        "fact.example-labs.accomplishment.001": "fact.example-labs.accomplishment.001",
+        "fact.packet-pantry.contribution.001": "fact.packet-pantry.contribution.001",
+    }

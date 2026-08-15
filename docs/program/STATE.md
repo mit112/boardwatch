@@ -26,9 +26,13 @@ adapter `boardwatch-resume-v1`.
 **On 2026-08-15 Gate B moved for the first time since it was defined (7 → 4, promoted as revision 6), and
 Stage 2 stopped refusing.** Both approvals are spent and **`profile-bundle project` is clean** — no approval
 is owed. Read memories `master-reservoir-built-from-wiki` and `option-b-repo-grounded-bullets` before
-touching the bundle. **Task 23 is resolved (D-198): the measurement found no clean scorer winner (tau-b
-≤ 0.16), and the owner adopted `mean_per_bullet` as the `resume project --scorer` default. Emitting a real
-projected résumé is now unblocked — but nothing sendable has been produced yet.**
+touching the bundle. **Task 23 is resolved (D-198): the owner adopted `mean_per_bullet` (no clean winner,
+tau-b ≤ 0.16).** **The first real emission then CRASHED and was fixed (D-199):** `resume project`'s manifest
+re-parsed the declaration's `claims`, which the live `bullet_predicates` declaration leaves empty — a
+`strict`-zip mismatch no test covered because every fixture used the claims form. **`resume project
+--posting 349` now emits a one-page PDF** (pinned 3 + 3 projects: hookrail, knowledge-forge, crop-rf);
+`tailor run` degrades to the untailored fallback (`bullet_too_long` — a bullet exceeds the Tier-A rewrite
+length filter; the pre-existing content matter of open Q5, not a bug). **Still 0 applications sent.**
 
 ### The active track — the master reservoir (bundle → résumé)
 
@@ -90,14 +94,17 @@ warnings (permanent residue of revision 4, superseded not undone — the promoti
   them also unlocks the last cosmetic gap: the template emits everything in argument one, so Experience is a
   single bold line while Education uses the macro properly.
 
-**Owed next — 1 is unblocked (a real emission, Mit reviews the artifact); 2 is Mit's content; do not start
-3–4 unilaterally:**
+**Owed next — 1 is DONE (artifact produced, reviewed); 2 is Mit's content; do not start 3–4
+unilaterally:**
 
-1. **Emit a real projected résumé and review it.** Task 23 is done (D-198), so `resume project --posting
-   <id>` now runs with `mean_per_bullet` by default — the first genuinely sendable artifact is within reach.
-   Two known snags to expect: `pdfinfo` is a hard dep wearing a soft failure (gaps table), and the
-   `no_match_fallback` fires on skill-orthogonal postings (Spotify 13160 admits nothing — D-198). Emitting
-   is safe to run; whether an emitted résumé is *sent* is Mit's, and remains gated on nothing being sent yet.
+1. **Emit a real projected résumé — DONE (D-199).** The command crashed on first run against the live
+   `bullet_predicates` declaration and was fixed. `resume project --posting 349` emits `resume.projected.yaml`
+   + manifest; `tailor run 349 --resume …` renders a real one-page PDF
+   (`{data_dir}/tailored/untailored-349.pdf`, verified 1 page via `pdfinfo`). The artifact is the untailored
+   fallback: one bullet trips the Tier-A length filter (`reason=bullet_too_long`), so JD-aware reordering is
+   dropped and the Stage-2 selection renders straight. **What's left is Mit's:** whether to send it, and
+   whether to shorten bullets (open Q5) so the *tailored* variant survives the filter. Spotify 13160 still
+   admits nothing (skill-orthogonal, D-198) — pick a skill-rich posting.
 2. **Individual bullet refinement** (one `edit-fact` per bullet, real numbers only) — also the only lever
    that widens Stage 2's choice, since D-195 caps a page at 16 bullets. **Offered and declined-by-default:**
    hookrail's CI chaos suite (7 failure scenarios, jobs that kill the Postgres primary and Redis master under
@@ -146,7 +153,7 @@ is evidence about the slices reviewed, not that the subsystem is defect-free (D-
 | 14-day acceptance | not started | — frozen; starts after P6 |
 | P7 Breadth | not started | — |
 | *Gate A (parallel)* | *complete, merged, CI green* | ***MET*** — *has moved no program gate* |
-| *Projection* | ***MERGED AND PUSHED**, reviewed clean. Task 20 LABELED (D-197); Task 23 resolved — `mean_per_bullet` adopted (D-198)* | *P0–P4 build gates met* |
+| *Projection* | ***MERGED AND PUSHED**, reviewed clean. Task 20 LABELED (D-197); Task 23 — `mean_per_bullet` adopted (D-198); first real emission crashed + fixed (D-199)* | *P0–P4 build gates met* |
 | *Gate B / master reservoir (active)* | ***Stage 1 DONE**; **Stage 2 unblocked** (D-195) — pinned 3 / candidates 8, pinned set 7 bullets → 1 page. **Live revision 6, `0f794d81`*** | ***4 blockers, down from 7** (D-196), measured on the live revision. The 4 need Mit's employment documents; no CLI reaches them* |
 
 ### Gate P6, clause by clause
@@ -182,7 +189,7 @@ whether the daily pipeline gets projection — **yes, after v1**; the pinned/can
 
 | Item | Detail | Owner |
 |---|---|---|
-| **Emit a real projected résumé + review it** | Task 23 done (D-198): `resume project --posting <id>` now defaults to `mean_per_bullet`. First sendable artifact is reachable. Expect the `pdfinfo` soft-failure (gaps table) and the `no_match_fallback` on skill-orthogonal postings (Spotify 13160 admits nothing). Sending is Mit's | next |
+| **Emit a real projected résumé — DONE (D-199)** | First emission crashed (`resume project`'s manifest re-parsed `claims`; live decl uses `bullet_predicates` → empty, `strict`-zip mismatch, no test covered it). Fixed + regression-tested. `--posting 349` emits a real one-page PDF; `tailor run` degrades to untailored (`bullet_too_long`). **Left: whether to send + bullet-shortening (Q5) — both Mit's** | Mit |
 | **A push run is 9 CI jobs, not 12** | D-151 took Windows off the per-push path (`ci.yml:21-33`): scheduled and `workflow_dispatch` get all three OSes, a push gets ubuntu + macOS, a PR ubuntu only. Any "all twelve green" claim describes a *scheduled* run | standing fact |
 | **A contended gate produces FALSE failures** | Running `make check` beside a live subagent turned a green `main` red on three filesystem-timing-sensitive tests. A gate that ran under contention has produced no usable result — re-run alone before diagnosing | standing fact |
 | **Two CI-only jobs: `gitleaks` and `perf`** | `generalization` IS inside `make check` — but it **scans git-TRACKED files only**, so `git add` new files before the gate run you intend to trust. Run `gitleaks git --log-opts=origin/main..HEAD` before a push. **`All checks passed!` is `generalization`'s banner, not the gate's** — it prints ~4 min early | mitigated |

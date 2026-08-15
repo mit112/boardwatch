@@ -44,9 +44,11 @@ class ProjectionManifest(BaseModel):
     #: raises on any float, because a score that lands in a lineage artifact must never depend on
     #: floating-point representation.
     scores: tuple[tuple[str, DecimalString], ...]
-    #: claim_id -> the bullet_id it produced. `pool._build_entry` currently sets
-    #: `bullet_id=claim_id`, so v1's pairs are the identity map; carried explicitly anyway so a
-    #: future divergence between the two has somewhere to be recorded rather than assumed away.
+    #: each rendered bullet's source id -> the bullet_id it produced. `pool._build_entry` sets
+    #: `bullet_id=claim_id` for a `claims`-derived bullet and `bullet_id=fact.fact_id` for a
+    #: `bullet_predicates`-derived one (D-188), so v1's pairs are the identity map; carried
+    #: explicitly anyway so a future divergence between the two has somewhere to be recorded rather
+    #: than assumed away.
     claim_to_bullet: tuple[tuple[str, str], ...]
 
 

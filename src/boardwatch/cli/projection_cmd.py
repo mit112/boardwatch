@@ -417,13 +417,12 @@ def resume_project(
     # database is somehow forbidden for this one.
     from boardwatch.cli.context import build_context
     from boardwatch.extract.taxonomy import load_taxonomy
-    from boardwatch.projection.declaration import load_declaration
     from boardwatch.projection.manifest import (
         MANIFEST_SCHEMA_VERSION,
         ProjectionManifest,
         manifest_bytes,
     )
-    from boardwatch.projection.pool import _entry_id, project_pool
+    from boardwatch.projection.pool import project_pool
     from boardwatch.projection.posting import posting_context
     from boardwatch.projection.select import select
     from boardwatch.projection.serialize import resume_document_bytes
@@ -503,25 +502,17 @@ def resume_project(
         (entry_id, str(scorer(entries_by_id[entry_id], jd_skills_set, table, taxonomy)))
         for entry_id in pool.candidate_entry_ids
     )
-    # `claim_id` is re-derived independently here, from a second parse of the declaration file
-    # itself, rather than read off `bullet.bullet_id` a second time — a tuple built as
-    # `(bullet.bullet_id, bullet.bullet_id)` records only that one attribute agrees with itself,
-    # never with the declaration's own claim ids. `pool._build_entry` builds each entry's bullets
-    # in `entry_decl.claims` order (identity map today, `bullet_id=claim_id`), so zipping the two
-    # in that same order pairs each declared claim with the bullet it produced; if `_build_entry`
-    # ever stopped setting `bullet_id=claim_id`, this pairing would genuinely diverge instead of
-    # trivially agreeing (manifest.py's own docstring on why the field is carried explicitly).
-    reloaded_declaration = load_declaration(declaration_path)
-    claims_by_entry_id = {
-        _entry_id(entry_decl.entity_id): entry_decl.claims
-        for entry_decl in reloaded_declaration.entries
-    }
+    # Each bullet's source id IS its `bullet_id`: `pool._build_entry` sets `bullet_id=claim_id` for
+    # a `claims`-derived bullet and `bullet_id=fact.fact_id` for a `bullet_predicates`-derived one
+    # (D-188). The mapping is therefore read from the rendered bullets, not re-derived from the
+    # declaration's `claims` — a `bullet_predicates` entry declares no per-bullet id there, so the
+    # earlier zip against `entry_decl.claims` mismatched the moment an entry's bullets came from a
+    # predicate (the live master-reservoir declaration's only bullet source). Scoped to
+    # `selection.resume.entries` (the FINAL résumé), so a dropped candidate's bullets are absent.
     claim_to_bullet = tuple(
-        (claim_id, bullet.bullet_id)
+        (bullet.bullet_id, bullet.bullet_id)
         for entry in selection.resume.entries
-        for claim_id, bullet in zip(
-            claims_by_entry_id[entry.entry_id], entry.bullets, strict=True
-        )
+        for bullet in entry.bullets
     )
     manifest = ProjectionManifest(
         manifest_schema=MANIFEST_SCHEMA_VERSION,
