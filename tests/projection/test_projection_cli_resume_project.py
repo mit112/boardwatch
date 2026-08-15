@@ -348,14 +348,20 @@ def test_manifest_carries_the_pool_lineage_and_a_score_for_every_candidate(env: 
 
 
 # --------------------------------------------------------------------------------------
-# `--scorer`: required, no default; unknown name is a typed refusal; choices are DERIVED
+# `--scorer`: defaults to mean_per_bullet (D-198); unknown name is a typed refusal; choices DERIVED
 # --------------------------------------------------------------------------------------
 
 
-def test_scorer_is_required_with_no_default(env: Env) -> None:
+def test_scorer_defaults_to_mean_per_bullet(env: Env) -> None:
+    """D-198 adopted `mean_per_bullet` from the owner-labeled selection matrix, so `--scorer` is
+    no longer required: omitting it runs, and runs AS `mean_per_bullet`. The command echoes the
+    scorer it actually used from the typer-resolved option value, so a different silent default
+    would name itself here instead — this reads the default through the real CLI path, not a
+    literal typed into the test."""
     result = run(env, ["--posting", str(env.posting_id)])
-    assert result.exit_code != 0
-    assert "Missing option" in result.output, result.output
+    assert result.exit_code == 0, result.output
+    assert "Missing option" not in result.output
+    assert "scorer mean_per_bullet" in result.output, result.output
 
 
 def test_an_unknown_scorer_name_is_a_typed_refusal_naming_the_real_choices(env: Env) -> None:

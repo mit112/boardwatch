@@ -87,8 +87,10 @@ boardwatch tailor run <id> --resume <path>
 (a new revision), projection refuses the stale approval rather than emit résumé text you never
 reviewed — re-approve after reviewing.
 
-`--scorer` is required and has no default: every registered scorer is falsified by a rank-agreement
-probe, so naming one is a deliberate, visible choice rather than a silently picked winner.
+`--scorer` defaults to `mean_per_bullet`, adopted from the owner-labeled selection matrix (D-198): it
+had the highest rank agreement with the matrix, though the margin over the alternatives is thin and all
+four scorers agree only weakly with a hand ranking. The pick stays overridable — pass another registered
+scorer (`total_distinct`, `coverage_then_density`, `mean_top_k`) to override it.
 
 ## 4. Multi-tenancy
 

@@ -26,8 +26,9 @@ adapter `boardwatch-resume-v1`.
 **On 2026-08-15 Gate B moved for the first time since it was defined (7 → 4, promoted as revision 6), and
 Stage 2 stopped refusing.** Both approvals are spent and **`profile-bundle project` is clean** — no approval
 is owed. Read memories `master-reservoir-built-from-wiki` and `option-b-repo-grounded-bullets` before
-touching the bundle. **Task 20's matrix is now owner-labeled (D-197), so scorer selection (Task 23) is
-unblocked — the next step toward a sendable per-JD résumé. Nothing sendable has been produced yet.**
+touching the bundle. **Task 23 is resolved (D-198): the measurement found no clean scorer winner (tau-b
+≤ 0.16), and the owner adopted `mean_per_bullet` as the `resume project --scorer` default. Emitting a real
+projected résumé is now unblocked — but nothing sendable has been produced yet.**
 
 ### The active track — the master reservoir (bundle → résumé)
 
@@ -69,8 +70,8 @@ independently (D-167).
 JD skills from `posting_context(...).jd_skills`, and the owner's rankings + cut lines over the **eight
 candidates** (pinned three excluded, since `agreement.score_all` scores only the ids `case.expected` names).
 Every row verified to cover exactly the 8 candidates. **No scorer was run before the label landed** (D-158).
-**Next: Task 23** — read `score_all`'s per-scorer rank agreement against these labels to pick the scorer,
-and the cut lines to set the admission threshold.
+**Task 23 read `score_all` against these labels (D-198):** no clean winner (tau-b ≤ 0.16; `mean_per_bullet`
+adopted), and the cut lines fix no score threshold, so `ADMISSION_FLOOR` stays `Decimal(0)`.
 
 ### Gate B — 4 blockers, down from 7, on the live revision
 
@@ -89,13 +90,14 @@ warnings (permanent residue of revision 4, superseded not undone — the promoti
   them also unlocks the last cosmetic gap: the template emits everything in argument one, so Experience is a
   single bold line while Education uses the macro properly.
 
-**Owed next — 1 is unblocked (objective measurement); 2 is Mit's content; do not start 3–4 unilaterally:**
+**Owed next — 1 is unblocked (a real emission, Mit reviews the artifact); 2 is Mit's content; do not start
+3–4 unilaterally:**
 
-1. **Task 23 — scorer + admission threshold.** Now unblocked (Task 20 labeled, D-197). Run
-   `agreement.score_all` over the ten labeled cases to read each registered scorer's mean rank agreement,
-   pick the highest, and set the threshold from where the cut lines fall (D-163/D-168). `--scorer` stays
-   required until a winner is adopted. No new code is owed; there is no CLI, so the ten cases are
-   transcribed into `MatrixCase`s and scored in a script.
+1. **Emit a real projected résumé and review it.** Task 23 is done (D-198), so `resume project --posting
+   <id>` now runs with `mean_per_bullet` by default — the first genuinely sendable artifact is within reach.
+   Two known snags to expect: `pdfinfo` is a hard dep wearing a soft failure (gaps table), and the
+   `no_match_fallback` fires on skill-orthogonal postings (Spotify 13160 admits nothing — D-198). Emitting
+   is safe to run; whether an emitted résumé is *sent* is Mit's, and remains gated on nothing being sent yet.
 2. **Individual bullet refinement** (one `edit-fact` per bullet, real numbers only) — also the only lever
    that widens Stage 2's choice, since D-195 caps a page at 16 bullets. **Offered and declined-by-default:**
    hookrail's CI chaos suite (7 failure scenarios, jobs that kill the Postgres primary and Redis master under
@@ -124,8 +126,8 @@ the example bundle is not a valid extraction host for a résumé *with projects*
 **Projection** (D-163…D-170): 22 tasks merged, CI green. Two facts outlive the detail —
 **`LatexRenderer.emit` never reads `Resume.header`/`Resume.education`** (D-156), template-hardcoded (bundle
 is NOT authoritative for name/contacts/education); and **no scorer may be picked by inspection** (D-163),
-`--scorer` has no default (D-168) — Task 23 picks among the **four registered** by rank agreement, never a
-new/third scorer. **Gate A — MET** (D-157): green on all twelve CI jobs at `8475319`; a closed review loop
+so `select()`'s parameter stays required with no default — but Task 23 adopted `mean_per_bullet` as the
+**CLI** `--scorer` default from the labeled matrix (D-198), never a new/third scorer. **Gate A — MET** (D-157): green on all twelve CI jobs at `8475319`; a closed review loop
 is evidence about the slices reviewed, not that the subsystem is defect-free (D-161/D-162).
 
 ---
@@ -144,7 +146,7 @@ is evidence about the slices reviewed, not that the subsystem is defect-free (D-
 | 14-day acceptance | not started | — frozen; starts after P6 |
 | P7 Breadth | not started | — |
 | *Gate A (parallel)* | *complete, merged, CI green* | ***MET*** — *has moved no program gate* |
-| *Projection* | ***MERGED AND PUSHED**, reviewed clean. Task 20 LABELED (D-197); Task 23 next* | *P0–P4 build gates met* |
+| *Projection* | ***MERGED AND PUSHED**, reviewed clean. Task 20 LABELED (D-197); Task 23 resolved — `mean_per_bullet` adopted (D-198)* | *P0–P4 build gates met* |
 | *Gate B / master reservoir (active)* | ***Stage 1 DONE**; **Stage 2 unblocked** (D-195) — pinned 3 / candidates 8, pinned set 7 bullets → 1 page. **Live revision 6, `0f794d81`*** | ***4 blockers, down from 7** (D-196), measured on the live revision. The 4 need Mit's employment documents; no CLI reaches them* |
 
 ### Gate P6, clause by clause
@@ -180,7 +182,7 @@ whether the daily pipeline gets projection — **yes, after v1**; the pinned/can
 
 | Item | Detail | Owner |
 |---|---|---|
-| **Task 23 — scorer pick + admission threshold** | Task 20 labeled (D-197), so unblocked. Read `score_all`'s per-scorer rank agreement against the labels; the pick is objective, the threshold comes from the cut lines. With 3 jobs pinned, at most 2 candidates are admitted (D-195) | next |
+| **Emit a real projected résumé + review it** | Task 23 done (D-198): `resume project --posting <id>` now defaults to `mean_per_bullet`. First sendable artifact is reachable. Expect the `pdfinfo` soft-failure (gaps table) and the `no_match_fallback` on skill-orthogonal postings (Spotify 13160 admits nothing). Sending is Mit's | next |
 | **A push run is 9 CI jobs, not 12** | D-151 took Windows off the per-push path (`ci.yml:21-33`): scheduled and `workflow_dispatch` get all three OSes, a push gets ubuntu + macOS, a PR ubuntu only. Any "all twelve green" claim describes a *scheduled* run | standing fact |
 | **A contended gate produces FALSE failures** | Running `make check` beside a live subagent turned a green `main` red on three filesystem-timing-sensitive tests. A gate that ran under contention has produced no usable result — re-run alone before diagnosing | standing fact |
 | **Two CI-only jobs: `gitleaks` and `perf`** | `generalization` IS inside `make check` — but it **scans git-TRACKED files only**, so `git add` new files before the gate run you intend to trust. Run `gitleaks git --log-opts=origin/main..HEAD` before a push. **`All checks passed!` is `generalization`'s banner, not the gate's** — it prints ~4 min early | mitigated |

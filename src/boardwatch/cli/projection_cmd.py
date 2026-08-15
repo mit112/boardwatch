@@ -349,15 +349,16 @@ resume_app = typer.Typer(
 
 POSTING_OPTION = typer.Option(..., "--posting", help="Posting id (the # column of top).")  # noqa: B008
 SCORER_OPTION = typer.Option(  # noqa: B008
-    ...,
+    "mean_per_bullet",
     "--scorer",
     help=(
-        "Entry scorer ranking candidates against the JD's skills. Required, no default: every "
-        "candidate in SCORERS (projection/scoring.py) is falsified by one rank-agreement probe "
-        "or the other (D-163), so none is chosen until the owner-labeled selection matrix rules "
-        "— naming one here is a deliberate, visible choice, not a silently-picked winner. Choices "
-        "today: coverage_then_density, mean_per_bullet, mean_top_k, total_distinct. An unknown "
-        "name is refused with the live list of registered choices."
+        "Entry scorer ranking candidates against the JD's skills. Defaults to mean_per_bullet, "
+        "adopted by the owner-labeled selection matrix (D-198): it had the highest mean rank "
+        "agreement with the matrix's ten postings and, being normalized per bullet, resists the "
+        "bullet-count inflation that fools total_distinct. Agreement is weak in absolute terms "
+        "(mean Kendall tau-b <= 0.16), so the pick stays overridable rather than silent. Choices: "
+        "coverage_then_density, mean_per_bullet, mean_top_k, total_distinct. An unknown name is "
+        "refused with the live list of registered choices."
     ),
 )
 RESUME_OUT_OPTION = typer.Option(  # noqa: B008
