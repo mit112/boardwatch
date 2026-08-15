@@ -36,11 +36,14 @@ still degrades to the untailored fallback (`bullet_too_long`, open Q5). The owne
 fact-grounded company — is **now live** (fresh `untailored-349.pdf`, 14:45); the projection stamp matches
 the current declaration.
 
-**With the résumé track shippable, the session pivoted to post-Gate-B robustness.** A multi-tenancy sweep
-found `candidate_promotion.py` was the only lossy-id-creation site in `src/`; three of its slug-collision
-sites are now refused rather than silently merging — skill_id (D-202, shipped + CI-green), and entity_id +
-category_id (D-203). **The sweep undercounted: `grep -n "_slug("` returns four id-building lines, and the
-fourth (`fact_id`) is still open — see D-203 residual (a2).** A 4-agent roadmap sweep then scoped the remaining autonomous engineering backlog (below).
+**With the résumé track shippable, the program pivoted to post-Gate-B robustness, and the scoped autonomous
+backlog is now shipped in full.** A multi-tenancy sweep found `candidate_promotion.py` is the only
+lossy-id-creation site in `src/`; **all four of its slug-collision sites now refuse** rather than silently
+merging — skill_id (D-202), entity_id + category_id (D-203), fact_id (D-205). The fourth was missed by the
+sweep's own enumeration and found by the pre-push review of D-203, whose "the whole class is now refused"
+claim was retracted *before* it was pushed. Alongside it: a missing `pdfinfo` is now a run-level fatal
+instead of a laundered `COMPILE_FAILED` (D-204), CSV export to stdout is UTF-8 (D-206), **§5.2 invariant 3 —
+the last owed audit invariant — ships**, and two fixture-drift fixes now fail on model/mapping drift.
 
 ### The active track — the master reservoir (bundle → résumé)
 
@@ -110,21 +113,13 @@ residue of earlier revisions, non-blocking). The path to zero:
 2. **Individual bullet refinement** (one `edit-fact` per bullet, real numbers) — Mit's content (D-191); also
    the only lever that widens Stage 2's choice (D-195 caps a page at 16 bullets). Hookrail's CI-chaos suite is
    the strongest unclaimed material, deliberately **not** added (no attestation for wording Mit has not read).
-3. **Autonomous engineering backlog (no owner input) — scoped 2026-08-15 by a 4-agent sweep:**
-   - **Promotion slug-collision class — 3 of 4 sites closed (D-202 skill_id + D-203 entity_id/category_id).**
-     `candidate_promotion.py` is the *only* lossy-id-creation site in `src/`, and those three lines now refuse
-     a colliding id instead of silently merging. **Still open: the `fact_id` builders, which drop the entity
-     kind, so two entries of different kinds whose ids slug-collide clear the entity guard and still collide
-     (D-203 residual a2) — an untyped pydantic traceback, not a refusal.** Also open: `_merge_categories`'s
-     `:499` collision-with-an-existing-category (low priority).
-   - **§5.2 invariant 3** — confirmed autonomous (test construction; semantics owner-decided 2026-08-14). Path:
-     a `ValidationContext` from in-memory `FactRecord`/`SkillRecord` on `builtin_catalog(1)`, assert an
-     incidental-context `technology.used` grounds nothing while a professional one does.
-   - **`pdfinfo` soft-failure** (`reports/tailor.py:170-197`) — a missing binary is laundered into
-     `COMPILE_FAILED` → a silent empty run; mirror `tectonic`'s `BINARY_MISSING` run-level-fatal.
-   - **`export --format csv` UTF-8** (`export_cmd.py:70`) — pure encoding fix, no policy call.
-   - **Two fixture-drift fixes** — derive `test_extraction_mapping.py:60-78` from `model_dump`; derive
-     `test_predicate_catalog.py:61-73`'s predicate set from the live mapping. (Memory: test-fixture-drift-risks.)
+3. **Autonomous engineering backlog — COMPLETE, nothing owed.** All five items the 2026-08-15 4-agent sweep
+   scoped shipped on 2026-08-15k; listed only so a fresh session does not re-scope them. Slug-collision class
+   **CLOSED, all four sites** (D-202/D-203/D-205); **§5.2 invariant 3 SHIPS** — the last owed audit invariant;
+   `pdfinfo` fatal (D-204); CSV stdout UTF-8 (D-206); both fixture-drift fixes derived from live models/config
+   and proven red on a mutated source copy. **One residual, low priority, deliberately unfixed:**
+   `_merge_categories` (`candidate_promotion.py:499`) still files a user's slug-colliding label under a
+   pre-existing catalog category of a different `display_name` (`if category_id not in known`).
 4. **Owner-gated — do NOT start unilaterally:** **D-184 finding 2** (partial emission silently drops fields;
    `run_extraction` records a reason only when a record produces *no* candidate — redefines the Gate B
    accounting contract, 4 mutually-exclusive designs, nothing lost today); the provider ATS-fixture +
@@ -186,7 +181,8 @@ is evidence about the slices reviewed, not that the subsystem is defect-free (D-
 2. **Should any family other than `work_auth` default to `blocker` severity** (e.g. `clearance`)? Owner-gated
    since D-035.
 3. **What is boardwatch's Windows story?** Parked 2026-08-13. `pyproject.toml:23` publishes `OS Independent`
-   while "Windows" appears zero times in the docs. One real bug is in the gaps table.
+   while "Windows" appears zero times in the docs. **The one real bug is now fixed (D-206)**, so what is left
+   is purely the support-posture claim — which no code change can settle.
 4. **The projection spec's six open questions** (§12) — soonest: whether `tailor run` should validate the
    projection manifest, and whether persona's `entries` list survives stage 2.
 5. **Do the 33 bullets get shortened?** D-195 measured the ceiling at 16 bullets, so a one-page résumé shows
@@ -209,7 +205,7 @@ whether the daily pipeline gets projection — **yes, after v1**; the pinned/can
 | **`resume.yaml` is an IMPORT SOURCE, never hand-fixed** | D-155. Content comes from the wiki; the bundle is what renders; wording is `edit-fact`'s job (D-190). Mit pins `resume_max_pages=1`; never advise 2 | Mit |
 | **`add-evidence` takes no bundle lock, and D-143 widened the race** | Only `promote`/`rebase`/`approve` take `bundle_lock`. Two concurrent captures race on up to 13 files; a lost update leaves a silent `evidence_link_asymmetry`. Raise it before anyone runs two authoring agents against one bundle | owner-gated |
 | **P2 item 8 — the onboarding gatherer** | What would make the field tier fire for anyone. D-054 forbids us authoring non-tech field content. Its open architecture question: a genuinely new field rule is still *code*, not data | owner-gated |
-| **`boardwatch export --format csv` to stdout crashes on Windows** | `cli/export_cmd.py:70` writes to bare `sys.stdout`, whose redirected encoding on Windows is the ANSI codepage, so any non-ASCII company name raises `UnicodeEncodeError`. Reproduced. `--out` at `:73` is already correct. **CI cannot see this** | open Q3 |
-| **`pdfinfo` is a hard dependency wearing a soft failure** | `cli/doctor_cmd.py:79-88` says so. Missing tectonic is loud; missing `pdfinfo` returns `None` (`reports/tailor.py:170-171`) laundered into `COMPILE_FAILED`. Hits `boardwatch run` on every OS. **Stage 2's budget loop compiles once per candidate, so it reads this too** | open Q3 |
+| **`boardwatch export --format csv` to stdout — FIXED (D-206)** | The stdout branch now writes through a locally-wrapped UTF-8 `TextIOWrapper`, flushed and detached, matching what `--out` always did. Global stdout is never mutated. **CI still cannot see the original crash** (every per-push runner defaults to UTF-8), so the regression drives an `ascii`-encoded stdout instead | closed |
+| **`pdfinfo` soft failure — FIXED (D-204)** | A missing `pdfinfo` is now `BINARY_MISSING` in `_default_runner`, i.e. run-level fatal like `tectonic`, with a poppler install message. It no longer launders into `COMPILE_FAILED`, so it cannot present as a silent empty run. Stage 2's budget loop reads the same fixed path | closed |
 | **Four `runs` rows are `running` WITH `finished_at` set, and no drain can clear them** | The predicate is `status='running' AND finished_at IS NULL AND started_at < cutoff` (`store/queries.py:183-186`), so ids 1–4 are excluded permanently — the real leak, needing a repair path nothing proposes. `top` is what opens them | P3 |
 | **`boardwatch top` advances the queue by default** | Records `seen` unless `--no-record`, so exploratory ranking mutates dedup state — directly relevant to Gate P6's clean 7-day window | P6 |

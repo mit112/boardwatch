@@ -182,6 +182,26 @@ All notable changes to this project are documented here. The format follows
   `pipeline/runner.py`, which has not happened; without the catalog entry such a row would have
   rendered the artifact's out-of-catalog FAILURE line.
 
+### Fixed
+
+- **A missing `pdfinfo` now fails the run loudly instead of quietly degrading every lead.** poppler's
+  `pdfinfo` supplies the page count the résumé gate measures against `resume_max_pages`. When the binary was
+  absent, `_pdf_page_count` returned `None` and that was folded into `COMPILE_FAILED` for **every** lead — so
+  a machine with `tectonic` but without poppler produced a degraded or empty run every morning, with the
+  cause named nowhere on the run path. `boardwatch doctor` did report it, but only if you thought to run it,
+  and a check the user must remember is not a guard. A missing `pdfinfo` is now `BINARY_MISSING`, the same
+  run-level fatal a missing `tectonic` has always been, and the error names poppler and how to install it.
+  The two other reasons a page count can come back unmeasured — `pdfinfo` exiting non-zero, or output with
+  no parseable `Pages:` line — still read as `COMPILE_FAILED`, because those really are compile failures.
+  Affects `boardwatch run`, `boardwatch tailor run`, and the projection budget loop, on every OS.
+
+- **`boardwatch export --format csv` no longer crashes on a redirected non-UTF-8 stdout.** It wrote rows to
+  the ambient `sys.stdout`, whose encoding when redirected on Windows is the ANSI codepage, so any non-ASCII
+  company name raised `UnicodeEncodeError` and killed the export. The `--out` path had always been correct;
+  only the stdout branch was wrong. That branch now writes UTF-8 through a locally-wrapped stream, flushed
+  and detached so the shared buffer stays open for the rest of the process. Global stdout is never modified,
+  so nothing else the command prints is affected.
+
 ## [0.3.0] - 2026-08-10
 
 ### Added
