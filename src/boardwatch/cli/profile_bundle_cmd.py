@@ -93,6 +93,7 @@ from boardwatch.profile_bundle.models.base import (
     VerificationState,
 )
 from boardwatch.profile_bundle.models.history import Actor
+from boardwatch.profile_bundle.models.imports import ExclusionReason
 from boardwatch.profile_bundle.models.manifests import RevisionManifest
 from boardwatch.profile_bundle.paths import (
     draft_root,
@@ -1126,6 +1127,67 @@ def add_fact(
         ),
     )
     _emit("add-fact", _with_revalidation(root, draft, outcome), rendered, as_json=json_output)
+
+
+@profile_bundle_app.command("exclude-record")
+def exclude_record(
+    ctx: typer.Context,
+    draft: str = DRAFT_OPTION,
+    source_record_id: str = typer.Option(  # noqa: B008
+        ...,
+        "--source-record-id",
+        help="The enumerated source record to account for. `validate --completeness` names the "
+        "undispositioned ones.",
+    ),
+    # The closed catalog, offered as an enum so an out-of-catalog reason is refused by Typer with
+    # the legal ones printed, rather than reaching the model as a string.
+    reason: ExclusionReason = typer.Option(  # noqa: B008
+        ..., "--reason", help="Why the record is excluded, from §18's closed catalog."
+    ),
+    # Not defaulted and not optional: §18 says every exclusion requires a rationale, and an
+    # exclusion is the one write no command can take back. A blank one is refused by the model.
+    rationale: str = typer.Option(  # noqa: B008
+        ..., "--rationale", help="Why this reason applies to this record, in the owner's words."
+    ),
+    bundle: Path | None = BUNDLE_OPTION,
+    json_output: bool = JSON_OPTION,
+) -> None:
+    """Exclude one enumerated source record, re-deriving its disposition, then revalidate."""
+    root = _bundle_root(ctx, bundle)
+    outcome = _guarded(
+        lambda: authoring.exclude_record(
+            root,
+            draft_name=draft,
+            source_record_id=source_record_id,
+            reason=reason.value,
+            rationale=rationale,
+        )
+    )
+    excluded = outcome.value
+    if excluded is None:
+        _emit("exclude-record", outcome, _nothing(), as_json=json_output)
+    rendered = _Rendered(
+        result={
+            "draft": excluded.draft_name,
+            "source_record_id": excluded.source_record_id,
+            "reason": excluded.reason,
+            "previous_disposition": excluded.previous_disposition,
+            "disposition": excluded.disposition,
+            "documents": list(excluded.documents),
+            "owner_gates": _gate_json(excluded.owner_gates),
+        },
+        lines=(
+            f"{excluded.source_record_id}: {excluded.previous_disposition} -> "
+            f"{excluded.disposition} ({excluded.reason})",
+            *_gate_lines(excluded.owner_gates),
+        ),
+    )
+    _emit(
+        "exclude-record",
+        _with_revalidation(root, draft, outcome),
+        rendered,
+        as_json=json_output,
+    )
 
 
 @profile_bundle_app.command("resolve-conflict")

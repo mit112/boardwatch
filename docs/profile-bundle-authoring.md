@@ -290,10 +290,11 @@ or `created_by`, because those are promotion-derived.
 
 ### Editing
 
-Direct editing of the draft's YAML is supported and expected. Four commands exist for the operations
+Direct editing of the draft's YAML is supported and expected. Five commands exist for the operations
 that have to touch more than one document at once — `add-evidence` (§10), `resolve-conflict` (§11),
-and `edit-fact` and `add-fact` (below) — and each ends by revalidating the draft it changed, so the
-exit code answers "did the change land *and* is the draft still promotable" in one number.
+`exclude-record` (§16), and `edit-fact` and `add-fact` (below) — and each ends by revalidating the
+draft it changed, so the exit code answers "did the change land *and* is the draft still promotable"
+in one number.
 
 ### `edit-fact` corrects a fact without a rebuild
 
@@ -1330,6 +1331,55 @@ information: completeness_counts: ...
     exclusions_by_reason: {"administrative_noise": 1, "duplicate": 0, ...}
 ```
 
+### `exclude-record` accounts for one record without hand-editing three documents
+
+Excluding a record is not one write. `imports/exclusions.yaml` gains the reason and the rationale;
+the ledger row's disposition is re-derived from it; and the `imports/extraction-report.yaml` entry
+that explained why the record was still unresolved retires, because §6.3a forbids a report entry for
+an excluded record. Write the first by hand and forget the third and the draft reconciles to
+`import_denominator_mismatch` — in the *completeness* tier, which no authoring command's closing
+revalidation runs, so it would not surface until `promote`.
+
+```bash
+boardwatch profile-bundle exclude-record --draft work \
+    --source-record-id source-record.5e052137... \
+    --reason no_candidate_assertion \
+    --rationale "A section heading with no assertion under it."
+```
+
+**Disposition stays derived.** The command never writes `disposition: excluded`; it appends the
+exclusion and re-derives every record from the same three-branch rule `import` applies. `--reason`
+is the closed seven-member catalog and `--rationale` is required and non-blank, because §18 says
+every exclusion carries one.
+
+**An exclusion cannot be taken back.** No command removes one, and one record carries one reason, so
+a mistyped `--reason` cannot be re-decided by appending a better exclusion — only by discarding the
+draft. Every check therefore runs before the first byte is written, as the same prospective-tree
+diff `edit-fact` and `add-fact` use. It refuses a record the ledger does not enumerate, a record
+already excluded, and an `imported` record (whose candidates would end up in no disposition):
+
+```console
+error: broken_reference (imports/source-ledger.yaml source-record.aaaa...): source-record.aaaa... is not a record imports/source-ledger.yaml enumerates, so there is nothing to account for
+error: duplicate_record_id (imports/exclusions.yaml source-record.bcf308bb...): source-record.bcf308bb... is already excluded in imports/exclusions.yaml; one record carries one reason, and no command removes an exclusion
+error: import_missing_exclusion (imports/source-ledger.yaml source-record.944c2949...): source-record.944c2949... is dispositioned imported and names 1 candidate(s)
+```
+
+`owner_excluded` is the one reason that costs an owner approval. The command reports the gate it
+introduced and `approve` is where you answer for it — there is no separate command, because §13 puts
+exactly one stamp on a candidate:
+
+```console
+$ ... exclude-record --reason owner_excluded --rationale "Not something I want represented."
+profile-bundle exclude-record: clean
+source-record.5e052137...: review_required -> excluded (owner_excluded)
+owner approval required:
+  approve_source_record_exclusion source-record.5e052137... -> owner_excluded
+EXIT=0
+```
+
+Promoting that draft with a stamp that does not carry the entry is refused —
+`missing_owner_approval`, from the same derivation `approve` reads.
+
 Imports are idempotent by construction: a candidate ID is derived from the canonical JSON of
 `["candidate", source_record_id, predicate, canonicalized_typed_value]`, so re-importing unchanged
 source material produces the same IDs and no new candidates. A changed source produces a **new
@@ -1413,6 +1463,7 @@ Every command accepts `--bundle PATH`, and every one but `approve-projection` ac
 | `add-evidence` | `--draft`, `--evidence-file`, `--capture` (all required) | `evidence/records.yaml`, each fact/metric document it cites back from, the manifest, and possibly one blob |
 | `edit-fact` | `--draft`, `--fact-id`, `--value` (all required) | the fact's own document, `evidence/records.yaml`, and the manifest |
 | `add-fact` | `--draft`, `--fact-id`, `--subject-id`, `--predicate`, `--value`, `--evidence-id`, `--verification-state`, `--verification-basis`, `--usage-context`, `--surface` (all required; `--surface` repeats) | the subject's document, `evidence/records.yaml`, and the manifest |
+| `exclude-record` | `--draft`, `--source-record-id`, `--reason`, `--rationale` (all required) | `imports/exclusions.yaml`, `imports/source-ledger.yaml`, and `imports/extraction-report.yaml` when the record carried a drain reason |
 | `resolve-conflict` | `--draft`, `--ruling-file` (both required) | `conflicts/rulings.yaml` and the one ruled group |
 | `approve` | `--draft NAME` (required) | one approval stamp under `approvals/` |
 | `promote` | `--draft`, `--summary` (required), `--actor` | one immutable revision, and `CURRENT` |

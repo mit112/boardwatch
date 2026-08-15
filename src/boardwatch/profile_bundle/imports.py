@@ -472,6 +472,78 @@ def rebuild_source_candidates(
 # --------------------------------------------------------------------------------------
 
 
+def _candidate_ids_by_record(package: CandidatePackage) -> dict[str, list[str]]:
+    by_record: dict[str, list[str]] = {}
+    for candidate in package.candidates:
+        by_record.setdefault(candidate.source_record_id, []).append(candidate.candidate_id)
+    return by_record
+
+
+def _disposition_for(
+    candidate_ids: Sequence[str],
+    source_record_id: str,
+    exclusions: Mapping[str, ExclusionRecord],
+) -> Disposition:
+    """§18's three-branch rule: candidates ⇒ imported, an exclusion ⇒ excluded, otherwise review.
+
+    One function because two entry points derive with it — `build_source_ledger` when a source is
+    (re-)enumerated, and `redispositioned_ledger` when an exclusion is authored against records
+    already enumerated. A second copy of the branch is a second place for the three counts to stop
+    summing to the denominator.
+    """
+    if candidate_ids:
+        return Disposition.IMPORTED
+    if source_record_id in exclusions:
+        return Disposition.EXCLUDED
+    return Disposition.REVIEW_REQUIRED
+
+
+def redispositioned_ledger(
+    ledger: SourceLedger,
+    package: CandidatePackage,
+    *,
+    exclusions: Mapping[str, ExclusionRecord],
+) -> SourceLedger:
+    """Re-derive every record's disposition from the candidates and exclusions now in the draft.
+
+    `build_source_ledger` derives the same thing but needs `EnumeratedSource`s, which only a run
+    that has just read the source bytes holds. Authoring one exclusion must not require re-reading
+    a source — the enumeration is already in the ledger and is not what changed — so this applies
+    `_disposition_for` to the ledger's own rows and leaves every enumerated field untouched.
+
+    Disposition stays DERIVED: nothing here is told what a record should become, so an exclusion
+    that was not appended cannot produce an `excluded` row, and removing one would return the
+    record to `review_required` by the same rule.
+    """
+    by_record = _candidate_ids_by_record(package)
+    records: list[dict[str, Any]] = []
+    for record in ledger.records:
+        candidate_ids = sorted(by_record.get(record.source_record_id, ()))
+        records.append(
+            {
+                "source_record_id": record.source_record_id,
+                "source_id": record.source_id,
+                "normalized_locator": record.normalized_locator,
+                "disposition": _disposition_for(
+                    candidate_ids, record.source_record_id, exclusions
+                ).value,
+                "candidate_ids": candidate_ids,
+            }
+        )
+    try:
+        return SourceLedger.model_validate(
+            {
+                "ledger_version": ledger.ledger_version,
+                "sources": [source.model_dump(mode="json") for source in ledger.sources],
+                "records": records,
+            }
+        )
+    except ValidationError as exc:
+        raise CandidateImportError(
+            f"the re-dispositioned source ledger is not valid ({exc.error_count()} field error(s))"
+        ) from exc
+
+
 def build_source_ledger(
     sources: Sequence[EnumeratedSource],
     package: CandidatePackage,
@@ -486,26 +558,20 @@ def build_source_ledger(
     Gate B blocker. There is no fourth branch, which is what makes the three counts sum to the
     denominator by construction rather than by a check.
     """
-    by_record: dict[str, list[str]] = {}
-    for candidate in package.candidates:
-        by_record.setdefault(candidate.source_record_id, []).append(candidate.candidate_id)
+    by_record = _candidate_ids_by_record(package)
 
     records: list[dict[str, Any]] = []
     for source in sources:
         for record in source.records:
             candidate_ids = sorted(by_record.get(record.source_record_id, ()))
-            if candidate_ids:
-                disposition = Disposition.IMPORTED
-            elif record.source_record_id in exclusions:
-                disposition = Disposition.EXCLUDED
-            else:
-                disposition = Disposition.REVIEW_REQUIRED
             records.append(
                 {
                     "source_record_id": record.source_record_id,
                     "source_id": record.source_id,
                     "normalized_locator": record.normalized_locator,
-                    "disposition": disposition.value,
+                    "disposition": _disposition_for(
+                        candidate_ids, record.source_record_id, exclusions
+                    ).value,
                     "candidate_ids": candidate_ids,
                 }
             )

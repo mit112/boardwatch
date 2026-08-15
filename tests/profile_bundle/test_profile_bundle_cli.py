@@ -47,6 +47,7 @@ EXPECTED_COMMANDS = (
     "checkout",
     "conflicts",
     "edit-fact",
+    "exclude-record",
     "init",
     "inspect",
     "inventory",

@@ -34,6 +34,23 @@ All notable changes to this project are documented here. The format follows
   `review_required` record for the bundle to be *complete*. Nothing is inferred and nothing is
   guessed: a line the deterministic lane cannot type is deferred with a reason, never approximated.
 
+- **Authored exclusions — `profile-bundle exclude-record`.** The other way a `review_required`
+  record leaves the Gate B blocker bucket: the owner says why it is not material, with a reason from
+  §18's closed seven-member catalog and a required rationale. Three documents move together — the
+  exclusion, the ledger row whose disposition is *re-derived* from it (never authored), and the
+  extraction-report entry that retires because §6.3a forbids one on an excluded record.
+
+  An exclusion cannot be taken back: nothing removes one and a record carries exactly one reason, so
+  every check runs before the first byte, as a diff of the real validation layers over the
+  prospective tree — including the completeness layer that owns the drain reconciliation, which no
+  authoring command's closing revalidation reaches.
+
+  `owner_excluded` is the one reason that costs an `approve_source_record_exclusion` sub-approval.
+  It is derived from the write, shown by `approve`, and filed in that candidate's single stamp;
+  promoting without it is `missing_owner_approval`. The stamp now binds
+  `source_exclusion_target_digest` — the function §18 names — rather than a second spelling of the
+  same join.
+
 - **Candidate promotion — `profile-bundle promote-candidates`.** Turns one source's imported
   candidates into the renderable graph: entities, `FactRecord`s, and the `SkillRecord`s whose
   `skill_id` is a real reference. It is grounded and owner-mediated by construction — **every fact

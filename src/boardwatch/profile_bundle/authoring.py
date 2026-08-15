@@ -44,7 +44,7 @@ from __future__ import annotations
 import os
 import tempfile
 import unicodedata
-from collections.abc import Mapping, Sequence
+from collections.abc import Callable, Iterable, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import date, datetime
 from pathlib import Path, PurePosixPath
@@ -109,6 +109,7 @@ from boardwatch.profile_bundle.imports import (
     build_source_ledger,
     enumerate_source,
     rebuild_source_candidates,
+    redispositioned_ledger,
 )
 from boardwatch.profile_bundle.index import build_index, record_id_of
 from boardwatch.profile_bundle.models.base import (
@@ -146,6 +147,7 @@ from boardwatch.profile_bundle.models.imports import (
     ExtractionReport,
     ExtractionReportReason,
     SourceLedger,
+    SourceLedgerRecord,
 )
 from boardwatch.profile_bundle.models.manifests import (
     BundleManifest,
@@ -181,6 +183,7 @@ from boardwatch.profile_bundle.storage import (
     selected_documents,
 )
 from boardwatch.profile_bundle.validation import (
+    ValidationContext,
     context_from_documents,
     load_documents,
     parse_error_diagnostics,
@@ -189,6 +192,7 @@ from boardwatch.profile_bundle.validation import (
     validate_structural,
 )
 from boardwatch.profile_bundle.validation.evidence import validate_evidence_structural
+from boardwatch.profile_bundle.validation.imports import imports_completeness, validate_imports
 from boardwatch.profile_bundle.yaml_loader import load_yaml_bytes
 from boardwatch.profile_bundle.yaml_writer import document_bytes
 
@@ -355,6 +359,24 @@ class FactAddition:
     draft_name: str
     fact_id: str
     document: str
+    owner_gates: tuple[ApprovalDecision, ...]
+
+
+@dataclass(frozen=True)
+class RecordExclusion:
+    """What `exclude-record` did: one exclusion, and the disposition it re-derived."""
+
+    draft_name: str
+    source_record_id: str
+    reason: str
+    #: What the record was dispositioned before this write — `review_required` in every case the
+    #: command admits, reported so the operator can see the denominator move rather than infer it.
+    previous_disposition: str
+    disposition: str
+    #: The paths this write actually rewrote, in the order they landed. `imports/extraction-report`
+    #: is absent when the record carried no drain reason to retire, and saying so is the difference
+    #: between "nothing to do" and "silently skipped".
+    documents: tuple[str, ...]
     owner_gates: tuple[ApprovalDecision, ...]
 
 
@@ -651,6 +673,80 @@ def add_fact(
             draft_name=draft_name,
             fact_id=fact_id,
             document=path.as_posix(),
+            owner_gates=_gates(documents, changed),
+        )
+    )
+
+
+def exclude_record(
+    bundle_root: Path,
+    *,
+    draft_name: str,
+    source_record_id: str,
+    reason: str,
+    rationale: str,
+) -> OperationOutcome[RecordExclusion]:
+    """Account for one enumerated source record by excluding it, with a reason and a rationale.
+
+    §18's denominator is `len(source-ledger.records)`, and `review_required` is the Gate B blocker
+    that says a record has not been accounted for. A record with no candidate assertion in it can
+    only leave that bucket one way — an exclusion — and until this command there was no way to
+    author one, so the only route was hand-editing two documents and hoping the third agreed.
+
+    **Disposition is still derived, never authored.** This appends the exclusion and then asks
+    `redispositioned_ledger` what every record now is, using the same three-branch rule
+    `build_source_ledger` applies after an import. Writing `disposition: excluded` directly would
+    make the ledger a second source of truth for a fact `imports/exclusions.yaml` already states.
+
+    **Three documents move together, which is why this is a command.** The exclusion, the ledger
+    row it re-derives, and — when the record was carrying one — the `imports/extraction-report.yaml`
+    entry that explained why it was still unresolved. §6.3a forbids a report entry for an excluded
+    record, so leaving that behind reconciles to `import_denominator_mismatch`; and because that
+    check lives in the completeness tier, which no authoring command's closing revalidation runs,
+    the mistake would not have shown up until `promote`.
+
+    **An exclusion cannot be taken back.** Nothing in this package removes one, `ExclusionLedger`
+    refuses a second exclusion for the same record, and a wrong `reason` therefore cannot be
+    corrected by appending a better one — so every check here runs before the first byte, and the
+    catalog check is the same prospective-tree DIFF `edit-fact` and `add-fact` use, over the layer
+    set that judges an import ledger.
+
+    `owner_excluded` is the one reason that costs an owner approval (§18). Nothing extra happens
+    here for it: `_gates` derives it from the write like every other gate, and `approve` is where
+    the owner answers for it.
+    """
+    try:
+        tree = _draft(bundle_root, draft_name)
+        documents = _load(tree)
+        ledger = _source_ledger(documents)
+        package = _candidate_package(documents)
+        exclusion_document = _exclusion_document(documents)
+        report = _extraction_report(documents)
+
+        record = _excludable_record(ledger, exclusion_document, source_record_id)
+        appended = _exclusion_appended(exclusion_document, source_record_id, reason, rationale)
+        exclusions = {item.source_record_id: item for item in appended.exclusions}
+        rebuilt = _redispositioned(ledger, package, exclusions)
+        changed: dict[PurePosixPath, DocumentModel] = {
+            IMPORT_EXCLUSIONS_PATH: appended,
+            SOURCE_LEDGER_PATH: rebuilt,
+        }
+        drained = _report_without_dispositioned(report, rebuilt)
+        if drained is not None:
+            changed[EXTRACTION_REPORT_PATH] = drained
+        _catalog_admits(tree, documents, changed, layers=_LEDGER_LAYERS)
+        _write_documents(tree, changed)
+    except _Refused as refusal:
+        return outcome_with(None, refusal.diagnostics)
+
+    return OperationOutcome.clean(
+        RecordExclusion(
+            draft_name=draft_name,
+            source_record_id=source_record_id,
+            reason=reason,
+            previous_disposition=record.disposition.value,
+            disposition=Disposition.EXCLUDED.value,
+            documents=tuple(path.as_posix() for path in changed),
             owner_gates=_gates(documents, changed),
         )
     )
@@ -993,7 +1089,7 @@ def _candidate_package(documents: BundleDocuments) -> CandidatePackage:
     return document
 
 
-def _exclusions(documents: BundleDocuments) -> dict[str, ExclusionRecord]:
+def _exclusion_document(documents: BundleDocuments) -> ExclusionLedger:
     document = documents.by_path.get(IMPORT_EXCLUSIONS_PATH)
     if not isinstance(document, ExclusionLedger):
         raise _refusal(
@@ -1001,7 +1097,142 @@ def _exclusions(documents: BundleDocuments) -> dict[str, ExclusionRecord]:
             f"the draft has no {IMPORT_EXCLUSIONS_PATH}, so no record's disposition can be derived",
             path=IMPORT_EXCLUSIONS_PATH.as_posix(),
         )
-    return {record.source_record_id: record for record in document.exclusions}
+    return document
+
+
+def _exclusions(documents: BundleDocuments) -> dict[str, ExclusionRecord]:
+    return {
+        record.source_record_id: record
+        for record in _exclusion_document(documents).exclusions
+    }
+
+
+def _excludable_record(
+    ledger: SourceLedger, exclusions: ExclusionLedger, source_record_id: str
+) -> SourceLedgerRecord:
+    """The ledger row this exclusion will account for, or the refusal that says why it cannot.
+
+    Three refusals, and each names a state the models would otherwise reject *after* the write with
+    a message about the assembled document rather than about the operator's argument:
+
+    - a record the ledger does not enumerate is not in the denominator at all, so excluding it
+      would add an exclusion that reconciles against nothing;
+    - a record already excluded cannot be excluded twice — `ExclusionLedger` refuses that, and it
+      is also the reason a wrong `reason` is not correctable, so it is worth saying plainly;
+    - an `imported` record names candidates, and `SourceLedgerRecord` refuses a non-imported row
+      that names any. Retracting those candidates is a re-extraction, not an exclusion.
+    """
+    row = next(
+        (item for item in ledger.records if item.source_record_id == source_record_id), None
+    )
+    if row is None:
+        raise _refusal(
+            IssueCode.BROKEN_REFERENCE,
+            f"{source_record_id} is not a record {SOURCE_LEDGER_PATH} enumerates, so there is "
+            "nothing to account for; `inventory` lists the records this draft holds",
+            path=SOURCE_LEDGER_PATH.as_posix(),
+            record_id=source_record_id,
+        )
+    if source_record_id in exclusions.by_record:
+        raise _refusal(
+            IssueCode.DUPLICATE_RECORD_ID,
+            f"{source_record_id} is already excluded in {IMPORT_EXCLUSIONS_PATH}; one record "
+            "carries one reason, and no command removes an exclusion, so this cannot be re-decided "
+            "by appending another",
+            path=IMPORT_EXCLUSIONS_PATH.as_posix(),
+            record_id=source_record_id,
+        )
+    if row.disposition is Disposition.IMPORTED:
+        raise _refusal(
+            IssueCode.IMPORT_MISSING_EXCLUSION,
+            f"{source_record_id} is dispositioned imported and names "
+            f"{len(row.candidate_ids)} candidate(s); a record that produced a candidate assertion "
+            "is already accounted for, and excluding it would leave those candidates in no "
+            "disposition",
+            path=SOURCE_LEDGER_PATH.as_posix(),
+            record_id=source_record_id,
+        )
+    return row
+
+
+def _exclusion_appended(
+    document: ExclusionLedger, source_record_id: str, reason: str, rationale: str
+) -> ExclusionLedger:
+    """`imports/exclusions.yaml` with one exclusion appended, rebuilt through its own model.
+
+    Appended rather than sorted: the document has no ordering rule, and re-sorting it would make a
+    one-record change produce a diff across every row of a bundle an owner is expected to read.
+
+    The reason and the rationale are handed to `ExclusionReason` and `NonBlankStr` rather than
+    re-checked here. That is D-115's rule — a closed catalog and a non-blank constraint are already
+    the refusal, and restating either would be a second spelling of a rule free to drift from the
+    one the schema publishes.
+    """
+    payload = document.model_dump(mode="json")
+    payload["exclusions"] = [
+        *payload["exclusions"],
+        {
+            "source_record_id": source_record_id,
+            "reason": reason,
+            "rationale": rationale,
+        },
+    ]
+    try:
+        return ExclusionLedger.model_validate(payload)
+    except ValidationError as exc:
+        first = exc.errors()[0]
+        raise _refusal(
+            IssueCode.MODEL_VALIDATION_ERROR,
+            f"the exclusion is not a valid record: {exc.error_count()} problem(s); first at "
+            f"{'.'.join(str(part) for part in first['loc'])!r}: {first['msg']}",
+            path=IMPORT_EXCLUSIONS_PATH.as_posix(),
+            record_id=source_record_id,
+        ) from exc
+
+
+def _redispositioned(
+    ledger: SourceLedger,
+    package: CandidatePackage,
+    exclusions: Mapping[str, ExclusionRecord],
+) -> SourceLedger:
+    try:
+        return redispositioned_ledger(ledger, package, exclusions=exclusions)
+    except CandidateImportError as exc:
+        raise _refusal(
+            IssueCode.MODEL_VALIDATION_ERROR,
+            f"{SOURCE_LEDGER_PATH} would not be valid after this exclusion: {exc}",
+            path=SOURCE_LEDGER_PATH.as_posix(),
+        ) from exc
+
+
+def _report_without_dispositioned(
+    report: ExtractionReport, ledger: SourceLedger
+) -> ExtractionReport | None:
+    """The drain with every entry retired whose record is no longer `review_required`, or `None`.
+
+    `None` means "this write does not touch the report", which is not the same as an empty report:
+    rewriting a document a change did not alter would put it in `RecordExclusion.documents` and
+    tell the operator something happened to it.
+
+    §6.3a's rule is the one applied — a report entry belongs to a `review_required` record and to
+    no other — read off the REBUILT ledger, so the entry retires because the disposition moved and
+    not because this command assumed it would.
+    """
+    unresolved = {
+        row.source_record_id
+        for row in ledger.records
+        if row.disposition is Disposition.REVIEW_REQUIRED
+    }
+    kept = [
+        entry.model_dump(mode="json")
+        for entry in report.entries
+        if entry.source_record_id in unresolved
+    ]
+    if len(kept) == len(report.entries):
+        return None
+    return ExtractionReport.model_validate(
+        {"report_version": report.report_version, "entries": kept}
+    )
 
 
 def _predicate_catalog(documents: BundleDocuments) -> PredicateCatalog:
@@ -1649,6 +1880,17 @@ _RECORD_LAYERS: Final = (
     validate_semantic,
 )
 
+#: What an IMPORT-LEDGER write is judged by, which is the record set plus the two layers that read
+#: the import documents it moves. `validate_imports` owns the ledger's arithmetic and its
+#: reconciliation with `imports/exclusions.yaml`; `imports_completeness` owns §6.3a's drain
+#: reconciliation with `imports/extraction-report.yaml`. The completeness one is not optional here:
+#: it is the ONLY layer that reports a report entry left behind on a record that is no longer
+#: `review_required`, an authoring command's closing revalidation does not run the completeness
+#: tier, and no command removes an exclusion — so a write that got it wrong would be both invisible
+#: and permanent. `validate_history` and `validate_digest` are still excluded, for their own
+#: reasons: a draft has no stamp to check and the manifest describes bytes not yet written.
+_LEDGER_LAYERS: Final = (*_RECORD_LAYERS, validate_imports, imports_completeness)
+
 
 def _evidence_naming(
     documents: BundleDocuments,
@@ -1719,7 +1961,11 @@ def _evidence_naming(
 
 
 def _catalog_admits(
-    tree: Path, before: BundleDocuments, changed: Mapping[PurePosixPath, DocumentModel]
+    tree: Path,
+    before: BundleDocuments,
+    changed: Mapping[PurePosixPath, DocumentModel],
+    *,
+    layers: Sequence[Callable[[ValidationContext], Iterable[Diagnostic]]] = _RECORD_LAYERS,
 ) -> None:
     """Refuse a write the predicate catalog would reject, BEFORE the first byte is written (§12).
 
@@ -1742,12 +1988,17 @@ def _catalog_admits(
     `validate_evidence_structural`. The three layers left out judge things this write does not
     touch: `history` and `imports` read ledgers, and `digest` compares a manifest to bytes on disk,
     which is exactly what has not been written yet.
+
+    **Which layers, though, is the caller's — because "what this write does not touch" is.** A fact
+    write is judged by `_RECORD_LAYERS`; an import-ledger write moves the very ledgers that set
+    leaves out, so `exclude_record` passes `_LEDGER_LAYERS`. The diff engine is one function either
+    way, so the "refuse what this write introduces" rule cannot be implemented twice and differ.
     """
     after = BundleDocuments(manifest=before.manifest, by_path={**before.by_path, **changed})
 
     def reported(documents: BundleDocuments) -> tuple[Diagnostic, ...]:
         ctx = context_from_documents(documents, root=tree, mode="draft")
-        return tuple(item for layer in _RECORD_LAYERS for item in layer(ctx))
+        return tuple(item for layer in layers for item in layer(ctx))
 
     found = tuple(item for item in reported(after) if item.tier in {"error", "blocker"})
     if not found:
@@ -2368,10 +2619,12 @@ __all__ = [
     "FactAddition",
     "FactEdit",
     "FiledApproval",
+    "RecordExclusion",
     "add_evidence",
     "add_fact",
     "approval_candidate",
     "edit_fact",
+    "exclude_record",
     "file_approval_stamp",
     "resolve_conflict",
 ]

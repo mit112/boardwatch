@@ -19,7 +19,12 @@ from dataclasses import dataclass
 from datetime import datetime
 from pathlib import PurePosixPath
 
-from boardwatch.profile_bundle.canonical import digest_of, normalized, record_digest
+from boardwatch.profile_bundle.canonical import (
+    digest_of,
+    normalized,
+    record_digest,
+    source_exclusion_target_digest,
+)
 from boardwatch.profile_bundle.errors import ProfileBundleError
 from boardwatch.profile_bundle.index import BundleIndex, build_index
 from boardwatch.profile_bundle.models.documents import BundleDocuments
@@ -113,13 +118,21 @@ def _exclusion_decisions(
             None,
         )
         old_ledger = parent_by_id.get(exclusion.source_record_id)
+        # `source_exclusion_target_digest` is §18's named target for this gate. Calling it rather
+        # than re-spelling the join here is what makes the documented binding the enforced one:
+        # with the join written out twice, the two could drift and no test would notice, because
+        # the helper had no caller at all.
         old_digest = (
-            digest_of([normalized(old_ledger), normalized(old_exclusion)])
+            source_exclusion_target_digest(old_ledger, old_exclusion)
             if old_ledger is not None and old_exclusion is not None
             else None
         )
+        # An exclusion whose record the ledger does not enumerate has no joined view to digest —
+        # `validate_referential` and `_dispositions_agree_with_the_exclusion_document` both report
+        # it. The decision is still emitted, over the exclusion alone, because dropping it would
+        # let an unenumerated `owner_excluded` record pass the one gate it owes.
         new_digest = (
-            digest_of([normalized(ledger), normalized(exclusion)])
+            source_exclusion_target_digest(ledger, exclusion)
             if ledger is not None
             else digest_of(normalized(exclusion))
         )

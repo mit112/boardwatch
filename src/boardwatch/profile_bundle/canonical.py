@@ -463,10 +463,18 @@ def source_scope_target_digest(source: SourceSpec, ledger: SourceLedgerSource) -
 
 
 def source_exclusion_target_digest(record: SourceLedgerRecord, exclusion: ExclusionRecord) -> str:
-    """`approve_source_record_exclusion`'s target: the ledger record joined with its exclusion."""
+    """`approve_source_record_exclusion`'s target: the ledger record joined with its exclusion.
+
+    A positional pair rather than a keyed mapping, and that is not a style choice: this function
+    shipped with no callers while `approvals.py` computed the same join inline as a two-element
+    list, so the digest an owner's stamp actually binds is the list one — it is already on disk in
+    every promoted revision that carries an `owner_excluded` exclusion. Re-keying it here would
+    have re-spelled a digest nothing can re-approve, so the helper was moved onto the enforced
+    spelling and `approvals.py` now calls it. One home; no promoted stamp changes value.
+    """
     if record.source_record_id != exclusion.source_record_id:
         raise CanonicalizationError(
             f"source-exclusion view joins mismatched records: {record.source_record_id!r} and "
             f"{exclusion.source_record_id!r}"
         )
-    return digest_of({"record": normalized(record), "exclusion": normalized(exclusion)})
+    return digest_of([normalized(record), normalized(exclusion)])
