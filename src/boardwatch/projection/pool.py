@@ -366,4 +366,6 @@ def _build_entry(
         dates=render_optional(entry_decl.dates, "dates"),
         subtitle=render_optional(entry_decl.subtitle, "subtitle"),
         location=render_optional(entry_decl.location, "location"),
+        link_url=render_optional(entry_decl.link_url, "link_url"),
+        link_label=render_optional(entry_decl.link_label, "link_label"),
     )

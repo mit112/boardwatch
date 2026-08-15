@@ -113,10 +113,19 @@ def _subheading(e: Entry) -> str:
     if e.title is None:
         return f"\\resumeSubheading{{{escape(e.heading)}}}{{}}{{}}{{}}"
     if e.kind == "project":
-        return (
-            f"\\resumeProjectHeading{{\\textbf{{{escape(e.title)}}} $|$ "
-            f"\\emph{{{escape(e.subtitle or '')}}}}}{{{escape(e.dates or '')}}}"
-        )
+        # Compose arg 1 from only the non-empty segments, joined by ` $|$ `: the bold name, the
+        # italic tech list (omitted when blank — an empty `\emph{}` would leave a stray `$|$`), and
+        # a clickable link when present. The URL is emitted VERBATIM (never escape()d — escaping
+        # would corrupt it); the label is display text and is escaped. URLs containing LaTeX
+        # specials (#, %, &, _, ~) are not handled — acceptable because the project URLs here
+        # (github.com/…, apps.apple.com/…) contain none.
+        segments = [f"\\textbf{{{escape(e.title)}}}"]
+        if e.subtitle:
+            segments.append(f"\\emph{{{escape(e.subtitle)}}}")
+        if e.link_url is not None:
+            label = escape(e.link_label or "")
+            segments.append(f"\\href{{{e.link_url}}}{{\\underline{{{label}}}}}")
+        return f"\\resumeProjectHeading{{{' $|$ '.join(segments)}}}{{{escape(e.dates or '')}}}"
     return (
         f"\\resumeSubheading{{{escape(e.title)}}}{{{escape(e.dates or '')}}}"
         f"{{{escape(e.subtitle or '')}}}{{{escape(e.location or '')}}}"

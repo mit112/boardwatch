@@ -40,6 +40,10 @@ class Entry(BaseModel):
     dates: str | None = None
     subtitle: str | None = None
     location: str | None = None
+    # A clickable heading link (project entries): the raw target URL and its display label. Both
+    # optional; the link segment renders only when `link_url` is set.
+    link_url: str | None = None
+    link_label: str | None = None
 
 
 class Resume(BaseModel):

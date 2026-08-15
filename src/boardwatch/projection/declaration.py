@@ -59,6 +59,10 @@ class EntryDeclaration(_Strict):
     subtitle: str | None = None
     dates: str | None = None
     location: str | None = None
+    #: A clickable heading link (project entries): the raw target URL and its display label. The
+    #: URL is emitted verbatim into `\href{...}` (not LaTeX-escaped), so it must be a plain URL.
+    link_url: str | None = None
+    link_label: str | None = None
     claims: tuple[str, ...] = ()
     #: Predicate ids whose facts render as this entry's bullets, in this order (D-188). The
     #: bundle already holds the accomplishment/contribution text as multi-valued facts; naming the

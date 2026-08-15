@@ -81,6 +81,62 @@ def test_emit_section_order_and_macros():
     assert r"\resumeProjectHeading" in src and r"{\textbf{Knowledge Forge} $|$ \emph{Python, Django}}{Sep 2023 -- Dec 2023}" in src
 
 
+def _project_resume(**entry_overrides) -> Resume:
+    base = dict(
+        entry_id="p1", heading="ignored", kind="project", title="Hookrail",
+        subtitle="Go, PostgreSQL, Redis", dates="June 2026 -- Present",
+        bullets=[Bullet(bullet_id="b1", text="Built a webhook service")],
+    )
+    base.update(entry_overrides)
+    return Resume(
+        header=["N", "e@example.com"], education=["ed"],
+        skill_groups=[SkillGroup(label="L", items=["Python"])],
+        entries=[Entry(**base)],
+    )
+
+
+def test_emit_project_heading_includes_href_when_link_present():
+    from boardwatch.tailor.render.latex import LatexRenderer
+
+    src = LatexRenderer().emit(
+        _project_resume(link_url="https://github.com/mit112/hookrail", link_label="GitHub")
+    )
+    # URL passes through byte-intact (never escape()d); label is escaped display text; the
+    # full heading composes name | tech | link, in that order.
+    assert (
+        r"{\textbf{Hookrail} $|$ \emph{Go, PostgreSQL, Redis} $|$ "
+        r"\href{https://github.com/mit112/hookrail}{\underline{GitHub}}}{June 2026 -- Present}"
+    ) in src
+
+
+def test_emit_project_heading_no_link_composes_name_and_tech_only():
+    from boardwatch.tailor.render.latex import LatexRenderer
+
+    # No link fields set: exactly name | tech, no \href and no trailing ' $|$ ' — the full macro
+    # call is asserted, which encodes both.
+    src = LatexRenderer().emit(_project_resume())
+    assert (
+        r"\resumeProjectHeading{\textbf{Hookrail} $|$ \emph{Go, PostgreSQL, Redis}}"
+        r"{June 2026 -- Present}"
+    ) in src
+
+
+def test_emit_project_heading_link_without_subtitle_has_no_empty_emph():
+    from boardwatch.tailor.render.latex import LatexRenderer
+
+    src = LatexRenderer().emit(
+        _project_resume(
+            title="StreakSync", subtitle=None, dates="2025",
+            link_url="https://apps.apple.com/us/app/x/id6755203446", link_label="App Store",
+        )
+    )
+    assert (
+        r"{\textbf{StreakSync} $|$ "
+        r"\href{https://apps.apple.com/us/app/x/id6755203446}{\underline{App Store}}}{2025}"
+    ) in src
+    assert r"\emph{}" not in src  # empty tech segment is dropped, not rendered blank
+
+
 def test_emit_escapes_bullets_and_firewall_roundtrips():
     from boardwatch.tailor.render.latex import LatexRenderer
 
