@@ -137,6 +137,31 @@ def test_emit_project_heading_link_without_subtitle_has_no_empty_emph():
     assert r"\emph{}" not in src  # empty tech segment is dropped, not rendered blank
 
 
+def test_emit_project_heading_escapes_link_label_but_not_url():
+    from boardwatch.tailor.render.latex import LatexRenderer
+
+    # The label is display text and must be LaTeX-escaped (unlike "GitHub", `R&D` actually
+    # exercises escape()); the URL is emitted verbatim, so its bytes survive intact.
+    src = LatexRenderer().emit(
+        _project_resume(link_url="https://example.test/r-and-d", link_label="R&D Repo")
+    )
+    assert r"\href{https://example.test/r-and-d}{\underline{R\&D Repo}}" in src
+    assert "R&D Repo" not in src  # the raw, unescaped ampersand never reaches the source
+
+
+def test_emit_project_heading_url_without_label_emits_no_link_segment():
+    from boardwatch.tailor.render.latex import LatexRenderer
+
+    # A directly-constructed Entry can carry link_url without link_label (the declaration forbids
+    # it, but the renderer must not emit an empty `\underline{}` and ship an invisible link): the
+    # whole link segment is dropped.
+    src = LatexRenderer().emit(
+        _project_resume(link_url="https://example.test/x", link_label=None)
+    )
+    assert "https://example.test/x" not in src  # the project's own link_url is never emitted
+    assert r"\underline{}" not in src  # and no empty-anchor link is produced
+
+
 def test_emit_escapes_bullets_and_firewall_roundtrips():
     from boardwatch.tailor.render.latex import LatexRenderer
 

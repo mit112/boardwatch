@@ -16,7 +16,7 @@ from pathlib import Path, PurePosixPath
 from typing import Any
 
 import yaml
-from pydantic import BaseModel, ConfigDict, Field, ValidationError
+from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_validator
 
 from boardwatch.profile_bundle.yaml_writer import document_bytes
 from boardwatch.projection.errors import ProjectionIssue, raise_violation
@@ -69,6 +69,18 @@ class EntryDeclaration(_Strict):
     #: predicate here — declared, never derived, like `kind` — turns them into bullets without a
     #: ClaimRecord. Empty means the entry's bullets come only from `claims`.
     bullet_predicates: tuple[str, ...] = ()
+
+    @model_validator(mode="after")
+    def _link_fields_are_paired(self) -> EntryDeclaration:
+        # A heading link needs both a target and a visible label: `link_url` without `link_label`
+        # would render an invisible `\href{url}{\underline{}}`, and a label without a URL is dead
+        # text. Refuse the half-declared case loudly rather than ship either.
+        if (self.link_url is None) != (self.link_label is None):
+            raise ValueError(
+                "link_url and link_label must be set together (a heading link needs both a "
+                "target URL and a visible label)"
+            )
+        return self
 
 
 class ProjectionDeclaration(_Strict):

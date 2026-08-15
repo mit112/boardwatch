@@ -122,9 +122,11 @@ def _subheading(e: Entry) -> str:
         segments = [f"\\textbf{{{escape(e.title)}}}"]
         if e.subtitle:
             segments.append(f"\\emph{{{escape(e.subtitle)}}}")
-        if e.link_url is not None:
-            label = escape(e.link_label or "")
-            segments.append(f"\\href{{{e.link_url}}}{{\\underline{{{label}}}}}")
+        # Both-or-neither is enforced on the declaration (`EntryDeclaration`); the guard here is
+        # belt-and-suspenders for a directly-constructed `Entry`, and keeps an incomplete link from
+        # emitting an empty `\underline{}` rather than shipping an invisible clickable link.
+        if e.link_url and e.link_label:
+            segments.append(f"\\href{{{e.link_url}}}{{\\underline{{{escape(e.link_label)}}}}}")
         return f"\\resumeProjectHeading{{{' $|$ '.join(segments)}}}{{{escape(e.dates or '')}}}"
     return (
         f"\\resumeSubheading{{{escape(e.title)}}}{{{escape(e.dates or '')}}}"

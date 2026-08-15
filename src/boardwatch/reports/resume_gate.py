@@ -211,6 +211,13 @@ def layout_scan_fields(resume: Resume) -> list[tuple[str, str]]:
             fields.append((e.subtitle, f"entry {e.entry_id!r} subtitle"))
         if e.location is not None:
             fields.append((e.location, f"entry {e.entry_id!r} location"))
+        # A link's visible label (and the URL it points at) render into the PDF like any other
+        # heading field, so both are scanned for leftover template artifacts — a `link_label:
+        # "TODO"` must be refused exactly as a `title: "TODO"` is, not shipped as a live link.
+        if e.link_url is not None:
+            fields.append((e.link_url, f"entry {e.entry_id!r} link_url"))
+        if e.link_label is not None:
+            fields.append((e.link_label, f"entry {e.entry_id!r} link_label"))
         fields.extend((b.text, f"bullet {b.bullet_id!r}") for b in e.bullets)
     fields.extend((line, "extracurricular") for line in resume.extracurricular)
     return fields

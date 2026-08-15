@@ -57,6 +57,19 @@ def test_an_out_of_catalog_kind_is_fatal_and_names_the_entity(tmp_path: Path) ->
     assert "project.packet-pantry" in exc.value.violation.where
 
 
+def test_a_link_url_without_a_label_is_fatal(tmp_path: Path) -> None:
+    """A heading link needs both a target and a visible label: a lone link_url would render an
+    invisible ``\\href{url}{\\underline{}}``, so the half-declared case is refused at load."""
+    body = MINIMAL.replace(
+        "    heading: '{{@display_name}}'\n",
+        "    heading: '{{@display_name}}'\n    link_url: https://example.test/p\n",
+    )
+    with pytest.raises(ProjectionError) as exc:
+        load_declaration(_write(tmp_path, body))
+    assert exc.value.violation.issue is ProjectionIssue.MALFORMED_DECLARATION
+    assert "link_url and link_label" in exc.value.violation.message
+
+
 def test_a_duplicated_entity_id_is_fatal(tmp_path: Path) -> None:
     """Without this, `entry_id = "entry." + entity_id` is not total and the failure surfaces
     much later as the frozen model's bare `duplicate entry_id` with no projection context."""

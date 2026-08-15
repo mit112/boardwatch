@@ -221,6 +221,24 @@ def test_validate_layout_rejects_template_artifact_in_bullet() -> None:
     assert exc_info.value.reason is GateReason.TEMPLATE_ARTIFACT
 
 
+def test_validate_layout_rejects_template_artifact_in_link_label() -> None:
+    # A link_label renders as visible `\underline{}` text, so it is scanned like any other
+    # heading field: a placeholder label must be refused, not shipped as a live clickable link.
+    r = _layout_resume(
+        entries=[
+            Entry(
+                entry_id="p1", heading="Proj", kind="project", title="Proj",
+                subtitle="Go", dates="2026",
+                link_url="https://example.test/p", link_label="TODO add the real link",
+                bullets=[_clean_bullet()],
+            )
+        ]
+    )
+    with pytest.raises(LayoutViolation) as exc_info:
+        validate_layout(r, LatexRenderer().emit(r))
+    assert exc_info.value.reason is GateReason.TEMPLATE_ARTIFACT
+
+
 def test_contains_template_artifact_detects_double_brace() -> None:
     assert contains_template_artifact("Worked on {{company}} launch project") == "{{"
 
