@@ -14,6 +14,8 @@ import pytest
 
 from boardwatch.profile_bundle.enumerators import (
     EnumeratedSourceRecord,
+    ResumeBullet,
+    ResumeEntry,
     derive_source_record_id,
 )
 from boardwatch.profile_bundle.extraction import (
@@ -57,25 +59,34 @@ def _record(locator: str, atomic_value: object) -> EnumeratedSourceRecord:
     )
 
 
-def _metadata(entry_id: str, kind: str, **fields: object) -> EnumeratedSourceRecord:
-    """A metadata record shaped like the enumerator's `entry.model_dump(exclude={'bullets'})`."""
-    value = {
-        "entry_id": entry_id,
-        "kind": kind,
-        "heading": fields.get("heading", ""),
-        "title": fields.get("title"),
-        "dates": fields.get("dates"),
-        "subtitle": fields.get("subtitle"),
-        "location": fields.get("location"),
-    }
+def _metadata(entry_id: str, kind: str, **fields: str | None) -> EnumeratedSourceRecord:
+    """A metadata record shaped like the enumerator's real
+    `entry.model_dump(mode="json", exclude={'bullets'})` (enumerators.py:532).
+
+    Built from an actual `ResumeEntry` instance rather than a hand-typed dict: a field the
+    model adds, drops, or renames changes this fixture's shape too, instead of leaving it
+    stale while the real enumerator moves on.
+    """
+    entry = ResumeEntry(
+        entry_id=entry_id,
+        kind=kind,
+        heading=fields.get("heading") or "",
+        bullets=(),
+        title=fields.get("title"),
+        dates=fields.get("dates"),
+        subtitle=fields.get("subtitle"),
+        location=fields.get("location"),
+    )
+    value = entry.model_dump(mode="json", exclude={"bullets"})
     return _record(f"entries/{entry_id}/metadata", value)
 
 
 def _bullet(entry_id: str, bullet_id: str, text: str) -> EnumeratedSourceRecord:
-    return _record(
-        f"entries/{entry_id}/bullets/{bullet_id}",
-        {"bullet_id": bullet_id, "text": text, "tech_tags": []},
-    )
+    """A bullet record shaped like the enumerator's real `bullet.model_dump(mode="json")`
+    (enumerators.py:538), built from an actual `ResumeBullet` instance for the same reason."""
+    bullet = ResumeBullet(bullet_id=bullet_id, text=text)
+    value = bullet.model_dump(mode="json")
+    return _record(f"entries/{entry_id}/bullets/{bullet_id}", value)
 
 
 def _package(records: tuple[EnumeratedSourceRecord, ...]):
