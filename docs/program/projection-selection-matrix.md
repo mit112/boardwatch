@@ -1,0 +1,363 @@
+# The owner-labeled projection selection matrix (Task 20)
+
+> **Status: steps 1–2 recorded, step 3 UNLABELED.** The ten postings and their extracted JD skills are
+> measured and written down. **The rankings and cut lines are the owner's and are still blank.**
+>
+> **No scorer has been run against any of this** (Task 20, step 4). Do not run one until the labeled
+> version of this file is committed. A matrix labeled after seeing a scorer's output is a test that
+> agrees with itself.
+
+This is a prose document on purpose. It gets no `SHIPPED_DATA` entry, so it cannot drift into a fixture
+the scorer is tuned against. `projection/agreement.py` reads it only through a human transcribing each
+block into a `MatrixCase(jd_skills=..., expected=...)`.
+
+**Why it exists.** Two design rounds each picked an entry scorer analytically and a probe falsified both
+(D-158). D-163 then showed the four registered candidates are two behavioural families and *none* survives
+both probes, so they cannot break their own tie. D-168 made `--scorer` a required parameter with no
+default. This matrix is the only arbiter that can end that, and it does not exist until the rankings below
+are filled in. It sets **two** numbers, not one: the scorer (by rank agreement) and the **admission
+threshold** (from where each cut line falls).
+
+---
+
+## Before this matrix can be used: every entry is currently pinned
+
+Measured 2026-08-15 against live bundle revision 5 (`sha256:a4bdc0b2…`):
+
+| Fact | Value | How measured |
+|---|---|---|
+| Entries declared in `projection.yaml` | 11 | `project_pool(...).resume.entries` |
+| `pinned_entry_ids` | **all 11** | every row carries `pinned: true` |
+| `candidate_entry_ids` | **empty** | `project_pool(...).candidate_entry_ids` → `[]` |
+| Reservoir render | **2 pages** | `pdfinfo` on the revision-5 preview PDF |
+| `page_budget` | **1** | `profile.resume_max_pages` |
+
+**Consequence, and it is a blocker.** `select` compiles the pinned-only set first and refuses with
+`PINNED_SET_EXCEEDS_BUDGET` when it alone overflows the budget (`select.py:188-197`). The pinned-only set
+*is* the whole reservoir, which is 2 pages against a budget of 1. So `resume project --posting --scorer`
+cannot return a résumé today for **any** posting and **any** scorer — the refusal happens before a single
+score is computed.
+
+Pinning all 11 was right for Stage 1, where the point was to render the entire reservoir as a master. It
+makes Stage 2 inert. **Which entries stay pinned is the owner's data decision, not a code change** — one
+edit to `projection.yaml`'s `pinned:` flags, no rebuild, no promotion.
+
+The owner's own ground truth already implies most of the answer and is recorded here as a starting point,
+**not** as a decision taken: SDE = {Hookrail, Knowledge Forge, StreakSync, Random Forest}; iOS =
+{StreakSync, FlickSwiper, BirthdayQuest, Fond}; "work experience is largely fixed"; **"Nakshatra =
+drop-if-space"**, which by itself says at least one *experience* entry is a candidate rather than pinned.
+
+- [ ] **Owner decision, blocks Stage 2 independently of the rankings below:** which of the 11 are `pinned`?
+
+---
+
+## The candidate menu
+
+These are the ids to write in the rankings. **Use the `entry.` form**, not the bare `entity_id` the plan's
+template sketched: `agreement.rank_agreement` compares against a scorer's output, which is keyed by
+`Entry.entry_id`, and it raises `ValueError` unless both sides name exactly the same ids. Writing
+`project.fond` where the code expects `entry.project.fond` is a transcription defect the harness will
+catch loudly but only after the labeling session is over.
+
+| `entry_id` | Heading as rendered | Bullets |
+|---|---|---|
+| `entry.employment.saayam` | Full Stack Developer (Volunteer) — Saayam For All — Oct 2025–Present | 2 |
+| `entry.employment.nio-coop` | Software Engineering Co-Op — National Internet Observatory — Jul 2024–Feb 2025 | 3 |
+| `entry.employment.nakshatra` | Software Developer Intern — Nakshatra Eye Care — Mar 2021–Feb 2022 | 2 |
+| `entry.employment.sakec` | Software Engineer Intern — SAKEC Marathon — Feb 2021–Apr 2021 | 2 |
+| `entry.project.hookrail` | Hookrail | 4 |
+| `entry.project.knowledge-forge` | Knowledge Forge | 3 |
+| `entry.project.streaksync` | StreakSync | 4 |
+| `entry.project.crop-rf` | Random Forest Sampling for Crop Recommendation | 3 |
+| `entry.project.flickswiper` | FlickSwiper | 4 |
+| `entry.project.birthdayquest` | BirthdayQuest | 3 |
+| `entry.project.fond` | Fond | 3 |
+
+## How to fill this in
+
+For each posting: move the entries you would actually want on that résumé **above** the cut line, best
+first, and leave the rest below it. Ties are allowed — write tied ids on one line. Everything left below
+the line is an assertion too: it says that entry should **not** appear for this JD, and that is what fixes
+the admission threshold.
+
+Rank only what you would genuinely send. Do not rank to be consistent with a formula, and do not look at
+any scorer's output first — that is the one thing this document exists to prevent.
+
+---
+
+## Posting 10947 — Stripe, "Backend Engineer, Payments and Risk"  ·  role family: backend
+
+JD skills extracted (5): `AWS`, `Docker`, `GraphQL`, `Kubernetes`, `gRPC`
+
+Expected candidate entries, best first. Rank ties are allowed; write them on one line.
+
+1.
+2.
+3.
+—— below here should NOT appear ——
+- `entry.employment.saayam`
+- `entry.employment.nio-coop`
+- `entry.employment.nakshatra`
+- `entry.employment.sakec`
+- `entry.project.hookrail`
+- `entry.project.knowledge-forge`
+- `entry.project.streaksync`
+- `entry.project.crop-rf`
+- `entry.project.flickswiper`
+- `entry.project.birthdayquest`
+- `entry.project.fond`
+
+---
+
+## Posting 349 — Confluent, "Distributed Systems Software Engineer - WarpStream"  ·  role family: distributed systems
+
+JD skills extracted (14): `AWS`, `Azure`, `C++`, `Code review`, `Distributed systems`, `GCP`, `Go`,
+`HTML/CSS`, `High availability`, `Java`, `JavaScript`, `Kafka`, `Microservices`, `Python`
+
+Expected candidate entries, best first. Rank ties are allowed; write them on one line.
+
+1.
+2.
+3.
+—— below here should NOT appear ——
+- `entry.employment.saayam`
+- `entry.employment.nio-coop`
+- `entry.employment.nakshatra`
+- `entry.employment.sakec`
+- `entry.project.hookrail`
+- `entry.project.knowledge-forge`
+- `entry.project.streaksync`
+- `entry.project.crop-rf`
+- `entry.project.flickswiper`
+- `entry.project.birthdayquest`
+- `entry.project.fond`
+
+---
+
+## Posting 2012 — Affirm, "Software Engineer I, Backend (Collections)"  ·  role family: backend (new grad)
+
+JD skills extracted (8): `AWS`, `Code review`, `Distributed systems`, `High availability`, `Kotlin`,
+`Kubernetes`, `MySQL`, `Python`
+
+Expected candidate entries, best first. Rank ties are allowed; write them on one line.
+
+1.
+2.
+3.
+—— below here should NOT appear ——
+- `entry.employment.saayam`
+- `entry.employment.nio-coop`
+- `entry.employment.nakshatra`
+- `entry.employment.sakec`
+- `entry.project.hookrail`
+- `entry.project.knowledge-forge`
+- `entry.project.streaksync`
+- `entry.project.crop-rf`
+- `entry.project.flickswiper`
+- `entry.project.birthdayquest`
+- `entry.project.fond`
+
+---
+
+## Posting 6397 — Dropbox, "Infrastructure Software Engineer"  ·  role family: infrastructure
+
+JD skills extracted (5): `C++`, `Go`, `Java`, `Python`, `Security (word)`
+
+Expected candidate entries, best first. Rank ties are allowed; write them on one line.
+
+1.
+2.
+3.
+—— below here should NOT appear ——
+- `entry.employment.saayam`
+- `entry.employment.nio-coop`
+- `entry.employment.nakshatra`
+- `entry.employment.sakec`
+- `entry.project.hookrail`
+- `entry.project.knowledge-forge`
+- `entry.project.streaksync`
+- `entry.project.crop-rf`
+- `entry.project.flickswiper`
+- `entry.project.birthdayquest`
+- `entry.project.fond`
+
+---
+
+## Posting 12761 — Palantir, "Software Engineer - Apollo Platform"  ·  role family: platform (generalist)
+
+JD skills extracted (1): `CI/CD`
+
+> Kept deliberately. A one-skill JD is the degenerate case for every scorer — `mean_per_bullet` and
+> `mean_top_k` can only return 0 or 1/bullet-count, and `total_distinct` can only return 0 or 1 — so this
+> row is where the *admission threshold* does the deciding rather than the ranking. It is also a live
+> example of the thin-extraction case a real run will hit.
+
+Expected candidate entries, best first. Rank ties are allowed; write them on one line.
+
+1.
+2.
+3.
+—— below here should NOT appear ——
+- `entry.employment.saayam`
+- `entry.employment.nio-coop`
+- `entry.employment.nakshatra`
+- `entry.employment.sakec`
+- `entry.project.hookrail`
+- `entry.project.knowledge-forge`
+- `entry.project.streaksync`
+- `entry.project.crop-rf`
+- `entry.project.flickswiper`
+- `entry.project.birthdayquest`
+- `entry.project.fond`
+
+---
+
+## Posting 1372 — Ramp, "Mobile Engineer, iOS"  ·  role family: iOS
+
+JD skills extracted (9): `AI (umbrella)`, `Code review`, `Flask`, `Python`, `React`, `SQL (language)`,
+`Swift`, `TypeScript`, `iOS/Swift (mobile)`
+
+Expected candidate entries, best first. Rank ties are allowed; write them on one line.
+
+1.
+2.
+3.
+—— below here should NOT appear ——
+- `entry.employment.saayam`
+- `entry.employment.nio-coop`
+- `entry.employment.nakshatra`
+- `entry.employment.sakec`
+- `entry.project.hookrail`
+- `entry.project.knowledge-forge`
+- `entry.project.streaksync`
+- `entry.project.crop-rf`
+- `entry.project.flickswiper`
+- `entry.project.birthdayquest`
+- `entry.project.fond`
+
+---
+
+## Posting 19754 — Snap, "Software Engineer, iOS, Level 3"  ·  role family: iOS
+
+JD skills extracted (3): `Distributed systems`, `Observability (word)`, `iOS/Swift (mobile)`
+
+> Paired with 1372 on purpose. Both are iOS roles, but one extracts nine skills and one extracts three.
+> If a scorer ranks the iOS projects differently across these two, the difference is extraction depth,
+> not role fit — which is exactly the kind of thing a hand-labeled matrix can see and a formula cannot.
+
+Expected candidate entries, best first. Rank ties are allowed; write them on one line.
+
+1.
+2.
+3.
+—— below here should NOT appear ——
+- `entry.employment.saayam`
+- `entry.employment.nio-coop`
+- `entry.employment.nakshatra`
+- `entry.employment.sakec`
+- `entry.project.hookrail`
+- `entry.project.knowledge-forge`
+- `entry.project.streaksync`
+- `entry.project.crop-rf`
+- `entry.project.flickswiper`
+- `entry.project.birthdayquest`
+- `entry.project.fond`
+
+---
+
+## Posting 13160 — Spotify, "Android Engineer - Experience"  ·  role family: Android / mobile
+
+JD skills extracted (1): `Android (mobile)`
+
+> A mobile role whose single extracted skill matches **none** of the reservoir's bullets, all of which are
+> iOS/Swift. This is the honest near-miss: the owner may well want the iOS projects shown anyway, on
+> mobile-craft grounds a skill-intersection scorer cannot represent. Where the cut line lands here is a
+> real finding either way.
+
+Expected candidate entries, best first. Rank ties are allowed; write them on one line.
+
+1.
+2.
+3.
+—— below here should NOT appear ——
+- `entry.employment.saayam`
+- `entry.employment.nio-coop`
+- `entry.employment.nakshatra`
+- `entry.employment.sakec`
+- `entry.project.hookrail`
+- `entry.project.knowledge-forge`
+- `entry.project.streaksync`
+- `entry.project.crop-rf`
+- `entry.project.flickswiper`
+- `entry.project.birthdayquest`
+- `entry.project.fond`
+
+---
+
+## Posting 17187 — Zillow, "Machine Learning Engineer"  ·  role family: ML / data
+
+JD skills extracted (13): `AI (umbrella)`, `AWS`, `Airflow`, `CI/CD`, `Data pipelines`, `GCP`,
+`Kubernetes`, `Machine learning`, `PyTorch`, `Python`, `Spark`, `TensorFlow`, `TypeScript`
+
+Expected candidate entries, best first. Rank ties are allowed; write them on one line.
+
+1.
+2.
+3.
+—— below here should NOT appear ——
+- `entry.employment.saayam`
+- `entry.employment.nio-coop`
+- `entry.employment.nakshatra`
+- `entry.employment.sakec`
+- `entry.project.hookrail`
+- `entry.project.knowledge-forge`
+- `entry.project.streaksync`
+- `entry.project.crop-rf`
+- `entry.project.flickswiper`
+- `entry.project.birthdayquest`
+- `entry.project.fond`
+
+---
+
+## Posting 1370 — Ramp, "Software Engineer, Frontend"  ·  role family: frontend
+
+JD skills extracted (3): `JavaScript`, `React`, `TypeScript`
+
+> Same company as 1372, deliberately. The two JDs share Ramp's boilerplate and differ only in the
+> role-specific text, so a scorer that ranks them identically is reading the boilerplate. This is also the
+> family the reservoir is weakest in, which makes it the best test of the cut line.
+
+Expected candidate entries, best first. Rank ties are allowed; write them on one line.
+
+1.
+2.
+3.
+—— below here should NOT appear ——
+- `entry.employment.saayam`
+- `entry.employment.nio-coop`
+- `entry.employment.nakshatra`
+- `entry.employment.sakec`
+- `entry.project.hookrail`
+- `entry.project.knowledge-forge`
+- `entry.project.streaksync`
+- `entry.project.crop-rf`
+- `entry.project.flickswiper`
+- `entry.project.birthdayquest`
+- `entry.project.fond`
+
+---
+
+## Provenance
+
+Every posting above is a real, currently-open posting in the live store, `role=swe`, pulled with
+`boardwatch top 400 --no-record` on 2026-08-15 — `--no-record` so ranking for this document did not mark
+anything `seen` and did not advance the dedup queue.
+
+JD skills are **not** transcribed from `boardwatch show`, which reports only a `covers 7/9 skills` summary
+and never enumerates them. They come from `projection.posting.posting_context(engine, settings, id)
+.jd_skills` — the same call `resume project` makes, resolved against each posting's current open version
+and the live taxonomy. Recording them through a different path than the one Stage 2 reads would let the
+matrix and the scorer disagree about what the JD even says.
+
+Ten postings, by family: backend ×2 (10947, 2012), distributed systems (349), infrastructure (6397),
+platform (12761), iOS ×2 (1372, 19754), Android (13160), ML/data (17187), frontend (1370).
