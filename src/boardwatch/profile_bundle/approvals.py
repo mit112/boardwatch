@@ -24,6 +24,7 @@ from boardwatch.profile_bundle.canonical import (
     normalized,
     record_digest,
     source_exclusion_target_digest,
+    source_scope_target_digest,
 )
 from boardwatch.profile_bundle.errors import ProfileBundleError
 from boardwatch.profile_bundle.index import BundleIndex, build_index
@@ -56,7 +57,13 @@ def _changed(candidate: object, parent: object | None) -> bool:
 
 
 def _joined_source_digest(source: SourceSpec, ledger: object) -> str:
-    return digest_of([normalized(source), normalized(ledger)])  # type: ignore[arg-type]
+    """§13's `source_scope_target_digest`, called rather than re-spelled.
+
+    The join was written out here as well as there, and there it had no callers at all — so the
+    documented target and the enforced one were free to drift with nothing able to notice. That is
+    the same divergence `source_exclusion_target_digest` carried until D-192; this is its twin.
+    """
+    return source_scope_target_digest(source, ledger)  # type: ignore[arg-type]
 
 
 def _source_decisions(candidate: BundleIndex, parent: BundleIndex | None) -> list[ApprovalDecision]:

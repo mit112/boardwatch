@@ -453,13 +453,21 @@ def source_scope_target_digest(source: SourceSpec, ledger: SourceLedgerSource) -
 
     Joined because the approval covers the complete source policy record *and* the ledger's exact
     scope object; approving either half alone would let the other be widened for free.
+
+    A positional pair rather than a keyed mapping, for the same reason as
+    `source_exclusion_target_digest` below: this function shipped with no callers while
+    `approvals.py` computed the same join inline as a two-element list, so the digest an owner's
+    stamp actually binds is the list one. It is already on disk in every promoted revision that
+    carries an `approve_source_scope` decision. Re-keying it here would re-spell a digest nothing
+    can re-approve, so the helper was moved onto the enforced spelling and `approvals.py` now
+    calls it. One home; no promoted stamp changes value.
     """
     if source.source_id != ledger.source_id:
         raise CanonicalizationError(
             f"source-scope view joins mismatched sources: {source.source_id!r} and "
             f"{ledger.source_id!r}"
         )
-    return digest_of({"source": normalized(source), "ledger": normalized(ledger)})
+    return digest_of([normalized(source), normalized(ledger)])
 
 
 def source_exclusion_target_digest(record: SourceLedgerRecord, exclusion: ExclusionRecord) -> str:

@@ -9,11 +9,15 @@ from pydantic import ValidationError
 
 from boardwatch.profile_bundle.approvals import (
     ApprovalDecision,
+    _joined_source_digest,
     build_approval_stamp,
     required_approval_decisions,
 )
+from boardwatch.profile_bundle.canonical import source_scope_target_digest
 from boardwatch.profile_bundle.errors import ProfileBundleError
 from boardwatch.profile_bundle.models.history import ApprovalAction
+from boardwatch.profile_bundle.models.imports import SourceLedgerSource
+from boardwatch.profile_bundle.models.policy import SourceSpec
 
 
 def test_the_shared_fixture_is_a_promoted_revision_with_one_change_and_stamp(
@@ -155,3 +159,74 @@ def test_a_dotted_target_alone_still_derives_a_distinct_id_per_stamp() -> None:
     ]
 
     assert len(set(ids)) == 2
+
+
+# --------------------------------------------------------------------------------------
+# `approve_source_scope`'s joined target digest (§13) — the twin of the exclusion gate's
+# --------------------------------------------------------------------------------------
+
+#: The scope join as `approvals.py` has always spelled it, and therefore as every promoted
+#: revision's stamp already binds. Computed from the two records authored below, NOT from the
+#: function under test: a value read back off `source_scope_target_digest` would agree with
+#: whatever that function currently does, which is the one thing this pins.
+PINNED_SCOPE_DIGEST = "sha256:a254525715cf480835e1af23770cf7402952adf1341632c6cf379b6076d055d3"
+
+
+def _pinned_scope_pair() -> tuple[SourceSpec, SourceLedgerSource]:
+    source = SourceSpec.model_validate(
+        {
+            "source_id": "source.frozen-digest-pin",
+            "source_kind": "repository_markdown",
+            "portable_locator": "notes/source.md",
+        }
+    )
+    ledger = SourceLedgerSource.model_validate(
+        {
+            "source_id": "source.frozen-digest-pin",
+            "enumerator_id": "markdown-headings",
+            "enumerator_version": 1,
+            "source_content_digest": "sha256:" + "11" * 32,
+            "approved_scope": {"kind": "complete_file"},
+            "source_record_ids": [],
+        }
+    )
+    return source, ledger
+
+
+def test_the_scope_target_digest_keeps_the_spelling_already_on_disk() -> None:
+    """The positional-pair spelling `approvals.py` stamped while the helper had no caller.
+
+    A keyed `{"source": ..., "ledger": ...}` mapping is the natural thing to write here and
+    produces a different digest — which is exactly what `source_scope_target_digest` returned
+    while nothing called it, so no test could see the divergence. Re-spelling the enforced join
+    to match the helper would silently invalidate every `approve_source_scope` stamp already on
+    disk, so the helper is the side that moves.
+    """
+    source, ledger = _pinned_scope_pair()
+
+    assert source_scope_target_digest(source, ledger) == PINNED_SCOPE_DIGEST
+
+
+def test_the_enforced_scope_join_and_the_named_helper_are_one_value() -> None:
+    """§13 names `source_scope_target_digest` as this gate's target. Two spellings of one join
+    are two chances to disagree, and the disagreement is invisible: the owner stamps whatever
+    `approvals.py` computes, while the documented helper is what a reader checks against.
+    """
+    source, ledger = _pinned_scope_pair()
+
+    assert _joined_source_digest(source, ledger) == source_scope_target_digest(source, ledger)
+
+
+def test_the_enforced_scope_join_delegates_rather_than_re_spelling(monkeypatch) -> None:
+    """Equality alone would still hold if both sides re-derived the same join independently, and
+    that is the state this change exists to leave. Patching the name `approvals` resolves proves
+    the call actually happens, so a future inline re-spelling fails here rather than drifting.
+    """
+    sentinel = "sha256:" + "c" * 64
+    monkeypatch.setattr(
+        "boardwatch.profile_bundle.approvals.source_scope_target_digest",
+        lambda source, ledger: sentinel,
+    )
+    source, ledger = _pinned_scope_pair()
+
+    assert _joined_source_digest(source, ledger) == sentinel
