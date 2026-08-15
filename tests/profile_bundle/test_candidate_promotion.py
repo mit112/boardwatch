@@ -160,6 +160,38 @@ CATEGORY_COLLIDING_RESUME: dict[str, Any] = {
 }
 
 
+#: The fourth site of the same lossy-slug class — missed by D-203's sweep, found by its pre-push review.
+#: Both fact-id builders drop the entity KIND (`_entry_facts` uses `_slug(entity_id.split('.', 1)[1])`,
+#: `_tech_fact` uses `_slug(entry_id)`), so two entries of *different* kinds whose ids slug-collide get
+#: DISTINCT entity ids (`employment.alpha`, `project.alpha`), pass the D-203 entity guard, and still
+#: collide in the global fact-id namespace. The tech fact is the reachable arm: `.tech.` is hardcoded
+#: regardless of kind, whereas metadata/bullet facts carry kind-specific predicate locals that differ.
+FACT_ID_COLLIDING_RESUME: dict[str, Any] = {
+    "header": ["Ada Lovelace", "ada@example.com"],
+    "education": ["Example University, BSc"],
+    "skill_groups": [{"label": "Languages", "items": ["Python"]}],
+    "entries": [
+        {
+            "entry_id": "alpha",
+            "heading": "Engineer — Acme — Jan 2020–Feb 2021 — New York, NY",
+            "kind": "experience",
+            "title": "Engineer",
+            "dates": "Jan 2020 -- Feb 2021",
+            "location": "New York, NY",
+            "bullets": [{"bullet_id": "b1", "text": "Did A.", "tech_tags": ["Python"]}],
+        },
+        {
+            "entry_id": "Alpha",
+            "heading": "Alpha",
+            "kind": "project",
+            "title": "Alpha",
+            "dates": "Mar 2021 -- Present",
+            "bullets": [{"bullet_id": "p1", "text": "Did B.", "tech_tags": ["Python"]}],
+        },
+    ],
+}
+
+
 @dataclass(frozen=True)
 class Env:
     bundle_root: Path
@@ -425,6 +457,29 @@ def test_promotion_refuses_when_two_labels_collide_to_one_category_id(tmp_path: 
     (diag,) = outcome.diagnostics
     assert "front-end" in diag.message
     assert "Front End" in diag.message and "Front-End" in diag.message
+
+
+def test_promotion_refuses_when_two_entries_collide_to_one_fact_id(tmp_path: Path) -> None:
+    """The fourth site of the D-184 lossy-slug class, missed by D-203's sweep and caught by its
+    pre-push review. Both fact-id builders drop the entity kind, so `alpha`/experience and
+    `Alpha`/project get distinct entity ids, clear the D-203 entity guard, and still both emit
+    `fact.alpha.tech.python`. Before the guard this escaped as a bare pydantic `ValidationError`
+    (the duplicate reaches `UniqueSorted` on `supporting_fact_ids`, and no `PromotionError`
+    handler catches it) — never as a refusal naming the cause. It must refuse like its three
+    siblings, naming the shared fact id and both colliding subjects."""
+    env = _seed(tmp_path, FACT_ID_COLLIDING_RESUME)
+    outcome = authoring.promote_candidates(
+        env.bundle_root,
+        draft_name="baseline",
+        source_id=RESUME_SOURCE_ID,
+        source_bytes=env.resume_bytes,
+        as_of=AS_OF,
+    )
+    assert outcome.exit_code != 0, outcome
+    (diag,) = outcome.diagnostics
+    assert diag.code == "model_validation_error", diag
+    assert "fact.alpha.tech.python" in diag.message
+    assert "employment.alpha" in diag.message and "project.alpha" in diag.message
 
 
 def test_the_owner_confirmation_step_reaches_a_grounded_resume_skill(env: Env) -> None:

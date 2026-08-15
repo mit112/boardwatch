@@ -248,6 +248,29 @@ def build_promotion(
                 entity_facts[entry_id].append(fact)
                 supporting_by_skill[skill_id].append(fact.fact_id)
 
+    # Both fact-id builders drop the entity KIND -- `_entry_facts` uses
+    # `_slug(entity_id.split('.', 1)[1])` and `_tech_fact` uses `_slug(entry_id)` -- so two entries
+    # of *different* kinds whose ids slug-collide get distinct `entity_id`s, clear the guard above,
+    # and still collide here (`.tech.` is hardcoded, so the tech fact is the reachable arm; metadata
+    # and bullet facts carry kind-specific predicate locals). Within one entry, `counters` keyed on
+    # the raw predicate local while the id uses `_slug(local)` collides the same way. Neither merges
+    # silently at this layer, but both escape UNTYPED: the duplicate reaches `UniqueSorted` on
+    # `supporting_fact_ids` as a bare pydantic `ValidationError` that no `PromotionError` handler
+    # catches, or surfaces later as `DUPLICATE_RECORD_ID` at `validate`. Refuse where the cause is
+    # still nameable (D-205).
+    subject_by_fact_id: dict[str, str] = {}
+    for entry_id in sorted(by_entry):
+        for fact in entity_facts[entry_id]:
+            prior_subject = subject_by_fact_id.get(fact.fact_id)
+            if prior_subject is not None:
+                raise PromotionError(
+                    f"fact id {fact.fact_id!r} is derived from more than one candidate (subjects "
+                    f"{sorted({prior_subject, fact.subject_id})!r}): the id drops the entity kind "
+                    "and slugs the predicate, so these facts would collide in one id namespace. "
+                    "Rename the entries or predicates so their ids differ after slugging."
+                )
+            subject_by_fact_id[fact.fact_id] = fact.subject_id
+
     # Assemble entity documents now every fact (metadata, bullet, tech) is attached.
     fact_count = 0
     for entry_id in sorted(by_entry):
