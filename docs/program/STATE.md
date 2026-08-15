@@ -24,10 +24,10 @@ bundle**, not the old `resume.yaml` path. **P3, P6 and the 14-day clock are froz
 job-apps produces Mit's résumés daily (8/28/24/18 PDFs on 08-09…08-12). `resume.yaml` is now an **import
 source, never hand-fixed**, via adapter `boardwatch-resume-v1`.
 
-**On 2026-08-14 the bundle→résumé lane came alive, then was rebuilt into a MASTER RESERVOIR.** Full detail
-and the rebuild recipe: **memory `master-reservoir-built-from-wiki`** (read it before touching the bundle).
-Nothing sendable has been produced yet — **no application sent** — and Mit has not deemed the résumé
-application-worthy; individual bullets still get refined.
+**On 2026-08-14 the bundle→résumé lane came alive, then was rebuilt into a MASTER RESERVOIR**; on 08-15 its
+bullets were grounded against the real repositories. Detail: memories `master-reservoir-built-from-wiki`
+and `option-b-repo-grounded-bullets` (read before touching the bundle). Nothing sendable has been produced
+yet — **no application sent** — and the résumé is not yet deemed application-worthy.
 
 ### The active track — the master reservoir (bundle → résumé)
 
@@ -38,11 +38,14 @@ application-worthy; individual bullets still get refined.
 > Task 20) selects it down to one page. `resume.yaml` / `sections.tex` are thin per-JD OUTPUTS, **not** the
 > source — the wiki is.
 
-**Live bundle: `sha256:206786a3…` (revision 3, 2026-08-15), projection re-approved and `project` clean.**
+**Live bundle: `sha256:a4bdc0b2…` (revision 5, 2026-08-15), projection re-approved and `project` clean.**
 **11 entities** — 4 experience (Saayam, NIO co-op, Nakshatra, SAKEC) + 7 projects (Hookrail, Knowledge
-Forge, StreakSync, Random Forest, FlickSwiper, BirthdayQuest, Fond). ~95 facts, **91 owner-confirmed**, 14
-skills, **33 résumé bullets** (9 experience + 24 project), all wiki-grounded with real metrics. Validates
-**0 error**, and the 2-page PDF renders with **zero overfull and zero underfull hboxes**.
+Forge, StreakSync, Random Forest, FlickSwiper, BirthdayQuest, Fond). 107 facts (95 effective, 12
+superseded), 14 skills, **33 résumé bullets** (9 experience + 24 project), and **6 evidence records** — the
+owner attestation plus five `repository_artifact` captures pinned to full commits (D-191). Validates
+**0 error**, and the 2-page PDF renders with **zero overfull** hboxes and **two underfull** ones in the
+Skills block — pre-existing, cosmetic, caused by a trailing `\\`. *(This file previously claimed zero
+underfull. It was never measured; re-rendering revision 3 through the same path emits the same two.)*
 
 **Re-promoting always stales the projection approval** (D-167 — `pool.py` re-checks the stamp's bundle
 digest unconditionally), so `project` refuses with `stale_approval_stamp` until `approve-projection` runs
@@ -53,12 +56,19 @@ all: memory `render-preview-without-tty-approve`.
 StreakSync, Random Forest}; iOS = {StreakSync, FlickSwiper, BirthdayQuest, Fond}; Nakshatra = drop-if-space.
 
 **Catalog change (Mit's "Option A"):** `project.contribution` was widened to `owner_attested` in **his bundle's**
-`policy/predicates.yaml` (the shipped builtin stays strict), so project bullets render on his attestation. This
-dropped Gate B to **7 blockers** — 4 `employment.organization` (`private_document`) + 3 `review_required`
-import items; the 11 project contributions are now resolved. "Option B" (LATER, new session): supply repo
-evidence per project AND use the repos to sharpen the bullets. Still true from before: **D-187** (`skill_groups`
-optional → synthesized) and **D-188** (`bullet_predicates` render bullets from facts); Path 1 (ClaimRecord)
-deferred.
+`policy/predicates.yaml` (the shipped builtin stays strict), so project bullets render on his attestation.
+Gate B sits at **7 blockers** — 4 `employment.organization` (`private_document`) + 3 `review_required`
+import items. Still true: **D-187** (`skill_groups` optional → synthesized) and **D-188**
+(`bullet_predicates` render bullets from facts); Path 1 (ClaimRecord) deferred.
+
+**"Option B" is DONE (2026-08-15, D-191).** All five project repositories were measured against the live
+bullets and **every one carried a false claim** — 12 bullets corrected (hookrail 219→218 Go files;
+StreakSync 335→**446** tests, its "27 warnings" unverifiable and CloudKit removed not shipped; FlickSwiper
+128→127 and a "no third-party libraries" overclaim; BirthdayQuest 15/5→**13/4**; Fond's widgets are
+iPhone/iPad only, the macOS and visionOS targets having been deleted). Five `repository_artifact` records
+now ground them. **Facts stay `owner_attested` deliberately**: `edit-fact` refuses any other basis, so
+flipping to `repository_verified` would forfeit the D-190 edit path for the records iterated most.
+Knowledge Forge has no repo and Crop-RF is a paper, so both stay attestation-backed.
 
 **The incremental-edit path SHIPPED (2026-08-14, D-190)** — the top workflow debt is cleared. A content
 change no longer rebuilds anything: `checkout --draft <name>` → `profile-bundle edit-fact --fact-id F
@@ -80,22 +90,27 @@ unlike the org fact, which `edit-fact` can **never** touch (`legal_verification_
 fits, measured through tectonic. All four now fit (82/77/77/91). The org fact *values* were also re-authored
 to just the employer name: invisible today (they are `unresolved`), correct for when the documents land.
 
-**Owed next — 1 and 2 are Mit's alone; do not start 3–6 unilaterally:**
-1. **Gate B's 7 blockers** (measured 2026-08-15: 4 `missing_review_state` on the `employment.organization`
-   facts + 3 `import_record_undispositioned`; **0 errors**). Mit's employment documents. Highest-leverage
-   step to a sendable résumé, and they also unlock the one cosmetic gap left: the template emits
-   `\resumeSubheading{...}{}{}{}` with everything in argument one, so Experience is a single bold line while
-   **Education uses the macro properly** (title left, dates right). The heading grammar already admits
-   `{predicate}` placeholders, so `'{employment.title} — {employment.organization} — {employment.date_range}
-   — {entity.location}'` is expressible the day `employment.organization` resolves.
-2. **Individual bullet refinement**, ongoing, before the résumé is application-worthy. **Adding metrics is
-   now cheap** — one `edit-fact` per bullet. Source real numbers from the wiki/repos, never fabricate.
+**Owed next — 1 and 2 are Mit's alone; do not start 3–5 unilaterally:**
+1. **Gate B's 7 blockers.** The 4 `missing_review_state` need **Mit's employment documents** (each
+   `employment.organization` fact needs `private_document` evidence; `edit-fact` can never touch them). The
+   3 `import_record_undispositioned` are `education/1`, `education/2`, `header/2` and need **no document at
+   all** — disposition is derived, so only an owner **exclusion** clears them, which is what
+   `exclude-record` was built for (D-192, unmerged). Closing the 4 also unlocks the last cosmetic gap: the
+   template emits `\resumeSubheading{...}{}{}{}` with everything in argument one, so Experience is a single
+   bold line while **Education uses the macro properly**. The heading grammar admits `{predicate}`
+   placeholders, so `'{employment.title} — {employment.organization} — {employment.date_range} —
+   {entity.location}'` is expressible the day `employment.organization` resolves.
+2. **Individual bullet refinement**, ongoing, before the résumé is application-worthy — one `edit-fact` per
+   bullet, real numbers only. **Offered and declined-by-default:** hookrail's CI chaos suite (7 failure
+   scenarios, jobs that kill the Postgres primary and Redis master under load asserting RPO=0) is the
+   strongest unclaimed material found and was deliberately **not** added — a new claim would be asserted on
+   Mit's behalf against an attestation covering only wording he has read (D-191).
 3. **Stage 2 / Task 20** — the scorer that turns the reservoir into per-JD résumés; needs Mit's posting
-   rankings (his SDE/iOS sets above are the start).
-4. **Option B** — ground project bullets against the real repos (new session).
-5. **§5.2 invariant 3** — the last owed audit invariant; needs a heavy builtin-catalog grounding fixture.
+   rankings (his SDE/iOS sets above are the start). **This is now the binding constraint on a sendable
+   per-JD résumé.**
+4. **§5.2 invariant 3** — the last owed audit invariant; needs a heavy builtin-catalog grounding fixture.
    Get Mit's effort/value call.
-6. **Two D-184 latent findings, both needing a design call** — (a) a partial emission silently drops fields
+5. **Two D-184 latent findings, both needing a design call** — (a) a partial emission silently drops fields
    (`run_extraction` records a drain reason only when a record produces *no* candidate, so a malformed date
    emits its other facts and reaches `imported` losing the date). All 6 live entries parse, so nothing is
    lost today. (b) A skill-id slug collision silently merges two skills (`C++`/`C#` → `skill.c`); Mit's 58
@@ -103,35 +118,33 @@ to just the employer name: invisible today (they are `unresolved`), correct for 
    deliberately last, and **promoting `header/1`'s `person.professional_name`** (`candidate_promotion.py:180`
    skips `header/*` unconditionally).
 
-**Carried authoring facts (D-185/186/190).** **`approve` does NOT validate** — `approval_candidate` checks
-the manifest type, the parent digest and quarantined captures and nothing else, so a draft carrying four
-errors stamps cleanly and only `promote` refuses (measured 2026-08-15). Always `validate --draft` before
-asking Mit to approve; `edit-fact`/`add-fact`/`add-evidence` revalidate for you, a hand edit does not.
-`add-evidence` needs `--draft --evidence-file --capture`; hand-authoring evidence leaves
-`evidence_set_digest` stale (take the computed one from `validate --json`). No CLI command confirms a skill
-(hand edit; `promote-candidates` is one-shot); skills are absent from the `ApprovalAction` catalog. Each
-bundle gets exactly one `init` draft, and `baseline` is spent — `checkout` a fresh one. **Two seams
-(D-181):** the builtin and comprehensive-example catalogs are independent (D-179), so the example bundle is
-not a valid extraction host for a résumé *with projects*; a fresh `init` is.
+**Carried authoring facts (D-185/186/190/191).** **Three guarantees are each narrower than their name**, and
+all three cost a real defect to learn: **`approve` does NOT validate** (it checks manifest type, parent
+digest, quarantined captures — nothing else, so a draft with four errors stamps cleanly and only `promote`
+refuses); **a plain `validate` cannot see Gate B** (the completeness tier owns it, and every authoring
+command's closing revalidation runs the validity tier only — so `clean` from `edit-fact` says nothing about
+whether Gate B moved); and **`_catalog_admits` is a DIFF** that refuses only what a write *introduces*, so a
+write that silently *removes* findings passes every layer. Always `validate --draft` before Mit approves,
+and `--completeness` too for anything touching `policy/`, the ledger or imports. `add-evidence` needs
+`--draft --evidence-file --capture`; a hand edit leaves `evidence_set_digest` stale (take the computed one
+from `validate --json`). No CLI confirms a skill; each bundle gets one `init` draft and `baseline` is spent.
+**Two seams (D-181):** the builtin and comprehensive-example catalogs are independent (D-179), so the
+example bundle is not a valid extraction host for a résumé *with projects*; a fresh `init` is.
 
 ### Projection — MERGED, PUSHED, CI green. Rulings in D-163…D-170; do not reopen
 
-`projection-v1` fast-forwarded into `main`; all 22 tasks complete and reviewed. Ships `profile-bundle
-approve-projection`, `profile-bundle project`, top-level `resume project`. Three facts outlive the detail:
-**`LatexRenderer.emit` never reads `Resume.header` or `Resume.education`** (D-156) — template-hardcoded, so v1
-projects only `skill_groups`, `entries`, `extracurricular`; the bundle is NOT authoritative for name, contacts
-or education, and a faithful preview needs a template carrying real header/education. **No scorer is picked
-and none may be picked by inspection** (D-163): all four are falsified and collapse into two families, so
-`--scorer` is required with no default (D-168) until **Task 20** — ten real postings ranked by Mit, still
-unbuilt, the only arbiter. **Do not open a session by picking a third scorer.** The shell's *content* is bound
-by no digest, so editing it changes the projected header/education with no re-approval (small blast radius).
+All 22 tasks complete. Ships `approve-projection`, `project`, top-level `resume project`. Two facts outlive
+the detail: **`LatexRenderer.emit` never reads `Resume.header` or `Resume.education`** (D-156) —
+template-hardcoded, so the bundle is NOT authoritative for name, contacts or education and a faithful
+preview needs a template carrying them. **No scorer is picked and none may be picked by inspection**
+(D-163): all four are falsified, so `--scorer` has no default (D-168) until **Task 20**, ten real postings
+ranked by Mit, the only arbiter. **Do not open a session by picking a third scorer.**
 
 ### Gate A — MET (2026-08-12). Detail in D-157; do not reopen
 
 Green on all twelve CI jobs at `8475319`, Windows included — cite that run and D-157, **not** D-145. It has
 moved no program gate. What outlives it: **a closed review loop is evidence about the slices reviewed, not
-about the subsystem being defect-free** (D-161/D-162) — before wiring a module into a package, grep `tests/`
-for what constrains its imports, because a symbol check cannot find a prohibition.
+about the subsystem being defect-free** (D-161/D-162).
 
 ---
 
@@ -150,7 +163,7 @@ for what constrains its imports, because a symbol check cannot find a prohibitio
 | P7 Breadth | not started | — |
 | *Gate A (parallel)* | *complete, merged, CI green* | ***MET*** — *has moved no program gate* |
 | *Projection* | ***MERGED AND PUSHED**, reviewed clean. Task 20 is Mit's* | *P0–P4 build gates met* |
-| *Gate B / master reservoir (active)* | ***DONE loop**: 11-entity master from `~/dev/portfolio-website/wiki` (4 exp + 7 projects, 33 bullets), promoted, projection approved, clean 2-page render. **Revision 3, bundle `206786a3`** (2026-08-15). Incremental edits ship (D-190). See memory `master-reservoir-built-from-wiki`* | ***7 blockers left**, measured 2026-08-15 (4 `missing_review_state` + 3 `import_record_undispositioned`, 0 errors). Résumé not yet application-worthy — bullets still refined; Stage 2 (per-JD) needs Task 20* |
+| *Gate B / master reservoir (active)* | ***DONE loop**: 11-entity master from `~/dev/portfolio-website/wiki` (4 exp + 7 projects, 33 bullets), promoted, projection approved, clean 2-page render. **Revision 5, bundle `a4bdc0b2`** (2026-08-15). Incremental edits ship (D-190); bullets are repo-grounded (D-191). See memory `option-b-repo-grounded-bullets`* | ***7 blockers left**, measured 2026-08-15 (4 `missing_review_state` + 3 `import_record_undispositioned`, 0 errors). Résumé not yet application-worthy — bullets still refined; Stage 2 (per-JD) needs Task 20* |
 
 ### Gate P6, clause by clause
 
@@ -184,6 +197,7 @@ whether the daily pipeline gets projection — **yes, after v1**.)*
 
 | Item | Detail | Owner |
 |---|---|---|
+| **`exclude-record` is BUILT but PARKED, unmerged** | D-192. Three commits on `worktree-agent-af5fde0288e79b376`, `make check` green at exit 0 (6381 passed), re-run rather than taken from the builder. Clears Gate B's 3 `import_record_undispositioned` blockers. Held back because the last commit — the drain guard — is the one change no fresh reviewer has seen, and each of three rounds found a real defect. **Merge owes one review.** Same class, still open elsewhere: `source_scope_target_digest` has the identical dict/list divergence, zero callers, no pinning test | Mit |
 | **A push run is 9 CI jobs, not 12** | D-151 took Windows off the per-push path (`ci.yml:21-33`): scheduled and `workflow_dispatch` get all three OSes, a push gets ubuntu + macOS, a PR ubuntu only. Any "all twelve green" claim describes a *scheduled* run | standing fact |
 | **CI can be red for a reason a local gate cannot see, and one is a RACE** | D-171: typer bakes `FORCE_TERMINAL` from `GITHUB_ACTIONS`/`FORCE_COLOR`/`PY_COLORS` at the first help render in an xdist worker, so a substring assert on an option name breaks. It looked OS-determined and was not. `tests/conftest.py` now pops all four vars at import; a test pins `FORCE_TERMINAL is not True` | fixed |
 | **Two CI-only jobs: `gitleaks` and `perf`** | `generalization` IS inside `make check` — but it **scans git-TRACKED files only**, so `git add` new files before the gate run you intend to trust. Run `gitleaks git --log-opts=origin/main..HEAD` before a push. **`All checks passed!` is `generalization`'s banner, not the gate's** — it prints ~4 min early, so the captured exit code is the only check that cannot be read early | mitigated |
