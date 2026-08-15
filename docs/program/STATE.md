@@ -72,12 +72,18 @@ The TTY `approve` is unchanged and stays — its frequency drops from per-rebuil
    metrics is now cheap** — one `edit-fact` per bullet. Source real numbers from the wiki/repos, never
    fabricate.
 2. **Option B** — ground project bullets against the real repos (new session).
-3. **Employer-heading overflow** — the 4 `employment.organization` values are the whole "Title — Org — Dates
-   — Location" line. All four are `unresolved` + `private_document_verified` (verified 2026-08-14), so they
-   are not effective and the heading falls back to `{@display_name}`. **`edit-fact` refuses them by design**
-   — twice over: an owner's retype does not re-establish a private document, and an `unresolved` fact is not
-   correctable. So this is not a tooling gap; it is the same Gate B evidence blocker wearing a second face.
-   Supplying the 3 employer records resolves the blocker *and* unlocks re-authoring these values.
+3. **Employer-heading overflow — two independent problems, and `edit-fact` can never fix either.** The 4
+   `employment.organization` values are the whole "Title — Org — Dates — Location" line rather than the
+   employer name, and all four are `unresolved` + `private_document_verified` (verified 2026-08-14), so
+   they are not effective and the heading falls back to `{@display_name}`.
+   **Correction of an earlier claim in this file: supplying the employer documents does NOT unlock
+   re-authoring these values.** The catalog row for `employment.organization` is
+   `legal_verification_bases: [private_document_verified]` with `owner_attestation_authority: none` — the
+   owner may never attest this predicate — and `edit-fact` only corrects `owner_attested` facts. So it
+   refuses these regardless of evidence, permanently and by design. Fixing the *value* means a hand edit of
+   the draft YAML (which `docs/profile-bundle-authoring.md` calls supported and expected) or widening the
+   catalog the way D-189 did for `project.contribution` — **Mit's call, not to be taken by fiat**.
+   Supplying the documents is still what clears the Gate B blocker; it is simply a separate thing.
 4. **Stage 2 / Task 20** — the scorer that turns the reservoir into per-JD résumés; needs Mit's posting
    rankings (his SDE/iOS sets above are the start).
 
