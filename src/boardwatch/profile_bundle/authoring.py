@@ -1588,11 +1588,18 @@ def _evidence_naming(
     The mirror of `_documents_citing_back`, which writes the fact side of the same contract when the
     evidence is what is new. Here the fact is what is new, so the evidence side is the one missing —
     and §12 compares the two directions exactly, so writing only one leaves the draft failing
-    `evidence_link_asymmetry` and unapprovable.
+    `evidence_link_asymmetry`.
 
     Refusing an ID the draft does not hold is what keeps that promise: a citation of an absent
     record is a broken reference the next validation reports, and writing it would leave the very
     asymmetry this closes.
+
+    Where that failure lands is worth being exact about, because it is not where it looks.
+    `approval_candidate` checks the manifest type, the parent digest and quarantined captures — it
+    never revalidates — so an asymmetric draft is still cleanly *approvable*, and the owner can
+    stamp content that cannot be promoted. `promote` runs `validate_bundle` and refuses. So the cost
+    of skipping this write is not a refused approval; it is a stamp the owner has already given
+    against a draft that will fail later.
     """
     existing = _evidence_document(documents)
     held = {record.evidence_id for record in existing.evidence}

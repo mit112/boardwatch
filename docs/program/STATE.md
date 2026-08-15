@@ -57,15 +57,28 @@ evidence per project AND use the repos to sharpen the bullets. Still true from b
 optional → synthesized) and **D-188** (`bullet_predicates` render bullets from facts); Path 1 (ClaimRecord)
 deferred.
 
+**The incremental-edit path SHIPPED (2026-08-14, D-190)** — the top workflow debt is cleared. A content
+change no longer rebuilds anything: `checkout --draft <name>` → `profile-bundle edit-fact --fact-id F
+--value "…"` → `validate` → Mit's TTY `approve` → `promote`. `promote-candidates` is out of the loop, so its
+one-shot guard never fires. `edit-fact` files a correction **as an edge** — a successor `F.r2` supersedes `F`,
+which stays immutable and leaves `EFFECTIVE_STATES`, so the old wording drops out of the render on its own.
+`add-fact` writes a new fact. Both keep the three documents an edit touches in agreement (the fact document,
+`evidence/records.yaml`'s back-citation, and the manifest's `evidence_set_digest`). Verified on Mit's real
+bundle: editing one BirthdayQuest bullet validates **0 error** and the entry still renders 3 bullets, not 4.
+The TTY `approve` is unchanged and stays — its frequency drops from per-rebuild to per-batch.
+
 **Owed next (mostly owner-gated; the reservoir loop itself is DONE):**
-1. **Individual bullet refinement** — Mit's, ongoing, before the résumé is application-worthy.
-2. **An incremental-edit path** — every content change currently forces a full bundle rebuild + a fresh TTY
-   `approve` (one-shot `promote-candidates`). Build `checkout → edit one fact → approve` before Mit iterates
-   on metrics. This is the top workflow debt.
-3. **Option B** — ground project bullets against the real repos (new session).
-4. **Employer-heading overflow** — the 4 `employment.organization` values are the whole résumé line, so the
-   heading uses `{@display_name}` and overflows; a clean heading needs each org value re-authored (data fix).
-5. **Stage 2 / Task 20** — the scorer that turns the reservoir into per-JD résumés; needs Mit's posting
+1. **Individual bullet refinement** — Mit's, ongoing, before the résumé is application-worthy. **Adding
+   metrics is now cheap** — one `edit-fact` per bullet. Source real numbers from the wiki/repos, never
+   fabricate.
+2. **Option B** — ground project bullets against the real repos (new session).
+3. **Employer-heading overflow** — the 4 `employment.organization` values are the whole "Title — Org — Dates
+   — Location" line. All four are `unresolved` + `private_document_verified` (verified 2026-08-14), so they
+   are not effective and the heading falls back to `{@display_name}`. **`edit-fact` refuses them by design**
+   — twice over: an owner's retype does not re-establish a private document, and an `unresolved` fact is not
+   correctable. So this is not a tooling gap; it is the same Gate B evidence blocker wearing a second face.
+   Supplying the 3 employer records resolves the blocker *and* unlocks re-authoring these values.
+4. **Stage 2 / Task 20** — the scorer that turns the reservoir into per-JD résumés; needs Mit's posting
    rankings (his SDE/iOS sets above are the start).
 
 **Owed next (all owner-gated or frozen — do not start unilaterally):**

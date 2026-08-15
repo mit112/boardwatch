@@ -14,8 +14,13 @@ The three are the point. A fact edit is not one write:
 
 Omit the second and the draft fails `evidence_link_asymmetry`; omit the third and it fails
 `evidence_set_digest_mismatch`. So the test that matters most in this file is not any single
-assertion about a field — it is that the draft still validates clean afterwards, which is the only
-thing that makes the next `approve` reachable.
+assertion about a field — it is that the draft still validates clean afterwards.
+
+That matters more than it looks, because `approve` does not validate. `approval_candidate` checks
+the manifest type, the parent digest and quarantined captures and nothing else, so a draft carrying
+all three failures is still cleanly approvable; `promote` is what runs `validate_bundle` and
+refuses. An operation that left one of the three writes undone would therefore not be caught by the
+owner it asked to approve — it would be caught after they had already stamped it.
 
 Correction is an edge, not a mutation (`models/facts.py`): the successor gets a new `fact_id` and
 the original stays immutable, so history is derivable rather than overwritten.
