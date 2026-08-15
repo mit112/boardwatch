@@ -334,6 +334,55 @@ def test_a_row_the_operator_did_not_name_is_refused_rather_than_silently_re_deri
         assert synthetic_bundle.read(f"imports/{name}.yaml") == original
 
 
+def stale_drain_entry_only(bundle: SyntheticBundle) -> None:
+    """Give an already-`imported` record a drain entry, and leave the ledger completely alone.
+
+    The distinction from `drift_a_second_record` is the whole point: there the second row's
+    disposition moves, so the ledger check sees it. Here NO row moves — the entry is simply one
+    §6.3a forbids, on a record that is `imported` before and after — so the ledger diff is empty
+    and only the drain diff can catch it.
+    """
+    report = document(bundle, "imports/extraction-report.yaml", ExtractionReport).model_dump(
+        mode="json"
+    )
+    report["entries"].append({"source_record_id": IMPORTED, "reason": "free_text_deferred"})
+    bundle.write(
+        "imports/extraction-report.yaml",
+        document_bytes(
+            ExtractionReport.model_validate(report).model_dump(mode="json"),
+            logical_path=PurePosixPath("imports/extraction-report.yaml"),
+        ).decode("utf-8"),
+    )
+
+
+def test_a_drain_entry_the_operator_did_not_name_is_refused_rather_than_silently_retired(
+    synthetic_bundle: SyntheticBundle,
+) -> None:
+    """Guarding the ledger alone closes the reproduction, not the defect.
+
+    `_report_without_dispositioned` retires by a record's CURRENT disposition in the rebuilt
+    ledger, not by whether this write moved it. So a stale entry on a record already `imported`
+    is dropped with **zero ledger drift** — `_only_the_named_record_moves` compares rows and finds
+    none moved, and `_catalog_admits` is a DIFF that refuses only what a write introduces, while
+    this write REMOVES `import_denominator_mismatch`. Without the drain check the command returns
+    `clean`, names one record, and silently clears a Gate B blocker on another.
+    """
+    stale_drain_entry_only(synthetic_bundle)
+    before = {
+        name: synthetic_bundle.read(f"imports/{name}.yaml")
+        for name in ("source-ledger", "exclusions", "extraction-report")
+    }
+
+    outcome = exclude(synthetic_bundle)
+
+    assert codes(outcome) == {"import_ledger_derivation_drift"}
+    assert [finding.record_id for finding in outcome.diagnostics] == [IMPORTED]
+    assert outcome.diagnostics[0].path == "imports/extraction-report.yaml"
+    assert outcome.diagnostics[0].details["drain_reason"] == "free_text_deferred"
+    for name, original in before.items():
+        assert synthetic_bundle.read(f"imports/{name}.yaml") == original
+
+
 # --------------------------------------------------------------------------------------
 # Refusals, all of which write nothing
 # --------------------------------------------------------------------------------------

@@ -746,6 +746,7 @@ def exclude_record(
         changed: dict[PurePosixPath, DocumentModel] = {SOURCE_LEDGER_PATH: rebuilt}
         drained = _report_without_dispositioned(report, rebuilt)
         if drained is not None:
+            _only_the_named_entry_retires(report, drained, source_record_id)
             changed[EXTRACTION_REPORT_PATH] = drained
         changed[IMPORT_EXCLUSIONS_PATH] = appended
         _catalog_admits(tree, documents, changed, layers=_LEDGER_LAYERS)
@@ -1274,6 +1275,49 @@ def _only_the_named_record_moves(
     # Present by construction: `_excludable_record` found this row in `before`, and
     # `redispositioned_ledger` reproduces every row it was given.
     return next(row for row in after.records if row.source_record_id == source_record_id)
+
+
+def _only_the_named_entry_retires(
+    before: ExtractionReport, after: ExtractionReport, source_record_id: str
+) -> None:
+    """Refuse when the drain rewrite would retire an entry the operator did not name.
+
+    The sibling of `_only_the_named_record_moves`, and it exists because that one is not enough.
+    `_report_without_dispositioned` retires by a record's CURRENT disposition in the rebuilt
+    ledger, not by whether this write moved it — so a stale entry belonging to a record already
+    dispositioned `imported` is dropped even though its ledger row never moves and the ledger check
+    therefore sees nothing at all. A report entry on a non-`review_required` record is an
+    `import_denominator_mismatch` at the completeness tier, so retiring it silently clears a Gate B
+    finding about a record this command was not asked about.
+
+    `_catalog_admits` is blind to it for exactly the reason it is blind to the ledger case: it is a
+    DIFF that refuses only what a write INTRODUCES, and a repair only ever removes findings.
+
+    Two documents are re-derived from one rebuilt ledger, so both need this check; guarding the
+    ledger alone closes the reproduction rather than the defect.
+    """
+    kept = {entry.source_record_id for entry in after.entries}
+    retired = [
+        entry
+        for entry in before.entries
+        if entry.source_record_id not in kept and entry.source_record_id != source_record_id
+    ]
+    if retired:
+        raise _Refused(
+            tuple(
+                diagnostic(
+                    IssueCode.IMPORT_LEDGER_DERIVATION_DRIFT,
+                    f"{entry.source_record_id} carries a drain entry but no longer derives as "
+                    f"review_required; excluding {source_record_id} would retire that entry too "
+                    "and clear a Gate B finding this command was not asked about, so nothing was "
+                    "written — re-extract the source or correct the ledger first",
+                    path=EXTRACTION_REPORT_PATH.as_posix(),
+                    record_id=entry.source_record_id,
+                    drain_reason=entry.reason.value,
+                )
+                for entry in retired
+            )
+        )
 
 
 def _report_without_dispositioned(
