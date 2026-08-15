@@ -40,8 +40,11 @@ application-worthy; individual bullets still get refined.
 > Task 20) selects it down to one page. `resume.yaml` / `sections.tex` are thin per-JD OUTPUTS, **not** the
 > source — the wiki is.
 
-**Live bundle: `sha256:268b7c78…`, projection `sha256:5642175e…`** (both supersede every earlier digest;
-three intermediate bundles are backed up at `{config_dir}/career-profile.bak-*`). **11 entities** — 4
+**Live bundle: `sha256:206786a3…` (revision 3, 2026-08-15).** Revision 2 re-authored the four employer
+headings and organization values; revision 3 shortened the NIO heading to fit. **The projection approval is
+now STALE** — `projection/pool.py` re-checks the stamp's bundle digest unconditionally (D-167), so
+`profile-bundle project` refuses with `stale_approval_stamp` until Mit runs `approve-projection` again on a
+TTY. A preview render needs no approval: see memory `render-preview-without-tty-approve`. **11 entities** — 4
 experience (Saayam, NIO co-op, Nakshatra, SAKEC) + 7 projects (Hookrail, Knowledge Forge, StreakSync, Random
 Forest, FlickSwiper, BirthdayQuest, Fond). ~95 facts, **91 owner-confirmed**, 14 skills, **33 résumé bullets**
 (9 experience + 24 project), all wiki-grounded with real metrics. Validates **0 error**.
@@ -72,18 +75,24 @@ The TTY `approve` is unchanged and stays — its frequency drops from per-rebuil
    metrics is now cheap** — one `edit-fact` per bullet. Source real numbers from the wiki/repos, never
    fabricate.
 2. **Option B** — ground project bullets against the real repos (new session).
-3. **Employer-heading overflow — two independent problems, and `edit-fact` can never fix either.** The 4
-   `employment.organization` values are the whole "Title — Org — Dates — Location" line rather than the
-   employer name, and all four are `unresolved` + `private_document_verified` (verified 2026-08-14), so
-   they are not effective and the heading falls back to `{@display_name}`.
-   **Correction of an earlier claim in this file: supplying the employer documents does NOT unlock
-   re-authoring these values.** The catalog row for `employment.organization` is
-   `legal_verification_bases: [private_document_verified]` with `owner_attestation_authority: none` — the
-   owner may never attest this predicate — and `edit-fact` only corrects `owner_attested` facts. So it
-   refuses these regardless of evidence, permanently and by design. Fixing the *value* means a hand edit of
-   the draft YAML (which `docs/profile-bundle-authoring.md` calls supported and expected) or widening the
-   catalog the way D-189 did for `project.contribution` — **Mit's call, not to be taken by fiat**.
-   Supplying the documents is still what clears the Gate B blocker; it is simply a separate thing.
+3. **Employer headings — FIXED 2026-08-15 (revisions 2 and 3).** The heading was never the
+   `employment.organization` fact: every `projection.yaml` heading is literally `'{@display_name}'`, so the
+   entity's **`display_name`** *is* the whole rendered line, and it held "Title — Org — Dates — Location"
+   at up to 143 characters. `display_name` is entity metadata with no catalog row, so it is freely
+   hand-editable. **Measured limit: ~95 characters** (116 → 95.1pt overfull, 99 → 13.8pt, 91 → fits;
+   measured through tectonic, not estimated). All four now fit — 82 / 77 / 77 / 91 — and the render has
+   **zero overfull and zero underfull hboxes**. The 4 `employment.organization` fact values were also
+   re-authored to just the employer name; they are `unresolved`, so this changes nothing visible today but
+   is correct data for when the documents land.
+   **Two things that stay true:** `edit-fact` can never touch those org facts — the catalog row is
+   `legal_verification_bases: [private_document_verified]` with `owner_attestation_authority: none`, so the
+   owner may never attest the predicate and `edit-fact` corrects only `owner_attested` facts. And the
+   remaining cosmetic gap is structural: the template emits `\resumeSubheading{...}{}{}{}` with all four
+   arguments crammed into the first, so Experience is one bold line while **Education uses the macro
+   properly** (title left, dates right). The real fix is teaching the projection to emit the four parts
+   separately — the heading grammar already admits `{predicate}` placeholders, so
+   `'{employment.title} — {employment.organization} — {employment.date_range} — {entity.location}'` is
+   expressible today and blocked only by `employment.organization` being `unresolved`.
 4. **Stage 2 / Task 20** — the scorer that turns the reservoir into per-JD résumés; needs Mit's posting
    rankings (his SDE/iOS sets above are the start).
 
