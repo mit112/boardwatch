@@ -26,8 +26,8 @@ adapter `boardwatch-resume-v1`.
 **On 2026-08-15 Gate B moved for the first time since it was defined (7 → 4, promoted as revision 6), and
 Stage 2 stopped refusing.** Both approvals are spent and **`profile-bundle project` is clean** — no approval
 is owed. Read memories `master-reservoir-built-from-wiki` and `option-b-repo-grounded-bullets` before
-touching the bundle. **The only thing between here and a sendable per-JD résumé is now Task 20's rankings,
-which are Mit's. Nothing sendable has been produced yet.**
+touching the bundle. **Task 20's matrix is now owner-labeled (D-197), so scorer selection (Task 23) is
+unblocked — the next step toward a sendable per-JD résumé. Nothing sendable has been produced yet.**
 
 ### The active track — the master reservoir (bundle → résumé)
 
@@ -48,39 +48,29 @@ and **two underfull** hboxes in the Skills block — pre-existing, cosmetic, fro
 forfeit the D-190 edit path for the records iterated most.
 
 **The incremental-edit path SHIPPED (D-190).** A content change rebuilds nothing: `checkout --draft <name>`
-→ `edit-fact --fact-id F --value "…"` → `validate` → Mit's TTY `approve` → `promote`. `edit-fact` files a
-correction **as an edge** — `F.r2` supersedes `F`, which stays immutable and leaves `EFFECTIVE_STATES`, so
-the old wording drops out of the render on its own. Batch many edits before the single TTY approve.
+→ `edit-fact --fact-id F --value "…"` → `validate` → Mit's TTY `approve` → `promote`. The correction is an
+edge (`F.r2` supersedes `F`; the old wording drops out of the render on its own). Batch edits before the
+single TTY approve. **Employer headings** are `'{@display_name}'`, so the entity's `display_name` *is* the
+rendered line, freely hand-editable (limit ≈ 95 chars; all four fit).
 
-**Employer headings — FIXED.** A heading is never the `employment.organization` fact: it is literally
-`'{@display_name}'`, so the entity's **`display_name`** *is* the rendered line, freely hand-editable (no
-catalog row). **Measured limit ≈ 95 characters**; all four fit.
+### Stage 2 — unblocked and approved (D-195); no approval owed
 
-### Stage 2 — unblocked at the data level (D-195); two owner approvals owed
+`projection.yaml` reads **pinned 3** (`saayam`, `nio-coop`, `sakec`) / **candidates 8** (`nakshatra` + seven
+projects); the pinned set alone is 7 bullets → 1 page, so `select` clears its own gate and reaches scoring.
+`profile-bundle project` is **clean, exit 0** — bundle `0f794d81…`, projection `c5b237d9…`. Backup:
+`projection.yaml.bak-allpinned-20260815`. **The one-page ceiling is 16 bullets, not entries** (D-195): with
+3 jobs pinned, **at most two candidates are ever admitted**, and Mit's four-project per-JD sets cannot fit at
+one page under any split (most is three, only with two jobs pinned). Previewing needs no approval
+(`render-preview-without-tty-approve`); re-promotion and `projection.yaml` edits each stale the stamp
+independently (D-167).
 
-**The pinning decision is made and applied.** `projection.yaml` now reads **pinned 3** — `employment.saayam`,
-`employment.nio-coop`, `employment.sakec` — and **candidates 8** (`employment.nakshatra` + all seven
-projects). The pinned set alone is 7 bullets → **1 page**, so `select` clears its own gate and reaches
-scoring; `PINNED_SET_EXCEEDS_BUDGET` no longer fires. Backup: `projection.yaml.bak-allpinned-20260815`.
-**Re-approved and verified through the official command:** `profile-bundle project` is **clean, exit 0**,
-reporting bundle `sha256:0f794d81…`, projection `sha256:c5b237d9…`, pinned 3 / candidates 8. The refreshed
-stamp binds both axes at once — the edit *and* the promotion each stale it independently (D-167), which is
-why they were sequenced before a single `approve-projection`. Previewing a PDF needs no approval at all:
-memory `render-preview-without-tty-approve`.
-
-**The one-page ceiling is 16 bullets, not a count of entries** (D-195) — 16 fits in every configuration
-tested, 17 overflows in every one, and two different *6-entry* sets landed on opposite sides of the budget.
-Measured by compiling subsets through the same path `select` builds; **no scorer was run.** With three jobs
-pinned, **at most two candidates can ever be admitted**, and Mit's stated per-JD sets (four projects each)
-**cannot be emitted at one page under any split** — the most that ever fits is three, and only with two jobs
-pinned.
-
-**Task 20 is still steps 1–2 only.** `docs/program/projection-selection-matrix.md` holds ten real, currently
-open `role=swe` postings spanning backend ×2, distributed systems, infrastructure, platform, iOS ×2,
-Android, ML/data, frontend, each with JD skills recorded verbatim from `posting_context(...).jd_skills` (the
-call Stage 2 makes; `show` never enumerates them), ids in the **`entry.`** form. **Rankings and cut lines are
-blank and are Mit's alone** — labeling after seeing a scorer's output is a test that agrees with itself
-(D-158). **No scorer has been run**, and none may be until the labeled commit lands.
+**Task 20 is LABELED (D-197, 2026-08-15).** `projection-selection-matrix.md` holds ten real, currently-open
+`role=swe` postings (backend ×2, distributed systems, infra, platform, iOS ×2, Android, ML/data, frontend),
+JD skills from `posting_context(...).jd_skills`, and the owner's rankings + cut lines over the **eight
+candidates** (pinned three excluded, since `agreement.score_all` scores only the ids `case.expected` names).
+Every row verified to cover exactly the 8 candidates. **No scorer was run before the label landed** (D-158).
+**Next: Task 23** — read `score_all`'s per-scorer rank agreement against these labels to pick the scorer,
+and the cut lines to set the admission threshold.
 
 ### Gate B — 4 blockers, down from 7, on the live revision
 
@@ -99,11 +89,13 @@ warnings (permanent residue of revision 4, superseded not undone — the promoti
   them also unlocks the last cosmetic gap: the template emits everything in argument one, so Experience is a
   single bold line while Education uses the macro properly.
 
-**Owed next — 1 and 2 are Mit's alone; do not start 3–5 unilaterally:**
+**Owed next — 1 is unblocked (objective measurement); 2 is Mit's content; do not start 3–4 unilaterally:**
 
-1. **Task 20's rankings.** The single remaining thing between here and a sendable per-JD résumé. No approval
-   is owed and no code is owed; `select` reaches scoring, and only the labeled matrix can pick the scorer and
-   set the admission threshold. **No scorer may be run before the labeled commit lands** (D-158/D-163/D-168).
+1. **Task 23 — scorer + admission threshold.** Now unblocked (Task 20 labeled, D-197). Run
+   `agreement.score_all` over the ten labeled cases to read each registered scorer's mean rank agreement,
+   pick the highest, and set the threshold from where the cut lines fall (D-163/D-168). `--scorer` stays
+   required until a winner is adopted. No new code is owed; there is no CLI, so the ten cases are
+   transcribed into `MatrixCase`s and scored in a script.
 2. **Individual bullet refinement** (one `edit-fact` per bullet, real numbers only) — also the only lever
    that widens Stage 2's choice, since D-195 caps a page at 16 bullets. **Offered and declined-by-default:**
    hookrail's CI chaos suite (7 failure scenarios, jobs that kill the Postgres primary and Redis master under
@@ -129,13 +121,12 @@ the example bundle is not a valid extraction host for a résumé *with projects*
 
 ### Settled tracks — do not reopen
 
-**Projection** (D-163…D-170): all 22 tasks merged and pushed, CI green. Two facts outlive the detail —
-**`LatexRenderer.emit` never reads `Resume.header` or `Resume.education`** (D-156), template-hardcoded, so
-the bundle is NOT authoritative for name, contacts or education; and **no scorer is picked or may be picked
-by inspection** (D-163), so `--scorer` has no default (D-168) until Task 20. **Do not open a session by
-picking a third scorer.** **Gate A — MET** (D-157): green on all twelve CI jobs at `8475319`, Windows
-included; cite that run, not D-145. It moved no program gate, and what outlives it is that **a closed review
-loop is evidence about the slices reviewed, not about the subsystem being defect-free** (D-161/D-162).
+**Projection** (D-163…D-170): 22 tasks merged, CI green. Two facts outlive the detail —
+**`LatexRenderer.emit` never reads `Resume.header`/`Resume.education`** (D-156), template-hardcoded (bundle
+is NOT authoritative for name/contacts/education); and **no scorer may be picked by inspection** (D-163),
+`--scorer` has no default (D-168) — Task 23 picks among the **four registered** by rank agreement, never a
+new/third scorer. **Gate A — MET** (D-157): green on all twelve CI jobs at `8475319`; a closed review loop
+is evidence about the slices reviewed, not that the subsystem is defect-free (D-161/D-162).
 
 ---
 
@@ -153,7 +144,7 @@ loop is evidence about the slices reviewed, not about the subsystem being defect
 | 14-day acceptance | not started | — frozen; starts after P6 |
 | P7 Breadth | not started | — |
 | *Gate A (parallel)* | *complete, merged, CI green* | ***MET*** — *has moved no program gate* |
-| *Projection* | ***MERGED AND PUSHED**, reviewed clean. Task 20 is Mit's* | *P0–P4 build gates met* |
+| *Projection* | ***MERGED AND PUSHED**, reviewed clean. Task 20 LABELED (D-197); Task 23 next* | *P0–P4 build gates met* |
 | *Gate B / master reservoir (active)* | ***Stage 1 DONE**; **Stage 2 unblocked** (D-195) — pinned 3 / candidates 8, pinned set 7 bullets → 1 page. **Live revision 6, `0f794d81`*** | ***4 blockers, down from 7** (D-196), measured on the live revision. The 4 need Mit's employment documents; no CLI reaches them* |
 
 ### Gate P6, clause by clause
@@ -189,7 +180,7 @@ whether the daily pipeline gets projection — **yes, after v1**; the pinned/can
 
 | Item | Detail | Owner |
 |---|---|---|
-| **Task 20's rankings — the last thing blocking a sendable résumé** | No approval and no code are owed. `select` reaches scoring; only the labeled matrix picks the scorer and sets the admission threshold, and no scorer may run before it lands. With 3 jobs pinned, at most 2 candidates can ever be admitted (D-195) | Mit |
+| **Task 23 — scorer pick + admission threshold** | Task 20 labeled (D-197), so unblocked. Read `score_all`'s per-scorer rank agreement against the labels; the pick is objective, the threshold comes from the cut lines. With 3 jobs pinned, at most 2 candidates are admitted (D-195) | next |
 | **A push run is 9 CI jobs, not 12** | D-151 took Windows off the per-push path (`ci.yml:21-33`): scheduled and `workflow_dispatch` get all three OSes, a push gets ubuntu + macOS, a PR ubuntu only. Any "all twelve green" claim describes a *scheduled* run | standing fact |
 | **A contended gate produces FALSE failures** | Running `make check` beside a live subagent turned a green `main` red on three filesystem-timing-sensitive tests. A gate that ran under contention has produced no usable result — re-run alone before diagnosing | standing fact |
 | **Two CI-only jobs: `gitleaks` and `perf`** | `generalization` IS inside `make check` — but it **scans git-TRACKED files only**, so `git add` new files before the gate run you intend to trust. Run `gitleaks git --log-opts=origin/main..HEAD` before a push. **`All checks passed!` is `generalization`'s banner, not the gate's** — it prints ~4 min early | mitigated |

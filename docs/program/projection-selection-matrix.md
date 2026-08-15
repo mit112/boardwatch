@@ -1,11 +1,12 @@
 # The owner-labeled projection selection matrix (Task 20)
 
-> **Status: steps 1–2 recorded, step 3 UNLABELED.** The ten postings and their extracted JD skills are
-> measured and written down. **The rankings and cut lines are the owner's and are still blank.**
+> **Status: steps 1–3 recorded — owner-labeled 2026-08-15.** The ten postings, their extracted JD
+> skills, and the owner's rankings + cut lines are all filled in below.
 >
-> **No scorer has been run against any of this** (Task 20, step 4). Do not run one until the labeled
-> version of this file is committed. A matrix labeled after seeing a scorer's output is a test that
-> agrees with itself.
+> **No scorer has been run against any of this.** The rankings were set by the owner from JD-and-project
+> fit alone, **without seeing any scorer's output** — so this file is the independent arbiter Task 23 reads
+> to pick the scorer (by rank agreement) and set the admission threshold (from where each cut line falls).
+> A matrix labeled after seeing a scorer's output would be a test that agrees with itself; this one was not.
 
 This is a prose document on purpose. It gets no `SHIPPED_DATA` entry, so it cannot drift into a fixture
 the scorer is tuned against. `projection/agreement.py` reads it only through a human transcribing each
@@ -60,35 +61,49 @@ any split. The most that ever fits is three, and only if just two jobs are pinne
 
 ## The candidate menu
 
+**The three pinned jobs (`saayam`, `nio-coop`, `sakec`) are always present and are NOT ranked.** The
+rankings below are over the **eight candidate entries** only (`nakshatra` + the seven projects); the
+scorer is run over exactly the ids each posting names above its cut line (`agreement._rank_by_scorer` →
+`_flatten(case.expected)`), so each below-the-line block lists the **rejected candidates**, never the
+pinned jobs.
+
 These are the ids to write in the rankings. **Use the `entry.` form**, not the bare `entity_id` the plan's
 template sketched: `agreement.rank_agreement` compares against a scorer's output, which is keyed by
 `Entry.entry_id`, and it raises `ValueError` unless both sides name exactly the same ids. Writing
 `project.fond` where the code expects `entry.project.fond` is a transcription defect the harness will
 catch loudly but only after the labeling session is over.
 
-| `entry_id` | Heading as rendered | Bullets |
-|---|---|---|
-| `entry.employment.saayam` | Full Stack Developer (Volunteer) — Saayam For All — Oct 2025–Present | 2 |
-| `entry.employment.nio-coop` | Software Engineering Co-Op — National Internet Observatory — Jul 2024–Feb 2025 | 3 |
-| `entry.employment.nakshatra` | Software Developer Intern — Nakshatra Eye Care — Mar 2021–Feb 2022 | 2 |
-| `entry.employment.sakec` | Software Engineer Intern — SAKEC Marathon — Feb 2021–Apr 2021 | 2 |
-| `entry.project.hookrail` | Hookrail | 4 |
-| `entry.project.knowledge-forge` | Knowledge Forge | 3 |
-| `entry.project.streaksync` | StreakSync | 4 |
-| `entry.project.crop-rf` | Random Forest Sampling for Crop Recommendation | 3 |
-| `entry.project.flickswiper` | FlickSwiper | 4 |
-| `entry.project.birthdayquest` | BirthdayQuest | 3 |
-| `entry.project.fond` | Fond | 3 |
+| `entry_id` | Heading as rendered | Bullets | Role |
+|---|---|---|---|
+| `entry.employment.saayam` | Full Stack Developer (Volunteer) — Saayam For All — Oct 2025–Present | 2 | **pinned** |
+| `entry.employment.nio-coop` | Software Engineering Co-Op — National Internet Observatory — Jul 2024–Feb 2025 | 3 | **pinned** |
+| `entry.employment.sakec` | Software Engineer Intern — SAKEC Marathon — Feb 2021–Apr 2021 | 2 | **pinned** |
+| `entry.employment.nakshatra` | Software Developer Intern — Nakshatra Eye Care — Mar 2021–Feb 2022 | 2 | candidate |
+| `entry.project.hookrail` | Hookrail | 4 | candidate |
+| `entry.project.knowledge-forge` | Knowledge Forge | 3 | candidate |
+| `entry.project.streaksync` | StreakSync | 4 | candidate |
+| `entry.project.crop-rf` | Random Forest Sampling for Crop Recommendation | 3 | candidate |
+| `entry.project.flickswiper` | FlickSwiper | 4 | candidate |
+| `entry.project.birthdayquest` | BirthdayQuest | 3 | candidate |
+| `entry.project.fond` | Fond | 3 | candidate |
 
-## How to fill this in
+## How this was filled in
 
-For each posting: move the entries you would actually want on that résumé **above** the cut line, best
-first, and leave the rest below it. Ties are allowed — write tied ids on one line. Everything left below
-the line is an assertion too: it says that entry should **not** appear for this JD, and that is what fixes
-the admission threshold.
+For each posting the owner moved the entries genuinely wanted on that résumé **above** the cut line, best
+first, and left the rest below it. Ties are allowed — tied ids on one line. Everything below the line is an
+assertion too: it says that entry should **not** appear for this JD, and that is what fixes the admission
+threshold. The owner ranked only what would genuinely be sent, and did **not** look at any scorer's output
+first — that is the one thing this document exists to prevent.
 
-Rank only what you would genuinely send. Do not rank to be consistent with a formula, and do not look at
-any scorer's output first — that is the one thing this document exists to prevent.
+**The owner's heuristic (recorded 2026-08-15):** most postings are general SDE, taking
+`hookrail → knowledge-forge → streaksync → crop-rf` (Random Forest for the published-research signal).
+Mobile/iOS postings lead with `streaksync` then `flickswiper` (both live on the App Store), then `fond`
+**or** `birthdayquest` depending on which the JD's keywords reach. Experience is fixed to the three pinned
+jobs. Five rows needed a keyword call, resolved with the owner: Ramp iOS 1372 → `fond` (only iOS project
+with TypeScript); Snap 19754 → `hookrail` in the third slot (JD wants distributed systems + observability);
+Spotify 13160 (Android, matches none) → `crop-rf` leads on its Flutter/cross-platform build, iOS apps kept
+as mobile-craft evidence; Zillow 17187 → `crop-rf` promoted (the ML/research project); Ramp frontend 1370 →
+`knowledge-forge` promoted (the only React/TS/Tailwind web project).
 
 ---
 
@@ -98,18 +113,12 @@ JD skills extracted (5): `AWS`, `Docker`, `GraphQL`, `Kubernetes`, `gRPC`
 
 Expected candidate entries, best first. Rank ties are allowed; write them on one line.
 
-1.
-2.
-3.
-—— below here should NOT appear ——
-- `entry.employment.saayam`
-- `entry.employment.nio-coop`
+1. `entry.project.hookrail`
+2. `entry.project.knowledge-forge`
+3. `entry.project.streaksync`
+4. `entry.project.crop-rf`
+—— below here should NOT appear (rejected candidates) ——
 - `entry.employment.nakshatra`
-- `entry.employment.sakec`
-- `entry.project.hookrail`
-- `entry.project.knowledge-forge`
-- `entry.project.streaksync`
-- `entry.project.crop-rf`
 - `entry.project.flickswiper`
 - `entry.project.birthdayquest`
 - `entry.project.fond`
@@ -123,18 +132,12 @@ JD skills extracted (14): `AWS`, `Azure`, `C++`, `Code review`, `Distributed sys
 
 Expected candidate entries, best first. Rank ties are allowed; write them on one line.
 
-1.
-2.
-3.
-—— below here should NOT appear ——
-- `entry.employment.saayam`
-- `entry.employment.nio-coop`
+1. `entry.project.hookrail`
+2. `entry.project.knowledge-forge`
+3. `entry.project.streaksync`
+4. `entry.project.crop-rf`
+—— below here should NOT appear (rejected candidates) ——
 - `entry.employment.nakshatra`
-- `entry.employment.sakec`
-- `entry.project.hookrail`
-- `entry.project.knowledge-forge`
-- `entry.project.streaksync`
-- `entry.project.crop-rf`
 - `entry.project.flickswiper`
 - `entry.project.birthdayquest`
 - `entry.project.fond`
@@ -148,18 +151,12 @@ JD skills extracted (8): `AWS`, `Code review`, `Distributed systems`, `High avai
 
 Expected candidate entries, best first. Rank ties are allowed; write them on one line.
 
-1.
-2.
-3.
-—— below here should NOT appear ——
-- `entry.employment.saayam`
-- `entry.employment.nio-coop`
+1. `entry.project.hookrail`
+2. `entry.project.knowledge-forge`
+3. `entry.project.streaksync`
+4. `entry.project.crop-rf`
+—— below here should NOT appear (rejected candidates) ——
 - `entry.employment.nakshatra`
-- `entry.employment.sakec`
-- `entry.project.hookrail`
-- `entry.project.knowledge-forge`
-- `entry.project.streaksync`
-- `entry.project.crop-rf`
 - `entry.project.flickswiper`
 - `entry.project.birthdayquest`
 - `entry.project.fond`
@@ -172,18 +169,12 @@ JD skills extracted (5): `C++`, `Go`, `Java`, `Python`, `Security (word)`
 
 Expected candidate entries, best first. Rank ties are allowed; write them on one line.
 
-1.
-2.
-3.
-—— below here should NOT appear ——
-- `entry.employment.saayam`
-- `entry.employment.nio-coop`
+1. `entry.project.hookrail`
+2. `entry.project.knowledge-forge`
+3. `entry.project.streaksync`
+4. `entry.project.crop-rf`
+—— below here should NOT appear (rejected candidates) ——
 - `entry.employment.nakshatra`
-- `entry.employment.sakec`
-- `entry.project.hookrail`
-- `entry.project.knowledge-forge`
-- `entry.project.streaksync`
-- `entry.project.crop-rf`
 - `entry.project.flickswiper`
 - `entry.project.birthdayquest`
 - `entry.project.fond`
@@ -201,18 +192,12 @@ JD skills extracted (1): `CI/CD`
 
 Expected candidate entries, best first. Rank ties are allowed; write them on one line.
 
-1.
-2.
-3.
-—— below here should NOT appear ——
-- `entry.employment.saayam`
-- `entry.employment.nio-coop`
+1. `entry.project.hookrail`
+2. `entry.project.knowledge-forge`
+3. `entry.project.streaksync`
+4. `entry.project.crop-rf`
+—— below here should NOT appear (rejected candidates) ——
 - `entry.employment.nakshatra`
-- `entry.employment.sakec`
-- `entry.project.hookrail`
-- `entry.project.knowledge-forge`
-- `entry.project.streaksync`
-- `entry.project.crop-rf`
 - `entry.project.flickswiper`
 - `entry.project.birthdayquest`
 - `entry.project.fond`
@@ -226,21 +211,15 @@ JD skills extracted (9): `AI (umbrella)`, `Code review`, `Flask`, `Python`, `Rea
 
 Expected candidate entries, best first. Rank ties are allowed; write them on one line.
 
-1.
-2.
-3.
-—— below here should NOT appear ——
-- `entry.employment.saayam`
-- `entry.employment.nio-coop`
+1. `entry.project.streaksync`
+2. `entry.project.flickswiper`
+3. `entry.project.fond`
+—— below here should NOT appear (rejected candidates) ——
 - `entry.employment.nakshatra`
-- `entry.employment.sakec`
 - `entry.project.hookrail`
 - `entry.project.knowledge-forge`
-- `entry.project.streaksync`
 - `entry.project.crop-rf`
-- `entry.project.flickswiper`
 - `entry.project.birthdayquest`
-- `entry.project.fond`
 
 ---
 
@@ -254,19 +233,13 @@ JD skills extracted (3): `Distributed systems`, `Observability (word)`, `iOS/Swi
 
 Expected candidate entries, best first. Rank ties are allowed; write them on one line.
 
-1.
-2.
-3.
-—— below here should NOT appear ——
-- `entry.employment.saayam`
-- `entry.employment.nio-coop`
+1. `entry.project.streaksync`
+2. `entry.project.flickswiper`
+3. `entry.project.hookrail`
+—— below here should NOT appear (rejected candidates) ——
 - `entry.employment.nakshatra`
-- `entry.employment.sakec`
-- `entry.project.hookrail`
 - `entry.project.knowledge-forge`
-- `entry.project.streaksync`
 - `entry.project.crop-rf`
-- `entry.project.flickswiper`
 - `entry.project.birthdayquest`
 - `entry.project.fond`
 
@@ -283,19 +256,13 @@ JD skills extracted (1): `Android (mobile)`
 
 Expected candidate entries, best first. Rank ties are allowed; write them on one line.
 
-1.
-2.
-3.
-—— below here should NOT appear ——
-- `entry.employment.saayam`
-- `entry.employment.nio-coop`
+1. `entry.project.crop-rf`
+2. `entry.project.streaksync`
+3. `entry.project.flickswiper`
+—— below here should NOT appear (rejected candidates) ——
 - `entry.employment.nakshatra`
-- `entry.employment.sakec`
 - `entry.project.hookrail`
 - `entry.project.knowledge-forge`
-- `entry.project.streaksync`
-- `entry.project.crop-rf`
-- `entry.project.flickswiper`
 - `entry.project.birthdayquest`
 - `entry.project.fond`
 
@@ -308,18 +275,12 @@ JD skills extracted (13): `AI (umbrella)`, `AWS`, `Airflow`, `CI/CD`, `Data pipe
 
 Expected candidate entries, best first. Rank ties are allowed; write them on one line.
 
-1.
-2.
-3.
-—— below here should NOT appear ——
-- `entry.employment.saayam`
-- `entry.employment.nio-coop`
+1. `entry.project.crop-rf`
+2. `entry.project.hookrail`
+3. `entry.project.knowledge-forge`
+4. `entry.project.streaksync`
+—— below here should NOT appear (rejected candidates) ——
 - `entry.employment.nakshatra`
-- `entry.employment.sakec`
-- `entry.project.hookrail`
-- `entry.project.knowledge-forge`
-- `entry.project.streaksync`
-- `entry.project.crop-rf`
 - `entry.project.flickswiper`
 - `entry.project.birthdayquest`
 - `entry.project.fond`
@@ -336,18 +297,12 @@ JD skills extracted (3): `JavaScript`, `React`, `TypeScript`
 
 Expected candidate entries, best first. Rank ties are allowed; write them on one line.
 
-1.
-2.
-3.
-—— below here should NOT appear ——
-- `entry.employment.saayam`
-- `entry.employment.nio-coop`
+1. `entry.project.knowledge-forge`
+2. `entry.project.hookrail`
+3. `entry.project.streaksync`
+4. `entry.project.crop-rf`
+—— below here should NOT appear (rejected candidates) ——
 - `entry.employment.nakshatra`
-- `entry.employment.sakec`
-- `entry.project.hookrail`
-- `entry.project.knowledge-forge`
-- `entry.project.streaksync`
-- `entry.project.crop-rf`
 - `entry.project.flickswiper`
 - `entry.project.birthdayquest`
 - `entry.project.fond`
