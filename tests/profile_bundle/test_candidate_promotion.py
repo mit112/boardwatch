@@ -107,6 +107,58 @@ COLLIDING_ONE_GROUNDED: dict[str, Any] = {
     ],
 }
 
+#: Two entries whose ids pass the case/punctuation-sensitive dedup (`acme-2021` != `acme_2021`) but whose
+#: `_slug` collides (both -> `employment.acme-2021`). Same lossy-slug class as the skill collision, one
+#: field over: a bare last-write-wins on the document path would drop a whole entity + its facts.
+ENTITY_COLLIDING_RESUME: dict[str, Any] = {
+    "header": ["Ada Lovelace", "ada@example.com"],
+    "education": ["Example University, BSc"],
+    "skill_groups": [{"label": "Languages", "items": ["Python"]}],
+    "entries": [
+        {
+            "entry_id": "acme-2021",
+            "heading": "Engineer — Acme — Jan 2020–Feb 2021 — New York, NY",
+            "kind": "experience",
+            "title": "Engineer",
+            "dates": "Jan 2020 -- Feb 2021",
+            "location": "New York, NY",
+            "bullets": [{"bullet_id": "b1", "text": "Did A.", "tech_tags": []}],
+        },
+        {
+            "entry_id": "acme_2021",
+            "heading": "Engineer — Beta — Mar 2021–Apr 2022 — San Francisco, CA",
+            "kind": "experience",
+            "title": "Engineer",
+            "dates": "Mar 2021 -- Apr 2022",
+            "location": "San Francisco, CA",
+            "bullets": [{"bullet_id": "b2", "text": "Did B.", "tech_tags": []}],
+        },
+    ],
+}
+
+#: Two skill-group labels that pass dedup (`Front End` != `Front-End`) but whose `_slug` collides (both ->
+#: category `front-end`). Both groups' skills are grounded, so both reach the category builder; a bare
+#: last-write-wins would merge the two categories and drop one label.
+CATEGORY_COLLIDING_RESUME: dict[str, Any] = {
+    "header": ["Ada Lovelace", "ada@example.com"],
+    "education": ["Example University, BSc"],
+    "skill_groups": [
+        {"label": "Front End", "items": ["React"]},
+        {"label": "Front-End", "items": ["Vue"]},
+    ],
+    "entries": [
+        {
+            "entry_id": "eng-role",
+            "heading": "Engineer — Acme — Jan 2020–Feb 2021 — New York, NY",
+            "kind": "experience",
+            "title": "Engineer",
+            "dates": "Jan 2020 -- Feb 2021",
+            "location": "New York, NY",
+            "bullets": [{"bullet_id": "b1", "text": "Shipped it.", "tech_tags": ["React", "Vue"]}],
+        },
+    ],
+}
+
 
 @dataclass(frozen=True)
 class Env:
@@ -335,6 +387,44 @@ def test_promotion_refuses_a_grounded_id_with_an_untagged_colliding_sibling(tmp_
     (diag,) = outcome.diagnostics
     assert "skill.c" in diag.message
     assert "C++" in diag.message and "C#" in diag.message
+
+
+def test_promotion_refuses_when_two_entries_collide_to_one_entity_id(tmp_path: Path) -> None:
+    """Same lossy-slug class as the skill collision, one field over (D-184): `acme-2021` and `acme_2021`
+    pass the case/punctuation-sensitive entry-id dedup but both `_slug` to `employment.acme-2021`, so a
+    bare last-write-wins on the document path would silently drop a whole entity and all its facts —
+    while the entity count still reports two. Promotion must refuse rather than merge, naming both
+    entries and the shared id."""
+    env = _seed(tmp_path, ENTITY_COLLIDING_RESUME)
+    outcome = authoring.promote_candidates(
+        env.bundle_root,
+        draft_name="baseline",
+        source_id=RESUME_SOURCE_ID,
+        source_bytes=env.resume_bytes,
+        as_of=AS_OF,
+    )
+    assert outcome.exit_code != 0, outcome
+    (diag,) = outcome.diagnostics
+    assert "employment.acme-2021" in diag.message
+    assert "acme-2021" in diag.message and "acme_2021" in diag.message
+
+
+def test_promotion_refuses_when_two_labels_collide_to_one_category_id(tmp_path: Path) -> None:
+    """`Front End` and `Front-End` pass the label dedup but both `_slug` to category `front-end`; both
+    groups' skills are grounded, so a bare last-write-wins would merge the two categories and drop one
+    label. Promotion must refuse, naming both labels and the shared category id."""
+    env = _seed(tmp_path, CATEGORY_COLLIDING_RESUME)
+    outcome = authoring.promote_candidates(
+        env.bundle_root,
+        draft_name="baseline",
+        source_id=RESUME_SOURCE_ID,
+        source_bytes=env.resume_bytes,
+        as_of=AS_OF,
+    )
+    assert outcome.exit_code != 0, outcome
+    (diag,) = outcome.diagnostics
+    assert "front-end" in diag.message
+    assert "Front End" in diag.message and "Front-End" in diag.message
 
 
 def test_the_owner_confirmation_step_reaches_a_grounded_resume_skill(env: Env) -> None:

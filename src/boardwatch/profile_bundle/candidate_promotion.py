@@ -188,12 +188,25 @@ def build_promotion(
     entity_facts: dict[str, list[FactRecord]] = {}
     entity_id_by_entry: dict[str, str] = {}
     entity_kind_by_entry: dict[str, EntityKind] = {}
+    entry_by_entity_id: dict[str, str] = {}
     entity_count = 0
 
     for entry_id in sorted(by_entry):
         entry_candidates = by_entry[entry_id]
         kind = _entry_subject_kind(entry_candidates, specs, entry_id)
         entity_id = f"{kind.value}.{_slug(entry_id)}"
+        # `_slug` is lossy (lowercases, folds punctuation) while entry ids are deduped only
+        # case/punctuation-sensitively, so two distinct entries can slug to one entity_id and
+        # collapse to a single document path -- silently dropping the first entity and its facts
+        # (D-184 class, cf. D-202), while the entity count still reports both. Refuse, don't merge.
+        if entity_id in entry_by_entity_id:
+            raise PromotionError(
+                f"entity id {entity_id!r} is derived from more than one entry "
+                f"{sorted((entry_by_entity_id[entity_id], entry_id))!r}: the id slug is lossy, "
+                "so these would silently merge into one entity. Rename the entries so their ids "
+                "differ after slugging."
+            )
+        entry_by_entity_id[entity_id] = entry_id
         entity_id_by_entry[entry_id] = entity_id
         entity_kind_by_entry[entry_id] = kind
 
@@ -286,8 +299,20 @@ def build_promotion(
                 f"{sorted(displays)!r}: the id slug is lossy (D-180), so these would silently "
                 "merge into one skill. Rename or merge them in the source before promoting."
             )
-        category_id = _slug(skill_id_to_label[skill_id])
-        used_categories[category_id] = skill_id_to_label[skill_id]
+        label = skill_id_to_label[skill_id]
+        category_id = _slug(label)
+        # `_slug` is lossy, but skill-group labels are deduped only case/punctuation-sensitively, so
+        # two distinct labels can share a category id and silently merge into one category (D-184
+        # class, cf. D-202). Refuse rather than let the last label win.
+        prior_label = used_categories.get(category_id)
+        if prior_label is not None and prior_label != label:
+            raise PromotionError(
+                f"category id {category_id!r} is derived from more than one skill-group label "
+                f"{sorted((prior_label, label))!r}: the id slug is lossy, so these groups would "
+                "silently merge into one category. Rename the groups so their ids differ after "
+                "slugging."
+            )
+        used_categories[category_id] = label
         skills.append(
             SkillRecord(
                 skill_id=skill_id,
