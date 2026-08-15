@@ -3756,7 +3756,8 @@ been promoted to a revision or rendered; that is the owner's confirm/attest/appr
 
 | Metric | Value |
 |---|---|
-| **Gate B** | **NOT MET — 4 blockers, down from 7.** First movement since the gate was defined. All four survivors are `missing_review_state` on the `employment.organization` facts; **0 errors** both sides |
+| **Gate B** | **NOT MET — 4 blockers, down from 7.** First movement since the gate was defined. All four survivors are `missing_review_state` on the `employment.organization` facts; **0 errors** both sides. **Promoted as revision 6, `sha256:0f794d81…`**, and re-measured on the live revision — not read off the draft |
+| Promotion | authorised by `approval-stamp.000006`, `approved_via: controlling_terminal`, binding candidate `sha256:94eb0b9f…` and carrying all three `approve_source_record_exclusion` entries, each with `resulting_state: owner_excluded` and its own target content digest. Warnings stayed at 10 — the promotion added no new `broken_reference` residue |
 | How the 3 were cleared (D-196) | `exclude-record` ×3 on draft `gate-b-imports`, reason `owner_excluded`, rationale citing D-156 — `LatexRenderer.emit` never reads `Resume.header` or `Resume.education`, so the two education rows and the header contact line have no consumer in the bundle |
 | Measured at the completeness tier, before any approval | blockers **7 → 4**; ledger `review_required` **3 → 0**, `excluded` **0 → 3**, denominator unchanged at **106**, `imported` 103; `exclusions_by_reason.owner_excluded` = 3; warnings **10 → 10** (the permanent revision-4 residue); errors **0 → 0** |
 | Why the count was diffed, not the exit code | a plain `validate` cannot see Gate B, and every authoring command's closing revalidation runs the validity tier only — "0 error" is a narrower claim than "Gate B did not move" |
@@ -3768,5 +3769,5 @@ been promoted to a revision or rendered; that is the owner's confirm/attest/appr
 | Verified after the edit | pinned **3** / candidates **8**; pinned set alone **7 bullets → 1 page**, so `select` clears its own gate and reaches scoring. `PINNED_SET_EXCEEDS_BUDGET` no longer fires |
 | Verification path | `load_declaration` + `_build_entry` (the preview recipe), **not** `project_pool` — editing `projection.yaml` stales the `approve-projection` stamp `project_pool` reads unconditionally (D-167) |
 | Task 20 | **still steps 1–2 only.** Rankings remain blank and remain Mit's. Still **no scorer run.** D-195 bounds it: with three jobs pinned, at most two candidates can ever be admitted, so a cut line deeper than that describes a résumé the budget cannot emit |
-| Owner approvals spent | **0 so far.** Two are now owed and were deliberately batched: one `approve` for draft `gate-b-imports`, then one `approve-projection` covering both the promotion and the `projection.yaml` edit |
+| Owner approvals spent | **1** — `approve --draft gate-b-imports` on a controlling terminal. **1 still owed:** `approve-projection`, covering the promotion and the `projection.yaml` edit together. Batched on purpose: a promotion stales the projection stamp anyway (D-167), so sequencing both before the stamp spends one, not two |
 | Applications sent | **still 0** |

@@ -23,8 +23,8 @@ bundle**, not the old `resume.yaml` path. **P3, P6 and the 14-day clock are froz
 job-apps produces Mit's résumés daily. `resume.yaml` is now an **import source, never hand-fixed**, via
 adapter `boardwatch-resume-v1`.
 
-**On 2026-08-15 Gate B moved for the first time since it was defined, and Stage 2 stopped refusing** —
-both staged, not promoted: **two owner TTY approvals are owed and were deliberately batched.** Read memories
+**On 2026-08-15 Gate B moved for the first time since it was defined (7 → 4, promoted as revision 6), and
+Stage 2 stopped refusing.** **One owner TTY approval remains owed** — `approve-projection`. Read memories
 `master-reservoir-built-from-wiki` and `option-b-repo-grounded-bullets` before touching the bundle.
 **Nothing sendable has been produced yet.**
 
@@ -35,7 +35,7 @@ both staged, not promoted: **two owner TTY approvals are owed and were deliberat
 > every bullet showing**. The master is a **RESERVOIR** holding the SUPERSET; per-JD **Stage 2** selects it
 > down to one page. `resume.yaml` / `sections.tex` are thin per-JD OUTPUTS, **not** the source — the wiki is.
 
-**Live revision: `sha256:a4bdc0b2…` (revision 5).** 11 entities — 4 experience (Saayam, NIO co-op,
+**Live revision: `sha256:0f794d81…` (revision 6).** 11 entities — 4 experience (Saayam, NIO co-op,
 Nakshatra, SAKEC) + 7 projects (Hookrail, Knowledge Forge, StreakSync, Random Forest, FlickSwiper,
 BirthdayQuest, Fond). 107 facts (95 effective), 14 skills, **33 bullets**, **6 evidence records** (owner
 attestation + five `repository_artifact`, D-191). Validates **0 error**. The PDF renders **zero overfull**
@@ -80,16 +80,16 @@ call Stage 2 makes; `show` never enumerates them), ids in the **`entry.`** form.
 blank and are Mit's alone** — labeling after seeing a scorer's output is a test that agrees with itself
 (D-158). **No scorer has been run**, and none may be until the labeled commit lands.
 
-### Gate B — 4 blockers on the draft, 7 on the live revision until it is promoted
+### Gate B — 4 blockers, down from 7, on the live revision
 
-Draft **`gate-b-imports`** measured at the completeness tier: **4 blockers, 0 errors**, 10 `broken_reference`
-warnings (permanent residue of revision 4, superseded not undone). The live revision still reads **7** — the
-draft is not promoted.
+**Measured on promoted revision 6, not on a draft:** **4 blockers, 0 errors**, 10 `broken_reference`
+warnings (permanent residue of revision 4, superseded not undone — the promotion added none).
 
-- **3 `import_record_undispositioned` — CLEARED on the draft** (D-196). The two education rows and the header
+- **3 `import_record_undispositioned` — CLEARED** (D-196). The two education rows and the header
   contact line, excluded with reason `owner_excluded`, rationale citing D-156: `LatexRenderer.emit` never
   reads `Resume.header` or `Resume.education`, so they have no consumer in the bundle. Ledger moved
-  `review_required` 3 → 0, `excluded` 0 → 3, denominator unchanged at 106.
+  `review_required` 3 → 0, `excluded` 0 → 3, denominator unchanged at 106. Authorised by
+  `approval-stamp.000006` (`controlling_terminal`), which binds all three exclusions to their target digests.
 - **4 `missing_review_state` — no CLI path at all.** The `employment.organization` facts, whose predicate is
   `minimum_evidence: private_document` / `owner_attestation_authority: none`, so Mit **cannot attest them**.
   The check fires only on `verification_state == UNRESOLVED` (`completeness.py:187`), and **no shipped CLI
@@ -99,8 +99,8 @@ draft is not promoted.
 
 **Owed next — 1 and 2 are Mit's alone; do not start 3–5 unilaterally:**
 
-1. **Two batched TTY approvals.** `approve --draft gate-b-imports` → agent runs `promote` → then a single
-   `approve-projection` covering both the promotion and the declaration edit. Batched on purpose: a
+1. **One TTY approval: `approve-projection`.** The `approve` + `promote` half is done (revision 6). The
+   remaining stamp covers both the promotion and the declaration edit at once — batched on purpose, since a
    promotion stales the projection approval anyway (D-167), so doing both first spends one stamp, not two.
 2. **Task 20's rankings**, and **individual bullet refinement** (one `edit-fact` per bullet, real numbers
    only). **Offered and declined-by-default:** hookrail's CI chaos suite (7 failure scenarios, jobs that kill
@@ -152,7 +152,7 @@ loop is evidence about the slices reviewed, not about the subsystem being defect
 | P7 Breadth | not started | — |
 | *Gate A (parallel)* | *complete, merged, CI green* | ***MET*** — *has moved no program gate* |
 | *Projection* | ***MERGED AND PUSHED**, reviewed clean. Task 20 is Mit's* | *P0–P4 build gates met* |
-| *Gate B / master reservoir (active)* | ***Stage 1 DONE**; **Stage 2 unblocked** (D-195) — pinned 3 / candidates 8, pinned set 7 bullets → 1 page. Live revision 5, `a4bdc0b2`; draft `gate-b-imports` awaiting approval* | ***4 blockers on the draft** (was 7, D-196), **7 on the live revision** until promoted. The 4 need Mit's employment documents* |
+| *Gate B / master reservoir (active)* | ***Stage 1 DONE**; **Stage 2 unblocked** (D-195) — pinned 3 / candidates 8, pinned set 7 bullets → 1 page. **Live revision 6, `0f794d81`*** | ***4 blockers, down from 7** (D-196), measured on the live revision. The 4 need Mit's employment documents; no CLI reaches them* |
 
 ### Gate P6, clause by clause
 
@@ -187,7 +187,7 @@ whether the daily pipeline gets projection — **yes, after v1**; the pinned/can
 
 | Item | Detail | Owner |
 |---|---|---|
-| **Two batched TTY approvals owed** | `approve --draft gate-b-imports` → agent `promote` → one `approve-projection`. Until then Gate B reads 7 on the live revision and `profile-bundle project` refuses with a stale stamp (`5642175e…` bound vs `c5b237d9…` current) | Mit |
+| **One TTY approval owed: `approve-projection`** | `approve` + `promote` are done (revision 6). Until the projection stamp is refreshed, `profile-bundle project` refuses — the stamp binds projection `5642175e…` and bundle `a4bdc0b2…`, while current are `c5b237d9…` and `0f794d81…`, so it is stale on both axes | Mit |
 | **A push run is 9 CI jobs, not 12** | D-151 took Windows off the per-push path (`ci.yml:21-33`): scheduled and `workflow_dispatch` get all three OSes, a push gets ubuntu + macOS, a PR ubuntu only. Any "all twelve green" claim describes a *scheduled* run | standing fact |
 | **A contended gate produces FALSE failures** | Running `make check` beside a live subagent turned a green `main` red on three filesystem-timing-sensitive tests. A gate that ran under contention has produced no usable result — re-run alone before diagnosing | standing fact |
 | **Two CI-only jobs: `gitleaks` and `perf`** | `generalization` IS inside `make check` — but it **scans git-TRACKED files only**, so `git add` new files before the gate run you intend to trust. Run `gitleaks git --log-opts=origin/main..HEAD` before a push. **`All checks passed!` is `generalization`'s banner, not the gate's** — it prints ~4 min early | mitigated |
