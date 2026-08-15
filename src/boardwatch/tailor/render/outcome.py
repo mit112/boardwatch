@@ -24,6 +24,11 @@ class CompileOutcome:
     pdf_path: Path | None
     page_count: int | None
     log: str
+    # Which render-toolchain binary was missing when `reason` is BINARY_MISSING ("tectonic" or
+    # "pdfinfo"); `None` for every other reason, and also the safe default for a BINARY_MISSING
+    # outcome from a caller that predates this field. `reports/tailor.py` selects the correct
+    # install-guidance message from this typed value, never by string-matching `log`.
+    tool: str | None = None
 
     def __post_init__(self) -> None:
         ok = self.reason is CompileReason.OK

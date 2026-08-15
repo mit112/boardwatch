@@ -95,6 +95,23 @@ _RENDER_TOOL_MISSING_MSG = (
     "tectonic binary not found on PATH; install it (e.g. `brew install tectonic` or "
     "https://tectonic-typesetting.github.io/en-US/install.html) to render résumé PDFs"
 )
+_RENDER_TOOL_MISSING_MSG_POPPLER = (
+    "pdfinfo binary not found on PATH; install poppler (e.g. `brew install poppler`, "
+    "`apt-get install poppler-utils`, or https://poppler.freedesktop.org/) to render résumé PDFs"
+)
+
+
+def _render_tool_missing_message(tool: str | None) -> str:
+    """Select the install-guidance message for the render-toolchain binary a BINARY_MISSING
+    `GateResult.tool` names. Defaults to the tectonic message: every `BINARY_MISSING` producer
+    in this codebase sets `tool` explicitly (`_default_runner` below), so `None` reaching here
+    means a caller that predates this field -- and tectonic-missing was this error's entire
+    meaning before poppler's preflight existed, so that is the fail-safe fallback rather than
+    inventing an "unknown tool" message that could misname a real poppler failure as tectonic
+    or vice versa."""
+    if tool == "pdfinfo":
+        return _RENDER_TOOL_MISSING_MSG_POPPLER
+    return _RENDER_TOOL_MISSING_MSG
 
 
 class NoCurrentVersionError(RuntimeError):
@@ -166,9 +183,10 @@ def _pdf_page_count(pdf: Path) -> int | None:
     """Shell `pdfinfo` and parse its `Pages:` line. Real `pdfinfo` output lists `Pages:`
     well after Creator/Producer/CreationDate/etc (around line 11), never on line 1 — the
     `re.MULTILINE` flag is load-bearing so `^` anchors to each line, not just position 0.
-    Missing binary, non-zero exit, or unparseable output all fall through to `None`."""
-    if shutil.which("pdfinfo") is None:
-        return None
+    A non-zero exit or unparseable output both fall through to `None` — genuine compile
+    failures. The binary itself being missing is no longer one of this function's causes:
+    callers preflight that (`_default_runner` does, before ever reaching here) so it surfaces
+    as BINARY_MISSING rather than being laundered into the same `None` as a real failure."""
     result = subprocess.run(["pdfinfo", str(pdf)], capture_output=True, text=True)
     if result.returncode != 0:
         return None
@@ -178,7 +196,15 @@ def _pdf_page_count(pdf: Path) -> int | None:
 
 def _default_runner(tex: Path, pdf: Path) -> CompileOutcome:
     if shutil.which("tectonic") is None:
-        return CompileOutcome(CompileReason.BINARY_MISSING, None, None, "")
+        return CompileOutcome(CompileReason.BINARY_MISSING, None, None, "", tool="tectonic")
+    # Preflight poppler too, beside the tectonic check: a missing `pdfinfo` used to surface
+    # only later, inside `_pdf_page_count`, indistinguishable from a real compile failure
+    # (COMPILE_FAILED) -- every résumé compile would report COMPILE_FAILED and degrade or drop
+    # silently. Checking it here instead makes it BINARY_MISSING like tectonic: a systemic
+    # render-toolchain outage, not a per-lead compile defect (CLAUDE.md: "systemic outage ⇒
+    # fatal, prevents the silent empty day").
+    if shutil.which("pdfinfo") is None:
+        return CompileOutcome(CompileReason.BINARY_MISSING, None, None, "", tool="pdfinfo")
     compiled = subprocess.run(
         ["tectonic", "-X", "compile", "--outfmt", "pdf", "--outdir", str(pdf.parent), str(tex)],
         capture_output=True, text=True,
@@ -193,7 +219,9 @@ def _default_runner(tex: Path, pdf: Path) -> CompileOutcome:
     page_count = _pdf_page_count(pdf)
     if page_count is None:
         # Mirrors the old typst fallback: an unmeasured PDF is treated as a compile
-        # failure so the lead falls back rather than shipping without a page count.
+        # failure so the lead falls back rather than shipping without a page count. Only
+        # the two genuine _pdf_page_count causes (non-zero exit, unparseable output) reach
+        # here now -- a missing pdfinfo returned above, before this compile ever ran.
         return CompileOutcome(CompileReason.COMPILE_FAILED, None, None, log)
     return CompileOutcome(CompileReason.OK, pdf, page_count, log)
 
@@ -600,7 +628,7 @@ def run_tailor(
             tailored_outcome = renderer.to_pdf(source, Path(out_dir), name, chosen_runner)
             tailored_gate = evaluate_compile(tailored_outcome, max_pages=max_pages)
         if tailored_gate.reason is GateReason.BINARY_MISSING:
-            raise RenderToolMissingError(_RENDER_TOOL_MISSING_MSG)
+            raise RenderToolMissingError(_render_tool_missing_message(tailored_gate.tool))
 
         if tailored_gate.shippable:
             chosen_gate = tailored_gate
@@ -622,7 +650,7 @@ def run_tailor(
             )
             untailored_gate = evaluate_compile(untailored_outcome, max_pages=max_pages)
             if untailored_gate.reason is GateReason.BINARY_MISSING:
-                raise RenderToolMissingError(_RENDER_TOOL_MISSING_MSG)
+                raise RenderToolMissingError(_render_tool_missing_message(untailored_gate.tool))
             if untailored_gate.shippable:
                 degraded = True
                 degrade_reason = tailored_gate.reason.value
@@ -680,7 +708,7 @@ def run_tailor(
                 llm_outcome = renderer.to_pdf(llm_source, Path(out_dir), llm_name, chosen_runner)
                 llm_gate = evaluate_compile(llm_outcome, max_pages=max_pages)
                 if llm_gate.reason is GateReason.BINARY_MISSING:
-                    raise RenderToolMissingError(_RENDER_TOOL_MISSING_MSG)
+                    raise RenderToolMissingError(_render_tool_missing_message(llm_gate.tool))
                 if llm_gate.shippable:
                     llm_pdf_path = llm_gate.pdf_path
                 # else: skip the Tier B PDF; Tier A's PDF above remains the lead's deliverable.

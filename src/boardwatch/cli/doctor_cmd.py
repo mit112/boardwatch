@@ -79,11 +79,13 @@ def check_tectonic() -> TectonicCheck:
 def check_pdfinfo() -> bool:
     """Is poppler's `pdfinfo` on PATH? Missing is an actionable failure, same as tectonic.
 
-    Probed because it is a hard dependency wearing a soft failure. `_pdf_page_count`
-    (`reports/tailor.py`) returns `None` when the binary is absent, and `_default_runner` turns a
-    `None` page count into `COMPILE_FAILED` for **every** lead — so a user with tectonic but no
-    poppler gets an empty run every morning, with `doctor` reporting healthy. That is a check
-    silently not running, reported as a pass.
+    It *was* a hard dependency wearing a soft failure, which is why this probe exists:
+    `_pdf_page_count` (`reports/tailor.py`) returned `None` when the binary was absent and
+    `_default_runner` laundered that into `COMPILE_FAILED` for **every** lead, so a user with
+    tectonic but no poppler got an empty run every morning and the cause was never named. D-204
+    lifted the check into `_default_runner`, where a missing `pdfinfo` is now `BINARY_MISSING` —
+    run-level fatal, exactly like tectonic. The probe stays because naming a missing binary
+    before a run beats aborting partway through one.
     """
     return shutil.which("pdfinfo") is not None
 

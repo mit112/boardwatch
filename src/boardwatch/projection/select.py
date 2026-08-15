@@ -17,9 +17,10 @@ takes `scorer: EntryScorer` as a required parameter with no default.
 
 The compile gate has four arms (`reports.resume_gate.evaluate_compile`) and only
 `PAGE_LIMIT_EXCEEDED` ever drops a candidate. `BINARY_MISSING` and `COMPILE_FAILED` are fatal
-infrastructure failures — `_pdf_page_count` (`reports/tailor.py`) launders three distinct `None`
-causes into `COMPILE_FAILED`, so a missing `pdfinfo` must never read as "every candidate
-overflowed the budget." If the pinned set alone fails to compile for a page-count reason, that
+infrastructure failures — a missing `tectonic` *or* `pdfinfo` is `BINARY_MISSING` (D-204), and
+`_pdf_page_count` (`reports/tailor.py`) folds its two remaining `None` causes into
+`COMPILE_FAILED`, so neither may ever read as "every candidate overflowed the budget." If the
+pinned set alone fails to compile for a page-count reason, that
 is `PINNED_SET_EXCEEDS_BUDGET`, naming the pinned set and the actionable knob
 (`resume_max_pages`), not a candidate-selection outcome at all.
 

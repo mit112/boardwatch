@@ -238,6 +238,47 @@ def test_tier_b_binary_missing_raises_render_tool_missing(tmp_path: Path) -> Non
         )
 
 
+def test_binary_missing_pdfinfo_names_poppler_not_tectonic(tmp_path: Path) -> None:
+    """A poppler-flavoured BINARY_MISSING must surface an install message naming poppler,
+    not the tectonic message every BINARY_MISSING used to get regardless of which tool was
+    actually absent."""
+
+    def runner(typ: Path, pdf: Path) -> CompileOutcome:
+        return CompileOutcome(CompileReason.BINARY_MISSING, None, None, "", tool="pdfinfo")
+
+    settings = _settings(tmp_path)
+    engine = _engine(settings)
+    pid = _seed(engine, settings)
+    out = tmp_path / "out"
+    with pytest.raises(RenderToolMissingError) as exc_info:
+        run_tailor(
+            engine, settings, pid, resume_path=_resume_yaml(tmp_path), out_dir=out, typst_runner=runner,
+        )
+    message = str(exc_info.value).lower()
+    assert "poppler" in message
+    assert "tectonic" not in message
+
+
+def test_binary_missing_tectonic_names_tectonic_not_poppler(tmp_path: Path) -> None:
+    """Regression: a defaulted `tool` field must not make a genuine tectonic-missing outcome
+    report poppler instead."""
+
+    def runner(typ: Path, pdf: Path) -> CompileOutcome:
+        return CompileOutcome(CompileReason.BINARY_MISSING, None, None, "", tool="tectonic")
+
+    settings = _settings(tmp_path)
+    engine = _engine(settings)
+    pid = _seed(engine, settings)
+    out = tmp_path / "out"
+    with pytest.raises(RenderToolMissingError) as exc_info:
+        run_tailor(
+            engine, settings, pid, resume_path=_resume_yaml(tmp_path), out_dir=out, typst_runner=runner,
+        )
+    message = str(exc_info.value).lower()
+    assert "tectonic" in message
+    assert "poppler" not in message
+
+
 def test_tailored_ok_within_limit_is_not_degraded(tmp_path: Path) -> None:
     def runner(typ: Path, pdf: Path) -> CompileOutcome:
         return _ok(pdf, 1)

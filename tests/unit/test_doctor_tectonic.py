@@ -26,9 +26,11 @@ def test_check_tectonic_ok(monkeypatch):
 
 
 def test_check_pdfinfo_missing_is_a_failure(monkeypatch):
-    """A hard dependency wearing a soft failure: without `pdfinfo`, `_pdf_page_count` returns
-    None and every lead degrades to COMPILE_FAILED — an empty run every morning, which `doctor`
-    used to call healthy because it probed only tectonic."""
+    """A hard dependency wearing a soft failure: without `pdfinfo`, `_default_runner`
+    (`reports/tailor.py`) reports BINARY_MISSING and the pipeline treats it as a run-level
+    fatal (same as a missing tectonic) rather than silently degrading every lead — but
+    `doctor` must still catch it proactively, before the first `boardwatch run` hits it, which
+    `doctor` used to call healthy because it probed only tectonic."""
     monkeypatch.setattr(doctor_cmd.shutil, "which", lambda _: None)
     assert doctor_cmd.check_pdfinfo() is False
 

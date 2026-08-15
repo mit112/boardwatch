@@ -23,9 +23,10 @@ from boardwatch.tailor.render.outcome import CompileOutcome, CompileReason
 
 
 class RenderToolMissingError(RuntimeError):
-    """The `tectonic` binary is not on PATH. An environment fault, never a per-lead failure:
-    the pipeline turns it into a run-level fatal and the CLI exits non-zero with install
-    guidance."""
+    """A render-toolchain binary (`tectonic` or poppler's `pdfinfo`) is not on PATH. An
+    environment fault, never a per-lead failure: the pipeline turns it into a run-level fatal
+    and the CLI exits non-zero with install guidance naming whichever binary is actually
+    missing."""
 
 
 class LeadArtifactError(RuntimeError):
@@ -110,12 +111,17 @@ class GateResult:
     pdf_path: Path | None
     page_count: int | None
     log: str
+    # Mirrors CompileOutcome.tool (tailor/render/outcome.py): which render-toolchain binary
+    # was missing when `reason` is BINARY_MISSING. `None` for every other reason.
+    tool: str | None = None
 
 
 def evaluate_compile(outcome: CompileOutcome, *, max_pages: int) -> GateResult:
     """Map a compile outcome + the profile's page limit to a shippability verdict."""
     if outcome.reason is CompileReason.BINARY_MISSING:
-        return GateResult(GateReason.BINARY_MISSING, False, None, None, outcome.log)
+        return GateResult(
+            GateReason.BINARY_MISSING, False, None, None, outcome.log, tool=outcome.tool
+        )
     if outcome.reason is CompileReason.COMPILE_FAILED:
         return GateResult(GateReason.COMPILE_FAILED, False, None, None, outcome.log)
     # OK: the __post_init__ invariant guarantees pdf_path and page_count are set.

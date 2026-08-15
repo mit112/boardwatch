@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import shutil
+import subprocess
 from pathlib import Path
 
 import pytest
@@ -66,3 +67,102 @@ def test_pdf_page_count_parses_multiline_pdfinfo_output(
 
     monkeypatch.setattr("boardwatch.reports.tailor.subprocess.run", _fake_run)
     assert _pdf_page_count(tmp_path / "whatever.pdf") == 2
+
+
+# --- the defect: a missing pdfinfo must not launder into COMPILE_FAILED ------------------
+
+
+def test_default_runner_missing_pdfinfo_is_binary_missing_not_compile_failed(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The defect this closes: today, a missing `pdfinfo` is only checked inside
+    `_pdf_page_count`, called AFTER tectonic has already compiled -- so it comes back as
+    COMPILE_FAILED, indistinguishable from a real compile defect. `_default_runner` must
+    preflight `pdfinfo` beside its existing tectonic check and report BINARY_MISSING
+    instead, naming pdfinfo as the missing tool."""
+
+    def fake_which(name: str) -> str | None:
+        return "/usr/bin/tectonic" if name == "tectonic" else None
+
+    def fake_run(cmd: list[str], **kwargs: object) -> subprocess.CompletedProcess[str]:
+        # Under the fix this is never called at all (the preflight returns first); under
+        # today's code it is the real tectonic compile step, which must succeed so the bug
+        # under test -- what happens AFTER a successful compile -- is isolated.
+        (tmp_path / "r.pdf").write_bytes(b"%PDF-1.7\n%stub\n")
+        return subprocess.CompletedProcess(cmd, 0, stdout="", stderr="")
+
+    monkeypatch.setattr("boardwatch.reports.tailor.shutil.which", fake_which)
+    monkeypatch.setattr("boardwatch.reports.tailor.subprocess.run", fake_run)
+    tex = tmp_path / "r.tex"
+    tex.write_text(_MINIMAL)
+    out = _default_runner(tex, tmp_path / "r.pdf")
+    assert out.reason is CompileReason.BINARY_MISSING
+    assert out.tool == "pdfinfo"
+
+
+def test_default_runner_missing_tectonic_tool_is_tectonic(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Regression: the pre-existing tectonic-missing path must keep reporting BINARY_MISSING,
+    and the new `tool` field must name tectonic, not pdfinfo -- the added field's default must
+    not make this report the wrong tool."""
+    monkeypatch.setattr("boardwatch.reports.tailor.shutil.which", lambda _name: None)
+    tex = tmp_path / "r.tex"
+    tex.write_text(_MINIMAL)
+    out = _default_runner(tex, tmp_path / "r.pdf")
+    assert out.reason is CompileReason.BINARY_MISSING
+    assert out.tool == "tectonic"
+
+
+def test_default_runner_pdfinfo_present_nonzero_exit_is_compile_failed(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Narrow-guard proof: with BOTH binaries reported present, a real pdfinfo failure (a
+    non-zero exit, e.g. a corrupt PDF) must still surface as COMPILE_FAILED, not
+    BINARY_MISSING -- the new preflight must not swallow genuine compile failures."""
+
+    def fake_which(name: str) -> str | None:
+        return f"/usr/bin/{name}"
+
+    def fake_run(cmd: list[str], **kwargs: object) -> subprocess.CompletedProcess[str]:
+        if cmd[0] == "tectonic":
+            (tmp_path / "r.pdf").write_bytes(b"%PDF-1.7\n%stub\n")
+            return subprocess.CompletedProcess(cmd, 0, stdout="", stderr="")
+        assert cmd[0] == "pdfinfo"
+        return subprocess.CompletedProcess(cmd, 1, stdout="", stderr="Error: corrupt xref")
+
+    monkeypatch.setattr("boardwatch.reports.tailor.shutil.which", fake_which)
+    monkeypatch.setattr("boardwatch.reports.tailor.subprocess.run", fake_run)
+    tex = tmp_path / "r.tex"
+    tex.write_text(_MINIMAL)
+    out = _default_runner(tex, tmp_path / "r.pdf")
+    assert out.reason is CompileReason.COMPILE_FAILED
+
+
+def test_pdf_page_count_returns_none_on_nonzero_exit(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """One of `_pdf_page_count`'s two remaining (non-binary-missing) failure causes: a
+    present pdfinfo that exits non-zero. Must keep returning None -- untouched by the
+    binary-missing fix."""
+
+    def fake_run(*args: object, **kwargs: object) -> subprocess.CompletedProcess[str]:
+        return subprocess.CompletedProcess([], 1, stdout="", stderr="Error: corrupt xref")
+
+    monkeypatch.setattr("boardwatch.reports.tailor.subprocess.run", fake_run)
+    assert _pdf_page_count(tmp_path / "whatever.pdf") is None
+
+
+def test_pdf_page_count_returns_none_on_unparseable_output(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The other remaining cause: a present pdfinfo whose output has no parseable `Pages:`
+    line. Must keep returning None -- untouched by the binary-missing fix."""
+
+    def fake_run(*args: object, **kwargs: object) -> subprocess.CompletedProcess[str]:
+        return subprocess.CompletedProcess(
+            [], 0, stdout="Creator: nothing useful here\n", stderr=""
+        )
+
+    monkeypatch.setattr("boardwatch.reports.tailor.subprocess.run", fake_run)
+    assert _pdf_page_count(tmp_path / "whatever.pdf") is None
