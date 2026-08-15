@@ -49,15 +49,23 @@ All notable changes to this project are documented here. The format follows
   derived, and it is also how a ledger that already disagreed with the documents it derives from
   would have had that repaired as a side effect: a second row moving, its drain entry retiring, and
   Gate B's counts changing with nothing shown to the operator. That is refused —
-  `import_ledger_derivation_drift`, naming the rows — rather than silently absorbed. The ledger and
-  the drain are written before the exclusion, so the one half-applied state the renames can leave is
-  the one the same command run again completes.
+  `import_ledger_derivation_drift` — rather than silently absorbed, in all **three** shapes the
+  claim has to cover, distinguished by a typed `drift_kind` detail rather than by their prose: a
+  `ledger_row` you did not name that would move; a stale `drain_entry` that would retire with **no**
+  row moving at all, since the extraction report is re-derived from the same rebuilt ledger by a
+  different rule; and the `named_record` itself, which the other two checks skip by construction and
+  which derives as `imported` rather than `excluded` whenever its candidate is still in
+  `imports/candidates.yaml`. The ledger and the drain are written before the exclusion, so the one
+  half-applied state the renames can leave is the one the same command run again completes.
 
   `owner_excluded` is the one reason that costs an `approve_source_record_exclusion` sub-approval.
   It is derived from the write, shown by `approve`, and filed in that candidate's single stamp;
   promoting without it is `missing_owner_approval`. The stamp now binds
   `source_exclusion_target_digest` — the function §18 names — rather than a second spelling of the
-  same join.
+  same join. `approve_source_scope`'s stamp now binds `source_scope_target_digest` for the same
+  reason: it carried the identical divergence, a published helper with no callers beside an inline
+  join that was the one actually enforced, and the helper has been moved onto the spelling already
+  on disk so no promoted stamp changes value.
 
 - **Candidate promotion — `profile-bundle promote-candidates`.** Turns one source's imported
   candidates into the renderable graph: entities, `FactRecord`s, and the `SkillRecord`s whose

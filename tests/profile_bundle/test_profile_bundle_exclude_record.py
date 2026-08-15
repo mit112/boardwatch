@@ -812,3 +812,80 @@ def test_the_cli_refuses_a_reason_outside_the_closed_catalog_before_reading_the_
     )
     assert result.exit_code == 2
     assert synthetic_bundle.read("imports/exclusions.yaml").count("source_record_id") == 1
+
+
+# --------------------------------------------------------------------------------------
+# Review follow-ups: the named record is covered too, and the two drifts are told apart
+# --------------------------------------------------------------------------------------
+
+
+def test_naming_the_drifted_record_itself_is_refused_rather_than_reported_as_imported(
+    synthetic_bundle: SyntheticBundle,
+) -> None:
+    """`_only_the_named_record_moves` skips the named row, so its claim excluded the one record
+    the operator actually named.
+
+    `_disposition_for` tries `candidates ⇒ imported` BEFORE `an exclusion ⇒ excluded`, so a row
+    recorded `review_required` while `imports/candidates.yaml` still holds its candidate derives
+    as `imported` even with the exclusion filed. Without this refusal an *exclude* command reports
+    `disposition: imported` — the command's own claim that disposition is derived, turned against
+    the outcome it prints.
+
+    It was never unsafe: `_catalog_admits` refuses it downstream as `import_missing_exclusion` plus
+    `import_denominator_mismatch`. But both name `imports/exclusions.yaml` and neither mentions the
+    ledger drift, so the operator is told the exclusion document is wrong when the ledger is.
+    """
+    drift_a_second_record(synthetic_bundle)
+    before = {
+        name: synthetic_bundle.read(f"imports/{name}.yaml")
+        for name in ("source-ledger", "exclusions", "extraction-report")
+    }
+
+    outcome = exclude(synthetic_bundle, record=IMPORTED)
+
+    assert codes(outcome) == {"import_ledger_derivation_drift"}
+    assert [finding.record_id for finding in outcome.diagnostics] == [IMPORTED]
+    assert outcome.diagnostics[0].details["drift_kind"] == "named_record"
+    assert outcome.diagnostics[0].details["recorded"] == "review_required"
+    assert outcome.diagnostics[0].details["derived"] == "imported"
+    for name, original in before.items():
+        assert synthetic_bundle.read(f"imports/{name}.yaml") == original
+
+
+def test_the_drain_refusal_names_the_document_that_actually_holds_the_stale_entry(
+    synthetic_bundle: SyntheticBundle,
+) -> None:
+    """The drain refusal inherited the ledger refusal's remedy verbatim, and it was the wrong one.
+
+    For this condition the ledger is the document that is CORRECT; the stale row is in the
+    extraction report. "Correct the ledger" is a no-op, and so is "re-extract the source" whenever
+    the entry names a record no source enumerates — `_rebuild_report` keeps every entry outside the
+    re-extracted source, so such an entry survives every `extract`. Hand-editing the report is then
+    the only exit, and the message never said so.
+    """
+    stale_drain_entry_only(synthetic_bundle)
+
+    outcome = exclude(synthetic_bundle)
+
+    message = outcome.diagnostics[0].message
+    assert "imports/extraction-report.yaml" in message
+    assert "re-extract the source or correct the ledger first" not in message
+    assert outcome.diagnostics[0].details["drift_kind"] == "drain_entry"
+
+
+def test_the_two_derivation_drifts_are_told_apart_by_a_typed_detail_not_by_the_message(
+    synthetic_bundle: SyntheticBundle,
+) -> None:
+    """One code now covers three conditions, and "classify by string-matching a message" is the
+    thing this repo's own rule forbids. `drift_kind` is the typed discriminator; `path` alone
+    cannot separate the named-record case from the unnamed-row one, since both are the ledger.
+    """
+    drift_a_second_record(synthetic_bundle)
+    unnamed = exclude(synthetic_bundle)
+    named = exclude(synthetic_bundle, record=IMPORTED)
+
+    assert unnamed.diagnostics[0].details["drift_kind"] == "ledger_row"
+    assert named.diagnostics[0].details["drift_kind"] == "named_record"
+    # The discriminator does real work: `path` is identical for both, so a consumer keying on it
+    # would merge two conditions with different remedies.
+    assert unnamed.diagnostics[0].path == named.diagnostics[0].path == "imports/source-ledger.yaml"

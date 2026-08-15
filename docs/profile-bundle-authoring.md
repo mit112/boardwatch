@@ -1368,13 +1368,32 @@ error: import_missing_exclusion (imports/source-ledger.yaml source-record.944c29
 that already disagrees with the candidates and exclusions it derives from — a hand-edited one — would
 have that repaired as a side effect of accounting for one record: a second row moves, its drain entry
 retires, and Gate B's counts change without appearing in the output. The command refuses instead, and
-names the rows, so the repair stays a decision you make on purpose:
+names the rows, so the repair stays a decision you make on purpose.
+
+`import_ledger_derivation_drift` covers **three** conditions, told apart by its `drift_kind` detail
+rather than by reading the message. Two documents are re-derived from one rebuilt ledger, and the
+third case is the record you named — the other two checks skip it by construction.
+
+`drift_kind: ledger_row` — a row you did not name would move:
 
 ```console
 error: import_ledger_derivation_drift (imports/source-ledger.yaml source-record.944c2949...): source-record.944c2949... is recorded as review_required but derives as imported; excluding source-record.5e052137... would re-derive it too and move a Gate B count this command was not asked about, so nothing was written — re-extract the source or correct the ledger first
 ```
 
-Re-run `extract` for that source, or correct the ledger, and then exclude the record you meant.
+`drift_kind: drain_entry` — no row moves, but a stale entry in the extraction report would retire.
+The ledger is the document that is *correct* here, so the remedy names the report instead:
+
+```console
+error: import_ledger_derivation_drift (imports/extraction-report.yaml source-record.944c2949...): source-record.944c2949... carries a drain entry but no longer derives as review_required; excluding source-record.5e052137... would retire that entry too and clear a Gate B finding this command was not asked about, so nothing was written — correct imports/extraction-report.yaml, which is the document holding the stale entry, or re-extract the source that enumerates the record (which rewrites only the entries of the records that source still enumerates, so it cannot remove an entry naming a record no source enumerates at all)
+```
+
+`drift_kind: named_record` — the record you named does not derive as `excluded`. §18's rule tries
+`candidates ⇒ imported` before `an exclusion ⇒ excluded`, so a row recorded `review_required` while
+`imports/candidates.yaml` still holds its candidate derives as `imported` *even with the exclusion
+filed*, and an exclude would otherwise report `imported` as its outcome.
+
+Re-run `extract` for that source, or correct the ledger — or, for `drain_entry`, the extraction
+report — and then exclude the record you meant.
 
 `owner_excluded` is the one reason that costs an owner approval. The command reports the gate it
 introduced and `approve` is where you answer for it — there is no separate command, because §13 puts

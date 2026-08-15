@@ -1246,7 +1246,10 @@ def _only_the_named_record_moves(
     unrelated command.
 
     Returns the named record's rebuilt row, because the caller reports the disposition the
-    derivation produced and this is the one place that row is already in hand.
+    derivation produced and this is the one place that row is already in hand — and refuses when
+    that row does not derive as `excluded`. The unnamed-row loop deliberately skips the named
+    record, so without that second refusal this function's own headline claim would hold for every
+    record except the one the operator actually named.
     """
     rows = {row.source_record_id: row for row in before.records}
     moved = [
@@ -1268,13 +1271,39 @@ def _only_the_named_record_moves(
                     record_id=row.source_record_id,
                     recorded=rows[row.source_record_id].disposition.value,
                     derived=row.disposition.value,
+                    drift_kind="ledger_row",
                 )
                 for row in moved
             )
         )
     # Present by construction: `_excludable_record` found this row in `before`, and
     # `redispositioned_ledger` reproduces every row it was given.
-    return next(row for row in after.records if row.source_record_id == source_record_id)
+    settled = next(row for row in after.records if row.source_record_id == source_record_id)
+    # The loop above skips the named record, so "exactly the named record moves" said nothing
+    # about the named record itself — and the caller reports `settled.disposition` as this
+    # command's outcome. A row whose recorded disposition is `review_required` while
+    # `imports/candidates.yaml` still holds its candidate derives as `imported` even with the
+    # exclusion filed, so an *exclude* command would report `imported`. `_catalog_admits` does
+    # refuse it downstream, but as two findings about `imports/exclusions.yaml` that never name
+    # the drift, leaving the operator without the remedy the other two branches give them.
+    if settled.disposition is not Disposition.EXCLUDED:
+        raise _Refused(
+            (
+                diagnostic(
+                    IssueCode.IMPORT_LEDGER_DERIVATION_DRIFT,
+                    f"{source_record_id} is recorded as {rows[source_record_id].disposition.value} "
+                    f"but derives as {settled.disposition.value} even with its exclusion filed, so "
+                    "excluding it would report an outcome its own derivation contradicts and "
+                    "nothing was written — re-extract the source or correct the ledger first",
+                    path=SOURCE_LEDGER_PATH.as_posix(),
+                    record_id=source_record_id,
+                    recorded=rows[source_record_id].disposition.value,
+                    derived=settled.disposition.value,
+                    drift_kind="named_record",
+                ),
+            )
+        )
+    return settled
 
 
 def _only_the_named_entry_retires(
@@ -1310,10 +1339,14 @@ def _only_the_named_entry_retires(
                     f"{entry.source_record_id} carries a drain entry but no longer derives as "
                     f"review_required; excluding {source_record_id} would retire that entry too "
                     "and clear a Gate B finding this command was not asked about, so nothing was "
-                    "written — re-extract the source or correct the ledger first",
+                    f"written — correct {EXTRACTION_REPORT_PATH.as_posix()}, which is the document "
+                    "holding the stale entry, or re-extract the source that enumerates the record "
+                    "(which rewrites only the entries of the records that source still enumerates, "
+                    "so it cannot remove an entry naming a record no source enumerates at all)",
                     path=EXTRACTION_REPORT_PATH.as_posix(),
                     record_id=entry.source_record_id,
                     drain_reason=entry.reason.value,
+                    drift_kind="drain_entry",
                 )
                 for entry in retired
             )
