@@ -24,9 +24,10 @@ job-apps produces Mit's résumés daily. `resume.yaml` is now an **import source
 adapter `boardwatch-resume-v1`.
 
 **On 2026-08-15 Gate B moved for the first time since it was defined (7 → 4, promoted as revision 6), and
-Stage 2 stopped refusing.** **One owner TTY approval remains owed** — `approve-projection`. Read memories
-`master-reservoir-built-from-wiki` and `option-b-repo-grounded-bullets` before touching the bundle.
-**Nothing sendable has been produced yet.**
+Stage 2 stopped refusing.** Both approvals are spent and **`profile-bundle project` is clean** — no approval
+is owed. Read memories `master-reservoir-built-from-wiki` and `option-b-repo-grounded-bullets` before
+touching the bundle. **The only thing between here and a sendable per-JD résumé is now Task 20's rankings,
+which are Mit's. Nothing sendable has been produced yet.**
 
 ### The active track — the master reservoir (bundle → résumé)
 
@@ -61,10 +62,11 @@ catalog row). **Measured limit ≈ 95 characters**; all four fit.
 `employment.nio-coop`, `employment.sakec` — and **candidates 8** (`employment.nakshatra` + all seven
 projects). The pinned set alone is 7 bullets → **1 page**, so `select` clears its own gate and reaches
 scoring; `PINNED_SET_EXCEEDS_BUDGET` no longer fires. Backup: `projection.yaml.bak-allpinned-20260815`.
-**This staled the projection approval, by measurement** — the stamp binds `sha256:5642175e…` (the all-pinned
-declaration), the current declaration digests to `sha256:c5b237d9…`, and `project_pool` reads that stamp
-unconditionally (D-167), so `profile-bundle project` refuses until `approve-projection` runs on a TTY.
-Previewing a PDF needs no approval: memory `render-preview-without-tty-approve`.
+**Re-approved and verified through the official command:** `profile-bundle project` is **clean, exit 0**,
+reporting bundle `sha256:0f794d81…`, projection `sha256:c5b237d9…`, pinned 3 / candidates 8. The refreshed
+stamp binds both axes at once — the edit *and* the promotion each stale it independently (D-167), which is
+why they were sequenced before a single `approve-projection`. Previewing a PDF needs no approval at all:
+memory `render-preview-without-tty-approve`.
 
 **The one-page ceiling is 16 bullets, not a count of entries** (D-195) — 16 fits in every configuration
 tested, 17 overflows in every one, and two different *6-entry* sets landed on opposite sides of the budget.
@@ -99,14 +101,14 @@ warnings (permanent residue of revision 4, superseded not undone — the promoti
 
 **Owed next — 1 and 2 are Mit's alone; do not start 3–5 unilaterally:**
 
-1. **One TTY approval: `approve-projection`.** The `approve` + `promote` half is done (revision 6). The
-   remaining stamp covers both the promotion and the declaration edit at once — batched on purpose, since a
-   promotion stales the projection approval anyway (D-167), so doing both first spends one stamp, not two.
-2. **Task 20's rankings**, and **individual bullet refinement** (one `edit-fact` per bullet, real numbers
-   only). **Offered and declined-by-default:** hookrail's CI chaos suite (7 failure scenarios, jobs that kill
-   the Postgres primary and Redis master under load asserting RPO=0) is the strongest unclaimed material
-   found and was deliberately **not** added — a new claim would be asserted on Mit's behalf against an
-   attestation covering only wording he has read (D-191).
+1. **Task 20's rankings.** The single remaining thing between here and a sendable per-JD résumé. No approval
+   is owed and no code is owed; `select` reaches scoring, and only the labeled matrix can pick the scorer and
+   set the admission threshold. **No scorer may be run before the labeled commit lands** (D-158/D-163/D-168).
+2. **Individual bullet refinement** (one `edit-fact` per bullet, real numbers only) — also the only lever
+   that widens Stage 2's choice, since D-195 caps a page at 16 bullets. **Offered and declined-by-default:**
+   hookrail's CI chaos suite (7 failure scenarios, jobs that kill the Postgres primary and Redis master under
+   load asserting RPO=0) is the strongest unclaimed material found and was deliberately **not** added — a new
+   claim would be asserted on Mit's behalf against an attestation covering only wording he has read (D-191).
 3. **§5.2 invariant 3** — the last owed audit invariant; needs a heavy builtin-catalog grounding fixture.
 4. **Two D-184 latent findings, both needing a design call** — (a) a partial emission silently drops fields
    (`run_extraction` records a drain reason only when a record produces *no* candidate); all 6 live entries
@@ -187,7 +189,7 @@ whether the daily pipeline gets projection — **yes, after v1**; the pinned/can
 
 | Item | Detail | Owner |
 |---|---|---|
-| **One TTY approval owed: `approve-projection`** | `approve` + `promote` are done (revision 6). Until the projection stamp is refreshed, `profile-bundle project` refuses — the stamp binds projection `5642175e…` and bundle `a4bdc0b2…`, while current are `c5b237d9…` and `0f794d81…`, so it is stale on both axes | Mit |
+| **Task 20's rankings — the last thing blocking a sendable résumé** | No approval and no code are owed. `select` reaches scoring; only the labeled matrix picks the scorer and sets the admission threshold, and no scorer may run before it lands. With 3 jobs pinned, at most 2 candidates can ever be admitted (D-195) | Mit |
 | **A push run is 9 CI jobs, not 12** | D-151 took Windows off the per-push path (`ci.yml:21-33`): scheduled and `workflow_dispatch` get all three OSes, a push gets ubuntu + macOS, a PR ubuntu only. Any "all twelve green" claim describes a *scheduled* run | standing fact |
 | **A contended gate produces FALSE failures** | Running `make check` beside a live subagent turned a green `main` red on three filesystem-timing-sensitive tests. A gate that ran under contention has produced no usable result — re-run alone before diagnosing | standing fact |
 | **Two CI-only jobs: `gitleaks` and `perf`** | `generalization` IS inside `make check` — but it **scans git-TRACKED files only**, so `git add` new files before the gate run you intend to trust. Run `gitleaks git --log-opts=origin/main..HEAD` before a push. **`All checks passed!` is `generalization`'s banner, not the gate's** — it prints ~4 min early | mitigated |
