@@ -113,12 +113,13 @@ start 3–4 unilaterally:**
    load asserting RPO=0) is the strongest unclaimed material found and was deliberately **not** added — a new
    claim would be asserted on Mit's behalf against an attestation covering only wording he has read (D-191).
 3. **§5.2 invariant 3** — the last owed audit invariant; needs a heavy builtin-catalog grounding fixture.
-4. **Two D-184 latent findings, both needing a design call** — (a) a partial emission silently drops fields
+4. **One D-184 latent finding left, needing a design call** — a partial emission silently drops fields
    (`run_extraction` records a drain reason only when a record produces *no* candidate); all 6 live entries
-   parse, so nothing is lost today. (b) A skill-id slug collision silently merges two skills (`C++`/`C#` →
-   `skill.c`); Mit's 58 items yield 58 distinct slugs, so it is a multi-tenancy defect. Also unbuilt:
-   **Education (Slice C)**, and **promoting `header/1`'s `person.professional_name`**
-   (`candidate_promotion.py:180` skips `header/*` unconditionally).
+   parse, so nothing is lost today. (The skill-id slug collision — `C++`/`C#` → `skill.c` — is **RESOLVED
+   (D-202):** promotion now refuses a *grounded* id built from more than one item, mirroring
+   `_entry_subject_kind`, instead of silently merging.) Also unbuilt: **Education (Slice C)**, and
+   **promoting `header/1`'s `person.professional_name`** (`candidate_promotion.py:182` skips `header/*`
+   unconditionally).
 
 **Carried authoring facts (D-185/186/190/191).** **Three guarantees are each narrower than their name**, and
 all three cost a real defect: **`approve` does NOT validate** (only `promote` refuses); **a plain `validate`
