@@ -31,9 +31,10 @@ MET for the first time.** The first real emission crashed and was fixed (D-199).
 line), Projects render `Name | tech | link · dates`, clickable project links shipped as a code feature, and
 the company name is now fact-grounded. Task 23 adopted `mean_per_bullet` (D-198). **Still 0 applications
 sent** — a polished, fact-grounded, Gate-B-clean one-page résumé now renders; sending is Mit's. `tailor run`
-still degrades to the untailored fallback (`bullet_too_long`, open Q5). One owner action is owed: a final
-`approve-projection` to make the links + fact-grounded company live (the D-200 formatting from the earlier
-run is already live, sans links).
+still degrades to the untailored fallback (`bullet_too_long`, open Q5). The owner then re-approved and re-ran
+(`approve-projection` + `resume project` + `tailor run`): the polished résumé — GitHub/App Store links +
+fact-grounded company — is **now live** (fresh `untailored-349.pdf`, 14:45); the projection stamp matches
+the current declaration.
 
 ### The active track — the master reservoir (bundle → résumé)
 
@@ -60,7 +61,7 @@ edge (`F.r2` supersedes `F`; the old wording drops out of the render on its own)
 single TTY approve. **Employer headings** are `'{@display_name}'`, so the entity's `display_name` *is* the
 rendered line, freely hand-editable (limit ≈ 95 chars; all four fit).
 
-### Stage 2 — unblocked (D-195); one re-approval owed for the D-200/D-201 formatting changes
+### Stage 2 — unblocked (D-195); the D-200/D-201 formatting changes are approved and live
 
 `projection.yaml` reads **pinned 3** (`saayam`, `nio-coop`, `sakec`) / **candidates 8** (`nakshatra` + seven
 projects); the pinned set alone is 7 bullets → 1 page, so `select` clears its own gate and reaches scoring.
@@ -98,11 +99,10 @@ start 3–4 unilaterally:**
 
 1. **Emit + formatting + Gate B — DONE (D-199/D-200/D-201).** `resume project --posting 349` emits a polished
    one-page résumé: proper two-line Experience with fact-grounded company, Projects as `Name | tech | link ·
-   dates` (Hookrail→GitHub, StreakSync/FlickSwiper→App Store). **One owner action owed:** a final `uv run
-   boardwatch profile-bundle approve-projection` + `resume project --posting 349` + `tailor run 349 --resume
-   …` to make the links + fact-grounded company live (the earlier run's formatting is already live, sans
-   links). `tailor run` degrades to the untailored fallback (`bullet_too_long`, open Q5); whether to *send*
-   is Mit's. Spotify 13160 admits nothing (skill-orthogonal, D-198) — pick a skill-rich posting. **Deferred
+   dates` (Hookrail→GitHub, StreakSync/FlickSwiper→App Store). **DONE — the owner re-approved and re-ran**;
+   the polished résumé (links + fact-grounded company) is now live (`untailored-349.pdf`, 14:45) and the
+   projection stamp matches the current declaration. `tailor run` degrades to the untailored fallback
+   (`bullet_too_long`, open Q5); whether to *send* is Mit's. Spotify 13160 admits nothing (skill-orthogonal, D-198) — pick a skill-rich posting. **Deferred
    (safe, investigated):** fact-grounding the dates (`{employment.date_range}` renders raw ISO) needs a small
    `render_value` month-formatter + a canonical-format choice from Mit; dates stay declaration literals until
    then. Project links come from declaration literals (no `entity.url` facts; that predicate is not
