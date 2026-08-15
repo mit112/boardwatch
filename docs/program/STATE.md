@@ -36,6 +36,12 @@ still degrades to the untailored fallback (`bullet_too_long`, open Q5). The owne
 fact-grounded company — is **now live** (fresh `untailored-349.pdf`, 14:45); the projection stamp matches
 the current declaration.
 
+**With the résumé track shippable, the session pivoted to post-Gate-B robustness.** A multi-tenancy sweep
+found `candidate_promotion.py` was the only lossy-id-creation site in `src/`; three of its slug-collision
+sites are now refused rather than silently merging — skill_id (D-202, shipped + CI-green), and entity_id +
+category_id (D-203). **The sweep undercounted: `grep -n "_slug("` returns four id-building lines, and the
+fourth (`fact_id`) is still open — see D-203 residual (a2).** A 4-agent roadmap sweep then scoped the remaining autonomous engineering backlog (below).
+
 ### The active track — the master reservoir (bundle → résumé)
 
 > **The Stage 1 loop is CLOSED**: `~/dev/portfolio-website/wiki` → an **11-entity master bundle** →
@@ -94,32 +100,36 @@ residue of earlier revisions, non-blocking). The path to zero:
   fact's verification state); owner approved + promoted → revision 7. **This also fact-grounded the résumé
   company name** — the last thing the D-200 formatting needed.
 
-**Owed next — the bundle → résumé track is essentially complete; the remaining items are Mit's; do not
-start 3–4 unilaterally:**
+**Owed next.** The bundle → résumé track is complete; its remaining items (1–2) are Mit's. A scoped
+**autonomous engineering backlog** (3) needs no owner input. Item 4 is **owner-gated — do not start**.
 
-1. **Emit + formatting + Gate B — DONE (D-199/D-200/D-201).** `resume project --posting 349` emits a polished
-   one-page résumé: proper two-line Experience with fact-grounded company, Projects as `Name | tech | link ·
-   dates` (Hookrail→GitHub, StreakSync/FlickSwiper→App Store). **DONE — the owner re-approved and re-ran**;
-   the polished résumé (links + fact-grounded company) is now live (`untailored-349.pdf`, 14:45) and the
-   projection stamp matches the current declaration. `tailor run` degrades to the untailored fallback
-   (`bullet_too_long`, open Q5); whether to *send* is Mit's. Spotify 13160 admits nothing (skill-orthogonal, D-198) — pick a skill-rich posting. **Deferred
-   (safe, investigated):** fact-grounding the dates (`{employment.date_range}` renders raw ISO) needs a small
-   `render_value` month-formatter + a canonical-format choice from Mit; dates stay declaration literals until
-   then. Project links come from declaration literals (no `entity.url` facts; that predicate is not
-   owner-attestable).
-2. **Individual bullet refinement** (one `edit-fact` per bullet, real numbers only) — also the only lever
-   that widens Stage 2's choice, since D-195 caps a page at 16 bullets. **Offered and declined-by-default:**
-   hookrail's CI chaos suite (7 failure scenarios, jobs that kill the Postgres primary and Redis master under
-   load asserting RPO=0) is the strongest unclaimed material found and was deliberately **not** added — a new
-   claim would be asserted on Mit's behalf against an attestation covering only wording he has read (D-191).
-3. **§5.2 invariant 3** — the last owed audit invariant; needs a heavy builtin-catalog grounding fixture.
-4. **One D-184 latent finding left, needing a design call** — a partial emission silently drops fields
-   (`run_extraction` records a drain reason only when a record produces *no* candidate); all 6 live entries
-   parse, so nothing is lost today. (The skill-id slug collision — `C++`/`C#` → `skill.c` — is **RESOLVED
-   (D-202):** promotion now refuses a *grounded* id built from more than one item, mirroring
-   `_entry_subject_kind`, instead of silently merging.) Also unbuilt: **Education (Slice C)**, and
-   **promoting `header/1`'s `person.professional_name`** (`candidate_promotion.py:182` skips `header/*`
-   unconditionally).
+1. **Résumé emit/format/Gate B — DONE (D-199/D-200/D-201).** The polished one-page résumé is live
+   (`untailored-349.pdf`); **sending is Mit's.** `tailor run` degrades to the untailored fallback
+   (`bullet_too_long`, open Q5). *Mit's calls:* fact-grounding the dates (needs a canonical-format choice —
+   `{employment.date_range}` renders raw ISO) and shortening the 2 over-length bullets to lift the fallback.
+2. **Individual bullet refinement** (one `edit-fact` per bullet, real numbers) — Mit's content (D-191); also
+   the only lever that widens Stage 2's choice (D-195 caps a page at 16 bullets). Hookrail's CI-chaos suite is
+   the strongest unclaimed material, deliberately **not** added (no attestation for wording Mit has not read).
+3. **Autonomous engineering backlog (no owner input) — scoped 2026-08-15 by a 4-agent sweep:**
+   - **Promotion slug-collision class — 3 of 4 sites closed (D-202 skill_id + D-203 entity_id/category_id).**
+     `candidate_promotion.py` is the *only* lossy-id-creation site in `src/`, and those three lines now refuse
+     a colliding id instead of silently merging. **Still open: the `fact_id` builders, which drop the entity
+     kind, so two entries of different kinds whose ids slug-collide clear the entity guard and still collide
+     (D-203 residual a2) — an untyped pydantic traceback, not a refusal.** Also open: `_merge_categories`'s
+     `:499` collision-with-an-existing-category (low priority).
+   - **§5.2 invariant 3** — confirmed autonomous (test construction; semantics owner-decided 2026-08-14). Path:
+     a `ValidationContext` from in-memory `FactRecord`/`SkillRecord` on `builtin_catalog(1)`, assert an
+     incidental-context `technology.used` grounds nothing while a professional one does.
+   - **`pdfinfo` soft-failure** (`reports/tailor.py:170-197`) — a missing binary is laundered into
+     `COMPILE_FAILED` → a silent empty run; mirror `tectonic`'s `BINARY_MISSING` run-level-fatal.
+   - **`export --format csv` UTF-8** (`export_cmd.py:70`) — pure encoding fix, no policy call.
+   - **Two fixture-drift fixes** — derive `test_extraction_mapping.py:60-78` from `model_dump`; derive
+     `test_predicate_catalog.py:61-73`'s predicate set from the live mapping. (Memory: test-fixture-drift-risks.)
+4. **Owner-gated — do NOT start unilaterally:** **D-184 finding 2** (partial emission silently drops fields;
+   `run_extraction` records a reason only when a record produces *no* candidate — redefines the Gate B
+   accounting contract, 4 mutually-exclusive designs, nothing lost today); the provider ATS-fixture +
+   eligibility-corpus drift (need live network / a missing generator); **Education Slice C**; promoting
+   `header/1`'s `person.professional_name` (`candidate_promotion.py:182` skips `header/*`).
 
 **Carried authoring facts (D-185/186/190/191).** **Three guarantees are each narrower than their name**, and
 all three cost a real defect: **`approve` does NOT validate** (only `promote` refuses); **a plain `validate`
