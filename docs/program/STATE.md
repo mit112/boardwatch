@@ -1,17 +1,14 @@
 # PROGRAM STATE — read this first
 
 > The one file a fresh session with zero memory reads to know where the program stands.
-> **If it disagrees with the repo, the repo wins** — fix this file and note the correction in
-> `DECISIONS.md`. Plan: `PROGRAM.md`. Numbers: `METRICS.md`. Rationale: `DECISIONS.md`. What shipped:
-> `CHANGELOG.md`. **Facts you should not re-derive: `STANDING-FACTS.md`** (D-139) — read it by section,
-> when you are about to touch the thing it describes.
+> **If it disagrees with the repo, the repo wins** — fix this file and record the correction in
+> `DECISIONS.md`. Plan: `PROGRAM.md`. Rationale: `DECISIONS.md`. Numbers: `METRICS.md`. Shipped:
+> `CHANGELOG.md`. **Do not re-derive `STANDING-FACTS.md`** (D-139) — read the section for what you are
+> about to touch. Both logs carry an index spanning themselves and a closed archive (D-108): read the
+> index, then the one range — never the whole file.
 >
-> `DECISIONS.md` and `METRICS.md` each carry an **index spanning themselves and a closed archive**
-> (`*-ARCHIVE.md`, D-108). Read the index, then the one range you need — never the whole file.
-
-**This file states only what is true now**, and carries no commit sha or commit count on purpose — both go
-stale inside a single session (D-017). `git log --oneline -1` and `git status --short --branch` are the
-authority. **Rewrite it, never prepend to it.** Keep it near 170 lines.
+> **States only what is true now**; no sha or commit count, both go stale inside one session (D-017).
+> **Rewrite it, never prepend.** Keep it near 170 lines.
 
 ---
 
@@ -19,7 +16,8 @@ authority. **Rewrite it, never prepend to it.** Keep it near 170 lines.
 
 **The headline number: 0.** Zero job applications have ever come out of boardwatch (`applications` has 0
 rows), zero unattended days, zero acceptance days. Against that: 3 published releases, ~46k lines of source,
-6,308 tests, 63 leaf CLI commands (17 `profile-bundle`), 6 ATS providers, an 800 MB / 24,073-posting store.
+**6,353 tests, 69 leaf CLI commands (19 `profile-bundle`)** — both measured 2026-08-15 — 6 ATS providers, an
+800 MB / 24,073-posting store.
 
 **The program reoriented on 2026-08-13 (D-155):** remaining work runs through the **canonical career-profile
 bundle**, not the old `resume.yaml` path. **P3, P6 and the 14-day clock are frozen** — costless, because
