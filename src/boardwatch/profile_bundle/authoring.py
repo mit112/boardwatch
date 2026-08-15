@@ -184,8 +184,11 @@ from boardwatch.profile_bundle.validation import (
     context_from_documents,
     load_documents,
     parse_error_diagnostics,
+    validate_referential,
     validate_semantic,
+    validate_structural,
 )
+from boardwatch.profile_bundle.validation.evidence import validate_evidence_structural
 from boardwatch.profile_bundle.yaml_loader import load_yaml_bytes
 from boardwatch.profile_bundle.yaml_writer import document_bytes
 
@@ -517,7 +520,9 @@ def edit_fact(
     **The successor joins no conflict group.** A group lists its candidates by ID, and a record it
     does not name reports `conflict_candidate_mismatch`; adding one is a ruling, which
     `resolve_conflict` owns. The parent stays a candidate, now superseded — which is what "this
-    candidate was corrected" means.
+    candidate was corrected" means. That is only reachable for a group that no longer blocks:
+    `_correctable` refuses a candidate of one that does, because there the successor would escape
+    the block entirely.
     """
     try:
         tree = _draft(bundle_root, draft_name)
@@ -600,10 +605,9 @@ def add_fact(
     failure mode where a shared writer's defaulted status quietly reports success for paths that
     never earned it. A caller that cannot say how it knows something has not established it.
 
-    The owning document is found by the subject's existing facts rather than by entity kind, so the
-    twelve fact-bearing document types stay one question instead of a list that goes stale. A
-    subject with no facts at all therefore reads as absent, which is the same refusal a genuinely
-    unknown subject gets and sends the operator to the same place: promote the entity first.
+    The owning document is the one that DECLARES the subject, asked of `BundleIndex` rather than
+    found by searching for a fact about it — see `_document_owning` for why both alternatives are
+    wrong. A subject the draft declares nowhere is refused, and nothing is written.
     """
     try:
         tree = _draft(bundle_root, draft_name)
@@ -1633,6 +1637,18 @@ _EVIDENCE_RELATIONSHIPS: Final = (
     "contextualizes_record_ids",
 )
 
+#: The validation layers that judge a RECORD, which is what these commands write. `validate_bundle`
+#: runs three more that this cannot: `history` and `imports` read ledgers no fact write touches, and
+#: `digest` compares the manifest against bytes on disk — the bytes a pre-write check has not
+#: written. A test pins this set against `validate_bundle`'s own list so a new layer cannot be added
+#: there and silently skipped here.
+_RECORD_LAYERS: Final = (
+    validate_structural,
+    validate_referential,
+    validate_evidence_structural,
+    validate_semantic,
+)
+
 
 def _evidence_naming(
     documents: BundleDocuments,
@@ -1684,11 +1700,17 @@ def _evidence_naming(
         #
         # `mirroring` is the parent whose relationship to copy, and is None for a new fact, which
         # has no parent to read and so declares the support its caller cited.
-        fields = [
-            field
-            for field in _EVIDENCE_RELATIONSHIPS
-            if mirroring is not None and mirroring in row[field]
-        ] or ["supports_record_ids"]
+        # A parent named in NONE of the three lists is an asymmetric draft, and the successor
+        # inherits that rather than being handed a relationship to repair it: falling back to
+        # `supports` here would be the same defect as writing `supports` for a contextualizing
+        # record — the successor acquires supporting evidence its parent never had, and
+        # `_catalog_admits` cannot see it, because the parent's findings are unchanged and so read
+        # as pre-existing while the successor has none of its own.
+        fields = (
+            ["supports_record_ids"]
+            if mirroring is None
+            else [field for field in _EVIDENCE_RELATIONSHIPS if mirroring in row[field]]
+        )
         for field in fields:
             # Sorted for `UniqueSorted`'s reason, and rebuilt from a set so re-offering a link that
             # is already there is a no-op rather than a duplicate refusal.
@@ -1710,20 +1732,32 @@ def _catalog_admits(
     written past its catalog row could never be taken back out of the draft.
 
     Asked as a DIFF rather than as a list of checks, for the reason `_gates` derives owner gates
-    instead of restating them: naming the five codes that can fire would be a second statement of
-    the catalog's rules, free to drift from the one `validate_semantic` enforces at promotion.
-    Anything the prospective tree reports that the current one does not is caused by this write.
+    instead of restating them: naming the codes that can fire would be a second statement of the
+    catalog's rules, free to drift from the ones enforced at promotion. Anything the prospective
+    tree reports that the current one does not is caused by this write.
+
+    **Four layers, not one.** The contracts a fact must satisfy are not all in one place, and the
+    first version of this consulted `validate_semantic` alone — which admitted a fact whose basis
+    the evidence it cites cannot establish, because `verification_basis_unsupported` is raised by
+    `validate_evidence_structural`. The three layers left out judge things this write does not
+    touch: `history` and `imports` read ledgers, and `digest` compares a manifest to bytes on disk,
+    which is exactly what has not been written yet.
     """
     after = BundleDocuments(manifest=before.manifest, by_path={**before.by_path, **changed})
-    seen = {
-        (item.code, item.record_id, item.message)
-        for item in validate_semantic(context_from_documents(before, root=tree, mode="draft"))
-    }
+
+    def reported(documents: BundleDocuments) -> tuple[Diagnostic, ...]:
+        ctx = context_from_documents(documents, root=tree, mode="draft")
+        return tuple(item for layer in _RECORD_LAYERS for item in layer(ctx))
+
+    found = tuple(item for item in reported(after) if item.tier in {"error", "blocker"})
+    if not found:
+        # The overwhelmingly common case, and the reason the before-pass is computed lazily: a tree
+        # that reports nothing cannot be reporting something this write introduced, so there is
+        # nothing to compare it against and the second full pass is pure cost.
+        return
+    seen = {(item.code, item.record_id, item.message) for item in reported(before)}
     introduced = tuple(
-        item
-        for item in validate_semantic(context_from_documents(after, root=tree, mode="draft"))
-        if item.tier in {"error", "blocker"}
-        and (item.code, item.record_id, item.message) not in seen
+        item for item in found if (item.code, item.record_id, item.message) not in seen
     )
     if introduced:
         raise _Refused(introduced)

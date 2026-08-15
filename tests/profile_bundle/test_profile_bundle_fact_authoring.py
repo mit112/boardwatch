@@ -29,13 +29,15 @@ the original stays immutable, so history is derivable rather than overwritten.
 from __future__ import annotations
 
 import json
+import re
 from datetime import date
-from pathlib import PurePosixPath
+from pathlib import Path, PurePosixPath
 
 import pytest
 from typer.testing import CliRunner
 
 from boardwatch.cli.app import app
+from boardwatch.profile_bundle import authoring
 from boardwatch.profile_bundle.authoring import add_fact, edit_fact
 from boardwatch.profile_bundle.models.base import EFFECTIVE_STATES, VerificationState
 from boardwatch.profile_bundle.models.documents import FactBearingDocument
@@ -162,6 +164,21 @@ def seed_conflict_membership(
     _rewrite(bundle, "facts/experience/employment.example-labs.yaml", join)
     _rewrite(bundle, "conflicts/groups.yaml", list_candidate)
     return conflict_id
+
+
+def strip_back_citation(bundle: SyntheticBundle, fact_id: str, evidence_id: str) -> None:
+    """Leave the draft asymmetric: the fact cites the record, the record names nothing back.
+
+    The state `evidence_link_asymmetry` exists to report, reachable in any hand-edited draft.
+    """
+
+    def unname(data: dict) -> None:  # type: ignore[type-arg]
+        rows = [row for row in data["evidence"] if row["evidence_id"] == evidence_id]
+        assert len(rows) == 1
+        for field in ("supports_record_ids", "contradicts_record_ids", "contextualizes_record_ids"):
+            rows[0][field] = [item for item in rows[0][field] if item != fact_id]
+
+    _rewrite(bundle, "evidence/records.yaml", unname)
 
 
 def evidence_record(bundle: SyntheticBundle, evidence_id: str) -> object:
@@ -811,6 +828,78 @@ def test_edit_fact_refuses_a_fact_inside_a_conflict_group(
     assert [item.code for item in outcome.diagnostics] == ["conflict_candidate_mismatch"]
 
 
+def test_add_fact_refuses_a_basis_the_cited_evidence_cannot_establish(
+    synthetic_bundle: SyntheticBundle,
+) -> None:
+    """The basis contract is an EVIDENCE-layer rule, not a semantic one.
+
+    A pre-write check that consulted only `validate_semantic` admitted this: the basis is in the
+    predicate's `legal_verification_bases`, the `{owner_attestation}` alternative of its
+    `minimum_evidence` is satisfied, `employment.title` is cardinality `many` so nothing competes,
+    and `_owner_attestation_is_permitted` returns early for a basis that is not `owner_attested`.
+    Only `validate_evidence_structural` knows that an `owner_attestation` record cannot establish
+    `private_document_verified`.
+
+    The fact would then be stuck: append-only, and `edit-fact` refuses to correct a fact whose
+    basis is not `owner_attested`.
+    """
+    before = {
+        path: path.read_bytes()
+        for path in sorted(synthetic_bundle.draft.rglob("*"))
+        if path.is_file()
+    }
+
+    outcome = add_fact(
+        synthetic_bundle.root,
+        draft_name=synthetic_bundle.draft_name,
+        fact_id="fact.example-labs.title.002",
+        subject_id=LABS,
+        predicate="employment.title",
+        value="Staff Engineer",
+        evidence_id=ATTESTATION,
+        verification_state="verified",
+        verification_basis="private_document_verified",
+        usage_context="professional",
+        surfaces=("resume",),
+        as_of=AS_OF,
+    )
+
+    assert outcome.category == "findings"
+    assert "verification_basis_unsupported" in [item.code for item in outcome.diagnostics]
+    after = {
+        path: path.read_bytes()
+        for path in sorted(synthetic_bundle.draft.rglob("*"))
+        if path.is_file()
+    }
+    assert after == before
+
+
+def test_edit_fact_invents_no_relationship_the_parent_did_not_have(
+    synthetic_bundle: SyntheticBundle,
+) -> None:
+    """An asymmetric parent gets an asymmetric successor, not a manufactured `supports`.
+
+    Falling back to `supports` whenever the parent is named in none of the three lists is the same
+    defect as writing `supports` for a contextualizing record: it hands the successor supporting
+    evidence its parent never had, and `_catalog_admits` cannot see it — the parent's findings are
+    unchanged, so they read as pre-existing, and the successor has none.
+    """
+    strip_back_citation(synthetic_bundle, TITLE, ATTESTATION)
+
+    edit_fact(
+        synthetic_bundle.root,
+        draft_name=synthetic_bundle.draft_name,
+        fact_id=TITLE,
+        value="Senior Software Engineer",
+        as_of=AS_OF,
+    )
+
+    record = evidence_record(synthetic_bundle, ATTESTATION)
+    assert f"{TITLE}.r2" not in record.supports_record_ids
+    assert f"{TITLE}.r2" not in record.contradicts_record_ids
+    assert f"{TITLE}.r2" not in record.contextualizes_record_ids
+
+
 def test_edit_fact_allows_a_fact_whose_conflict_is_resolved(
     synthetic_bundle: SyntheticBundle,
 ) -> None:
@@ -833,6 +922,33 @@ def test_edit_fact_allows_a_fact_whose_conflict_is_resolved(
     )
 
     assert outcome.category == "clean", outcome.diagnostics
+
+
+def test_the_pre_write_layers_are_validate_bundles_own_list_minus_three() -> None:
+    """Read from `run.py`'s source, not restated here — the emitter owns the list.
+
+    `_catalog_admits` runs a SUBSET of what `promote` runs, and a subset is only safe while it is
+    derived from the whole. An eighth layer added to `validate_bundle` would otherwise be silently
+    absent from the pre-write check, which is exactly how the first version came to consult
+    `validate_semantic` alone and admit a fact `validate_evidence_structural` rejects.
+
+    The three excluded are named here with the reason they cannot apply: `history` and `imports`
+    read ledgers no fact write touches, and `digest` compares the manifest against bytes on disk,
+    which a pre-write check has deliberately not written.
+    """
+    source = (
+        Path(authoring.__file__).parent / "validation" / "run.py"
+    ).read_text(encoding="utf-8")
+    block = source.split("findings: list[Diagnostic] = [", 1)[1].split("]", 1)[0]
+    emitted = set(re.findall(r"\*(validate_\w+)\(ctx\)", block))
+    assert emitted, "could not read validate_bundle's layer list"
+
+    consulted = {layer.__name__ for layer in authoring._RECORD_LAYERS}
+    excluded = {"validate_history", "validate_imports", "validate_digest"}
+    assert consulted | excluded == emitted, (
+        f"validate_bundle runs {sorted(emitted)}; the pre-write check consults "
+        f"{sorted(consulted)} and deliberately skips {sorted(excluded)}"
+    )
 
 
 def test_the_incremental_loop_runs_without_re_importing_the_source(

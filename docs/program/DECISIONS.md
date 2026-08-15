@@ -7315,3 +7315,31 @@ caught predicate errors (it cannot), and the write-ordering comment named `evide
 residual failure class when it is `broken_reference` — `_evidence_links_are_symmetric` skips a target already
 reported as a broken reference. **The lesson worth carrying: three of the five were invisible to a green
 `make check`, because the tests and the code shared the author's assumption about where validation runs.**
+
+**Second review, of the fix round.** A fix round inherits its author's blind spot, so the fixes above were
+reviewed in fresh context. Three defects survived the first round, all narrower variants of what it found —
+a declining severity curve, which is the stated reason the loop stops here rather than running a third time.
+
+1. **`_catalog_admits` consulted one layer, and the basis contract lives in another.**
+   `verification_basis_unsupported` is raised by `validate_evidence_structural`, not
+   `validate_semantic` — so `add-fact --verification-state verified --verification-basis
+   private_document_verified` citing an `owner_attestation` record returned **`clean`**, wrote all three
+   documents, and reported the error only afterwards. The fact was then doubly stuck: append-only, and
+   `edit-fact` refuses to correct a fact whose basis is not `owner_attested`. The check now runs the four
+   layers that judge a RECORD, and a test reads `validate_bundle`'s own list out of `run.py` and asserts
+   the consulted set plus the three deliberately excluded (`history` and `imports` read ledgers; `digest`
+   compares a manifest to bytes not yet written) is exactly it — so an eighth layer cannot be added there
+   and silently skipped here. That test is the guard the first version lacked.
+2. **The relationship fallback re-created the defect it fixed.** When the parent was named in *none* of a
+   record's three lists — an asymmetric draft, the state `evidence_link_asymmetry` exists to report — the
+   successor was still written into `supports_record_ids`, handing it supporting evidence its parent never
+   had. `_catalog_admits` is blind to it by construction: the parent's findings are unchanged and so read
+   as pre-existing, and the successor has none. An asymmetric parent now yields an asymmetric successor.
+3. **Two docstrings outlived their code** in the same commit that corrected two others.
+
+The reviewer independently reached the conflict-guard defect already fixed above, by the same route
+(key on the group's state, not on membership), which is corroboration rather than a new finding.
+
+**Cost.** `edit-fact` on the 11-entity master measures **1.2s warm against a 1.14s interpreter-startup
+floor** — the pre-write check is ~0.1s, and the before-pass is computed only when the after-pass reports
+something, so a clean write validates once.
