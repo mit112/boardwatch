@@ -45,6 +45,14 @@ All notable changes to this project are documented here. The format follows
   prospective tree — including the completeness layer that owns the drain reconciliation, which no
   authoring command's closing revalidation reaches.
 
+  It moves **exactly the record named**. Re-deriving the whole ledger is what keeps disposition
+  derived, and it is also how a ledger that already disagreed with the documents it derives from
+  would have had that repaired as a side effect: a second row moving, its drain entry retiring, and
+  Gate B's counts changing with nothing shown to the operator. That is refused —
+  `import_ledger_derivation_drift`, naming the rows — rather than silently absorbed. The ledger and
+  the drain are written before the exclusion, so the one half-applied state the renames can leave is
+  the one the same command run again completes.
+
   `owner_excluded` is the one reason that costs an `approve_source_record_exclusion` sub-approval.
   It is derived from the write, shown by `approve`, and filed in that candidate's single stamp;
   promoting without it is `missing_owner_approval`. The stamp now binds

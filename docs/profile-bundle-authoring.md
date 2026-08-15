@@ -1364,6 +1364,18 @@ error: duplicate_record_id (imports/exclusions.yaml source-record.bcf308bb...): 
 error: import_missing_exclusion (imports/source-ledger.yaml source-record.944c2949...): source-record.944c2949... is dispositioned imported and names 1 candidate(s)
 ```
 
+**Exactly the record you name moves.** Re-deriving is what keeps disposition derived, so a ledger
+that already disagrees with the candidates and exclusions it derives from — a hand-edited one — would
+have that repaired as a side effect of accounting for one record: a second row moves, its drain entry
+retires, and Gate B's counts change without appearing in the output. The command refuses instead, and
+names the rows, so the repair stays a decision you make on purpose:
+
+```console
+error: import_ledger_derivation_drift (imports/source-ledger.yaml source-record.944c2949...): source-record.944c2949... is recorded as review_required but derives as imported; excluding source-record.5e052137... would re-derive it too and move a Gate B count this command was not asked about, so nothing was written — re-extract the source or correct the ledger first
+```
+
+Re-run `extract` for that source, or correct the ledger, and then exclude the record you meant.
+
 `owner_excluded` is the one reason that costs an owner approval. The command reports the gate it
 introduced and `approve` is where you answer for it — there is no separate command, because §13 puts
 exactly one stamp on a candidate:

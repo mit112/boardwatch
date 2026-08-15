@@ -369,8 +369,10 @@ class RecordExclusion:
     draft_name: str
     source_record_id: str
     reason: str
-    #: What the record was dispositioned before this write — `review_required` in every case the
-    #: command admits, reported so the operator can see the denominator move rather than infer it.
+    #: What the record was dispositioned before this write, reported so the operator can see the
+    #: denominator move rather than infer it. Usually `review_required`, but not always:
+    #: `_excludable_record` also admits a row already dispositioned `excluded` that carries no
+    #: exclusion, which is the state a half-applied write leaves and a re-run completes.
     previous_disposition: str
     disposition: str
     #: The paths this write actually rewrote, in the order they landed. `imports/extraction-report`
@@ -698,6 +700,12 @@ def exclude_record(
     `build_source_ledger` applies after an import. Writing `disposition: excluded` directly would
     make the ledger a second source of truth for a fact `imports/exclusions.yaml` already states.
 
+    **Exactly the named record moves.** Re-deriving every row is what keeps disposition derived, and
+    it is also how this command could quietly repair a ledger that already disagreed with the
+    documents it derives from — a second row moving, its drain entry retiring, Gate B's counts
+    changing, and the operator told about one record. `_only_the_named_record_moves` refuses that
+    outright; see it for why fail-safe here means refusing rather than repairing.
+
     **Three documents move together, which is why this is a command.** The exclusion, the ledger
     row it re-derives, and — when the record was carrying one — the `imports/extraction-report.yaml`
     entry that explained why it was still unresolved. §6.3a forbids a report entry for an excluded
@@ -727,13 +735,19 @@ def exclude_record(
         appended = _exclusion_appended(exclusion_document, source_record_id, reason, rationale)
         exclusions = {item.source_record_id: item for item in appended.exclusions}
         rebuilt = _redispositioned(ledger, package, exclusions)
-        changed: dict[PurePosixPath, DocumentModel] = {
-            IMPORT_EXCLUSIONS_PATH: appended,
-            SOURCE_LEDGER_PATH: rebuilt,
-        }
+        settled = _only_the_named_record_moves(ledger, rebuilt, source_record_id)
+        # The ledger and the drain FIRST, the exclusion last, because the renames are not atomic
+        # (D-137) and the order decides what a half-applied write leaves behind. Exclusion-first
+        # leaves the reason durable against a ledger that has not moved, which is the one state a
+        # retry cannot repair: `_excludable_record` refuses `duplicate_record_id`, and no command
+        # removes an exclusion, so only discarding the draft works. This way round the half-applied
+        # state is a ledger row dispositioned `excluded` with no exclusion beside it — which the
+        # same command run again completes, because that row is still one it admits.
+        changed: dict[PurePosixPath, DocumentModel] = {SOURCE_LEDGER_PATH: rebuilt}
         drained = _report_without_dispositioned(report, rebuilt)
         if drained is not None:
             changed[EXTRACTION_REPORT_PATH] = drained
+        changed[IMPORT_EXCLUSIONS_PATH] = appended
         _catalog_admits(tree, documents, changed, layers=_LEDGER_LAYERS)
         _write_documents(tree, changed)
     except _Refused as refusal:
@@ -745,7 +759,10 @@ def exclude_record(
             source_record_id=source_record_id,
             reason=reason,
             previous_disposition=record.disposition.value,
-            disposition=Disposition.EXCLUDED.value,
+            # Read off the REBUILT ledger rather than stated as `excluded` here. The command's whole
+            # claim is that disposition is derived, and a constant would report that claim's
+            # expected answer whatever the derivation actually produced.
+            disposition=settled.disposition.value,
             documents=tuple(path.as_posix() for path in changed),
             owner_gates=_gates(documents, changed),
         )
@@ -1203,6 +1220,60 @@ def _redispositioned(
             f"{SOURCE_LEDGER_PATH} would not be valid after this exclusion: {exc}",
             path=SOURCE_LEDGER_PATH.as_posix(),
         ) from exc
+
+
+def _only_the_named_record_moves(
+    before: SourceLedger, after: SourceLedger, source_record_id: str
+) -> SourceLedgerRecord:
+    """Refuse when re-deriving would move a row the operator did not name, and return the one that
+    did.
+
+    `redispositioned_ledger` re-derives EVERY row, which is what keeps disposition derived rather
+    than authored — and is also why this check has to exist. A ledger that already disagrees with
+    the documents its dispositions come from (a hand-edited one, which §16 supports) gets that
+    disagreement repaired as a side effect of accounting for one record: a second row moves,
+    `imports/extraction-report.yaml` drops its drain entry too, and Gate B's counts change with
+    nothing shown to the operator.
+
+    `_catalog_admits` cannot object to it. That check is a DIFF keyed on
+    `(code, record_id, message)`, and repairing an inconsistency only ever REMOVES findings, so it
+    has nothing to introduce.
+
+    The fail-safe direction is to refuse. The operator asked about one record; a silent Gate B
+    movement is invisible, and the repair — re-running `extract` for the source, or correcting the
+    ledger — is a decision they should be making on purpose rather than inheriting from an
+    unrelated command.
+
+    Returns the named record's rebuilt row, because the caller reports the disposition the
+    derivation produced and this is the one place that row is already in hand.
+    """
+    rows = {row.source_record_id: row for row in before.records}
+    moved = [
+        row
+        for row in after.records
+        if row.source_record_id != source_record_id and rows.get(row.source_record_id) != row
+    ]
+    if moved:
+        raise _Refused(
+            tuple(
+                diagnostic(
+                    IssueCode.IMPORT_LEDGER_DERIVATION_DRIFT,
+                    f"{row.source_record_id} is recorded as "
+                    f"{rows[row.source_record_id].disposition.value} but derives as "
+                    f"{row.disposition.value}; excluding {source_record_id} would re-derive it too "
+                    "and move a Gate B count this command was not asked about, so nothing was "
+                    "written — re-extract the source or correct the ledger first",
+                    path=SOURCE_LEDGER_PATH.as_posix(),
+                    record_id=row.source_record_id,
+                    recorded=rows[row.source_record_id].disposition.value,
+                    derived=row.disposition.value,
+                )
+                for row in moved
+            )
+        )
+    # Present by construction: `_excludable_record` found this row in `before`, and
+    # `redispositioned_ledger` reproduces every row it was given.
+    return next(row for row in after.records if row.source_record_id == source_record_id)
 
 
 def _report_without_dispositioned(

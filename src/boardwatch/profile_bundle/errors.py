@@ -150,6 +150,14 @@ class IssueCode(StrEnum):
     IMPORT_RECORD_UNDISPOSITIONED = "import_record_undispositioned"
     IMPORT_UNEXPLAINED_RECORD = "import_unexplained_record"
     IMPORT_CANDIDATE_IDENTITY_MISMATCH = "import_candidate_identity_mismatch"
+    #: The ledger on disk disagrees with the disposition its own three-branch rule derives, for a
+    #: record the operator did not name. Raised by `exclude_record` before it writes anything:
+    #: re-deriving the whole ledger would repair that disagreement as a side effect of accounting
+    #: for one record, moving a Gate B count with nothing shown to the operator. Not reported by a
+    #: validation layer — the layers see the *consequences* of the drift (a candidate its record
+    #: does not name, an exclusion whose row is not `excluded`), and this names the drift itself at
+    #: the one moment a command is about to silently absorb it.
+    IMPORT_LEDGER_DERIVATION_DRIFT = "import_ledger_derivation_drift"
 
     # -- digest and history identity -----------------------------------------------
     BUNDLE_DIGEST_MISMATCH = "bundle_digest_mismatch"

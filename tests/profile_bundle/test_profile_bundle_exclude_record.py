@@ -24,6 +24,7 @@ actually holds the parent the diff needs — rather than asserting the derivatio
 from __future__ import annotations
 
 import json
+import os
 import re
 from datetime import UTC, datetime
 from pathlib import Path, PurePosixPath
@@ -44,10 +45,18 @@ from boardwatch.profile_bundle.canonical import (
     source_exclusion_target_digest,
 )
 from boardwatch.profile_bundle.models.history import ApprovalAction, ApprovalStamp
-from boardwatch.profile_bundle.models.imports import Disposition, ExclusionLedger, SourceLedger
+from boardwatch.profile_bundle.models.imports import (
+    Disposition,
+    ExclusionLedger,
+    ExclusionRecord,
+    ExtractionReport,
+    SourceLedger,
+    SourceLedgerRecord,
+)
 from boardwatch.profile_bundle.paths import approval_path
 from boardwatch.profile_bundle.validation import load_documents, validate_bundle
 from boardwatch.profile_bundle.yaml_loader import load_yaml_bytes
+from boardwatch.profile_bundle.yaml_writer import document_bytes
 from tests.profile_bundle.conftest import SyntheticBundle, stored_blob_reader
 from tests.profile_bundle.test_profile_bundle_cli_approval import FakeTerminal
 
@@ -182,16 +191,147 @@ def test_the_drain_entry_for_the_now_excluded_record_retires_with_it(
     assert UNDISPOSITIONED not in report_path.read_text(encoding="utf-8")
 
     assert outcome.value is not None
+    # Ledger, drain, exclusion — the order the renames land in, and the reason the half-applied
+    # state below is repairable. See the retry test.
     assert outcome.value.documents == (
-        "imports/exclusions.yaml",
         "imports/source-ledger.yaml",
         "imports/extraction-report.yaml",
+        "imports/exclusions.yaml",
     )
     assert outcome.value.previous_disposition == "review_required"
-    assert outcome.value.disposition == "excluded"
+    # What the command REPORTS against what the ledger on disk says, read back through the loader.
+    # `RecordExclusion.disposition` is taken off the re-derived row for this reason: stated as the
+    # constant `excluded` it would report the expected answer whatever the derivation produced.
+    row = next(
+        item for item in ledger_of(synthetic_bundle).records
+        if item.source_record_id == UNDISPOSITIONED
+    )
+    assert outcome.value.disposition == row.disposition.value == "excluded"
     assert "import_denominator_mismatch" not in {
         finding.code for finding in completeness_findings(synthetic_bundle)
     }
+
+
+def test_a_half_applied_write_is_completed_by_running_the_same_command_again(
+    synthetic_bundle: SyntheticBundle, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The write ORDER is a claim about which half-applied state a retry can repair, so it is pinned.
+
+    Three renames, and D-137 says they cannot be made atomic. Exclusion-first leaves the reason
+    durable against a ledger that never moved — and that is the one state nothing repairs:
+    `_excludable_record` refuses `duplicate_record_id` on the retry, no command removes an
+    exclusion, so the operator's only remaining move is to discard the draft. Ledger and drain
+    first leaves a row dispositioned `excluded` with no exclusion beside it, which the same command
+    run again completes, because that row is still one it admits.
+
+    `os.replace` is monkeypatched rather than made to fail for real, for
+    `test_profile_bundle_authoring`'s reason: the property under test is this command's ordering,
+    not the filesystem's.
+    """
+    real_replace = os.replace
+    calls: list[int] = []
+
+    def fail_after_the_second(src, dst, **kwargs):  # type: ignore[no-untyped-def]
+        calls.append(1)
+        if len(calls) <= 2:
+            return real_replace(src, dst, **kwargs)
+        raise PermissionError(1, "Operation not permitted")
+
+    monkeypatch.setattr(os, "replace", fail_after_the_second)
+    first = exclude(synthetic_bundle)
+    monkeypatch.undo()
+
+    assert codes(first) == {"partial_edit_applied"}
+    (finding,) = first.diagnostics
+    assert finding.details["applied"] == [
+        "imports/source-ledger.yaml",
+        "imports/extraction-report.yaml",
+    ]
+    rows = {row.source_record_id: row for row in ledger_of(synthetic_bundle).records}
+    assert rows[UNDISPOSITIONED].disposition is Disposition.EXCLUDED
+    assert UNDISPOSITIONED not in exclusions_of(synthetic_bundle).by_record
+
+    second = exclude(synthetic_bundle)
+
+    assert second.category == "clean", second.diagnostics
+    assert second.value is not None
+    # `excluded -> excluded`: the row had already moved, which is why `previous_disposition` cannot
+    # be the constant `review_required` the docstring used to claim.
+    assert second.value.previous_disposition == "excluded"
+    assert second.value.disposition == "excluded"
+    assert second.value.documents == ("imports/source-ledger.yaml", "imports/exclusions.yaml")
+    assert exclusions_of(synthetic_bundle).by_record[UNDISPOSITIONED].rationale == RATIONALE
+    assert "import_denominator_mismatch" not in {
+        finding.code for finding in completeness_findings(synthetic_bundle)
+    }
+
+
+def drift_a_second_record(bundle: SyntheticBundle) -> None:
+    """Hand-edit the ledger so a row the command will NOT be asked about disagrees with derivation.
+
+    Not an invented state: `docs/profile-bundle-authoring.md` §"Editing" makes direct editing of a
+    draft's YAML "supported and expected", so a draft whose ledger disagrees with the documents its
+    dispositions derive from is one an operator can arrive with — this command exists precisely
+    because doing it by hand is easy to get wrong. `IMPORTED` is recorded here as
+    `review_required` while `imports/candidates.yaml`
+    still holds its candidate, so re-deriving the whole ledger moves it straight back to `imported`
+    — and §6.3a's drain entry, added here because a `review_required` record owes one, retires with
+    it. Both writes go through the models and the bundle writer, so the fixture cannot encode a
+    document the loader would not accept.
+    """
+    ledger = ledger_of(bundle).model_dump(mode="json")
+    for row in ledger["records"]:
+        if row["source_record_id"] == IMPORTED:
+            row["disposition"] = "review_required"
+            row["candidate_ids"] = []
+    bundle.write(
+        "imports/source-ledger.yaml",
+        document_bytes(
+            SourceLedger.model_validate(ledger).model_dump(mode="json"),
+            logical_path=PurePosixPath("imports/source-ledger.yaml"),
+        ).decode("utf-8"),
+    )
+
+    report = document(bundle, "imports/extraction-report.yaml", ExtractionReport).model_dump(
+        mode="json"
+    )
+    report["entries"].append({"source_record_id": IMPORTED, "reason": "free_text_deferred"})
+    bundle.write(
+        "imports/extraction-report.yaml",
+        document_bytes(
+            ExtractionReport.model_validate(report).model_dump(mode="json"),
+            logical_path=PurePosixPath("imports/extraction-report.yaml"),
+        ).decode("utf-8"),
+    )
+
+
+def test_a_row_the_operator_did_not_name_is_refused_rather_than_silently_re_derived(
+    synthetic_bundle: SyntheticBundle,
+) -> None:
+    """`redispositioned_ledger` re-derives EVERY row, and repairing one is a silent Gate B move.
+
+    `_catalog_admits` cannot object: it is a DIFF keyed on `(code, record_id, message)`, and
+    repairing a pre-existing inconsistency only ever REMOVES findings, so there is nothing for it
+    to call introduced. Without the refusal this returns `clean`, reports one record, and moves a
+    second one — `imported` 1 -> 2, `review_required` 2 -> 0 — with the drain entry that explained
+    it gone too.
+    """
+    drift_a_second_record(synthetic_bundle)
+    before = {
+        name: synthetic_bundle.read(f"imports/{name}.yaml")
+        for name in ("source-ledger", "exclusions", "extraction-report")
+    }
+
+    outcome = exclude(synthetic_bundle)
+
+    assert codes(outcome) == {"import_ledger_derivation_drift"}
+    assert [finding.record_id for finding in outcome.diagnostics] == [IMPORTED]
+    assert outcome.diagnostics[0].details["recorded"] == "review_required"
+    assert outcome.diagnostics[0].details["derived"] == "imported"
+    # Nothing written, which is what makes this a refusal rather than a partial repair: the drifted
+    # row is still drifted and the record the operator DID name is still unaccounted for.
+    for name, original in before.items():
+        assert synthetic_bundle.read(f"imports/{name}.yaml") == original
 
 
 # --------------------------------------------------------------------------------------
@@ -279,7 +419,11 @@ def test_the_ledger_pre_write_layers_are_read_off_validate_bundles_own_lists() -
     """
     source = (Path(authoring.__file__).parent / "validation" / "run.py").read_text(encoding="utf-8")
     block = source.split("findings: list[Diagnostic] = [", 1)[1].split("]", 1)[0]
-    validity = set(re.findall(r"\*(validate_\w+)\(ctx\)", block))
+    # Any starred call over `ctx`, not `validate_*` specifically: matching the naming convention
+    # would make a validity layer that does not follow it invisible here, and "invisible" is the
+    # exact failure this test exists to prevent. The completeness pattern below is already
+    # name-agnostic for the same reason.
+    validity = set(re.findall(r"\*(\w+)\(ctx\)", block))
     completeness = set(re.findall(r"findings\.extend\(\s*(\w+)\(\s*ctx", source))
     assert validity, "could not read validate_bundle's validity layer list"
     assert "imports_completeness" in completeness, "run.py no longer runs imports_completeness"
@@ -297,6 +441,42 @@ def test_the_ledger_pre_write_layers_are_read_off_validate_bundles_own_lists() -
 # --------------------------------------------------------------------------------------
 # The owner gate `owner_excluded` costs (§18), where it is enforced
 # --------------------------------------------------------------------------------------
+
+#: A ledger record and its exclusion, authored here and never derived from a bundle, and the digest
+#: their join produces. Frozen because `source_exclusion_target_digest` is DURABLE: every promoted
+#: revision carrying an `owner_excluded` exclusion has this value stamped into its approval, and no
+#: command re-approves one — so a respelling of the join silently invalidates approvals already on
+#: disk. Every other assertion about that digest in this file compares it against the function under
+#: test and therefore agrees with itself; this literal is the one statement made from outside it.
+#: Regenerating it to make a failing test pass is the mistake it exists to catch.
+PINNED_RECORD_ID = "source-record." + "0f" * 32
+PINNED_EXCLUSION_DIGEST = "sha256:9216ee93ddfdc042ce94ce5ca65cf03b646eec1c9c4f5b2c6d02c227e17ba0d8"
+
+
+def test_the_exclusion_target_digest_keeps_the_spelling_already_on_disk() -> None:
+    """The positional-pair spelling `approvals.py` stamped before the helper had any caller.
+
+    A keyed `{"record": ..., "exclusion": ...}` mapping is the natural thing to write here and
+    produces a different digest, which is exactly the change no test could see.
+    """
+    record = SourceLedgerRecord.model_validate(
+        {
+            "source_record_id": PINNED_RECORD_ID,
+            "source_id": "source.frozen-digest-pin",
+            "normalized_locator": "notes/heading-1",
+            "disposition": "excluded",
+            "candidate_ids": [],
+        }
+    )
+    exclusion = ExclusionRecord.model_validate(
+        {
+            "source_record_id": PINNED_RECORD_ID,
+            "reason": "owner_excluded",
+            "rationale": "Not something the owner wants represented.",
+        }
+    )
+
+    assert source_exclusion_target_digest(record, exclusion) == PINNED_EXCLUSION_DIGEST
 
 
 def test_owner_excluded_reports_a_gate_bound_to_the_named_target_digest(
