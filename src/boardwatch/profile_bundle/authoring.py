@@ -523,7 +523,7 @@ def edit_fact(
         tree = _draft(bundle_root, draft_name)
         documents = _load(tree)
         path, document, position, original = _fact_position(documents, fact_id)
-        _correctable(original)
+        _correctable(original, build_index(documents).unresolved_conflict_ids)
 
         payload = document.model_dump(mode="json")
         rows = payload["facts"]
@@ -1502,7 +1502,7 @@ def _fact_position(
     )
 
 
-def _correctable(fact: FactRecord) -> None:
+def _correctable(fact: FactRecord, blocking: frozenset[str]) -> None:
     """The two states in which filing a successor would assert something the owner did not.
 
     A basis other than `owner_attested` belongs to the evidence that established it — a document
@@ -1536,16 +1536,22 @@ def _correctable(fact: FactRecord) -> None:
             "draft's YAML directly for a value this command cannot state",
             record_id=fact.fact_id,
         )
-    if fact.conflict_group_id is not None:
-        # A group blocks its candidates by membership, so a successor outside it would be effective
-        # immediately — the disputed value reaching a surface while the conflict is still unruled.
-        # Putting the successor *in* the group is not this command's call either: a group's
-        # candidate list is what a ruling decides, and `resolve_conflict` sets only its state and
-        # active ruling, so nothing could undo it afterwards.
+    if fact.conflict_group_id in blocking:
+        # A group that blocks holds its candidates out of the effective set BY MEMBERSHIP, so a
+        # successor naming no group would be effective at once — the disputed value reaching a
+        # surface while the conflict is still open. Putting the successor *in* the group is not
+        # this command's call either: a candidate list is what a ruling decides, and
+        # `resolve_conflict` sets only a group's state and active ruling, so nothing could undo it.
+        #
+        # Asked of `unresolved_conflict_ids` rather than by reading `state`, because which states
+        # block is a rule that already has one home ("`resolved` does not; `reopened` does") and
+        # restating it here is how the two come to disagree. A settled group blocks nothing, so its
+        # winning value is an ordinary correctable fact — refusing it would make the outcome of
+        # every ruling permanently uncorrectable.
         raise _refusal(
             IssueCode.CONFLICT_CANDIDATE_MISMATCH,
-            f"{fact.fact_id} is a candidate of {fact.conflict_group_id}; rule on the conflict "
-            "before correcting the value it disputes",
+            f"{fact.fact_id} is a candidate of {fact.conflict_group_id}, which is not resolved; "
+            "rule on the conflict before correcting the value it disputes",
             record_id=fact.fact_id,
         )
 

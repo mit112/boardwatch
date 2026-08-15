@@ -374,14 +374,19 @@ than coerced, and the message names the one route that still works:
 error: model_validation_error (fact.example-labs.dates.001): fact.example-labs.dates.001 holds a date_range value, which text cannot express; edit the draft's YAML directly for a value this command cannot state
 ```
 
-**A fact inside a conflict group.** A group blocks its candidates by membership, so a successor that
-named no group would be effective immediately — the disputed value reaching a surface with the conflict
-still unruled. Adding the successor to the group instead would be a ruling, which `resolve-conflict`
-owns, so the correction waits on the ruling:
+**A fact inside a conflict group that still blocks.** Such a group holds its candidates out of the
+effective set by membership, so a successor naming no group would be effective at once — the disputed
+value reaching a surface with the conflict still open. Adding the successor to the group instead would be
+a ruling, which `resolve-conflict` owns, so the correction waits on it:
 
 ```console
-error: conflict_candidate_mismatch (fact.x.001): fact.x.001 is a candidate of conflict.x; rule on the conflict before correcting the value it disputes
+error: conflict_candidate_mismatch (fact.x.001): fact.x.001 is a candidate of conflict.x, which is not resolved; rule on the conflict before correcting the value it disputes
 ```
+
+A **resolved** group blocks nothing, so its winning value is an ordinary correctable fact — refusing that
+would make the outcome of every settled dispute permanently uncorrectable. A `reopened` group blocks
+again, and the refusal follows `unresolved_conflict_ids` rather than reading `state` itself, so the two
+cannot drift apart.
 
 ### What the predicate catalog refuses, before anything is written
 

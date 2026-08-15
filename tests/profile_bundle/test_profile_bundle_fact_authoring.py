@@ -135,14 +135,19 @@ def seed_contextualizing_citation(bundle: SyntheticBundle, fact_id: str) -> None
     _rewrite(bundle, "evidence/records.yaml", name_back)
 
 
-def seed_conflict_membership(bundle: SyntheticBundle, fact_id: str) -> str:
-    """Put `fact_id` into an existing unresolved conflict group, both directions.
+def seed_conflict_membership(
+    bundle: SyntheticBundle,
+    fact_id: str,
+    *,
+    conflict_id: str = "conflict.packet-pantry.end-date",
+) -> str:
+    """Put `fact_id` into one of the example's conflict groups, both directions.
 
     Seeded for the same reason: both groups the example ships are `year_month`-valued with
     non-effective candidates, so `_correctable`'s earlier refusals fire first and the conflict
-    guard is unreachable through the fixture as shipped.
+    guard is unreachable through the fixture as shipped. The default group is `unresolved`;
+    `conflict.packet-pantry.start-date` is `resolved`.
     """
-    conflict_id = "conflict.packet-pantry.end-date"
 
     def join(data: dict) -> None:  # type: ignore[type-arg]
         rows = [row for row in data["facts"] if row["fact_id"] == fact_id]
@@ -804,6 +809,30 @@ def test_edit_fact_refuses_a_fact_inside_a_conflict_group(
 
     assert outcome.category == "findings"
     assert [item.code for item in outcome.diagnostics] == ["conflict_candidate_mismatch"]
+
+
+def test_edit_fact_allows_a_fact_whose_conflict_is_resolved(
+    synthetic_bundle: SyntheticBundle,
+) -> None:
+    """A settled group blocks nothing, so its winning value is an ordinary correctable fact.
+
+    `unresolved_conflict_ids` is explicit that `resolved` does not block and `reopened` does, so a
+    guard that refused on mere group membership would make the outcome of every settled dispute
+    permanently uncorrectable — the opposite of what ruling on it achieved.
+    """
+    seed_conflict_membership(
+        synthetic_bundle, TITLE, conflict_id="conflict.packet-pantry.start-date"
+    )
+
+    outcome = edit_fact(
+        synthetic_bundle.root,
+        draft_name=synthetic_bundle.draft_name,
+        fact_id=TITLE,
+        value="Senior Software Engineer",
+        as_of=AS_OF,
+    )
+
+    assert outcome.category == "clean", outcome.diagnostics
 
 
 def test_the_incremental_loop_runs_without_re_importing_the_source(
