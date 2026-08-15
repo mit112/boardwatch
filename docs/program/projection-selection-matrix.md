@@ -20,34 +20,41 @@ threshold** (from where each cut line falls).
 
 ---
 
-## Before this matrix can be used: every entry is currently pinned
+## Before this matrix can be used: the pinning decision — RESOLVED 2026-08-15 (D-195)
 
-Measured 2026-08-15 against live bundle revision 5 (`sha256:a4bdc0b2…`):
+- [x] **Owner decision, blocked Stage 2 independently of the rankings below:** which of the 11 are `pinned`?
 
-| Fact | Value | How measured |
-|---|---|---|
-| Entries declared in `projection.yaml` | 11 | `project_pool(...).resume.entries` |
-| `pinned_entry_ids` | **all 11** | every row carries `pinned: true` |
-| `candidate_entry_ids` | **empty** | `project_pool(...).candidate_entry_ids` → `[]` |
-| Reservoir render | **2 pages** | `pdfinfo` on the revision-5 preview PDF |
-| `page_budget` | **1** | `profile.resume_max_pages` |
+**Pinned (3):** `employment.saayam`, `employment.nio-coop`, `employment.sakec`.
+**Candidates (8):** `employment.nakshatra` and all seven projects.
 
-**Consequence, and it is a blocker.** `select` compiles the pinned-only set first and refuses with
-`PINNED_SET_EXCEEDS_BUDGET` when it alone overflows the budget (`select.py:188-197`). The pinned-only set
-*is* the whole reservoir, which is 2 pages against a budget of 1. So `resume project --posting --scorer`
-cannot return a résumé today for **any** posting and **any** scorer — the refusal happens before a single
-score is computed.
+Verified after the edit: pinned 3 / candidates 8, and the pinned set alone is 7 bullets → **1 page**, so
+`select` clears its own gate and reaches scoring. `PINNED_SET_EXCEEDS_BUDGET` no longer fires. (Previously
+all 11 carried `pinned: true`, `candidate_entry_ids` was empty, and the pinned-only set *was* the whole
+2-page reservoir against a 1-page budget — so `select` refused before computing a single score.)
 
-Pinning all 11 was right for Stage 1, where the point was to render the entire reservoir as a master. It
-makes Stage 2 inert. **Which entries stay pinned is the owner's data decision, not a code change** — one
-edit to `projection.yaml`'s `pinned:` flags, no rebuild, no promotion.
+### The capacity this leaves, and why it bounds the cut lines below
 
-The owner's own ground truth already implies most of the answer and is recorded here as a starting point,
-**not** as a decision taken: SDE = {Hookrail, Knowledge Forge, StreakSync, Random Forest}; iOS =
-{StreakSync, FlickSwiper, BirthdayQuest, Fond}; "work experience is largely fixed"; **"Nakshatra =
-drop-if-space"**, which by itself says at least one *experience* entry is a candidate rather than pinned.
+Measured by compiling hand-named subsets through the same path `select` builds — `LatexRenderer.emit` →
+`to_pdf` → `evaluate_compile(max_pages=1)`. **No scorer was run**; the growth orders were probe orders, not
+rankings.
 
-- [ ] **Owner decision, blocks Stage 2 independently of the rankings below:** which of the 11 are `pinned`?
+| Experience base | Base bullets | SDE order survives | iOS order survives |
+|---|---|---|---|
+| all four jobs | 9 | 2 of 4 | **1** of 4 |
+| **three jobs (the chosen pin)** | **7** | **2 of 4** | **2 of 4** |
+| two jobs | 5 | 3 of 4 | 3 of 4 |
+
+**The ceiling is 16 bullets, not a count of entries** — 16 fits in every configuration tested, 17 overflows
+in every one, and two different 6-entry sets landed on opposite sides of the budget.
+
+**Consequence for this document:** with three jobs pinned, **at most two candidates can ever be admitted**.
+Rank what you would genuinely send anyway — the cut line is a statement about what belongs on that résumé,
+and the budget truncating it at two is a separate fact about the pipeline. Do not compress your ranking to
+fit the budget; that would fold two different numbers into one.
+
+It also means the owner's stated sets — SDE = {Hookrail, Knowledge Forge, StreakSync, Random Forest}; iOS =
+{StreakSync, FlickSwiper, BirthdayQuest, Fond}, **four projects each** — cannot be emitted at one page under
+any split. The most that ever fits is three, and only if just two jobs are pinned.
 
 ---
 
