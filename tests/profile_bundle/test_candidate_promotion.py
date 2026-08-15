@@ -67,6 +67,46 @@ RESUME_DOCUMENT: dict[str, Any] = {
     ],
 }
 
+#: D-184 finding 3: two distinct skill items the deliberately-lossy `_derive_skill_id` (D-180) both
+#: slug to `skill.c`. A bullet tags both, so `skill.c` is grounded — the exact shape a last-write-wins
+#: merge would collapse to one `SkillRecord`, silently dropping the other.
+COLLIDING_RESUME: dict[str, Any] = {
+    "header": ["Ada Lovelace", "ada@example.com"],
+    "education": ["Example University, BSc"],
+    "skill_groups": [{"label": "Languages", "items": ["C++", "C#"]}],
+    "entries": [
+        {
+            "entry_id": "eng-role",
+            "heading": "Engineer — Acme — Jan 2020–Feb 2021 — New York, NY",
+            "kind": "experience",
+            "title": "Engineer",
+            "dates": "Jan 2020 -- Feb 2021",
+            "location": "New York, NY",
+            "bullets": [{"bullet_id": "b1", "text": "Shipped it.", "tech_tags": ["C++", "C#"]}],
+        },
+    ],
+}
+
+#: The corruption arm of the same finding: only `C++` is tagged, but `C#` shares `skill.c`, so the
+#: single grounded skill would silently take whichever colliding item was written last as its
+#: `canonical_name` — possibly the untagged sibling's. Still an ambiguous grounded id.
+COLLIDING_ONE_GROUNDED: dict[str, Any] = {
+    "header": ["Ada Lovelace", "ada@example.com"],
+    "education": ["Example University, BSc"],
+    "skill_groups": [{"label": "Languages", "items": ["C++", "C#"]}],
+    "entries": [
+        {
+            "entry_id": "eng-role",
+            "heading": "Engineer — Acme — Jan 2020–Feb 2021 — New York, NY",
+            "kind": "experience",
+            "title": "Engineer",
+            "dates": "Jan 2020 -- Feb 2021",
+            "location": "New York, NY",
+            "bullets": [{"bullet_id": "b1", "text": "Shipped it.", "tech_tags": ["C++"]}],
+        },
+    ],
+}
+
 
 @dataclass(frozen=True)
 class Env:
@@ -104,6 +144,11 @@ class Env:
 
 @pytest.fixture
 def env(tmp_path: Path) -> Env:
+    """A fresh v2 `init` bundle seeded from the module's default résumé document."""
+    return _seed(tmp_path, RESUME_DOCUMENT)
+
+
+def _seed(tmp_path: Path, document: dict[str, Any]) -> Env:
     """A fresh v2 `init` bundle with a `boardwatch_resume` source declared, imported and extracted.
 
     The source declaration is the owner-approval step the command does not perform; declaring it in
@@ -149,7 +194,7 @@ def env(tmp_path: Path) -> Env:
         document_bytes(identity, logical_path=PurePosixPath("facts/identity.yaml"))
     )
 
-    resume_bytes = document_bytes(RESUME_DOCUMENT, logical_path=PurePosixPath("resume.yaml"))
+    resume_bytes = document_bytes(document, logical_path=PurePosixPath("resume.yaml"))
     assert (
         authoring.import_source(
             root, draft_name="baseline", source_id=RESUME_SOURCE_ID, source_bytes=resume_bytes
@@ -250,6 +295,46 @@ def test_re_promotion_refuses_rather_than_clobbering(env: Env) -> None:
     again = promote(env)
     assert again.exit_code != 0
     assert [d.code for d in again.diagnostics] == ["duplicate_record_id"]
+
+
+def test_promotion_refuses_when_two_skills_collide_to_one_id(tmp_path: Path) -> None:
+    """D-184 finding 3: `C++` and `C#` both derive `skill.c` (the slug is lossy on purpose, D-180),
+    so a bare last-write-wins merge keeps one `SkillRecord` and drops the other with no diagnostic —
+    a multi-tenancy data loss. Promotion must refuse the ambiguous grounded id and write nothing,
+    exactly as `_entry_subject_kind` refuses an entry that resolves to more than one subject kind.
+    The refusal names the id and every colliding item so the owner can rename or merge them."""
+    env = _seed(tmp_path, COLLIDING_RESUME)
+    outcome = authoring.promote_candidates(
+        env.bundle_root,
+        draft_name="baseline",
+        source_id=RESUME_SOURCE_ID,
+        source_bytes=env.resume_bytes,
+        as_of=AS_OF,
+    )
+    assert outcome.exit_code != 0, outcome
+    (diag,) = outcome.diagnostics
+    assert diag.code == "model_validation_error", diag
+    assert "skill.c" in diag.message
+    assert "C++" in diag.message and "C#" in diag.message
+
+
+def test_promotion_refuses_a_grounded_id_with_an_untagged_colliding_sibling(tmp_path: Path) -> None:
+    """The corruption arm of D-184 finding 3: only `C++` is tagged, but `C#` shares `skill.c`, so the
+    single grounded skill would silently take whichever colliding item was written last as its
+    `canonical_name`. Promotion refuses the ambiguous grounded id even when just one collider is
+    tagged — the check keys on the grounded id's item set, not on how many of them a bullet grounds."""
+    env = _seed(tmp_path, COLLIDING_ONE_GROUNDED)
+    outcome = authoring.promote_candidates(
+        env.bundle_root,
+        draft_name="baseline",
+        source_id=RESUME_SOURCE_ID,
+        source_bytes=env.resume_bytes,
+        as_of=AS_OF,
+    )
+    assert outcome.exit_code != 0, outcome
+    (diag,) = outcome.diagnostics
+    assert "skill.c" in diag.message
+    assert "C++" in diag.message and "C#" in diag.message
 
 
 def test_the_owner_confirmation_step_reaches_a_grounded_resume_skill(env: Env) -> None:

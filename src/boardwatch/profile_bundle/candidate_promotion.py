@@ -165,6 +165,7 @@ def build_promotion(
     skill_display_to_id: dict[str, str] = {}
     skill_id_to_display: dict[str, str] = {}
     skill_id_to_label: dict[str, str] = {}
+    skill_id_to_displays: dict[str, set[str]] = defaultdict(set)
     for candidate in candidates:
         locator = locator_by_record.get(candidate.source_record_id)
         if locator is None:
@@ -177,6 +178,7 @@ def build_promotion(
             skill_display_to_id[candidate.original_display_value] = skill_id
             skill_id_to_display[skill_id] = candidate.original_display_value
             skill_id_to_label[skill_id] = _decode_label(match.group("label"))
+            skill_id_to_displays[skill_id].add(candidate.original_display_value)
         # header/* and anything else is not promoted here (person facts need facts/identity.yaml).
 
     # Build each entry into an entity plus its metadata/bullet facts, and remember its kind so the
@@ -274,6 +276,16 @@ def build_promotion(
     skills: list[SkillRecord] = []
     used_categories: dict[str, str] = {}
     for skill_id in sorted(supporting_by_skill):
+        # `_derive_skill_id` is lossy on purpose (D-180): distinct items can share one id. A
+        # grounded id built from more than one item would collapse to a single `SkillRecord`,
+        # silently dropping the rest (D-184). Refuse rather than resolve it by last-write-wins.
+        displays = skill_id_to_displays[skill_id]
+        if len(displays) > 1:
+            raise PromotionError(
+                f"skill id {skill_id!r} is grounded by more than one skill item "
+                f"{sorted(displays)!r}: the id slug is lossy (D-180), so these would silently "
+                "merge into one skill. Rename or merge them in the source before promoting."
+            )
         category_id = _slug(skill_id_to_label[skill_id])
         used_categories[category_id] = skill_id_to_label[skill_id]
         skills.append(
