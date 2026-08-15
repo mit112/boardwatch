@@ -517,8 +517,7 @@ def edit_fact(
     try:
         tree = _draft(bundle_root, draft_name)
         documents = _load(tree)
-        path, document, position = _fact_position(documents, fact_id)
-        original = document.facts[position]
+        path, document, position, original = _fact_position(documents, fact_id)
         _correctable(original)
 
         payload = document.model_dump(mode="json")
@@ -1466,19 +1465,26 @@ def _evidence_document(documents: BundleDocuments) -> EvidenceRecordsDocument:
 
 def _fact_position(
     documents: BundleDocuments, fact_id: str
-) -> tuple[PurePosixPath, FactBearingDocument, int]:
-    """Where one fact lives: its document, and its index within that document's `facts`.
+) -> tuple[PurePosixPath, DocumentModel, int, FactRecord]:
+    """Where one fact lives: its document, its index within `facts`, and the record itself.
 
     Asked by type rather than by name for `_documents_citing_back`'s reason — there are twelve
     fact-bearing documents and `FactBearingDocument` exists so this does not become a list that
     goes stale when a thirteenth arrives.
+
+    The document is returned as a `DocumentModel` and the record alongside it, rather than as the
+    `FactBearingDocument` the isinstance test proves it is. That base class is not a member of the
+    union every writer here takes: narrowing to it discards which concrete document this is, and
+    the value could then not be handed back to `_write_documents` at all. Returning the record too
+    is what makes that possible without a cast — no caller has to reach through `.facts` on a union
+    whose other members do not have it.
     """
     for path, document in documents.items():
         if not isinstance(document, FactBearingDocument):
             continue
         for position, fact in enumerate(document.facts):
             if fact.fact_id == fact_id:
-                return (path, document, position)
+                return (path, document, position, fact)
     raise _refusal(
         IssueCode.BROKEN_REFERENCE,
         f"{fact_id} is not a fact this draft holds; `inspect` lists what it does",
@@ -1555,8 +1561,12 @@ def _unused_fact_id(documents: BundleDocuments, fact_id: str) -> None:
 
 def _document_owning(
     documents: BundleDocuments, subject_id: str
-) -> tuple[PurePosixPath, FactBearingDocument]:
-    """The document that already holds facts about `subject_id`."""
+) -> tuple[PurePosixPath, DocumentModel]:
+    """The document that already holds facts about `subject_id`.
+
+    Returned as a `DocumentModel` for `_fact_position`'s reason: the base class the isinstance test
+    proves is not a member of the union the writers take.
+    """
     for path, document in documents.items():
         if not isinstance(document, FactBearingDocument):
             continue
