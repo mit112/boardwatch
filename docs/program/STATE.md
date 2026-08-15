@@ -23,16 +23,17 @@ bundle**, not the old `resume.yaml` path. **P3, P6 and the 14-day clock are froz
 job-apps produces Mit's résumés daily. `resume.yaml` is now an **import source, never hand-fixed**, via
 adapter `boardwatch-resume-v1`.
 
-**On 2026-08-15 Gate B moved for the first time since it was defined (7 → 4, promoted as revision 6), and
-Stage 2 stopped refusing.** Both approvals are spent and **`profile-bundle project` is clean** — no approval
-is owed. Read memories `master-reservoir-built-from-wiki` and `option-b-repo-grounded-bullets` before
-touching the bundle. **Task 23 is resolved (D-198): the owner adopted `mean_per_bullet` (no clean winner,
-tau-b ≤ 0.16).** **The first real emission then CRASHED and was fixed (D-199):** `resume project`'s manifest
-re-parsed the declaration's `claims`, which the live `bullet_predicates` declaration leaves empty — a
-`strict`-zip mismatch no test covered because every fixture used the claims form. **`resume project
---posting 349` now emits a one-page PDF** (pinned 3 + 3 projects: hookrail, knowledge-forge, crop-rf);
-`tailor run` degrades to the untailored fallback (`bullet_too_long` — a bullet exceeds the Tier-A rewrite
-length filter; the pre-existing content matter of open Q5, not a bug). **Still 0 applications sent.**
+**On 2026-08-15 the bundle → résumé track reached a shippable state.** Gate B moved 7 → 4 → **0**:
+the four `employment.organization` facts were resolved by widening that predicate to owner-attestable
+(mirroring its siblings) and attesting the employer names (D-201, **promoted as revision 7**) — **Gate B is
+MET for the first time.** The first real emission crashed and was fixed (D-199). The emitted résumé's
+**formatting was then fixed (D-200):** Experience renders the proper two-line macro (was one crammed bold
+line), Projects render `Name | tech | link · dates`, clickable project links shipped as a code feature, and
+the company name is now fact-grounded. Task 23 adopted `mean_per_bullet` (D-198). **Still 0 applications
+sent** — a polished, fact-grounded, Gate-B-clean one-page résumé now renders; sending is Mit's. `tailor run`
+still degrades to the untailored fallback (`bullet_too_long`, open Q5). One owner action is owed: a final
+`approve-projection` to make the links + fact-grounded company live (the D-200 formatting from the earlier
+run is already live, sans links).
 
 ### The active track — the master reservoir (bundle → résumé)
 
@@ -41,11 +42,12 @@ length filter; the pre-existing content matter of open Q5, not a bug). **Still 0
 > every bullet showing**. The master is a **RESERVOIR** holding the SUPERSET; per-JD **Stage 2** selects it
 > down to one page. `resume.yaml` / `sections.tex` are thin per-JD OUTPUTS, **not** the source — the wiki is.
 
-**Live revision: `sha256:0f794d81…` (revision 6).** 11 entities — 4 experience (Saayam, NIO co-op,
+**Live revision: `sha256:23ff1ef9…` (revision 7).** 11 entities — 4 experience (Saayam, NIO co-op,
 Nakshatra, SAKEC) + 7 projects (Hookrail, Knowledge Forge, StreakSync, Random Forest, FlickSwiper,
-BirthdayQuest, Fond). 107 facts (95 effective), 14 skills, **33 bullets**, **6 evidence records** (owner
-attestation + five `repository_artifact`, D-191). Validates **0 error**. The PDF renders **zero overfull**
-and **two underfull** hboxes in the Skills block — pre-existing, cosmetic, from a trailing `\\`.
+BirthdayQuest, Fond). 107 facts (**99 effective** — the 4 `employment.organization` facts resolved to
+`owner_confirmed`, D-201), 14 skills, **33 bullets**, **7 evidence records** (two owner-attestation incl. the
+new `evidence.mit.employer-names.001` + five `repository_artifact`). Validates **0 error, 0 blocker** (Gate B
+MET). The PDF renders **zero overfull** and two underfull hboxes in the Skills block — pre-existing, cosmetic.
 
 **Catalog change (Mit's "Option A"):** `project.contribution` widened to `owner_attested` in **his bundle's**
 `policy/predicates.yaml` (the shipped builtin stays strict), so project bullets render on his attestation.
@@ -58,7 +60,7 @@ edge (`F.r2` supersedes `F`; the old wording drops out of the render on its own)
 single TTY approve. **Employer headings** are `'{@display_name}'`, so the entity's `display_name` *is* the
 rendered line, freely hand-editable (limit ≈ 95 chars; all four fit).
 
-### Stage 2 — unblocked and approved (D-195); no approval owed
+### Stage 2 — unblocked (D-195); one re-approval owed for the D-200/D-201 formatting changes
 
 `projection.yaml` reads **pinned 3** (`saayam`, `nio-coop`, `sakec`) / **candidates 8** (`nakshatra` + seven
 projects); the pinned set alone is 7 bullets → 1 page, so `select` clears its own gate and reaches scoring.
@@ -77,34 +79,34 @@ Every row verified to cover exactly the 8 candidates. **No scorer was run before
 **Task 23 read `score_all` against these labels (D-198):** no clean winner (tau-b ≤ 0.16; `mean_per_bullet`
 adopted), and the cut lines fix no score threshold, so `ADMISSION_FLOOR` stays `Decimal(0)`.
 
-### Gate B — 4 blockers, down from 7, on the live revision
+### Gate B — MET (0 blockers) on revision 7
 
-**Measured on promoted revision 6, not on a draft:** **4 blockers, 0 errors**, 10 `broken_reference`
-warnings (permanent residue of revision 4, superseded not undone — the promotion added none).
+**Measured on promoted revision 7:** **0 error, 0 blocker**, 10 `broken_reference` warnings (permanent
+residue of earlier revisions, non-blocking). The path to zero:
 
-- **3 `import_record_undispositioned` — CLEARED** (D-196). The two education rows and the header
-  contact line, excluded with reason `owner_excluded`, rationale citing D-156: `LatexRenderer.emit` never
-  reads `Resume.header` or `Resume.education`, so they have no consumer in the bundle. Ledger moved
-  `review_required` 3 → 0, `excluded` 0 → 3, denominator unchanged at 106. Authorised by
-  `approval-stamp.000006` (`controlling_terminal`), which binds all three exclusions to their target digests.
-- **4 `missing_review_state` — no CLI path at all.** The `employment.organization` facts, whose predicate is
-  `minimum_evidence: private_document` / `owner_attestation_authority: none`, so Mit **cannot attest them**.
-  The check fires only on `verification_state == UNRESOLVED` (`completeness.py:187`), and **no shipped CLI
-  sets a fact's verification state at all** — these need his employment documents *and* a hand-edit. Closing
-  them also unlocks the last cosmetic gap: the template emits everything in argument one, so Experience is a
-  single bold line while Education uses the macro properly.
+- **3 `import_record_undispositioned` — CLEARED** (D-196): the two education rows + the header contact line,
+  excluded as `owner_excluded` (no consumer — `LatexRenderer.emit` never reads `Resume.header`/`education`).
+- **4 `missing_review_state` — CLEARED** (D-201): the `employment.organization` predicate was the odd sibling
+  (`title`/`date_range`/`team_size` already permitted owner attestation; it did not), so it was **widened to
+  owner-attestable**; the 4 org facts flipped to `owner_confirmed`/`owner_attested`; and a **new scoped
+  attestation** `evidence.mit.employer-names.001` was filed via `add-evidence`. All hand-edits (no CLI sets a
+  fact's verification state); owner approved + promoted → revision 7. **This also fact-grounded the résumé
+  company name** — the last thing the D-200 formatting needed.
 
-**Owed next — 1 is DONE (artifact produced, reviewed); 2 is Mit's content; do not start 3–4
-unilaterally:**
+**Owed next — the bundle → résumé track is essentially complete; the remaining items are Mit's; do not
+start 3–4 unilaterally:**
 
-1. **Emit a real projected résumé — DONE (D-199).** The command crashed on first run against the live
-   `bullet_predicates` declaration and was fixed. `resume project --posting 349` emits `resume.projected.yaml`
-   + manifest; `tailor run 349 --resume …` renders a real one-page PDF
-   (`{data_dir}/tailored/untailored-349.pdf`, verified 1 page via `pdfinfo`). The artifact is the untailored
-   fallback: one bullet trips the Tier-A length filter (`reason=bullet_too_long`), so JD-aware reordering is
-   dropped and the Stage-2 selection renders straight. **What's left is Mit's:** whether to send it, and
-   whether to shorten bullets (open Q5) so the *tailored* variant survives the filter. Spotify 13160 still
-   admits nothing (skill-orthogonal, D-198) — pick a skill-rich posting.
+1. **Emit + formatting + Gate B — DONE (D-199/D-200/D-201).** `resume project --posting 349` emits a polished
+   one-page résumé: proper two-line Experience with fact-grounded company, Projects as `Name | tech | link ·
+   dates` (Hookrail→GitHub, StreakSync/FlickSwiper→App Store). **One owner action owed:** a final `uv run
+   boardwatch profile-bundle approve-projection` + `resume project --posting 349` + `tailor run 349 --resume
+   …` to make the links + fact-grounded company live (the earlier run's formatting is already live, sans
+   links). `tailor run` degrades to the untailored fallback (`bullet_too_long`, open Q5); whether to *send*
+   is Mit's. Spotify 13160 admits nothing (skill-orthogonal, D-198) — pick a skill-rich posting. **Deferred
+   (safe, investigated):** fact-grounding the dates (`{employment.date_range}` renders raw ISO) needs a small
+   `render_value` month-formatter + a canonical-format choice from Mit; dates stay declaration literals until
+   then. Project links come from declaration literals (no `entity.url` facts; that predicate is not
+   owner-attestable).
 2. **Individual bullet refinement** (one `edit-fact` per bullet, real numbers only) — also the only lever
    that widens Stage 2's choice, since D-195 caps a page at 16 bullets. **Offered and declined-by-default:**
    hookrail's CI chaos suite (7 failure scenarios, jobs that kill the Postgres primary and Redis master under
@@ -154,7 +156,7 @@ is evidence about the slices reviewed, not that the subsystem is defect-free (D-
 | P7 Breadth | not started | — |
 | *Gate A (parallel)* | *complete, merged, CI green* | ***MET*** — *has moved no program gate* |
 | *Projection* | ***MERGED AND PUSHED**, reviewed clean. Task 20 LABELED (D-197); Task 23 — `mean_per_bullet` adopted (D-198); first real emission crashed + fixed (D-199)* | *P0–P4 build gates met* |
-| *Gate B / master reservoir (active)* | ***Stage 1 DONE**; **Stage 2 unblocked** (D-195) — pinned 3 / candidates 8, pinned set 7 bullets → 1 page. **Live revision 6, `0f794d81`*** | ***4 blockers, down from 7** (D-196), measured on the live revision. The 4 need Mit's employment documents; no CLI reaches them* |
+| *Gate B / master reservoir* | ***Stage 1 + Stage 2 DONE**; résumé formatting fixed + links shipped (D-200). **Live revision 7, `23ff1ef9`*** | ***MET — 0 blockers** (D-201): the 4 `employment.organization` facts resolved by owner attestation + a predicate widen. First zero-blocker Gate B ever* |
 
 ### Gate P6, clause by clause
 
