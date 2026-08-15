@@ -290,10 +290,140 @@ or `created_by`, because those are promotion-derived.
 
 ### Editing
 
-Direct editing of the draft's YAML is supported and expected. Two commands exist for the operations
-that have to touch more than one document at once — `add-evidence` (§9) and `resolve-conflict`
-(§10) — and both end by revalidating the draft they changed, so the exit code answers "did the change
-land *and* is the draft still promotable" in one number.
+Direct editing of the draft's YAML is supported and expected. Four commands exist for the operations
+that have to touch more than one document at once — `add-evidence` (§10), `resolve-conflict` (§11),
+and `edit-fact` and `add-fact` (below) — and each ends by revalidating the draft it changed, so the
+exit code answers "did the change land *and* is the draft still promotable" in one number.
+
+### `edit-fact` corrects a fact without a rebuild
+
+Changing the wording of a fact in a bundle that has already been promoted needs neither `import`,
+`extract` nor `promote-candidates`:
+
+```bash
+boardwatch profile-bundle checkout  --draft wording
+boardwatch profile-bundle edit-fact --draft wording --fact-id <fact-id> --value "the new wording"
+boardwatch profile-bundle validate  --draft wording
+boardwatch profile-bundle approve   --draft wording          # the owner types `approve` (§13)
+boardwatch profile-bundle promote   --draft wording --summary "reword one bullet"
+```
+
+`promote-candidates` is absent from that loop deliberately. It is **one-shot** — it refuses once the
+draft already holds entities or skills, because a re-run would clobber the owner's edits to what it
+wrote — so before `edit-fact` existed, the only route to a changed word was a full rebuild: `init`,
+`import`, `extract`, `promote-candidates`. The capability to avoid it was always there, since
+`checkout` copies the selected revision into a writable draft; what was missing was a writer that
+keeps the documents one fact edit touches in agreement.
+
+**A correction is filed as an edge, not written as a mutation.** `edit-fact` appends a successor fact
+whose ID is the original's with `.r2`, then `.r3`, and whose `supersedes_fact_ids` names its parent.
+The original is never rewritten: its value stands, and only its `verification_state` moves to
+`superseded`. That state is outside the effective set, so the old wording stops reaching any surface
+on its own — a render drops it with no render-side change, and history stays derivable rather than
+overwritten.
+
+```console
+$ boardwatch profile-bundle edit-fact --bundle <root> --draft wording \
+    --fact-id fact.example-labs.title.001 --value "Senior Software Engineer"
+profile-bundle edit-fact: clean
+fact.example-labs.title.001.r2 supersedes fact.example-labs.title.001 in facts/experience/employment.example-labs.yaml
+owner approval required:
+  approve_evidence_sufficiency evidence.example.owner-attestation.001 -> owner_approved
+  confirm_fact fact.example-labs.title.001.r2 -> owner_confirmed
+EXIT=0
+```
+
+The successor is a new record, so it owes its own `confirm_fact`; the evidence record it rewrote
+reports the sufficiency gate that document owes. Two things the successor does **not** inherit:
+
+- **`import_lineage` is dropped.** The parent's `source_content_digest` asserts a match against
+  source bytes that no longer contain this text, and nothing recomputes it — carrying it forward
+  would be a provenance claim no layer checks and no command repairs.
+- **It joins no conflict group.** A group lists its candidates by ID, and adding one is a ruling,
+  which `resolve-conflict` owns (§11). The parent stays a candidate, now superseded, which is what
+  "this candidate was corrected" means.
+
+Three things are refused, and a refusal writes nothing at all — the draft is left byte-identical, so
+a second attempt starts clean.
+
+**A basis the owner cannot attest.** A basis other than `owner_attested` belongs to the evidence that
+established it — a document read, a repository checked. Retyping the wording does not re-establish
+any of that, and neither inheriting the basis nor silently downgrading it is this command's call:
+
+```console
+$ ... edit-fact --draft wording --fact-id fact.example-labs.organization.001 --value "Example Labs, Inc."
+profile-bundle edit-fact: findings
+error: verification_basis_unsupported (fact.example-labs.organization.001): fact.example-labs.organization.001 is established by private_document_verified, which an owner's rewording does not re-establish; capture evidence for the new wording and add a fact citing it
+EXIT=1
+```
+
+**A fact that is already superseded.** Correcting one would branch the chain, leaving two live
+successors of one parent, and "the current value" would stop being a question with an answer:
+
+```console
+error: fact_state_inconsistent (fact.example-labs.title.001): fact.example-labs.title.001 is superseded and no longer reaches any surface; correct the record that superseded it instead
+```
+
+**A value no string can express.** `--value` is text; a `date_range` is not. It is refused rather
+than coerced, and the message names the one route that still works:
+
+```console
+error: model_validation_error (fact.example-labs.dates.001): fact.example-labs.dates.001 holds a date_range value, which text cannot express; edit the draft's YAML directly for a value this command cannot state
+```
+
+### `add-fact` writes a new fact into the document owning its subject
+
+The same write `edit-fact` performs, without the supersession. Every field is required, and
+**`--verification-state` and `--verification-basis` are deliberately not defaulted**: they are the
+two fields that say how strongly the bundle believes the fact, and a default would assert it on the
+owner's behalf every time a caller left them out. A caller that cannot say how it knows something has
+not established it. Repeat `--surface` for more than one surface.
+
+```console
+$ boardwatch profile-bundle add-fact --bundle <root> --draft wording \
+    --fact-id fact.example-labs.accomplishment.002 \
+    --subject-id employment.example-labs \
+    --predicate employment.accomplishment \
+    --value "Cut nightly batch runtime from six hours to forty minutes." \
+    --evidence-id evidence.example.owner-attestation.001 \
+    --verification-state owner_confirmed \
+    --verification-basis owner_attested \
+    --usage-context professional \
+    --surface resume
+profile-bundle add-fact: clean
+added fact.example-labs.accomplishment.002 to facts/experience/employment.example-labs.yaml
+owner approval required:
+  approve_evidence_sufficiency evidence.example.owner-attestation.001 -> owner_approved
+  confirm_fact fact.example-labs.accomplishment.002 -> owner_confirmed
+EXIT=0
+```
+
+The owning document is found by the subject's existing facts rather than by entity kind, so the
+twelve fact-bearing document types stay one question instead of a list that goes stale. A subject
+with no facts at all therefore reads as absent, which is the same refusal a genuinely unknown subject
+gets and sends you to the same place. `add-fact` refuses an ID already in use, a subject no document
+holds facts about, and evidence the draft does not hold:
+
+```console
+error: duplicate_record_id (facts/experience/employment.example-labs.yaml fact.example-labs.accomplishment.002): fact.example-labs.accomplishment.002 is already a fact in this draft; an identifier names one record
+error: broken_reference (employment.example-nowhere): no document in this draft holds facts about employment.example-nowhere, so there is nowhere to write one; promote the entity before adding facts to it
+error: broken_reference (evidence/records.yaml evidence.example.absent.999): evidence.example.absent.999 is not an evidence record this draft holds; capture it with `add-evidence` before citing it
+```
+
+**Both commands write three documents together, which is why they exist rather than an instruction to
+edit YAML.** A fact write is not one write:
+
+1. the fact-bearing document, which gains the record and — for `edit-fact` — marks the original
+   `superseded`;
+2. `evidence/records.yaml`, because the two citation directions have to agree exactly (§10) and the
+   new fact cites evidence that does not yet name it;
+3. `manifest.yaml`, whose `evidence_set_digest` describes the evidence document that just changed.
+
+Write the first by hand and forget the other two and the draft fails `evidence_link_asymmetry` and
+`evidence_set_digest_mismatch`. Neither stops `approve`, which reads the candidate digest rather than
+revalidating — they surface at `promote`, which refuses a tree that does not validate. That the draft
+still validates clean afterwards is the whole contract, which is why each command ends by rechecking
+the draft it changed.
 
 ### Validating
 
@@ -1245,6 +1375,8 @@ Every command accepts `--bundle PATH`, and every one but `approve-projection` ac
 | `migrate` | — | nothing at schema v1 |
 | `import` | `--draft`, `--source` (both required), `--from PATH` | `imports/source-ledger.yaml`, and nothing else |
 | `add-evidence` | `--draft`, `--evidence-file`, `--capture` (all required) | `evidence/records.yaml`, each fact/metric document it cites back from, the manifest, and possibly one blob |
+| `edit-fact` | `--draft`, `--fact-id`, `--value` (all required) | the fact's own document, `evidence/records.yaml`, and the manifest |
+| `add-fact` | `--draft`, `--fact-id`, `--subject-id`, `--predicate`, `--value`, `--evidence-id`, `--verification-state`, `--verification-basis`, `--usage-context`, `--surface` (all required; `--surface` repeats) | the subject's document, `evidence/records.yaml`, and the manifest |
 | `resolve-conflict` | `--draft`, `--ruling-file` (both required) | `conflicts/rulings.yaml` and the one ruled group |
 | `approve` | `--draft NAME` (required) | one approval stamp under `approvals/` |
 | `promote` | `--draft`, `--summary` (required), `--actor` | one immutable revision, and `CURRENT` |
