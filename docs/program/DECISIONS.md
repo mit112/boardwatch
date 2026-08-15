@@ -7269,3 +7269,49 @@ fact-bearing documents but is *not* a member of the `DocumentModel` union the wr
 it discards which concrete document a value is and it can no longer be handed to `_write_documents`.
 `_fact_position` therefore returns the record it already found alongside a union-typed document, which avoids
 a `cast` and removes a second lookup.
+
+**Review, and five defects it found in the first cut.** An adversarial read of the branch before merge
+found that the first implementation broke the module's own header contract — "every check runs before the
+first byte is written" — in the one place it matters most. All five were reproduced before being fixed.
+
+1. **`add_fact` wrote all three documents before any predicate contract was checked.** `_revalidated` runs
+   the MODEL tier only, and `PredicateId` is a bare regex, so an unknown predicate, an illegal value type,
+   surface, usage context or subject kind all parsed and were renamed to disk; the CLI's closing
+   revalidation then reported them, too late. Measured: `add-fact --predicate employment.date_range --value
+   "2024-01 to 2025-06"` returned **`clean`**, rewrote all three documents, and only afterwards reported
+   `predicate_value_type_illegal`. That fact could then never be removed — facts are append-only, no command
+   deletes one, and `edit-fact` swaps a string for a string without touching a value type or predicate. Now
+   `_catalog_admits` runs the semantic layer over the prospective tree and refuses anything it reports that
+   the current tree does not. Written as a **diff, not a list of checks**, for the reason `_gates` derives
+   owner gates rather than restating them: five hand-named codes would be a second statement of the
+   catalog's rules, free to drift from the one `promote` enforces. It reads the *bundle's* catalog, so Mit's
+   D-189 widening of `project.contribution` is honoured rather than second-guessed.
+2. **`_document_owning` resolved to `application/gated-facts.yaml`.** It took the first fact-bearing
+   document mentioning the subject, and `BundleDocuments.items()` sorts, so `application/` beat
+   `facts/identity.yaml` for every person fact — filing it among the application-only records, where
+   `effective.is_application_only` classifies by **file membership**, making a §16 decision the operator
+   never asked for. It now asks `BundleIndex.path_of`, which indexes entities independently of the facts
+   about them. That also fixes the second half: an entity with **zero** facts — every entity in a freshly
+   `init`-ed draft — used to read as absent, and the refusal told the operator to "promote the entity",
+   which `promote-candidates` refuses outright once entities exist.
+3. **`_evidence_naming` rewrote contradicting and contextualizing citations as `supports`.** `edit_fact`
+   passes the parent's whole `evidence_ids`, and every named record had the successor written into
+   `supports_record_ids` regardless of which of §12's three relationships actually held. Only `supports`
+   counts toward a predicate's evidence contract, so a rewording could silently clear an
+   `evidence_contract_unmet` nobody re-established — D-144's defect arriving through a new writer. The
+   relationship is now mirrored per record from the parent.
+4. **A successor escaped an unresolved conflict group.** `conflict_group_id: None` was justified in the
+   first cut as "joining a group is a ruling", but a group blocks its candidates *by membership*, so the
+   ungrouped successor became effective immediately — the disputed value reaching a résumé unruled — while
+   `competing_values_outside_conflict` blocked `promote` with no command able to repair it. `edit-fact` now
+   refuses a fact carrying a `conflict_group_id`.
+5. **A derived successor ID could dead-end.** `.r<digits>` is read as a counter, so an ID that ends that way
+   for an unrelated reason (`fact.lab.room.r2`) yields a sibling, and a collision used to refuse with
+   `duplicate_record_id` naming an ID the operator never typed — leaving that fact permanently
+   uncorrectable. The counter now advances past whatever the draft holds.
+
+Two claims in the first cut's own prose were also false and are corrected: `_revalidated`'s docstring said it
+caught predicate errors (it cannot), and the write-ordering comment named `evidence_link_asymmetry` as the
+residual failure class when it is `broken_reference` — `_evidence_links_are_symmetric` skips a target already
+reported as a broken reference. **The lesson worth carrying: three of the five were invisible to a green
+`make check`, because the tests and the code shared the author's assumption about where validation runs.**

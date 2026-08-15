@@ -317,6 +317,9 @@ keeps the documents one fact edit touches in agreement.
 
 **A correction is filed as an edge, not written as a mutation.** `edit-fact` appends a successor fact
 whose ID is the original's with `.r2`, then `.r3`, and whose `supersedes_fact_ids` names its parent.
+A trailing `.r<digits>` is read as that counter and replaced rather than appended to, so a chain stays
+flat; an ID that already ends that way for an unrelated reason therefore yields a sibling rather than a
+child, and the counter advances past anything the draft already holds so a collision never refuses.
 The original is never rewritten: its value stands, and only its `verification_state` moves to
 `superseded`. That state is outside the effective set, so the old wording stops reaching any surface
 on its own — a render drops it with no render-side change, and history stays derivable rather than
@@ -369,6 +372,34 @@ than coerced, and the message names the one route that still works:
 
 ```console
 error: model_validation_error (fact.example-labs.dates.001): fact.example-labs.dates.001 holds a date_range value, which text cannot express; edit the draft's YAML directly for a value this command cannot state
+```
+
+**A fact inside a conflict group.** A group blocks its candidates by membership, so a successor that
+named no group would be effective immediately — the disputed value reaching a surface with the conflict
+still unruled. Adding the successor to the group instead would be a ruling, which `resolve-conflict`
+owns, so the correction waits on the ruling:
+
+```console
+error: conflict_candidate_mismatch (fact.x.001): fact.x.001 is a candidate of conflict.x; rule on the conflict before correcting the value it disputes
+```
+
+### What the predicate catalog refuses, before anything is written
+
+Neither command writes a fact its predicate's catalog row would reject. This matters more here than the
+usual "validate early", because a fact cannot be taken back out: facts are append-only, no command
+removes one, and `edit-fact` swaps one string for another without touching a value type or a predicate.
+A fact written past its catalog row would be stuck in the draft.
+
+So both commands run the semantic layer over the tree they are about to write and refuse anything it
+reports that the current tree does not — a diff, not a list of checks, so the rule cannot drift from the
+one `promote` enforces. That covers an unknown predicate, an illegal value type, usage context, surface
+or subject kind, and an exceeded cardinality:
+
+```console
+$ ... add-fact --fact-id fact.example-labs.tenure.001 --predicate employment.date_range --value "2024-01 to 2025-06" ...
+profile-bundle add-fact: findings
+error: predicate_value_type_illegal (fact.example-labs.tenure.001): employment.date_range does not admit a string value
+EXIT=1
 ```
 
 ### `add-fact` writes a new fact into the document owning its subject

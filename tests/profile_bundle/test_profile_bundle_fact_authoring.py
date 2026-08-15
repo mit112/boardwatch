@@ -102,6 +102,73 @@ def seed_import_lineage(bundle: SyntheticBundle, fact_id: str) -> None:
     path.write_bytes(quoted_yaml(data, logical_path=logical))
 
 
+def _rewrite(bundle: SyntheticBundle, relative: str, mutate: object) -> None:
+    logical = PurePosixPath(relative)
+    path = bundle.document(relative)
+    data = load_yaml_bytes(path.read_bytes(), logical_path=logical)
+    mutate(data)  # type: ignore[operator]
+    path.write_bytes(quoted_yaml(data, logical_path=logical))
+
+
+def seed_contextualizing_citation(bundle: SyntheticBundle, fact_id: str) -> None:
+    """Make `fact_id` cite a record that only *contextualizes* it.
+
+    Seeded because the example's one contextualizing citation is on a `stale`, `skill_ref`,
+    `repository_verified` fact, which `edit-fact` refuses three times over — so the shipped fixture
+    cannot reach this arm, and a test written against it would pass without exercising anything.
+    """
+    evidence_id = "evidence.example.legacy-summary.001"
+
+    def cite(data: dict) -> None:  # type: ignore[type-arg]
+        rows = [row for row in data["facts"] if row["fact_id"] == fact_id]
+        assert len(rows) == 1, f"{fact_id} not found"
+        rows[0]["evidence_ids"] = sorted({*rows[0]["evidence_ids"], evidence_id})
+
+    def name_back(data: dict) -> None:  # type: ignore[type-arg]
+        rows = [row for row in data["evidence"] if row["evidence_id"] == evidence_id]
+        assert len(rows) == 1
+        rows[0]["contextualizes_record_ids"] = sorted(
+            {*rows[0]["contextualizes_record_ids"], fact_id}
+        )
+
+    _rewrite(bundle, "facts/experience/employment.example-labs.yaml", cite)
+    _rewrite(bundle, "evidence/records.yaml", name_back)
+
+
+def seed_conflict_membership(bundle: SyntheticBundle, fact_id: str) -> str:
+    """Put `fact_id` into an existing unresolved conflict group, both directions.
+
+    Seeded for the same reason: both groups the example ships are `year_month`-valued with
+    non-effective candidates, so `_correctable`'s earlier refusals fire first and the conflict
+    guard is unreachable through the fixture as shipped.
+    """
+    conflict_id = "conflict.packet-pantry.end-date"
+
+    def join(data: dict) -> None:  # type: ignore[type-arg]
+        rows = [row for row in data["facts"] if row["fact_id"] == fact_id]
+        assert len(rows) == 1, f"{fact_id} not found"
+        rows[0]["conflict_group_id"] = conflict_id
+
+    def list_candidate(data: dict) -> None:  # type: ignore[type-arg]
+        rows = [row for row in data["conflicts"] if row["conflict_id"] == conflict_id]
+        assert len(rows) == 1
+        rows[0]["candidate_fact_ids"] = sorted({*rows[0]["candidate_fact_ids"], fact_id})
+
+    _rewrite(bundle, "facts/experience/employment.example-labs.yaml", join)
+    _rewrite(bundle, "conflicts/groups.yaml", list_candidate)
+    return conflict_id
+
+
+def evidence_record(bundle: SyntheticBundle, evidence_id: str) -> object:
+    documents = parse_documents(bundle.draft)
+    return next(
+        record
+        for document in documents.by_path.values()
+        for record in getattr(document, "evidence", ())
+        if record.evidence_id == evidence_id
+    )
+
+
 # --------------------------------------------------------------------------------------
 # edit-fact
 # --------------------------------------------------------------------------------------
@@ -575,6 +642,168 @@ def test_add_fact_names_the_document_it_wrote(synthetic_bundle: SyntheticBundle)
 
     assert outcome.value is not None
     assert outcome.value.document == "facts/experience/employment.example-labs.yaml"
+
+
+# --------------------------------------------------------------------------------------
+# What a model check cannot see: the predicate catalog, and where a fact belongs
+# --------------------------------------------------------------------------------------
+
+
+def test_add_fact_refuses_a_value_the_predicate_forbids_before_writing(
+    synthetic_bundle: SyntheticBundle,
+) -> None:
+    """The models accept any string; the predicate catalog is what rejects this one.
+
+    `employment.date_range` admits no string value. Pydantic cannot know that — the contract lives
+    in `policy/predicates.yaml` and is enforced by the semantic layer, which the CLI runs only
+    *after* the write. So this used to return `clean`, rename all three documents, and report
+    `predicate_value_type_illegal` from the revalidation afterwards.
+
+    That ordering is not survivable here the way it would be elsewhere: facts are append-only,
+    there is no `remove-fact` and no `discard-draft`, and `edit-fact` swaps one string for another
+    without touching a value type or predicate. A fact written this way could never be removed from
+    the draft.
+    """
+    before = {
+        path: path.read_bytes()
+        for path in sorted(synthetic_bundle.draft.rglob("*"))
+        if path.is_file()
+    }
+
+    outcome = add_fact(
+        synthetic_bundle.root,
+        draft_name=synthetic_bundle.draft_name,
+        fact_id="fact.example-labs.tenure.001",
+        subject_id=LABS,
+        predicate="employment.date_range",
+        value="2024-01 to 2025-06",
+        evidence_id=ATTESTATION,
+        verification_state="owner_confirmed",
+        verification_basis="owner_attested",
+        usage_context="professional",
+        surfaces=("resume",),
+        as_of=AS_OF,
+    )
+
+    assert outcome.category == "findings"
+    assert "predicate_value_type_illegal" in [item.code for item in outcome.diagnostics]
+    after = {
+        path: path.read_bytes()
+        for path in sorted(synthetic_bundle.draft.rglob("*"))
+        if path.is_file()
+    }
+    assert after == before, "a refused addition must leave the draft byte-identical"
+
+
+def test_add_fact_refuses_an_unknown_predicate_before_writing(
+    synthetic_bundle: SyntheticBundle,
+) -> None:
+    """`PredicateId` is a bare regex, so a typo is a well-formed ID naming no catalog row."""
+    outcome = add_fact(
+        synthetic_bundle.root,
+        draft_name=synthetic_bundle.draft_name,
+        fact_id="fact.example-labs.accomplishment.002",
+        subject_id=LABS,
+        predicate="employment.acomplishment",
+        value="Cut nightly batch runtime from six hours to forty minutes.",
+        evidence_id=ATTESTATION,
+        verification_state="owner_confirmed",
+        verification_basis="owner_attested",
+        usage_context="professional",
+        surfaces=("resume",),
+        as_of=AS_OF,
+    )
+
+    assert outcome.category == "findings"
+    assert "unknown_predicate" in [item.code for item in outcome.diagnostics]
+
+
+def test_add_fact_writes_into_the_document_declaring_the_entity(
+    synthetic_bundle: SyntheticBundle,
+) -> None:
+    """The owning document is the one that declares the subject, not the first holding a fact.
+
+    `person.example-candidate` has facts in two documents — `facts/identity.yaml`, which declares
+    the person, and `application/gated-facts.yaml`, which holds its application-only facts. A
+    search for the first fact-bearing document mentioning the subject picks the latter, because
+    `application/` sorts before `facts/`. A person fact would then be filed among the gated ones,
+    where `effective.is_application_only` classifies by file membership — a §16 decision the
+    operator never made.
+
+    Both person predicates the example ships are cardinality `one` and already have a fact, so no
+    legal person fact can be added to this bundle at all. What is observable — and what actually
+    changed — is WHICH document the write was aimed at: the refusal now comes from the catalog
+    about `facts/identity.yaml`, where before it came from the gated document's own model,
+    rejecting a `resume` surface in a file the operator never named.
+    """
+    outcome = add_fact(
+        synthetic_bundle.root,
+        draft_name=synthetic_bundle.draft_name,
+        fact_id="fact.example.headline.002",
+        subject_id="person.example-candidate",
+        predicate="person.professional_headline",
+        value="Backend engineer who ships measured systems.",
+        evidence_id=ATTESTATION,
+        verification_state="owner_confirmed",
+        verification_basis="owner_attested",
+        usage_context="professional",
+        surfaces=("resume", "public"),
+        as_of=AS_OF,
+    )
+
+    assert outcome.category == "findings"
+    paths = {item.path for item in outcome.diagnostics}
+    assert paths == {"facts/identity.yaml"}, paths
+    assert "application/gated-facts.yaml" not in paths
+
+
+def test_edit_fact_keeps_a_contextualizing_citation_out_of_supports(
+    synthetic_bundle: SyntheticBundle,
+) -> None:
+    """§12 makes the relationship a closed choice of three, and only `supports` clears a contract.
+
+    A fact legitimately cites the record that merely *contextualizes* it. Writing the successor
+    into that record's `supports_record_ids` would hand it a supporting evidence class its parent
+    never had — which is how a rewording silently clears an `evidence_contract_unmet` nobody
+    re-established.
+    """
+    seed_contextualizing_citation(synthetic_bundle, TITLE)
+
+    outcome = edit_fact(
+        synthetic_bundle.root,
+        draft_name=synthetic_bundle.draft_name,
+        fact_id=TITLE,
+        value="Senior Software Engineer",
+        as_of=AS_OF,
+    )
+    assert outcome.category == "clean", outcome.diagnostics
+
+    record = evidence_record(synthetic_bundle, "evidence.example.legacy-summary.001")
+    assert f"{TITLE}.r2" in record.contextualizes_record_ids
+    assert f"{TITLE}.r2" not in record.supports_record_ids
+
+
+def test_edit_fact_refuses_a_fact_inside_a_conflict_group(
+    synthetic_bundle: SyntheticBundle,
+) -> None:
+    """A group blocks its candidates by membership, so a successor outside it escapes the block.
+
+    Correcting a candidate would make the disputed value effective while the conflict is still
+    unruled, and no command could put the successor back in the group — `resolve-conflict` sets
+    only a group's state and active ruling.
+    """
+    seed_conflict_membership(synthetic_bundle, TITLE)
+
+    outcome = edit_fact(
+        synthetic_bundle.root,
+        draft_name=synthetic_bundle.draft_name,
+        fact_id=TITLE,
+        value="Senior Software Engineer",
+        as_of=AS_OF,
+    )
+
+    assert outcome.category == "findings"
+    assert [item.code for item in outcome.diagnostics] == ["conflict_candidate_mismatch"]
 
 
 def test_the_incremental_loop_runs_without_re_importing_the_source(

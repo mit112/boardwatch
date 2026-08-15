@@ -110,7 +110,7 @@ from boardwatch.profile_bundle.imports import (
     enumerate_source,
     rebuild_source_candidates,
 )
-from boardwatch.profile_bundle.index import record_id_of
+from boardwatch.profile_bundle.index import build_index, record_id_of
 from boardwatch.profile_bundle.models.base import (
     EFFECTIVE_STATES,
     VerificationBasis,
@@ -180,7 +180,12 @@ from boardwatch.profile_bundle.storage import (
     read_current_once,
     selected_documents,
 )
-from boardwatch.profile_bundle.validation import load_documents, parse_error_diagnostics
+from boardwatch.profile_bundle.validation import (
+    context_from_documents,
+    load_documents,
+    parse_error_diagnostics,
+    validate_semantic,
+)
 from boardwatch.profile_bundle.yaml_loader import load_yaml_bytes
 from boardwatch.profile_bundle.yaml_writer import document_bytes
 
@@ -541,15 +546,19 @@ def edit_fact(
         )
         rewritten = _revalidated(type(document), payload, path)
 
-        evidence = _evidence_naming(documents, original.evidence_ids, successor_id)
+        evidence = _evidence_naming(
+            documents, original.evidence_ids, successor_id, mirroring=fact_id
+        )
         restated = _manifest_restating_the_evidence_set(bundle_root, documents, evidence)
         changed = {EVIDENCE_PATH: evidence, MANIFEST_PATH: restated, path: rewritten}
+        _catalog_admits(tree, documents, changed)
         # Evidence, the manifest that describes it, then the record that cites it — `add_evidence`'s
         # order and for its reason. The two evidence-shaped documents land together, so a rename
-        # that fails after them leaves exactly one error class, `evidence_link_asymmetry`, which an
-        # ordinary draft edit repairs; leaving the manifest last would add
-        # `evidence_set_digest_mismatch`, which §21 reserves for evidence mutated after promotion
-        # and no command repairs.
+        # that fails after them leaves exactly one error class: `broken_reference`, because the
+        # evidence now names a successor no document holds and `_evidence_links_are_symmetric`
+        # explicitly skips a target that is already reported as a broken reference. An ordinary
+        # draft edit repairs it. Leaving the manifest last would add `evidence_set_digest_mismatch`
+        # on top, which §21 reserves for evidence mutated after promotion and no command repairs.
         _write_documents(tree, changed)
     except _Refused as refusal:
         return outcome_with(None, refusal.diagnostics)
@@ -628,6 +637,7 @@ def add_fact(
         evidence = _evidence_naming(documents, (evidence_id,), fact_id)
         restated = _manifest_restating_the_evidence_set(bundle_root, documents, evidence)
         changed = {EVIDENCE_PATH: evidence, MANIFEST_PATH: restated, path: rewritten}
+        _catalog_admits(tree, documents, changed)
         _write_documents(tree, changed)
     except _Refused as refusal:
         return outcome_with(None, refusal.diagnostics)
@@ -1526,6 +1536,18 @@ def _correctable(fact: FactRecord) -> None:
             "draft's YAML directly for a value this command cannot state",
             record_id=fact.fact_id,
         )
+    if fact.conflict_group_id is not None:
+        # A group blocks its candidates by membership, so a successor outside it would be effective
+        # immediately — the disputed value reaching a surface while the conflict is still unruled.
+        # Putting the successor *in* the group is not this command's call either: a group's
+        # candidate list is what a ruling decides, and `resolve_conflict` sets only its state and
+        # active ruling, so nothing could undo it afterwards.
+        raise _refusal(
+            IssueCode.CONFLICT_CANDIDATE_MISMATCH,
+            f"{fact.fact_id} is a candidate of {fact.conflict_group_id}; rule on the conflict "
+            "before correcting the value it disputes",
+            record_id=fact.fact_id,
+        )
 
 
 def _successor_fact_id(fact_id: str, documents: BundleDocuments) -> str:
@@ -1540,9 +1562,19 @@ def _successor_fact_id(fact_id: str, documents: BundleDocuments) -> str:
     revision = 2
     if base and tail.startswith("r") and tail[1:].isdigit():
         fact_id, revision = base, int(tail[1:]) + 1
-    successor = f"{fact_id}.r{revision}"
-    _unused_fact_id(documents, successor)
-    return successor
+    held = {
+        held_fact.fact_id
+        for document in documents.by_path.values()
+        if isinstance(document, FactBearingDocument)
+        for held_fact in document.facts
+    }
+    # Advance past anything already there rather than refusing. The `.rN` tail is a convention, and
+    # an ID the owner authored by their own naming scheme can collide with the one this derives —
+    # `fact.lab.room.r2` reads as a second revision here and is not one. Refusing would leave that
+    # fact permanently uncorrectable by this command, since there is no way to name the successor.
+    while f"{fact_id}.r{revision}" in held:
+        revision += 1
+    return f"{fact_id}.r{revision}"
 
 
 def _unused_fact_id(documents: BundleDocuments, fact_id: str) -> None:
@@ -1562,26 +1594,46 @@ def _unused_fact_id(documents: BundleDocuments, fact_id: str) -> None:
 def _document_owning(
     documents: BundleDocuments, subject_id: str
 ) -> tuple[PurePosixPath, DocumentModel]:
-    """The document that already holds facts about `subject_id`.
+    """The document that DECLARES `subject_id`, asked of the index rather than searched for.
+
+    Not "the first fact-bearing document mentioning the subject". Two things break under that
+    reading, and both are reachable in the packaged example. `application/gated-facts.yaml` holds
+    facts about the person and sorts before `facts/identity.yaml`, so a person fact would be filed
+    among the application-only ones — where `effective.is_application_only` classifies by file
+    membership, making a §16 decision the operator never asked for. And an entity that exists with
+    no facts yet — which is every entity in a freshly `init`-ed draft — would read as absent.
+
+    `BundleIndex` already answers the real question: it indexes entities independently of the facts
+    about them, so `path_of` names the document that declares one whether or not it has any facts.
 
     Returned as a `DocumentModel` for `_fact_position`'s reason: the base class the isinstance test
     proves is not a member of the union the writers take.
     """
-    for path, document in documents.items():
-        if not isinstance(document, FactBearingDocument):
-            continue
-        if any(fact.subject_id == subject_id for fact in document.facts):
-            return (path, document)
-    raise _refusal(
-        IssueCode.BROKEN_REFERENCE,
-        f"no document in this draft holds facts about {subject_id}, so there is nowhere to write "
-        "one; promote the entity before adding facts to it",
-        record_id=subject_id,
-    )
+    path = build_index(documents).path_of(subject_id)
+    document = None if path is None else documents.by_path.get(PurePosixPath(path))
+    if path is None or not isinstance(document, FactBearingDocument):
+        raise _refusal(
+            IssueCode.BROKEN_REFERENCE,
+            f"{subject_id} is not an entity this draft declares, so there is nowhere to write a "
+            "fact about it",
+            record_id=subject_id,
+        )
+    return (PurePosixPath(path), document)
+
+
+_EVIDENCE_RELATIONSHIPS: Final = (
+    "supports_record_ids",
+    "contradicts_record_ids",
+    "contextualizes_record_ids",
+)
 
 
 def _evidence_naming(
-    documents: BundleDocuments, evidence_ids: Sequence[str], fact_id: str
+    documents: BundleDocuments,
+    evidence_ids: Sequence[str],
+    fact_id: str,
+    *,
+    mirroring: str | None = None,
 ) -> EvidenceRecordsDocument:
     """`evidence/records.yaml` with each named record supporting `fact_id` (§12).
 
@@ -1618,10 +1670,57 @@ def _evidence_naming(
     for row in payload["evidence"]:
         if row["evidence_id"] not in named:
             continue
-        # Sorted for `UniqueSorted`'s reason, and rebuilt from a set so re-offering a link that is
-        # already there is a no-op rather than a duplicate refusal.
-        row["supports_record_ids"] = sorted({*row["supports_record_ids"], fact_id})
+        # Which of the three lists, not always `supports`. §12 makes the relationship a closed
+        # choice, and only `supports` counts toward a predicate's evidence contract — so writing a
+        # successor into `supports` when its parent was merely *contextualized* by that record
+        # would hand the correction a supporting evidence class its parent never had, and could
+        # clear an `evidence_contract_unmet` nobody re-established.
+        #
+        # `mirroring` is the parent whose relationship to copy, and is None for a new fact, which
+        # has no parent to read and so declares the support its caller cited.
+        fields = [
+            field
+            for field in _EVIDENCE_RELATIONSHIPS
+            if mirroring is not None and mirroring in row[field]
+        ] or ["supports_record_ids"]
+        for field in fields:
+            # Sorted for `UniqueSorted`'s reason, and rebuilt from a set so re-offering a link that
+            # is already there is a no-op rather than a duplicate refusal.
+            row[field] = sorted({*row[field], fact_id})
     return EvidenceRecordsDocument.model_validate(payload)
+
+
+def _catalog_admits(
+    tree: Path, before: BundleDocuments, changed: Mapping[PurePosixPath, DocumentModel]
+) -> None:
+    """Refuse a write the predicate catalog would reject, BEFORE the first byte is written (§12).
+
+    The models cannot answer this. `PredicateId` is a bare regex, and every contract a predicate
+    imposes — which value types it admits, which surfaces and usage contexts are legal, which
+    subject kinds it applies to, its cardinality — lives in `policy/predicates.yaml` and is enforced
+    by the semantic layer. The command layer runs that layer only *after* the write, as the closing
+    revalidation, which is far too late here: facts are append-only, no command removes one, and
+    `edit-fact` swaps one string for another without touching a value type or a predicate. A fact
+    written past its catalog row could never be taken back out of the draft.
+
+    Asked as a DIFF rather than as a list of checks, for the reason `_gates` derives owner gates
+    instead of restating them: naming the five codes that can fire would be a second statement of
+    the catalog's rules, free to drift from the one `validate_semantic` enforces at promotion.
+    Anything the prospective tree reports that the current one does not is caused by this write.
+    """
+    after = BundleDocuments(manifest=before.manifest, by_path={**before.by_path, **changed})
+    seen = {
+        (item.code, item.record_id, item.message)
+        for item in validate_semantic(context_from_documents(before, root=tree, mode="draft"))
+    }
+    introduced = tuple(
+        item
+        for item in validate_semantic(context_from_documents(after, root=tree, mode="draft"))
+        if item.tier in {"error", "blocker"}
+        and (item.code, item.record_id, item.message) not in seen
+    )
+    if introduced:
+        raise _Refused(introduced)
 
 
 def _revalidated(
@@ -1631,9 +1730,12 @@ def _revalidated(
 
     `edit_fact` builds its successor by copying a record the models already accepted, so only its
     value can be invalid and `StringValue` states that itself. `add_fact` assembles a record from
-    twelve separate arguments, any of which the catalog or the models can refuse — an unknown
-    predicate, a surface the predicate forbids, a state outside the enum. Letting that escape as a
-    `ValidationError` would surface a caller's typo as an internal failure.
+    twelve separate arguments, and letting a rejection escape as a `ValidationError` would surface
+    a caller's typo as an internal failure.
+
+    This is the MODEL tier only — shapes, enums, and the document's own validators. It cannot see a
+    predicate's contract: `PredicateId` is a bare regex, so an unknown predicate, a forbidden value
+    type and an illegal surface all parse here and are caught by `_catalog_admits` instead.
     """
     try:
         return kind.model_validate(payload)
