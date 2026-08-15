@@ -111,6 +111,11 @@ from boardwatch.profile_bundle.imports import (
     rebuild_source_candidates,
 )
 from boardwatch.profile_bundle.index import record_id_of
+from boardwatch.profile_bundle.models.base import (
+    EFFECTIVE_STATES,
+    VerificationBasis,
+    VerificationState,
+)
 from boardwatch.profile_bundle.models.documents import (
     BundleDocuments,
     DocumentModel,
@@ -122,6 +127,7 @@ from boardwatch.profile_bundle.models.documents import (
     SkillInventoryDocument,
 )
 from boardwatch.profile_bundle.models.evidence import AnyEvidence, EvidenceRecord
+from boardwatch.profile_bundle.models.facts import FactRecord
 from boardwatch.profile_bundle.models.history import (
     ConflictGroups,
     ConflictRecord,
@@ -320,6 +326,30 @@ class ConflictResolution:
     owner_gates: tuple[ApprovalDecision, ...]
 
 
+@dataclass(frozen=True)
+class FactEdit:
+    """What `edit-fact` did: one correction, filed as an edge rather than a mutation."""
+
+    draft_name: str
+    #: The record the operator named. Still on disk, still carrying its original value, now
+    #: `superseded` — reported so a caller can show what the correction replaced.
+    fact_id: str
+    successor_fact_id: str
+    #: Where both records live, so the operator can read the result back.
+    document: str
+    owner_gates: tuple[ApprovalDecision, ...]
+
+
+@dataclass(frozen=True)
+class FactAddition:
+    """What `add-fact` did."""
+
+    draft_name: str
+    fact_id: str
+    document: str
+    owner_gates: tuple[ApprovalDecision, ...]
+
+
 def add_evidence(
     bundle_root: Path,
     *,
@@ -449,6 +479,166 @@ def resolve_conflict(
                 documents,
                 {CONFLICT_RULINGS_PATH: new_rulings, CONFLICT_GROUPS_PATH: new_groups},
             ),
+        )
+    )
+
+
+def edit_fact(
+    bundle_root: Path,
+    *,
+    draft_name: str,
+    fact_id: str,
+    value: str,
+    as_of: date,
+) -> OperationOutcome[FactEdit]:
+    """Correct one fact's wording by filing a successor that supersedes it (§10.2, §19).
+
+    The alternative — rewriting the value in place — is what `FactRecord` was designed against:
+    "`supersedes_fact_ids` is an edge, not a mutation: a corrected fact gets a NEW `fact_id` and the
+    superseded record stays immutable, so history is derivable rather than overwritten."
+
+    Three documents move together, which is the whole reason this is a command rather than an
+    instruction to edit YAML. The successor cites the evidence its parent cited, so
+    `evidence/records.yaml` has to name it back or §12's two directions disagree; and the evidence
+    document changing makes the manifest's `evidence_set_digest` a statement about content that
+    moved. An owner doing this by hand writes the first and forgets the other two.
+
+    **The successor claims no import lineage.** The parent's `source_content_digest` asserts a match
+    against source bytes that no longer contain this text, and nothing recomputes it — so carrying
+    it forward would be a provenance claim no layer checks and no command repairs. What supports an
+    owner's wording is the owner's attestation, which is why a basis the owner cannot attest is
+    refused rather than inherited.
+
+    **The successor joins no conflict group.** A group lists its candidates by ID, and a record it
+    does not name reports `conflict_candidate_mismatch`; adding one is a ruling, which
+    `resolve_conflict` owns. The parent stays a candidate, now superseded — which is what "this
+    candidate was corrected" means.
+    """
+    try:
+        tree = _draft(bundle_root, draft_name)
+        documents = _load(tree)
+        path, document, position = _fact_position(documents, fact_id)
+        original = document.facts[position]
+        _correctable(original)
+
+        payload = document.model_dump(mode="json")
+        rows = payload["facts"]
+        parent = dict(rows[position])
+        successor_id = _successor_fact_id(fact_id, documents)
+        # The parent row is captured above, so flipping its state cannot reach the successor built
+        # from it — which would file a correction that is already superseded by nothing.
+        rows[position] = {**parent, "verification_state": VerificationState.SUPERSEDED.value}
+        rows.insert(
+            position + 1,
+            {
+                **parent,
+                "fact_id": successor_id,
+                "value": {"type": "string", "value": value},
+                "supersedes_fact_ids": [fact_id],
+                "conflict_group_id": None,
+                "import_lineage": None,
+                "reviewed_at": as_of.isoformat(),
+            },
+        )
+        rewritten = _revalidated(type(document), payload, path)
+
+        evidence = _evidence_naming(documents, original.evidence_ids, successor_id)
+        restated = _manifest_restating_the_evidence_set(bundle_root, documents, evidence)
+        changed = {EVIDENCE_PATH: evidence, MANIFEST_PATH: restated, path: rewritten}
+        # Evidence, the manifest that describes it, then the record that cites it — `add_evidence`'s
+        # order and for its reason. The two evidence-shaped documents land together, so a rename
+        # that fails after them leaves exactly one error class, `evidence_link_asymmetry`, which an
+        # ordinary draft edit repairs; leaving the manifest last would add
+        # `evidence_set_digest_mismatch`, which §21 reserves for evidence mutated after promotion
+        # and no command repairs.
+        _write_documents(tree, changed)
+    except _Refused as refusal:
+        return outcome_with(None, refusal.diagnostics)
+
+    return OperationOutcome.clean(
+        FactEdit(
+            draft_name=draft_name,
+            fact_id=fact_id,
+            successor_fact_id=successor_id,
+            document=path.as_posix(),
+            owner_gates=_gates(documents, changed),
+        )
+    )
+
+
+def add_fact(
+    bundle_root: Path,
+    *,
+    draft_name: str,
+    fact_id: str,
+    subject_id: str,
+    predicate: str,
+    value: str,
+    evidence_id: str,
+    verification_state: str,
+    verification_basis: str,
+    usage_context: str,
+    surfaces: Sequence[str],
+    as_of: date,
+) -> OperationOutcome[FactAddition]:
+    """Write one new fact into the document that owns its subject (§10.1, §19).
+
+    The same three-document write `edit_fact` performs, without the supersession: a new record, the
+    evidence naming it back, and the manifest restating the evidence set.
+
+    **`verification_state` and `verification_basis` are required and never defaulted.** They are the
+    two fields that say how strongly the bundle believes this fact, and a default would make the
+    command assert `owner_confirmed` on the owner's behalf every time a caller omitted it — the
+    failure mode where a shared writer's defaulted status quietly reports success for paths that
+    never earned it. A caller that cannot say how it knows something has not established it.
+
+    The owning document is found by the subject's existing facts rather than by entity kind, so the
+    twelve fact-bearing document types stay one question instead of a list that goes stale. A
+    subject with no facts at all therefore reads as absent, which is the same refusal a genuinely
+    unknown subject gets and sends the operator to the same place: promote the entity first.
+    """
+    try:
+        tree = _draft(bundle_root, draft_name)
+        documents = _load(tree)
+        _unused_fact_id(documents, fact_id)
+        path, document = _document_owning(documents, subject_id)
+
+        payload = document.model_dump(mode="json")
+        payload["facts"] = [
+            *payload["facts"],
+            {
+                "fact_id": fact_id,
+                "subject_id": subject_id,
+                "predicate": predicate,
+                "value": {"type": "string", "value": value},
+                "verification_state": verification_state,
+                "verification_basis": verification_basis,
+                "usage_context": usage_context,
+                "evidence_ids": [evidence_id],
+                "allowed_surfaces": sorted(set(surfaces)),
+                "conflict_group_id": None,
+                "reviewed_at": as_of.isoformat(),
+                "expires_at": None,
+                "supersedes_fact_ids": [],
+                "import_lineage": None,
+                "notes": None,
+            },
+        ]
+        rewritten = _revalidated(type(document), payload, path)
+
+        evidence = _evidence_naming(documents, (evidence_id,), fact_id)
+        restated = _manifest_restating_the_evidence_set(bundle_root, documents, evidence)
+        changed = {EVIDENCE_PATH: evidence, MANIFEST_PATH: restated, path: rewritten}
+        _write_documents(tree, changed)
+    except _Refused as refusal:
+        return outcome_with(None, refusal.diagnostics)
+
+    return OperationOutcome.clean(
+        FactAddition(
+            draft_name=draft_name,
+            fact_id=fact_id,
+            document=path.as_posix(),
+            owner_gates=_gates(documents, changed),
         )
     )
 
@@ -1274,6 +1464,172 @@ def _evidence_document(documents: BundleDocuments) -> EvidenceRecordsDocument:
     return document
 
 
+def _fact_position(
+    documents: BundleDocuments, fact_id: str
+) -> tuple[PurePosixPath, FactBearingDocument, int]:
+    """Where one fact lives: its document, and its index within that document's `facts`.
+
+    Asked by type rather than by name for `_documents_citing_back`'s reason — there are twelve
+    fact-bearing documents and `FactBearingDocument` exists so this does not become a list that
+    goes stale when a thirteenth arrives.
+    """
+    for path, document in documents.items():
+        if not isinstance(document, FactBearingDocument):
+            continue
+        for position, fact in enumerate(document.facts):
+            if fact.fact_id == fact_id:
+                return (path, document, position)
+    raise _refusal(
+        IssueCode.BROKEN_REFERENCE,
+        f"{fact_id} is not a fact this draft holds; `inspect` lists what it does",
+        record_id=fact_id,
+    )
+
+
+def _correctable(fact: FactRecord) -> None:
+    """The two states in which filing a successor would assert something the owner did not.
+
+    A basis other than `owner_attested` belongs to the evidence that established it — a document
+    read, a repository checked. The owner retyping the wording does not re-establish any of that,
+    so a successor inheriting the basis would borrow authority from a record nobody re-read, and
+    one silently downgraded to `owner_attested` would drop a verification the operator never asked
+    to drop. Neither is this command's call to make.
+
+    An already-superseded record is refused because correcting it would leave two live successors
+    of one parent, and "the current value" would stop being a question with an answer.
+    """
+    if fact.verification_basis is not VerificationBasis.OWNER_ATTESTED:
+        raise _refusal(
+            IssueCode.VERIFICATION_BASIS_UNSUPPORTED,
+            f"{fact.fact_id} is established by {fact.verification_basis.value}, which an owner's "
+            "rewording does not re-establish; capture evidence for the new wording and add a fact "
+            "citing it",
+            record_id=fact.fact_id,
+        )
+    if fact.verification_state not in EFFECTIVE_STATES:
+        raise _refusal(
+            IssueCode.FACT_STATE_INCONSISTENT,
+            f"{fact.fact_id} is {fact.verification_state.value} and no longer reaches any surface; "
+            "correct the record that superseded it instead",
+            record_id=fact.fact_id,
+        )
+    if fact.value.type != "string":
+        raise _refusal(
+            IssueCode.MODEL_VALIDATION_ERROR,
+            f"{fact.fact_id} holds a {fact.value.type} value, which text cannot express; edit the "
+            "draft's YAML directly for a value this command cannot state",
+            record_id=fact.fact_id,
+        )
+
+
+def _successor_fact_id(fact_id: str, documents: BundleDocuments) -> str:
+    """`<id>.r2`, then `.r3` — the revision counted on the ID rather than searched for.
+
+    Derived from the ID the operator named, so a chain of corrections reads as one lineage in a
+    sorted directory listing instead of scattering across unrelated numbers. The collision check is
+    still made against the whole draft: the suffix is a convention, and a draft that already holds
+    the ID it produces would otherwise get a duplicate that only structural validation catches.
+    """
+    base, _, tail = fact_id.rpartition(".")
+    revision = 2
+    if base and tail.startswith("r") and tail[1:].isdigit():
+        fact_id, revision = base, int(tail[1:]) + 1
+    successor = f"{fact_id}.r{revision}"
+    _unused_fact_id(documents, successor)
+    return successor
+
+
+def _unused_fact_id(documents: BundleDocuments, fact_id: str) -> None:
+    for path, document in documents.items():
+        if not isinstance(document, FactBearingDocument):
+            continue
+        for fact in document.facts:
+            if fact.fact_id == fact_id:
+                raise _refusal(
+                    IssueCode.DUPLICATE_RECORD_ID,
+                    f"{fact_id} is already a fact in this draft; an identifier names one record",
+                    path=path.as_posix(),
+                    record_id=fact_id,
+                )
+
+
+def _document_owning(
+    documents: BundleDocuments, subject_id: str
+) -> tuple[PurePosixPath, FactBearingDocument]:
+    """The document that already holds facts about `subject_id`."""
+    for path, document in documents.items():
+        if not isinstance(document, FactBearingDocument):
+            continue
+        if any(fact.subject_id == subject_id for fact in document.facts):
+            return (path, document)
+    raise _refusal(
+        IssueCode.BROKEN_REFERENCE,
+        f"no document in this draft holds facts about {subject_id}, so there is nowhere to write "
+        "one; promote the entity before adding facts to it",
+        record_id=subject_id,
+    )
+
+
+def _evidence_naming(
+    documents: BundleDocuments, evidence_ids: Sequence[str], fact_id: str
+) -> EvidenceRecordsDocument:
+    """`evidence/records.yaml` with each named record supporting `fact_id` (§12).
+
+    The mirror of `_documents_citing_back`, which writes the fact side of the same contract when the
+    evidence is what is new. Here the fact is what is new, so the evidence side is the one missing —
+    and §12 compares the two directions exactly, so writing only one leaves the draft failing
+    `evidence_link_asymmetry` and unapprovable.
+
+    Refusing an ID the draft does not hold is what keeps that promise: a citation of an absent
+    record is a broken reference the next validation reports, and writing it would leave the very
+    asymmetry this closes.
+    """
+    existing = _evidence_document(documents)
+    held = {record.evidence_id for record in existing.evidence}
+    for evidence_id in evidence_ids:
+        if evidence_id not in held:
+            raise _refusal(
+                IssueCode.BROKEN_REFERENCE,
+                f"{evidence_id} is not an evidence record this draft holds; capture it with "
+                "`add-evidence` before citing it",
+                path=EVIDENCE_PATH.as_posix(),
+                record_id=evidence_id,
+            )
+
+    named = set(evidence_ids)
+    payload = existing.model_dump(mode="json")
+    for row in payload["evidence"]:
+        if row["evidence_id"] not in named:
+            continue
+        # Sorted for `UniqueSorted`'s reason, and rebuilt from a set so re-offering a link that is
+        # already there is a no-op rather than a duplicate refusal.
+        row["supports_record_ids"] = sorted({*row["supports_record_ids"], fact_id})
+    return EvidenceRecordsDocument.model_validate(payload)
+
+
+def _revalidated(
+    kind: type[DocumentModel], payload: dict[str, Any], path: PurePosixPath
+) -> DocumentModel:
+    """Rebuild a document from an edited payload, reporting a rejection as the operator's input.
+
+    `edit_fact` builds its successor by copying a record the models already accepted, so only its
+    value can be invalid and `StringValue` states that itself. `add_fact` assembles a record from
+    twelve separate arguments, any of which the catalog or the models can refuse — an unknown
+    predicate, a surface the predicate forbids, a state outside the enum. Letting that escape as a
+    `ValidationError` would surface a caller's typo as an internal failure.
+    """
+    try:
+        return kind.model_validate(payload)
+    except ValidationError as exc:
+        first = exc.errors()[0]
+        raise _refusal(
+            IssueCode.MODEL_VALIDATION_ERROR,
+            f"the fact is not a valid record: {exc.error_count()} problem(s); first at "
+            f"{'.'.join(str(part) for part in first['loc'])!r}: {first['msg']}",
+            path=path.as_posix(),
+        ) from exc
+
+
 def _unused_evidence_id(document: EvidenceRecordsDocument, record: AnyEvidence) -> None:
     if any(existing.evidence_id == record.evidence_id for existing in document.evidence):
         raise _refusal(
@@ -1850,9 +2206,13 @@ __all__ = [
     "ApprovalCandidate",
     "ConflictResolution",
     "EvidenceAddition",
+    "FactAddition",
+    "FactEdit",
     "FiledApproval",
     "add_evidence",
+    "add_fact",
     "approval_candidate",
+    "edit_fact",
     "file_approval_stamp",
     "resolve_conflict",
 ]

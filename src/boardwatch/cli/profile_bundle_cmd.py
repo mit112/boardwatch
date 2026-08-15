@@ -86,6 +86,12 @@ from boardwatch.profile_bundle.errors import (
 )
 from boardwatch.profile_bundle.index import build_index
 from boardwatch.profile_bundle.layout import FIXED_DOCUMENTS, DocumentKind
+from boardwatch.profile_bundle.models.base import (
+    Surface,
+    UsageContext,
+    VerificationBasis,
+    VerificationState,
+)
 from boardwatch.profile_bundle.models.history import Actor
 from boardwatch.profile_bundle.models.manifests import RevisionManifest
 from boardwatch.profile_bundle.paths import (
@@ -1009,6 +1015,117 @@ def promote_candidates(
         rendered,
         as_json=json_output,
     )
+
+
+@profile_bundle_app.command("edit-fact")
+def edit_fact(
+    ctx: typer.Context,
+    draft: str = DRAFT_OPTION,
+    fact_id: str = typer.Option(  # noqa: B008
+        ..., "--fact-id", help="The fact to correct. `inspect` shows one and what cites it."
+    ),
+    value: str = typer.Option(  # noqa: B008
+        ..., "--value", help="The corrected wording."
+    ),
+    bundle: Path | None = BUNDLE_OPTION,
+    json_output: bool = JSON_OPTION,
+) -> None:
+    """Correct one fact by filing a successor that supersedes it, then revalidate the draft."""
+    root = _bundle_root(ctx, bundle)
+    outcome = _guarded(
+        lambda: authoring.edit_fact(
+            root,
+            draft_name=draft,
+            fact_id=fact_id,
+            value=value,
+            as_of=date.today(),
+        )
+    )
+    edited = outcome.value
+    if edited is None:
+        _emit("edit-fact", outcome, _nothing(), as_json=json_output)
+    rendered = _Rendered(
+        result={
+            "draft": edited.draft_name,
+            "fact_id": edited.fact_id,
+            "successor_fact_id": edited.successor_fact_id,
+            "document": edited.document,
+            "owner_gates": _gate_json(edited.owner_gates),
+        },
+        lines=(
+            f"{edited.successor_fact_id} supersedes {edited.fact_id} in {edited.document}",
+            *_gate_lines(edited.owner_gates),
+        ),
+    )
+    _emit("edit-fact", _with_revalidation(root, draft, outcome), rendered, as_json=json_output)
+
+
+@profile_bundle_app.command("add-fact")
+def add_fact(
+    ctx: typer.Context,
+    draft: str = DRAFT_OPTION,
+    fact_id: str = typer.Option(..., "--fact-id", help="The new fact's identifier."),  # noqa: B008
+    subject_id: str = typer.Option(  # noqa: B008
+        ..., "--subject-id", help="The entity the fact is about."
+    ),
+    predicate: str = typer.Option(  # noqa: B008
+        ..., "--predicate", help="The predicate, as declared in policy/predicates.yaml."
+    ),
+    value: str = typer.Option(..., "--value", help="The fact's wording."),  # noqa: B008
+    evidence_id: str = typer.Option(  # noqa: B008
+        ..., "--evidence-id", help="The evidence record supporting it, already in the draft."
+    ),
+    # No defaults, deliberately: these two say how strongly the bundle believes the fact, and a
+    # default would assert it on the owner's behalf every time a caller left them out.
+    verification_state: VerificationState = typer.Option(  # noqa: B008
+        ..., "--verification-state", help="How settled the fact is."
+    ),
+    verification_basis: VerificationBasis = typer.Option(  # noqa: B008
+        ..., "--verification-basis", help="How it was established."
+    ),
+    usage_context: UsageContext = typer.Option(  # noqa: B008
+        ..., "--usage-context", help="How the subject encountered the material."
+    ),
+    surface: list[Surface] = typer.Option(  # noqa: B008
+        ..., "--surface", help="A surface the fact may reach. Repeat for more than one."
+    ),
+    bundle: Path | None = BUNDLE_OPTION,
+    json_output: bool = JSON_OPTION,
+) -> None:
+    """Write one new fact into the document owning its subject, then revalidate the draft."""
+    root = _bundle_root(ctx, bundle)
+    outcome = _guarded(
+        lambda: authoring.add_fact(
+            root,
+            draft_name=draft,
+            fact_id=fact_id,
+            subject_id=subject_id,
+            predicate=predicate,
+            value=value,
+            evidence_id=evidence_id,
+            verification_state=verification_state.value,
+            verification_basis=verification_basis.value,
+            usage_context=usage_context.value,
+            surfaces=[item.value for item in surface],
+            as_of=date.today(),
+        )
+    )
+    added = outcome.value
+    if added is None:
+        _emit("add-fact", outcome, _nothing(), as_json=json_output)
+    rendered = _Rendered(
+        result={
+            "draft": added.draft_name,
+            "fact_id": added.fact_id,
+            "document": added.document,
+            "owner_gates": _gate_json(added.owner_gates),
+        },
+        lines=(
+            f"added {added.fact_id} to {added.document}",
+            *_gate_lines(added.owner_gates),
+        ),
+    )
+    _emit("add-fact", _with_revalidation(root, draft, outcome), rendered, as_json=json_output)
 
 
 @profile_bundle_app.command("resolve-conflict")

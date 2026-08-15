@@ -42,9 +42,11 @@ from tests.profile_bundle.conftest import (
 #: Design §19's command surface, transcribed. The outside fact this file pins.
 EXPECTED_COMMANDS = (
     "add-evidence",
+    "add-fact",
     "approve",
     "checkout",
     "conflicts",
+    "edit-fact",
     "init",
     "inspect",
     "inventory",
