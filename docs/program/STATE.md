@@ -70,25 +70,18 @@ now ground them. **Facts stay `owner_attested` deliberately**: `edit-fact` refus
 flipping to `repository_verified` would forfeit the D-190 edit path for the records iterated most.
 Knowledge Forge has no repo and Crop-RF is a paper, so both stay attestation-backed.
 
-**The incremental-edit path SHIPPED (2026-08-14, D-190)** — the top workflow debt is cleared. A content
-change no longer rebuilds anything: `checkout --draft <name>` → `profile-bundle edit-fact --fact-id F
---value "…"` → `validate` → Mit's TTY `approve` → `promote`. `promote-candidates` is out of the loop, so its
-one-shot guard never fires. `edit-fact` files a correction **as an edge** — a successor `F.r2` supersedes `F`,
-which stays immutable and leaves `EFFECTIVE_STATES`, so the old wording drops out of the render on its own.
-`add-fact` writes a new fact. Both keep the three documents an edit touches in agreement (the fact document,
-`evidence/records.yaml`'s back-citation, and the manifest's `evidence_set_digest`). Verified on Mit's real
-bundle: editing one BirthdayQuest bullet validates **0 error** and the entry still renders 3 bullets, not 4.
-The TTY `approve` is unchanged and stays — its frequency drops from per-rebuild to per-batch.
+**The incremental-edit path SHIPPED (2026-08-14, D-190).** A content change rebuilds nothing:
+`checkout --draft <name>` → `edit-fact --fact-id F --value "…"` → `validate` → Mit's TTY `approve` →
+`promote`, with `promote-candidates` out of the loop. `edit-fact` files a correction **as an edge** — `F.r2`
+supersedes `F`, which stays immutable and leaves `EFFECTIVE_STATES`, so the old wording drops out of the
+render on its own — and keeps the fact document, the evidence back-citation and `evidence_set_digest` in
+agreement. Batch many edits before the single TTY approve.
 
-**Employer headings — FIXED 2026-08-15 (revisions 2 and 3).** The heading was never the
-`employment.organization` fact: every `projection.yaml` heading is literally `'{@display_name}'`, so the
-entity's **`display_name`** *is* the whole rendered line, and it held "Title — Org — Dates — Location" at up
-to 143 characters. `display_name` is entity metadata with no catalog row, so it is freely hand-editable —
-unlike the org fact, which `edit-fact` can **never** touch (`legal_verification_bases:
-[private_document_verified]`, `owner_attestation_authority: none`, and `edit-fact` corrects only
-`owner_attested` facts). **Measured line limit ≈ 95 characters** — 116 → 95.1pt overfull, 99 → 13.8pt, 91 →
-fits, measured through tectonic. All four now fit (82/77/77/91). The org fact *values* were also re-authored
-to just the employer name: invisible today (they are `unresolved`), correct for when the documents land.
+**Employer headings — FIXED (revisions 2 and 3).** The heading was never the `employment.organization`
+fact: every `projection.yaml` heading is literally `'{@display_name}'`, so the entity's **`display_name`**
+*is* the whole rendered line. It is entity metadata with no catalog row, hence freely hand-editable —
+unlike the org fact, which `edit-fact` can **never** touch (`owner_attestation_authority: none`).
+**Measured limit ≈ 95 characters** through tectonic (116 → 95.1pt overfull, 91 → fits); all four now fit.
 
 **Owed next — 1 and 2 are Mit's alone; do not start 3–5 unilaterally:**
 1. **Gate B's 7 blockers.** The 4 `missing_review_state` need **Mit's employment documents** (each
@@ -201,7 +194,7 @@ whether the daily pipeline gets projection — **yes, after v1**.)*
 | **A push run is 9 CI jobs, not 12** | D-151 took Windows off the per-push path (`ci.yml:21-33`): scheduled and `workflow_dispatch` get all three OSes, a push gets ubuntu + macOS, a PR ubuntu only. Any "all twelve green" claim describes a *scheduled* run | standing fact |
 | **CI can be red for a reason a local gate cannot see, and one is a RACE** | D-171: typer bakes `FORCE_TERMINAL` from `GITHUB_ACTIONS`/`FORCE_COLOR`/`PY_COLORS` at the first help render in an xdist worker, so a substring assert on an option name breaks. It looked OS-determined and was not. `tests/conftest.py` now pops all four vars at import; a test pins `FORCE_TERMINAL is not True` | fixed |
 | **Two CI-only jobs: `gitleaks` and `perf`** | `generalization` IS inside `make check` — but it **scans git-TRACKED files only**, so `git add` new files before the gate run you intend to trust. Run `gitleaks git --log-opts=origin/main..HEAD` before a push. **`All checks passed!` is `generalization`'s banner, not the gate's** — it prints ~4 min early, so the captured exit code is the only check that cannot be read early | mitigated |
-| **`resume.yaml` is an IMPORT SOURCE, never hand-fixed** | D-155. Its content now comes from the wiki, and the bundle is what renders — the gaps this row used to list (missing Knowledge Forge and Saayam, stale `skill_groups`) are closed: 11 entities, and `skill_groups` are synthesized from the catalog (D-187). Bullet wording is now `edit-fact`'s job (D-190). Mit pins `resume_max_pages=1`; never advise 2 | Mit |
+| **`resume.yaml` is an IMPORT SOURCE, never hand-fixed** | D-155. Content comes from the wiki; the bundle is what renders; wording is `edit-fact`'s job (D-190). Mit pins `resume_max_pages=1`; never advise 2 | Mit |
 | **`add-evidence` takes no bundle lock, and D-143 widened the race** | Only `promote`/`rebase`/`approve` take `bundle_lock`. Two concurrent captures race on up to 13 files; a lost update leaves a silent `evidence_link_asymmetry`. Raise it before anyone runs two authoring agents against one bundle | owner-gated |
 | **P2 item 8 — the onboarding gatherer** | What would make the field tier fire for anyone. D-054 forbids us authoring non-tech field content. Its open architecture question: a genuinely new field rule is still *code*, not data | owner-gated |
 | **`boardwatch export --format csv` to stdout crashes on Windows** | `cli/export_cmd.py:70` writes to bare `sys.stdout`, whose redirected encoding on Windows is the ANSI codepage, so any non-ASCII company name raises `UnicodeEncodeError`. Reproduced. `--out` at `:73` is already correct. **CI cannot see this** | open Q3 |
