@@ -10,12 +10,14 @@ stays clean. Selection is open postings plus every tracked posting, closed or no
 import csv
 import io
 import json
+import sys
 from pathlib import Path
 
 import pytest
 from sqlalchemy import insert, update
 from typer.testing import CliRunner
 
+from boardwatch.cli import export_cmd
 from boardwatch.cli.app import app
 from boardwatch.core.clock import utcnow
 from boardwatch.reports.export import CSV_COLUMNS
@@ -193,6 +195,69 @@ def test_csv_data_row_includes_quoted_field(env: Path, seeded_events) -> None:
     assert data_rows
     assert any(r[company_idx] == "Acme, Inc." for r in data_rows)
     assert '"Acme, Inc."' in result.stdout  # the comma forces CSV quoting
+
+
+def test_csv_stdout_survives_a_restrictive_ambient_encoding(env: Path, seeded_events) -> None:
+    """A redirected Windows stdout reports the ANSI codepage (e.g. cp1252), not utf-8; a
+    non-ASCII company name must not crash the export (open Q3).
+
+    `CliRunner(charset=...)` controls the text encoding of the `sys.stdout` substitute the
+    command actually writes through, so `charset="ascii"` reproduces a stdout at least as
+    restrictive as any Windows codepage without needing Windows. `result.stdout_bytes` is the
+    raw bytes that reached the underlying buffer, decoded here ourselves as utf-8 -- NOT
+    `result.stdout`, which decodes with the runner's own (deliberately restrictive) charset.
+    """
+    seeded_events(env)
+    with get_engine(env).begin() as conn:
+        conn.execute(update(companies).values(name="Société Générale"))
+    ascii_runner = CliRunner(charset="ascii")
+    result = ascii_runner.invoke(app, ["--data-dir", str(env), "export", "--format", "csv"])
+    assert result.exit_code == 0, repr(result.exception)
+    text = result.stdout_bytes.decode("utf-8")
+    assert "Société Générale" in text
+
+
+def _trivial_writer(rows: object, stream: object) -> int:
+    stream.write("Société Générale\n")  # type: ignore[attr-defined]
+    return 1
+
+
+def test_stdout_wrapper_detaches_without_closing_the_shared_buffer(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The hazard the fix must avoid: an undetached `TextIOWrapper` closes its buffer when
+    garbage-collected, and that buffer is `sys.stdout`'s own -- breaking every later write to
+    stdout in the process."""
+    buffer = io.BytesIO()
+    fake_stdout = io.TextIOWrapper(buffer, encoding="ascii", newline="")
+    monkeypatch.setattr(sys, "stdout", fake_stdout)
+
+    count = export_cmd._write_stdout_utf8(_trivial_writer, ())
+
+    assert count == 1
+    assert buffer.getvalue() == "Société Générale\n".encode()  # utf-8, not ascii
+    assert not buffer.closed  # detached, not left to close on garbage collection
+
+    # sys.stdout itself -- the restrictively-encoded OUTER wrapper -- must still be usable:
+    # proves the fix wrapped .buffer locally rather than mutating sys.stdout in place.
+    fake_stdout.write("still usable\n")
+    fake_stdout.flush()
+    assert buffer.getvalue() == "Société Générale\n".encode() + b"still usable\n"
+
+
+def test_stdout_wrapper_falls_back_when_stdout_has_no_buffer(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Some stdout substitutes (e.g. a bare `io.StringIO`) carry no `.buffer`; that must be
+    handled explicitly rather than crashing on the attribute access."""
+    fake_stdout = io.StringIO()
+    monkeypatch.setattr(sys, "stdout", fake_stdout)
+
+    count = export_cmd._write_stdout_utf8(_trivial_writer, ())
+
+    assert count == 1
+    assert fake_stdout.getvalue() == "Société Générale\n"
+    assert not fake_stdout.closed
 
 
 def test_multi_attempt_funnel_shows_highest_attempt(env: Path, seeded_events) -> None:

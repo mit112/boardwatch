@@ -9,9 +9,11 @@ progress and the confirmation go to stderr; stdout carries ONLY data rows, so
 
 from __future__ import annotations
 
+import io
 import sys
+from collections.abc import Callable, Iterable
 from pathlib import Path
-from typing import Annotated
+from typing import IO, Annotated, Any
 
 import typer
 from rich.console import Console
@@ -27,6 +29,39 @@ from boardwatch.store.queries import current_posting_versions
 console = Console(stderr=True)
 
 _WRITERS = {"jsonl": write_jsonl, "csv": write_csv}
+
+
+def _write_stdout_utf8(
+    writer: Callable[[Iterable[dict[str, Any]], IO[str]], int],
+    rows: Iterable[dict[str, Any]],
+) -> int:
+    """Run `writer` against the real process stdout, encoded as utf-8 regardless of its
+    declared text encoding.
+
+    A *redirected* Windows stdout reports the ANSI codepage (e.g. cp1252), not utf-8, so a
+    non-ASCII company name written straight through `sys.stdout` raises `UnicodeEncodeError`
+    and the export dies. Wrapping `sys.stdout.buffer` locally -- rather than mutating
+    `sys.stdout` itself via `.reconfigure()` or reassignment -- keeps every other write in
+    this process on its ambient encoding.
+
+    The wrapper is flushed and detached (never left to be garbage-collected) before
+    returning: `TextIOWrapper.close()` -- which is what runs if the wrapper is simply
+    dropped -- closes the underlying buffer too, and that buffer is `sys.stdout`'s own, so a
+    dropped wrapper would break every later write to stdout in the process. `detach()`
+    flushes first, then severs the wrapper from the buffer without closing it.
+
+    Some stdout substitutes (e.g. a bare `io.StringIO`) carry no `.buffer` at all; that path
+    falls back to writing through `sys.stdout` directly, on its ambient encoding.
+    """
+    buffer = getattr(sys.stdout, "buffer", None)
+    if buffer is None:
+        return writer(rows, sys.stdout)
+    wrapped = io.TextIOWrapper(buffer, encoding="utf-8", newline="")
+    try:
+        return writer(rows, wrapped)
+    finally:
+        wrapped.flush()
+        wrapped.detach()
 
 
 def export(
@@ -67,7 +102,7 @@ def export(
             rules_hash=stats.rules_hash,
         )
         if out is None:
-            writer(rows, sys.stdout)
+            _write_stdout_utf8(writer, rows)
             return
         out.parent.mkdir(parents=True, exist_ok=True)
         with out.open("w", encoding="utf-8", newline="") as stream:
