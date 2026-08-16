@@ -16,7 +16,7 @@
 
 **The headline number: 0.** Zero job applications have ever come out of boardwatch (`applications` has 0
 rows), zero unattended days, zero acceptance days. Against that: 3 published releases, ~53k lines of source,
-**6,438 tests** (6,434 passing + 4 xfailed), **70 leaf CLI commands (20 `profile-bundle`)**, 6 ATS providers,
+**6,439 tests** (6,435 passing + 4 xfailed), **70 leaf CLI commands (20 `profile-bundle`)**, 6 ATS providers,
 an 800 MB / 24,073-posting store.
 
 **The program reoriented on 2026-08-13 (D-155):** remaining work runs through the **canonical career-profile
@@ -33,8 +33,9 @@ untailored fallback (`bullet_too_long`, open Q5). **Sending is Mit's, and nothin
 **Post-Gate-B robustness is finished: the scoped autonomous backlog is complete and pushed CI-green**
 (D-202…D-206, plus **§5.2 invariant 3** — the last owed audit invariant). `candidate_promotion.py` is the
 only lossy-id-creation site in `src/`, and **all four of its slug-collision sites now refuse** rather than
-silently merging. **The next task must come from `PROGRAM.md`, from "Owed next" item 1–2 (Mit's), or from
-item 4 once Mit rules on it.**
+silently merging. **D-210 closed the fifth ambiguity in the same loop** — a skill listed under two groups
+took its category by arrival order; it now refuses. **The next task must come from `PROGRAM.md`, or from
+"Owed next" item 1–2, which are Mit's.**
 
 ### The active track — the master reservoir (bundle → résumé)
 
@@ -103,18 +104,11 @@ the cut lines fix no score threshold, so `ADMISSION_FLOOR` stays `Decimal(0)` (D
    read, so Hookrail's CI-chaos suite stays deliberately unclaimed.
 3. **Autonomous engineering backlog — COMPLETE, nothing owed.** Listed only so a fresh session does not
    re-scope it; it is a record, not a queue. Recorded in D-202…D-206 and METRICS' 2026-08-15i/j/k sessions.
-4. **Owner-gated — do NOT start unilaterally.** The first two are the same design question — does the seeded
-   catalog or the author own a display name? — and both answers are defensible, which is why neither was
-   decided in-session:
-   - **A skill listed in two skill groups silently takes one of them as its category.**
-     `candidate_promotion.py`'s skill-item loop assigns `skill_id_to_label[skill_id]` by bare
-     last-write-wins over an *unsorted* `candidates`, so `Python` under both `Languages` and `Backend`
-     yields one `SkillRecord` whose category is whichever candidate arrived last. **Reachable with an
-     entirely ordinary résumé** — the enumerator refuses duplicate group *labels* but not duplicate *items*.
-     It is **not** the slug-collision class: no id is lost, and `SkillRecord.category` is singular, so some
-     choice is forced. Refuse and make the author pick, or pick deterministically and document the rule.
-   - **`_merge_categories`** (same file): its `if category_id not in known` files a user's slug-colliding
-     label under a pre-existing catalog category of a *different* `display_name`.
+4. **Owner-gated — do NOT start unilaterally.**
+   - **`_merge_categories`** (`candidate_promotion.py`): its `if category_id not in known` files a user's
+     slug-colliding label under a pre-existing catalog category of a *different* `display_name`. The open
+     question is whether the seeded catalog or the author owns a `display_name`; both answers are
+     defensible, which is why it was not decided alongside D-210.
    - **D-184 finding 2** — a partial emission silently drops fields (`run_extraction` records a reason only
      when a record produces *no* candidate). Redefines the Gate B accounting contract; four mutually
      exclusive designs; nothing lost today.
@@ -186,15 +180,10 @@ the slices reviewed and not that the subsystem is defect-free, are in `STANDING-
    left is purely the support-posture claim, which no code change can settle.
 4. **The projection spec's six open questions** (§12) — soonest: whether `tailor run` should validate the
    projection manifest, and whether persona's `entries` list survives stage 2.
-5. **Does a résumé that lists one skill under two groups get refused, or silently assigned one category?**
-   `candidate_promotion.py`'s skill-item loop is bare last-write-wins over an unsorted `candidates`.
-   Owner-gated (item 4) — but note the same loop already **refuses** its sibling case one line away
-   (`skill_id_to_displays`, D-202), so the asymmetry is the tell.
-
 *(Resolved: docs-only commits and `make check` (D-116); `add-evidence` writing the back-citation (D-143);
 whether the daily pipeline gets projection — **yes, after v1**; the pinned/candidate split (D-195); whether
 the 33 bullets get shortened — **yes, in a dedicated attended session**, item 2; the two contradictory
-job-apps dates — **ruled**, item 1.)*
+job-apps dates — **ruled**, item 1; a skill listed under two groups — **refused**, D-210.)*
 
 ---
 
