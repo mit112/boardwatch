@@ -288,6 +288,20 @@ blesses whichever convention they picked. Revision 2's "verbatim in every admitt
 of authored English out of code and inside the file the owner already reviews, consistent with the
 multi-tenancy rule. Date *formatting* is not authoring; the word for "still going" is.
 
+> **SUPERSEDED on two rows by D-208 (2026-08-15) — the reasoning above stands, the chosen output moved.**
+> `year_month` now renders `Jun 2026` and `date_range` renders `Feb 2025 – Jan 2026` / `Oct 2025 – Present`
+> — month precision, from a locale-independent English month table. `date` is unchanged (`YYYY-MM-DD`).
+> The ISO choice made dates the one field that could not be fact-grounded, so every `projection.yaml`
+> entry carried a hand-typed date literal instead; the sentence directly above — *date formatting is not
+> authoring* — is what authorised changing it. `open_range_label` is untouched and still has no default.
+>
+> D-208 also adds a second admitted shape for `entries[].dates`: a declared `{start:, end:}` range over
+> the `year_month` PAIR that `project.*`/`education.*` carry (§6.2a, D-177). The
+> `"{project.start_date} – {project.end_date}"` form this section shows still works, but it cannot express
+> an open range at all — a missing end fact is a fatal unresolved placeholder — so an ongoing project had
+> no renderable form. Omitting `end` in the declared range is how the owner says "still going"; a *named*
+> `end` whose fact is missing stays fatal.
+
 ## 4.2 Emitted artifacts
 
 Revision 1 put provenance in YAML comments. `load_resume` calls `yaml.safe_load`, which discards them, so
