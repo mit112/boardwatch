@@ -19,7 +19,7 @@ from pathlib import Path
 from boardwatch.tailor.model import Resume
 from boardwatch.tailor.plan import MAX_BULLETS_PER_ENTRY
 from boardwatch.tailor.render.latex import escape
-from boardwatch.tailor.render.outcome import CompileOutcome, CompileReason
+from boardwatch.tailor.render.outcome import CompileOutcome, CompileReason, RenderTool
 
 
 class RenderToolMissingError(RuntimeError):
@@ -113,7 +113,7 @@ class GateResult:
     log: str
     # Mirrors CompileOutcome.tool (tailor/render/outcome.py): which render-toolchain binary
     # was missing when `reason` is BINARY_MISSING. `None` for every other reason.
-    tool: str | None = None
+    tool: RenderTool | None = None
 
 
 def evaluate_compile(outcome: CompileOutcome, *, max_pages: int) -> GateResult:

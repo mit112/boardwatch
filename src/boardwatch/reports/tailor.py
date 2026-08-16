@@ -79,7 +79,12 @@ from boardwatch.tailor.model import Resume
 from boardwatch.tailor.persona import apply_persona, load_personas, select_persona
 from boardwatch.tailor.plan import Delete, EquivalenceSwap, TailorPlan, build_plan
 from boardwatch.tailor.render.latex import LatexRenderer
-from boardwatch.tailor.render.outcome import CompileOutcome, CompileReason, CompileRunner
+from boardwatch.tailor.render.outcome import (
+    CompileOutcome,
+    CompileReason,
+    CompileRunner,
+    RenderTool,
+)
 from boardwatch.tailor.rewrite.lane import TierBResult, run_tier_b
 from boardwatch.tailor.rewrite.prompt import JUDGE_PROMPT_VERSION, REWRITE_PROMPT_VERSION
 from boardwatch.tailor.rewrite.provenance import PROVENANCE_VERSION
@@ -101,7 +106,7 @@ _RENDER_TOOL_MISSING_MSG_POPPLER = (
 )
 
 
-def _render_tool_missing_message(tool: str | None) -> str:
+def _render_tool_missing_message(tool: RenderTool | None) -> str:
     """Select the install-guidance message for the render-toolchain binary a BINARY_MISSING
     `GateResult.tool` names. Defaults to the tectonic message: every `BINARY_MISSING` producer
     in this codebase sets `tool` explicitly (`_default_runner` below), so `None` reaching here
