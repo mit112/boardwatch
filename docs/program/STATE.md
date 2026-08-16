@@ -27,8 +27,8 @@ adapter `boardwatch-resume-v1`.
 **The bundle → résumé track is shippable, and Gate B is MET for the first time.** A polished,
 fact-grounded, Gate-B-clean **one-page résumé renders and is live** (`untailored-349.pdf`): Experience in the
 two-line macro, Projects as `Name | tech | link · dates`, clickable links, fact-grounded company
-(D-199/D-200/D-201). `tailor run` still degrades to the untailored fallback (`bullet_too_long`, open Q5).
-**Sending is Mit's, and nothing has been sent.**
+(D-199/D-200/D-201) and — since D-208 — **fact-grounded dates**. `tailor run` still degrades to the
+untailored fallback (`bullet_too_long`, open Q5). **Sending is Mit's, and nothing has been sent.**
 
 **Post-Gate-B robustness is finished: the scoped autonomous backlog is complete and pushed CI-green**
 (D-202…D-206, plus **§5.2 invariant 3** — the last owed audit invariant). `candidate_promotion.py` is the
@@ -66,10 +66,15 @@ line, freely hand-editable (limit ≈ 95 chars; all four fit).
 
 `projection.yaml` reads **pinned 3** (`saayam`, `nio-coop`, `sakec`) / **candidates 8** (`nakshatra` + seven
 projects); the pinned set alone is 7 bullets → 1 page, so `select` clears its own gate and reaches scoring.
-`profile-bundle project` is **clean, exit 0** — projection `aa023678…` against revision 7. (Six approval
-stamps exist; only the newest binds. Read the live pair off `profile-bundle project`, never off a stamp
-filename — the older stamps name real digests against superseded bundles.) Backup:
-`projection.yaml.bak-allpinned-20260815`, beside the live config. **The one-page ceiling is 16 bullets, not
+**The declaration is now fact-grounded throughout and its approval has reopened (D-208).** All eleven
+`dates` entries reference facts — `'{employment.date_range}'` for the four jobs, a declared
+`{start:, end:}` range for the seven projects (Hookrail and StreakSync omit `end`, which declares the
+range open). The projection digest moved to **`3de65ba5…`**, so **`profile-bundle project` refuses until
+Mit re-runs `approve-projection` on a controlling terminal** — by design (D-167). Every rendered date is
+semantically identical to the literal it replaced; only the typography changed, to one convention
+(`Oct 2025 – Present`). (Read the live pair off `profile-bundle project`, never off a stamp filename —
+older stamps name real digests against superseded bundles.) Backups:
+`projection.yaml.bak-preground-20260815` and `.bak-allpinned-20260815`, beside the live config. **The one-page ceiling is 16 bullets, not
 entries** (D-195): with 3 jobs pinned, **at most two candidates are ever admitted**, and Mit's four-project
 per-JD sets cannot fit at one page under any split (most is three, only with two jobs pinned). Previewing
 needs no approval; re-promotion and `projection.yaml` edits each stale the stamp independently (D-167).
@@ -82,13 +87,21 @@ the cut lines fix no score threshold, so `ADMISSION_FLOOR` stays `Decimal(0)` (D
 
 **Owed next.** Items 1–2 are Mit's content calls. Item 3 is closed. Item 4 is **owner-gated — do not start.**
 
-1. **Résumé emit / format / Gate B — DONE (D-199/D-200/D-201).** *Left, and all Mit's:* whether to send;
-   fact-grounding the dates (needs a canonical-format choice — `{employment.date_range}` renders raw ISO);
-   and shortening the 2 over-length bullets to lift the `bullet_too_long` fallback.
-2. **Individual bullet refinement** (one `edit-fact` per bullet, real numbers) — Mit's content (D-191); also
-   the only lever that widens Stage 2's choice (D-195 caps a page at 16 bullets). Hookrail's CI-chaos suite
-   is the strongest unclaimed material, deliberately **not** added (no attestation for wording Mit has not
-   read).
+1. **Résumé emit / format / dates / Gate B — DONE (D-199/D-200/D-201/D-208).** *Left, and all Mit's:*
+   **re-approving the projection** (nothing renders until he does), whether to send, and the bullets below.
+   **RULED 2026-08-15** on the two dates job-apps contradicted itself on: **StreakSync `Jul 2025 –
+   Present`** (already what the bundle held) and **FlickSwiper `Jan 2026 – Present`** — Mit: *"im adding
+   present because its live on the app store and im maintaining it."* FlickSwiper therefore needed a
+   **bundle correction**, not just a declaration edit: `fact.flickswiper.end-date.001` (`2026-03`) is
+   retired to `rejected`, since `EFFECTIVE_STATES` is `{verified, owner_confirmed}` and there is no
+   "no end" value for a `year_month`.
+2. **Individual bullet refinement** — **a dedicated attended session**, Mit's ruling: *"a whole different
+   attended session where we go through each project/employment to figure out what is the best way to
+   showcase it."* Not a trim-to-length task. **10 of the 33 effective bullets exceed the 220-char ceiling**
+   (longest 307), not the 2 this file used to claim; only `nio-coop` (241) is in the pinned three, so the
+   fallback trips as soon as Stage 2 admits a project. It is also the only lever that widens Stage 2's
+   choice (D-195 caps a page at 16 bullets). Wording is Mit's (D-191) — no attestation for text he has not
+   read, so Hookrail's CI-chaos suite stays deliberately unclaimed.
 3. **Autonomous engineering backlog — COMPLETE, nothing owed.** Listed only so a fresh session does not
    re-scope it; it is a record, not a queue. Recorded in D-202…D-206 and METRICS' 2026-08-15i/j/k sessions.
 4. **Owner-gated — do NOT start unilaterally.** The first two are the same design question — does the seeded
@@ -174,12 +187,15 @@ the slices reviewed and not that the subsystem is defect-free, are in `STANDING-
    left is purely the support-posture claim, which no code change can settle.
 4. **The projection spec's six open questions** (§12) — soonest: whether `tailor run` should validate the
    projection manifest, and whether persona's `entries` list survives stage 2.
-5. **Do the 33 bullets get shortened?** D-195 measured the ceiling at 16 bullets, so a one-page résumé shows
-   at most 5 entries' worth. Trimming bullet counts is the only lever that widens Stage 2's choice, and it is
-   an `edit-fact` job on content that is Mit's.
+5. **Does a résumé that lists one skill under two groups get refused, or silently assigned one category?**
+   `candidate_promotion.py`'s skill-item loop is bare last-write-wins over an unsorted `candidates`.
+   Owner-gated (item 4) — but note the same loop already **refuses** its sibling case one line away
+   (`skill_id_to_displays`, D-202), so the asymmetry is the tell.
 
 *(Resolved: docs-only commits and `make check` (D-116); `add-evidence` writing the back-citation (D-143);
-whether the daily pipeline gets projection — **yes, after v1**; the pinned/candidate split (D-195).)*
+whether the daily pipeline gets projection — **yes, after v1**; the pinned/candidate split (D-195); whether
+the 33 bullets get shortened — **yes, in a dedicated attended session**, item 2; the two contradictory
+job-apps dates — **ruled**, item 1.)*
 
 ---
 
