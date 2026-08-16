@@ -43,9 +43,9 @@ item 4 once Mit rules on it.**
 > every bullet showing**. The master is a **RESERVOIR** holding the SUPERSET; per-JD **Stage 2** selects it
 > down to one page. `resume.yaml` / `sections.tex` are thin per-JD OUTPUTS, **not** the source — the wiki is.
 
-**Live revision: `sha256:23ff1ef9…` (revision 7).** 11 entities — 4 experience (Saayam, NIO co-op,
+**Live revision: `sha256:79a9cbf7…` (revision 8).** 11 entities — 4 experience (Saayam, NIO co-op,
 Nakshatra, SAKEC) + 7 projects (Hookrail, Knowledge Forge, StreakSync, Random Forest, FlickSwiper,
-BirthdayQuest, Fond). 107 facts (**95 effective** — 12 are `superseded`, retired by an active edge),
+BirthdayQuest, Fond). 107 facts (**94 effective** — 12 `superseded` by an active edge, 1 `rejected` by owner ruling),
 14 skills, **33 bullets**, **7 evidence records** (two
 owner-attestation, incl. `evidence.mit.employer-names.001`, + five `repository_artifact`). Validates
 **0 error, 0 blocker**, with 10 `broken_reference` warnings — permanent residue of earlier revisions,
@@ -69,13 +69,11 @@ projects); the pinned set alone is 7 bullets → 1 page, so `select` clears its 
 **The declaration is now fact-grounded throughout and its approval has reopened (D-208).** All eleven
 `dates` entries reference facts — `'{employment.date_range}'` for the four jobs, a declared
 `{start:, end:}` range for the seven projects (Hookrail, StreakSync **and FlickSwiper** omit `end`, which
-declares the range open). The projection digest has moved, so **`profile-bundle project` refuses until Mit
-re-runs `approve-projection` on a controlling terminal** — by design (D-167). *Do not quote the digest
-here: it is pre-stale while revision 8 is pending; re-derive it.* Every rendered date is
-semantically identical to the literal it replaced; only the typography changed, to one convention
-(`Oct 2025 – Present`). (Read the live pair off `profile-bundle project`, never off a stamp filename —
-older stamps name real digests against superseded bundles.) Backups:
-`projection.yaml.bak-preground-20260815` and `.bak-allpinned-20260815`, beside the live config. **The one-page ceiling is 16 bullets, not
+declares the range open). **Approved and clean: `profile-bundle project` exits 0 against revision 8.**
+Every rendered date is semantically identical to the literal it replaced; only the typography changed, to
+one convention (`Oct 2025 – Present`). **Never quote a digest for this pair** — it moved three times in one
+session, and older stamps name real digests against superseded bundles; re-derive it with
+`profile-bundle project`. Backup: `projection.yaml.bak-preground-20260815`, beside the live config. **The one-page ceiling is 16 bullets, not
 entries** (D-195): with 3 jobs pinned, **at most two candidates are ever admitted**, and Mit's four-project
 per-JD sets cannot fit at one page under any split (most is three, only with two jobs pinned). Previewing
 needs no approval; re-promotion and `projection.yaml` edits each stale the stamp independently (D-167).
@@ -89,15 +87,13 @@ the cut lines fix no score threshold, so `ADMISSION_FLOOR` stays `Decimal(0)` (D
 **Owed next.** Items 1–2 are Mit's content calls. Item 3 is closed. Item 4 is **owner-gated — do not start.**
 
 1. **Résumé emit / format / dates / Gate B — DONE (D-199/D-200/D-201/D-208).** *Left, and all Mit's:*
-   **re-approving the projection** (nothing renders until he does), whether to send, and the bullets below.
+   *Left:* whether to send, and the bullets below.
    **RULED 2026-08-15** on the two dates job-apps contradicted itself on: **StreakSync `Jul 2025 –
    Present`** (already what the bundle held) and **FlickSwiper `Jan 2026 – Present`** — Mit: *"im adding
    present because its live on the app store and im maintaining it."* FlickSwiper therefore needed a
    **bundle correction**, not just a declaration edit (D-209): `fact.flickswiper.end-date.001` (`2026-03`)
    is retired to `rejected`, since `EFFECTIVE_STATES` is `{verified, owner_confirmed}` and there is no
-   "no end" value for a `year_month`. **OWED BY MIT, in this order — a draft is waiting:**
-   `approve --draft flickswiper-open` (TTY) → `promote` → `approve-projection` (TTY). The projection
-   stamp binds the bundle digest, so it can only be written after revision 8 exists.
+   "no end" value for a `year_month`. **DONE — approved, promoted to revision 8, projection re-approved.**
 2. **Individual bullet refinement** — **a dedicated attended session**, Mit's ruling: *"a whole different
    attended session where we go through each project/employment to figure out what is the best way to
    showcase it."* Not a trim-to-length task. **10 of the 33 effective bullets exceed the 220-char ceiling**
@@ -166,7 +162,7 @@ the slices reviewed and not that the subsystem is defect-free, are in `STANDING-
 | P7 Breadth | not started | — |
 | *Gate A (parallel)* | *complete, merged, CI green* | ***MET*** — *has moved no program gate* |
 | *Projection* | ***MERGED AND PUSHED**, reviewed clean; Tasks 20 and 23 closed (D-197, D-198)* | *P0–P4 build gates met* |
-| *Gate B / master reservoir* | ***Stage 1 + Stage 2 DONE**; live revision 7, `23ff1ef9`* | ***MET — 0 blockers** (D-201). First zero-blocker Gate B ever* |
+| *Gate B / master reservoir* | ***Stage 1 + Stage 2 DONE**; live revision 8, `79a9cbf7`* | ***MET — 0 blockers** (D-201). First zero-blocker Gate B ever* |
 
 ### Gate P6, clause by clause
 
