@@ -16,7 +16,7 @@
 
 **The headline number: 0.** Zero job applications have ever come out of boardwatch (`applications` has 0
 rows), zero unattended days, zero acceptance days. Against that: 3 published releases, ~53k lines of source,
-**6,415 tests** (6,411 passing + 4 xfailed), **70 leaf CLI commands (20 `profile-bundle`)**, 6 ATS providers,
+**6,438 tests** (6,434 passing + 4 xfailed), **70 leaf CLI commands (20 `profile-bundle`)**, 6 ATS providers,
 an 800 MB / 24,073-posting store.
 
 **The program reoriented on 2026-08-13 (D-155):** remaining work runs through the **canonical career-profile
