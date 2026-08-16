@@ -76,6 +76,12 @@
 
 ## Gate A internals
 
+- **A closed review loop is evidence about the slices reviewed, not about the subsystem being
+  defect-free** (D-161/D-162; carried here as D-149's fourth prerequisite so it survives the `STATE.md`
+  trim, since STATE was the only place holding it). Earned, not cautionary: two silent-success defects
+  (D-138/D-142, D-141) were found *after* the loop closed, in code six reviews and four gates had already
+  passed. Gate A reading **MET** (D-157, green on all twelve CI jobs at `8475319`) says its slices were
+  reviewed; it does not say the subsystem is clean.
 - **`_root`, `.` and `..` are ESCAPED by the encoder, never refused** (`%5Froot`, `%2E`, `%2E.`). Refusing
   makes a legitimate document unenumerable. `normalize_locator` keeps a `.`/`..` guard for raw *paths*, where
   the same spelling means traversal (D-120, D-125).

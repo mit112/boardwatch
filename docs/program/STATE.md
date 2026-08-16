@@ -44,6 +44,15 @@ sweep's own enumeration and found by the pre-push review of D-203, whose "the wh
 claim was retracted *before* it was pushed. Alongside it: a missing `pdfinfo` is now a run-level fatal
 instead of a laundered `COMPILE_FAILED` (D-204), CSV export to stdout is UTF-8 (D-206), **§5.2 invariant 3 —
 the last owed audit invariant — ships**, and two fixture-drift fixes now fail on model/mapping drift.
+**All of it is pushed and CI-green** (12 commits, `4ed0d6f..4bbdb00`, three runs × 9 per-push jobs), so
+**item 3's engineering backlog is finished**. The next task must come from `PROGRAM.md`, from item 1–2
+(Mit's), or from item 4 once Mit rules on it — **with one autonomous exception: this file's own trim, which
+is now UNBLOCKED.** D-149 gated it on four prerequisites; three had already landed (D-157's two correction
+entries, the `cited_back` CHANGELOG bullet) and the fourth — carrying "a closed review loop is evidence
+about the slices reviewed, not that the subsystem is defect-free" into `STANDING-FACTS.md` §Gate A
+internals, where it now sits — was done on 2026-08-15k. **This file is well over its ~170-line target**
+(`wc -l` it; a number written here would be stale by the next edit, D-017); trimming the settled Gate A and
+résumé-track narration is now safe.
 
 ### The active track — the master reservoir (bundle → résumé)
 
