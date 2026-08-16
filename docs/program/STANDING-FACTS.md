@@ -46,9 +46,20 @@
   `head`/`tail` (SIGPIPE gives a false negative — observed live giving a false `EXIT=0`), end a
   backgrounded gate with `exit $ec`. `All checks passed!` is the *lint* step and appears while pytest is
   still running; only `GATE_EXIT` and the pytest summary are the verdict.
+- **A push run is 9 CI jobs, not 12** (D-151). Windows is off the per-push path: scheduled and
+  `workflow_dispatch` runs get all three OSes, a push gets ubuntu + macOS, a PR ubuntu only. Any "all
+  twelve green" claim in this program — including the Gate A one below — describes a *scheduled* run.
+- **A contended gate produces FALSE failures, not merely slow ones.** Running `make check` beside a live
+  subagent turned a green `main` **red** on three filesystem-timing-sensitive tests. A gate that ran under
+  contention has produced no usable result — **re-run it alone before diagnosing anything it reported.**
+  (§Process lessons records the other half: contention also stretches and SIGTERMs a gate. Slow is the
+  visible symptom; a false red is the expensive one, because it sends you debugging code that is fine.)
 - **Green locally ≠ green CI** (D-117), but the gap is **`gitleaks` and `perf` only**. `generalization` is
   inside `make check` and runs CI's exact command; the "three CI-only jobs" phrasing was wrong.
   `gitleaks git --log-opts=origin/main..HEAD` before a push is the cheap mitigation, not yet wired in.
+- **`generalization` scans git-TRACKED files only** — it enumerates through `git ls-files`, so a new file
+  that is not yet staged is invisible to it and a green gate says nothing about it. **`git add` before the
+  gate run you intend to trust.**
 - **Put the commit inside a guard that reads the check's exit code** — `if uv run ruff check . && uv run
   mypy --strict src tools; then git add <paths> && git commit …; fi`. Committing before reading an exit code
   shipped a `$HOME` path into a tracked file, a stale program index and a ruff failure, on three separate
