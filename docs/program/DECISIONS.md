@@ -8538,17 +8538,30 @@ So a **push** run is 6 test jobs (ubuntu + macos × 3 Pythons) plus `gitleaks`, 
 3-OS matrix, at 12 jobs. **This is the reconciliation for the familiar "all 9 per-push jobs green"**:
 nine *is* the Windows-free count, and reading it as full-matrix coverage is the error.
 
+**The split itself is not the defect — it is `D-151`, deliberate and owner-requested** ("I just don't
+want to be waiting for 30-100 minutes on that Windows CI"), and it remains the right call. What D-151
+did not establish is **who reads the nightly**. A cadence decision silently became a coverage decision
+because nothing consumed the result: the corrective is watching the scheduled run, not restoring
+Windows to every push. `workflow_dispatch` is a declared trigger, so Windows can also be run on demand.
+
 **Measured standing.** The scheduled build has failed **three consecutive days** — `31934224040`
 (`39f608a`), `31872269792` (`78f3021`), `31783422159` (`af1b524`) — always all three Windows jobs,
 never any ubuntu/macos job, and never `gitleaks`/`perf`/`generalization`. The signature is stable
 across days, so this is a standing breakage rather than a flake:
 
-- `tests/unit/test_eligibility_cmd.py:259` — `assert console.width == 137` gets **136**. A test's
-  assumption about terminal width; likely a test defect, not a product bug.
-- `tests/profile_bundle/test_profile_bundle_promotion.py:923` — a command returns `bundle_lock_held`
-  (exit 3) after the test SIGKILLs the holder: the **stale-lock reclaim** does not work on Windows.
-  This one may be a real product defect.
-- `tests/profile_bundle/test_profile_bundle_rebase.py:1422` — a third site, on the 2026-08-15 run.
+Resolved to test **names**, it is **two defects, not three** — two of the three sites are the same test
+in two suites:
+
+- **`test_setting_COLUMNS_reaches_the_module_level_console`** (`tests/unit/test_eligibility_cmd.py`) —
+  `assert console.width == 137` gets **136**. An off-by-one in a test's own assumption about terminal
+  width, and squarely the class of "a test that sets an env var must prove the setting arrives".
+  Almost certainly a test defect, not a product bug.
+- **`test_a_persistent_lockfile_left_by_a_killed_process_is_not_a_held_lock`** — present in **both**
+  `tests/profile_bundle/test_profile_bundle_promotion.py` *and*
+  `tests/profile_bundle/test_profile_bundle_rebase.py`. A command returns `bundle_lock_held` (exit 3)
+  after the test SIGKILLs the holder, i.e. **the stale-lock reclaim does not recognise an abandoned
+  lock on Windows**. This one may be a real product defect, and it is the one that matters: a user
+  whose machine dies mid-authoring would be locked out of their own bundle with no documented drain.
 
 **No fix attempted, deliberately.** Whether these are worth fixing depends entirely on the unanswered
 support-posture question, which is the owner's. Fixing them first would answer it by fiat.
