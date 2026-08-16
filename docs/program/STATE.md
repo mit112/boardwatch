@@ -174,18 +174,21 @@ the slices reviewed and not that the subsystem is defect-free, are in `STANDING-
 1. **Should `pipeline/runner.py` keep swallowing a funnel-write failure into a printed warning?** (D-076.)
 2. **Should any family other than `work_auth` default to `blocker` severity** (e.g. `clearance`)? Owner-gated
    since D-035.
-3. **What is boardwatch's Windows story?** Parked 2026-08-13. `pyproject.toml` publishes `OS Independent`
-   while "Windows" appears zero times in the **user-facing** docs (`docs/*.md`, `docs/registry/`,
-   `README.md`) — it appears only in the program logs. **No longer just a posture question (D-211):
-   the SCHEDULED CI build is RED on all three Windows jobs and has been since 2026-08-14**, on a stable
-   signature of three tests. **Windows runs only on `schedule`/`workflow_dispatch`** (`ci.yml`'s `os`
-   matrix is conditional), so a green 9-job push run contains zero Windows and cannot see it.
-4. **The projection spec's six open questions** (§12) — soonest: whether `tailor run` should validate the
+3. **The projection spec's six open questions** (§12) — soonest: whether `tailor run` should validate the
    projection manifest, and whether persona's `entries` list survives stage 2.
 *(Resolved: docs-only commits and `make check` (D-116); `add-evidence` writing the back-citation (D-143);
 whether the daily pipeline gets projection — **yes, after v1**; the pinned/candidate split (D-195); whether
 the 33 bullets get shortened — **yes, in a dedicated attended session**, item 2; the two contradictory
-job-apps dates — **ruled**, item 1; a skill listed under two groups — **refused**, D-210.)*
+job-apps dates — **ruled**, item 1; a skill listed under two groups — **refused**, D-210; **boardwatch's
+Windows story — RULED best-effort, D-212**.)*
+
+**Windows is best-effort (D-212)** — in the nightly, out of the pyproject classifiers, four caveats in
+`README.md`. **A green 9-job push run contains ZERO Windows jobs** (`ci.yml`'s `os` matrix is conditional
+on `schedule`/`workflow_dispatch`, D-151; the nightly is 12) — never read it as full-matrix coverage. A
+**`nightly-watch`** job now files a GitHub issue when a scheduled run fails and closes it on recovery:
+**check for an open "Nightly CI is failing" issue at session start.** Of the two red tests, rich's
+`legacy_windows` off-by-one is fixed; the stale-lock reclaim is a Windows-only **race** (6 of 9 jobs),
+unfixed by ruling and marked `xfail(win32, strict=False)`.
 
 ---
 
