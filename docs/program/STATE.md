@@ -68,9 +68,10 @@ line, freely hand-editable (limit ≈ 95 chars; all four fit).
 projects); the pinned set alone is 7 bullets → 1 page, so `select` clears its own gate and reaches scoring.
 **The declaration is now fact-grounded throughout and its approval has reopened (D-208).** All eleven
 `dates` entries reference facts — `'{employment.date_range}'` for the four jobs, a declared
-`{start:, end:}` range for the seven projects (Hookrail and StreakSync omit `end`, which declares the
-range open). The projection digest moved to **`3de65ba5…`**, so **`profile-bundle project` refuses until
-Mit re-runs `approve-projection` on a controlling terminal** — by design (D-167). Every rendered date is
+`{start:, end:}` range for the seven projects (Hookrail, StreakSync **and FlickSwiper** omit `end`, which
+declares the range open). The projection digest has moved, so **`profile-bundle project` refuses until Mit
+re-runs `approve-projection` on a controlling terminal** — by design (D-167). *Do not quote the digest
+here: it is pre-stale while revision 8 is pending; re-derive it.* Every rendered date is
 semantically identical to the literal it replaced; only the typography changed, to one convention
 (`Oct 2025 – Present`). (Read the live pair off `profile-bundle project`, never off a stamp filename —
 older stamps name real digests against superseded bundles.) Backups:
@@ -92,9 +93,11 @@ the cut lines fix no score threshold, so `ADMISSION_FLOOR` stays `Decimal(0)` (D
    **RULED 2026-08-15** on the two dates job-apps contradicted itself on: **StreakSync `Jul 2025 –
    Present`** (already what the bundle held) and **FlickSwiper `Jan 2026 – Present`** — Mit: *"im adding
    present because its live on the app store and im maintaining it."* FlickSwiper therefore needed a
-   **bundle correction**, not just a declaration edit: `fact.flickswiper.end-date.001` (`2026-03`) is
-   retired to `rejected`, since `EFFECTIVE_STATES` is `{verified, owner_confirmed}` and there is no
-   "no end" value for a `year_month`.
+   **bundle correction**, not just a declaration edit (D-209): `fact.flickswiper.end-date.001` (`2026-03`)
+   is retired to `rejected`, since `EFFECTIVE_STATES` is `{verified, owner_confirmed}` and there is no
+   "no end" value for a `year_month`. **OWED BY MIT, in this order — a draft is waiting:**
+   `approve --draft flickswiper-open` (TTY) → `promote` → `approve-projection` (TTY). The projection
+   stamp binds the bundle digest, so it can only be written after revision 8 exists.
 2. **Individual bullet refinement** — **a dedicated attended session**, Mit's ruling: *"a whole different
    attended session where we go through each project/employment to figure out what is the best way to
    showcase it."* Not a trim-to-length task. **10 of the 33 effective bullets exceed the 220-char ceiling**
