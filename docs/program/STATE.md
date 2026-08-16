@@ -121,7 +121,17 @@ residue of earlier revisions, non-blocking). The path to zero:
    `candidate_promotion.py`'s `_merge_categories` still files a user's slug-colliding label under a
    pre-existing catalog category of a different `display_name` (`if category_id not in known`). Whether the
    catalog or the author owns `display_name` is a genuine design question, so it is not a clear defect.
-4. **Owner-gated — do NOT start unilaterally:** **D-184 finding 2** (partial emission silently drops fields;
+4. **Owner-gated — do NOT start unilaterally:** **one skill listed in two skill groups silently gets one of
+   them as its category** (found by the 2026-08-15k pre-push review). `candidate_promotion.py`'s skill-item
+   loop assigns `skill_id_to_label[skill_id]` by bare last-write-wins over an *unsorted* `candidates`, so
+   `Python` under both `Languages` and `Backend` yields one `SkillRecord` whose category is whichever
+   candidate arrived last. **Reachable with an entirely ordinary résumé, not an adversarial one** — but it is
+   *not* the slug-collision class (no id is lost, and `SkillRecord.category` is singular, so some choice is
+   forced). Needs a ruling — refuse and make the author pick, or pick deterministically and document the
+   rule — and both are defensible, which is why it was not decided unilaterally. Also:
+   **`_merge_categories`** (same file), where a user's slug-colliding label is filed under a pre-existing
+   catalog category of a different `display_name`; same shape of question (does the catalog or the author own
+   `display_name`?). Also: **D-184 finding 2** (partial emission silently drops fields;
    `run_extraction` records a reason only when a record produces *no* candidate — redefines the Gate B
    accounting contract, 4 mutually-exclusive designs, nothing lost today); the provider ATS-fixture +
    eligibility-corpus drift (need live network / a missing generator); **Education Slice C**; promoting
