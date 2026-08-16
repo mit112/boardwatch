@@ -188,7 +188,9 @@ on `schedule`/`workflow_dispatch`, D-151; the nightly is 12) — never read it a
 **`nightly-watch`** job now files a GitHub issue when a scheduled run fails and closes it on recovery:
 **check for an open "Nightly CI is failing" issue at session start.** Of the two red tests, rich's
 `legacy_windows` off-by-one is fixed; the stale-lock reclaim is a Windows-only **race** (6 of 9 jobs),
-unfixed by ruling and marked `xfail(win32, strict=False)`.
+unfixed by ruling and marked `xfail(win32, strict=False)`. **The fix is NECESSARY, NOT VERIFIED** —
+`make check` cannot see Windows. Dispatch run **`31954948210`** (`4593d04`) was still running at
+session end; the 07:00 UTC nightly also exercises it, and `nightly-watch` files an issue if it failed.
 
 ---
 
