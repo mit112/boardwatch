@@ -44,9 +44,9 @@ took its category by arrival order; it now refuses. **The next task must come fr
 > every bullet showing**. The master is a **RESERVOIR** holding the SUPERSET; per-JD **Stage 2** selects it
 > down to one page. `resume.yaml` / `sections.tex` are thin per-JD OUTPUTS, **not** the source — the wiki is.
 
-**Live revision: `sha256:566e7cf6…` (revision 9).** 11 entities — 4 experience (Saayam, NIO co-op,
+**Live revision: `sha256:524eef0c…` (revision 10).** 11 entities — 4 experience (Saayam, NIO co-op,
 Nakshatra, SAKEC) + 7 projects (Hookrail, Knowledge Forge, StreakSync, Random Forest, FlickSwiper,
-BirthdayQuest, Fond). 109 facts (**94 effective** — 14 `superseded` by an active edge, 1 `rejected` by owner ruling),
+BirthdayQuest, Fond). 110 facts (**94 effective** — 15 `superseded` by an active edge, 1 `rejected` by owner ruling),
 14 skills, **31 bullets**, **7 evidence records** (two
 owner-attestation, incl. `evidence.mit.employer-names.001`, + five `repository_artifact`). Validates
 **0 error, 0 blocker**, with 10 `broken_reference` warnings — permanent residue of earlier revisions,
@@ -70,7 +70,7 @@ projects); the pinned set alone is 7 bullets → 1 page, so `select` clears its 
 **The declaration is now fact-grounded throughout and its approval has reopened (D-208).** All eleven
 `dates` entries reference facts — `'{employment.date_range}'` for the four jobs, a declared
 `{start:, end:}` range for the seven projects (Hookrail, StreakSync **and FlickSwiper** omit `end`, which
-declares the range open). **Approved and clean: `profile-bundle project` exits 0 against revision 8.**
+declares the range open). **Approved and clean: `profile-bundle project` exits 0 against revision 10.**
 Every rendered date is semantically identical to the literal it replaced; only the typography changed, to
 one convention (`Oct 2025 – Present`). **Never quote a digest for this pair** — it moved three times in one
 session, and older stamps name real digests against superseded bundles; re-derive it with
@@ -97,8 +97,8 @@ the cut lines fix no score threshold, so `ADMISSION_FLOOR` stays `Decimal(0)` (D
    "no end" value for a `year_month`. **DONE — approved, promoted to revision 8, projection re-approved.**
 2. **Individual bullet refinement — IN PROGRESS, one entity per attended session.** Mit's ruling: *"a whole
    different attended session where we go through each project/employment to figure out what is the best way
-   to showcase it."* Not a trim-to-length task. **FlickSwiper is DONE** (revision 9): 4 bullets → **2**,
-   872 → **408 chars**, zero over ceiling. **8 of the 31 effective bullets still exceed the 220-char ceiling**
+   to showcase it."* Not a trim-to-length task. **FlickSwiper is DONE** (revision 10): 4 bullets → **2**,
+   872 → **419 chars**, zero over ceiling. **8 of the 31 effective bullets still exceed the 220-char ceiling**
    (longest 307), across 5 entries — `fond` 307/241, `streaksync` 289/285/233, `birthdayquest` 263,
    `hookrail` 251, `nio-coop` 241. **`nio-coop` is in the pinned three, so the fallback trips on every
    render regardless of which projects Stage 2 admits.** Refinement is also the only lever that widens
@@ -111,6 +111,13 @@ the cut lines fix no score threshold, so `ADMISSION_FLOOR` stays `Decimal(0)` (D
    355, `saayam` 328); `nio-coop` is both the largest and the one tripping the fallback, so it is the
    highest-leverage entity left. Corollary: the 8 over-ceiling bullets split by blast radius — the one
    in `nio-coop` breaks **every** render; the other 7 bite only when their candidate is admitted.
+   **Bullets are the ONLY scored text.** Every scorer routes through `effective_skills(bullet.text, …)`
+   (`scoring.py`); a `subtitle` earns **nothing**. The taxonomy does **not** know `Firebase`, `Firestore`
+   or `SwiftData` — all extract `[]` — while `Swift` and `iOS` resolve. FlickSwiper's first 2-bullet set
+   obeyed "don't restate the stack" and thereby **lost `Swift` and `iOS/Swift (mobile)`**, leaving its
+   flagship iOS entity with no iOS signal; revision 10 restored them for **+11 chars**. **Re-measure
+   extraction after any length trim**, and check a candidate's union is non-empty — a bullet can be
+   entirely score-invisible and nothing warns you.
    **D-213 fixes the house style** — state what was built with metrics, **never a story**, in Mit's own
    résumé voice; and a bullet is parked by dropping `'resume'` from `allowed_surfaces`, **not** by adding a
    fact (Stage 2 admits *entries*, so an extra fact renders unconditionally). **Rule splits by `kind:`** —

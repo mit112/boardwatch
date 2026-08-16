@@ -8715,6 +8715,21 @@ against the 220 budget when it ships.
 entry in the pool. **The gate is not clear:** 7 bullets across 5 entries remain over 220, and
 `nio-coop` (241) is in the **pinned** set, so the fallback still trips on every render.
 
+**Amendment, same day — the rule had a cost nobody measured.** "Never restate what the entry line
+carries" is right for character economy and **wrong for scoring**. Every scorer routes through
+`effective_skills(bullet.text, …)` (`scoring.py`); `subtitle` appears nowhere in it, so a declared tech
+stack earns **zero**. The taxonomy does not know `Firebase`, `Firestore` or `SwiftData` (all extract
+`[]`), while `Swift` and `iOS` resolve. FlickSwiper's first two-bullet set therefore shipped at revision 9
+having **lost `Swift` and `iOS/Swift (mobile)`** — its flagship iOS entity carrying no iOS signal into a
+scorer that decides admission. Revision 10 restored both for **+11 characters**, giving a union that is a
+**superset** of what the original four bullets earned at half the length. Two operational rules follow:
+**re-measure extraction after any length trim**, and **check a candidate entity's skill union is
+non-empty** — a bullet can be entirely score-invisible and nothing warns you. (Found by the hookrail
+session on its own entity and confirmed here on shipped text.) For **pinned** entries the scoring
+argument is void — `select.py`: pinned entries are *"emitted in declared order, never scored, never
+dropped"* — but the keyword case still holds on ATS grounds, and their characters gate how many
+candidates are admitted at all.
+
 **Lesson.** *A verified finding is not automatically a résumé claim.* This session spent its
 depth establishing that the migration defect was caught pre-release rather than in production —
 a correction worth making — and the owner then removed the entire clause as narrative. The
