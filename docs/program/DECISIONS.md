@@ -8859,9 +8859,10 @@ found the new set **lost the bare `Swift` token**: the replaced bullet carried "
 extracted `{Swift, iOS/Swift (mobile)}`; the new pair extracts only `{iOS/Swift (mobile)}`, because
 `SwiftUI` does not resolve to `Swift`. This is the identical regression D-213 recorded for FlickSwiper's
 first 2-bullet set, reintroduced by a different route — evidence the warning needs to be a step, not a
-note. Draft **`streaksync-swift-keyword`** restores it for **+11 chars** ("Built a Share Extension **in
-Swift 6** with…", 214 chars, union back to `{Swift, iOS/Swift (mobile)}`), validates 0/0/10 on both
-tiers, and awaits the owner's TTY approve.
+note. Draft **`streaksync-swift-keyword`** restored it for **+11 chars** ("Built a Share Extension **in
+Swift 6** with…", 214 chars). **Approved and promoted the same session — revision 13
+`sha256:ab48d3f7…`, `project` exit 0**, entity union back to `{Swift, iOS/Swift (mobile)}` verified
+from the rendered output. StreakSync final: **2 bullets / 426 chars, zero over ceiling.**
 
 **Alternatives rejected.** Putting `Swift 6` in bullet 1 instead — lands the bullet at exactly 220, which
 passes the strict `>` but leaves no margin for any later edit.

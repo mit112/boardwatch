@@ -44,7 +44,7 @@ took its category by arrival order; it now refuses. **The next task must come fr
 > every bullet showing**. The master is a **RESERVOIR** holding the SUPERSET; per-JD **Stage 2** selects it
 > down to one page. `resume.yaml` / `sections.tex` are thin per-JD OUTPUTS, **not** the source — the wiki is.
 
-**Live revision: `sha256:76bc5d42…` (revision 12).** 11 entities — 4 experience (Saayam, NIO co-op,
+**Live revision: `sha256:ab48d3f7…` (revision 13).** 11 entities — 4 experience (Saayam, NIO co-op,
 Nakshatra, SAKEC) + 7 projects (Hookrail, Knowledge Forge, StreakSync, Random Forest, FlickSwiper,
 BirthdayQuest, Fond). 115 facts (**94 effective** — 20 `superseded` by an active edge, 1 `rejected` by owner ruling),
 14 skills, **33 effective bullet-facts of which 28 render** (5 parked by surface per D-213), **7 evidence records** (two
@@ -103,10 +103,10 @@ the cut lines fix no score threshold, so `ADMISSION_FLOOR` stays `Decimal(0)` (D
    **StreakSync DONE** (revision 12, D-215): 4 → **2**, 1,012 → **415 chars**, retiring the bundle's most
    expensive entity and its one contradicted number (a "110-case" suite that measures **109**); the
    Firestore-security theme was ceded to FlickSwiper rather than said twice. All three zero over ceiling.
-   **⚠️ StreakSync's trim lost the bare `Swift` token** — the same regression D-213 recorded for
-   FlickSwiper, by a different route. Draft **`streaksync-swift-keyword`** restores it for +11 chars,
-   validates 0/0/10 on both tiers, and **awaits Mit's TTY approve**. Treat "re-measure extraction after a
-   trim" as a required step, not a note — it has now fired twice.
+   **StreakSync's trim lost the bare `Swift` token** — the same regression D-213 recorded for
+   FlickSwiper, by a different route — **FIXED at revision 13** for +11 chars; entity union is back to
+   `{Swift, iOS/Swift (mobile)}` and StreakSync is 2 bullets / **426 chars**, zero over. Treat
+   "re-measure extraction after a trim" as a required step, not a note — it has now fired twice.
    **4 of the 28 rendering bullets still exceed the 220-char ceiling** (longest 307), across 3
    entries — `fond` 307/241, `birthdayquest` 263, `nio-coop` 241.
    **`nio-coop` is in the pinned three, so the fallback trips on every
