@@ -192,6 +192,36 @@ FACT_ID_COLLIDING_RESUME: dict[str, Any] = {
 }
 
 
+#: One skill item listed under TWO groups — an entirely ordinary résumé, not a crafted collision. The
+#: enumerator refuses duplicate group *labels* but not duplicate *items*, so `Python` reaches the
+#: skill-item loop twice with the SAME display value and two DIFFERENT labels.
+#:
+#: This is NOT the lossy-slug class: no id is lost, and `languages`/`backend` are distinct categories.
+#: The ambiguity is which single category the one `SkillRecord` belongs to. Crucially, D-202's guard
+#: cannot see it — that guard keys on `original_display_value`, which is the same string in both
+#: groups, so its set has size 1 — and the category guard cannot either, since both labels are
+#: distinct and never collide. Only `skill_id_to_label` observes the difference, by overwriting.
+SKILL_IN_TWO_GROUPS_RESUME: dict[str, Any] = {
+    "header": ["Ada Lovelace", "ada@example.com"],
+    "education": ["Example University, BSc"],
+    "skill_groups": [
+        {"label": "Languages", "items": ["Python"]},
+        {"label": "Backend", "items": ["Python"]},
+    ],
+    "entries": [
+        {
+            "entry_id": "eng-role",
+            "heading": "Engineer — Acme — Jan 2020–Feb 2021 — New York, NY",
+            "kind": "experience",
+            "title": "Engineer",
+            "dates": "Jan 2020 -- Feb 2021",
+            "location": "New York, NY",
+            "bullets": [{"bullet_id": "b1", "text": "Shipped it.", "tech_tags": ["Python"]}],
+        },
+    ],
+}
+
+
 @dataclass(frozen=True)
 class Env:
     bundle_root: Path
@@ -480,6 +510,34 @@ def test_promotion_refuses_when_two_entries_collide_to_one_fact_id(tmp_path: Pat
     assert diag.code == "model_validation_error", diag
     assert "fact.alpha.tech.python" in diag.message
     assert "employment.alpha" in diag.message and "project.alpha" in diag.message
+
+
+def test_promotion_refuses_a_skill_listed_under_two_skill_groups(tmp_path: Path) -> None:
+    """The fifth ambiguity in the same loop, and the only one reachable from an ordinary résumé.
+    `Python` under both `Languages` and `Backend` grounds ONE `skill.python`, but
+    `skill_id_to_label[skill_id]` is a bare overwrite over an *unsorted* `candidates`, so the single
+    `SkillRecord` silently takes whichever group arrived last as its category.
+
+    Neither existing guard can fire. D-202's keys on `original_display_value` — the same `'Python'`
+    in both groups, so its set has size 1 — and the category guard sees two distinct labels that
+    never collide. Only the label map observes the difference, and it was never checked.
+
+    Unlike its four siblings this is not a lossy id: no record is dropped, and `SkillRecord.category`
+    is singular, so *some* category must be chosen. The owner must choose it, not arrival order —
+    so promotion refuses, naming the item and every group claiming it."""
+    env = _seed(tmp_path, SKILL_IN_TWO_GROUPS_RESUME)
+    outcome = authoring.promote_candidates(
+        env.bundle_root,
+        draft_name="baseline",
+        source_id=RESUME_SOURCE_ID,
+        source_bytes=env.resume_bytes,
+        as_of=AS_OF,
+    )
+    assert outcome.exit_code != 0, outcome
+    (diag,) = outcome.diagnostics
+    assert diag.code == "model_validation_error", diag
+    assert "skill.python" in diag.message
+    assert "Backend" in diag.message and "Languages" in diag.message
 
 
 def test_the_owner_confirmation_step_reaches_a_grounded_resume_skill(env: Env) -> None:

@@ -164,7 +164,7 @@ def build_promotion(
     by_entry: dict[str, list[_EntryCandidate]] = defaultdict(list)
     skill_display_to_id: dict[str, str] = {}
     skill_id_to_display: dict[str, str] = {}
-    skill_id_to_label: dict[str, str] = {}
+    skill_id_to_labels: dict[str, set[str]] = defaultdict(set)
     skill_id_to_displays: dict[str, set[str]] = defaultdict(set)
     for candidate in candidates:
         locator = locator_by_record.get(candidate.source_record_id)
@@ -177,7 +177,7 @@ def build_promotion(
             skill_id = value.skill_id  # type: ignore[union-attr]
             skill_display_to_id[candidate.original_display_value] = skill_id
             skill_id_to_display[skill_id] = candidate.original_display_value
-            skill_id_to_label[skill_id] = _decode_label(match.group("label"))
+            skill_id_to_labels[skill_id].add(_decode_label(match.group("label")))
             skill_id_to_displays[skill_id].add(candidate.original_display_value)
         # header/* and anything else is not promoted here (person facts need facts/identity.yaml).
 
@@ -322,7 +322,18 @@ def build_promotion(
                 f"{sorted(displays)!r}: the id slug is lossy (D-180), so these would silently "
                 "merge into one skill. Rename or merge them in the source before promoting."
             )
-        label = skill_id_to_label[skill_id]
+        # One item under two groups is not a lossy id (D-202's guard keys on the display value, the
+        # same string in both groups, so it cannot see this) and not a category collision (the two
+        # labels are distinct). But `SkillRecord.category` is singular, so a bare last-write-wins
+        # over an unsorted `candidates` would let arrival order pick the category. The owner picks.
+        labels = skill_id_to_labels[skill_id]
+        if len(labels) > 1:
+            raise PromotionError(
+                f"skill item {skill_id_to_display[skill_id]!r} ({skill_id}) is listed under more "
+                f"than one skill group {sorted(labels)!r}: a skill has exactly one category, so "
+                "one group would silently win by arrival order. List it under a single group."
+            )
+        (label,) = labels
         category_id = _slug(label)
         # `_slug` is lossy, but skill-group labels are deduped only case/punctuation-sensitively, so
         # two distinct labels can share a category id and silently merge into one category (D-184
