@@ -44,10 +44,10 @@ took its category by arrival order; it now refuses. **The next task must come fr
 > every bullet showing**. The master is a **RESERVOIR** holding the SUPERSET; per-JD **Stage 2** selects it
 > down to one page. `resume.yaml` / `sections.tex` are thin per-JD OUTPUTS, **not** the source — the wiki is.
 
-**Live revision: `sha256:79a9cbf7…` (revision 8).** 11 entities — 4 experience (Saayam, NIO co-op,
+**Live revision: `sha256:566e7cf6…` (revision 9).** 11 entities — 4 experience (Saayam, NIO co-op,
 Nakshatra, SAKEC) + 7 projects (Hookrail, Knowledge Forge, StreakSync, Random Forest, FlickSwiper,
-BirthdayQuest, Fond). 107 facts (**94 effective** — 12 `superseded` by an active edge, 1 `rejected` by owner ruling),
-14 skills, **33 bullets**, **7 evidence records** (two
+BirthdayQuest, Fond). 109 facts (**94 effective** — 14 `superseded` by an active edge, 1 `rejected` by owner ruling),
+14 skills, **31 bullets**, **7 evidence records** (two
 owner-attestation, incl. `evidence.mit.employer-names.001`, + five `repository_artifact`). Validates
 **0 error, 0 blocker**, with 10 `broken_reference` warnings — permanent residue of earlier revisions,
 non-blocking. The PDF renders **zero overfull**.
@@ -95,13 +95,29 @@ the cut lines fix no score threshold, so `ADMISSION_FLOOR` stays `Decimal(0)` (D
    **bundle correction**, not just a declaration edit (D-209): `fact.flickswiper.end-date.001` (`2026-03`)
    is retired to `rejected`, since `EFFECTIVE_STATES` is `{verified, owner_confirmed}` and there is no
    "no end" value for a `year_month`. **DONE — approved, promoted to revision 8, projection re-approved.**
-2. **Individual bullet refinement** — **a dedicated attended session**, Mit's ruling: *"a whole different
-   attended session where we go through each project/employment to figure out what is the best way to
-   showcase it."* Not a trim-to-length task. **10 of the 33 effective bullets exceed the 220-char ceiling**
-   (longest 307), not the 2 this file used to claim; only `nio-coop` (241) is in the pinned three, so the
-   fallback trips as soon as Stage 2 admits a project. It is also the only lever that widens Stage 2's
-   choice (D-195 caps a page at 16 bullets). Wording is Mit's (D-191) — no attestation for text he has not
-   read, so Hookrail's CI-chaos suite stays deliberately unclaimed.
+2. **Individual bullet refinement — IN PROGRESS, one entity per attended session.** Mit's ruling: *"a whole
+   different attended session where we go through each project/employment to figure out what is the best way
+   to showcase it."* Not a trim-to-length task. **FlickSwiper is DONE** (revision 9): 4 bullets → **2**,
+   872 → **408 chars**, zero over ceiling. **8 of the 31 effective bullets still exceed the 220-char ceiling**
+   (longest 307), across 5 entries — `fond` 307/241, `streaksync` 289/285/233, `birthdayquest` 263,
+   `hookrail` 251, `nio-coop` 241. **`nio-coop` is in the pinned three, so the fallback trips on every
+   render regardless of which projects Stage 2 admits.** Refinement is also the only lever that widens
+   Stage 2's choice (D-195 caps a page at 16 bullets).
+   **Do the PINNED entries first.** `select.py`'s docstring: pinned entries are *"emitted in declared
+   order, never scored, never dropped"*, and `_grow` adds candidates onto the pinned base one at a time
+   until the page overflows. So pinned characters are spent **before any project competes**, and
+   shortening a pinned entry does nothing for its own standing — it buys **admission headroom for the
+   next candidate, on every posting**. The pinned three cost **1,231 chars** (`nio-coop` 548, `sakec`
+   355, `saayam` 328); `nio-coop` is both the largest and the one tripping the fallback, so it is the
+   highest-leverage entity left. Corollary: the 8 over-ceiling bullets split by blast radius — the one
+   in `nio-coop` breaks **every** render; the other 7 bite only when their candidate is admitted.
+   **D-213 fixes the house style** — state what was built with metrics, **never a story**, in Mit's own
+   résumé voice; and a bullet is parked by dropping `'resume'` from `allowed_surfaces`, **not** by adding a
+   fact (Stage 2 admits *entries*, so an extra fact renders unconditionally). **Rule splits by `kind:`** —
+   a `project` entry's subtitle carries its tech stack (and often a `link_url`), so restating it wastes
+   characters; a `kind: experience` entry's subtitle is `'{employment.organization}'` with **no link**, so
+   its bullets are the **only** place tech keywords can appear. Wording is Mit's (D-191) — no attestation
+   for text he has not read, so Hookrail's CI-chaos suite stays deliberately unclaimed.
 3. **Autonomous engineering backlog — COMPLETE, nothing owed.** Listed only so a fresh session does not
    re-scope it; it is a record, not a queue. Recorded in D-202…D-206 and METRICS' 2026-08-15i/j/k sessions.
 4. **Owner-gated — do NOT start unilaterally.**
