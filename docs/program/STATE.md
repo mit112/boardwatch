@@ -176,8 +176,10 @@ the slices reviewed and not that the subsystem is defect-free, are in `STANDING-
    since D-035.
 3. **What is boardwatch's Windows story?** Parked 2026-08-13. `pyproject.toml` publishes `OS Independent`
    while "Windows" appears zero times in the **user-facing** docs (`docs/*.md`, `docs/registry/`,
-   `README.md`) — it appears only in the program logs. **The one real bug is fixed (D-206)**, so what is
-   left is purely the support-posture claim, which no code change can settle.
+   `README.md`) — it appears only in the program logs. **No longer just a posture question (D-211):
+   the SCHEDULED CI build is RED on all three Windows jobs and has been since 2026-08-14**, on a stable
+   signature of three tests. **Windows runs only on `schedule`/`workflow_dispatch`** (`ci.yml`'s `os`
+   matrix is conditional), so a green 9-job push run contains zero Windows and cannot see it.
 4. **The projection spec's six open questions** (§12) — soonest: whether `tailor run` should validate the
    projection manifest, and whether persona's `entries` list survives stage 2.
 *(Resolved: docs-only commits and `make check` (D-116); `add-evidence` writing the back-citation (D-143);
