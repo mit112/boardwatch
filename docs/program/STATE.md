@@ -44,10 +44,10 @@ took its category by arrival order; it now refuses. **The next task must come fr
 > every bullet showing**. The master is a **RESERVOIR** holding the SUPERSET; per-JD **Stage 2** selects it
 > down to one page. `resume.yaml` / `sections.tex` are thin per-JD OUTPUTS, **not** the source — the wiki is.
 
-**Live revision: `sha256:524eef0c…` (revision 10).** 11 entities — 4 experience (Saayam, NIO co-op,
+**Live revision: `sha256:ccd4d741…` (revision 11).** 11 entities — 4 experience (Saayam, NIO co-op,
 Nakshatra, SAKEC) + 7 projects (Hookrail, Knowledge Forge, StreakSync, Random Forest, FlickSwiper,
-BirthdayQuest, Fond). 110 facts (**94 effective** — 15 `superseded` by an active edge, 1 `rejected` by owner ruling),
-14 skills, **31 bullets**, **7 evidence records** (two
+BirthdayQuest, Fond). 113 facts (**94 effective** — 18 `superseded` by an active edge, 1 `rejected` by owner ruling),
+14 skills, **30 bullets**, **7 evidence records** (two
 owner-attestation, incl. `evidence.mit.employer-names.001`, + five `repository_artifact`). Validates
 **0 error, 0 blocker**, with 10 `broken_reference` warnings — permanent residue of earlier revisions,
 non-blocking. The PDF renders **zero overfull**.
@@ -70,7 +70,7 @@ projects); the pinned set alone is 7 bullets → 1 page, so `select` clears its 
 **The declaration is now fact-grounded throughout and its approval has reopened (D-208).** All eleven
 `dates` entries reference facts — `'{employment.date_range}'` for the four jobs, a declared
 `{start:, end:}` range for the seven projects (Hookrail, StreakSync **and FlickSwiper** omit `end`, which
-declares the range open). **Approved and clean: `profile-bundle project` exits 0 against revision 10.**
+declares the range open). **Approved and clean: `profile-bundle project` exits 0 against revision 11.**
 Every rendered date is semantically identical to the literal it replaced; only the typography changed, to
 one convention (`Oct 2025 – Present`). **Never quote a digest for this pair** — it moved three times in one
 session, and older stamps name real digests against superseded bundles; re-derive it with
@@ -97,11 +97,14 @@ the cut lines fix no score threshold, so `ADMISSION_FLOOR` stays `Decimal(0)` (D
    "no end" value for a `year_month`. **DONE — approved, promoted to revision 8, projection re-approved.**
 2. **Individual bullet refinement — IN PROGRESS, one entity per attended session.** Mit's ruling: *"a whole
    different attended session where we go through each project/employment to figure out what is the best way
-   to showcase it."* Not a trim-to-length task. **FlickSwiper is DONE** (revision 10): 4 bullets → **2**,
-   872 → **419 chars**, zero over ceiling. **8 of the 31 effective bullets still exceed the 220-char ceiling**
-   (longest 307), across 5 entries — `fond` 307/241, `streaksync` 289/285/233, `birthdayquest` 263,
-   `hookrail` 251, `nio-coop` 241. **`nio-coop` is in the pinned three, so the fallback trips on every
-   render regardless of which projects Stage 2 admits.** Refinement is also the only lever that widens
+   to showcase it."* Not a trim-to-length task. **FlickSwiper DONE** (revision 10): 4 bullets → **2**,
+   872 → **419 chars**. **Hookrail DONE** (revision 11, D-214): 4 → **3**, 848 → **626 chars**, and its
+   CI-chaos suite — unclaimed since D-191 — now ships as a merged perf-plus-chaos bullet. Both zero over
+   ceiling. **7 of the 30 effective bullets still exceed the 220-char ceiling** (longest 307), across 4
+   entries — `fond` 307/241, `streaksync` 289/285/233, `birthdayquest` 263, `nio-coop` 241.
+   **`nio-coop` is in the pinned three, so the fallback trips on every
+   render regardless of which projects Stage 2 admits** — it is the highest-value remaining target.
+   Refinement is also the only lever that widens
    Stage 2's choice (D-195 caps a page at 16 bullets).
    **Do the PINNED entries first.** `select.py`'s docstring: pinned entries are *"emitted in declared
    order, never scored, never dropped"*, and `_grow` adds candidates onto the pinned base one at a time
@@ -179,7 +182,7 @@ the slices reviewed and not that the subsystem is defect-free, are in `STANDING-
 | P7 Breadth | not started | — |
 | *Gate A (parallel)* | *complete, merged, CI green* | ***MET*** — *has moved no program gate* |
 | *Projection* | ***MERGED AND PUSHED**, reviewed clean; Tasks 20 and 23 closed (D-197, D-198)* | *P0–P4 build gates met* |
-| *Gate B / master reservoir* | ***Stage 1 + Stage 2 DONE**; live revision 8, `79a9cbf7`* | ***MET — 0 blockers** (D-201). First zero-blocker Gate B ever* |
+| *Gate B / master reservoir* | ***Stage 1 + Stage 2 DONE**; live revision 11, `ccd4d741`* | ***MET — 0 blockers** (D-201). First zero-blocker Gate B ever* |
 
 ### Gate P6, clause by clause
 
