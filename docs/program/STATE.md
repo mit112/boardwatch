@@ -15,7 +15,7 @@
 
 **The headline number: 0.** Zero job applications have ever come out of boardwatch (`applications` has 0
 rows), zero unattended days, zero acceptance days. Against that: 3 published releases, ~46k lines of source,
-**6,387 tests, 70 leaf CLI commands (20 `profile-bundle`)**, 6 ATS providers, an 800 MB / 24,073-posting
+**6,411 tests, 70 leaf CLI commands (20 `profile-bundle`)**, 6 ATS providers, an 800 MB / 24,073-posting
 store.
 
 **The program reoriented on 2026-08-13 (D-155):** remaining work runs through the **canonical career-profile
@@ -118,13 +118,14 @@ residue of earlier revisions, non-blocking). The path to zero:
    **CLOSED, all four sites** (D-202/D-203/D-205); **§5.2 invariant 3 SHIPS** — the last owed audit invariant;
    `pdfinfo` fatal (D-204); CSV stdout UTF-8 (D-206); both fixture-drift fixes derived from live models/config
    and proven red on a mutated source copy. **One residual, low priority, deliberately unfixed:**
-   `_merge_categories` (`candidate_promotion.py:499`) still files a user's slug-colliding label under a
-   pre-existing catalog category of a different `display_name` (`if category_id not in known`).
+   `candidate_promotion.py`'s `_merge_categories` still files a user's slug-colliding label under a
+   pre-existing catalog category of a different `display_name` (`if category_id not in known`). Whether the
+   catalog or the author owns `display_name` is a genuine design question, so it is not a clear defect.
 4. **Owner-gated — do NOT start unilaterally:** **D-184 finding 2** (partial emission silently drops fields;
    `run_extraction` records a reason only when a record produces *no* candidate — redefines the Gate B
    accounting contract, 4 mutually-exclusive designs, nothing lost today); the provider ATS-fixture +
    eligibility-corpus drift (need live network / a missing generator); **Education Slice C**; promoting
-   `header/1`'s `person.professional_name` (`candidate_promotion.py:182` skips `header/*`).
+   `header/1`'s `person.professional_name` (`candidate_promotion.py`'s skill-item loop skips `header/*`).
 
 **Carried authoring facts (D-185/186/190/191).** **Three guarantees are each narrower than their name**, and
 all three cost a real defect: **`approve` does NOT validate** (only `promote` refuses); **a plain `validate`

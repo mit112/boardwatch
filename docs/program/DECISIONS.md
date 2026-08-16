@@ -237,9 +237,9 @@ and is a no-op when the index is already right. `make index-check` reports drift
 | D-201 | DECISIONS.md | 7936 | `employment.organization` is owner-attestable; the four org facts are resolved by a scoped owner attestation — Gate B 4 → 0 |
 | D-202 | DECISIONS.md | 7983 | The skill-id slug collision (D-184 finding 3) is fixed: promotion refuses a grounded id built from more than one item, rather than silently merging |
 | D-203 | DECISIONS.md | 8032 | The other two promotion slug-collision sites (entity_id, category_id) are closed the same way; a fourth (fact_id) is found open, not closed |
-| D-204 | DECISIONS.md | 8106 | A missing `pdfinfo` is a run-level fatal, not a laundered `COMPILE_FAILED`; the tool identity travels as typed data |
-| D-205 | DECISIONS.md | 8163 | The fourth promotion slug-collision site (`fact_id`) is refused; the guard sits on the derived id, not on each builder |
-| D-206 | DECISIONS.md | 8213 | CSV export to stdout is written UTF-8 through a locally-wrapped stream |
+| D-204 | DECISIONS.md | 8107 | A missing `pdfinfo` is a run-level fatal, not a laundered `COMPILE_FAILED`; the tool identity travels as typed data |
+| D-205 | DECISIONS.md | 8175 | The fourth promotion slug-collision site (`fact_id`) is refused; the guard sits on the derived id, not on each builder |
+| D-206 | DECISIONS.md | 8234 | CSV export to stdout is written UTF-8 through a locally-wrapped stream |
 
 ---
 
@@ -8043,14 +8043,15 @@ claims the class is closed.***
 
 **The two defects (same class as D-202, one field over each):**
 
-- **`entity_id` (`candidate_promotion.py:196`) — HIGH.** `entity_id = f"{kind.value}.{_slug(entry_id)}"`.
+- **`entity_id` (`candidate_promotion.py`, `build_promotion`'s entry loop) — HIGH.** `entity_id =
+  f"{kind.value}.{_slug(entry_id)}"`.
   Authored entry ids are deduped only case/punctuation-sensitively (`enumerators.py`), so `"Acme"`/`"acme"`
   or `"proj.alpha"`/`"proj-alpha"` or `"acme-2021"`/`"acme_2021"` pass dedup but `_slug` folds them to one
   `entity_id` → one document path → bare `employment_docs[path]=` last-write-wins → **a whole entity and all
   its facts silently vanish**, while `entity_count` still reports both (the CLAUDE.md "self-report is not
   verification / count through a different path" trap). Not caught downstream: the bundle dup-detector needs
   the id in two *different* documents, but here they merge to one path before anything is written.
-- **`category_id` (`:289`) — MED.** `_slug(label)` folds two distinct skill-group labels (`"Front End"`/
+- **`category_id` (`build_promotion`'s skills loop) — MED.** `_slug(label)` folds two distinct skill-group labels (`"Front End"`/
   `"Front-End"`) to one category id; the last label wins as `display_name` and both groups' skills merge into
   one category. Milder — the `SkillRecord`s survive (own `skill_id`); only the taxonomy grouping is lost.
 
@@ -8065,19 +8066,19 @@ unique path → one doc, so `entity_count` equals what reaches disk by construct
 assertion would be error handling for a now-impossible case (against the minimum-code rule), so it was not
 added.
 
-**Residuals, not fixed here.** (a) A `fact_id` slug collision on the *predicate local* (`:377`, `counters`
-keyed on raw `local` while the id uses `_slug(local)`) is unreachable with the seeded catalog — it needs an
-adversarial predicate override. *(The original text also claimed "any such entity is already subject to the
-entity-id refusal" — false, per (a2); retracted.)* (a2) **The missed fourth site, found by the pre-push
-review rather than the sweep.** Both `fact_id` builders drop the entity **kind**: `_entry_facts` (`:402`)
-uses `_slug(entity_id.split('.', 1)[1])` and `_tech_fact` (`:432`) uses `_slug(entry_id)`. So two entries of
+**Residuals, not fixed here.** (a) A `fact_id` slug collision on the *predicate local* (in `_entry_facts`,
+where `counters` is keyed on raw `local` while the id uses `_slug(local)`) is unreachable with the seeded
+catalog — it needs an adversarial predicate override. *(The original text also claimed "any such entity is
+already subject to the entity-id refusal" — false, per (a2); retracted.)* (a2) **The missed fourth site,
+found by the pre-push review rather than the sweep.** Both `fact_id` builders drop the entity **kind**:
+`_entry_facts` uses `_slug(entity_id.split('.', 1)[1])` and `_tech_fact` uses `_slug(entry_id)`. So two entries of
 *different* kinds whose ids slug-collide (`"alpha"`/experience vs `"Alpha"`/project) get **distinct**
 `entity_id`s, **pass the new entity guard**, and then collide in the global fact-id namespace. No catalog
 override needed — this is strictly more reachable than (a). It surfaces as an unhandled pydantic
 `ValidationError` traceback (`UniqueSorted` on `supporting_fact_ids`, since neither `PromotionError` handler
 catches it) or, in the weaker arm, as a `DUPLICATE_RECORD_ID` at a later `validate` — **never as a typed
 refusal**. Left open here. (b) `_merge_categories`
-(`:499`) still silently files skills under an *existing* catalog category whose `display_name` differs from
+(its `if category_id not in known`) still silently files skills under an *existing* catalog category whose `display_name` differs from
 the user's slug-colliding label (`if category_id not in known`) — a rarer collision-with-the-pre-existing-
 catalog case, left as a noted residual rather than expanded into `_merge_categories`.
 
@@ -8152,6 +8153,17 @@ two remaining `None` causes still read `COMPILE_FAILED`, so the guard is narrow 
 docstrings that narrated the old laundering (`projection/select.py`, `doctor_cmd.check_pdfinfo`) were
 corrected in the same change.
 
+**Follow-up, from the pre-push review: `tool` is a closed catalog, not an open string.** The review filed it
+as a non-defect note — no wrong-message path exists, since both producers sit in `_default_runner` and both
+are tested — but the field was `str | None` while its reader maps *anything* that is not `"pdfinfo"` to the
+tectonic message, so a third render binary passing an unlisted name would silently receive the wrong install
+guidance. That is precisely the open-bucket shape CLAUDE.md rules out ("closed, versioned catalogs;
+out-of-catalog is a failure, never a new bucket"). It is now
+`RenderTool = Literal["tectonic", "pdfinfo"]`, declared beside `CompileReason` and used on both dataclasses
+and the selector, so a third binary is a **type error at the call site** rather than a mis-worded runtime
+message. Confirmed the constraint binds rather than merely being declared: `mypy --strict` rejects
+`tool="poppler"` and `tool="xelatex"` on both dataclasses and still accepts `"pdfinfo"`.
+
 ### What generalises
 
 - **Naming a hazard in a diagnostic command is not fixing it.** `doctor` had described this exact failure,
@@ -8168,7 +8180,7 @@ of fix; this one closes it.*
 **Context.** D-203 recorded that `candidate_promotion.py` had **three** lossy-id-creation lines and that
 refusing all three closed the class. `grep -n "_slug("` returns **four**. The missed one is the fact-id
 namespace, and it is *more* reachable than either residual D-203 did record. Both builders drop the entity
-**kind**: `_entry_facts` uses `_slug(entity_id.split('.', 1)[1])` and `_tech_fact` uses `_slug(entry_id)`.
+**kind**: `_entry_facts` uses `_slug(entity_id.split('.', 1)[1])`, `_tech_fact` uses `_slug(entry_id)`.
 So two entries of *different* kinds whose ids slug-collide — `"alpha"`/experience and `"Alpha"`/project —
 survive the case-sensitive entry dedup, receive **distinct** `entity_id`s (`employment.alpha` vs
 `project.alpha`), **clear the D-203 entity guard**, and then collide anyway. The tech fact is the reachable
@@ -8209,6 +8221,15 @@ retracted, and a mis-stated test count fixed.
 - **Guard the derived value, not each producer.** Keying the refusal on the fact id itself made the guard
   independent of how many builders exist — so it covered a residual nobody had connected to it, and cannot
   be defeated by adding a fifth builder later.
+- **Cite code by symbol, not by line number — a fix invalidates its own entry's citations.** This change
+  inserted ~23 lines near the top of `candidate_promotion.py`, silently shifting every line D-203 cited
+  below it: `:289` → 326, `:377`/`:402` → 425, `:432` → 455, `:499` → 547. The claims stayed true; only the
+  pointers rotted, and the D-203 entry ended up mixing citations from **two different snapshots** of the
+  same file. The worst case is not a dead link but a live one — at HEAD, `:499` lands inside `_fact()`, so a
+  session that trusts it reads plausible, unrelated code. CLAUDE.md already tells *readers* to confirm a
+  line with `grep -n`; the writer's half of that rule is to cite a greppable symbol so there is nothing to
+  confirm. Every citation in D-203 and D-205 was converted to a function name plus the distinguishing
+  expression.
 
 ## D-206 — CSV export to stdout is written UTF-8 through a locally-wrapped stream
 
