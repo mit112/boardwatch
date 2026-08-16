@@ -39,6 +39,7 @@ from pathlib import Path
 
 from boardwatch.profile_bundle.models.base import Surface
 from boardwatch.profile_bundle.models.claims import ClaimRecord
+from boardwatch.profile_bundle.models.facts import FactRecord
 from boardwatch.profile_bundle.models.policy import SkillCategoryCatalog
 from boardwatch.profile_bundle.models.skills import SkillRecord
 from boardwatch.profile_bundle.storage import (
@@ -48,10 +49,20 @@ from boardwatch.profile_bundle.storage import (
 )
 from boardwatch.profile_bundle.validation.context import ValidationContext, context_from_documents
 from boardwatch.projection.contract import check_references
-from boardwatch.projection.declaration import EntryDeclaration, load_declaration, projection_digest
+from boardwatch.projection.declaration import (
+    DateRangeDeclaration,
+    EntryDeclaration,
+    load_declaration,
+    projection_digest,
+)
 from boardwatch.projection.effectiveness import resume_bullet_facts_for, resume_facts_for
 from boardwatch.projection.errors import ProjectionIssue, raise_violation
-from boardwatch.projection.grammar import render_skill, render_value, resolve_template
+from boardwatch.projection.grammar import (
+    render_declared_range,
+    render_skill,
+    render_value,
+    resolve_template,
+)
 from boardwatch.projection.shell import load_shell
 from boardwatch.projection.stamp import read_stamp, stamp_exists
 from boardwatch.tailor.model import Bullet, Entry, Resume, SkillGroup
@@ -210,9 +221,7 @@ def project_pool(
     return ProjectionPool(
         resume=resume,
         pinned_entry_ids=tuple(_entry_id(entity_id) for entity_id in declaration.pinned_ids),
-        candidate_entry_ids=tuple(
-            _entry_id(entity_id) for entity_id in declaration.candidate_ids
-        ),
+        candidate_entry_ids=tuple(_entry_id(entity_id) for entity_id in declaration.candidate_ids),
         no_match_fallback_ids=tuple(
             _entry_id(entity_id) for entity_id in declaration.no_match_fallback
         ),
@@ -324,6 +333,29 @@ def _build_entry(
     def render_optional(template: str | None, field_name: str) -> str | None:
         return None if template is None else render(template, field_name)
 
+    def range_fact(predicate: str) -> FactRecord:
+        # Mirrors `resolve_template`'s unresolved-placeholder refusal, and for the same reason: a
+        # declared range half that resolves to nothing must not quietly become an open range.
+        fact = facts_by_predicate.get(predicate)
+        if fact is None:
+            raise_violation(
+                ProjectionIssue.UNRESOLVED_PLACEHOLDER,
+                f"no résumé-surfaced, effective fact with predicate {predicate!r} on this "
+                "entity, so the declared date range has no end to render",
+                where=f"entries: {entry_decl.entity_id}.dates",
+            )
+        return fact
+
+    def render_dates(declared: str | DateRangeDeclaration | None) -> str | None:
+        if declared is None or isinstance(declared, str):
+            return render_optional(declared, "dates")
+        return render_declared_range(
+            range_fact(declared.start),
+            None if declared.end is None else range_fact(declared.end),
+            open_range_label=open_range_label,
+            where=f"entries: {entry_decl.entity_id}.dates",
+        )
+
     bullets = [
         # `text=` is `claim.text` verbatim — never templated, edited or reflowed. Only
         # `Bullet._single_line`'s own whitespace-run normalisation touches it, identically to
@@ -363,7 +395,7 @@ def _build_entry(
         bullets=bullets,
         kind=entry_decl.kind.value,
         title=render_optional(entry_decl.title, "title"),
-        dates=render_optional(entry_decl.dates, "dates"),
+        dates=render_dates(entry_decl.dates),
         subtitle=render_optional(entry_decl.subtitle, "subtitle"),
         location=render_optional(entry_decl.location, "location"),
         link_url=render_optional(entry_decl.link_url, "link_url"),

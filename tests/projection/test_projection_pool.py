@@ -401,3 +401,61 @@ def test_a_skill_ref_bullet_predicate_is_refused_as_unrenderable(
     with pytest.raises(ProjectionError) as exc:
         projection_candidate(projection_env.bundle_root, decl, as_of=AS_OF)
     assert exc.value.violation.issue is ProjectionIssue.FACT_VALUE_KIND_NOT_ADMITTED
+
+
+def test_a_declared_range_with_no_end_renders_the_open_label_end_to_end(
+    projection_env,  # noqa: F811
+    tmp_path: Path,
+) -> None:
+    """The capability the template form never had. `'{project.start_date} – {project.end_date}'`
+    cannot express an ongoing project at all, because a missing end fact is a fatal unresolved
+    placeholder — so before this, an open-ended project could only be rendered by hand-typing the
+    word "Present" into the declaration, beside an `open_range_label` that then meant nothing."""
+    decl = tmp_path / "projection.yaml"
+    _write_declaration(
+        decl,
+        [
+            {
+                "entity_id": "project.packet-pantry",
+                "kind": "project",
+                "pinned": False,
+                "heading": "{@display_name}",
+                "dates": {"start": "project.start_date"},
+                "claims": ["claim.packet-pantry.backend.001"],
+            }
+        ],
+    )
+    candidate = projection_candidate(projection_env.bundle_root, decl, as_of=AS_OF)
+
+    (entry,) = candidate.entries
+    # `start-date.001` (2025-01) is `rejected`; `.002` (2025-04) is the owner-confirmed one, so
+    # this also proves the range reads the effective fact rather than the first one on file.
+    assert entry.dates == "Apr 2025 – Present"
+
+
+def test_a_named_range_end_with_no_fact_is_fatal_not_silently_open(
+    projection_env,  # noqa: F811
+    tmp_path: Path,
+) -> None:
+    """**The fabrication guard.** An OMITTED `end` is the owner declaring the range open; a NAMED
+    `end` whose fact is missing is a broken declaration. Folding the second into the first would
+    print "Present" over work that has finished — claiming ongoing employment on a live job
+    application — so the absence of a fact must never be read as a declaration of openness."""
+    decl = tmp_path / "projection.yaml"
+    _write_declaration(
+        decl,
+        [
+            {
+                "entity_id": "project.packet-pantry",
+                "kind": "project",
+                "pinned": False,
+                "heading": "{@display_name}",
+                "dates": {"start": "project.start_date", "end": "certification.expiry"},
+                "claims": ["claim.packet-pantry.backend.001"],
+            }
+        ],
+    )
+    with pytest.raises(ProjectionError) as exc:
+        projection_candidate(projection_env.bundle_root, decl, as_of=AS_OF)
+    assert exc.value.violation.issue is ProjectionIssue.UNRESOLVED_PLACEHOLDER
+    assert "certification.expiry" in exc.value.violation.message

@@ -27,6 +27,15 @@ entries:
     pinned: false
     heading: '{@display_name}'
     title: '{@display_name}'
+    # The two-fact range shape. Projects carry `start_date`/`end_date` as a `year_month` PAIR
+    # rather than one `date_range` (D-177), so the range is declared rather than templated: that
+    # is what puts the separator and the open-range word in one place instead of retyping both
+    # per entry. `end` is omitted here, which declares the range OPEN — the case a
+    # '{project.start_date} – {project.end_date}' template cannot express, because a missing end
+    # fact is a fatal unresolved placeholder. (This project's end-date facts are `unresolved`, so
+    # citing one would be citing a disputed value.)
+    dates:
+      start: project.start_date
     claims:
       - claim.packet-pantry.backend.001
 

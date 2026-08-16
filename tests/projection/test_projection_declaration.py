@@ -7,6 +7,7 @@ from pathlib import Path
 import pytest
 
 from boardwatch.projection.declaration import (
+    DateRangeDeclaration,
     EntryKind,
     load_declaration,
     projection_digest,
@@ -94,8 +95,7 @@ def test_a_duplicated_bullet_predicate_is_fatal(tmp_path: Path) -> None:
     collapse to one — the same class of loss `_reject_duplicate_entities` exists to prevent."""
     body = MINIMAL.replace(
         "claims: [claim.packet-pantry.backend.001]",
-        "claims: []\n"
-        "    bullet_predicates: [project.contribution, project.contribution]",
+        "claims: []\n    bullet_predicates: [project.contribution, project.contribution]",
     )
     with pytest.raises(ProjectionError) as exc:
         load_declaration(_write(tmp_path, body))
@@ -185,3 +185,61 @@ def test_the_digest_is_stable_across_formatting(tmp_path: Path) -> None:
     )
     second = projection_digest(load_declaration(_write(tmp_path, reflowed)))
     assert first == second
+
+
+def test_dates_may_be_a_declared_two_fact_range(tmp_path: Path) -> None:
+    """The mapping shape loads as a `DateRangeDeclaration`, not as a string. Projects and
+    education carry dates as a `year_month` PAIR (D-177), so the declaration admits one form per
+    fact shape rather than forcing both through a template string."""
+    body = MINIMAL.replace(
+        "    claims: [claim.packet-pantry.backend.001]",
+        "    dates:\n"
+        "      start: project.start_date\n"
+        "      end: project.end_date\n"
+        "    claims: [claim.packet-pantry.backend.001]",
+    )
+    decl = load_declaration(_write(tmp_path, body))
+    dates = decl.entries[0].dates
+    assert isinstance(dates, DateRangeDeclaration)
+    assert dates.start == "project.start_date"
+    assert dates.end == "project.end_date"
+
+
+def test_a_declared_range_may_omit_its_end(tmp_path: Path) -> None:
+    """An omitted `end` is the owner declaring the range open — it renders `open_range_label`."""
+    body = MINIMAL.replace(
+        "    claims: [claim.packet-pantry.backend.001]",
+        "    dates:\n"
+        "      start: project.start_date\n"
+        "    claims: [claim.packet-pantry.backend.001]",
+    )
+    decl = load_declaration(_write(tmp_path, body))
+    dates = decl.entries[0].dates
+    assert isinstance(dates, DateRangeDeclaration)
+    assert dates.end is None
+
+
+def test_a_declared_range_half_that_is_not_a_predicate_is_malformed(tmp_path: Path) -> None:
+    """Typed as `PredicateId`, so the shape is refused at LOAD time rather than surviving to
+    render time as an unresolvable token — earlier is better for a declaration the owner is about
+    to approve."""
+    body = MINIMAL.replace(
+        "    claims: [claim.packet-pantry.backend.001]",
+        "    dates:\n      start: 'Not A Predicate'\n    claims: [claim.packet-pantry.backend.001]",
+    )
+    with pytest.raises(ProjectionError) as exc:
+        load_declaration(_write(tmp_path, body))
+    assert exc.value.violation.issue is ProjectionIssue.MALFORMED_DECLARATION
+
+
+def test_an_unknown_key_inside_a_declared_range_is_malformed(tmp_path: Path) -> None:
+    """`_Strict` forbids extras here too: `open: true` looks plausible and would silently do
+    nothing, which is precisely the shape of declaration bug an owner cannot see in a preview."""
+    body = MINIMAL.replace(
+        "    claims: [claim.packet-pantry.backend.001]",
+        "    dates:\n      start: project.start_date\n      open: true\n"
+        "    claims: [claim.packet-pantry.backend.001]",
+    )
+    with pytest.raises(ProjectionError) as exc:
+        load_declaration(_write(tmp_path, body))
+    assert exc.value.violation.issue is ProjectionIssue.MALFORMED_DECLARATION

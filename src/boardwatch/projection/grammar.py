@@ -4,6 +4,14 @@ Rendering is projection-owned and specified HERE rather than deferred, because t
 that whoever implements it invents `2025-02-01 – Present` versus `Feb 2025 – Present` and a golden
 test blesses whichever convention they happened to pick.
 
+**The convention is month precision: `Oct 2025`, `Feb 2025 – Jan 2026`, `Oct 2025 – Present`.**
+The first cut of this module rendered dates as raw ISO, which is why `projection.yaml` carried
+hand-typed date literals instead of fact references — nobody wants `2025-10-01` on a résumé, so
+the one field that could not be fact-grounded was the one every entry needed. D-200 recorded the
+month formatter as owed and did not build it; this is that formatter. It is ours to choose:
+the spec's §4.1 rule is that date *formatting* is not authoring, while the word for "still going"
+(`open_range_label`) is the owner's and has no default.
+
 There is no uniform accessor on `FactValue`: seven of ten arms expose `.value`, `string_list`
 exposes `.values`, `skill_ref` exposes `.skill_id`, and `date_range` exposes `.start`/`.end`. So
 this dispatches on type, and a test derives the arm set from `FactValueKind` so an eleventh member
@@ -40,6 +48,39 @@ from boardwatch.projection.errors import ProjectionIssue, raise_violation
 
 #: The en-dash separator for a date range. One convention, one place.
 RANGE_SEPARATOR = " – "
+
+#: English month abbreviations, indexed at `[month - 1]`. Deliberately NOT `strftime("%b")`:
+#: that is locale-dependent, so the same bundle would render "Oct", "oct." or "Okt" onto a résumé
+#: depending on `LC_TIME`. boardwatch runs on its user's own machine, whoever that user is, so a
+#: rendering that reaches a live job application has to be locale-independent by construction
+#: rather than by whatever the environment happens to be set to.
+_MONTH_ABBREVIATIONS: tuple[str, ...] = (
+    "Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
+)  # fmt: skip
+
+#: The kinds admitted as an ENDPOINT of a declared two-fact range (`DateRangeDeclaration`).
+#: Only `year_month`, because that is exactly what the catalog's paired date predicates carry
+#: (`project.start_date`/`end_date`, `education.start_date`/`end_date` — the only four predicates
+#: whose `legal_value_types` is `year_month`). `date_range` is excluded on purpose: an endpoint
+#: that is itself a range would nest one inside another and print "Oct 2025 – Present – Mar 2026".
+RANGE_ENDPOINT_KINDS: frozenset[FactValueKind] = frozenset({FactValueKind.YEAR_MONTH})
+
+
+def format_month_year(year: int, month: int) -> str:
+    """`(2025, 10)` → `"Oct 2025"`. The one month-precision rendering, used by every date arm.
+
+    Month precision is the résumé convention, and it is why this discards a `date`'s day: the
+    bundle stores `employment.date_range` as full dates with day `01` standing in for "that
+    month", so printing `2025-10-01` would show a precision the fact never actually had.
+    """
+    return f"{_MONTH_ABBREVIATIONS[month - 1]} {year}"
+
+
+def _month_year_of(value: YearMonthValue) -> str:
+    # `YearMonth` is regex-pinned to `YYYY-MM` on the model, so this split cannot fail.
+    year, month = value.value.split("-")
+    return format_month_year(int(year), int(month))
+
 
 #: Kinds a template may carry. `boolean`, `string_list` and `skill_ref` are excluded: a list or a
 #: boolean on a résumé line is authoring, not projection.
@@ -79,18 +120,68 @@ def render_value(value: FactValue, *, open_range_label: str, where: str) -> str:
         # NOT verbatim: the loader normalises, so a legal `+12` input arrives here as 12.
         return str(value.value)
     if isinstance(value, YearMonthValue):
-        return value.value
+        return _month_year_of(value)
     if isinstance(value, DateValue):
+        # Stays ISO. `date` is day-precision and no catalog predicate carries one today, so
+        # giving it a month-precision rendering would be inventing a convention for a case that
+        # does not exist; `year_month` and `date_range` moved because both DO reach a résumé.
         return value.value.isoformat()
     if isinstance(value, DateRangeValue):
-        end = value.end.isoformat() if value.end is not None else open_range_label
-        return f"{value.start.isoformat()}{RANGE_SEPARATOR}{end}"
+        end = (
+            format_month_year(value.end.year, value.end.month)
+            if value.end is not None
+            else open_range_label
+        )
+        start = format_month_year(value.start.year, value.start.month)
+        return f"{start}{RANGE_SEPARATOR}{end}"
     raise_violation(
         ProjectionIssue.FACT_VALUE_KIND_NOT_ADMITTED,
         f"a {value.type!r} value cannot be rendered on a résumé line; admitted kinds are "
         f"{sorted(k.value for k in ADMITTED_KINDS)}",
         where=where,
     )
+
+
+def render_declared_range(
+    start: FactRecord,
+    end: FactRecord | None,
+    *,
+    open_range_label: str,
+    where: str,
+) -> str:
+    """Assemble a range from the TWO facts the catalog uses for projects and education.
+
+    `employment.date_range` carries both halves in ONE `DateRangeValue`, but `project.*` and
+    `education.*` carry a `year_month` PAIR instead, and that split is deliberate — D-177 finding
+    3: `YearMonthValue` holds a single scalar, so one extraction rule cannot yield start and end
+    from one source field. The spec's §4.1 answer was for the owner to write
+    `'{project.start_date} – {project.end_date}'`, which has two defects this fixes: it retypes
+    the separator on every entry, and — because an unresolved placeholder is fatal — it cannot
+    express an open range **at all**, so a project still running has no renderable form.
+
+    Same convention as the `DateRangeValue` arm, applied to the pair: `RANGE_SEPARATOR` between
+    the halves, `open_range_label` when there is no end. `end is None` here means the DECLARATION
+    omitted it — the owner saying "still going". A named end whose fact is missing never reaches
+    this function; the caller keeps that distinction, because the absence of a fact is not the
+    owner declaring a range open, and printing "Present" over a role that ended would fabricate.
+    """
+    rendered_start = _range_endpoint(start, where=where)
+    if end is None:
+        return f"{rendered_start}{RANGE_SEPARATOR}{open_range_label}"
+    return f"{rendered_start}{RANGE_SEPARATOR}{_range_endpoint(end, where=where)}"
+
+
+def _range_endpoint(fact: FactRecord, *, where: str) -> str:
+    value = fact.value
+    if not isinstance(value, YearMonthValue):
+        raise_violation(
+            ProjectionIssue.FACT_VALUE_KIND_NOT_ADMITTED,
+            f"fact {fact.fact_id!r} is a {value.type!r}, which cannot be one END of a declared "
+            f"date range; admitted endpoints are "
+            f"{sorted(k.value for k in RANGE_ENDPOINT_KINDS)}",
+            where=where,
+        )
+    return _month_year_of(value)
 
 
 def render_skill(skill: SkillRecord) -> str:

@@ -39,10 +39,18 @@ entries:
     pinned: true                       # pinned entries always render; unpinned are JD-scored candidates
     heading: '{@display_name}'         # templates resolve against the entity + its résumé-citable facts
     title: '{employment.title}'
-    dates: '{employment.date_range}'
+    dates: '{employment.date_range}'   # ONE fact of type date_range -> "Oct 2025 – Present"
     # Bullets come from claims, from bullet_predicates, or both:
     claims: [claim.example-labs.ownership.001]   # approved, résumé-surfaced ClaimRecords
     bullet_predicates: [employment.accomplishment]  # predicate ids whose facts render as bullets
+
+  - entity_id: project.example-project
+    kind: project
+    pinned: false
+    heading: '{@display_name}'
+    dates:                             # TWO facts: the shape projects and education use
+      start: project.start_date
+      end: project.end_date            # omit `end` entirely to declare the range OPEN
 
 no_match_fallback: [project.example-project]   # unpinned ids to fall back to when no candidate matches
 extracurricular: []
@@ -56,6 +64,21 @@ extracurricular: []
 - `entries[].heading/title/subtitle/dates/location` — templates. `{predicate}` resolves to the
   entity's one résumé-citable fact of that predicate; `{@display_name}` / `{@status}` read entity
   fields. An unresolved placeholder is fatal — projection never prints a half-built line.
+- `entries[].dates` — either a template string (above), **or** a two-fact range: `start:` and an
+  optional `end:`, each naming a predicate. Both shapes exist because the bundle holds dates two
+  ways: employment carries one `date_range` fact, while projects and education carry a
+  `start_date`/`end_date` **pair** of `year_month` facts. Declaring the range — rather than writing
+  `'{project.start_date} – {project.end_date}'` — keeps the separator and the open-range word in
+  one place, and is the only way to express an ongoing project at all.
+  **Omitting `end` declares the range open** and renders `open_range_label`. Naming an `end` whose
+  fact is missing stays fatal: an absent fact is not you saying "still going", and printing
+  "Present" over work that ended would put a false claim on a live application.
+
+**Dates render at month precision**, in one convention set by the projection, not by the bundle and
+not by your locale: `Oct 2025`, `Feb 2025 – Jan 2026`, `Oct 2025 – Present`. Only the word for an
+open range is yours (`open_range_label`, no default). Fact-grounding dates this way means editing a
+date in the bundle changes the page; hand-typed date literals still work, but nothing keeps them
+honest.
 - `entries[].claims` — `ClaimRecord` ids. Each must be `approved`, résumé-surfaced, and about this
   entry's entity; its text is copied verbatim.
 - `entries[].bullet_predicates` — predicate ids whose résumé-citable facts render directly as bullets,

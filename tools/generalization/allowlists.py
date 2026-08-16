@@ -143,7 +143,7 @@ SHIPPED_DATA: dict[str, DataEntry] = {
         provenance="synthetic",
         source="authored for this task, over the synthetic "
         "profile_bundle/examples/comprehensive fixture",
-        pin="sha256:27d1aed7a0ff4da552717af3cb5c83baecf08e7aa86bbcdd4887c8832d7cfd7b",
+        pin="sha256:bff0a349d460d5f48e421d06ff95045a2a5de60ee5e5057b858069c0bfcbbe61",
     ),
     "src/boardwatch/projection/examples/projection.golden.txt": DataEntry(
         kind="fixture",
@@ -157,7 +157,7 @@ SHIPPED_DATA: dict[str, DataEntry] = {
         provenance="synthetic",
         source="generated for this task by projection.pool.project_pool over the synthetic "
         "profile_bundle/examples/comprehensive fixture and projection.example.yaml",
-        pin="sha256:6a3a76f14b0586d228b58ab490130e2f6738ca954d40eb18fe3efc019969e4bd",
+        pin="sha256:9a5b3b7446617040c1cfbf73f4ad6590011d03380fd8a4be47932b3a267b85bc",
     ),
     "tests/fixtures/ashby/dead.json": DataEntry(
         kind="fixture",

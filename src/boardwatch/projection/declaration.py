@@ -18,6 +18,7 @@ from typing import Any
 import yaml
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_validator
 
+from boardwatch.profile_bundle.models.base import PredicateId
 from boardwatch.profile_bundle.yaml_writer import document_bytes
 from boardwatch.projection.errors import ProjectionIssue, raise_violation
 
@@ -50,6 +51,26 @@ class SkillGroupDeclaration(_Strict):
     skills: tuple[str, ...] = Field(min_length=1)
 
 
+class DateRangeDeclaration(_Strict):
+    """A date range assembled from TWO facts, for the entity kinds whose catalog models dates as a
+    start/end pair rather than as one `date_range` value.
+
+    `project.start_date`/`project.end_date` and `education.start_date`/`education.end_date` are the
+    catalog's only `year_month` predicates, and the pair is deliberate (D-177 finding 3):
+    `YearMonthValue` holds one scalar, so a single extraction rule cannot yield both halves. The
+    alternative shape — a `dates` template reading `'{project.start_date} – {project.end_date}'` —
+    makes the owner retype the separator per entry, and cannot express an open range at all,
+    because a missing end fact is a fatal unresolved placeholder.
+
+    **Omitting `end` declares the range OPEN**, and it renders `open_range_label`. A NAMED `end`
+    whose fact is missing stays fatal: the absence of a fact is not the owner saying "still going",
+    and silently printing "Present" over work that ended would fabricate.
+    """
+
+    start: PredicateId
+    end: PredicateId | None = None
+
+
 class EntryDeclaration(_Strict):
     entity_id: str = Field(min_length=1)
     kind: EntryKind
@@ -57,7 +78,10 @@ class EntryDeclaration(_Strict):
     heading: str = Field(min_length=1)
     title: str | None = None
     subtitle: str | None = None
-    dates: str | None = None
+    #: Either a template/literal string, or a two-fact range the projection assembles itself.
+    #: The union is not a convenience: the bundle genuinely holds dates in two shapes, so the
+    #: declaration admits one form per shape rather than forcing every entity into one of them.
+    dates: str | DateRangeDeclaration | None = None
     location: str | None = None
     #: A clickable heading link (project entries): the raw target URL and its display label. The
     #: URL is emitted verbatim into `\href{...}` (not LaTeX-escaped), so it must be a plain URL.
