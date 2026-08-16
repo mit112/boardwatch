@@ -44,10 +44,10 @@ took its category by arrival order; it now refuses. **The next task must come fr
 > every bullet showing**. The master is a **RESERVOIR** holding the SUPERSET; per-JD **Stage 2** selects it
 > down to one page. `resume.yaml` / `sections.tex` are thin per-JD OUTPUTS, **not** the source — the wiki is.
 
-**Live revision: `sha256:ccd4d741…` (revision 11).** 11 entities — 4 experience (Saayam, NIO co-op,
+**Live revision: `sha256:76bc5d42…` (revision 12).** 11 entities — 4 experience (Saayam, NIO co-op,
 Nakshatra, SAKEC) + 7 projects (Hookrail, Knowledge Forge, StreakSync, Random Forest, FlickSwiper,
-BirthdayQuest, Fond). 113 facts (**94 effective** — 18 `superseded` by an active edge, 1 `rejected` by owner ruling),
-14 skills, **30 bullets**, **7 evidence records** (two
+BirthdayQuest, Fond). 115 facts (**94 effective** — 20 `superseded` by an active edge, 1 `rejected` by owner ruling),
+14 skills, **33 effective bullet-facts of which 28 render** (5 parked by surface per D-213), **7 evidence records** (two
 owner-attestation, incl. `evidence.mit.employer-names.001`, + five `repository_artifact`). Validates
 **0 error, 0 blocker**, with 10 `broken_reference` warnings — permanent residue of earlier revisions,
 non-blocking. The PDF renders **zero overfull**.
@@ -99,9 +99,16 @@ the cut lines fix no score threshold, so `ADMISSION_FLOOR` stays `Decimal(0)` (D
    different attended session where we go through each project/employment to figure out what is the best way
    to showcase it."* Not a trim-to-length task. **FlickSwiper DONE** (revision 10): 4 bullets → **2**,
    872 → **419 chars**. **Hookrail DONE** (revision 11, D-214): 4 → **3**, 848 → **626 chars**, and its
-   CI-chaos suite — unclaimed since D-191 — now ships as a merged perf-plus-chaos bullet. Both zero over
-   ceiling. **7 of the 30 effective bullets still exceed the 220-char ceiling** (longest 307), across 4
-   entries — `fond` 307/241, `streaksync` 289/285/233, `birthdayquest` 263, `nio-coop` 241.
+   CI-chaos suite — unclaimed since D-191 — now ships as a merged perf-plus-chaos bullet.
+   **StreakSync DONE** (revision 12, D-215): 4 → **2**, 1,012 → **415 chars**, retiring the bundle's most
+   expensive entity and its one contradicted number (a "110-case" suite that measures **109**); the
+   Firestore-security theme was ceded to FlickSwiper rather than said twice. All three zero over ceiling.
+   **⚠️ StreakSync's trim lost the bare `Swift` token** — the same regression D-213 recorded for
+   FlickSwiper, by a different route. Draft **`streaksync-swift-keyword`** restores it for +11 chars,
+   validates 0/0/10 on both tiers, and **awaits Mit's TTY approve**. Treat "re-measure extraction after a
+   trim" as a required step, not a note — it has now fired twice.
+   **4 of the 28 rendering bullets still exceed the 220-char ceiling** (longest 307), across 3
+   entries — `fond` 307/241, `birthdayquest` 263, `nio-coop` 241.
    **`nio-coop` is in the pinned three, so the fallback trips on every
    render regardless of which projects Stage 2 admits** — it is the highest-value remaining target.
    Refinement is also the only lever that widens
@@ -112,8 +119,8 @@ the cut lines fix no score threshold, so `ADMISSION_FLOOR` stays `Decimal(0)` (D
    shortening a pinned entry does nothing for its own standing — it buys **admission headroom for the
    next candidate, on every posting**. The pinned three cost **1,231 chars** (`nio-coop` 548, `sakec`
    355, `saayam` 328); `nio-coop` is both the largest and the one tripping the fallback, so it is the
-   highest-leverage entity left. Corollary: the 8 over-ceiling bullets split by blast radius — the one
-   in `nio-coop` breaks **every** render; the other 7 bite only when their candidate is admitted.
+   highest-leverage entity left. Corollary: the 4 over-ceiling bullets split by blast radius — the one
+   in `nio-coop` breaks **every** render; the other 3 bite only when their candidate is admitted.
    **Bullets are the ONLY scored text.** Every scorer routes through `effective_skills(bullet.text, …)`
    (`scoring.py`); a `subtitle` earns **nothing**. The taxonomy does **not** know `Firebase`, `Firestore`
    or `SwiftData` — all extract `[]` — while `Swift` and `iOS` resolve. FlickSwiper's first 2-bullet set
