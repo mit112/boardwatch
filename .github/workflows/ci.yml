@@ -83,3 +83,82 @@ jobs:
           python-version: "3.12"
       - run: uv sync --frozen
       - run: uv run python -m tools.generalization
+
+  # The nightly is the ONLY build whose matrix contains Windows (D-151), and for three consecutive
+  # days nothing read its result — so a deliberate CADENCE decision had quietly become an unnoticed
+  # COVERAGE decision (D-211/D-212). This job is what reads it. Without a consumer, "CI is green"
+  # kept meaning the 9-job push matrix, which by construction contains zero Windows jobs and can
+  # never be evidence about them.
+  #
+  # Scoped to `schedule` on purpose: a `workflow_dispatch` run is somebody already investigating,
+  # and filing an issue about a run you are watching is noise. It also CLOSES the issue when the
+  # nightly recovers — an alert with no off-switch becomes a permanently-open issue everyone learns
+  # to scroll past, which is the same failure as having no alert at all.
+  nightly-watch:
+    name: nightly-watch
+    if: ${{ always() && github.event_name == 'schedule' }}
+    needs: [test, gitleaks, perf, generalization]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      issues: write
+    steps:
+      - uses: actions/github-script@v7
+        with:
+          script: |
+            const marker = '<!-- nightly-ci-watch -->';
+            const { owner, repo } = context.repo;
+            const runUrl = `${context.serverUrl}/${owner}/${repo}/actions/runs/${context.runId}`;
+
+            // Read the per-job conclusions from the API rather than from `needs`: `needs` collapses
+            // a 3-OS matrix into one result, and WHICH os/python failed is the whole diagnostic.
+            const jobs = await github.paginate(github.rest.actions.listJobsForWorkflowRun, {
+              owner, repo, run_id: context.runId, per_page: 100,
+            });
+            const failed = jobs
+              .filter((job) => job.conclusion === 'failure')
+              .map((job) => job.name)
+              .sort();
+
+            const issues = await github.paginate(github.rest.issues.listForRepo, {
+              owner, repo, state: 'open', per_page: 100,
+            });
+            const open = issues.find(
+              (issue) => !issue.pull_request && (issue.body || '').includes(marker),
+            );
+
+            if (failed.length === 0) {
+              if (open) {
+                await github.rest.issues.createComment({
+                  owner, repo, issue_number: open.number,
+                  body: `Nightly build recovered: every job passed in ${runUrl}. Closing.`,
+                });
+                await github.rest.issues.update({
+                  owner, repo, issue_number: open.number, state: 'closed',
+                });
+              }
+              return;
+            }
+
+            const body = [
+              marker,
+              '## The nightly build is failing',
+              '',
+              `Run: ${runUrl} (commit \`${context.sha.slice(0, 7)}\`)`,
+              '',
+              'Failed jobs:',
+              ...failed.map((name) => `- \`${name}\``),
+              '',
+              '**A push run cannot see this.** `ci.yml` builds the `os` matrix only for',
+              '`schedule` and `workflow_dispatch` (D-151), so a push is 9 jobs with zero Windows',
+              'while the nightly is 12. Reproduce on demand with',
+              '`gh workflow run ci.yml --ref main` — budget ~1h05m for a Windows job.',
+            ].join('\n');
+
+            if (open) {
+              await github.rest.issues.createComment({ owner, repo, issue_number: open.number, body });
+            } else {
+              await github.rest.issues.create({
+                owner, repo, title: 'Nightly CI is failing', body,
+              });
+            }
