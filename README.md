@@ -77,6 +77,24 @@ sudo apt-get install poppler-utils                  # Debian/Ubuntu (tectonic: s
 
 `boardwatch doctor` reports whether both are present. The Docker image bundles them.
 
+**Supported platforms.** **Linux and macOS are supported** — every push is tested on both, across
+Python 3.11, 3.12 and 3.13. **Windows is best-effort**: the core is written to be portable and the
+full suite runs there nightly, but it is not a platform any release is blocked on, and four caveats
+are known and unfixed:
+
+- **Résumé PDFs are effectively unavailable.** poppler's `pdfinfo` has no package-manager route on
+  Windows, and without it the page-count gate cannot answer, so tailoring fails the run. Scanning,
+  ranking and the eligibility audit are unaffected.
+- **Desktop notifications are unavailable**; configure a webhook instead (see *Notifications*).
+- **No Task Scheduler recipe** is provided — only cron, launchd and systemd.
+- **Killing a command mid-write can briefly make its bundle look locked.** A subsequent
+  `profile-bundle promote` or `rebase-draft` may report `bundle_lock_held` for a moment after the
+  holder dies. It clears on its own; **retry the command rather than deleting the lockfile**, which
+  is never a safe repair. Never observed on Linux or macOS.
+
+If you run Windows and any of this blocks you, open an issue — the constraint is attention, not a
+decision that it should not work.
+
 ### pipx (recommended)
 
 ```bash

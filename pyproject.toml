@@ -20,7 +20,12 @@ classifiers = [
     "Environment :: Console",
     "Intended Audience :: Developers",
     "Intended Audience :: End Users/Desktop",
-    "Operating System :: OS Independent",
+    # Not `OS Independent`: that is a support claim, and until D-212 nothing verified it. Windows
+    # is deliberately absent rather than best-effort-with-an-asterisk — a classifier cannot carry
+    # the asterisk, and re-stating support a red nightly contradicts is how this drifted. The
+    # Windows position is stated in README.md, where it can be qualified.
+    "Operating System :: MacOS",
+    "Operating System :: POSIX :: Linux",
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
