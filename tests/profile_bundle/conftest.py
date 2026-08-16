@@ -74,6 +74,23 @@ EXAMPLE_EVIDENCE_SET_DIGEST = (
 
 EXAMPLE_PROFILE_ID = "profile.example-candidate"
 
+WINDOWS_STALE_LOCK_RACE = (
+    "Windows is a best-effort platform (D-212) and this is a Windows-only race. `locking.py` rests "
+    "on 'the operating system is the only authority', which is a POSIX-shaped premise: the kernel "
+    "drops a dead process's flock at once. On Windows, `filelock`'s `WindowsFileLock._acquire` "
+    "swallows EACCES from `os.open` without setting the fd, so an acquire that lands inside the "
+    "killed holder's handle-teardown window raises `Timeout` and is reported as `bundle_lock_held` "
+    "— a lock nobody holds. Measured across three nightly builds it failed 6 of 9 Windows jobs, "
+    "landing in whichever of the two suites ran first, so it is a race and not standing breakage. "
+    "NOT strict, deliberately: on the other 3 of 9 the test passes, and `strict=True` would turn "
+    "that XPASS into a fresh red nightly. The marker is conditional, so on Linux and macOS — where "
+    "the guarantee is actually claimed — this stays an ordinary test that must pass."
+)
+
+# Both `test_profile_bundle_promotion.py` and `test_profile_bundle_rebase.py` carry a copy of the
+# stale-lock test, and the reason above is the same fact about one lock. Kept here so the two
+# cannot drift into disagreeing accounts of why they are marked.
+
 
 def example_source_root() -> Path:
     """The packaged example tree, resolved through `importlib.resources`.

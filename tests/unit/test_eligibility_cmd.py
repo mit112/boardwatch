@@ -256,7 +256,12 @@ def test_setting_COLUMNS_reaches_the_module_level_console(monkeypatch: pytest.Mo
     from boardwatch.cli.eligibility_cmd import console
 
     monkeypatch.setenv("COLUMNS", "137")
-    assert console.width == 137
+    # `Console.size` returns `width - self.legacy_windows`, so a legacy Windows console reports one
+    # column fewer than `COLUMNS` names — it reserves the last cell that would otherwise auto-wrap.
+    # Read the flag off the console rather than restating the platform test here: what this pins is
+    # that the env var ARRIVES, not what rich subsequently subtracts from it. Asserting the bare
+    # 137 made this the one deterministic failure in all nine nightly Windows jobs (D-212).
+    assert console.width == 137 - console.legacy_windows
 
 
 def test_typer_does_not_force_a_terminal_for_help_rendering() -> None:
