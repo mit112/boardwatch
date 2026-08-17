@@ -259,9 +259,16 @@ raises `BundleLockHeldError`). It is recorded in `tests/profile_bundle/conftest.
 constant. **Instance 4 is marked by MECHANISM, never observed failing.** Five other holder sites stay
 **deliberately unmarked**: a live holder makes the race a spurious *pass*, a natural exit releases cleanly.
 
-**The nightly cannot go green until the fix is PUSHED** — run `32007953224` ran against an `origin/main`
-lacking D-222's marker. **`make check` can never verify this**: the markers are inert off `win32`, so the
-only route is a `workflow_dispatch` or the next 07:00 UTC nightly, and **issue #76 closing is the signal**.
+**All four markers are now PUSHED** (`origin/main` was 14 commits behind, which is the whole reason run
+`32007953224` was red — it ran against a tip that could not contain them). **`make check` can never verify
+this**: the markers are inert off `win32`.
+
+**Two verification routes, and they are NOT interchangeable.** A `workflow_dispatch` of `ci.yml` builds the
+full 12-job matrix and so yields the **Windows evidence** — dispatch `32039875198` (`8573f50`) is that run.
+But **it cannot close issue #76**: `nightly-watch` is gated `if: always() && github.event_name ==
+'schedule'` (`ci.yml:99`), so only the **07:00 UTC scheduled** run files or closes. So read the dispatch
+run's three `windows-latest` jobs directly for the verdict, and expect **#76 to close on the next nightly**,
+not before. Do not read a still-open #76 as the fix having failed.
 
 ---
 
