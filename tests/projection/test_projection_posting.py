@@ -90,6 +90,19 @@ def _seed(
     return posting_id
 
 
+def _context(engine: Engine, settings: Settings, posting_id: int) -> PostingContext:
+    """`posting_context` with the taxonomy the seam no longer loads for itself.
+
+    Injecting the taxonomy a run resolved once is the point of the keyword; that INJECTION is
+    exercised in tests/projection/test_projection_run_context.py. These cases are about the seam's
+    own guards, so they pass the same taxonomy `_seed` keyed its extraction row to — the object
+    `posting_context` used to load itself, leaving every assertion below unchanged.
+    """
+    return posting_context(
+        engine, settings, posting_id, taxonomy=load_taxonomy(settings.config_dir)
+    )
+
+
 # -- happy path -----------------------------------------------------------------------
 
 
@@ -97,7 +110,7 @@ def test_jd_skills_and_version_come_back_correctly(tmp_path: Path) -> None:
     settings = _settings(tmp_path)
     engine = _engine(settings)
     posting_id = _seed(engine, settings, skills=("Python", "Go"))
-    ctx = posting_context(engine, settings, posting_id)
+    ctx = _context(engine, settings, posting_id)
     assert isinstance(ctx, PostingContext)
     assert ctx.posting_id == posting_id
     assert ctx.jd_skills == frozenset({"Python", "Go"})
@@ -110,7 +123,7 @@ def test_an_extraction_row_with_no_skills_is_not_a_miss(tmp_path: Path) -> None:
     settings = _settings(tmp_path)
     engine = _engine(settings)
     posting_id = _seed(engine, settings, skills=())
-    ctx = posting_context(engine, settings, posting_id)
+    ctx = _context(engine, settings, posting_id)
     assert ctx.jd_skills == frozenset()
 
 
@@ -126,7 +139,7 @@ def test_budget_floors_a_stored_zero_to_one(tmp_path: Path) -> None:
             remote_only=False, skills=[], taxonomy_version="v1", resume_max_pages=0,
         )
     posting_id = _seed(engine, settings)
-    ctx = posting_context(engine, settings, posting_id)
+    ctx = _context(engine, settings, posting_id)
     assert ctx.page_budget == 1
 
 
@@ -141,7 +154,7 @@ def test_budget_honors_a_stored_value_above_one(tmp_path: Path) -> None:
             remote_only=False, skills=[], taxonomy_version="v1", resume_max_pages=2,
         )
     posting_id = _seed(engine, settings)
-    ctx = posting_context(engine, settings, posting_id)
+    ctx = _context(engine, settings, posting_id)
     assert ctx.page_budget == 2
 
 
@@ -149,7 +162,7 @@ def test_budget_defaults_to_one_with_no_profile_row(tmp_path: Path) -> None:
     settings = _settings(tmp_path)
     engine = _engine(settings)
     posting_id = _seed(engine, settings)  # no save_profile call at all
-    ctx = posting_context(engine, settings, posting_id)
+    ctx = _context(engine, settings, posting_id)
     assert ctx.page_budget == 1
 
 
@@ -161,7 +174,7 @@ def test_a_closed_posting_refuses(tmp_path: Path) -> None:
     engine = _engine(settings)
     posting_id = _seed(engine, settings, status="closed")
     try:
-        posting_context(engine, settings, posting_id)
+        _context(engine, settings, posting_id)
     except ProjectionError as exc:
         assert exc.violation.issue is ProjectionIssue.POSTING_NOT_OPEN
     else:
@@ -173,7 +186,7 @@ def test_a_posting_with_no_current_version_refuses(tmp_path: Path) -> None:
     engine = _engine(settings)
     posting_id = _seed(engine, settings, with_version=False)
     try:
-        posting_context(engine, settings, posting_id)
+        _context(engine, settings, posting_id)
     except ProjectionError as exc:
         assert exc.violation.issue is ProjectionIssue.POSTING_NO_CURRENT_VERSION
     else:
@@ -193,7 +206,7 @@ def test_a_missing_extraction_raises_no_jd_extraction(
     engine = _engine(settings)
     posting_id = _seed(engine, settings, with_extraction=False)
     try:
-        posting_context(engine, settings, posting_id)
+        _context(engine, settings, posting_id)
     except ProjectionError as exc:
         assert exc.violation.issue is ProjectionIssue.NO_JD_EXTRACTION
     else:

@@ -120,3 +120,13 @@ SCORERS: Mapping[str, EntryScorer] = {
     "mean_top_k": mean_top_k,
     "total_distinct": total_distinct,
 }
+
+#: The scorer a caller that was given no choice uses. `mean_per_bullet` is the owner's measured
+#: adoption (D-198): highest mean rank agreement with the labeled selection matrix, and normalized
+#: per bullet, so it resists the bullet-count inflation that fools `total_distinct`.
+#:
+#: Named here rather than left as a literal in `--scorer`'s Typer option so an unattended caller
+#: (which has no CLI option to read) does not become a second source of truth for the same choice.
+#: This is a DEFAULT, not the ranking this module's own docstring declines to make — the choice was
+#: made by measurement outside this module and is recorded here, not derived here.
+DEFAULT_SCORER_ID = "mean_per_bullet"

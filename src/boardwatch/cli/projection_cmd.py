@@ -439,9 +439,14 @@ def resume_project(
     bundle_root = resolve_bundle_root(config_dir, bundle)
     as_of = date.today()
 
+    # Loaded ABOVE `posting_context`, not below it: one taxonomy object serves both JD extraction
+    # and selection, so this command cannot extract a posting's skills under one taxonomy and score
+    # them under another. `posting_context` no longer loads its own.
+    taxonomy = load_taxonomy(config_dir)
+
     try:
         pool = project_pool(bundle_root, declaration_path, config_dir=config_dir, as_of=as_of)
-        posting = posting_context(app_ctx.engine, settings, posting_id)
+        posting = posting_context(app_ctx.engine, settings, posting_id, taxonomy=taxonomy)
     except (ProjectionError, ProfileBundleError) as exc:
         # `project_pool` now calls `read_stamp` unconditionally (D-167), which raises
         # `ProfileBundleError`, not `ProjectionError`, for a stamp that fails to parse or
@@ -450,7 +455,6 @@ def resume_project(
         typer.echo(str(exc), err=True)
         raise typer.Exit(code=1) from exc
 
-    taxonomy = load_taxonomy(config_dir)
     table = load_equivalences()
     renderer = LatexRenderer(config_dir=config_dir)
 

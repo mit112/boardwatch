@@ -72,6 +72,12 @@ class ProjectionIssue(StrEnum):
     # -- posting ------------------------------------------------------------------------
     POSTING_NOT_OPEN = "posting_not_open"
     POSTING_NO_CURRENT_VERSION = "posting_no_current_version"
+    # -- run configuration --------------------------------------------------------------
+    #: The `scorer_id` a run asked for is not in `SCORERS`. A misconfiguration of the run itself,
+    #: distinct from every declaration and bundle member above: nothing about the owner's data is
+    #: wrong, so an unattended caller must be able to tell "your config names a scorer that does
+    #: not exist" from "your bundle cannot be read" without inspecting a message.
+    UNKNOWN_SCORER = "unknown_scorer"
 
 
 @dataclass(frozen=True)
