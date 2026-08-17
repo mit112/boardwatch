@@ -3,9 +3,11 @@ free of the tailor/bundle import wall it was carved out to avoid breaking."""
 
 from __future__ import annotations
 
+import ast
 import dataclasses
 from pathlib import Path
 
+from boardwatch.core import lineage
 from boardwatch.core.lineage import ResumeSourceLineage
 
 
@@ -33,12 +35,21 @@ def test_lineage_round_trips_through_its_meta_form() -> None:
     assert len(meta) == len(dataclasses.fields(lineage))
 
 
-def test_the_lineage_module_does_not_reach_the_profile_bundle() -> None:
-    """`reports.tailor` imports this type and sits inside the tailor import-wall closure, so a
-    lineage module that reached `profile_bundle` would break
-    `test_no_production_tailor_module_reaches_the_profile_bundle`."""
-    import boardwatch.core.lineage as lineage_module
-
-    source = Path(lineage_module.__file__).read_text(encoding="utf-8")
-    assert "profile_bundle" not in source
-    assert "boardwatch.projection" not in source
+def test_the_lineage_module_imports_neither_the_bundle_nor_projection() -> None:
+    """The guarantee is an IMPORT edge, not a spelling. `reports.tailor` imports this module and
+    sits inside the closure `test_profile_bundle_tailor_isolation.py` walks, so an import of
+    `profile_bundle` here would break that wall. Asserting on parsed imports rather than on the
+    raw source lets the docstring name the constraint it exists to enforce."""
+    tree = ast.parse(Path(lineage.__file__).read_text(encoding="utf-8"))
+    imported: list[str] = []
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            imported.extend(alias.name for alias in node.names)
+        elif isinstance(node, ast.ImportFrom) and node.module is not None:
+            imported.append(node.module)
+    forbidden = [
+        name
+        for name in imported
+        if name.startswith(("boardwatch.profile_bundle", "boardwatch.projection"))
+    ]
+    assert forbidden == []
