@@ -8959,11 +8959,15 @@ regression. Note bullet 2 extracts `[]` both before and after: *GPS* and *Google
 taxonomy's 115 patterns, so those two additions are external-ATS value only and move nothing internally —
 which is consistent with the pinned finding above, where nothing internal was ever at stake.
 
-**`approve` and `approve-projection` were deliberately left to the owner.** They record *his* attestation
-of exact content on a controlling terminal; an agent running them would be manufacturing the owner
-approval the whole `owner_attested` basis rests on. So the entity ends this session **staged and
-validated but not promoted** — the first in that state. Commands are in the research README §11b, and the
-wording is final: **the next session must not re-derive it.**
+**`approve` and `approve-projection` were deliberately left to the owner**, because they record *his*
+attestation of exact content on a controlling terminal; an agent running them would be manufacturing the
+owner approval the whole `owner_attested` basis rests on.
+
+**PROMOTED by the owner: revision 13 → 14 `sha256:b72158a9…`, projection re-approved, `project` exit 0**
+(new projection digest `sha256:950fbd47…`). Verified through the **rendered `project` output rather than
+the draft that produced it**: SAKEC ships **2 bullets / 161 + 187 = 348 chars, zero over ceiling**, with
+`.001`/`.002` superseded and dropping out of the render on their own. **SAKEC is closed; the wording is
+final and must not be re-derived.**
 
 **Alternatives rejected.** *One merged bullet* (~200 chars, −155) — the redundancy argument survived, but
 the original case for it rested on bullet 002's distinct content being someone else's work, which the

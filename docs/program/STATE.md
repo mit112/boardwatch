@@ -107,13 +107,10 @@ the cut lines fix no score threshold, so `ADMISSION_FLOOR` stays `Decimal(0)` (D
    FlickSwiper, by a different route — **FIXED at revision 13** for +11 chars; entity union is back to
    `{Swift, iOS/Swift (mobile)}` and StreakSync is 2 bullets / **426 chars**, zero over. Treat
    "re-measure extraction after a trim" as a required step, not a note — it has now fired twice.
-   **SAKEC is STAGED AND VALIDATED BUT NOT PROMOTED (D-216)** — the first entity in that state, and the
-   first **pinned** one. Draft **`sakec-bullets`** holds the final owner-selected text, **2 bullets /
-   348 chars** (from 355), zero over ceiling, validating **identically to the revision-13 baseline at
-   both tiers**; extraction re-measured, union `{Android (mobile)}` → `{Android (mobile), Flutter,
-   iOS/Swift (mobile)}`, **nothing lost**. **All that remains is Mit's TTY `approve` → `promote
-   --summary` → `approve-projection`** — those record his attestation, so an agent must not run them.
-   Commands in `wiki/reporesearch/sakec/README.md` §11b. **Do not re-derive the wording.** Its brief said "no SAKEC source
+   **SAKEC DONE** (revision 14, D-216) — the first **pinned** entity refined: 2 bullets, 355 →
+   **348 chars**, zero over ceiling, promoted and projection re-approved, `project` **exit 0**.
+   Extraction re-measured with **nothing lost** — union `{Android (mobile)}` → `{Android (mobile),
+   Flutter, iOS/Swift (mobile)}` — so the D-213/D-215 keyword regression did not recur. Its brief said "no SAKEC source
    code" — true of local disk, false of the world: the repo is **private** on GitHub, and a private
    org's public page reports itself empty, so `gh repo list` is now mandatory before any filesystem
    negative counts. All four claimed features are teammates' commits; Mit ruled team ownership is
