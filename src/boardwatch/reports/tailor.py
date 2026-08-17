@@ -425,6 +425,57 @@ def _master_from_lineage(path: Path, lineage: ResumeSourceLineage, cv: CurrentVe
     return master
 
 
+def _reject_mixed_transformation(
+    lineage: ResumeSourceLineage,
+    *,
+    taxonomy: Taxonomy,
+    persona_registry_version: str,
+    table: EquivalenceTable,
+) -> None:
+    """Refuse a projected lead whose transformation dependencies moved since it was projected.
+
+    The document checks (`_master_from_lineage`) prove *which document* this is; they cannot prove
+    *which rules* produced it. The run freezes one taxonomy, one persona registry and one
+    equivalence table into `ProjectionRunContext` and records their versions in the lineage, but
+    this function's caller loads all three again — so a `taxonomy.yaml`, persona-registry or
+    equivalence-table edit landing between projection and tailoring would let the artifact be
+    written claiming the frozen versions while the transform actually applied the new ones.
+
+    Compared here rather than solved by threading the frozen objects into `run_tailor`: the design
+    (§4.1) allows either, and comparing keeps `run_tailor`'s contract at the single optional
+    lineage argument §4.3 ruled for. It also keeps `ProjectionRunContext` carrying only the persona
+    registry's *version* rather than the registry object, which is the whole reason that field is
+    shaped the way it is.
+
+    **Before the extraction lookup, deliberately.** `_plan_tier_a` coalesces a missing extraction to
+    an empty `jd_skills` set for its authored callers, and a taxonomy that moved is exactly what
+    makes `jd_skills_for` miss — so a comparison placed after that lookup would be looking at a
+    silently-emptied skill set instead of at the version that emptied it.
+    """
+    mismatches = [
+        (name, recorded, actual)
+        for name, recorded, actual in (
+            ("taxonomy_version", lineage.taxonomy_version, taxonomy.version),
+            (
+                "persona_registry_version",
+                lineage.persona_registry_version,
+                persona_registry_version,
+            ),
+            ("equivalence_version", lineage.equivalence_version, table.version),
+        )
+        if recorded != actual
+    ]
+    if mismatches:
+        detail = "; ".join(
+            f"{name}: projected under {recorded!r}, tailoring resolves {actual!r}"
+            for name, recorded, actual in mismatches
+        )
+        raise ResumeLineageMismatch(
+            f"the projected résumé's transformation dependencies moved between projection and "
+            f"tailoring, so the artifact would record a transform that was never applied ({detail})"
+        )
+
+
 def _plan_tier_a(
     engine: Engine,
     settings: Settings,
@@ -440,13 +491,27 @@ def _plan_tier_a(
 
     `source_lineage` is set only when the résumé at `resume_path` was projected rather than
     authored; it is then checked against the file and the resolved version (see
-    `_master_from_lineage`) before the document is parsed.
+    `_master_from_lineage`) before the document is parsed, and its recorded transformation versions
+    are checked against the three this function loads (see `_reject_mixed_transformation`) before
+    anything at all is read out of the database.
     """
     run_preflight(engine, settings)
     taxonomy = load_taxonomy(settings.config_dir)
     # A malformed registry (bundled OR override) raises PersonaError here, before any render or
     # write — the pipeline runner treats it as a run-level fatal, never a per-lead degrade.
     registry = load_personas(settings.config_dir)
+    # Loaded here rather than beside `build_plan` below so that all three transformation
+    # dependencies are in hand at one point, which is what lets the projected-lineage comparison
+    # happen before the extraction lookup coalesces a taxonomy miss into an empty skill set. Pure
+    # load, no dependency on anything between the two positions.
+    table = load_equivalences()
+    if source_lineage is not None:
+        _reject_mixed_transformation(
+            source_lineage,
+            taxonomy=taxonomy,
+            persona_registry_version=registry.version,
+            table=table,
+        )
 
     with engine.connect() as conn:
         cv = current_posting_versions(conn, [posting_id]).get(posting_id)
@@ -481,7 +546,6 @@ def _plan_tier_a(
     persona = select_persona(jd_title, registry)
     resolved_title = resolve_title(jd_title, persona)
     shaped = apply_persona(master, persona, resolved_title)
-    table = load_equivalences()
     plan = build_plan(shaped, jd_skills, table, taxonomy)
     tailored = apply_plan(shaped, plan, table)
     enforce_tier_a(shaped, tailored, plan, table)  # raises before any render or write

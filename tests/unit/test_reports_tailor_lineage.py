@@ -35,7 +35,9 @@ from boardwatch.store.tables import (
     postings,
 )
 from boardwatch.tailor import load as load_mod
+from boardwatch.tailor.equivalences import load_equivalences
 from boardwatch.tailor.load import load_resume, scaffold_template
+from boardwatch.tailor.persona import load_personas
 from boardwatch.tailor.render.outcome import CompileOutcome, CompileReason
 
 NOW = datetime(2026, 8, 17, 12, 0, 0)
@@ -122,10 +124,17 @@ def _projected(tmp_path: Path) -> Path:
     return path
 
 
-def _lineage(path: Path, posting_version_id: int) -> ResumeSourceLineage:
+def _lineage(path: Path, posting_version_id: int, settings: Settings) -> ResumeSourceLineage:
     """The lineage the projection would have recorded for `path`. Both hashes are computed the
     way `boardwatch.projection.run` computes them — sha256 over the published bytes, and sha256
-    over `model_dump_json()` of the model those bytes parse to."""
+    over `model_dump_json()` of the model those bytes parse to.
+
+    The three transformation versions are RESOLVED from the same loaders `resolve_projection_run`
+    calls, never spelled as literals. They used to be `"tax-1"`/`"eq-1"`/`"pr-1"`, which is what a
+    projection whose taxonomy, equivalence table and persona registry had all been replaced would
+    have recorded — and every test in this file passed, because nothing compared them. Deriving
+    them is what makes the three mutation tests below able to fail for the reason they name (D-142).
+    """
     return ResumeSourceLineage(
         kind="projection",
         bundle_revision="21",
@@ -134,9 +143,9 @@ def _lineage(path: Path, posting_version_id: int) -> ResumeSourceLineage:
         posting_version_id=posting_version_id,
         as_of="2026-08-17T12:00:00",
         scorer_id="mean_per_bullet",
-        taxonomy_version="tax-1",
-        equivalence_version="eq-1",
-        persona_registry_version="pr-1",
+        taxonomy_version=load_taxonomy(settings.config_dir).version,
+        equivalence_version=load_equivalences().version,
+        persona_registry_version=load_personas(settings.config_dir).version,
         resume_sha256=hashlib.sha256(path.read_bytes()).hexdigest(),
         resume_model_sha256=hashlib.sha256(
             load_resume(path).model_dump_json().encode("utf-8")
@@ -153,7 +162,7 @@ def test_lineage_lands_on_the_tailored_row(tmp_path: Path) -> None:
     engine = _engine(settings)
     pid = _seed(engine, settings)
     projected = _projected(tmp_path)
-    lineage = _lineage(projected, _version_id(engine, pid))
+    lineage = _lineage(projected, _version_id(engine, pid), settings)
 
     res = run_tailor(
         engine, settings, pid, resume_path=projected, out_dir=tmp_path / "out",
@@ -186,7 +195,7 @@ def test_lineage_is_not_written_to_the_master_row(tmp_path: Path) -> None:
 
     run_tailor(
         engine, settings, pid, resume_path=projected, out_dir=tmp_path / "out",
-        typst_runner=_Runner(), source_lineage=_lineage(projected, _version_id(engine, pid)),
+        typst_runner=_Runner(), source_lineage=_lineage(projected, _version_id(engine, pid), settings),
     )
 
     with engine.connect() as conn:
@@ -203,7 +212,7 @@ def test_a_hash_mismatch_refuses_before_rendering(tmp_path: Path) -> None:
     pid = _seed(engine, settings)
     projected = _projected(tmp_path)
     wrong = dataclasses.replace(
-        _lineage(projected, _version_id(engine, pid)), resume_sha256="0" * 64
+        _lineage(projected, _version_id(engine, pid), settings), resume_sha256="0" * 64
     )
     runner = _Runner()
 
@@ -225,7 +234,7 @@ def test_a_swapped_file_is_refused_even_though_it_loads(tmp_path: Path) -> None:
     engine = _engine(settings)
     pid = _seed(engine, settings)
     projected = _projected(tmp_path)
-    lineage = _lineage(projected, _version_id(engine, pid))
+    lineage = _lineage(projected, _version_id(engine, pid), settings)
     projected.write_text(
         scaffold_template().replace("Ada Lovelace", "Grace Hopper"), encoding="utf-8"
     )
@@ -244,7 +253,7 @@ def test_a_posting_version_change_refuses(tmp_path: Path) -> None:
     engine = _engine(settings)
     pid = _seed(engine, settings)
     projected = _projected(tmp_path)
-    lineage = _lineage(projected, _version_id(engine, pid))
+    lineage = _lineage(projected, _version_id(engine, pid), settings)
     stale = dataclasses.replace(lineage, posting_version_id=lineage.posting_version_id - 1)
     runner = _Runner()
 
@@ -268,7 +277,7 @@ def test_a_model_hash_mismatch_refuses(tmp_path: Path) -> None:
     pid = _seed(engine, settings)
     projected = _projected(tmp_path)
     wrong = dataclasses.replace(
-        _lineage(projected, _version_id(engine, pid)), resume_model_sha256="1" * 64
+        _lineage(projected, _version_id(engine, pid), settings), resume_model_sha256="1" * 64
     )
 
     with pytest.raises(ResumeLineageMismatch):
@@ -279,6 +288,168 @@ def test_a_model_hash_mismatch_refuses(tmp_path: Path) -> None:
 
     with engine.connect() as conn:
         assert conn.execute(artifacts.select()).first() is None
+
+
+# -- transformation identity: the rules, not just the document ---------------------------
+#
+# The document checks above prove WHICH DOCUMENT this is. They cannot prove WHICH RULES produced
+# it: `_plan_tier_a` loads the taxonomy, the persona registry and the equivalence table itself, so
+# a configuration change landing between projection and tailoring left the artifact recording the
+# frozen versions while the transform actually applied the new ones — the design's §4.1 requirement
+# ("`run_tailor` either consumes the same snapshot or compares its own resolved dependencies
+# against the recorded versions and refuses"), and it was the unimplemented half.
+#
+# Each case changes the configuration FOR REAL where the loader supports it — `load_taxonomy` and
+# `load_personas` both take a `{config_dir}` override — rather than mutating the recorded version,
+# so what is exercised is the value `run_tailor` genuinely resolved.
+
+#: A valid taxonomy override whose CONTENT differs from the bundled table, so `_version_of` (a hash
+#: of the canonical parsed document) necessarily moves. One pattern is enough: the version is what
+#: is under test, not the extraction.
+_OTHER_TAXONOMY = (
+    "patterns:\n"
+    "  - name: Python\n"
+    "    category: language\n"
+    "    pattern: '\\bPython\\b'\n"
+)
+
+#: A valid persona override — exactly one default, unique ids, role_families inside the closed
+#: `classify_role_family` output set. Different content from the bundled seed, so its derived
+#: version differs.
+_OTHER_PERSONAS = (
+    "personas:\n"
+    "  - id: general_swe\n"
+    "    title: 'Software Engineer'\n"
+    "    default: true\n"
+    "    role_families: [backend, frontend, fullstack, data_eng, devops_sre, ml_ai, security,"
+    " general_swe]\n"
+    "    skill_group_order: [Languages]\n"
+    "    entries: null\n"
+)
+
+
+def test_a_taxonomy_change_between_projection_and_tailoring_refuses(tmp_path: Path) -> None:
+    """The lineage names taxonomy A; `_plan_tier_a` resolves B, so the transform about to run is
+    not the one the artifact would claim.
+
+    This is the arm a document hash cannot reach — the bytes are untouched and both hashes still
+    match — and it is the one the extraction lookup would otherwise hide: `jd_skills_for` is keyed
+    to the taxonomy version, so a miss coalesces to an EMPTY skill set and the lead tailors on
+    silently. The refusal therefore has to land before that lookup, which is where it is.
+    """
+    settings = _settings(tmp_path)
+    engine = _engine(settings)
+    pid = _seed(engine, settings)
+    projected = _projected(tmp_path)
+    lineage = _lineage(projected, _version_id(engine, pid), settings)
+    settings.config_dir.mkdir(parents=True, exist_ok=True)
+    (settings.config_dir / "taxonomy.yaml").write_text(_OTHER_TAXONOMY, encoding="utf-8")
+    # Non-vacuity: the override really did move the version, so the refusal below is about a
+    # genuine disagreement and not about a lineage field nobody changed.
+    assert load_taxonomy(settings.config_dir).version != lineage.taxonomy_version
+    runner = _Runner()
+
+    with pytest.raises(ResumeLineageMismatch, match="taxonomy_version"):
+        run_tailor(
+            engine, settings, pid, resume_path=projected, out_dir=tmp_path / "out",
+            typst_runner=runner, source_lineage=lineage,
+        )
+
+    assert runner.calls == []  # refused before any render
+    with engine.connect() as conn:
+        assert conn.execute(artifacts.select()).first() is None
+
+
+def test_a_persona_registry_change_between_projection_and_tailoring_refuses(
+    tmp_path: Path,
+) -> None:
+    """The persona lens shapes the résumé BEFORE planning (`apply_persona`), so a registry that
+    moved changes which entries and which headline the tailored document carries — under a lineage
+    naming the registry that did not."""
+    settings = _settings(tmp_path)
+    engine = _engine(settings)
+    pid = _seed(engine, settings)
+    projected = _projected(tmp_path)
+    lineage = _lineage(projected, _version_id(engine, pid), settings)
+    settings.config_dir.mkdir(parents=True, exist_ok=True)
+    (settings.config_dir / "personas.yaml").write_text(_OTHER_PERSONAS, encoding="utf-8")
+    assert load_personas(settings.config_dir).version != lineage.persona_registry_version
+    runner = _Runner()
+
+    with pytest.raises(ResumeLineageMismatch, match="persona_registry_version"):
+        run_tailor(
+            engine, settings, pid, resume_path=projected, out_dir=tmp_path / "out",
+            typst_runner=runner, source_lineage=lineage,
+        )
+
+    assert runner.calls == []
+    with engine.connect() as conn:
+        assert conn.execute(artifacts.select()).first() is None
+
+
+def test_an_equivalence_table_change_between_projection_and_tailoring_refuses(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The third dependency, and the only one with no `{config_dir}` override: `load_equivalences`
+    reads a packaged file, so the change is injected at the BY-NAME binding `reports.tailor`
+    actually calls. Patching `boardwatch.tailor.equivalences` instead would leave that binding
+    untouched and the test could not fail (the same resolution-at-call-time subtlety
+    `projection/run.py` records for `load_taxonomy`).
+
+    Equivalence swaps rewrite bullet TEXT, so a table that moved changes the shipped words — which
+    no hash over the projected bytes can see, because the swap happens after they were hashed.
+    """
+    settings = _settings(tmp_path)
+    engine = _engine(settings)
+    pid = _seed(engine, settings)
+    projected = _projected(tmp_path)
+    lineage = _lineage(projected, _version_id(engine, pid), settings)
+    moved = dataclasses.replace(load_equivalences(), version="equivalences-after-the-edit")
+    assert moved.version != lineage.equivalence_version
+    monkeypatch.setattr(tailor_mod, "load_equivalences", lambda: moved)
+    runner = _Runner()
+
+    with pytest.raises(ResumeLineageMismatch, match="equivalence_version"):
+        run_tailor(
+            engine, settings, pid, resume_path=projected, out_dir=tmp_path / "out",
+            typst_runner=runner, source_lineage=lineage,
+        )
+
+    assert runner.calls == []
+    with engine.connect() as conn:
+        assert conn.execute(artifacts.select()).first() is None
+
+
+def test_an_authored_run_never_compares_transformation_versions(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The negative control for the three above. With no `source_lineage` there is nothing to
+    compare against, and the same configuration changes that refuse a projected lead must leave an
+    authored one completely unaffected — otherwise this check would have made every ordinary
+    `boardwatch run` depend on a bundle nobody asked it to read."""
+    settings = _settings(tmp_path)
+    engine = _engine(settings)
+    pid = _seed(engine, settings)
+    authored = tmp_path / "resume.yaml"
+    authored.write_text(scaffold_template(), encoding="utf-8")
+    settings.config_dir.mkdir(parents=True, exist_ok=True)
+    (settings.config_dir / "taxonomy.yaml").write_text(_OTHER_TAXONOMY, encoding="utf-8")
+    (settings.config_dir / "personas.yaml").write_text(_OTHER_PERSONAS, encoding="utf-8")
+    monkeypatch.setattr(
+        tailor_mod,
+        "load_equivalences",
+        lambda: dataclasses.replace(load_equivalences(), version="equivalences-after-the-edit"),
+    )
+
+    res = run_tailor(
+        engine, settings, pid, resume_path=authored, out_dir=tmp_path / "out",
+        typst_runner=_Runner(),
+    )
+
+    assert res.pdf_path is not None
+    with engine.connect() as conn:
+        rows = conn.execute(artifacts.select()).fetchall()
+    assert any(row.kind == "resume_tailored" for row in rows)
 
 
 def test_the_lineage_path_reads_the_resume_file_exactly_once(
@@ -301,7 +472,7 @@ def test_the_lineage_path_reads_the_resume_file_exactly_once(
     pid = _seed(engine, settings)
     projected = _projected(tmp_path)
     # Computed BEFORE the counters are installed, so the lineage's own hashing is not counted.
-    lineage = _lineage(projected, _version_id(engine, pid))
+    lineage = _lineage(projected, _version_id(engine, pid), settings)
 
     helper_calls = 0
     file_reads = 0
@@ -355,7 +526,7 @@ def test_a_dry_run_with_lineage_records_no_artifact_and_no_lineage(tmp_path: Pat
     res = run_tailor(
         engine, settings, pid, resume_path=projected, out_dir=tmp_path / "out",
         typst_runner=runner, dry_run=True,
-        source_lineage=_lineage(projected, _version_id(engine, pid)),
+        source_lineage=_lineage(projected, _version_id(engine, pid), settings),
     )
 
     assert res.dry_run is True
