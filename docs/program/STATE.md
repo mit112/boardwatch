@@ -27,15 +27,18 @@ adapter `boardwatch-resume-v1`.
 **The bundle → résumé track is shippable, and Gate B is MET for the first time.** A polished,
 fact-grounded, Gate-B-clean **one-page résumé renders and is live** (`untailored-349.pdf`): Experience in the
 two-line macro, Projects as `Name | tech | link · dates`, clickable links, fact-grounded company
-(D-199/D-200/D-201) and — since D-208 — **fact-grounded dates**. `tailor run` still degrades to the
-untailored fallback (`bullet_too_long`, open Q5). **Sending is Mit's, and nothing has been sent.**
+(D-199/D-200/D-201) and — since D-208 — **fact-grounded dates**. **`bullet_too_long` can no longer fire:
+as of revision 21 every one of the 23 rendering bullets is within the 220-char ceiling** (D-213…D-221),
+so the fallback's remaining structural cause is gone — open Q5 needs re-testing against a real
+`tailor run`, not re-analysing. **Sending is Mit's, and nothing has been sent.**
 
 **Post-Gate-B robustness is finished: the scoped autonomous backlog is complete and pushed CI-green**
 (D-202…D-206, plus **§5.2 invariant 3** — the last owed audit invariant). `candidate_promotion.py` is the
 only lossy-id-creation site in `src/`, and **all four of its slug-collision sites now refuse** rather than
 silently merging. **D-210 closed the fifth ambiguity in the same loop** — a skill listed under two groups
-took its category by arrival order; it now refuses. **The next task must come from `PROGRAM.md`, or from
-"Owed next" item 1–2, which are Mit's.**
+took its category by arrival order; it now refuses. **"Owed next" item 2 — individual bullet refinement —
+is COMPLETE as of 2026-08-17: all eleven entities, revision 21.** Two small residuals are named under it.
+**The next task must come from `PROGRAM.md`.**
 
 ### The active track — the master reservoir (bundle → résumé)
 
@@ -76,9 +79,16 @@ declares the range open). **Approved and clean: `profile-bundle project` exits 0
 Every rendered date is semantically identical to the literal it replaced; only the typography changed, to
 one convention (`Oct 2025 – Present`). **Never quote a digest for this pair** — it moved three times in one
 session, and older stamps name real digests against superseded bundles; re-derive it with
-`profile-bundle project`. Backup: `projection.yaml.bak-preground-20260815`, beside the live config. **The one-page ceiling is 16 bullets, not
-entries** (D-195): with 3 jobs pinned, **at most two candidates are ever admitted**, and Mit's four-project
-per-JD sets cannot fit at one page under any split (most is three, only with two jobs pinned). Previewing
+`profile-bundle project`. Backup: `projection.yaml.bak-preground-20260815`, beside the live config.
+**The one-page budget is a CHARACTER budget, not a bullet count (D-219).** Measured by compiling
+subsets through the D-195 path: at the old ~250-char-average pool every set ≤ **3,439** chars fit and
+every set ≥ **3,528** overflowed, while bullet count did **not** predict fit — two different
+18-bullet / 7-entry sets landed on opposite sides. Characters proxy rendered lines, which is the real
+mechanism. **D-195's "16 bullets", its "at most two candidates are ever admitted" and its "the
+four-project sets do not fit under any split" are RETIRED** — all three were artifacts of the bullet
+lengths then in the bundle, not properties of the page. Measured at revision 21 (pinned 1,180 chars):
+**both** of Mit's stated per-JD four-project sets fit (SDE 3,131 / iOS 2,968) and **five** projects fit
+(3,347); six overflows. Candidate room **2,259**. Previewing
 needs no approval; re-promotion and `projection.yaml` edits each stale the stamp independently (D-167).
 
 **Tasks 20 and 23 are closed.** `projection-selection-matrix.md` holds ten real `role=swe` postings with the
@@ -97,72 +107,49 @@ the cut lines fix no score threshold, so `ADMISSION_FLOOR` stays `Decimal(0)` (D
    **bundle correction**, not just a declaration edit (D-209): `fact.flickswiper.end-date.001` (`2026-03`)
    is retired to `rejected`, since `EFFECTIVE_STATES` is `{verified, owner_confirmed}` and there is no
    "no end" value for a `year_month`. **DONE — approved, promoted to revision 8, projection re-approved.**
-2. **Individual bullet refinement — IN PROGRESS, one entity per attended session.** Mit's ruling: *"a whole
-   different attended session where we go through each project/employment to figure out what is the best way
-   to showcase it."* Not a trim-to-length task. **FlickSwiper DONE** (revision 10): 4 bullets → **2**,
-   872 → **419 chars**. **Hookrail DONE** (revision 11, D-214): 4 → **3**, 848 → **626 chars**, and its
-   CI-chaos suite — unclaimed since D-191 — now ships as a merged perf-plus-chaos bullet.
-   **StreakSync DONE** (revision 12, D-215): 4 → **2**, 1,012 → **415 chars**, retiring the bundle's most
-   expensive entity and its one contradicted number (a "110-case" suite that measures **109**); the
-   Firestore-security theme was ceded to FlickSwiper rather than said twice. All three zero over ceiling.
-   **StreakSync's trim lost the bare `Swift` token** — the same regression D-213 recorded for
-   FlickSwiper, by a different route — **FIXED at revision 13** for +11 chars; entity union is back to
-   `{Swift, iOS/Swift (mobile)}` and StreakSync is 2 bullets / **426 chars**, zero over. Treat
-   "re-measure extraction after a trim" as a required step, not a note — it has now fired twice.
-   **SAKEC DONE** (revision 14, D-216) — the first **pinned** entity refined: 2 bullets, 355 →
-   **348 chars**, zero over ceiling, promoted and projection re-approved, `project` **exit 0**.
-   Extraction re-measured with **nothing lost** — union `{Android (mobile)}` → `{Android (mobile),
-   Flutter, iOS/Swift (mobile)}` — so the D-213/D-215 keyword regression did not recur. Its brief said "no SAKEC source
-   code" — true of local disk, false of the world: the repo is **private** on GitHub, and a private
-   org's public page reports itself empty, so `gh repo list` is now mandatory before any filesystem
-   negative counts. All four claimed features are teammates' commits; Mit ruled team ownership is
-   fine, kept the title and the attested "1,000 active users", and chose two bullets. Only
-   `gyroscope` was dropped on evidence (0 occurrences, any author).
-   **crop-rf DONE** (revision 17, D-217): 3 → **2**, 439 → **372 chars**, zero over ceiling. The only
-   entity briefed with a **primary published source**, and the outcome inverted: **every technical number
-   verified** against the paper (99.54/98.90/97.45 Table 3 p.4; 676,425 and 2,200 samples §3.1 p.2;
-   FastAPI named in the paper itself), while the **non-technical** claims failed — "among 300
-   presentations" is contradicted by the host college's official report (511 submitted / 206 accepted /
-   **120 registered**, bound to this conference because its IEEE Catalogue Number 58201 matches the DOI),
-   and **"on AWS"** is contradicted twice (poster says *"SERVER: Heroku"*; `uurl` held one value in all 67
-   commits — the emulator loopback). Mit **attested** Best Paper and then **closed the question** — he holds
-   the certificate, so the claim rests on `owner_attested`; **do not re-run the sweep** — and ruled
-   `fact.crop-rf.tech.aws` **stays** — the bundle's only AWS source — so the AWS *skill* remains while the
-   AWS *bullet* claim is gone, deliberately. Its bullets were **inverted**: he is the client's **top
-   contributor (24 of 67 commits)** but the ML training is unattributable, so the app claim now leads.
-   `projection.yaml` also gained back its **DOI link** — an import regression, since his real résumé has
-   one.
-   **2 of the 25 rendering bullets still exceed the 220-char ceiling** — `birthdayquest` 263,
-   `nio-coop` 241. *Corrected 2026-08-17 from a live `project` measurement at revision 17; the previous
-   "4 of 28 … `fond` 307/241" was stale. `fond` (3 → 2, 423 chars) and `knowledge-forge` (3 → 2, 399)
-   are refined in the bundle but **their sessions have not recorded them here or in `DECISIONS.md`** —
-   those two entries are owed.*
-   **`nio-coop` is in the pinned three, so the fallback trips on every
-   render regardless of which projects Stage 2 admits** — it is the highest-value remaining target.
-   Refinement is also the only lever that widens
-   Stage 2's choice (D-195 caps a page at 16 bullets).
-   **Do the PINNED entries first.** `select.py`'s docstring: pinned entries are *"emitted in declared
-   order, never scored, never dropped"*, and `_grow` adds candidates onto the pinned base one at a time
-   until the page overflows. So pinned characters are spent **before any project competes**, and
-   shortening a pinned entry does nothing for its own standing — it buys **admission headroom for the
-   next candidate, on every posting**. The pinned three cost **1,231 chars** (`nio-coop` 548, `sakec`
-   355, `saayam` 328); `nio-coop` is both the largest and the one tripping the fallback, so it is the
-   highest-leverage entity left. Corollary: the 4 over-ceiling bullets split by blast radius — the one
-   in `nio-coop` breaks **every** render; the other 3 bite only when their candidate is admitted.
+2. **Individual bullet refinement — COMPLETE. All eleven entities refined and promoted** (D-213…D-221),
+   one per attended session. **Live revision 21** (`sha256:abed3cab…`), `project` **exit 0**.
+   Pool: **11 entries, 23 bullets, 4,608 chars, ZERO over the 220-char ceiling** (was 33 bullets /
+   6,492 chars / 10 over). `bullet_too_long` can no longer trip on any render, which retires the
+   `tailor run` fallback's only remaining structural cause. Pinned three cost **1,180 chars**
+   (`nio-coop` 632, `saayam` 200, `sakec` 348); candidate room **2,259**.
+   **The capacity conclusions this file used to carry are retired (D-219)** — see *Stage 2* above.
+   **Still owed from this track, both small:**
+   - **D-221's "C"** — make "role + org + dates only" representable: a declared `bullet_predicate` with
+     no résumé-surfaced fact should drop the bullet, not raise `BULLET_PREDICATE_NO_FACTS`
+     (`pool.py:367`), and `validate_slots` (`resume_gate.py:145`) should accept a bullet-less entry.
+     Today the two gates jointly forbid a legitimate third state, which is why `saayam` carries one
+     role-scoped bullet instead of none.
+   - **`00-profile/application-qa.md` still says "sole iOS developer"** for the NIO co-op — contradicted
+     by six contributors (D-220), and it is the text the **live application form-fills of 2026-07-23/24
+     drew from** (`Job apps/.playwright-mcp/` captures). Outside the bundle; one edit.
+
+   **Method facts this track established, all still binding:**
+   **Do the PINNED entries first.** `select.py`: pinned entries are *"emitted in declared order, never
+   scored, never dropped"*, and `_grow` adds candidates onto the pinned base one at a time until the page
+   overflows. Pinned characters are spent **before any project competes**, so shortening a pinned entry
+   does nothing for its own standing — it buys **admission headroom for the next candidate, on every
+   posting**.
    **Bullets are the ONLY scored text.** Every scorer routes through `effective_skills(bullet.text, …)`
    (`scoring.py`); a `subtitle` earns **nothing**. The taxonomy does **not** know `Firebase`, `Firestore`
-   or `SwiftData` — all extract `[]` — while `Swift` and `iOS` resolve. FlickSwiper's first 2-bullet set
-   obeyed "don't restate the stack" and thereby **lost `Swift` and `iOS/Swift (mobile)`**, leaving its
-   flagship iOS entity with no iOS signal; revision 10 restored them for **+11 chars**. **Re-measure
-   extraction after any length trim**, and check a candidate's union is non-empty — a bullet can be
-   entirely score-invisible and nothing warns you.
+   or `SwiftData` — all extract `[]` — while `Swift` and `iOS` resolve. **Re-measure extraction after any
+   length trim** and check the candidate's union is non-empty: a bullet can be entirely score-invisible
+   and nothing warns you. This regression fired **twice** (D-213 FlickSwiper, D-215 StreakSync) — treat
+   it as a required step, not a note.
    **D-213 fixes the house style** — state what was built with metrics, **never a story**, in Mit's own
-   résumé voice; and a bullet is parked by dropping `'resume'` from `allowed_surfaces`, **not** by adding a
-   fact (Stage 2 admits *entries*, so an extra fact renders unconditionally). **Rule splits by `kind:`** —
-   a `project` entry's subtitle carries its tech stack (and often a `link_url`), so restating it wastes
-   characters; a `kind: experience` entry's subtitle is `'{employment.organization}'` with **no link**, so
-   its bullets are the **only** place tech keywords can appear. Wording is Mit's (D-191) — no attestation
-   for text he has not read, so Hookrail's CI-chaos suite stays deliberately unclaimed.
+   résumé voice; and a bullet is parked by dropping `'resume'` from `allowed_surfaces`, **not** by adding
+   a fact (Stage 2 admits *entries*, so an extra fact renders unconditionally). **The rule splits by
+   `kind:`** — a `project` entry's subtitle carries its tech stack (and often a `link_url`), so restating
+   it wastes characters; a `kind: experience` entry's subtitle is `'{employment.organization}'` with **no
+   link**, so its bullets are the **only** place tech keywords can appear.
+   **Verification discipline that actually caught defects** (D-215/D-216/D-217/D-220): the résumé's own
+   claims are never evidence — they cite themselves via `source.mit-resume`; **the working tree is not
+   the repo**, so an absence needs `git log --all -S … -- '*.swift'` plus `git branch -a`, and a control
+   test is only evidence about the corpus it ran against; **existence ≠ authorship**, settled by
+   `git log --author` across the owner's *whole identity set*; `grep` here is a **ugrep wrapper honouring
+   `.gitignore`** (use `command grep`/`rg --no-ignore`); `gh repo list` is mandatory before trusting any
+   filesystem negative, because a private repo is invisible to disk **and** makes its org page look empty.
+   Wording is Mit's (D-191) — no attestation for text he has not read.
 3. **Autonomous engineering backlog — COMPLETE, nothing owed.** Listed only so a fresh session does not
    re-scope it; it is a record, not a queue. Recorded in D-202…D-206 and METRICS' 2026-08-15i/j/k sessions.
 4. **Owner-gated — do NOT start unilaterally.**
@@ -184,9 +171,12 @@ tier only); and **`_catalog_admits` is a DIFF** refusing only what a write *intr
 silently *removes* findings passes every layer. Always `validate --draft` before Mit approves, and
 `--completeness` too for anything touching `policy/`, the ledger or imports — **diff the blocker COUNT, not
 just "0 error"**. `add-evidence` needs `--draft --evidence-file --capture`. **No CLI confirms a skill, and
-none sets a fact's verification state** — the four `employment.organization` flips were hand-edits. **Spent
-draft names — `profile-bundle inventory` is authoritative, not this list:** `baseline`, `fmt-inspect`,
-`gate-b-imports`, `headings`, `nio-heading`, `optionb`, `optionb-fix`, `orgfix`, `orgfix-probe`. **D-181:**
+none sets a fact's verification state** — the four `employment.organization` flips were hand-edits.
+**Draft names: run `profile-bundle inventory` for the spent list — never a remembered one.** Twenty-two
+are spent as of revision 21, and this file no longer enumerates them: the list went stale twice and it
+is authoritative nowhere. **The bundle takes no lock** on `checkout`/`edit-fact`/`add-evidence` (only
+`promote`/`rebase`/`approve` do), so check `inventory` for a recent write before authoring when more
+than one session is live. **D-181:**
 the example bundle is not a valid extraction host for a résumé *with projects*; a fresh `init` is.
 
 ### Settled tracks — do not reopen
@@ -239,7 +229,7 @@ the slices reviewed and not that the subsystem is defect-free, are in `STANDING-
    projection manifest, and whether persona's `entries` list survives stage 2.
 *(Resolved: docs-only commits and `make check` (D-116); `add-evidence` writing the back-citation (D-143);
 whether the daily pipeline gets projection — **yes, after v1**; the pinned/candidate split (D-195); whether
-the 33 bullets get shortened — **yes, in a dedicated attended session**, item 2; the two contradictory
+the 33 bullets get shortened — **DONE, all eleven entities, revision 21** (D-213…D-221); the two contradictory
 job-apps dates — **ruled**, item 1; a skill listed under two groups — **refused**, D-210; **boardwatch's
 Windows story — RULED best-effort, D-212**.)*
 
