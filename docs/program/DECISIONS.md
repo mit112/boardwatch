@@ -110,146 +110,147 @@ and is a no-op when the index is already right. `make index-check` reports drift
 | D-074 | DECISIONS-ARCHIVE.md | 3009 | Final eligibility gate lane SHIPPED (persistent, agent-lane, fail-open); Gate P5 unchanged |
 | D-075 | DECISIONS-ARCHIVE.md | 3084 | Gate P2 reconciled: three individually-correct verdicts (may coincide); ≥3-field mechanism via fixtures |
 | D-076 | DECISIONS-ARCHIVE.md | 3153 | P2 item 4's final whole-branch review: what it caught, and four rulings it forced |
-| D-077 | DECISIONS.md | 256 | P6 Slice 1: the design is settled and the plan is written; no code exists yet |
-| D-078 | DECISIONS.md | 346 | P6 Slice 1: the plan's test fixtures are now real; eleven defects, all found by running code |
-| D-079 | DECISIONS.md | 435 | P6 Slice 1 annotates only; `postings.job_id` is not mutated |
-| D-080 | DECISIONS.md | 449 | `content_hash` alone may never suppress |
-| D-081 | DECISIONS.md | 463 | `exact_quad` is the sole suppressing kind, and its yield is stated honestly |
-| D-082 | DECISIONS.md | 481 | `cross_host` ships annotate-only, reversing an earlier draft |
-| D-083 | DECISIONS.md | 502 | No location evidence ⇒ no location-bearing identity, never a `"[]"` sentinel |
-| D-084 | DECISIONS.md | 517 | Three host classes, not two; matching is exact-or-dot-suffix |
-| D-085 | DECISIONS.md | 531 | Allowlist URL normalization, not a denylist |
-| D-086 | DECISIONS.md | 545 | Survivor election never consults score; `posting_id` is a load-bearing tiebreak |
-| D-087 | DECISIONS.md | 560 | Instrumentation is completeness-gated, not existence-gated |
-| D-088 | DECISIONS.md | 574 | `assisted` stays `None` in this slice |
-| D-089 | DECISIONS.md | 589 | Identities are upserted on every observation; a kind that stops being produced is deleted |
-| D-090 | DECISIONS.md | 606 | The ranker is completeness-gated for reproducibility, not safety |
-| D-091 | DECISIONS.md | 624 | The recount recomputes in Python, and claims staleness only |
-| D-092 | DECISIONS.md | 639 | Identities are backfilled by an explicit command, not by the migration |
-| D-093 | DECISIONS.md | 653 | Slice 1 does NOT meet Gate P6, and makes only one of its four clauses measurable |
-| D-094 | DECISIONS.md | 667 | P6 Slice 1 BUILT (unattended run): five more plan defects, three of them tests that could not fail |
-| D-095 | DECISIONS.md | 795 | P6 Slice 1 reviewed by three independent reviewers; fourteen findings fixed, two rejected |
-| D-096 | DECISIONS.md | 860 | The C++/C# fix folds punctuation into words; it does NOT add a raw-title comparison |
-| D-097 | DECISIONS.md | 904 | `_verify_quad` rejected nothing on the live corpus; "string-verified" is not precision evidence |
-| D-098 | DECISIONS.md | 933 | Suppression reports when it is OFF; wiring backfill into the pipeline is Slice 2 |
-| D-099 | DECISIONS.md | 969 | Gate batching stays allowed; the per-task fast-check set must include the schema guards |
-| D-100 | DECISIONS.md | 995 | P6 Slice 1 merged to `main`; Gate P6 clause 3 is MET, not merely measurable |
-| D-101 | DECISIONS.md | 1027 | Gate P6 clause 4 is MET: 20/20 sampled suppressions are genuine duplicates |
-| D-102 | DECISIONS.md | 1057 | D-072 (model-tier benchmark) is deferred indefinitely |
-| D-103 | DECISIONS.md | 1079 | P6 Slice 2: the ledger is a current-state row per job, `seen` suppresses on a TTL, and the policy stamp never auto-reopens |
-| D-104 | DECISIONS.md | 1151 | Job regrouping: the survivor's job wins, and a tracked group is refused whole |
-| D-105 | DECISIONS.md | 1194 | Identity writes move into the scan path, closing D-098 — and D-098's cost argument did not apply |
-| D-106 | DECISIONS.md | 1225 | Two consequences the build forced: what earns a permanent `skipped`, and the zero-output guard |
-| D-107 | DECISIONS.md | 1251 | P6 Slice 2 BUILT and verified on real data; `cross_host` dereference deferred by measured absence |
-| D-108 | DECISIONS.md | 1300 | The decision log and the metrics log are archive-split; the reading protocol moves into the index |
-| D-109 | DECISIONS.md | 1359 | Index drift fails the gate, and the fixer lives in `tools/` |
-| D-110 | DECISIONS.md | 1437 | The Slice 2 review: only a caller that delivers a lead may consume the queue |
-| D-111 | DECISIONS.md | 1554 | P6 Slice 3: applied-state suppression, and liveness sized to what the corpus actually is |
-| D-112 | DECISIONS.md | 1723 | 0.3.0 is cut, the changelog gets ONE triple, and the tag is the owner's to push |
-| D-113 | DECISIONS.md | 1827 | The Slice 3 external review: a followed redirect can forge a gone-status |
-| D-114 | DECISIONS.md | 1915 | CI installs tectonic and pdfinfo on all three OSes; skipping the gate was refused |
-| D-115 | DECISIONS.md | 1983 | Gate A of the career-profile bundle: 9 of 19 slices, and a rule for checks that cannot fire |
-| D-116 | DECISIONS.md | 2065 | A docs-only commit owes the two fast gates, not the full suite; the tectonic pin gets a detector |
-| D-117 | DECISIONS.md | 2112 | 0.3.0's tag moves rather than 0.3.1 being cut; gitleaks fixed by cleaning bytes, not allowlisting |
-| D-118 | DECISIONS.md | 2162 | Gate A slice T10: effectiveness derived in one place, and two more §20.4 rows with no check |
-| D-119 | DECISIONS.md | 2259 | 0.3.0 is PUBLISHED: the tag moved onto a CI-green commit, and ships two known BLOCKERs deliberately |
-| D-120 | DECISIONS.md | 2327 | Gate A slice T12: the résumé emission order is fixed, and three more checks that cannot fire |
-| D-121 | DECISIONS.md | 2410 | The T12 review: a green gate and a perfect mutation score hid five BLOCKING defects |
-| D-122 | DECISIONS.md | 2471 | The T12 re-review: one defect the fix created, two contracts never enforced, and a decline that was wrong |
-| D-123 | DECISIONS.md | 2594 | A recurring trigger holding a one-shot prompt re-fires a task that already shipped |
-| D-124 | DECISIONS.md | 2639 | The third T12 review: the locator grammar keeps failing because it restates the emitter instead of deriving from it |
-| D-125 | DECISIONS.md | 2704 | The T12 round-three fix, and two more reviews of it: a forbidden segment is escaped, never refused |
-| D-126 | DECISIONS.md | 2836 | T12's review loop is CLOSED, with a stated exit criterion |
-| D-127 | DECISIONS.md | 2892 | Gate A slices T13 and T14: an approval bound to nothing, and the first code that WRITES a bundle |
-| D-128 | DECISIONS.md | 3013 | Gate A T14 round 2, T15 and T17: what three green suites could not see |
-| D-129 | DECISIONS.md | 3202 | The two Gate A design departures are RULED: the design text was wrong, not the code |
-| D-130 | DECISIONS.md | 3267 | Correcting D-128 and D-129: what the fix rounds actually established, and what the rebase actually deletes |
-| D-131 | DECISIONS.md | 3342 | The T14/T15 fix-round review's findings are fixed: a merge short-cut that skipped the append-only rule, and five residues |
-| D-132 | DECISIONS.md | 3477 | Gate A slice T16 reviewed by three lenses: the highest-risk slice, and the one defect two of them found separately |
-| D-133 | DECISIONS.md | 3554 | Correcting D-130 and D-131: what is actually pushed, and five statements a docs review caught in this session's own records |
-| D-134 | DECISIONS.md | 3626 | A finding's tier is a property of the operation, not of the code alone |
-| D-135 | DECISIONS.md | 3683 | The Gate A integration gate is green on all nineteen slices, and the 03:10 job misfired a second time |
-| D-136 | DECISIONS.md | 3756 | Gate A slices T18 and T19: two lenses, a ten-commit fix round, and an integration merge where two green branches wrote one rule twice |
-| D-137 | DECISIONS.md | 3872 | Gate A's review loop CLOSES at round five, and a two-document write is named rather than made atomic |
-| D-138 | DECISIONS.md | 3957 | A missing bundle root is its own fact, and `inventory` reporting it as clean was the defect |
-| D-139 | DECISIONS.md | 4012 | `STATE.md` splits its standing facts out, because a read-first file at twice its stated length is read past |
-| D-140 | DECISIONS.md | 4060 | D-116's conclusion survives, its premise does not: two tests do read the real `docs/` tree |
-| D-141 | DECISIONS.md | 4108 | The third site of the blocking-`open()` class is closed, at the layout boundary |
-| D-142 | DECISIONS.md | 4151 | D-138 delivered eight of twelve commands, and said twelve. The review that caught it, and what the surviving mutation cost |
-| D-143 | DECISIONS.md | 4220 | `add-evidence` writes the back-citation, closing Gate A's last open question |
-| D-144 | DECISIONS.md | 4303 | Grounding reads `supports` alone; citing a source is not being backed by it |
-| D-145 | DECISIONS.md | 4361 | The Gate A subsystem never ran on Windows, and one `write_text` hid it |
-| D-146 | DECISIONS.md | 4431 | LLM lane-death is one typed error, classified at the raise site, latched per invocation — scoped to the two lanes that call out |
-| D-147 | DECISIONS.md | 4604 | Slice 5 merges as-is: four known residuals, recorded rather than fixed |
-| D-148 | DECISIONS.md | 4689 | D-147's R1 closed: one flag drives the tailor lane's ledger row and its exit code |
-| D-149 | DECISIONS.md | 4775 | The `STATE.md` trim is BLOCKED: three Gate A records disagree with the code or with each other |
-| D-150 | DECISIONS.md | 4862 | The suite runs across worker processes; `-n auto` lives at the call sites, not in `addopts` |
-| D-151 | DECISIONS.md | 4971 | Windows leaves the per-push path for a nightly schedule; it is not dropped |
-| D-152 | DECISIONS.md | 5036 | Retraction: the archived CGPA claim is inverted; job-apps was never the stale copy |
-| D-153 | DECISIONS.md | 5075 | A rich table's width can ignore `COLUMNS`, so terminal env is pinned for the whole suite |
-| D-154 | DECISIONS.md | 5162 | `eligibility_inputs` gains an identity index; `top`'s pending anti-join cost 141 s per run |
-| D-155 | DECISIONS.md | 5226 | The program reorients onto the bundle-to-résumé path; `resume.yaml` becomes an import source, not an artifact to hand-fix |
-| D-156 | DECISIONS.md | 5314 | v1 projection is not authoritative for header, education or summary, because the renderer never reads them |
-| D-157 | DECISIONS.md | 5409 | Corrections that unblock D-149: the manifest write order, and Windows closed by CI |
-| D-158 | DECISIONS.md | 5493 | The projection scorer is chosen by measurement, because two design rounds picked two scorers and a probe falsified both |
-| D-159 | DECISIONS.md | 5581 | `COLUMNS` is baked into a `Console` at import, so three width-controlling tests never controlled anything |
-| D-160 | DECISIONS.md | 5686 | Preflighting a thrice-reviewed spec still found four false claims, and the plan argues from the preflight |
-| D-161 | DECISIONS.md | 5790 | A third import wall guards the bundle serializer, and projection digests through the YAML writer instead |
-| D-162 | DECISIONS.md | 5864 | A fourth import wall guards the CLI command module against the store, found only by tripping it |
-| D-163 | DECISIONS.md | 5902 | The plan's four candidate scorers are two behavioural families, and none survives both probes |
-| D-164 | DECISIONS.md | 5947 | Where the closed `ProjectionIssue` catalog is extended, and where a foreign error may escape |
-| D-165 | DECISIONS.md | 5993 | A consent control gets one definition, because the rationale for copying it was false |
-| D-166 | DECISIONS.md | 6034 | Projection maps its issues onto the bundle's catalog at the boundary, rather than inverting the dependency |
-| D-167 | DECISIONS.md | 6069 | A projection approval binds the bundle it was made against, and the check is unconditional |
-| D-168 | DECISIONS.md | 6120 | Stage 2's scorer is a required parameter with no default, because the plan is forbidden to pick one |
-| D-169 | DECISIONS.md | 6154 | A plan can ship an artifact no task consumes, and only a whole-branch lens sees it |
-| D-170 | DECISIONS.md | 6198 | `profile-bundle import` writes the ledger and nothing else, and derives no disposition |
-| D-171 | DECISIONS.md | 6272 | A CI-only failure was a lazy-import race in typer, not an OS difference and not a regression |
-| D-172 | DECISIONS.md | 6356 | Gate B is met at a promoted revision, and the extraction mapping lives inside the bundle |
-| D-173 | DECISIONS.md | 6434 | Gate B gets a mechanical predicate, the drain gets a digest-bound carrier, and the mapping's carrier is questioned |
-| D-174 | DECISIONS.md | 6531 | The extraction mapping's carrier is `policy/extraction-mappings.yaml`, not a `SourceSpec` field |
-| D-175 | DECISIONS.md | 6567 | Review round 3 outcome: 7 findings, all accepted; the schema bump needs a real migrator, not a raw-v1 loader |
-| D-176 | DECISIONS.md | 6613 | Review round 4 outcome: 4 blocking findings accepted; the kind→subject→predicate relation gets modelled once |
-| D-177 | DECISIONS.md | 6658 | Review round 5: the rule interface is under-designed; revision 7 redesigns it completely, not by patch |
-| D-178 | DECISIONS.md | 6712 | Stop the spec-review loop as the gate to building; de-risk the rule interface with a thin TDD slice |
-| D-179 | DECISIONS.md | 6742 | The Task-1 predicate audit: seed the audited starter catalog, and roster three dead verification bases |
-| D-180 | DECISIONS.md | 6776 | The skill-id derivation scheme, and the two easy extraction buckets proven in code |
-| D-181 | DECISIONS.md | 6800 | Gate B extraction ships end to end: interpreter, schema v2, `extract`, and 78/81 records reach `imported` |
-| D-182 | DECISIONS.md | 6851 | The §6.8 promotion slice: candidates become entities, facts, and grounded skills — deterministic, owner-mediated, one-shot |
-| D-183 | DECISIONS.md | 6897 | Two owed Gate B gates ship: §5.2 invariant 4 reachability, and the drain reconciliation wired at the completeness tier, not validity |
-| D-184 | DECISIONS.md | 6948 | The Gate B merge review: the catalog check was never wired, and is now the gate D-181 said it was |
-| D-185 | DECISIONS.md | 7022 | boardwatch's first promoted revision: the bundle becomes a real résumé source, and Gate B's remaining nine are evidence, not code |
-| D-186 | DECISIONS.md | 7079 | Revision 2: the skills surface, D-185's "not reachable" claim is retracted, and the bootstrap draft is a one-time dead end |
-| D-187 | DECISIONS.md | 7119 | Projection `skill_groups` are optional and synthesized from the bundle catalog when omitted |
-| D-188 | DECISIONS.md | 7158 | An entry's bullets can come from facts, not only claims: `bullet_predicates` |
-| D-189 | DECISIONS.md | 7198 | The master is a RESERVOIR sourced from the wiki, and `project.contribution` is widened to owner_attested in Mit's bundle |
-| D-190 | DECISIONS.md | 7240 | Content edits are incremental: `edit-fact` files a correction as an edge, and no rebuild is needed |
-| D-191 | DECISIONS.md | 7373 | Repository evidence grounds the project bullets, and the verification basis deliberately does not change |
-| D-192 | DECISIONS.md | 7444 | `exclude-record` ships, and both documents re-derived from one ledger are guarded |
-| D-193 | DECISIONS.md | 7500 | Task 20's matrix is recorded unlabeled, and Stage 2 is blocked by a pinning decision underneath it |
-| D-194 | DECISIONS.md | 7578 | `approve_source_scope` binds the spelling already on disk, and the helper is the side that moves |
-| D-195 | DECISIONS.md | 7647 | The pinned set is the three fixed jobs, and the one-page ceiling is 16 bullets |
-| D-196 | DECISIONS.md | 7703 | Gate B's three undispositioned import records are excluded as `owner_excluded`, 7 blockers → 4 |
-| D-197 | DECISIONS.md | 7737 | Task 20's matrix is owner-labeled, unblocking scorer selection (Task 23) |
-| D-198 | DECISIONS.md | 7775 | Task 23: `mean_per_bullet` is adopted as the CLI scorer default, threshold stays `Decimal(0)` |
-| D-199 | DECISIONS.md | 7837 | `resume project`'s manifest maps bullets by their own id, not by re-parsing the declaration's `claims` |
-| D-200 | DECISIONS.md | 7897 | Résumé heading formatting is declaration-driven; clickable project links are an optional code feature |
-| D-201 | DECISIONS.md | 7946 | `employment.organization` is owner-attestable; the four org facts are resolved by a scoped owner attestation — Gate B 4 → 0 |
-| D-202 | DECISIONS.md | 7993 | The skill-id slug collision (D-184 finding 3) is fixed: promotion refuses a grounded id built from more than one item, rather than silently merging |
-| D-203 | DECISIONS.md | 8042 | The other two promotion slug-collision sites (entity_id, category_id) are closed the same way; a fourth (fact_id) is found open, not closed |
-| D-204 | DECISIONS.md | 8117 | A missing `pdfinfo` is a run-level fatal, not a laundered `COMPILE_FAILED`; the tool identity travels as typed data |
-| D-205 | DECISIONS.md | 8185 | The fourth promotion slug-collision site (`fact_id`) is refused; the guard sits on the derived id, not on each builder |
-| D-206 | DECISIONS.md | 8244 | CSV export to stdout is written UTF-8 through a locally-wrapped stream |
-| D-207 | DECISIONS.md | 8271 | The `STATE.md` trim executes D-149, and the fact-check that gated it corrects six stale figures |
-| D-208 | DECISIONS.md | 8347 | Dates render at month precision, and a projection may declare a two-fact range so an open-ended project is renderable at all |
-| D-209 | DECISIONS.md | 8428 | A fact that is simply wrong is retired by flipping its verification state to `rejected`; there is no delete, and `year_month` has no null form |
-| D-210 | DECISIONS.md | 8465 | A skill listed under two skill groups is refused, because a skill has exactly one category and arrival order must not pick it |
-| D-211 | DECISIONS.md | 8526 | Correction: Windows runs only on the scheduled CI build, and that build has been red since 2026-08-14 |
-| D-212 | DECISIONS.md | 8585 | Windows is a best-effort platform, the nightly gets a consumer, and D-211's "not a flake" is corrected |
-| D-213 | DECISIONS.md | 8666 | Résumé bullets state what was built with metrics, never a story; and a bullet is parked by surface, not by an extra fact |
-| D-214 | DECISIONS.md | 8744 | Hookrail's bullets: a merged perf-plus-chaos claim, a keyword measured back in after a length trim, and a correct-but-unwanted bullet parked |
-| D-215 | DECISIONS.md | 8815 | StreakSync ships two bullets; a control test is only evidence about the corpus it ran against, so a historical absence needs the pickaxe; authorship is verified per entity |
-| D-216 | DECISIONS.md | 8873 | SAKEC's bullets are ruled and worded but NOT promoted; a private repo makes a disk sweep's negative worthless; and keywords are chosen by diffing the résumé's own Skills section |
+| D-077 | DECISIONS.md | 257 | P6 Slice 1: the design is settled and the plan is written; no code exists yet |
+| D-078 | DECISIONS.md | 347 | P6 Slice 1: the plan's test fixtures are now real; eleven defects, all found by running code |
+| D-079 | DECISIONS.md | 436 | P6 Slice 1 annotates only; `postings.job_id` is not mutated |
+| D-080 | DECISIONS.md | 450 | `content_hash` alone may never suppress |
+| D-081 | DECISIONS.md | 464 | `exact_quad` is the sole suppressing kind, and its yield is stated honestly |
+| D-082 | DECISIONS.md | 482 | `cross_host` ships annotate-only, reversing an earlier draft |
+| D-083 | DECISIONS.md | 503 | No location evidence ⇒ no location-bearing identity, never a `"[]"` sentinel |
+| D-084 | DECISIONS.md | 518 | Three host classes, not two; matching is exact-or-dot-suffix |
+| D-085 | DECISIONS.md | 532 | Allowlist URL normalization, not a denylist |
+| D-086 | DECISIONS.md | 546 | Survivor election never consults score; `posting_id` is a load-bearing tiebreak |
+| D-087 | DECISIONS.md | 561 | Instrumentation is completeness-gated, not existence-gated |
+| D-088 | DECISIONS.md | 575 | `assisted` stays `None` in this slice |
+| D-089 | DECISIONS.md | 590 | Identities are upserted on every observation; a kind that stops being produced is deleted |
+| D-090 | DECISIONS.md | 607 | The ranker is completeness-gated for reproducibility, not safety |
+| D-091 | DECISIONS.md | 625 | The recount recomputes in Python, and claims staleness only |
+| D-092 | DECISIONS.md | 640 | Identities are backfilled by an explicit command, not by the migration |
+| D-093 | DECISIONS.md | 654 | Slice 1 does NOT meet Gate P6, and makes only one of its four clauses measurable |
+| D-094 | DECISIONS.md | 668 | P6 Slice 1 BUILT (unattended run): five more plan defects, three of them tests that could not fail |
+| D-095 | DECISIONS.md | 796 | P6 Slice 1 reviewed by three independent reviewers; fourteen findings fixed, two rejected |
+| D-096 | DECISIONS.md | 861 | The C++/C# fix folds punctuation into words; it does NOT add a raw-title comparison |
+| D-097 | DECISIONS.md | 905 | `_verify_quad` rejected nothing on the live corpus; "string-verified" is not precision evidence |
+| D-098 | DECISIONS.md | 934 | Suppression reports when it is OFF; wiring backfill into the pipeline is Slice 2 |
+| D-099 | DECISIONS.md | 970 | Gate batching stays allowed; the per-task fast-check set must include the schema guards |
+| D-100 | DECISIONS.md | 996 | P6 Slice 1 merged to `main`; Gate P6 clause 3 is MET, not merely measurable |
+| D-101 | DECISIONS.md | 1028 | Gate P6 clause 4 is MET: 20/20 sampled suppressions are genuine duplicates |
+| D-102 | DECISIONS.md | 1058 | D-072 (model-tier benchmark) is deferred indefinitely |
+| D-103 | DECISIONS.md | 1080 | P6 Slice 2: the ledger is a current-state row per job, `seen` suppresses on a TTL, and the policy stamp never auto-reopens |
+| D-104 | DECISIONS.md | 1152 | Job regrouping: the survivor's job wins, and a tracked group is refused whole |
+| D-105 | DECISIONS.md | 1195 | Identity writes move into the scan path, closing D-098 — and D-098's cost argument did not apply |
+| D-106 | DECISIONS.md | 1226 | Two consequences the build forced: what earns a permanent `skipped`, and the zero-output guard |
+| D-107 | DECISIONS.md | 1252 | P6 Slice 2 BUILT and verified on real data; `cross_host` dereference deferred by measured absence |
+| D-108 | DECISIONS.md | 1301 | The decision log and the metrics log are archive-split; the reading protocol moves into the index |
+| D-109 | DECISIONS.md | 1360 | Index drift fails the gate, and the fixer lives in `tools/` |
+| D-110 | DECISIONS.md | 1438 | The Slice 2 review: only a caller that delivers a lead may consume the queue |
+| D-111 | DECISIONS.md | 1555 | P6 Slice 3: applied-state suppression, and liveness sized to what the corpus actually is |
+| D-112 | DECISIONS.md | 1724 | 0.3.0 is cut, the changelog gets ONE triple, and the tag is the owner's to push |
+| D-113 | DECISIONS.md | 1828 | The Slice 3 external review: a followed redirect can forge a gone-status |
+| D-114 | DECISIONS.md | 1916 | CI installs tectonic and pdfinfo on all three OSes; skipping the gate was refused |
+| D-115 | DECISIONS.md | 1984 | Gate A of the career-profile bundle: 9 of 19 slices, and a rule for checks that cannot fire |
+| D-116 | DECISIONS.md | 2066 | A docs-only commit owes the two fast gates, not the full suite; the tectonic pin gets a detector |
+| D-117 | DECISIONS.md | 2113 | 0.3.0's tag moves rather than 0.3.1 being cut; gitleaks fixed by cleaning bytes, not allowlisting |
+| D-118 | DECISIONS.md | 2163 | Gate A slice T10: effectiveness derived in one place, and two more §20.4 rows with no check |
+| D-119 | DECISIONS.md | 2260 | 0.3.0 is PUBLISHED: the tag moved onto a CI-green commit, and ships two known BLOCKERs deliberately |
+| D-120 | DECISIONS.md | 2328 | Gate A slice T12: the résumé emission order is fixed, and three more checks that cannot fire |
+| D-121 | DECISIONS.md | 2411 | The T12 review: a green gate and a perfect mutation score hid five BLOCKING defects |
+| D-122 | DECISIONS.md | 2472 | The T12 re-review: one defect the fix created, two contracts never enforced, and a decline that was wrong |
+| D-123 | DECISIONS.md | 2595 | A recurring trigger holding a one-shot prompt re-fires a task that already shipped |
+| D-124 | DECISIONS.md | 2640 | The third T12 review: the locator grammar keeps failing because it restates the emitter instead of deriving from it |
+| D-125 | DECISIONS.md | 2705 | The T12 round-three fix, and two more reviews of it: a forbidden segment is escaped, never refused |
+| D-126 | DECISIONS.md | 2837 | T12's review loop is CLOSED, with a stated exit criterion |
+| D-127 | DECISIONS.md | 2893 | Gate A slices T13 and T14: an approval bound to nothing, and the first code that WRITES a bundle |
+| D-128 | DECISIONS.md | 3014 | Gate A T14 round 2, T15 and T17: what three green suites could not see |
+| D-129 | DECISIONS.md | 3203 | The two Gate A design departures are RULED: the design text was wrong, not the code |
+| D-130 | DECISIONS.md | 3268 | Correcting D-128 and D-129: what the fix rounds actually established, and what the rebase actually deletes |
+| D-131 | DECISIONS.md | 3343 | The T14/T15 fix-round review's findings are fixed: a merge short-cut that skipped the append-only rule, and five residues |
+| D-132 | DECISIONS.md | 3478 | Gate A slice T16 reviewed by three lenses: the highest-risk slice, and the one defect two of them found separately |
+| D-133 | DECISIONS.md | 3555 | Correcting D-130 and D-131: what is actually pushed, and five statements a docs review caught in this session's own records |
+| D-134 | DECISIONS.md | 3627 | A finding's tier is a property of the operation, not of the code alone |
+| D-135 | DECISIONS.md | 3684 | The Gate A integration gate is green on all nineteen slices, and the 03:10 job misfired a second time |
+| D-136 | DECISIONS.md | 3757 | Gate A slices T18 and T19: two lenses, a ten-commit fix round, and an integration merge where two green branches wrote one rule twice |
+| D-137 | DECISIONS.md | 3873 | Gate A's review loop CLOSES at round five, and a two-document write is named rather than made atomic |
+| D-138 | DECISIONS.md | 3958 | A missing bundle root is its own fact, and `inventory` reporting it as clean was the defect |
+| D-139 | DECISIONS.md | 4013 | `STATE.md` splits its standing facts out, because a read-first file at twice its stated length is read past |
+| D-140 | DECISIONS.md | 4061 | D-116's conclusion survives, its premise does not: two tests do read the real `docs/` tree |
+| D-141 | DECISIONS.md | 4109 | The third site of the blocking-`open()` class is closed, at the layout boundary |
+| D-142 | DECISIONS.md | 4152 | D-138 delivered eight of twelve commands, and said twelve. The review that caught it, and what the surviving mutation cost |
+| D-143 | DECISIONS.md | 4221 | `add-evidence` writes the back-citation, closing Gate A's last open question |
+| D-144 | DECISIONS.md | 4304 | Grounding reads `supports` alone; citing a source is not being backed by it |
+| D-145 | DECISIONS.md | 4362 | The Gate A subsystem never ran on Windows, and one `write_text` hid it |
+| D-146 | DECISIONS.md | 4432 | LLM lane-death is one typed error, classified at the raise site, latched per invocation — scoped to the two lanes that call out |
+| D-147 | DECISIONS.md | 4605 | Slice 5 merges as-is: four known residuals, recorded rather than fixed |
+| D-148 | DECISIONS.md | 4690 | D-147's R1 closed: one flag drives the tailor lane's ledger row and its exit code |
+| D-149 | DECISIONS.md | 4776 | The `STATE.md` trim is BLOCKED: three Gate A records disagree with the code or with each other |
+| D-150 | DECISIONS.md | 4863 | The suite runs across worker processes; `-n auto` lives at the call sites, not in `addopts` |
+| D-151 | DECISIONS.md | 4972 | Windows leaves the per-push path for a nightly schedule; it is not dropped |
+| D-152 | DECISIONS.md | 5037 | Retraction: the archived CGPA claim is inverted; job-apps was never the stale copy |
+| D-153 | DECISIONS.md | 5076 | A rich table's width can ignore `COLUMNS`, so terminal env is pinned for the whole suite |
+| D-154 | DECISIONS.md | 5163 | `eligibility_inputs` gains an identity index; `top`'s pending anti-join cost 141 s per run |
+| D-155 | DECISIONS.md | 5227 | The program reorients onto the bundle-to-résumé path; `resume.yaml` becomes an import source, not an artifact to hand-fix |
+| D-156 | DECISIONS.md | 5315 | v1 projection is not authoritative for header, education or summary, because the renderer never reads them |
+| D-157 | DECISIONS.md | 5410 | Corrections that unblock D-149: the manifest write order, and Windows closed by CI |
+| D-158 | DECISIONS.md | 5494 | The projection scorer is chosen by measurement, because two design rounds picked two scorers and a probe falsified both |
+| D-159 | DECISIONS.md | 5582 | `COLUMNS` is baked into a `Console` at import, so three width-controlling tests never controlled anything |
+| D-160 | DECISIONS.md | 5687 | Preflighting a thrice-reviewed spec still found four false claims, and the plan argues from the preflight |
+| D-161 | DECISIONS.md | 5791 | A third import wall guards the bundle serializer, and projection digests through the YAML writer instead |
+| D-162 | DECISIONS.md | 5865 | A fourth import wall guards the CLI command module against the store, found only by tripping it |
+| D-163 | DECISIONS.md | 5903 | The plan's four candidate scorers are two behavioural families, and none survives both probes |
+| D-164 | DECISIONS.md | 5948 | Where the closed `ProjectionIssue` catalog is extended, and where a foreign error may escape |
+| D-165 | DECISIONS.md | 5994 | A consent control gets one definition, because the rationale for copying it was false |
+| D-166 | DECISIONS.md | 6035 | Projection maps its issues onto the bundle's catalog at the boundary, rather than inverting the dependency |
+| D-167 | DECISIONS.md | 6070 | A projection approval binds the bundle it was made against, and the check is unconditional |
+| D-168 | DECISIONS.md | 6121 | Stage 2's scorer is a required parameter with no default, because the plan is forbidden to pick one |
+| D-169 | DECISIONS.md | 6155 | A plan can ship an artifact no task consumes, and only a whole-branch lens sees it |
+| D-170 | DECISIONS.md | 6199 | `profile-bundle import` writes the ledger and nothing else, and derives no disposition |
+| D-171 | DECISIONS.md | 6273 | A CI-only failure was a lazy-import race in typer, not an OS difference and not a regression |
+| D-172 | DECISIONS.md | 6357 | Gate B is met at a promoted revision, and the extraction mapping lives inside the bundle |
+| D-173 | DECISIONS.md | 6435 | Gate B gets a mechanical predicate, the drain gets a digest-bound carrier, and the mapping's carrier is questioned |
+| D-174 | DECISIONS.md | 6532 | The extraction mapping's carrier is `policy/extraction-mappings.yaml`, not a `SourceSpec` field |
+| D-175 | DECISIONS.md | 6568 | Review round 3 outcome: 7 findings, all accepted; the schema bump needs a real migrator, not a raw-v1 loader |
+| D-176 | DECISIONS.md | 6614 | Review round 4 outcome: 4 blocking findings accepted; the kind→subject→predicate relation gets modelled once |
+| D-177 | DECISIONS.md | 6659 | Review round 5: the rule interface is under-designed; revision 7 redesigns it completely, not by patch |
+| D-178 | DECISIONS.md | 6713 | Stop the spec-review loop as the gate to building; de-risk the rule interface with a thin TDD slice |
+| D-179 | DECISIONS.md | 6743 | The Task-1 predicate audit: seed the audited starter catalog, and roster three dead verification bases |
+| D-180 | DECISIONS.md | 6777 | The skill-id derivation scheme, and the two easy extraction buckets proven in code |
+| D-181 | DECISIONS.md | 6801 | Gate B extraction ships end to end: interpreter, schema v2, `extract`, and 78/81 records reach `imported` |
+| D-182 | DECISIONS.md | 6852 | The §6.8 promotion slice: candidates become entities, facts, and grounded skills — deterministic, owner-mediated, one-shot |
+| D-183 | DECISIONS.md | 6898 | Two owed Gate B gates ship: §5.2 invariant 4 reachability, and the drain reconciliation wired at the completeness tier, not validity |
+| D-184 | DECISIONS.md | 6949 | The Gate B merge review: the catalog check was never wired, and is now the gate D-181 said it was |
+| D-185 | DECISIONS.md | 7023 | boardwatch's first promoted revision: the bundle becomes a real résumé source, and Gate B's remaining nine are evidence, not code |
+| D-186 | DECISIONS.md | 7080 | Revision 2: the skills surface, D-185's "not reachable" claim is retracted, and the bootstrap draft is a one-time dead end |
+| D-187 | DECISIONS.md | 7120 | Projection `skill_groups` are optional and synthesized from the bundle catalog when omitted |
+| D-188 | DECISIONS.md | 7159 | An entry's bullets can come from facts, not only claims: `bullet_predicates` |
+| D-189 | DECISIONS.md | 7199 | The master is a RESERVOIR sourced from the wiki, and `project.contribution` is widened to owner_attested in Mit's bundle |
+| D-190 | DECISIONS.md | 7241 | Content edits are incremental: `edit-fact` files a correction as an edge, and no rebuild is needed |
+| D-191 | DECISIONS.md | 7374 | Repository evidence grounds the project bullets, and the verification basis deliberately does not change |
+| D-192 | DECISIONS.md | 7445 | `exclude-record` ships, and both documents re-derived from one ledger are guarded |
+| D-193 | DECISIONS.md | 7501 | Task 20's matrix is recorded unlabeled, and Stage 2 is blocked by a pinning decision underneath it |
+| D-194 | DECISIONS.md | 7579 | `approve_source_scope` binds the spelling already on disk, and the helper is the side that moves |
+| D-195 | DECISIONS.md | 7648 | The pinned set is the three fixed jobs, and the one-page ceiling is 16 bullets |
+| D-196 | DECISIONS.md | 7704 | Gate B's three undispositioned import records are excluded as `owner_excluded`, 7 blockers → 4 |
+| D-197 | DECISIONS.md | 7738 | Task 20's matrix is owner-labeled, unblocking scorer selection (Task 23) |
+| D-198 | DECISIONS.md | 7776 | Task 23: `mean_per_bullet` is adopted as the CLI scorer default, threshold stays `Decimal(0)` |
+| D-199 | DECISIONS.md | 7838 | `resume project`'s manifest maps bullets by their own id, not by re-parsing the declaration's `claims` |
+| D-200 | DECISIONS.md | 7898 | Résumé heading formatting is declaration-driven; clickable project links are an optional code feature |
+| D-201 | DECISIONS.md | 7947 | `employment.organization` is owner-attestable; the four org facts are resolved by a scoped owner attestation — Gate B 4 → 0 |
+| D-202 | DECISIONS.md | 7994 | The skill-id slug collision (D-184 finding 3) is fixed: promotion refuses a grounded id built from more than one item, rather than silently merging |
+| D-203 | DECISIONS.md | 8043 | The other two promotion slug-collision sites (entity_id, category_id) are closed the same way; a fourth (fact_id) is found open, not closed |
+| D-204 | DECISIONS.md | 8118 | A missing `pdfinfo` is a run-level fatal, not a laundered `COMPILE_FAILED`; the tool identity travels as typed data |
+| D-205 | DECISIONS.md | 8186 | The fourth promotion slug-collision site (`fact_id`) is refused; the guard sits on the derived id, not on each builder |
+| D-206 | DECISIONS.md | 8245 | CSV export to stdout is written UTF-8 through a locally-wrapped stream |
+| D-207 | DECISIONS.md | 8272 | The `STATE.md` trim executes D-149, and the fact-check that gated it corrects six stale figures |
+| D-208 | DECISIONS.md | 8348 | Dates render at month precision, and a projection may declare a two-fact range so an open-ended project is renderable at all |
+| D-209 | DECISIONS.md | 8429 | A fact that is simply wrong is retired by flipping its verification state to `rejected`; there is no delete, and `year_month` has no null form |
+| D-210 | DECISIONS.md | 8466 | A skill listed under two skill groups is refused, because a skill has exactly one category and arrival order must not pick it |
+| D-211 | DECISIONS.md | 8527 | Correction: Windows runs only on the scheduled CI build, and that build has been red since 2026-08-14 |
+| D-212 | DECISIONS.md | 8586 | Windows is a best-effort platform, the nightly gets a consumer, and D-211's "not a flake" is corrected |
+| D-213 | DECISIONS.md | 8667 | Résumé bullets state what was built with metrics, never a story; and a bullet is parked by surface, not by an extra fact |
+| D-214 | DECISIONS.md | 8745 | Hookrail's bullets: a merged perf-plus-chaos claim, a keyword measured back in after a length trim, and a correct-but-unwanted bullet parked |
+| D-215 | DECISIONS.md | 8816 | StreakSync ships two bullets; a control test is only evidence about the corpus it ran against, so a historical absence needs the pickaxe; authorship is verified per entity |
+| D-216 | DECISIONS.md | 8874 | SAKEC's bullets are ruled and worded but NOT promoted; a private repo makes a disk sweep's negative worthless; and keywords are chosen by diffing the résumé's own Skills section |
+| D-217 | DECISIONS.md | 8982 | Crop-RF's numbers all verify against the paper, but its award count, its host and its authorship do not; and `grep` here silently honours `.gitignore` |
 
 ---
 
@@ -8977,3 +8978,152 @@ candidate-admission headroom. *Claiming iOS ownership* (*"and owned the iOS buil
 strongest verifiable claim in the entity, but it displaces the *Android* keyword; hold it for iOS-targeted
 variants. *Correcting the title to "App Developer"* — owner declined. *Deleting the user count* — owner
 attested it.
+
+## D-217 — Crop-RF's numbers all verify against the paper, but its award count, its host and its authorship do not; and `grep` here silently honours `.gitignore`
+
+*2026-08-16/17. Executes STATE "Owed next" item 2 for the fifth entity. Owner-ruled wording under
+D-213's house style. **PROMOTED: revision 16 → 17 `sha256:1e4c2420…`.** Research:
+`~/dev/portfolio-website/wiki/reporesearch/crop-rf/README.md`.*
+
+**Context.** crop-rf is the bundle's only peer-reviewed and only ML entity, so it is never
+interchangeable, and it was the only entity briefed with a **primary published source**: the 5-page
+ICACTA 2023 paper. That inverted the usual outcome. Unlike NIO (SwiftUI/SensorKit contradicted) and
+unlike SAKEC (every feature attributable to teammates), **every technical number in the bullets checked
+out**: 99.54 / 98.90 / 97.45 (Table 3, p.4), 676,425 and 2,200 samples and "three government datasets"
+(§3.1, p.2), and **FastAPI is named in the paper itself** (p.3 §IV). Mit is 4th of 5 authors. The
+failures were all in the *non-technical* claims — exactly where nobody was looking.
+
+**The award count is contradicted by an institutional source, which is a different kind of evidence.**
+"Best Paper among 300 presentations" appears in Mit's résumé, `professional-summary.md` (3×),
+`certifications-and-awards.md`, `crop-recommendation.md` (2×), `v1-content-archive.md` (2×) and the
+bundle fact — every occurrence one of his own documents citing another. The host college's official
+report (`djsce.ac.in/docs/Report on ICACTA 2023.pdf`) states **511 papers submitted, 288 reviewers, 206
+selected, 120 registered**. Nothing is 300; the field was **120**. **The join that makes this
+admissible is the IEEE Catalogue Number**: the report's banner reads *"IEEE Catalogue Number 58201"* and
+the paper's DOI is `10.1109/ICACTA58201.2023.10393121` — same conference, provably, not a
+similarly-named one. **Prefer a source outside the owner's own document lineage; a catalogue number or
+DOI fragment is often the cheapest way to bind one.** The replacement, *"among 120 papers presented from
+511 submitted"*, is stronger than the claim it replaces because it is checkable.
+
+**The award itself was NOT disproved, and the owner attested it.** The conference report never
+enumerates awards, and a sweep of **145,853 PDFs/images** found no ICACTA certificate (the certificates
+folder holds SIH22, Nakshatra, SAKEC Marathon, Blockchain, Ethical Hacking, Coursera — not this).
+`mdfind "ICACTA"` and `mdfind "Best Paper"` returned only his own résumés, `sections.tex` files, wiki
+pages and bundle YAML. Ruled: *"Yes — I have proof."* So **Best Paper stays**, and the distinction
+between *contradicted* and *unsubstantiated* did real work here — the count died, the award lived.
+**Still owed: the artifact**, so the claim can rest on evidence rather than attestation alone.
+
+**"on AWS" is contradicted twice, from independent directions.** The project poster
+(`Fasal_Poster_FINAL.pdf`) states **"SERVER: Heroku"** under a technology stack that also names Flutter,
+Firebase and Cloud Firestore. And in the Flutter client, `uurl` has **exactly one distinct value across
+all 67 commits** — `http://10.0.2.2:8000`, the Android emulator's loopback alias to the dev machine,
+matching `uvicorn.run(app, host='127.0.0.1', port=8000)` in `soilAPI.py`. `keys.dart` exists in **62 of
+67** commits and never held an EC2, ngrok or Heroku host. The backend has no Dockerfile, no
+`requirements.txt`, no Procfile. A precise grep over all 67 commits returned zero cloud-host hits with a
+`10.0.2.2` control returning hits. **A bare `aws` substring grep is useless** — it matches inside
+`styles.xml` ("draws") and raw JPEG bytes.
+
+**The attribution was inverted, and the client is public.** The brief called `APIS-main` a *candidate*
+backend; six independent joins make it conclusive (route names `/recommend` + `/predictRainfall` match
+the Dart client exactly; 2 pickles for the paper's "2 machine learning models"; `predict_proba` → top 5
+matching p.4 §5.2). The **client** is `github.com/NotKashish/fasal` — public, Dart 157,891 B, 67
+commits — where **Mit is the top contributor, 24 of 67 (36%)**, his best ownership position on any
+collaborative artifact examined. But his commits are UI, auth, profile, the **four-step input form**
+(`form_page.dart`, 5 commits) and **EN/HI/TA localisation** (`+1,527/−153`); the ML-integration commit is
+Miloni's, and **no training code exists anywhere**. So bullet 002's *"Trained Random Forest models"* was
+unattributable while bullet 003 — the app he led — was worded as a delivery afterthought. **The fix was
+to swap which claim carries the weight**, not to add anything.
+
+**Method finding 1 — `grep` in this environment is a shell function execing `ugrep --ignore-files`,
+which silently honours `.gitignore`.** This produced a wrong finding that was published before it was
+caught: the "300 presentations" blast radius was first reported as **7 places**. Re-measured with
+`command grep`: **8,891 of 14,719 `.tex` files** under `~/dev/Job apps` — the shim returned **2,263**, a
+**4× undercount, exit 0, no warning**. `type grep` confirms the shim. Already recorded in memory
+`recursive-grep-can-silently-truncate.md` with the same root cause (`Job apps/.gitignore` contains
+`/APPLY_QUEUE/`), and it has now bitten **at least three sessions independently** — so the brief a
+session receives is not enough; **use `command grep` or `rg --no-ignore` for any count you intend to
+quote, and print the denominator beside it.**
+
+**Method finding 2 — the correction does not land in boardwatch alone.** Of those 8,891 files, exactly
+**3 are git-tracked source templates** — `Job apps/sections_ios_base.tex:56`,
+`sections_ios_template.tex:57` (which also says the wrong *"IEEE Journal"*), `summary_sde.tex:4` — and
+job-apps renders Mit's résumés **daily** from them. Downstream: 6,536 in `resumes/`, **1,112 in the live
+`APPLY_QUEUE`**, 1,148 skipped, 87 archived. **Fixing a bundle fact does not stop a claim shipping while
+job-apps is the live path.** Owner ruled this out of scope: *"ideally we want to retire job apps once
+boardwatch is finalized. So this is fine, not to worry about."* Recorded so no session re-raises it.
+
+**Method finding 3 — read the résumé he actually sends before proposing a bullet count.** `Mit Sheth
+Resume_final.pdf` uses **two** bullets for crop-rf, and **the accuracy comparison appears on no résumé
+he has ever sent** — 99.54/98.90/97.45 is a bundle-era addition. So the bundle had drifted *up* from the
+résumé, and the burden of proof was on keeping the third bullet, not on cutting it. That résumé also
+ends the entry with a hyperlinked **"DOI Link"**, so crop-rf having no `link_url` was an **import
+regression to undo**, not a new idea to evaluate. Relayed to the sibling sessions and adopted as standing
+guidance.
+
+**Method finding 4 — two independent measurement routes lied, in opposite ways.** (a) The 2022-era model
+pickles need **two** pins to load: `scikit-learn==1.0.2` alone fails on a scipy `dlopen`, which reads
+exactly like a corrupt artifact; `scikit-learn==1.2.2` + `scipy==1.11.4` + `numpy<2` works, and confirms
+`soil_rfc.pkl` is a **RandomForestClassifier, 100 trees, 7 features, 22 classes** and `soil_dt.pkl` a
+DecisionTreeClassifier with the same shape — so Table 3's comparison is real work, verified through a
+path that does not run through the paper's prose. (b) Post-promotion verification first read
+`projected/349/resume.projected.yaml`, which was **two days stale** — `profile-bundle project` prints to
+**stdout** and does not write that file. Caught by the file's mtime, not by its contents. **Check the
+mtime of any artifact you are about to treat as a render.**
+
+**The paper contradicts itself, and the resolution is cheaper than either number.** Table 3 (p.4) says
+**99.54%**; Fig 1 (p.3) says **99.45%**, as does the poster's block diagram — so the "wrong" figure has
+two occurrences and neither can be recomputed (the 2,200-row CSV is not on disk). **Ruled: write
+`99.5%`** — true under both readings, survives a reviewer who opens the PDF at Fig 1, and **shorter**.
+
+**A provenance caveat that is inherited, not introduced.** `soil_rfc.pkl`'s 22 classes are *exactly* the
+22 crops of the Kaggle "Crop Recommendation Dataset" (2,200 rows, same 7 features), whose documented
+origin is agricultural/weather-station data, not an Indian government portal — while the paper calls all
+three datasets *"obtained from the official government website"* (p.2). The other two are well
+supported: the rainfall CSV's header matches §3.1 word for word, and `keys.py` holds a **`data.gov.in`**
+API key. The bullet said what its peer-reviewed source said, so this is a risk to brief Mit on, **not a
+résumé defect** — and the final wording drops "government" anyway.
+
+**Owner rulings.** (1) **Best Paper stays** — he holds proof off-disk. (2) **Two bullets.** (3)
+**`fact.crop-rf.tech.aws` STAYS** — it is the bundle's *only* source of the AWS skill (1 of 20 fact
+files) and therefore why "AWS" renders under Skills → Tools; parking it was offered and **declined**:
+he knows AWS from elsewhere. So the AWS *bullet* claim is gone while the AWS *skill* remains,
+**deliberately — do not "fix" this apparent inconsistency.** (4) job-apps out of scope, above.
+
+**Final wording, owner-approved: 2 bullets / 174 + 198 = 372 chars** (from 3 / 439, **−67**), zero over
+ceiling. Bullet 1 carries the publication and the corrected award count; bullet 2 carries the trilingual
+client, the sample scale, the probability-ranked top five and the accuracy. **Nothing was lost to the
+cut**: "Random Forest" is already the entry title (so restating it would violate D-213's no-repeat
+rule), the headline accuracy folded into bullet 2 as *"99.5% model accuracy"* — attribution-neutral, so
+it describes the system without asserting he trained it — and the stack and DOI live in `subtitle` and
+`link_url`.
+
+**Authoring shape.** Draft `crop-rf-bullets` cut from revision 16; two `edit-fact` calls produced
+`.001.r2` and `.003.r2` per D-190; **`…contribution.002` was parked by surface** — `'resume'` dropped
+from `allowed_surfaces`, leaving `['public']` — per D-213, since the bullet is *correct* but surplus,
+which is not D-209's `rejected`. No CLI does this, so it was a surgical hand-edit anchored on the fact's
+unique value line (the three-line surfaces block repeats throughout the file), and a per-fact dump
+confirmed **exactly one** of eleven facts changed surface. Validated **identically to a baseline
+captured before the edits** at both tiers — 0 error / 0 blocker / 10 warning / 1 information — because
+`_catalog_admits` is a diff and cannot see removals. `approve`, `promote` and `approve-projection` were
+left to the owner: they record *his* attestation on a controlling terminal, and an agent running them
+would manufacture the approval the whole `owner_attested` basis rests on.
+
+**`projection.yaml:12` corrected in the same change.** `subtitle` `'Python, Flutter, AWS'` →
+`'Python, scikit-learn, FastAPI, Flutter, Firebase'` (drops the contradicted host, adds the two
+keywords an ML/SDE screen actually looks for, all verified), and **`link_url` restored** to the DOI with
+`link_label: 'DOI'`. crop-rf now joins hookrail/streaksync/flickswiper as a linked entry; it had been
+the only project holding a permanent identifier and rendering no link.
+
+**Verified through the rendered `project` output, not the draft that produced it.** Revision 17,
+`project` exit 0 clean, new projection digest `sha256:c070a5a7…`: crop-rf ships **2 bullets, 174 + 198
+chars**, `.001`/`.003` superseded and dropping out on their own, `.002` absent by surface. **crop-rf is
+closed; the wording is final and must not be re-derived.**
+
+**Alternatives rejected.** *Three bullets keeping a slimmed accuracy comparison* (~501 chars) — the
+comparators exist to flatter 99.54, and a 1.09-point margin over a decision tree is not itself
+impressive; owner chose two. *Dropping the award and leading on selectivity alone* (127 chars) — moot
+once he attested the award, but it was the stronger option had he not. *Leading with the app to match
+his résumé's order* — bullets sort by fact id, so this would have required swapping content between
+`.001` and `.003` and scrambling `import_lineage`; each fact was instead edited in place, and the
+credential leads. *Naming Heroku in the subtitle* — accurate per the poster but a far weaker keyword
+than what replaced it. *Retiring `fact.crop-rf.tech.aws`* — owner declined, above.

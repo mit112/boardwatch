@@ -44,10 +44,12 @@ took its category by arrival order; it now refuses. **The next task must come fr
 > every bullet showing**. The master is a **RESERVOIR** holding the SUPERSET; per-JD **Stage 2** selects it
 > down to one page. `resume.yaml` / `sections.tex` are thin per-JD OUTPUTS, **not** the source — the wiki is.
 
-**Live revision: `sha256:ab48d3f7…` (revision 13).** 11 entities — 4 experience (Saayam, NIO co-op,
+**Live revision: 17.** *Do not quote its digest here — the refinement sessions promote several times a
+day and any stamp written into this file is stale within the hour; re-derive it with `profile-bundle
+inventory` (D-017).* 11 entities — 4 experience (Saayam, NIO co-op,
 Nakshatra, SAKEC) + 7 projects (Hookrail, Knowledge Forge, StreakSync, Random Forest, FlickSwiper,
-BirthdayQuest, Fond). 115 facts (**94 effective** — 20 `superseded` by an active edge, 1 `rejected` by owner ruling),
-14 skills, **33 effective bullet-facts of which 28 render** (5 parked by surface per D-213), **7 evidence records** (two
+BirthdayQuest, Fond). 124 facts (**93 effective** — 29 `superseded` by an active edge, 2 `rejected` by owner ruling),
+14 skills, **32 effective bullet-facts of which 25 render** (7 parked by surface per D-213), **7 evidence records** (two
 owner-attestation, incl. `evidence.mit.employer-names.001`, + five `repository_artifact`). Validates
 **0 error, 0 blocker**, with 10 `broken_reference` warnings — permanent residue of earlier revisions,
 non-blocking. The PDF renders **zero overfull**.
@@ -116,8 +118,24 @@ the cut lines fix no score threshold, so `ADMISSION_FLOOR` stays `Decimal(0)` (D
    negative counts. All four claimed features are teammates' commits; Mit ruled team ownership is
    fine, kept the title and the attested "1,000 active users", and chose two bullets. Only
    `gyroscope` was dropped on evidence (0 occurrences, any author).
-   **4 of the 28 rendering bullets still exceed the 220-char ceiling** (longest 307), across 3
-   entries — `fond` 307/241, `birthdayquest` 263, `nio-coop` 241.
+   **crop-rf DONE** (revision 17, D-217): 3 → **2**, 439 → **372 chars**, zero over ceiling. The only
+   entity briefed with a **primary published source**, and the outcome inverted: **every technical number
+   verified** against the paper (99.54/98.90/97.45 Table 3 p.4; 676,425 and 2,200 samples §3.1 p.2;
+   FastAPI named in the paper itself), while the **non-technical** claims failed — "among 300
+   presentations" is contradicted by the host college's official report (511 submitted / 206 accepted /
+   **120 registered**, bound to this conference because its IEEE Catalogue Number 58201 matches the DOI),
+   and **"on AWS"** is contradicted twice (poster says *"SERVER: Heroku"*; `uurl` held one value in all 67
+   commits — the emulator loopback). Mit **attested** Best Paper (artifact still owed) and ruled
+   `fact.crop-rf.tech.aws` **stays** — the bundle's only AWS source — so the AWS *skill* remains while the
+   AWS *bullet* claim is gone, deliberately. Its bullets were **inverted**: he is the client's **top
+   contributor (24 of 67 commits)** but the ML training is unattributable, so the app claim now leads.
+   `projection.yaml` also gained back its **DOI link** — an import regression, since his real résumé has
+   one.
+   **2 of the 25 rendering bullets still exceed the 220-char ceiling** — `birthdayquest` 263,
+   `nio-coop` 241. *Corrected 2026-08-17 from a live `project` measurement at revision 17; the previous
+   "4 of 28 … `fond` 307/241" was stale. `fond` (3 → 2, 423 chars) and `knowledge-forge` (3 → 2, 399)
+   are refined in the bundle but **their sessions have not recorded them here or in `DECISIONS.md`** —
+   those two entries are owed.*
    **`nio-coop` is in the pinned three, so the fallback trips on every
    render regardless of which projects Stage 2 admits** — it is the highest-value remaining target.
    Refinement is also the only lever that widens
