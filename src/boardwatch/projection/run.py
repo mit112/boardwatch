@@ -398,8 +398,10 @@ def _publish(out_dir: Path, files: Mapping[str, bytes]) -> None:
         if out_dir.exists():
             # A re-run over a directory that already exists (the pipeline creates the lead's
             # directory before calling this). `os.replace` will not rename onto a non-empty
-            # directory, so each file is published individually — and there is no husk to create
-            # here anyway, because the directory the cleanup would have removed already exists.
+            # directory, so each file is published individually. Safe regardless: both payloads
+            # are already fully materialised in `staging` before either `os.replace` runs, so a
+            # failure between the two calls cannot produce a partially-written file — at worst one
+            # of the two complete files lands and the other is left staged.
             for name in files:
                 os.replace(staging / name, out_dir / name)
         else:

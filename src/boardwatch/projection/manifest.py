@@ -29,9 +29,6 @@ MANIFEST_SCHEMA_VERSION = 2
 class ProjectionManifest(BaseModel):
     """One projection run's lineage: which bundle, which declaration, which entries survived
     selection, which score each candidate got, and which claim produced which bullet.
-
-    `posting_id` is `None` for a JD-blind Stage 1 manifest (there is no posting yet, so no
-    scores either); Stage 2 fills both in.
     """
 
     model_config = ConfigDict(frozen=True, extra="forbid")
@@ -40,7 +37,7 @@ class ProjectionManifest(BaseModel):
     bundle_revision: str
     bundle_digest: str
     projection_digest: str
-    posting_id: int | None
+    posting_id: int
     jd_skills: tuple[str, ...]
     pinned_entry_ids: tuple[str, ...]
     selected_entry_ids: tuple[str, ...]
