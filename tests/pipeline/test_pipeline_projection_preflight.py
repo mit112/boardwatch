@@ -183,8 +183,19 @@ def test_a_stale_stamp_fails_the_run_and_consumes_no_leads(env: Path, tmp_path: 
     # forgot to set it would land here as `ok`.
     assert _run_status(engine, summary.run_id) == RUN_FAILED
     # (3) visible in the artifact, which Gate P0 requires to be answerable on its own.
+    #
+    # Asserted on the FATAL **line**, not on the substring "FATAL". A bare `"FATAL" in markdown`
+    # cannot fail on this path and was measured not to: the shortlist stage's NOT-INSTRUMENTED
+    # note — which is what a refused run always emits, because `summary.shortlist` is None —
+    # spells the word in its own prose ("it is whatever the FATAL line and the Errors section
+    # below say", `reports/run_funnel.py:629`). Passing `fatal=None` to the writer left that
+    # substring assertion green. The line must also NAME the availability member, so the artifact
+    # answers *which* refusal on its own rather than only *that* one happened.
     assert summary.funnel is not None
-    assert "FATAL" in summary.funnel.markdown_path.read_text(encoding="utf-8")
+    markdown = summary.funnel.markdown_path.read_text(encoding="utf-8")
+    fatal_lines = [line for line in markdown.splitlines() if line.startswith("- **FATAL:**")]
+    assert len(fatal_lines) == 1, markdown
+    assert ProjectionAvailability.STALE_APPROVAL.value in fatal_lines[0]
     # Nothing was rendered, so there is no lead a `built` could have named.
     assert summary.tailored == []
 
