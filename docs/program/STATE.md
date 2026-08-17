@@ -103,6 +103,14 @@ were also used in 2026-08 for unrelated eligibility work (D-064/D-065/D-068).* M
 a **copy** of the store: projection stage **7.59s / 10 leads**, **max 3 compiles per lead** (structural
 ceiling 10), declared ceiling **≤ 6s per lead**.
 
+**Two things about `--project` that are easy to get wrong.** The funnel's `artifact_version` advances to
+**5 for every run, authored ones included** — one emitter, one schema version. "Nothing changes without the
+flag" is a claim about **behaviour**: no projection stage, no lineage keys, unchanged lead outcomes and
+dispositions — **not** about that field, and an earlier wording that also claimed byte-identical no-flag
+JSON was an over-claim, corrected in D-225. And **`--project` with an explicit `--resume` REFUSES** (exit 2,
+before any `runs` row): the projected path overwrote the résumé path for every lead, so `--resume` had no
+effect; what the combination should mean is P5b's to rule.
+
 **Tasks 20 and 23 are closed.** `projection-selection-matrix.md` holds ten real `role=swe` postings with the
 owner's rankings and cut lines over the **eight candidates** — the pinned three are excluded, since
 `agreement.score_all` scores only the ids `case.expected` names (D-197). Reading `score_all` against those

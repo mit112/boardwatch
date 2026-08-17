@@ -9633,7 +9633,8 @@ work produced.
 - **Projection gets its own balanced funnel stage**, entered at the ranker's shortlist rather than at the
   leads projection actually attempted, so leads liveness withheld keep a named bucket instead of vanishing
   between two stages. Folding a projection drop into `tailor_failed` would both make that count a lie and
-  hide the loss under a reason naming the wrong stage. Funnel `ARTIFACT_VERSION` **4 → 5**.
+  hide the loss under a reason naming the wrong stage. Funnel `ARTIFACT_VERSION` **4 → 5**, **globally** —
+  see the correction below.
 - **A closed run-scoped / per-lead outcome catalog**, with an enum-totality test over every
   `ProjectionIssue` member plus the foreign exception families. Out-of-catalog is a failure, never a new
   bucket: `classify_availability` raises on an unmapped type, so an unrecognised failure aborts the run
@@ -9676,6 +9677,47 @@ precisely so a working `tectonic` is never misdiagnosed as absent; the remedy it
 compile log and then look at the pinned entries. The reasoning is written into
 `projection/errors.py` beside both members, citing `resume_gate.py`, so the next reader inherits it instead
 of re-litigating it.
+
+### Corrections from the whole-branch review, applied before merge
+
+A final whole-branch review (`...-final-review.md`, verdict DO NOT SHIP) found four Important seam defects
+and one Minor. All five are fixed on this branch; the two that change what this entry claims are recorded
+here rather than in a new entry, because nothing had merged yet and the slice is one decision.
+
+- **The `artifact_version` 4 → 5 bump is GLOBAL, and "byte-identical no-flag output" was an over-claim.**
+  Both were recorded as met and both cannot hold: a run without `--project` emits a funnel whose
+  `artifact_version` reads 5 where it read 4, so the JSON is not byte-identical. **Ruled by Mit
+  (2026-08-17): keep the global bump, narrow the claim.** One emitter with one schema version is right —
+  versioning per run type would force every consumer to handle both, for a field whose whole job is to tell
+  a consumer which shape it is reading. The guarantee was always about *behaviour*: **no projection stage,
+  no lineage keys, unchanged lead outcomes and unchanged dispositions**, and it should never have extended
+  to the artifact's own schema-version field. `artifact_version` therefore advances to 5 for **every** run,
+  authored ones included. Corrected in the design's §2/§4.5/§5/§6 and beside `ARTIFACT_VERSION` itself.
+- **A new per-lead terminal bucket, `ProjectionLeadOutcome.NOT_ATTEMPTED`.** A run-scoped cause can surface
+  *inside* the per-lead loop — `select()` raises three, and `compile_prefix` can raise
+  `TemplateArtifactError` — and the loop set `fatal` and broke, leaving the current lead and every lead
+  behind it counted nowhere while the funnel stage still declared it entered at the ranker's shortlist. The
+  stage reported **DOES NOT RECONCILE**: a *fourth* case outside the three the design promises are
+  exhaustive (flag absent / preflight refused / balanced run). The bucket names no cause — the typed cause
+  stays `projection_availability` and `fatal`, said once for the run — and earns no ledger disposition,
+  since `stage_completed=False` on any fatal path. **Hoisting** the pinned-set compile into the preflight
+  was the alternative and was rejected: it cannot cover an environment that dies mid-run, so the accounting
+  would still be needed, and removing `select`'s per-lead pinned-only compile would delete
+  `_fatal_if_infrastructure`'s documented escalation — the very next lead's unattributable pinned failure
+  is what turns a real outage from N misattributed content failures into a stopped run.
+- **`boardwatch run --project --resume custom.yaml` now refuses** with a `typer.BadParameter` at the CLI
+  boundary, before any `runs` row exists. Both options describe an active choice of document source and the
+  projected path overwrote the résumé path for every lead, so `--resume` had no effect and said nothing.
+  What the combination should mean is P5b's, and silent precedence was the worst of the three answers.
+- **`run_tailor` now compares its own resolved transformation dependencies against the recorded lineage**
+  and raises `ResumeLineageMismatch` before parsing or rendering, closing the design's §4.1 requirement.
+  `_plan_tier_a` reloads the taxonomy, the persona registry and the equivalence table, so a configuration
+  edit between projection and tailoring wrote an artifact claiming the frozen snapshot while the transform
+  applied a different one — and a document hash cannot see it. Comparing was chosen over threading the
+  frozen objects in: it keeps `run_tailor`'s contract at the single optional lineage argument §4.3 ruled
+  for, and keeps `ProjectionRunContext` carrying the persona registry's *version* rather than the object.
+  The check lands **before** the extraction lookup, which coalesces a taxonomy miss to an empty skill set
+  and would otherwise have hidden exactly this.
 
 ### Residuals — recorded, not fixed
 
