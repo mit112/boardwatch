@@ -32,6 +32,7 @@ from sqlalchemy import Engine, select
 
 from boardwatch.core.clock import utcnow
 from boardwatch.core.dedup import Suppression
+from boardwatch.core.lineage import ResumeSourceLineage
 from boardwatch.core.regroup import plan_regrouping
 from boardwatch.core.settings import Settings
 from boardwatch.eligibility.audit import AuditView, load_audit
@@ -43,11 +44,15 @@ from boardwatch.pipeline.funnel_writer import collect_run_funnel
 from boardwatch.pipeline.liveness import LivenessProber, check_leads
 from boardwatch.pipeline.policy import run_policy_version
 from boardwatch.profile_bundle.paths import resolve_bundle_root
+from boardwatch.projection.errors import ProjectionError
 from boardwatch.projection.run import (
+    ISSUE_SCOPE,
     ProjectionAvailability,
     ProjectionLeadOutcome,
     ProjectionRunContext,
     classify_availability,
+    classify_lead_outcome,
+    project_for_posting,
     resolve_projection_run,
 )
 from boardwatch.projection.scoring import DEFAULT_SCORER_ID
@@ -60,7 +65,7 @@ from boardwatch.reports.run_funnel import (
     WrittenArtifact,
     write_run_funnel,
 )
-from boardwatch.reports.tailor import run_tailor
+from boardwatch.reports.tailor import ResumeLineageMismatch, default_compile_runner, run_tailor
 from boardwatch.scan.coordinator import ScanSummary, is_systemic_scan_outage, run_scan
 from boardwatch.store.db import ensure_schema
 from boardwatch.store.ledger_queries import record_disposition
@@ -173,7 +178,11 @@ class PipelineSummary:
     # The postings withheld as gone, kept by ID rather than by count so the cohort guard can
     # reconcile SETS. They are not tailor failures and not leads; they never entered the loop.
     dead_lead_ids: list[int] = field(default_factory=list)
-    # P5a — the run-scoped projection verdict, decided once by the `--project` preflight.
+    # P5a — the run-scoped projection verdict. Decided by the `--project` preflight, and re-decided
+    # only if a RUN-SCOPED cause surfaces later inside the per-lead loop: `select()` raises
+    # `PINNED_SET_COMPILE_FAILED`, `PINNED_SET_EXCEEDS_BUDGET` and `COMPILE_INFRASTRUCTURE_FAILURE`
+    # while building one lead, and all three are run-invariant, so the run's verdict is what they
+    # change — never one lead's outcome.
     #
     # `None` means the flag was NOT passed, which is not the same as `AVAILABLE`: a run that never
     # asked has no verdict to report, and defaulting to `AVAILABLE` would claim a resolve that
@@ -188,10 +197,63 @@ class PipelineSummary:
     # ABSENT, not zero, so a reader can omit a funnel stage entirely instead of printing a row of
     # zeros for a bucket nothing reached.
     projection_outcomes: Counter[ProjectionLeadOutcome] = field(default_factory=Counter)
+    # The postings whose PROJECTION failed, kept by ID beside the counter above for the same reason
+    # `dead_lead_ids` is: the cohort guard reconciles SETS. A THIRD terminal state, exactly like a
+    # withheld-as-gone lead — not a lead, and deliberately not a `tailor_failed`: the tailor stage
+    # never ran for these, so folding them into that count would make it a lie and would hide the
+    # projection drops inside a bucket whose reason names the wrong stage.
+    #
+    # They earn no `skipped` disposition either. Only a refusal the RÉSUMÉ earned is permanent
+    # (`LeadArtifactError.is_deterministic`); a projection that could not be built is the owner's
+    # bundle or the machine, and burying the lead for it would delete an opportunity that
+    # tomorrow's run would have built.
+    projection_failed_ids: list[int] = field(default_factory=list)
 
     @property
     def leads_with_pdf(self) -> int:
         return sum(1 for lead in self.tailored if lead.pdf_built)
+
+
+def _retract_projected(outcomes: Counter[ProjectionLeadOutcome]) -> None:
+    """Un-count one `PROJECTED` lead, for a lead whose projection is repudiated after the fact.
+
+    One caller: the `ResumeLineageMismatch` arm. The sidecars landed, so the lead was counted, and
+    then `run_tailor` proved the document it was handed is not the one that lineage describes —
+    before parsing or rendering anything. So the lead never advanced out of projection, and the
+    count has to say so: a reader's only balance is `served == projected + drops`, and a lead
+    counted in both terms makes that arithmetic unclosable.
+
+    Deletes the key at zero rather than leaving `PROJECTED: 0` behind. `projection_outcomes` is
+    empty by default precisely so an outcome that never occurred is ABSENT rather than zero — a
+    residual zero would claim projection ran and advanced nothing, which is a different report.
+    """
+    outcomes[ProjectionLeadOutcome.PROJECTED] -= 1
+    if outcomes[ProjectionLeadOutcome.PROJECTED] == 0:
+        del outcomes[ProjectionLeadOutcome.PROJECTED]
+
+
+def _projection_scope(exc: Exception) -> ProjectionAvailability | ProjectionLeadOutcome:
+    """Route one projection failure raised INSIDE the per-lead loop by scope, then classify it.
+
+    Scope first, deliberately. Both classifiers refuse the other's scope by raising
+    (`projection/run.py`), which is what makes a routing mistake loud — so a loop that called
+    `classify_lead_outcome` on everything would abort the run with the classifier's own
+    `AssertionError` instead of recording a typed fatal. Three run-scoped causes really do surface
+    here rather than at the preflight, because `select()` raises them while building ONE lead:
+    `PINNED_SET_COMPILE_FAILED`, `PINNED_SET_EXCEEDS_BUDGET` and `COMPILE_INFRASTRUCTURE_FAILURE`.
+
+    A member is read out of `ISSUE_SCOPE` only to decide WHICH classifier to ask; the answer always
+    comes from the classifier, so the guard that fails on a row whose value type and classifier
+    disagree still runs. Anything that is not a `ProjectionError` is run-scoped or unclassified by
+    construction (`classify_lead_outcome` takes only this package's own refusals), so it goes to
+    `classify_availability` — which raises rather than inventing a bucket for an unmapped type, and
+    that raise is correct: it reaches the crash handler, which records `fatal` and re-raises.
+    """
+    if isinstance(exc, ProjectionError) and isinstance(
+        ISSUE_SCOPE.get(exc.violation.issue), ProjectionLeadOutcome
+    ):
+        return classify_lead_outcome(exc)
+    return classify_availability(exc)
 
 
 def _cohort_guard(
@@ -393,6 +455,12 @@ def run_pipeline(
     the projection cannot be resolved. Never a fallback to the authored résumé: a fallback
     *succeeds*, so every lead would enter `summary.tailored`, every one of those would earn a
     permanent `built` disposition, and re-approving projection could never recover them.
+
+    A projection that fails for ONE lead counts its outcome in `summary.projection_outcomes`,
+    records a non-fatal error and skips that lead: the run continues and the lead stays reachable
+    tomorrow. A RUN-scoped cause that surfaces inside the loop — `select()` raises three of them
+    while building a single lead — stops the stage with `fatal` instead, because every remaining
+    lead would fail on it identically.
     """
     console = console or Console()
     # Deferred: top_cmd imports from the CLI layer, and importing it at module scope makes
@@ -613,14 +681,68 @@ def run_pipeline(
         console.print(f"[bold]tailor[/bold]{' (projected)' if projection_ctx is not None else ''}")
         for posting in leads:
             dest = day_dir / _slug(posting.company, posting.posting_id)
+            # The authored résumé and no lineage, unless this lead is projected below. Never a
+            # FALLBACK: a projection that fails does not reach `run_tailor` at all (it `continue`s),
+            # because a fallback SUCCEEDS and every lead it produced would earn a permanent `built`
+            # for an artifact nobody asked for — the defect the whole design exists to avoid.
+            lead_resume_path = resume_path
+            lead_lineage: ResumeSourceLineage | None = None
+            if projection_ctx is not None:
+                try:
+                    # `dest` is NOT pre-created. `_publish` stages both sidecars in a sibling
+                    # directory and renames them in only once every byte exists, so a lead that
+                    # refuses leaves no directory at all — which `_remove_if_empty` (an `rmdir`)
+                    # could not undo once one sidecar was inside it.
+                    projected = project_for_posting(
+                        projection_ctx,
+                        engine,
+                        settings,
+                        posting.posting_id,
+                        out_dir=dest,
+                        compile_runner=default_compile_runner(),
+                    )
+                except Exception as exc:
+                    # Broad, then routed by SCOPE — see `_projection_scope`, which raises rather
+                    # than bucketing anything the two closed catalogs do not name.
+                    scope = _projection_scope(exc)
+                    if isinstance(scope, ProjectionAvailability):
+                        # Run-invariant: every remaining lead would fail identically, so the stage
+                        # stops here exactly as it does for a missing render tool. Recorded as the
+                        # RUN's verdict and as `fatal`, never as a lead outcome — counting it
+                        # per-lead would grant the leads after it a disposition under a run-wide
+                        # fault, which is the one mistake a total table cannot prevent by itself.
+                        summary.projection_availability = scope
+                        summary.fatal = (
+                            f"projection unavailable: {scope.value} "
+                            f"(posting {posting.posting_id}: {exc})"
+                        )
+                        message = f"projection: {summary.fatal}"
+                        stage_errors.append(message)
+                        summary.errors.append(message)
+                        break
+                    # Per-lead: counted, reported as a NON-fatal error, and the run continues.
+                    summary.projection_outcomes[scope] += 1
+                    summary.projection_failed_ids.append(posting.posting_id)
+                    message = f"projection: posting {posting.posting_id}: {scope.value}: {exc}"
+                    stage_errors.append(message)
+                    summary.errors.append(message)
+                    continue
+                summary.projection_outcomes[ProjectionLeadOutcome.PROJECTED] += 1
+                lead_resume_path = projected.resume_path
+                lead_lineage = projected.lineage
             try:
                 result = run_tailor(
                     engine,
                     settings,
                     posting.posting_id,
-                    resume_path=resume_path,
+                    resume_path=lead_resume_path,
                     out_dir=_ensure_dir(dest),
                     run_id=run_id,
+                    # None on the authored path, so that path is byte-identical to before. On the
+                    # projected one this is what arms `_master_from_lineage`: without it the
+                    # hash/version validation and the artifact's `projection_*` provenance are
+                    # unreachable code.
+                    source_lineage=lead_lineage,
                 )
             except (RenderToolMissingError, TemplateArtifactError) as exc:
                 # An environment/authoring fault, not a per-lead failure (P1a): either the
@@ -669,6 +791,27 @@ def run_pipeline(
                 if exc.is_deterministic:
                     summary.unshippable_ids.append(posting.posting_id)
                 message = f"tailor: posting {posting.posting_id}: {exc}"
+                stage_errors.append(message)
+                summary.errors.append(message)
+                continue
+            except ResumeLineageMismatch as exc:
+                # An EXPLICIT arm, above the broad one, and it has to be: `run_tailor` raises this
+                # when the file it was handed is not the document its lineage describes (swapped
+                # bytes, a re-parsed model, or a posting version that moved between projection and
+                # tailoring). Caught by the `except Exception` below it would be filed as an
+                # ordinary `tailor_failed` and `ProjectionLeadOutcome.LINEAGE_MISMATCH` could never
+                # be produced — a typed refusal silently degraded into a generic bucket, which
+                # ships looking green.
+                #
+                # Not a fatal: the mismatch is about ONE posting's projected document, and the next
+                # lead's own projection and validation are independent of it.
+                _retract_projected(summary.projection_outcomes)
+                summary.projection_outcomes[ProjectionLeadOutcome.LINEAGE_MISMATCH] += 1
+                summary.projection_failed_ids.append(posting.posting_id)
+                message = (
+                    f"projection: posting {posting.posting_id}: "
+                    f"{ProjectionLeadOutcome.LINEAGE_MISMATCH.value}: {exc}"
+                )
                 stage_errors.append(message)
                 summary.errors.append(message)
                 continue
@@ -723,10 +866,15 @@ def run_pipeline(
         # render failures would report a dead board as a broken résumé path.
         shortlisted = summary.shortlist.shortlisted if summary.shortlist else 0
         renderable = shortlisted - len(summary.dead_lead_ids)
+        # A projected lead that never reached `run_tailor` is counted here and NOT subtracted from
+        # `renderable`, deliberately: it was renderable, and a run that produced nothing from a
+        # non-empty shortlist must stay fatal. Subtracting them would leave the zero-output guard
+        # below as the only backstop, and that guard is widened by `hidden_handled`/`hidden_applied`
+        # — so on any steady-state day a projection that failed on every lead would have written
+        # `status=ok` with nothing delivered.
+        unrendered = summary.tailor_failed + len(summary.projection_failed_ids)
         if summary.fatal is None and renderable > 0 and not summary.tailored:
-            summary.fatal = (
-                f"every lead failed to tailor ({summary.tailor_failed}/{renderable})"
-            )
+            summary.fatal = f"every lead failed to tailor ({unrendered}/{renderable})"
 
         # P3 item 5 (B5) — zero-output guard. Reachable when `renderable == 0`, which is either a
         # candidate-less day (`shortlisted == 0`) or — since P6 item 6 — a day where a non-empty
@@ -767,10 +915,14 @@ def run_pipeline(
         if summary.fatal is None:
             # Postings withheld as gone are removed from the cohort rather than added to the
             # accounted set: they are a THIRD terminal state, not a lead and not a render
-            # failure, and folding them into either would make one of those counts a lie.
-            visible_ids = frozenset(
-                posting.posting_id for posting in ranked.visible
-            ) - frozenset(summary.dead_lead_ids)
+            # failure, and folding them into either would make one of those counts a lie. A lead
+            # whose PROJECTION refused is removed for exactly that reason — a fourth terminal
+            # state, and the tailor stage never ran for it.
+            visible_ids = (
+                frozenset(posting.posting_id for posting in ranked.visible)
+                - frozenset(summary.dead_lead_ids)
+                - frozenset(summary.projection_failed_ids)
+            )
             lead_ids = frozenset(lead.posting_id for lead in summary.tailored)
             failed_ids = frozenset(summary.tailor_failed_ids)
             summary.fatal = _cohort_guard(visible_ids, lead_ids, failed_ids)

@@ -489,9 +489,9 @@ def resume_project(
         typer.echo(str(exc), err=True)
         raise typer.Exit(code=1) from exc
 
-    # `project_for_posting` raises on every refusal, so a returned result always carries both.
+    # `project_for_posting` raises on every refusal, so a returned result always carries both —
+    # which is now in `ProjectionResult`'s own types rather than re-asserted here.
     selection = result.selection
-    assert selection is not None
     typer.echo(f"wrote {result.resume_path}")
     typer.echo(f"wrote {result.manifest_path}")
     selected_count = len(selection.selected_candidate_ids)

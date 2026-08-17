@@ -91,6 +91,14 @@ class ProjectionIssue(StrEnum):
     #: the compile log, then look at the pinned entries.
     PINNED_SET_COMPILE_FAILED = "pinned_set_compile_failed"
     NO_JD_EXTRACTION = "no_jd_extraction"
+    # -- output -------------------------------------------------------------------------
+    #: The two sidecars for ONE lead could not be written. Typed here rather than left as the bare
+    #: `OSError` `_publish` raises, for the same reason every other member exists: the pipeline
+    #: routes a per-lead failure through the closed catalog, and an unclassified exception there is
+    #: an aborted run rather than a skipped lead. Like `CANDIDATE_COMPILE_FAILED`, it names an
+    #: ATTRIBUTION and not a cause — an `ENOSPC` will land on every lead in turn and be counted once
+    #: each, which is the honest report when nothing distinguishes a full disk from one bad path.
+    OUTPUT_IO_FAILURE = "output_io_failure"
     # -- posting ------------------------------------------------------------------------
     POSTING_NOT_OPEN = "posting_not_open"
     POSTING_NO_CURRENT_VERSION = "posting_no_current_version"

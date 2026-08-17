@@ -296,6 +296,14 @@ ISSUE_SCOPE = MappingProxyType({
     #: not run-scoped: an extraction row is posting-specific, so refusing the whole run for one
     #: posting's missing row would drop every other lead for an unrelated reason.
     ProjectionIssue.NO_JD_EXTRACTION: ProjectionLeadOutcome.EXTRACTION_UNAVAILABLE,
+    # -- output --------------------------------------------------------------------------
+    #: PER-LEAD, by attribution rather than by cause. `_publish` writes exactly one lead's two
+    #: sidecars, so a failure there is observably about that lead's output directory.
+    #: A full disk is run-invariant and will be counted once per lead, which is the same limit
+    #: `CANDIDATE_COMPILE_FAILED` accepts and for the same reason: nothing typed distinguishes
+    #: `ENOSPC` from one unwritable path, and refusing the whole run for a single bad directory
+    #: would drop every other lead for an unrelated reason.
+    ProjectionIssue.OUTPUT_IO_FAILURE: ProjectionLeadOutcome.OUTPUT_IO_FAILURE,
     # -- posting: per-lead by construction; another posting is unaffected ----------------
     ProjectionIssue.POSTING_NOT_OPEN: ProjectionLeadOutcome.POSTING_UNAVAILABLE,
     ProjectionIssue.POSTING_NO_CURRENT_VERSION: ProjectionLeadOutcome.POSTING_UNAVAILABLE,
@@ -382,15 +390,21 @@ def classify_lead_outcome(exc: Exception) -> ProjectionLeadOutcome:
 class ProjectionResult:
     """One lead's projection. `outcome` is `PROJECTED` and every other field is set on the only
     path that returns — every refusal raises instead, so the caller classifies it through
-    `classify_lead_outcome` / `ISSUE_SCOPE` rather than reading a sentinel out of this. The fields
-    stay optional so a caller that already holds a `ProjectionResult` for a skipped lead has
-    somewhere to put it without inventing a second type."""
+    `classify_lead_outcome` / `ISSUE_SCOPE` rather than reading a sentinel out of this.
+
+    Every field is therefore NON-OPTIONAL. They were `| None` on the theory that a caller holding a
+    result for a skipped lead would want somewhere to put it; no such caller exists or can exist,
+    because a skipped lead never gets a `ProjectionResult` at all — it gets an exception. An
+    optional field that cannot be `None` buys nothing and costs every reader a dead null check
+    (`cli/projection_cmd.py` had written one as an `assert`), which is exactly the check a reader
+    then wonders how to reach.
+    """
 
     outcome: ProjectionLeadOutcome
-    resume_path: Path | None
-    manifest_path: Path | None
-    lineage: ResumeSourceLineage | None
-    selection: SelectionResult | None
+    resume_path: Path
+    manifest_path: Path
+    lineage: ResumeSourceLineage
+    selection: SelectionResult
 
 
 def _publish(out_dir: Path, files: Mapping[str, bytes]) -> None:
@@ -444,11 +458,14 @@ def project_for_posting(
     re-resolve would let lead 2 be built under rules lead 1 was not built under, which no digest
     over the pool or hash over the résumé bytes can detect.
 
-    Nothing is caught: `posting_context` and `select` raise `ProjectionError`, and `select`'s
+    Nothing is classified: `posting_context` and `select` raise `ProjectionError`, and `select`'s
     `compile_prefix` can raise `TemplateArtifactError` from `LatexRenderer.emit` when the owner
     supplied a custom template with a leftover artifact in it. A caller routes each by scope
     (`ISSUE_SCOPE` first, then `classify_lead_outcome`); classifying here would fix one caller's
-    policy for both.
+    policy for both. The one exception that IS caught is the `OSError` from publishing the two
+    sidecars, re-raised as `OUTPUT_IO_FAILURE` — that is a translation into this package's own
+    catalog at the raise site, not a classification: it still leaves the scope routing to the
+    caller, and without it the loop's only route for a write failure was an aborted run.
 
     The compiles inside `select` are scratch, discarded with the temp directory they wrote into:
     they exist only to measure page count against the budget. `tailor run` renders the artifact
@@ -540,10 +557,25 @@ def project_for_posting(
         resume_model_sha256=resume_model_sha256,
         manifest_schema=MANIFEST_SCHEMA_VERSION,
     )
-    _publish(
-        out_dir,
-        {RESUME_FILENAME: document, MANIFEST_FILENAME: manifest_bytes(manifest)},
-    )
+    try:
+        _publish(
+            out_dir,
+            {RESUME_FILENAME: document, MANIFEST_FILENAME: manifest_bytes(manifest)},
+        )
+    except OSError:
+        # Typed at the raise site, so the pipeline's per-lead loop routes it through the closed
+        # catalog like every other refusal. Left as a bare `OSError`, it reached the loop as a
+        # foreign exception, and a foreign exception there is (correctly) not a lead outcome — a
+        # full disk would have aborted the run through `classify_availability`'s refusal rather
+        # than skipping the lead it actually happened to. The caught exception stays as this
+        # error's `__context__`, so the errno and the path it names are still in the traceback;
+        # neither is interpolated into the message, which several boundaries copy into a report.
+        raise_violation(
+            ProjectionIssue.OUTPUT_IO_FAILURE,
+            f"the projected résumé and manifest for posting {posting.posting_id} could not be "
+            f"written into {out_dir.name}",
+            where=f"posting:{posting.posting_id}",
+        )
     return ProjectionResult(
         outcome=ProjectionLeadOutcome.PROJECTED,
         resume_path=out_dir / RESUME_FILENAME,
