@@ -262,9 +262,19 @@ false refusal, so it can be widened on evidence. The three deliberately-unmarked
 (`promotion.py:892`, `rebase.py:1389`, `concurrency.py:234`) now read their timing budget as
 `RECLAIM_WINDOW_SECONDS + 2.0` from the emitter; left as literals they would have gone flaky on Windows.
 
+**VERIFIED ON WINDOWS as repair, not suppression.** A dispatch of `ci.yml` came back **success on all 12
+jobs**, and the pytest summaries were diffed against the pre-fix dispatch rather than trusting the job
+conclusions: **pre-fix Python 3.13 reported 5 xfailed / 3 xpassed**, so one of the four marked tests was
+*genuinely failing* under its marker; post-fix it is **4 xfailed / 0 xpassed / 0 failed** on all three
+versions, the 4 being the unrelated projection scorers. Totals reconcile exactly (pre-fix `6381 + 4 xpassed`
++ 6 new tests = **6391 passed**, `50 skipped` unchanged), so the four tests moved from suppressed to
+passing rather than being skipped or weakened. 3.11 and 3.12 xpassed all four *both* times — which is why a
+green run alone could never have settled it.
+
 **`make check` can NEVER verify this work** (it passes, and passed before the fix too) — the window is inert
 off `win32`. Windows evidence comes only from a **`workflow_dispatch`** of `ci.yml`, which builds the full
-12-job matrix. It **cannot close issue #76** —
+12-job matrix and takes **~1 hour** (Windows jobs measured at 40–62 min; 3.13 is usually the long pole).
+It **cannot close issue #76** —
 `nightly-watch` is gated `if: always() && github.event_name == 'schedule'` (`ci.yml:99`), so only the 07:00
 UTC scheduled run files or closes one. Read the dispatch's three `windows-latest` jobs directly; a
 still-open #76 is not evidence the fix failed.

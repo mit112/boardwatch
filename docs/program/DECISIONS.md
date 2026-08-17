@@ -9734,3 +9734,32 @@ one here was confirmed only after the first reproduction of it turned out to be 
 doc that states a behaviour is not the doc that quotes a message** — the sweep that correctly found the one
 verbatim quotation of the refusal string missed the README paragraph that described the bug in its own words,
 which was the only user-facing copy that mattered.
+
+### The Windows verdict: repair, not suppression — and 3.13 is what proves it
+
+Dispatch **`32047384310`** on `0ab16e9`, **conclusion `success`**, all 12 jobs including three
+`windows-latest`. The job conclusions alone would not have settled anything, so the pytest summaries were
+read out of the logs and compared against the **pre-fix** dispatch `32039875198` (`8573f50`, all four
+markers present) — a second path to the same claim.
+
+| Windows job | Pre-fix, markers on | Post-fix, markers off |
+|---|---|---|
+| 3.11 | 4 xfailed, **4 xpassed** | 4 xfailed, **0 xpassed** |
+| 3.12 | 4 xfailed, **4 xpassed** | 4 xfailed, **0 xpassed** |
+| 3.13 | **5 xfailed, 3 xpassed** | 4 xfailed, **0 xpassed** |
+
+**The 3.13 column is the whole argument.** Pre-fix it reports *five* xfailed and only *three* xpassed —
+so one of the four marked tests **genuinely failed**, which is the race firing under a marker that hid
+it. Post-fix, on the same platform and interpreter, there is nothing left to hide: 4 xfailed (the
+unrelated `strict=True` projection scorers, on every version), **0 xpassed, 0 failed**. 3.11 and 3.12
+had all four xpass both times, which is exactly why `strict=False` was chosen and exactly why a green
+run could never have been read as repair on its own.
+
+**The totals reconcile to the test, not approximately.** Pre-fix `6381 passed + 4 xpassed = 6385`
+effectively-passing; add this change's 6 new tests and the post-fix run must report **6391 passed**, and
+it does, on all three versions, with `50 skipped` unchanged (the POSIX-only modules). So the four tests
+did not vanish, get skipped, or get weakened — they moved from *suppressed* to *passing*, and the count
+proves which.
+
+**`nightly-watch` skipped, as designed** (`ci.yml:99` gates it to `schedule`), so issue #76 is untouched
+by this and closes on the next 07:00 UTC nightly. A still-open #76 is not evidence about this fix.
