@@ -395,10 +395,16 @@ def resume_project(
     # tell whether a persona declares `entries` (Task 15's own collision), so this runs before
     # `project_pool` reads anything and before `--scorer` is even validated.
     from boardwatch.projection.persona_preflight import reject_entry_declaring_personas
+    from boardwatch.tailor.persona import PersonaError
 
     try:
         reject_entry_declaring_personas(config_dir)
-    except ProjectionError as exc:
+    except (ProjectionError, PersonaError) as exc:
+        # `reject_entry_declaring_personas` calls `load_personas`, which raises `PersonaError` —
+        # not `ProjectionError` — for a registry that is malformed rather than merely
+        # entry-declaring: invalid YAML, no default persona, a duplicate id, a role_family outside
+        # the closed set. This is the FIRST thing in the command that reads `personas.yaml`, so it
+        # is where that refusal has to be reported; uncaught, it was a traceback.
         typer.echo(str(exc), err=True)
         raise typer.Exit(code=1) from exc
 
@@ -415,8 +421,10 @@ def resume_project(
     # database is somehow forbidden for this one. `projection.run` is deferred for that same
     # reason: it reaches `boardwatch.store` through `projection.posting`.
     from boardwatch.cli.context import build_context
+    from boardwatch.extract.taxonomy import TaxonomyError
     from boardwatch.projection.run import project_for_posting, resolve_projection_run
     from boardwatch.reports.tailor import default_compile_runner
+    from boardwatch.tailor.equivalences import EquivalenceError
     from boardwatch.tailor.render.latex import TemplateArtifactError
 
     app_ctx = build_context(ctx.obj)
@@ -448,17 +456,36 @@ def resume_project(
             out_dir=out_dir,
             compile_runner=default_compile_runner(),
         )
-    except (ProjectionError, ProfileBundleError, TemplateArtifactError) as exc:
-        # Three families, all from the shared implementation and none of them a traceback here:
-        # `ProjectionError` for every member of the closed catalog; `ProfileBundleError` because
-        # `project_pool` calls `read_stamp` unconditionally (D-167) and that raises for a stamp
-        # that fails to parse or validate against the current schema (the same widening
-        # `project`'s own boundary already has); `TemplateArtifactError` because `select`'s
-        # `compile_prefix` calls `renderer.emit`, which resolves and validates a user-supplied
-        # `{config_dir}/resume_template.tex` and refuses a leftover `%%..%%`/TODO/placeholder
-        # marker with a bare `RuntimeError` subclass. `RenderToolMissingError`/`LeadArtifactError`
-        # are still not listed: both are raised by `run_tailor` after inspecting a `GateResult`,
-        # never by `evaluate_compile`, `to_pdf`, or the default runner, which only return one.
+    except (
+        ProjectionError,
+        ProfileBundleError,
+        TemplateArtifactError,
+        PersonaError,
+        TaxonomyError,
+        EquivalenceError,
+    ) as exc:
+        # Exactly `resolve_projection_run`'s documented raise set, plus what `select` adds. Every
+        # one is an operator-actionable configuration fault, so every one is a message and an exit
+        # code rather than a traceback:
+        #
+        # * `ProjectionError` — every member of the closed catalog.
+        # * `ProfileBundleError` — `project_pool` calls `read_stamp` unconditionally (D-167), which
+        #   raises this for a stamp that fails to parse or validate against the current schema.
+        #   The same widening `project`'s own boundary already has.
+        # * `TemplateArtifactError` — `select`'s `compile_prefix` calls `renderer.emit`, which
+        #   resolves and validates a user-supplied `{config_dir}/resume_template.tex` and refuses a
+        #   leftover `%%..%%`/TODO/placeholder marker with a bare `RuntimeError` subclass.
+        # * `TaxonomyError` — a malformed `{config_dir}/taxonomy.yaml` override.
+        # * `EquivalenceError` — the packaged `tailor/equivalences.yaml` is unreadable or malformed.
+        #   No user override exists for it, so this arm means a corrupt installation.
+        # * `PersonaError` — `resolve_projection_run` reads the registry too. The preflight above
+        #   reads the same file first and so refuses a malformed one there in practice; this arm
+        #   covers the file changing between the two reads, and keeps the two boundaries from
+        #   disagreeing about which families are typed refusals.
+        #
+        # `RenderToolMissingError`/`LeadArtifactError` are still not listed: both are raised by
+        # `run_tailor` after inspecting a `GateResult`, never by `evaluate_compile`, `to_pdf`, or
+        # the default runner, which only ever return one.
         typer.echo(str(exc), err=True)
         raise typer.Exit(code=1) from exc
 
