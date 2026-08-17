@@ -400,4 +400,7 @@ def _build_entry(
         location=render_optional(entry_decl.location, "location"),
         link_url=render_optional(entry_decl.link_url, "link_url"),
         link_label=render_optional(entry_decl.link_label, "link_label"),
+        # `None` rather than `False` when undeclared: the projected document drops None-valued
+        # optionals, so this field's existence changes the bytes of no entry that does not use it.
+        bulletless=entry_decl.bulletless or None,
     )

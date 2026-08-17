@@ -194,7 +194,10 @@ The render path exists and is architecturally sound (§6, correction 1). What is
 4. **DONE.** Slot-filled assertion (job-apps resume-transfer §13.1) — shipped as a standalone
    `validate_slots(resume)` function (a build-time refinement from a `Resume` `model_validator`, which
    would run on every construction including legitimately-partial intermediate models), raising
-   `ResumeValidationError`, called once on the tailored model right before render.
+   `ResumeValidationError`, called once on the tailored model right before render. Its
+   bullets-per-entry clause was narrowed by D-226: an entry that **declares** `bulletless` may render
+   with none. Every other route to an empty entry — including one whose declared bullet source resolved
+   to nothing — is still refused, so the assertion's fail-closed direction is unchanged.
 5. **DONE.** Degraded path (job-apps §13.3): on compile failure or page-limit overflow, retry with the
    untailored résumé before giving up. A plain résumé beats none. Only if the untailored master is also
    unshippable is that lead dropped — non-fatal for the run unless every shortlisted lead fails (D-021).

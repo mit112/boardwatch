@@ -114,12 +114,17 @@ the cut lines fix no score threshold, so `ADMISSION_FLOOR` stays `Decimal(0)` (D
    `tailor run` fallback's only remaining structural cause. Pinned three cost **1,180 chars**
    (`nio-coop` 632, `saayam` 200, `sakec` 348); candidate room **2,259**.
    **The capacity conclusions this file used to carry are retired (D-219)** — see *Stage 2* above.
-   **Still owed from this track, both small:**
-   - **D-221's "C"** — make "role + org + dates only" representable: a declared `bullet_predicate` with
-     no résumé-surfaced fact should drop the bullet, not raise `BULLET_PREDICATE_NO_FACTS`
-     (`pool.py:367`), and `validate_slots` (`resume_gate.py:145`) should accept a bullet-less entry.
-     Today the two gates jointly forbid a legitimate third state, which is why `saayam` carries one
-     role-scoped bullet instead of none.
+   **Still owed from this track:**
+   - **D-221's "C" — BUILT (D-226) on branch `bulletless-entry-representable`; UNMERGED, unpushed.**
+     "Role + org + dates only" is now representable by declaring **`bulletless: true`** on the entry in
+     `projection.yaml`. `validate_slots` accepts an entry that declares it and still refuses every other
+     empty entry, so Gate P1's direction is unchanged (`PROGRAM.md` item 4 amended). **The fix is the
+     opposite of how this bullet used to describe it:** `BULLET_PREDICATE_NO_FACTS` is deliberately
+     UNCHANGED — a declared predicate resolving to nothing stays fatal, because dropping the bullet
+     instead would trade a loud refusal for a silent omission. No new `ProjectionIssue`; no existing test
+     edited. `make check` green, exit 0, 6,443 passed / 4 xfailed. **Mit's `saayam` entry still carries
+     its one role-scoped bullet** — the code is his to merge and the `projection.yaml` edit plus its
+     re-`approve-projection` are his to make (see *Live blockers*).
    - **The "sole iOS developer" prose is OWNER-GATED, not "one edit", and it lives in TWO files.**
      `wiki/00-profile/application-qa.md` already carries the full D-220 warning block; the prose under it
      is left verbatim **deliberately**, because rewording Mit's own writing is his alone (D-191) — so

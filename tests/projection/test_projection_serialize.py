@@ -279,3 +279,40 @@ def test_a_template_artifact_in_the_source_resume_is_still_caught_after_serializ
     path.write_bytes(resume_document_bytes(original))
     with pytest.raises(MasterResumeError):
         load_resume(path)
+
+
+def test_a_declared_bulletless_entry_round_trips(tmp_path: Path) -> None:
+    """`bulletless` has to survive the document boundary or it is useless: `resume project` writes
+    the document and `tailor run` loads it back, and the render gate that reads the flag runs on
+    the LOADED model. A flag that serialized away would turn a declared bullet-less entry into an
+    accidental one at exactly the gate built to tell them apart."""
+    original = _resume().model_copy(
+        update={
+            "entries": [
+                *_resume().entries,
+                Entry(
+                    entry_id="entry.employment.saayam-shaped",
+                    heading="Example Nonprofit",
+                    kind="experience",
+                    title="Volunteer Engineer",
+                    dates="Oct 2025 – Present",
+                    bullets=[],
+                    bulletless=True,
+                ),
+            ]
+        }
+    )
+    path = tmp_path / "projected.yaml"
+    path.write_bytes(resume_document_bytes(original))
+
+    loaded = load_resume(path)
+    assert loaded == original
+    assert loaded.entries[-1].bulletless is True
+    assert loaded.entries[-1].bullets == []
+
+
+def test_an_ordinary_document_carries_no_bulletless_key() -> None:
+    """The field is emitted only by the entries that use it. `exclude_none=True` drops it
+    everywhere else, which is why adding it changed the bytes of no existing document — including
+    the pinned projection golden and every content-addressed résumé hash."""
+    assert b"bulletless" not in resume_document_bytes(_resume())
