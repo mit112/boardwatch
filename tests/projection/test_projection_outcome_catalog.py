@@ -11,6 +11,10 @@ file: a hardcoded catalog once passed 98 tests in this repo while covering 5 of 
 
 from __future__ import annotations
 
+import subprocess
+import sys
+import types
+
 import pytest
 
 from boardwatch.extract.taxonomy import TaxonomyError
@@ -144,11 +148,10 @@ def test_a_broken_shell_source_is_not_a_broken_declaration() -> None:
         ISSUE_SCOPE[ProjectionIssue.SHELL_SOURCE_UNREADABLE]
         is not ProjectionAvailability.DECLARATION_UNREADABLE
     )
-    # The remedy the member names is a different file's, so the two must not share a value either.
-    assert (
-        ProjectionAvailability.SHELL_SOURCE_INVALID.value
-        != ProjectionAvailability.DECLARATION_UNREADABLE.value
-    )
+    # No `.value !=` assertion here on purpose (task 5b): two equal values inside ONE StrEnum alias
+    # to a single member, so the `is not` above already fails first and a `.value !=` line could
+    # never fail independently. `test_the_two_catalogs_share_no_member_value` covers the ACROSS-
+    # catalog case, which is the one where a shared value is actually representable.
 
 
 def test_a_missing_extraction_and_an_empty_skill_set_are_different() -> None:
@@ -170,6 +173,25 @@ def test_a_posting_refusal_skips_one_lead() -> None:
         ISSUE_SCOPE[ProjectionIssue.POSTING_NO_CURRENT_VERSION]
         is ProjectionLeadOutcome.POSTING_UNAVAILABLE
     )
+
+
+def test_a_candidates_content_compile_failure_skips_one_lead_not_the_run() -> None:
+    """`COMPILE_FAILED` is a non-zero tectonic exit over the candidate's own text (an unescaped `%`,
+    say), raised inside `select`'s JD-dependent candidate loop. Run-scoped, it would abort the whole
+    projected run as "toolchain unavailable" and send the operator to reinstall a working tectonic.
+    A missing binary is the arm that really is the machine's."""
+    assert (
+        ISSUE_SCOPE[ProjectionIssue.CANDIDATE_COMPILE_FAILED]
+        is ProjectionLeadOutcome.CANDIDATE_CONTENT_UNRENDERABLE
+    )
+    assert isinstance(
+        ISSUE_SCOPE[ProjectionIssue.COMPILE_INFRASTRUCTURE_FAILURE], ProjectionAvailability
+    )
+    assert classify_lead_outcome(_refusal(ProjectionIssue.CANDIDATE_COMPILE_FAILED)) is (
+        ProjectionLeadOutcome.CANDIDATE_CONTENT_UNRENDERABLE
+    )
+    with pytest.raises(AssertionError):
+        classify_availability(_refusal(ProjectionIssue.CANDIDATE_COMPILE_FAILED))
 
 
 def test_an_unknown_scorer_is_a_run_configuration_fault() -> None:
@@ -212,6 +234,73 @@ def test_a_foreign_exception_is_never_a_lead_outcome() -> None:
     per-lead loop is a run-scoped or unclassified fault, never a lead skip."""
     with pytest.raises(AssertionError):
         classify_lead_outcome(TaxonomyError("bad"))
+
+
+#: Run in a child interpreter under `-O`, which strips `assert`. Every case must refuse, and refuse
+#: with the same `AssertionError` the un-optimised interpreter raises: a classifier whose only guard
+#: is an `assert` returns the OTHER catalog's member, typed as its own, under optimisation — exactly
+#: the silent wrong bucket two catalogs exist to prevent.
+#:
+#: The unclassified-INPUT cases (`RuntimeError`, and a foreign exception at the lead gate) are
+#: included but are not what makes this test able to fail: `classify_availability` already ended in
+#: a real `raise`. The scope-CROSSING cases are the ones that returned `NO_REFUSAL` before the fix.
+_OPTIMIZE_PROBE = """
+from boardwatch.extract.taxonomy import TaxonomyError
+from boardwatch.projection.errors import ProjectionError, ProjectionIssue, ProjectionViolation
+from boardwatch.projection.run import classify_availability, classify_lead_outcome
+
+
+def refusal(issue):
+    return ProjectionError(ProjectionViolation(issue=issue, message="m", where="w"))
+
+
+CASES = (
+    ("availability/unclassified", classify_availability, RuntimeError("unmapped")),
+    (
+        "availability/per-lead-scope",
+        classify_availability,
+        refusal(ProjectionIssue.NO_JD_EXTRACTION),
+    ),
+    ("lead/foreign", classify_lead_outcome, TaxonomyError("bad")),
+    (
+        "lead/run-scoped-scope",
+        classify_lead_outcome,
+        refusal(ProjectionIssue.PINNED_SET_EXCEEDS_BUDGET),
+    ),
+)
+
+for name, classify, exc in CASES:
+    try:
+        got = classify(exc)
+    except AssertionError:
+        print(name + ": REFUSED")
+    except Exception as other:
+        print(name + ": WRONG_ERROR " + type(other).__name__)
+    else:
+        print(name + ": NO_REFUSAL " + repr(got))
+"""
+
+
+def test_the_classifiers_still_refuse_out_of_scope_input_under_optimize() -> None:
+    """`-O` strips asserts. A classifier whose only guard is `assert` returns the wrong enum type
+    silently under optimisation, which is the one outcome the closed catalog exists to prevent."""
+    out = subprocess.run(
+        [sys.executable, "-O", "-c", _OPTIMIZE_PROBE], capture_output=True, text=True, check=True
+    )
+    assert "NO_REFUSAL" not in out.stdout, out.stdout
+    assert "WRONG_ERROR" not in out.stdout, out.stdout
+    assert out.stdout.count("REFUSED") == 4, out.stdout
+
+
+def test_the_catalog_cannot_be_mutated_at_runtime() -> None:
+    """A closed catalog annotated `Mapping` but built as a plain `dict` is only CONVENTIONALLY
+    closed — the annotation binds mypy, not a caller holding the object. A read-only proxy is what
+    makes "a cause this does not name is a defect here, never a new bucket" true at runtime."""
+    assert isinstance(ISSUE_SCOPE, types.MappingProxyType)
+    with pytest.raises(TypeError):
+        ISSUE_SCOPE[ProjectionIssue.NO_JD_EXTRACTION] = (  # type: ignore[index]
+            ProjectionAvailability.TOOLCHAIN_UNAVAILABLE
+        )
 
 
 def test_the_classifiers_refuse_each_others_scopes() -> None:

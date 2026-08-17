@@ -23,7 +23,7 @@ from boardwatch.projection.errors import ProjectionError, ProjectionIssue
 from boardwatch.projection.pool import ProjectionPool
 from boardwatch.projection.posting import PostingContext
 from boardwatch.projection.scoring import SCORERS
-from boardwatch.projection.select import Compiler, select
+from boardwatch.projection.select import Compiler, _fatal_if_infrastructure, select
 from boardwatch.reports.resume_gate import GateReason, GateResult
 from boardwatch.tailor.equivalences import EquivalenceTable
 from boardwatch.tailor.model import Bullet, Entry, Resume
@@ -206,8 +206,8 @@ def test_used_fallback_is_false_when_the_fallback_list_is_itself_empty() -> None
 
 
 def _fails_once_grown(resume: Resume) -> GateResult:
-    """OK for the pinned-only prefix; `COMPILE_FAILED` the moment anything is added to it —
-    an infrastructure fault mid-growth, never overflow."""
+    """OK for the pinned-only prefix; `COMPILE_FAILED` the moment anything is added to it — a
+    non-zero tectonic exit over the candidate's own content mid-growth, never overflow."""
     if len(resume.entries) <= 1:
         return GateResult(GateReason.OK, True, None, 1, "")
     return GateResult(GateReason.COMPILE_FAILED, False, None, None, "tectonic exploded")
@@ -223,21 +223,69 @@ def test_compile_failed_mid_growth_fails_named_and_drops_nothing() -> None:
             taxonomy=TAXONOMY,
             compile_prefix=_fails_once_grown,
         )
+    assert exc_info.value.violation.issue is ProjectionIssue.CANDIDATE_COMPILE_FAILED
+
+
+# -- task 5b part 1: the two fatal arms are two different faults ------------------------------
+
+
+def test_a_content_compile_failure_is_not_a_toolchain_failure() -> None:
+    """`COMPILE_FAILED` means tectonic exited non-zero — owner content, e.g. an unescaped `%` in a
+    bullet. Reporting it as a toolchain fault sends the operator to reinstall a binary that is
+    already fine, and because this fires inside the JD-dependent candidate loop it aborts the whole
+    run for the postings where one entry happens to be admitted."""
+    with pytest.raises(ProjectionError) as exc_info:
+        _fatal_if_infrastructure(
+            GateResult(GateReason.COMPILE_FAILED, False, None, None, "! Misplaced alignment tab"),
+            where="posting:1",
+        )
+    assert exc_info.value.violation.issue is ProjectionIssue.CANDIDATE_COMPILE_FAILED
+
+
+def test_a_missing_binary_is_still_a_toolchain_failure() -> None:
+    """The other arm must not move: an absent tectonic really is run-scoped."""
+    with pytest.raises(ProjectionError) as exc_info:
+        _fatal_if_infrastructure(
+            GateResult(GateReason.BINARY_MISSING, False, None, None, "tectonic not found"),
+            where="posting:1",
+        )
     assert exc_info.value.violation.issue is ProjectionIssue.COMPILE_INFRASTRUCTURE_FAILURE
+
+
+def test_neither_fatal_arm_mentions_a_page_budget() -> None:
+    """Both arms keep the "no candidate is dropped on its account" guarantee — neither reason is
+    overflow — so neither message may send the operator to `resume_max_pages`. Splitting the issue
+    members must not cost that shared property."""
+    for reason in (GateReason.COMPILE_FAILED, GateReason.BINARY_MISSING):
+        with pytest.raises(ProjectionError) as exc_info:
+            _fatal_if_infrastructure(
+                GateResult(reason, False, None, None, ""), where="posting:1"
+            )
+        message = exc_info.value.violation.message
+        assert "never budget overflow" in message
+        assert "resume_max_pages" not in message
+
+
+def test_an_ok_gate_is_not_fatal() -> None:
+    """The guard fires on exactly two reasons; `OK` and `PAGE_LIMIT_EXCEEDED` fall through to the
+    caller's own handling. A split that widened the guard would abort every successful compile."""
+    for reason in (GateReason.OK, GateReason.PAGE_LIMIT_EXCEEDED):
+        _fatal_if_infrastructure(GateResult(reason, reason is GateReason.OK, None, 1, ""), where="w")
 
 
 # -- fix round 1, finding 2: BINARY_MISSING, the other fatal arm, was untested ----------------
 
 
 def _binary_missing_once_grown(resume: Resume) -> GateResult:
-    """OK for the pinned-only prefix; `BINARY_MISSING` the moment anything is added — the
-    sibling fatal arm to `COMPILE_FAILED` in `_fatal_if_infrastructure`'s tuple. A mutation that
-    drops `BINARY_MISSING` from that tuple does NOT go undetected without this test: `_grow`
-    falls through to `_reject_unless_ok`, whose "anything that is not exactly OK" catch-all backs
-    it up and raises the identical `COMPILE_INFRASTRUCTURE_FAILURE` regardless. This test still
-    earns its place — it pins the fatal-and-drops-nothing behaviour itself against the sibling
-    arm, `COMPILE_FAILED` — but the guard backstopping a regression here is `_reject_unless_ok`,
-    not this test."""
+    """OK for the pinned-only prefix; `BINARY_MISSING` the moment anything is added — the other
+    fatal arm of `_fatal_if_infrastructure`, which since task 5b raises a DIFFERENT issue from
+    `COMPILE_FAILED`. A mutation that drops `BINARY_MISSING` from that guard does NOT go undetected
+    without this test: `_grow` falls through to `_reject_unless_ok`, whose "anything that is not
+    exactly OK" catch-all backs it up and raises the identical `COMPILE_INFRASTRUCTURE_FAILURE`
+    regardless. This test still earns its place — it pins the fatal-and-drops-nothing behaviour
+    itself — but the guard backstopping a regression here is `_reject_unless_ok`, not this test.
+    Dropping the `COMPILE_FAILED` arm, by contrast, IS now caught: the catch-all would report
+    `COMPILE_INFRASTRUCTURE_FAILURE` where `CANDIDATE_COMPILE_FAILED` is required."""
     if len(resume.entries) <= 1:
         return GateResult(GateReason.OK, True, None, 1, "")
     return GateResult(GateReason.BINARY_MISSING, False, None, None, "pdfinfo not found")

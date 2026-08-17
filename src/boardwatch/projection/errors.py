@@ -68,6 +68,14 @@ class ProjectionIssue(StrEnum):
     # -- selection --------------------------------------------------------------------
     PINNED_SET_EXCEEDS_BUDGET = "pinned_set_exceeds_budget"
     COMPILE_INFRASTRUCTURE_FAILURE = "compile_infrastructure_failure"
+    #: `tectonic` exited non-zero while compiling a prefix that includes a CANDIDATE entry — an
+    #: unescaped `%` in one of its bullets, say. Distinct from COMPILE_INFRASTRUCTURE_FAILURE
+    #: because that member means the toolchain is absent or the gate reason is unclassified, and the
+    #: two remedies do not overlap: this one is edited in the bundle, that one is installed on the
+    #: machine. Folding them reports "toolchain unavailable" for a working tectonic and sends the
+    #: operator to reinstall it. Split at the raise site (`select._fatal_if_infrastructure`), not
+    #: downstream: telling them apart later would mean re-reading the compile log.
+    CANDIDATE_COMPILE_FAILED = "candidate_compile_failed"
     NO_JD_EXTRACTION = "no_jd_extraction"
     # -- posting ------------------------------------------------------------------------
     POSTING_NOT_OPEN = "posting_not_open"

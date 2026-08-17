@@ -39,6 +39,7 @@ from dataclasses import dataclass
 from datetime import date
 from enum import StrEnum
 from pathlib import Path
+from types import MappingProxyType
 
 from sqlalchemy import Engine
 
@@ -185,6 +186,12 @@ class ProjectionLeadOutcome(StrEnum):
     PROJECTED = "projected"
     POSTING_UNAVAILABLE = "posting_unavailable"
     EXTRACTION_UNAVAILABLE = "extraction_unavailable"
+    #: A prefix including a CANDIDATE entry would not compile — `tectonic` exited non-zero, most
+    #: often over an unescaped LaTeX special in one of that entry's bullets. Per-lead and not a
+    #: contradiction of the run-invariance rule above: which candidates are compiled at all is
+    #: decided per posting by `select`, so this is not the same claim as "the pinned set" or "the
+    #: page budget", both of which are fixed before any JD is read.
+    CANDIDATE_CONTENT_UNRENDERABLE = "candidate_content_unrenderable"
     LINEAGE_MISMATCH = "lineage_mismatch"
     OUTPUT_IO_FAILURE = "output_io_failure"
 
@@ -192,7 +199,12 @@ class ProjectionLeadOutcome(StrEnum):
 #: One row per `ProjectionIssue` member, in the order `errors.py` declares them. The table is the
 #: deliverable: totality asserted without a readable table is unreviewable, and a member's scope
 #: is a judgement that has to be written down where the next reader can disagree with it.
-ISSUE_SCOPE: Mapping[ProjectionIssue, ProjectionAvailability | ProjectionLeadOutcome] = {
+#:
+#: A read-only proxy, not a bare `dict`: the `Mapping` annotation closes the table for mypy only,
+#: and "a cause this does not name is a defect here, never a new bucket" has to hold for a caller
+#: holding the object at runtime too. `MappingProxyType` makes `ISSUE_SCOPE[x] = y` a `TypeError`.
+ISSUE_SCOPE: Mapping[ProjectionIssue, ProjectionAvailability | ProjectionLeadOutcome]
+ISSUE_SCOPE = MappingProxyType({
     # -- declaration: read once per run out of `config_dir`, so every arm is run-scoped ---
     ProjectionIssue.DECLARATION_UNREADABLE: ProjectionAvailability.DECLARATION_UNREADABLE,
     ProjectionIssue.DECLARATION_MISSING: ProjectionAvailability.DECLARATION_MISSING,
@@ -242,8 +254,21 @@ ISSUE_SCOPE: Mapping[ProjectionIssue, ProjectionAvailability | ProjectionLeadOut
     ProjectionIssue.PINNED_SET_EXCEEDS_BUDGET: ProjectionAvailability.PINNED_BUDGET_OVERFLOW,
     #: A missing `tectonic`/`pdfinfo` or an unclassified gate reason is a property of the
     #: machine, identical for every posting. Per-lead, it would re-shell out to an absent
-    #: binary once per lead and bill each failure to the owner's content.
+    #: binary once per lead and bill each failure to the owner's content. A non-zero tectonic
+    #: EXIT is not in here — see the row below.
     ProjectionIssue.COMPILE_INFRASTRUCTURE_FAILURE: ProjectionAvailability.TOOLCHAIN_UNAVAILABLE,
+    #: PER-LEAD. The toolchain ran and the document lost: an unescaped LaTeX special in one
+    #: candidate entry's bullet, say. Run-scoped, this reported "toolchain unavailable" for a
+    #: working tectonic and aborted every remaining lead.
+    #:
+    #: The honest limit: the candidate set is JD-DEPENDENT, so the same bad entry skips only the
+    #: leads whose JD admits it, and a lead whose JD never admits entry X is unaffected by X being
+    #: broken. That is correct rather than a gap — the broken entry is genuinely absent from those
+    #: leads' résumés — but it does mean this outcome's count is a count of AFFECTED leads, not of
+    #: broken entries, and one bad character can therefore show up as anywhere from 0 to N skips.
+    ProjectionIssue.CANDIDATE_COMPILE_FAILED: (
+        ProjectionLeadOutcome.CANDIDATE_CONTENT_UNRENDERABLE
+    ),
     #: PER-LEAD, deliberately. `posting_context` raises this when the taxonomy extraction backing
     #: `jd_skills_for` is missing for THIS posting at the run's taxonomy version. One way to
     #: reach it is a mid-run edit to `taxonomy.yaml`: `run_preflight` still loads its own
@@ -258,7 +283,7 @@ ISSUE_SCOPE: Mapping[ProjectionIssue, ProjectionAvailability | ProjectionLeadOut
     ProjectionIssue.POSTING_NO_CURRENT_VERSION: ProjectionLeadOutcome.POSTING_UNAVAILABLE,
     # -- run configuration ---------------------------------------------------------------
     ProjectionIssue.UNKNOWN_SCORER: ProjectionAvailability.SCORER_INVALID,
-}
+})
 
 #: The run-scoped causes that arrive as a FOREIGN exception rather than a `ProjectionIssue`,
 #: matched by type in order (each entry is checked with `isinstance`, so a subclass of
@@ -284,15 +309,24 @@ def classify_availability(exc: Exception) -> ProjectionAvailability:
     Never returns a default: an unmapped exception at a run gate would otherwise become a silent
     new bucket, and the whole point of a closed catalog is that it cannot grow by accident.
     A `ProjectionError` carrying a PER-LEAD issue is equally a defect here — it means a lead
-    failure reached a run gate — so it asserts rather than being promoted to fatal.
+    failure reached a run gate — so it raises rather than being promoted to fatal.
+
+    Every guard is an explicit `raise AssertionError`, never a bare `assert`: `-O` strips asserts,
+    and a stripped scope guard here does not fall through to the terminal raise — it RETURNS
+    `ISSUE_SCOPE[issue]`, i.e. a `ProjectionLeadOutcome` typed as a `ProjectionAvailability` — the
+    silent wrong bucket two catalogs exist to prevent, so it may not depend on an interpreter flag.
+    `AssertionError` is kept as the type (rather than a `ProjectionIssue`) because these are defects
+    in this table, not refusals of the owner's projection.
     """
     if isinstance(exc, ProjectionError):
         issue = exc.violation.issue
-        assert issue in ISSUE_SCOPE, f"unmapped ProjectionIssue {issue!r}"
-        scope = ISSUE_SCOPE[issue]
-        assert isinstance(scope, ProjectionAvailability), (
-            f"{issue!r} is a per-lead outcome ({scope!r}), not a run-scoped availability"
-        )
+        scope = ISSUE_SCOPE.get(issue)
+        if scope is None:
+            raise AssertionError(f"unmapped ProjectionIssue {issue!r}")
+        if not isinstance(scope, ProjectionAvailability):
+            raise AssertionError(
+                f"{issue!r} is a per-lead outcome ({scope!r}), not a run-scoped availability"
+            )
         return scope
     for family, availability in FOREIGN_AVAILABILITY:
         if isinstance(exc, family):
@@ -303,20 +337,26 @@ def classify_availability(exc: Exception) -> ProjectionAvailability:
 def classify_lead_outcome(exc: Exception) -> ProjectionLeadOutcome:
     """The per-lead catalog member `exc` means, or an `AssertionError`.
 
-    Asserts on a run-scoped cause: those surface inside the per-lead loop too (`select()` raises
+    Refuses a run-scoped cause: those surface inside the per-lead loop too (`select()` raises
     `PINNED_SET_EXCEEDS_BUDGET` and `COMPILE_INFRASTRUCTURE_FAILURE` while building one lead), and
     a caller that fed one here would grant the remaining leads a disposition under a run-wide
     fault. The caller reads `ISSUE_SCOPE` / `FOREIGN_AVAILABILITY` to route by scope first.
+
+    Explicit raises, never bare `assert`, for the same reason as `classify_availability`: under `-O`
+    the stripped scope guard returned a `ProjectionAvailability` typed as a `ProjectionLeadOutcome`,
+    and the stripped type guard reached `exc.violation` on a foreign exception and leaked an
+    `AttributeError` in place of this function's own refusal.
     """
-    assert isinstance(exc, ProjectionError), (
-        f"unclassified lead failure {type(exc).__name__}: {exc}"
-    )
+    if not isinstance(exc, ProjectionError):
+        raise AssertionError(f"unclassified lead failure {type(exc).__name__}: {exc}")
     issue = exc.violation.issue
-    assert issue in ISSUE_SCOPE, f"unmapped ProjectionIssue {issue!r}"
-    scope = ISSUE_SCOPE[issue]
-    assert isinstance(scope, ProjectionLeadOutcome), (
-        f"{issue!r} is a run-scoped availability ({scope!r}), not a per-lead outcome"
-    )
+    scope = ISSUE_SCOPE.get(issue)
+    if scope is None:
+        raise AssertionError(f"unmapped ProjectionIssue {issue!r}")
+    if not isinstance(scope, ProjectionLeadOutcome):
+        raise AssertionError(
+            f"{issue!r} is a run-scoped availability ({scope!r}), not a per-lead outcome"
+        )
     return scope
 
 

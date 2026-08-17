@@ -16,11 +16,13 @@ survivors is empty by construction — there is no basis here for preferring one
 takes `scorer: EntryScorer` as a required parameter with no default.
 
 The compile gate has four arms (`reports.resume_gate.evaluate_compile`) and only
-`PAGE_LIMIT_EXCEEDED` ever drops a candidate. `BINARY_MISSING` and `COMPILE_FAILED` are fatal
-infrastructure failures — a missing `tectonic` *or* `pdfinfo` is `BINARY_MISSING` (D-204), and
-`_pdf_page_count` (`reports/tailor.py`) folds its two remaining `None` causes into
-`COMPILE_FAILED`, so neither may ever read as "every candidate overflowed the budget." If the
-pinned set alone fails to compile for a page-count reason, that
+`PAGE_LIMIT_EXCEEDED` ever drops a candidate. `BINARY_MISSING` and `COMPILE_FAILED` are both fatal
+and neither may ever read as "every candidate overflowed the budget" — but they are two different
+faults with two different remedies, and `_fatal_if_infrastructure` raises a different issue for
+each: a missing `tectonic` *or* `pdfinfo` is `BINARY_MISSING` (D-204), the machine's problem, while
+`COMPILE_FAILED` means the toolchain ran and the document lost — a non-zero `tectonic` exit, or one
+of `_pdf_page_count`'s two remaining `None` causes (`reports/tailor.py`) — which is the owner's
+content. If the pinned set alone fails to compile for a page-count reason, that
 is `PINNED_SET_EXCEEDS_BUDGET`, naming the pinned set and the actionable knob
 (`resume_max_pages`), not a candidate-selection outcome at all.
 
@@ -80,14 +82,43 @@ class SelectionResult:
 
 
 def _fatal_if_infrastructure(gate: GateResult, *, where: str) -> None:
-    """`BINARY_MISSING`/`COMPILE_FAILED` are never overflow: raise before any candidate is
-    dropped on their account."""
-    if gate.reason in (GateReason.BINARY_MISSING, GateReason.COMPILE_FAILED):
+    """Raise on either non-overflow compile failure, as a DIFFERENT issue each — before any
+    candidate is dropped on its account.
+
+    Both arms share exactly one property: neither is budget overflow, so neither may ever read as
+    "this candidate did not fit." That is where the resemblance ends, and "not overflow" is not
+    what makes something infrastructure:
+
+    - `BINARY_MISSING` — `tectonic` or `pdfinfo` is absent (D-204). A property of the machine,
+      identical for every posting, remedied by installing something.
+    - `COMPILE_FAILED` — `tectonic` exited non-zero (`reports/tailor.py`), or `_pdf_page_count`
+      could not read a page count out of a PDF that WAS produced. The toolchain ran; the document
+      it was handed is what failed. The overwhelmingly common cause is the owner's own content —
+      an unescaped `%`, `&` or `_` in a bullet — remedied by editing the bundle.
+
+    Reporting the second as the first is a live misdiagnosis, not a tidiness point: this function
+    is called from inside the JD-dependent candidate loop, so one bad character in one candidate
+    entry aborted the whole projected run as "toolchain unavailable", for exactly the postings
+    whose JD admitted that entry, and sent the operator to reinstall a tectonic that was fine.
+    """
+    if gate.reason is GateReason.BINARY_MISSING:
         raise_violation(
             ProjectionIssue.COMPILE_INFRASTRUCTURE_FAILURE,
-            f"compile failed for a reason unrelated to page count ({gate.reason.value}); this "
-            "is an infrastructure fault, never budget overflow, and no candidate is dropped "
-            "on its account",
+            f"a render-toolchain binary is missing ({gate.reason.value}"
+            # `GateResult.tool` names WHICH binary, and is None for every other reason. A
+            # `RenderTool` is a `Literal[str]`, not an enum — no `.value` to read.
+            + (f": {gate.tool}" if gate.tool is not None else "")
+            + "); this is an environment fault, never budget overflow, and no candidate is "
+            "dropped on its account",
+            where=where,
+        )
+    if gate.reason is GateReason.COMPILE_FAILED:
+        raise_violation(
+            ProjectionIssue.CANDIDATE_COMPILE_FAILED,
+            f"the compile of a prefix including a candidate entry failed ({gate.reason.value}); "
+            "the toolchain ran, so this is the DOCUMENT, most often an unescaped LaTeX special "
+            "character in a bullet — never budget overflow, and no candidate is dropped on its "
+            "account",
             where=where,
         )
 
@@ -103,13 +134,23 @@ def _reject_unless_ok(gate: GateResult, *, where: str) -> None:
     `CONTACT_BLOCK_INVALID_EMAIL`). A compiler wired to one of those would otherwise fall
     through an implicit else and be silently admitted as "it fits." Anything that is not
     exactly `OK` here is unclassified for this module's purposes and must fail named, not pass
-    through."""
+    through.
+
+    This catch-all stays with `COMPILE_INFRASTRUCTURE_FAILURE` (run-scoped) rather than moving to
+    `CANDIDATE_COMPILE_FAILED` (per-lead) alongside the content arm, and the reason is which
+    compiler can produce these reasons at all. The production `compile_prefix`
+    (`run.project_for_posting`) returns `evaluate_compile`'s output, whose only reachable reasons
+    are the four this module names — so a fifth arriving here means a compiler was wired in that
+    `evaluate_compile` is not, which is a run-invariant property of the WIRING, true for every
+    posting. Per-lead, it would bill N leads to the owner's content for one miswiring; run-scoped,
+    it names the defect once. That is also the fail-safe direction: for a reason nobody classified
+    we do not know the document caused it, and stopping is cheaper than N wrong diagnoses."""
     if gate.reason is not GateReason.OK:
         raise_violation(
             ProjectionIssue.COMPILE_INFRASTRUCTURE_FAILURE,
             f"compile gate returned {gate.reason.value!r}, which this module does not "
-            "recognise as success or as one of its two handled failure arms "
-            "(BINARY_MISSING/COMPILE_FAILED, PAGE_LIMIT_EXCEEDED); an unclassified gate reason "
+            "recognise as success or as one of its three handled failure arms "
+            "(BINARY_MISSING, COMPILE_FAILED, PAGE_LIMIT_EXCEEDED); an unclassified gate reason "
             "is a property of the compiler wired in, not of the owner's content, so it is "
             "treated as infrastructure failure rather than budget overflow or silent success",
             where=where,
