@@ -123,10 +123,14 @@ the cut lines fix no score threshold, so `ADMISSION_FLOOR` stays `Decimal(0)` (D
    - **The "sole iOS developer" prose is OWNER-GATED, not "one edit", and it lives in TWO files.**
      `wiki/00-profile/application-qa.md` already carries the full D-220 warning block; the prose under it
      is left verbatim **deliberately**, because rewording Mit's own writing is his alone (D-191) — so
-     nothing is owed there but a rewrite only he can make. **What is unflagged is the upstream copy,
-     `~/dev/Job apps/Common_App_Questions.md:8`** — same two contradicted claims (six contributors; the
-     SensorKit work is a colleague's), no warning at all, and it is the file a future application would be
-     pasted from. Note `~/dev/portfolio-website/wiki` is **not a git repo** — edits there have no undo.
+     nothing is owed there but a rewrite only he can make. The upstream copy,
+     `~/dev/Job apps/Common_App_Questions.md:8`, carried the same two claims with **no** warning and is the
+     file a future application would be pasted from — **now flagged** with the same block, committed locally
+     as `7dbc4ab` and **not pushed** (Mit's personal repo, his call). Its other answers were checked and
+     deliberately left alone: the "gamified learning / 94% / 2,000+ students" claims belong to a *different*
+     project, and Mit **retracted** the theory tying them to Knowledge Forge's AWS/GCP contradiction.
+     **So all that remains here is Mit's rewrite of his own prose.** Note
+     `~/dev/portfolio-website/wiki` is **not a git repo** — edits there have no undo.
 
    **Method facts this track established, all still binding:**
    **Do the PINNED entries first.** `select.py`: pinned entries are *"emitted in declared order, never
@@ -240,16 +244,13 @@ Windows story — RULED best-effort, D-212**.)*
 **Windows is best-effort (D-212)** — in the nightly, out of the pyproject classifiers, four caveats in
 `README.md`. **A green 9-job push run contains ZERO Windows jobs** (`ci.yml`'s `os` matrix is conditional
 on `schedule`/`workflow_dispatch`, D-151; the nightly is 12) — never read it as full-matrix coverage. A
-**`nightly-watch`** job now files a GitHub issue when a scheduled run fails and closes it on recovery:
+**`nightly-watch`** job files a GitHub issue when a scheduled run fails and closes it on recovery:
 **check for an open "Nightly CI is failing" issue at session start.** Of the two red tests, rich's
 `legacy_windows` off-by-one is fixed; the stale-lock reclaim is a Windows-only **race**, accepted by
-ruling and marked `xfail(win32, strict=False)`. **D-212's fix IS now verified** — dispatch run
-`31954948210` (`4593d04`) completed **success**, resolving the "necessary, not verified" caveat this
-file used to carry.
+ruling and marked `xfail(win32, strict=False)`.
 
-**The nightly is RED, and the marking took three passes to become a census (2026-08-17).** Scheduled run
-**`32007953224`** (`aeb87d9`) failed on exactly **one** job — `test (3.11, windows-latest)`; Windows
-3.12 and 3.13 both passed, as did every macOS/Linux job. **`nightly-watch` issue #76 is OPEN.**
+**`nightly-watch` issue #76 is OPEN**, filed by scheduled run `32007953224`, which failed on one job —
+`test (3.11, windows-latest)`.
 
 **FOUR tests kill a lock holder then acquire; all four are now marked** (D-212 two, D-222 a third, **D-223**
 a fourth — `test_profile_bundle_rebase.py::test_the_lock_helper_refuses_a_second_holder_and_releases_on_exit`).
@@ -269,6 +270,12 @@ But **it cannot close issue #76**: `nightly-watch` is gated `if: always() && git
 'schedule'` (`ci.yml:99`), so only the **07:00 UTC scheduled** run files or closes. So read the dispatch
 run's three `windows-latest` jobs directly for the verdict, and expect **#76 to close on the next nightly**,
 not before. Do not read a still-open #76 as the fix having failed.
+
+**A green Windows run proves SUPPRESSION, not repair.** `strict=False` means all four tests pass whether or
+not the defect fires. The **root fix is unstarted and named in D-223**: `locking.py`'s docstring chose
+`filelock` *for* portability and then rested its correctness argument on "the kernel drops a dead process's
+`flock` immediately", which only POSIX guarantees. Fixing that is a design question, not a cleanup, and the
+four markers come off together after it — never one at a time.
 
 ---
 
