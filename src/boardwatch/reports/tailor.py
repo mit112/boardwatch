@@ -33,6 +33,7 @@ from typing import Any
 
 from sqlalchemy import Connection, Engine, select
 
+from boardwatch.core.lineage import ResumeSourceLineage
 from boardwatch.core.settings import Settings
 from boardwatch.extract.preflight import run_preflight
 from boardwatch.extract.taxonomy import Taxonomy, load_taxonomy
@@ -74,7 +75,7 @@ from boardwatch.tailor.coverage import (
     resume_fact_skills,
 )
 from boardwatch.tailor.equivalences import EquivalenceTable, load_equivalences
-from boardwatch.tailor.load import load_resume
+from boardwatch.tailor.load import load_resume, load_resume_bytes, read_resume_bytes
 from boardwatch.tailor.model import Resume
 from boardwatch.tailor.persona import apply_persona, load_personas, select_persona
 from boardwatch.tailor.plan import Delete, EquivalenceSwap, TailorPlan, build_plan
@@ -121,6 +122,13 @@ def _render_tool_missing_message(tool: RenderTool | None) -> str:
 
 class NoCurrentVersionError(RuntimeError):
     """The posting has no current version, or is not open — nothing safe to tailor against."""
+
+
+class ResumeLineageMismatch(RuntimeError):
+    """The résumé handed to `run_tailor` is not the document its `ResumeSourceLineage` describes:
+    different bytes, a different parsed model, or a posting version that moved between projection
+    and tailoring. Typed so the pipeline can map it to one lead outcome without reading a
+    message."""
 
 
 class UnsupportedFormatError(ValueError):
@@ -383,13 +391,56 @@ def jd_skills_for(conn: Connection, posting_id: int, *, taxonomy: Taxonomy) -> s
     return set(row.json.get("skills", []))
 
 
+def _master_from_lineage(path: Path, lineage: ResumeSourceLineage, cv: CurrentVersion) -> Resume:
+    """Load a PROJECTED master and prove it is the document its lineage describes.
+
+    One read. Byte identity, the posting version, and model identity are all checked against the
+    single buffer this function reads — hashing the path and then calling `load_resume` on it
+    would leave a read/swap/read window in which the bytes that were validated are not the bytes
+    that get rendered. The two hash checks do not subsume one another: bytes catch a swapped
+    file, the model catches two documents that differ only under a different loader.
+
+    The byte and version refusals land before the document is parsed at all; all three land
+    before any render or write.
+    """
+    data = read_resume_bytes(path)
+    resume_sha256 = hashlib.sha256(data).hexdigest()
+    if resume_sha256 != lineage.resume_sha256:
+        raise ResumeLineageMismatch(
+            f"projected résumé {path} hashes to {resume_sha256}, but its lineage records "
+            f"{lineage.resume_sha256}"
+        )
+    if cv.posting_version_id != lineage.posting_version_id:
+        raise ResumeLineageMismatch(
+            f"projection targeted posting version {lineage.posting_version_id}, but posting "
+            f"{cv.posting_id} now resolves to version {cv.posting_version_id}"
+        )
+    master = load_resume_bytes(data, origin=path)
+    model_sha256 = _sha(master.model_dump_json())
+    if model_sha256 != lineage.resume_model_sha256:
+        raise ResumeLineageMismatch(
+            f"projected résumé {path} parses to model hash {model_sha256}, but its lineage "
+            f"records {lineage.resume_model_sha256}"
+        )
+    return master
+
+
 def _plan_tier_a(
-    engine: Engine, settings: Settings, posting_id: int, *, resume_path: Path
+    engine: Engine,
+    settings: Settings,
+    posting_id: int,
+    *,
+    resume_path: Path,
+    source_lineage: ResumeSourceLineage | None = None,
 ) -> _TierAPlan:
     """Tier A planning prefix shared by `run_tailor` and `plan_tier_a`: preflight,
     taxonomy, the posting's current OPEN version + jd_skills extraction lookup, the
     authored résumé, equivalences, plan build/apply, and the no-fabrication check —
     raises before any render or write.
+
+    `source_lineage` is set only when the résumé at `resume_path` was projected rather than
+    authored; it is then checked against the file and the resolved version (see
+    `_master_from_lineage`) before the document is parsed.
     """
     run_preflight(engine, settings)
     taxonomy = load_taxonomy(settings.config_dir)
@@ -418,7 +469,10 @@ def _plan_tier_a(
     # jd_skills_for directly rather than through this coalesce.
     jd_skills: set[str] = found if found is not None else set()
 
-    master = load_resume(Path(resume_path))
+    if source_lineage is None:
+        master = load_resume(Path(resume_path))
+    else:
+        master = _master_from_lineage(Path(resume_path), source_lineage, cv)
     # Shape the résumé through the persona lens BEFORE planning: the JD title selects the
     # persona, the persona resolves the headline title, and the shaped résumé (reordered skill
     # groups, entry subset, headline) is what all of Tier A operates on. `apply_persona` never
@@ -477,13 +531,16 @@ def run_tailor(
     llm_model_override: str | None = None,
     llm_budget_override: int | None = None,
     run_id: int | None = None,
+    source_lineage: ResumeSourceLineage | None = None,
 ) -> TailorResult:
     if fmt not in SUPPORTED_FORMATS:
         supported = ", ".join(SUPPORTED_FORMATS)
         raise UnsupportedFormatError(f"unsupported format {fmt!r}; supported: {supported}")
     if client is not None and tb_override is not None:
         raise ValueError("pass either client or tb_override, not both")
-    r = _plan_tier_a(engine, settings, posting_id, resume_path=resume_path)
+    r = _plan_tier_a(
+        engine, settings, posting_id, resume_path=resume_path, source_lineage=source_lineage
+    )
     master, tailored, jd_skills, taxonomy = r.master, r.tailored, r.jd_skills, r.taxonomy
     table, plan, cv = r.table, r.plan, r.cv
     persona_id, resolved_title = r.persona_id, r.resolved_title
@@ -737,6 +794,12 @@ def run_tailor(
         if degraded:
             meta["degrade_reason"] = degrade_reason
         meta["compile_log_uri"] = str(log_path)
+        # Projected-master provenance, on the TAILORED row only. `resume_master` is
+        # content-addressed and reused across runs by get_or_create_master_artifact, whose meta is
+        # written on first creation alone — lineage there would be attributed to whichever run
+        # happened to create that master first, and would go stale for every later one.
+        if source_lineage is not None:
+            meta.update(source_lineage.as_meta())
 
         # Standalone `boardwatch tailor run` owns its run: a degenerate pipeline run whose
         # only stage is this one posting. Minting rather than writing NULL keeps

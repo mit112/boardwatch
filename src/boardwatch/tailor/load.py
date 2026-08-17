@@ -67,23 +67,40 @@ def validate_master(resume: Resume) -> None:
             )
 
 
-def load_resume(path: Path) -> Resume:
+def read_resume_bytes(path: Path) -> bytes:
+    """The résumé's raw bytes, read exactly once.
+
+    Split out of `load_resume` so a caller that must hash the bytes it parses (a projected
+    master, whose lineage records a sha256 over the published document) can hash and parse the
+    same buffer. Reading the path again between the hash and the parse would leave a
+    read/swap/read window in which the bytes that were validated are not the bytes rendered.
+    """
     if not path.is_file():
         raise ResumeLoadError(f"no résumé at {path}; run `boardwatch tailor init` to scaffold one")
+    return path.read_bytes()
+
+
+def load_resume_bytes(data: bytes, *, origin: Path) -> Resume:
+    """Decode, parse, and master-validate résumé bytes. `origin` names the file the bytes came
+    from and appears in every error message, exactly as when `load_resume` read it itself."""
     try:
-        text = path.read_text(encoding="utf-8")
+        text = data.decode("utf-8")
     except UnicodeDecodeError as exc:
-        raise ResumeLoadError(f"{path}: not valid UTF-8: {exc}") from exc
+        raise ResumeLoadError(f"{origin}: not valid UTF-8: {exc}") from exc
     try:
-        data = yaml.safe_load(text)
+        parsed = yaml.safe_load(text)
     except yaml.YAMLError as exc:
-        raise ResumeLoadError(f"{path}: invalid YAML: {exc}") from exc
+        raise ResumeLoadError(f"{origin}: invalid YAML: {exc}") from exc
     try:
-        resume = Resume.model_validate(data)
+        resume = Resume.model_validate(parsed)
     except ValidationError as exc:
-        raise ResumeLoadError(f"{path}: {exc}") from exc
+        raise ResumeLoadError(f"{origin}: {exc}") from exc
     validate_master(resume)
     return resume
+
+
+def load_resume(path: Path) -> Resume:
+    return load_resume_bytes(read_resume_bytes(path), origin=path)
 
 
 def scaffold_template() -> str:
