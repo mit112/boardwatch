@@ -399,12 +399,18 @@ def test_the_authored_run_is_untouched() -> None:
 
 
 def test_a_stray_counter_entry_cannot_conjure_the_stage() -> None:
-    """The omit decision is the run's VERDICT, never the counter's emptiness. `_retract_projected`
-    called against a counter with no `PROJECTED` key would leave `PROJECTED: -1` — unreachable
-    today only because `ResumeLineageMismatch` has one raise site gated on a lineage being present,
-    which is a behavioural accident rather than a structural guarantee. A funnel that inferred
-    "projection ran" from a non-empty counter would then report a stage for a run that never
-    passed the flag."""
+    """A stray counter entry does not reach the BUILDER's omit decision, which is `projection is
+    None` and nothing else. `_retract_projected` called against a counter with no `PROJECTED` key
+    would leave `PROJECTED: -1` — unreachable today only because `ResumeLineageMismatch` has one
+    raise site gated on a lineage being present, which is a behavioural accident rather than a
+    structural guarantee.
+
+    Scope note, because this helper folds the counter itself: the run-level decision — verdict, not
+    counter emptiness — is made one layer up in `funnel_writer.collect_run_funnel`, so this test
+    cannot see a drift there. `tests/pipeline/test_run_funnel_projection_stage.py::
+    test_a_refused_projected_run_still_carries_an_UNMEASURED_stage` is the one that can, and it
+    goes red if that condition ever starts consulting the counter.
+    """
     report = funnel(
         projection_ran=False, outcomes=Counter({ProjectionLeadOutcome.PROJECTED: -1})
     )

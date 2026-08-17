@@ -24,7 +24,7 @@ from pathlib import Path
 
 import pytest
 
-from boardwatch.projection.run import ProjectionLeadOutcome
+from boardwatch.projection.run import ProjectionAvailability, ProjectionLeadOutcome
 from tests.pipeline.test_ledger_advances_the_queue import _ready
 from tests.pipeline.test_pipeline_projection_leads import (
     _pipeline,
@@ -32,6 +32,7 @@ from tests.pipeline.test_pipeline_projection_leads import (
     _SelectRunner,
     _use,
 )
+from tests.pipeline.test_pipeline_projection_preflight import _config_dir, _install_projection
 
 
 @pytest.fixture()
@@ -106,6 +107,55 @@ def test_a_projected_run_that_lost_a_lead_reconciles(
     markdown = summary.funnel.markdown_path.read_text(encoding="utf-8")
     assert "### projection — 2 in, 1 out" in markdown
     assert "**candidate_unrenderable**: 1" in markdown
+
+
+def test_a_refused_projected_run_still_carries_an_UNMEASURED_stage(
+    env: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The third case of "absent, not zeroed", and the only one with no other end-to-end cover.
+
+    `--project` with no approval filed: the preflight refuses and the pipeline `return`s BEFORE
+    `rank_open_postings`, so `summary.shortlist` is None and `projection_outcomes` is EMPTY — yet the
+    funnel is still emitted from the `finally`, and the run has a verdict to report. The stage must
+    therefore be PRESENT and UNMEASURED: `entered`/`advanced` null, `instrumented: false`,
+    `reconciled: null` so it is excluded from `unreconciled`.
+
+    This is the case a helper that folds `projection_outcomes` before the real decision site cannot
+    reach. `collect_run_funnel` is what decides here — and it must decide on the run's VERDICT, not
+    on the counter being non-empty, or an empty counter drops this stage out of the artifact
+    altogether and a refused run becomes indistinguishable from a run that never passed the flag.
+    """
+    _ready(env, 2)
+    _install_projection(_config_dir(env))  # no approval filed at all
+
+    summary = _pipeline(env, tmp_path / "apps")
+
+    # The preconditions that make this the uncovered case, asserted rather than assumed.
+    assert summary.projection_availability is ProjectionAvailability.MISSING_APPROVAL
+    assert summary.projection_outcomes == Counter()
+    assert summary.shortlist is None
+    assert summary.fatal is not None
+    assert summary.funnel is not None
+
+    payload = json.loads(summary.funnel.json_path.read_text(encoding="utf-8"))
+    stages = _stages(payload)
+    assert "projection" in stages, sorted(stages)
+    projection = stages["projection"]
+    assert projection["entered"] is None
+    assert projection["advanced"] is None
+    assert projection["instrumented"] is False
+    # An uncomputable identity is not a pass and not a failure: null, so the stage is in neither
+    # `unreconciled` nor the list of balances that could have failed.
+    assert projection["reconciled"] is None
+    assert projection["drops"] == []
+    assert "NOT INSTRUMENTED" in str(projection["note"])
+    assert not any(stage["reconciled"] is False for stage in stages.values()), stages
+
+    markdown = summary.funnel.markdown_path.read_text(encoding="utf-8")
+    assert "| projection | not instrumented | not instrumented | — | — |" in markdown
+    # The refusal's cause is on the FATAL line; the stage does not fabricate one of its own.
+    assert ProjectionAvailability.MISSING_APPROVAL.value not in str(projection["note"])
+    assert ProjectionAvailability.MISSING_APPROVAL.value in str(payload["fatal"])
 
 
 def test_an_authored_run_has_no_projection_stage(
