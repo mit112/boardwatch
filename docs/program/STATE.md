@@ -125,7 +125,8 @@ the cut lines fix no score threshold, so `ADMISSION_FLOOR` stays `Decimal(0)` (D
    presentations" is contradicted by the host college's official report (511 submitted / 206 accepted /
    **120 registered**, bound to this conference because its IEEE Catalogue Number 58201 matches the DOI),
    and **"on AWS"** is contradicted twice (poster says *"SERVER: Heroku"*; `uurl` held one value in all 67
-   commits — the emulator loopback). Mit **attested** Best Paper (artifact still owed) and ruled
+   commits — the emulator loopback). Mit **attested** Best Paper and then **closed the question** — he holds
+   the certificate, so the claim rests on `owner_attested`; **do not re-run the sweep** — and ruled
    `fact.crop-rf.tech.aws` **stays** — the bundle's only AWS source — so the AWS *skill* remains while the
    AWS *bullet* claim is gone, deliberately. Its bullets were **inverted**: he is the client's **top
    contributor (24 of 67 commits)** but the ML training is unattributable, so the app claim now leads.

@@ -9011,7 +9011,10 @@ folder holds SIH22, Nakshatra, SAKEC Marathon, Blockchain, Ethical Hacking, Cour
 `mdfind "ICACTA"` and `mdfind "Best Paper"` returned only his own résumés, `sections.tex` files, wiki
 pages and bundle YAML. Ruled: *"Yes — I have proof."* So **Best Paper stays**, and the distinction
 between *contradicted* and *unsubstantiated* did real work here — the count died, the award lived.
-**Still owed: the artifact**, so the claim can rest on evidence rather than attestation alone.
+**CLOSED 2026-08-17: the owner holds the certificate and ruled the question resolved** (*"that's fine and
+resolved. i have it."*). It was not handed over and no evidence record was cut, deliberately — the claim
+stands on `owner_attested`, which is what that basis is for. **Do not re-open this or re-run the
+certificate sweep**; the searches recorded above are history, not an open lead.
 
 **"on AWS" is contradicted twice, from independent directions.** The project poster
 (`Fasal_Poster_FINAL.pdf`) states **"SERVER: Heroku"** under a technology stack that also names Flutter,
