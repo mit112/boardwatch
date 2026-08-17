@@ -4226,7 +4226,7 @@ been promoted to a revision or rendered; that is the owner's confirm/attest/appr
 
 ## Session — 2026-08-17d (fixture + corpus drift detection, D-227) · Attended, on the `fixture-drift-detection` worktree alongside three other live lanes. The brief's central premise was false and measuring it deleted a planned deliverable. No phase gate moved, still 0 sent.
 
-**Commit** `c4ef0bd`, unpushed and unmerged. Gate bound to tree `2ee2b605`, not just to an exit code.
+**Branch** `fixture-drift-detection`, **PR #77**, 4 commits, tip `72114ad`. Local gate bound to a tree hash, not just an exit code. CI green on the PR (run `32063295816`, sha `72114adb`): generalization, gitleaks, perf and all three ubuntu test jobs. **Windows unproven** — scheduled-only.
 
 ### The premise correction, measured
 
