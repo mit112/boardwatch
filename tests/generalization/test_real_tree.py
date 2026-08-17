@@ -10,7 +10,7 @@ from pathlib import Path
 from pytest import CaptureFixture, MonkeyPatch
 
 from tools.generalization import __main__ as entry
-from tools.generalization import defaults, inventory, packaging, shape
+from tools.generalization import defaults, fixtures, inventory, packaging, shape
 from tools.generalization.__main__ import ALL_RULES, main, run
 from tools.generalization.discovery import Repo
 from tools.generalization.model import Rule, Violation
@@ -26,11 +26,14 @@ EXPECTED_RULES = (
     "check_defaults_snapshot",
     "check_init_prompts",
     "check_wheel_completeness",
+    "check_fixture_coverage",
+    "check_fixture_pins",
+    "check_fixture_review_due",
 )
 
 
 def test_every_rule_function_is_registered() -> None:
-    """Eight named functions cover the twelve rules R1 through R12, in spec order."""
+    """Eleven named functions cover the fifteen rules R1 through R15, in spec order."""
     assert tuple(rule.__name__ for rule in ALL_RULES) == EXPECTED_RULES
 
 
@@ -38,7 +41,7 @@ def test_no_rule_function_is_left_unregistered() -> None:
     """A check_ function that exists but is not in ALL_RULES never runs at all."""
     defined = {
         name
-        for module in (shape, inventory, defaults, packaging)
+        for module in (shape, inventory, defaults, packaging, fixtures)
         for name, value in vars(module).items()
         if name.startswith("check_")
         and inspect.isfunction(value)

@@ -168,9 +168,21 @@ the cut lines fix no score threshold, so `ADMISSION_FLOOR` stays `Decimal(0)` (D
    - **D-184 finding 2** — a partial emission silently drops fields (`run_extraction` records a reason only
      when a record produces *no* candidate). Redefines the Gate B accounting contract; four mutually
      exclusive designs; nothing lost today.
-   - Provider ATS-fixture + eligibility-corpus **drift** (need live network / a missing generator);
-     **Education Slice C**; promoting `header/1`'s `person.professional_name` (the skill-item loop skips
+   - **Education Slice C**; promoting `header/1`'s `person.professional_name` (the skill-item loop skips
      `header/*`).
+
+**Fixture + corpus drift — the offline half is BUILT and gated (D-227).** R13/R14/R15 in
+`tools/generalization/fixtures.py` run inside `make check` and the CI `generalization` job: R13 diffs the
+fixture directories against `PROVIDER_NAMES` both ways, R14 pins the six fixture READMEs and the 987-row
+corpus (the 31 fixture JSONs were **already** pinned by R7 — do not build a second manifest), R15 fails on
+an overdue per-provider `review_by`. **R15 enforces that somebody reviewed on schedule, NOT that a fixture
+matches production** — `python -m tools.fixture_refresh --extend <p> --days N --reason "…"` restores green
+offline, by design. Green today; **first red 2026-09-11** (greenhouse). Re-record pins with
+`--record`. *Still owner-gated:* the live-API comparison, which needs network and an attended session.
+**Two findings, neither fixed:** the corpus docstring points at `scratchpad/gen_corpus.py`, **never
+committed** and under a gitignored path, so the 987-row oracle is **unregenerable**; and four fixtures are
+read by no test (`workable/dead_404.json`, `workable/normal_response_headers.json`,
+`smartrecruiters/` and `workday/normal_response_headers.json`).
 
 **Carried authoring facts (D-185/186/190/191).** **Three guarantees are each narrower than their name**, and
 all three cost a real defect: **`approve` does NOT validate** (only `promote` refuses); **a plain `validate`

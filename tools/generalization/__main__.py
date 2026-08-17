@@ -21,6 +21,11 @@ from tools.generalization.discovery import (
     discover,
     find_repo_root,
 )
+from tools.generalization.fixtures import (
+    check_fixture_coverage,
+    check_fixture_pins,
+    check_fixture_review_due,
+)
 from tools.generalization.inventory import check_inventory, check_registry_invariants
 from tools.generalization.model import Rule, Violation
 from tools.generalization.packaging import check_wheel_completeness
@@ -35,6 +40,9 @@ ALL_RULES: tuple[Rule, ...] = (
     check_defaults_snapshot,    # R10
     check_init_prompts,         # R11
     check_wheel_completeness,   # R12
+    check_fixture_coverage,     # R13
+    check_fixture_pins,         # R14
+    check_fixture_review_due,   # R15
 )
 
 
