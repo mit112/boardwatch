@@ -42,7 +42,12 @@ from boardwatch.profile_bundle.promotion import (
 )
 from boardwatch.profile_bundle.storage import read_current_once, selected_documents
 from boardwatch.profile_bundle.yaml_loader import load_yaml_bytes
-from tests.profile_bundle.conftest import approve_draft, materialise, quoted_yaml
+from tests.profile_bundle.conftest import (
+    WINDOWS_STALE_LOCK_RACE,
+    approve_draft,
+    materialise,
+    quoted_yaml,
+)
 
 FIRST_DRAFT = "baseline"
 SKILLS_PATH = PurePosixPath("skills/inventory.yaml")
@@ -230,6 +235,11 @@ def test_a_promotion_in_flight_refuses_a_second_writer_without_waiting(scene: Sc
     assert read_current_once(scene.bundle_root).revision == 1
 
 
+@pytest.mark.xfail(
+    sys.platform == "win32",
+    reason=WINDOWS_STALE_LOCK_RACE,
+    strict=False,
+)
 def test_a_lockfile_left_by_a_killed_promoter_is_not_a_held_lock(scene: Scene) -> None:
     """§6: never break a lock on file existence. The kernel released this one; the file remains.
 

@@ -207,7 +207,7 @@ the slices reviewed and not that the subsystem is defect-free, are in `STANDING-
 | P7 Breadth | not started | — |
 | *Gate A (parallel)* | *complete, merged, CI green* | ***MET*** — *has moved no program gate* |
 | *Projection* | ***MERGED AND PUSHED**, reviewed clean; Tasks 20 and 23 closed (D-197, D-198)* | *P0–P4 build gates met* |
-| *Gate B / master reservoir* | ***Stage 1 + Stage 2 DONE**; live revision 11, `ccd4d741`* | ***MET — 0 blockers** (D-201). First zero-blocker Gate B ever* |
+| *Gate B / master reservoir* | ***Stage 1 + Stage 2 DONE**; all 11 entities' bullets refined (D-213…D-221); live revision **21**. Digest deliberately omitted — refinement restamps it several times a day (D-017)* | ***MET — 0 blockers** (D-201), and **0 over-ceiling bullets** since revision 21* |
 
 ### Gate P6, clause by clause
 
@@ -238,10 +238,23 @@ Windows story — RULED best-effort, D-212**.)*
 on `schedule`/`workflow_dispatch`, D-151; the nightly is 12) — never read it as full-matrix coverage. A
 **`nightly-watch`** job now files a GitHub issue when a scheduled run fails and closes it on recovery:
 **check for an open "Nightly CI is failing" issue at session start.** Of the two red tests, rich's
-`legacy_windows` off-by-one is fixed; the stale-lock reclaim is a Windows-only **race** (6 of 9 jobs),
-unfixed by ruling and marked `xfail(win32, strict=False)`. **The fix is NECESSARY, NOT VERIFIED** —
-`make check` cannot see Windows. Dispatch run **`31954948210`** (`4593d04`) was still running at
-session end; the 07:00 UTC nightly also exercises it, and `nightly-watch` files an issue if it failed.
+`legacy_windows` off-by-one is fixed; the stale-lock reclaim is a Windows-only **race**, accepted by
+ruling and marked `xfail(win32, strict=False)`. **D-212's fix IS now verified** — dispatch run
+`31954948210` (`4593d04`) completed **success**, resolving the "necessary, not verified" caveat this
+file used to carry.
+
+**But the nightly is RED again, and D-212's marking was incomplete (2026-08-17).** Scheduled run
+**`32007953224`** (`aeb87d9`) failed on exactly **one** job — `test (3.11, windows-latest)`; Windows
+3.12 and 3.13 both passed, as did every macOS/Linux job. **`nightly-watch` issue #76 is OPEN.** Cause:
+D-212 marked **two of the three** tests exercising the same race —
+`test_profile_bundle_promotion.py:915` and `test_profile_bundle_rebase.py:1412` — while
+`test_profile_bundle_promotion_concurrency.py::test_a_lockfile_left_by_a_killed_promoter_is_not_a_held_lock`
+was left **unmarked** and fails with the same `bundle_lock_held` diagnostic. The third marker is now
+added in the same style. **An enumeration is a claim, not a census**: the fix was scoped by the two
+instances someone had in hand, not by a search for all of them.
+**`make check` cannot verify it** — the race is Windows-only and never runs locally, so the real
+verification is a `workflow_dispatch` or the next 07:00 UTC nightly, and **issue #76 closing is the
+signal**. Do not read a green local gate as evidence here.
 
 ---
 
