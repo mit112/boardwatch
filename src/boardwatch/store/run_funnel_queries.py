@@ -308,6 +308,31 @@ def count_tailored_artifacts(conn: Connection, run_id: int) -> TailoredArtifactC
     return TailoredArtifactCounts(rows=int(row[0]), with_pdf=int(row[1]))
 
 
+def count_projected_tailored_artifacts(conn: Connection, run_id: int) -> int:
+    """This run's `resume_tailored` rows whose master was PROJECTED, not authored (P5a).
+
+    The predicate is the PRESENCE of the lineage, not its value: `ResumeSourceLineage.as_meta()`
+    writes every field under a `projection_` prefix, so `$.projection_kind` exists on exactly the
+    rows `run_tailor` was handed a lineage for. Testing presence rather than restating the literal
+    `"projection"` here keeps this check from carrying its own copy of the emitter's constant.
+
+    Counted apart from `count_tailored_artifacts` above rather than by widening it: the funnel
+    compares this against the leads the pipeline believed it projected, and a run where the
+    lineage silently stopped being written would leave the row count identical while this one
+    drops — the failure a plain row count cannot see.
+    """
+    lineage = func.json_extract(artifacts.c.meta_json, "$.projection_kind")
+    return int(
+        conn.execute(
+            select(func.count()).where(
+                artifacts.c.run_id == run_id,
+                artifacts.c.kind == TAILORED_KIND,
+                lineage.is_not(None),
+            )
+        ).scalar_one()
+    )
+
+
 @dataclass(frozen=True)
 class Provenance:
     """The board a posting came from. Gate P0 requires this per lead, from the artifact alone."""

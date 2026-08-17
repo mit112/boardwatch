@@ -1016,6 +1016,13 @@ def _emit_funnel(
             for lead in summary.tailored
         ],
         tailor_failed=summary.tailor_failed,
+        # P5a — the run's own verdict decides whether the artifact carries a `projection` stage.
+        # `None` means `--project` was never passed and there is nothing to report; it is
+        # deliberately distinct from `AVAILABLE` (see `PipelineSummary.projection_availability`),
+        # and it is read here rather than testing the counter for emptiness, which is a different
+        # question with two legitimate answers.
+        projection_ran=summary.projection_availability is not None,
+        projection_outcomes=summary.projection_outcomes,
         rewrite_rows=summary.rewrite_rows,
         # P4 item 6: one coverage report per lead, same order as `tailored`, for the funnel's
         # coverage summary. Mirrors how `rewrite_rows` is passed separately, not via the Lead.

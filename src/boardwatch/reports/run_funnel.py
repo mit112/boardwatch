@@ -42,11 +42,12 @@ from __future__ import annotations
 import json
 import statistics
 from collections import Counter
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 
+from boardwatch.projection.run import ProjectionLeadOutcome
 from boardwatch.reports.abstain import AbstainReport
 from boardwatch.store.run_funnel_queries import (
     CorpusCounts,
@@ -58,15 +59,24 @@ from boardwatch.tailor.coverage import CoverageReport
 # How many distinct missing requirement terms the coverage summary lists, most-frequent first.
 _TOP_MISSING = 10
 
-# v4 added the top-level `liveness` block (P6 item 6). It stays 4 through two keys added inside
+# v4 added the top-level `liveness` block (P6 item 6). It stayed 4 through two keys added inside
 # blocks that already existed — D-113's `liveness.gone_after_redirect` and D-146's
 # `fabrication.lane_dead`: every bump so far has signalled a new top-level SECTION, and D-113 is
 # the precedent for declining one on an additive key. **Not** D-031, which declines a bump for a
 # change that does not extend the artifact at all (`boardwatch verify` consumes it). Holding at 4
-# is safe because no consumer reads these blocks strictly: `cli/verify_cmd.py` pulls named keys out
+# was safe because no consumer reads these blocks strictly: `cli/verify_cmd.py` pulls named keys out
 # of the frozen JSON and tolerates whatever else is there — no schema, no golden fixture, no
 # full-dict equality on `fabrication` anywhere (D-147 R3).
-ARTIFACT_VERSION = 4
+#
+# **v5 is the `projection` stage (P5a).** It bumps, and D-113 does not apply to it: this is not an
+# additive key inside an existing block. `stages` is the artifact's spine, and a new member of it
+# changes the CHAIN a reader walks — but the deciding part is that an existing value changed
+# MEANING. On a `--project` run the `tailor` stage's `entered` is no longer the ranker's
+# `shortlisted`; it is what projection advanced, and the `withheld_not_live` bucket moves with it.
+# A consumer comparing `tailor.entered` against the shortlist across two runs would silently read a
+# projection loss as a shortlist that shrank. A changed meaning is exactly what a version signals,
+# where an added key is not.
+ARTIFACT_VERSION = 5
 
 # The stored verdict that carries the keystone invariant's ABSTAIN. Named here once so the
 # rename is visible rather than scattered through the renderers as a string literal.
@@ -454,6 +464,52 @@ def build_fabrication_counters(
 
 
 @dataclass(frozen=True)
+class ProjectionCounters:
+    """P5a: the per-lead projection tally, in the shape the `projection` stage needs.
+
+    `drops` names ONLY the outcomes that actually occurred — one `Drop` per non-`PROJECTED`
+    member the pipeline counted, and nothing at all for a member nothing reached. That is the
+    same absent-versus-zero rule the rest of this module applies (D-023), and it is the reason
+    this fold exists instead of the stage reading the counter directly.
+    """
+
+    projected: int
+    drops: tuple[Drop, ...]
+
+
+def build_projection_counters(
+    outcomes: Mapping[ProjectionLeadOutcome, int],
+) -> ProjectionCounters:
+    """Fold the per-lead outcome counter into (advanced, drops). Pure.
+
+    **ITERATES the counter; never indexes it.** `summary.projection_outcomes` is a `Counter`, so
+    `outcomes[SOME_OUTCOME]` returns 0 for a member nothing reached — walking
+    `ProjectionLeadOutcome` and indexing would therefore emit a drop of 0 for every outcome that
+    never occurred, and the distinction between "no lead hit this" and "this bucket is empty"
+    would be gone with no test failing. `in` and `.items()` only.
+
+    The catalog is closed by the key TYPE, not by an enumeration here, so there is no `other`
+    bucket to fall into: `pipeline/runner._projection_scope` routes every projection failure
+    through the two classifiers, both of which raise on a cause their catalog does not name, so an
+    out-of-catalog outcome cannot reach this fold at all. Contrast `build_fabrication_counters`,
+    whose input is an untyped `drop_reason` string and which therefore needs one.
+
+    Drops are sorted by reason so two runs with the same outcomes render the same artifact — a
+    `Counter` iterates in first-increment order, which is whichever lead happened to fail first.
+    """
+    projected = 0
+    drops: list[Drop] = []
+    for outcome, count in outcomes.items():
+        if outcome is ProjectionLeadOutcome.PROJECTED:
+            projected = count
+        else:
+            drops.append(Drop(reason=outcome.value, count=count))
+    return ProjectionCounters(
+        projected=projected, drops=tuple(sorted(drops, key=lambda drop: drop.reason))
+    )
+
+
+@dataclass(frozen=True)
 class CoverageSummary:
     """P4 item 6: this run's keyword-coverage roll-up across leads. A REPORT, never a gate.
 
@@ -590,6 +646,15 @@ def build_run_funnel(
     # Omitted means UNMEASURED, never "0 dead" — a caller that forgets gets the honest report
     # rather than a clean liveness result it never took.
     liveness: LivenessCheck | None = None,
+    # P5a. `None` means `--project` was NOT passed, so there is no `projection` stage at all —
+    # not a stage of zeros, which would claim projection ran and dropped nothing. The caller
+    # decides this from `summary.projection_availability is None`, never from the counter being
+    # empty: a projected run legitimately has an empty counter (the preflight refused, or every
+    # shortlisted lead was withheld as gone).
+    projection: ProjectionCounters | None = None,
+    # Read from the store, and only meaningful alongside `projection`. Compared against the LEADS
+    # rather than against the projection stage's `advanced` — see the cross-check's note below.
+    projected_lineage_rows: int = 0,
     rewrite_rows: Sequence[dict[str, object]],
     unattributed_evaluations: int,
     abstain: AbstainReport,
@@ -703,6 +768,53 @@ def build_run_funnel(
             ),
         )
 
+    # The leads liveness withheld. ONE object, used by whichever stage is the ranker's successor:
+    # the `tailor` stage on an authored run, the `projection` stage on a projected one. It has to
+    # move with the chain — the withheld leads left the funnel between the shortlist and whatever
+    # came next, and a bucket that belongs to no stage is a lead counted in none.
+    withheld_drop = Drop(
+        reason="withheld_not_live",
+        count=liveness.dead or 0,
+        note=(
+            "re-fetched immediately before the render and answered 404/410, so it "
+            "never entered the tailor loop (P6 item 6). NOT a render failure — a "
+            "third terminal state, which is why it is its own bucket"
+        ),
+    )
+    # P5a — present only on a `--project` run, and NOT INSTRUMENTED when the ranker never ran, for
+    # the same reason the shortlist and tailor stages are: the preflight refuses before ranking, so
+    # how many leads projection would have attempted is unknown rather than zero.
+    projection_stage: Stage | None = None
+    if projection is not None:
+        projection_stage = Stage(
+            name="projection",
+            entered=None if shortlist is None else shortlist.shortlisted,
+            advanced=None if shortlist is None else projection.projected,
+            drops=() if shortlist is None else (withheld_drop, *projection.drops),
+            # NOT derived. Every drop is counted where the lead actually leaves — one increment at
+            # the raise site inside the loop — so this identity can genuinely fail, and it is what
+            # catches a projection exit added without a counter. Do not let arithmetic masquerade
+            # as verification: no bucket here is the remainder of the others.
+            derived=False,
+            note=(
+                "NOT INSTRUMENTED. `--project` was passed but the ranker never ran, so how many "
+                "leads projection would have attempted is unknown and is reported as unmeasured "
+                "rather than as zero. **Why** is whatever the FATAL line above says — this stage "
+                "cannot know which cause fired."
+                if shortlist is None
+                else "Every SHORTLISTED lead, and what the bundle's projection made of it. "
+                "Entered at the ranker's shortlist rather than at the leads projection actually "
+                "attempted, so the leads liveness withheld keep a named bucket here instead of "
+                "vanishing between two stages — nothing projected them, and they are not "
+                "projection failures either. Every other drop is named by the "
+                "`ProjectionLeadOutcome` the pipeline counted for ONE lead, and an outcome no "
+                "lead reached is ABSENT rather than reported as 0. None of them is a tailor "
+                "failure: the tailor stage never ran for these leads, and folding them into "
+                "`tailor_failed` would both make that count a lie and hide the loss under a "
+                "reason naming the wrong stage."
+            ),
+        )
+
     stages = (
         Stage(
             name="dedup",
@@ -784,23 +896,27 @@ def build_run_funnel(
             ),
         ),
         shortlist_stage,
+        *(() if projection_stage is None else (projection_stage,)),
         Stage(
             name="tailor",
+            # On a projected run this enters at what PROJECTION advanced, not at the ranker's
+            # shortlist: the withheld and projection-dropped leads never reached the tailor loop,
+            # and they are accounted for in the stage above. Read off `projection_stage.advanced`
+            # rather than recomputed, so the two can never drift apart.
+            #
             # None, not 0, for the same reason as the shortlist stage above: if the ranker never
             # ran, how many leads it would have handed over is unknown rather than zero.
-            entered=None if shortlist is None else shortlist.shortlisted,
+            entered=(
+                (None if shortlist is None else shortlist.shortlisted)
+                if projection_stage is None
+                else projection_stage.advanced
+            ),
             advanced=tailored,
             drops=(
                 Drop(reason="tailor_failed", count=tailor_failed),
-                Drop(
-                    reason="withheld_not_live",
-                    count=liveness.dead or 0,
-                    note=(
-                        "re-fetched immediately before the render and answered 404/410, so it "
-                        "never entered the tailor loop (P6 item 6). NOT a render failure — a "
-                        "third terminal state, which is why it is its own bucket"
-                    ),
-                ),
+                # Only when there is no projection stage to hold it. Keeping it here as well would
+                # subtract the withheld leads twice and report a healthy run as unbalanced.
+                *(() if projection_stage is not None else (withheld_drop,)),
             ),
         ),
         Stage(
@@ -851,6 +967,29 @@ def build_run_funnel(
                 "pipeline's pdf_built flags vs json_extract(meta_json,'$.typst_pdf_built'). "
                 "artifacts.uri is the .tex path either way, so a row count would not do"
             ),
+        ),
+        # P5a. Absent on an authored run — there, 0 lineage-bearing rows is correct and comparing
+        # it against the leads would fail every time.
+        *(
+            ()
+            if projection is None
+            else (
+                CrossCheck(
+                    name="projected_leads",
+                    in_memory=tailored,
+                    from_store=projected_lineage_rows,
+                    note=(
+                        "pipeline's leads vs resume_tailored rows carrying projection lineage "
+                        "(meta_json '$.projection_kind'). Counted against the LEADS, not against "
+                        "the projection stage's `advanced`: `advanced` counts leads whose "
+                        "projection succeeded, and one of those can still fail the résumé gate "
+                        "afterwards — which writes no artifact row at all, so `advanced` is this "
+                        "plus `tailor_failed`. A disagreement means a lead on a projected run was "
+                        "rendered from something other than the projection, or the lineage stopped "
+                        "being recorded — neither of which the `tailored` row count above can see"
+                    ),
+                ),
+            )
         ),
     )
 
@@ -1500,6 +1639,7 @@ __all__ = [
     "FabricationCounters",
     "Lead",
     "LivenessCheck",
+    "ProjectionCounters",
     "RunFunnel",
     "RunManifest",
     "ScanContext",
@@ -1510,6 +1650,7 @@ __all__ = [
     "WrittenArtifact",
     "build_coverage_summary",
     "build_fabrication_counters",
+    "build_projection_counters",
     "build_run_funnel",
     "funnel_to_dict",
     "funnel_to_markdown",
