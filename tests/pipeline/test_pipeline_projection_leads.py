@@ -365,10 +365,12 @@ def test_a_run_scoped_cause_inside_the_loop_is_a_typed_fatal(
     posting. `classify_lead_outcome` RAISES when handed it, so a loop that classified before routing
     by scope would abort the run with an `AssertionError` instead of recording this.
 
-    The run must therefore end fatal, with the typed availability member, having counted NOTHING as
-    a lead outcome and having stopped rather than re-shelling out for every remaining lead.
+    The run must therefore end fatal, with the typed availability member, and stop rather than
+    re-shelling out for every remaining lead — while still giving every lead it abandoned a terminal
+    accounting, because the funnel's projection stage declares it entered at the ranker's shortlist
+    and a lead counted nowhere makes that stage unreconcilable.
     """
-    _ready(env, 2)
+    ids = _ready(env, 2)
     _projected_env(env)
     runner = _SelectRunner(fail_lead=1, fail_base=True)
     _use(monkeypatch, runner)
@@ -378,10 +380,13 @@ def test_a_run_scoped_cause_inside_the_loop_is_a_typed_fatal(
     assert summary.projection_availability is ProjectionAvailability.PINNED_SET_UNRENDERABLE
     assert summary.fatal is not None
     assert ProjectionAvailability.PINNED_SET_UNRENDERABLE.value in summary.fatal
-    # Nothing was counted per-lead. Not "no PROJECTED" — nothing at all, because a run-wide fault
-    # is not a lead's outcome in either direction.
-    assert summary.projection_outcomes == Counter()
-    assert summary.projection_failed_ids == []
+    # No lead is given a CAUSE — the run-wide fault is `projection_availability` and `fatal`, said
+    # once. What every abandoned lead does get is `NOT_ATTEMPTED`, which names no cause and exists
+    # so `entered == advanced + drops` can still close: the lead this surfaced on, and the one
+    # behind it that never got a turn. Before it, both were counted nowhere and the stage read
+    # `2 in, 0 out, 0 dropped`.
+    assert summary.projection_outcomes == Counter({ProjectionLeadOutcome.NOT_ATTEMPTED: 2})
+    assert sorted(summary.projection_failed_ids) == sorted(ids)
     assert summary.tailored == []
     engine = get_engine(env)
     assert _run_status(engine, summary.run_id) == RUN_FAILED

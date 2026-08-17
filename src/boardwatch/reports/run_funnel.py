@@ -76,6 +76,13 @@ _TOP_MISSING = 10
 # A consumer comparing `tailor.entered` against the shortlist across two runs would silently read a
 # projection loss as a shortlist that shrank. A changed meaning is exactly what a version signals,
 # where an added key is not.
+#
+# **The bump is GLOBAL — an authored run emits 5 too, and that is deliberate (D-225).** One emitter
+# with one schema version; versioning per run type would force every consumer to handle both, for a
+# field whose whole job is to say which shape it is reading. So `--project`'s "nothing changes
+# without the flag" guarantee covers stages, lineage keys, lead outcomes and dispositions — not
+# this field, which moves for every run. An earlier wording claimed byte-identical no-flag output
+# alongside the bump; the two cannot both hold and the claim, not the bump, was the error.
 ARTIFACT_VERSION = 5
 
 # The stored verdict that carries the keystone invariant's ABSTAIN. Named here once so the
@@ -808,7 +815,10 @@ def build_run_funnel(
                 "vanishing between two stages — nothing projected them, and they are not "
                 "projection failures either. Every other drop is named by the "
                 "`ProjectionLeadOutcome` the pipeline counted for ONE lead, and an outcome no "
-                "lead reached is ABSENT rather than reported as 0. None of them is a tailor "
+                "lead reached is ABSENT rather than reported as 0. `not_attempted` is the one "
+                "bucket that names no cause: a RUN-scoped fault stopped the stage, and those "
+                "leads never got a turn — the cause is on the FATAL line, once, for the run. "
+                "None of them is a tailor "
                 "failure: the tailor stage never ran for these leads, and folding them into "
                 "`tailor_failed` would both make that count a lie and hide the loss under a "
                 "reason naming the wrong stage."

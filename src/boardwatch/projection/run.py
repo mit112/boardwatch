@@ -182,10 +182,14 @@ class ProjectionAvailability(StrEnum):
 
 
 class ProjectionLeadOutcome(StrEnum):
-    """Per attempted lead, reachable only once availability is `AVAILABLE`. Skipping one lead
-    leaves the run running, so nothing here may name a run-invariant cause: the page budget is one
-    global profile column and the pinned set is fixed by the frozen declaration, so a lead can
-    never be the unit at which either is decided.
+    """One per lead the projection stage was RESPONSIBLE for, reachable only once availability is
+    `AVAILABLE`. Skipping one lead leaves the run running, so no member here may name a
+    run-invariant *cause*: the page budget is one global profile column and the pinned set is fixed
+    by the frozen declaration, so a lead can never be the unit at which either is decided.
+
+    "Responsible for" rather than "attempted", because of `NOT_ATTEMPTED` below — the one member
+    that names an absence of attempt rather than an outcome of one. The stage's balance is over the
+    leads it was handed, so a lead it never reached still has to appear somewhere in it.
 
     Closed. A cause this does not name is a defect here, never a new bucket.
     """
@@ -202,6 +206,24 @@ class ProjectionLeadOutcome(StrEnum):
     CANDIDATE_UNRENDERABLE = "candidate_unrenderable"
     LINEAGE_MISMATCH = "lineage_mismatch"
     OUTPUT_IO_FAILURE = "output_io_failure"
+    #: The stage was aborted by a RUN-scoped cause before this lead was projected — the lead it
+    #: aborted on, and every lead behind it. Not a diagnosis and not this lead's fault: the typed
+    #: cause is `summary.projection_availability`, and `fatal` says it once for the whole run.
+    #:
+    #: It exists because a run-scoped cause can surface *inside* the per-lead loop — `select()`
+    #: raises three of them, and `compile_prefix` can raise `TemplateArtifactError` — and without a
+    #: terminal bucket those leads are counted nowhere while the funnel stage still declares it
+    #: entered at the full shortlist. That is a stage that DOES NOT RECONCILE, and it was a fourth
+    #: case outside the three the design promises are exhaustive (flag absent / preflight refused /
+    #: balanced run). A bucket that closes the balance is the smaller claim; the alternative
+    #: considered and rejected was hoisting the pinned-set compile to the preflight, which cannot
+    #: cover an environment that dies mid-run and would delete `_fatal_if_infrastructure`'s
+    #: escalation path (`select.py`).
+    #:
+    #: Not run-invariant *as a cause* — it names no cause at all — so it does not contradict the
+    #: rule above. And it earns no ledger disposition: `_record_shortlist_dispositions` runs with
+    #: `stage_completed=False` on any fatal path, so these leads stay reachable tomorrow.
+    NOT_ATTEMPTED = "not_attempted"
 
 
 #: One row per `ProjectionIssue` member, in the order `errors.py` declares them. The table is the
@@ -428,12 +450,17 @@ def _publish(out_dir: Path, files: Mapping[str, bytes]) -> None:
         for name, payload in files.items():
             (staging / name).write_bytes(payload)
         if out_dir.exists():
-            # A re-run over a directory that already exists (the pipeline creates the lead's
-            # directory before calling this). `os.replace` will not rename onto a non-empty
-            # directory, so each file is published individually. Safe regardless: both payloads
-            # are already fully materialised in `staging` before either `os.replace` runs, so a
-            # failure between the two calls cannot produce a partially-written file — at worst one
-            # of the two complete files lands and the other is left staged.
+            # A directory that already exists — a re-run over a day's output, or a caller that
+            # created it. The pipeline is NOT such a caller: its per-lead loop deliberately leaves
+            # `dest` uncreated so a refusing lead leaves no husk (`runner.py`), so this branch is
+            # reached by a second projection of the same lead, never by the first.
+            #
+            # `os.replace` will not rename onto a non-empty directory, so each file is published
+            # individually — and that means the operation is NOT pair-atomic here: an `OSError` on
+            # the second `os.replace` leaves the first file already swapped for its new version
+            # beside the previous run's copy of the second. What cannot happen is a partially
+            # WRITTEN file: both payloads are fully materialised in `staging` before either
+            # `os.replace` runs. The fresh-directory branch below is atomic in both senses.
             for name in files:
                 os.replace(staging / name, out_dir / name)
         else:

@@ -26,6 +26,7 @@ from collections.abc import Sequence
 from dataclasses import dataclass, field
 from datetime import timedelta
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from rich.console import Console
 from sqlalchemy import Engine, select
@@ -83,6 +84,13 @@ from boardwatch.tailor.coverage import CoverageReport
 from boardwatch.tailor.load import ResumeLoadError
 from boardwatch.tailor.persona import PersonaError
 from boardwatch.tailor.render.latex import TemplateArtifactError
+
+if TYPE_CHECKING:
+    # Type-only. `top_cmd` imports from the CLI layer, and importing it at runtime module scope
+    # makes pipeline -> cli -> pipeline a cycle the moment `run_cmd` imports this — which is why
+    # `run_pipeline` imports it inside the function body. `from __future__ import annotations`
+    # keeps the annotation below a string, so nothing is evaluated at import time.
+    from boardwatch.cli.top_cmd import RankedPosting
 
 DEFAULT_TOP_N = 8
 
@@ -230,6 +238,44 @@ def _retract_projected(outcomes: Counter[ProjectionLeadOutcome]) -> None:
     outcomes[ProjectionLeadOutcome.PROJECTED] -= 1
     if outcomes[ProjectionLeadOutcome.PROJECTED] == 0:
         del outcomes[ProjectionLeadOutcome.PROJECTED]
+
+
+def _abandon_unattempted(summary: PipelineSummary, remaining: Sequence[RankedPosting]) -> None:
+    """Give every lead the aborted projection stage never reached a terminal accounting.
+
+    `remaining` is the lead the run-scoped cause surfaced on, plus every lead behind it — none of
+    them was projected, and before this they were counted nowhere. The funnel's projection stage
+    still declares it entered at the ranker's shortlist, so `entered == advanced + drops` failed on
+    exactly this path: a fourth case outside the three the design promises are exhaustive (flag
+    absent, preflight refused, balanced run).
+
+    `NOT_ATTEMPTED` is not a diagnosis. The typed cause is `summary.projection_availability` and
+    `fatal` states it once for the whole run; this only says these leads never got a turn. The ids
+    go onto `projection_failed_ids` for the same reason every other non-`PROJECTED` outcome's do —
+    the counter and the id list are read as one set, and a reader comparing their sizes must not
+    find them disagreeing. Nothing downstream is changed by that on this path: `_cohort_guard`, the
+    all-failed fatal and `folders_reconcile` all run only while `summary.fatal is None`.
+    """
+    for posting in remaining:
+        summary.projection_outcomes[ProjectionLeadOutcome.NOT_ATTEMPTED] += 1
+        summary.projection_failed_ids.append(posting.posting_id)
+
+
+def _abandon_unattempted_if_projected(
+    summary: PipelineSummary,
+    projection_ctx: ProjectionRunContext | None,
+    remaining: Sequence[RankedPosting],
+) -> None:
+    """`_abandon_unattempted`, but only when there is a projection stage whose balance to close.
+
+    The tailor loop's three run-scoped `break`s predate `--project` and fire on an authored run
+    too, where `projection_outcomes` must stay EMPTY — a `not_attempted` count there would
+    materialise a stage that never ran. `projection_ctx` is the same object the loop reads to decide
+    whether to project at all, so the guard cannot drift from the condition it guards.
+    """
+    if projection_ctx is None:
+        return
+    _abandon_unattempted(summary, remaining)
 
 
 def _projection_scope(exc: Exception) -> ProjectionAvailability | ProjectionLeadOutcome:
@@ -679,7 +725,10 @@ def run_pipeline(
         # authored one after the fact. Byte-identical to the plain header when `--project` was not
         # passed; `projection_ctx` itself stays in scope for the loop below.
         console.print(f"[bold]tailor[/bold]{' (projected)' if projection_ctx is not None else ''}")
-        for posting in leads:
+        # Enumerated so a run-scoped projection failure can name the leads it aborted on — this one
+        # and every one behind it — rather than leaving them counted nowhere while the funnel stage
+        # still claims it entered at the full shortlist. See `_abandon_unattempted`.
+        for lead_index, posting in enumerate(leads):
             dest = day_dir / _slug(posting.company, posting.posting_id)
             # The authored résumé and no lineage, unless this lead is projected below. Never a
             # FALLBACK: a projection that fails does not reach `run_tailor` at all (it `continue`s),
@@ -719,6 +768,12 @@ def run_pipeline(
                         message = f"projection: {summary.fatal}"
                         stage_errors.append(message)
                         summary.errors.append(message)
+                        # This lead and every one behind it get a terminal accounting before the
+                        # break. Without it the stage stops with the funnel still declaring it
+                        # entered at the ranker's shortlist while `advanced` and the drops hold
+                        # only the work that finished first — a stage that DOES NOT RECONCILE, and
+                        # a fourth case outside the three §4.5 promises are exhaustive.
+                        _abandon_unattempted(summary, leads[lead_index:])
                         break
                     # Per-lead: counted, reported as a NON-fatal error, and the run continues.
                     summary.projection_outcomes[scope] += 1
@@ -765,6 +820,12 @@ def run_pipeline(
                 message = f"tailor: {summary.fatal}"
                 stage_errors.append(message)
                 summary.errors.append(message)
+                # THIS lead is not in the remainder: on a projected run it was already counted
+                # `PROJECTED` — projection finished for it and the TAILOR stage is where it drops.
+                # The leads behind it never reached projection at all. Same reasoning at the two
+                # `break`s below; the tailor stage's own behaviour on a fatal abort is unchanged
+                # from the authored path and is not this stage's balance to close.
+                _abandon_unattempted_if_projected(summary, projection_ctx, leads[lead_index + 1:])
                 break
             except ResumeLoadError as exc:
                 # A malformed or genuinely-broken master résumé (P4 item 5b: a bad contact
@@ -776,6 +837,7 @@ def run_pipeline(
                 message = f"tailor: {summary.fatal}"
                 stage_errors.append(message)
                 summary.errors.append(message)
+                _abandon_unattempted_if_projected(summary, projection_ctx, leads[lead_index + 1:])
                 break
             except PersonaError as exc:
                 # A malformed persona registry (bundled or {config_dir} override) is a
@@ -786,6 +848,7 @@ def run_pipeline(
                 message = f"tailor: {summary.fatal}"
                 stage_errors.append(message)
                 summary.errors.append(message)
+                _abandon_unattempted_if_projected(summary, projection_ctx, leads[lead_index + 1:])
                 break
             except LeadArtifactError as exc:
                 # Leave no empty folder behind: counting the deliverable by listing the dated
