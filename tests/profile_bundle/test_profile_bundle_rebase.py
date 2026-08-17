@@ -1429,6 +1429,15 @@ def test_a_persistent_lockfile_left_by_a_killed_process_is_not_a_held_lock(
     assert _skills(scene.draft).skills[0].canonical_name == REVISION_TWO_NAME
 
 
+# Marked by MECHANISM, not by observation (D-223): the re-acquire below lands in exactly the
+# killed holder's handle-teardown window that `WINDOWS_STALE_LOCK_RACE` describes. Unlike the other
+# three instances this one has never been seen failing — it is a latent red nightly, not a
+# reproduced one, and it surfaces the race as a raised `BundleLockHeldError` rather than exit code 3.
+@pytest.mark.xfail(
+    sys.platform == "win32",
+    reason=WINDOWS_STALE_LOCK_RACE,
+    strict=False,
+)
 def test_the_lock_helper_refuses_a_second_holder_and_releases_on_exit(
     scene: Scene, lock_holder: Callable[[Path], subprocess.Popen[str]]
 ) -> None:

@@ -87,9 +87,11 @@ WINDOWS_STALE_LOCK_RACE = (
     "the guarantee is actually claimed — this stays an ordinary test that must pass."
 )
 
-# Both `test_profile_bundle_promotion.py` and `test_profile_bundle_rebase.py` carry a copy of the
-# stale-lock test, and the reason above is the same fact about one lock. Kept here so the two
-# cannot drift into disagreeing accounts of why they are marked.
+# FOUR tests across three files acquire the lock after killing its holder, and the reason above is
+# the same fact about one lock. Kept here so they cannot drift into disagreeing accounts of why they
+# are marked. The census is `process.kill()` in a test BODY (fixture teardown does not count) —
+# not the word "killed" in a name, which is what left instances 3 and 4 unmarked (D-222, D-223).
+# Holder-stays-alive tests are deliberately unmarked: there the race produces a spurious PASS.
 
 
 def example_source_root() -> Path:

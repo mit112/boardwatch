@@ -120,9 +120,13 @@ the cut lines fix no score threshold, so `ADMISSION_FLOOR` stays `Decimal(0)` (D
      (`pool.py:367`), and `validate_slots` (`resume_gate.py:145`) should accept a bullet-less entry.
      Today the two gates jointly forbid a legitimate third state, which is why `saayam` carries one
      role-scoped bullet instead of none.
-   - **`00-profile/application-qa.md` still says "sole iOS developer"** for the NIO co-op — contradicted
-     by six contributors (D-220), and it is the text the **live application form-fills of 2026-07-23/24
-     drew from** (`Job apps/.playwright-mcp/` captures). Outside the bundle; one edit.
+   - **The "sole iOS developer" prose is OWNER-GATED, not "one edit", and it lives in TWO files.**
+     `wiki/00-profile/application-qa.md` already carries the full D-220 warning block; the prose under it
+     is left verbatim **deliberately**, because rewording Mit's own writing is his alone (D-191) — so
+     nothing is owed there but a rewrite only he can make. **What is unflagged is the upstream copy,
+     `~/dev/Job apps/Common_App_Questions.md:8`** — same two contradicted claims (six contributors; the
+     SensorKit work is a colleague's), no warning at all, and it is the file a future application would be
+     pasted from. Note `~/dev/portfolio-website/wiki` is **not a git repo** — edits there have no undo.
 
    **Method facts this track established, all still binding:**
    **Do the PINNED entries first.** `select.py`: pinned entries are *"emitted in declared order, never
@@ -243,18 +247,21 @@ ruling and marked `xfail(win32, strict=False)`. **D-212's fix IS now verified** 
 `31954948210` (`4593d04`) completed **success**, resolving the "necessary, not verified" caveat this
 file used to carry.
 
-**But the nightly is RED again, and D-212's marking was incomplete (2026-08-17).** Scheduled run
+**The nightly is RED, and the marking took three passes to become a census (2026-08-17).** Scheduled run
 **`32007953224`** (`aeb87d9`) failed on exactly **one** job — `test (3.11, windows-latest)`; Windows
-3.12 and 3.13 both passed, as did every macOS/Linux job. **`nightly-watch` issue #76 is OPEN.** Cause:
-D-212 marked **two of the three** tests exercising the same race —
-`test_profile_bundle_promotion.py:915` and `test_profile_bundle_rebase.py:1412` — while
-`test_profile_bundle_promotion_concurrency.py::test_a_lockfile_left_by_a_killed_promoter_is_not_a_held_lock`
-was left **unmarked** and fails with the same `bundle_lock_held` diagnostic. The third marker is now
-added in the same style. **An enumeration is a claim, not a census**: the fix was scoped by the two
-instances someone had in hand, not by a search for all of them.
-**`make check` cannot verify it** — the race is Windows-only and never runs locally, so the real
-verification is a `workflow_dispatch` or the next 07:00 UTC nightly, and **issue #76 closing is the
-signal**. Do not read a green local gate as evidence here.
+3.12 and 3.13 both passed, as did every macOS/Linux job. **`nightly-watch` issue #76 is OPEN.**
+
+**FOUR tests kill a lock holder then acquire; all four are now marked** (D-212 two, D-222 a third, **D-223**
+a fourth — `test_profile_bundle_rebase.py::test_the_lock_helper_refuses_a_second_holder_and_releases_on_exit`).
+**The census predicate is `process.kill()` in a test BODY followed by an acquire** — not the word `"killed"`
+in a name (what D-222 grepped, and why it missed one) and not the `bundle_lock_held` diagnostic (instance 4
+raises `BundleLockHeldError`). It is recorded in `tests/profile_bundle/conftest.py` beside the shared reason
+constant. **Instance 4 is marked by MECHANISM, never observed failing.** Five other holder sites stay
+**deliberately unmarked**: a live holder makes the race a spurious *pass*, a natural exit releases cleanly.
+
+**The nightly cannot go green until the fix is PUSHED** — run `32007953224` ran against an `origin/main`
+lacking D-222's marker. **`make check` can never verify this**: the markers are inert off `win32`, so the
+only route is a `workflow_dispatch` or the next 07:00 UTC nightly, and **issue #76 closing is the signal**.
 
 ---
 
