@@ -47,7 +47,7 @@ is COMPLETE as of 2026-08-17: all eleven entities, revision 21.** Two small resi
 > every bullet showing**. The master is a **RESERVOIR** holding the SUPERSET; per-JD **Stage 2** selects it
 > down to one page. `resume.yaml` / `sections.tex` are thin per-JD OUTPUTS, **not** the source — the wiki is.
 
-**Live revision: 17.** *Do not quote its digest here — the refinement sessions promote several times a
+**Live revision: 21.** *Do not quote its digest here — the refinement sessions promote several times a
 day and any stamp written into this file is stale within the hour; re-derive it with `profile-bundle
 inventory` (D-017).* 11 entities — 4 experience (Saayam, NIO co-op,
 Nakshatra, SAKEC) + 7 projects (Hookrail, Knowledge Forge, StreakSync, Random Forest, FlickSwiper,
