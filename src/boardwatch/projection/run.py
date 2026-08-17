@@ -172,6 +172,13 @@ class ProjectionAvailability(StrEnum):
     TEMPLATE_INVALID = "template_invalid"
     TOOLCHAIN_UNAVAILABLE = "toolchain_unavailable"
     PINNED_BUDGET_OVERFLOW = "pinned_budget_overflow"
+    #: The pinned-only résumé would not compile, for a reason that is not a page count and not a
+    #: missing binary. Its own member rather than TOOLCHAIN_UNAVAILABLE: that one tells the operator
+    #: to install something, and `COMPILE_FAILED` is not evidence the toolchain is absent — it is
+    #: evidence that a compile which RAN did not produce a readable PDF. The cause is genuinely
+    #: ambiguous (see `select._fatal_if_infrastructure`), so the member names the observation, and
+    #: the remedy it points at is the compile log rather than a package manager.
+    PINNED_SET_UNRENDERABLE = "pinned_set_unrenderable"
 
 
 class ProjectionLeadOutcome(StrEnum):
@@ -186,12 +193,13 @@ class ProjectionLeadOutcome(StrEnum):
     PROJECTED = "projected"
     POSTING_UNAVAILABLE = "posting_unavailable"
     EXTRACTION_UNAVAILABLE = "extraction_unavailable"
-    #: A prefix including a CANDIDATE entry would not compile — `tectonic` exited non-zero, most
-    #: often over an unescaped LaTeX special in one of that entry's bullets. Per-lead and not a
-    #: contradiction of the run-invariance rule above: which candidates are compiled at all is
-    #: decided per posting by `select`, so this is not the same claim as "the pinned set" or "the
-    #: page budget", both of which are fixed before any JD is read.
-    CANDIDATE_CONTENT_UNRENDERABLE = "candidate_content_unrenderable"
+    #: Adding one CANDIDATE entry made the compile fail when the same document without it compiled.
+    #: Named for the observation, not a cause: `COMPILE_FAILED` cannot tell content from environment
+    #: (`select._fatal_if_infrastructure`), so what this member claims is ATTRIBUTION — that entry
+    #: is what changed. Per-lead, and not a contradiction of the run-invariance rule above: which
+    #: candidates are compiled at all is decided per posting by `select`, so this is not the same
+    #: claim as "the pinned set" or "the page budget", both fixed before any JD is read.
+    CANDIDATE_UNRENDERABLE = "candidate_unrenderable"
     LINEAGE_MISMATCH = "lineage_mismatch"
     OUTPUT_IO_FAILURE = "output_io_failure"
 
@@ -254,21 +262,31 @@ ISSUE_SCOPE = MappingProxyType({
     ProjectionIssue.PINNED_SET_EXCEEDS_BUDGET: ProjectionAvailability.PINNED_BUDGET_OVERFLOW,
     #: A missing `tectonic`/`pdfinfo` or an unclassified gate reason is a property of the
     #: machine, identical for every posting. Per-lead, it would re-shell out to an absent
-    #: binary once per lead and bill each failure to the owner's content. A non-zero tectonic
-    #: EXIT is not in here — see the row below.
+    #: binary once per lead and bill each failure to the owner's content. `BINARY_MISSING` is typed
+    #: separately from `COMPILE_FAILED` by `evaluate_compile`, so this really is the machine; a
+    #: non-zero tectonic EXIT is not in here — see the two rows below.
     ProjectionIssue.COMPILE_INFRASTRUCTURE_FAILURE: ProjectionAvailability.TOOLCHAIN_UNAVAILABLE,
-    #: PER-LEAD. The toolchain ran and the document lost: an unescaped LaTeX special in one
-    #: candidate entry's bullet, say. Run-scoped, this reported "toolchain unavailable" for a
-    #: working tectonic and aborted every remaining lead.
+    #: PER-LEAD, justified by ATTRIBUTION and not by cause. The same document minus this candidate
+    #: compiled `OK` moments earlier, so this entry is what changed. Run-scoped, this reported
+    #: "toolchain unavailable" for a working tectonic and aborted every remaining lead.
     #:
-    #: The honest limit: the candidate set is JD-DEPENDENT, so the same bad entry skips only the
-    #: leads whose JD admits it, and a lead whose JD never admits entry X is unaffected by X being
-    #: broken. That is correct rather than a gap — the broken entry is genuinely absent from those
-    #: leads' résumés — but it does mean this outcome's count is a count of AFFECTED leads, not of
-    #: broken entries, and one bad character can therefore show up as anywhere from 0 to N skips.
-    ProjectionIssue.CANDIDATE_COMPILE_FAILED: (
-        ProjectionLeadOutcome.CANDIDATE_CONTENT_UNRENDERABLE
-    ),
+    #: Two honest limits. (1) The candidate set is JD-DEPENDENT, so the same bad entry skips only
+    #: the leads whose JD admits it, and a lead whose JD never admits entry X is unaffected by X
+    #: being broken. That is correct rather than a gap — the entry is genuinely absent from those
+    #: leads' résumés — but it means this outcome's count is a count of AFFECTED leads, not of
+    #: broken entries: one bad character shows up as anywhere from 0 to N skips. (2) Attribution is
+    #: not proof of cause. An environment that died between the two compiles lands here once; the
+    #: NEXT lead's pinned-only compile then fails unattributably and takes the run-scoped row below,
+    #: so a real outage costs one misattributed lead and then stops the run, never a silent empty
+    #: day.
+    ProjectionIssue.CANDIDATE_COMPILE_FAILED: ProjectionLeadOutcome.CANDIDATE_UNRENDERABLE,
+    #: RUN-SCOPED. `COMPILE_FAILED` on the pinned-only prefix: nothing smaller has compiled, so
+    #: nothing is attributable, and the pinned set is fixed by the frozen declaration — so it is
+    #: run-invariant by exactly the `PINNED_SET_EXCEEDS_BUDGET` argument above. Fatal is right for
+    #: both readings of an ambiguous failure: a systemic outage must be fatal, and an authoring bug
+    #: would otherwise skip every lead in turn and report N content failures for one broken bullet.
+    #: NOT folded into TOOLCHAIN_UNAVAILABLE — see `ProjectionAvailability.PINNED_SET_UNRENDERABLE`.
+    ProjectionIssue.PINNED_SET_COMPILE_FAILED: ProjectionAvailability.PINNED_SET_UNRENDERABLE,
     #: PER-LEAD, deliberately. `posting_context` raises this when the taxonomy extraction backing
     #: `jd_skills_for` is missing for THIS posting at the run's taxonomy version. One way to
     #: reach it is a mid-run edit to `taxonomy.yaml`: `run_preflight` still loads its own

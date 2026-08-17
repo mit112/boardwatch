@@ -68,14 +68,28 @@ class ProjectionIssue(StrEnum):
     # -- selection --------------------------------------------------------------------
     PINNED_SET_EXCEEDS_BUDGET = "pinned_set_exceeds_budget"
     COMPILE_INFRASTRUCTURE_FAILURE = "compile_infrastructure_failure"
-    #: `tectonic` exited non-zero while compiling a prefix that includes a CANDIDATE entry — an
-    #: unescaped `%` in one of its bullets, say. Distinct from COMPILE_INFRASTRUCTURE_FAILURE
-    #: because that member means the toolchain is absent or the gate reason is unclassified, and the
-    #: two remedies do not overlap: this one is edited in the bundle, that one is installed on the
-    #: machine. Folding them reports "toolchain unavailable" for a working tectonic and sends the
-    #: operator to reinstall it. Split at the raise site (`select._fatal_if_infrastructure`), not
-    #: downstream: telling them apart later would mean re-reading the compile log.
+    #: `COMPILE_FAILED` while compiling a prefix that includes a CANDIDATE entry, when the same
+    #: document WITHOUT that candidate compiled `OK` moments earlier. The failure is therefore
+    #: ATTRIBUTABLE to that one entry, which is the whole of the claim — this member does not assert
+    #: a cause. `CompileReason.COMPILE_FAILED` folds a non-zero `tectonic` exit, a missing PDF and
+    #: an unreadable page count into one value, and `reports/resume_gate.py:87-90` reasons such an
+    #: exit is typically ENVIRONMENTAL (cold support-file cache with no network, disk full, OOM,
+    #: killed subprocess), so nothing typed anywhere distinguishes content from environment.
+    #: Attribution is what is observable; the cause is not.
+    #: Distinct from COMPILE_INFRASTRUCTURE_FAILURE, which means the toolchain is absent (typed
+    #: separately at the source as `BINARY_MISSING`) or the gate reason is unclassified. Folding
+    #: them reported "toolchain unavailable" for a working tectonic. Split at the raise site
+    #: (`select._fatal_if_infrastructure`), not downstream: telling the two call sites apart later
+    #: would mean re-reading a compile log.
     CANDIDATE_COMPILE_FAILED = "candidate_compile_failed"
+    #: `COMPILE_FAILED` on the PINNED-ONLY prefix, before any candidate exists. Nothing can be
+    #: attributed: no smaller prefix has compiled, so the environment and the pinned content are
+    #: equally implicated, and either way the pinned set comes from the frozen declaration and the
+    #: cause is run-invariant. Its own member rather than COMPILE_INFRASTRUCTURE_FAILURE because
+    #: that one resolves to `TOOLCHAIN_UNAVAILABLE`, and telling an operator to reinstall a working
+    #: tectonic is the exact misdiagnosis this split exists to remove — the remedy here is to read
+    #: the compile log, then look at the pinned entries.
+    PINNED_SET_COMPILE_FAILED = "pinned_set_compile_failed"
     NO_JD_EXTRACTION = "no_jd_extraction"
     # -- posting ------------------------------------------------------------------------
     POSTING_NOT_OPEN = "posting_not_open"

@@ -175,23 +175,60 @@ def test_a_posting_refusal_skips_one_lead() -> None:
     )
 
 
-def test_a_candidates_content_compile_failure_skips_one_lead_not_the_run() -> None:
-    """`COMPILE_FAILED` is a non-zero tectonic exit over the candidate's own text (an unescaped `%`,
-    say), raised inside `select`'s JD-dependent candidate loop. Run-scoped, it would abort the whole
-    projected run as "toolchain unavailable" and send the operator to reinstall a working tectonic.
-    A missing binary is the arm that really is the machine's."""
+def test_an_attributable_compile_failure_skips_one_lead_not_the_run() -> None:
+    """A `COMPILE_FAILED` raised inside `select`'s JD-dependent candidate loop is attributable to the
+    entry that was just added — the same document without it compiled. Run-scoped, it would abort the
+    whole projected run as "toolchain unavailable" and send the operator to reinstall a working
+    tectonic. A missing binary is the arm that really is the machine's."""
     assert (
         ISSUE_SCOPE[ProjectionIssue.CANDIDATE_COMPILE_FAILED]
-        is ProjectionLeadOutcome.CANDIDATE_CONTENT_UNRENDERABLE
+        is ProjectionLeadOutcome.CANDIDATE_UNRENDERABLE
     )
     assert isinstance(
         ISSUE_SCOPE[ProjectionIssue.COMPILE_INFRASTRUCTURE_FAILURE], ProjectionAvailability
     )
     assert classify_lead_outcome(_refusal(ProjectionIssue.CANDIDATE_COMPILE_FAILED)) is (
-        ProjectionLeadOutcome.CANDIDATE_CONTENT_UNRENDERABLE
+        ProjectionLeadOutcome.CANDIDATE_UNRENDERABLE
     )
     with pytest.raises(AssertionError):
         classify_availability(_refusal(ProjectionIssue.CANDIDATE_COMPILE_FAILED))
+
+
+def test_an_unattributable_compile_failure_refuses_the_whole_run() -> None:
+    """The mirror row, and the one the reviewer found missing: `COMPILE_FAILED` on the PINNED-ONLY
+    prefix is not attributable to any candidate, and the pinned set is fixed by the frozen
+    declaration, so it is run-invariant — `ProjectionLeadOutcome`'s own rule forbids naming it there.
+
+    It must NOT resolve to `TOOLCHAIN_UNAVAILABLE` either: a compile that ran and failed is no
+    evidence the toolchain is absent, and that member's remedy is "install something", which is the
+    misdiagnosis this whole split exists to remove."""
+    assert (
+        ISSUE_SCOPE[ProjectionIssue.PINNED_SET_COMPILE_FAILED]
+        is ProjectionAvailability.PINNED_SET_UNRENDERABLE
+    )
+    assert (
+        ISSUE_SCOPE[ProjectionIssue.PINNED_SET_COMPILE_FAILED]
+        is not ProjectionAvailability.TOOLCHAIN_UNAVAILABLE
+    )
+    assert classify_availability(_refusal(ProjectionIssue.PINNED_SET_COMPILE_FAILED)) is (
+        ProjectionAvailability.PINNED_SET_UNRENDERABLE
+    )
+    with pytest.raises(AssertionError):
+        classify_lead_outcome(_refusal(ProjectionIssue.PINNED_SET_COMPILE_FAILED))
+
+
+def test_no_lead_outcome_claims_a_cause_compile_failed_cannot_establish() -> None:
+    """`CompileReason.COMPILE_FAILED` folds a non-zero exit, a missing PDF and an unreadable page
+    count into one value, and `reports/resume_gate.py:87-90` reasons that a non-zero exit is
+    typically ENVIRONMENTAL. So no member on either side of this split may be named for "content":
+    a disk-full run would then bill every lead to the owner's text. The members name the observation
+    — what was added, or that nothing was — and the two catalogs stay consistent with resume_gate's."""
+    named_for_content = [
+        member
+        for member in (*ProjectionLeadOutcome, *ProjectionAvailability)
+        if "content" in member.value
+    ]
+    assert named_for_content == []
 
 
 def test_an_unknown_scorer_is_a_run_configuration_fault() -> None:

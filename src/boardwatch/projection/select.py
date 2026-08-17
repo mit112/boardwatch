@@ -17,12 +17,17 @@ takes `scorer: EntryScorer` as a required parameter with no default.
 
 The compile gate has four arms (`reports.resume_gate.evaluate_compile`) and only
 `PAGE_LIMIT_EXCEEDED` ever drops a candidate. `BINARY_MISSING` and `COMPILE_FAILED` are both fatal
-and neither may ever read as "every candidate overflowed the budget" — but they are two different
-faults with two different remedies, and `_fatal_if_infrastructure` raises a different issue for
-each: a missing `tectonic` *or* `pdfinfo` is `BINARY_MISSING` (D-204), the machine's problem, while
-`COMPILE_FAILED` means the toolchain ran and the document lost — a non-zero `tectonic` exit, or one
-of `_pdf_page_count`'s two remaining `None` causes (`reports/tailor.py`) — which is the owner's
-content. If the pinned set alone fails to compile for a page-count reason, that
+and neither may ever read as "every candidate overflowed the budget" — but they are not one fault,
+and `_fatal_if_infrastructure` raises a different issue for each of its three arms. A missing
+`tectonic` *or* `pdfinfo` is `BINARY_MISSING` (D-204), typed at its source, the machine's problem.
+`COMPILE_FAILED` is ambiguous by construction — it folds a non-zero exit, a missing PDF and an
+unreadable page count into one value, and `reports/resume_gate.py` reasons that such an exit is
+typically environmental — so this module does not classify it by cause at all. It classifies by
+whether the failure is ATTRIBUTABLE: mid-growth, the same document minus this candidate compiled
+seconds earlier, so the entry is implicated and the scope is one lead; on the pinned-only base,
+nothing smaller has compiled and the pinned set is frozen anyway, so it is unattributable and
+run-scoped. See `_fatal_if_infrastructure` for how that degrades in both directions.
+If the pinned set alone fails to compile for a page-count reason, that
 is `PINNED_SET_EXCEEDS_BUDGET`, naming the pinned set and the actionable knob
 (`resume_max_pages`), not a candidate-selection outcome at all.
 
@@ -81,25 +86,44 @@ class SelectionResult:
     page_count: int | None
 
 
-def _fatal_if_infrastructure(gate: GateResult, *, where: str) -> None:
-    """Raise on either non-overflow compile failure, as a DIFFERENT issue each — before any
-    candidate is dropped on its account.
+def _fatal_if_infrastructure(gate: GateResult, *, where: str, candidate: str | None) -> None:
+    """Raise on either non-overflow compile failure — three arms, scoped by ATTRIBUTION rather than
+    by cause. Always before any candidate is dropped on its account: neither reason is overflow, so
+    neither may ever read as "this candidate did not fit."
 
-    Both arms share exactly one property: neither is budget overflow, so neither may ever read as
-    "this candidate did not fit." That is where the resemblance ends, and "not overflow" is not
-    what makes something infrastructure:
+    `candidate` is the entry id this compile added, or `None` for the pinned-only base compile. It
+    is required, not defaulted, because it is the whole discriminator and a silent default would
+    give one of the two call sites the other's scope.
 
-    - `BINARY_MISSING` — `tectonic` or `pdfinfo` is absent (D-204). A property of the machine,
-      identical for every posting, remedied by installing something.
-    - `COMPILE_FAILED` — `tectonic` exited non-zero (`reports/tailor.py`), or `_pdf_page_count`
-      could not read a page count out of a PDF that WAS produced. The toolchain ran; the document
-      it was handed is what failed. The overwhelmingly common cause is the owner's own content —
-      an unescaped `%`, `&` or `_` in a bullet — remedied by editing the bundle.
+    **This function asserts no cause, deliberately.** `CompileReason.COMPILE_FAILED` folds three
+    distinct events into one value — a non-zero `tectonic` exit, a PDF that was never produced, and
+    a page count that could not be read (`tailor/render/outcome.py`'s `_default_runner`) — and
+    `reports/resume_gate.py:87-90` reasons, in an existing closed catalog, that a non-zero exit is
+    typically ENVIRONMENTAL: "cold support-file cache with no network, disk full, OOM, killed
+    subprocess", which is why `DETERMINISTIC_GATE_REFUSALS` deliberately excludes it rather than
+    burying a lead "on the strength of a bad afternoon". Nothing typed anywhere distinguishes
+    content from environment here, so this module does not guess. What IS observable is whether the
+    failure can be pinned on one entry:
 
-    Reporting the second as the first is a live misdiagnosis, not a tidiness point: this function
-    is called from inside the JD-dependent candidate loop, so one bad character in one candidate
-    entry aborted the whole projected run as "toolchain unavailable", for exactly the postings
-    whose JD admitted that entry, and sent the operator to reinstall a tectonic that was fine.
+    - `BINARY_MISSING`, either site — the one arm that IS typed at its source: `evaluate_compile`
+      separates it from `COMPILE_FAILED`, so `tectonic`/`pdfinfo` really is absent (D-204). A
+      property of the machine, identical for every posting. Run-scoped.
+    - `COMPILE_FAILED` with a `candidate` — the same document MINUS this entry compiled `OK`
+      moments earlier (`_grow` only reaches here after a strictly smaller prefix passed
+      `_reject_unless_ok`), so the failure is attributable to this one entry. Per-lead, so one bad
+      `%` in a candidate bullet skips only the leads whose JD admits it.
+    - `COMPILE_FAILED` with no `candidate` — the pinned-only base. Nothing has compiled yet, so
+      nothing is attributable; the environment and the pinned content are equally implicated. And
+      either way the pinned set is fixed by the frozen declaration, so the cause is run-invariant
+      by the same argument `PINNED_SET_EXCEEDS_BUDGET` uses. Run-scoped and fatal, which is the
+      right direction for both a systemic outage and a pinned-content authoring bug.
+
+    How this degrades, in both directions — no silent empty day either way. If the environment
+    really did die mid-run, the per-lead arm misattributes at most ONE lead to a candidate: the
+    very next lead begins with its own pinned-only compile, which fails unattributably and takes
+    the run-scoped arm, so the run goes fatal. If instead the failure was genuinely that one
+    candidate, the next lead's pinned compile succeeds and only the leads admitting that entry are
+    skipped. A transient blip costs one lead; a real outage stops the run.
     """
     if gate.reason is GateReason.BINARY_MISSING:
         raise_violation(
@@ -112,13 +136,24 @@ def _fatal_if_infrastructure(gate: GateResult, *, where: str) -> None:
             "dropped on its account",
             where=where,
         )
-    if gate.reason is GateReason.COMPILE_FAILED:
+    if gate.reason is GateReason.COMPILE_FAILED and candidate is not None:
         raise_violation(
             ProjectionIssue.CANDIDATE_COMPILE_FAILED,
-            f"the compile of a prefix including a candidate entry failed ({gate.reason.value}); "
-            "the toolchain ran, so this is the DOCUMENT, most often an unescaped LaTeX special "
-            "character in a bullet — never budget overflow, and no candidate is dropped on its "
-            "account",
+            f"adding candidate entry {candidate!r} made the compile fail "
+            f"({gate.reason.value}) when the same document without it compiled; the failure is "
+            "attributable to that entry — check its bullets for an unescaped LaTeX special, and "
+            "the compile log for an environment fault that began between the two compiles. Never "
+            "budget overflow, and no candidate is dropped on its account",
+            where=where,
+        )
+    if gate.reason is GateReason.COMPILE_FAILED:
+        raise_violation(
+            ProjectionIssue.PINNED_SET_COMPILE_FAILED,
+            f"the pinned entries alone would not compile ({gate.reason.value}); no smaller prefix "
+            "has compiled, so this is not attributable to any one entry — read the compile log "
+            "first, then the pinned entries' own bullets. Run-scoped because the pinned set comes "
+            "from the frozen declaration either way. Never budget overflow, and no candidate is "
+            "dropped on its account",
             where=where,
         )
 
@@ -127,7 +162,7 @@ def _reject_unless_ok(gate: GateResult, *, where: str) -> None:
     """Admit by assertion, never by elimination. By the time a caller reaches this check,
     `_fatal_if_infrastructure` has already ruled out `BINARY_MISSING`/`COMPILE_FAILED` and the
     caller's own `PAGE_LIMIT_EXCEEDED` check has run — but `Compiler = Callable[[Resume],
-    GateResult]` accepts any `GateResult`, and `GateReason` has eight members, not four:
+    GateResult]` accepts any `GateResult`, and `GateReason` has ten members, not four:
     `evaluate_compile` produces the four this module names, but the same type is also returned
     by `validate_layout`/`validate_slots` (`BULLET_TOO_LONG`, `TOO_MANY_BULLETS`,
     `ESCAPING_MISMATCH`, `TEMPLATE_ARTIFACT`, `CONTACT_BLOCK_MISSING_NAME`,
@@ -203,7 +238,10 @@ def _grow(
     for candidate_id in order:
         tentative = pinned | frozenset(admitted) | {candidate_id}
         gate = compile_prefix(_subset_resume(pool, tentative))
-        _fatal_if_infrastructure(gate, where=where)
+        # This candidate is what the prefix gained since the last compile, and that compile was
+        # `OK` (the pinned base for the first iteration, `_reject_unless_ok` below for the rest) —
+        # which is what makes a failure here attributable to `candidate_id` specifically.
+        _fatal_if_infrastructure(gate, where=where, candidate=candidate_id)
         if gate.reason is GateReason.PAGE_LIMIT_EXCEEDED:
             break
         _reject_unless_ok(gate, where=where)
@@ -228,7 +266,9 @@ def select(
     pinned = frozenset(pool.pinned_entry_ids)
 
     pinned_gate = compile_prefix(_subset_resume(pool, pinned))
-    _fatal_if_infrastructure(pinned_gate, where=where)
+    # `candidate=None`: nothing has been added yet and nothing smaller has compiled, so a
+    # `COMPILE_FAILED` here is unattributable and run-scoped, not one candidate's fault.
+    _fatal_if_infrastructure(pinned_gate, where=where, candidate=None)
     if pinned_gate.reason is GateReason.PAGE_LIMIT_EXCEEDED:
         raise_violation(
             ProjectionIssue.PINNED_SET_EXCEEDS_BUDGET,

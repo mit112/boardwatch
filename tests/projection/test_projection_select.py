@@ -229,48 +229,88 @@ def test_compile_failed_mid_growth_fails_named_and_drops_nothing() -> None:
 # -- task 5b part 1: the two fatal arms are two different faults ------------------------------
 
 
-def test_a_content_compile_failure_is_not_a_toolchain_failure() -> None:
-    """`COMPILE_FAILED` means tectonic exited non-zero — owner content, e.g. an unescaped `%` in a
-    bullet. Reporting it as a toolchain fault sends the operator to reinstall a binary that is
-    already fine, and because this fires inside the JD-dependent candidate loop it aborts the whole
-    run for the postings where one entry happens to be admitted."""
+def test_an_attributable_compile_failure_is_not_a_toolchain_failure() -> None:
+    """A `COMPILE_FAILED` whose prefix ADDED a candidate is attributable to that candidate: the same
+    document without it compiled moments earlier. Reporting it as a toolchain fault sends the
+    operator to reinstall a binary that is already fine, and because this fires inside the
+    JD-dependent candidate loop it aborts the whole run for the postings where that entry is
+    admitted. Note the claim is attribution, NOT cause — `COMPILE_FAILED` cannot tell content from
+    environment (`reports/resume_gate.py:87-90`)."""
     with pytest.raises(ProjectionError) as exc_info:
         _fatal_if_infrastructure(
             GateResult(GateReason.COMPILE_FAILED, False, None, None, "! Misplaced alignment tab"),
             where="posting:1",
+            candidate="proj-x",
         )
     assert exc_info.value.violation.issue is ProjectionIssue.CANDIDATE_COMPILE_FAILED
+    # The entry is named, because naming it is the whole of the claim being made.
+    assert "proj-x" in exc_info.value.violation.message
 
 
-def test_a_missing_binary_is_still_a_toolchain_failure() -> None:
-    """The other arm must not move: an absent tectonic really is run-scoped."""
+def test_an_unattributable_compile_failure_is_run_scoped() -> None:
+    """The pinned-only base compile passes `candidate=None`: nothing smaller has compiled, so the
+    environment and the pinned content are equally implicated and neither can be singled out. Fatal
+    is right for both readings, and the pinned set is frozen anyway. Its own member rather than
+    `COMPILE_INFRASTRUCTURE_FAILURE`, whose availability member would tell the operator to reinstall
+    a tectonic that just ran."""
     with pytest.raises(ProjectionError) as exc_info:
         _fatal_if_infrastructure(
-            GateResult(GateReason.BINARY_MISSING, False, None, None, "tectonic not found"),
+            GateResult(GateReason.COMPILE_FAILED, False, None, None, "! Undefined control sequence"),
             where="posting:1",
+            candidate=None,
         )
-    assert exc_info.value.violation.issue is ProjectionIssue.COMPILE_INFRASTRUCTURE_FAILURE
+    assert exc_info.value.violation.issue is ProjectionIssue.PINNED_SET_COMPILE_FAILED
+    assert exc_info.value.violation.issue is not ProjectionIssue.CANDIDATE_COMPILE_FAILED
 
 
-def test_neither_fatal_arm_mentions_a_page_budget() -> None:
-    """Both arms keep the "no candidate is dropped on its account" guarantee — neither reason is
-    overflow — so neither message may send the operator to `resume_max_pages`. Splitting the issue
-    members must not cost that shared property."""
-    for reason in (GateReason.COMPILE_FAILED, GateReason.BINARY_MISSING):
+def test_a_missing_binary_is_a_toolchain_failure_at_either_site() -> None:
+    """`BINARY_MISSING` is the one arm typed at its source — `evaluate_compile` separates it from
+    `COMPILE_FAILED` — so it is the machine's fault wherever it is observed, and attribution does not
+    enter into it. Both call sites must agree."""
+    for candidate in ("proj-x", None):
         with pytest.raises(ProjectionError) as exc_info:
             _fatal_if_infrastructure(
-                GateResult(reason, False, None, None, ""), where="posting:1"
+                GateResult(GateReason.BINARY_MISSING, False, None, None, "not found"),
+                where="posting:1",
+                candidate=candidate,
             )
-        message = exc_info.value.violation.message
+        assert exc_info.value.violation.issue is ProjectionIssue.COMPILE_INFRASTRUCTURE_FAILURE
+
+
+def test_no_fatal_arm_mentions_a_page_budget_or_claims_a_cause() -> None:
+    """Every arm keeps the "no candidate is dropped on its account" guarantee — no reason here is
+    overflow — so no message may send the operator to `resume_max_pages`. And none may assert that
+    the owner's content caused it: `CompileReason.COMPILE_FAILED` folds a non-zero exit, a missing
+    PDF and an unreadable page count together, and `resume_gate.py` reasons that a non-zero exit is
+    typically environmental, so a message claiming content would contradict a sibling catalog."""
+    cases = (
+        (GateReason.COMPILE_FAILED, "proj-x"),
+        (GateReason.COMPILE_FAILED, None),
+        (GateReason.BINARY_MISSING, "proj-x"),
+        (GateReason.BINARY_MISSING, None),
+    )
+    for reason, candidate in cases:
+        with pytest.raises(ProjectionError) as exc_info:
+            _fatal_if_infrastructure(
+                GateResult(reason, False, None, None, ""), where="posting:1", candidate=candidate
+            )
+        # Case-insensitive: the guarantee starts a sentence in one arm and continues one in another.
+        message = exc_info.value.violation.message.lower()
         assert "never budget overflow" in message
         assert "resume_max_pages" not in message
+        assert "most often" not in message
 
 
 def test_an_ok_gate_is_not_fatal() -> None:
     """The guard fires on exactly two reasons; `OK` and `PAGE_LIMIT_EXCEEDED` fall through to the
     caller's own handling. A split that widened the guard would abort every successful compile."""
     for reason in (GateReason.OK, GateReason.PAGE_LIMIT_EXCEEDED):
-        _fatal_if_infrastructure(GateResult(reason, reason is GateReason.OK, None, 1, ""), where="w")
+        for candidate in ("proj-x", None):
+            _fatal_if_infrastructure(
+                GateResult(reason, reason is GateReason.OK, None, 1, ""),
+                where="w",
+                candidate=candidate,
+            )
 
 
 # -- fix round 1, finding 2: BINARY_MISSING, the other fatal arm, was untested ----------------
@@ -332,6 +372,31 @@ def test_unhandled_gate_reason_mid_growth_fails_named_and_drops_nothing() -> Non
             compile_prefix=_layout_reason_once_grown,
         )
     assert exc_info.value.violation.issue is ProjectionIssue.COMPILE_INFRASTRUCTURE_FAILURE
+
+
+def _always_compile_failed(resume: Resume) -> GateResult:
+    """`COMPILE_FAILED` from the very first compile, so the PINNED-ONLY prefix takes it. Every other
+    fixture in this file returns `OK` for `len(entries) <= 1`, which is why the pinned-base arm of
+    `_fatal_if_infrastructure` went untested through `select` until now — and it is the arm reached
+    FIRST on every lead, not an edge case."""
+    return GateResult(GateReason.COMPILE_FAILED, False, None, None, "! Undefined control sequence")
+
+
+def test_pinned_only_compile_failure_is_run_scoped_not_one_candidates_fault() -> None:
+    """The pinned prefix compiles before any candidate exists, so a failure there cannot be pinned on
+    a candidate and must not claim to be. The pinned set is fixed by the frozen declaration, so it is
+    run-invariant by exactly the `PINNED_SET_EXCEEDS_BUDGET` argument — per-lead, it would skip every
+    lead in turn and report N candidate failures for one cause."""
+    with pytest.raises(ProjectionError) as exc_info:
+        select(
+            POOL,
+            _context(JD_DATA),
+            SCORER,
+            table=TABLE,
+            taxonomy=TAXONOMY,
+            compile_prefix=_always_compile_failed,
+        )
+    assert exc_info.value.violation.issue is ProjectionIssue.PINNED_SET_COMPILE_FAILED
 
 
 def _always_layout_reason(resume: Resume) -> GateResult:
