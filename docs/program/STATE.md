@@ -16,7 +16,7 @@
 
 **The headline number: 0.** Zero job applications have ever come out of boardwatch (`applications` has 0
 rows), zero unattended days, zero acceptance days. Against that: 3 published releases, ~53k lines of source,
-**6,446 tests** (6,442 passing + 4 xfailed), **70 leaf CLI commands (20 `profile-bundle`)**, 6 ATS providers,
+**6,451 tests** (6,447 passing + 4 xfailed), **70 leaf CLI commands (20 `profile-bundle`)**, 6 ATS providers,
 an 800 MB / 24,073-posting store.
 
 **The program reoriented on 2026-08-13 (D-155):** remaining work runs through the **canonical career-profile
@@ -284,16 +284,20 @@ still-open #76 is not evidence the fix failed.
 **`nightly-watch` issue #76 is OPEN**, filed by scheduled run `32007953224` (a tip that predated even the
 markers). Expect it to close on the first nightly that runs with D-224 merged.
 
-**Two false-refusal exposures are left standing DELIBERATELY, both named in D-224 — do not "fix" either
-without the owner.** (1) **POSIX is not exempt.** `UnixFileLock` unlinks the lockfile *before* releasing the
-`flock` and discards an already-unlinked inode, so a second writer that opened it first can be reported
-`bundle_lock_held` while nobody holds the lock — a **live-holder handoff** race, reproduced on macOS local
-disk, no network filesystem needed. **Ruled: record, do not widen the window** — closing it costs a wait
-where §21 grants none on the platforms boardwatch actually runs on. (2) **`scan/coordinator.py:151-155` has
-the identical single-ask shape** and no window; on Windows a killed scan can refuse the next one with
-"another scan is already running" and write nothing, which on the unattended path is a silent empty day.
-Left because sharing the constant would make `scan` import from `profile_bundle`. `bundle_lock` is the only
-acquire path *inside* `profile_bundle`.
+**BOTH locks now carry the window.** `core/lock_reclaim.py` owns `RECLAIM_WINDOW_SECONDS` /
+`RECLAIM_POLL_SECONDS` and the bundle writer lock and the **scan lock** both bind it (D-227). The scan lock
+mattered more despite never having been observed firing: scanning runs **unattended**, so a killed scan
+followed by a refused scheduled scan is a **silent empty day**, not a retryable prompt. Both consumers bind
+the constants **by name**, so patching `core.lock_reclaim` reaches neither — patch the consumer, and a test
+compares both bindings against the source so they cannot drift.
+
+**One false-refusal exposure is left standing DELIBERATELY (D-224) — do not "fix" it without the owner.**
+**POSIX is not exempt.** `UnixFileLock` unlinks the lockfile *before* releasing the `flock` and discards an
+already-unlinked inode, so a second writer that opened it first can be reported `bundle_lock_held` while
+nobody holds the lock — a **live-holder handoff** race, reproduced on macOS local disk, no network
+filesystem needed. **Ruled: record, do not widen the window** — closing it costs a wait where §21 grants
+none on the platforms boardwatch actually runs on. `bundle_lock` is the only acquire path *inside*
+`profile_bundle`, and `coordinator.run_scan` the only one in `scan`.
 
 ---
 

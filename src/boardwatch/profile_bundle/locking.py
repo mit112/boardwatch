@@ -10,7 +10,7 @@ Three properties are contractual rather than incidental.
 `bundle_lock_held` with "no wait or mutation". A blocking acquire would turn a second operator's
 mistake into a hung terminal, and an unbounded retry loop would turn it into a hung terminal that
 also writes. On POSIX that is literal — `RECLAIM_WINDOW_SECONDS` is zero, the lock is asked once,
-and a refusal is reported as it arrives. Windows pays the window below before a genuine refusal,
+and a refusal is reported as it arrives. Windows pays the reclaim window before a genuine refusal,
 which is a departure from §21 recorded as such (D-224) and bounded by a deadline on purpose.
 
 **The operating system is the only authority.** A killed holder leaves its lockfile behind, and §6
@@ -57,7 +57,6 @@ portability contract for the sake of one subsystem.
 
 from __future__ import annotations
 
-import sys
 import time
 from collections.abc import Iterator
 from contextlib import contextmanager
@@ -65,17 +64,9 @@ from pathlib import Path
 
 from filelock import FileLock, Timeout
 
+from boardwatch.core.lock_reclaim import RECLAIM_POLL_SECONDS, RECLAIM_WINDOW_SECONDS
 from boardwatch.profile_bundle.errors import BundleIoError, ProfileBundleError
 from boardwatch.profile_bundle.paths import LOCK_FILE, lock_path
-
-#: How long to keep re-asking the OS before believing a refusal. Zero wherever the *killed-holder*
-#: case needs no window, which is everywhere but Windows — not because POSIX never false-refuses (it
-#: does; see the docstring's handoff race) but because widening this is the owner's call. One second
-#: on Windows, a judgement and not a measurement of the teardown window.
-RECLAIM_WINDOW_SECONDS = 1.0 if sys.platform == "win32" else 0.0
-
-#: Short enough that the common Windows case — a window that has already closed — costs one poll.
-RECLAIM_POLL_SECONDS = 0.025
 
 
 class BundleLockHeldError(ProfileBundleError):

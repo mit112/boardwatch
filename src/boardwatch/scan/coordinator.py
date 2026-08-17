@@ -12,6 +12,7 @@ from __future__ import annotations
 import json
 import os
 import socket
+import time
 from collections import defaultdict
 from collections.abc import Sequence
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -23,6 +24,7 @@ from filelock import FileLock, Timeout
 from sqlalchemy import Engine, func, select
 
 from boardwatch.core.clock import utcnow
+from boardwatch.core.lock_reclaim import RECLAIM_POLL_SECONDS, RECLAIM_WINDOW_SECONDS
 from boardwatch.core.models import BoardRequest, BoardSnapshot
 from boardwatch.core.politeness import Fetcher
 from boardwatch.core.settings import Settings
@@ -149,10 +151,23 @@ def run_scan(
     lock_path = settings.data_dir / "scan.lock"
     meta_path = _lock_meta_path(lock_path)
     lock = FileLock(str(lock_path))
-    try:
-        lock.acquire(blocking=False)  # before schema setup, the runs insert, any fetch (D20)
-    except Timeout as exc:
-        raise ScanLockHeldError(_lock_held_message(lock_path, meta_path)) from exc
+    # Before schema setup, the runs insert, any fetch (D20) — and re-asked until a deadline rather
+    # than believed on the first refusal (D-227). A scan killed mid-run leaves Windows tearing its
+    # handles down asynchronously, and during that window `filelock` reports `Timeout` for a lock
+    # nobody holds; believing it would refuse the next scheduled scan and write nothing, which on
+    # the unattended path is a silent empty day rather than a visible failure. The window is zero
+    # off Windows, so POSIX asks exactly once and this stays the fail-fast path state test j
+    # measures.
+    deadline = time.monotonic() + RECLAIM_WINDOW_SECONDS
+    while True:
+        try:
+            lock.acquire(blocking=False)
+        except Timeout as exc:
+            if time.monotonic() >= deadline:
+                raise ScanLockHeldError(_lock_held_message(lock_path, meta_path)) from exc
+            time.sleep(RECLAIM_POLL_SECONDS)
+            continue
+        break
     _write_lock_meta(meta_path)  # message-only; never governs the lock itself
     try:
         return _run_scan_locked(
