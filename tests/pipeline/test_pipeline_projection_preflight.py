@@ -145,6 +145,14 @@ def _disposition_count(engine: Engine) -> int:
         )
 
 
+def _run_count(engine: Engine) -> int:
+    """Every `runs` row. The pipeline mints one before it can refuse anything (`scan/coordinator`
+    creates it inside the scan lock, and `ensure_run` does on `--no-scan`), so a CLI-boundary
+    refusal is only genuinely "before any state is created" if this stays at zero."""
+    with engine.connect() as conn:
+        return int(conn.execute(select(func.count()).select_from(tables.runs)).scalar_one())
+
+
 def _run_status(engine: Engine, run_id: int) -> str:
     with engine.connect() as conn:
         return str(
@@ -269,6 +277,57 @@ def test_a_missing_approval_is_its_own_availability_member(env: Path, tmp_path: 
     assert summary.projection_availability is ProjectionAvailability.MISSING_APPROVAL
     assert summary.fatal is not None
     assert _disposition_count(get_engine(env)) == 0
+
+
+# -- `--project` and `--resume` cannot both be honoured --------------------------------
+
+
+def test_project_with_an_explicit_resume_refuses_before_any_state_exists(
+    env: Path, tmp_path: Path
+) -> None:
+    """Both options describe an active choice of document source, and the pipeline can only obey
+    one: every projected lead overwrites `lead_resume_path` with the projection's own file, so
+    `--resume custom.yaml` had NO EFFECT and said nothing about it. Silent precedence is the worst
+    of the three possible answers, and what the combination should mean is P5b's question — so the
+    CLI refuses until the owner rules it.
+
+    Asserted at the boundary, not merely on the exit code: a refusal that first minted a `runs` row
+    would burn a row per typo and leave `doctor` reporting an unfinished run, and one that got as
+    far as a disposition would suppress the very leads it never worked. Exit 2, not 1: this is a
+    usage error, not a run that failed — nothing about the store or the bundle is wrong.
+    """
+    _ready(env, 2)
+    config_dir = _config_dir(env)
+    _approve(config_dir, _install_projection(config_dir))
+    custom = tmp_path / "custom.yaml"
+    custom.write_text("header: []\n", encoding="utf-8")
+
+    result = cli.invoke(
+        app,
+        [
+            "--data-dir", str(env),
+            "run", "--no-scan", "--project", "--no-check-liveness",
+            "--resume", str(custom), "--top", "2", "--out", str(tmp_path / "apps"),
+        ],
+    )
+
+    assert result.exit_code == 2, result.output
+    assert "--resume" in result.output and "--project" in result.output
+    engine = get_engine(env)
+    assert _run_count(engine) == 0
+    assert _disposition_count(engine) == 0
+    # Non-vacuity: the same invocation WITHOUT `--resume` is accepted and does mint a run, so the
+    # zeros above are the refusal's doing and not an environment that could never have run.
+    accepted = cli.invoke(
+        app,
+        [
+            "--data-dir", str(env),
+            "run", "--no-scan", "--project", "--no-check-liveness",
+            "--top", "2", "--out", str(tmp_path / "apps"),
+        ],
+    )
+    assert accepted.exit_code == 0, accepted.output
+    assert _run_count(engine) == 1
 
 
 # -- one clock, one date ---------------------------------------------------------------
