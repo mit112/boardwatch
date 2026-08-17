@@ -4299,3 +4299,43 @@ and append-to-existing branches), leaving ruff- and mypy-clean source. All resto
    `smartrecruiters/normal_response_headers.json`, `workday/normal_response_headers.json`.
 3. Still owner-gated: the live-API comparison. R15 enforces *reviewed on schedule*, not *matches
    production*, and `--extend` restores green with no network by design.
+
+### Review round — two reviewers, fresh context, concurrent (commit `152565a`)
+
+Design was reviewed pre-implementation by gpt-5.6-sol (verdict REWORK, 8 findings, all folded in before
+any code). The **implementation** was then reviewed by two subagents with different lenses, run
+concurrently: correctness/bypassability, and conformance to `CLAUDE.md`'s engineering defaults.
+
+**Two findings were severe enough to have made the change ineffective:**
+
+| Finding | Status before | Reproduced |
+|---|---|---|
+| R13+R14 jointly bypassed by one nested directory — bucketing a provider's files by **basename** let `ashby/docs/README.md` satisfy the has-a-README check while the pinned `ashby/README.md` was deleted; R14 then skipped the absent file to defer to R13 | **all 15 rules green** with the pinned document replaced by another provider's content | Yes, by hand before and after: 0 violations → **4** |
+| `--record` derived the corpus pin **and** the row count from one read and wrote both, so the "second path" was the same path | `--record` on a corpus truncated at `m0500` would have written `CORPUS_ROWS = 500` and gone green | Yes — measured `rows=500, pin=a000e995982f` |
+
+Three further defects, all in the drain — the thing that must be able to restore green:
+
+- A 55-character `--reason` emitted a **111-character** line; ruff enforces 100 over `tools/` with no
+  per-file ignore, so running the documented remedy reddened `make check` on E501 inside the module the
+  gate imports. Budget is **45 characters**, now refused before any write.
+- `--check` ran `_measure` unconditionally and returned **2** ("could not run") for a missing README that
+  R13 reports as **1** (drift).
+- A newline in `--reason` survived `.strip()` and escaped the quote guard into an uncaught `SyntaxError`
+  (no file corruption — `_write` parses before replacing — but the wrong exit code).
+
+Plus: two divergent ast row counters folded into one; the rewriter's anchors bound to the real module
+rather than only to a synthetic constant shaped to match them; a second `.md` in a provider directory
+refused (pinned by nothing — R7 cannot see `.md`, R14 pins `README.md` by name); two overclaiming test
+docstrings; and doc corrections (the false "second path" claim in D-227 and here, `~30 ms` → the measured
+**26.3 ms**, `test_provider_registry.py:24,30` → `:25,31`, a truncated filename in STATE).
+
+**Both reviewers independently confirmed** the `test_real_tree.py` change strengthens rather than weakens
+the rule census, and every factual claim in D-227 verified against code.
+
+| Gate | Result | Wall clock |
+|---|---|---|
+| 3 (post-fix) | **exit 0** — 6,483 passed, 4 xfailed, 0 failed; all five steps green | 284.89 s (4:44) |
+
+Test count 6,473 → **6,483** (+10 from the review round; 48 new tests total on the branch).
+**The mutation suite's blind spot is the transferable part:** all 21 original mutations changed file
+*contents*; the bypass changed *directory structure*, and nothing in the suite could see it.
