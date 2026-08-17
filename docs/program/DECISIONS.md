@@ -9842,3 +9842,37 @@ apart.
 - **Severity is set by who is watching, not by the code.** These two acquires are line-for-line the
   same and their consequences are not: one interrupts a person who retries, the other silently skips a
   night's work. A defect's blast radius is a property of its *caller's* supervision.
+
+### The first Windows run was RED, and the defect was in the test, not the lock
+
+Dispatch `32055596667` (`c916423`) failed on **`test (3.11, windows-latest)`** and
+**`test (3.12, windows-latest)`** — deterministically, both jobs, one test:
+`test_a_refusal_that_stands_is_reported_after_the_window_and_the_wait_is_bounded`, on
+`assert elapsed < 1.0`.
+
+**Cause: the assertion timed the wrong span.** Its helper did `get_engine` + `ensure_schema` *inside*
+the timed region — creating a SQLite file and running the whole DDL. That is ~50 ms on this Mac and
+**over a second on a Windows runner**, so the assertion was measuring the filesystem and comparing it
+to a budget meant for the lock wait. The window logic was never involved. Setup is now hoisted into a
+`_prepared` helper, the timed region contains the acquire and nothing else, and the budget derives
+from the window (`_WINDOW + 1.0`) rather than restating a number.
+
+**Reproduced on macOS before being fixed, then verified against the cause.** A throwaway probe ran both
+structures with schema creation slowed to 2 s: the old structure's timed region measured **2.095 s**
+against its 1.0 s budget — the Windows failure, on this machine — and the new one measured **0.050 s**,
+exactly the window, against 1.05 s. Mutation coverage survives the restructure: no-retry still kills two
+tests, and the unbounded mutation still dies in 1.58 s on the stand-in's ceiling rather than hanging.
+
+**What this cost, and what it teaches.** Three hypotheses were falsified by measurement before the log
+arrived — the widened `test_j` budget (measured 1.4–1.6 s against 3.0 s), every other timing bound (all
+616 test files swept, all already window-derived), and `raise_on_not_writable_file`. A local
+"reproduction" also had to be **retracted**: forcing the window on under macOS only re-fails
+`test_the_window_is_asked_for_on_windows_only`, which is the simulation's own artifact, and the full
+window-on suite passes (6,445 tests). **Forcing a platform's *constant* does not simulate its
+*backend*** — `msvcrt` versus `flock`, and a filesystem an order of magnitude slower, are exactly what
+was left out, and the second is what broke.
+
+**The log was reachable the whole time.** `gh run view --log` refuses while any job in the run is still
+running, which cost most of the delay; **`gh api repos/{owner}/{repo}/actions/jobs/{id}/logs
+--allow-escape-sequences` serves a completed job's log immediately.** Use it when one job fails and
+others are still going.

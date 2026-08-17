@@ -258,12 +258,24 @@ class _ScriptedLock:
         self.releases += 1
 
 
-def _scan(tmp_path: Path) -> object:
+#: The window these tests drive. Named so the bounded-wait assertion derives its budget from the
+#: window rather than restating a number.
+_WINDOW = 0.05
+
+
+def _prepared(tmp_path: Path) -> tuple[Engine, Settings]:
+    """An engine with the schema already created, plus settings pointing at it.
+
+    Deliberately a separate step so no timed region contains it. `get_engine` + `ensure_schema`
+    create a SQLite file and run the whole DDL: ~50ms here, but **over a second on a Windows CI
+    runner**. Timing that alongside the acquire is what made this file's bounded-wait assertion
+    measure the filesystem instead of the window, and it failed on Windows only (D-227).
+    """
     data_dir = tmp_path / "data"
     data_dir.mkdir(exist_ok=True)
     engine = get_engine(data_dir)
     ensure_schema(engine)
-    return run_scan(engine, Settings(data_dir=data_dir, config_dir=tmp_path))
+    return engine, Settings(data_dir=data_dir, config_dir=tmp_path)
 
 
 def test_a_refusal_that_clears_inside_the_window_is_retried_not_reported(
@@ -273,12 +285,13 @@ def test_a_refusal_that_clears_inside_the_window_is_retried_not_reported(
 
     On the unattended path this is the difference between a run and a silent empty day.
     """
+    engine, settings = _prepared(tmp_path)
     lock = _ScriptedLock(refusals=2)
     monkeypatch.setattr(coordinator, "FileLock", lock)
     monkeypatch.setattr(coordinator, "RECLAIM_WINDOW_SECONDS", 1.0)
     monkeypatch.setattr(coordinator, "RECLAIM_POLL_SECONDS", 0.001)
 
-    _scan(tmp_path)
+    run_scan(engine, settings)
 
     assert lock.attempts == 3, "the window must re-ask, not believe the first refusal"
     assert lock.releases == 1, "the scan still releases what it took"
@@ -288,18 +301,21 @@ def test_a_refusal_that_stands_is_reported_after_the_window_and_the_wait_is_boun
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """A live holder still gets the typed refusal, and the window bounds the wait."""
+    engine, settings = _prepared(tmp_path)
     lock = _ScriptedLock(refusals=10_000)
     monkeypatch.setattr(coordinator, "FileLock", lock)
-    monkeypatch.setattr(coordinator, "RECLAIM_WINDOW_SECONDS", 0.05)
+    monkeypatch.setattr(coordinator, "RECLAIM_WINDOW_SECONDS", _WINDOW)
     monkeypatch.setattr(coordinator, "RECLAIM_POLL_SECONDS", 0.001)
 
+    # Only the acquire is timed. The stand-in never yields, so `run_scan` raises before it reaches
+    # any scan work at all — what is left in here is the wait and nothing else.
     started = time.monotonic()
     with pytest.raises(ScanLockHeldError):
-        _scan(tmp_path)
+        run_scan(engine, settings)
     elapsed = time.monotonic() - started
 
     assert lock.attempts > 1, "a window that asks once is not a window"
-    assert elapsed < 1.0, "the wait is bounded by the window, never by the holder"
+    assert elapsed < _WINDOW + 1.0, "the wait is bounded by the window, never by the holder"
     assert lock.releases == 0, "nothing was acquired, so nothing may be released"
 
 
@@ -307,12 +323,13 @@ def test_without_a_window_the_scan_lock_is_asked_exactly_once(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """POSIX's behaviour, unchanged: one ask, no wait, and state test j's fail-fast still holds."""
+    engine, settings = _prepared(tmp_path)
     lock = _ScriptedLock(refusals=1)
     monkeypatch.setattr(coordinator, "FileLock", lock)
     monkeypatch.setattr(coordinator, "RECLAIM_WINDOW_SECONDS", 0.0)
 
     with pytest.raises(ScanLockHeldError):
-        _scan(tmp_path)
+        run_scan(engine, settings)
 
     assert lock.attempts == 1
 
