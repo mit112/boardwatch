@@ -3,9 +3,14 @@ lineage.
 
 Revision 1 put provenance in YAML comments; `load_resume` (`tailor/load.py`) calls
 `yaml.safe_load`, which discards comments, so that provenance never reached the ledger
-(`serialize.py`'s own docstring makes the identical point about `Resume` itself). **v1 does not
-close stale lineage** — `tailor run` never reads this file, so the sidecar makes staleness
-*inspectable*, not *detected*. Slice P5 owns the real fix.
+(`serialize.py`'s own docstring makes the identical point about `Resume` itself).
+
+v2 adds **transformation identity** beside the bundle lineage v1 already carried. Which bundle
+produced a résumé is not which rules produced it: `select` scores through the taxonomy and the
+equivalence table and persona application reads the registry, so two runs that disagree because
+the taxonomy moved are indistinguishable from each other under v1's fields alone. v2 records the
+scorer id, those three versions, the run's `as_of`, the posting VERSION selection ran against,
+and both hashes of the résumé bytes that were written beside this file.
 """
 
 from __future__ import annotations
@@ -16,9 +21,9 @@ from pydantic import BaseModel, ConfigDict
 
 from boardwatch.profile_bundle.models.base import DecimalString
 
-#: Bumped whenever a field is added, removed, or its meaning changes. Nothing reads this yet — v1
-#: does not close stale lineage (see the module docstring) — it exists so a future reader can.
-MANIFEST_SCHEMA_VERSION = 1
+#: Bumped whenever a field is added, removed, or its meaning changes. v2 added the eight
+#: transformation- and document-identity fields (see the module docstring).
+MANIFEST_SCHEMA_VERSION = 2
 
 
 class ProjectionManifest(BaseModel):
@@ -50,6 +55,25 @@ class ProjectionManifest(BaseModel):
     #: explicitly anyway so a future divergence between the two has somewhere to be recorded rather
     #: than assumed away.
     claim_to_bullet: tuple[tuple[str, str], ...]
+    #: The posting VERSION selection actually ran against, not merely the posting. `run_tailor`
+    #: re-reads the current version independently, so without this a résumé selected against
+    #: version A can be tailored against version B with nothing recording the divergence.
+    posting_version_id: int
+    #: -- transformation identity: which RULES produced this résumé -----------------------
+    #: The run's `as_of`, ISO-formatted. Date effectiveness decides which facts are eligible at
+    #: all, so two runs a day apart over an unchanged bundle can legitimately differ.
+    as_of: str
+    scorer_id: str
+    taxonomy_version: str
+    equivalence_version: str
+    persona_registry_version: str
+    #: -- document identity: two hashes, never one -----------------------------------------
+    #: Over the raw bytes written to `resume.projected.yaml`; catches a swapped file.
+    resume_sha256: str
+    #: Over the parsed model (`Resume.model_dump_json()`), the identity `reports/tailor.py`
+    #: already uses for a master; catches two documents that serialise alike under a different
+    #: loader version. Neither hash subsumes the other — `core/lineage.py` states the same.
+    resume_model_sha256: str
 
 
 def manifest_bytes(manifest: ProjectionManifest) -> bytes:

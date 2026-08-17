@@ -33,6 +33,14 @@ def _manifest(**overrides: object) -> ProjectionManifest:
         selected_entry_ids=("entry.pinned", "entry.candidate"),
         scores=(("entry.candidate", "2.5"),),
         claim_to_bullet=(("claim.a", "claim.a"),),
+        posting_version_id=11,
+        as_of="2026-08-17",
+        scorer_id="mean_per_bullet",
+        taxonomy_version="c" * 64,
+        equivalence_version="equiv-1",
+        persona_registry_version="personas-1",
+        resume_sha256="d" * 64,
+        resume_model_sha256="e" * 64,
     )
     fields.update(overrides)
     return ProjectionManifest(**fields)  # type: ignore[arg-type]

@@ -231,6 +231,17 @@ def _default_runner(tex: Path, pdf: Path) -> CompileOutcome:
     return CompileOutcome(CompileReason.OK, pdf, page_count, log)
 
 
+def default_compile_runner() -> CompileRunner:
+    """The production tectonic+pdfinfo runner, under a public name.
+
+    `_default_runner` keeps its own name and its callers inside this module (`run_tailor`'s
+    `typst_runner or _default_runner`). This exists for callers OUTSIDE it — `resume project` and
+    the pipeline's projection step both need a compile runner and neither should reach into a
+    private symbol to get one, which is what they did before this.
+    """
+    return _default_runner
+
+
 def _sha(text: str) -> str:
     return hashlib.sha256(text.encode()).hexdigest()
 

@@ -21,10 +21,19 @@ units differ: a `ProjectionAvailability` other than `AVAILABLE` is decided once 
 whole run before any lead earns a ledger disposition, while a `ProjectionLeadOutcome` skips one
 lead and the run continues. A single catalog cannot reconcile its own counts — "12 leads skipped"
 and "the run never started" are not the same number of anything.
+
+`project_for_posting` is the per-lead half, and lives here rather than in the CLI because it has
+two callers: `boardwatch resume project` and the unattended pipeline. It consumes `ctx.pool` and
+never calls `project_pool` itself — one bundle revision and one configuration serve every lead in
+a run, and a per-lead re-resolve would make that invariant decorative.
 """
 
 from __future__ import annotations
 
+import hashlib
+import os
+import shutil
+import tempfile
 from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import date
@@ -33,16 +42,34 @@ from pathlib import Path
 
 from sqlalchemy import Engine
 
+from boardwatch.core.lineage import ResumeSourceLineage
 from boardwatch.core.settings import Settings
 from boardwatch.extract.taxonomy import Taxonomy, TaxonomyError, load_taxonomy
 from boardwatch.profile_bundle.errors import ProfileBundleError
 from boardwatch.projection.errors import ProjectionError, ProjectionIssue, raise_violation
+from boardwatch.projection.manifest import (
+    MANIFEST_SCHEMA_VERSION,
+    ProjectionManifest,
+    manifest_bytes,
+)
 from boardwatch.projection.persona_preflight import reject_entry_declaring_personas
 from boardwatch.projection.pool import ProjectionPool, project_pool
+from boardwatch.projection.posting import posting_context
 from boardwatch.projection.scoring import SCORERS, EntryScorer
+from boardwatch.projection.select import SelectionResult, select
+from boardwatch.projection.serialize import resume_document_bytes
+from boardwatch.reports.resume_gate import GateResult, evaluate_compile
 from boardwatch.tailor.equivalences import EquivalenceError, EquivalenceTable, load_equivalences
+from boardwatch.tailor.model import Resume
 from boardwatch.tailor.persona import PersonaError, load_personas
-from boardwatch.tailor.render.latex import TemplateArtifactError
+from boardwatch.tailor.render.latex import LatexRenderer, TemplateArtifactError
+from boardwatch.tailor.render.outcome import CompileRunner
+
+#: The two files one projected lead writes, side by side. Named here rather than at each caller:
+#: the pipeline (which reads them back) and the CLI (which echoes them) must agree, and a second
+#: spelling of either is a silent divergence.
+RESUME_FILENAME = "resume.projected.yaml"
+MANIFEST_FILENAME = "projection-manifest.json"
 
 
 @dataclass(frozen=True)
@@ -293,13 +320,190 @@ def classify_lead_outcome(exc: Exception) -> ProjectionLeadOutcome:
     return scope
 
 
+@dataclass(frozen=True)
+class ProjectionResult:
+    """One lead's projection. `outcome` is `PROJECTED` and every other field is set on the only
+    path that returns — every refusal raises instead, so the caller classifies it through
+    `classify_lead_outcome` / `ISSUE_SCOPE` rather than reading a sentinel out of this. The fields
+    stay optional so a caller that already holds a `ProjectionResult` for a skipped lead has
+    somewhere to put it without inventing a second type."""
+
+    outcome: ProjectionLeadOutcome
+    resume_path: Path | None
+    manifest_path: Path | None
+    lineage: ResumeSourceLineage | None
+    selection: SelectionResult | None
+
+
+def _publish(out_dir: Path, files: Mapping[str, bytes]) -> None:
+    """Put `files` into `out_dir`, staged in a sibling temp directory and renamed in only once
+    every byte exists.
+
+    A husk — an output directory holding one sidecar and no résumé — is precisely what the
+    pipeline's cleanup cannot undo: `_remove_if_empty` (`pipeline/runner.py`) calls `rmdir()`,
+    which refuses a non-empty directory, and `tests/pipeline/test_pipeline_run.py` pins that a
+    failed lead leaves nothing behind. So `out_dir` is not created at all until both payloads are
+    on disk under a name nothing else knows.
+
+    Staging is a SIBLING of `out_dir`, never `$TMPDIR`: `os.replace` across filesystems fails with
+    `EXDEV`, and a temp dir and a data dir routinely live on different ones.
+    """
+    out_dir.parent.mkdir(parents=True, exist_ok=True)
+    # `mkdtemp` creates the directory 0700, so on the fresh-directory path below `out_dir` lands
+    # more restrictive than `mkdir` would have made it. Deliberate: it holds the owner's résumé.
+    staging = Path(tempfile.mkdtemp(prefix=".projection-", dir=out_dir.parent))
+    try:
+        for name, payload in files.items():
+            (staging / name).write_bytes(payload)
+        if out_dir.exists():
+            # A re-run over a directory that already exists (the pipeline creates the lead's
+            # directory before calling this). `os.replace` will not rename onto a non-empty
+            # directory, so each file is published individually — and there is no husk to create
+            # here anyway, because the directory the cleanup would have removed already exists.
+            for name in files:
+                os.replace(staging / name, out_dir / name)
+        else:
+            os.replace(staging, out_dir)
+    finally:
+        shutil.rmtree(staging, ignore_errors=True)
+
+
+def project_for_posting(
+    ctx: ProjectionRunContext,
+    engine: Engine,
+    settings: Settings,
+    posting_id: int,
+    *,
+    out_dir: Path,
+    compile_runner: CompileRunner,
+) -> ProjectionResult:
+    """Project one lead: Stage 2 selection against `posting_id`, then both sidecars into `out_dir`.
+
+    **Never calls `project_pool`.** The pool, the scorer, the taxonomy, the equivalence table and
+    `as_of` all come from `ctx`, resolved once per run by `resolve_projection_run`. A per-lead
+    re-resolve would let lead 2 be built under rules lead 1 was not built under, which no digest
+    over the pool or hash over the résumé bytes can detect.
+
+    Nothing is caught: `posting_context` and `select` raise `ProjectionError`, and `select`'s
+    `compile_prefix` can raise `TemplateArtifactError` from `LatexRenderer.emit` when the owner
+    supplied a custom template with a leftover artifact in it. A caller routes each by scope
+    (`ISSUE_SCOPE` first, then `classify_lead_outcome`); classifying here would fix one caller's
+    policy for both.
+
+    The compiles inside `select` are scratch, discarded with the temp directory they wrote into:
+    they exist only to measure page count against the budget. `tailor run` renders the artifact
+    the owner actually sends.
+    """
+    posting = posting_context(engine, settings, posting_id, taxonomy=ctx.taxonomy)
+    renderer = LatexRenderer(config_dir=settings.config_dir)
+
+    with tempfile.TemporaryDirectory(prefix="boardwatch-projection-select-") as scratch:
+        scratch_dir = Path(scratch)
+
+        def compile_prefix(resume: Resume) -> GateResult:
+            source = renderer.emit(resume)
+            outcome = renderer.to_pdf(source, scratch_dir, "select-preview", compile_runner)
+            return evaluate_compile(outcome, max_pages=posting.page_budget)
+
+        selection = select(
+            ctx.pool,
+            posting,
+            ctx.scorer,
+            table=ctx.table,
+            taxonomy=ctx.taxonomy,
+            compile_prefix=compile_prefix,
+        )
+
+    # The one `bytes` object. Both hashes are taken from it and from the model that produced it —
+    # never by re-reading `resume_path`, which would leave a read/swap/read window in which the
+    # hashed bytes and the parsed document are not the same file.
+    document = resume_document_bytes(selection.resume)
+    resume_sha256 = hashlib.sha256(document).hexdigest()
+    # `resume_document_bytes`' own contract is `load_resume(path) == resume`
+    # (tests/projection/test_projection_serialize.py), so hashing the in-memory model here yields
+    # exactly what a reader who loads `document` back and hashes the model will compute.
+    resume_model_sha256 = hashlib.sha256(
+        selection.resume.model_dump_json().encode("utf-8")
+    ).hexdigest()
+
+    # Every candidate's score, not just the admitted ones — the manifest's own job is to record
+    # "which score each candidate got" (manifest.py's docstring), including one that never
+    # cleared `ADMISSION_FLOOR`.
+    entries_by_id = {entry.entry_id: entry for entry in ctx.pool.resume.entries}
+    jd_skills_set = set(posting.jd_skills)
+    scores = tuple(
+        (entry_id, str(ctx.scorer(entries_by_id[entry_id], jd_skills_set, ctx.table, ctx.taxonomy)))
+        for entry_id in ctx.pool.candidate_entry_ids
+    )
+    # Each bullet's source id IS its `bullet_id`: `pool._build_entry` sets `bullet_id=claim_id` for
+    # a `claims`-derived bullet and `bullet_id=fact.fact_id` for a `bullet_predicates`-derived one
+    # (D-188), so the mapping is read from the rendered bullets rather than re-derived from the
+    # declaration's `claims` — a `bullet_predicates` entry declares no per-bullet id there. Scoped
+    # to `selection.resume.entries` (the FINAL résumé), so a dropped candidate's bullets are absent.
+    claim_to_bullet = tuple(
+        (bullet.bullet_id, bullet.bullet_id)
+        for entry in selection.resume.entries
+        for bullet in entry.bullets
+    )
+    manifest = ProjectionManifest(
+        manifest_schema=MANIFEST_SCHEMA_VERSION,
+        bundle_revision=ctx.pool.bundle_revision,
+        bundle_digest=ctx.pool.bundle_digest,
+        projection_digest=ctx.pool.projection_digest,
+        posting_id=posting.posting_id,
+        jd_skills=tuple(sorted(posting.jd_skills)),
+        pinned_entry_ids=selection.pinned_entry_ids,
+        selected_entry_ids=tuple(e.entry_id for e in selection.resume.entries),
+        scores=scores,
+        claim_to_bullet=claim_to_bullet,
+        posting_version_id=posting.posting_version_id,
+        as_of=ctx.as_of.isoformat(),
+        scorer_id=ctx.scorer_id,
+        taxonomy_version=ctx.taxonomy.version,
+        equivalence_version=ctx.table.version,
+        persona_registry_version=ctx.persona_registry_version,
+        resume_sha256=resume_sha256,
+        resume_model_sha256=resume_model_sha256,
+    )
+    lineage = ResumeSourceLineage(
+        kind="projection",
+        bundle_revision=ctx.pool.bundle_revision,
+        bundle_digest=ctx.pool.bundle_digest,
+        projection_digest=ctx.pool.projection_digest,
+        posting_version_id=posting.posting_version_id,
+        as_of=ctx.as_of.isoformat(),
+        scorer_id=ctx.scorer_id,
+        taxonomy_version=ctx.taxonomy.version,
+        equivalence_version=ctx.table.version,
+        persona_registry_version=ctx.persona_registry_version,
+        resume_sha256=resume_sha256,
+        resume_model_sha256=resume_model_sha256,
+        manifest_schema=MANIFEST_SCHEMA_VERSION,
+    )
+    _publish(
+        out_dir,
+        {RESUME_FILENAME: document, MANIFEST_FILENAME: manifest_bytes(manifest)},
+    )
+    return ProjectionResult(
+        outcome=ProjectionLeadOutcome.PROJECTED,
+        resume_path=out_dir / RESUME_FILENAME,
+        manifest_path=out_dir / MANIFEST_FILENAME,
+        lineage=lineage,
+        selection=selection,
+    )
+
+
 __all__ = [
     "FOREIGN_AVAILABILITY",
     "ISSUE_SCOPE",
+    "MANIFEST_FILENAME",
     "ProjectionAvailability",
     "ProjectionLeadOutcome",
+    "ProjectionResult",
     "ProjectionRunContext",
+    "RESUME_FILENAME",
     "classify_availability",
     "classify_lead_outcome",
+    "project_for_posting",
     "resolve_projection_run",
 ]
