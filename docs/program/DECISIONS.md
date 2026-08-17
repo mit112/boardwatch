@@ -9649,9 +9649,11 @@ asked past a ceiling, so "bounded" fails loudly instead of hanging — a hang is
 
 ### Alternatives rejected
 
-- **Open the window on every platform.** Defensible — the Unix backend has the same shape — but it changes
-  behaviour on the platform where nothing is broken, widens the §21 departure to everywhere, and adds ~9s to
-  every `make check` for the three contention tests.
+- **Open the window on every platform.** ~~It changes behaviour on the platform where nothing is broken~~ —
+  **this reasoning was falsified within the session and the correction is below: something *is* broken
+  there.** The option was still declined, on the narrower and surviving grounds that it widens the §21
+  departure to the platforms Boardwatch is actually run on, costs a wait on every genuine refusal there, and
+  is the owner's call rather than a reviewer's. Ruled by Mit: **record it, do not widen.**
 - **Docstring-only: delete the POSIX claim and keep the markers.** Honest and zero-risk, and it was a real
   option. Rejected because the race would remain and the markers with it, so nothing would be repaired.
 - **Delegate the wait to `filelock`'s own `timeout=`/`poll_interval=`.** Fewer lines, but it puts the wait
@@ -9681,3 +9683,54 @@ asked past a ceiling, so "bounded" fails loudly instead of hanging — a hang is
 - **When a hang is the failure mode, make the double refuse.** An unbounded wait cannot be asserted against
   with a wall clock, because the test never returns to make the assertion. Capping the stand-in's answers
   converts it into an ordinary failing test with no new dependency.
+
+### Corrected within the session, by review — and two exposures left standing on purpose
+
+Two reviewers ran concurrently on the finished branch, one on runtime correctness and one on conformance to
+D-223's census. Both cleared the retry loop itself (no path exits it without a held lock; the deadline is
+checked after every attempt; `filelock`'s `lock_counter` is decremented under `except BaseException`, so N
+failed asks cannot inflate it and defeat the later `release`). Three things they found are recorded here
+because the entry above was wrong or silent about them.
+
+**1. POSIX is not exempt, and "lucky on local disk" was wrong.** The runtime reviewer showed the *same class*
+of false refusal on Linux and macOS, by a different mechanism, and it was **reproduced independently before
+being accepted** — the first attempt at reproduction was itself wrong and is worth recording: hooking
+`os.fstat` proves nothing, because when `flock` fails the `fstat` arm is never reached, so the `Timeout`
+observed was a *correct* refusal wearing a wrong label. Forcing the interleaving at `os.open` reproduces it
+properly: `UnixFileLock._release` unlinks the lockfile **before** it releases the `flock`, and `_acquire`
+discards a lock whose inode is already unlinked (`st_nlink == 0`) by returning without setting its
+descriptor. So a second writer that opened the inode before the holder released it wins the `flock`, finds
+the inode doomed, and is reported as contention while **nobody holds the lock**. Verified by a third
+acquirer taking it immediately afterwards. This is a **live-holder handoff** race, needs no dead process and
+no network filesystem, and is therefore live on the supported platforms today. **Ruled by Mit: record it, do
+not widen the window.** Closing it means a wait where §21 grants none on the platforms boardwatch is
+actually run on; the fail-safe direction is at least right, since the symptom is a refusal and never a
+corruption. `test_two_promotions_from_one_parent_produce_exactly_one_winner` cannot detect it, because it
+accepts `bundle_lock_held` as a legitimate way to lose.
+
+**2. `scan/coordinator.py:151-155` has the identical single-ask shape and did not get a window.** It builds a
+`FileLock`, asks once with `blocking=False`, and maps `Timeout` to `ScanLockHeldError` → exit 2. On Windows a
+scan killed mid-run leaves `scan.lock`, and the next `boardwatch scan` inside the teardown window is refused
+with "another scan is already running" and writes nothing — on the unattended path that is the silent empty
+day this codebase treats as fatal. Deliberately **not** fixed here: it is a different subsystem, and sharing
+the constant would either duplicate it or make `scan` import from `profile_bundle`, which is the wrong
+dependency direction. Named so it is a known gap rather than a discovery. `bundle_lock` is confirmed to be
+the *only* acquire path inside `profile_bundle` — `promotion.py` and `rebase.py` mention `filelock` in
+comments only.
+
+**3. Three sibling statements of the "no wait" contract survived the docstring rewrite**, which is exactly the
+D-223 pattern this entry closes: a guarantee asserted where the code no longer makes it.
+`promotion.py`'s "the nine steps are the contract" and `docs/profile-bundle-authoring.md`'s promotion
+sequence both now qualify it and point at this entry rather than restating the window. **`README.md` was the
+real defect**: its "Supported platforms" block listed *four* Windows caveats "known and unfixed", and the
+fourth was this exact bug, telling the operator to retry — which after the fix would have taught a Windows
+user that a *genuine* post-fix refusal is expected behaviour, suppressing the one report that would prove the
+window too small. Now three caveats, with the fourth recorded as fixed, its residual stated, and a request to
+report it. The design spec's §21 table (`2026-08-10-…-design.md:1775`) is left as the source the departure is
+measured against.
+
+**What generalises from the review itself.** A reviewer's finding is a claim, not a result: the load-bearing
+one here was confirmed only after the first reproduction of it turned out to be measuring nothing. And **the
+doc that states a behaviour is not the doc that quotes a message** — the sweep that correctly found the one
+verbatim quotation of the refusal string missed the README paragraph that described the bug in its own words,
+which was the only user-facing copy that mattered.

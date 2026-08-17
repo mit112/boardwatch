@@ -1036,7 +1036,9 @@ rather than trusted from YAML.
 
 Promotion is crash-consistent, under a non-blocking exclusive lock:
 
-1. Acquire the lock non-blocking. Contention is exit 3 with `bundle_lock_held` — no wait, no mutation.
+1. Acquire the lock non-blocking. Contention is exit 3 with `bundle_lock_held` — no mutation, and no
+   wait on Linux or macOS. On Windows the acquire re-asks the operating system for up to a second
+   before reporting contention, so a genuine refusal there is briefly delayed (D-224).
 2. Re-check that the draft's parent is still `CURRENT`. A mismatch is `stale_draft_parent` at exit 1,
    and the draft is left exactly as it was.
 3. Derive the next revision as `CURRENT.revision + 1`.

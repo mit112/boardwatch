@@ -24,15 +24,25 @@ between `filelock` versions the declared floor admits, and it is exactly the kin
 must not rest on.
 
 What this property does *not* get to assume is that the OS answers correctly on the first ask.
-POSIX drops a dead process's `flock` as the process dies, so there one ask is enough. Windows tears
-a killed holder's handles down asynchronously, and `filelock`'s `WindowsFileLock._acquire` swallows
-the `EACCES` that window produces without setting its file descriptor, so `acquire` reports
-`Timeout` and this module would report `bundle_lock_held` for a lock nobody holds.
-`RECLAIM_WINDOW_SECONDS` answers that by asking the OS **again**, briefly, and by nothing else:
-re-asking leaves the kernel as the sole authority, whereas ageing the file would move that
-authority here, which §6 forbids. A window too short to cover the teardown fails the way this
-module already failed — a false refusal — so it can be widened on evidence without changing what
-the property means.
+POSIX drops a *dead* process's `flock` as the process dies, so no window is needed for the
+killed-holder case. Windows tears a killed holder's handles down asynchronously, and `filelock`'s
+`WindowsFileLock._acquire` swallows the `EACCES` that window produces without setting its file
+descriptor, so `acquire` reports `Timeout` and this module would report `bundle_lock_held` for a
+lock nobody holds. `RECLAIM_WINDOW_SECONDS` answers that by asking the OS **again**, briefly, and
+by nothing else: re-asking leaves the kernel as the sole authority, whereas ageing the file would
+move that authority here, which §6 forbids. A window too short to cover the teardown fails the way
+this module already failed — a false refusal — so it can be widened on evidence without changing
+what the property means.
+
+**A zero window is not the same as no false refusals, and POSIX is not exempt.** `UnixFileLock`
+unlinks the lockfile *before* it releases the `flock`, and discards a lock whose inode is already
+unlinked (`st_nlink == 0`) by returning without setting its descriptor. So a second writer that
+opened the inode before the holder released it can win the `flock`, find the inode doomed, and be
+reported as contention while nobody holds the lock — a live-holder *handoff* race, distinct from
+Windows' dead-holder one, reproducible on local disk with no network filesystem. It is left standing
+deliberately: closing it means a wait on the platforms Boardwatch is actually run on, which is a
+departure §21 does not grant and the owner has not. Recorded, with a reproduction, in D-224. Do not
+"fix" it here by widening the window without that decision.
 
 Absence is not symmetric with presence, and saying so matters: exclusion is by path, so deleting the
 lockfile *while a holder is inside its critical section* lets the next acquire create a new file and
@@ -58,9 +68,10 @@ from filelock import FileLock, Timeout
 from boardwatch.profile_bundle.errors import BundleIoError, ProfileBundleError
 from boardwatch.profile_bundle.paths import LOCK_FILE, lock_path
 
-#: How long to keep re-asking the OS before believing a refusal. Zero everywhere the OS answers
-#: correctly on the first ask, which is everywhere but Windows; one second on Windows, which is a
-#: judgement and not a measurement of the handle-teardown window — see the module docstring.
+#: How long to keep re-asking the OS before believing a refusal. Zero wherever the *killed-holder*
+#: case needs no window, which is everywhere but Windows — not because POSIX never false-refuses (it
+#: does; see the docstring's handoff race) but because widening this is the owner's call. One second
+#: on Windows, a judgement and not a measurement of the teardown window.
 RECLAIM_WINDOW_SECONDS = 1.0 if sys.platform == "win32" else 0.0
 
 #: Short enough that the common Windows case — a window that has already closed — costs one poll.

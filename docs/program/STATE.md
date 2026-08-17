@@ -16,7 +16,7 @@
 
 **The headline number: 0.** Zero job applications have ever come out of boardwatch (`applications` has 0
 rows), zero unattended days, zero acceptance days. Against that: 3 published releases, ~53k lines of source,
-**6,445 tests** (6,441 passing + 4 xfailed), **70 leaf CLI commands (20 `profile-bundle`)**, 6 ATS providers,
+**6,446 tests** (6,442 passing + 4 xfailed), **70 leaf CLI commands (20 `profile-bundle`)**, 6 ATS providers,
 an 800 MB / 24,073-posting store.
 
 **The program reoriented on 2026-08-13 (D-155):** remaining work runs through the **canonical career-profile
@@ -241,8 +241,8 @@ the 33 bullets get shortened — **DONE, all eleven entities, revision 21** (D-2
 job-apps dates — **ruled**, item 1; a skill listed under two groups — **refused**, D-210; **boardwatch's
 Windows story — RULED best-effort, D-212**.)*
 
-**Windows is best-effort (D-212)** — in the nightly, out of the pyproject classifiers, four caveats in
-`README.md`. **A green 9-job push run contains ZERO Windows jobs** (`ci.yml`'s `os` matrix is conditional
+**Windows is best-effort (D-212)** — in the nightly, out of the pyproject classifiers, three caveats in
+`README.md` (the fourth was this race and is now recorded there as fixed, with its residual). **A green 9-job push run contains ZERO Windows jobs** (`ci.yml`'s `os` matrix is conditional
 on `schedule`/`workflow_dispatch`, D-151; the nightly is 12) — never read it as full-matrix coverage. A
 **`nightly-watch`** job files a GitHub issue when a scheduled run fails and closes it on recovery:
 **check for an open "Nightly CI is failing" issue at session start.** Both formerly-red Windows tests are
@@ -262,15 +262,26 @@ false refusal, so it can be widened on evidence. The three deliberately-unmarked
 (`promotion.py:892`, `rebase.py:1389`, `concurrency.py:234`) now read their timing budget as
 `RECLAIM_WINDOW_SECONDS + 2.0` from the emitter; left as literals they would have gone flaky on Windows.
 
-**`make check` can NEVER verify this work** (exit 0 on `0ab16e9`, 6,441 passed) — the window is inert off
-`win32`. Windows evidence comes only from a **`workflow_dispatch`** of `ci.yml`, which builds the full
-12-job matrix: dispatch **`32047384310`** on `0ab16e9` is that run. It **cannot close issue #76** —
+**`make check` can NEVER verify this work** (it passes, and passed before the fix too) — the window is inert
+off `win32`. Windows evidence comes only from a **`workflow_dispatch`** of `ci.yml`, which builds the full
+12-job matrix. It **cannot close issue #76** —
 `nightly-watch` is gated `if: always() && github.event_name == 'schedule'` (`ci.yml:99`), so only the 07:00
 UTC scheduled run files or closes one. Read the dispatch's three `windows-latest` jobs directly; a
 still-open #76 is not evidence the fix failed.
 
 **`nightly-watch` issue #76 is OPEN**, filed by scheduled run `32007953224` (a tip that predated even the
 markers). Expect it to close on the first nightly that runs with D-224 merged.
+
+**Two false-refusal exposures are left standing DELIBERATELY, both named in D-224 — do not "fix" either
+without the owner.** (1) **POSIX is not exempt.** `UnixFileLock` unlinks the lockfile *before* releasing the
+`flock` and discards an already-unlinked inode, so a second writer that opened it first can be reported
+`bundle_lock_held` while nobody holds the lock — a **live-holder handoff** race, reproduced on macOS local
+disk, no network filesystem needed. **Ruled: record, do not widen the window** — closing it costs a wait
+where §21 grants none on the platforms boardwatch actually runs on. (2) **`scan/coordinator.py:151-155` has
+the identical single-ask shape** and no window; on Windows a killed scan can refuse the next one with
+"another scan is already running" and write nothing, which on the unattended path is a silent empty day.
+Left because sharing the constant would make `scan` import from `profile_bundle`. `bundle_lock` is the only
+acquire path *inside* `profile_bundle`.
 
 ---
 

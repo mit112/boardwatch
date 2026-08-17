@@ -13,12 +13,13 @@ a fake that reimplemented the retry would be testing itself rather than `bundle_
 from __future__ import annotations
 
 import sys
+import threading
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
 
 import pytest
-from filelock import Timeout
+from filelock import FileLock, Timeout
 
 from boardwatch.profile_bundle import locking
 from boardwatch.profile_bundle.errors import BundleIoError
@@ -145,6 +146,44 @@ def test_an_io_failure_is_reported_at_once_rather_than_waited_out(
             pass
 
     assert len(lock.attempts) == 1
+
+
+def test_a_holder_that_releases_inside_the_window_hands_the_lock_over(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """The grant arm, against the real `FileLock` rather than the stand-in.
+
+    The stand-in cannot witness this: it models `acquire`/`release` but not `lock_counter`, so a
+    library that left the counter incremented on a *failed* ask would grant the lock here and then
+    have its `release()` decrement to a non-zero count — leaving the lock held for the rest of the
+    process while `_ScriptedLock.releases == 1` still looked correct. The final acquire below is what
+    proves the handover actually completed.
+    """
+    monkeypatch.setattr(locking, "RECLAIM_WINDOW_SECONDS", 5.0)
+    monkeypatch.setattr(locking, "RECLAIM_POLL_SECONDS", 0.01)
+
+    held = threading.Event()
+    holder = FileLock(str(lock_path(tmp_path)))
+
+    def hold_briefly() -> None:
+        holder.acquire(blocking=False)
+        held.set()
+        time.sleep(0.2)
+        holder.release()
+
+    thread = threading.Thread(target=hold_briefly)
+    thread.start()
+    try:
+        assert held.wait(timeout=5.0), "the holder never took the lock"
+        with bundle_lock(tmp_path) as path:
+            assert path == lock_path(tmp_path)
+    finally:
+        thread.join(timeout=5.0)
+
+    # Genuinely released, not merely granted: a zero-window acquire must succeed at once.
+    monkeypatch.setattr(locking, "RECLAIM_WINDOW_SECONDS", 0.0)
+    with bundle_lock(tmp_path):
+        pass
 
 
 def test_a_live_holder_is_refused_even_with_a_window_open(
