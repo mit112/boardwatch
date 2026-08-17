@@ -58,6 +58,13 @@ def run(
     skip_scan: bool = typer.Option(
         False, "--no-scan", help="Reuse already-fetched postings instead of refetching boards."
     ),
+    project: bool = typer.Option(
+        False,
+        "--project",
+        help="Render each lead from the career-profile bundle's projection instead of the "
+        "authored résumé. Requires a current projection approval: without one the run refuses "
+        "before any lead is consumed, rather than falling back to the authored résumé.",
+    ),
     check_liveness: bool = typer.Option(
         True,
         "--check-liveness/--no-check-liveness",
@@ -79,6 +86,7 @@ def run(
             out_root=out_root,
             resume_path=resume_path or settings.config_dir / "resume.yaml",
             skip_scan=skip_scan,
+            project=project,
             # Built here rather than inside the pipeline so that which URLs get probed is the
             # CLI's decision. Not an offline switch — the scan stage fetches every configured
             # board, and `--no-scan` is what makes a run offline.

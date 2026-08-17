@@ -21,6 +21,7 @@ id rather than minting its own; run standalone, each still mints one, which is w
 
 from __future__ import annotations
 
+from collections import Counter
 from collections.abc import Sequence
 from dataclasses import dataclass, field
 from datetime import timedelta
@@ -41,6 +42,15 @@ from boardwatch.pipeline.freshness import folders_reconcile
 from boardwatch.pipeline.funnel_writer import collect_run_funnel
 from boardwatch.pipeline.liveness import LivenessProber, check_leads
 from boardwatch.pipeline.policy import run_policy_version
+from boardwatch.profile_bundle.paths import resolve_bundle_root
+from boardwatch.projection.run import (
+    ProjectionAvailability,
+    ProjectionLeadOutcome,
+    ProjectionRunContext,
+    classify_availability,
+    resolve_projection_run,
+)
+from boardwatch.projection.scoring import DEFAULT_SCORER_ID
 from boardwatch.reports.morning import MorningLead, build_morning, write_morning
 from boardwatch.reports.resume_gate import LeadArtifactError, RenderToolMissingError
 from boardwatch.reports.run_funnel import (
@@ -163,6 +173,21 @@ class PipelineSummary:
     # The postings withheld as gone, kept by ID rather than by count so the cohort guard can
     # reconcile SETS. They are not tailor failures and not leads; they never entered the loop.
     dead_lead_ids: list[int] = field(default_factory=list)
+    # P5a — the run-scoped projection verdict, decided once by the `--project` preflight.
+    #
+    # `None` means the flag was NOT passed, which is not the same as `AVAILABLE`: a run that never
+    # asked has no verdict to report, and defaulting to `AVAILABLE` would claim a resolve that
+    # never happened. Anything other than `AVAILABLE` is accompanied by `fatal`, so the two can
+    # never disagree about whether the run delivered.
+    #
+    # This enum member — never the `fatal` STRING — is the typed cause. Nothing classifies a
+    # projection failure by matching that message.
+    projection_availability: ProjectionAvailability | None = None
+    # Per-lead projection outcomes, one increment per attempted lead. A `Counter`, deliberately
+    # left EMPTY rather than pre-seeded with a zero per member: an outcome that never occurred is
+    # ABSENT, not zero, so a reader can omit a funnel stage entirely instead of printing a row of
+    # zeros for a bucket nothing reached.
+    projection_outcomes: Counter[ProjectionLeadOutcome] = field(default_factory=Counter)
 
     @property
     def leads_with_pdf(self) -> int:
@@ -348,6 +373,7 @@ def run_pipeline(
     out_root: Path,
     resume_path: Path,
     skip_scan: bool = False,
+    project: bool = False,
     liveness_prober: LivenessProber | None = None,
 ) -> PipelineSummary:
     """Run scan → eligibility → tailor under one run row and return what each stage did.
@@ -361,6 +387,12 @@ def run_pipeline(
     offline: the scan stage fetches every configured board and is by far its largest network
     consumer, so `liveness_prober=None` is not an offline mode. `skip_scan=True` plus no prober
     is.
+
+    `project=True` renders each lead from the career-profile bundle's projection instead of the
+    authored résumé, and REFUSES the whole run — before any lead earns a ledger disposition — when
+    the projection cannot be resolved. Never a fallback to the authored résumé: a fallback
+    *succeeds*, so every lead would enter `summary.tailored`, every one of those would earn a
+    permanent `built` disposition, and re-approving projection could never recover them.
     """
     console = console or Console()
     # Deferred: top_cmd imports from the CLI layer, and importing it at module scope makes
@@ -422,6 +454,66 @@ def run_pipeline(
             stage_errors.append(f"scan: {summary.fatal}")
             summary.errors.append(f"scan: {summary.fatal}")
             return summary
+
+        # P5a — the `--project` preflight. HERE, after the scan outcome and BEFORE the ranker call
+        # below, and the position is the guarantee rather than a preference: the ranker is invoked
+        # with `record_surfaced=False` and every shortlist disposition is deferred to
+        # `_record_shortlist_dispositions` after the tailor loop, so nothing between this point and
+        # that call has written one. `_zero_output_guard` and `_cohort_guard` cannot stand in for
+        # this — both run AFTER that write, and both need a ranked cohort this run will not have.
+        #
+        # Fail-closed, never a fallback to the authored résumé. A fallback *succeeds*, so every
+        # lead enters `summary.tailored`, `built_ids` is derived from exactly that set, and each
+        # lead earns a PERMANENT `built` the ledger suppresses on every later run — re-approving
+        # projection could not recover them. Refusing first is what makes re-approval a real drain.
+        #
+        # The honest limit: *no LEAD DISPOSITION* is achievable; *nothing recorded at all* is not.
+        # The `runs` row already exists (`scan/coordinator.py` creates it inside the scan lock) and
+        # a scan that ran has already written posting versions and events. The claim is scoped to
+        # lead dispositions, which is exactly what the drain needs.
+        #
+        # `return`, never a bare one: only `fatal` decides the persisted status
+        # (`finish_run(..., status=RUN_FAILED if summary.fatal is not None ...)` below) and only
+        # `fatal` makes `run_cmd.py` exit 1. A return that left it None would write `status=ok` and
+        # exit 0 having produced nothing — the run reporting success while producing nothing that
+        # P3's gate forbids.
+        projection_ctx: ProjectionRunContext | None = None
+        if project:
+            # One clock reading for the whole run, from the same clock the `runs` row uses. Not
+            # cosmetic: `as_of` feeds effective-fact resolution, so it decides WHICH facts render.
+            # Re-read per lead, a run crossing midnight UTC would render two leads from two
+            # different fact sets and no digest over either résumé could detect it.
+            as_of = utcnow().date()
+            try:
+                projection_ctx = resolve_projection_run(
+                    engine,
+                    settings,
+                    bundle_root=resolve_bundle_root(settings.config_dir, None),
+                    declaration_path=settings.config_dir / "projection.yaml",
+                    scorer_id=DEFAULT_SCORER_ID,
+                    as_of=as_of,
+                )
+                summary.projection_availability = ProjectionAvailability.AVAILABLE
+            except Exception as exc:
+                # Classified, never swallowed. A bare `except Exception` is safe ONLY because
+                # `classify_availability` raises on an unmapped type: an unrecognised failure
+                # surfaces loudly instead of becoming a silent wrong bucket. Letting that raise
+                # propagate is correct — the crash handler below sets `summary.fatal` before
+                # re-raising, so the run still records `failed`.
+                #
+                # The member is the typed outcome; the string below is the operator's sentence
+                # about it and nothing classifies behaviour by reading it.
+                availability = classify_availability(exc)
+                summary.projection_availability = availability
+                summary.fatal = (
+                    f"projection unavailable: {availability.value} ({exc}); "
+                    "run `boardwatch profile-bundle approve-projection` after fixing what that "
+                    "names, or drop --project to run from the authored résumé"
+                )
+                message = f"projection: {summary.fatal}"
+                stage_errors.append(message)
+                summary.errors.append(message)
+                return summary
 
         console.print("[bold]eligibility[/bold]")
         try:
@@ -515,7 +607,10 @@ def run_pipeline(
                 f"{summary.liveness_unknown} unknown (unknown is served){redirected_note}"
             )
 
-        console.print("[bold]tailor[/bold]")
+        # Names the résumé source in the log, so a projected run is distinguishable from an
+        # authored one after the fact. Byte-identical to the plain header when `--project` was not
+        # passed; `projection_ctx` itself stays in scope for the loop below.
+        console.print(f"[bold]tailor[/bold]{' (projected)' if projection_ctx is not None else ''}")
         for posting in leads:
             dest = day_dir / _slug(posting.company, posting.posting_id)
             try:

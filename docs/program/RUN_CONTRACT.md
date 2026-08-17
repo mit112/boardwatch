@@ -20,7 +20,7 @@ That one field drives both the persisted status and the process exit code:
 - `run_cmd.py` maps `summary.fatal is not None` to `typer.Exit(code=1)`
   (`src/boardwatch/cli/run_cmd.py:87-89`); a clean run falls through to exit 0.
 
-## The four fatal conditions, plus the crash path
+## The five fatal conditions, plus the crash path
 
 | # | Condition | Where it is set | Why it is fatal, not an error |
 |---|---|---|---|
@@ -28,6 +28,7 @@ That one field drives both the persisted status and the process exit code:
 | 2 | **No profile configured** (`NoProfileError`, `src/boardwatch/cli/top_cmd.py:42`; raised at `top_cmd.py:116` inside `rank_open_postings` when `get_profile` returns nothing) | caught at `src/boardwatch/pipeline/runner.py:186-193` | A fresh install has nothing to rank against; nothing downstream (tailoring) can run. |
 | 3 | **Render tool unavailable** (`RenderToolMissingError`, `src/boardwatch/reports/resume_gate.py:25`) — the renderer is `tectonic`, and `pdfinfo` is equally required | caught at `src/boardwatch/pipeline/runner.py:530` | An environment fault, not a per-lead one: the binary is either on `PATH` or it isn't, so every remaining lead in the shortlist would fail identically — the stage aborts rather than burning through the whole shortlist re-discovering that. |
 | 4 | **Every lead failed to tailor** from a non-empty shortlist | `src/boardwatch/pipeline/runner.py:258-262` | Zero output was not provably right: it was produced from postings the ranker actually shortlisted, which means the résumé path itself is broken (missing `resume.yaml`, `tectonic` or `pdfinfo` gone), not an honest empty day. |
+| 5 | **Projection requested and unavailable** — `--project` was passed (`src/boardwatch/cli/run_cmd.py:61`) and `resolve_projection_run` (`src/boardwatch/projection/run.py:98`) refused. The typed cause is `summary.projection_availability`, a member of the closed `ProjectionAvailability` catalog (`src/boardwatch/projection/run.py:145`) assigned by `classify_availability` (`:324`); the `fatal` string carries the member's `value` and its remedy but nothing classifies by reading it | `src/boardwatch/pipeline/runner.py:458-516`, **before** the ranker call at `:527` | Never a fallback to the authored résumé. A fallback *succeeds*, so every lead enters `summary.tailored`, `built_ids` is derived from exactly that set (`src/boardwatch/pipeline/runner.py:293`), and each lead earns a permanent `built` the ledger suppresses on every later run — re-approving projection could not recover them. Refusing before anything is ranked is what keeps the retry a real drain: **no lead disposition is written**, so the next run re-surfaces the same shortlist. Remedy: `boardwatch profile-bundle approve-projection` after fixing what the member names, or drop `--project`. |
 | — | **Crash path** — any other exception during the run | `src/boardwatch/pipeline/runner.py:266-279`; sets `summary.fatal` before re-raising | Without this, a crashed run and a clean empty run would be indistinguishable in the ledger — the row would read as finished with no errors. The `finally` block still closes the row (see below), so `status == failed` and this file's FATAL line can never disagree. |
 
 Terminal status is always written in a `finally`, whether the run returned normally or raised
@@ -59,7 +60,7 @@ every other path above produces exactly one row.
 | Exit code | Meaning | Run row written? |
 |---|---|---|
 | 0 | Clean run, or a run with only non-fatal errors | yes, `status = ok` |
-| 1 | One of the four fatal conditions, or a crash | yes, `status = failed` |
+| 1 | One of the five fatal conditions, or a crash | yes, `status = failed` |
 | 2 | Scan lock already held by another process | no |
 
 ## Known gap: `running` + NULL `finished_at` is ambiguous
