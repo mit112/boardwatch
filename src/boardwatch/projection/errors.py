@@ -17,6 +17,10 @@ class ProjectionIssue(StrEnum):
 
     # -- declaration ------------------------------------------------------------------
     DECLARATION_UNREADABLE = "declaration_unreadable"
+    #: `projection.yaml` is absent. Distinct from DECLARATION_UNREADABLE because "you have not
+    #: opted into projection" and "your declaration is corrupt" are different operator problems,
+    #: and the availability catalog may not tell them apart by inspecting a message.
+    DECLARATION_MISSING = "declaration_missing"
     MALFORMED_DECLARATION = "malformed_declaration"
     UNKNOWN_ENTRY_KIND = "unknown_entry_kind"
     DUPLICATE_ENTITY_ID = "duplicate_entity_id"

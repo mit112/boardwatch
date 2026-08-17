@@ -121,11 +121,28 @@ def test_a_non_string_open_range_label_is_malformed_not_missing(tmp_path: Path) 
     assert exc.value.violation.issue is ProjectionIssue.MALFORMED_DECLARATION
 
 
-def test_a_missing_declaration_file_is_unreadable(tmp_path: Path) -> None:
+def test_a_missing_declaration_file_is_missing(tmp_path: Path) -> None:
     """`load_declaration` never reads a path that is not a file (`declaration.py:85`)."""
     path = tmp_path / "does-not-exist.yaml"
     with pytest.raises(ProjectionError) as exc:
         load_declaration(path)
+    assert exc.value.violation.issue is ProjectionIssue.DECLARATION_MISSING
+
+
+def test_an_absent_declaration_is_missing_not_unreadable(tmp_path: Path) -> None:
+    """The two arms are different operator problems: 'you have not opted in' vs 'your file is
+    broken'. Task 4's availability catalog routes them differently and may not read a message."""
+    absent = tmp_path / "projection.yaml"
+    with pytest.raises(ProjectionError) as exc:
+        load_declaration(absent)
+    assert exc.value.violation.issue is ProjectionIssue.DECLARATION_MISSING
+
+
+def test_an_unreadable_declaration_stays_unreadable(tmp_path: Path) -> None:
+    bad = tmp_path / "projection.yaml"
+    bad.write_bytes(b"\xff\xfe not utf-8")
+    with pytest.raises(ProjectionError) as exc:
+        load_declaration(bad)
     assert exc.value.violation.issue is ProjectionIssue.DECLARATION_UNREADABLE
 
 
