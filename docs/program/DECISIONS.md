@@ -9195,9 +9195,19 @@ text and escapes `93\%`, so no literal match is possible — strip markup before
 researching it alone would have reported "no history exists". Run `gh repo view` before calling a repo
 historyless. This complements D-217's `grep`/`.gitignore` finding — same class, different instrument.
 
-**State.** Draft `nakshatra-bullets` on **revision 17** (`sha256:1e4c2420`; the bundle moved 9 → 17
-mid-session as eight sibling promotions landed, and all six Nakshatra facts were re-verified
-byte-identical before editing). Both `.r2` edges filed; `validate --draft` and `validate --draft
---completeness` each **0 error, 0 blocker**, with a completeness blocker count **identical to the
-revision-17 baseline**. `approve`, `promote --summary` and `approve-projection` are the owner's consent
-steps and are **not run**.
+**State — PROMOTED AND LIVE.** Authored as draft `nakshatra-bullets` on revision 17 (`sha256:1e4c2420`;
+the bundle moved 9 → 17 mid-session as eight sibling promotions landed, and all six Nakshatra facts were
+re-verified byte-identical before editing). Both `.r2` edges filed; `validate --draft` and `validate
+--draft --completeness` each **0 error, 0 blocker**, completeness blocker count identical to the
+revision-17 baseline. The owner then ran `approve`, `promote` and `approve-projection`, producing
+**revision 18, `sha256:669ad874`**. Verified through `profile-bundle project` (exit 0): both `.r2` facts
+render at **176 and 195 chars, 371 total**, matching `Flutter`, `Android (mobile)` and `NoSQL (word)`
+where the pre-edit pair matched nothing; the originals read `superseded`.
+
+**One trap this produced, worth the line.** Immediately after approval the bundle read revision 18 /
+`669ad874`, which did **not** match the draft's candidate digest `f513247f`, and revision 18 had modified
+`employment.nakshatra.yaml` — the exact signature of a sibling session having edited the same entity.
+Promotion was halted and `rebase-draft` located before acting. It was a false alarm: **promotion appends
+to `history/changes.yaml`, `history/approvals.yaml` and `manifest.yaml`, so a draft's candidate digest is
+never the digest of the revision it becomes.** A candidate-vs-CURRENT digest mismatch is therefore not
+evidence of a concurrent write; inspect the records to tell the two apart.
