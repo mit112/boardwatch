@@ -9876,3 +9876,9 @@ was left out, and the second is what broke.
 running, which cost most of the delay; **`gh api repos/{owner}/{repo}/actions/jobs/{id}/logs
 --allow-escape-sequences` serves a completed job's log immediately.** Use it when one job fails and
 others are still going.
+
+**Green on the re-dispatch.** Run `32065805682` (`655c474`): every job success or skipped, and all three
+Windows jobs report **6,397 passed, 50 skipped, 4 xfailed, 0 failed**. The red run reported `1 failed,
+6,396 passed` on the same three, so `6,396 + 1 = 6,397` — the one failing test passes and **nothing else
+moved**, which is what distinguishes a fix from a suppression here just as the xfail arithmetic did for
+D-224.

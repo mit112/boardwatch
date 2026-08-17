@@ -284,12 +284,21 @@ still-open #76 is not evidence the fix failed.
 **`nightly-watch` issue #76 is OPEN**, filed by scheduled run `32007953224` (a tip that predated even the
 markers). Expect it to close on the first nightly that runs with D-224 merged.
 
-**BOTH locks now carry the window.** `core/lock_reclaim.py` owns `RECLAIM_WINDOW_SECONDS` /
-`RECLAIM_POLL_SECONDS` and the bundle writer lock and the **scan lock** both bind it (D-227). The scan lock
-mattered more despite never having been observed firing: scanning runs **unattended**, so a killed scan
-followed by a refused scheduled scan is a **silent empty day**, not a retryable prompt. Both consumers bind
-the constants **by name**, so patching `core.lock_reclaim` reaches neither — patch the consumer, and a test
-compares both bindings against the source so they cannot drift.
+**BOTH locks now carry the window, and both are VERIFIED GREEN on Windows.** `core/lock_reclaim.py` owns
+`RECLAIM_WINDOW_SECONDS` / `RECLAIM_POLL_SECONDS` and the bundle writer lock and the **scan lock** both
+bind it (D-227). The scan lock mattered more despite never having been observed firing: scanning runs
+**unattended**, so a killed scan followed by a refused scheduled scan is a **silent empty day**, not a
+retryable prompt. Both consumers bind the constants **by name**, so patching `core.lock_reclaim` reaches
+neither — patch the consumer, and a test compares both bindings against the source so they cannot drift.
+
+**D-227's first Windows dispatch was RED, and the defect was the TEST.** A bounded-wait assertion timed a
+helper that ran `get_engine` + `ensure_schema` **inside the timed region** — ~50 ms locally, over a second
+on a Windows runner — so it measured the filesystem, not the lock. Two lessons a future session should not
+re-learn: **a timed assertion must enclose only the span it claims**, and **forcing a platform's constant
+does not simulate its backend** (the full window-on suite passes locally; `msvcrt` and a far slower
+filesystem are what a constant cannot fake). Also: `gh run view --log` refuses while *any* job is still
+running, but **`gh api repos/{owner}/{repo}/actions/jobs/{id}/logs --allow-escape-sequences`** serves a
+completed job's log at once.
 
 **One false-refusal exposure is left standing DELIBERATELY (D-224) — do not "fix" it without the owner.**
 **POSIX is not exempt.** `UnixFileLock` unlinks the lockfile *before* releasing the `flock` and discards an
