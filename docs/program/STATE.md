@@ -266,10 +266,12 @@ false refusal, so it can be widened on evidence. The three deliberately-unmarked
 jobs**, and the pytest summaries were diffed against the pre-fix dispatch rather than trusting the job
 conclusions: **pre-fix Python 3.13 reported 5 xfailed / 3 xpassed**, so one of the four marked tests was
 *genuinely failing* under its marker; post-fix it is **4 xfailed / 0 xpassed / 0 failed** on all three
-versions, the 4 being the unrelated projection scorers. Totals reconcile exactly (pre-fix `6381 + 4 xpassed`
-+ 6 new tests = **6391 passed**, `50 skipped` unchanged), so the four tests moved from suppressed to
-passing rather than being skipped or weakened. 3.11 and 3.12 xpassed all four *both* times — which is why a
-green run alone could never have settled it.
+versions, the 4 being the unrelated projection scorers. Totals reconcile exactly across two dispatches
+(pre-fix `6381 + 4 xpassed = 6385` effectively passing, `+6` new tests = **6391**, `+7` = **6392** on the
+final tip, `50 skipped` throughout), so the four tests moved from suppressed to passing rather than being
+skipped or weakened. 3.11 and 3.12 xpassed all four *both* times — which is why a green run alone could
+never have settled it, and why the **arithmetic** is the evidence. The seventh test also settles that two
+handles in one process contend on Windows via `msvcrt.locking` as two file descriptions do via `flock`.
 
 **`make check` can NEVER verify this work** (it passes, and passed before the fix too) — the window is inert
 off `win32`. Windows evidence comes only from a **`workflow_dispatch`** of `ci.yml`, which builds the full

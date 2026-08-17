@@ -9763,3 +9763,15 @@ proves which.
 
 **`nightly-watch` skipped, as designed** (`ci.yml:99` gates it to `schedule`), so issue #76 is untouched
 by this and closes on the next 07:00 UTC nightly. A still-open #76 is not evidence about this fix.
+
+**Confirmed again on the final tip.** Dispatch **`32049743593`** (`f0515e6`), **success on every job**,
+because run 1 predated the review fixes and the seventh test — a *threaded* handover against the real
+`FileLock` — rested on an assumption worth evidence rather than reasoning: that two handles in one
+process contend on Windows through `msvcrt.locking` the way two file descriptions do through `flock`.
+They do. All three Windows jobs report **6,392 passed, 50 skipped, 4 xfailed, 0 failed** — exactly one
+more pass than run 1, which is that test and nothing else.
+
+So the count reconciles across three runs and two platforms without a residue: pre-fix
+`6,381 passed + 4 xpassed = 6,385` effectively passing, `+6` new tests = **6,391** (run 1), `+7` =
+**6,392** (run 2), with `50 skipped` fixed throughout. **A green Windows run was never going to prove
+repair; the arithmetic is what proves it.**
