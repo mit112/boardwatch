@@ -554,7 +554,7 @@ Invalid value for --as-of: --as-of dates the completeness checks, so it needs --
 EXIT=2
 $ boardwatch profile-bundle promote --bundle <root> --draft demo2 --summary "..."
 profile-bundle promote: could_not_complete
-error: bundle_lock_held: this bundle's career-profile.lock is already held, by another command or by this one holding it twice; nothing was waited for and nothing was changed
+error: bundle_lock_held: this bundle's career-profile.lock is already held, by another command or by this one holding it twice; nothing was changed
 EXIT=3
 ```
 

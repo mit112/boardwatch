@@ -6,19 +6,33 @@ two different ways, is two writers who each believe they are alone.
 
 Three properties are contractual rather than incidental.
 
-**Non-blocking.** §6 and §21 both say contention returns `bundle_lock_held` with "no wait or
-mutation". A blocking acquire would turn a second operator's mistake into a hung terminal, and a
-retry loop would turn it into a hung terminal that also writes.
+**Non-blocking, with one bounded exception.** §6 and §21 both say contention returns
+`bundle_lock_held` with "no wait or mutation". A blocking acquire would turn a second operator's
+mistake into a hung terminal, and an unbounded retry loop would turn it into a hung terminal that
+also writes. On POSIX that is literal — `RECLAIM_WINDOW_SECONDS` is zero, the lock is asked once,
+and a refusal is reported as it arrives. Windows pays the window below before a genuine refusal,
+which is a departure from §21 recorded as such (D-224) and bounded by a deadline on purpose.
 
-**The operating system is the only authority.** The kernel drops a dead process's `flock`
-immediately, and a killed holder leaves its lockfile behind. §6 is explicit that Boardwatch "must
-never break or remove a lock based only on PID age, timestamp, or file existence" — so a leftover
-`career-profile.lock` means nothing at all, and nothing here reads it, ages it, or deletes it. That
-is what makes a stale file harmless: the next acquire succeeds because the kernel says the lock is
-free, not because a heuristic decided the file was old enough. It also means the file's presence is
-not a signal that anybody holds it, and no caller may treat it as one. Nothing here depends on *who*
-unlinks the file, or on whether anybody does — that differs between `filelock` versions the declared
-floor admits, and it is exactly the kind of detail a lock must not rest on.
+**The operating system is the only authority.** A killed holder leaves its lockfile behind, and §6
+is explicit that Boardwatch "must never break or remove a lock based only on PID age, timestamp, or
+file existence" — so a leftover `career-profile.lock` means nothing at all, and nothing here reads
+it, ages it, or deletes it. That is what makes a stale file harmless: the next acquire succeeds
+because the kernel says the lock is free, not because a heuristic decided the file was old enough.
+It also means the file's presence is not a signal that anybody holds it, and no caller may treat it
+as one. Nothing here depends on *who* unlinks the file, or on whether anybody does — that differs
+between `filelock` versions the declared floor admits, and it is exactly the kind of detail a lock
+must not rest on.
+
+What this property does *not* get to assume is that the OS answers correctly on the first ask.
+POSIX drops a dead process's `flock` as the process dies, so there one ask is enough. Windows tears
+a killed holder's handles down asynchronously, and `filelock`'s `WindowsFileLock._acquire` swallows
+the `EACCES` that window produces without setting its file descriptor, so `acquire` reports
+`Timeout` and this module would report `bundle_lock_held` for a lock nobody holds.
+`RECLAIM_WINDOW_SECONDS` answers that by asking the OS **again**, briefly, and by nothing else:
+re-asking leaves the kernel as the sole authority, whereas ageing the file would move that
+authority here, which §6 forbids. A window too short to cover the teardown fails the way this
+module already failed — a false refusal — so it can be widened on evidence without changing what
+the property means.
 
 Absence is not symmetric with presence, and saying so matters: exclusion is by path, so deleting the
 lockfile *while a holder is inside its critical section* lets the next acquire create a new file and
@@ -33,6 +47,8 @@ portability contract for the sake of one subsystem.
 
 from __future__ import annotations
 
+import sys
+import time
 from collections.abc import Iterator
 from contextlib import contextmanager
 from pathlib import Path
@@ -41,6 +57,14 @@ from filelock import FileLock, Timeout
 
 from boardwatch.profile_bundle.errors import BundleIoError, ProfileBundleError
 from boardwatch.profile_bundle.paths import LOCK_FILE, lock_path
+
+#: How long to keep re-asking the OS before believing a refusal. Zero everywhere the OS answers
+#: correctly on the first ask, which is everywhere but Windows; one second on Windows, which is a
+#: judgement and not a measurement of the handle-teardown window — see the module docstring.
+RECLAIM_WINDOW_SECONDS = 1.0 if sys.platform == "win32" else 0.0
+
+#: Short enough that the common Windows case — a window that has already closed — costs one poll.
+RECLAIM_POLL_SECONDS = 0.025
 
 
 class BundleLockHeldError(ProfileBundleError):
@@ -60,31 +84,43 @@ class BundleLockHeldError(ProfileBundleError):
 def bundle_lock(bundle_root: Path) -> Iterator[Path]:
     """Hold the bundle's exclusive writer lock for the duration of the block.
 
-    Yields the lockfile path so a caller can name it in a message. Raises `BundleLockHeldError`
-    immediately on contention and `BundleIoError` when the lockfile cannot be opened at all — the
-    two are different situations for the operator ("wait for the other command" versus "this is not
-    a bundle root"), and collapsing them would send one of them to the wrong fix.
+    Yields the lockfile path so a caller can name it in a message. Raises `BundleLockHeldError` on
+    contention — at once where `RECLAIM_WINDOW_SECONDS` is zero, otherwise once the window closes —
+    and `BundleIoError` when the lockfile cannot be opened at all. The two are different situations
+    for the operator ("wait for the other command" versus "this is not a bundle root"), and
+    collapsing them would send one of them to the wrong fix; an I/O failure is never re-asked.
     """
     path = lock_path(bundle_root)
     lock = FileLock(str(path))
-    try:
-        # `Timeout` derives from `TimeoutError`, which derives from `OSError`, so it must be caught
-        # first or contention would be reported as an I/O failure.
-        lock.acquire(blocking=False)
-    except Timeout as exc:
-        raise BundleLockHeldError(
-            f"this bundle's {LOCK_FILE} is already held, by another command or by this one holding "
-            "it twice; nothing was waited for and nothing was changed"
-        ) from exc
-    except OSError as exc:
-        # `strerror` rather than `str(exc)`: the stringified error embeds the absolute lockfile
-        # path, and a diagnostic that reached either rendering would carry the operator's home
-        # directory into anything they pasted.
-        raise BundleIoError(f"{LOCK_FILE} could not be opened: {exc.strerror}") from exc
+    # Each pass is a whole non-blocking acquire, so the wait is this loop's and stays bounded by the
+    # deadline. Delegating to `filelock`'s own `timeout=` would put the wait inside the library,
+    # where no test here can reach either arm of it.
+    deadline = time.monotonic() + RECLAIM_WINDOW_SECONDS
+    while True:
+        try:
+            # `Timeout` derives from `TimeoutError`, which derives from `OSError`, so it must be
+            # caught first or contention would be reported as an I/O failure.
+            lock.acquire(blocking=False)
+        except Timeout as exc:
+            if time.monotonic() >= deadline:
+                # Not "nothing was waited for", which this message used to claim: on Windows the
+                # reclaim window is a real if brief wait, and denying it would be false there.
+                raise BundleLockHeldError(
+                    f"this bundle's {LOCK_FILE} is already held, by another command or by this one "
+                    "holding it twice; nothing was changed"
+                ) from exc
+            time.sleep(RECLAIM_POLL_SECONDS)
+            continue
+        except OSError as exc:
+            # `strerror` rather than `str(exc)`: the stringified error embeds the absolute lockfile
+            # path, and a diagnostic that reached either rendering would carry the operator's home
+            # directory into anything they pasted.
+            raise BundleIoError(f"{LOCK_FILE} could not be opened: {exc.strerror}") from exc
+        break
     try:
         yield path
     finally:
         lock.release()
 
 
-__all__ = ["BundleLockHeldError", "bundle_lock"]
+__all__ = ["RECLAIM_WINDOW_SECONDS", "BundleLockHeldError", "bundle_lock"]

@@ -28,6 +28,7 @@ import pytest
 
 from boardwatch.profile_bundle.drafts import checkout_current
 from boardwatch.profile_bundle.errors import IssueCode
+from boardwatch.profile_bundle.locking import RECLAIM_WINDOW_SECONDS
 from boardwatch.profile_bundle.models.history import Actor
 from boardwatch.profile_bundle.paths import (
     LOCK_FILE,
@@ -43,7 +44,6 @@ from boardwatch.profile_bundle.promotion import (
 from boardwatch.profile_bundle.storage import read_current_once, selected_documents
 from boardwatch.profile_bundle.yaml_loader import load_yaml_bytes
 from tests.profile_bundle.conftest import (
-    WINDOWS_STALE_LOCK_RACE,
     approve_draft,
     materialise,
     quoted_yaml,
@@ -221,7 +221,11 @@ def test_promoting_the_same_draft_twice_is_refused_the_second_time(scene: Scene)
 
 
 def test_a_promotion_in_flight_refuses_a_second_writer_without_waiting(scene: Scene) -> None:
-    """Contention is refused, not queued: §6 and §21 both say no wait and no mutation."""
+    """Contention is refused, not queued: §6 and §21 both say no wait and no mutation.
+
+    Windows pays the bounded reclaim window before a genuine refusal (D-224), which is a departure
+    from §21 and not a queue — so the budget below is the window plus a margin, never the holder.
+    """
     from boardwatch.profile_bundle.locking import bundle_lock
 
     with bundle_lock(scene.bundle_root):
@@ -231,15 +235,10 @@ def test_a_promotion_in_flight_refuses_a_second_writer_without_waiting(scene: Sc
 
     assert outcome.exit_code == 3
     assert [finding.code for finding in outcome.diagnostics] == [IssueCode.BUNDLE_LOCK_HELD]
-    assert elapsed < 2.0
+    assert elapsed < RECLAIM_WINDOW_SECONDS + 2.0
     assert read_current_once(scene.bundle_root).revision == 1
 
 
-@pytest.mark.xfail(
-    sys.platform == "win32",
-    reason=WINDOWS_STALE_LOCK_RACE,
-    strict=False,
-)
 def test_a_lockfile_left_by_a_killed_promoter_is_not_a_held_lock(scene: Scene) -> None:
     """§6: never break a lock on file existence. The kernel released this one; the file remains.
 
