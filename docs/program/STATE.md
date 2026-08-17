@@ -171,7 +171,7 @@ the cut lines fix no score threshold, so `ADMISSION_FLOOR` stays `Decimal(0)` (D
    - **Education Slice C**; promoting `header/1`'s `person.professional_name` (the skill-item loop skips
      `header/*`).
 
-**Fixture + corpus drift — the offline half is BUILT and gated (D-227).** R13/R14/R15 in
+**Fixture + corpus drift — the offline half is BUILT and gated (D-228).** R13/R14/R15 in
 `tools/generalization/fixtures.py`, inside `make check` and the CI `generalization` job. **The 31 fixture
 JSONs were ALREADY pinned by R7 — do not build a second manifest.** **R15 enforces that somebody reviewed
 on schedule, NOT that a fixture matches production**; `tools.fixture_refresh --extend` restores green

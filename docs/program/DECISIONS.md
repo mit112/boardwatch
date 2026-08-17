@@ -257,7 +257,7 @@ and is a no-op when the index is already right. `make index-check` reports drift
 | D-221 | DECISIONS.md | 9368 | Saayam keeps its entry with one role-scoped bullet, because "role + org + dates only" is unrepresentable today |
 | D-222 | DECISIONS.md | 9450 | Correction: D-212 marked two of the three tests exercising the Windows stale-lock race, and the third turned the nightly red |
 | D-223 | DECISIONS.md | 9512 | Correction: D-222's own census was short one, and instance 4 is marked by mechanism rather than observation |
-| D-227 | DECISIONS.md | 9590 | Fixture drift is three separate gates, and the staleness one enforces a review deadline rather than freshness |
+| D-228 | DECISIONS.md | 9590 | Fixture drift is three separate gates, and the staleness one enforces a review deadline rather than freshness |
 
 ---
 
@@ -9587,7 +9587,7 @@ it fires; but it is a consistency call on an unobserved instance, not evidence t
   fixed, this docstring is the thing to fix first** — the four markers come off together after it, and any
   fix that leaves both sentences standing has not addressed the defect.
 
-## D-227 — Fixture drift is three separate gates, and the staleness one enforces a review deadline rather than freshness
+## D-228 — Fixture drift is three separate gates, and the staleness one enforces a review deadline rather than freshness
 
 *2026-08-17. Closes the "fixture + corpus drift" line that has sat under STATE's owner-gated list as
 "needs live network / a missing generator". The generator half is built here; the network half is not,

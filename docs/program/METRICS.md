@@ -129,7 +129,7 @@ reports drift without writing, and `make check` depends on it (D-109).
 | METRICS.md | 4140 | Session — 2026-08-17 (crop-rf bullet refinement: the fifth entity through STATE item 2, D-217) · Attended. The only entity with a primary published source, and the outcome inverted: every technical number verified against the paper, while the award count, the hosting claim and the authorship all failed. Bundle revision 16 -> 17. No phase gate moved, still 0 sent. |
 | METRICS.md | 4168 | Session — 2026-08-17b (NIO + Saayam: the last two entities through STATE item 2, D-219/D-220/D-221) · Attended. The pinned pair, and the two hardest attribution calls in the bundle. Bundle revision 19 → 21, completing all eleven entities. The page budget was re-measured and two of D-195's conclusions retired. No phase gate moved, still 0 sent. |
 | METRICS.md | 4203 | Session — 2026-08-17c (verifying D-222 found a fourth instance of the same race, D-223) · Opened as a verification pass on an inherited handoff. The handoff's one owed item was already done; the real findings were 14 unpushed commits and a fourth unmarked test. No phase gate moved, still 0 sent. |
-| METRICS.md | 4227 | Session — 2026-08-17d (fixture + corpus drift detection, D-227) · Attended, on the `fixture-drift-detection` worktree alongside three other live lanes. The brief's central premise was false and measuring it deleted a planned deliverable. No phase gate moved, still 0 sent. |
+| METRICS.md | 4227 | Session — 2026-08-17d (fixture + corpus drift detection, D-228) · Attended, on the `fixture-drift-detection` worktree alongside three other live lanes. The brief's central premise was false and measuring it deleted a planned deliverable. No phase gate moved, still 0 sent. |
 
 ---
 
@@ -4224,7 +4224,7 @@ been promoted to a revision or rendered; that is the owner's confirm/attest/appr
 | The limit of what a green Windows run would prove | That the four markers **suppress** the race — not that it is fixed. `strict=False` means these tests now pass whether or not the defect fires. **The real fix is named in D-223**: `locking.py`'s docstring chose `filelock` *for* portability, then rested its correctness argument on the POSIX-only guarantee that "the kernel drops a dead process's `flock` immediately". Unstarted, and a design question rather than a cleanup |
 | Phase gates | Unmoved. **Still 0 applications sent** |
 
-## Session — 2026-08-17d (fixture + corpus drift detection, D-227) · Attended, on the `fixture-drift-detection` worktree alongside three other live lanes. The brief's central premise was false and measuring it deleted a planned deliverable. No phase gate moved, still 0 sent.
+## Session — 2026-08-17d (fixture + corpus drift detection, D-228) · Attended, on the `fixture-drift-detection` worktree alongside three other live lanes. The brief's central premise was false and measuring it deleted a planned deliverable. No phase gate moved, still 0 sent.
 
 **Branch** `fixture-drift-detection`, **PR #77**, 4 commits, tip `72114ad`. Local gate bound to a tree hash, not just an exit code. CI green on the PR (run `32063295816`, sha `72114adb`): generalization, gitleaks, perf and all three ubuntu test jobs. **Windows unproven** — scheduled-only.
 
@@ -4326,11 +4326,11 @@ Three further defects, all in the drain — the thing that must be able to resto
 Plus: two divergent ast row counters folded into one; the rewriter's anchors bound to the real module
 rather than only to a synthetic constant shaped to match them; a second `.md` in a provider directory
 refused (pinned by nothing — R7 cannot see `.md`, R14 pins `README.md` by name); two overclaiming test
-docstrings; and doc corrections (the false "second path" claim in D-227 and here, `~30 ms` → the measured
+docstrings; and doc corrections (the false "second path" claim in D-228 and here, `~30 ms` → the measured
 **26.3 ms**, `test_provider_registry.py:24,30` → `:25,31`, a truncated filename in STATE).
 
 **Both reviewers independently confirmed** the `test_real_tree.py` change strengthens rather than weakens
-the rule census, and every factual claim in D-227 verified against code.
+the rule census, and every factual claim in D-228 verified against code.
 
 | Gate | Result | Wall clock |
 |---|---|---|
