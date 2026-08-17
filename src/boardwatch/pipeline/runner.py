@@ -723,7 +723,19 @@ def run_pipeline(
                     # Per-lead: counted, reported as a NON-fatal error, and the run continues.
                     summary.projection_outcomes[scope] += 1
                     summary.projection_failed_ids.append(posting.posting_id)
-                    message = f"projection: posting {posting.posting_id}: {scope.value}: {exc}"
+                    # A lead outcome is only ever returned by `classify_lead_outcome`, which
+                    # `_projection_scope` calls behind its own `isinstance` check — so `exc` here is
+                    # always a `ProjectionError` and its violation can be read as data.
+                    assert isinstance(exc, ProjectionError)
+                    # The violation's own fields, not `str(exc)`: that already LEADS with the issue
+                    # value, so prefixing it with the outcome printed
+                    # `output_io_failure: output_io_failure: …` for every member whose outcome and
+                    # issue happen to share a name. The outcome is the bucket this run counted, and
+                    # the violation's message names the issue in prose, so nothing is lost.
+                    message = (
+                        f"projection: posting {posting.posting_id}: {scope.value}: "
+                        f"{exc.violation.message} ({exc.violation.where})"
+                    )
                     stage_errors.append(message)
                     summary.errors.append(message)
                     continue
@@ -874,7 +886,10 @@ def run_pipeline(
         # `status=ok` with nothing delivered.
         unrendered = summary.tailor_failed + len(summary.projection_failed_ids)
         if summary.fatal is None and renderable > 0 and not summary.tailored:
-            summary.fatal = f"every lead failed to tailor ({unrendered}/{renderable})"
+            # "project or tailor", because `unrendered` sums BOTH: a projected lead that never
+            # reached `run_tailor` is in the numerator, so naming only tailoring would point an
+            # operator at the résumé path for a failure that happened before it.
+            summary.fatal = f"every lead failed to project or tailor ({unrendered}/{renderable})"
 
         # P3 item 5 (B5) — zero-output guard. Reachable when `renderable == 0`, which is either a
         # candidate-less day (`shortlisted == 0`) or — since P6 item 6 — a day where a non-empty

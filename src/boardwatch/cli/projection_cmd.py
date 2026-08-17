@@ -48,6 +48,14 @@ from typing import TYPE_CHECKING, Any, NoReturn
 import typer
 
 from boardwatch.cli._approval import CONFIRMATION_WORD, approval_terminal
+
+# Every `as_of` below is read from the SAME clock the pipeline reads (`utcnow().date()`), never
+# `date.today()`. `as_of` feeds effective-fact resolution, so it decides WHICH facts render: for an
+# owner at UTC-4/5 the local and UTC dates differ for several hours every evening, and a preview
+# built from the local date would show a résumé assembled from different effective facts than
+# `run --project` produces. The `runs` row and the lineage record are both UTC, and a preview that
+# disagrees with the run it is previewing is worse than either convention alone.
+from boardwatch.core.clock import utcnow
 from boardwatch.core.settings import load_settings
 from boardwatch.profile_bundle.errors import (
     Diagnostic,
@@ -144,7 +152,7 @@ def approve_projection(
     from boardwatch.projection.pool import projection_candidate
 
     try:
-        candidate = projection_candidate(bundle_root, declaration_path, as_of=date.today())
+        candidate = projection_candidate(bundle_root, declaration_path, as_of=utcnow().date())
     except (ProjectionError, ProfileBundleError) as exc:
         typer.echo(str(exc), err=True)
         raise typer.Exit(code=1) from exc
@@ -297,7 +305,7 @@ def project(
     config_dir = load_settings(data_dir=ctx.obj).config_dir
     declaration_path = declaration if declaration is not None else config_dir / "projection.yaml"
     bundle_root = resolve_bundle_root(config_dir, bundle)
-    as_of = date.today()
+    as_of = utcnow().date()
 
     # Deferred: see the module docstring on why `projection.pool` is never imported at module
     # level here; the same reasoning covers `projection.serialize`, reached only through this one
@@ -432,7 +440,7 @@ def resume_project(
     config_dir = settings.config_dir
     declaration_path = declaration if declaration is not None else config_dir / "projection.yaml"
     bundle_root = resolve_bundle_root(config_dir, bundle)
-    as_of = date.today()
+    as_of = utcnow().date()
     out_dir = out if out is not None else settings.data_dir / "projected" / str(posting_id)
 
     try:

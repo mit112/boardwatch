@@ -281,9 +281,9 @@ def test_as_of_is_one_reading_of_the_runs_own_clock(
     cosmetic. It must be `utcnow().date()` from the same clock the `runs` row uses, read ONCE.
 
     `utcnow` is frozen to a date far from any real "today" so the test discriminates: a
-    `date.today()` implementation (which `cli/projection_cmd.py` legitimately uses, and which is
-    the LOCAL date) would record the real date here and fail, and a per-lead re-read would append
-    more than one entry.
+    `date.today()` implementation (the LOCAL date, which nothing in this codebase reads for `as_of`
+    any more) would record the real date here and fail, and a per-lead re-read would append more
+    than one entry.
     """
     _ready(env, 2)
     config_dir = _config_dir(env)

@@ -40,6 +40,7 @@ from boardwatch.pipeline import runner as runner_mod
 from boardwatch.pipeline.runner import PipelineSummary, _projection_scope, run_pipeline
 from boardwatch.projection.errors import ProjectionError, ProjectionIssue, ProjectionViolation
 from boardwatch.projection.run import (
+    ISSUE_SCOPE,
     MANIFEST_FILENAME,
     RESUME_FILENAME,
     ProjectionAvailability,
@@ -346,8 +347,10 @@ def test_a_failed_projection_lead_is_counted_and_leaves_no_directory(
     # `resume.yaml` for it would have produced one and looked entirely successful.
     assert _artifact_count_for(engine, failed[0]) == 0
     # And nothing permanent was written for it, so re-approving or fixing the bundle is a real
-    # drain rather than a lead deleted for good.
-    assert _dispositions(engine, failed[0]) <= {"seen"}
+    # drain rather than a lead deleted for good. EQUALITY, not `<= {"seen"}`: the subset form is
+    # satisfied by the empty set, so it could not fail on a run that wrote no disposition at all —
+    # and `seen` is exactly what a completed stage owes a shortlisted job it did not build.
+    assert _dispositions(engine, failed[0]) == {"seen"}
     assert "built" in _dispositions(engine, summary.tailored[0].posting_id)
 
 
@@ -389,20 +392,34 @@ def test_a_run_scoped_cause_inside_the_loop_is_a_typed_fatal(
         assert conn.execute(select(tables.job_dispositions.c.job_id)).fetchall() == []
 
 
-@pytest.mark.parametrize(
-    "issue",
-    [
+#: Every RUN-scoped member of the closed table, DERIVED from it rather than transcribed. Three of
+#: them surface from inside the per-lead loop today, because `select()` raises them while building
+#: one lead (`PINNED_SET_COMPILE_FAILED`, `PINNED_SET_EXCEEDS_BUDGET`,
+#: `COMPILE_INFRASTRUCTURE_FAILURE`) — but a hardcoded list of those three cannot see a fourth
+#: arriving, and the loop's routing has to hold for whichever ones reach it. Parametrising over the
+#: whole run-scoped half of the table is a superset of what the loop can raise, so nothing drifts
+#: past. Sorted for a deterministic parametrisation order.
+RUN_SCOPED_ISSUES = sorted(
+    issue for issue, scope in ISSUE_SCOPE.items() if isinstance(scope, ProjectionAvailability)
+)
+
+
+def test_the_run_scoped_derivation_is_not_vacuous() -> None:
+    """An empty parametrisation collects no tests and reports green, so the derivation above needs a
+    floor that does not come from itself: the three `select()` raises from inside the loop must all
+    be in it. A LOWER bound, deliberately — the derived set is what the next test covers."""
+    assert {
         ProjectionIssue.PINNED_SET_COMPILE_FAILED,
         ProjectionIssue.PINNED_SET_EXCEEDS_BUDGET,
         ProjectionIssue.COMPILE_INFRASTRUCTURE_FAILURE,
-    ],
-)
+    } <= set(RUN_SCOPED_ISSUES)
+
+
+@pytest.mark.parametrize("issue", RUN_SCOPED_ISSUES)
 def test_every_run_scoped_cause_that_surfaces_per_lead_routes_by_scope(
     issue: ProjectionIssue,
 ) -> None:
-    """The three enumerated from the catalog, not from memory: `select()` is the only thing the
-    per-lead loop calls that raises a run-scoped issue, and these are its three. Each must reach
-    the availability catalog through `_projection_scope`; handed straight to
+    """Each must reach the availability catalog through `_projection_scope`; handed straight to
     `classify_lead_outcome`, each raises."""
     exc = ProjectionError(ProjectionViolation(issue=issue, message="m", where="w"))
     assert isinstance(_projection_scope(exc), ProjectionAvailability)
@@ -484,8 +501,13 @@ def test_a_publication_failure_is_a_counted_lead_outcome(
     routed it to `classify_availability`, which refuses an unmapped type — so a full disk aborted
     the run with an `AssertionError` instead of skipping the lead it happened to.
 
-    `ENOSPC` is the case that cannot be arranged for real, so `_publish` is made to raise it once.
-    The typed refusal, the routing and the counting are all real.
+    The `OSError` is driven from INSIDE the real `_publish` rather than replacing it: the wrapper
+    only plants a regular FILE where the first lead's output directory would go, and then calls the
+    real function, whose `os.replace` into a path that is not a directory raises `ENOTDIR`. Replacing
+    `_publish` wholesale left its atomic staging unexercised on this path, so the no-husk guarantee
+    rested entirely on the `CANDIDATE_UNRENDERABLE` test; here the staging directory is really
+    created, both payloads are really written into it, and the `finally` that removes it really runs
+    — which the two extra assertions below read off the filesystem.
     """
     ids = _ready(env, 2)
     _projected_env(env)
@@ -494,15 +516,19 @@ def test_a_publication_failure_is_a_counted_lead_outcome(
     from boardwatch.projection import run as projection_run
 
     real_publish = projection_run._publish
-    failed_once: list[int] = []
+    blocked: list[Path] = []
 
-    def flaky(out_dir: Path, files: object) -> None:
-        if not failed_once:
-            failed_once.append(1)
-            raise OSError(28, "No space left on device")
+    def colliding(out_dir: Path, files: object) -> None:
+        if not blocked:
+            # A file, not a directory: `_publish` finds `out_dir.exists()` true and publishes each
+            # payload individually with `os.replace(staging / name, out_dir / name)`, which cannot
+            # descend into a regular file.
+            out_dir.parent.mkdir(parents=True, exist_ok=True)
+            out_dir.write_bytes(b"not a directory")
+            blocked.append(out_dir)
         real_publish(out_dir, files)  # type: ignore[arg-type]
 
-    monkeypatch.setattr(projection_run, "_publish", flaky)
+    monkeypatch.setattr(projection_run, "_publish", colliding)
 
     summary = _pipeline(env, tmp_path / "apps")
 
@@ -517,6 +543,13 @@ def test_a_publication_failure_is_a_counted_lead_outcome(
     failed = sorted(set(ids) - {lead.posting_id for lead in summary.tailored})
     assert summary.projection_failed_ids == failed
     assert _artifact_count_for(get_engine(env), failed[0]) == 0
+
+    # Real staging, verified on disk: nothing was published into the blocked destination (its bytes
+    # are untouched), and the sibling staging directory the failed `_publish` opened was removed by
+    # its own `finally` rather than left beside the day's leads.
+    assert blocked[0].read_bytes() == b"not a directory"
+    day_dir = blocked[0].parent
+    assert [p.name for p in day_dir.glob(".projection-*")] == []
 
 
 # -- the negative control ---------------------------------------------------------------

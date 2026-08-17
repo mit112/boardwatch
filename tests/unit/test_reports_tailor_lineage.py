@@ -23,6 +23,7 @@ from sqlalchemy import Engine, insert, select
 from boardwatch.core.lineage import ResumeSourceLineage
 from boardwatch.core.settings import Settings
 from boardwatch.extract.taxonomy import load_taxonomy
+from boardwatch.reports import tailor as tailor_mod
 from boardwatch.reports.tailor import ResumeLineageMismatch, run_tailor
 from boardwatch.store.db import ensure_schema, get_engine
 from boardwatch.store.tables import (
@@ -33,6 +34,7 @@ from boardwatch.store.tables import (
     posting_versions,
     postings,
 )
+from boardwatch.tailor import load as load_mod
 from boardwatch.tailor.load import load_resume, scaffold_template
 from boardwatch.tailor.render.outcome import CompileOutcome, CompileReason
 
@@ -275,6 +277,95 @@ def test_a_model_hash_mismatch_refuses(tmp_path: Path) -> None:
             typst_runner=_Runner(), source_lineage=wrong,
         )
 
+    with engine.connect() as conn:
+        assert conn.execute(artifacts.select()).first() is None
+
+
+def test_the_lineage_path_reads_the_resume_file_exactly_once(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """One read, hashed and parsed from the same buffer. The property is structurally unobservable
+    from BEHAVIOUR — single-threaded, the file holds the same bytes however often it is read — but a
+    call COUNT is observable, and it is what a regression moves: `hashlib.sha256(path.read_bytes())`
+    followed by `load_resume(path)` reads twice and reopens the read/swap/read window
+    `_master_from_lineage` exists to close, while satisfying every other test in this file.
+
+    Counted on two routes, because either alone has a blind spot. `read_resume_bytes` is the only
+    sanctioned reader, and it is bound in TWO modules: `load_resume` calls `tailor.load`'s own
+    global, `_master_from_lineage` calls the by-name import in `reports.tailor`, so a swap from one
+    route to the other is invisible to a counter that watches only one. `Path.read_bytes` underneath
+    both catches the re-read that bypasses the helper entirely.
+    """
+    settings = _settings(tmp_path)
+    engine = _engine(settings)
+    pid = _seed(engine, settings)
+    projected = _projected(tmp_path)
+    # Computed BEFORE the counters are installed, so the lineage's own hashing is not counted.
+    lineage = _lineage(projected, _version_id(engine, pid))
+
+    helper_calls = 0
+    file_reads = 0
+    real_helper = load_mod.read_resume_bytes
+    real_read_bytes = Path.read_bytes
+
+    def counting_helper(path: Path) -> bytes:
+        nonlocal helper_calls
+        if path == projected:
+            helper_calls += 1
+        return real_helper(path)
+
+    def counting_read_bytes(self: Path) -> bytes:
+        nonlocal file_reads
+        if self == projected:
+            file_reads += 1
+        return real_read_bytes(self)
+
+    monkeypatch.setattr(load_mod, "read_resume_bytes", counting_helper)
+    monkeypatch.setattr(tailor_mod, "read_resume_bytes", counting_helper)
+    monkeypatch.setattr(Path, "read_bytes", counting_read_bytes)
+
+    res = run_tailor(
+        engine, settings, pid, resume_path=projected, out_dir=tmp_path / "out",
+        typst_runner=_Runner(), source_lineage=lineage,
+    )
+
+    # Non-vacuity: the run completed, so the single read really did serve both the hash checks and
+    # the parse rather than the lead having been refused before either.
+    assert res.tailored_artifact_id is not None
+    assert helper_calls == 1
+    assert file_reads == 1
+
+
+def test_a_dry_run_with_lineage_records_no_artifact_and_no_lineage(tmp_path: Path) -> None:
+    """`dry_run=True` validates the lineage (the check lives in `_plan_tier_a`, above the write) and
+    then records NOTHING — and the write is the only thing that carries the lineage, so "no artifact
+    ⇒ no lineage" has to hold on this path too.
+
+    Unasserted, it was true only by inspection: `run_tailor`'s whole recording block sits under
+    `if not dry_run:`, and a `meta.update(source_lineage.as_meta())` hoisted above that guard, or a
+    `record_artifact` call moved out of it, would attribute a projection provenance to a résumé this
+    call never kept.
+    """
+    settings = _settings(tmp_path)
+    engine = _engine(settings)
+    pid = _seed(engine, settings)
+    projected = _projected(tmp_path)
+    runner = _Runner()
+
+    res = run_tailor(
+        engine, settings, pid, resume_path=projected, out_dir=tmp_path / "out",
+        typst_runner=runner, dry_run=True,
+        source_lineage=_lineage(projected, _version_id(engine, pid)),
+    )
+
+    assert res.dry_run is True
+    assert res.tailored_artifact_id is None
+    assert res.pdf_path is None
+    # Non-vacuity: Tier A really did plan and render source from the projected master, so the empty
+    # artifacts table below is a dry run's restraint and not a refusal earlier in the call.
+    assert res.source
+    assert res.kept
+    assert runner.calls == []  # a dry run never reaches the compile gate
     with engine.connect() as conn:
         assert conn.execute(artifacts.select()).first() is None
 

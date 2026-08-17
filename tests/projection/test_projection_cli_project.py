@@ -28,6 +28,7 @@ from typing import Any
 import pytest
 from typer.testing import CliRunner
 
+from boardwatch.cli import projection_cmd
 from boardwatch.cli.app import app
 from boardwatch.profile_bundle.errors import IssueCode
 from boardwatch.profile_bundle.paths import BUNDLE_DIR_NAME
@@ -334,3 +335,27 @@ def test_plain_text_output_never_leaks_an_absolute_path_for_a_missing_shell_sour
     assert IssueCode.PROJECTION_REFUSED.value in codes
     issues = [d["details"].get("projection_issue") for d in body["diagnostics"]]
     assert "shell_source_unreadable" in issues
+
+
+# --------------------------------------------------------------------------------------
+# One clock: the preview's `as_of` is the pipeline's, not the local date.
+# --------------------------------------------------------------------------------------
+
+
+def test_the_as_of_is_the_utc_date_and_not_the_local_one(
+    approved_env: Env, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """`as_of` feeds effective-fact resolution, so it decides WHICH facts render — a preview that
+    reads a different clock than `boardwatch run --project` can show a résumé built from different
+    effective facts than the run produces. `date.today()` is the LOCAL date, and for an owner at
+    UTC-4/5 the local and UTC dates differ for several hours every evening.
+
+    The frozen instant is what discriminates: it is far from any real "today", so an implementation
+    that never consults `utcnow` reports the real local date and fails here.
+    """
+    monkeypatch.setattr(projection_cmd, "utcnow", lambda: datetime(2027, 3, 4, 23, 30))
+
+    result = run(approved_env, ["--json"])
+
+    assert result.exit_code == 0, result.output
+    assert payload(result)["as_of"] == "2027-03-04"
