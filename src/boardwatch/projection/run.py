@@ -14,24 +14,35 @@ wants to count loads must patch `boardwatch.projection.run.load_taxonomy`; patch
 resolution-at-call-time subtlety `tailor/plan.py:94` records for `effective_skills`).
 
 Nothing here is caught. See `resolve_projection_run`.
+
+This module also holds the two closed catalogs that classify those failures, and the one table
+that maps every `ProjectionIssue` into exactly one of them. There are TWO catalogs because the
+units differ: a `ProjectionAvailability` other than `AVAILABLE` is decided once and refuses the
+whole run before any lead earns a ledger disposition, while a `ProjectionLeadOutcome` skips one
+lead and the run continues. A single catalog cannot reconcile its own counts — "12 leads skipped"
+and "the run never started" are not the same number of anything.
 """
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import date
+from enum import StrEnum
 from pathlib import Path
 
 from sqlalchemy import Engine
 
 from boardwatch.core.settings import Settings
-from boardwatch.extract.taxonomy import Taxonomy, load_taxonomy
-from boardwatch.projection.errors import ProjectionIssue, raise_violation
+from boardwatch.extract.taxonomy import Taxonomy, TaxonomyError, load_taxonomy
+from boardwatch.profile_bundle.errors import ProfileBundleError
+from boardwatch.projection.errors import ProjectionError, ProjectionIssue, raise_violation
 from boardwatch.projection.persona_preflight import reject_entry_declaring_personas
 from boardwatch.projection.pool import ProjectionPool, project_pool
 from boardwatch.projection.scoring import SCORERS, EntryScorer
-from boardwatch.tailor.equivalences import EquivalenceTable, load_equivalences
-from boardwatch.tailor.persona import load_personas
+from boardwatch.tailor.equivalences import EquivalenceError, EquivalenceTable, load_equivalences
+from boardwatch.tailor.persona import PersonaError, load_personas
+from boardwatch.tailor.render.latex import TemplateArtifactError
 
 
 @dataclass(frozen=True)
@@ -103,4 +114,183 @@ def resolve_projection_run(
     )
 
 
-__all__ = ["ProjectionRunContext", "resolve_projection_run"]
+class ProjectionAvailability(StrEnum):
+    """Decided ONCE per run. Anything but `AVAILABLE` refuses the whole run before any lead earns
+    a ledger disposition, and sets `summary.fatal`.
+
+    Closed. A cause this does not name is a defect here, never a new bucket.
+    """
+
+    AVAILABLE = "available"
+    MISSING_APPROVAL = "missing_approval"
+    STALE_APPROVAL = "stale_approval"
+    DECLARATION_MISSING = "declaration_missing"
+    DECLARATION_UNREADABLE = "declaration_unreadable"
+    DECLARATION_INVALID = "declaration_invalid"
+    BUNDLE_UNREADABLE = "bundle_unreadable"
+    PERSONA_INVALID = "persona_invalid"
+    SCORER_INVALID = "scorer_invalid"
+    TAXONOMY_INVALID = "taxonomy_invalid"
+    EQUIVALENCES_INVALID = "equivalences_invalid"
+    TEMPLATE_INVALID = "template_invalid"
+    TOOLCHAIN_UNAVAILABLE = "toolchain_unavailable"
+    PINNED_BUDGET_OVERFLOW = "pinned_budget_overflow"
+
+
+class ProjectionLeadOutcome(StrEnum):
+    """Per attempted lead, reachable only once availability is `AVAILABLE`. Skipping one lead
+    leaves the run running, so nothing here may name a run-invariant cause: the page budget is one
+    global profile column and the pinned set is fixed by the frozen declaration, so a lead can
+    never be the unit at which either is decided.
+
+    Closed. A cause this does not name is a defect here, never a new bucket.
+    """
+
+    PROJECTED = "projected"
+    POSTING_UNAVAILABLE = "posting_unavailable"
+    EXTRACTION_UNAVAILABLE = "extraction_unavailable"
+    LINEAGE_MISMATCH = "lineage_mismatch"
+    OUTPUT_IO_FAILURE = "output_io_failure"
+
+
+#: One row per `ProjectionIssue` member, in the order `errors.py` declares them. The table is the
+#: deliverable: totality asserted without a readable table is unreviewable, and a member's scope
+#: is a judgement that has to be written down where the next reader can disagree with it.
+ISSUE_SCOPE: Mapping[ProjectionIssue, ProjectionAvailability | ProjectionLeadOutcome] = {
+    # -- declaration: read once per run out of `config_dir`, so every arm is run-scoped ---
+    ProjectionIssue.DECLARATION_UNREADABLE: ProjectionAvailability.DECLARATION_UNREADABLE,
+    ProjectionIssue.DECLARATION_MISSING: ProjectionAvailability.DECLARATION_MISSING,
+    ProjectionIssue.MALFORMED_DECLARATION: ProjectionAvailability.DECLARATION_INVALID,
+    ProjectionIssue.UNKNOWN_ENTRY_KIND: ProjectionAvailability.DECLARATION_INVALID,
+    ProjectionIssue.DUPLICATE_ENTITY_ID: ProjectionAvailability.DECLARATION_INVALID,
+    ProjectionIssue.DUPLICATE_BULLET_PREDICATE: ProjectionAvailability.DECLARATION_INVALID,
+    ProjectionIssue.UNRESOLVED_PLACEHOLDER: ProjectionAvailability.DECLARATION_INVALID,
+    ProjectionIssue.MALFORMED_PLACEHOLDER: ProjectionAvailability.DECLARATION_INVALID,
+    ProjectionIssue.MISSING_OPEN_RANGE_LABEL: ProjectionAvailability.DECLARATION_INVALID,
+    # -- fallback: `no_match_fallback_ids` is declaration content, validated with it ------
+    ProjectionIssue.FALLBACK_ID_NOT_A_CANDIDATE: ProjectionAvailability.DECLARATION_INVALID,
+    ProjectionIssue.FALLBACK_ID_DUPLICATED: ProjectionAvailability.DECLARATION_INVALID,
+    ProjectionIssue.FALLBACK_OVERLAPS_PINNED: ProjectionAvailability.DECLARATION_INVALID,
+    # -- bundle -------------------------------------------------------------------------
+    ProjectionIssue.BUNDLE_UNREADABLE: ProjectionAvailability.BUNDLE_UNREADABLE,
+    # -- bundle references: the fidelity contract. Every arm is the declaration asking the
+    # bundle for something the bundle will not give it, resolved once when the pool is
+    # projected — identical for every posting, so DECLARATION_INVALID and not a lead skip.
+    ProjectionIssue.UNKNOWN_BUNDLE_ID: ProjectionAvailability.DECLARATION_INVALID,
+    ProjectionIssue.FACT_NOT_RESUME_SURFACED: ProjectionAvailability.DECLARATION_INVALID,
+    ProjectionIssue.FACT_NOT_EFFECTIVE: ProjectionAvailability.DECLARATION_INVALID,
+    ProjectionIssue.FACT_EXPIRED: ProjectionAvailability.DECLARATION_INVALID,
+    ProjectionIssue.FACT_VALUE_KIND_NOT_ADMITTED: ProjectionAvailability.DECLARATION_INVALID,
+    ProjectionIssue.CLAIM_NOT_APPROVED: ProjectionAvailability.DECLARATION_INVALID,
+    ProjectionIssue.CLAIM_NOT_RESUME_SURFACED: ProjectionAvailability.DECLARATION_INVALID,
+    ProjectionIssue.CLAIM_SUBJECT_MISMATCH: ProjectionAvailability.DECLARATION_INVALID,
+    ProjectionIssue.SKILL_NOT_RESUME_SURFACED: ProjectionAvailability.DECLARATION_INVALID,
+    ProjectionIssue.BULLET_TEXT_ALTERED: ProjectionAvailability.DECLARATION_INVALID,
+    ProjectionIssue.BULLET_PREDICATE_NO_FACTS: ProjectionAvailability.DECLARATION_INVALID,
+    # -- shell: the file `declaration.shell_source` names. Its arms are OSError as well as
+    # YAMLError/ValidationError (`shell.py:67`), so "unreadable" is the honest bucket for the
+    # pair; there is no SHELL_* member because the operator's remedy is the same one either
+    # way — fix the file the declaration points at — and a second member would be a bucket
+    # nothing routes on.
+    ProjectionIssue.SHELL_SOURCE_UNREADABLE: ProjectionAvailability.DECLARATION_UNREADABLE,
+    # -- persona: the registry is loaded once per run ------------------------------------
+    ProjectionIssue.PERSONA_DECLARES_ENTRIES: ProjectionAvailability.PERSONA_INVALID,
+    # -- owner gate: one stamp per (declaration, bundle) pair, not per posting -----------
+    ProjectionIssue.MISSING_PROJECTION_APPROVAL: ProjectionAvailability.MISSING_APPROVAL,
+    ProjectionIssue.STALE_PROJECTION_APPROVAL: ProjectionAvailability.STALE_APPROVAL,
+    # -- selection: raised from `select()` DURING a lead, and still run-scoped -----------
+    #: The pinned set comes from the frozen declaration and the budget from one global profile
+    #: column, so if the pinned entries alone overflow for one posting they overflow for all.
+    #: Per-lead, this would skip every lead in turn and report N content failures for one
+    #: setting; run-scoped, it names `resume_max_pages` once.
+    ProjectionIssue.PINNED_SET_EXCEEDS_BUDGET: ProjectionAvailability.PINNED_BUDGET_OVERFLOW,
+    #: A missing `tectonic`/`pdfinfo` or an unclassified gate reason is a property of the
+    #: machine, identical for every posting. Per-lead, it would re-shell out to an absent
+    #: binary once per lead and bill each failure to the owner's content.
+    ProjectionIssue.COMPILE_INFRASTRUCTURE_FAILURE: ProjectionAvailability.TOOLCHAIN_UNAVAILABLE,
+    #: PER-LEAD, deliberately. `posting_context` raises this when the taxonomy extraction backing
+    #: `jd_skills_for` is missing for THIS posting at the run's taxonomy version. One way to
+    #: reach it is a mid-run edit to `taxonomy.yaml`: `run_preflight` still loads its own
+    #: taxonomy on every `posting_context` call, so a later lead can backfill against a version
+    #: the run is not holding. That is acceptable precisely BECAUSE this row is per-lead — the
+    #: lead is skipped and counted, and no résumé is ever rendered under two taxonomies. It is
+    #: not run-scoped: an extraction row is posting-specific, so refusing the whole run for one
+    #: posting's missing row would drop every other lead for an unrelated reason.
+    ProjectionIssue.NO_JD_EXTRACTION: ProjectionLeadOutcome.EXTRACTION_UNAVAILABLE,
+    # -- posting: per-lead by construction; another posting is unaffected ----------------
+    ProjectionIssue.POSTING_NOT_OPEN: ProjectionLeadOutcome.POSTING_UNAVAILABLE,
+    ProjectionIssue.POSTING_NO_CURRENT_VERSION: ProjectionLeadOutcome.POSTING_UNAVAILABLE,
+    # -- run configuration ---------------------------------------------------------------
+    ProjectionIssue.UNKNOWN_SCORER: ProjectionAvailability.SCORER_INVALID,
+}
+
+#: The run-scoped causes that arrive as a FOREIGN exception rather than a `ProjectionIssue`,
+#: matched by type in order (each entry is checked with `isinstance`, so a subclass of
+#: `ProfileBundleError` resolves to the same arm as its base). Ordered most specific first.
+FOREIGN_AVAILABILITY: tuple[tuple[type[Exception], ProjectionAvailability], ...] = (
+    # Run-invariant: one template per run, resolved from `config_dir` or the bundled default.
+    (TemplateArtifactError, ProjectionAvailability.TEMPLATE_INVALID),
+    # Run-invariant: `load_taxonomy` / `load_equivalences` are called once by
+    # `resolve_projection_run`, and both raise `ValueError` subclasses that are disjoint.
+    (TaxonomyError, ProjectionAvailability.TAXONOMY_INVALID),
+    (EquivalenceError, ProjectionAvailability.EQUIVALENCES_INVALID),
+    (PersonaError, ProjectionAvailability.PERSONA_INVALID),
+    # `project_pool` calls `read_stamp`, which raises `ProfileBundleError` (not
+    # `ProjectionError`) for a stamp this build cannot parse — so this family really does
+    # escape `resolve_projection_run` and must map.
+    (ProfileBundleError, ProjectionAvailability.BUNDLE_UNREADABLE),
+)
+
+
+def classify_availability(exc: Exception) -> ProjectionAvailability:
+    """The run-scoped catalog member `exc` means, or an `AssertionError`.
+
+    Never returns a default: an unmapped exception at a run gate would otherwise become a silent
+    new bucket, and the whole point of a closed catalog is that it cannot grow by accident.
+    A `ProjectionError` carrying a PER-LEAD issue is equally a defect here — it means a lead
+    failure reached a run gate — so it asserts rather than being promoted to fatal.
+    """
+    if isinstance(exc, ProjectionError):
+        issue = exc.violation.issue
+        assert issue in ISSUE_SCOPE, f"unmapped ProjectionIssue {issue!r}"
+        scope = ISSUE_SCOPE[issue]
+        assert isinstance(scope, ProjectionAvailability), (
+            f"{issue!r} is a per-lead outcome ({scope!r}), not a run-scoped availability"
+        )
+        return scope
+    for family, availability in FOREIGN_AVAILABILITY:
+        if isinstance(exc, family):
+            return availability
+    raise AssertionError(f"unclassified projection failure {type(exc).__name__}: {exc}")
+
+
+def classify_lead_outcome(exc: Exception) -> ProjectionLeadOutcome:
+    """The per-lead catalog member `exc` means, or an `AssertionError`.
+
+    Asserts on a run-scoped cause: those surface inside the per-lead loop too (`select()` raises
+    `PINNED_SET_EXCEEDS_BUDGET` and `COMPILE_INFRASTRUCTURE_FAILURE` while building one lead), and
+    a caller that fed one here would grant the remaining leads a disposition under a run-wide
+    fault. The caller reads `ISSUE_SCOPE` / `FOREIGN_AVAILABILITY` to route by scope first.
+    """
+    assert isinstance(exc, ProjectionError), (
+        f"unclassified lead failure {type(exc).__name__}: {exc}"
+    )
+    issue = exc.violation.issue
+    assert issue in ISSUE_SCOPE, f"unmapped ProjectionIssue {issue!r}"
+    scope = ISSUE_SCOPE[issue]
+    assert isinstance(scope, ProjectionLeadOutcome), (
+        f"{issue!r} is a run-scoped availability ({scope!r}), not a per-lead outcome"
+    )
+    return scope
+
+
+__all__ = [
+    "FOREIGN_AVAILABILITY",
+    "ISSUE_SCOPE",
+    "ProjectionAvailability",
+    "ProjectionLeadOutcome",
+    "ProjectionRunContext",
+    "classify_availability",
+    "classify_lead_outcome",
+    "resolve_projection_run",
+]

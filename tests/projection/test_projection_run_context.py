@@ -22,6 +22,7 @@ from sqlalchemy import Engine, insert
 
 from boardwatch.cli import projection_cmd
 from boardwatch.core.settings import Settings
+from boardwatch.extract import taxonomy as taxonomy_mod
 from boardwatch.extract.taxonomy import Taxonomy
 from boardwatch.projection import posting as posting_mod
 from boardwatch.projection import run as run_mod
@@ -67,13 +68,17 @@ def _resolve(env: ProjectionEnv, engine: Engine, settings: Settings, **over: obj
 def test_the_run_context_loads_the_taxonomy_exactly_once(
     projection_env: ProjectionEnv, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """Two postings, one taxonomy load.
+    """Two postings, one load *by the run context*.
+
+    Not one load by the run: `run_preflight` owns its own taxonomy load on every `posting_context`
+    call and this test does not count it. What is asserted is that the run context resolves the
+    taxonomy once and `posting_context` scores against that object rather than reloading one.
 
     Counting the CALL is the assertion, not comparing two returned objects: two loads of an
     unchanged file are equal (and `re.compile`'s own cache even makes their patterns identical),
     so no comparison of results can detect the defect this guards.
 
-    Both bound names are patched, and both are load-bearing:
+    All three bound names are patched, and each is load-bearing:
 
     * `run_mod.load_taxonomy` — `run.py` does `from boardwatch.extract.taxonomy import
       load_taxonomy`, so patching `boardwatch.extract.taxonomy` itself would leave that
@@ -83,6 +88,12 @@ def test_the_run_context_loads_the_taxonomy_exactly_once(
       regression that re-adds a per-call `load_taxonomy(...)` to `posting.py` resolves through the
       patched module `__dict__` at call time and is counted, failing this test, instead of passing
       unseen.
+    * `taxonomy_mod.load_taxonomy` — patching only the two bound names above leaves a
+      FUNCTION-LOCAL `from boardwatch.extract.taxonomy import load_taxonomy` inside
+      `posting_context` invisible: it resolves through the source module at call time, not through
+      either patched binding, so a per-posting reload would pass this test. Patching the source
+      module closes that arm. `_seed` and `run_preflight` both bind `load_taxonomy` by name in
+      their own modules, so neither is miscounted by this third patch.
     """
     settings = _settings_over(projection_env, tmp_path)
     engine = _engine(settings)
@@ -98,6 +109,7 @@ def test_the_run_context_loads_the_taxonomy_exactly_once(
 
     monkeypatch.setattr(run_mod, "load_taxonomy", counting)
     monkeypatch.setattr(posting_mod, "load_taxonomy", counting, raising=False)
+    monkeypatch.setattr(taxonomy_mod, "load_taxonomy", counting)
 
     ctx = _resolve(projection_env, engine, settings)
     assert isinstance(ctx, ProjectionRunContext)
