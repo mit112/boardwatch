@@ -127,6 +127,15 @@ class ProjectionAvailability(StrEnum):
     DECLARATION_MISSING = "declaration_missing"
     DECLARATION_UNREADABLE = "declaration_unreadable"
     DECLARATION_INVALID = "declaration_invalid"
+    #: The file `declaration.shell_source` points at (the résumé shell) is broken. Its own member,
+    #: never folded into a DECLARATION_* one: those describe `projection.yaml`, this describes a
+    #: DIFFERENT file with a different remedy, and an availability member whose whole job is to
+    #: name what the operator can act on must not send them to edit the wrong file.
+    #: `INVALID` rather than `UNREADABLE` deliberately: the raise site (`load_shell` in
+    #: `projection/shell.py`) catches `OSError`, `UnicodeDecodeError`, `yaml.YAMLError`,
+    #: `ValidationError` and `ResumeLoadError` in one arm, so the member spans both "cannot be
+    #: read" and "read, but not a valid header/education shell".
+    SHELL_SOURCE_INVALID = "shell_source_invalid"
     BUNDLE_UNREADABLE = "bundle_unreadable"
     PERSONA_INVALID = "persona_invalid"
     SCORER_INVALID = "scorer_invalid"
@@ -187,12 +196,12 @@ ISSUE_SCOPE: Mapping[ProjectionIssue, ProjectionAvailability | ProjectionLeadOut
     ProjectionIssue.SKILL_NOT_RESUME_SURFACED: ProjectionAvailability.DECLARATION_INVALID,
     ProjectionIssue.BULLET_TEXT_ALTERED: ProjectionAvailability.DECLARATION_INVALID,
     ProjectionIssue.BULLET_PREDICATE_NO_FACTS: ProjectionAvailability.DECLARATION_INVALID,
-    # -- shell: the file `declaration.shell_source` names. Its arms are OSError as well as
-    # YAMLError/ValidationError (`shell.py:67`), so "unreadable" is the honest bucket for the
-    # pair; there is no SHELL_* member because the operator's remedy is the same one either
-    # way — fix the file the declaration points at — and a second member would be a bucket
-    # nothing routes on.
-    ProjectionIssue.SHELL_SOURCE_UNREADABLE: ProjectionAvailability.DECLARATION_UNREADABLE,
+    # -- shell: the file `declaration.shell_source` names — a DIFFERENT file from the
+    # declaration, with a different remedy, so it gets its own member rather than a
+    # DECLARATION_* one. `load_shell` (`shell.py:55-71`) catches OSError, UnicodeDecodeError,
+    # yaml.YAMLError, ValidationError and ResumeLoadError in one arm, which is why the member is
+    # named INVALID: it spans "cannot be read" and "read, but not a valid shell".
+    ProjectionIssue.SHELL_SOURCE_UNREADABLE: ProjectionAvailability.SHELL_SOURCE_INVALID,
     # -- persona: the registry is loaded once per run ------------------------------------
     ProjectionIssue.PERSONA_DECLARES_ENTRIES: ProjectionAvailability.PERSONA_INVALID,
     # -- owner gate: one stamp per (declaration, bundle) pair, not per posting -----------

@@ -126,6 +126,31 @@ def test_an_absent_declaration_is_not_a_corrupt_one() -> None:
     )
 
 
+def test_a_broken_shell_source_is_not_a_broken_declaration() -> None:
+    """`SHELL_SOURCE_UNREADABLE` describes the file `declaration.shell_source` points at; the
+    DECLARATION_* members describe `projection.yaml`. Two files, two remedies — folding them would
+    make an availability member send the operator to edit the wrong file, which is the one thing
+    this catalog exists to prevent.
+
+    Pinned as a NON-IDENTITY as well as an identity: asserting only the positive row would still
+    pass if a later edit added a second issue mapping to DECLARATION_UNREADABLE, but re-pointing
+    this row back at DECLARATION_UNREADABLE has to fail here.
+    """
+    assert (
+        ISSUE_SCOPE[ProjectionIssue.SHELL_SOURCE_UNREADABLE]
+        is ProjectionAvailability.SHELL_SOURCE_INVALID
+    )
+    assert (
+        ISSUE_SCOPE[ProjectionIssue.SHELL_SOURCE_UNREADABLE]
+        is not ProjectionAvailability.DECLARATION_UNREADABLE
+    )
+    # The remedy the member names is a different file's, so the two must not share a value either.
+    assert (
+        ProjectionAvailability.SHELL_SOURCE_INVALID.value
+        != ProjectionAvailability.DECLARATION_UNREADABLE.value
+    )
+
+
 def test_a_missing_extraction_and_an_empty_skill_set_are_different() -> None:
     """`jd_skills_for` returns None for missing extraction and a valid empty set separately, and
     `select` routes an empty set to the curated no-match fallback. Collapsing them would turn a
