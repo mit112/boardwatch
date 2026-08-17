@@ -83,8 +83,12 @@ def test_the_real_tree_passes_all_three_rules() -> None:
     assert check_fixture_review_due(repo, today=date(2026, 8, 17)) == []
 
 
-def test_every_registered_provider_has_provenance_and_a_future_deadline() -> None:
-    """Pins the gate's own premise: it lands green, and each deadline is a real future date."""
+def test_every_registered_provider_has_a_wellformed_provenance_entry() -> None:
+    """Shape only -- whether a deadline has PASSED is R15's job, checked against a clock.
+
+    Deliberately not asserting the deadlines are in the future: that would make this test go
+    red with the calendar rather than with a code change, and R15 already reports it.
+    """
     assert set(FIXTURE_PROVENANCE) == set(PROVIDER_NAMES)
     for name, record in FIXTURE_PROVENANCE.items():
         assert record.captured <= record.review_by, name
@@ -111,7 +115,7 @@ def test_registering_a_seventh_provider_without_fixtures_fails(
 
 
 def test_a_registered_provider_with_no_fixture_directory_fails() -> None:
-    """The headline case: register a seventh provider, capture nothing, and be caught."""
+    """The same set difference from the other side: the directory goes, the registry stays."""
     violations = check_fixture_coverage(_without("tests/fixtures/lever"))
     assert _rules(violations) == {"R13"}
     assert any("is in the registry but has no fixture directory" in v.detail for v in violations)
@@ -170,6 +174,48 @@ def test_enumeration_is_git_tracked_so_untracked_debris_cannot_fail_the_gate(
         assert check_fixture_coverage(repo) == []
     finally:
         debris.unlink()
+
+
+def test_a_nested_readme_cannot_stand_in_for_the_pinned_one(tmp_path: Path) -> None:
+    """The bypass that got through design review, code, and twenty-one other mutation tests.
+
+    Bucketing a provider's files by BASENAME let `ashby/docs/README.md` satisfy R13's presence
+    check while `ashby/README.md` was deleted; R14 then skipped the absent file, deferring to
+    the R13 that had just been fooled. All fifteen rules reported clean while the one document
+    R14 exists to pin was replaced with another provider's content.
+    """
+    gh = REPO_ROOT / readme_path("greenhouse")
+    kept = tuple(f for f in _real().files if f.path != readme_path("ashby"))
+    nested = RepoFile(
+        path="tests/fixtures/ashby/docs/README.md",
+        abspath=gh,
+        is_text=True,
+        text=gh.read_text(encoding="utf-8"),
+    )
+    repo = Repo(root=REPO_ROOT, files=kept + (nested,), mode="git")
+
+    coverage = check_fixture_coverage(repo)
+    assert any("never subdirectories" in v.detail for v in coverage)
+    assert any("no README.md" in v.detail for v in coverage)
+    # R14 must report the absent pin ITSELF rather than deferring.
+    pins = check_fixture_pins(repo)
+    assert _rules(pins) == {"R14"}
+    assert any("the pinned README is not in the tree" in v.detail for v in pins)
+
+
+def test_a_nested_file_is_refused_even_when_the_real_readme_survives(tmp_path: Path) -> None:
+    """The weaker variant: an extra, unpinned field-contract document hidden one level down."""
+    extra = _plus("tests/fixtures/workday/nested/README.md", tmp_path)
+    violations = check_fixture_coverage(extra)
+    assert _rules(violations) == {"R13"}
+    assert any("never subdirectories" in v.detail for v in violations)
+
+
+def test_a_second_markdown_file_in_a_provider_directory_is_refused(tmp_path: Path) -> None:
+    """R7 cannot see .md and R14 pins README.md by name, so a second .md is pinned by nothing."""
+    violations = check_fixture_coverage(_plus("tests/fixtures/workday/PAGINATION.md", tmp_path))
+    assert _rules(violations) == {"R13"}
+    assert any("only README.md may be Markdown here" in v.detail for v in violations)
 
 
 # --------------------------------------------------------------------------- R14 pins

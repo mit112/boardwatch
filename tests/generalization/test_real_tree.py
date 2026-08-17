@@ -102,7 +102,7 @@ def test_main_returns_two_when_discovery_fails(
 
 
 def test_the_report_sorts_r2_before_r10(monkeypatch: MonkeyPatch, capsys: CaptureFixture[str]) -> None:
-    """Plain string order puts 'R10' before 'R2', which is unreadable in an 11-rule report."""
+    """Plain string order puts 'R10' before 'R2', which is unreadable in a 15-rule report."""
 
     def noisy(repo: Repo) -> list[Violation]:
         return [

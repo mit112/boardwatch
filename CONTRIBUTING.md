@@ -33,7 +33,11 @@ These checks catch identifier shapes, new data files and changed defaults, so th
 land unnoticed. They do not and cannot catch personal values written into Python source or
 prose; code review is the control there. For a legitimate block, add a reviewed entry to
 `tools/generalization/allowlists.py` for the shape and inventory rules, or a reviewed update
-to `tools/generalization/snapshots.py` for the pinned defaults. The collection-defaults rule
+to `tools/generalization/snapshots.py` for the pinned defaults. For the fixture rules
+(R13/R14/R15), the remedy is `python -m tools.fixture_refresh` — `--check` to see what drifted,
+`--record` to re-pin a reviewed fixture README, and `--extend <provider> --days N --reason "…"`
+to accept an overdue capture review when you cannot reach the live API. It will not re-record
+the corpus row count; that one is a deliberate hand edit. The collection-defaults rule
 has no opt-out by design, so the remedy there is to restructure the value. Weakening or
 removing a check is a security-sensitive change and will be reviewed as one.
 

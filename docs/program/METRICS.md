@@ -4233,7 +4233,7 @@ been promoted to a revision or rendered; that is the owner's confirm/attest/appr
 | Claim (brief + the 2026-08-15 audit) | Measured |
 |---|---|
 | "No fixture refresh or drift-detection tooling at all" | **False for content pins.** `SHIPPED_DATA` holds **31/31** fixture JSONs with sha256, enforced by R7 (`inventory.py:195-212`) in `make check` **and** its own CI job |
-| "A 7th provider passes every gate" | **Overstated.** `test_provider_registry.py:24,30` pin the six-name set; the relational gap (registry vs disk) is real, and nothing checked it |
+| "A 7th provider passes every gate" | **Overstated.** `test_provider_registry.py:25,31` pin the six-name set; the relational gap (registry vs disk) is real, and nothing checked it |
 | 37 files / 6 dirs / 6 providers / 3 `tools/` entries | Confirmed |
 | ~987 corpus rows | **987** exactly (`test_eligibility_corpus.py:1022`) |
 
@@ -4271,7 +4271,7 @@ debris — that test asserts `repo.mode == "git"` so it cannot pass vacuously in
 R14 fires on: an edited README; a flipped corpus verdict; **a `CASES[0] = …` line appended below the
 literal** (the literal still reads 987 rows, so a parsed-rows digest would stay green — this is why the
 pin is whole-file); a truncated corpus **whose own hash is pinned**, where only the row count fires
-(500 vs 987, proving the second path is independent); a corpus with no `CASES` literal; a missing corpus.
+(500 vs 987); a corpus with no `CASES` literal; a missing corpus.
 
 R15 fires on: every deadline past; a missing provenance entry; a stale one; `review_by < captured`; a
 blank extension reason; out-of-order extensions. It stays green **on** the due date and reds the day

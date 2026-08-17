@@ -9614,7 +9614,7 @@ equals the hash on disk. Building a second manifest would have duplicated a work
 deadlines, in `tools/generalization/fixtures.py`; the write side is a separate `tools/fixture_refresh`.
 A standalone `Makefile` target was rejected on evidence: **`index-check` runs in `make check` but has no
 CI job**, and the only `tools.` invocation in CI is `python -m tools.generalization`. A new target would
-have been locally-green and CI-blind. Cost measured at ~30 ms.
+have been locally-green and CI-blind. Cost measured at 26.3 ms (R13 0.97, R14 25.31, R15 0.01).
 
 **R15 fails rather than warns, and the drain is what makes that defensible.** A warning loses to a
 6,439-test run. A single global max-age constant was rejected because bumping one number silences six
@@ -9648,6 +9648,17 @@ unregenerable**. And four fixtures are read by no test: `workable/dead_404.json`
 - **Enumerating fixture directories with `Path.iterdir()`.** Rejected: untracked scratch would fail the
   gate locally and vanish in CI. Enumeration reads `repo.files` (git-tracked), pinned by a test that
   asserts `repo.mode == "git"` so it cannot pass vacuously in walk mode.
+- **Letting `fixture_refresh --record` rewrite `CORPUS_ROWS`.** Written that way, then removed in the
+  same change after code review. `--record` derived the pin AND the row count from one read of the
+  corpus and wrote both, so a corpus truncated to 500 rows satisfied each of them at once — the "second
+  path" was the same path, and the only flow in which the two were independent was a monkeypatch no
+  operator uses. `--record` now prints the measured count and **refuses** (exit 2) when it disagrees
+  with the constant, directing the operator to a hand edit. **The independence is the human, not the
+  ast.** Also bucketing a provider's files by **basename**: `ashby/docs/README.md` satisfied R13's
+  presence check while the pinned `ashby/README.md` was deleted, and R14 skipped the absent file to
+  defer to the R13 that had just been fooled — all fifteen rules green with the pinned document
+  replaced. Fixed three ways: relative paths not basenames, subdirectories refused outright, and R14
+  reporting its own missing pin.
 - **A rolling global `max_age_days`.** One edit erasing six independent signals.
 - **Warn locally, fail only in CI.** Manufactures the "green `make check` is not green CI" split this
   repo has already been bitten by.
@@ -9678,3 +9689,14 @@ unregenerable**. And four fixtures are read by no test: `workable/dead_404.json`
 - **Name the guarantee you actually provide.** The gap between "fixtures are fresh" and "someone was due
   to look" is the whole value of the check, and a name that oversells it converts a useful signal into
   a false assurance.
+- **A "second path" is only second if the REMEDY cannot move both ends.** The corpus row count was
+  argued independent because it is read by `ast` and the pin by bytes. But the documented repair
+  recomputed both from one read, so in the only flow anyone runs they moved together. Ask what the
+  fixing command writes, not just what the checking code reads.
+- **Two rules that defer to each other are one rule with a hole.** R14 skipped a missing file "because
+  R13 owns that report", and the bypass was precisely to satisfy R13's report while defeating R14's.
+  A rule that owns a pin must report that pin's absence itself, even at the cost of a duplicate line.
+- **Mutation tests inherit the shape of the author's imagination.** Twenty-one mutations all changed
+  file *contents*; the bypass changed the *directory structure*, and nothing in the suite could see it.
+  When enumerating mutations, walk the categories — content, structure, absence, ordering, encoding —
+  rather than listing the ones that come to mind.

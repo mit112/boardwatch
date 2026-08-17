@@ -37,32 +37,32 @@ from tools.generalization.discovery import (
 )
 from tools.generalization.fixtures import (
     CORPUS_PATH,
-    CORPUS_SYMBOL,
+    CORPUS_ROWS,
     FIXTURE_PROVENANCE,
     check_fixture_coverage,
     check_fixture_pins,
     check_fixture_review_due,
+    count_corpus_rows,
     readme_path,
 )
 from tools.generalization.model import Violation
 
 
-def _measure(root: Path) -> tuple[dict[str, str], str, int]:
-    """The values a human cannot compute by hand: seven hashes and a row count."""
+def _measure(root: Path) -> tuple[dict[str, str], str, int | None]:
+    """The seven content hashes a human cannot compute by hand, plus the observed row count.
+
+    The row count is measured for REPORTING only -- `--record` never writes it. See
+    `CORPUS_ROWS` in the gate module: letting this tool rewrite that constant from the same
+    read that produced the pin collapsed the two into one path, and a truncated corpus went
+    green on both.
+    """
     readmes = {
         provider: hashlib.sha256((root / readme_path(provider)).read_bytes()).hexdigest()
         for provider in sorted(FIXTURE_PROVENANCE)
     }
     corpus_bytes = (root / CORPUS_PATH).read_bytes()
     corpus_pin = hashlib.sha256(corpus_bytes).hexdigest()
-    rows = 0
-    for node in ast.parse(corpus_bytes.decode("utf-8")).body:
-        if not isinstance(node, ast.AnnAssign):
-            continue
-        if not (isinstance(node.target, ast.Name) and node.target.id == CORPUS_SYMBOL):
-            continue
-        rows = len(node.value.elts) if isinstance(node.value, ast.List) else 0
-    return readmes, corpus_pin, rows
+    return readmes, corpus_pin, count_corpus_rows(corpus_bytes.decode("utf-8"))
 
 
 def _report(violations: list[Violation]) -> int:
@@ -138,18 +138,33 @@ def main(argv: list[str] | None = None) -> int:
         )
         return 0
 
+    if not args.record:
+        # Measurement stays OUT of this path deliberately. It used to run unconditionally, and
+        # a deleted README then raised OSError -> exit 2 ("could not run") for a condition R13
+        # reports as exit 1 (drift) -- the drain failing on exactly the drift it drains.
+        return _report(
+            check_fixture_coverage(repo)
+            + check_fixture_pins(repo)
+            + check_fixture_review_due(repo)
+        )
+
     try:
         readmes, corpus_pin, rows = _measure(root)
     except (OSError, SyntaxError) as exc:
         print(f"fixture-refresh: FAILED, {exc}", file=sys.stderr)
         return 2
 
-    if not args.record:
-        return _report(
-            check_fixture_coverage(repo)
-            + check_fixture_pins(repo)
-            + check_fixture_review_due(repo)
+    if rows != CORPUS_ROWS:
+        # Refuse rather than re-record. The row count is the one value here whose independence
+        # comes from a human having agreed to it; writing it from this same read is what made
+        # a 500-row truncated corpus pass both checks at once.
+        print(
+            f"fixture-refresh: FAILED, the corpus holds {rows} rows but CORPUS_ROWS is "
+            f"{CORPUS_ROWS}. This tool will not re-record that number. Confirm the corpus is "
+            f"correct, then edit CORPUS_ROWS in {PROVENANCE_MODULE} by hand and re-run.",
+            file=sys.stderr,
         )
+        return 2
 
     changes = [
         f"  {provider}: README {FIXTURE_PROVENANCE[provider].readme_pin[7:19]} -> {pin[:12]}"
@@ -158,7 +173,7 @@ def main(argv: list[str] | None = None) -> int:
     ]
     try:
         original = (root / PROVENANCE_MODULE).read_text(encoding="utf-8")
-        updated = record_pins(original, readmes=readmes, corpus_pin=corpus_pin, rows=rows)
+        updated = record_pins(original, readmes=readmes, corpus_pin=corpus_pin)
     except RewriteError as exc:
         print(f"fixture-refresh: FAILED, {exc}", file=sys.stderr)
         return 2
@@ -173,7 +188,7 @@ def main(argv: list[str] | None = None) -> int:
     print(f"fixture-refresh: re-recorded {PROVENANCE_MODULE}")
     for line in changes:
         print(line)
-    print(f"  corpus: {rows} rows, pin {corpus_pin[:12]}")
+    print(f"  corpus: pin {corpus_pin[:12]} ({rows} rows, unchanged and not re-recorded)")
     print("\nReview the diff before committing: a re-recorded pin is a reviewed pin.")
     return 0
 

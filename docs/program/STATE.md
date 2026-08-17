@@ -172,17 +172,14 @@ the cut lines fix no score threshold, so `ADMISSION_FLOOR` stays `Decimal(0)` (D
      `header/*`).
 
 **Fixture + corpus drift — the offline half is BUILT and gated (D-227).** R13/R14/R15 in
-`tools/generalization/fixtures.py` run inside `make check` and the CI `generalization` job: R13 diffs the
-fixture directories against `PROVIDER_NAMES` both ways, R14 pins the six fixture READMEs and the 987-row
-corpus (the 31 fixture JSONs were **already** pinned by R7 — do not build a second manifest), R15 fails on
-an overdue per-provider `review_by`. **R15 enforces that somebody reviewed on schedule, NOT that a fixture
-matches production** — `python -m tools.fixture_refresh --extend <p> --days N --reason "…"` restores green
-offline, by design. Green today; **first red 2026-09-11** (greenhouse). Re-record pins with
-`--record`. *Still owner-gated:* the live-API comparison, which needs network and an attended session.
-**Two findings, neither fixed:** the corpus docstring points at `scratchpad/gen_corpus.py`, **never
-committed** and under a gitignored path, so the 987-row oracle is **unregenerable**; and four fixtures are
-read by no test (`workable/dead_404.json`, `workable/normal_response_headers.json`,
-`smartrecruiters/` and `workday/normal_response_headers.json`).
+`tools/generalization/fixtures.py`, inside `make check` and the CI `generalization` job. **The 31 fixture
+JSONs were ALREADY pinned by R7 — do not build a second manifest.** **R15 enforces that somebody reviewed
+on schedule, NOT that a fixture matches production**; `tools.fixture_refresh --extend` restores green
+offline by design. **On 2026-09-11 (greenhouse) the whole `make check` reds**, not one rule — several
+real-tree tests assert the gate is clean. Drain it or re-capture. *Owner-gated:* the live-API comparison.
+**Unfixed:** the corpus's generator `scratchpad/gen_corpus.py` was **never committed**, so the 987-row
+oracle is **unregenerable**; and four fixtures are read by no test (`workable/dead_404.json`, plus
+`normal_response_headers.json` under `workable/`, `smartrecruiters/` and `workday/`).
 
 **Carried authoring facts (D-185/186/190/191).** **Three guarantees are each narrower than their name**, and
 all three cost a real defect: **`approve` does NOT validate** (only `promote` refuses); **a plain `validate`

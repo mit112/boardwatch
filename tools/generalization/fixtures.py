@@ -36,9 +36,7 @@ of sliding quietly.
 
 Provenance lives in this module as a typed dict rather than a data file for one reason: this is
 tools CODE, not repo DATA, so it stays outside R7's inventory scope and needs no pin of its own,
-and `mypy --strict` checks it. (An earlier draft justified it as avoiding a "recursion" with R7.
-That was wrong -- a JSON manifest would simply need one more hand-maintained pin, like every
-other data file -- and the claim is recorded here only so it is not re-derived.)
+and `mypy --strict` checks it.
 """
 
 from __future__ import annotations
@@ -61,12 +59,6 @@ CORPUS_PATH = "tests/pipeline/test_eligibility_corpus.py"
 CORPUS_SYMBOL = "CASES"
 
 REFRESH_HINT = "Run `python -m tools.fixture_refresh --check` to see what changed."
-
-# The only non-directory entries allowed at the top level of tests/fixtures/. Closed: anything
-# else is a violation, never a new bucket. Empty today, and deliberately so -- every fixture
-# belongs to exactly one provider, so a file loose at the root has no owner.
-ALLOWED_ROOT_FILES: frozenset[str] = frozenset()
-
 
 @dataclass(frozen=True)
 class Extension:
@@ -132,10 +124,13 @@ FIXTURE_PROVENANCE: dict[str, FixtureProvenance] = {
 # platforms because .gitattributes pins eol=lf repo-wide for exactly this reason.
 CORPUS_PIN = "sha256:dfc6c7f16600990d97b7c7c6b892a1c965c023ea879745c1f5df0de979c7b619"
 
-# Counted through a different path than the pin (ast, not bytes), so a refresh that blessed a
-# truncated corpus would still be caught. CLAUDE.md: a component's self-report is not
-# verification. The corpus asserts this number itself at its own tail -- that assert lives
-# INSIDE the file being tampered with, which is why it is restated out here.
+# A HUMAN-REVIEWED constant, and that is the whole of its value. It is counted by ast rather than
+# by bytes, but that alone would not make it a second path: an earlier version let
+# `fixture_refresh --record` rewrite this number from the same read that produced CORPUS_PIN, and
+# a 500-row truncated corpus then went green on both. So `--record` REFUSES to write this line --
+# it prints the measured count and stops, and a human edits it. The independence is the human,
+# not the ast. The corpus asserts this number itself at its own tail; that assert lives INSIDE
+# the file being tampered with, which is why it is restated out here.
 CORPUS_ROWS = 987
 
 
@@ -152,11 +147,17 @@ def _sha256(repo: Repo, path: str) -> str | None:
 
 
 def _tracked_under_fixtures(repo: Repo) -> tuple[dict[str, set[str]], set[str]]:
-    """Provider directory -> its file names, plus any file loose at the fixture root.
+    """Provider directory -> the paths inside it RELATIVE to that directory, plus any file
+    loose at the fixture root.
 
     Enumerated from `repo.files` (git-tracked) rather than by walking the filesystem: an
     untracked scratch file under tests/fixtures/ would fail this gate locally and then vanish
     in CI, which is a worse gate than none.
+
+    Relative paths, NOT basenames. Bucketing by basename let `ashby/docs/README.md` satisfy
+    R13's "has a README" check while `ashby/README.md` was deleted, and R14 then skipped the
+    absent file -- so the one document R14 exists to pin could be replaced wholesale with all
+    fifteen rules green. A nested path must stay distinguishable from a top-level one.
     """
     dirs: dict[str, set[str]] = {}
     loose: set[str] = set()
@@ -167,7 +168,7 @@ def _tracked_under_fixtures(repo: Repo) -> tuple[dict[str, set[str]], set[str]]:
         if len(parts) == 3:
             loose.add(parts[2])
             continue
-        dirs.setdefault(parts[2], set()).add(parts[-1])
+        dirs.setdefault(parts[2], set()).add("/".join(parts[3:]))
     return dirs, loose
 
 
@@ -196,19 +197,44 @@ def check_fixture_coverage(repo: Repo) -> list[Violation]:
                 "or restore the provider it belongs to",
             )
         )
-    for name in sorted(loose - ALLOWED_ROOT_FILES):
+    for name in sorted(loose):
         violations.append(
             Violation(
                 "R13",
                 f"{FIXTURE_ROOT}/{name}",
                 None,
                 "file at the fixture root belongs to no provider. Move it under the provider "
-                "directory it documents",
+                "directory it documents, or widen this rule deliberately if the fixture root "
+                "ever needs a file of its own",
             )
         )
 
     for provider in sorted(PROVIDER_NAMES & set(dirs)):
         names = dirs[provider]
+        for nested in sorted(name for name in names if "/" in name):
+            violations.append(
+                Violation(
+                    "R13",
+                    f"{FIXTURE_ROOT}/{provider}/{nested}",
+                    None,
+                    "a provider directory holds files, never subdirectories. Nesting hides a "
+                    "file from the rule that pins it: a nested README.md once satisfied the "
+                    "presence check below while the pinned top-level one was deleted",
+                )
+            )
+        for stray in sorted(
+            name for name in names if name.endswith(".md") and name != "README.md"
+        ):
+            violations.append(
+                Violation(
+                    "R13",
+                    f"{FIXTURE_ROOT}/{provider}/{stray}",
+                    None,
+                    "only README.md may be Markdown here. R7 cannot see .md at all and R14 "
+                    "pins README.md by name, so a second .md file is pinned by nothing and "
+                    "can state anything",
+                )
+            )
         if "README.md" not in names:
             violations.append(
                 Violation(
@@ -231,22 +257,26 @@ def check_fixture_coverage(repo: Repo) -> list[Violation]:
     return violations
 
 
-def _corpus_rows(repo: Repo) -> int | None:
-    """Row count of the corpus literal, read by ast so it never imports the module.
+def count_corpus_rows(text: str) -> int | None:
+    """Rows in the corpus literal, by ast so the module is never imported. None if unreadable.
 
-    Deliberately a different path from the byte pin: `ast.parse` measures the list's shape
-    without evaluating a single row, so a pin recorded over a truncated file still fails here.
+    The ONE implementation. `fixture_refresh` measures through this same function rather than
+    keeping its own walk: a second copy drifted on two points at once (which duplicate
+    `CASES` wins, and whether an unreadable literal counts as 0), which would have let the
+    tool record a number the gate disagreed with.
     """
-    entry = repo.by_path(CORPUS_PATH)
-    if entry is None:
-        return None
-    for node in ast.parse(entry.text).body:
+    for node in ast.parse(text).body:
         if not isinstance(node, ast.AnnAssign):
             continue
         if not (isinstance(node.target, ast.Name) and node.target.id == CORPUS_SYMBOL):
             continue
         return len(node.value.elts) if isinstance(node.value, ast.List) else None
     return None
+
+
+def _corpus_rows(repo: Repo) -> int | None:
+    entry = repo.by_path(CORPUS_PATH)
+    return None if entry is None else count_corpus_rows(entry.text)
 
 
 def check_fixture_pins(repo: Repo) -> list[Violation]:
@@ -257,7 +287,22 @@ def check_fixture_pins(repo: Repo) -> list[Violation]:
         path = readme_path(provider)
         actual = _sha256(repo, path)
         if actual is None:
-            continue  # R13 owns the missing-file report; two rules saying it is noise.
+            # Deliberately NOT deferred to R13. An earlier version skipped here on the grounds
+            # that R13 owns the missing-file report, and that made the two rules jointly
+            # bypassable: nest a README one level down and R13's presence check was satisfied
+            # while this pin was never compared. A rule that owns a pin reports its own
+            # absence.
+            violations.append(
+                Violation(
+                    "R14",
+                    path,
+                    None,
+                    "the pinned README is not in the tree. It carries the capture date and "
+                    "the recorded field contract, so losing it discards the provenance this "
+                    "pin exists to protect",
+                )
+            )
+            continue
         expected = FIXTURE_PROVENANCE[provider].readme_pin.removeprefix("sha256:")
         if actual != expected:
             violations.append(
