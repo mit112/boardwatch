@@ -459,3 +459,64 @@ def test_a_named_range_end_with_no_fact_is_fatal_not_silently_open(
         projection_candidate(projection_env.bundle_root, decl, as_of=AS_OF)
     assert exc.value.violation.issue is ProjectionIssue.UNRESOLVED_PLACEHOLDER
     assert "certification.expiry" in exc.value.violation.message
+
+
+def test_a_bulletless_declaration_yields_an_entry_with_no_bullets(
+    projection_env,  # noqa: F811
+    tmp_path: Path,
+) -> None:
+    """D-221's third state, resolved: an entry that declares `bulletless` renders its heading,
+    title and dates with an empty bullet list, and carries the declaration forward on the model so
+    the render gate can tell this apart from an entry whose bullets failed to resolve. The
+    neighbouring `BULLET_PREDICATE_NO_FACTS` test is the other half of the pair — a predicate that
+    matches nothing is still fatal, because only a declaration can carry intent."""
+    decl = tmp_path / "projection.yaml"
+    _write_declaration(
+        decl,
+        [
+            {
+                "entity_id": "employment.example-labs",
+                "kind": "experience",
+                "pinned": True,
+                "heading": "{@display_name}",
+                "title": "{employment.title}",
+                "bulletless": True,
+            }
+        ],
+    )
+    candidate = projection_candidate(projection_env.bundle_root, decl, as_of=AS_OF)
+
+    (entry,) = candidate.entries
+    assert entry.bullets == []
+    assert entry.bulletless is True
+    # The rest of the entry still resolves: a bulletless entry is a FULL entry minus its bullets,
+    # which is the whole point — the timeline gap it covers is what puts it on the page.
+    assert entry.heading == "Example Labs"
+    assert entry.title == "Software Engineer"
+
+
+def test_an_entry_that_declares_no_bullet_source_is_not_marked_bulletless(
+    projection_env,  # noqa: F811
+    tmp_path: Path,
+) -> None:
+    """The flag is set by the DECLARATION, never inferred from the resolved bullet list. An entry
+    that simply names no `claims` and no `bullet_predicates` resolves to zero bullets today and
+    keeps `bulletless` unset — so it is still refused downstream by `validate_slots` rather than
+    quietly rendering as the declared third state."""
+    decl = tmp_path / "projection.yaml"
+    _write_declaration(
+        decl,
+        [
+            {
+                "entity_id": "employment.example-labs",
+                "kind": "experience",
+                "pinned": True,
+                "heading": "{@display_name}",
+            }
+        ],
+    )
+    candidate = projection_candidate(projection_env.bundle_root, decl, as_of=AS_OF)
+
+    (entry,) = candidate.entries
+    assert entry.bullets == []
+    assert entry.bulletless is None

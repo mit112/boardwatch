@@ -93,6 +93,27 @@ class EntryDeclaration(_Strict):
     #: predicate here — declared, never derived, like `kind` — turns them into bullets without a
     #: ClaimRecord. Empty means the entry's bullets come only from `claims`.
     bullet_predicates: tuple[str, ...] = ()
+    #: Declares that this entry renders with NO bullets — the "role + organisation + dates only"
+    #: state (D-221). Declared, never inferred, for the same reason `kind` is: an entry that merely
+    #: *happens* to resolve to zero bullets is an accident (a mistyped predicate, a source nobody
+    #: named), and rendering it silently would drop the owner's accomplishments off the page with
+    #: nothing on the page to reveal the loss. `BULLET_PREDICATE_NO_FACTS` is deliberately
+    #: unaffected: a declared predicate that matches nothing stays fatal, which is why this flag
+    #: forbids declaring a bullet source at all rather than excusing one that came up empty.
+    bulletless: bool = False
+
+    @model_validator(mode="after")
+    def _bulletless_declares_no_bullet_source(self) -> EntryDeclaration:
+        # `bulletless` asserts the entry has no bullets; `claims`/`bullet_predicates` name where
+        # its bullets come from. Together they are a contradiction, and honouring either side
+        # would make the declaration mean something its author did not write. Refuse both-ways
+        # rather than pick a precedence.
+        if self.bulletless and (self.claims or self.bullet_predicates):
+            raise ValueError(
+                "a bulletless entry must declare no bullet source: drop `claims` and "
+                "`bullet_predicates`, or drop `bulletless`"
+            )
+        return self
 
     @model_validator(mode="after")
     def _link_fields_are_paired(self) -> EntryDeclaration:

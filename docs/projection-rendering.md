@@ -85,6 +85,12 @@ honest.
   in predicate-declaration then index order. This is how accomplishment/contribution facts reach the
   page without a `ClaimRecord`. A predicate that resolves to no fact is refused (not a silent gap); a
   value that is not a résumé line (a skill reference, a list) is refused too.
+- `entries[].bulletless` — set it to `true` to declare that the entry renders with **no bullets**: role,
+  organisation and dates only. A bulletless entry must name no bullet source at all — declaring it
+  alongside `claims` or `bullet_predicates` is a contradiction and is refused. This is the *only* legal
+  route to an entry with no bullets: an entry that merely resolves to zero bullets is still refused at
+  the render gate, because an absence on its own cannot say whether it was meant. Useful when a role
+  belongs on the page (it closes a gap in your timeline) but nothing has shipped under it yet.
 - `entries[].kind` — `experience` or `project`, declared not derived: it decides the page section, and
   an out-of-catalog value would silently drop the entry, so it is a closed catalog.
 
@@ -119,6 +125,6 @@ scorer (`total_distinct`, `coverage_then_density`, `mean_top_k`) to override it.
 
 Nothing here is specific to any one person or field. The mechanism — declaration, shell, skill
 categories, predicates — is generic; what makes it *your* résumé is your own bundle, projection, and
-shell layered on top. A résumé with no skills omits the Skills section; an entry with no bullets
-renders its heading alone; a category with no résumé-surfaced skill is dropped — each an empty-section
-guard, so a field whose résumé looks nothing like a software résumé still renders cleanly.
+shell layered on top. A résumé with no skills omits the Skills section; an entry that declares
+`bulletless` renders its heading alone; a category with no résumé-surfaced skill is dropped — each an
+empty-section guard, so a field whose résumé looks nothing like a software résumé still renders cleanly.

@@ -243,3 +243,38 @@ def test_an_unknown_key_inside_a_declared_range_is_malformed(tmp_path: Path) -> 
     with pytest.raises(ProjectionError) as exc:
         load_declaration(_write(tmp_path, body))
     assert exc.value.violation.issue is ProjectionIssue.MALFORMED_DECLARATION
+
+
+def test_a_bulletless_entry_declares_no_bullet_source(tmp_path: Path) -> None:
+    """"Role + organisation + dates only" is a legal third state, but only when it is SAID
+    (D-221). The flag is what separates it from an entry whose bullets failed to resolve."""
+    body = MINIMAL.replace("claims: [claim.packet-pantry.backend.001]", "bulletless: true")
+    decl = load_declaration(_write(tmp_path, body))
+    assert decl.entries[0].bulletless is True
+    assert decl.entries[0].claims == ()
+    assert decl.entries[0].bullet_predicates == ()
+
+
+def test_a_bulletless_entry_that_also_declares_a_bullet_source_is_fatal(tmp_path: Path) -> None:
+    """`bulletless` asserts there are no bullets; `bullet_predicates` names where bullets come
+    from. Honouring either side of that contradiction would render a document its author did not
+    declare, so the pair is refused rather than given a precedence order."""
+    body = MINIMAL.replace(
+        "claims: [claim.packet-pantry.backend.001]",
+        "bulletless: true\n    bullet_predicates: [project.contribution]",
+    )
+    with pytest.raises(ProjectionError) as exc:
+        load_declaration(_write(tmp_path, body))
+    assert exc.value.violation.issue is ProjectionIssue.MALFORMED_DECLARATION
+
+
+def test_a_bulletless_entry_that_also_declares_claims_is_fatal(tmp_path: Path) -> None:
+    """The same contradiction reached through the OTHER bullet source, so the refusal cannot be
+    satisfied by a check that only knows about `bullet_predicates`."""
+    body = MINIMAL.replace(
+        "claims: [claim.packet-pantry.backend.001]",
+        "claims: [claim.packet-pantry.backend.001]\n    bulletless: true",
+    )
+    with pytest.raises(ProjectionError) as exc:
+        load_declaration(_write(tmp_path, body))
+    assert exc.value.violation.issue is ProjectionIssue.MALFORMED_DECLARATION
