@@ -4616,3 +4616,23 @@ described the instrument, not the org. The finding was scoped to the one repo ac
 **Gate B's "0 blockers" was never a claim about truth.** Nothing in the bundle's validation layer can
 compare a numeral to the world. The 42 audited PDFs were rendered from **revision 21** and no longer match
 what the pipeline produces; whether a re-render and re-audit is owed is the owner's call.
+
+### Session close — what was verified at the end
+
+| Check | Result |
+|---|---|
+| `main` | **`0b054ed`** — both PRs merged (#80, #81), tree clean |
+| Bundle | **revision 22**, projection stamp bound to `14fd7d41…` |
+| Live store | `job_dispositions` **0**, `runs` **22**, `applications` **0** — untouched all session |
+| Fresh render from rev 22 | 3 leads, **3 PDFs, 1 page each**, exit 0, against a store COPY |
+
+**A claim retracted at close.** The session reported "PR #81 merged" on the strength of a background
+waiter's completion notification. It had **not** merged — `main` was still at `88b57b1`, and the merge had
+to be run. The waiter's exit code described **the polling loop**, not the merge, which is the same failure
+the session had already flagged once that day about a different waiter. *A notification that a watcher
+finished is not a statement about what it was watching.* Verify the end state, not the watcher.
+
+**Also noted:** the fresh rev-22 render did **not** contain the corrected StreakSync bullet — Stage 2 chose
+Hookrail alone as the project for that Stripe backend role. Per-JD selection means any single PDF is a
+subset, so *"the fix is live"* has to be verified against the bundle or a render that selects the entity,
+never against an arbitrary output.

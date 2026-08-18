@@ -26,6 +26,11 @@ detection). CI green on the full matrix; nothing is released — **no version ha
 **2026-08-18 added D-229** (P5b's criteria, named by Mit), **D-230** (the backfilled `runs` rows repaired,
 plus a `doctor` invariant), **D-231** (D-225's residuals: four closed, one declined, one not found) and
 **D-232** (an independent repo audit found a FALSE NUMBER on the rendered résumés; fixed in revision 22).
+**Both 2026-08-18 PRs are MERGED** (#80, #81); working tree clean.
+
+**The next session is about the RÉSUMÉ, at Mit's direction** — not the engineering backlog. He has seen a
+current one-page render from revision 22 and the conversation continues from there. The judgement that has
+never been made is *whether a given document is the one to send*, and no gate makes it.
 
 **The program reoriented on 2026-08-13 (D-155):** remaining work runs through the **canonical career-profile
 bundle**, not the old `resume.yaml` path. **P3, P6 and the 14-day clock are frozen** — costless, because
