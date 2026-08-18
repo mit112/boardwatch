@@ -24,7 +24,8 @@ stale-lock race, fixed at the root, all four `xfail` markers gone), **D-225** (p
 pipeline, slice P5a), **D-226** (a bullet-less entry is representable) and **D-228** (fixture + corpus drift
 detection). CI green on the full matrix; nothing is released — **no version has been cut since 0.3.0.**
 **2026-08-18 added D-229** (P5b's criteria, named by Mit), **D-230** (the backfilled `runs` rows repaired,
-plus a `doctor` invariant) and **D-231** (D-225's residuals: four closed, one declined, one not found).
+plus a `doctor` invariant), **D-231** (D-225's residuals: four closed, one declined, one not found) and
+**D-232** (an independent repo audit found a FALSE NUMBER on the rendered résumés; fixed in revision 22).
 
 **The program reoriented on 2026-08-13 (D-155):** remaining work runs through the **canonical career-profile
 bundle**, not the old `resume.yaml` path. **P3, P6 and the 14-day clock are frozen** — costless, because
@@ -34,7 +35,7 @@ adapter `boardwatch-resume-v1`.
 **The bundle → résumé track is shippable, and Gate B is MET.** A fact-grounded, Gate-B-clean **one-page
 résumé renders and is live** (`untailored-349.pdf`): Experience in the two-line macro, Projects as
 `Name | tech | link · dates`, clickable links, fact-grounded company (D-199/D-200/D-201) and dates (D-208).
-**`bullet_too_long` can no longer fire: at revision 21 every rendering bullet is within the 220-char
+**`bullet_too_long` can no longer fire: at revision 22 every rendering bullet is within the 220-char
 ceiling** (D-213…D-221), so the fallback's remaining structural cause is gone — open Q5 needs re-testing
 against a real `tailor run`, not re-analysing. **Sending is Mit's, and nothing has been sent.**
 
@@ -50,7 +51,7 @@ remains open — see item 4. **The next task must come from `PROGRAM.md`.**
 > every bullet showing**. The master is a **RESERVOIR** holding the SUPERSET; per-JD **Stage 2** selects it
 > down to one page. `resume.yaml` / `sections.tex` are thin per-JD OUTPUTS, **not** the source — the wiki is.
 
-**Live revision: 21.** *Do not quote its digest or its counts here — refinement promotes several times a day
+**Live revision: 22.** *Do not quote its digest or its counts here — refinement promotes several times a day
 and any stamp written into this file is stale within the hour; re-derive with `profile-bundle inventory`
 (D-017).* 11 entities — 4 experience (Saayam, NIO co-op, Nakshatra, SAKEC) + 7 projects (Hookrail, Knowledge
 Forge, StreakSync, Random Forest, FlickSwiper, BirthdayQuest, Fond). Validates **0 error, 0 blocker**, with
@@ -94,10 +95,25 @@ unrelated eligibility work (D-064/D-065/D-068).*
 **P5b's criteria are NAMED (D-229, Mit's):** 3 clean projected runs, **≥ 30 distinct postings**, 0
 preflight fatals, 0 résumé-QA failures, 0 fabrications. **Four of the five are met with evidence** — three
 runs on a store COPY produced **35 distinct postings, 35 PDFs, 0 tailor/pdf drops, 0 fatals**, and
-`pdfinfo` independently confirms **1 page for all 35**. **The fabrication clause is B4's audit and cannot be
-self-reported, so the default has NOT flipped — that is Mit's action, not a session's.** Whether runs on a
-copy count toward a gate about *unattended* operation is also his call; running them live would have earned
-35 real postings a permanent `built`, which is the defect the design exists to prevent.
+`pdfinfo` independently confirms **1 page for all 35**. Whether runs on a copy count toward a gate about
+*unattended* operation is Mit's call; running them live would have earned 35 real postings a permanent
+`built`, which is the defect the design exists to prevent.
+
+**The fifth clause FAILED, and that is the important fact (D-232).** An independent session — no access to
+boardwatch, the wiki or job-apps, checking **source code and git history only** — audited the 19 claims the
+42 PDFs are all subsets of. Ten came back SUPPORTED with **every checkable number exact**; **one was
+CONTRADICTED**: StreakSync claimed *"446 XCTest tests across 36 suites"* against a repo holding **396 across
+31**. Repaired as `.r4` in **revision 22**, character-neutral so the page budget cannot shift, and verified
+rendering. Seven are UNVERIFIABLE by construction (private/absent artifacts) — expected, not a finding.
+**Saayam was ruled unchanged by Mit**; its bullet describes the *platform*, not authorship, so the audit's
+authorship finding answers a claim the sentence does not make.
+
+**Mit attested the seven UNVERIFIABLE claims and let Saayam's "on AWS Lambda" stand — do not reopen
+either.** `owner_attested` is the basis those facts carry (D-191), and for employer/private work he is the
+only source. **The fabrication clause therefore carries no outstanding defect.** He also elected to move on
+from the re-render question (the 42 audited PDFs came from revision 21) — closed, not forgotten. **The
+default has NOT flipped; that is a separate owner action, untaken.** **Gate B's 0 blockers was never a claim about truth** — nothing in the validation layer can
+compare a numeral to the world, which is why the outside reader is not optional.
 
 **Two things about `--project` that are easy to get wrong.** The funnel's `artifact_version` advances to
 **5 for every run, authored ones included** — one emitter, one schema version. "Nothing changes without the
@@ -208,7 +224,7 @@ the slices reviewed and not that the subsystem is defect-free, are in `STANDING-
 | P7 Breadth | not started | — |
 | *Gate A (parallel)* | *complete, merged, CI green* | ***MET*** — *has moved no program gate* |
 | *Projection* | *Tasks 1–22 **merged to `main` and pushed**, reviewed clean; Tasks 20 and 23 closed (D-197, D-198). **Pipeline integration slice P5a MERGED to `main`** — `run --project`, 11 reviewed tasks (D-225)* | *Projection-spec P0–P4 build gates met; **its P5 NOT met** — P5a only. **P5b's criteria are now NAMED (D-229) and 4 of 5 clauses are evidenced**; the flip waits on the fabrication audit, which is Mit's* |
-| *Gate B / master reservoir* | ***Stage 1 + Stage 2 DONE**; all 11 entities' bullets refined (D-213…D-221); live revision **21**. Digest deliberately omitted — refinement restamps it several times a day (D-017)* | ***MET — 0 blockers** (D-201), and **0 over-ceiling bullets** since revision 21* |
+| *Gate B / master reservoir* | ***Stage 1 + Stage 2 DONE**; all 11 entities' bullets refined (D-213…D-221); live revision **22**. Digest deliberately omitted — refinement restamps it several times a day (D-017)* | ***MET — 0 blockers** (D-201), and **0 over-ceiling bullets** since revision 21. **Revision 22 corrects a FALSE NUMBER an independent audit found (D-232)** — Gate B never tested truth* |
 
 ### Gate P6, clause by clause
 
