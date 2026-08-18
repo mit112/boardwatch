@@ -201,6 +201,17 @@ All notable changes to this project are documented here. The format follows
 
 ### Fixed
 
+- **`profile-bundle extract` no longer imports a half-record when one field of an entry can't be typed**
+  (D-238). `run_extraction` recorded a drain reason only for a record that produced *zero* candidates, so an
+  entry that grounded some slots (say its heading → `project.name`) but hit a slot-level failure on another
+  (a garbled `dates` → `value_not_typeable`) imported anyway, and the failed field went unaccounted — the
+  disposition is derived from the candidate package, so the good candidate made the record `imported` with no
+  reason attached. Now a record that hits any slot-level failure is set aside whole: its candidates are
+  withheld and it drains that one reason, landing `review_required` for the owner. A record is imported only
+  when it produced candidates *and* raised no reason; legitimate absence (an empty field, an open-ended date
+  range) still imports as before. Latent today — every current résumé entry parses cleanly — so no live run
+  changes.
+
 - **`profile-bundle promote-candidates` no longer silently drops a skill-group label that collides with a
   seeded category** (D-237). A promoted skill's group label is slugged to a `category_id`; when that slug hit
   a category the bundle's catalog already defined under a *different* `display_name` (author writes group

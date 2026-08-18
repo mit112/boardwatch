@@ -86,15 +86,17 @@ copy count toward an *unattended* gate, and whether the default flips to `--proj
 
 ### Owner-gated — do NOT start unilaterally
 
-1. **D-184 finding 2** — a partial emission silently drops fields (`run_extraction` records a reason only
-   when a record produces *no* candidate). Redefines the Gate B accounting contract; four designs.
-2. **Education Slice C** — promoting `header/1`'s `person.professional_name` (the skill-item loop skips
-   `header/*`).
-3. **P2 item 8 — the onboarding field-taxonomy gatherer** (needs its own brainstorm). D-054 forbids us
+1. **Education Slice C** — promoting `header/1`'s `person.professional_name` into the owner-authored
+   `facts/identity.yaml` would break promotion's whole-doc, no-clobber write contract (D-182). Undecided:
+   promote-and-merge that fact, or exclude `header/1` like `header/2` since the name is already owner-supplied.
+2. **P2 item 8 — the onboarding field-taxonomy gatherer** (needs its own brainstorm). D-054 forbids us
    authoring non-tech field content; its open question: a genuinely new field rule is still *code*, not data.
-4. **Mit's two résumé content calls** — whether to send; the D-220 prose rewrites (his own writing, D-191).
-5. **`add-evidence` takes no bundle lock, and D-143 widened the race** — two concurrent captures race on up
+3. **Mit's two résumé content calls** — whether to send; the D-220 prose rewrites (his own writing, D-191).
+4. **`add-evidence` takes no bundle lock, and D-143 widened the race** — two concurrent captures race on up
    to 13 files. Raise before anyone runs two authoring agents against one bundle.
+
+*(Closed: **D-184 finding 2** — a partial extraction now sets the whole record aside for review rather
+than importing a half-record and silently dropping the failed field, D-238.)*
 
 ### Fixture + corpus drift (D-228) — on `main`
 

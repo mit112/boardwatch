@@ -315,17 +315,31 @@ def test_the_header_email_and_education_carry_their_specific_reasons() -> None:
 
 
 def test_a_garbled_dates_string_drains_value_not_typeable() -> None:
-    reasons = _reasons((_metadata("q", "project", heading="Q", dates="whenever it was"),))
-    # heading still lands project.name, so the record is NOT review_required — no failure for it.
-    # Force the no-candidate case: a project whose only field is a garbled date.
+    """A project whose only content is an unparseable `dates` string produces no candidate and drains
+    `value_not_typeable`. (When such a record ALSO grounds another slot it is still set aside whole —
+    see test_a_record_with_a_failing_slot_is_set_aside_whole_not_imported_partial, D-238.)"""
     only_dates = _record(
         "entries/z/metadata",
         {"entry_id": "z", "kind": "project", "heading": "", "title": None,
          "dates": "garbled", "subtitle": None, "location": None},
     )
     result = run_extraction((only_dates,), _MAPPING)
+    assert result.proposals == ()
     assert {f.reason for f in result.failures} == {"value_not_typeable"}
-    assert reasons == {}  # the heading-bearing project produced project.name, so no drain
+
+
+def test_a_record_with_a_failing_slot_is_set_aside_whole_not_imported_partial() -> None:
+    """D-238: when a record grounds SOME slots but a slot-level failure drops another (here a garbled
+    `dates` → value_not_typeable), the whole record is set aside for review, not imported as a
+    half-record. Before the fix `run_extraction` drained a reason only for a record that produced NO
+    candidate, so the heading's `project.name` made this record `imported` and the untypeable date
+    was silently lost — the D-184 finding-2 leak."""
+    record = _metadata("q", "project", heading="Q", dates="whenever it was")
+    rid = derive_source_record_id(_SOURCE_ID, "entries/q/metadata")
+    result = run_extraction((record,), _MAPPING)
+    # The good project.name candidate is NOT admitted; the whole record drains exactly one reason.
+    assert result.proposals == ()
+    assert {f.source_record_id: f.reason for f in result.failures} == {rid: "value_not_typeable"}
 
 
 # --- the literal primitive still works for the easy buckets ----------------------------------------

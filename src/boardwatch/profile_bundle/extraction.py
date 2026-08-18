@@ -400,12 +400,15 @@ def run_extraction(
     records: Sequence[EnumeratedSourceRecord], mapping: ExtractionMapping
 ) -> ExtractionResult:
     """Every candidate the mapping proposes over the records, plus the drain reason for each record
-    that produced none (§6.2a, §6.3a). Record-then-rule order.
+    that did not import cleanly (§6.2a, §6.3a). Record-then-rule order.
 
     A record may match several rules producing different candidates (multi-output emission). A
     record that matches no producing rule takes its most specific deferral reason, else
     `no_mapping_for_locator`. A record that matched a rule but produced nothing takes the reason
-    that rule reported (`unsupported_entry_kind`, `value_not_typeable`, `span_not_grounded`).
+    that rule reported (`unsupported_entry_kind`, `value_not_typeable`, `span_not_grounded`). A
+    record that produced some candidates but ALSO reported such a reason on another slot is set
+    aside whole — its candidates are withheld and it drains that reason (D-238), so a partial
+    emission cannot import a half-record while silently dropping the field that failed.
     """
     by_locator = {record.normalized_locator: record for record in records}
     proposals: list[ProposedCandidate] = []
@@ -461,8 +464,16 @@ def run_extraction(
         if not matched_a_rule:
             reason = _deferral_reason(mapping, record.normalized_locator)
 
-        proposals.extend(produced)
-        if not produced:
+        # A record that produced some candidates but also hit a slot-level failure — an untypeable
+        # value, an ungrounded span, an unsupported entry kind — is set aside WHOLE for review, not
+        # imported as a half-record (D-238). A partial emission that silently drops a field is the
+        # keystone analogue: a record that cannot ground every part it reached abstains, rather than
+        # importing the parts that worked and losing the accounting for the parts that did not. Only
+        # a record that produced candidates AND raised no reason is imported; every other record
+        # drains exactly one reason, which is what `_disposition_for` reads as `review_required`.
+        if produced and reason is None:
+            proposals.extend(produced)
+        else:
             failures.append(
                 ExtractionFailure(record.source_record_id, reason or NO_MAPPING_FOR_LOCATOR)
             )
