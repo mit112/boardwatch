@@ -24,7 +24,7 @@ from boardwatch.scan.coordinator import default_providers
 from boardwatch.scan.health import probe_health
 from boardwatch.store import tables
 from boardwatch.store.db import schema_revision
-from boardwatch.store.queries import last_complete_scan_ages, reap_stale_runs
+from boardwatch.store.queries import RUN_RUNNING, last_complete_scan_ages, reap_stale_runs
 
 console = Console()
 
@@ -147,6 +147,17 @@ def doctor(ctx: typer.Context, offline: bool = typer.Option(False, "--offline"))
         running = conn.execute(
             select(tables.runs.c.id).where(tables.runs.c.finished_at.is_(None))
         ).first()
+        # The inverse combination, and it is an INVARIANT rather than a state: every writer that
+        # stamps `finished_at` stamps `status` in the same UPDATE (`record_scan_run(finished=True)`,
+        # `finish_run`, `reap_stale_runs`), so no write path can leave a row `running` once it is
+        # closed. `p0_run_status`'s `DEFAULT 'running'` backfill produced exactly that and no drain
+        # could reach it — `reap_stale_runs` requires `finished_at IS NULL`. Repaired by
+        # `runs_status_backfill_repair`; asserted here so a second one is loud instead of inert.
+        unreachable = conn.execute(
+            select(tables.runs.c.id)
+            .where(tables.runs.c.status == RUN_RUNNING)
+            .where(tables.runs.c.finished_at.is_not(None))
+        ).all()
         integrity = _integrity_check(conn)
 
     # connectivity: offline renders "not checked" for EVERY registered provider (not just those
@@ -190,6 +201,14 @@ def doctor(ctx: typer.Context, offline: bool = typer.Option(False, "--offline"))
         # eligibility pass still judging. Naming it a scan sent users looking for a held
         # scan lock that is in fact free.
         console.print(f"[yellow]a run is in progress (run {running.id})[/yellow]")
+    if unreachable:
+        ids = [row.id for row in unreachable]
+        console.print(
+            f"[red]{len(ids)} run(s) are '{RUN_RUNNING}' with finished_at set, which no write "
+            f"path can produce: {ids}. This is a schema-backfill artifact or direct database "
+            f"surgery, and no reaper can drain it — `reap_stale_runs` requires finished_at "
+            f"IS NULL. Run the migrations (`runs_status_backfill_repair` repairs it).[/red]"
+        )
 
     # schema check compares the DB's applied revision against the code's expected script head
     schema_ok = db_revision == schema_revision()
@@ -222,5 +241,6 @@ def doctor(ctx: typer.Context, offline: bool = typer.Option(False, "--offline"))
         or not schema_ok
         or tectonic_check.failed
         or not pdfinfo_ok
+        or bool(unreachable)
     )
     raise typer.Exit(code=1 if failed else 0)

@@ -43,6 +43,23 @@ class ResumeSourceLineage:
         """Flat, prefixed keys for an artifact's `meta_json`. Prefixed because the row already
         carries unprefixed tailoring keys and a bare `as_of` there would be ambiguous."""
         return {
-            f"projection_{field.name}": getattr(self, field.name)
+            f"{META_PREFIX}{field.name}": getattr(self, field.name)
             for field in dataclasses.fields(self)
         }
+
+
+#: The prefix `as_meta` writes every field under. Named so a consumer can derive a key instead of
+#: spelling one out — see `meta_probe_key`.
+META_PREFIX = "projection_"
+
+
+def meta_probe_key() -> str:
+    """The one `meta_json` key a consumer tests to detect that an artifact carries this lineage.
+
+    Derived from the dataclass, never restated. `as_meta` writes EVERY field under `META_PREFIX`,
+    so any single field is a sound presence probe, and taking the first one means a rename moves
+    the probe with it. A consumer that spelled the key out instead would keep type-checking and
+    keep running while silently matching nothing — the failure a presence check cannot see, because
+    "no rows carry this lineage" and "the key I asked for no longer exists" look identical.
+    """
+    return f"{META_PREFIX}{dataclasses.fields(ResumeSourceLineage)[0].name}"
