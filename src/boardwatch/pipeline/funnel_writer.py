@@ -13,7 +13,7 @@ in the artifact instead of being resolved silently in favour of whichever ran la
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from pathlib import Path
 
 from sqlalchemy import Engine, select
@@ -28,6 +28,7 @@ from boardwatch.eligibility.engine import (
 )
 from boardwatch.eligibility.facts import parse_facts
 from boardwatch.eligibility.preflight import current_identity
+from boardwatch.projection.run import ProjectionLeadOutcome
 from boardwatch.reports.abstain import AbstainReport, build_abstain_report
 from boardwatch.reports.manifest import config_hash, profile_row_hash
 from boardwatch.reports.run_funnel import (
@@ -37,6 +38,7 @@ from boardwatch.reports.run_funnel import (
     RunManifest,
     ScanContext,
     ShortlistCounts,
+    build_projection_counters,
     build_run_funnel,
 )
 from boardwatch.store.abstain_queries import count_requirement_dispositions
@@ -49,6 +51,7 @@ from boardwatch.store.run_funnel_queries import (
     count_by_source,
     count_corpus,
     count_open_postings,
+    count_projected_tailored_artifacts,
     count_stub_postings,
     count_tailored_artifacts,
     count_unattributed_evaluations,
@@ -89,6 +92,16 @@ def collect_run_funnel(
     liveness: LivenessCheck | None = None,
     tailored: list[tuple[int, str, str, Path, bool]],
     tailor_failed: int,
+    # P5a. `projection_ran` is the ONLY thing that decides whether the artifact carries a
+    # `projection` stage — never whether `projection_outcomes` is non-empty. A projected run can
+    # legitimately count nothing (the preflight refused before the loop, or every shortlisted lead
+    # was withheld as gone), and the converse hazard is real too: `_retract_projected` would leave
+    # `PROJECTED: -1` on a counter it was called against with no `PROJECTED` key, which is
+    # unreachable today only because `ResumeLineageMismatch` has one raise site gated on a lineage
+    # being present. Reading the run's own verdict instead means neither accident can move the
+    # stage in or out of the artifact.
+    projection_ran: bool = False,
+    projection_outcomes: Mapping[ProjectionLeadOutcome, int] | None = None,
     rewrite_rows: list[dict[str, object]],
     coverages: Sequence[CoverageReport | None] = (),
     errors: list[str],
@@ -148,6 +161,13 @@ def collect_run_funnel(
             posting_ids=posting_ids,
         )
         tailored_artifacts: TailoredArtifactCounts = count_tailored_artifacts(conn, run_id)
+        # An INDEPENDENT recount of the projected leads: artifact rows whose meta carries the
+        # projection lineage, read here rather than derived from the counter the loop incremented.
+        # Read only on a projected run — on an authored one the answer is 0 by construction and
+        # there is nothing to compare it with.
+        projected_lineage_rows = (
+            count_projected_tailored_artifacts(conn, run_id) if projection_ran else 0
+        )
         marked_applied = count_applied_for_postings(conn, posting_ids)
         unattributed = count_unattributed_evaluations(conn)
         provenance = lead_provenance(conn, posting_ids)
@@ -212,6 +232,10 @@ def collect_run_funnel(
         sources=sources,
         leads=leads,
         tailor_failed=tailor_failed,
+        projection=(
+            build_projection_counters(projection_outcomes or {}) if projection_ran else None
+        ),
+        projected_lineage_rows=projected_lineage_rows,
         tailored_artifacts=tailored_artifacts,
         marked_applied=marked_applied,
         stub_postings=stub_postings,

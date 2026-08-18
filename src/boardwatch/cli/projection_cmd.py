@@ -41,7 +41,6 @@ import json
 # (`tests/projection/test_projection_cli_approval.py`) still finds a `sys` attribute here — it
 # patches the one shared `sys` module, which `_approval.py`'s `sys.stdin`/`sys.stdout` reads too.
 import sys  # noqa: F401
-import tempfile
 from datetime import UTC, date, datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, NoReturn
@@ -49,6 +48,14 @@ from typing import TYPE_CHECKING, Any, NoReturn
 import typer
 
 from boardwatch.cli._approval import CONFIRMATION_WORD, approval_terminal
+
+# Every `as_of` below is read from the SAME clock the pipeline reads (`utcnow().date()`), never
+# `date.today()`. `as_of` feeds effective-fact resolution, so it decides WHICH facts render: for an
+# owner at UTC-4/5 the local and UTC dates differ for several hours every evening, and a preview
+# built from the local date would show a résumé assembled from different effective facts than
+# `run --project` produces. The `runs` row and the lineage record are both UTC, and a preview that
+# disagrees with the run it is previewing is worse than either convention alone.
+from boardwatch.core.clock import utcnow
 from boardwatch.core.settings import load_settings
 from boardwatch.profile_bundle.errors import (
     Diagnostic,
@@ -145,7 +152,7 @@ def approve_projection(
     from boardwatch.projection.pool import projection_candidate
 
     try:
-        candidate = projection_candidate(bundle_root, declaration_path, as_of=date.today())
+        candidate = projection_candidate(bundle_root, declaration_path, as_of=utcnow().date())
     except (ProjectionError, ProfileBundleError) as exc:
         typer.echo(str(exc), err=True)
         raise typer.Exit(code=1) from exc
@@ -298,7 +305,7 @@ def project(
     config_dir = load_settings(data_dir=ctx.obj).config_dir
     declaration_path = declaration if declaration is not None else config_dir / "projection.yaml"
     bundle_root = resolve_bundle_root(config_dir, bundle)
-    as_of = date.today()
+    as_of = utcnow().date()
 
     # Deferred: see the module docstring on why `projection.pool` is never imported at module
     # level here; the same reasoning covers `projection.serialize`, reached only through this one
@@ -396,10 +403,16 @@ def resume_project(
     # tell whether a persona declares `entries` (Task 15's own collision), so this runs before
     # `project_pool` reads anything and before `--scorer` is even validated.
     from boardwatch.projection.persona_preflight import reject_entry_declaring_personas
+    from boardwatch.tailor.persona import PersonaError
 
     try:
         reject_entry_declaring_personas(config_dir)
-    except ProjectionError as exc:
+    except (ProjectionError, PersonaError) as exc:
+        # `reject_entry_declaring_personas` calls `load_personas`, which raises `PersonaError` —
+        # not `ProjectionError` — for a registry that is malformed rather than merely
+        # entry-declaring: invalid YAML, no default persona, a duplicate id, a role_family outside
+        # the closed set. This is the FIRST thing in the command that reads `personas.yaml`, so it
+        # is where that refusal has to be reported; uncaught, it was a traceback.
         typer.echo(str(exc), err=True)
         raise typer.Exit(code=1) from exc
 
@@ -409,131 +422,89 @@ def resume_project(
             err=True,
         )
         raise typer.Exit(code=1)
-    scorer = SCORERS[scorer_name]
 
     # Unlike `project`, this command legitimately needs a database (JD skills and the page
     # budget are posting-context facts) — `build_context` is deferred here purely to keep this
     # module's own store-import guard intact for the OTHER commands it hosts, not because a
-    # database is somehow forbidden for this one.
+    # database is somehow forbidden for this one. `projection.run` is deferred for that same
+    # reason: it reaches `boardwatch.store` through `projection.posting`.
     from boardwatch.cli.context import build_context
-    from boardwatch.extract.taxonomy import load_taxonomy
-    from boardwatch.projection.manifest import (
-        MANIFEST_SCHEMA_VERSION,
-        ProjectionManifest,
-        manifest_bytes,
-    )
-    from boardwatch.projection.pool import project_pool
-    from boardwatch.projection.posting import posting_context
-    from boardwatch.projection.select import select
-    from boardwatch.projection.serialize import resume_document_bytes
-    from boardwatch.reports.resume_gate import GateResult, evaluate_compile
-    from boardwatch.reports.tailor import _default_runner
-    from boardwatch.tailor.equivalences import load_equivalences
-    from boardwatch.tailor.model import Resume
-    from boardwatch.tailor.render.latex import LatexRenderer, TemplateArtifactError
+    from boardwatch.extract.taxonomy import TaxonomyError
+    from boardwatch.projection.run import project_for_posting, resolve_projection_run
+    from boardwatch.reports.tailor import default_compile_runner
+    from boardwatch.tailor.equivalences import EquivalenceError
+    from boardwatch.tailor.render.latex import TemplateArtifactError
 
     app_ctx = build_context(ctx.obj)
     settings = app_ctx.settings
     config_dir = settings.config_dir
     declaration_path = declaration if declaration is not None else config_dir / "projection.yaml"
     bundle_root = resolve_bundle_root(config_dir, bundle)
-    as_of = date.today()
+    as_of = utcnow().date()
+    out_dir = out if out is not None else settings.data_dir / "projected" / str(posting_id)
 
     try:
-        pool = project_pool(bundle_root, declaration_path, config_dir=config_dir, as_of=as_of)
-        posting = posting_context(app_ctx.engine, settings, posting_id)
-    except (ProjectionError, ProfileBundleError) as exc:
-        # `project_pool` now calls `read_stamp` unconditionally (D-167), which raises
-        # `ProfileBundleError`, not `ProjectionError`, for a stamp that fails to parse or
-        # validate against the current schema — the same widening `project`'s own boundary
-        # already has (`_boundary_outcome`).
+        # `resolve_projection_run` resolves the taxonomy ONCE, above the `posting_context` call
+        # `project_for_posting` makes, so this command cannot extract a posting's skills under one
+        # taxonomy and score them under another. It also owns the pool, the equivalence table and
+        # the persona registry version, so nothing here re-reads any of them.
+        run_ctx = resolve_projection_run(
+            app_ctx.engine,
+            settings,
+            bundle_root=bundle_root,
+            declaration_path=declaration_path,
+            scorer_id=scorer_name,
+            as_of=as_of,
+        )
+        result = project_for_posting(
+            run_ctx,
+            app_ctx.engine,
+            settings,
+            posting_id,
+            out_dir=out_dir,
+            compile_runner=default_compile_runner(),
+        )
+    except (
+        ProjectionError,
+        ProfileBundleError,
+        TemplateArtifactError,
+        PersonaError,
+        TaxonomyError,
+        EquivalenceError,
+    ) as exc:
+        # Exactly `resolve_projection_run`'s documented raise set, plus what `select` adds. Every
+        # one is an operator-actionable configuration fault, so every one is a message and an exit
+        # code rather than a traceback:
+        #
+        # * `ProjectionError` — every member of the closed catalog.
+        # * `ProfileBundleError` — `project_pool` calls `read_stamp` unconditionally (D-167), which
+        #   raises this for a stamp that fails to parse or validate against the current schema.
+        #   The same widening `project`'s own boundary already has.
+        # * `TemplateArtifactError` — `select`'s `compile_prefix` calls `renderer.emit`, which
+        #   resolves and validates a user-supplied `{config_dir}/resume_template.tex` and refuses a
+        #   leftover `%%..%%`/TODO/placeholder marker with a bare `RuntimeError` subclass.
+        # * `TaxonomyError` — a malformed `{config_dir}/taxonomy.yaml` override.
+        # * `EquivalenceError` — the packaged `tailor/equivalences.yaml` is unreadable or malformed.
+        #   No user override exists for it, so this arm means a corrupt installation.
+        # * `PersonaError` — `resolve_projection_run` reads the registry too. The preflight above
+        #   reads the same file first and so refuses a malformed one there in practice; this arm
+        #   covers the file changing between the two reads, and keeps the two boundaries from
+        #   disagreeing about which families are typed refusals.
+        #
+        # `RenderToolMissingError`/`LeadArtifactError` are still not listed: both are raised by
+        # `run_tailor` after inspecting a `GateResult`, never by `evaluate_compile`, `to_pdf`, or
+        # the default runner, which only ever return one.
         typer.echo(str(exc), err=True)
         raise typer.Exit(code=1) from exc
 
-    taxonomy = load_taxonomy(config_dir)
-    table = load_equivalences()
-    renderer = LatexRenderer(config_dir=config_dir)
-
-    # A scratch directory, never the command's own output: these compiles exist only to gauge
-    # page count for the budget check (`select`'s own docstring), not to produce a shippable
-    # PDF — `tailor run` is what renders the artifact the owner actually sends.
-    with tempfile.TemporaryDirectory(prefix="boardwatch-resume-project-") as scratch:
-        scratch_dir = Path(scratch)
-
-        def compile_prefix(resume: Resume) -> GateResult:
-            source = renderer.emit(resume)
-            outcome = renderer.to_pdf(source, scratch_dir, "select-preview", _default_runner)
-            return evaluate_compile(outcome, max_pages=posting.page_budget)
-
-        try:
-            selection = select(
-                pool,
-                posting,
-                scorer,
-                table=table,
-                taxonomy=taxonomy,
-                compile_prefix=compile_prefix,
-            )
-        except (ProjectionError, TemplateArtifactError) as exc:
-            # `compile_prefix` calls `renderer.emit(resume)` inside `select`, which resolves
-            # and validates `{config_dir}/resume_template.tex` (`_validate_template`) — a
-            # user-supplied custom template is explicitly supported here (`LatexRenderer(
-            # config_dir=config_dir)`, above), so a leftover `%%..%%`/TODO/placeholder marker
-            # in it is a typed refusal, not a traceback. Mirrors `tailor_cmd.py`'s own
-            # `(RenderToolMissingError, TemplateArtifactError, LeadArtifactError)` catch around
-            # its compile call; `RenderToolMissingError`/`LeadArtifactError` are not added here
-            # because neither is reachable from this path — both are raised by `run_tailor`
-            # itself after inspecting a `GateResult`, never by `evaluate_compile`, `to_pdf`, or
-            # `_default_runner`, which only ever return one, never raise it.
-            typer.echo(str(exc), err=True)
-            raise typer.Exit(code=1) from exc
-
-    out_dir = out if out is not None else settings.data_dir / "projected" / str(posting_id)
-    out_dir.mkdir(parents=True, exist_ok=True)
-    resume_path = out_dir / "resume.projected.yaml"
-    resume_path.write_bytes(resume_document_bytes(selection.resume))
-
-    # Every candidate's score, not just the admitted ones — the manifest's own job is to record
-    # "which score each candidate got" (manifest.py's docstring), including one that never
-    # cleared `ADMISSION_FLOOR`.
-    entries_by_id = {entry.entry_id: entry for entry in pool.resume.entries}
-    jd_skills_set = set(posting.jd_skills)
-    scores = tuple(
-        (entry_id, str(scorer(entries_by_id[entry_id], jd_skills_set, table, taxonomy)))
-        for entry_id in pool.candidate_entry_ids
-    )
-    # Each bullet's source id IS its `bullet_id`: `pool._build_entry` sets `bullet_id=claim_id` for
-    # a `claims`-derived bullet and `bullet_id=fact.fact_id` for a `bullet_predicates`-derived one
-    # (D-188). The mapping is therefore read from the rendered bullets, not re-derived from the
-    # declaration's `claims` — a `bullet_predicates` entry declares no per-bullet id there, so the
-    # earlier zip against `entry_decl.claims` mismatched the moment an entry's bullets came from a
-    # predicate (the live master-reservoir declaration's only bullet source). Scoped to
-    # `selection.resume.entries` (the FINAL résumé), so a dropped candidate's bullets are absent.
-    claim_to_bullet = tuple(
-        (bullet.bullet_id, bullet.bullet_id)
-        for entry in selection.resume.entries
-        for bullet in entry.bullets
-    )
-    manifest = ProjectionManifest(
-        manifest_schema=MANIFEST_SCHEMA_VERSION,
-        bundle_revision=pool.bundle_revision,
-        bundle_digest=pool.bundle_digest,
-        projection_digest=pool.projection_digest,
-        posting_id=posting.posting_id,
-        jd_skills=tuple(sorted(posting.jd_skills)),
-        pinned_entry_ids=selection.pinned_entry_ids,
-        selected_entry_ids=tuple(e.entry_id for e in selection.resume.entries),
-        scores=scores,
-        claim_to_bullet=claim_to_bullet,
-    )
-    manifest_path = out_dir / "projection-manifest.json"
-    manifest_path.write_bytes(manifest_bytes(manifest))
-
-    typer.echo(f"wrote {resume_path}")
-    typer.echo(f"wrote {manifest_path}")
+    # `project_for_posting` raises on every refusal, so a returned result always carries both —
+    # which is now in `ProjectionResult`'s own types rather than re-asserted here.
+    selection = result.selection
+    typer.echo(f"wrote {result.resume_path}")
+    typer.echo(f"wrote {result.manifest_path}")
     selected_count = len(selection.selected_candidate_ids)
     typer.echo(
-        f"posting {posting.posting_id} scorer {scorer_name} "
+        f"posting {posting_id} scorer {scorer_name} "
         f"pinned {len(selection.pinned_entry_ids)} selected {selected_count} "
         f"fallback {selection.used_fallback} pages {selection.page_count}"
     )

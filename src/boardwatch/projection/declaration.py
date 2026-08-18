@@ -152,7 +152,7 @@ def load_declaration(path: Path) -> ProjectionDeclaration:
     """Parse and validate. Every refusal is typed and names the offending declaration."""
     if not path.is_file():
         raise_violation(
-            ProjectionIssue.DECLARATION_UNREADABLE,
+            ProjectionIssue.DECLARATION_MISSING,
             "no projection declaration at this path",
             where=path.name,
         )

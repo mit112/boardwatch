@@ -91,6 +91,26 @@ lengths then in the bundle, not properties of the page. Measured at revision 21 
 (3,347); six overflows. Candidate room **2,259**. Previewing
 needs no approval; re-promotion and `projection.yaml` edits each stale the stamp independently (D-167).
 
+**Projection reaches the daily pipeline — slice P5a SHIPPED (D-225), and it is OPT-IN.** `boardwatch run
+--project` renders each lead from the bundle's projection; **without the flag, `resume.yaml` is still the
+unattended default and that is deliberate.** A run-level preflight refuses **before any lead earns a ledger
+disposition** — never a per-lead fallback, which would have succeeded and so earned each lead a permanent
+`built` the ledger suppresses forever. **The projection spec's P5 is NOT met by this**: its gate includes
+"`resume.yaml` stops being the daily default", which is **P5b — owner-gated**, and its criteria (how many
+clean projected runs, over how many postings, at what defect budget) are Mit's to name. *Do not confuse this
+with the program's `P5 Eligibility decides`, which is a different phase and is MET; the labels `P5a`/`P5b`
+were also used in 2026-08 for unrelated eligibility work (D-064/D-065/D-068).* Measured before merge against
+a **copy** of the store: projection stage **7.59s / 10 leads**, **max 3 compiles per lead** (structural
+ceiling 10), declared ceiling **≤ 6s per lead**.
+
+**Two things about `--project` that are easy to get wrong.** The funnel's `artifact_version` advances to
+**5 for every run, authored ones included** — one emitter, one schema version. "Nothing changes without the
+flag" is a claim about **behaviour**: no projection stage, no lineage keys, unchanged lead outcomes and
+dispositions — **not** about that field, and an earlier wording that also claimed byte-identical no-flag
+JSON was an over-claim, corrected in D-225. And **`--project` with an explicit `--resume` REFUSES** (exit 2,
+before any `runs` row): the projected path overwrote the résumé path for every lead, so `--resume` had no
+effect; what the combination should mean is P5b's to rule.
+
 **Tasks 20 and 23 are closed.** `projection-selection-matrix.md` holds ten real `role=swe` postings with the
 owner's rankings and cut lines over the **eight candidates** — the pinned three are excluded, since
 `agreement.score_all` scores only the ids `case.expected` names (D-197). Reading `score_all` against those
@@ -228,7 +248,7 @@ the slices reviewed and not that the subsystem is defect-free, are in `STANDING-
 | 14-day acceptance | not started | — frozen; starts after P6 |
 | P7 Breadth | not started | — |
 | *Gate A (parallel)* | *complete, merged, CI green* | ***MET*** — *has moved no program gate* |
-| *Projection* | ***MERGED AND PUSHED**, reviewed clean; Tasks 20 and 23 closed (D-197, D-198)* | *P0–P4 build gates met* |
+| *Projection* | ***MERGED AND PUSHED**, reviewed clean; Tasks 20 and 23 closed (D-197, D-198). **Pipeline integration slice P5a SHIPPED** — `run --project`, 11 reviewed tasks (D-225)* | *Projection-spec P0–P4 build gates met; **its P5 NOT met** — P5a only, the default flip is P5b* |
 | *Gate B / master reservoir* | ***Stage 1 + Stage 2 DONE**; all 11 entities' bullets refined (D-213…D-221); live revision **21**. Digest deliberately omitted — refinement restamps it several times a day (D-017)* | ***MET — 0 blockers** (D-201), and **0 over-ceiling bullets** since revision 21* |
 
 ### Gate P6, clause by clause

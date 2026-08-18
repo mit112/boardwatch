@@ -28,7 +28,7 @@ from sqlalchemy import Engine, select
 
 from boardwatch.core.settings import Settings
 from boardwatch.extract.preflight import run_preflight
-from boardwatch.extract.taxonomy import load_taxonomy
+from boardwatch.extract.taxonomy import Taxonomy
 from boardwatch.projection.errors import ProjectionIssue, raise_violation
 from boardwatch.reports.tailor import jd_skills_for
 from boardwatch.store.queries import current_posting_versions, get_profile
@@ -43,15 +43,24 @@ class PostingContext:
     page_budget: int
 
 
-def posting_context(engine: Engine, settings: Settings, posting_id: int) -> PostingContext:
+def posting_context(
+    engine: Engine, settings: Settings, posting_id: int, *, taxonomy: Taxonomy
+) -> PostingContext:
     """`(jd_skills, page_budget)` for `posting_id`, resolved against its current OPEN
     version. Raises `ProjectionError` for every refusal: `POSTING_NO_CURRENT_VERSION` for
     a posting with no current version, `POSTING_NOT_OPEN` for one that is not open (the
     same two-line guard `reports/tailor.py:333-336` uses), and `NO_JD_EXTRACTION` when the
     taxonomy extraction that backs `jd_skills_for` is missing even after preflight.
+
+    The taxonomy is injected rather than loaded here so that one run scores every posting under
+    one taxonomy. Loading it per call let JD extraction for posting 2 run under a taxonomy that
+    selection was not using — a stale *transformation*, invisible to every digest check.
+    `resolve_projection_run` (`projection/run.py`) is what resolves it once per run.
+
+    `run_preflight` stays: it is extraction preflight, not configuration — it backfills the
+    extraction rows `jd_skills_for` then reads, and owns its own taxonomy load for that.
     """
     run_preflight(engine, settings)
-    taxonomy = load_taxonomy(settings.config_dir)
     with engine.connect() as conn:
         cv = current_posting_versions(conn, [posting_id]).get(posting_id)
         if cv is None:

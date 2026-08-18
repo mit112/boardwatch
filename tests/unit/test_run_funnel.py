@@ -671,8 +671,10 @@ def test_both_halves_are_written_and_named_by_run(tmp_path: Path) -> None:
     payload = json.loads(written.json_path.read_text())
     assert payload["run_id"] == 42
     # Bumped to 3 by P0 item 4/6/8, which added the manifest, stub_rate and fabrication
-    # sections; to 4 by P6 item 6, which added the top-level `liveness` block.
-    assert payload["artifact_version"] == 4
+    # sections; to 4 by P6 item 6, which added the top-level `liveness` block; to 5 by P5a,
+    # which added the `projection` stage and changed what `tailor.entered` means on a
+    # projected run.
+    assert payload["artifact_version"] == 5
     assert written.markdown_path.read_text().startswith("# boardwatch run 42")
 
 
