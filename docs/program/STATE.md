@@ -23,6 +23,8 @@ rows), zero unattended days, zero acceptance days. Against that: 3 published rel
 stale-lock race, fixed at the root, all four `xfail` markers gone), **D-225** (projection reaches the daily
 pipeline, slice P5a), **D-226** (a bullet-less entry is representable) and **D-228** (fixture + corpus drift
 detection). CI green on the full matrix; nothing is released — **no version has been cut since 0.3.0.**
+**2026-08-18 added D-229** (P5b's criteria, named by Mit), **D-230** (the backfilled `runs` rows repaired,
+plus a `doctor` invariant) and **D-231** (D-225's residuals: four closed, one declined, one not found).
 
 **The program reoriented on 2026-08-13 (D-155):** remaining work runs through the **canonical career-profile
 bundle**, not the old `resume.yaml` path. **P3, P6 and the 14-day clock are frozen** — costless, because
@@ -85,11 +87,17 @@ approval; re-promotion and `projection.yaml` edits each stale the stamp independ
 run --project` renders each lead from the bundle's projection; **without the flag, `resume.yaml` is still
 the unattended default and that is deliberate.** A run-level preflight refuses **before any lead earns a
 ledger disposition** — never a per-lead fallback, which would have succeeded and so earned each lead a
-permanent `built` the ledger suppresses forever. **The projection spec's P5 is NOT met by this**: its gate
-includes "`resume.yaml` stops being the daily default", which is **P5b — owner-gated**, and its criteria
-(how many clean projected runs, over how many postings, at what defect budget) are Mit's to name. *Do not
-confuse this with the program's `P5 Eligibility decides`, which is a different phase and is MET; the labels
-`P5a`/`P5b` were also used in 2026-08 for unrelated eligibility work (D-064/D-065/D-068).*
+permanent `built` the ledger suppresses forever. *Do not confuse this with the program's `P5 Eligibility
+decides`, which is a different phase and is MET; the labels `P5a`/`P5b` were also used in 2026-08 for
+unrelated eligibility work (D-064/D-065/D-068).*
+
+**P5b's criteria are NAMED (D-229, Mit's):** 3 clean projected runs, **≥ 30 distinct postings**, 0
+preflight fatals, 0 résumé-QA failures, 0 fabrications. **Four of the five are met with evidence** — three
+runs on a store COPY produced **35 distinct postings, 35 PDFs, 0 tailor/pdf drops, 0 fatals**, and
+`pdfinfo` independently confirms **1 page for all 35**. **The fabrication clause is B4's audit and cannot be
+self-reported, so the default has NOT flipped — that is Mit's action, not a session's.** Whether runs on a
+copy count toward a gate about *unattended* operation is also his call; running them live would have earned
+35 real postings a permanent `built`, which is the defect the design exists to prevent.
 
 **Two things about `--project` that are easy to get wrong.** The funnel's `artifact_version` advances to
 **5 for every run, authored ones included** — one emitter, one schema version. "Nothing changes without the
@@ -199,7 +207,7 @@ the slices reviewed and not that the subsystem is defect-free, are in `STANDING-
 | 14-day acceptance | not started | — frozen; starts after P6 |
 | P7 Breadth | not started | — |
 | *Gate A (parallel)* | *complete, merged, CI green* | ***MET*** — *has moved no program gate* |
-| *Projection* | *Tasks 1–22 **merged to `main` and pushed**, reviewed clean; Tasks 20 and 23 closed (D-197, D-198). **Pipeline integration slice P5a MERGED to `main`** — `run --project`, 11 reviewed tasks (D-225)* | *Projection-spec P0–P4 build gates met; **its P5 NOT met** — P5a only, the default flip is P5b* |
+| *Projection* | *Tasks 1–22 **merged to `main` and pushed**, reviewed clean; Tasks 20 and 23 closed (D-197, D-198). **Pipeline integration slice P5a MERGED to `main`** — `run --project`, 11 reviewed tasks (D-225)* | *Projection-spec P0–P4 build gates met; **its P5 NOT met** — P5a only. **P5b's criteria are now NAMED (D-229) and 4 of 5 clauses are evidenced**; the flip waits on the fabrication audit, which is Mit's* |
 | *Gate B / master reservoir* | ***Stage 1 + Stage 2 DONE**; all 11 entities' bullets refined (D-213…D-221); live revision **21**. Digest deliberately omitted — refinement restamps it several times a day (D-017)* | ***MET — 0 blockers** (D-201), and **0 over-ceiling bullets** since revision 21* |
 
 ### Gate P6, clause by clause
@@ -221,7 +229,8 @@ the slices reviewed and not that the subsystem is defect-free, are in `STANDING-
 3. **The projection spec's six open questions** (§12) — soonest: whether `tailor run` should validate the
    projection manifest, and whether persona's `entries` list survives stage 2.
 *(Resolved: docs-only commits and `make check` (D-116); `add-evidence` writing the back-citation (D-143);
-whether the daily pipeline gets projection — **yes, opt-in, D-225**; the pinned/candidate split (D-195);
+whether the daily pipeline gets projection — **yes, opt-in, D-225**; **P5b's criteria — NAMED, D-229**;
+**which terminal status the four backfilled `runs` rows get — `ok`, D-230**; the pinned/candidate split (D-195);
 whether the 33 bullets get shortened — **DONE, D-213…D-221**; the two contradictory job-apps dates —
 **ruled**, D-209; a skill listed under two groups — **refused**, D-210; **boardwatch's Windows story —
 RULED best-effort, D-212**; a bullet-less entry — **declared, D-226**.)*
@@ -250,10 +259,18 @@ must derive its budget as `RECLAIM_WINDOW_SECONDS + N`, never a literal, or it g
 
 **`make check` can NEVER verify this work** — the window is inert off `win32`. Windows evidence comes only
 from a **`workflow_dispatch`** of `ci.yml` (the full 12-job matrix, **~1 hour**; Windows jobs 40–62 min, 3.13
-the long pole), and a dispatch **cannot** close issue #76 — `nightly-watch` is gated
-`github.event_name == 'schedule'`. **#76 is OPEN.** D-224 is now on `main` and the four markers are gone, so
-the next nightly tests the real fix — but **a closed #76 still is not evidence about the fix**: `nightly-watch`
-closes on any green scheduled run, and the window is inert off `win32`. Read the Windows jobs directly.
+the long pole).
+
+**The evidence exists and is bound: run `32065805682`, on sha `655c474f`** — 12/12 green including all three
+Windows jobs, with the four `xfail` markers already removed and D-227's `c916423` in its history.
+`core/lock_reclaim.py`, `profile_bundle/` and `scan/` are **unchanged between that sha and `main`**, which is
+what carries the evidence forward to HEAD; re-check that with `git log 655c474f..HEAD -- <those paths>` before
+citing it again, because a later commit to any of them voids it.
+
+**Issue #76 is CLOSED, and its closure is NOT that evidence** — read it as unrelated. `nightly-watch` closed
+it on the 2026-08-18 07:41 scheduled run, whose sha was `834d25a7` (PR #77): **that tree still carried all
+four `xfail` markers**, so the nightly it went green on was still suppressing the tests. A green scheduled run
+closes #76 regardless of what it ran; only the dispatch above says anything about the fix.
 
 **One false-refusal exposure is left standing DELIBERATELY (D-224) — do not "fix" it without the owner.**
 **POSIX is not exempt.** `UnixFileLock` unlinks the lockfile *before* releasing the `flock` and discards an
@@ -271,5 +288,5 @@ filesystem needed. **Ruled: record, do not widen the window.** `bundle_lock` is 
 | **`resume.yaml` is an IMPORT SOURCE, never hand-fixed** | D-155. Content comes from the wiki; the bundle is what renders; wording is `edit-fact`'s job (D-190). Mit pins `resume_max_pages=1`; never advise 2 | Mit |
 | **`add-evidence` takes no bundle lock, and D-143 widened the race** | Only `promote`/`rebase`/`approve` take `bundle_lock`. Two concurrent captures race on up to 13 files; a lost update leaves a silent `evidence_link_asymmetry`. Raise it before anyone runs two authoring agents against one bundle | owner-gated |
 | **P2 item 8 — the onboarding gatherer** | What would make the field tier fire for anyone. D-054 forbids us authoring non-tech field content. Its open architecture question: a genuinely new field rule is still *code*, not data | owner-gated |
-| **Four `runs` rows are `running` WITH `finished_at` set, and no drain can clear them** | **DIAGNOSED 2026-08-17.** `reap_stale_runs` (`store/queries.py`) excludes ids 1–4 and `tests/unit/test_queries.py` **pins that exclusion as intentional**. **The cause is not `top`** — it was migration `p0_run_status.py` (`541dfdd`, 2026-08-06) adding `status` with `DEFAULT 'running'`, which backfilled already-closed rows; row 5 onward is a clean `ok`/`failed` split, and **the mechanism cannot recur** through today's write path. **Blast radius: nothing observable** — every other `runs` query is scoped by `run_id` or `finished_at IS NULL`. The leak is real but **inert**. Recommended repair: a one-shot predicate-matched (never id-hardcoded) migration, plus a doctor-time invariant so recurrence is loud. **Owner-gated: which terminal status the four rows get** — silently rewriting run history differs from leaving an audit trail | P3 |
+| ~~Four `runs` rows are `running` WITH `finished_at` set~~ — **REPAIRED (D-230)** | Migration `runs_status_backfill_repair` closes them as **`ok`** (Mit's ruling), matched on `status='running' AND finished_at IS NOT NULL` — **never on ids**, so it is correct for any operator's store. `doctor` now asserts the same predicate and **exits 1** on a hit, so a recurrence is loud rather than inert. The old premise that these are "indistinguishable from a killed run" is **false**: a killed run keeps `finished_at` NULL, so all four were closed by a writer that ran. **Apply the migration to the live store** — it has not been run there yet | done |
 | **`boardwatch top` advances the queue by default** | Records `seen` unless `--no-record`, so exploratory ranking mutates dedup state — directly relevant to Gate P6's clean 7-day window | P6 |
