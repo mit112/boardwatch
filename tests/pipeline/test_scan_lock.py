@@ -13,11 +13,13 @@ import time
 from pathlib import Path
 
 import pytest
+from filelock import Timeout
 from provider_cases import ProviderCase
 from sqlalchemy import Engine, func, select
 from typer.testing import CliRunner
 
 from boardwatch.cli.app import app
+from boardwatch.core.lock_reclaim import RECLAIM_WINDOW_SECONDS
 from boardwatch.core.settings import Settings
 from boardwatch.scan import coordinator
 from boardwatch.scan.coordinator import SCAN_LOCK_MESSAGE, ScanLockHeldError, run_scan
@@ -68,7 +70,10 @@ def test_j_second_scan_rejected_fast_with_zero_db_writes(
 
     assert result.exit_code == 2
     assert SCAN_LOCK_MESSAGE in result.output
-    assert elapsed < 2.0  # fail-fast: no fetch, no retries, no migration work
+    # fail-fast: no fetch, no retries, no migration work. Read from the emitter rather than restated,
+    # because on Windows a genuine refusal pays the reclaim window first (D-227) — zero off Windows,
+    # so this stays the 2.0s budget everywhere the holder is alive and the OS answers at once.
+    assert elapsed < RECLAIM_WINDOW_SECONDS + 2.0
     # ZERO DB writes — not even schema creation touched the disk:
     assert not (data_dir / DB_FILENAME).exists()
 
@@ -212,3 +217,143 @@ def test_second_in_process_scan_raises_typed_error(tmp_path: Path) -> None:
             run_scan(engine, Settings(data_dir=data_dir, config_dir=tmp_path))
     finally:
         lock.release()
+
+
+# --------------------------------------------------------------------------------------
+# The reclaim window (D-227). The scan lock inherits the same platform defect as the bundle
+# writer lock: `filelock` swallows the EACCES Windows returns while a killed holder's handles are
+# torn down, so an acquire lands on `Timeout` for a lock nobody holds. These run on every platform
+# by driving the window directly — the Windows path itself cannot be exercised here.
+# --------------------------------------------------------------------------------------
+
+
+class _ScriptedLock:
+    """A `FileLock` stand-in that refuses a scripted number of asks before it yields.
+
+    Models only what `run_scan` uses: `acquire(blocking=False)` and `release()`. Refuses to be asked
+    past a ceiling so that a wait which lost its deadline fails loudly instead of hanging — a hang is
+    not a failure.
+    """
+
+    def __init__(self, refusals: int, ceiling: int = 1_000) -> None:
+        self.refusals = refusals
+        self.ceiling = ceiling
+        self.attempts = 0
+        self.releases = 0
+
+    def __call__(self, path: str) -> "_ScriptedLock":
+        return self
+
+    def acquire(self, *, blocking: bool) -> None:
+        assert blocking is False, "the acquire must stay non-blocking; the window is run_scan's"
+        self.attempts += 1
+        if self.attempts > self.ceiling:
+            raise AssertionError(
+                f"the scan lock was asked {self.attempts} times: the wait has lost its deadline"
+            )
+        if self.attempts <= self.refusals:
+            raise Timeout("scripted refusal")
+
+    def release(self) -> None:
+        self.releases += 1
+
+
+#: The window these tests drive. Named so the bounded-wait assertion derives its budget from the
+#: window rather than restating a number.
+_WINDOW = 0.05
+
+
+def _prepared(tmp_path: Path) -> tuple[Engine, Settings]:
+    """An engine with the schema already created, plus settings pointing at it.
+
+    Deliberately a separate step so no timed region contains it. `get_engine` + `ensure_schema`
+    create a SQLite file and run the whole DDL: ~50ms here, but **over a second on a Windows CI
+    runner**. Timing that alongside the acquire is what made this file's bounded-wait assertion
+    measure the filesystem instead of the window, and it failed on Windows only (D-227).
+    """
+    data_dir = tmp_path / "data"
+    data_dir.mkdir(exist_ok=True)
+    engine = get_engine(data_dir)
+    ensure_schema(engine)
+    return engine, Settings(data_dir=data_dir, config_dir=tmp_path)
+
+
+def test_a_refusal_that_clears_inside_the_window_is_retried_not_reported(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The point of the window: a killed scan's leftover lock must not refuse the next scan.
+
+    On the unattended path this is the difference between a run and a silent empty day.
+    """
+    engine, settings = _prepared(tmp_path)
+    lock = _ScriptedLock(refusals=2)
+    monkeypatch.setattr(coordinator, "FileLock", lock)
+    monkeypatch.setattr(coordinator, "RECLAIM_WINDOW_SECONDS", 1.0)
+    monkeypatch.setattr(coordinator, "RECLAIM_POLL_SECONDS", 0.001)
+
+    run_scan(engine, settings)
+
+    assert lock.attempts == 3, "the window must re-ask, not believe the first refusal"
+    assert lock.releases == 1, "the scan still releases what it took"
+
+
+def test_a_refusal_that_stands_is_reported_after_the_window_and_the_wait_is_bounded(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A live holder still gets the typed refusal, and the window bounds the wait."""
+    engine, settings = _prepared(tmp_path)
+    lock = _ScriptedLock(refusals=10_000)
+    monkeypatch.setattr(coordinator, "FileLock", lock)
+    monkeypatch.setattr(coordinator, "RECLAIM_WINDOW_SECONDS", _WINDOW)
+    monkeypatch.setattr(coordinator, "RECLAIM_POLL_SECONDS", 0.001)
+
+    # Only the acquire is timed. The stand-in never yields, so `run_scan` raises before it reaches
+    # any scan work at all — what is left in here is the wait and nothing else.
+    started = time.monotonic()
+    with pytest.raises(ScanLockHeldError):
+        run_scan(engine, settings)
+    elapsed = time.monotonic() - started
+
+    assert lock.attempts > 1, "a window that asks once is not a window"
+    assert elapsed < _WINDOW + 1.0, "the wait is bounded by the window, never by the holder"
+    assert lock.releases == 0, "nothing was acquired, so nothing may be released"
+
+
+def test_without_a_window_the_scan_lock_is_asked_exactly_once(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """POSIX's behaviour, unchanged: one ask, no wait, and state test j's fail-fast still holds."""
+    engine, settings = _prepared(tmp_path)
+    lock = _ScriptedLock(refusals=1)
+    monkeypatch.setattr(coordinator, "FileLock", lock)
+    monkeypatch.setattr(coordinator, "RECLAIM_WINDOW_SECONDS", 0.0)
+
+    with pytest.raises(ScanLockHeldError):
+        run_scan(engine, settings)
+
+    assert lock.attempts == 1
+
+
+def test_the_window_is_asked_for_on_windows_only() -> None:
+    """Both locks read one constant, so this pins the shared platform contract from the scan side."""
+    if sys.platform == "win32":  # pragma: win32 cover
+        assert coordinator.RECLAIM_WINDOW_SECONDS > 0
+    else:  # pragma: win32 no cover
+        assert coordinator.RECLAIM_WINDOW_SECONDS == 0.0
+
+
+def test_the_two_locks_share_one_window_rather_than_agreeing_by_coincidence(
+    tmp_path: Path,
+) -> None:
+    """The bundle lock and the scan lock must not drift apart.
+
+    Both bind the constant by name from `core.lock_reclaim`, so this compares the two bindings
+    against the source rather than against each other's literals.
+    """
+    from boardwatch.core import lock_reclaim
+    from boardwatch.profile_bundle import locking
+
+    assert coordinator.RECLAIM_WINDOW_SECONDS == lock_reclaim.RECLAIM_WINDOW_SECONDS
+    assert locking.RECLAIM_WINDOW_SECONDS == lock_reclaim.RECLAIM_WINDOW_SECONDS
+    assert coordinator.RECLAIM_POLL_SECONDS == lock_reclaim.RECLAIM_POLL_SECONDS
+    assert locking.RECLAIM_POLL_SECONDS == lock_reclaim.RECLAIM_POLL_SECONDS

@@ -6,9 +6,9 @@ failure modes are the ones the whole bundle inherits.
 ## The nine steps are the contract, not an outline
 
 §6 numbers them and this module runs them in that order:
-
-1. Take the exclusive bundle lock, **non-blocking**. Contention is `bundle_lock_held`, exit 3, no
-   wait and no write.
+1. Take the exclusive bundle lock, **non-blocking**. Contention is `bundle_lock_held`, exit 3, and
+   no write. "No wait" is literal on POSIX; on Windows the acquire pays a bounded reclaim window
+   first, which is D-224's recorded departure, described in `locking.py` rather than restated here.
 2. Re-check that the draft's parent is still `CURRENT`. A mismatch is `stale_draft_parent` with the
    draft left exactly as it was, because `rebase-draft` is the drain for it.
 3. Derive the next revision as `CURRENT.revision + 1` — contiguous along the selected chain, and

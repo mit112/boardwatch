@@ -16,7 +16,7 @@
 
 **The headline number: 0.** Zero job applications have ever come out of boardwatch (`applications` has 0
 rows), zero unattended days, zero acceptance days. Against that: 3 published releases, ~53k lines of source,
-**6,439 tests** (6,435 passing + 4 xfailed), **70 leaf CLI commands (20 `profile-bundle`)**, 6 ATS providers,
+**6,451 tests** (6,447 passing + 4 xfailed), **70 leaf CLI commands (20 `profile-bundle`)**, 6 ATS providers,
 an 800 MB / 24,073-posting store.
 
 **The program reoriented on 2026-08-13 (D-155):** remaining work runs through the **canonical career-profile
@@ -250,41 +250,70 @@ the 33 bullets get shortened — **DONE, all eleven entities, revision 21** (D-2
 job-apps dates — **ruled**, item 1; a skill listed under two groups — **refused**, D-210; **boardwatch's
 Windows story — RULED best-effort, D-212**.)*
 
-**Windows is best-effort (D-212)** — in the nightly, out of the pyproject classifiers, four caveats in
-`README.md`. **A green 9-job push run contains ZERO Windows jobs** (`ci.yml`'s `os` matrix is conditional
+**Windows is best-effort (D-212)** — in the nightly, out of the pyproject classifiers, three caveats in
+`README.md` (the fourth was this race and is now recorded there as fixed, with its residual). **A green 9-job push run contains ZERO Windows jobs** (`ci.yml`'s `os` matrix is conditional
 on `schedule`/`workflow_dispatch`, D-151; the nightly is 12) — never read it as full-matrix coverage. A
 **`nightly-watch`** job files a GitHub issue when a scheduled run fails and closes it on recovery:
-**check for an open "Nightly CI is failing" issue at session start.** Of the two red tests, rich's
-`legacy_windows` off-by-one is fixed; the stale-lock reclaim is a Windows-only **race**, accepted by
-ruling and marked `xfail(win32, strict=False)`.
+**check for an open "Nightly CI is failing" issue at session start.** Both formerly-red Windows tests are
+fixed: rich's `legacy_windows` off-by-one, and — as of D-224 — the stale-lock race itself.
 
-**`nightly-watch` issue #76 is OPEN**, filed by scheduled run `32007953224`, which failed on one job —
-`test (3.11, windows-latest)`.
+**The stale-lock race is FIXED at the root, and all four `xfail` markers are GONE** (D-224, superseding the
+D-212/D-222/D-223 suppression track). `locking.py`'s POSIX-only sentence is out; `bundle_lock` re-asks the
+OS for `RECLAIM_WINDOW_SECONDS` — **1.0s on `win32`, 0.0 everywhere else, so POSIX is bit-identical** —
+rather than believing one refusal. **Zero Windows `xfail` markers remain**; the surviving 4 xfails are
+`test_projection_scoring.py:117`'s `strict=True` known-biased scorers, and always were a different four
+(the removed markers were conditional on `win32`, hence ordinary passes off Windows).
 
-**FOUR tests kill a lock holder then acquire; all four are now marked** (D-212 two, D-222 a third, **D-223**
-a fourth — `test_profile_bundle_rebase.py::test_the_lock_helper_refuses_a_second_holder_and_releases_on_exit`).
-**The census predicate is `process.kill()` in a test BODY followed by an acquire** — not the word `"killed"`
-in a name (what D-222 grepped, and why it missed one) and not the `bundle_lock_held` diagnostic (instance 4
-raises `BundleLockHeldError`). It is recorded in `tests/profile_bundle/conftest.py` beside the shared reason
-constant. **Instance 4 is marked by MECHANISM, never observed failing.** Five other holder sites stay
-**deliberately unmarked**: a live holder makes the race a spurious *pass*, a natural exit releases cleanly.
+**Two things about it are departures worth not rediscovering.** It departs from §21's *"no wait or
+mutation"* on Windows only: a **genuine** refusal there now costs up to a second, bounded by a deadline.
+And **1.0s is a judgement, not a measurement** — too short a window fails the way the module already did, a
+false refusal, so it can be widened on evidence. The three deliberately-unmarked contention tests
+(`promotion.py:892`, `rebase.py:1389`, `concurrency.py:234`) now read their timing budget as
+`RECLAIM_WINDOW_SECONDS + 2.0` from the emitter; left as literals they would have gone flaky on Windows.
 
-**All four markers are now PUSHED** (`origin/main` was 14 commits behind, which is the whole reason run
-`32007953224` was red — it ran against a tip that could not contain them). **`make check` can never verify
-this**: the markers are inert off `win32`.
+**VERIFIED ON WINDOWS as repair, not suppression.** A dispatch of `ci.yml` came back **success on all 12
+jobs**, and the pytest summaries were diffed against the pre-fix dispatch rather than trusting the job
+conclusions: **pre-fix Python 3.13 reported 5 xfailed / 3 xpassed**, so one of the four marked tests was
+*genuinely failing* under its marker; post-fix it is **4 xfailed / 0 xpassed / 0 failed** on all three
+versions, the 4 being the unrelated projection scorers. Totals reconcile exactly across two dispatches
+(pre-fix `6381 + 4 xpassed = 6385` effectively passing, `+6` new tests = **6391**, `+7` = **6392** on the
+final tip, `50 skipped` throughout), so the four tests moved from suppressed to passing rather than being
+skipped or weakened. 3.11 and 3.12 xpassed all four *both* times — which is why a green run alone could
+never have settled it, and why the **arithmetic** is the evidence. The seventh test also settles that two
+handles in one process contend on Windows via `msvcrt.locking` as two file descriptions do via `flock`.
 
-**Two verification routes, and they are NOT interchangeable.** A `workflow_dispatch` of `ci.yml` builds the
-full 12-job matrix and so yields the **Windows evidence** — dispatch `32039875198` (`8573f50`) is that run.
-But **it cannot close issue #76**: `nightly-watch` is gated `if: always() && github.event_name ==
-'schedule'` (`ci.yml:99`), so only the **07:00 UTC scheduled** run files or closes. So read the dispatch
-run's three `windows-latest` jobs directly for the verdict, and expect **#76 to close on the next nightly**,
-not before. Do not read a still-open #76 as the fix having failed.
+**`make check` can NEVER verify this work** (it passes, and passed before the fix too) — the window is inert
+off `win32`. Windows evidence comes only from a **`workflow_dispatch`** of `ci.yml`, which builds the full
+12-job matrix and takes **~1 hour** (Windows jobs measured at 40–62 min; 3.13 is usually the long pole).
+It **cannot close issue #76** —
+`nightly-watch` is gated `if: always() && github.event_name == 'schedule'` (`ci.yml:99`), so only the 07:00
+UTC scheduled run files or closes one. Read the dispatch's three `windows-latest` jobs directly; a
+still-open #76 is not evidence the fix failed.
 
-**A green Windows run proves SUPPRESSION, not repair.** `strict=False` means all four tests pass whether or
-not the defect fires. The **root fix is unstarted and named in D-223**: `locking.py`'s docstring chose
-`filelock` *for* portability and then rested its correctness argument on "the kernel drops a dead process's
-`flock` immediately", which only POSIX guarantees. Fixing that is a design question, not a cleanup, and the
-four markers come off together after it — never one at a time.
+**`nightly-watch` issue #76 is OPEN**, filed by scheduled run `32007953224` (a tip that predated even the
+markers). Expect it to close on the first nightly that runs with D-224 merged.
+
+**BOTH locks now carry the window, and both are VERIFIED GREEN on Windows.** `core/lock_reclaim.py` owns
+`RECLAIM_WINDOW_SECONDS` / `RECLAIM_POLL_SECONDS` and the bundle writer lock and the **scan lock** both
+bind it (D-227). The scan lock mattered more despite never having been observed firing: scanning runs
+**unattended**, so a killed scan followed by a refused scheduled scan is a **silent empty day**, not a
+retryable prompt. Both consumers bind the constants **by name**, so patching `core.lock_reclaim` reaches
+neither — patch the consumer, and a test compares both bindings against the source so they cannot drift.
+
+**Three facts from D-227's red first dispatch, kept because they change what a future session does** (the
+narration is in D-227): **a timed assertion must enclose only the span it claims** — setup inside the timer
+measured a Windows filesystem, not the lock; **forcing a platform's constant does not simulate its
+backend**, so a local window-on run proves nothing about `msvcrt` or runner speed; and `gh run view --log`
+refuses while *any* job still runs, whereas **`gh api repos/{o}/{r}/actions/jobs/{id}/logs
+--allow-escape-sequences`** serves a finished job's log at once.
+
+**One false-refusal exposure is left standing DELIBERATELY (D-224) — do not "fix" it without the owner.**
+**POSIX is not exempt.** `UnixFileLock` unlinks the lockfile *before* releasing the `flock` and discards an
+already-unlinked inode, so a second writer that opened it first can be reported `bundle_lock_held` while
+nobody holds the lock — a **live-holder handoff** race, reproduced on macOS local disk, no network
+filesystem needed. **Ruled: record, do not widen the window** — closing it costs a wait where §21 grants
+none on the platforms boardwatch actually runs on. `bundle_lock` is the only acquire path *inside*
+`profile_bundle`, and `coordinator.run_scan` the only one in `scan`.
 
 ---
 
@@ -295,5 +324,5 @@ four markers come off together after it — never one at a time.
 | **`resume.yaml` is an IMPORT SOURCE, never hand-fixed** | D-155. Content comes from the wiki; the bundle is what renders; wording is `edit-fact`'s job (D-190). Mit pins `resume_max_pages=1`; never advise 2 | Mit |
 | **`add-evidence` takes no bundle lock, and D-143 widened the race** | Only `promote`/`rebase`/`approve` take `bundle_lock`. Two concurrent captures race on up to 13 files; a lost update leaves a silent `evidence_link_asymmetry`. Raise it before anyone runs two authoring agents against one bundle | owner-gated |
 | **P2 item 8 — the onboarding gatherer** | What would make the field tier fire for anyone. D-054 forbids us authoring non-tech field content. Its open architecture question: a genuinely new field rule is still *code*, not data | owner-gated |
-| **Four `runs` rows are `running` WITH `finished_at` set, and no drain can clear them** | **DIAGNOSED 2026-08-17; two prior claims in this row were wrong.** `reap_stale_runs` (`store/queries.py:153-203`, predicate at `183-187`) does exclude ids 1–4 — and `tests/unit/test_queries.py:136-151` **pins that exclusion as intentional**, so it is not an oversight. **The cause is not `top`** — `top_cmd.py` never called `insert_run`/`ensure_run`; only `scan/coordinator.py:189` could have created them. It was migration `p0_run_status.py` (commit `541dfdd`, 2026-08-06) adding `status` with `DEFAULT 'running'`, which backfilled already-closed rows; row 5 onward is a clean `ok`/`failed` split, and **the mechanism cannot recur** through today's write path. **Blast radius: nothing observable** — every other `runs` query is scoped by `run_id` or `finished_at IS NULL`, `doctor`'s in-progress guard reads `finished_at`, and `verify` discovers runs only from `funnel-<run_id>.json` artifacts that postdate all four. So the leak is real but **inert**. Recommended repair: a one-shot predicate-matched (never id-hardcoded) migration for the four, plus a doctor-time invariant so recurrence is loud — a `CHECK` constraint would need a 6-FK table rebuild, disproportionate. **Owner-gated: which terminal status the four rows get** (re-derived `ok`, conservative `failed`-with-breadcrumb, or a new `unknown` catalog value) — a per-gate fail-safe call, since silently rewriting run history differs from leaving an audit trail | P3 |
+| **Four `runs` rows are `running` WITH `finished_at` set, and no drain can clear them** | **DIAGNOSED 2026-08-17; two prior claims in this row were wrong.** `reap_stale_runs` (`store/queries.py:153-203`, predicate at `183-187`) does exclude ids 1–4 — and `tests/unit/test_queries.py:136-151` **pins that exclusion as intentional**, so it is not an oversight. **The cause is not `top`** — `top_cmd.py` never called `insert_run`/`ensure_run`; only `scan/coordinator.py`'s `insert_run` call could have created them (cited by symbol: D-227 shifted its line). It was migration `p0_run_status.py` (commit `541dfdd`, 2026-08-06) adding `status` with `DEFAULT 'running'`, which backfilled already-closed rows; row 5 onward is a clean `ok`/`failed` split, and **the mechanism cannot recur** through today's write path. **Blast radius: nothing observable** — every other `runs` query is scoped by `run_id` or `finished_at IS NULL`, `doctor`'s in-progress guard reads `finished_at`, and `verify` discovers runs only from `funnel-<run_id>.json` artifacts that postdate all four. So the leak is real but **inert**. Recommended repair: a one-shot predicate-matched (never id-hardcoded) migration for the four, plus a doctor-time invariant so recurrence is loud — a `CHECK` constraint would need a 6-FK table rebuild, disproportionate. **Owner-gated: which terminal status the four rows get** (re-derived `ok`, conservative `failed`-with-breadcrumb, or a new `unknown` catalog value) — a per-gate fail-safe call, since silently rewriting run history differs from leaving an audit trail | P3 |
 | **`boardwatch top` advances the queue by default** | Records `seen` unless `--no-record`, so exploratory ranking mutates dedup state — directly relevant to Gate P6's clean 7-day window | P6 |
