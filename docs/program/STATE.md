@@ -19,11 +19,10 @@ rows), zero unattended days, zero acceptance days. Against that: 3 published rel
 **6,650 tests collected**, **70 leaf CLI commands (20 `profile-bundle`)**, 6 ATS providers, an 800 MB /
 24,073-posting store.
 
-**The working branch is `integrate-2026-08-17`, pushed and open as PR #78 — not merged.** Four lanes are merged into
-it: **D-224 + D-227** (the Windows stale-lock race, fixed at the root), **D-225** (projection reaches the
-daily pipeline, slice P5a), **D-226** (a bullet-less entry is representable) and **D-228** (fixture + corpus
-drift detection). **Only D-228 has reached `main`** (PR #77). D-224/D-225/D-226/D-227 exist on this branch
-alone, **awaiting the owner's review** — never describe them as released, pushed, or on `main`.
+**All four 2026-08-17 lanes are MERGED to `main`** (PR #77 then PR #78): **D-224 + D-227** (the Windows
+stale-lock race, fixed at the root, all four `xfail` markers gone), **D-225** (projection reaches the daily
+pipeline, slice P5a), **D-226** (a bullet-less entry is representable) and **D-228** (fixture + corpus drift
+detection). CI green on the full matrix; nothing is released — **no version has been cut since 0.3.0.**
 
 **The program reoriented on 2026-08-13 (D-155):** remaining work runs through the **canonical career-profile
 bundle**, not the old `resume.yaml` path. **P3, P6 and the 14-day clock are frozen** — costless, because
@@ -252,9 +251,9 @@ must derive its budget as `RECLAIM_WINDOW_SECONDS + N`, never a literal, or it g
 **`make check` can NEVER verify this work** — the window is inert off `win32`. Windows evidence comes only
 from a **`workflow_dispatch`** of `ci.yml` (the full 12-job matrix, **~1 hour**; Windows jobs 40–62 min, 3.13
 the long pole), and a dispatch **cannot** close issue #76 — `nightly-watch` is gated
-`github.event_name == 'schedule'`. **#76 is OPEN**, and since `main` still carries all four markers the next
-nightly is expected to close it **by SUPPRESSION, not by D-224** — that lane is on this branch only. **A
-closed #76 is not evidence about the fix.**
+`github.event_name == 'schedule'`. **#76 is OPEN.** D-224 is now on `main` and the four markers are gone, so
+the next nightly tests the real fix — but **a closed #76 still is not evidence about the fix**: `nightly-watch`
+closes on any green scheduled run, and the window is inert off `win32`. Read the Windows jobs directly.
 
 **One false-refusal exposure is left standing DELIBERATELY (D-224) — do not "fix" it without the owner.**
 **POSIX is not exempt.** `UnixFileLock` unlinks the lockfile *before* releasing the `flock` and discards an
