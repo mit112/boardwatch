@@ -36,6 +36,16 @@ against the declaration's own `no_match_fallback_ids` instead, by the identical 
 procedure — so a curated fallback still honours the budget and the same fatal-infrastructure
 handling, rather than being trusted verbatim.
 
+**"Fill the page" is opt-in and OFF by default** (`pool.fill_to_page`, from the declaration's own
+`fill_to_page` flag). When off, selection is exactly the ranked-then-fallback growth above. When
+on, a SECOND growth phase runs after it: whatever page room is left is topped off from the
+candidates the ranked phase left behind — non-pinned, not yet admitted — in the declaration's own
+order, by the identical one-at-a-time procedure, but WITHOUT the admission floor. That is the whole
+point: a candidate sharing no skill with the JD scores exactly `ADMISSION_FLOOR` and is unreachable
+in the ranked phase, yet the owner may still want it filling a page that would otherwise sit
+half-blank. The ids it admits are recorded separately in `fill_added_ids`, never folded into
+`selected_candidate_ids`.
+
 **This module never compiles anything itself.** `compile_prefix` is supplied by the caller,
 closing over the real `LatexRenderer`, an output directory, and `context.page_budget` — nothing
 here shells out to tectonic or pdfinfo, so a test can stub the four-arm gate directly instead of
@@ -84,6 +94,12 @@ class SelectionResult:
     selected_candidate_ids: tuple[str, ...]
     used_fallback: bool
     page_count: int | None
+    #: The candidate ids admitted by the opt-in "fill the page" phase, in the order they were
+    #: admitted (declaration order), and disjoint from `selected_candidate_ids` by construction.
+    #: Empty whenever `pool.fill_to_page` is off (the default) — so an existing caller reading only
+    #: the fields above sees identical values, and this field only ever grows the record, never
+    #: changes it.
+    fill_added_ids: tuple[str, ...] = ()
 
 
 def _fatal_if_infrastructure(gate: GateResult, *, where: str, candidate: str | None) -> None:
@@ -295,10 +311,29 @@ def select(
         pool, pinned, growth_order, compile_prefix, base_gate=pinned_gate, where=where
     )
 
+    # Opt-in second phase. Default OFF ⇒ this block is skipped entirely and the result
+    # below is byte-for-byte the ranked-only selection, `fill_added_ids` an empty tuple. With
+    # `fill_to_page`, top off any leftover page room from the candidates the ranked phase left
+    # behind — those neither pinned nor already admitted (ranked or fallback) — in the
+    # declaration's own order (`candidate_entry_ids` preserves it). This reuses `_grow`, which
+    # never consults the scorer, so the phase bypasses `ADMISSION_FLOOR` by construction: a
+    # zero-overlap candidate the ranked phase could never admit fills space here, still one at a
+    # time, still stopping at the first overflow. `already` is the phase's base set, and
+    # `last_gate` — the gate of the last ranked prefix that fit — its base gate, so the same
+    # fatal-infrastructure handling applies unchanged.
+    fill_added: list[str] = []
+    if pool.fill_to_page:
+        already = pinned | frozenset(admitted)
+        fill_order = [cid for cid in pool.candidate_entry_ids if cid not in already]
+        fill_added, last_gate = _grow(
+            pool, already, fill_order, compile_prefix, base_gate=last_gate, where=where
+        )
+
     return SelectionResult(
-        resume=_subset_resume(pool, pinned | frozenset(admitted)),
+        resume=_subset_resume(pool, pinned | frozenset(admitted) | frozenset(fill_added)),
         pinned_entry_ids=pool.pinned_entry_ids,
         selected_candidate_ids=tuple(admitted),
         used_fallback=used_fallback,
         page_count=last_gate.page_count,
+        fill_added_ids=tuple(fill_added),
     )

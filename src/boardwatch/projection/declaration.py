@@ -138,6 +138,15 @@ class ProjectionDeclaration(_Strict):
     entries: tuple[EntryDeclaration, ...] = ()
     no_match_fallback: tuple[str, ...] = ()
     extracurricular: tuple[str, ...] = ()
+    #: Opt-in "fill the page" (default OFF, so an absent field leaves selection byte-for-byte
+    #: unchanged). After the JD-ranked growth, if the page still has room, a SECOND growth phase
+    #: tops it off from the remaining candidate entries — those not pinned and not already admitted
+    #: — in DECLARATION order, keeping each while it still fits and stopping at the first overflow.
+    #: Priority IS declaration order: the owner already sequences `entries`, so the entries most
+    #: valuable regardless of role go first and no separate priority list is needed. This phase
+    #: bypasses the strict `ADMISSION_FLOOR` (select.py), so a candidate that shares no skill with
+    #: the JD — never admissible in the ranked phase — can still fill leftover space here.
+    fill_to_page: bool = False
 
     @property
     def pinned_ids(self) -> tuple[str, ...]:

@@ -506,5 +506,6 @@ def resume_project(
     typer.echo(
         f"posting {posting_id} scorer {scorer_name} "
         f"pinned {len(selection.pinned_entry_ids)} selected {selected_count} "
+        f"filled {len(selection.fill_added_ids)} "
         f"fallback {selection.used_fallback} pages {selection.page_count}"
     )

@@ -13,6 +13,7 @@ probe or the other), so a test that wants readable output supplies one itself.
 
 from __future__ import annotations
 
+import dataclasses
 import re
 from decimal import Decimal
 
@@ -523,3 +524,77 @@ def test_admission_floor_constant_is_zero_and_strict() -> None:
     assert ADMISSION_FLOOR == Decimal(0)
     for scorer in SCORERS.values():
         assert scorer(ZERO, set(JD_DATA), TABLE, TAXONOMY) == Decimal(0)
+
+
+# -- opt-in "fill the page": a second, floor-bypassing growth phase --------------------------
+#
+# `JD_MOBILE` matches only `entry.mobile1`; `entry.data1`, `entry.data2` and `entry.zero` all
+# score exactly `ADMISSION_FLOOR` against it and so are unreachable in the ranked phase. That is
+# the whole point of these tests: the fill phase must reach what the ranked phase provably cannot.
+
+
+def test_fill_to_page_tops_off_the_page_from_the_remaining_candidates_in_order() -> None:
+    """Feature ON, a JD matching one candidate, a roomy page: the ranked phase admits only the
+    JD match, then the fill phase tops the page off from every remaining candidate in DECLARATION
+    order — including the zero-overlap ones the ranked phase could never admit. Strictly more
+    entries reach the page than ranked-only, and the fill admits are recorded separately."""
+    filling_pool = dataclasses.replace(POOL, fill_to_page=True)
+    roomy = _budget_compiler(10)
+
+    ranked_only = select(
+        POOL, _context(JD_MOBILE), SCORER, table=TABLE, taxonomy=TAXONOMY, compile_prefix=roomy
+    )
+    filled = select(
+        filling_pool, _context(JD_MOBILE), SCORER, table=TABLE, taxonomy=TAXONOMY,
+        compile_prefix=roomy,
+    )
+
+    # The ranked phase is untouched by the flag: only the JD match clears the floor either way.
+    assert ranked_only.selected_candidate_ids == ("entry.mobile1",)
+    assert filled.selected_candidate_ids == ("entry.mobile1",)
+
+    # The fill phase adds the remaining candidates in declaration order (mobile1 is already
+    # admitted, so it is skipped); the ranked-only run adds nothing.
+    assert filled.fill_added_ids == ("entry.data1", "entry.data2", "entry.zero")
+    assert ranked_only.fill_added_ids == ()
+
+    # Strictly more entries reach the page, filling toward the budget.
+    filled_ids = {e.entry_id for e in filled.resume.entries}
+    ranked_ids = {e.entry_id for e in ranked_only.resume.entries}
+    assert filled_ids > ranked_ids
+    assert filled_ids == {"entry.core", "entry.mobile1", "entry.data1", "entry.data2", "entry.zero"}
+
+    # A zero-overlap entry reached the page ONLY through the fill phase, never the ranked one.
+    assert "entry.zero" not in filled.selected_candidate_ids
+    assert "entry.zero" in filled.fill_added_ids
+
+
+def test_fill_to_page_off_is_the_ranked_only_selection_unchanged() -> None:
+    """Regression guard: with the flag off (the default), the same posting yields exactly the
+    ranked-only selection — the zero-overlap candidates stay off the page and `fill_added_ids`
+    is empty. This is what makes the feature backward compatible."""
+    result = select(
+        POOL, _context(JD_MOBILE), SCORER, table=TABLE, taxonomy=TAXONOMY,
+        compile_prefix=_budget_compiler(10),
+    )
+    assert POOL.fill_to_page is False
+    assert result.fill_added_ids == ()
+    assert result.selected_candidate_ids == ("entry.mobile1",)
+    assert {e.entry_id for e in result.resume.entries} == {"entry.core", "entry.mobile1"}
+
+
+def test_fill_to_page_stops_at_the_first_overflow_and_honours_declaration_order() -> None:
+    """The fill phase keeps each candidate while it still fits and stops at the first overflow,
+    just like the ranked phase — it does not skip an overflowing candidate to try a later one.
+    Budget for pinned + the JD match + exactly ONE fill candidate: the first in declaration order
+    (`entry.data1`) is kept; `entry.data2`/`entry.zero` must never appear."""
+    filling_pool = dataclasses.replace(POOL, fill_to_page=True)
+    result = select(
+        filling_pool, _context(JD_MOBILE, page_budget=3), SCORER, table=TABLE, taxonomy=TAXONOMY,
+        compile_prefix=_budget_compiler(3),
+    )
+    assert result.selected_candidate_ids == ("entry.mobile1",)
+    assert result.fill_added_ids == ("entry.data1",)
+    assert {e.entry_id for e in result.resume.entries} == {
+        "entry.core", "entry.mobile1", "entry.data1"
+    }

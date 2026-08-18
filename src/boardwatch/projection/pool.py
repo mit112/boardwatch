@@ -107,6 +107,9 @@ class ProjectionPool:
 
     `resume.entries` holds every declared entry; `pinned_entry_ids` / `candidate_entry_ids` /
     `no_match_fallback_ids` locate the declaration's own split within it, by `Entry.entry_id`.
+    `fill_to_page` carries the declaration's opt-in "fill the page" flag into Stage 2, exactly as
+    `no_match_fallback_ids` carries the declaration's fallback list — both are Stage-2 selection
+    inputs the declaration owns, not rendering content.
     """
 
     resume: Resume
@@ -116,6 +119,7 @@ class ProjectionPool:
     bundle_revision: str
     bundle_digest: str
     projection_digest: str
+    fill_to_page: bool = False
 
 
 def project_pool(
@@ -228,6 +232,7 @@ def project_pool(
         bundle_revision=str(selection.revision),
         bundle_digest=selection.bundle_digest,
         projection_digest=digest,
+        fill_to_page=declaration.fill_to_page,
     )
 
 
