@@ -24,9 +24,12 @@ stale-lock race, fixed at the root, all four `xfail` markers gone), **D-225** (p
 pipeline, slice P5a), **D-226** (a bullet-less entry is representable) and **D-228** (fixture + corpus drift
 detection). CI green on the full matrix; nothing is released — **no version has been cut since 0.3.0.**
 **2026-08-18 added D-229** (P5b's criteria, named by Mit), **D-230** (the backfilled `runs` rows repaired,
-plus a `doctor` invariant), **D-231** (D-225's residuals: four closed, one declined, one not found) and
-**D-232** (an independent repo audit found a FALSE NUMBER on the rendered résumés; fixed in revision 22).
-**Both 2026-08-18 PRs are MERGED** (#80, #81); working tree clean.
+plus a `doctor` invariant), **D-231** (D-225's residuals: four closed, one declined, one not found),
+**D-232** (an independent repo audit found a FALSE NUMBER on the rendered résumés; fixed in revision 22),
+and three résumé-render changes — **D-233** (ATS-parsable PDFs: XeTeX ligatures disabled via `fontspec`),
+**D-234** (opt-in `fill_to_page` page-fill for projection Stage 2) and **D-235** (opt-in first-bullet link
+placement + reverse-chronological project sort). **All of these PRs are MERGED** (#80–#85); working tree
+clean.
 
 **The next session is about the RÉSUMÉ, at Mit's direction** — not the engineering backlog. He has seen a
 current one-page render from revision 22 and the conversation continues from there. The judgement that has
@@ -43,6 +46,14 @@ résumé renders and is live** (`untailored-349.pdf`): Experience in the two-lin
 **`bullet_too_long` can no longer fire: at revision 22 every rendering bullet is within the 220-char
 ceiling** (D-213…D-221), so the fallback's remaining structural cause is gone — open Q5 needs re-testing
 against a real `tailor run`, not re-analysing. **Sending is Mit's, and nothing has been sent.**
+
+**The render stack gained four merged résumé changes, all default-off opt-ins.** Output is now
+**ATS-parsable** (D-233) — the bundled `resume_base.tex` loads its font via `fontspec` with
+`Ligatures=NoCommon` so `pdftotext` reads every word, small caps preserved (R7 template pin updated). Three
+opt-in **projection** controls also shipped: `fill_to_page` (D-234, a second growth phase that tops off the
+page past `ADMISSION_FLOOR` in declaration order), and `link_in_first_bullet` + `sort_projects_by_date`
+(D-235). Each adds a projection field, so each shifts `projection_digest` and reopens `approve-projection`
+once on upgrade — the intended fail-safe. **Mit's personal template and declarations adopt all four.**
 
 **Post-Gate-B robustness is finished** (D-202…D-206, plus §5.2 invariant 3). `candidate_promotion.py` is the
 only lossy-id-creation site in `src/`, and **all four of its slug-collision sites now refuse** rather than

@@ -157,6 +157,23 @@ All notable changes to this project are documented here. The format follows
   `[0.3.0]` notes below do not enumerate it; it was unreachable there, with no command and no entry
   point.
 
+- **Opt-in page-fill for bundle-to-résumé projection — `fill_to_page` on the projection declaration**
+  (D-234). Stage-2 `select` enforces a strict `ADMISSION_FLOOR=0` (a candidate sharing no JD-skill overlap
+  is never admitted) and an all-or-nothing `no_match_fallback`, so a narrowly-targeted JD could leave the
+  page short with no way to fill it. When `fill_to_page: true`, a second growth phase runs after the ranked
+  selection and tops off from the remaining candidates in declaration order, bypassing the floor, until the
+  page budget is reached; the ids it added are recorded on `SelectionResult.fill_added_ids`. Default off
+  leaves selection unchanged.
+
+- **Opt-in first-bullet link placement and reverse-chronological project sort — `link_in_first_bullet`
+  (per-entry) and `sort_projects_by_date` on the projection declaration** (D-235). `link_in_first_bullet`
+  renders an entry's link as an underlined label appended to its first bullet instead of the project
+  heading, clearing the link/date collision on a wide heading line. `sort_projects_by_date` orders project
+  entries newest-first by their structured `year_month` start date, applied after selection and fill;
+  experience entries are untouched. Both default off. The layout firewall reconstructs the first-bullet
+  expected substring through the shared `_href` helper, so the escaping round-trip stays exact and tailoring
+  is not silently degraded to the untailored fallback.
+
 ### Changed
 
 - **`boardwatch eligibility extract` and `boardwatch tailor run <posting-id> --tier-b` now exit 1 when an LLM
@@ -184,6 +201,14 @@ All notable changes to this project are documented here. The format follows
 
 ### Fixed
 
+- **Rendered résumé PDFs are now ATS-parsable** (D-233). tectonic (XeTeX) with the default Computer Modern
+  fonts emitted the `ff` ligature as the single codepoint U+FB00 with no ToUnicode mapping, so `pdftotext`
+  — and every ATS that runs one — read "efficiency" and "traffic" as garbled or dropped text: correct on
+  screen, unparseable underneath. The bundled `resume_base.tex` now loads the font through `fontspec` with
+  `Ligatures=NoCommon`, so each glyph stays one ASCII codepoint, and names the small-caps face explicitly
+  (`SmallCapsFont={lmromancaps10-regular.otf}`, Latin Modern) so section headers keep their small caps. The
+  font resolves from tectonic's own bundle; nothing new is shipped, and the one-page fit is unchanged.
+
 - **A missing `pdfinfo` now fails the run loudly instead of quietly degrading every lead.** poppler's
   `pdfinfo` supplies the page count the résumé gate measures against `resume_max_pages`. When the binary was
   absent, `_pdf_page_count` returned `None` and that was folded into `COMPILE_FAILED` for **every** lead — so
@@ -201,6 +226,15 @@ All notable changes to this project are documented here. The format follows
   only the stdout branch was wrong. That branch now writes UTF-8 through a locally-wrapped stream, flushed
   and detached so the shared buffer stays open for the rest of the process. Global stdout is never modified,
   so nothing else the command prints is affected.
+
+### Migration
+
+- **The opt-in projection controls added this release — `fill_to_page`, `link_in_first_bullet` and
+  `sort_projects_by_date` — shift `projection_digest`.** Adding these fields changes the projection's
+  controlling shape, so an existing user must re-approve their projection once after upgrading:
+  `boardwatch profile-bundle approve-projection`. This is the intended fail-safe — the digest reopens the
+  owner's editorial gate whenever the projection changes — and it is a one-time step, even for users who
+  leave all three controls off.
 
 ## [0.3.0] - 2026-08-10
 
