@@ -111,7 +111,7 @@ threshold, so `ADMISSION_FLOOR` stays `Decimal(0)`.
    Pool: **11 entries, 23 bullets, 4,608 chars, ZERO over the 220-char ceiling**; the pinned three cost
    `nio-coop` 632 / `saayam` 200 / `sakec` 348 (page budget under *Stage 2*).
    **Still owed from this track:**
-   - **D-221's "C" — BUILT and MERGED into this branch (D-226); not on `main`.** "Role + org + dates only"
+   - **D-221's "C" — BUILT and MERGED to `main` (D-226).** "Role + org + dates only"
      is representable by declaring **`bulletless: true`** on the entry in `projection.yaml`;
      `validate_slots` accepts a declared entry and still refuses every other empty one, so Gate P1's
      direction is unchanged (`PROGRAM.md` item 4 amended). **The fix is the opposite of what STATE and
@@ -199,7 +199,7 @@ the slices reviewed and not that the subsystem is defect-free, are in `STANDING-
 | 14-day acceptance | not started | — frozen; starts after P6 |
 | P7 Breadth | not started | — |
 | *Gate A (parallel)* | *complete, merged, CI green* | ***MET*** — *has moved no program gate* |
-| *Projection* | *Tasks 1–22 **merged to `main` and pushed**, reviewed clean; Tasks 20 and 23 closed (D-197, D-198). **Pipeline integration slice P5a built and merged into `integrate-2026-08-17` only** — `run --project`, 11 reviewed tasks (D-225)* | *Projection-spec P0–P4 build gates met; **its P5 NOT met** — P5a only, the default flip is P5b* |
+| *Projection* | *Tasks 1–22 **merged to `main` and pushed**, reviewed clean; Tasks 20 and 23 closed (D-197, D-198). **Pipeline integration slice P5a MERGED to `main`** — `run --project`, 11 reviewed tasks (D-225)* | *Projection-spec P0–P4 build gates met; **its P5 NOT met** — P5a only, the default flip is P5b* |
 | *Gate B / master reservoir* | ***Stage 1 + Stage 2 DONE**; all 11 entities' bullets refined (D-213…D-221); live revision **21**. Digest deliberately omitted — refinement restamps it several times a day (D-017)* | ***MET — 0 blockers** (D-201), and **0 over-ceiling bullets** since revision 21* |
 
 ### Gate P6, clause by clause
@@ -234,7 +234,7 @@ RULED best-effort, D-212**; a bullet-less entry — **declared, D-226**.)*
 **`nightly-watch`** job files a GitHub issue when a scheduled run fails and closes it on recovery:
 **check for an open "Nightly CI is failing" issue at session start.**
 
-**The stale-lock race is FIXED at the root, all four `xfail` markers are GONE on this branch** (D-224,
+**The stale-lock race is FIXED at the root, all four `xfail` markers are GONE on `main`** (D-224,
 superseding the D-212/D-222/D-223 suppression track), **and BOTH locks now carry the window** (D-227), both
 verified green on Windows. `core/lock_reclaim.py` owns `RECLAIM_WINDOW_SECONDS` / `RECLAIM_POLL_SECONDS` —
 **1.0s on `win32`, 0.0 everywhere else, so POSIX is bit-identical** — and the bundle writer lock and the
