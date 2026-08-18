@@ -201,6 +201,15 @@ All notable changes to this project are documented here. The format follows
 
 ### Fixed
 
+- **`profile-bundle promote-candidates` no longer silently drops a skill-group label that collides with a
+  seeded category** (D-237). A promoted skill's group label is slugged to a `category_id`; when that slug hit
+  a category the bundle's catalog already defined under a *different* `display_name` (author writes group
+  "Technique"; the catalog defines `technique` → "Techniques"), promotion skipped it and filed the skill under
+  the catalog's label, discarding the author's — with nothing warning. Promotion now refuses, naming both
+  labels and the shared id, so the author aligns the group label to the catalog (or changes the catalog's
+  `display_name`). This closes the last of the five slug-collision sites (D-202…D-210); the catalog owns the
+  `display_name`. Reachable only when a bundle ships a seeded catalog, so no default behaviour changes.
+
 - **Rendered résumé PDFs are now ATS-parsable** (D-233). tectonic (XeTeX) with the default Computer Modern
   fonts emitted the `ff` ligature as the single codepoint U+FB00 with no ToUnicode mapping, so `pdftotext`
   — and every ATS that runs one — read "efficiency" and "traffic" as garbled or dropped text: correct on
