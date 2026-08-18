@@ -14,6 +14,25 @@
 \usepackage{tabularx}
 \usepackage{ragged2e}
 
+% ATS-parsable text: XeTeX's default Computer Modern emits the ff/ffi/ffl ligatures as
+% single glyphs (U+FB00-FB04) with no decomposing ToUnicode, so pdftotext and every ATS
+% extract "efficiency" as "e<U+FB00>iciency" — invisible to a keyword search. Load Latin
+% Modern (the OpenType Computer Modern, visually identical) via fontspec and disable the
+% common ligatures so every glyph maps back to plain ASCII. The .otf files are resolved
+% from tectonic's own bundle — the same source as every other asset in this template —
+% so this needs no font file shipped in the repo and works for any tectonic user.
+\usepackage{fontspec}
+% SmallCapsFont is load-bearing: the section headers and the name use \scshape, and Latin
+% Modern ships small caps as a SEPARATE face (lmromancaps) — without this, \scshape silently
+% falls back to normal letters and the small-caps look is lost. lmromancaps has no bold face,
+% so the bold small-caps name synthesizes from it, which matches the old Computer Modern look.
+\setmainfont{lmroman10-regular.otf}[
+  BoldFont=lmroman10-bold.otf,
+  ItalicFont=lmroman10-italic.otf,
+  BoldItalicFont=lmroman10-bolditalic.otf,
+  SmallCapsFont={lmromancaps10-regular.otf},
+  Ligatures=NoCommon]
+
 \pagestyle{fancy}
 \fancyhf{}
 \fancyfoot{}

@@ -131,7 +131,7 @@ SHIPPED_DATA: dict[str, DataEntry] = {
         provenance="first-party",
         source="derived from the 'Jake's Resume' LaTeX template lineage via job-apps' "
         "~/dev/Job apps/resume_base.tex, genericized for this repo",
-        pin="sha256:793a4c415d371f358e55cf5e3241da8185c224dcfdce3dfe697d5679f41957cc",
+        pin="sha256:26787e133fabf1aa9a761e29ac586498cf0ac527e5143658ddd4a2186d5666a8",
     ),
     "src/boardwatch/projection/examples/projection.example.yaml": DataEntry(
         kind="fixture",
