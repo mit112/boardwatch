@@ -267,7 +267,12 @@ outcome and the counts could never reconcile):
    **`declaration_invalid`** (the fidelity-contract arms). Anything other than `available` refuses the run
    before any disposition is written (A2) and sets `summary.fatal`.
 2. **Per-lead outcome**, only reachable when availability is `available`: `projected`,
-   `posting_unavailable`, **`extraction_unavailable`**, `lineage_mismatch`, `output_io_failure`.
+   `posting_unavailable`, **`extraction_unavailable`**, `lineage_mismatch`, `output_io_failure`,
+   **`candidate_unrenderable`** (a candidate whose content will not compile — attributable to that candidate
+   because the same document without it compiled seconds earlier), and **`not_attempted`** (the leads an
+   aborted projection stage never reached; added so the funnel still balances when a run-scoped cause
+   surfaces mid-loop). **The catalog in code is authoritative** — this list has drifted twice, and the
+   enum-derived totality test is what actually holds it closed.
 
 **Six things moved out of the per-lead catalog, because they are run-invariant.** The template, the renderer
 and the tectonic toolchain are shared; the pinned set and its budget are identical for every posting; and

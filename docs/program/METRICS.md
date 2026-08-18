@@ -129,7 +129,7 @@ reports drift without writing, and `make check` depends on it (D-109).
 | METRICS.md | 4140 | Session — 2026-08-17 (crop-rf bullet refinement: the fifth entity through STATE item 2, D-217) · Attended. The only entity with a primary published source, and the outcome inverted: every technical number verified against the paper, while the award count, the hosting claim and the authorship all failed. Bundle revision 16 -> 17. No phase gate moved, still 0 sent. |
 | METRICS.md | 4168 | Session — 2026-08-17b (NIO + Saayam: the last two entities through STATE item 2, D-219/D-220/D-221) · Attended. The pinned pair, and the two hardest attribution calls in the bundle. Bundle revision 19 → 21, completing all eleven entities. The page budget was re-measured and two of D-195's conclusions retired. No phase gate moved, still 0 sent. |
 | METRICS.md | 4203 | Session — 2026-08-17c (verifying D-222 found a fourth instance of the same race, D-223) · Opened as a verification pass on an inherited handoff. The handoff's one owed item was already done; the real findings were 14 unpushed commits and a fourth unmarked test. No phase gate moved, still 0 sent. |
-| METRICS.md | 4229 | Session — 2026-08-17d (projection reaches the daily pipeline: `run --project`, slice P5a, D-225) · Eleven reviewed build tasks plus two fix batches. The compile budget was measured **before** merge, against a copy of the store. Projection-spec P5a shipped; **parent P5 still NOT met** (the default flip is P5b, owner-gated). No program phase gate moved, still 0 sent. |
+| METRICS.md | 4229 | Session — 2026-08-17d (projection reaches the daily pipeline: `run --project`, slice P5a, D-225) · Eleven reviewed build tasks plus two fix batches, then a whole-branch review that returned DO NOT SHIP on four seam findings and SHIP after one fix wave. The compile budget was measured **before** merge, against a copy of the store. Projection-spec P5a shipped; **parent P5 still NOT met** (the default flip is P5b, owner-gated). No program phase gate moved, still 0 sent. |
 
 ---
 
@@ -4226,7 +4226,7 @@ been promoted to a revision or rendered; that is the owner's confirm/attest/appr
 
 ---
 
-## Session — 2026-08-17d (projection reaches the daily pipeline: `run --project`, slice P5a, D-225) · Eleven reviewed build tasks plus two fix batches. The compile budget was measured **before** merge, against a copy of the store. Projection-spec P5a shipped; **parent P5 still NOT met** (the default flip is P5b, owner-gated). No program phase gate moved, still 0 sent.
+## Session — 2026-08-17d (projection reaches the daily pipeline: `run --project`, slice P5a, D-225) · Eleven reviewed build tasks plus two fix batches, then a whole-branch review that returned DO NOT SHIP on four seam findings and SHIP after one fix wave. The compile budget was measured **before** merge, against a copy of the store. Projection-spec P5a shipped; **parent P5 still NOT met** (the default flip is P5b, owner-gated). No program phase gate moved, still 0 sent.
 
 ### The benchmark — ten representative postings, against a COPY of the store
 
@@ -4268,3 +4268,32 @@ benchmark would have created the very first ones.
 | ⚠️ Found while checking — not ours to fix | **D-227 is double-claimed**: `windows-lock-portability` ("The scan lock gets the same reclaim window…") and `fixture-drift-detection` ("Fixture drift is three separate gates…") each define a `## D-227` on unmerged branches. Whichever merges second must renumber, and `make check`'s index gate will catch it |
 | Residuals recorded in D-225, not fixed | Three `date.today()` authoring `as_of` values in `cli/profile_bundle_cmd.py:990,1042,1111` against a UTC-unified render path; the `$.projection_kind` **field-name** coupling at `store/run_funnel_queries.py:324`; `run_preflight`'s per-lead taxonomy load; `projection_ran`'s omission-direction default; the doubled `bundle_unreadable` sibling message |
 | Phase gates | **Projection-spec P5a shipped; parent projection-spec P5 NOT met** — its gate includes "`resume.yaml` stops being the daily default", which this slice deliberately leaves unmet (that is P5b, owner-gated). No `PROGRAM.md` phase gate moved. **Still 0 applications sent** |
+
+### The whole-branch review — DO NOT SHIP, then SHIP
+
+The eleven task reviews were all clean, so this final pass was aimed only at the **seams**. It returned
+**DO NOT SHIP** on four Important findings none of the task-scoped reviews could have seen, and triaged all
+six deferred ledger items as can-ship — the backlog blocked nothing; the integration contracts did.
+
+| Finding | What it was | Disposition |
+|---|---|---|
+| Lineage could name a transformation that was never applied | The run freezes taxonomy/persona/equivalence versions and records them, but `_plan_tier_a` **reloads** all three and validation covered only the two document hashes and the posting version. A config change between projection and tailoring wrote an artifact claiming snapshot A while B was applied — the design's own §4.1 requirement, unimplemented because the plan listed those versions as lineage *fields* and never specified checking them | **Fixed** — compare-and-refuse in `run_tailor`, placed **before** the extraction lookup so the empty-set coalescing cannot hide a taxonomy mismatch |
+| A late run-scoped failure left the funnel unbalanced | Preflight passes; a later lead's pinned compile hits a run-scoped cause; the loop sets fatal and breaks, leaving that lead and every remaining one with no terminal accounting while `entered` still claimed the full shortlist. A **fourth** case outside the three the design promises are exhaustive | **Fixed** — a `not_attempted` bucket, extended to the tailor loop's three run-scoped breaks. The alternative (hoisting the pinned compile into preflight) was **rejected for cause**: it would delete `_fatal_if_infrastructure`'s escalation, so a real outage would be billed per-lead to the owner's content and never stop the run |
+| `--project --resume custom.yaml` silently ignored the explicit résumé | Both options accepted; every projected lead then overwrote the path. The plan had said this combination must refuse until the owner rules it | **Fixed** — typed refusal as the first statement of `run()`, before any `runs` row or disposition exists |
+| The design contradicted itself | Revision 3 required **both** a global `ARTIFACT_VERSION` 4→5 bump **and** byte-identical no-flag output. Both cannot hold | **Resolved by ruling** — keep the global bump (mixed versions would force every consumer to handle two schemas); narrow the over-claim, which was about *behaviour* and should never have covered the artifact's own version field. Corrected in the design, D-225 and STATE so neither claim is left recorded as met |
+
+**Final gate: exit 0 on `9f323a8`** — **6,577 passed** (+11, exactly the eleven tests added), mypy clean over
+275 files, `generalization: OK`, index current. The scoped re-review verdicted all five findings ADDRESSED
+and returned **SHIP**, confirming the accounting is total and non-overlapping (an aborted projection counts
+`leads[lead_index:]`, an aborted tailor `leads[lead_index+1:]`, and a per-lead failure always `continue`s so
+it can never land in a remainder).
+
+**Adjudicated residuals, shipped knowingly.** A projected run that aborts in the *tailor* loop still leaves
+the **tailor** stage unreconciled — but that is **pre-existing and identical on the authored path**, so it is
+not a regression this branch introduced. The `--project`/`--resume` refusal is CLI-only; `run_pipeline`
+itself still accepts both, which is what the design asked for. And `STATE.md` now stands at ~310 lines
+against `CLAUDE.md`'s ~170 target — pre-existing drift, +8 from this session, and not safe for one lane to
+rewrite while three others are appending to it.
+
+**What this session did NOT do:** merge anything, push `main`, or flip any default. Four branches are open
+and unmerged, and the merge order is Mit's call.
