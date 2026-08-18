@@ -48,7 +48,7 @@ def test_an_absent_declaration_is_missing_not_unreadable(tmp_path: Path) -> None
     absent = tmp_path / "projection.yaml"
     with pytest.raises(ProjectionError) as exc:
         load_declaration(absent)
-    assert exc.value.issue is ProjectionIssue.DECLARATION_MISSING
+    assert exc.value.violation.issue is ProjectionIssue.DECLARATION_MISSING
 
 
 def test_an_unreadable_declaration_stays_unreadable(tmp_path: Path) -> None:
@@ -56,7 +56,7 @@ def test_an_unreadable_declaration_stays_unreadable(tmp_path: Path) -> None:
     bad.write_bytes(b"\xff\xfe not utf-8")
     with pytest.raises(ProjectionError) as exc:
         load_declaration(bad)
-    assert exc.value.issue is ProjectionIssue.DECLARATION_UNREADABLE
+    assert exc.value.violation.issue is ProjectionIssue.DECLARATION_UNREADABLE
 ```
 
 - [ ] **Step 2: Run the tests to verify the first fails**
@@ -101,7 +101,7 @@ The lineage type must exist before anything produces or consumes it, and its *ho
 
 **Files:**
 - Create: `src/boardwatch/core/lineage.py`
-- Test: `tests/core/test_lineage.py`
+- Test: `tests/unit/test_core_lineage.py`
 
 **Interfaces:**
 - Consumes: nothing.
@@ -145,7 +145,7 @@ def test_the_lineage_module_does_not_reach_the_profile_bundle() -> None:
 
 - [ ] **Step 2: Run the tests to verify they fail**
 
-Run: `uv run pytest tests/core/test_lineage.py -v --no-cov -n 0`
+Run: `uv run pytest tests/unit/test_core_lineage.py -v --no-cov -n 0`
 
 Expected: FAIL with `ModuleNotFoundError: boardwatch.core.lineage`.
 
@@ -204,14 +204,14 @@ class ResumeSourceLineage:
 
 - [ ] **Step 4: Run the tests**
 
-Run: `uv run pytest tests/core/test_lineage.py -v --no-cov -n 0`
+Run: `uv run pytest tests/unit/test_core_lineage.py -v --no-cov -n 0`
 
 Expected: PASS both.
 
 - [ ] **Step 5: Commit**
 
 ```bash
-git add src/boardwatch/core/lineage.py tests/core/test_lineage.py
+git add src/boardwatch/core/lineage.py tests/unit/test_core_lineage.py
 git commit -m "Add the projected-resume lineage type in a neutral module"
 ```
 
@@ -593,7 +593,7 @@ git commit -m "Extract per-posting projection so the pipeline and CLI share one 
 
 **Files:**
 - Modify: `src/boardwatch/reports/tailor.py:452` (signature), `:721` and `:746` (meta and insert)
-- Test: `tests/reports/test_tailor_lineage.py`
+- Test: `tests/unit/test_reports_tailor_lineage.py`
 
 **Interfaces:**
 - Consumes: `ResumeSourceLineage` from `boardwatch.core.lineage`.
@@ -639,7 +639,7 @@ def test_existing_callers_are_unaffected(...) -> None:
 
 - [ ] **Step 2: Run to verify they fail**
 
-Run: `uv run pytest tests/reports/test_tailor_lineage.py -v --no-cov -n 0`
+Run: `uv run pytest tests/unit/test_reports_tailor_lineage.py -v --no-cov -n 0`
 
 Expected: FAIL — `run_tailor() got an unexpected keyword argument 'source_lineage'`.
 
@@ -649,14 +649,14 @@ Add the keyword-only parameter with default `None` (the signature is already key
 
 - [ ] **Step 4: Run the tests, then the import wall**
 
-Run: `uv run pytest tests/reports/test_tailor_lineage.py tests/profile_bundle/test_profile_bundle_tailor_isolation.py -v --no-cov -n 0`
+Run: `uv run pytest tests/unit/test_reports_tailor_lineage.py tests/profile_bundle/test_profile_bundle_tailor_isolation.py -v --no-cov -n 0`
 
 Expected: PASS both. The wall test is the one that catches a lineage import from the wrong module.
 
 - [ ] **Step 5: Commit**
 
 ```bash
-git add src/boardwatch/reports/tailor.py tests/reports/test_tailor_lineage.py
+git add src/boardwatch/reports/tailor.py tests/unit/test_reports_tailor_lineage.py
 git commit -m "Validate and record projected-resume lineage on the tailored artifact"
 ```
 
@@ -856,7 +856,7 @@ git commit -m "Render projected leads inside the daily pipeline"
 **Files:**
 - Modify: `src/boardwatch/reports/run_funnel.py` (new stage; `ARTIFACT_VERSION` 4 → 5)
 - Modify: `src/boardwatch/pipeline/funnel_writer.py` (carry the counts)
-- Test: `tests/reports/test_run_funnel_projection.py`
+- Test: `tests/unit/test_run_funnel_projection.py`
 
 **Interfaces:**
 - Consumes: `summary.projection_outcomes`, `summary.projection_availability`.
@@ -902,7 +902,7 @@ def test_the_artifact_version_is_bumped() -> None:
 
 - [ ] **Step 2: Run to verify they fail**
 
-Run: `uv run pytest tests/reports/test_run_funnel_projection.py -v --no-cov -n 0`
+Run: `uv run pytest tests/unit/test_run_funnel_projection.py -v --no-cov -n 0`
 
 Expected: FAIL — no stage named `projection`, and `ARTIFACT_VERSION == 4`.
 
@@ -912,14 +912,14 @@ Build the stage from `summary.projection_outcomes`, one `Drop(reason=<outcome va
 
 - [ ] **Step 4: Run the whole funnel suite**
 
-Run: `uv run pytest tests/reports/ -v --no-cov -n 0`
+Run: `uv run pytest tests/unit/ -v --no-cov -n 0`
 
 Expected: PASS. Any existing test asserting `artifact_version == 4` must be updated — that is the bump, not an accommodation.
 
 - [ ] **Step 5: Commit**
 
 ```bash
-git add src/boardwatch/reports/run_funnel.py src/boardwatch/pipeline/funnel_writer.py tests/reports/
+git add src/boardwatch/reports/run_funnel.py src/boardwatch/pipeline/funnel_writer.py tests/unit/
 git commit -m "Give projection its own balanced funnel stage"
 ```
 

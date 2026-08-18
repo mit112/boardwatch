@@ -271,3 +271,13 @@ def test_contains_template_artifact_still_flags_standalone_todo() -> None:
 @pytest.mark.parametrize("token", TEMPLATE_ARTIFACT_TOKENS)
 def test_contains_template_artifact_catches_every_catalog_token(token: str) -> None:
     assert contains_template_artifact(f"prefix {token} suffix") == token
+
+
+def test_validate_slots_accepts_a_declared_bulletless_entry() -> None:
+    """D-221's third state: an entry that DECLARES it has no bullets renders as role +
+    organisation + dates only. `test_validate_slots_rejects_entry_with_no_bullets` above is the
+    control — the identical entry without the declaration is still refused, so relaxing this arm
+    did not turn an accidental omission into a silent one."""
+    validate_slots(
+        _resume(entries=[Entry(entry_id="e1", heading="Co", bullets=[], bulletless=True)])
+    )

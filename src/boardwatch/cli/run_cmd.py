@@ -53,10 +53,20 @@ def run(
         DEFAULT_OUT_ROOT, "--out", help="Root for dated output folders (<out>/<YYYY-MM-DD>/)."
     ),
     resume_path: Path | None = typer.Option(  # noqa: B008
-        None, "--resume", help="Authored résumé YAML (default: {config_dir}/resume.yaml)."
+        None,
+        "--resume",
+        help="Authored résumé YAML (default: {config_dir}/resume.yaml). Cannot be combined with "
+        "--project, which supplies each lead's document from the bundle instead.",
     ),
     skip_scan: bool = typer.Option(
         False, "--no-scan", help="Reuse already-fetched postings instead of refetching boards."
+    ),
+    project: bool = typer.Option(
+        False,
+        "--project",
+        help="Render each lead from the career-profile bundle's projection instead of the "
+        "authored résumé. Requires a current projection approval: without one the run refuses "
+        "before any lead is consumed, rather than falling back to the authored résumé.",
     ),
     check_liveness: bool = typer.Option(
         True,
@@ -66,6 +76,21 @@ def run(
     ),
 ) -> None:
     """Run the whole pipeline once, attributing every row it writes to one run."""
+    # BEFORE `build_context`, and before anything that could mint a `runs` row: both options
+    # describe an active choice of document source, and with both passed every projected lead
+    # overwrites the résumé path — so the explicit `--resume` would silently have no effect. What
+    # the combination MEANS is P5b's question (the design's §8 lists it among the contracts P5a
+    # deliberately leaves open), and until the owner rules it the only honest answer is to refuse.
+    # A usage error, not a fatal run: nothing about the store or the bundle is wrong, and a refusal
+    # that first created a run row would burn a row per typo.
+    if project and resume_path is not None:
+        raise typer.BadParameter(
+            "--resume names an authored résumé and --project renders each lead from the "
+            "career-profile bundle's projection instead; pass one or the other. What the two "
+            "together should mean is not decided yet, so this refuses rather than silently "
+            "ignoring --resume.",
+            param_hint="--resume",
+        )
     # ensure=False mirrors scan_cmd: run_scan migrates INSIDE the scan lock, so a contended
     # run must not have migrated the live DB on its way to being rejected.
     app_ctx = build_context(ctx.obj, ensure=False)
@@ -79,6 +104,7 @@ def run(
             out_root=out_root,
             resume_path=resume_path or settings.config_dir / "resume.yaml",
             skip_scan=skip_scan,
+            project=project,
             # Built here rather than inside the pipeline so that which URLs get probed is the
             # CLI's decision. Not an offline switch — the scan stage fetches every configured
             # board, and `--no-scan` is what makes a run offline.

@@ -46,6 +46,7 @@ from boardwatch.profile_bundle.canonical import (
 from boardwatch.profile_bundle.drafts import checkout_current
 from boardwatch.profile_bundle.errors import IssueCode
 from boardwatch.profile_bundle.inspection import inventory
+from boardwatch.profile_bundle.locking import RECLAIM_WINDOW_SECONDS
 from boardwatch.profile_bundle.models.history import (
     Actor,
     ApprovalLedger,
@@ -85,7 +86,6 @@ from boardwatch.profile_bundle.yaml_loader import load_yaml_bytes
 from tests.profile_bundle.conftest import (
     BLOB_SHA256,
     EXAMPLE_PROFILE_ID,
-    WINDOWS_STALE_LOCK_RACE,
     PromotedRevisionTree,
     approve_draft,
     blob_reader,
@@ -889,7 +889,9 @@ def test_contention_refuses_immediately_without_waiting_or_writing(
 
     assert outcome.exit_code == 3
     assert _codes(outcome) == [IssueCode.BUNDLE_LOCK_HELD]
-    assert elapsed < 2.0
+    # Read from the emitter rather than restated: the budget is "bounded, not queued behind the
+    # holder", and on Windows a genuine refusal pays the reclaim window first (D-224). Zero on POSIX.
+    assert elapsed < RECLAIM_WINDOW_SECONDS + 2.0
     assert _snapshot(scene.bundle_root) == before
 
 
@@ -911,11 +913,6 @@ def test_the_lock_is_taken_before_the_pointer_is_read(
     assert _codes(outcome) == [IssueCode.BUNDLE_LOCK_HELD]
 
 
-@pytest.mark.xfail(
-    sys.platform == "win32",
-    reason=WINDOWS_STALE_LOCK_RACE,
-    strict=False,
-)
 def test_a_persistent_lockfile_left_by_a_killed_process_is_not_a_held_lock(
     scene: Scene, lock_holder: Callable[[Path], subprocess.Popen[str]]
 ) -> None:

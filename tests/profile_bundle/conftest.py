@@ -74,24 +74,11 @@ EXAMPLE_EVIDENCE_SET_DIGEST = (
 
 EXAMPLE_PROFILE_ID = "profile.example-candidate"
 
-WINDOWS_STALE_LOCK_RACE = (
-    "Windows is a best-effort platform (D-212) and this is a Windows-only race. `locking.py` rests "
-    "on 'the operating system is the only authority', which is a POSIX-shaped premise: the kernel "
-    "drops a dead process's flock at once. On Windows, `filelock`'s `WindowsFileLock._acquire` "
-    "swallows EACCES from `os.open` without setting the fd, so an acquire that lands inside the "
-    "killed holder's handle-teardown window raises `Timeout` and is reported as `bundle_lock_held` "
-    "— a lock nobody holds. Measured across three nightly builds it failed 6 of 9 Windows jobs, "
-    "landing in whichever of the two suites ran first, so it is a race and not standing breakage. "
-    "NOT strict, deliberately: on the other 3 of 9 the test passes, and `strict=True` would turn "
-    "that XPASS into a fresh red nightly. The marker is conditional, so on Linux and macOS — where "
-    "the guarantee is actually claimed — this stays an ordinary test that must pass."
-)
-
-# FOUR tests across three files acquire the lock after killing its holder, and the reason above is
-# the same fact about one lock. Kept here so they cannot drift into disagreeing accounts of why they
-# are marked. The census is `process.kill()` in a test BODY (fixture teardown does not count) —
-# not the word "killed" in a name, which is what left instances 3 and 4 unmarked (D-222, D-223).
-# Holder-stays-alive tests are deliberately unmarked: there the race produces a spurious PASS.
+# The four `xfail(win32)` markers that used to be shared from here are gone: D-224 fixed the race
+# they suppressed, so all four killed-holder tests are ordinary tests on every platform. The census
+# that found them was `process.kill()` in a test BODY followed by an acquire — a shape, not the word
+# "killed" in a name, which is what left two of the four unmarked for a while (D-222, D-223). Kept as
+# a comment because it is the predicate to re-run if the race ever comes back, not a live constant.
 
 
 def example_source_root() -> Path:

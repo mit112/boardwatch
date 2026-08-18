@@ -554,7 +554,7 @@ Invalid value for --as-of: --as-of dates the completeness checks, so it needs --
 EXIT=2
 $ boardwatch profile-bundle promote --bundle <root> --draft demo2 --summary "..."
 profile-bundle promote: could_not_complete
-error: bundle_lock_held: this bundle's career-profile.lock is already held, by another command or by this one holding it twice; nothing was waited for and nothing was changed
+error: bundle_lock_held: this bundle's career-profile.lock is already held, by another command or by this one holding it twice; nothing was changed
 EXIT=3
 ```
 
@@ -1036,7 +1036,9 @@ rather than trusted from YAML.
 
 Promotion is crash-consistent, under a non-blocking exclusive lock:
 
-1. Acquire the lock non-blocking. Contention is exit 3 with `bundle_lock_held` — no wait, no mutation.
+1. Acquire the lock non-blocking. Contention is exit 3 with `bundle_lock_held` — no mutation, and no
+   wait on Linux or macOS. On Windows the acquire re-asks the operating system for up to a second
+   before reporting contention, so a genuine refusal there is briefly delayed (D-224).
 2. Re-check that the draft's parent is still `CURRENT`. A mismatch is `stale_draft_parent` at exit 1,
    and the draft is left exactly as it was.
 3. Derive the next revision as `CURRENT.revision + 1`.

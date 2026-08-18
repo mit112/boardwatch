@@ -54,7 +54,9 @@ auto-flip on a metric (invents a criterion nobody argued for). What evidence lic
 **A2 — Fail closed at a run-level preflight. No per-lead fallback.** With `--project`, if projection is
 unavailable — no stamp, a stale stamp, an unreadable or absent declaration, an unreadable bundle — the
 projection stage refuses **before any lead earns a disposition**, and the run ends without consuming leads.
-Without `--project`, behaviour is byte-identical to today.
+Without `--project`, **behaviour** is unchanged: no projection stage is emitted, no lineage keys are
+written, and lead outcomes and dispositions are exactly what they were. The funnel artifact's own
+`artifact_version` field is the one thing that does move — see §4.5.
 
 **Revision 1 said the opposite, and it was a blocking defect.** It proposed rendering each lead from static
 `resume.yaml` on projection failure. That fallback *succeeds*, so every lead enters `summary.tailored`
@@ -265,7 +267,12 @@ outcome and the counts could never reconcile):
    **`declaration_invalid`** (the fidelity-contract arms). Anything other than `available` refuses the run
    before any disposition is written (A2) and sets `summary.fatal`.
 2. **Per-lead outcome**, only reachable when availability is `available`: `projected`,
-   `posting_unavailable`, **`extraction_unavailable`**, `lineage_mismatch`, `output_io_failure`.
+   `posting_unavailable`, **`extraction_unavailable`**, `lineage_mismatch`, `output_io_failure`,
+   **`candidate_unrenderable`** (a candidate whose content will not compile — attributable to that candidate
+   because the same document without it compiled seconds earlier), and **`not_attempted`** (the leads an
+   aborted projection stage never reached; added so the funnel still balances when a run-scoped cause
+   surfaces mid-loop). **The catalog in code is authoritative** — this list has drifted twice, and the
+   enum-derived totality test is what actually holds it closed.
 
 **Six things moved out of the per-lead catalog, because they are run-invariant.** The template, the renderer
 and the tectonic toolchain are shared; the pinned set and its budget are identical for every posting; and
@@ -333,6 +340,17 @@ top-level SECTION", with D-113 the precedent for *declining* a bump on a key add
 (`run_funnel.py:58-64`). A `projection` stage is a new top-level section, so it **bumps the version**. That
 is a deliberate, recorded decision, not an incidental one.
 
+**The bump is GLOBAL, and revision 3 contradicted itself about it — ruled by Mit, 2026-08-17.** The bump
+and a literal reading of "byte-identical no-flag output" cannot both hold: a run without `--project` emits
+a funnel whose `artifact_version` reads **5** where it read **4**, so the JSON is not byte-identical. The
+ruling keeps the global bump and narrows the claim. One emitter with one schema version is right —
+versioning per run type would force every consumer to handle both, for a field whose whole job is to tell a
+consumer which shape it is reading. The over-claim was "byte-identical", which was always about
+*behaviour*: **no projection stage, no lineage keys, unchanged lead outcomes and unchanged dispositions**.
+It should never have extended to the artifact's own schema-version field. So: `artifact_version` advances
+to 5 for **every** run, including authored ones, and the unchanged-behaviour guarantee covers stages,
+lineage, outcomes and dispositions — not that field.
+
 **When `--project` is absent, the projection stage is omitted entirely** — not emitted as zeros. A stage
 reporting `0` would claim projection ran and dropped nothing; omission says it never ran, which is the same
 distinction P0 item 1 already draws with `not instrumented` versus `0` (D-023).
@@ -344,7 +362,9 @@ distinction P0 item 1 already draws with `not instrumented` versus `0` (D-023).
    table, one persona registry, one scorer — asserted by **call count**, not by comparing two returned pools
    (§4.1).
 3. `--project` unavailable ⇒ set `summary.fatal`, refuse before any lead earns a disposition, exit 1 (A2).
-4. Without `--project`, behaviour is byte-identical to today, and no `projection` funnel stage is emitted.
+4. Without `--project`, **behaviour** is unchanged — no `projection` funnel stage is emitted, no lineage
+   keys are written, and lead outcomes and dispositions are what they were. **Not** the funnel's
+   `artifact_version`, which advances to 5 for every run including authored ones (§4.5).
 5. One implementation of pool assembly and of selection, shared by CLI and pipeline (§4.1).
 6. One artifact writer. Lineage goes in the artifact's own transaction (§4.3).
 7. Hash the buffer that is parsed, never a path read twice (§4.3).
@@ -388,8 +408,9 @@ those leads re-entering after the stamp is repaired.* Every listed assertion sti
 - **The extraction is a no-op for the CLI.** `resume project`'s existing tests pass **unedited** — including
   the stale-approval case (`tests/projection/test_projection_cli_resume_project.py:443`) and the
   `TemplateArtifactError` case (`:521`) — and its exit codes and stdout are unchanged.
-- **Negative control:** without `--project`, byte-identical behaviour, asserted against the existing
-  pipeline suite unedited.
+- **Negative control:** without `--project`, unchanged behaviour — no projection stage, no lineage keys,
+  the same lead outcomes and dispositions — asserted against the existing pipeline suite unedited. The
+  funnel's `artifact_version` is excluded from the claim (§4.5).
 
 Gate: `make check` in plain mode, exit code captured, never piped.
 

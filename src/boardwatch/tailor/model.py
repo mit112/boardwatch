@@ -44,6 +44,14 @@ class Entry(BaseModel):
     # optional; the link segment renders only when `link_url` is set.
     link_url: str | None = None
     link_label: str | None = None
+    # Declares this entry renders with NO bullets — "role + organisation + dates only" (D-221).
+    # `None` (unset) and `True` are the only values the projection ever emits, deliberately: a
+    # projected document drops None-valued optionals (`serialize.resume_document_bytes` passes
+    # `exclude_none=True`), so every entry that is not declared bulletless serializes exactly as it
+    # did before this field existed. `validate_slots` reads it to tell a DECLARED absence of
+    # bullets from an accidental one; the renderer does not, because `_entry_block` already omits
+    # an empty item list on its own.
+    bulletless: bool | None = None
 
 
 class Resume(BaseModel):

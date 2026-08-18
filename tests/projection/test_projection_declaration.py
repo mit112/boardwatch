@@ -121,11 +121,28 @@ def test_a_non_string_open_range_label_is_malformed_not_missing(tmp_path: Path) 
     assert exc.value.violation.issue is ProjectionIssue.MALFORMED_DECLARATION
 
 
-def test_a_missing_declaration_file_is_unreadable(tmp_path: Path) -> None:
+def test_a_missing_declaration_file_is_missing(tmp_path: Path) -> None:
     """`load_declaration` never reads a path that is not a file (`declaration.py:85`)."""
     path = tmp_path / "does-not-exist.yaml"
     with pytest.raises(ProjectionError) as exc:
         load_declaration(path)
+    assert exc.value.violation.issue is ProjectionIssue.DECLARATION_MISSING
+
+
+def test_an_absent_declaration_is_missing_not_unreadable(tmp_path: Path) -> None:
+    """The two arms are different operator problems: 'you have not opted in' vs 'your file is
+    broken'. Task 4's availability catalog routes them differently and may not read a message."""
+    absent = tmp_path / "projection.yaml"
+    with pytest.raises(ProjectionError) as exc:
+        load_declaration(absent)
+    assert exc.value.violation.issue is ProjectionIssue.DECLARATION_MISSING
+
+
+def test_an_unreadable_declaration_stays_unreadable(tmp_path: Path) -> None:
+    bad = tmp_path / "projection.yaml"
+    bad.write_bytes(b"\xff\xfe not utf-8")
+    with pytest.raises(ProjectionError) as exc:
+        load_declaration(bad)
     assert exc.value.violation.issue is ProjectionIssue.DECLARATION_UNREADABLE
 
 
@@ -239,6 +256,41 @@ def test_an_unknown_key_inside_a_declared_range_is_malformed(tmp_path: Path) -> 
         "    claims: [claim.packet-pantry.backend.001]",
         "    dates:\n      start: project.start_date\n      open: true\n"
         "    claims: [claim.packet-pantry.backend.001]",
+    )
+    with pytest.raises(ProjectionError) as exc:
+        load_declaration(_write(tmp_path, body))
+    assert exc.value.violation.issue is ProjectionIssue.MALFORMED_DECLARATION
+
+
+def test_a_bulletless_entry_declares_no_bullet_source(tmp_path: Path) -> None:
+    """"Role + organisation + dates only" is a legal third state, but only when it is SAID
+    (D-221). The flag is what separates it from an entry whose bullets failed to resolve."""
+    body = MINIMAL.replace("claims: [claim.packet-pantry.backend.001]", "bulletless: true")
+    decl = load_declaration(_write(tmp_path, body))
+    assert decl.entries[0].bulletless is True
+    assert decl.entries[0].claims == ()
+    assert decl.entries[0].bullet_predicates == ()
+
+
+def test_a_bulletless_entry_that_also_declares_a_bullet_source_is_fatal(tmp_path: Path) -> None:
+    """`bulletless` asserts there are no bullets; `bullet_predicates` names where bullets come
+    from. Honouring either side of that contradiction would render a document its author did not
+    declare, so the pair is refused rather than given a precedence order."""
+    body = MINIMAL.replace(
+        "claims: [claim.packet-pantry.backend.001]",
+        "bulletless: true\n    bullet_predicates: [project.contribution]",
+    )
+    with pytest.raises(ProjectionError) as exc:
+        load_declaration(_write(tmp_path, body))
+    assert exc.value.violation.issue is ProjectionIssue.MALFORMED_DECLARATION
+
+
+def test_a_bulletless_entry_that_also_declares_claims_is_fatal(tmp_path: Path) -> None:
+    """The same contradiction reached through the OTHER bullet source, so the refusal cannot be
+    satisfied by a check that only knows about `bullet_predicates`."""
+    body = MINIMAL.replace(
+        "claims: [claim.packet-pantry.backend.001]",
+        "claims: [claim.packet-pantry.backend.001]\n    bulletless: true",
     )
     with pytest.raises(ProjectionError) as exc:
         load_declaration(_write(tmp_path, body))

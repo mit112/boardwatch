@@ -17,11 +17,11 @@ package `src/boardwatch/projection/` must not depend on regardless.
 The mapping carries EXACTLY the keys `load_resume` reads, in `Resume`'s own field order
 (`model_dump`'s order, preserved with `sort_keys=False` so the document reads the way the model is
 declared). `exclude_none=True` drops unset optional fields (`Entry.title`, `.dates`, `.subtitle`,
-`.location`; `Resume.title`) instead of emitting `null` for them — `load_resume` treats a missing
-key and an explicit `null` identically (both validate to `None`), so this is a readability choice,
-not a correctness one. No provenance comment: `load_resume` calls `yaml.safe_load`, which discards
-comments, so a comment could never reach the artifact ledger anyway — provenance is the projection
-manifest's job, not this file's.
+`.location`, `.bulletless`; `Resume.title`) instead of emitting `null` for them — `load_resume`
+treats a missing key and an explicit `null` identically (both validate to `None`), so this is a
+readability choice, not a correctness one. No provenance comment: `load_resume` calls
+`yaml.safe_load`, which discards comments, so a comment could never reach the artifact ledger
+anyway — provenance is the projection manifest's job, not this file's.
 
 `width` is set far past any realistic line length so PyYAML never folds a long plain scalar across
 multiple physical lines. Folding is lossless for ordinary text (`load_resume` would unfold it back
@@ -30,9 +30,9 @@ landed is one a reviewer cannot diff cleanly — the same reason `profile_bundle
 it, restated here because that module is not imported.
 
 There is no float/tuple/non-string-key refusal here, unlike the bundle's general-purpose emitter:
-every field `Resume.model_dump(mode="json")` can produce is a `str`, `list[str]`, `None`, or a
-mapping built from those, so that failure mode does not exist for this model and a defensive check
-against it would be dead code.
+every field `Resume.model_dump(mode="json")` can produce is a `str`, `list[str]`, `bool`
+(`Entry.bulletless`), `None`, or a mapping built from those, so that failure mode does not exist
+for this model and a defensive check against it would be dead code.
 """
 
 from __future__ import annotations

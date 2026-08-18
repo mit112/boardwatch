@@ -27,12 +27,20 @@ def _manifest(**overrides: object) -> ProjectionManifest:
         bundle_revision="7",
         bundle_digest="sha256:" + "a" * 64,
         projection_digest="sha256:" + "b" * 64,
-        posting_id=None,
+        posting_id=3,
         jd_skills=("python", "sql"),
         pinned_entry_ids=("entry.pinned",),
         selected_entry_ids=("entry.pinned", "entry.candidate"),
         scores=(("entry.candidate", "2.5"),),
         claim_to_bullet=(("claim.a", "claim.a"),),
+        posting_version_id=11,
+        as_of="2026-08-17",
+        scorer_id="mean_per_bullet",
+        taxonomy_version="c" * 64,
+        equivalence_version="equiv-1",
+        persona_registry_version="personas-1",
+        resume_sha256="d" * 64,
+        resume_model_sha256="e" * 64,
     )
     fields.update(overrides)
     return ProjectionManifest(**fields)  # type: ignore[arg-type]
@@ -76,6 +84,14 @@ def test_manifest_accepts_a_negative_decimal_string() -> None:
     one, is accepted verbatim."""
     manifest = _manifest(scores=(("entry.candidate", "-1.25"),))
     assert manifest.scores == (("entry.candidate", "-1.25"),)
+
+
+def test_the_manifest_schema_version_is_pinned() -> None:
+    """Pinned to the literal, not to the constant under test. The existing assertion in
+    test_projection_for_posting.py compares the emitted field against MANIFEST_SCHEMA_VERSION
+    itself, so reverting the bump left every suite green — a test derived from a constant agrees
+    with itself. Bumping the schema must be a deliberate edit here."""
+    assert MANIFEST_SCHEMA_VERSION == 2
 
 
 def test_manifest_scores_survive_a_round_trip_as_the_exact_decimal_string() -> None:

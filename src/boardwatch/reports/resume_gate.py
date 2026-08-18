@@ -142,7 +142,12 @@ def validate_slots(resume: Resume) -> None:
     if not resume.entries:
         raise ResumeValidationError("résumé has no entries")
     for entry in resume.entries:
-        if not entry.bullets:
+        # An entry with no bullets is legal ONLY when it says it has none (`Entry.bulletless`,
+        # D-221's third state: role + organisation + dates only). An entry that merely ARRIVES
+        # empty — a declaration naming no bullet source, a rewrite that dropped every bullet — is
+        # the accidental omission this assertion exists to catch, and stays refused. The
+        # distinction is a declaration, never an inference: absence alone cannot carry intent.
+        if not entry.bullets and not entry.bulletless:
             raise ResumeValidationError(f"entry {entry.entry_id!r} has no bullets")
         for bullet in entry.bullets:
             if not bullet.text.strip():

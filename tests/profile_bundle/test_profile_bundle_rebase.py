@@ -44,7 +44,11 @@ from boardwatch.profile_bundle.diff import (
 from boardwatch.profile_bundle.drafts import DRAFT_TEMP_PREFIX, checkout_current
 from boardwatch.profile_bundle.errors import IssueCode
 from boardwatch.profile_bundle.layout import owner_for_path
-from boardwatch.profile_bundle.locking import BundleLockHeldError, bundle_lock
+from boardwatch.profile_bundle.locking import (
+    RECLAIM_WINDOW_SECONDS,
+    BundleLockHeldError,
+    bundle_lock,
+)
 from boardwatch.profile_bundle.models.documents import (
     BundleDocuments,
     ProjectFactsDocument,
@@ -68,7 +72,6 @@ from boardwatch.profile_bundle.validation import load_documents
 from boardwatch.profile_bundle.yaml_loader import load_yaml_bytes
 from boardwatch.profile_bundle.yaml_writer import DocumentEmitError
 from tests.profile_bundle.conftest import (
-    WINDOWS_STALE_LOCK_RACE,
     PromotedRevisionTree,
     blob_reader,
     materialise,
@@ -1386,7 +1389,9 @@ def test_contention_refuses_immediately_without_waiting_or_writing(
 
     assert outcome.exit_code == 3
     assert _codes(outcome) == [IssueCode.BUNDLE_LOCK_HELD]
-    assert elapsed < 2.0
+    # Read from the emitter rather than restated: the budget is "bounded, not queued behind the
+    # holder", and on Windows a genuine refusal pays the reclaim window first (D-224). Zero on POSIX.
+    assert elapsed < RECLAIM_WINDOW_SECONDS + 2.0
     assert _snapshot(scene.bundle_root) == before
 
 
@@ -1408,11 +1413,6 @@ def test_the_lock_is_taken_before_current_is_reread(
     assert _codes(outcome) == [IssueCode.BUNDLE_LOCK_HELD]
 
 
-@pytest.mark.xfail(
-    sys.platform == "win32",
-    reason=WINDOWS_STALE_LOCK_RACE,
-    strict=False,
-)
 def test_a_persistent_lockfile_left_by_a_killed_process_is_not_a_held_lock(
     scene: Scene, lock_holder: Callable[[Path], subprocess.Popen[str]]
 ) -> None:
@@ -1429,15 +1429,9 @@ def test_a_persistent_lockfile_left_by_a_killed_process_is_not_a_held_lock(
     assert _skills(scene.draft).skills[0].canonical_name == REVISION_TWO_NAME
 
 
-# Marked by MECHANISM, not by observation (D-223): the re-acquire below lands in exactly the
-# killed holder's handle-teardown window that `WINDOWS_STALE_LOCK_RACE` describes. Unlike the other
-# three instances this one has never been seen failing — it is a latent red nightly, not a
-# reproduced one, and it surfaces the race as a raised `BundleLockHeldError` rather than exit code 3.
-@pytest.mark.xfail(
-    sys.platform == "win32",
-    reason=WINDOWS_STALE_LOCK_RACE,
-    strict=False,
-)
+# The re-acquire below lands in the killed holder's handle-teardown window, which is the case the
+# reclaim window exists for (D-224). It differs from the other three killed-holder tests only in
+# surfacing the race as a raised `BundleLockHeldError` rather than as exit code 3.
 def test_the_lock_helper_refuses_a_second_holder_and_releases_on_exit(
     scene: Scene, lock_holder: Callable[[Path], subprocess.Popen[str]]
 ) -> None:

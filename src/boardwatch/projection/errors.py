@@ -17,6 +17,10 @@ class ProjectionIssue(StrEnum):
 
     # -- declaration ------------------------------------------------------------------
     DECLARATION_UNREADABLE = "declaration_unreadable"
+    #: `projection.yaml` is absent. Distinct from DECLARATION_UNREADABLE because "you have not
+    #: opted into projection" and "your declaration is corrupt" are different operator problems,
+    #: and the availability catalog may not tell them apart by inspecting a message.
+    DECLARATION_MISSING = "declaration_missing"
     MALFORMED_DECLARATION = "malformed_declaration"
     UNKNOWN_ENTRY_KIND = "unknown_entry_kind"
     DUPLICATE_ENTITY_ID = "duplicate_entity_id"
@@ -64,10 +68,46 @@ class ProjectionIssue(StrEnum):
     # -- selection --------------------------------------------------------------------
     PINNED_SET_EXCEEDS_BUDGET = "pinned_set_exceeds_budget"
     COMPILE_INFRASTRUCTURE_FAILURE = "compile_infrastructure_failure"
+    #: `COMPILE_FAILED` while compiling a prefix that includes a CANDIDATE entry, when the same
+    #: document WITHOUT that candidate compiled `OK` moments earlier. The failure is therefore
+    #: ATTRIBUTABLE to that one entry, which is the whole of the claim — this member does not assert
+    #: a cause. `CompileReason.COMPILE_FAILED` folds a non-zero `tectonic` exit, a missing PDF and
+    #: an unreadable page count into one value, and `reports/resume_gate.py:87-90` reasons such an
+    #: exit is typically ENVIRONMENTAL (cold support-file cache with no network, disk full, OOM,
+    #: killed subprocess), so nothing typed anywhere distinguishes content from environment.
+    #: Attribution is what is observable; the cause is not.
+    #: Distinct from COMPILE_INFRASTRUCTURE_FAILURE, which means the toolchain is absent (typed
+    #: separately at the source as `BINARY_MISSING`) or the gate reason is unclassified. Folding
+    #: them reported "toolchain unavailable" for a working tectonic. Split at the raise site
+    #: (`select._fatal_if_infrastructure`), not downstream: telling the two call sites apart later
+    #: would mean re-reading a compile log.
+    CANDIDATE_COMPILE_FAILED = "candidate_compile_failed"
+    #: `COMPILE_FAILED` on the PINNED-ONLY prefix, before any candidate exists. Nothing can be
+    #: attributed: no smaller prefix has compiled, so the environment and the pinned content are
+    #: equally implicated, and either way the pinned set comes from the frozen declaration and the
+    #: cause is run-invariant. Its own member rather than COMPILE_INFRASTRUCTURE_FAILURE because
+    #: that one resolves to `TOOLCHAIN_UNAVAILABLE`, and telling an operator to reinstall a working
+    #: tectonic is the exact misdiagnosis this split exists to remove — the remedy here is to read
+    #: the compile log, then look at the pinned entries.
+    PINNED_SET_COMPILE_FAILED = "pinned_set_compile_failed"
     NO_JD_EXTRACTION = "no_jd_extraction"
+    # -- output -------------------------------------------------------------------------
+    #: The two sidecars for ONE lead could not be written. Typed here rather than left as the bare
+    #: `OSError` `_publish` raises, for the same reason every other member exists: the pipeline
+    #: routes a per-lead failure through the closed catalog, and an unclassified exception there is
+    #: an aborted run rather than a skipped lead. Like `CANDIDATE_COMPILE_FAILED`, it names an
+    #: ATTRIBUTION and not a cause — an `ENOSPC` will land on every lead in turn and be counted once
+    #: each, which is the honest report when nothing distinguishes a full disk from one bad path.
+    OUTPUT_IO_FAILURE = "output_io_failure"
     # -- posting ------------------------------------------------------------------------
     POSTING_NOT_OPEN = "posting_not_open"
     POSTING_NO_CURRENT_VERSION = "posting_no_current_version"
+    # -- run configuration --------------------------------------------------------------
+    #: The `scorer_id` a run asked for is not in `SCORERS`. A misconfiguration of the run itself,
+    #: distinct from every declaration and bundle member above: nothing about the owner's data is
+    #: wrong, so an unattended caller must be able to tell "your config names a scorer that does
+    #: not exist" from "your bundle cannot be read" without inspecting a message.
+    UNKNOWN_SCORER = "unknown_scorer"
 
 
 @dataclass(frozen=True)
