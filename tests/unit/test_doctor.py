@@ -206,8 +206,12 @@ def test_cli_stale_board_is_informational_not_failure(tmp_path, monkeypatch) -> 
     # a board with an OLD last-complete scan renders, but staleness ALONE does not fail (exit 0)
     def old_scan(eng):
         with eng.begin() as conn:
+            # `status` stated, not left to the column default: that default is `running`, so
+            # omitting it built a CLOSED row still marked running — a shape no write path can
+            # produce, and one `doctor` now (correctly) fails on.
             run = conn.execute(insert(tables.runs).values(
-                started_at=datetime(2025, 1, 1), finished_at=datetime(2025, 1, 1))).inserted_primary_key[0]
+                started_at=datetime(2025, 1, 1), finished_at=datetime(2025, 1, 1),
+                status="ok")).inserted_primary_key[0]
             cid = conn.execute(select(tables.companies.c.id)
                                .where(tables.companies.c.slug == "acme")).scalar_one()
             conn.execute(insert(tables.board_scans).values(
@@ -371,3 +375,48 @@ def test_doctor_shows_a_description_in_the_command_list() -> None:
     result = runner.invoke(app, ["--help"])
     assert result.exit_code == 0
     assert "Connectivity" in result.stdout
+
+
+def test_doctor_flags_a_closed_row_still_marked_running(tmp_path, monkeypatch) -> None:
+    """`status='running'` WITH `finished_at` set is unreachable through every write path.
+
+    `record_scan_run(finished=True)`, `finish_run` and `reap_stale_runs` each stamp
+    `finished_at` and `status` in the same UPDATE, so only a schema backfill (what
+    `p0_run_status`'s `DEFAULT 'running'` did) or direct surgery can produce this. The reaper
+    cannot drain it either — it requires `finished_at IS NULL` — so without this check the row
+    is invisible and permanent. Asserted on the exit code as well as the text: a diagnostic
+    that prints and still exits 0 is one nobody acts on.
+    """
+    def closed_but_running(eng):
+        with eng.begin() as conn:
+            conn.execute(
+                insert(tables.runs).values(
+                    started_at=datetime(2026, 1, 1), finished_at=datetime(2026, 1, 2),
+                    status="running",
+                )
+            )
+    result = _cli(tmp_path, monkeypatch, {"acme": BoardHealth.OK}, extra=closed_but_running)
+
+    assert result.exit_code == 1, result.output
+    assert "no write path can produce" in result.output
+    # The reaper must NOT have been what cleared it: the row is still there, untouched, which
+    # is exactly why the invariant has to be reported rather than drained.
+    assert "reaped" not in result.stdout.lower()
+
+
+def test_doctor_does_not_flag_a_normally_closed_row(tmp_path, monkeypatch) -> None:
+    """The negative control. A row closed with a terminal status is the normal shape and must
+    not trip the invariant — otherwise the check would fire on every healthy database and be
+    turned off within a day."""
+    def closed_ok(eng):
+        with eng.begin() as conn:
+            conn.execute(
+                insert(tables.runs).values(
+                    started_at=datetime(2026, 1, 1), finished_at=datetime(2026, 1, 2),
+                    status="ok",
+                )
+            )
+    result = _cli(tmp_path, monkeypatch, {"acme": BoardHealth.OK}, extra=closed_ok)
+
+    assert result.exit_code == 0, result.output
+    assert "no write path can produce" not in result.output
