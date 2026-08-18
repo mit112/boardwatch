@@ -168,9 +168,18 @@ the cut lines fix no score threshold, so `ADMISSION_FLOOR` stays `Decimal(0)` (D
    - **D-184 finding 2** — a partial emission silently drops fields (`run_extraction` records a reason only
      when a record produces *no* candidate). Redefines the Gate B accounting contract; four mutually
      exclusive designs; nothing lost today.
-   - Provider ATS-fixture + eligibility-corpus **drift** (need live network / a missing generator);
-     **Education Slice C**; promoting `header/1`'s `person.professional_name` (the skill-item loop skips
+   - **Education Slice C**; promoting `header/1`'s `person.professional_name` (the skill-item loop skips
      `header/*`).
+
+**Fixture + corpus drift — the offline half is BUILT and gated (D-228).** R13/R14/R15 in
+`tools/generalization/fixtures.py`, inside `make check` and the CI `generalization` job. **The 31 fixture
+JSONs were ALREADY pinned by R7 — do not build a second manifest.** **R15 enforces that somebody reviewed
+on schedule, NOT that a fixture matches production**; `tools.fixture_refresh --extend` restores green
+offline by design. **On 2026-09-11 (greenhouse) the whole `make check` reds**, not one rule — several
+real-tree tests assert the gate is clean. Drain it or re-capture. *Owner-gated:* the live-API comparison.
+**Unfixed:** the corpus's generator `scratchpad/gen_corpus.py` was **never committed**, so the 987-row
+oracle is **unregenerable**; and four fixtures are read by no test (`workable/dead_404.json`, plus
+`normal_response_headers.json` under `workable/`, `smartrecruiters/` and `workday/`).
 
 **Carried authoring facts (D-185/186/190/191).** **Three guarantees are each narrower than their name**, and
 all three cost a real defect: **`approve` does NOT validate** (only `promote` refuses); **a plain `validate`
