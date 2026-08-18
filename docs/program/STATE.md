@@ -108,9 +108,11 @@ rendering. Seven are UNVERIFIABLE by construction (private/absent artifacts) —
 **Saayam was ruled unchanged by Mit**; its bullet describes the *platform*, not authorship, so the audit's
 authorship finding answers a claim the sentence does not make.
 
-**The 42 audited PDFs were rendered from revision 21 and no longer match what the pipeline produces.**
-Whether re-rendering and re-auditing is owed before the clause counts as met is **Mit's call**. The default
-has NOT flipped. **Gate B's 0 blockers was never a claim about truth** — nothing in the validation layer can
+**Mit attested the seven UNVERIFIABLE claims and let Saayam's "on AWS Lambda" stand — do not reopen
+either.** `owner_attested` is the basis those facts carry (D-191), and for employer/private work he is the
+only source. **The fabrication clause therefore carries no outstanding defect.** He also elected to move on
+from the re-render question (the 42 audited PDFs came from revision 21) — closed, not forgotten. **The
+default has NOT flipped; that is a separate owner action, untaken.** **Gate B's 0 blockers was never a claim about truth** — nothing in the validation layer can
 compare a numeral to the world, which is why the outside reader is not optional.
 
 **Two things about `--project` that are easy to get wrong.** The funnel's `artifact_version` advances to

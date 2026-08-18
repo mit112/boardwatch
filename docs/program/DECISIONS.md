@@ -10535,3 +10535,17 @@ defect within one pass that eleven attended refinement sessions and a passing Ga
 0 blockers was never a claim about truth** — it is a structural and completeness gate. Nothing in the
 bundle's validation layer can compare a numeral to the world, which is exactly why an outside reader is
 not optional.
+
+**Owner ruling on the residue (2026-08-18, same day).** Mit reviewed the seven UNVERIFIABLE claims — NIO's
+three (including *"improved startup performance and battery efficiency by 40%"*), Knowledge Forge's two
+(*"32 REST endpoints … four Mongoose schemas … 645-line OpenAPI"*, whose repo no longer exists anywhere) and
+SAKEC's two — and **attested them**. He also let Saayam's *"on AWS Lambda"* stand. **Do not reopen either.**
+
+That is the correct resting place, not a concession: `owner_attested` is precisely the basis these facts
+carry (D-191), and for employer and private work the owner is the *only* available source. The session
+raised the base rate first — of the numeric claims that could be checked, **one in roughly eleven was
+materially wrong** — so the ruling was made against the measured risk rather than in ignorance of it.
+
+**P5b's fabrication clause therefore carries no outstanding defect.** What that does NOT do is flip the
+default: that remains a separate owner action, untaken. The re-render question (the 42 audited PDFs came
+from revision 21) was raised and the owner elected to move on; it is closed, not forgotten.
