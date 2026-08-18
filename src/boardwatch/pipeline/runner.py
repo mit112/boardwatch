@@ -302,6 +302,27 @@ def _projection_scope(exc: Exception) -> ProjectionAvailability | ProjectionLead
     return classify_availability(exc)
 
 
+def _projection_unavailable(availability: ProjectionAvailability, detail: str) -> str:
+    """The one operator sentence for a run-scoped projection refusal.
+
+    Both sites that can raise one — the preflight, and the run-scoped arm of the per-lead loop —
+    resolve through the same closed catalog, so they owe the operator the same remedy. They wrote
+    it separately before, and only the preflight's copy carried the remedy: a `bundle_unreadable`
+    that surfaced from the loop instead told the operator what had happened and nothing about how
+    to get out of it, for a cause identical to one the preflight explains. Which site a run-scoped
+    member happens to surface from is an accident of timing, so it may not decide how much the
+    operator is told.
+
+    The member is the typed outcome and nothing classifies behaviour by reading this string;
+    `detail` is the free-text context the site has and the other does not.
+    """
+    return (
+        f"projection unavailable: {availability.value} ({detail}); "
+        "run `boardwatch profile-bundle approve-projection` after fixing what that names, "
+        "or drop --project to run from the authored résumé"
+    )
+
+
 def _cohort_guard(
     visible_ids: frozenset[int], lead_ids: frozenset[int], failed_ids: frozenset[int]
 ) -> str | None:
@@ -619,11 +640,7 @@ def run_pipeline(
                 # about it and nothing classifies behaviour by reading it.
                 availability = classify_availability(exc)
                 summary.projection_availability = availability
-                summary.fatal = (
-                    f"projection unavailable: {availability.value} ({exc}); "
-                    "run `boardwatch profile-bundle approve-projection` after fixing what that "
-                    "names, or drop --project to run from the authored résumé"
-                )
+                summary.fatal = _projection_unavailable(availability, str(exc))
                 message = f"projection: {summary.fatal}"
                 stage_errors.append(message)
                 summary.errors.append(message)
@@ -761,9 +778,8 @@ def run_pipeline(
                         # per-lead would grant the leads after it a disposition under a run-wide
                         # fault, which is the one mistake a total table cannot prevent by itself.
                         summary.projection_availability = scope
-                        summary.fatal = (
-                            f"projection unavailable: {scope.value} "
-                            f"(posting {posting.posting_id}: {exc})"
+                        summary.fatal = _projection_unavailable(
+                            scope, f"posting {posting.posting_id}: {exc}"
                         )
                         message = f"projection: {summary.fatal}"
                         stage_errors.append(message)

@@ -69,6 +69,7 @@ from boardwatch.cli._approval import (
     _StandardTerminal,  # noqa: F401 -- see `import sys` above: same test-attribute seam
     approval_terminal,
 )
+from boardwatch.core.clock import utcnow
 from boardwatch.core.settings import load_settings
 from boardwatch.profile_bundle import authoring, drafts, inspection, migrations, promotion, rebase
 from boardwatch.profile_bundle.approvals import ApprovalDecision
@@ -987,7 +988,7 @@ def promote_candidates(
             draft_name=draft,
             source_id=source,
             source_bytes=None if from_path is None else from_path.read_bytes(),
-            as_of=date.today(),
+            as_of=utcnow().date(),
         )
     )
     promoted = outcome.value
@@ -1039,7 +1040,7 @@ def edit_fact(
             draft_name=draft,
             fact_id=fact_id,
             value=value,
-            as_of=date.today(),
+            as_of=utcnow().date(),
         )
     )
     edited = outcome.value
@@ -1108,7 +1109,7 @@ def add_fact(
             verification_basis=verification_basis.value,
             usage_context=usage_context.value,
             surfaces=[item.value for item in surface],
-            as_of=date.today(),
+            as_of=utcnow().date(),
         )
     )
     added = outcome.value

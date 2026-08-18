@@ -100,7 +100,14 @@ def collect_run_funnel(
     # unreachable today only because `ResumeLineageMismatch` has one raise site gated on a lineage
     # being present. Reading the run's own verdict instead means neither accident can move the
     # stage in or out of the artifact.
-    projection_ran: bool = False,
+    #
+    # REQUIRED, with no default. A default of `False` fails in the omission direction: a caller
+    # that forgot the argument would silently claim projection never ran and drop the whole stage
+    # from the artifact, which reads as a legitimate authored run rather than as a mistake. There
+    # is no safe default in the other direction either — `True` would fabricate an empty stage on
+    # every authored run — so the honest answer is that the caller must state it and the type
+    # checker enforces that it did.
+    projection_ran: bool,
     projection_outcomes: Mapping[ProjectionLeadOutcome, int] | None = None,
     rewrite_rows: list[dict[str, object]],
     coverages: Sequence[CoverageReport | None] = (),

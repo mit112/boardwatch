@@ -30,6 +30,7 @@ from dataclasses import dataclass
 from sqlalchemy import Connection, Select, case, func, literal, select, tuple_
 
 from boardwatch.core.dedup import resolve_duplicates
+from boardwatch.core.lineage import meta_probe_key
 from boardwatch.store.applications import APPLIED_STATUSES
 from boardwatch.store.identity_queries import (
     identities_complete,
@@ -312,16 +313,18 @@ def count_projected_tailored_artifacts(conn: Connection, run_id: int) -> int:
     """This run's `resume_tailored` rows whose master was PROJECTED, not authored (P5a).
 
     The predicate is the PRESENCE of the lineage, not its value: `ResumeSourceLineage.as_meta()`
-    writes every field under a `projection_` prefix, so `$.projection_kind` exists on exactly the
-    rows `run_tailor` was handed a lineage for. Testing presence rather than restating the literal
-    `"projection"` here keeps this check from carrying its own copy of the emitter's constant.
+    writes every field under a `projection_` prefix, so the probed key exists on exactly the rows
+    `run_tailor` was handed a lineage for. Testing presence rather than restating the literal
+    `"projection"` here keeps this check from carrying its own copy of the emitter's constant —
+    and the KEY is derived from the emitter too (`meta_probe_key`), not spelled out, so renaming
+    the field it names moves this probe with it instead of silently matching nothing.
 
     Counted apart from `count_tailored_artifacts` above rather than by widening it: the funnel
     compares this against the leads the pipeline believed it projected, and a run where the
     lineage silently stopped being written would leave the row count identical while this one
     drops — the failure a plain row count cannot see.
     """
-    lineage = func.json_extract(artifacts.c.meta_json, "$.projection_kind")
+    lineage = func.json_extract(artifacts.c.meta_json, f"$.{meta_probe_key()}")
     return int(
         conn.execute(
             select(func.count()).where(
