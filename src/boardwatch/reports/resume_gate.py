@@ -18,7 +18,7 @@ from pathlib import Path
 
 from boardwatch.tailor.model import Resume
 from boardwatch.tailor.plan import MAX_BULLETS_PER_ENTRY
-from boardwatch.tailor.render.latex import escape
+from boardwatch.tailor.render.latex import _href, escape
 from boardwatch.tailor.render.outcome import CompileOutcome, CompileReason, RenderTool
 
 
@@ -290,9 +290,25 @@ def validate_layout(resume: Resume, source: str) -> None:
     for e in resume.entries:
         heading_text = escape(e.title) if e.title is not None else escape(e.heading)
         _assert_escaped_round_trip(source, heading_text, f"entry {e.entry_id!r} heading")
-        for b in e.bullets:
+        # `link_in_first_bullet` (F1) appends the entry's declared link INSIDE the first bullet's
+        # `\resumeItem{...}` (latex.py `_bullet_lines`), so its expected substring is reconstructed
+        # exactly the way the renderer builds it: escaped text, a space, the SHARED `_href`
+        # rendering, then the closing brace. Reusing `_href` keeps this from drifting from the
+        # emitter. The text still round-trips exactly AND the appended link must be the exact
+        # declared one, so a tampered href or altered first-bullet text still fails
+        # ESCAPING_MISMATCH; every other bullet — and the whole entry when the flag is off — is
+        # byte-for-byte unchanged.
+        link_suffix = (
+            f" {_href(e.link_url, e.link_label)}"
+            if e.link_in_first_bullet and e.link_url and e.link_label
+            else ""
+        )
+        for index, b in enumerate(e.bullets):
+            body = escape(b.text)
+            if index == 0:
+                body += link_suffix
             _assert_escaped_round_trip(
-                source, f"\\resumeItem{{{escape(b.text)}}}", f"bullet {b.bullet_id!r}"
+                source, f"\\resumeItem{{{body}}}", f"bullet {b.bullet_id!r}"
             )
 
     for text, where in layout_scan_fields(resume):

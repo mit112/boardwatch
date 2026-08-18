@@ -239,6 +239,61 @@ def test_validate_layout_rejects_template_artifact_in_link_label() -> None:
     assert exc_info.value.reason is GateReason.TEMPLATE_ARTIFACT
 
 
+def _link_in_first_bullet_resume() -> Resume:
+    # F1 (link_in_first_bullet): a project entry that renders its declared link INSIDE the first
+    # bullet's \resumeItem{...} instead of the heading. Two bullets so "only the first gets it"
+    # is exercised; an "&" in the label makes the escape() round-trip meaningful.
+    return _layout_resume(
+        entries=[
+            Entry(
+                entry_id="p1", heading="Hookrail", kind="project", title="Hookrail",
+                subtitle="Go, PostgreSQL", dates="2026",
+                link_url="https://example.test/r-and-d", link_label="R&D Repo",
+                link_in_first_bullet=True,
+                bullets=[
+                    _clean_bullet(bullet_id="b1", text="Released 511 datasets to production"),
+                    _clean_bullet(bullet_id="b2", text="Wrote the ingestion path end to end"),
+                ],
+            )
+        ]
+    )
+
+
+def test_validate_layout_passes_a_link_in_first_bullet_render() -> None:
+    # The interaction bug: the renderer appends the link inside the first \resumeItem{...}, so a
+    # firewall that expected the bare \resumeItem{<text>} raised ESCAPING_MISMATCH and silently
+    # degraded the lead to the untailored master. This must PASS on the real render.
+    r = _link_in_first_bullet_resume()
+    validate_layout(r, LatexRenderer().emit(r))  # no raise
+
+
+def test_validate_layout_link_in_first_bullet_still_catches_a_tampered_href() -> None:
+    # The firewall must still bite: a first-bullet href pointing anywhere other than the declared
+    # link (a fabricated/mismatched URL) fails ESCAPING_MISMATCH — the fix reconstructs the exact
+    # expected substring, it does not merely loosen the check.
+    r = _link_in_first_bullet_resume()
+    src = LatexRenderer().emit(r)
+    tampered = src.replace("https://example.test/r-and-d", "https://evil.test/phish")
+    assert tampered != src
+    with pytest.raises(LayoutViolation) as exc_info:
+        validate_layout(r, tampered)
+    assert exc_info.value.reason is GateReason.ESCAPING_MISMATCH
+
+
+def test_validate_layout_link_in_first_bullet_still_catches_altered_first_bullet_text() -> None:
+    # Altering the first bullet's TEXT (the part before the appended link) must also fail: the
+    # escaped-text round-trip still holds inside the reconstructed substring.
+    r = _link_in_first_bullet_resume()
+    src = LatexRenderer().emit(r)
+    tampered = src.replace(
+        escape("Released 511 datasets to production"), "Released 999 datasets to production"
+    )
+    assert tampered != src
+    with pytest.raises(LayoutViolation) as exc_info:
+        validate_layout(r, tampered)
+    assert exc_info.value.reason is GateReason.ESCAPING_MISMATCH
+
+
 def test_contains_template_artifact_detects_double_brace() -> None:
     assert contains_template_artifact("Worked on {{company}} launch project") == "{{"
 
