@@ -19,7 +19,7 @@ rows), zero unattended days, zero acceptance days. Against that: 3 published rel
 **6,650 tests collected**, **70 leaf CLI commands (20 `profile-bundle`)**, 6 ATS providers, an 800 MB /
 24,073-posting store.
 
-**The working branch is `integrate-2026-08-17`, and nothing on it is pushed.** Four lanes are merged into
+**The working branch is `integrate-2026-08-17`, pushed and open as PR #78 — not merged.** Four lanes are merged into
 it: **D-224 + D-227** (the Windows stale-lock race, fixed at the root), **D-225** (projection reaches the
 daily pipeline, slice P5a), **D-226** (a bullet-less entry is representable) and **D-228** (fixture + corpus
 drift detection). **Only D-228 has reached `main`** (PR #77). D-224/D-225/D-226/D-227 exist on this branch
