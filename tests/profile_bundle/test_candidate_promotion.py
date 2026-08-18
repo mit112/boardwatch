@@ -222,6 +222,30 @@ SKILL_IN_TWO_GROUPS_RESUME: dict[str, Any] = {
 }
 
 
+#: A skill-group label whose `_slug` collides with a category the SEEDED catalog already defines under
+#: a DIFFERENT display_name (`Technique` -> `technique`, seeded as "Techniques"). The last open site of
+#: the same lossy-slug class (D-236), one step later than its siblings: not two author labels colliding,
+#: but one author label colliding with the pre-existing catalog. `if category_id not in known` skips it,
+#: so promotion silently files the skill under the catalog's "Techniques" and drops the author's
+#: "Technique". The catalog owns the display_name, so promotion must refuse.
+SEEDED_CATEGORY_COLLIDING_RESUME: dict[str, Any] = {
+    "header": ["Ada Lovelace", "ada@example.com"],
+    "education": ["Example University, BSc"],
+    "skill_groups": [{"label": "Technique", "items": ["Python"]}],
+    "entries": [
+        {
+            "entry_id": "eng-role",
+            "heading": "Engineer — Acme — Jan 2020–Feb 2021 — New York, NY",
+            "kind": "experience",
+            "title": "Engineer",
+            "dates": "Jan 2020 -- Feb 2021",
+            "location": "New York, NY",
+            "bullets": [{"bullet_id": "b1", "text": "Shipped it.", "tech_tags": ["Python"]}],
+        },
+    ],
+}
+
+
 @dataclass(frozen=True)
 class Env:
     bundle_root: Path
@@ -487,6 +511,46 @@ def test_promotion_refuses_when_two_labels_collide_to_one_category_id(tmp_path: 
     (diag,) = outcome.diagnostics
     assert "front-end" in diag.message
     assert "Front End" in diag.message and "Front-End" in diag.message
+
+
+def test_promotion_refuses_when_a_label_collides_with_a_seeded_category(tmp_path: Path) -> None:
+    """The last open site of the lossy-slug class (D-236): a promoted skill's group label `_slug`s to
+    a category the SEEDED catalog already defines under a DIFFERENT display_name (`Technique` ->
+    `technique`, seeded "Techniques"). `if category_id not in known` skips it, so promotion silently
+    files the skill under the catalog's label and drops the author's — the same silent merge the four
+    sibling guards refuse, one step later against the pre-existing catalog rather than a second author
+    label. The catalog owns the display_name (D-236), so promotion must refuse, naming both labels and
+    the shared id."""
+    env = _seed(tmp_path, SEEDED_CATEGORY_COLLIDING_RESUME)
+    # A fresh `init` seeds an empty catalog, so pre-seed the colliding category the author's label
+    # would slug into, reusing the draft catalog's own version/career_field so nothing else drifts.
+    existing = env.categories()
+    catalog = {
+        "catalog_version": existing.catalog_version,
+        "career_field": existing.career_field,
+        "categories": [
+            {
+                "category_id": "technique",
+                "display_name": "Techniques",
+                "parent_category_id": None,
+                "aliases": [],
+            }
+        ],
+    }
+    (env.draft / "policy" / "skill-categories.yaml").write_bytes(
+        document_bytes(catalog, logical_path=PurePosixPath("policy/skill-categories.yaml"))
+    )
+    outcome = authoring.promote_candidates(
+        env.bundle_root,
+        draft_name="baseline",
+        source_id=RESUME_SOURCE_ID,
+        source_bytes=env.resume_bytes,
+        as_of=AS_OF,
+    )
+    assert outcome.exit_code != 0, outcome
+    (diag,) = outcome.diagnostics
+    assert "technique" in diag.message
+    assert "Technique" in diag.message and "Techniques" in diag.message
 
 
 def test_promotion_refuses_when_two_entries_collide_to_one_fact_id(tmp_path: Path) -> None:

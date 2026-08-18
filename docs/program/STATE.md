@@ -81,22 +81,19 @@ copy count toward an *unattended* gate, and whether the default flips to `--proj
   `.education` — template-hardcoded (D-156); no scorer may be picked by inspection (D-163).
 - **Gate A — MET** (D-157). Internals in `STANDING-FACTS.md` §Gate A internals.
 - **Autonomous engineering backlog — COMPLETE** (D-202…D-206). `candidate_promotion.py` is the only
-  lossy-id site; all four slug-collision sites refuse, and D-210 closed a fifth. `_merge_categories` remains
-  open (owner-gated, below).
+  lossy-id site; **all slug-collision sites now refuse** — D-210 closed a fifth and **D-237 closed the last
+  (`_merge_categories`, a label colliding with a seeded catalog category: the catalog owns the display_name).**
 
 ### Owner-gated — do NOT start unilaterally
 
-1. **`_merge_categories`** (`candidate_promotion.py`): `if category_id not in known` files a slug-colliding
-   label under a pre-existing catalog category of a different `display_name`. Undecided: seeded catalog vs.
-   author owns a `display_name`.
-2. **D-184 finding 2** — a partial emission silently drops fields (`run_extraction` records a reason only
+1. **D-184 finding 2** — a partial emission silently drops fields (`run_extraction` records a reason only
    when a record produces *no* candidate). Redefines the Gate B accounting contract; four designs.
-3. **Education Slice C** — promoting `header/1`'s `person.professional_name` (the skill-item loop skips
+2. **Education Slice C** — promoting `header/1`'s `person.professional_name` (the skill-item loop skips
    `header/*`).
-4. **P2 item 8 — the onboarding field-taxonomy gatherer** (needs its own brainstorm). D-054 forbids us
+3. **P2 item 8 — the onboarding field-taxonomy gatherer** (needs its own brainstorm). D-054 forbids us
    authoring non-tech field content; its open question: a genuinely new field rule is still *code*, not data.
-5. **Mit's two résumé content calls** — whether to send; the D-220 prose rewrites (his own writing, D-191).
-6. **`add-evidence` takes no bundle lock, and D-143 widened the race** — two concurrent captures race on up
+4. **Mit's two résumé content calls** — whether to send; the D-220 prose rewrites (his own writing, D-191).
+5. **`add-evidence` takes no bundle lock, and D-143 widened the race** — two concurrent captures race on up
    to 13 files. Raise before anyone runs two authoring agents against one bundle.
 
 ### Fixture + corpus drift (D-228) — on `main`

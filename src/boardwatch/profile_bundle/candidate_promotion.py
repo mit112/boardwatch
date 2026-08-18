@@ -546,7 +546,21 @@ def _merge_categories(
     existing: SkillCategoryCatalog, used: Mapping[str, str]
 ) -> tuple[SkillCategoryCatalog, int]:
     """Add any category a promoted skill names that the catalog does not already define."""
-    known = {spec.category_id for spec in existing.categories}
+    known = {spec.category_id: spec.display_name for spec in existing.categories}
+    # An author label whose `_slug` hits a category the catalog ALREADY defines, but under a
+    # different display_name, would silently file the skill under the catalog's label and drop the
+    # author's — the same lossy-slug class the four sibling guards refuse (D-202…D-210), one step
+    # later against the SEEDED catalog rather than a second author label. The catalog owns the
+    # display_name (D-236): refuse rather than let the skip normalize the author's wording away.
+    for category_id, label in sorted(used.items()):
+        seeded = known.get(category_id)
+        if seeded is not None and seeded != label:
+            raise PromotionError(
+                f"category id {category_id!r} is derived from skill-group label {label!r}, but the "
+                f"catalog already defines it as {seeded!r}: promoting would silently file the "
+                f"skill under the catalog's label and drop {label!r}. Rename the group to match "
+                "the catalog, or change the catalog's display_name."
+            )
     new: list[dict[str, object]] = [
         {
             "category_id": category_id,
