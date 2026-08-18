@@ -271,6 +271,56 @@ def test_the_pool_carries_the_bundles_revision_digest_and_projection_digest(
     assert pool.projection_digest == expected_digest
 
 
+def test_the_pool_carries_the_sort_flag_and_the_project_order(
+    projection_env,  # noqa: F811
+) -> None:
+    """Both Stage-2 inputs the declaration owns, carried like `fill_to_page`. The example does not
+    opt into sorting, and its one project makes the order a single-element tuple — the multi-project
+    ordering rule is covered by `_order_projects_by_start`'s own test below."""
+    pool = project_pool(
+        projection_env.bundle_root,
+        projection_env.declaration,
+        config_dir=projection_env.config_dir,
+        as_of=AS_OF,
+    )
+    assert pool.sort_projects_by_date is False
+    assert pool.project_order == ("entry.project.packet-pantry",)
+
+
+def test_the_project_start_key_reads_the_structured_start_not_the_display_string(
+    projection_env,  # noqa: F811
+    bundle_ctx,  # noqa: F811
+) -> None:
+    """The sort key is the STRUCTURED `year_month` value, never the rendered display string. The
+    example project's effective start is `2025-04` (the owner_confirmed `.002`; `.001` is rejected),
+    which the renderer would print as "Apr 2025 – Present" — the key must be the raw `2025-04`."""
+    from boardwatch.projection.pool import _project_start_key
+
+    decl = load_declaration(projection_env.declaration)
+    project_decl = next(e for e in decl.entries if e.entity_id == "project.packet-pantry")
+    key = _project_start_key(project_decl, ctx=bundle_ctx, as_of=AS_OF)
+    assert key == "2025-04"
+
+
+def test_order_projects_by_start_is_newest_first_with_no_start_as_most_recent() -> None:
+    """The projects-only ordering rule, in isolation: dated projects descend by `YYYY-MM`, and a
+    project with no structured start sorts as most recent, ahead of every dated one."""
+    from boardwatch.projection.pool import _order_projects_by_start
+
+    pairs = [
+        ("entry.old", "2021-01"),
+        ("entry.nostart", None),
+        ("entry.present", "2024-03"),
+        ("entry.mid", "2022-08"),
+    ]
+    assert _order_projects_by_start(pairs) == (
+        "entry.nostart",  # no structured start ⇒ most recent, at the top
+        "entry.present",  # 2024-03
+        "entry.mid",  # 2022-08
+        "entry.old",  # 2021-01
+    )
+
+
 def test_the_shell_source_resolves_against_config_dir_not_the_bundle_root(
     projection_env,  # noqa: F811
 ) -> None:

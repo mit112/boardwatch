@@ -329,11 +329,32 @@ def select(
             pool, already, fill_order, compile_prefix, base_gate=last_gate, where=where
         )
 
+    # The final selected set, in declaration order (`_subset_resume`'s own contract). The opt-in
+    # `sort_projects_by_date` then reorders the PROJECT entries reverse-chronologically — after
+    # pinned + ranked + fill, so a pinned older project no longer sits above a newer one — while
+    # leaving experience entries untouched. Default OFF ⇒ the declaration order is unchanged.
+    resume = _subset_resume(pool, pinned | frozenset(admitted) | frozenset(fill_added))
+    if pool.sort_projects_by_date:
+        resume = _reorder_projects(resume, pool.project_order)
+
     return SelectionResult(
-        resume=_subset_resume(pool, pinned | frozenset(admitted) | frozenset(fill_added)),
+        resume=resume,
         pinned_entry_ids=pool.pinned_entry_ids,
         selected_candidate_ids=tuple(admitted),
         used_fallback=used_fallback,
         page_count=last_gate.page_count,
         fill_added_ids=tuple(fill_added),
     )
+
+
+def _reorder_projects(resume: Resume, project_order: tuple[str, ...]) -> Resume:
+    """Reorder `resume`'s PROJECT entries by `project_order` (the pool's newest-first project
+    order), leaving every experience entry at its own position untouched. Only the projects present
+    in this résumé are placed, in `project_order`'s relative order — it reorders, never adds or
+    drops. A project id absent from `project_order` (none is: the pool derives the order from the
+    same declaration these entries came from) keeps declaration order behind the ordered ones."""
+    rank = {entry_id: position for position, entry_id in enumerate(project_order)}
+    projects = [e for e in resume.entries if e.kind == "project"]
+    ordered = iter(sorted(projects, key=lambda e: rank.get(e.entry_id, len(rank))))
+    entries = [next(ordered) if e.kind == "project" else e for e in resume.entries]
+    return resume.model_copy(update={"entries": entries})
