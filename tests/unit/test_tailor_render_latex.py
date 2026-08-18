@@ -162,6 +162,49 @@ def test_emit_project_heading_url_without_label_emits_no_link_segment():
     assert r"\underline{}" not in src  # and no empty-anchor link is produced
 
 
+def test_emit_link_in_first_bullet_moves_the_link_from_the_heading_onto_the_first_bullet():
+    from boardwatch.tailor.render.latex import LatexRenderer
+
+    src = LatexRenderer().emit(
+        _project_resume(
+            link_url="https://example.test/r-and-d",
+            link_label="R&D Repo",
+            link_in_first_bullet=True,
+            bullets=[
+                Bullet(bullet_id="b1", text="Released 511 datasets."),
+                Bullet(bullet_id="b2", text="Wrote the ingestion path"),
+            ],
+        )
+    )
+    # The heading composes name | tech ONLY — the link is no longer in it, and there is no
+    # trailing ' $|$ ' where it used to sit.
+    assert (
+        r"\resumeProjectHeading{\textbf{Hookrail} $|$ \emph{Go, PostgreSQL, Redis}}"
+        r"{June 2026 -- Present}"
+    ) in src
+    # Instead the link is appended to the FIRST bullet: one space, URL verbatim, label escaped.
+    assert (
+        r"\resumeItem{Released 511 datasets. "
+        r"\href{https://example.test/r-and-d}{\underline{R\&D Repo}}}"
+    ) in src
+    # Only the first bullet gets it; the raw, unescaped label never reaches the source.
+    assert r"\resumeItem{Wrote the ingestion path}" in src
+    assert "R&D Repo" not in src
+
+
+def test_emit_link_in_first_bullet_off_keeps_the_link_in_the_heading():
+    from boardwatch.tailor.render.latex import LatexRenderer
+
+    # Regression: default off ⇒ byte-for-byte the heading-link behaviour, and nothing on the bullet.
+    src = LatexRenderer().emit(
+        _project_resume(link_url="https://github.com/x/hookrail", link_label="GitHub")
+    )
+    assert (
+        r"\href{https://github.com/x/hookrail}{\underline{GitHub}}}{June 2026 -- Present}"
+    ) in src
+    assert r"\resumeItem{Built a webhook service}" in src  # bullet unchanged, no appended link
+
+
 def test_emit_escapes_bullets_and_firewall_roundtrips():
     from boardwatch.tailor.render.latex import LatexRenderer
 

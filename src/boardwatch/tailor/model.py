@@ -44,6 +44,12 @@ class Entry(BaseModel):
     # optional; the link segment renders only when `link_url` is set.
     link_url: str | None = None
     link_label: str | None = None
+    # Opt-in: render the link at the end of the FIRST bullet instead of in the heading (frees a
+    # wide project heading from colliding with the date). `None`/`True` are the only values the
+    # projection emits — like `bulletless`, `None` when undeclared so the projected document
+    # (`serialize.resume_document_bytes`, `exclude_none=True`) drops it and every entry that does
+    # not use it serializes exactly as before. The renderer treats `None` as false.
+    link_in_first_bullet: bool | None = None
     # Declares this entry renders with NO bullets — "role + organisation + dates only" (D-221).
     # `None` (unset) and `True` are the only values the projection ever emits, deliberately: a
     # projected document drops None-valued optionals (`serialize.resume_document_bytes` passes

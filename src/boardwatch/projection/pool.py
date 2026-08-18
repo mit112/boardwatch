@@ -39,7 +39,7 @@ from pathlib import Path
 
 from boardwatch.profile_bundle.models.base import Surface
 from boardwatch.profile_bundle.models.claims import ClaimRecord
-from boardwatch.profile_bundle.models.facts import FactRecord
+from boardwatch.profile_bundle.models.facts import FactRecord, YearMonthValue
 from boardwatch.profile_bundle.models.policy import SkillCategoryCatalog
 from boardwatch.profile_bundle.models.skills import SkillRecord
 from boardwatch.profile_bundle.storage import (
@@ -52,6 +52,8 @@ from boardwatch.projection.contract import check_references
 from boardwatch.projection.declaration import (
     DateRangeDeclaration,
     EntryDeclaration,
+    EntryKind,
+    ProjectionDeclaration,
     load_declaration,
     projection_digest,
 )
@@ -120,6 +122,15 @@ class ProjectionPool:
     bundle_digest: str
     projection_digest: str
     fill_to_page: bool = False
+    #: The declaration's opt-in reverse-chronological PROJECT ordering, carried into Stage 2 like
+    #: `fill_to_page` — a selection input the declaration owns, not rendering content. `select`
+    #: reorders the final project set by `project_order` when this is set. Default OFF.
+    sort_projects_by_date: bool = False
+    #: Project entry ids in reverse-chronological order (newest structured start first) — the sort
+    #: key `select` applies when `sort_projects_by_date` is on. Computed HERE, where the structured
+    #: start FACTS are in scope, so `select` never re-reads the bundle. Empty for a pool with no
+    #: project entries.
+    project_order: tuple[str, ...] = ()
 
 
 def project_pool(
@@ -233,6 +244,8 @@ def project_pool(
         bundle_digest=selection.bundle_digest,
         projection_digest=digest,
         fill_to_page=declaration.fill_to_page,
+        sort_projects_by_date=declaration.sort_projects_by_date,
+        project_order=_project_order(declaration, ctx=ctx, as_of=as_of),
     )
 
 
@@ -408,4 +421,50 @@ def _build_entry(
         # `None` rather than `False` when undeclared: the projected document drops None-valued
         # optionals, so this field's existence changes the bytes of no entry that does not use it.
         bulletless=entry_decl.bulletless or None,
+        # Same `None`-when-undeclared rule as `bulletless`, for the same serialization reason.
+        link_in_first_bullet=entry_decl.link_in_first_bullet or None,
     )
+
+
+def _project_start_key(
+    entry_decl: EntryDeclaration, *, ctx: ValidationContext, as_of: date
+) -> str | None:
+    """A project entry's STRUCTURED start as a sortable `YYYY-MM` string, or `None` when it has no
+    structured start — a literal-string or absent `dates`, or a start fact that is not a
+    `year_month`. Reads the same résumé-surfaced facts `_build_entry` renders from (its `range_fact`
+    reads this same `resume_facts_for` map), so a project sorts on the very start it prints. `None`
+    sorts as most recent (see `_project_order`)."""
+    dates = entry_decl.dates
+    if not isinstance(dates, DateRangeDeclaration):
+        return None
+    fact = resume_facts_for(entry_decl.entity_id, ctx, as_of=as_of).get(dates.start)
+    if fact is None or not isinstance(fact.value, YearMonthValue):
+        return None
+    return fact.value.value
+
+
+def _order_projects_by_start(pairs: list[tuple[str, str | None]]) -> tuple[str, ...]:
+    """Given `(entry_id, start_key)` pairs in declaration order, return the entry ids newest-first:
+    projects with no structured start (`None`) come first, as most recent; the dated ones then
+    follow, DESCENDING by `YYYY-MM` (which sorts chronologically as a plain string). Stable within
+    each group, so declaration order breaks ties. Pure — the fact-reading lives in
+    `_project_start_key` — so the ordering rule is testable without a bundle."""
+    undated = [entry_id for entry_id, key in pairs if key is None]
+    dated = [(entry_id, key) for entry_id, key in pairs if key is not None]
+    dated.sort(key=lambda row: row[1], reverse=True)
+    return tuple(undated) + tuple(entry_id for entry_id, _ in dated)
+
+
+def _project_order(
+    declaration: ProjectionDeclaration, *, ctx: ValidationContext, as_of: date
+) -> tuple[str, ...]:
+    """Project entry ids newest-start-first — the order `select` applies when the declaration opts
+    into `sort_projects_by_date`. Experience entries are excluded — the ordering is projects-only by
+    design. Computed unconditionally so the field is a faithful record whether or not the flag is
+    on; `select` consults it only when it is."""
+    pairs = [
+        (_entry_id(entry_decl.entity_id), _project_start_key(entry_decl, ctx=ctx, as_of=as_of))
+        for entry_decl in declaration.entries
+        if entry_decl.kind is EntryKind.PROJECT
+    ]
+    return _order_projects_by_start(pairs)

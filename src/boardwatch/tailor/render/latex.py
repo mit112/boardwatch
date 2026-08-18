@@ -107,6 +107,13 @@ def resolve_template(config_dir: Path | None) -> str:
 # --- section emitters ---------------------------------------------------------------------
 
 
+def _href(url: str, label: str) -> str:
+    """`\\href{<url>}{\\underline{<label>}}` — the one link rendering, shared by the project
+    heading and the first-bullet append. The URL is emitted VERBATIM (escaping would corrupt it);
+    the label is display text and is escaped."""
+    return f"\\href{{{url}}}{{\\underline{{{escape(label)}}}}}"
+
+
 def _subheading(e: Entry) -> str:
     # Fallback FIRST, before kind routing (Blocker-2 fix): a heading-only entry has no
     # structured title, so escaping e.title here would be escape(None). Degraded but valid.
@@ -125,8 +132,10 @@ def _subheading(e: Entry) -> str:
         # Both-or-neither is enforced on the declaration (`EntryDeclaration`); the guard here is
         # belt-and-suspenders for a directly-constructed `Entry`, and keeps an incomplete link from
         # emitting an empty `\underline{}` rather than shipping an invisible clickable link.
-        if e.link_url and e.link_label:
-            segments.append(f"\\href{{{e.link_url}}}{{\\underline{{{escape(e.link_label)}}}}}")
+        # `link_in_first_bullet` moves the link onto the first bullet instead (`_bullet_lines`), so
+        # the heading drops it when that opt-in is set.
+        if e.link_url and e.link_label and not e.link_in_first_bullet:
+            segments.append(_href(e.link_url, e.link_label))
         return f"\\resumeProjectHeading{{{' $|$ '.join(segments)}}}{{{escape(e.dates or '')}}}"
     return (
         f"\\resumeSubheading{{{escape(e.title)}}}{{{escape(e.dates or '')}}}"
@@ -153,13 +162,25 @@ def _skills(resume: Resume) -> str:
 
 
 def _bullet_lines(e: Entry, reworded: frozenset[str]) -> str:
+    # `link_in_first_bullet` (opt-in) appends the entry's link to the FIRST bullet's text instead
+    # of the heading: ` \href{<url>}{\underline{<label>}}`, URL verbatim, label escaped. The
+    # append lands on `escape(b.text)` (never re-escaped) and only when both link fields are
+    # present — the declaration pairs them, and the guard keeps a half-declared directly-built
+    # `Entry` from emitting an empty `\underline{}`. Empty suffix otherwise, so the default path is
+    # byte-for-byte unchanged.
+    link_suffix = ""
+    if e.link_in_first_bullet and e.link_url and e.link_label:
+        link_suffix = f" {_href(e.link_url, e.link_label)}"
     lines: list[str] = []
-    for b in e.bullets:
+    for index, b in enumerate(e.bullets):
         if b.bullet_id in reworded:
             # A marker comment, not a payload change: parse_bullets only matches
             # \resumeItem{...}, so this is invisible to both the PDF and the firewall.
             lines.append("% reworded (Tier B)")
-        lines.append(f"\\resumeItem{{{escape(b.text)}}}")
+        text = escape(b.text)
+        if index == 0:
+            text += link_suffix
+        lines.append(f"\\resumeItem{{{text}}}")
     return "\n".join(lines)
 
 

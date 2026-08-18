@@ -87,6 +87,14 @@ class EntryDeclaration(_Strict):
     #: URL is emitted verbatim into `\href{...}` (not LaTeX-escaped), so it must be a plain URL.
     link_url: str | None = None
     link_label: str | None = None
+    #: Opt-in (default OFF): render the link at the END OF THE ENTRY'S FIRST BULLET instead of in
+    #: the heading. When a project's title + tech list + link are wide, the heading link collides
+    #: with the date column; moving it onto the first bullet frees the heading. When true the link
+    #: does NOT render in the heading — the renderer appends ` \href{<url>}{\underline{<label>}}`
+    #: to the first bullet's text (URL verbatim like the heading path, label escaped). Requires
+    #: `link_url`/`link_label` and a first bullet to append to, enforced below. Absent/false keeps
+    #: the heading-link behaviour byte-for-byte.
+    link_in_first_bullet: bool = False
     claims: tuple[str, ...] = ()
     #: Predicate ids whose facts render as this entry's bullets, in this order (D-188). The
     #: bundle already holds the accomplishment/contribution text as multi-valued facts; naming the
@@ -127,6 +135,31 @@ class EntryDeclaration(_Strict):
             )
         return self
 
+    @model_validator(mode="after")
+    def _link_in_first_bullet_is_satisfiable(self) -> EntryDeclaration:
+        # Appending the link to the first bullet needs both a link to append and a bullet to
+        # append it to. Refuse the unsatisfiable declaration at authoring time rather than let it
+        # render a heading with no link and drop the link off the page silently: a bulletless (or
+        # bullet-source-less) entry has no first bullet, and a missing link has nothing to append.
+        if not self.link_in_first_bullet:
+            return self
+        if self.link_url is None or self.link_label is None:
+            raise ValueError(
+                "link_in_first_bullet needs a link to append: set link_url and link_label, "
+                "or drop link_in_first_bullet"
+            )
+        if self.bulletless:
+            raise ValueError(
+                "link_in_first_bullet needs a first bullet to append to, but this entry is "
+                "bulletless; drop one of the two"
+            )
+        if not (self.claims or self.bullet_predicates):
+            raise ValueError(
+                "link_in_first_bullet needs a first bullet to append to: declare a bullet source "
+                "(claims or bullet_predicates), or drop link_in_first_bullet"
+            )
+        return self
+
 
 class ProjectionDeclaration(_Strict):
     projection_version: int
@@ -147,6 +180,14 @@ class ProjectionDeclaration(_Strict):
     #: bypasses the strict `ADMISSION_FLOOR` (select.py), so a candidate that shares no skill with
     #: the JD — never admissible in the ranked phase — can still fill leftover space here.
     fill_to_page: bool = False
+    #: Opt-in (default OFF): order the PROJECTS section reverse-chronologically — by each project's
+    #: STRUCTURED start date, most recent first — rather than in declaration order. Applied to the
+    #: FINAL selected project set (after pinned + ranked + fill) in `select`, so a pinned older
+    #: project no longer sits above a newer one once `fill_to_page` has topped the page off. It only
+    #: reorders projects among themselves; experience entries are untouched. A project with no
+    #: structured start (a literal-string or absent `dates`, or an open-ended one with no start
+    #: fact) sorts as most recent. Absent/false keeps declaration order unchanged.
+    sort_projects_by_date: bool = False
 
     @property
     def pinned_ids(self) -> tuple[str, ...]:

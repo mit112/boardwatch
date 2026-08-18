@@ -285,6 +285,70 @@ def test_a_bulletless_entry_that_also_declares_a_bullet_source_is_fatal(tmp_path
     assert exc.value.violation.issue is ProjectionIssue.MALFORMED_DECLARATION
 
 
+def test_link_in_first_bullet_loads_with_a_link_and_a_bullet_source(tmp_path: Path) -> None:
+    """The opt-in that renders the link at the end of the first bullet instead of the heading. It
+    is satisfiable here: MINIMAL's entry declares both link fields (added below) and a `claims`
+    bullet source, so there is a link to append and a first bullet to append it to."""
+    body = MINIMAL.replace(
+        "    heading: '{{@display_name}}'\n",
+        "    heading: '{{@display_name}}'\n"
+        "    link_url: https://example.test/p\n"
+        "    link_label: DOI Link\n"
+        "    link_in_first_bullet: true\n",
+    )
+    decl = load_declaration(_write(tmp_path, body))
+    assert decl.entries[0].link_in_first_bullet is True
+    assert decl.entries[0].link_url == "https://example.test/p"
+
+
+def test_link_in_first_bullet_without_link_fields_is_fatal(tmp_path: Path) -> None:
+    """There is nothing to append: the flag needs both a URL and a label, and refusing at load
+    keeps a heading with no link from silently dropping it off the page."""
+    body = MINIMAL.replace(
+        "    heading: '{{@display_name}}'\n",
+        "    heading: '{{@display_name}}'\n    link_in_first_bullet: true\n",
+    )
+    with pytest.raises(ProjectionError) as exc:
+        load_declaration(_write(tmp_path, body))
+    assert exc.value.violation.issue is ProjectionIssue.MALFORMED_DECLARATION
+    assert "link to append" in exc.value.violation.message
+
+
+def test_link_in_first_bullet_on_a_bulletless_entry_is_fatal(tmp_path: Path) -> None:
+    """A bulletless entry has no first bullet to append to. The link fields ARE present, so this
+    reaches the bulletless arm rather than the missing-link one — the two are distinct refusals."""
+    body = MINIMAL.replace(
+        "    heading: '{{@display_name}}'\n    claims: [claim.packet-pantry.backend.001]",
+        "    heading: '{{@display_name}}'\n"
+        "    link_url: https://example.test/p\n"
+        "    link_label: DOI Link\n"
+        "    link_in_first_bullet: true\n"
+        "    bulletless: true",
+    )
+    with pytest.raises(ProjectionError) as exc:
+        load_declaration(_write(tmp_path, body))
+    assert exc.value.violation.issue is ProjectionIssue.MALFORMED_DECLARATION
+    assert "first bullet to append to" in exc.value.violation.message
+    assert "bulletless" in exc.value.violation.message
+
+
+def test_link_in_first_bullet_without_a_bullet_source_is_fatal(tmp_path: Path) -> None:
+    """An entry that declares neither `claims` nor `bullet_predicates` renders no bullets, so there
+    is no first bullet to append to — refused even though it is not marked bulletless."""
+    body = MINIMAL.replace(
+        "    heading: '{{@display_name}}'\n    claims: [claim.packet-pantry.backend.001]",
+        "    heading: '{{@display_name}}'\n"
+        "    link_url: https://example.test/p\n"
+        "    link_label: DOI Link\n"
+        "    link_in_first_bullet: true\n"
+        "    claims: []",
+    )
+    with pytest.raises(ProjectionError) as exc:
+        load_declaration(_write(tmp_path, body))
+    assert exc.value.violation.issue is ProjectionIssue.MALFORMED_DECLARATION
+    assert "bullet source" in exc.value.violation.message
+
+
 def test_a_bulletless_entry_that_also_declares_claims_is_fatal(tmp_path: Path) -> None:
     """The same contradiction reached through the OTHER bullet source, so the refusal cannot be
     satisfied by a check that only knows about `bullet_predicates`."""

@@ -598,3 +598,74 @@ def test_fill_to_page_stops_at_the_first_overflow_and_honours_declaration_order(
     assert {e.entry_id for e in result.resume.entries} == {
         "entry.core", "entry.mobile1", "entry.data1"
     }
+
+
+# -- opt-in reverse-chronological PROJECT ordering -------------------------------------------
+#
+# `sort_projects_by_date` reorders the FINAL selected PROJECT entries by the pool's precomputed
+# `project_order` (newest structured start first — the date computation itself is covered in
+# test_projection_pool.py), leaving experience entries where they are. The pool is built directly
+# with a hand-authored `project_order`, so these tests isolate the reorder from the fact-reading.
+
+
+def _proj(entry_id: str) -> Entry:
+    return Entry(
+        entry_id=entry_id,
+        heading=entry_id,
+        kind="project",
+        bullets=[Bullet(bullet_id=f"{entry_id}.0", text="Built a thing")],
+    )
+
+
+# Declaration order is deliberately out of date order and interleaves an experience entry:
+#   pold (oldest, pinned) · exp (experience) · ppresent (newest / open-ended) · pmid.
+_SORT_ENTRIES = [
+    _proj("entry.pold"),
+    _entry("entry.exp", "Led the platform team"),
+    _proj("entry.ppresent"),
+    _proj("entry.pmid"),
+]
+#: Newest structured start first, exactly as `pool._project_order` would compute it.
+_PROJECT_ORDER = ("entry.ppresent", "entry.pmid", "entry.pold")
+
+
+def _sort_pool(**overrides: object) -> ProjectionPool:
+    pool = ProjectionPool(
+        resume=Resume(header=["C"], education=[], skill_groups=[], entries=list(_SORT_ENTRIES)),
+        pinned_entry_ids=("entry.pold", "entry.exp", "entry.ppresent", "entry.pmid"),
+        candidate_entry_ids=(),
+        no_match_fallback_ids=(),
+        bundle_revision="1",
+        bundle_digest="sha256:sortpool",
+        projection_digest="sha256:sortdecl",
+        project_order=_PROJECT_ORDER,
+    )
+    return dataclasses.replace(pool, **overrides)
+
+
+def test_sort_projects_by_date_renders_projects_newest_first_and_leaves_experience_in_place() -> None:
+    pool = _sort_pool(sort_projects_by_date=True)
+    result = select(
+        pool, _context(JD_NONE), SCORER, table=TABLE, taxonomy=TAXONOMY,
+        compile_prefix=_budget_compiler(50),
+    )
+    ids = [e.entry_id for e in result.resume.entries]
+    # Projects are reordered newest-first; the experience entry keeps its own slot (index 1).
+    assert ids == ["entry.ppresent", "entry.exp", "entry.pmid", "entry.pold"]
+    projects = [e.entry_id for e in result.resume.entries if e.kind == "project"]
+    assert projects == ["entry.ppresent", "entry.pmid", "entry.pold"]
+    # It reorders only — no entry is added or dropped.
+    assert set(ids) == {"entry.pold", "entry.exp", "entry.ppresent", "entry.pmid"}
+
+
+def test_sort_projects_by_date_off_preserves_declaration_order() -> None:
+    """Regression: with the flag off (the default) the final résumé keeps declaration order — the
+    pinned older project still sits where it was declared, above the newer ones."""
+    pool = _sort_pool()
+    assert pool.sort_projects_by_date is False
+    result = select(
+        pool, _context(JD_NONE), SCORER, table=TABLE, taxonomy=TAXONOMY,
+        compile_prefix=_budget_compiler(50),
+    )
+    ids = [e.entry_id for e in result.resume.entries]
+    assert ids == ["entry.pold", "entry.exp", "entry.ppresent", "entry.pmid"]
