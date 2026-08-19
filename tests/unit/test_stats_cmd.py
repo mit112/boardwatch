@@ -119,3 +119,26 @@ def test_the_stats_table_renders_the_over_seniority_count(tmp_path, monkeypatch)
     source = inspect.getsource(stats_cmd)
     assert "over target band" in source, "over_seniority is counted but never shown"
     assert "report.over_seniority" in source
+def test_a_posting_that_is_both_non_swe_and_over_band_is_counted_once(data_dir: Path) -> None:
+    """`top` gates in ORDER: the role gate `continue`s before the seniority gate ever runs, so
+    this posting is `hidden_non_swe` there and nothing else. Counted independently here it
+    landed in both buckets, and `stats.over_seniority` read higher than the funnel's
+    `hidden_over_seniority` for the same corpus -- two numbers for one gate that could not be
+    reconciled, which is the whole discipline this gate was built under."""
+    from boardwatch.cli.top_cmd import rank_open_postings
+
+    _seed_one_posting(data_dir, title="Senior Marketing Manager", band="entry")
+    report = _report(data_dir)
+    assert report is not None
+    assert report.non_swe == 1
+    assert report.over_seniority == 0
+
+    # Counted a second time through the OTHER path -- the one the funnel writes down -- because
+    # a component's self-report is not verification (CLAUDE.md).
+    ranked = rank_open_postings(
+        get_engine(data_dir), load_settings(data_dir=data_dir),
+        limit=50, record_surfaced=False, output_console=Console(),
+    )
+    assert (ranked.hidden_non_swe, ranked.hidden_over_seniority) == (
+        report.non_swe, report.over_seniority
+    )

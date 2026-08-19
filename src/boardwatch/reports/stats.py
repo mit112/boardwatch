@@ -36,7 +36,9 @@ class PostingStat:
     passes_filters: bool
     verdict: str | None  # "eligible" | "uncertain" | "ineligible" | None (unevaluated)
     non_swe: bool = False  # title role gate says non-software; `top` hides these by default
-    # title seniority gate says above the target band; `top` hides these by default (D-246)
+    # Title seniority gate says above the target band; `top` hides these by default (D-246).
+    # Set ONLY for postings the role gate passed, mirroring `top`'s gate ORDER: see the loop in
+    # `compute_stats`. The buckets are disjoint there, so they have to be disjoint here.
     over_seniority: bool = False
 
 
@@ -124,8 +126,19 @@ def compute_stats(
     schemes, _binding_warning = resolve_schemes(leveling, settings.config_dir)
     tier = leveling.fields["software"]
     target_band = cast(TargetBand, profile.target_seniority_band)
-    stats = [
-        PostingStat(
+    stats: list[PostingStat] = []
+    for row in rows:
+        # ORDERED exactly as `top_cmd` gates, because these two counts describe one gate chain.
+        # There the role gate `continue`s before the seniority gate ever runs, so a posting that
+        # is both non-software and over-band is `hidden_non_swe` and nothing else. Evaluated
+        # independently, such a posting landed in both buckets and `over_seniority` read higher
+        # than the funnel's `hidden_over_seniority` for the same corpus -- two numbers for one
+        # gate that could not be reconciled.
+        non_swe = role_verdict(row.title)[0] == "not_swe"
+        over_seniority = not non_swe and seniority_verdict(
+            row.title, schemes.get((row.provider, row.slug)), target_band, tier, leveling,
+        )[0] == "above_band"
+        stats.append(PostingStat(
             posting_id=int(row.id),
             posted_at=row.posted_at,
             passes_filters=passes_hard_filters(
@@ -133,11 +146,7 @@ def compute_stats(
                 profile, settings.location_filter_mode,
             ),
             verdict=verdicts.get(int(row.id)),
-            non_swe=role_verdict(row.title)[0] == "not_swe",
-            over_seniority=seniority_verdict(
-                row.title, schemes.get((row.provider, row.slug)), target_band, tier, leveling,
-            )[0] == "above_band",
-        )
-        for row in rows
-    ]
+            non_swe=non_swe,
+            over_seniority=over_seniority,
+        ))
     return summarize(stats, now=now, window_days=window_days, seen=seen, tracked=tracked)
