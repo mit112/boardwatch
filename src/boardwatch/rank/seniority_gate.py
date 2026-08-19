@@ -191,8 +191,10 @@ def build_token_probe(tier: FieldTier, catalog: LevelingCatalog) -> Callable[[st
       compiled pattern carries `IGNORECASE`; compiling the whole alternation under one global
       `IGNORECASE` counted "Network Engineer l2" as a signal the gate can never act on.
     * **The title is MASKED first**, exactly as step 1 of `parse_seniority` masks it, so
-      `staff` inside "Member of Technical Staff" is not counted. That phrase is 94 live titles
-      the armed gate deliberately keeps.
+      `staff` inside "Member of Technical Staff" is not counted. Measured for D-247, the
+      unmasked probe counted 90 such titles the armed gate deliberately keeps. (Not the 94 in
+      this module's header: that is D-246's count of titles the GATE falsely dropped, a
+      different question over a different population. The two must not be conflated.)
 
     Built ONCE per rank by the caller, never per row: a single alternation scan plus one mask
     substitution is the whole cost, against the ~13 word searches a full parse would run.
