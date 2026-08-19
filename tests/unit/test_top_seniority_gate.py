@@ -263,3 +263,34 @@ def test_an_inert_gate_is_quiet_when_there_was_nothing_to_say(engine, settings, 
     _disarm(engine)
     r = rank_open_postings(engine, settings, limit=50)
     assert r.band_tokens_seen_while_inert == 0
+def test_a_doubly_drained_row_names_both_drains() -> None:
+    """`--include-over-seniority` and `--include-duplicates` can surface the same row. Reporting
+    only the first annotation showed it as merely over-band, so the operator could not tell it
+    was also a duplicate of a posting they had already been served -- a suppression you cannot
+    read is the leak this column exists to close."""
+    from dataclasses import replace
+
+    from boardwatch.cli.top_cmd import RankedPosting, _why_cell
+    from boardwatch.rank.heuristic import Score
+
+    over_band_duplicate = RankedPosting(
+        posting_id=1, title=OVER_BAND_TITLE, company="Acme",
+        score=Score(total=1.0, components={}, covered=0, posting_skill_count=0),
+        why="score 1.00", band="above_band", band_reason='seniority word "staff"',
+        duplicate_of=41,
+    )
+    cell = _why_cell(over_band_duplicate)
+    assert 'seniority word "staff"' in cell
+    assert "duplicate of 41" in cell
+
+    applied = replace(over_band_duplicate, duplicate_of=None, applied_as="applied")
+    assert 'seniority word "staff"' in _why_cell(applied)
+    assert "already applied (applied)" in _why_cell(applied)
+
+    handled = replace(over_band_duplicate, duplicate_of=None, handled_as="built")
+    assert 'seniority word "staff"' in _why_cell(handled)
+    assert "already built" in _why_cell(handled)
+
+    # And a normally-visible row is still unannotated -- the invariant the ordering protects.
+    ordinary = replace(over_band_duplicate, band="in_band", band_reason="", duplicate_of=None)
+    assert _why_cell(ordinary) == "score 1.00"

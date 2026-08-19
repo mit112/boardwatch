@@ -587,19 +587,24 @@ def count_filter_matches(engine: Engine, settings: Settings) -> int | None:
 def _why_cell(posting: RankedPosting) -> str:
     """A drained row names why it was suppressed, inline, so it can never be read as an ordinary
     lead. Every drain annotates; a normally-visible row is unannotated."""
-    # `above_band` reaches `visible` ONLY through `--include-over-seniority`; without the drain
-    # the row `continue`s in the ranker. So this annotates the drained row and never an
-    # ordinary one, which is what keeps the invariant above true. `uncertain` is deliberately
-    # NOT annotated here: it is not a drain, it is a normally-visible row.
+    # EVERY applicable drain annotates, not just the first one matched. A row can be drained
+    # twice: `above_band` reaches `visible` only through `--include-over-seniority`, and a
+    # duplicate/applied/handled row reaches it through its own `--include-*`. Returning on the
+    # first match showed such a row as merely over-band, so the operator could not tell it was
+    # also one they had already applied to — a suppression you cannot read is the leak this
+    # column exists to close. The last three are mutually exclusive by construction (each
+    # `continue`s in the ranker), so at most two annotations ever appear. `uncertain` is
+    # deliberately NOT annotated: it is not a drain, it is a normally-visible row.
+    notes: list[str] = []
     if posting.band == "above_band":
-        return f"{posting.why} · {posting.band_reason}"
+        notes.append(posting.band_reason)
     if posting.duplicate_of is not None:
-        return f"{posting.why} · duplicate of {posting.duplicate_of}"
-    if posting.applied_as is not None:
-        return f"{posting.why} · already applied ({posting.applied_as})"
-    if posting.handled_as is not None:
-        return f"{posting.why} · already {posting.handled_as}"
-    return posting.why
+        notes.append(f"duplicate of {posting.duplicate_of}")
+    elif posting.applied_as is not None:
+        notes.append(f"already applied ({posting.applied_as})")
+    elif posting.handled_as is not None:
+        notes.append(f"already {posting.handled_as}")
+    return " · ".join([posting.why, *notes])
 
 
 def _verdict_token(verdict: str | None) -> str:
