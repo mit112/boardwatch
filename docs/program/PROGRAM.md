@@ -332,6 +332,14 @@ and nearly every line is an incident.
    same-OS: boardwatch ships a Docker image over a host-mounted DB, which *is* the Linux-container-plus-
    macOS-host configuration that corrupted job-apps' primary key. A same-OS test will pass and prove
    nothing about the failure actually at risk.
+   **DONE** (D-241). Documented stance: `WAL_DISCIPLINE.md`. Single-writer discipline: the scan lock +
+   unique indexes (D-020, D-041). Same-OS two-writer test: `tests/pipeline/test_two_writer_concurrency.py`
+   (two subprocesses append concurrently; `PRAGMA integrity_check == ok`; no lost write). The cross-OS case
+   **cannot run in GitHub CI** — macOS runners have no Docker — so it is handled by prevention, not a test:
+   `store/fs_safety.py::unsafe_wal_filesystem` + `get_engine` **refuse** a WAL-unsafe filesystem (a host
+   bind-mount reads as `virtiofs`/`fuse.grpcfuse` inside the container; a named Docker volume reads as
+   `ext4`/`overlay` and is cleared; non-Linux hosts have no `/proc/self/mountinfo`, so local runs are never
+   refused).
 9. **Cohort completeness as a mechanism, not a phrase.** Item 5's "unless zero was provably right" *is*
    cohort completeness. A day is `complete` only when every posting that materialised into a **candidate**
    reached a terminal state — not every posting observed. That distinction cost job-apps several days of
@@ -356,8 +364,10 @@ and nearly every line is an incident.
    remains deferred.
 
 **Gate P3:** **7** consecutive unattended runs with **0** silent empty days, **0** runs reporting success
-while producing nothing, **0** stale-day feeds, and the two-writer test green. (Seven, not fourteen — the
-14-day clock is acceptance and runs after P6.)
+while producing nothing, **0** stale-day feeds, and the two-writer discipline enforced (D-241): the same-OS
+two-writer test green, and the cross-OS bind-mount config refused at runtime, since it is not CI-runnable.
+(Seven, not fourteen — the 14-day clock is acceptance and runs after P6.) **The item-8 test/guard half is
+DONE**; the 7-run half is operational and begins when Mit stands up the daily unattended run.
 
 ### P4 — Craft
 

@@ -14,12 +14,33 @@ from alembic.config import Config
 from alembic.script import ScriptDirectory
 from sqlalchemy import Engine, create_engine, event
 
+from boardwatch.store.fs_safety import unsafe_wal_filesystem
+
 DB_FILENAME = "boardwatch.db"
 _MIGRATIONS = Path(__file__).parent / "migrations"
 
 
+class WalUnsafeFilesystemError(RuntimeError):
+    """The store's directory is on a filesystem where WAL cannot hold its locks (D-241).
+
+    Typed at the raise site so callers never classify it by string-matching the message.
+    """
+
+    def __init__(self, data_dir: Path, fstype: str) -> None:
+        self.data_dir = data_dir
+        self.fstype = fstype
+        super().__init__(
+            f"the store at {data_dir} is on a {fstype!r} filesystem, where SQLite's WAL "
+            "journaling cannot hold its locks and concurrent writers can corrupt the database. "
+            "Put the store on local disk, or use a named Docker volume "
+            "(docker run -v boardwatch-data:/data …) rather than a host bind-mount."
+        )
+
+
 def get_engine(data_dir: Path, busy_timeout_ms: int = 5000) -> Engine:
     data_dir.mkdir(parents=True, exist_ok=True)
+    if (fstype := unsafe_wal_filesystem(data_dir)) is not None:
+        raise WalUnsafeFilesystemError(data_dir, fstype)
     engine = create_engine(f"sqlite:///{data_dir / DB_FILENAME}")
 
     @event.listens_for(engine, "connect")
