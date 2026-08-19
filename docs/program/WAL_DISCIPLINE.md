@@ -1,8 +1,7 @@
-# SQLite concurrency & WAL discipline (P3 item 8 — the documented-stance half)
+# SQLite concurrency & WAL discipline (P3 item 8)
 
-**This documents the concurrency stance that already exists in code, and names the one untested,
-highest-risk configuration.** The two-writer *test* (esp. the cross-OS case) is item 8's remaining hard
-half — deliberately NOT built yet (see "Known gap"). Verified against `src/boardwatch/store/db.py` and
+**This documents the concurrency stance in code, and the test plus runtime guard that now enforce it
+(D-241).** Verified against `src/boardwatch/store/db.py`, `src/boardwatch/store/fs_safety.py`, and
 `src/boardwatch/scan/coordinator.py`.
 
 ## The configuration (every connection)
@@ -33,21 +32,27 @@ second scan can interleave. The eligibility and tailor stages are the same proce
 only cross-process concurrency in normal operation is (a running scan) × (an ad-hoc read like `verify`/
 `show`), which WAL handles by construction.
 
-## Known gap — item 8's REMAINING hard half (NOT built; needs fresh context + a real harness)
-- **No two-writer TEST exists.** `tests/pipeline/test_scan_lock.py` proves the scan lock REJECTS a second
-  scan (State-test j: second scan rejected, zero DB writes) — it does NOT exercise two processes writing the
-  DB concurrently.
-- **No cross-OS test.** boardwatch ships a Docker image over a host-mounted DB — the
-  **Linux-container-plus-macOS-host** configuration that corrupted job-apps' primary key (PROGRAM.md §3.P3
-  item 8). WAL over a network/host-mounted filesystem, or across an OS boundary, has known fragility that a
-  same-OS test cannot surface. **A same-OS two-writer test would pass and prove nothing about the failure
-  actually at risk.**
-- **The remaining work:** a genuine cross-process (and ideally cross-OS: container writer + host writer over
-  the mounted DB) concurrent-writer harness that asserts no corruption / no lost write / the PK stays
-  intact. This is a hard test-infrastructure problem, deliberately left for a fresh context window.
+## The two-writer test (same-OS) and the cross-OS guard
+The two halves of item 8's risk are handled differently, because only one of them can run in CI.
+
+- **Same-OS — a real test.** `tests/pipeline/test_two_writer_concurrency.py` spawns two subprocesses that
+  each append 200 run rows to `boardwatch.db` concurrently, then asserts `PRAGMA integrity_check == "ok"` and
+  that all 400 writes landed (no lost write, no corruption). Genuine kernel-level concurrency — real
+  processes, not an in-process double. This is the regression guard for WAL + busy_timeout under contention.
+- **Cross-OS — a runtime refusal, not a test.** boardwatch ships a Docker image over a host-mounted DB — the
+  **Linux-container-plus-macOS-host** configuration that corrupted job-apps' primary key. WAL over a
+  network/host-mounted filesystem, or across the container/host boundary, has known fragility, and **a
+  same-OS test would pass and prove nothing about it.** GitHub's macOS runners cannot run Docker, so that
+  config can never be a green CI check. The mitigation is prevention: `store/fs_safety.py::unsafe_wal_filesystem`
+  reads `/proc/self/mountinfo` and `get_engine` **refuses** (`WalUnsafeFilesystemError`) when the store sits
+  on a WAL-unsafe filesystem — a host bind-mount reads inside the container as `virtiofs`/`fuse.grpcfuse`/etc.,
+  while a named Docker volume reads as the container's own `ext4`/`overlay` and is cleared. Detection is
+  Linux-only; on macOS/Windows there is no `/proc/self/mountinfo`, the host side is normal local disk, and
+  the guard is a no-op, so it never refuses a legitimate local run.
 
 ## Fail-safe posture
-The discipline is conservative: the scan lock fails CLOSED (a second scan is rejected, never runs
-half-corrupting), and busy_timeout makes contention WAIT rather than error. The untested cross-OS path is a
-monitoring/verification gap, not a known-broken behavior — but until the harness exists, running two writers
-across the container/host boundary is NOT proven safe and should be avoided operationally.
+The discipline fails CLOSED at three points: the scan lock rejects a second scan rather than running
+half-corrupting; busy_timeout makes contention WAIT rather than error; and `get_engine` refuses outright on a
+WAL-unsafe filesystem rather than opening a store that concurrent writers could corrupt. Refusal on a
+network share is a false-positive cost the operator resolves by moving the store to local disk — a recoverable
+inconvenience, deliberately chosen over the unrecoverable data loss of silent corruption.
