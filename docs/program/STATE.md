@@ -19,13 +19,16 @@ rows), zero unattended days, zero acceptance days. Against that: 3 published rel
 ~53k lines of source, **6,650 tests collected**, 70 leaf CLI commands, 6 ATS providers, an 800 MB /
 24,073-posting store. **The build is largely complete; operation is absent.** Working tree clean.
 
-**The buildable roadmap is exhausted pending an owner call.** P0/P1/P2/P5 gates are **MET**. P3, P6 and the
-14-day clock are **frozen by D-155** — job-apps delivers Mit's résumés daily, so there is no live gap and the
-freeze is costless. P4 is built; its one remaining clause is Mit's blind craft review. P7 is breadth-last and
-gated. Because P3's gate is unmet, the ordering rule bars starting P4, and P3/P6 are frozen by owner decision
-— so **no linear-roadmap phase is unilaterally startable** (D-236). The next roadmap move is an **owner
-decision**: unfreeze P3/P6, run the P4 blind review, or open an owner-gated item (see *Owner-gated* below).
-A fresh session should surface this, not manufacture work.
+**The roadmap is UNFROZEN (D-240); its remaining gates are OPERATIONAL, not build.** P0/P1/P2/P5 gates are
+**MET**. On 2026-08-18 Mit lifted D-155's freeze on P3, P6 and the 14-day clock. The builds for P3/P4/P6 are
+essentially done, so their gates now close by *running* boardwatch daily, not by coding. **The single build
+item left on the critical path is P3 item 8** — the cross-OS two-writer corruption test, the one P3 item with
+no `DONE` marker; Gate P3 also needs 7 consecutive clean unattended runs. Gate P4 is Mit's blind craft review,
+barred by the ordering rule until P3's gate is met. Gate P6 needs a real 7-day dedup window plus
+liveness-probed leads. The 14-day acceptance clock starts after P6; **P7 breadth stays last.** **Two
+workstreams are active (D-240, both Mit's):** (a) build P3 item 8; (b) stand up the daily unattended-run
+mechanism — Mit starts it against his live store, we build the mechanism only. This maps onto the headline
+**0**: the machine is built and has never been run in anger.
 
 **The bundle → résumé + projection + render tracks are COMPLETE and merged; nothing is queued there.**
 Gate B is **MET** (0 blockers, D-201); all 11 entities' bullets are refined and within the 220-char ceiling
@@ -86,17 +89,15 @@ copy count toward an *unattended* gate, and whether the default flips to `--proj
 
 ### Owner-gated — do NOT start unilaterally
 
-1. **Education Slice C** — promoting `header/1`'s `person.professional_name` into the owner-authored
-   `facts/identity.yaml` would break promotion's whole-doc, no-clobber write contract (D-182). Undecided:
-   promote-and-merge that fact, or exclude `header/1` like `header/2` since the name is already owner-supplied.
-2. **P2 item 8 — the onboarding field-taxonomy gatherer** (needs its own brainstorm). D-054 forbids us
+1. **P2 item 8 — the onboarding field-taxonomy gatherer** (needs its own brainstorm). D-054 forbids us
    authoring non-tech field content; its open question: a genuinely new field rule is still *code*, not data.
-3. **Mit's two résumé content calls** — whether to send; the D-220 prose rewrites (his own writing, D-191).
-4. **`add-evidence` takes no bundle lock, and D-143 widened the race** — two concurrent captures race on up
+2. **Mit's two résumé content calls** — whether to send; the D-220 prose rewrites (his own writing, D-191).
+3. **`add-evidence` takes no bundle lock, and D-143 widened the race** — two concurrent captures race on up
    to 13 files. Raise before anyone runs two authoring agents against one bundle.
 
-*(Closed: **D-184 finding 2** — a partial extraction now sets the whole record aside for review rather
-than importing a half-record and silently dropping the failed field, D-238.)*
+*(Closed: **Education Slice C** (D-239) — `header/1`'s name is excluded from promotion like the email, since
+onboarding already supplies it; **D-184 finding 2** (D-238) — a partial extraction sets the whole record
+aside for review rather than importing a half-record.)*
 
 ### Fixture + corpus drift (D-228) — on `main`
 
@@ -116,11 +117,11 @@ live-API comparison. **Unfixed:** `scratchpad/gen_corpus.py` was never committed
 | P0 Instrumentation | **COMPLETE** — all nine items | **MET** (D-030) |
 | P1 Résumé artifact gate | **COMPLETE** — P1a + P1b | **MET** (D-032, D-033) |
 | P2 Profile + keystone | items 1–7 shipped; item 4 inert for bundled `[software]`; **item 8 NOT STARTED** | **MET AS RECONCILED** (D-075) — evidence is fixtures, not a live run |
-| P3 Unattended one command | **COMPLETE** except Docker and Mit's input | **NOT MET** — needs 7 consecutive runs; **frozen** (D-155) |
+| P3 Unattended one command | **COMPLETE** except item 8's cross-OS two-writer test and Mit's runs | **NOT MET** — needs 7 consecutive runs + item 8; **unfrozen** (D-240) |
 | P4 Craft gate | **COMPLETE** — items 1–7 | **NOT MET** — the blind craft review is the owner's, never run |
 | P5 Eligibility decides | **COMPLETE** | **MET** — INELIGIBLE precision 16/16, 0 span violations |
-| P6 Liveness + dedup | **BUILD COMPLETE** — three slices (D-110, D-111, D-113) | **NOT MET — 2 of 4**, below; **frozen** |
-| 14-day acceptance | not started | — frozen; starts after P6 |
+| P6 Liveness + dedup | **BUILD COMPLETE** — three slices (D-110, D-111, D-113) | **NOT MET — 2 of 4**, below; **unfrozen** (D-240) — needs real runs |
+| 14-day acceptance | not started | **unfrozen** (D-240); starts after P6 |
 | P7 Breadth | not started | — gated on P0 attribution data (§P7) |
 | *Gate A (parallel)* | *complete, merged, CI green* | ***MET*** — *has moved no program gate* |
 | *Gate B / master reservoir* | ***Stage 1 + Stage 2 DONE**; 11 entities refined (D-213…D-221); live revision **22**; digest omitted (D-017)* | ***MET — 0 blockers** (D-201); 0 over-ceiling bullets since rev 21; rev 22 corrects a false number (D-232) — Gate B never tested truth* |
