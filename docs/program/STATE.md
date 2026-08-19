@@ -21,13 +21,13 @@ rows), zero unattended days, zero acceptance days. Against that: 3 published rel
 
 **The roadmap is UNFROZEN (D-240); its remaining gates are OPERATIONAL, not build.** P0/P1/P2/P5 gates are
 **MET**. On 2026-08-18 Mit lifted D-155's freeze on P3, P6 and the 14-day clock. The builds for P3/P4/P6 are
-essentially done, so their gates now close by *running* boardwatch daily, not by coding. **The single build
-item left on the critical path is P3 item 8** — the cross-OS two-writer corruption test, the one P3 item with
-no `DONE` marker; Gate P3 also needs 7 consecutive clean unattended runs. Gate P4 is Mit's blind craft review,
-barred by the ordering rule until P3's gate is met. Gate P6 needs a real 7-day dedup window plus
-liveness-probed leads. The 14-day acceptance clock starts after P6; **P7 breadth stays last.** **Two
-workstreams are active (D-240, both Mit's):** (a) build P3 item 8; (b) stand up the daily unattended-run
-mechanism — Mit starts it against his live store, we build the mechanism only. This maps onto the headline
+essentially done, so their gates now close by *running* boardwatch daily, not by coding. **P3 item 8 — the
+last P3 build item (a same-OS two-writer test + a runtime refusal of WAL-unsafe filesystems for the
+CI-untestable cross-OS case) — is DONE (D-241);** Gate P3 now needs only its operational half: 7 consecutive
+clean unattended runs. Gate P4 is Mit's blind craft review, barred by the ordering rule until P3's gate is
+met. Gate P6 needs a real 7-day dedup window plus liveness-probed leads. The 14-day acceptance clock starts
+after P6; **P7 breadth stays last.** **The remaining work is operational and Mit's:** stand up the daily
+`boardwatch run` against his live store for the 7 clean runs Gate P3 needs. This maps onto the headline
 **0**: the machine is built and has never been run in anger.
 
 **The bundle → résumé + projection + render tracks are COMPLETE and merged; nothing is queued there.**
@@ -117,7 +117,7 @@ live-API comparison. **Unfixed:** `scratchpad/gen_corpus.py` was never committed
 | P0 Instrumentation | **COMPLETE** — all nine items | **MET** (D-030) |
 | P1 Résumé artifact gate | **COMPLETE** — P1a + P1b | **MET** (D-032, D-033) |
 | P2 Profile + keystone | items 1–7 shipped; item 4 inert for bundled `[software]`; **item 8 NOT STARTED** | **MET AS RECONCILED** (D-075) — evidence is fixtures, not a live run |
-| P3 Unattended one command | **COMPLETE** except item 8's cross-OS two-writer test and Mit's runs | **NOT MET** — needs 7 consecutive runs + item 8; **unfrozen** (D-240) |
+| P3 Unattended one command | **COMPLETE** — all items incl. item 8 (D-241); awaiting Mit's runs | **NOT MET** — needs 7 consecutive clean runs; **unfrozen** (D-240) |
 | P4 Craft gate | **COMPLETE** — items 1–7 | **NOT MET** — the blind craft review is the owner's, never run |
 | P5 Eligibility decides | **COMPLETE** | **MET** — INELIGIBLE precision 16/16, 0 span violations |
 | P6 Liveness + dedup | **BUILD COMPLETE** — three slices (D-110, D-111, D-113) | **NOT MET — 2 of 4**, below; **unfrozen** (D-240) — needs real runs |
