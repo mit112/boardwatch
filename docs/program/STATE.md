@@ -14,10 +14,12 @@
 
 ## Current standing
 
-**The headline number: 0.** Zero job applications have ever come out of boardwatch (`applications` has 0
-rows), zero unattended days, zero acceptance days. Against that: 3 published releases (none since **0.3.0**),
-~53k lines of source, **6,650 tests collected**, 70 leaf CLI commands, 6 ATS providers, an 800 MB /
-24,073-posting store. **The build is largely complete; operation is absent.** Working tree clean.
+**The headline number: 0.** Zero job applications have ever been sent from boardwatch (`applications` has 0
+rows) — the machine produces leads, it never applies (out of scope). Against that: 3 published releases
+(none since **0.3.0**), ~53k lines of source, **6,650 tests collected**, 70 leaf CLI commands, 6 ATS
+providers, an ~800 MB store. **The build is complete and the daily driver is now LIVE (D-244):** on
+2026-08-19 the first full unattended run (run 61) completed clean end-to-end — 8 leads, 8 one-page PDFs — via
+a launchd agent. Working tree clean.
 
 **The roadmap is UNFROZEN (D-240); its remaining gates are OPERATIONAL, not build.** P0/P1/P2/P5 gates are
 **MET**. On 2026-08-18 Mit lifted D-155's freeze on P3, P6 and the 14-day clock. The builds for P3/P4/P6 are
@@ -26,11 +28,11 @@ last P3 build item (a same-OS two-writer test + a runtime refusal of WAL-unsafe 
 CI-untestable cross-OS case) — is DONE (D-241);** Gate P3 now needs only its operational half: 7 consecutive
 clean unattended runs. Gate P4 is Mit's blind craft review, barred by the ordering rule until P3's gate is
 met. Gate P6 needs a real 7-day dedup window plus liveness-probed leads. The 14-day acceptance clock starts
-after P6; **P7 breadth stays last.** **The remaining work is operational and Mit's, and the window is BLOCKED
-on one TTY action (D-243):** the default `boardwatch run` fails on the stale `resume.yaml` (over-length
-bullet + page overflow) and `run --project` refuses for a `missing_projection_approval` — so Mit must either
-`profile-bundle approve-projection` or re-sync `resume.yaml`, then schedule the daily run for the 7 clean runs
-Gate P3 needs. This maps onto the headline **0**: the machine is built and has never been run in anger.
+after P6; **P7 breadth stays last.** **The window is now OPEN (D-244):** on 2026-08-19 Mit approved the
+projection (TTY), a launchd agent (`com.boardwatch.run`, 8:00 AM daily, `run --project`) was installed with
+an explicit homebrew PATH — without which the unattended render silently dies (D-204) — and run 61 completed
+clean. **The remaining P3 work is now accrual, not code:** 7 consecutive clean runs, of which run 61 is the
+first (whether a kickstarted run counts as day 1, or the streak begins with the next scheduled run, is Mit's).
 
 **The bundle → résumé + projection + render tracks are COMPLETE and merged; nothing is queued there.**
 Gate B is **MET** (0 blockers, D-201); all 11 entities' bullets are refined and within the 220-char ceiling
@@ -119,7 +121,7 @@ live-API comparison. **Unfixed:** `scratchpad/gen_corpus.py` was never committed
 | P0 Instrumentation | **COMPLETE** — all nine items | **MET** (D-030) |
 | P1 Résumé artifact gate | **COMPLETE** — P1a + P1b | **MET** (D-032, D-033) |
 | P2 Profile + keystone | items 1–7 shipped; item 4 inert for bundled `[software]`; **item 8 NOT STARTED** | **MET AS RECONCILED** (D-075) — evidence is fixtures, not a live run |
-| P3 Unattended one command | **COMPLETE** — all items incl. item 8 (D-241); awaiting Mit's runs | **NOT MET** — needs 7 consecutive clean runs; **unfrozen** (D-240) |
+| P3 Unattended one command | **COMPLETE + LIVE** — launchd agent installed, run 61 clean (D-244) | **NOT MET** — needs 7 consecutive clean runs; run 61 is the first; **unfrozen** (D-240) |
 | P4 Craft gate | **COMPLETE** — items 1–7 | **NOT MET** — the blind craft review is the owner's, never run |
 | P5 Eligibility decides | **COMPLETE** | **MET** — INELIGIBLE precision 16/16, 0 span violations |
 | P6 Liveness + dedup | **BUILD COMPLETE** — three slices (D-110, D-111, D-113) | **NOT MET — 2 of 4**, below; **unfrozen** (D-240) — needs real runs |
@@ -182,7 +184,7 @@ record, do not widen the window.**
 |---|---|---|
 | **`resume.yaml` is an IMPORT SOURCE, never hand-fixed** | D-155. Content comes from the wiki; the bundle renders; wording is `edit-fact`'s job. Mit pins `resume_max_pages=1`; never advise 2 | Mit |
 | **D-230 migration — ALREADY APPLIED to live (D-243)** | Verified 2026-08-18 on a byte copy: 0 stuck rows, alembic at `runs_status_backfill_repair` head; `stats` is a no-op. **Do NOT use `doctor`'s exit as the check** — it exits 1 on ~12 dead Workday boards, unrelated. Read-only check: `sqlite3 "file:<db>?immutable=1" "SELECT COUNT(*) FROM runs WHERE status='running' AND finished_at IS NOT NULL"` → 0 | resolved |
-| **Window-start BLOCKED on one TTY action (D-243)** | Default `boardwatch run` fails on stale `resume.yaml` (bullet `nio-1` 241 > 220 ceiling; résumé overflows 1 page); `run --project` refuses (`missing_projection_approval`, digest `87513b4d…`). Mit must `profile-bundle approve-projection` OR re-sync `resume.yaml` (never hand-edit it, D-155). No `--yes`; TTY-only | Mit |
+| **Daily driver LIVE — Gate P3 now accruing (D-244)** | Projection approved (TTY, 2026-08-19); launchd agent `com.boardwatch.run` runs `run --project` at 8:00 AM daily with an explicit homebrew PATH (the D-204 trap). Run 61 clean: 8 leads, 8 one-page PDFs. Needs 7 consecutive clean runs; whether run 61 is day 1 is Mit's | Mit / P3 |
 | **`add-evidence` takes no bundle lock** | Only `promote`/`rebase`/`approve` take `bundle_lock`; two concurrent captures race on up to 13 files (D-143) | owner-gated |
 | **P2 item 8 — the onboarding gatherer** | What would make the field tier fire for anyone. D-054 forbids us authoring non-tech field content | owner-gated |
 | **`boardwatch top` advances the queue by default** | Records `seen` unless `--no-record`, so exploratory ranking mutates dedup state — relevant to Gate P6's clean 7-day window | P6 |
