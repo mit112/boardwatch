@@ -127,3 +127,34 @@ class TestLiveRunNarrowings:
     @pytest.mark.parametrize("title", ["Tooling Technician", "Solutions Consultant, Mid-Market"])
     def test_the_manufacturing_and_gtm_readings_are_still_vetoed(self, title: str) -> None:
         assert role_verdict(title)[0] == "not_swe"
+
+
+class TestCoordinatorDeny:
+    """A bare `… Coordinator` with no engineering noun is not a software role (D-245).
+
+    Measured 2026-08-19 over 26,997 live open postings: 135 postings / 125 distinct titles
+    flip `uncertain` -> `not_swe`, and ZERO `swe`-classified titles contain `coordinator`,
+    so the deny cannot bury a software job.
+    """
+
+    @pytest.mark.parametrize("title", [
+        "Disaster Response Coordinator",          # the D-245 lead
+        "Talent Coordinator",
+        "Workplace Coordinator",
+        "People Ops Coordinator",
+        "Coordinator, Content Operations",
+    ])
+    def test_bare_coordinator_is_vetoed(self, title: str) -> None:
+        verdict, reason = role_verdict(title)
+        assert verdict == "not_swe"
+        assert "coordinator" in reason.lower()
+
+    @pytest.mark.parametrize("title", [
+        # The _NOENG guard spares anything carrying an engineering noun anywhere.
+        "Administrative Coordinator - College of Engineering - Information Networking Institute",
+        "Student Program Coordinator, Engineering Student Success Center",
+        # A real software title must never reach the soft denies at all.
+        "Software Engineer, Release Coordinator Tooling",
+    ])
+    def test_engineering_titles_are_never_vetoed_by_the_coordinator_deny(self, title: str) -> None:
+        assert role_verdict(title)[0] != "not_swe"
