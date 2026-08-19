@@ -225,6 +225,31 @@ posting, and `top --include-non-swe` lists the hidden rows with the exact title 
 vetoed each one. A title that gives no signal either way is never filtered — it is scored
 normally, so a genuine software job with an unusual title is not at risk.
 
+`top` can also hide postings whose title names a **seniority band above the one you target** — a
+"Distinguished Engineer" or a "Vice President, Engineering" that would otherwise crowd out the roles
+you can actually get. This is **off until you ask for it**: the profile field `target_seniority_band`
+is one of `entry`, `mid`, `senior` or `any`, it defaults to `any`, and on `any` the gate short-circuits
+before reading a single title. Set it with `boardwatch profile edit`. Like the role gate it is loud:
+the count appears under the table, `stats` reports it, `show <id>` explains any posting, and
+`top --include-over-seniority` lists the hidden rows with the title text that decided each one.
+
+Only a confident hit hides a posting. A title carrying a level token boardwatch cannot resolve —
+and most bare `L2`/`T3` tokens are not levels at all, but OSI layers, support tiers or facility
+codes — is **abstained**: passed through, and counted under the table so you can see the gate's
+blind spot rather than inherit it silently. To resolve levels for a company you watch, bind it to one
+of the shipped company-free rung ladders in `{config_dir}/leveling-bindings.yaml`:
+
+```yaml
+bindings:
+  - provider: workday
+    slug: example.wd1.myworkdayjobs.com/example/careers
+    scheme: ic_1_to_7
+```
+
+The schemes themselves ship with boardwatch and name no companies — which company uses which ladder
+is yours to declare, exactly like your board list. With no bindings file, every level token abstains,
+which is the honest default.
+
 ---
 
 ## What changed since you last looked

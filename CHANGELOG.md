@@ -174,6 +174,34 @@ All notable changes to this project are documented here. The format follows
   expected substring through the shared `_href` helper, so the escaping round-trip stays exact and tailoring
   is not silently degraded to the untailored fallback.
 
+- **A rank-time seniority gate, a versioned leveling catalog, and the `target_seniority_band` profile
+  field** (D-246). Run 61 shortlisted two off-target leads because seniority was only the
+  `exclude_titles` substring list and nothing read a title's *band*. `boardwatch top` now gains a
+  `hidden_over_seniority` bucket and an `--include-over-seniority` drain; the funnel's shortlist stage
+  reports the new bucket and its reconciliation identity includes it. The same gate runs on `notify`
+  and `stats`, and `show <id>` tells you what it made of any posting.
+
+  The gate reads a new **versioned catalog**, `rank/leveling.yaml` — level grammars, named company-free
+  rung ladders, and per-field word→band and roman→band maps. **It contains no company names**, because a
+  company's ladder is not a fact boardwatch can ship; the company→scheme binding is user config in
+  `{config_dir}/leveling-bindings.yaml`, keyed on `(provider, slug)`. Only a confident word, roman
+  numeral, or bound-scheme hit may drop. An unbound level token, a level outside its scheme's range, and
+  every ambiguous bare letter+digit token (`L2` is far more often OSI layer 2 than a level) all abstain,
+  and abstains are **counted and reported** as `uncertain_band` rather than folded into either
+  neighbour. Absence of any token is in-band — silence is never evidence of seniority.
+
+  The new profile field `target_seniority_band` is a closed vocabulary — `entry | mid | senior | any` —
+  and **defaults to `any`, which short-circuits the gate before any title is read**. Behaviour is
+  therefore unchanged on upgrade until you set a band with `boardwatch profile edit`; while the gate is
+  inert, `top` still counts the band tokens it saw and says so, so the feature is discoverable rather
+  than silently dormant.
+
+  Measured 2026-08-19 over 26,997 live open postings: only **two** companies put resolvable levels in
+  their titles at all, the abstain rate is **0.05%**, and the shipped word list closes **61** senior
+  postings that leak into the shortlist today (21 Distinguished Engineer, ~15 Vice President). Bare
+  `fellow` was **dropped** from the word list as a measured false drop — "Engineering Fellow" is a
+  senior IC software title.
+
 ### Changed
 
 - **`boardwatch eligibility extract` and `boardwatch tailor run <posting-id> --tier-b` now exit 1 when an LLM
@@ -198,8 +226,24 @@ All notable changes to this project are documented here. The format follows
   It is additive, so `artifact_version` stays `4`. Reaching it needs Tier B wired into
   `pipeline/runner.py`, which has not happened; without the catalog entry such a row would have
   rendered the artifact's out-of-catalog FAILURE line.
+- **The title role gate denies a bare `… Coordinator` with no engineering head noun** (D-245, D-246).
+  "Disaster Response Coordinator" reached run 61's shortlist because the gate verdicts it `uncertain`
+  and the ranker passes `uncertain` through fail-open. The new pattern is anchor-guarded by the same
+  `_NOENG` lookahead the bare-`sales` pattern uses, so "Engineer, Coordinator Services" stays reachable.
+  Measured over 26,997 open postings: **135 postings flip `uncertain` → `not_swe`, and zero
+  `swe`-classified titles contain the word**, so the deny cannot bury a software job; the anchor
+  additionally spares 4 administrative roles at engineering schools. This closes 135 of the 11,171
+  `uncertain` postings (1.2%) — reporting `uncertain_role` and closing the role gate's fail-open
+  `uncertain` lane are separate, larger work and are **deliberately deferred**, not overlooked.
 
 ### Fixed
+
+- **`top --include-non-swe` no longer records the rows it reveals as `seen`** (D-246). Draining the
+  role-gate quarantine marked every revealed row `seen`, so looking into the bucket suppressed those
+  rows from later runs inside the TTL — the drain closed behind you. A drained row is now excluded from
+  the `seen` write, as CLAUDE.md requires of every quarantine: a drain is a re-entry path, not a one-way
+  consumption of the queue. `--include-over-seniority` is built on the same rule from the start. The
+  duplicate, applied and handled drains were never affected — they return before the surfacing line.
 
 - **`profile-bundle extract` no longer imports a half-record when one field of an entry can't be typed**
   (D-238). `run_extraction` recorded a drain reason only for a record that produced *zero* candidates, so an
@@ -248,6 +292,15 @@ All notable changes to this project are documented here. The format follows
   so nothing else the command prints is affected.
 
 ### Migration
+
+- **`target_seniority_band` re-keys `policy_version` once.** The band and the leveling catalog's digest
+  now enter `profile_row_hash`, so every stored decision's policy stamp moves the first time you run
+  after upgrading. Measured on the live store: **11 ledger rows** go stale. This is the intended
+  fail-safe — a stamp mismatch is never released automatically, because auto-expiry on mismatch would
+  rebuild the whole shortlist on any settings tweak — and it is a one-time step: `boardwatch ledger show
+  --stale` lists them and `boardwatch ledger reopen --stale` releases them. Migration
+  `p_seniority_band` adds the column, defaulting to `any`, so the gate is inert and no ranking changes
+  until you choose a band.
 
 - **The opt-in projection controls added this release — `fill_to_page`, `link_in_first_bullet` and
   `sort_projects_by_date` — shift `projection_digest`.** Adding these fields changes the projection's

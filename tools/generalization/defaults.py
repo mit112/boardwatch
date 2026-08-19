@@ -24,6 +24,9 @@ SCOPED_MODULES: tuple[str, ...] = (
     # Scoped even though it holds no user preference: it holds TITLE data, and letting a
     # split-out module escape R9 is the evasion this rule exists to catch.
     "src/boardwatch/rank/role_gate.py",
+    # Scoped for the same reason role_gate is: it holds TITLE data. The word and band data
+    # live in leveling.yaml; the patterns here use tuple(...) constructor calls.
+    "src/boardwatch/rank/seniority_gate.py",
     "src/boardwatch/eligibility/facts.py",
     "src/boardwatch/eligibility/hashing.py",
     "src/boardwatch/eligibility/catalog.py",
