@@ -328,7 +328,7 @@ def rank_open_postings(
             row.title, schemes.get((row.provider, row.slug)),
             target_band, tier, catalog,
         )
-        if token_probe is not None and token_probe.search(row.title) is not None:
+        if token_probe is not None and token_probe(row.title):
             # Only built when the gate is inert; see build_token_probe.
             band_tokens_seen_while_inert += 1
         if band == "uncertain":

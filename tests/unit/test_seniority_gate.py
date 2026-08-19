@@ -154,13 +154,48 @@ class TestInertReporting:
                       "Software Engineer, Specs, Level 5", "L2 Support Engineer"):
             assert V(title, cat, tier, target="any")[0] == "in_band"
             # ...but the probe knows there was something to say.
-            assert probe.search(title) is not None
+            assert probe(title)
 
     def test_the_probe_is_quiet_on_a_title_with_no_signal(self, cat, tier):
         from boardwatch.rank.seniority_gate import build_token_probe
 
         probe = build_token_probe(tier, cat)
-        assert probe.search("Software Engineer, Content Platform") is None
+        assert not probe("Software Engineer, Content Platform")
+
+    @pytest.mark.parametrize("title", [
+        "Network Engineer l2",           # `l_prefix` is case-SENSITIVE: lowercase is a layer
+        "Support Engineer e3",           # same for `e_prefix`
+        "Backend Engineer ii",           # `_ROMAN` is case-SENSITIVE too
+    ])
+    def test_the_probe_ignores_what_a_case_sensitive_gate_would_ignore(self, title, cat, tier):
+        """The probe drives a notice telling the operator to SET a band. Counting a title an
+        armed gate could never act on nags them towards a setting that changes nothing."""
+        from boardwatch.rank.seniority_gate import build_token_probe
+
+        # The armed gate has no opinion on these at all -- no drop, and no abstain either.
+        assert V(title, cat, tier)[0] == "in_band"
+        assert not build_token_probe(tier, cat)(title)
+
+    def test_the_probe_still_sees_the_case_insensitive_grammars(self, cat, tier):
+        """`level_n` and the field-tier words DO match case-insensitively, and must keep doing
+        so -- the per-branch fix must not turn the whole alternation case-sensitive."""
+        from boardwatch.rank.seniority_gate import build_token_probe
+
+        probe = build_token_probe(tier, cat)
+        assert probe("software engineer, specs, level 5")
+        assert probe("staff software engineer")
+
+    def test_the_probe_masks_member_of_technical_staff(self, cat, tier):
+        """The 94-job phrase. An armed gate keeps these, so counting them here would nag the
+        operator towards a band that deliberately would not act on a single one of them."""
+        from boardwatch.rank.seniority_gate import build_token_probe
+
+        probe = build_token_probe(tier, cat)
+        assert V("Member of Technical Staff", cat, tier)[0] == "in_band"
+        assert not probe("Member of Technical Staff")
+        # ...but a real senior word beside the phrase is still a signal, as it still drops.
+        assert V("Sr. Member of Technical Staff", cat, tier)[0] == "above_band"
+        assert probe("Sr. Member of Technical Staff")
 
 
 class TestMemberOfTechnicalStaff:

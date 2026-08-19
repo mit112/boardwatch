@@ -25,6 +25,7 @@ data — this module was caught by exactly that on first registration.
 from __future__ import annotations
 
 import re
+from collections.abc import Callable
 from typing import Literal
 
 from boardwatch.rank.leveling import (
@@ -170,21 +171,43 @@ def seniority_verdict(
     return "in_band", reason
 
 
-def build_token_probe(tier: FieldTier, catalog: LevelingCatalog) -> re.Pattern[str]:
-    """One combined pattern that answers 'does this title carry ANY seniority signal?'.
+def build_token_probe(tier: FieldTier, catalog: LevelingCatalog) -> Callable[[str], bool]:
+    """A predicate: would an ARMED gate have had something to say about this title?
 
     Used ONLY on the inert path (`target_seniority_band == "any"`), where `seniority_verdict`
     short-circuits before parsing. Without it "the gate is inert" is indistinguishable from
     "there was nothing to gate", and an inert gate nobody knows about is the same monitoring
     failure as an unreported abstain — the thing this module exists to prevent.
 
-    Built ONCE per rank by the caller, never per row: a single alternation scan is the whole
-    cost, against the ~13 word searches plus level patterns a full parse would run.
+    It must answer for the gate that WOULD run, not for a looser one, because `top` turns a
+    non-zero count into "set a target band". Every title it counts that the armed gate would
+    ignore is a nag towards a setting that changes nothing. So it mirrors `parse_seniority`
+    in both places that matters:
+
+    * **Case sensitivity is per branch, never global.** `l_prefix`/`e_prefix`/`ic_prefix`/
+      `t_prefix` and `_ROMAN` are deliberately case-SENSITIVE — lowercase `l2` is a network
+      layer and lowercase `iv` is a word fragment — while `level_n` and the field-tier words
+      match case-insensitively. Each branch is wrapped in a scoped `(?i:...)` only if its own
+      compiled pattern carries `IGNORECASE`; compiling the whole alternation under one global
+      `IGNORECASE` counted "Network Engineer l2" as a signal the gate can never act on.
+    * **The title is MASKED first**, exactly as step 1 of `parse_seniority` masks it, so
+      `staff` inside "Member of Technical Staff" is not counted. That phrase is 94 live titles
+      the armed gate deliberately keeps.
+
+    Built ONCE per rank by the caller, never per row: a single alternation scan plus one mask
+    substitution is the whole cost, against the ~13 word searches a full parse would run.
     """
-    alternatives = [rf"\b{re.escape(word)}\b" for word in tier.words]
+    alternatives = [rf"(?i:\b{re.escape(word)}\b)" for word in tier.words]
     alternatives += [rf"\b{re.escape(numeral)}\b" for numeral in tier.roman]
     alternatives += [
-        _PATTERNS[name].pattern
+        f"(?i:{_PATTERNS[name].pattern})"
+        if _PATTERNS[name].flags & re.IGNORECASE
+        else _PATTERNS[name].pattern
         for name in sorted(catalog.ambiguous_grammars | catalog.self_describing_grammars)
     ]
-    return re.compile("|".join(alternatives), re.IGNORECASE)
+    probe = re.compile("|".join(alternatives))
+
+    def carries_a_band_token(title: str) -> bool:
+        return probe.search(_mask_non_seniority_phrases(title)) is not None
+
+    return carries_a_band_token
