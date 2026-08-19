@@ -21,7 +21,7 @@ from boardwatch.eligibility.preflight import run_eligibility
 from boardwatch.eligibility.read import current_verdicts
 from boardwatch.extract.preflight import run_preflight
 from boardwatch.rank.heuristic import passes_hard_filters, profile_view_from_row
-from boardwatch.rank.leveling import load_bindings, load_leveling
+from boardwatch.rank.leveling import load_leveling, resolve_schemes
 from boardwatch.rank.role_gate import role_verdict
 from boardwatch.rank.seniority_gate import TargetBand, seniority_verdict
 from boardwatch.store.queries import current_posting_versions, get_profile
@@ -121,11 +121,7 @@ def compute_stats(
         tracked = count_tracked_submitted(conn)
     # Loaded ONCE, outside the comprehension: `load_leveling` parses YAML on every call.
     leveling = load_leveling(settings.config_dir)
-    schemes = {
-        key: leveling.schemes[name]
-        for key, name in load_bindings(settings.config_dir).items()
-        if name in leveling.schemes
-    }
+    schemes, _binding_warning = resolve_schemes(leveling, settings.config_dir)
     tier = leveling.fields["software"]
     target_band = cast(TargetBand, profile.target_seniority_band)
     stats = [

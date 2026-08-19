@@ -23,6 +23,10 @@ import yaml
 
 LEVELING_VERSION = 1
 
+# The one field tier every caller resolves today. Field-tier selection by the profile's
+# career_field is future work; until then this key is required rather than assumed.
+DEFAULT_FIELD = "software"
+
 SeniorityBand = Literal["entry", "mid", "senior", "staff_plus"]
 
 _BANDS: frozenset[str] = frozenset({"entry", "mid", "senior", "staff_plus"})
@@ -141,6 +145,15 @@ def load_leveling(config_dir: Path) -> LevelingCatalog:
         }
         fields[fname] = FieldTier(words=words, roman=roman)
 
+    # A catalog with no `software` tier loads fine and then KeyErrors at four call sites, on
+    # the unattended run included. Out-of-catalog is a failure, never a silent bucket -- so it
+    # fails HERE, typed and naming the value, rather than as a bare KeyError later.
+    if DEFAULT_FIELD not in fields:
+        raise LevelingError(
+            f"leveling.yaml: no {DEFAULT_FIELD!r} entry under `fields`; declared: "
+            f"{', '.join(sorted(fields)) or '(none)'}"
+        )
+
     # Hash the PARSED document, not the file: the consumer reads the parsed object, so a
     # digest over raw bytes would move on a comment edit and miss a semantic one via override.
     canonical = json.dumps(raw, sort_keys=True, separators=(",", ":"), default=str)
@@ -158,6 +171,15 @@ def load_leveling(config_dir: Path) -> LevelingCatalog:
     )
 
 
+def _binding_field(row: Mapping[str, object], label: str) -> str:
+    value = row.get(label)
+    if not isinstance(value, str) or not value:
+        raise LevelingError(
+            f"leveling-bindings.yaml: {label} must be a non-empty string, got {value!r}"
+        )
+    return value
+
+
 def load_bindings(config_dir: Path) -> dict[tuple[str, str], str]:
     """Company -> scheme, keyed on (provider, slug) — the pair the store and registry agree on.
 
@@ -168,11 +190,57 @@ def load_bindings(config_dir: Path) -> dict[tuple[str, str], str]:
     if not path.is_file():
         return {}
     raw = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+    if not isinstance(raw, dict):
+        raise LevelingError("leveling-bindings.yaml: top level must be a mapping")
+    rows = raw.get("bindings") or []
+    if not isinstance(rows, list):
+        raise LevelingError(
+            f"leveling-bindings.yaml: `bindings` must be a list, got {type(rows).__name__}"
+        )
     out: dict[tuple[str, str], str] = {}
-    for row in raw.get("bindings") or []:
-        provider, slug, scheme = row.get("provider"), row.get("slug"), row.get("scheme")
-        for label, value in (("provider", provider), ("slug", slug), ("scheme", scheme)):
-            if not isinstance(value, str) or not value:
-                raise LevelingError(f"leveling-bindings.yaml: {label} must be a non-empty string")
+    for row in rows:
+        if not isinstance(row, dict):
+            raise LevelingError(
+                f"leveling-bindings.yaml: each binding must be a mapping, got {row!r}"
+            )
+        # Checked one at a time rather than in a loop so the type narrows for the key below.
+        provider = _binding_field(row, "provider")
+        slug = _binding_field(row, "slug")
+        scheme = _binding_field(row, "scheme")
         out[(provider, slug)] = scheme
     return out
+
+
+def resolve_schemes(
+    catalog: LevelingCatalog, config_dir: Path
+) -> tuple[dict[tuple[str, str], LevelScheme], str | None]:
+    """Bindings resolved to schemes, plus a warning to print if the file was unusable.
+
+    The fail direction differs from `load_leveling`'s ON PURPOSE, chosen per gate:
+
+    * A broken catalog OVERRIDE raises. The operator deliberately customised it, and silently
+      falling back to the bundled catalog would run their machine on data they did not choose.
+    * A broken BINDINGS file degrades to no bindings, loudly. Bindings only ever turn an
+      abstain into a drop, so losing them can never hide a job — it only shows more. A typo in
+      a hand-edited file must not take down the unattended 8 AM run.
+
+    Returns the warning rather than printing it, so the four call sites keep their own console.
+    """
+    try:
+        bindings = load_bindings(config_dir)
+    except LevelingError as exc:
+        return {}, (
+            f"leveling-bindings.yaml is unusable ({exc}); continuing with no company bindings, "
+            "so every level token abstains and nothing is dropped for seniority."
+        )
+    unknown = sorted({name for name in bindings.values() if name not in catalog.schemes})
+    schemes = {
+        key: catalog.schemes[name] for key, name in bindings.items() if name in catalog.schemes
+    }
+    warning = (
+        f"leveling-bindings.yaml names unknown scheme(s) {', '.join(unknown)}; "
+        f"known: {', '.join(sorted(catalog.schemes))}. Those bindings were ignored."
+        if unknown
+        else None
+    )
+    return schemes, warning

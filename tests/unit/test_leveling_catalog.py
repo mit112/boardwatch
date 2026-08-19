@@ -109,3 +109,50 @@ def test_bindings_are_keyed_on_provider_and_slug(tmp_path: Path) -> None:
     )
     got = load_bindings(tmp_path)
     assert got == {("workday", "snapchat.wd1.myworkdayjobs.com/snapchat/snap"): "ic_1_to_7"}
+
+
+class TestFailDirectionIsPerGate:
+    """A broken override raises; broken bindings degrade loudly. Deliberately different."""
+
+    def test_a_catalog_missing_the_software_tier_raises_typed(self, tmp_path: Path) -> None:
+        # Otherwise it loads fine and KeyErrors at four call sites, the 8 AM run included.
+        cfg = _write(tmp_path, """
+leveling_version: 1
+grammars: {}
+schemes: {}
+fields: {nursing: {words: {}, roman: {}}}
+""")
+        with pytest.raises(LevelingError, match="software"):
+            load_leveling(cfg)
+
+    def test_structurally_broken_bindings_degrade_instead_of_raising(self, tmp_path: Path) -> None:
+        """Bindings only ever turn an abstain into a drop, so losing them cannot hide a job."""
+        from boardwatch.rank.leveling import resolve_schemes
+
+        (tmp_path / "leveling-bindings.yaml").write_text(
+            "bindings:\n  provider: workday\n", encoding="utf-8"
+        )
+        schemes, warning = resolve_schemes(load_leveling(tmp_path), tmp_path)
+        assert schemes == {}
+        assert warning is not None and "unusable" in warning
+
+    def test_an_unknown_scheme_name_is_ignored_with_a_warning(self, tmp_path: Path) -> None:
+        from boardwatch.rank.leveling import resolve_schemes
+
+        (tmp_path / "leveling-bindings.yaml").write_text(
+            "bindings:\n  - provider: workday\n    slug: s\n    scheme: nope\n", encoding="utf-8"
+        )
+        schemes, warning = resolve_schemes(load_leveling(tmp_path), tmp_path)
+        assert schemes == {}
+        assert warning is not None and "nope" in warning
+
+    def test_a_valid_binding_resolves_to_a_scheme_object(self, tmp_path: Path) -> None:
+        from boardwatch.rank.leveling import resolve_schemes
+
+        (tmp_path / "leveling-bindings.yaml").write_text(
+            "bindings:\n  - provider: workday\n    slug: s\n    scheme: ic_1_to_7\n",
+            encoding="utf-8",
+        )
+        schemes, warning = resolve_schemes(load_leveling(tmp_path), tmp_path)
+        assert warning is None
+        assert schemes[("workday", "s")].name == "ic_1_to_7"

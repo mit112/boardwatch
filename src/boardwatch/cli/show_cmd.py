@@ -23,7 +23,7 @@ from boardwatch.extract.preflight import run_preflight
 from boardwatch.extract.taxonomy import load_taxonomy
 from boardwatch.rank.explain import explain
 from boardwatch.rank.heuristic import profile_view_from_row, score_posting
-from boardwatch.rank.leveling import load_bindings, load_leveling
+from boardwatch.rank.leveling import load_leveling, resolve_schemes
 from boardwatch.rank.role_gate import role_verdict
 from boardwatch.rank.seniority_gate import TargetBand, seniority_verdict
 from boardwatch.store.queries import get_profile
@@ -166,11 +166,7 @@ def show(
         # Same contract for the seniority gate: a row `top` hides as above_band must be
         # explainable by looking it up, or the quarantine is unauditable.
         leveling = load_leveling(settings.config_dir)
-        schemes = {
-            key: leveling.schemes[name]
-            for key, name in load_bindings(settings.config_dir).items()
-            if name in leveling.schemes
-        }
+        schemes, _binding_warning = resolve_schemes(leveling, settings.config_dir)
         band, band_reason = seniority_verdict(
             row.title, schemes.get((row.provider, row.slug)),
             cast(TargetBand, profile.target_seniority_band),

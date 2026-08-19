@@ -35,7 +35,7 @@ from boardwatch.rank.heuristic import (
     profile_view_from_row,
     score_posting,
 )
-from boardwatch.rank.leveling import load_bindings, load_leveling
+from boardwatch.rank.leveling import load_leveling, resolve_schemes
 from boardwatch.rank.role_gate import RoleVerdict, role_verdict
 from boardwatch.rank.seniority_gate import (
     SeniorityVerdict,
@@ -235,11 +235,7 @@ def rank_open_postings(
     # lookup instead of two. An unknown scheme name is dropped rather than raised on — the
     # binding file is hand-edited, and a typo must not take the whole shortlist down.
     catalog = load_leveling(settings.config_dir)
-    schemes = {
-        key: catalog.schemes[name]
-        for key, name in load_bindings(settings.config_dir).items()
-        if name in catalog.schemes
-    }
+    schemes, _binding_warning = resolve_schemes(catalog, settings.config_dir)
     # `software` is the only field tier shipped in leveling.yaml. Resolving the operator's own
     # career field (and abstaining when it is unresolvable, which is what the catalog comment
     # calls for) is future work — there is no profile field to resolve it from yet.

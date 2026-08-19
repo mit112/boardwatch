@@ -21,7 +21,7 @@ from boardwatch.eligibility.preflight import current_identity
 from boardwatch.eligibility.read import current_verdicts
 from boardwatch.extract.taxonomy import load_taxonomy
 from boardwatch.rank.heuristic import ProfileView, passes_hard_filters, score_posting
-from boardwatch.rank.leveling import load_bindings, load_leveling
+from boardwatch.rank.leveling import load_leveling, resolve_schemes
 from boardwatch.rank.role_gate import role_verdict
 from boardwatch.rank.seniority_gate import TargetBand, seniority_verdict
 from boardwatch.store.queries import current_posting_versions
@@ -123,11 +123,7 @@ def select_new_matches(
     # Loaded ONCE: `load_leveling` reads (and may parse an override) on every call, so a
     # per-row load would put a YAML parse inside the notify loop.
     leveling = load_leveling(settings.config_dir)
-    schemes = {
-        key: leveling.schemes[name]
-        for key, name in load_bindings(settings.config_dir).items()
-        if name in leveling.schemes
-    }
+    schemes, _binding_warning = resolve_schemes(leveling, settings.config_dir)
     tier = leveling.fields["software"]
     target_band = cast(TargetBand, profile.target_seniority_band)
     items: list[NotifyItem] = []
