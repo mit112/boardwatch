@@ -4710,3 +4710,16 @@ Triggered via `launchctl kickstart` so it ran in launchd's real environment, not
 "Airbnb — Disaster Response Coordinator" was shortlisted as SWE-eligible (a role-relevance false positive)
 and Snap "Level 5" reads senior against Mit's new-grad target. Both are P4/craft + relevance, not P3 —
 recorded for the craft gate, not fixed unilaterally.
+
+### Follow-up (same session): Mit's questions answered by two read-only investigations — D-245
+Mit ruled **run 61 = day 1 of Gate P3's 7** (kickstart trigger does not disqualify a real-agent/live-store
+run). **"Run 61" is a per-invocation counter, not 61 days:** only ~7 of 61 rows were real board scans; the
+rest were dev/tailor/reaper/verify (incl. a 36-run coverage-résumé burst on 08-18). **Nothing to capitalize
+from the prior 60:** `applications`/`application_events` both 0 rows; the Aug-5/7 PDFs are all stale (Typst
+not tectonic, pre-refinement bullets incl. D-232's false number, some non-relevant roles) and the only good
+still-open ones (Affirm 2012, Stripe 10947) were already re-tailored in runs 60/61 — start fresh from run 61.
+**Off-target root cause (verified against the live system):** role/seniority gate only at rank time; Airbnb
+"Coordinator" → `role_verdict` `uncertain`, which the ranker passes through (fail-open, invisible in the
+"non-SWE" drop count); Snap "Level 5" → `role_verdict` `swe`, and the only seniority gate is the
+`exclude_titles` substring list, which enumerates seniority words but no numeric leveling. Fix fork (data
+`exclude_titles` vs a proper seniority gate) left OPEN — presented, Mit away. Not blocking P3.

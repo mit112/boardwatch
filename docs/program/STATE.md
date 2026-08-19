@@ -31,8 +31,8 @@ met. Gate P6 needs a real 7-day dedup window plus liveness-probed leads. The 14-
 after P6; **P7 breadth stays last.** **The window is now OPEN (D-244):** on 2026-08-19 Mit approved the
 projection (TTY), a launchd agent (`com.boardwatch.run`, 8:00 AM daily, `run --project`) was installed with
 an explicit homebrew PATH — without which the unattended render silently dies (D-204) — and run 61 completed
-clean. **The remaining P3 work is now accrual, not code:** 7 consecutive clean runs, of which run 61 is the
-first (whether a kickstarted run counts as day 1, or the streak begins with the next scheduled run, is Mit's).
+clean. **The remaining P3 work is now accrual, not code:** 7 consecutive clean runs. **Mit ruled run 61 is
+day 1 (D-245) — 6 to go.** The next arrives with tomorrow's 8:00 AM scheduled fire.
 
 **The bundle → résumé + projection + render tracks are COMPLETE and merged; nothing is queued there.**
 Gate B is **MET** (0 blockers, D-201); all 11 entities' bullets are refined and within the 220-char ceiling
@@ -121,7 +121,7 @@ live-API comparison. **Unfixed:** `scratchpad/gen_corpus.py` was never committed
 | P0 Instrumentation | **COMPLETE** — all nine items | **MET** (D-030) |
 | P1 Résumé artifact gate | **COMPLETE** — P1a + P1b | **MET** (D-032, D-033) |
 | P2 Profile + keystone | items 1–7 shipped; item 4 inert for bundled `[software]`; **item 8 NOT STARTED** | **MET AS RECONCILED** (D-075) — evidence is fixtures, not a live run |
-| P3 Unattended one command | **COMPLETE + LIVE** — launchd agent installed, run 61 clean (D-244) | **NOT MET** — needs 7 consecutive clean runs; run 61 is the first; **unfrozen** (D-240) |
+| P3 Unattended one command | **COMPLETE + LIVE** — launchd agent installed, run 61 clean (D-244) | **NOT MET — 1 of 7** — run 61 ruled day 1 (D-245), 6 to go; **unfrozen** (D-240) |
 | P4 Craft gate | **COMPLETE** — items 1–7 | **NOT MET** — the blind craft review is the owner's, never run |
 | P5 Eligibility decides | **COMPLETE** | **MET** — INELIGIBLE precision 16/16, 0 span violations |
 | P6 Liveness + dedup | **BUILD COMPLETE** — three slices (D-110, D-111, D-113) | **NOT MET — 2 of 4**, below; **unfrozen** (D-240) — needs real runs |
@@ -147,6 +147,10 @@ live-API comparison. **Unfixed:** `scratchpad/gen_corpus.py` was never committed
 2. **Should any family other than `work_auth` default to `blocker` severity** (e.g. `clearance`)? (D-035.)
 3. **The projection spec's six open questions** (§12) — soonest: whether `tailor run` should validate the
    projection manifest, and whether persona's `entries` list survives stage 2.
+4. **How to close the two relevance leaks (D-245)?** Run 61 shortlisted a non-SWE "Coordinator" (role gate
+   returns `uncertain`, which the ranker passes through) and a senior "Level 5" (only `exclude_titles`
+   substrings gate seniority, and they lack numeric leveling). Fix fork: per-user `exclude_titles` data now
+   vs a proper seniority gate (code mechanism + versioned data). Not blocking P3. Mit's call.
 *(Recently resolved: the daily pipeline gets projection — yes, opt-in, D-225; P5b's criteria — NAMED, D-229;
 the four backfilled `runs` rows close `ok` — D-230; a bullet-less entry — declared, D-226; Windows —
 best-effort, D-212.)*
@@ -184,7 +188,7 @@ record, do not widen the window.**
 |---|---|---|
 | **`resume.yaml` is an IMPORT SOURCE, never hand-fixed** | D-155. Content comes from the wiki; the bundle renders; wording is `edit-fact`'s job. Mit pins `resume_max_pages=1`; never advise 2 | Mit |
 | **D-230 migration — ALREADY APPLIED to live (D-243)** | Verified 2026-08-18 on a byte copy: 0 stuck rows, alembic at `runs_status_backfill_repair` head; `stats` is a no-op. **Do NOT use `doctor`'s exit as the check** — it exits 1 on ~12 dead Workday boards, unrelated. Read-only check: `sqlite3 "file:<db>?immutable=1" "SELECT COUNT(*) FROM runs WHERE status='running' AND finished_at IS NOT NULL"` → 0 | resolved |
-| **Daily driver LIVE — Gate P3 now accruing (D-244)** | Projection approved (TTY, 2026-08-19); launchd agent `com.boardwatch.run` runs `run --project` at 8:00 AM daily with an explicit homebrew PATH (the D-204 trap). Run 61 clean: 8 leads, 8 one-page PDFs. Needs 7 consecutive clean runs; whether run 61 is day 1 is Mit's | Mit / P3 |
+| **Daily driver LIVE — Gate P3 now accruing (D-244)** | Projection approved (TTY, 2026-08-19); launchd agent `com.boardwatch.run` runs `run --project` at 8:00 AM daily with an explicit homebrew PATH (the D-204 trap). Run 61 clean: 8 leads, 8 one-page PDFs. **1 of 7** — Mit ruled run 61 = day 1 (D-245), 6 to go | Mit / P3 |
 | **`add-evidence` takes no bundle lock** | Only `promote`/`rebase`/`approve` take `bundle_lock`; two concurrent captures race on up to 13 files (D-143) | owner-gated |
 | **P2 item 8 — the onboarding gatherer** | What would make the field tier fire for anyone. D-054 forbids us authoring non-tech field content | owner-gated |
 | **`boardwatch top` advances the queue by default** | Records `seen` unless `--no-record`, so exploratory ranking mutates dedup state — relevant to Gate P6's clean 7-day window | P6 |
