@@ -4761,3 +4761,40 @@ reappearing in it.
 **Run 61 replay** (`target=entry`, no bindings): Airbnb *Disaster Response Coordinator* **dropped**; Snap
 *Level 5* **kept + flagged** (abstains until a binding exists); the other 6 leads retained, including
 Affirm's *"Software Engineer I"* whose roman `I` must read as entry. **One leak closed, one made visible.**
+
+### 2026-08-19c: the four D-246 review findings closed, and the gate GREEN — D-247 (branch `seniority-gate-spec`, PR #99)
+**`make check` passed end to end on this branch for the first time.** `EXIT=0`, **6,785 passed + 4 xfailed
+in 16:43**, coverage 95.67% (floor 85%). All five stages ran: `generalization` OK · `program_index --check`
+current · `ruff` · `mypy --strict` (285 files) · `pytest -n auto`. Count reconciles: 6,782 collected at
+`ecc0454` + 7 new tests = 6,789 = 6,785 + 4. Bound to the tree by four routes — HEAD `ecc0454`, no tracked
+`.py`/`.yaml` newer than the log's start, the count identity above, and a working tree holding exactly the
+eight expected modified files.
+
+*Two earlier runs of the same gate were killed at 97% and 25% by `make: *** [test] Error 143` — SIGTERM, not
+a test. **The Bash tool clamps `timeout` to 600,000 ms**, so any `make check` longer than 10 minutes dies
+regardless of the value passed. It has to be launched detached (double-`fork` + `setsid`; macOS has no
+`setsid` binary) and polled. This cost two full gate runs.*
+
+**The probe's precision, measured the way D-246's word list should have been.** Same read-only snapshot,
+**26,997 open postings**. Old probe fired on **15,986** titles, new on **15,896**. The delta is not the
+number that matters — the **disagreement with `seniority_verdict` itself is: 90 → 0.** All 90 false fires
+were "Member of Technical Staff"; the role gate classifies all 90 as `swe`.
+
+| | old probe | new probe |
+|---|---|---|
+| fired | 15,986 | 15,896 |
+| disagreed with the armed gate | **90** | **0** |
+
+**The half the review named has zero live hits.** Finding 2 described the `re.IGNORECASE` recompile, i.e.
+lowercase `l2`/`e3`/`ii`: **0** occurrences in the live corpus. The half that was firing — the missing
+phrase mask — was named by nobody. Fixing only what was written down would have closed the finding and
+moved no number. *A finding is a hypothesis about a defect, not a boundary around it.*
+
+**Each new test confirmed to fail without its fix.** Src files reverted from `HEAD` **by file copy, never
+`git stash`** (it is shared across worktrees, D-refs in STATE). The stats disjointness test and the
+doubly-drained `_why_cell` test both fail on the pre-fix tree, the latter with
+`assert 'duplicate of 41' in 'score 1.00 · seniority word "staff"'`.
+
+**Unchanged, deliberately:** `rank/leveling.yaml`'s `fields.software.words` was not touched. Widening it
+requires enumerating and *reading* the `swe` titles it would drop, which is a measurement, not a cleanup.
+The Snap `Level 5` lead still reaches the shortlist flagged; that closes only with a binding line.
