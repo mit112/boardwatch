@@ -3,16 +3,16 @@ from pathlib import Path
 import pytest
 
 from boardwatch.rank.leveling import (
-    LEVELING_VERSION,
     LevelingError,
     load_bindings,
     load_leveling,
 )
 
 
-def test_bundled_catalog_loads_and_pins_its_version(tmp_path: Path) -> None:
+def test_bundled_catalog_loads_and_is_content_addressed(tmp_path: Path) -> None:
+    # The version is enforced at load (`test_version_mismatch_raises`) and travels inside the
+    # digest, so the catalog carries no separate `version` field for anyone to read.
     catalog = load_leveling(tmp_path)
-    assert catalog.version == LEVELING_VERSION
     assert catalog.digest  # content-addressed, for policy_version
 
 

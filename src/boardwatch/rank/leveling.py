@@ -60,7 +60,10 @@ class FieldTier:
 
 @dataclass(frozen=True)
 class LevelingCatalog:
-    version: int
+    # No `version` field: it could only ever hold `LEVELING_VERSION`, since `load_leveling`
+    # refuses any document that disagrees with the constant. A field nothing but its own test
+    # can read is a check that cannot fire, and the version that does travel is already inside
+    # `digest`, which is what the run identity consumes.
     ambiguous_grammars: frozenset[str]
     self_describing_grammars: frozenset[str]
     schemes: Mapping[str, LevelScheme]
@@ -162,7 +165,6 @@ def load_leveling(config_dir: Path) -> LevelingCatalog:
     ).hexdigest()
 
     return LevelingCatalog(
-        version=LEVELING_VERSION,
         ambiguous_grammars=frozenset(ambiguous),
         self_describing_grammars=frozenset(self_describing),
         schemes=schemes,
