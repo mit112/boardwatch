@@ -24,24 +24,39 @@ from __future__ import annotations
 import re
 from typing import Literal
 
-from boardwatch.rank.leveling import FieldTier, LevelingCatalog, LevelScheme, SeniorityBand
+from boardwatch.rank.leveling import (
+    KNOWN_GRAMMARS,
+    FieldTier,
+    LevelingCatalog,
+    LevelScheme,
+    SeniorityBand,
+)
 
 TargetBand = Literal["entry", "mid", "senior", "any"]
 SeniorityVerdict = Literal["in_band", "above_band", "uncertain"]
 
 BAND_ORDER: dict[str, int] = {"entry": 0, "mid": 1, "senior": 2, "staff_plus": 3}
 
-# "Level 5" — the one grammar measured to be unambiguous (33/33 live hits are real levels).
-_LEVEL_N = re.compile(r"\blevel\s+(\d{1,2})\b", re.IGNORECASE)
+# The regexes are CODE; which of them are live is CATALOG. Keyed by grammar name so the
+# catalog's `grammars:` section actually decides behaviour — otherwise it is declared data
+# nothing reads, and editing it would silently change nothing.
+_PATTERNS: dict[str, re.Pattern[str]] = {
+    # "Level 5" — measured unambiguous (33/33 live hits are real levels).
+    "level_n": re.compile(r"\blevel\s+(\d{1,2})\b", re.IGNORECASE),
+    # Bare letter+digit. Measured NOT to be levels: OSI layer 2, support tiers, facility codes.
+    # Matched only so the gate can ABSTAIN loudly instead of silently ignoring them.
+    "l_prefix": re.compile(r"\b(L\s?-?\d{1,2})\b"),
+    "e_prefix": re.compile(r"\b(E\s?-?\d{1,2})\b"),
+    "ic_prefix": re.compile(r"\b(IC\s?-?\d{1,2})\b"),
+    "t_prefix": re.compile(r"\b(T\s?-?\d{1,3})\b"),
+}
 
-# Bare letter+digit. Measured NOT to be levels: OSI layer 2, support tiers, facility codes.
-# Matched only so the gate can ABSTAIN loudly instead of silently ignoring them.
-_AMBIGUOUS: tuple[re.Pattern[str], ...] = tuple([
-    re.compile(r"\b(L\s?-?\d{1,2})\b"),
-    re.compile(r"\b(E\s?-?\d{1,2})\b"),
-    re.compile(r"\b(IC\s?-?\d{1,2})\b"),
-    re.compile(r"\b(T\s?-?\d{1,3})\b"),
-])
+# Closed vocabulary, enforced at import: a grammar this module cannot match must never be
+# declarable, or the catalog could name one and it would silently do nothing.
+assert set(_PATTERNS) == KNOWN_GRAMMARS, (
+    f"grammar patterns disagree with the catalog vocabulary: "
+    f"{set(_PATTERNS) ^ KNOWN_GRAMMARS}"
+)
 
 # Bare roman numerals. `I` is deliberately absent: it is entry, so it can never raise the band,
 # and matching it would collide with initials and Roman-numeral product names.
@@ -60,17 +75,22 @@ def parse_seniority(
         if re.search(rf"\b{re.escape(word)}\b", title, re.IGNORECASE):
             return tier.words[word], f'seniority word "{word}"'
 
-    # 2. Ambiguous tokens abstain BEFORE any scheme can resolve them.
-    for pattern in _AMBIGUOUS:
-        found = pattern.search(title)
+    # 2. Ambiguous tokens abstain BEFORE any scheme can resolve them. Which grammars are
+    #    ambiguous is the catalog's call, not this module's.
+    for name in sorted(catalog.ambiguous_grammars):
+        found = _PATTERNS[name].search(title)
         if found is not None:
             return None, (
                 f'"{found.group(1)}" looks like a level but that token shape is ambiguous '
                 "(it is usually a network layer, support tier or site code), so it never resolves"
             )
 
-    # 3. Self-describing level token.
-    level = _LEVEL_N.search(title)
+    # 3. Self-describing level token — again, only the grammars the catalog declares.
+    level = None
+    for name in sorted(catalog.self_describing_grammars):
+        level = _PATTERNS[name].search(title)
+        if level is not None:
+            break
     if level is not None:
         if scheme is None:
             return None, (

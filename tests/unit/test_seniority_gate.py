@@ -97,3 +97,41 @@ class TestFailDirection:
             verdict, reason = V(title, cat, tier)
             assert verdict == "above_band"
             assert reason.strip()
+
+
+class TestTheCatalogActuallyDrivesBehaviour:
+    """The `grammars:` section must not be decoration.
+
+    Before this was wired, the module hardcoded its ambiguous-token list and the catalog's
+    declaration was read by nobody: editing the YAML changed nothing. These tests fail if
+    that regresses.
+    """
+
+    def test_dropping_a_grammar_from_the_catalog_changes_the_verdict(self, tmp_path):
+        from boardwatch.rank.leveling import load_leveling
+
+        (tmp_path / "leveling.yaml").write_text("""
+leveling_version: 1
+grammars: {level_n: {kind: self_describing}}
+schemes: {s: {grammar: level_n, levels: {"5": senior}}}
+fields: {software: {words: {}, roman: {}}}
+""", encoding="utf-8")
+        cat = load_leveling(tmp_path)
+        # `l_prefix` is no longer declared, so L2 is not recognised as anything at all and the
+        # title falls through to the entry default instead of abstaining.
+        verdict, _ = seniority_verdict(
+            "L2 Support Engineer", None, "entry", cat.fields["software"], cat
+        )
+        assert verdict == "in_band"
+
+    def test_a_grammar_the_module_cannot_match_is_not_declarable(self, tmp_path):
+        from boardwatch.rank.leveling import LevelingError, load_leveling
+
+        (tmp_path / "leveling.yaml").write_text("""
+leveling_version: 1
+grammars: {klingon_prefix: {kind: ambiguous}}
+schemes: {}
+fields: {software: {words: {}, roman: {}}}
+""", encoding="utf-8")
+        with pytest.raises(LevelingError, match="klingon_prefix"):
+            load_leveling(tmp_path)

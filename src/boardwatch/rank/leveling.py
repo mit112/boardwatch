@@ -27,6 +27,12 @@ SeniorityBand = Literal["entry", "mid", "senior", "staff_plus"]
 
 _BANDS: frozenset[str] = frozenset({"entry", "mid", "senior", "staff_plus"})
 _GRAMMAR_KINDS: frozenset[str] = frozenset({"self_describing", "ambiguous"})
+# Closed vocabulary of grammar NAMES. `seniority_gate` owns the matching regex for each
+# and asserts at import that it covers exactly this set, so the catalog can never declare
+# a grammar nothing can match -- which would be declared data that silently does nothing.
+KNOWN_GRAMMARS: frozenset[str] = frozenset(
+    {"level_n", "l_prefix", "e_prefix", "ic_prefix", "t_prefix"}
+)
 # YAML 1.1 turns these into bools when unquoted, which would silently become a token.
 _YAML_BOOLISH = "unquoted no/yes/on/off/true/false are YAML booleans"
 
@@ -97,6 +103,11 @@ def load_leveling(config_dir: Path) -> LevelingCatalog:
     self_describing: set[str] = set()
     for name, body in (raw.get("grammars") or {}).items():
         gname = _key(name, "grammars")
+        if gname not in KNOWN_GRAMMARS:
+            raise LevelingError(
+                f"grammar {gname!r} is not a known grammar; known: "
+                f"{', '.join(sorted(KNOWN_GRAMMARS))}"
+            )
         kind = (body or {}).get("kind")
         if kind not in _GRAMMAR_KINDS:
             raise LevelingError(f"grammar {gname!r}: unknown kind {kind!r}")
