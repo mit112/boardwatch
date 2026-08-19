@@ -29,8 +29,8 @@ from boardwatch.eligibility.engine import (
 from boardwatch.eligibility.facts import parse_facts
 from boardwatch.eligibility.preflight import current_identity
 from boardwatch.projection.run import ProjectionLeadOutcome
-from boardwatch.reports.abstain import AbstainReport, build_abstain_report
 from boardwatch.rank.leveling import load_leveling
+from boardwatch.reports.abstain import AbstainReport, build_abstain_report
 from boardwatch.reports.manifest import config_hash, profile_row_hash
 from boardwatch.reports.run_funnel import (
     Lead,
