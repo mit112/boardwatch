@@ -4742,7 +4742,9 @@ tokens are mostly not levels — of 45 `L#` hits, Cisco's is OSI layer 2 and eBa
 are declared ambiguous and never resolve. This is what a blind numeric floor would have vetoed.
 
 **Gate outcome** (16,474 survivors): at the shipped default `any` — `in_band` 100%, **0 drops, 0 abstains**
-(inert, and the probe reports 10,261 titles carried a signal so inertness is not silent). At `entry` —
+(inert, and the probe reports 10,261 titles carried a signal so inertness is not silent — **that
+figure is the PRE-D-247 probe; the corrected probe reports 10,171**, the difference being 90
+"Member of Technical Staff" titles it should never have counted). At `entry` —
 `in_band` 6,213 (37.71%), `above_band` 10,219 (62.03%), **abstain 42 (0.25%)**, all 42 honest refusals.
 *(A pre-implementation prototype reported 0.05%; it had Snap and Twilio bound in a hardcoded catalog.
 Moving bindings to user config is what raised it — a prototype's numbers do not survive a design change.)*

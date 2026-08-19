@@ -247,6 +247,8 @@ survivors of the 26,997-posting corpus, with **no bindings** (the shipped defaul
 
 **The `any` column is the proof the gate ships inert:** zero drops, zero abstains, behaviour
 identical to today. The inert-path probe reports that **10,261** of those titles carry a seniority
+*(measured against the probe as first written; **D-247 corrected it to 10,171** — it had been
+counting 90 "Member of Technical Staff" titles the armed gate deliberately keeps)*
 signal, which is what the operator is told instead of silence (§4.5).
 
 **All 42 abstains are correct** — every one is a level token the gate can see and honestly cannot
