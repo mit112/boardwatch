@@ -61,6 +61,33 @@ assert set(_PATTERNS) == KNOWN_GRAMMARS, (
     f"{set(_PATTERNS) ^ KNOWN_GRAMMARS}"
 )
 
+# Phrases that CONTAIN a seniority word but are NOT seniority. Masked out BEFORE word matching,
+# the same rescue-first ordering discipline `role_gate` uses and for the same reason: an
+# unguarded word match is how a real job disappears.
+#
+# "Member of Technical Staff" is the whole reason this exists. It is the standard IC title at
+# Perplexity, xAI, Cohere, Cockroach Labs, Adyen and others — frequently entry-level — and
+# `role_gate._TITLE_SWE_SIGNAL` already names it a POSITIVE software signal. Without this mask
+# the two gates in this package contradict each other on the same string: measured over 26,997
+# live open postings, `staff` falsely dropped **94** `swe`-classified MTS titles. The 19 that
+# also carry a real senior word ("Sr. Member of Technical Staff") still drop, because only the
+# phrase is masked, not the title.
+_NOT_SENIORITY_PHRASES: tuple[re.Pattern[str], ...] = tuple([
+    re.compile(r"\bmembers?\s+of\s+technical\s+staff\b", re.IGNORECASE),
+])
+
+
+def _mask_non_seniority_phrases(title: str) -> str:
+    """Blank out phrases whose seniority word does not mean seniority.
+
+    Replaced with spaces rather than removed so that offsets, word boundaries and any
+    surrounding tokens are all preserved exactly.
+    """
+    for pattern in _NOT_SENIORITY_PHRASES:
+        title = pattern.sub(lambda m: " " * len(m.group(0)), title)
+    return title
+
+
 # Bare roman numerals. `I` is deliberately absent: it is entry, so it can never raise the band,
 # and matching it would collide with initials and Roman-numeral product names.
 _ROMAN = re.compile(r"\b(I{2,3}|IV)\b")
@@ -73,9 +100,11 @@ def parse_seniority(
     catalog: LevelingCatalog,
 ) -> tuple[SeniorityBand | None, str]:
     """Return the title's band and the text that decided it, or (None, reason) to abstain."""
-    # 1. Field-tier words, longest first so "vice president" beats "vp".
+    # 1. Field-tier words, longest first so "vice president" beats "vp". Matched against the
+    #    MASKED title so a phrase like "Member of Technical Staff" cannot read as `staff`.
+    masked = _mask_non_seniority_phrases(title)
     for word in sorted(tier.words, key=len, reverse=True):
-        if re.search(rf"\b{re.escape(word)}\b", title, re.IGNORECASE):
+        if re.search(rf"\b{re.escape(word)}\b", masked, re.IGNORECASE):
             return tier.words[word], f'seniority word "{word}"'
 
     # 2. Ambiguous tokens abstain BEFORE any scheme can resolve them. Which grammars are

@@ -161,3 +161,41 @@ class TestInertReporting:
 
         probe = build_token_probe(tier, cat)
         assert probe.search("Software Engineer, Content Platform") is None
+
+
+class TestMemberOfTechnicalStaff:
+    """`staff` must not fire inside "Member of Technical Staff".
+
+    MTS is the standard IC title at Perplexity, xAI, Cohere, Cockroach Labs and Adyen, often
+    entry-level, and `role_gate` already names it a POSITIVE software signal. Unguarded, the two
+    gates in this package contradicted each other on the same string and 94 real software jobs
+    were dropped -- the `Sr` c `SRE` defect this gate exists to fix, in a new costume.
+    """
+
+    @pytest.mark.parametrize("title", [
+        "Member of Technical Staff",
+        "Member of Technical Staff (Software Engineer, Search)",
+        "Member of Technical Staff - Post-Training and RL",
+        "Members of Technical Staff",
+        "iOS Member of Technical Staff",
+    ])
+    def test_plain_mts_is_not_senior(self, title, cat, tier):
+        assert V(title, cat, tier)[0] == "in_band"
+
+    @pytest.mark.parametrize("title", [
+        "Sr. Member of Technical Staff",
+        "Senior Member of Technical Staff",
+        "Principal Member of Technical Staff",
+    ])
+    def test_a_real_senior_word_still_drops_an_mts_title(self, title, cat, tier):
+        # Only the PHRASE is masked, never the rest of the title.
+        assert V(title, cat, tier)[0] == "above_band"
+
+    def test_the_mask_does_not_disarm_staff_generally(self, cat, tier):
+        verdict, reason = V("Staff Software Engineer", cat, tier)
+        assert verdict == "above_band"
+        assert "staff" in reason.lower()
+
+    def test_the_mask_preserves_surrounding_tokens(self, cat, tier):
+        """Masked with spaces, not deleted, so neighbouring words keep their boundaries."""
+        assert V("Member of Technical Staff II", cat, tier)[0] == "above_band"  # roman II = mid
