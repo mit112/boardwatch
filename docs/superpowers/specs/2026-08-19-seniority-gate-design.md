@@ -234,16 +234,31 @@ are `swe` level markers. But record plainly that **the other 218 are role-gate l
 seniority costume**, and that the real fix is §8 Q2 — closing the role gate's `uncertain` lane. The
 seniority gate is not the right owner of that population and must not be credited with it.
 
-### 3.7 Prototype — the whole gate, end to end
+### 3.7 The whole gate, end to end — measured on the SHIPPED code
 
-Prototype of `parse_seniority` + `seniority_verdict` at `target_seniority_band = entry` over the
-16,542 population:
+*Re-measured 2026-08-19 against the merged implementation, over the **16,474** role-gate
+survivors of the 26,997-posting corpus, with **no bindings** (the shipped default).*
 
-| Verdict | Count | Share |
+| Verdict | `target = any` (shipped default) | `target = entry` |
 |---|---|---|
-| `in_band` | 6,410 | 38.75% |
-| `above_band` | 10,124 | 61.20% |
-| **`uncertain` (abstain rate)** | **8** | **0.05%** |
+| `in_band` | 16,474 — 100% | 6,213 — 37.71% |
+| `above_band` | **0** | 10,219 — 62.03% |
+| **`uncertain` (abstain rate)** | **0** | **42 — 0.25%** |
+
+**The `any` column is the proof the gate ships inert:** zero drops, zero abstains, behaviour
+identical to today. The inert-path probe reports that **10,261** of those titles carry a seniority
+signal, which is what the operator is told instead of silence (§4.5).
+
+**All 42 abstains are correct** — every one is a level token the gate can see and honestly cannot
+resolve: 21 Snap `Level N` (a real scheme, no binding), 11 Twilio `L#`, plus Cisco's
+*"& L2 - Routing"*, eBay's *"L2 Support Engineer"* and *"(T25)"*, Target's facility codes, Coupang's
+`[L4]`, Cerebras' `L2`. **Zero false abstains.**
+
+> **Corrected from the pre-implementation prototype**, which reported 8 abstains (0.05%). That run
+> had Snap and Twilio bound in a hardcoded catalog. The shipped design moved company bindings out
+> of shipped data into user config (§2.1), so by default those 32 postings now abstain instead of
+> resolving — the higher abstain rate is the design change working, not a regression. A prototype's
+> numbers do not survive a design change; they were re-derived rather than carried over.
 
 **Independent corroboration.** Today's shortlist vs the gate's, bare-roman rule:
 
