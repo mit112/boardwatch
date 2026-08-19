@@ -4800,3 +4800,20 @@ doubly-drained `_why_cell` test both fail on the pre-fix tree, the latter with
 **Unchanged, deliberately:** `rank/leveling.yaml`'s `fields.software.words` was not touched. Widening it
 requires enumerating and *reading* the `swe` titles it would drop, which is a measurement, not a cleanup.
 The Snap `Level 5` lead still reaches the shortlist flagged; that closes only with a binding line.
+
+**The gate, run twice.** Once on the four code commits (16:43) and once on the final sha `3b1a792`
+(6:43 — the same 6,785 + 4, and a live example of the documented 8× duration spread). Both `EXIT=0`.
+
+**CI is NOT green, and it is not this branch.** On `3b1a792`: `generalization`, `gitleaks`, `perf` and
+**Python 3.13 all pass**; **3.12 fails** with ~30 errors that are almost entirely `compile_failed` /
+"no shippable résumé PDF", rooted in `failure fetching "fontspec.sty" from network (2/3)` — `tectonic`
+pulls LaTeX packages on demand, so one runner-side network hiccup reds the whole PDF/tailor/projection
+surface at once. Checked against a control rather than assumed: **`main` fails the same way in 4 of its
+last 12 runs**, including run `32266925522` (sha `f99dd5f`) failing the identical
+`test_two_writer_concurrency` plus 5 fontspec/XeTeX hits, and `32229073099` failing the same
+"nothing was tailored, so this proves nothing" family — with two failures on one unchanged sha `2e2a2de`.
+
+**Unresolved at session end: the `3.11` job hung on BOTH runs** — mine (`3b1a792`) and the control
+(`ecc0454`) — ~90 minutes with no completion, while 3.12 and 3.13 finished on both. Equal on both sides,
+so it says nothing about this branch, but it is not a pass and is not recorded as one. Worth a look before
+the next merge.
