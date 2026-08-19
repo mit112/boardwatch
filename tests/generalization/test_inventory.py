@@ -53,7 +53,11 @@ def test_scope_covers_data_files_repo_wide() -> None:
     assert "src/boardwatch/profile_bundle/resources/career-profile.schema.json" in scope
     assert "src/boardwatch/profile_bundle/examples/comprehensive/manifest.yaml" in scope
     assert "src/boardwatch/profile_bundle/resources/predicate-catalog-v1.yaml" in scope
-    assert len(scope) == 79
+    # D-246 added the seniority leveling catalog, 79 -> 80. The count is pinned so a data file
+    # cannot enter the wheel without someone acknowledging it here; bumping this line IS that
+    # acknowledgement, and it must be paired with a SHIPPED_DATA entry in allowlists.py.
+    assert "src/boardwatch/rank/leveling.yaml" in scope
+    assert len(scope) == 80
 
 
 def test_every_bundle_example_file_is_pinned_and_synthetic() -> None:
