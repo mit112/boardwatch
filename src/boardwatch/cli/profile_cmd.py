@@ -6,7 +6,7 @@ by the D21 preflight (Task 12)."""
 
 from __future__ import annotations
 
-from typing import Literal
+from typing import Literal, get_args
 
 import typer
 from pydantic import BaseModel, ConfigDict, Field
@@ -27,6 +27,9 @@ profile_app = typer.Typer(no_args_is_help=True, help="Profile management.")
 # D-246. The closed target vocabulary. Enforced here at the write boundary rather than by a
 # SQLite CHECK, which would cost a full table rebuild to retrofit.
 SeniorityBandChoice = Literal["entry", "mid", "senior", "any"]
+# DERIVED from the Literal, never restated: a second hand-written list would drift from
+# the one pydantic actually validates against.
+SENIORITY_BAND_CHOICES: frozenset[str] = frozenset(get_args(SeniorityBandChoice))
 
 ZERO_SKILL_WARNING = (
     "warning: no recognized skills in your profile — "
@@ -147,10 +150,20 @@ def edit(ctx: typer.Context) -> None:
     resume_max_pages = typer.prompt(
         "Résumé max pages", default=row.resume_max_pages, type=int
     )
-    target_seniority_band = typer.prompt(
-        "Target seniority band (entry/mid/senior/any)",
-        default=getattr(row, "target_seniority_band", None) or "any",
-    )
+    # Re-prompt on a bad answer rather than aborting the edit and discarding the answers
+    # already entered this run — the same reason the eligibility prompts below loop. A bare
+    # prompt would let a typo like "Entry" raise inside persist_profile and lose everything.
+    while True:
+        target_seniority_band = typer.prompt(
+            "Target seniority band (entry/mid/senior/any)",
+            default=getattr(row, "target_seniority_band", None) or "any",
+        ).strip()
+        if target_seniority_band in SENIORITY_BAND_CHOICES:
+            break
+        console.print(
+            f"{target_seniority_band!r} is not a seniority band; "
+            f"choose one of {', '.join(sorted(SENIORITY_BAND_CHOICES))}"
+        )
     persist_profile(
         app_ctx.engine,
         app_ctx.settings,

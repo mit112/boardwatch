@@ -300,3 +300,30 @@ def test_profile_edit_reprompts_on_a_bad_career_field(env: Path) -> None:
     facts = parse_facts(row.eligibility_facts_json)
     assert facts.career_field == "software"
     assert facts.highest_degree == "master"  # later answers did not slide up
+
+
+def test_a_bad_seniority_band_reprompts_instead_of_discarding_the_edit(env: Path) -> None:
+    """A typo must not abort the edit and throw away every answer already typed.
+
+    The eligibility prompts loop for exactly this reason. A bare `typer.prompt` would let
+    "Entry" raise a pydantic literal_error inside persist_profile, after the operator had
+    already retyped their profile text, titles and locations.
+    """
+    _invoke(env, ["init"], INIT_INPUT)
+    edit_input = (
+        "\n"  # keep text
+        "\n"  # keep target titles
+        "\n"  # keep exclude titles
+        "\n"  # keep locations
+        "n\n"  # remote only
+        "\n"  # keep resume max pages
+        "Entry\n"  # BAD band — wrong case
+        "entry\n"  # corrected
+        "n\n"  # update eligibility checks? no
+    )
+    result = _invoke(env, ["profile", "edit"], edit_input)
+    assert result.exit_code == 0
+    assert "is not a seniority band" in result.output
+    engine = get_engine(env)
+    with engine.connect() as conn:
+        assert get_profile(conn).target_seniority_band == "entry"

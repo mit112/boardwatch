@@ -70,3 +70,4 @@ def test_profile_row_hash_parameter_set_is_pinned() -> None:
         "skills", "target_titles", "exclude_titles", "locations", "remote_only",
         "target_seniority_band",
     }
+
