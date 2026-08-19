@@ -147,13 +147,17 @@ live-API comparison. **Unfixed:** `scratchpad/gen_corpus.py` was never committed
 2. **Should any family other than `work_auth` default to `blocker` severity** (e.g. `clearance`)? (D-035.)
 3. **The projection spec's six open questions** (§12) — soonest: whether `tailor run` should validate the
    projection manifest, and whether persona's `entries` list survives stage 2.
-4. **How to close the two relevance leaks (D-245)?** Run 61 shortlisted a non-SWE "Coordinator" (role gate
-   returns `uncertain`, which the ranker passes through) and a senior "Level 5" (only `exclude_titles`
-   substrings gate seniority, and they lack numeric leveling). Fix fork: per-user `exclude_titles` data now
-   vs a proper seniority gate (code mechanism + versioned data). Not blocking P3. Mit's call.
-*(Recently resolved: the daily pipeline gets projection — yes, opt-in, D-225; P5b's criteria — NAMED, D-229;
-the four backfilled `runs` rows close `ok` — D-230; a bullet-less entry — declared, D-226; Windows —
-best-effort, D-212.)*
+4. **Which seniority band does Mit target?** The gate is built (D-246) but ships **inert** —
+   `target_seniority_band` defaults to `any` and short-circuits before any title is read, so ranking is
+   unchanged. Setting it (`profile edit` → `entry`) re-keys `policy_version` once: 11 ledger rows stale,
+   released with `ledger reopen --stale`.
+*(Recently resolved: **D-245's two relevance leaks — CLOSED, D-246**, option (b), the real fix: a guarded
+bare-`coordinator` deny in `role_gate` (135 postings flip, 0 `swe` touched) plus a rank-time
+`seniority_gate` over a versioned, company-free `leveling.yaml`, with company→scheme binding in user config
+(`{config_dir}/leveling-bindings.yaml` — the registry is a 37-entry `extra="forbid"` seed catalog with no
+Snap/Twilio/Google). Deferred by design: the role gate's fail-open `uncertain` lane, only 1.2% closed. Also:
+projection in the daily pipeline — opt-in, D-225; P5b's criteria — NAMED, D-229; the four backfilled `runs`
+rows close `ok` — D-230; a bullet-less entry — declared, D-226; Windows — best-effort, D-212.)*
 
 ## Windows and the lock reclaim window
 

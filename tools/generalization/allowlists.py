@@ -90,6 +90,15 @@ SHIPPED_DATA: dict[str, DataEntry] = {
         "(P4 item 7, D-062)",
         pin="sha256:baa9e9cbe736182e7a8b3376a3699d383e191a1d5526f765b0de63b06e185c3c",
     ),
+    "src/boardwatch/rank/leveling.yaml": DataEntry(
+        kind="taxonomy",
+        reason="Seniority level grammars, company-free rung ladders, and per-field word "
+        "meanings. Describes how postings word seniority, not one user's targets — it "
+        "contains no company names at all, because a company's ladder is not a fact "
+        "boardwatch can ship. The company binding is user config in "
+        "{config_dir}/leveling-bindings.yaml (D-246)",
+        pin="sha256:65f6ee5ec230480840831aaea17d63d09e6a6b2f61acfe3921889c59f8ee2e07",
+    ),
     "src/boardwatch/registry/companies.yaml": DataEntry(
         kind="company_enumeration",
         reason="The one public starter registry of company job boards. Schema-validated, "
