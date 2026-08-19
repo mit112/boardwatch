@@ -16,7 +16,7 @@
 
 **The headline number: 0.** Zero job applications have ever been sent from boardwatch (`applications` has 0
 rows) — the machine produces leads, it never applies (out of scope). Against that: 3 published releases
-(none since **0.3.0**), ~53k lines of source, **6,650 tests collected**, 70 leaf CLI commands, 6 ATS
+(none since **0.3.0**), ~53k lines of source, **6,789 tests collected**, 70 leaf CLI commands, 6 ATS
 providers, an ~800 MB store. **The build is complete and the daily driver is now LIVE (D-244):** on
 2026-08-19 the first full unattended run (run 61) completed clean end-to-end — 8 leads, 8 one-page PDFs — via
 a launchd agent. Working tree clean.
