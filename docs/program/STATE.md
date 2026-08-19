@@ -26,9 +26,11 @@ last P3 build item (a same-OS two-writer test + a runtime refusal of WAL-unsafe 
 CI-untestable cross-OS case) — is DONE (D-241);** Gate P3 now needs only its operational half: 7 consecutive
 clean unattended runs. Gate P4 is Mit's blind craft review, barred by the ordering rule until P3's gate is
 met. Gate P6 needs a real 7-day dedup window plus liveness-probed leads. The 14-day acceptance clock starts
-after P6; **P7 breadth stays last.** **The remaining work is operational and Mit's:** stand up the daily
-`boardwatch run` against his live store for the 7 clean runs Gate P3 needs. This maps onto the headline
-**0**: the machine is built and has never been run in anger.
+after P6; **P7 breadth stays last.** **The remaining work is operational and Mit's, and the window is BLOCKED
+on one TTY action (D-243):** the default `boardwatch run` fails on the stale `resume.yaml` (over-length
+bullet + page overflow) and `run --project` refuses for a `missing_projection_approval` — so Mit must either
+`profile-bundle approve-projection` or re-sync `resume.yaml`, then schedule the daily run for the 7 clean runs
+Gate P3 needs. This maps onto the headline **0**: the machine is built and has never been run in anger.
 
 **The bundle → résumé + projection + render tracks are COMPLETE and merged; nothing is queued there.**
 Gate B is **MET** (0 blockers, D-201); all 11 entities' bullets are refined and within the 220-char ceiling
@@ -179,7 +181,8 @@ record, do not widen the window.**
 | Item | Detail | Owner |
 |---|---|---|
 | **`resume.yaml` is an IMPORT SOURCE, never hand-fixed** | D-155. Content comes from the wiki; the bundle renders; wording is `edit-fact`'s job. Mit pins `resume_max_pages=1`; never advise 2 | Mit |
-| **Apply the D-230 migration to the LIVE store** | `runs_status_backfill_repair` closes the four `status='running' AND finished_at IS NOT NULL` rows as `ok`, matched by predicate not ids. Built and on `main`; **not yet run against Mit's live store.** `doctor` exits 1 on a recurrence | Mit / operational |
+| **D-230 migration — ALREADY APPLIED to live (D-243)** | Verified 2026-08-18 on a byte copy: 0 stuck rows, alembic at `runs_status_backfill_repair` head; `stats` is a no-op. **Do NOT use `doctor`'s exit as the check** — it exits 1 on ~12 dead Workday boards, unrelated. Read-only check: `sqlite3 "file:<db>?immutable=1" "SELECT COUNT(*) FROM runs WHERE status='running' AND finished_at IS NOT NULL"` → 0 | resolved |
+| **Window-start BLOCKED on one TTY action (D-243)** | Default `boardwatch run` fails on stale `resume.yaml` (bullet `nio-1` 241 > 220 ceiling; résumé overflows 1 page); `run --project` refuses (`missing_projection_approval`, digest `87513b4d…`). Mit must `profile-bundle approve-projection` OR re-sync `resume.yaml` (never hand-edit it, D-155). No `--yes`; TTY-only | Mit |
 | **`add-evidence` takes no bundle lock** | Only `promote`/`rebase`/`approve` take `bundle_lock`; two concurrent captures race on up to 13 files (D-143) | owner-gated |
 | **P2 item 8 — the onboarding gatherer** | What would make the field tier fire for anyone. D-054 forbids us authoring non-tech field content | owner-gated |
 | **`boardwatch top` advances the queue by default** | Records `seen` unless `--no-record`, so exploratory ranking mutates dedup state — relevant to Gate P6's clean 7-day window | P6 |
