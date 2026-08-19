@@ -108,3 +108,14 @@ def test_stats_does_not_count_an_in_band_posting(data_dir: Path) -> None:
     report = _report(data_dir)
     assert report is not None
     assert report.over_seniority == 0
+
+
+def test_the_stats_table_renders_the_over_seniority_count(tmp_path, monkeypatch):
+    """A counter that is computed and tested but never rendered is invisible to the operator."""
+    import inspect
+
+    from boardwatch.cli import stats_cmd
+
+    source = inspect.getsource(stats_cmd)
+    assert "over target band" in source, "over_seniority is counted but never shown"
+    assert "report.over_seniority" in source

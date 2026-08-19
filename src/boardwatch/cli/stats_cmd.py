@@ -44,6 +44,9 @@ def stats(
     pipe.add_row("seen (open)", str(report.seen))
     pipe.add_row("passes filters", str(report.passes_filters))
     pipe.add_row("  of which non-software (hidden from top)", str(report.non_swe))
+    pipe.add_row(
+        "  of which over target band (hidden from top)", str(report.over_seniority)
+    )
     pipe.add_row("not ineligible", str(report.not_ineligible))
     pipe.add_row("tracked (submitted)", str(report.tracked))
     console.print(pipe)
