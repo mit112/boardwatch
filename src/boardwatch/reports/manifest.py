@@ -13,12 +13,12 @@ is `runs.status` (D-029). This module supplies the parts that did not exist:
     if a field appears in neither — `CLAUDE.md`: out-of-catalog is a failure, never a new
     bucket. A `Settings` field added later cannot be silently swept into or out of the hash.
 
-  * **`profile_row_hash`** — over the five profile columns the RANKER reads
-    (`skills`, `target_titles`, `exclude_titles`, `locations`, `remote_only`). `profile_hash`
-    is an eligibility-*facts* hash and covers none of them, yet `exclude_titles` alone drives
-    the single largest drop in the funnel. Without this hash the manifest would say two runs
-    were identical while the setting responsible for 11,517 rejections had changed underneath
-    it. This closes that gap rather than only documenting it.
+  * **`profile_row_hash`** — over the six profile columns the RANKER reads (`skills`,
+    `target_titles`, `exclude_titles`, `locations`, `remote_only`, `target_seniority_band`).
+    `profile_hash` is an eligibility-*facts* hash and covers none of them, yet
+    `exclude_titles` alone drives the single largest drop in the funnel. Without this hash the
+    manifest would say two runs were identical while the setting responsible for 11,517
+    rejections had changed underneath it. This closes that gap rather than only documenting it.
 
 The one coverage gap that remains, stated so the manifest never over-claims: neither hash
 covers the **skill-taxonomy version** — `taxonomy.yaml` can change which postings score as
@@ -137,8 +137,9 @@ def profile_row_hash(
     exclude_titles: Sequence[object] | None,
     locations: Sequence[object] | None,
     remote_only: bool,
+    target_seniority_band: str = "any",
 ) -> str:
-    """SHA-256 over the five profile columns the ranker reads.
+    """SHA-256 over the six profile columns the ranker reads.
 
     A missing list and an empty list are different inputs and hash differently — canonical form
     keeps an explicit null distinct from `[]`, the same guard `hashing.canonical` documents.
@@ -149,6 +150,7 @@ def profile_row_hash(
         "exclude_titles": list(exclude_titles) if exclude_titles is not None else None,
         "locations": list(locations) if locations is not None else None,
         "remote_only": remote_only,
+        "target_seniority_band": target_seniority_band,
     }
     return digest(payload)
 

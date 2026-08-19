@@ -197,6 +197,7 @@ def collect_run_funnel(
                 exclude_titles=profile_row.exclude_titles_json,
                 locations=profile_row.locations_json,
                 remote_only=profile_row.remote_only,
+                target_seniority_band=profile_row.target_seniority_band,
             )
             if profile_row is not None
             else None

@@ -50,12 +50,20 @@ def test_server_default_is_one_when_column_omitted(engine: Engine) -> None:
 
 
 def test_resume_max_pages_not_a_profile_row_hash_input() -> None:
-    # The ranker's profile_row_hash is a deliberate five-column contract; page count is a render
+    # The ranker's profile_row_hash is a deliberate six-column contract; page count is a render
     # knob and must NOT enter it. The non-vacuous test of "kept out of the hash" is that the
     # function has no such parameter — a buggy impl that threaded it in would add the parameter
-    # and fail this.
+    # and fail this. `target_seniority_band` joined the set in D-246 because, unlike page count,
+    # it drives a funnel drop bucket.
     import inspect
 
     params = set(inspect.signature(profile_row_hash).parameters)
     assert "resume_max_pages" not in params
-    assert params == {"skills", "target_titles", "exclude_titles", "locations", "remote_only"}
+    assert params == {
+        "skills",
+        "target_titles",
+        "exclude_titles",
+        "locations",
+        "remote_only",
+        "target_seniority_band",
+    }

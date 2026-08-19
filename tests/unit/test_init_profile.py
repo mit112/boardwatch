@@ -100,6 +100,7 @@ def test_profile_edit_rederives_skills(env: Path) -> None:
         "\n"  # keep locations
         "n\n"  # remote only
         "\n"  # keep resume max pages
+        "\n"  # keep target seniority band
         "n\n"  # update eligibility checks? no
     )
     result = _invoke(env, ["profile", "edit"], edit_input)
@@ -231,6 +232,7 @@ def test_init_skipping_eligibility_leaves_columns_null(env: Path) -> None:
 _ELIG_EDIT = (
     "\n\n\n\n\n"                        # keep profile text and all filters
     "\n"                               # keep resume max pages
+    "\n"                               # keep target seniority band
     "y\n"                              # update eligibility checks?
     "\n"                               # career field: skip (keeps stored value)
     "permanent_resident\nus\n\n\n"     # work_auth: change status, skip bit, default policy
