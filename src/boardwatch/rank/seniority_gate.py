@@ -136,3 +136,23 @@ def seniority_verdict(
     if BAND_ORDER[band] > BAND_ORDER[target_band]:
         return "above_band", f"{band} above target {target_band} ({reason})"
     return "in_band", reason
+
+
+def build_token_probe(tier: FieldTier, catalog: LevelingCatalog) -> re.Pattern[str]:
+    """One combined pattern that answers 'does this title carry ANY seniority signal?'.
+
+    Used ONLY on the inert path (`target_seniority_band == "any"`), where `seniority_verdict`
+    short-circuits before parsing. Without it "the gate is inert" is indistinguishable from
+    "there was nothing to gate", and an inert gate nobody knows about is the same monitoring
+    failure as an unreported abstain — the thing this module exists to prevent.
+
+    Built ONCE per rank by the caller, never per row: a single alternation scan is the whole
+    cost, against the ~13 word searches plus level patterns a full parse would run.
+    """
+    alternatives = [rf"\b{re.escape(word)}\b" for word in tier.words]
+    alternatives += [rf"\b{re.escape(numeral)}\b" for numeral in tier.roman]
+    alternatives += [
+        _PATTERNS[name].pattern
+        for name in sorted(catalog.ambiguous_grammars | catalog.self_describing_grammars)
+    ]
+    return re.compile("|".join(alternatives), re.IGNORECASE)

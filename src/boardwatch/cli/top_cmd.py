@@ -37,7 +37,12 @@ from boardwatch.rank.heuristic import (
 )
 from boardwatch.rank.leveling import load_bindings, load_leveling
 from boardwatch.rank.role_gate import RoleVerdict, role_verdict
-from boardwatch.rank.seniority_gate import SeniorityVerdict, TargetBand, seniority_verdict
+from boardwatch.rank.seniority_gate import (
+    SeniorityVerdict,
+    TargetBand,
+    build_token_probe,
+    seniority_verdict,
+)
 from boardwatch.store.app_state import get_digest_cursor
 from boardwatch.store.applications import applied_job_ids
 from boardwatch.store.identity_queries import (
@@ -140,6 +145,12 @@ class RankedResults:
     # these postings are in `visible` and are already accounted for there. A rule that cannot
     # fire is a monitoring failure, so this is surfaced as a number rather than as silence.
     uncertain_band: int = 0
+    # Titles carrying SOME seniority signal while the gate was inert
+    # (`target_seniority_band == 'any'`). The gate short-circuits on `any` before
+    # parsing, so `uncertain_band` and `hidden_over_seniority` are structurally 0
+    # there — without this counter, 'inert' is indistinguishable from 'nothing to
+    # gate' and the operator is never told the feature exists.
+    band_tokens_seen_while_inert: int = 0
     # Postings the ranker looked at: open postings joined to their company. Measured
     # independently of the loop below, which is what lets the identity above fail.
     considered: int = 0
@@ -287,11 +298,16 @@ def rank_open_postings(
     hidden_non_swe = 0
     hidden_over_seniority = 0
     uncertain_band = 0
+    band_tokens_seen_while_inert = 0
     skipped_not_new = 0
     hidden_hard_filter = 0
     # The band vocabulary is closed and `profile_cmd` is the only writer, which validates it
     # against exactly this Literal before persisting.
     target_band = cast(TargetBand, profile.target_seniority_band)
+    # Built ONCE, and only when the gate is inert: on the `any` path the verdict short-circuits
+    # before parsing, so this single alternation scan is the only way to tell the operator the
+    # gate would have had something to say. `None` on every other path costs nothing.
+    token_probe = build_token_probe(tier, catalog) if target_band == "any" else None
     for row in rows:
         if new_ids is not None and int(row.id) not in new_ids:
             skipped_not_new += 1
@@ -316,6 +332,9 @@ def rank_open_postings(
             row.title, schemes.get((row.provider, row.slug)),
             target_band, tier, catalog,
         )
+        if token_probe is not None and token_probe.search(row.title) is not None:
+            # Only built when the gate is inert; see build_token_probe.
+            band_tokens_seen_while_inert += 1
         if band == "uncertain":
             # Counted, never dropped: the abstain rate is the keystone number, and an
             # unreported abstain is the monitoring failure this gate exists to prevent.
@@ -477,6 +496,7 @@ def rank_open_postings(
         hidden_non_swe=hidden_non_swe,
         hidden_over_seniority=hidden_over_seniority,
         uncertain_band=uncertain_band,
+        band_tokens_seen_while_inert=band_tokens_seen_while_inert,
         considered=len(rows),
         hidden_hard_filter=hidden_hard_filter,
         hidden_below_cutoff=hidden_below_cutoff,
@@ -634,6 +654,16 @@ def _print_hidden_notices(
         target.print(
             f"{results.hidden_over_seniority} hidden as above your target seniority band — see "
             "them with --include-over-seniority, each with the title text that vetoed it.",
+            markup=False,
+        )
+    if results.band_tokens_seen_while_inert:
+        # The gate is INERT, not absent. Reported rather than silent for the same reason an
+        # abstain is: a rule that cannot fire is a monitoring failure, and an operator who
+        # never learns the setting exists cannot choose to use it.
+        target.print(
+            f"seniority filtering is OFF — {results.band_tokens_seen_while_inert} title(s) "
+            "carry a seniority signal that was not acted on. Set a target band with "
+            "`boardwatch profile edit`.",
             markup=False,
         )
     if results.uncertain_band:

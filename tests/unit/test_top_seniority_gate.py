@@ -223,3 +223,43 @@ def test_the_gate_is_inert_at_the_shipped_default(
     assert r.hidden_over_seniority == 0
     assert r.uncertain_band == 0
     assert {p.title for p in r.visible} == {OVER_BAND_TITLE, UNBOUND_LEVEL_TITLE}
+
+
+def _disarm(engine) -> None:
+    """Set the band back to the shipped default so the gate goes inert."""
+    with engine.begin() as conn:
+        save_profile(
+            conn, text="Backend engineer.", target_titles=[], exclude_titles=["intern"],
+            locations=[], remote_only=False, skills=[], taxonomy_version="t",
+            resume_max_pages=1, target_seniority_band="any",
+        )
+
+
+def test_an_inert_gate_reports_what_it_declined_to_act_on(engine, settings, seeded_senior_posting):
+    """`any` is the shipped default, so silence here means nobody ever learns the gate exists.
+
+    The verdict short-circuits on `any` BEFORE parsing, so `hidden_over_seniority` and
+    `uncertain_band` are structurally 0 on this path — this counter is the only signal, and
+    without it "inert" is indistinguishable from "nothing to gate".
+    """
+    _disarm(engine)
+    r = rank_open_postings(engine, settings, limit=50)
+    assert r.hidden_over_seniority == 0          # inert: nothing is dropped
+    assert r.uncertain_band == 0                 # and nothing abstains either
+    assert r.band_tokens_seen_while_inert == 1   # but it SAW the `staff` in the title
+    assert any(p.title == OVER_BAND_TITLE for p in r.visible)
+
+
+def test_the_inert_counter_stays_zero_once_a_band_is_set(engine, settings, seeded_senior_posting):
+    """Otherwise the notice would misfire on every armed run."""
+    r = rank_open_postings(engine, settings, limit=50)   # fixture arms it at `entry`
+    assert r.band_tokens_seen_while_inert == 0
+    assert r.hidden_over_seniority == 1
+
+
+def test_an_inert_gate_is_quiet_when_there_was_nothing_to_say(engine, settings, seed):
+    """No signal, no notice — the report must not nag about a corpus it had no opinion on."""
+    seed(ORDINARY_TITLES)
+    _disarm(engine)
+    r = rank_open_postings(engine, settings, limit=50)
+    assert r.band_tokens_seen_while_inert == 0

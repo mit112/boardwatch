@@ -135,3 +135,29 @@ fields: {software: {words: {}, roman: {}}}
 """, encoding="utf-8")
         with pytest.raises(LevelingError, match="klingon_prefix"):
             load_leveling(tmp_path)
+
+
+class TestInertReporting:
+    """`any` must be reportable, not merely silent.
+
+    `seniority_verdict` short-circuits on `any` before parsing, so the drop and abstain
+    counters are structurally always 0 there. Without a separate probe the operator can
+    never be told the gate WOULD have had something to say.
+    """
+
+    def test_the_probe_sees_what_the_inert_gate_stays_silent_about(self, cat, tier):
+        from boardwatch.rank.seniority_gate import build_token_probe
+
+        probe = build_token_probe(tier, cat)
+        # The inert gate says nothing about any of these...
+        for title in ("Staff Software Engineer", "Backend Engineer II",
+                      "Software Engineer, Specs, Level 5", "L2 Support Engineer"):
+            assert V(title, cat, tier, target="any")[0] == "in_band"
+            # ...but the probe knows there was something to say.
+            assert probe.search(title) is not None
+
+    def test_the_probe_is_quiet_on_a_title_with_no_signal(self, cat, tier):
+        from boardwatch.rank.seniority_gate import build_token_probe
+
+        probe = build_token_probe(tier, cat)
+        assert probe.search("Software Engineer, Content Platform") is None
