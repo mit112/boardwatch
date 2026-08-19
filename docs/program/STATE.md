@@ -28,11 +28,8 @@ last P3 build item (a same-OS two-writer test + a runtime refusal of WAL-unsafe 
 CI-untestable cross-OS case) — is DONE (D-241);** Gate P3 now needs only its operational half: 7 consecutive
 clean unattended runs. Gate P4 is Mit's blind craft review, barred by the ordering rule until P3's gate is
 met. Gate P6 needs a real 7-day dedup window plus liveness-probed leads. The 14-day acceptance clock starts
-after P6; **P7 breadth stays last.** **The window is now OPEN (D-244):** on 2026-08-19 Mit approved the
-projection (TTY), a launchd agent (`com.boardwatch.run`, 8:00 AM daily, `run --project`) was installed with
-an explicit homebrew PATH — without which the unattended render silently dies (D-204) — and run 61 completed
-clean. **The remaining P3 work is now accrual, not code:** 7 consecutive clean runs. **Mit ruled run 61 is
-day 1 (D-245) — 6 to go.** The next arrives with tomorrow's 8:00 AM scheduled fire.
+after P6; **P7 breadth stays last.** **The window is now OPEN (D-244)** — the launchd agent is installed and
+run 61 was clean; **the remaining P3 work is accrual, not code.** Details in the blockers table below.
 
 **The bundle → résumé + projection + render tracks are COMPLETE and merged; nothing is queued there.**
 Gate B is **MET** (0 blockers, D-201); all 11 entities' bullets are refined and within the 220-char ceiling
@@ -147,15 +144,20 @@ live-API comparison. **Unfixed:** `scratchpad/gen_corpus.py` was never committed
 2. **Should any family other than `work_auth` default to `blocker` severity** (e.g. `clearance`)? (D-035.)
 3. **The projection spec's six open questions** (§12) — soonest: whether `tailor run` should validate the
    projection manifest, and whether persona's `entries` list survives stage 2.
-4. **Which seniority band does Mit target?** The gate is built (D-246) but ships **inert** —
-   `target_seniority_band` defaults to `any` and short-circuits before any title is read, so ranking is
-   unchanged. Setting it (`profile edit` → `entry`) re-keys `policy_version` once: 11 ledger rows stale,
-   released with `ledger reopen --stale`.
-*(Recently resolved: **D-245's two relevance leaks — CLOSED, D-246**, option (b), the real fix: a guarded
-bare-`coordinator` deny in `role_gate` (135 postings flip, 0 `swe` touched) plus a rank-time
-`seniority_gate` over a versioned, company-free `leveling.yaml`, with company→scheme binding in user config
-(`{config_dir}/leveling-bindings.yaml` — the registry is a 37-entry `extra="forbid"` seed catalog with no
-Snap/Twilio/Google). Deferred by design: the role gate's fail-open `uncertain` lane, only 1.2% closed. Also:
+4. **Which seniority band does Mit target, and which companies get a scheme bound?** The gate is
+   built (D-246) but ships **inert** — `target_seniority_band` defaults to `any` and short-circuits
+   before any title is read, so ranking is unchanged. Two TTY acts are Mit's: `profile edit` → `entry`,
+   and a `{config_dir}/leveling-bindings.yaml` entry for any company whose levels should resolve.
+   **The `policy_version` re-key (11 ledger rows, `ledger reopen --stale`) happens on the FIRST RUN
+   AFTER UPGRADING, not when the band is set** — the field enters `profile_row_hash` at its default.
+*(Recently resolved: **D-245's relevance leaks — ONE CLOSED, ONE MADE VISIBLE (D-246)**, option (b).
+The Airbnb coordinator leak is closed by a guarded bare-`coordinator` deny in `role_gate` (135 postings
+flip, 0 `swe` touched). **The Snap `Level 5` leak is NOT closed** — with no bindings file every level
+token abstains, so it is still shortlisted, now carrying its reason; closing it takes one binding line,
+deliberately, because boardwatch ships no verifiable claim about any company's ladder. The mechanism is a
+rank-time `seniority_gate` over a versioned, company-free `leveling.yaml`, binding in user config (the
+registry is a 37-entry `extra="forbid"` seed catalog with no Snap/Twilio/Google). Deferred by design: the
+role gate's fail-open `uncertain` lane, only 1.2% closed. Also:
 projection in the daily pipeline — opt-in, D-225; P5b's criteria — NAMED, D-229; the four backfilled `runs`
 rows close `ok` — D-230; a bullet-less entry — declared, D-226; Windows — best-effort, D-212.)*
 
@@ -196,3 +198,5 @@ record, do not widen the window.**
 | **`add-evidence` takes no bundle lock** | Only `promote`/`rebase`/`approve` take `bundle_lock`; two concurrent captures race on up to 13 files (D-143) | owner-gated |
 | **P2 item 8 — the onboarding gatherer** | What would make the field tier fire for anyone. D-054 forbids us authoring non-tech field content | owner-gated |
 | **`boardwatch top` advances the queue by default** | Records `seen` unless `--no-record`, so exploratory ranking mutates dedup state — relevant to Gate P6's clean 7-day window | P6 |
+| **Seniority gate — BUILT, UNMERGED on `seniority-gate-spec` (PR #99)** | All 8 plan tasks done, D-246 recorded. **`make check` has NOT passed end to end yet** — its one real failure (a pinned data-file count, 79→80) is fixed but the gate has not been re-run since. Four review findings remain open, listed below. Spec + self-review in `docs/superpowers/specs/2026-08-19-seniority-gate-design.md` | next session |
+| **4 open review findings on that branch** | (1) `stats` double-counts rows the funnel counts once — `top` gates in order (`role` `continue`s first) while `compute_stats` evaluates both independently, so `stats.over_seniority` reads higher than the funnel's `hidden_over_seniority` for the same corpus. (2) `build_token_probe` recompiles case-**sensitive** patterns under `IGNORECASE`, so the inert counter over-reports titles the gate would never act on. (3) `_why_cell` returns the band reason first, shadowing the duplicate/applied/handled annotation on a doubly-drained row. (4) `LevelingCatalog.version` is read only by its own test | next session |

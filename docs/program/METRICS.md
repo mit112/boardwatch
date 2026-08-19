@@ -4723,3 +4723,41 @@ still-open ones (Affirm 2012, Stripe 10947) were already re-tailored in runs 60/
 "non-SWE" drop count); Snap "Level 5" → `role_verdict` `swe`, and the only seniority gate is the
 `exclude_titles` substring list, which enumerates seniority words but no numeric leveling. Fix fork (data
 `exclude_titles` vs a proper seniority gate) left OPEN — presented, Mit away. Not blocking P3.
+
+### 2026-08-19b: the seniority gate built and measured — D-246 (branch `seniority-gate-spec`, PR #99, UNMERGED)
+Every number below is from a **read-only** snapshot of the live store (`sqlite3 "file:…?immutable=1"`;
+`doctor` writes and was not used), **26,997 open postings**, re-derived independently by a second reviewer.
+
+**Corpus baseline.** `role_verdict`: `swe` 5,438 · `not_swe` 10,388 · **`uncertain` 11,171 (41%)** — the
+fail-open hole the funnel's "non-SWE" count does not describe. Role-gate survivors: 16,474.
+
+**Coordinator deny** (`_NOENG + \bcoordinator\b`, `_DENY_BUSINESS_SOFT`): **135 postings / 125 distinct
+titles** flip `uncertain`→`not_swe`; **0** `swe`-classified titles contain the word, so it cannot bury a
+software job; 4 engineering-school admin roles spared by the anchor. Verified through a second path than
+the unit tests: whole-corpus verdict deltas were `not_swe` +135, `uncertain` −135, **`swe` ±0**.
+
+**Level grammars.** Only **3 companies** put a resolvable level in a title (`Level N`: Snap 29, Thomson
+Reuters 3, Disney 1). Google `L3–L7`, Meta `E3–E6`, Amazon `SDE I–III`: **zero** title hits. Bare-letter
+tokens are mostly not levels — of 45 `L#` hits, Cisco's is OSI layer 2 and eBay's a support tier — so they
+are declared ambiguous and never resolve. This is what a blind numeric floor would have vetoed.
+
+**Gate outcome** (16,474 survivors): at the shipped default `any` — `in_band` 100%, **0 drops, 0 abstains**
+(inert, and the probe reports 10,261 titles carried a signal so inertness is not silent). At `entry` —
+`in_band` 6,213 (37.71%), `above_band` 10,219 (62.03%), **abstain 42 (0.25%)**, all 42 honest refusals.
+*(A pre-implementation prototype reported 0.05%; it had Snap and Twilio bound in a hardcoded catalog.
+Moving bindings to user config is what raised it — a prototype's numbers do not survive a design change.)*
+
+**Shortlist delta** vs today: 5,483 → 5,445 distinct. **Gained 23**, incl. all 9 `Sr`⊂`SRE`/`ISR`/`Israel`
+recoveries. **Lost 61, every one correctly senior and every one leaking today** — 21 × *Distinguished
+Engineer*, ~15 × *Vice President* software roles, plus `IV` titles. Neither word is in `exclude_titles`.
+
+**A false-drop defect found by review and fixed.** The word list was measured for FREQUENCY, never for
+PRECISION against `swe` titles. Bare `staff` fired inside **"Member of Technical Staff"** — the standard IC
+title at Perplexity, xAI, Cohere, Cockroach Labs, Adyen — dropping **94** real software jobs, while
+`role_gate` names that same string a positive software signal. Phrase masking took it to **0**; the 19 MTS
+titles carrying a real senior word still drop. This is the `Sr`⊂`SRE` class the gate exists to fix,
+reappearing in it.
+
+**Run 61 replay** (`target=entry`, no bindings): Airbnb *Disaster Response Coordinator* **dropped**; Snap
+*Level 5* **kept + flagged** (abstains until a binding exists); the other 6 leads retained, including
+Affirm's *"Software Engineer I"* whose roman `I` must read as entry. **One leak closed, one made visible.**

@@ -11107,16 +11107,28 @@ already agree on. With no bindings file every level token abstains, which is the
 - The coordinator deny flips **135 postings / 125 distinct titles** `uncertain` → `not_swe`, and **zero**
   `swe`-classified titles contain the word, so it cannot bury a software job. The anchor additionally
   spares 4 administrative roles at engineering schools.
-- Only **two companies in the whole corpus** put resolvable levels in their titles. That is why the level
-  machinery is deliberately small and why binding is opt-in: shipping a large ladder catalog would be
-  building for a population that does not exist.
-- The gate's abstain rate is **0.05%**.
-- The shipped word list closes **61** senior postings leaking into the shortlist today — 21 Distinguished
-  Engineer, ~15 Vice President, the rest Staff/Principal/Director variants.
-- Bare **`fellow` was dropped** from the word list as a measured false drop: "Engineering Fellow" is a
-  senior IC software title at several companies.
+- Only **three companies in the whole corpus** put a resolvable level in their titles (`Level N`: Snap 29,
+  Thomson Reuters 3, Disney 1). That is why the level machinery is deliberately small and why binding is
+  opt-in: shipping a large ladder catalog would be building for a population that does not exist. Every
+  other level-shaped token (`L#`, `E#`, `IC#`, `T#`) is declared **ambiguous** and never resolves.
+- The gate's abstain rate is **0.25%** (42 of 16,474 role-gate survivors) at `target = entry`, and **0%**
+  at the shipped default `any`. All 42 are honest refusals: 21 Snap `Level N` with no scheme bound, 11
+  Twilio `L#`, plus Cisco's "L2 - Routing" (OSI layer 2), eBay's "L2 Support Engineer" and Target's
+  facility codes. *(An earlier 0.05% figure came from a pre-implementation prototype that had Snap and
+  Twilio bound in a hardcoded catalog; moving bindings to user config is what raised it.)*
+- The gate closes **61** senior postings leaking into the shortlist today — 21 Distinguished Engineer,
+  ~15 Vice President software roles, plus `IV` titles. This is the whole gate's delta, word list **and**
+  the roman-numeral rule together, not the word list alone.
+- Bare **`fellow` was dropped** from the word list as a measured false drop — in the opposite direction
+  to the obvious one. A *fellowship* is an early-career program, so treating `fellow` as senior killed
+  three `swe`-classified entry-level roles (Scale AI "SWE Fellow", "Machine Learning Fellow"). Genuinely
+  senior uses are still caught by `distinguished`.
 
-**Deferred, deliberately — stated here so it does not read as an oversight.** The spec asks that
+**Deferred, deliberately — stated here so it does not read as an oversight.** *Only the Airbnb
+coordinator leak is CLOSED by this change.* The Snap "Level 5" leak is made **visible and drainable**,
+not closed: with no bindings file every level token abstains, so the posting is still shortlisted, now
+carrying its reason. Closing it takes one binding line from the operator, deliberately — boardwatch ships
+no verifiable claim about any company's internal ladder. Separately, the spec asks that
 `uncertain_role` be reported by the same mechanism as `uncertain_band`, and D-245 names closing the role
 gate's fail-open `uncertain` lane as the general fix. Neither is in this change. The coordinator deny closes
 **135 of 11,171** `uncertain` postings — **1.2%** — so the lane remains wide open, and shutting it is
@@ -11131,5 +11143,5 @@ bucket suppressed them from later runs — the drain closed behind you. Drained 
 **Generalises.** *A taxonomy that names companies is a target list wearing a schema.* The mechanism (how
 postings word seniority) is shippable; the binding (which company uses which ladder) is the operator's, and
 keeping the two in different files is what lets the first be pinned and audited while the second stays
-private. *And a gate you cannot measure the abstain rate of is not a gate* — the 0.05% number is what makes
+private. *And a gate you cannot measure the abstain rate of is not a gate* — the 0.25% number is what makes
 the level machinery's smallness a finding rather than a gap.

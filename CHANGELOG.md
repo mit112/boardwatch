@@ -196,11 +196,11 @@ All notable changes to this project are documented here. The format follows
   inert, `top` still counts the band tokens it saw and says so, so the feature is discoverable rather
   than silently dormant.
 
-  Measured 2026-08-19 over 26,997 live open postings: only **two** companies put resolvable levels in
-  their titles at all, the abstain rate is **0.05%**, and the shipped word list closes **61** senior
-  postings that leak into the shortlist today (21 Distinguished Engineer, ~15 Vice President). Bare
-  `fellow` was **dropped** from the word list as a measured false drop — "Engineering Fellow" is a
-  senior IC software title.
+  Measured 2026-08-19 over 26,997 live open postings: only **three** companies put a resolvable level in
+  their titles at all, the abstain rate is **0.25%** at `entry` and **0%** at the shipped default, and the
+  gate closes **61** senior postings that leak into the shortlist today (21 Distinguished Engineer, ~15
+  Vice President). Bare `fellow` was **dropped** from the word list as a measured false drop: a
+  *fellowship* is early-career, and treating it as senior killed three entry-level software roles.
 
 ### Changed
 
