@@ -112,6 +112,7 @@ def test_the_reconciliation_identity_holds_with_the_drain_open(seed_dedup, backf
         + r.skipped_not_new
         + r.hidden_hard_filter
         + r.hidden_non_swe
+        + r.hidden_over_seniority
         + r.hidden_ineligible
         + r.hidden_below_cutoff
         + r.hidden_duplicate
@@ -179,6 +180,7 @@ def test_the_reconciliation_identity_still_holds_with_duplicates(seed_dedup, bac
         + r.skipped_not_new
         + r.hidden_hard_filter
         + r.hidden_non_swe
+        + r.hidden_over_seniority
         + r.hidden_ineligible
         + r.hidden_below_cutoff
         + r.hidden_duplicate
