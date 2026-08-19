@@ -99,6 +99,9 @@ def funnel(
     skipped_not_new: int = 0,
     hidden_duplicate: int = 0,
     hidden_applied: int = 0,
+    hidden_over_seniority: int = 0,
+    uncertain_band: int = 0,
+    band_tokens_seen_while_inert: int = 0,
     liveness: LivenessCheck | None = None,
     considered: int | None = None,
     tailor_failed: int = 0,
@@ -126,8 +129,11 @@ def funnel(
         considered = (
             shortlisted + hidden_ineligible + hidden_non_swe
             + hidden_hard_filter + hidden_below_cutoff + skipped_not_new
-            + hidden_duplicate + hidden_applied
+            + hidden_duplicate + hidden_applied + hidden_over_seniority
         )
+    # `uncertain_band` and `band_tokens_seen_while_inert` are deliberately ABSENT from that
+    # sum: they count postings that PASSED and are already inside `shortlisted`. Adding them
+    # here would be the same double-count that adding them to `drops` would be.
     counts = counts or corpus()
     tailored_artifacts = artifacts or TailoredArtifactCounts(
         rows=len(leads), with_pdf=sum(1 for item in leads if item.pdf_built)
@@ -168,6 +174,9 @@ def funnel(
             skipped_not_new=skipped_not_new,
             hidden_duplicate=hidden_duplicate,
             hidden_applied=hidden_applied,
+            hidden_over_seniority=hidden_over_seniority,
+            uncertain_band=uncertain_band,
+            band_tokens_seen_while_inert=band_tokens_seen_while_inert,
         ) if ranker_ran else None,
         liveness=liveness,
         leads=leads,
@@ -421,6 +430,52 @@ def test_an_applied_suppression_is_named_in_the_artifact_and_still_reconciles() 
     applied = next(drop for drop in shortlist.drops if drop.reason == "hidden_applied")
     assert applied.count == 3
     assert "track status" in applied.note  # the drain is named where the count is
+
+
+def test_the_shortlist_stage_reconciles_with_the_new_bucket() -> None:
+    """D-246. `hidden_over_seniority` is a DROP, so it must be mirrored here or the identity
+    goes False — the same hand-maintained mirror that `hidden_applied` above guards."""
+    report = funnel(considered=10, shortlisted=6, hidden_ineligible=0, hidden_non_swe=0,
+                    hidden_over_seniority=4, leads=[lead()], tailor_failed=5)
+
+    shortlist = stage(report, "shortlist")
+    assert shortlist.entered == 10
+    assert shortlist.reconciled is True
+
+
+def test_the_markdown_names_the_over_seniority_drop_with_its_count() -> None:
+    """Gate P0's *why every non-lead was dropped*, and the drain named where the count is."""
+    report = funnel(considered=10, shortlisted=6, hidden_ineligible=0, hidden_non_swe=0,
+                    hidden_over_seniority=4, leads=[lead()], tailor_failed=5)
+
+    assert "- **hidden_over_seniority**: 4" in funnel_to_markdown(report)
+    drop = next(d for d in stage(report, "shortlist").drops
+                if d.reason == "hidden_over_seniority")
+    assert "top --include-over-seniority" in drop.note
+
+
+def test_uncertain_band_is_reported_but_is_not_a_drop() -> None:
+    """Folding an abstain into a drop would break the identity AND hide the abstain.
+
+    `uncertain_band` counts postings that PASSED — they are already inside `advanced`. A
+    `Drop` for them would subtract them a second time and the stage would stop reconciling,
+    so the number is carried in the stage's report prose instead.
+    """
+    report = funnel(considered=10, shortlisted=6, hidden_ineligible=0, hidden_non_swe=0,
+                    uncertain_band=3, band_tokens_seen_while_inert=2,
+                    hidden_over_seniority=4, leads=[lead()], tailor_failed=5)
+
+    shortlist = stage(report, "shortlist")
+    assert shortlist.reconciled is True
+    assert all(drop.reason != "uncertain_band" for drop in shortlist.drops)
+    assert all(drop.reason != "band_tokens_seen_while_inert" for drop in shortlist.drops)
+    body = funnel_to_markdown(report)
+    assert "uncertain_band" in body
+    assert "band_tokens_seen_while_inert" in body
+    # The counts themselves, not just the names — a renderer that names the bucket and drops
+    # the figure answers nothing "from the artifact alone".
+    assert "`uncertain_band`: 3" in body
+    assert "`band_tokens_seen_while_inert`: 2" in body
 
 
 def test_an_unprobed_liveness_check_reports_unmeasured_rather_than_zero_dead() -> None:
