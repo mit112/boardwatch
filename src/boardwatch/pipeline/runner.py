@@ -375,6 +375,14 @@ def _zero_output_guard(
 
     All three widenings stay narrow in the way that matters — a run with nothing handled, nothing
     applied and nothing dead still cannot explain itself, and still fires.
+
+    **`hidden_over_seniority` is deliberately NOT a clause here (D-246), and adding one would be
+    a weakening, not a widening.** The three clauses above are SUPPRESSIONS — the program already
+    delivered on those jobs, or the posting is gone — so they explain an empty day. Being above
+    the operator's target band is a REJECTION: the run judged new eligible work and rejected all
+    of it on a filter the operator configured. A misconfigured `target_seniority_band` that ate
+    the whole shortlist is exactly the silent empty day this guard exists to catch, and a clause
+    for it would make that run exit 0 with nothing to show.
     """
     if (
         eligible_judged_this_run > 0
@@ -681,6 +689,9 @@ def run_pipeline(
             hidden_duplicate=ranked.hidden_duplicate,
             hidden_handled=ranked.hidden_handled,
             hidden_applied=ranked.hidden_applied,
+            hidden_over_seniority=ranked.hidden_over_seniority,
+            uncertain_band=ranked.uncertain_band,
+            band_tokens_seen_while_inert=ranked.band_tokens_seen_while_inert,
         )
 
         # P6 slice 2 §3.4: project this run's duplicate groups onto canonical jobs, so a lead
