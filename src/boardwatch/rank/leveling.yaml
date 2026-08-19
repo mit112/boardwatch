@@ -1,0 +1,48 @@
+# Seniority leveling catalog (D-246). Universal tier = the mechanism; field tier = meanings.
+#
+# THIS FILE CONTAINS NO COMPANY NAMES, deliberately. A company's leveling scheme is not a
+# fact boardwatch can ship — the board list is per-operator — so the company -> scheme
+# binding lives in {config_dir}/leveling-bindings.yaml. An unbound level ABSTAINS.
+leveling_version: 1
+
+# Which token shapes are levels at all. Measured 2026-08-19 over 26,997 open postings.
+grammars:
+  # "Level 5" names itself. All 33 live hits are genuine levels.
+  level_n: {kind: self_describing}
+  # Bare letter+digit is usually NOT a level: of 45 live `L#` hits, most are OSI layer 2,
+  # support tiers, or facility codes. These never resolve, whatever the binding says.
+  l_prefix: {kind: ambiguous}
+  e_prefix: {kind: ambiguous}
+  ic_prefix: {kind: ambiguous}
+  t_prefix: {kind: ambiguous}
+
+# Named, company-free rung ladders. An operator binds a company to one of these by name.
+schemes:
+  ic_1_to_7:
+    grammar: level_n
+    levels: {"1": entry, "2": entry, "3": entry, "4": mid,
+             "5": senior, "6": staff_plus, "7": staff_plus}
+  ic_1_to_6:
+    grammar: level_n
+    levels: {"1": entry, "2": entry, "3": mid, "4": senior,
+             "5": staff_plus, "6": staff_plus}
+
+# Field tier: what the WORDS mean. An unresolvable career field abstains rather than
+# defaulting to software, because these invert by field (a postdoc Fellow is entry-level).
+fields:
+  software:
+    words:
+      senior: senior
+      "sr": senior
+      lead: senior
+      leader: senior          # required: `Lead` is a substring of `Leader`
+      manager: senior
+      staff: staff_plus
+      principal: staff_plus
+      distinguished: staff_plus
+      director: staff_plus
+      "vp": staff_plus
+      "vice president": staff_plus
+      "head of": staff_plus   # dormant: 0 hits measured 2026-08-19
+      chief: staff_plus       # dormant: 0 hits measured 2026-08-19
+    roman: {"II": mid, "III": senior, "IV": senior}
