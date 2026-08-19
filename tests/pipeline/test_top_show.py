@@ -29,14 +29,17 @@ def env(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     return tmp_path
 
 
-def _seed_profile(engine: Engine, config_dir: Path, text: str = "Python, Go, PostgreSQL.") -> None:
+def _seed_profile(
+    engine: Engine, config_dir: Path, text: str = "Python, Go, PostgreSQL.",
+    target_seniority_band: str = "any",
+) -> None:
     taxonomy = load_taxonomy(config_dir)
     with engine.begin() as conn:
         save_profile(
             conn, text=text, target_titles=["Backend Engineer"], exclude_titles=[],
             locations=["Remote"], remote_only=False,
             skills=sorted(taxonomy.extract(text)), taxonomy_version=taxonomy.version,
-            resume_max_pages=1,
+            resume_max_pages=1, target_seniority_band=target_seniority_band,
         )
 
 
@@ -183,6 +186,41 @@ def test_show_no_recognized_skills_message(
     result = _invoke(tmp_path, ["show", str(ids["222"])])  # gardening body: no taxonomy hits
     assert result.exit_code == 0
     assert "no recognized skills" in result.stdout  # Rich may wrap across lines
+
+
+def test_show_prints_the_band_line(
+    env: Path, engine: Engine, company_id: int, run_id: int, tmp_path: Path
+) -> None:
+    """A row `top` hides as above_band must be explainable by looking it up."""
+    senior = set_body(clone_with_id(gh_jobs()[0], 333), "<p>Python, Go, and PostgreSQL daily.</p>")
+    senior["title"] = "Staff Software Engineer"
+    senior["location"] = {"name": "Remote — US"}
+    apply_board(engine, snapshot_for([senior]), company_id, run_id)
+    _seed_profile(engine, env / "cfg", target_seniority_band="entry")
+    with engine.connect() as conn:
+        posting_id = conn.execute(
+            select(tables.postings.c.id).where(
+                tables.postings.c.provider_posting_id == "333"
+            )
+        ).scalar_one()
+    result = _invoke(tmp_path, ["show", str(posting_id)])
+    assert result.exit_code == 0
+    out = " ".join(result.stdout.split())  # Rich wraps the line at the console width
+    assert "Band:" in out
+    assert 'seniority word "staff"' in out
+    assert "hidden from top unless --include-over-seniority" in out
+
+
+def test_show_band_line_carries_no_hidden_note_for_an_in_band_title(
+    env: Path, engine: Engine, company_id: int, run_id: int, tmp_path: Path
+) -> None:
+    ids = _seed_postings(engine, company_id, run_id)
+    _seed_profile(engine, env / "cfg", target_seniority_band="entry")
+    result = _invoke(tmp_path, ["show", str(ids["111"])])
+    assert result.exit_code == 0
+    out = " ".join(result.stdout.split())
+    assert "Band: no seniority signal in title" in out
+    assert "--include-over-seniority" not in out
 
 
 def test_show_unknown_id_fails_cleanly(env: Path, engine: Engine, tmp_path: Path) -> None:

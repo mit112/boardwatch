@@ -7,6 +7,8 @@ on-demand extraction runs for them ('displayed, never ranked', §3.6).
 
 from __future__ import annotations
 
+from typing import cast
+
 import typer
 from rich.console import Console
 from rich.table import Table
@@ -21,7 +23,9 @@ from boardwatch.extract.preflight import run_preflight
 from boardwatch.extract.taxonomy import load_taxonomy
 from boardwatch.rank.explain import explain
 from boardwatch.rank.heuristic import profile_view_from_row, score_posting
+from boardwatch.rank.leveling import load_bindings, load_leveling
 from boardwatch.rank.role_gate import role_verdict
+from boardwatch.rank.seniority_gate import TargetBand, seniority_verdict
 from boardwatch.store.queries import get_profile
 from boardwatch.store.tables import companies, extractions, postings
 
@@ -88,7 +92,12 @@ def show(
     engine, settings = app_ctx.engine, app_ctx.settings
     with engine.connect() as conn:
         row = conn.execute(
-            select(postings, companies.c.name.label("company_name"))
+            select(
+                postings,
+                companies.c.name.label("company_name"),
+                companies.c.provider,
+                companies.c.slug,
+            )
             .join(companies, postings.c.company_id == companies.c.id)
             .where(postings.c.id == posting_id)
         ).one_or_none()
@@ -116,6 +125,7 @@ def show(
             if profile_row is None:
                 console.print("no profile yet — run `boardwatch init` first")
                 raise typer.Exit(code=1)
+            profile = profile_view_from_row(profile_row)
             version = load_taxonomy(settings.config_dir).version
             extraction = conn.execute(
                 select(extractions.c.json).where(
@@ -127,7 +137,7 @@ def show(
             ).scalar_one_or_none()
         skills = set((extraction or {}).get("skills", []))
         score = score_posting(
-            profile_view_from_row(profile_row), skills, row.title, row.posted_at,
+            profile, skills, row.title, row.posted_at,
             list(row.locations_json or []), row.remote_policy,
             settings.weights, utcnow(), settings.recency_half_life_days,
             settings.zero_skill_coverage_prior,
@@ -153,6 +163,23 @@ def show(
         role, role_reason = role_verdict(row.title)
         hidden_note = " — hidden from top unless --include-non-swe" if role == "not_swe" else ""
         console.print(f"Role: {role_reason}{hidden_note}", markup=False)
+        # Same contract for the seniority gate: a row `top` hides as above_band must be
+        # explainable by looking it up, or the quarantine is unauditable.
+        leveling = load_leveling(settings.config_dir)
+        schemes = {
+            key: leveling.schemes[name]
+            for key, name in load_bindings(settings.config_dir).items()
+            if name in leveling.schemes
+        }
+        band, band_reason = seniority_verdict(
+            row.title, schemes.get((row.provider, row.slug)),
+            cast(TargetBand, profile.target_seniority_band),
+            leveling.fields["software"], leveling,
+        )
+        band_note = (
+            " — hidden from top unless --include-over-seniority" if band == "above_band" else ""
+        )
+        console.print(f"Band: {band_reason}{band_note}", markup=False)
 
     catalog = load_rules(settings.config_dir)
     with engine.connect() as conn:
