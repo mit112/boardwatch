@@ -16,7 +16,10 @@ FLAGGED and COUNTS. Absence of any token is `in_band` — silence is never evide
 R9 note: listed in `tools/generalization/defaults.py::SCOPED_MODULES` for the same reason
 `role_gate` is — it holds TITLE data, and moving title data to an unscoped module to escape the
 rule is the evasion R9 exists to catch. The word and band data live in `leveling.yaml`; the
-patterns here are built with `tuple(...)` constructor calls, the documented escape hatch.
+two mappings that remain here are built with `dict(...)` CONSTRUCTOR CALLS rather than literals,
+the documented escape hatch `role_gate` uses via `tuple([...])`. R9 traverses dict KEYS as
+strings, so a bare `{...}` literal fails even when its keys are grammar names rather than user
+data — this module was caught by exactly that on first registration.
 """
 
 from __future__ import annotations
@@ -35,21 +38,21 @@ from boardwatch.rank.leveling import (
 TargetBand = Literal["entry", "mid", "senior", "any"]
 SeniorityVerdict = Literal["in_band", "above_band", "uncertain"]
 
-BAND_ORDER: dict[str, int] = {"entry": 0, "mid": 1, "senior": 2, "staff_plus": 3}
+BAND_ORDER: dict[str, int] = dict(entry=0, mid=1, senior=2, staff_plus=3)
 
 # The regexes are CODE; which of them are live is CATALOG. Keyed by grammar name so the
 # catalog's `grammars:` section actually decides behaviour — otherwise it is declared data
 # nothing reads, and editing it would silently change nothing.
-_PATTERNS: dict[str, re.Pattern[str]] = {
+_PATTERNS: dict[str, re.Pattern[str]] = dict(
     # "Level 5" — measured unambiguous (33/33 live hits are real levels).
-    "level_n": re.compile(r"\blevel\s+(\d{1,2})\b", re.IGNORECASE),
+    level_n=re.compile(r"\blevel\s+(\d{1,2})\b", re.IGNORECASE),
     # Bare letter+digit. Measured NOT to be levels: OSI layer 2, support tiers, facility codes.
     # Matched only so the gate can ABSTAIN loudly instead of silently ignoring them.
-    "l_prefix": re.compile(r"\b(L\s?-?\d{1,2})\b"),
-    "e_prefix": re.compile(r"\b(E\s?-?\d{1,2})\b"),
-    "ic_prefix": re.compile(r"\b(IC\s?-?\d{1,2})\b"),
-    "t_prefix": re.compile(r"\b(T\s?-?\d{1,3})\b"),
-}
+    l_prefix=re.compile(r"\b(L\s?-?\d{1,2})\b"),
+    e_prefix=re.compile(r"\b(E\s?-?\d{1,2})\b"),
+    ic_prefix=re.compile(r"\b(IC\s?-?\d{1,2})\b"),
+    t_prefix=re.compile(r"\b(T\s?-?\d{1,3})\b"),
+)
 
 # Closed vocabulary, enforced at import: a grammar this module cannot match must never be
 # declarable, or the catalog could name one and it would silently do nothing.
