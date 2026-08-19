@@ -36,6 +36,9 @@ class ProfileView:
     exclude_titles: tuple[str, ...]
     locations: tuple[str, ...]
     remote_only: bool
+    # D-246. `notify` consumes ProfileView too, which is what makes wiring the second filter
+    # chain cheap. Falls back to "any" (inert) so a row predating the migration is safe.
+    target_seniority_band: str = "any"
 
 
 def profile_view_from_row(row: object) -> ProfileView:
@@ -45,6 +48,7 @@ def profile_view_from_row(row: object) -> ProfileView:
         exclude_titles=tuple(getattr(row, "exclude_titles_json", None) or []),
         locations=tuple(getattr(row, "locations_json", None) or []),
         remote_only=bool(getattr(row, "remote_only", False)),
+        target_seniority_band=str(getattr(row, "target_seniority_band", None) or "any"),
     )
 
 
