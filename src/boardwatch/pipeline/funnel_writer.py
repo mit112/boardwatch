@@ -30,6 +30,7 @@ from boardwatch.eligibility.facts import parse_facts
 from boardwatch.eligibility.preflight import current_identity
 from boardwatch.projection.run import ProjectionLeadOutcome
 from boardwatch.reports.abstain import AbstainReport, build_abstain_report
+from boardwatch.rank.leveling import load_leveling
 from boardwatch.reports.manifest import config_hash, profile_row_hash
 from boardwatch.reports.run_funnel import (
     Lead,
@@ -198,6 +199,7 @@ def collect_run_funnel(
                 locations=profile_row.locations_json,
                 remote_only=profile_row.remote_only,
                 target_seniority_band=profile_row.target_seniority_band,
+                leveling_digest=load_leveling(settings.config_dir).digest,
             )
             if profile_row is not None
             else None

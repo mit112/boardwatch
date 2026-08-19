@@ -53,8 +53,8 @@ def test_resume_max_pages_not_a_profile_row_hash_input() -> None:
     # The ranker's profile_row_hash is a deliberate six-column contract; page count is a render
     # knob and must NOT enter it. The non-vacuous test of "kept out of the hash" is that the
     # function has no such parameter — a buggy impl that threaded it in would add the parameter
-    # and fail this. `target_seniority_band` joined the set in D-246 because, unlike page count,
-    # it drives a funnel drop bucket.
+    # and fail this. `target_seniority_band` and `leveling_digest` joined the set in D-246
+    # because, unlike page count, they drive a funnel drop bucket.
     import inspect
 
     params = set(inspect.signature(profile_row_hash).parameters)
@@ -66,4 +66,5 @@ def test_resume_max_pages_not_a_profile_row_hash_input() -> None:
         "locations",
         "remote_only",
         "target_seniority_band",
+        "leveling_digest",
     }

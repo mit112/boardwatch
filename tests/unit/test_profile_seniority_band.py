@@ -68,6 +68,21 @@ def test_profile_row_hash_tracks_the_band() -> None:
 def test_profile_row_hash_parameter_set_is_pinned() -> None:
     assert set(inspect.signature(profile_row_hash).parameters) == {
         "skills", "target_titles", "exclude_titles", "locations", "remote_only",
-        "target_seniority_band",
+        "target_seniority_band", "leveling_digest",
     }
 
+
+
+def test_profile_row_hash_tracks_the_leveling_catalog() -> None:
+    """The catalog is user-overridable and decides a drop bucket.
+
+    Without it in the identity, an operator could edit {config_dir}/leveling.yaml, change which
+    titles are dropped, and the manifest would still report two runs as identical.
+    """
+    base = dict(
+        skills=[], target_titles=[], exclude_titles=[], locations=[], remote_only=False,
+        target_seniority_band="entry",
+    )
+    assert profile_row_hash(**base, leveling_digest="aaa") != profile_row_hash(
+        **base, leveling_digest="bbb"
+    )

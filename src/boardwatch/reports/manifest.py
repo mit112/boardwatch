@@ -20,6 +20,11 @@ is `runs.status` (D-029). This module supplies the parts that did not exist:
     manifest would say two runs were identical while the setting responsible for 11,517
     rejections had changed underneath it. This closes that gap rather than only documenting it.
 
+`profile_row_hash` also carries the **leveling catalog's digest** (D-246). The catalog is
+user-overridable at `{config_dir}/leveling.yaml` and decides a drop bucket, so without it an
+operator could edit which titles are dropped and the manifest would still call two runs
+identical — the same failure `exclude_titles` above describes.
+
 The one coverage gap that remains, stated so the manifest never over-claims: neither hash
 covers the **skill-taxonomy version** — `taxonomy.yaml` can change which postings score as
 covered without moving either hash. It is called out in the manifest's own note.
@@ -138,8 +143,9 @@ def profile_row_hash(
     locations: Sequence[object] | None,
     remote_only: bool,
     target_seniority_band: str = "any",
+    leveling_digest: str = "",
 ) -> str:
-    """SHA-256 over the six profile columns the ranker reads.
+    """SHA-256 over the six profile columns the ranker reads, plus the leveling digest.
 
     A missing list and an empty list are different inputs and hash differently — canonical form
     keeps an explicit null distinct from `[]`, the same guard `hashing.canonical` documents.
@@ -151,6 +157,9 @@ def profile_row_hash(
         "locations": list(locations) if locations is not None else None,
         "remote_only": remote_only,
         "target_seniority_band": target_seniority_band,
+        # The catalog decides a drop bucket and is user-overridable, so it belongs in
+        # the identity for the same reason the band does.
+        "leveling_digest": leveling_digest,
     }
     return digest(payload)
 
