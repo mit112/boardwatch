@@ -48,13 +48,15 @@ def _engine(settings: Settings) -> Engine:
 
 
 def _seed_profile(
-    engine: Engine, *, target_titles: tuple[str, ...] = (), exclude_titles: tuple[str, ...] = ()
+    engine: Engine, *, target_titles: tuple[str, ...] = (), exclude_titles: tuple[str, ...] = (),
+    target_seniority_band: str = "any",
 ) -> None:
     with engine.begin() as conn:
         save_profile(
             conn, text="Backend engineer.", target_titles=list(target_titles),
             exclude_titles=list(exclude_titles), locations=[], remote_only=False,
             skills=[], taxonomy_version="t", resume_max_pages=1,
+            target_seniority_band=target_seniority_band,
         )
 
 
@@ -241,3 +243,47 @@ def test_selection_agrees_with_top_on_ineligible_hiding(tmp_path: Path) -> None:
     assert ineligible_id not in top_ids
     assert eligible_id in notify_ids
     assert eligible_id in top_ids
+
+
+def _band_titles(
+    tmp_path: Path, title: str, *, include_over_seniority: bool = False
+) -> list[str]:
+    """Seed one entry-band profile and one posting; return what notify would push."""
+    settings = _settings(tmp_path)
+    engine = _engine(settings)
+    _seed_profile(engine, target_seniority_band="entry")
+    _seed_posting(engine, title=title, slug="band")
+    with engine.connect() as conn:
+        profile = profile_view_from_row(get_profile(conn))
+        result = select_new_matches(
+            conn, 0, profile, settings, include_over_seniority=include_over_seniority
+        )
+    return [item.title for item in result.items]
+
+
+def test_notify_does_not_push_an_above_band_posting(tmp_path: Path) -> None:
+    assert _band_titles(tmp_path, "Staff Software Engineer") == []
+
+
+def test_notify_drain_reveals_it(tmp_path: Path) -> None:
+    assert _band_titles(
+        tmp_path, "Staff Software Engineer", include_over_seniority=True
+    ) == ["Staff Software Engineer"]
+
+
+def test_notify_still_pushes_an_uncertain_band_posting(tmp_path: Path) -> None:
+    """Fail-open: an abstain is never a suppression."""
+    title = "Software Engineer, Specs, Level 5"  # no scheme bound => the gate abstains
+    assert _band_titles(tmp_path, title) == [title]
+
+
+def test_notify_ignores_the_band_when_the_profile_targets_any(tmp_path: Path) -> None:
+    """The gate is inert on the default band, so it can never silently narrow an upgrade."""
+    settings = _settings(tmp_path)
+    engine = _engine(settings)
+    _seed_profile(engine)  # target_seniority_band defaults to "any"
+    _seed_posting(engine, title="Staff Software Engineer", slug="band")
+    with engine.connect() as conn:
+        profile = profile_view_from_row(get_profile(conn))
+        result = select_new_matches(conn, 0, profile, settings)
+    assert [item.title for item in result.items] == ["Staff Software Engineer"]
