@@ -185,6 +185,10 @@ _DENY_BUSINESS_SOFT: tuple[str, ...] = tuple([
     r"\bcopywriter\b|\beditor\b|\bjournalist\b|\bvideographer\b|\billustrator\b",
     r"\btechnical\s+writer\b",
     r"\bbusiness\s+(systems?\s+)?analyst\b(?!.*\bengineer\b)",
+    # Data Scientist / Data Analyst are out of scope (owner decision): not SWE roles. The
+    # literal scientist/analyst token cannot match a "Data Engineer" / "Analytics Engineer"
+    # title, and the SOFT lane means a signalled/rescued software title never reaches it.
+    r"\bdata\s+(scientist|analyst)\b",
     # Bare `logistics` narrowed ("Engineer, Logistics Platform"); bare `planner` narrowed
     # (0 marginal; "Engineer, Planner Platform"). The noise rows survive both.
     r"\bsupply\s+chain\b|\bprocurement\b|\bbuyer\b|"
@@ -222,6 +226,11 @@ _DENY_BUSINESS_SOFT: tuple[str, ...] = tuple([
     # 0 `swe`-classified titles contain the word, so this cannot bury a software job. The
     # anchored guard additionally spares 4 administrative roles at engineering schools.
     _NOENG + r"\bcoordinator\b",
+    # Bare `... Manager` / `... Director`, anchor-guarded (owner decision, 2026-08-20:
+    # hard-exclude non-engineering management). `_NOENG` spares every engineering title
+    # (Engineering Manager, Director of Engineering; "Software Development Manager" is
+    # rescued first), and the SOFT lane keeps any signalled software title out of reach.
+    _NOENG + r"\b(manager|director)\b",
     # D-252 consistency gaps: the gate already denied "Solutions ENGINEER", "field support
     # engineer", and bare sales, but not these pre-sales / support / non-sales-BD twins. All
     # are in the SOFT lane, so a real "Software Architect" (rescued) or a signalled IC title is
