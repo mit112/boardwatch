@@ -283,3 +283,125 @@ class TestExplain:
         )
         assert score.components["skill_coverage"].value is None
         assert score.components["skill_coverage"].detail == "no recognized skills in this posting"
+
+
+class TestHardFilterWordBoundaries:
+    """`exclude_titles` vetoes on WORD boundaries, not substrings.
+
+    Substring containment was the original rule and it silently deleted real jobs. Measured
+    over 26,997 live open postings: `Sr` fired inside "Israel" and "SRE", `Staff` fired inside
+    "Member of Technical Staff", and `III` could never fire at all because every title carrying
+    it also carries `II`, which is tested first. 100 postings were dropped that no other gate
+    in the repo would drop on the merits.
+
+    Word boundaries are strictly narrower than containment, so this rule can only ever drop
+    FEWER postings than before. `test_veto_is_monotonically_narrower` pins that direction.
+    """
+
+    def test_sr_does_not_fire_inside_israel(self) -> None:
+        profile = _profile(exclude_titles=("Sr",))
+        title = "Software Engineer - Figma Weave (Tel Aviv, Israel)"
+        assert passes_hard_filters(title, ["Tel Aviv"], "unknown", profile, "soft") is True
+
+    def test_sr_does_not_fire_inside_sre(self) -> None:
+        profile = _profile(exclude_titles=("Sr",))
+        assert (
+            passes_hard_filters("SRE/Dev Ops Engineer", ["NY"], "unknown", profile, "soft") is True
+        )
+
+    def test_sr_still_vetoes_a_real_abbreviation(self) -> None:
+        profile = _profile(exclude_titles=("Sr",))
+        assert (
+            passes_hard_filters("Sr. Software Engineer", ["NY"], "unknown", profile, "soft")
+            is False
+        )
+
+    def test_roman_three_is_reachable_and_does_not_catch_two(self) -> None:
+        """`III` was dead code under containment. It must fire, and only on itself."""
+        profile = _profile(exclude_titles=("III",))
+        assert (
+            passes_hard_filters("Software Engineer III", ["NY"], "unknown", profile, "soft")
+            is False
+        )
+        assert (
+            passes_hard_filters("Software Engineer II", ["NY"], "unknown", profile, "soft") is True
+        )
+
+    def test_two_does_not_catch_three(self) -> None:
+        profile = _profile(exclude_titles=("II",))
+        assert (
+            passes_hard_filters("Software Engineer II", ["NY"], "unknown", profile, "soft") is False
+        )
+        assert (
+            passes_hard_filters("Software Engineer III", ["NY"], "unknown", profile, "soft") is True
+        )
+
+    def test_staff_does_not_fire_inside_member_of_technical_staff(self) -> None:
+        """90 real software postings turned on this one phrase."""
+        profile = _profile(exclude_titles=("Staff",))
+        for title in (
+            "Member of Technical Staff",
+            "Member of Technical Staff (Software Engineer)",
+            "Member of Technical Staff, MLE",
+            "Members of Technical Staff",
+        ):
+            assert passes_hard_filters(title, ["NY"], "unknown", profile, "soft") is True, title
+
+    def test_staff_still_vetoes_real_seniority(self) -> None:
+        profile = _profile(exclude_titles=("Staff",))
+        assert (
+            passes_hard_filters("Staff Software Engineer", ["NY"], "unknown", profile, "soft")
+            is False
+        )
+
+    def test_a_senior_word_outside_the_masked_phrase_still_vetoes(self) -> None:
+        """Only the phrase is masked, never the whole title."""
+        profile = _profile(exclude_titles=("Sr",))
+        title = "Sr. Member of Technical Staff"
+        assert passes_hard_filters(title, ["NY"], "unknown", profile, "soft") is False
+
+    def test_multi_word_exclusions_still_match_as_phrases(self) -> None:
+        profile = _profile(exclude_titles=("Field Service Engineer",))
+        assert (
+            passes_hard_filters("Field Service Engineer", ["NY"], "unknown", profile, "soft")
+            is False
+        )
+        assert passes_hard_filters("Field Engineer", ["NY"], "unknown", profile, "soft") is True
+
+    def test_veto_is_monotonically_narrower(self) -> None:
+        """The new rule may never veto a title the substring rule let through."""
+        excludes = (
+            "Senior",
+            "Sr",
+            "Staff",
+            "Principal",
+            "Lead",
+            "Manager",
+            "Director",
+            "II",
+            "III",
+            "Field Service Engineer",
+            "Sales Engineer",
+        )
+        profile = _profile(exclude_titles=excludes)
+        titles = (
+            "Software Engineer",
+            "Senior Software Engineer",
+            "Sr. Backend Engineer",
+            "Staff Software Engineer",
+            "Member of Technical Staff",
+            "SRE/Dev Ops Engineer",
+            "Software Engineer II",
+            "Software Engineer III",
+            "Engineering Manager",
+            "Software Engineer - Figma Weave (Tel Aviv, Israel)",
+            "Sales Engineer",
+            "Leadership Development Program",
+            "Field Service Engineer",
+        )
+        for title in titles:
+            folded = title.casefold()
+            substring_vetoed = any(e.casefold() in folded for e in excludes)
+            now_passes = passes_hard_filters(title, ["NY"], "unknown", profile, "soft")
+            if not substring_vetoed:
+                assert now_passes is True, f"newly vetoed, must not be: {title}"

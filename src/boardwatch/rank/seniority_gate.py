@@ -78,7 +78,7 @@ _NOT_SENIORITY_PHRASES: tuple[re.Pattern[str], ...] = tuple([
 ])
 
 
-def _mask_non_seniority_phrases(title: str) -> str:
+def mask_non_seniority_phrases(title: str) -> str:
     """Blank out phrases whose seniority word does not mean seniority.
 
     Replaced with spaces rather than removed so that offsets, word boundaries and any
@@ -103,7 +103,7 @@ def parse_seniority(
     """Return the title's band and the text that decided it, or (None, reason) to abstain."""
     # 1. Field-tier words, longest first so "vice president" beats "vp". Matched against the
     #    MASKED title so a phrase like "Member of Technical Staff" cannot read as `staff`.
-    masked = _mask_non_seniority_phrases(title)
+    masked = mask_non_seniority_phrases(title)
     for word in sorted(tier.words, key=len, reverse=True):
         if re.search(rf"\b{re.escape(word)}\b", masked, re.IGNORECASE):
             return tier.words[word], f'seniority word "{word}"'
@@ -210,6 +210,6 @@ def build_token_probe(tier: FieldTier, catalog: LevelingCatalog) -> Callable[[st
     probe = re.compile("|".join(alternatives))
 
     def carries_a_band_token(title: str) -> bool:
-        return probe.search(_mask_non_seniority_phrases(title)) is not None
+        return probe.search(mask_non_seniority_phrases(title)) is not None
 
     return carries_a_band_token

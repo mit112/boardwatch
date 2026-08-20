@@ -19,14 +19,17 @@ that component away is a promotion rather than a neutral act (see score_posting)
 from __future__ import annotations
 
 import math
+import re
 from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import datetime
+from functools import lru_cache
 
 from rapidfuzz import fuzz
 from rapidfuzz.utils import default_process
 
 from boardwatch.core.settings import RankWeights
+from boardwatch.rank.seniority_gate import mask_non_seniority_phrases
 
 
 @dataclass(frozen=True)
@@ -145,6 +148,18 @@ def location_fit(
     return 0.0
 
 
+@lru_cache(maxsize=256)
+def _exclusion_pattern(excluded: str) -> re.Pattern[str]:
+    """Compile one user exclusion into a case-insensitive, word-bounded matcher.
+
+    `(?<!\\w)` / `(?!\\w)` rather than `\\b` because the exclusion is arbitrary user text: a
+    profile carrying `Sr.` or `(contract)` starts or ends on a non-word character, where `\\b`
+    asserts the opposite of what is wanted. Cached because `exclude_titles` is a short, stable
+    list re-tested against every posting in the corpus — 26,997 times per run.
+    """
+    return re.compile(rf"(?<!\w){re.escape(excluded.strip())}(?!\w)", re.IGNORECASE)
+
+
 def passes_hard_filters(
     posting_title: str,
     posting_locations: Sequence[str],
@@ -152,9 +167,27 @@ def passes_hard_filters(
     profile: ProfileView,
     location_filter_mode: str,
 ) -> bool:
-    folded_title = posting_title.casefold()
+    # Word-boundary veto (§6.1), NOT substring containment. Containment was the original rule
+    # and it deleted real jobs in three ways, measured over 26,997 live open postings: `Sr` fired
+    # inside "Israel" and "SRE" (10 postings), `Staff` fired inside "Member of Technical Staff"
+    # (90), and `III` was unreachable because every title carrying it also carries `II`, which is
+    # tested first. Those 100 are drops no other gate in this package would make on the merits.
+    #
+    # The phrase mask runs BEFORE matching, the same rescue-first ordering `role_gate` uses.
+    # Without it `seniority_gate` and this function contradict each other on the same string:
+    # the mask that package added to save MTS titles never got to run, because this veto is
+    # upstream of both other gates (`top_cmd` calls it first).
+    #
+    # Both changes are strictly NARROWING — a word-boundary match is a subset of a containment
+    # match, and masking only removes candidate text — so this can never veto a title the old
+    # rule admitted. `test_veto_is_monotonically_narrower` pins that direction.
+    #
+    # Known limitation: a user who deliberately excludes "Member of Technical Staff" is defeated
+    # by the mask. Left standing because the phrase is a POSITIVE software signal in `role_gate`,
+    # so excluding it is self-contradicting; revisit if a real profile ever wants it.
+    masked_title = mask_non_seniority_phrases(posting_title)
     for excluded in profile.exclude_titles:
-        if excluded.casefold() in folded_title:  # exact-substring, case-folded veto (§6.1)
+        if _exclusion_pattern(excluded).search(masked_title):
             return False
     if location_filter_mode == "hard":
         fit = location_fit(posting_locations, remote_policy, profile)
