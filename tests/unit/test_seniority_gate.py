@@ -234,3 +234,36 @@ class TestMemberOfTechnicalStaff:
     def test_the_mask_preserves_surrounding_tokens(self, cat, tier):
         """Masked with spaces, not deleted, so neighbouring words keep their boundaries."""
         assert V("Member of Technical Staff II", cat, tier)[0] == "above_band"  # roman II = mid
+
+
+class TestManagementWordNeedsRoleTokenAdjacency:
+    """`manager`/`lead`/`director`/`leader` are also ordinary product/domain nouns. They may
+    raise the band only as a title qualifier next to a role token (`Engineering Manager`,
+    `Lead Engineer`) — never inside a product-noun phrase, or real entry SWE roles like
+    `Password Manager` or `Lead Scoring` silently disappear (measured false drops)."""
+
+    @pytest.mark.parametrize(
+        "title",
+        [
+            "Software Engineer, Password Manager",
+            "Backend Engineer, Package Manager",
+            "Software Engineer, Lead Scoring Platform",
+            "Software Engineer, Lead Generation",
+        ],
+    )
+    def test_product_noun_collision_is_kept(self, title, cat, tier):
+        assert V(title, cat, tier)[0] == "in_band"
+
+    @pytest.mark.parametrize(
+        "title",
+        [
+            "Engineering Manager",
+            "Software Engineering Manager",
+            "Lead Engineer",
+            "Engineering Director",
+            "Director of Engineering",
+            "Software Engineering Technical Leader",
+        ],
+    )
+    def test_management_next_to_a_role_token_still_drops(self, title, cat, tier):
+        assert V(title, cat, tier)[0] == "above_band"

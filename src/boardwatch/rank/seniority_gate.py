@@ -93,6 +93,30 @@ def mask_non_seniority_phrases(title: str) -> str:
 # and matching it would collide with initials and Roman-numeral product names.
 _ROMAN = re.compile(r"\b(I{2,3}|IV)\b")
 
+# Management words that are ALSO ordinary product/domain nouns. They raise the band only as a
+# title qualifier that shares a role's comma-clause ("Engineering Manager", "Lead Engineer"),
+# never inside a product-noun phrase ("Password Manager", "Lead Scoring") — measured false drops
+# of real entry SWE roles otherwise. Guarded like the MTS mask above, and for the same reason:
+# an unguarded word match is how a real job disappears. `frozenset([...])` is a constructor call,
+# the escape hatch this module already uses for R9-scoped title data.
+_MANAGEMENT_AMBIGUOUS = frozenset(["lead", "leader", "manager", "director"])
+_ROLE_TOKEN = re.compile(
+    r"\b(?:engineer|engineering|developer|dev|swe|sde|sdet|sre|programmer|architect)\b",
+    re.IGNORECASE,
+)
+
+
+def _shares_clause_with_a_role(title: str, pos: int) -> bool:
+    """Does the comma-clause holding the character at `pos` also name a role token?
+
+    Comma-delimited because a product noun sits in its own clause ("Software Engineer, Lead
+    Scoring"), while a seniority qualifier shares the role's clause ("Lead Engineer").
+    """
+    start = title.rfind(",", 0, pos) + 1
+    end = title.find(",", pos)
+    clause = title[start:] if end == -1 else title[start:end]
+    return _ROLE_TOKEN.search(clause) is not None
+
 
 def parse_seniority(
     title: str,
@@ -105,8 +129,16 @@ def parse_seniority(
     #    MASKED title so a phrase like "Member of Technical Staff" cannot read as `staff`.
     masked = mask_non_seniority_phrases(title)
     for word in sorted(tier.words, key=len, reverse=True):
-        if re.search(rf"\b{re.escape(word)}\b", masked, re.IGNORECASE):
-            return tier.words[word], f'seniority word "{word}"'
+        match = re.search(rf"\b{re.escape(word)}\b", masked, re.IGNORECASE)
+        if match is None:
+            continue
+        # An ambiguous management word counts only when it shares a role's clause; otherwise it
+        # is a product noun ("Password Manager") — skip it and keep looking for a real signal.
+        if word.lower() in _MANAGEMENT_AMBIGUOUS and not _shares_clause_with_a_role(
+            masked, match.start()
+        ):
+            continue
+        return tier.words[word], f'seniority word "{word}"'
 
     # 2. Ambiguous tokens abstain BEFORE any scheme can resolve them. Which grammars are
     #    ambiguous is the catalog's call, not this module's.
