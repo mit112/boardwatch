@@ -202,3 +202,61 @@ class TestCoordinatorDeny:
     ])
     def test_engineering_titles_are_never_vetoed_by_the_coordinator_deny(self, title: str) -> None:
         assert role_verdict(title)[0] != "not_swe"
+
+
+class TestManagerDirectorDeny:
+    """A bare `... Manager` / `... Director` with no engineering noun is not a software role.
+
+    Owner decision (2026-08-20): hard-exclude non-engineering management. The `_NOENG`
+    anchored guard spares any title carrying engineer/engineering/developer/architect/
+    programmer/swe/sde/sdet, so engineering managers and directors are never vetoed. The
+    pattern sits in the SOFT lane, so a rescued or signalled software title never reaches it.
+    """
+
+    @pytest.mark.parametrize("title", [
+        "Director of Operations",
+        "General Manager",
+        "Regional Manager",
+        "Delivery Manager",
+        "Technical Director",
+    ])
+    def test_non_engineering_managers_and_directors_are_vetoed(self, title: str) -> None:
+        verdict, reason = role_verdict(title)
+        assert verdict == "not_swe"
+        assert "manager" in reason.lower() or "director" in reason.lower()
+
+    @pytest.mark.parametrize("title", [
+        "Engineering Manager",            # carries an engineering noun -> spared
+        "Software Engineering Manager",   # rescued software-first
+        "Director of Engineering",        # carries an engineering noun -> spared
+        "Software Development Manager",   # 'software development' rescues before any deny
+    ])
+    def test_engineering_managers_and_directors_are_never_vetoed(self, title: str) -> None:
+        assert role_verdict(title)[0] != "not_swe"
+
+
+class TestDataRolesOutOfScope:
+    """Data Scientist / Data Analyst are out of scope (owner decision, 2026-08-20): they are
+    not software-engineering roles. Data *engineering* stays in scope -- the deny needs the
+    literal `scientist`/`analyst` token, so it cannot touch a `... Engineer` title.
+    """
+
+    @pytest.mark.parametrize("title", [
+        "Data Scientist",
+        "Senior Data Scientist",
+        "Data Analyst",
+        "Lead Data Analyst",
+    ])
+    def test_data_science_and_analyst_titles_are_vetoed(self, title: str) -> None:
+        verdict, reason = role_verdict(title)
+        assert verdict == "not_swe"
+        assert reason  # never silent: the veto names what it matched
+
+    @pytest.mark.parametrize("title", [
+        "Data Engineer",
+        "Data Platform Engineer",
+        "Machine Learning Engineer",
+        "Data Warehouse Engineer",  # no signal -> stays uncertain, still not vetoed
+    ])
+    def test_data_engineering_titles_are_never_vetoed(self, title: str) -> None:
+        assert role_verdict(title)[0] != "not_swe"
