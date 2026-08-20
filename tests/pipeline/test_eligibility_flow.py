@@ -142,7 +142,9 @@ def test_preflight_no_ops_with_no_profile_and_top_still_raises(env: Path) -> Non
     assert "no profile" in top.output
 
 
-def _evaluate_open(env: Path, body: str, *, degree: str = "none") -> int:
+def _evaluate_open(
+    env: Path, body: str, *, degree: str = "none", degree_policy: str = "blocker"
+) -> int:
     posting_id = _seed_posting(env, body)
     engine = get_engine(env)
     with engine.begin() as conn:
@@ -152,7 +154,7 @@ def _evaluate_open(env: Path, body: str, *, degree: str = "none") -> int:
             resume_max_pages=1,
         )
     assert _run(env, ["eligibility", "facts", "set", "highest_degree", degree]).exit_code == 0
-    assert _run(env, ["eligibility", "policy", "set", "degree", "blocker"]).exit_code == 0
+    assert _run(env, ["eligibility", "policy", "set", "degree", degree_policy]).exit_code == 0
     assert _run(env, ["eligibility", "run"]).exit_code == 0
     return posting_id
 
@@ -354,9 +356,12 @@ def test_show_agrees_with_top_after_toggling_a_fact_back(env: Path) -> None:
 
 
 def test_eligible_with_zero_requirements_renders_as_no_rule_applied(env: Path) -> None:
-    # "No flags" != cleared (CLAUDE.md, P2 item 6): a plain body no family detects anything in
-    # must not read the same as an `eligible` that actually fired and cleared requirements.
-    posting_id = _evaluate_open(env, PLAIN_BODY, degree="none")
+    # "No flags" != cleared (CLAUDE.md, P2 item 6): an `eligible` that fired NO rule must not
+    # read the same as an `eligible` that actually cleared a requirement. The remaining
+    # eligible-with-zero-rows case is an IGNORED family (D-250): a body that fires nothing at
+    # all now abstains to `uncertain`, so this fixture states a degree requirement and ignores
+    # the degree family, which stays `eligible` because the user opted out of the only gate.
+    posting_id = _evaluate_open(env, DEGREE_BODY, degree="none", degree_policy="ignore")
     catalog = load_rules(env.parent / "cfg")
     engine = get_engine(env)
     with engine.connect() as conn:

@@ -320,9 +320,13 @@ def test_roll_up_precedence_unmet_beats_unknown(catalog) -> None:
     assert evaluate(body, facts, BLOCK_ALL, catalog).verdict == "ineligible"
 
 
-def test_zero_rows_stores_eligible(catalog) -> None:
+def test_zero_rows_abstains_never_clears_by_silence(catalog) -> None:
+    """A body that fires no family in any of the six reaches the roll-up with zero
+    requirement rows. `eligible` there is a clear BY SILENCE with an empty evidence chain,
+    which the keystone forbids ("No flags" != cleared), so the verdict abstains. The chain
+    stays empty — zero rows is the honest record, not a fabricated per-family abstain."""
     result = evaluate("We build lovely software.", Facts(), BLOCK_ALL, catalog)
-    assert result.verdict == "eligible"
+    assert result.verdict == "uncertain"
     assert result.requirements == ()
 
 
