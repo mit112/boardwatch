@@ -17,7 +17,8 @@ import pytest
 
 from boardwatch.eligibility.catalog import load_rules
 from boardwatch.eligibility.detect import Detection
-from boardwatch.eligibility.facts import Facts
+from boardwatch.eligibility.engine import evaluate
+from boardwatch.eligibility.facts import Facts, Policy
 from boardwatch.eligibility.resolve import UNKNOWN, registry, resolve
 
 
@@ -62,3 +63,24 @@ def test_every_resolver_abstains_on_empty_facts(catalog) -> None:
         "resolver(s) decided ELIGIBLE/INELIGIBLE on empty facts instead of abstaining "
         f"(family, pattern, disposition, rationale): {failures}"
     )
+
+
+def test_a_body_that_fires_no_family_abstains_through_the_real_engine(catalog) -> None:
+    """The keystone at the ROLL-UP, exercised through the real detect() -> evaluate() path.
+
+    `test_every_resolver_abstains_on_empty_facts` hand-builds Detection objects, so its loop
+    body never runs for a body that produces NO detection at all. A boilerplate JD that
+    matches no pattern in any of the six families therefore used to reach `eligible` BY
+    SILENCE: `rows` is empty, both blocking() any() tests are False, and the else-branch
+    cleared the posting with an empty evidence chain — the "No flags != cleared" violation
+    the keystone forbids. It must ABSTAIN instead.
+
+    None of the six families decides, so the verdict is `uncertain` and the evidence chain
+    stays empty. Zero rows is the HONEST record here (a synthetic per-family `unknown` row
+    would corrupt the abstain report's never_fired-vs-fully_abstaining signal), so the test
+    asserts the empty chain rather than fabricating six abstain rows.
+    """
+    body = "About us: we value collaboration, curiosity, and a bias for action. Join our team."
+    result = evaluate(body, Facts(), Policy(), catalog)
+    assert result.verdict == "uncertain"
+    assert result.requirements == ()  # no family produced a deciding row; none cleared it

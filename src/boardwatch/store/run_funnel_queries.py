@@ -232,7 +232,7 @@ def count_corpus(
     )
 
 
-def count_eligible_judged_this_run(
+def count_candidate_judged_this_run(
     conn: Connection,
     *,
     profile_hash: str,
@@ -241,12 +241,20 @@ def count_eligible_judged_this_run(
     engine_version: str,
     run_id: int,
 ) -> int:
-    """Open postings whose CURRENT-identity evaluation is verdict `eligible` AND was itself
-    judged by THIS run (`run_id` attribution) — the P3 item 5 (B5) zero-output guard's
-    predicate.
+    """Open postings whose CURRENT-identity evaluation is a CANDIDATE verdict (`eligible` OR
+    `uncertain`) AND was itself judged by THIS run (`run_id` attribution) — the P3 item 5 (B5)
+    zero-output guard's predicate.
+
+    `uncertain` counts, not only `eligible`: the ranker hides only `ineligible` (D-P2-10,
+    top_cmd), so an `uncertain` posting is a candidate lead exactly like an `eligible` one, and
+    a run that judged new candidate work yet produced 0 leads is the silent empty day this
+    guard exists to catch regardless of which of the two verdicts the candidate carries. This
+    also keeps the guard's coverage intact now that a body firing no family abstains to
+    `uncertain` rather than clearing to `eligible` by silence (D-250): the same normal posting
+    that used to count as `eligible` still counts, under its corrected verdict.
 
     Deliberately run_id-attributed rather than a cross-run "handled ledger": a steady-state day
-    where every eligible posting is a cache hit from a PRIOR run has this count at 0 and is
+    where every candidate posting is a cache hit from a PRIOR run has this count at 0 and is
     honest (nothing NEW happened this run), which is exactly what dissolves the reviewer's
     false-alarm concern without inventing a second identity path. Reuses
     `_current_identity_evaluations` — the same subquery `count_corpus` partitions — rather than
@@ -262,7 +270,7 @@ def count_eligible_judged_this_run(
         conn.execute(
             select(func.count())
             .select_from(sub)
-            .where(sub.c.verdict == "eligible", sub.c.run_id == run_id)
+            .where(sub.c.verdict.in_(("eligible", "uncertain")), sub.c.run_id == run_id)
         ).scalar_one()
     )
 

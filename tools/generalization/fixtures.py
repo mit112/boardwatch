@@ -122,7 +122,7 @@ FIXTURE_PROVENANCE: dict[str, FixtureProvenance] = {
 # @pytest.mark.parametrize further down the file, so a digest over the literal alone stays green
 # while a `CASES[0] = (...)` line appended below rewrites the oracle. Byte-stable across
 # platforms because .gitattributes pins eol=lf repo-wide for exactly this reason.
-CORPUS_PIN = "sha256:dfc6c7f16600990d97b7c7c6b892a1c965c023ea879745c1f5df0de979c7b619"
+CORPUS_PIN = "sha256:c03e28281dc79ff0c2ca79052c7358e486242bc65e2d66d60e5a3fdb77bf42f8"
 
 # A HUMAN-REVIEWED constant, and that is the whole of its value. It is counted by ast rather than
 # by bytes, but that alone would not make it a second path: an earlier version let

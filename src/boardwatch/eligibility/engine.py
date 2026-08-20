@@ -136,6 +136,26 @@ def not_applicable_field_families(facts: Facts, catalog: RulesCatalog) -> frozen
     )
 
 
+def _no_evaluable_requirement(
+    body_text: str, catalog: RulesCatalog, enabled: frozenset[str]
+) -> bool:
+    """True when the posting carried NO requirement any family could evaluate.
+
+    Consulted only in the zero-row branch of the roll-up. `eligible` there would be a
+    clear-BY-SILENCE — the "No flags != cleared" keystone violation: the body matched no
+    pattern in any ENABLED family, so nothing was cleared and the evidence chain is empty.
+    A family the profile's own policy (`ignore`) or field scope (`skip`) left OUT is a
+    different case entirely — a requirement WAS present and the user deliberately opted out
+    of it, which legitimately stays `eligible`. So the posting is un-evaluable (must abstain)
+    only when no EXCLUDED family would have detected a requirement either. For a default or
+    all-`blocker` profile nothing is excluded, so this short-circuits without re-detecting.
+    """
+    excluded = frozenset(family.id for family in catalog.families) - enabled
+    if not excluded:
+        return True
+    return not detect(body_text, catalog, enabled_families=excluded)
+
+
 def evaluate(
     body_text: str, facts: Facts, policy: Policy, catalog: RulesCatalog
 ) -> EvaluationResult:
@@ -274,6 +294,11 @@ def evaluate(
     if blocking(UNMET):
         verdict = "ineligible"
     elif blocking(UNKNOWN):
+        verdict = "uncertain"
+    elif not rows and _no_evaluable_requirement(body_text, catalog, enabled):
+        # Zero requirement rows AND no family — enabled or user-excluded — could have found
+        # a requirement in this body. `eligible` here is a clear by silence with an empty
+        # evidence chain, which the keystone forbids ("No flags" != cleared). Abstain.
         verdict = "uncertain"
     else:
         verdict = "eligible"

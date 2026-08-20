@@ -164,7 +164,7 @@ class TestContractNotFte:
         self, catalog: RulesCatalog, body: str
     ) -> None:
         assert rows(catalog, body, FTE_ONLY) == []
-        assert verdict(catalog, body, FTE_ONLY) == "eligible"
+        assert verdict(catalog, body, FTE_ONLY) == "uncertain"
 
     def test_a_temporary_computing_noun_is_not_a_temporary_engagement(
         self, catalog: RulesCatalog
@@ -176,7 +176,7 @@ class TestContractNotFte:
     ) -> None:
         """The cue guard, not a suppressor: a cue inside the span drops the detection."""
         assert rows(catalog, "This is not a contract position.", FTE_ONLY) == []
-        assert verdict(catalog, "This is not a contract position.", FTE_ONLY) == "eligible"
+        assert verdict(catalog, "This is not a contract position.", FTE_ONLY) == "uncertain"
 
     def test_a_posting_declaring_both_abstains_instead_of_guessing(
         self, catalog: RulesCatalog
@@ -253,7 +253,11 @@ class TestInternship:
         self, catalog: RulesCatalog, body: str
     ) -> None:
         assert rows(catalog, body, NO_INTERNS) == []
-        assert verdict(catalog, body, NO_INTERNS) == "eligible"
+        # Most of these fire no family and now abstain (zero rows -> `uncertain` under the
+        # empty-evidence gate); "0-2 years ... internships ... count" also trips the
+        # experience_years family, so it keeps a row and stays `eligible`. Both satisfy the
+        # claim: a mention of internships is never read as an internship declaration.
+        assert verdict(catalog, body, NO_INTERNS) != "ineligible"
 
     @pytest.mark.parametrize(
         "body",
@@ -273,7 +277,7 @@ class TestInternship:
         self, catalog: RulesCatalog, body: str
     ) -> None:
         assert rows(catalog, body, NO_INTERNS) == []
-        assert verdict(catalog, body, NO_INTERNS) == "eligible"
+        assert verdict(catalog, body, NO_INTERNS) == "uncertain"
 
     @pytest.mark.parametrize(
         "body",
@@ -338,7 +342,11 @@ class TestReviewRegressions:
         # already isolates contract_not_fte/internship, so this test keeps testing only
         # what its name says.
         isolated = Policy(families={**BLOCK_BOTH.families, "work_auth": "preference"})
-        assert verdict(catalog, body, FTE_ONLY, isolated) == "eligible"
+        # The three pure contractor-refusals now fire no family at all, so they abstain
+        # (zero rows -> `uncertain` under the empty-evidence gate); the CPT/OPT sentence keeps
+        # a work_auth preference row and stays `eligible`. Both satisfy this test's real
+        # claim: a refusal to engage contractors is never read as a contractor role.
+        assert verdict(catalog, body, FTE_ONLY, isolated) != "ineligible"
 
     @pytest.mark.parametrize(
         "body,facts",
@@ -355,7 +363,7 @@ class TestReviewRegressions:
         self, catalog: RulesCatalog, body: str, facts: Facts
     ) -> None:
         assert rows(catalog, body, facts) == []
-        assert verdict(catalog, body, facts) == "eligible"
+        assert verdict(catalog, body, facts) == "uncertain"
 
     def test_a_true_positive_survives_a_second_temporary_noun_in_the_same_sentence(
         self, catalog: RulesCatalog
@@ -451,7 +459,7 @@ class TestSecondReviewRegressions:
         self, catalog: RulesCatalog, body: str
     ) -> None:
         assert rows(catalog, body, NO_INTERNS) == []
-        assert verdict(catalog, body, NO_INTERNS) == "eligible"
+        assert verdict(catalog, body, NO_INTERNS) == "uncertain"
 
     def test_trailing_programme_ownership_prose_does_not_delete_a_real_internship(
         self, catalog: RulesCatalog
@@ -510,7 +518,7 @@ class TestSecondReviewRegressions:
         self, catalog: RulesCatalog, body: str
     ) -> None:
         assert rows(catalog, body, NO_INTERNS) == []
-        assert verdict(catalog, body, NO_INTERNS) == "eligible"
+        assert verdict(catalog, body, NO_INTERNS) == "uncertain"
 
     @pytest.mark.parametrize(
         "body",
@@ -531,7 +539,7 @@ class TestSecondReviewRegressions:
         self, catalog: RulesCatalog, body: str
     ) -> None:
         assert rows(catalog, body, FTE_ONLY) == []
-        assert verdict(catalog, body, FTE_ONLY) == "eligible"
+        assert verdict(catalog, body, FTE_ONLY) == "uncertain"
 
     def test_a_genuine_contract_to_hire_posting_still_fires_through_the_framed_arm(
         self, catalog: RulesCatalog

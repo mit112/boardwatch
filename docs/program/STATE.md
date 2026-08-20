@@ -34,6 +34,14 @@ keystone invariant worked — it showed this as a 100% abstain rate in every fun
 **17 of 44 rules are still at 100% abstain**, incl. `experience_years:scoped_years_minimum` on all 16,007
 observations.
 
+**Zero-evidence `eligible` now abstains (D-250).** 11,158 of 26,997 (41.3%) were `eligible` with zero
+requirement rows — cleared by silence, 98% full-length JDs with no eligibility token (median 5,922 chars).
+`eligible` now requires a row OR an ignore/skip-excluded family that would have detected one, so these become
+`uncertain`; multi-tenant opt-outs stay `eligible`. **Label-only** — the ranker hides only `ineligible`, so
+leads are unchanged. The silent-empty-day guard now counts `eligible`+`uncertain`. Mit chose flip-and-
+rebaseline; 320 frozen corpus cases flipped. Owed next run: re-evaluate the corpus so the store carries the
+new verdicts (the engine digest moved, so it re-keys on the next `eligibility run`).
+
 **The roadmap is UNFROZEN (D-240); its remaining gates are OPERATIONAL, not build.** P0/P1/P2/P5 gates are
 **MET**. On 2026-08-18 Mit lifted D-155's freeze on P3, P6 and the 14-day clock. The builds for P3/P4/P6 are
 essentially done, so their gates now close by *running* boardwatch daily, not by coding. **P3 item 8 — the

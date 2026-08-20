@@ -78,7 +78,7 @@ from boardwatch.store.queries import (
     reap_stale_runs,
 )
 from boardwatch.store.regroup import apply_merges, job_anchors, protected_job_ids
-from boardwatch.store.run_funnel_queries import count_eligible_judged_this_run, lead_provenance
+from boardwatch.store.run_funnel_queries import count_candidate_judged_this_run, lead_provenance
 from boardwatch.store.tables import postings
 from boardwatch.tailor.coverage import CoverageReport
 from boardwatch.tailor.load import ResumeLoadError
@@ -340,18 +340,19 @@ def _cohort_guard(
 
 
 def _zero_output_guard(
-    eligible_judged_this_run: int,
+    candidate_judged_this_run: int,
     hidden_handled: int = 0,
     dead_leads: int = 0,
     hidden_applied: int = 0,
 ) -> str | None:
-    """P3 item 5 (B5) — 0 leads is provably right IFF this run did no NEW eligible work, **or**
+    """P3 item 5 (B5) — 0 leads is provably right IFF this run did no NEW candidate work, **or**
     every candidate it had was already handled, already applied to, or dead.
 
-    `eligible_judged_this_run` is run_id-attributed (not a cross-run handled ledger): a
-    steady-state day where every eligible posting is a cache hit from a PRIOR run has this at
-    0 and is honest. > 0 with 0 leads means new eligible work existed this run and nothing came
-    of it — the silent-empty-day this guard exists to catch.
+    `candidate_judged_this_run` counts `eligible` AND `uncertain` (the ranker hides only
+    `ineligible`, so both are candidate leads), run_id-attributed (not a cross-run handled
+    ledger): a steady-state day where every candidate posting is a cache hit from a PRIOR run
+    has this at 0 and is honest. > 0 with 0 leads means new candidate work existed this run and
+    nothing came of it — the silent-empty-day this guard exists to catch.
 
     `hidden_handled` is the P6 slice 2 clause, and it is a widening the ledger forces rather than
     a weakening. Under the ledger a run can judge genuinely new eligible postings and still
@@ -385,14 +386,14 @@ def _zero_output_guard(
     for it would make that run exit 0 with nothing to show.
     """
     if (
-        eligible_judged_this_run > 0
+        candidate_judged_this_run > 0
         and hidden_handled == 0
         and dead_leads == 0
         and hidden_applied == 0
     ):
         return (
-            f"empty day not provably right: {eligible_judged_this_run} eligible postings "
-            "judged this run but 0 leads"
+            f"empty day not provably right: {candidate_judged_this_run} candidate postings "
+            "(eligible or uncertain) judged this run but 0 leads"
         )
     return None
 
@@ -992,10 +993,10 @@ def run_pipeline(
                 identity = current_identity(conn, settings)
                 # None only when the profile vanished mid-run after `rank_open_postings`
                 # already required one to exist — unreachable in practice. Treated as "no
-                # NEW eligible work is knowable", not as suspicious, per the fail-safe stance:
+                # NEW candidate work is knowable", not as suspicious, per the fail-safe stance:
                 # ambiguity here must not manufacture a false alarm.
-                eligible_judged_this_run = (
-                    count_eligible_judged_this_run(
+                candidate_judged_this_run = (
+                    count_candidate_judged_this_run(
                         conn,
                         profile_hash=identity[0],
                         rules_hash=identity[1],
@@ -1007,7 +1008,7 @@ def run_pipeline(
                     else 0
                 )
             summary.fatal = _zero_output_guard(
-                eligible_judged_this_run,
+                candidate_judged_this_run,
                 ranked.hidden_handled,
                 len(summary.dead_lead_ids),
                 ranked.hidden_applied,
