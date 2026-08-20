@@ -76,6 +76,50 @@ class TestOrdering:
         assert role_verdict("Machine Learning Engineer, Consultant Tools")[0] == "swe"
 
 
+class TestPrecisionAdditions:
+    """Consistency gaps closed (D-252): the gate denied 'Solutions Engineer' but not
+    'Solutions Architect', denied 'field support engineer' but not 'technical support
+    engineer', and let sales 'Development Representative' through. All are pre-sales / support /
+    sales by definition, and all sit in the SOFT deny lane, so a real software title with a
+    signal or a rescue is never reached by them."""
+
+    @pytest.mark.parametrize(
+        "title",
+        [
+            "Solutions Architect",
+            "Enterprise Solutions Architect",
+            "AI Solutions Architect",
+            "Pre-Sales Architect",
+            "Sales Development Representative",
+            "Business Development Representative",
+            "Partner Development Manager",
+            "Technical Support Engineer",
+            "Customer Support Engineer",
+            "IT Support Engineer",
+        ],
+    )
+    def test_presales_support_sales_titles_are_vetoed(self, title: str) -> None:
+        assert role_verdict(title)[0] == "not_swe"
+
+    @pytest.mark.parametrize(
+        "title",
+        [
+            "Software Architect",  # rescued before any deny
+            "Backend Software Engineer",
+            "Software Development Manager",  # 'software development' is a signal
+            "Software Support Engineer",  # rescued: software-first
+            "Developer Support Engineer",  # spared: not a customer/technical support role
+            "Support Engineer",  # bare, ambiguous — stays uncertain, not vetoed
+        ],
+    )
+    def test_real_or_ambiguous_software_titles_are_not_vetoed(self, title: str) -> None:
+        assert role_verdict(title)[0] != "not_swe"
+
+    def test_sw_engineer_abbreviation_is_software(self) -> None:
+        # "SW Engineer" is unambiguously software; "SW" alone (=southwest) is not added.
+        assert role_verdict("SW Engineer")[0] == "swe"
+
+
 class TestNarrowedPatterns:
     """Patterns the audit dropped or narrowed stay dropped, and what they were dropped
     FOR still gets vetoed by the rest of the list."""

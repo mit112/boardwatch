@@ -222,6 +222,14 @@ _DENY_BUSINESS_SOFT: tuple[str, ...] = tuple([
     # 0 `swe`-classified titles contain the word, so this cannot bury a software job. The
     # anchored guard additionally spares 4 administrative roles at engineering schools.
     _NOENG + r"\bcoordinator\b",
+    # D-252 consistency gaps: the gate already denied "Solutions ENGINEER", "field support
+    # engineer", and bare sales, but not these pre-sales / support / non-sales-BD twins. All
+    # are in the SOFT lane, so a real "Software Architect" (rescued) or a signalled IC title is
+    # never reached; a "Software Solutions Architect" is rescued software-first.
+    r"\b(solutions?|enterprise|customer|pre.?sales|sales)\s+architect\b",
+    r"\b(business|partner|account|channel|corporate|market|revenue)\s+development\s+"
+    r"(representative|rep|manager|associate|executive|director|lead|specialist)\b",
+    r"\b(customer|technical|it|desktop|help\s*desk)\s+support\s+engineer\b",
 ])
 
 # Positive SWE signal on the title. Bare `reliability` is deliberately absent: it made a
@@ -242,6 +250,7 @@ _TITLE_SWE_SIGNAL = (
     r"\b(engineer|developer)\s*,?\s*(backend|frontend|full[\s-]?stack|mobile|ios|android|"
     r"platform|infrastructure|distributed\s+systems|api)\b|"
     r"\b(swe|sde|sdet|mts|amts|imts)\b|\bmember\s+of\s+technical\s+staff\b|"
+    r"\bsw\s+engineer\w*\b|"
     r"\bprogrammer\b|\bprogrammer\s+analyst\b|"
     r"\bweb\s+develop\w*\b|\bapplication\s+develop\w*\b|"
     r"\bnew\s+grad\w*\b.{0,30}\b(engineer|developer)\b|"
