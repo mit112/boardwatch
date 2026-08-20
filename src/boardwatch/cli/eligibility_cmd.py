@@ -515,6 +515,10 @@ def abstain_cmd(ctx: typer.Context) -> None:
         elif rule.never_fired:
             # Not "0%" — the rule produced no rows, so there is no rate to report.
             rate, style = "never fired", "yellow"
+        elif rule.structurally_undecidable:
+            # Fires, always abstains — but by schema design (no datum exists), not a fixable
+            # blind spot, so it is dimmed apart from the red fixable 100%-abstains.
+            rate, style = "100% (schema gap)", "dim"
         elif rule.fully_abstaining:
             rate, style = "100%", "red"
         else:
@@ -532,7 +536,8 @@ def abstain_cmd(ctx: typer.Context) -> None:
     console.print(
         f"{len(report.rules)} rules · {len(report.never_fired)} never fired · "
         f"{len(report.not_applicable)} not applicable · "
-        f"{len(report.fully_abstaining)} fire but never decide · "
+        f"{len(report.fully_abstaining_fixable)} fire but never decide · "
+        f"{len(report.structurally_undecidable)} structurally undecidable · "
         f"{report.total_rows} rows across {len(evals)} evaluations"
     )
     if report.unattributed:
