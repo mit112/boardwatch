@@ -201,6 +201,11 @@ profile = Table(
     Column("locations_json", JSON, nullable=True),
     Column("remote_only", Boolean, nullable=False, default=False),
     Column("resume_max_pages", Integer, nullable=False, server_default="1"),
+    # D-246. NOT NULL with a server default: `None` and "any" would otherwise be two hash
+    # inputs for one behaviour, and `hashing.canonical` keeps an explicit null distinct from
+    # a missing key. Closed vocabulary enforced in Python at the write site (ProfileInput),
+    # not by a CHECK — retrofitting one to SQLite costs a full table rebuild.
+    Column("target_seniority_band", Text, nullable=False, server_default="any"),
     Column("eligibility_facts_json", JSON, nullable=True),
     Column("eligibility_policy_json", JSON, nullable=True),
     Column("updated_at", DateTime, nullable=False),

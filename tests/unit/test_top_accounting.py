@@ -113,6 +113,7 @@ def _accounted(results: RankedResults) -> int:
         + results.skipped_not_new
         + results.hidden_hard_filter
         + results.hidden_non_swe
+        + results.hidden_over_seniority
         + results.hidden_ineligible
         + results.hidden_below_cutoff
         + results.hidden_duplicate

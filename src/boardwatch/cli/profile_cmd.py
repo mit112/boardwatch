@@ -6,6 +6,8 @@ by the D21 preflight (Task 12)."""
 
 from __future__ import annotations
 
+from typing import Literal, get_args
+
 import typer
 from pydantic import BaseModel, ConfigDict, Field
 from rich.console import Console
@@ -21,6 +23,13 @@ from boardwatch.store.queries import get_profile, save_eligibility, save_profile
 
 console = Console()
 profile_app = typer.Typer(no_args_is_help=True, help="Profile management.")
+
+# D-246. The closed target vocabulary. Enforced here at the write boundary rather than by a
+# SQLite CHECK, which would cost a full table rebuild to retrofit.
+SeniorityBandChoice = Literal["entry", "mid", "senior", "any"]
+# DERIVED from the Literal, never restated: a second hand-written list would drift from
+# the one pydantic actually validates against.
+SENIORITY_BAND_CHOICES: frozenset[str] = frozenset(get_args(SeniorityBandChoice))
 
 ZERO_SKILL_WARNING = (
     "warning: no recognized skills in your profile — "
@@ -39,6 +48,7 @@ class ProfileInput(BaseModel):
     locations: list[str]
     remote_only: bool
     resume_max_pages: int = 1
+    target_seniority_band: SeniorityBandChoice = "any"
 
 
 def persist_profile(
@@ -51,6 +61,7 @@ def persist_profile(
     locations: list[str],
     remote_only: bool,
     resume_max_pages: int = 1,
+    target_seniority_band: str = "any",
 ) -> list[str]:
     """Save the singleton profile, re-deriving skills via the taxonomy engine.
 
@@ -64,6 +75,7 @@ def persist_profile(
         locations=locations,
         remote_only=remote_only,
         resume_max_pages=resume_max_pages,
+        target_seniority_band=target_seniority_band,
     )
     taxonomy = load_taxonomy(settings.config_dir)
     skills = sorted(taxonomy.extract(data.text))
@@ -78,6 +90,9 @@ def persist_profile(
             skills=skills,
             taxonomy_version=taxonomy.version,
             resume_max_pages=data.resume_max_pages,
+            # Explicit, never defaulted: a caller that forgot it would silently reset the
+            # band on every `profile edit`.
+            target_seniority_band=data.target_seniority_band,
         )
     if not skills:
         console.print(ZERO_SKILL_WARNING)
@@ -105,6 +120,7 @@ def show(ctx: typer.Context) -> None:
     console.print(f"Taxonomy version: {row.taxonomy_version}")
     console.print(f"Target titles: {', '.join(row.target_titles_json or []) or '—'}")
     console.print(f"Exclude titles: {', '.join(row.exclude_titles_json or []) or '—'}")
+    console.print(f"Target seniority band: {row.target_seniority_band}")
     console.print(
         f"Locations: {', '.join(row.locations_json or []) or '—'} · "
         f"Remote only: {'yes' if row.remote_only else 'no'}"
@@ -134,6 +150,20 @@ def edit(ctx: typer.Context) -> None:
     resume_max_pages = typer.prompt(
         "Résumé max pages", default=row.resume_max_pages, type=int
     )
+    # Re-prompt on a bad answer rather than aborting the edit and discarding the answers
+    # already entered this run — the same reason the eligibility prompts below loop. A bare
+    # prompt would let a typo like "Entry" raise inside persist_profile and lose everything.
+    while True:
+        target_seniority_band = typer.prompt(
+            "Target seniority band (entry/mid/senior/any)",
+            default=getattr(row, "target_seniority_band", None) or "any",
+        ).strip()
+        if target_seniority_band in SENIORITY_BAND_CHOICES:
+            break
+        console.print(
+            f"{target_seniority_band!r} is not a seniority band; "
+            f"choose one of {', '.join(sorted(SENIORITY_BAND_CHOICES))}"
+        )
     persist_profile(
         app_ctx.engine,
         app_ctx.settings,
@@ -143,6 +173,7 @@ def edit(ctx: typer.Context) -> None:
         locations=split_csv(locations),
         remote_only=remote_only,
         resume_max_pages=resume_max_pages,
+        target_seniority_band=target_seniority_band,
     )
 
     # The same four eligibility prompts as init, so the feature is reachable on an existing

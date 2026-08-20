@@ -100,6 +100,7 @@ def test_profile_edit_rederives_skills(env: Path) -> None:
         "\n"  # keep locations
         "n\n"  # remote only
         "\n"  # keep resume max pages
+        "\n"  # keep target seniority band
         "n\n"  # update eligibility checks? no
     )
     result = _invoke(env, ["profile", "edit"], edit_input)
@@ -231,6 +232,7 @@ def test_init_skipping_eligibility_leaves_columns_null(env: Path) -> None:
 _ELIG_EDIT = (
     "\n\n\n\n\n"                        # keep profile text and all filters
     "\n"                               # keep resume max pages
+    "\n"                               # keep target seniority band
     "y\n"                              # update eligibility checks?
     "\n"                               # career field: skip (keeps stored value)
     "permanent_resident\nus\n\n\n"     # work_auth: change status, skip bit, default policy
@@ -298,3 +300,30 @@ def test_profile_edit_reprompts_on_a_bad_career_field(env: Path) -> None:
     facts = parse_facts(row.eligibility_facts_json)
     assert facts.career_field == "software"
     assert facts.highest_degree == "master"  # later answers did not slide up
+
+
+def test_a_bad_seniority_band_reprompts_instead_of_discarding_the_edit(env: Path) -> None:
+    """A typo must not abort the edit and throw away every answer already typed.
+
+    The eligibility prompts loop for exactly this reason. A bare `typer.prompt` would let
+    "Entry" raise a pydantic literal_error inside persist_profile, after the operator had
+    already retyped their profile text, titles and locations.
+    """
+    _invoke(env, ["init"], INIT_INPUT)
+    edit_input = (
+        "\n"  # keep text
+        "\n"  # keep target titles
+        "\n"  # keep exclude titles
+        "\n"  # keep locations
+        "n\n"  # remote only
+        "\n"  # keep resume max pages
+        "Entry\n"  # BAD band — wrong case
+        "entry\n"  # corrected
+        "n\n"  # update eligibility checks? no
+    )
+    result = _invoke(env, ["profile", "edit"], edit_input)
+    assert result.exit_code == 0
+    assert "is not a seniority band" in result.output
+    engine = get_engine(env)
+    with engine.connect() as conn:
+        assert get_profile(conn).target_seniority_band == "entry"

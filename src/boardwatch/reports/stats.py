@@ -10,6 +10,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime, timedelta
+from typing import cast
 
 from rich.console import Console
 from sqlalchemy import Engine, select
@@ -20,10 +21,12 @@ from boardwatch.eligibility.preflight import run_eligibility
 from boardwatch.eligibility.read import current_verdicts
 from boardwatch.extract.preflight import run_preflight
 from boardwatch.rank.heuristic import passes_hard_filters, profile_view_from_row
+from boardwatch.rank.leveling import load_leveling, resolve_schemes
 from boardwatch.rank.role_gate import role_verdict
+from boardwatch.rank.seniority_gate import TargetBand, seniority_verdict
 from boardwatch.store.queries import current_posting_versions, get_profile
 from boardwatch.store.stats_queries import count_open_postings, count_tracked_submitted
-from boardwatch.store.tables import postings
+from boardwatch.store.tables import companies, postings
 
 
 @dataclass(frozen=True)
@@ -33,6 +36,10 @@ class PostingStat:
     passes_filters: bool
     verdict: str | None  # "eligible" | "uncertain" | "ineligible" | None (unevaluated)
     non_swe: bool = False  # title role gate says non-software; `top` hides these by default
+    # Title seniority gate says above the target band; `top` hides these by default (D-246).
+    # Set ONLY for postings the role gate passed, mirroring `top`'s gate ORDER: see the loop in
+    # `compute_stats`. The buckets are disjoint there, so they have to be disjoint here.
+    over_seniority: bool = False
 
 
 @dataclass(frozen=True)
@@ -47,6 +54,9 @@ class StatsReport:
     non_swe: int
     not_ineligible: int
     tracked: int
+    # Reported the same way `non_swe` is, and for the same reason: `top` hides these, so a
+    # readout that never counted them would disagree with the shortlist it describes (D-246).
+    over_seniority: int = 0
 
 
 def summarize(
@@ -67,12 +77,13 @@ def summarize(
     # folding it into `passes_filters`/`not_ineligible`/the window buckets instead would
     # redefine numbers the parity window is already measuring. Counted, not silent.
     non_swe = sum(1 for s in stats if s.passes_filters and s.non_swe)
+    over_seniority = sum(1 for s in stats if s.passes_filters and s.over_seniority)
     not_ineligible = sum(1 for s in stats if s.passes_filters and s.verdict != "ineligible")
     return StatsReport(
         window_days=window_days,
         qualified=qualified, uncertain=uncertain, ineligible=ineligible, unevaluated=unevaluated,
         seen=seen, passes_filters=passes, non_swe=non_swe,
-        not_ineligible=not_ineligible, tracked=tracked,
+        not_ineligible=not_ineligible, tracked=tracked, over_seniority=over_seniority,
     )
 
 
@@ -98,7 +109,10 @@ def compute_stats(
             select(
                 postings.c.id, postings.c.title, postings.c.posted_at,
                 postings.c.locations_json, postings.c.remote_policy,
-            ).where(postings.c.status == "open")
+                companies.c.provider, companies.c.slug,
+            )
+            .join(companies, postings.c.company_id == companies.c.id)
+            .where(postings.c.status == "open")
         ).all()
         versions = current_posting_versions(conn, None)
         verdicts = current_verdicts(
@@ -107,8 +121,24 @@ def compute_stats(
         )
         seen = count_open_postings(conn)
         tracked = count_tracked_submitted(conn)
-    stats = [
-        PostingStat(
+    # Loaded ONCE, outside the comprehension: `load_leveling` parses YAML on every call.
+    leveling = load_leveling(settings.config_dir)
+    schemes, _binding_warning = resolve_schemes(leveling, settings.config_dir)
+    tier = leveling.fields["software"]
+    target_band = cast(TargetBand, profile.target_seniority_band)
+    stats: list[PostingStat] = []
+    for row in rows:
+        # ORDERED exactly as `top_cmd` gates, because these two counts describe one gate chain.
+        # There the role gate `continue`s before the seniority gate ever runs, so a posting that
+        # is both non-software and over-band is `hidden_non_swe` and nothing else. Evaluated
+        # independently, such a posting landed in both buckets and `over_seniority` read higher
+        # than the funnel's `hidden_over_seniority` for the same corpus -- two numbers for one
+        # gate that could not be reconciled.
+        non_swe = role_verdict(row.title)[0] == "not_swe"
+        over_seniority = not non_swe and seniority_verdict(
+            row.title, schemes.get((row.provider, row.slug)), target_band, tier, leveling,
+        )[0] == "above_band"
+        stats.append(PostingStat(
             posting_id=int(row.id),
             posted_at=row.posted_at,
             passes_filters=passes_hard_filters(
@@ -116,8 +146,7 @@ def compute_stats(
                 profile, settings.location_filter_mode,
             ),
             verdict=verdicts.get(int(row.id)),
-            non_swe=role_verdict(row.title)[0] == "not_swe",
-        )
-        for row in rows
-    ]
+            non_swe=non_swe,
+            over_seniority=over_seniority,
+        ))
     return summarize(stats, now=now, window_days=window_days, seen=seen, tracked=tracked)

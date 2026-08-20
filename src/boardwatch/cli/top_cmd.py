@@ -12,6 +12,7 @@ import json
 from collections.abc import Sequence
 from dataclasses import dataclass, replace
 from datetime import datetime, timedelta
+from typing import cast
 
 import typer
 from rich.console import Console
@@ -34,7 +35,14 @@ from boardwatch.rank.heuristic import (
     profile_view_from_row,
     score_posting,
 )
+from boardwatch.rank.leveling import load_leveling, resolve_schemes
 from boardwatch.rank.role_gate import RoleVerdict, role_verdict
+from boardwatch.rank.seniority_gate import (
+    SeniorityVerdict,
+    TargetBand,
+    build_token_probe,
+    seniority_verdict,
+)
 from boardwatch.store.app_state import get_digest_cursor
 from boardwatch.store.applications import applied_job_ids
 from boardwatch.store.identity_queries import (
@@ -64,6 +72,10 @@ class RankedPosting:
     verdict: str | None = None  # the current profile's eligibility verdict, None if unevaluated
     role: RoleVerdict = "uncertain"  # title role gate; "not_swe" is hidden unless asked for
     role_reason: str = ""
+    # Title seniority gate (D-246). "above_band" is hidden unless asked for; "uncertain" is
+    # counted and passed through, so it reaches the shortlist carrying the text that abstained.
+    band: SeniorityVerdict = "in_band"
+    band_reason: str = ""
     # The survivor this posting was suppressed in favour of. Set only when the row is
     # surfaced by the `--include-duplicates` drain; a normally-visible posting has None.
     duplicate_of: int | None = None
@@ -79,13 +91,19 @@ class RankedPosting:
 class RankedResults:
     """The shortlist plus every count needed to account for the postings considered.
 
-    `considered` and the seven drop counts exist so the funnel's shortlist stage can reconcile:
+    `considered` and the eight drop counts exist so the funnel's shortlist stage can reconcile:
     `considered == len(visible) + skipped_not_new + hidden_hard_filter + hidden_non_swe +
-    hidden_ineligible + hidden_duplicate + hidden_applied + hidden_handled +
-    hidden_below_cutoff`. Each is its own counter,
+    hidden_over_seniority + hidden_ineligible + hidden_duplicate + hidden_applied +
+    hidden_handled + hidden_below_cutoff`. Each is its own counter,
     incremented where the posting actually leaves, never a remainder computed by subtraction —
     a remainder cannot catch a `continue` that forgot to count, which is the only way this
     identity realistically breaks (P0 item 3).
+
+    `uncertain_band` is NOT in that identity and must never be added to it. It is a **reported
+    abstain rate, not a drop**: the postings it counts are in `visible`, already accounted for
+    there, so folding it in would double-count them and break reconciliation. It exists because
+    the keystone invariant says a rule that cannot fire has to be visible as a number rather
+    than as silence.
 
     That `considered` is `len(rows)` rather than that sum is a **code-review invariant, not a
     tested one**: the loop's exits are exhaustive, so rewriting it as the sum is behaviourally
@@ -93,13 +111,19 @@ class RankedResults:
     `len(rows)` a single deleted counter is caught; with the sum it is self-consistent and
     invisible.
 
-    **A new drop bucket has SIX hand-maintained mirror sites and only three of them are
-    checked by anything.** Counted honestly, because two successive reviews corrected this number
-    upward (D-111): this dataclass and its increment site; `pipeline/runner.py`'s mapping into
-    `ShortlistCounts`; `ShortlistCounts` itself and the shortlist stage's `Drop` list (both
-    `reports/run_funnel.py`); a `Drop` on the funnel's **tailor** stage as well if the bucket
-    removes postings *after* ranking, as liveness does; `_zero_output_guard` if the bucket can
-    legitimately explain an empty day; and `run_cmd.py::_shortlist_line`.
+    **A new drop bucket has AT LEAST 27 hand-maintained mirror sites and only three of them are
+    checked by anything.** Stated as a floor, not a count: this number has now been corrected
+    upward by four successive reviews (six → 21 → 27), and the revision that said 21 enumerated
+    only 19 of them. Nineteen sites are inside this file alone — the identity prose above, this
+    paragraph, the dataclass field, the counter init, the increment and its `continue`, the
+    `rank_open_postings` signature, the `return RankedResults(...)` mapping, the `RankedPosting`
+    twin fields, `_why_cell`, the JSON payload keys, the `select(...)` columns, the
+    `_print_hidden_notices` signature and its notice, the empty-result early-return guard, the
+    typer option, and **four** call sites threading the flag. The rest live in
+    `pipeline/runner.py`, `reports/run_funnel.py` (twice), `cli/run_cmd.py::_shortlist_line`,
+    `reports/notify.py`, `reports/stats.py`, `cli/show_cmd.py`, and `reports/manifest.py`.
+    The full enumeration, including the sites deliberately NOT touched and why, is in
+    `docs/superpowers/plans/2026-08-19-seniority-gate.md` and the spec it cites.
 
     The stage `reconciled` identities catch a miss in the `Drop` lists and in the `runner.py`
     mapping — at runtime, not statically. **Nothing catches a miss in `_shortlist_line`**, which
@@ -110,6 +134,23 @@ class RankedResults:
     visible: list[RankedPosting]
     hidden_ineligible: int
     hidden_non_swe: int = 0
+    # Dropped by the title seniority gate: the title names a band above `target_seniority_band`
+    # (D-246). Only a confident word, roman numeral, or bound-scheme hit lands a posting here —
+    # everything else abstains into `uncertain_band` and stays visible. Drained by
+    # `--include-over-seniority`, and inert entirely while the target band is `any`.
+    hidden_over_seniority: int = 0
+    # The seniority gate's abstain rate: titles carrying a level token it could not resolve,
+    # because no scheme is bound for the company or the rung is outside the bound scheme.
+    # REPORTED, NEVER DROPPED, and deliberately NOT part of the reconciliation identity above —
+    # these postings are in `visible` and are already accounted for there. A rule that cannot
+    # fire is a monitoring failure, so this is surfaced as a number rather than as silence.
+    uncertain_band: int = 0
+    # Titles carrying SOME seniority signal while the gate was inert
+    # (`target_seniority_band == 'any'`). The gate short-circuits on `any` before
+    # parsing, so `uncertain_band` and `hidden_over_seniority` are structurally 0
+    # there — without this counter, 'inert' is indistinguishable from 'nothing to
+    # gate' and the operator is never told the feature exists.
+    band_tokens_seen_while_inert: int = 0
     # Postings the ranker looked at: open postings joined to their company. Measured
     # independently of the loop below, which is what lets the identity above fail.
     considered: int = 0
@@ -165,6 +206,7 @@ def rank_open_postings(
     limit: int = 10,
     include_ineligible: bool = False,
     include_non_swe: bool = False,
+    include_over_seniority: bool = False,
     include_duplicates: bool = False,
     include_handled: bool = False,
     include_applied: bool = False,
@@ -187,6 +229,17 @@ def rank_open_postings(
         engine, settings, output_console, run_id=run_id
     )  # no-op on a null profile; before the check
     version = load_taxonomy(settings.config_dir).version
+    # Loaded ONCE, beside the taxonomy, never per row: `role_verdict` is tuned to 0.30s over
+    # 19,262 postings and the loop below runs ~27k times. `bindings` is user config keyed on
+    # (provider, slug); resolving it to LevelScheme objects here means the loop does one dict
+    # lookup instead of two. An unknown scheme name is dropped rather than raised on — the
+    # binding file is hand-edited, and a typo must not take the whole shortlist down.
+    catalog = load_leveling(settings.config_dir)
+    schemes, _binding_warning = resolve_schemes(catalog, settings.config_dir)
+    # `software` is the only field tier shipped in leveling.yaml. Resolving the operator's own
+    # career field (and abstaining when it is unresolvable, which is what the catalog comment
+    # calls for) is future work — there is no profile field to resolve it from yet.
+    tier = catalog.fields["software"]
     now = now or utcnow()
     with engine.connect() as conn:
         profile_row = get_profile(conn)
@@ -201,6 +254,10 @@ def rank_open_postings(
                 postings.c.locations_json,
                 postings.c.remote_policy,
                 companies.c.name.label("company_name"),
+                # The seniority gate's binding key: a scheme is bound per company, and
+                # (provider, slug) is the pair the store and the registry agree on.
+                companies.c.provider,
+                companies.c.slug,
                 extractions.c.json.label("extraction_json"),
             )
             .join(companies, postings.c.company_id == companies.c.id)
@@ -235,8 +292,18 @@ def rank_open_postings(
         new_ids = _new_posting_ids(conn) if only_new else None
     scored: list[RankedPosting] = []
     hidden_non_swe = 0
+    hidden_over_seniority = 0
+    uncertain_band = 0
+    band_tokens_seen_while_inert = 0
     skipped_not_new = 0
     hidden_hard_filter = 0
+    # The band vocabulary is closed and `profile_cmd` is the only writer, which validates it
+    # against exactly this Literal before persisting.
+    target_band = cast(TargetBand, profile.target_seniority_band)
+    # Built ONCE, and only when the gate is inert: on the `any` path the verdict short-circuits
+    # before parsing, so this single alternation scan is the only way to tell the operator the
+    # gate would have had something to say. `None` on every other path costs nothing.
+    token_probe = build_token_probe(tier, catalog) if target_band == "any" else None
     for row in rows:
         if new_ids is not None and int(row.id) not in new_ids:
             skipped_not_new += 1
@@ -257,6 +324,20 @@ def rank_open_postings(
         if role == "not_swe" and not include_non_swe:
             hidden_non_swe += 1
             continue
+        band, band_reason = seniority_verdict(
+            row.title, schemes.get((row.provider, row.slug)),
+            target_band, tier, catalog,
+        )
+        if token_probe is not None and token_probe(row.title):
+            # Only built when the gate is inert; see build_token_probe.
+            band_tokens_seen_while_inert += 1
+        if band == "uncertain":
+            # Counted, never dropped: the abstain rate is the keystone number, and an
+            # unreported abstain is the monitoring failure this gate exists to prevent.
+            uncertain_band += 1
+        if band == "above_band" and not include_over_seniority:
+            hidden_over_seniority += 1
+            continue
         skills = set((row.extraction_json or {}).get("skills", []))
         score = score_posting(
             profile, skills, row.title, row.posted_at,
@@ -271,6 +352,7 @@ def rank_open_postings(
             why=f"{why} · role: {role_reason}" if role == "not_swe" else why,
             verdict=verdicts.get(int(row.id)),
             role=role, role_reason=role_reason,
+            band=band, band_reason=band_reason,
         ))
     scored.sort(key=lambda r: r.score.total, reverse=True)
     # Hide persisted-ineligible postings BEFORE the limit, so `top N` returns up to N shown
@@ -385,7 +467,14 @@ def rank_open_postings(
             visible.append(replace(posting, handled_as=disposition.disposition))
             continue
         if kept < limit:
-            if job_id is not None:
+            # A drained row is NOT surfaced. `--include-over-seniority` and `--include-non-swe`
+            # let you inspect a quarantine; recording those rows `seen` would make looking into
+            # the bucket suppress them from later runs, so the drain would close behind you.
+            # Every drain has to be a re-entry path, not a one-way consumption of the queue
+            # (CLAUDE.md). The duplicate/applied/handled drains already `continue` above this
+            # line and so were never affected; these two reach it because their rows are
+            # ordinary members of `eligible`.
+            if job_id is not None and posting.band != "above_band" and posting.role != "not_swe":
                 surfaced_job_ids.append(job_id)
             visible.append(posting)
             kept += 1
@@ -401,6 +490,9 @@ def rank_open_postings(
         visible=visible,
         hidden_ineligible=hidden,
         hidden_non_swe=hidden_non_swe,
+        hidden_over_seniority=hidden_over_seniority,
+        uncertain_band=uncertain_band,
+        band_tokens_seen_while_inert=band_tokens_seen_while_inert,
         considered=len(rows),
         hidden_hard_filter=hidden_hard_filter,
         hidden_below_cutoff=hidden_below_cutoff,
@@ -495,13 +587,24 @@ def count_filter_matches(engine: Engine, settings: Settings) -> int | None:
 def _why_cell(posting: RankedPosting) -> str:
     """A drained row names why it was suppressed, inline, so it can never be read as an ordinary
     lead. Every drain annotates; a normally-visible row is unannotated."""
+    # EVERY applicable drain annotates, not just the first one matched. A row can be drained
+    # twice: `above_band` reaches `visible` only through `--include-over-seniority`, and a
+    # duplicate/applied/handled row reaches it through its own `--include-*`. Returning on the
+    # first match showed such a row as merely over-band, so the operator could not tell it was
+    # also one they had already applied to — a suppression you cannot read is the leak this
+    # column exists to close. The last three are mutually exclusive by construction (each
+    # `continue`s in the ranker), so at most two annotations ever appear. `uncertain` is
+    # deliberately NOT annotated: it is not a drain, it is a normally-visible row.
+    notes: list[str] = []
+    if posting.band == "above_band":
+        notes.append(posting.band_reason)
     if posting.duplicate_of is not None:
-        return f"{posting.why} · duplicate of {posting.duplicate_of}"
-    if posting.applied_as is not None:
-        return f"{posting.why} · already applied ({posting.applied_as})"
-    if posting.handled_as is not None:
-        return f"{posting.why} · already {posting.handled_as}"
-    return posting.why
+        notes.append(f"duplicate of {posting.duplicate_of}")
+    elif posting.applied_as is not None:
+        notes.append(f"already applied ({posting.applied_as})")
+    elif posting.handled_as is not None:
+        notes.append(f"already {posting.handled_as}")
+    return " · ".join([posting.why, *notes])
 
 
 def _verdict_token(verdict: str | None) -> str:
@@ -520,6 +623,7 @@ def _print_hidden_notices(
     *,
     include_ineligible: bool,
     include_non_swe: bool,
+    include_over_seniority: bool,
     include_duplicates: bool,
     include_handled: bool,
     include_applied: bool,
@@ -545,6 +649,32 @@ def _print_hidden_notices(
         target.print(
             f"{results.hidden_non_swe} hidden as non-software roles — see them with "
             "--include-non-swe, each with the title text that vetoed it.",
+            markup=False,
+        )
+    if results.hidden_over_seniority and not include_over_seniority:
+        target.print(
+            f"{results.hidden_over_seniority} hidden as above your target seniority band — see "
+            "them with --include-over-seniority, each with the title text that vetoed it.",
+            markup=False,
+        )
+    if results.band_tokens_seen_while_inert:
+        # The gate is INERT, not absent. Reported rather than silent for the same reason an
+        # abstain is: a rule that cannot fire is a monitoring failure, and an operator who
+        # never learns the setting exists cannot choose to use it.
+        target.print(
+            f"seniority filtering is OFF — {results.band_tokens_seen_while_inert} title(s) "
+            "carry a seniority signal that was not acted on. Set a target band with "
+            "`boardwatch profile edit`.",
+            markup=False,
+        )
+    if results.uncertain_band:
+        # Printed unconditionally, with no drain to offer, because these rows are ALREADY
+        # visible — nothing is being withheld. It is the abstain rate: a level token the gate
+        # could not resolve, which is a gap in the bindings rather than a fact about the job.
+        target.print(
+            f"{results.uncertain_band} title(s) carry a level the seniority gate could not "
+            "resolve, so they were passed through unfiltered — bind those companies to a "
+            "scheme in leveling-bindings.yaml.",
             markup=False,
         )
     if results.hidden_duplicate and not include_duplicates:
@@ -597,6 +727,11 @@ def top(
     include_non_swe: bool = typer.Option(
         False, "--include-non-swe", help="Show postings the title role gate reads as non-software."
     ),
+    include_over_seniority: bool = typer.Option(
+        False,
+        "--include-over-seniority",
+        help="Show postings whose title names a band above your target seniority band.",
+    ),
     include_duplicates: bool = typer.Option(
         False, "--include-duplicates", help="Show postings suppressed as duplicates."
     ),
@@ -631,6 +766,7 @@ def top(
             limit=n,
             include_ineligible=include_ineligible,
             include_non_swe=include_non_swe,
+            include_over_seniority=include_over_seniority,
             include_duplicates=include_duplicates,
             include_handled=include_handled,
             include_applied=include_applied,
@@ -652,6 +788,7 @@ def top(
             results,
             include_ineligible=include_ineligible,
             include_non_swe=include_non_swe,
+            include_over_seniority=include_over_seniority,
             include_duplicates=include_duplicates,
             include_handled=include_handled,
             include_applied=include_applied,
@@ -666,6 +803,7 @@ def top(
                         "score": p.score.total,
                         "why": p.why,
                         "role": p.role,
+                        "band": p.band,
                         "duplicate_of": p.duplicate_of,
                         "handled_as": p.handled_as,
                         "applied_as": p.applied_as,
@@ -687,7 +825,12 @@ def top(
             "`boardwatch identities backfill`.",
             markup=False,
         )
-    if not results.visible and not results.hidden_ineligible and not results.hidden_non_swe:
+    if (
+        not results.visible
+        and not results.hidden_ineligible
+        and not results.hidden_non_swe
+        and not results.hidden_over_seniority
+    ):
         if new:
             output_console.print("nothing new since your last digest")
         else:
@@ -699,6 +842,7 @@ def top(
             results,
             include_ineligible=include_ineligible,
             include_non_swe=include_non_swe,
+            include_over_seniority=include_over_seniority,
             include_duplicates=include_duplicates,
             include_handled=include_handled,
             include_applied=include_applied,
@@ -723,6 +867,7 @@ def top(
         results,
         include_ineligible=include_ineligible,
         include_non_swe=include_non_swe,
+        include_over_seniority=include_over_seniority,
         include_duplicates=include_duplicates,
         include_handled=include_handled,
         include_applied=include_applied,

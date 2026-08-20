@@ -4723,3 +4723,97 @@ still-open ones (Affirm 2012, Stripe 10947) were already re-tailored in runs 60/
 "non-SWE" drop count); Snap "Level 5" → `role_verdict` `swe`, and the only seniority gate is the
 `exclude_titles` substring list, which enumerates seniority words but no numeric leveling. Fix fork (data
 `exclude_titles` vs a proper seniority gate) left OPEN — presented, Mit away. Not blocking P3.
+
+### 2026-08-19b: the seniority gate built and measured — D-246 (branch `seniority-gate-spec`, PR #99, UNMERGED)
+Every number below is from a **read-only** snapshot of the live store (`sqlite3 "file:…?immutable=1"`;
+`doctor` writes and was not used), **26,997 open postings**, re-derived independently by a second reviewer.
+
+**Corpus baseline.** `role_verdict`: `swe` 5,438 · `not_swe` 10,388 · **`uncertain` 11,171 (41%)** — the
+fail-open hole the funnel's "non-SWE" count does not describe. Role-gate survivors: 16,474.
+
+**Coordinator deny** (`_NOENG + \bcoordinator\b`, `_DENY_BUSINESS_SOFT`): **135 postings / 125 distinct
+titles** flip `uncertain`→`not_swe`; **0** `swe`-classified titles contain the word, so it cannot bury a
+software job; 4 engineering-school admin roles spared by the anchor. Verified through a second path than
+the unit tests: whole-corpus verdict deltas were `not_swe` +135, `uncertain` −135, **`swe` ±0**.
+
+**Level grammars.** Only **3 companies** put a resolvable level in a title (`Level N`: Snap 29, Thomson
+Reuters 3, Disney 1). Google `L3–L7`, Meta `E3–E6`, Amazon `SDE I–III`: **zero** title hits. Bare-letter
+tokens are mostly not levels — of 45 `L#` hits, Cisco's is OSI layer 2 and eBay's a support tier — so they
+are declared ambiguous and never resolve. This is what a blind numeric floor would have vetoed.
+
+**Gate outcome** (16,474 survivors): at the shipped default `any` — `in_band` 100%, **0 drops, 0 abstains**
+(inert, and the probe reports 10,261 titles carried a signal so inertness is not silent — **that
+figure is the PRE-D-247 probe; the corrected probe reports 10,171**, the difference being 90
+"Member of Technical Staff" titles it should never have counted). At `entry` —
+`in_band` 6,213 (37.71%), `above_band` 10,219 (62.03%), **abstain 42 (0.25%)**, all 42 honest refusals.
+*(A pre-implementation prototype reported 0.05%; it had Snap and Twilio bound in a hardcoded catalog.
+Moving bindings to user config is what raised it — a prototype's numbers do not survive a design change.)*
+
+**Shortlist delta** vs today: 5,483 → 5,445 distinct. **Gained 23**, incl. all 9 `Sr`⊂`SRE`/`ISR`/`Israel`
+recoveries. **Lost 61, every one correctly senior and every one leaking today** — 21 × *Distinguished
+Engineer*, ~15 × *Vice President* software roles, plus `IV` titles. Neither word is in `exclude_titles`.
+
+**A false-drop defect found by review and fixed.** The word list was measured for FREQUENCY, never for
+PRECISION against `swe` titles. Bare `staff` fired inside **"Member of Technical Staff"** — the standard IC
+title at Perplexity, xAI, Cohere, Cockroach Labs, Adyen — dropping **94** real software jobs, while
+`role_gate` names that same string a positive software signal. Phrase masking took it to **0**; the 19 MTS
+titles carrying a real senior word still drop. This is the `Sr`⊂`SRE` class the gate exists to fix,
+reappearing in it.
+
+**Run 61 replay** (`target=entry`, no bindings): Airbnb *Disaster Response Coordinator* **dropped**; Snap
+*Level 5* **kept + flagged** (abstains until a binding exists); the other 6 leads retained, including
+Affirm's *"Software Engineer I"* whose roman `I` must read as entry. **One leak closed, one made visible.**
+
+### 2026-08-19c: the four D-246 review findings closed, and the gate GREEN — D-247 (branch `seniority-gate-spec`, PR #99)
+**`make check` passed end to end on this branch for the first time.** `EXIT=0`, **6,785 passed + 4 xfailed
+in 16:43**, coverage 95.67% (floor 85%). All five stages ran: `generalization` OK · `program_index --check`
+current · `ruff` · `mypy --strict` (285 files) · `pytest -n auto`. Count reconciles: 6,782 collected at
+`ecc0454` + 7 new tests = 6,789 = 6,785 + 4. Bound to the tree by four routes — HEAD `ecc0454`, no tracked
+`.py`/`.yaml` newer than the log's start, the count identity above, and a working tree holding exactly the
+eight expected modified files.
+
+*Two earlier runs of the same gate were killed at 97% and 25% by `make: *** [test] Error 143` — SIGTERM, not
+a test. **The Bash tool clamps `timeout` to 600,000 ms**, so any `make check` longer than 10 minutes dies
+regardless of the value passed. It has to be launched detached (double-`fork` + `setsid`; macOS has no
+`setsid` binary) and polled. This cost two full gate runs.*
+
+**The probe's precision, measured the way D-246's word list should have been.** Same read-only snapshot,
+**26,997 open postings**. Old probe fired on **15,986** titles, new on **15,896**. The delta is not the
+number that matters — the **disagreement with `seniority_verdict` itself is: 90 → 0.** All 90 false fires
+were "Member of Technical Staff"; the role gate classifies all 90 as `swe`.
+
+| | old probe | new probe |
+|---|---|---|
+| fired | 15,986 | 15,896 |
+| disagreed with the armed gate | **90** | **0** |
+
+**The half the review named has zero live hits.** Finding 2 described the `re.IGNORECASE` recompile, i.e.
+lowercase `l2`/`e3`/`ii`: **0** occurrences in the live corpus. The half that was firing — the missing
+phrase mask — was named by nobody. Fixing only what was written down would have closed the finding and
+moved no number. *A finding is a hypothesis about a defect, not a boundary around it.*
+
+**Each new test confirmed to fail without its fix.** Src files reverted from `HEAD` **by file copy, never
+`git stash`** (it is shared across worktrees, D-refs in STATE). The stats disjointness test and the
+doubly-drained `_why_cell` test both fail on the pre-fix tree, the latter with
+`assert 'duplicate of 41' in 'score 1.00 · seniority word "staff"'`.
+
+**Unchanged, deliberately:** `rank/leveling.yaml`'s `fields.software.words` was not touched. Widening it
+requires enumerating and *reading* the `swe` titles it would drop, which is a measurement, not a cleanup.
+The Snap `Level 5` lead still reaches the shortlist flagged; that closes only with a binding line.
+
+**The gate, run twice.** Once on the four code commits (16:43) and once on the final sha `3b1a792`
+(6:43 — the same 6,785 + 4, and a live example of the documented 8× duration spread). Both `EXIT=0`.
+
+**CI is NOT green, and it is not this branch.** On `3b1a792`: `generalization`, `gitleaks`, `perf` and
+**Python 3.13 all pass**; **3.12 fails** with ~30 errors that are almost entirely `compile_failed` /
+"no shippable résumé PDF", rooted in `failure fetching "fontspec.sty" from network (2/3)` — `tectonic`
+pulls LaTeX packages on demand, so one runner-side network hiccup reds the whole PDF/tailor/projection
+surface at once. Checked against a control rather than assumed: **`main` fails the same way in 4 of its
+last 12 runs**, including run `32266925522` (sha `f99dd5f`) failing the identical
+`test_two_writer_concurrency` plus 5 fontspec/XeTeX hits, and `32229073099` failing the same
+"nothing was tailored, so this proves nothing" family — with two failures on one unchanged sha `2e2a2de`.
+
+**Unresolved at session end: the `3.11` job hung on BOTH runs** — mine (`3b1a792`) and the control
+(`ecc0454`) — ~90 minutes with no completion, while 3.12 and 3.13 finished on both. Equal on both sides,
+so it says nothing about this branch, but it is not a pass and is not recorded as one. Worth a look before
+the next merge.

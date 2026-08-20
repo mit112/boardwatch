@@ -11,6 +11,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime
+from typing import cast
 
 from sqlalchemy import Connection, select
 
@@ -20,7 +21,9 @@ from boardwatch.eligibility.preflight import current_identity
 from boardwatch.eligibility.read import current_verdicts
 from boardwatch.extract.taxonomy import load_taxonomy
 from boardwatch.rank.heuristic import ProfileView, passes_hard_filters, score_posting
+from boardwatch.rank.leveling import load_leveling, resolve_schemes
 from boardwatch.rank.role_gate import role_verdict
+from boardwatch.rank.seniority_gate import TargetBand, seniority_verdict
 from boardwatch.store.queries import current_posting_versions
 from boardwatch.store.tables import companies, extractions, posting_events, postings
 
@@ -76,6 +79,7 @@ def select_new_matches(
     *,
     now: datetime | None = None,
     include_non_swe: bool = False,
+    include_over_seniority: bool = False,
 ) -> NotifyResult:
     now = now or utcnow()
     new_ids, max_event_id = _new_ids_and_max(conn, since_event_id)
@@ -91,6 +95,8 @@ def select_new_matches(
             postings.c.locations_json,
             postings.c.remote_policy,
             companies.c.name.label("company_name"),
+            companies.c.provider,
+            companies.c.slug,
             extractions.c.json.label("extraction_json"),
         )
         .join(companies, postings.c.company_id == companies.c.id)
@@ -114,6 +120,12 @@ def select_new_matches(
         profile_hash,
         rules_hash,
     )
+    # Loaded ONCE: `load_leveling` reads (and may parse an override) on every call, so a
+    # per-row load would put a YAML parse inside the notify loop.
+    leveling = load_leveling(settings.config_dir)
+    schemes, _binding_warning = resolve_schemes(leveling, settings.config_dir)
+    tier = leveling.fields["software"]
+    target_band = cast(TargetBand, profile.target_seniority_band)
     items: list[NotifyItem] = []
     for row in rows:
         if not passes_hard_filters(
@@ -126,6 +138,13 @@ def select_new_matches(
         # Same default as `top`: a non-software title is not a "new match" worth a push.
         # Suppressed rather than dropped — `top --include-non-swe` still shows it.
         if not include_non_swe and role_verdict(row.title)[0] == "not_swe":
+            continue
+        # Same default as `top`: a title above the operator's target band is not a "new match"
+        # worth a push. `uncertain` is pushed — an abstain is never a suppression.
+        band, _ = seniority_verdict(
+            row.title, schemes.get((row.provider, row.slug)), target_band, tier, leveling,
+        )
+        if not include_over_seniority and band == "above_band":
             continue
         skills = set((row.extraction_json or {}).get("skills", []))
         score = score_posting(

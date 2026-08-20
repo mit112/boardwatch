@@ -35,12 +35,19 @@ def _shortlist_line(summary: PipelineSummary) -> str:
     dead = (
         f", {len(summary.dead_lead_ids)} withheld as gone" if summary.dead_lead_ids else ""
     )
+    # D-246. `over seniority` is a drop and belongs in the parenthesised accounting; `uncertain
+    # band` is NOT — it counts postings inside `shortlisted` — so it is appended after the
+    # accounting rather than inside it, where summing the buckets would over-count. It is named
+    # at all because nothing else puts the gate's abstain rate in front of the operator daily,
+    # and a gate that cannot fire has to be visible as a number.
+    uncertain = f" · {counts.uncertain_band} uncertain band" if counts.uncertain_band else ""
     return (
         f"{counts.shortlisted} shortlisted of {counts.considered} considered "
         f"({counts.hidden_ineligible} ineligible, {counts.hidden_non_swe} non-SWE, "
+        f"{counts.hidden_over_seniority} over seniority, "
         f"{counts.hidden_duplicate} duplicate, {counts.hidden_applied} already applied, "
         f"{counts.hidden_handled} already handled, "
-        f"{counts.hidden_below_cutoff} below cutoff{dead})"
+        f"{counts.hidden_below_cutoff} below cutoff{dead}){uncertain}"
     )
 
 

@@ -216,6 +216,12 @@ _DENY_BUSINESS_SOFT: tuple[str, ...] = tuple([
     # exactly the pattern that would veto "Engineer, Retail Systems".
     _NOENG + r"\bsales\b",
     r"\bgtm\b|\bgo.?to.?market\b|\bpre.?sales\b|\bconsult(ing|ancy)\b",
+    # Bare `coordinator`, anchor-guarded (D-245). "Disaster Response Coordinator" reached the
+    # shortlist on run 61 because it verdicts `uncertain` and the ranker passes `uncertain`
+    # through. Measured over 26,997 open postings: 135 flip to not_swe, all non-software, and
+    # 0 `swe`-classified titles contain the word, so this cannot bury a software job. The
+    # anchored guard additionally spares 4 administrative roles at engineering schools.
+    _NOENG + r"\bcoordinator\b",
 ])
 
 # Positive SWE signal on the title. Bare `reliability` is deliberately absent: it made a

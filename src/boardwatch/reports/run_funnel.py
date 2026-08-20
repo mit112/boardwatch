@@ -233,6 +233,20 @@ class ShortlistCounts:
     # `hidden_handled` it is released by nothing the program does on its own — no TTL, no policy
     # stamp — only by `track status <id> withdrawn`.
     hidden_applied: int = 0
+    # D-246: the title names a seniority band above the operator's `target_seniority_band`. A
+    # genuine DROP and part of the identity above. Drained by `top --include-over-seniority`.
+    hidden_over_seniority: int = 0
+    # D-246, the seniority gate's abstain rate: a level token it could not resolve, because no
+    # scheme is bound for the company or the rung falls outside the bound one. REPORTED, NEVER
+    # DROPPED, and deliberately NOT part of the identity above — these postings are inside
+    # `shortlisted` already, so a `Drop` for them would subtract them twice and the stage would
+    # stop reconciling. The keystone invariant wants the abstain rate as a number, not silence.
+    uncertain_band: int = 0
+    # D-246: titles carrying SOME seniority signal while the gate was inert
+    # (`target_seniority_band: any`). The gate short-circuits before parsing there, so the two
+    # counters above are structurally 0 and 'inert' is otherwise indistinguishable from
+    # 'nothing to gate'. Reported, not dropped, for the same reason as `uncertain_band`.
+    band_tokens_seen_while_inert: int = 0
 
 
 @dataclass(frozen=True)
@@ -733,6 +747,14 @@ def build_run_funnel(
                 ),
                 Drop(reason="hidden_non_swe", count=shortlist.hidden_non_swe,
                      note="title role gate"),
+                Drop(
+                    reason="hidden_over_seniority",
+                    count=shortlist.hidden_over_seniority,
+                    note=(
+                        "title seniority above target band; "
+                        "drain with `top --include-over-seniority`"
+                    ),
+                ),
                 Drop(reason="hidden_ineligible", count=shortlist.hidden_ineligible),
                 Drop(
                     reason="hidden_duplicate",
@@ -771,7 +793,16 @@ def build_run_funnel(
             note=(
                 "The ranker's whole considered population. NOT a continuation of `verdict` — "
                 "the two count different populations, so the numbers here will not match it. "
-                "Every exit is counted where the posting actually leaves."
+                "Every exit is counted where the posting actually leaves. "
+                "REPORTED HERE AND NOT AS DROPS, because both count postings that PASSED and "
+                "are therefore already inside `advanced` — a `Drop` would subtract them a "
+                "second time and this stage would stop reconciling: "
+                f"`uncertain_band`: {shortlist.uncertain_band} (the seniority gate met a level "
+                "token it could not resolve — no scheme bound for the company, or a rung "
+                "outside the bound one — and passed the posting through); "
+                f"`band_tokens_seen_while_inert`: "
+                f"{shortlist.band_tokens_seen_while_inert} (titles carrying a seniority signal "
+                "while the gate was off, i.e. `target_seniority_band: any`)."
             ),
         )
 

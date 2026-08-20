@@ -16,7 +16,7 @@
 
 **The headline number: 0.** Zero job applications have ever been sent from boardwatch (`applications` has 0
 rows) — the machine produces leads, it never applies (out of scope). Against that: 3 published releases
-(none since **0.3.0**), ~53k lines of source, **6,650 tests collected**, 70 leaf CLI commands, 6 ATS
+(none since **0.3.0**), ~53k lines of source, **6,789 tests collected**, 70 leaf CLI commands, 6 ATS
 providers, an ~800 MB store. **The build is complete and the daily driver is now LIVE (D-244):** on
 2026-08-19 the first full unattended run (run 61) completed clean end-to-end — 8 leads, 8 one-page PDFs — via
 a launchd agent. Working tree clean.
@@ -28,11 +28,8 @@ last P3 build item (a same-OS two-writer test + a runtime refusal of WAL-unsafe 
 CI-untestable cross-OS case) — is DONE (D-241);** Gate P3 now needs only its operational half: 7 consecutive
 clean unattended runs. Gate P4 is Mit's blind craft review, barred by the ordering rule until P3's gate is
 met. Gate P6 needs a real 7-day dedup window plus liveness-probed leads. The 14-day acceptance clock starts
-after P6; **P7 breadth stays last.** **The window is now OPEN (D-244):** on 2026-08-19 Mit approved the
-projection (TTY), a launchd agent (`com.boardwatch.run`, 8:00 AM daily, `run --project`) was installed with
-an explicit homebrew PATH — without which the unattended render silently dies (D-204) — and run 61 completed
-clean. **The remaining P3 work is now accrual, not code:** 7 consecutive clean runs. **Mit ruled run 61 is
-day 1 (D-245) — 6 to go.** The next arrives with tomorrow's 8:00 AM scheduled fire.
+after P6; **P7 breadth stays last.** **The window is now OPEN (D-244)** — the launchd agent is installed and
+run 61 was clean; **the remaining P3 work is accrual, not code.** Details in the blockers table below.
 
 **The bundle → résumé + projection + render tracks are COMPLETE and merged; nothing is queued there.**
 Gate B is **MET** (0 blockers, D-201); all 11 entities' bullets are refined and within the 220-char ceiling
@@ -147,13 +144,22 @@ live-API comparison. **Unfixed:** `scratchpad/gen_corpus.py` was never committed
 2. **Should any family other than `work_auth` default to `blocker` severity** (e.g. `clearance`)? (D-035.)
 3. **The projection spec's six open questions** (§12) — soonest: whether `tailor run` should validate the
    projection manifest, and whether persona's `entries` list survives stage 2.
-4. **How to close the two relevance leaks (D-245)?** Run 61 shortlisted a non-SWE "Coordinator" (role gate
-   returns `uncertain`, which the ranker passes through) and a senior "Level 5" (only `exclude_titles`
-   substrings gate seniority, and they lack numeric leveling). Fix fork: per-user `exclude_titles` data now
-   vs a proper seniority gate (code mechanism + versioned data). Not blocking P3. Mit's call.
-*(Recently resolved: the daily pipeline gets projection — yes, opt-in, D-225; P5b's criteria — NAMED, D-229;
-the four backfilled `runs` rows close `ok` — D-230; a bullet-less entry — declared, D-226; Windows —
-best-effort, D-212.)*
+4. **Which seniority band does Mit target, and which companies get a scheme bound?** The gate is
+   built (D-246) but ships **inert** — `target_seniority_band` defaults to `any` and short-circuits
+   before any title is read, so ranking is unchanged. Two TTY acts are Mit's: `profile edit` → `entry`,
+   and a `{config_dir}/leveling-bindings.yaml` entry for any company whose levels should resolve.
+   **The `policy_version` re-key (11 ledger rows, `ledger reopen --stale`) happens on the FIRST RUN
+   AFTER UPGRADING, not when the band is set** — the field enters `profile_row_hash` at its default.
+*(Recently resolved: **D-245's relevance leaks — ONE CLOSED, ONE MADE VISIBLE (D-246)**, option (b); **that branch's four review findings — all CLOSED, gate green (D-247)**.
+The Airbnb coordinator leak is closed by a guarded bare-`coordinator` deny in `role_gate` (135 postings
+flip, 0 `swe` touched). **The Snap `Level 5` leak is NOT closed** — with no bindings file every level
+token abstains, so it is still shortlisted, now carrying its reason; closing it takes one binding line,
+deliberately, because boardwatch ships no verifiable claim about any company's ladder. The mechanism is a
+rank-time `seniority_gate` over a versioned, company-free `leveling.yaml`, binding in user config (the
+registry is a 37-entry `extra="forbid"` seed catalog with no Snap/Twilio/Google). Deferred by design: the
+role gate's fail-open `uncertain` lane, only 1.2% closed. Also:
+projection in the daily pipeline — opt-in, D-225; P5b's criteria — NAMED, D-229; the four backfilled `runs`
+rows close `ok` — D-230; a bullet-less entry — declared, D-226; Windows — best-effort, D-212.)*
 
 ## Windows and the lock reclaim window
 
@@ -192,3 +198,5 @@ record, do not widen the window.**
 | **`add-evidence` takes no bundle lock** | Only `promote`/`rebase`/`approve` take `bundle_lock`; two concurrent captures race on up to 13 files (D-143) | owner-gated |
 | **P2 item 8 — the onboarding gatherer** | What would make the field tier fire for anyone. D-054 forbids us authoring non-tech field content | owner-gated |
 | **`boardwatch top` advances the queue by default** | Records `seen` unless `--no-record`, so exploratory ranking mutates dedup state — relevant to Gate P6's clean 7-day window | P6 |
+| **Seniority gate — GREEN and READY, on `seniority-gate-spec` (PR #99)** | All 8 plan tasks done; D-246 + D-247 recorded. **`make check` passes end to end for the first time** — 6,785 passed + 4 xfailed, 16:43, coverage 95.67%, all five stages. **All four review findings are CLOSED (D-247).** CI on that sha: `generalization`/`gitleaks`/`perf`/**3.13 green**; **3.12 red from a PRE-EXISTING `tectonic` network flake** (same signature on `main`, 4 of 12 runs — not this branch); **3.11 HUNG on both this sha and its base**, unresolved. Two TTY acts remain Mit's — see open question 4. Spec + self-review in `docs/superpowers/specs/2026-08-19-seniority-gate-design.md` | **Mit — review + merge** |
+| **`make check` must be launched DETACHED** | The Bash tool clamps `timeout` to **600,000 ms**, so any gate run over 10 minutes is SIGTERMed mid-suite and reads as `make: *** [test] Error 143` — a tooling kill that looks exactly like a build break. Launch it double-`fork` + `setsid` from Python (macOS ships no `setsid` binary) and poll the log. Cost two full runs on 2026-08-19 | tooling |

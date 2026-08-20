@@ -388,13 +388,21 @@ def test_the_operator_summary_line_names_both_new_buckets(env: Path) -> None:
     from boardwatch.reports.run_funnel import ShortlistCounts  # noqa: PLC0415
 
     summary = PipelineSummary(run_id=1)
-    summary.shortlist = ShortlistCounts(considered=9, shortlisted=1, hidden_applied=3)
+    summary.shortlist = ShortlistCounts(
+        considered=9, shortlisted=1, hidden_applied=3,
+        hidden_over_seniority=4, uncertain_band=2,
+    )
     summary.dead_lead_ids = [7, 8]
 
     line = _shortlist_line(summary)
 
     assert "3 already applied" in line
     assert "2 withheld as gone" in line
+    # D-246. Nothing static catches a miss in this line — no stage identity covers it — so the
+    # seniority drop and the gate's abstain rate are asserted here or nowhere. The abstain is
+    # named even though it is not a drop: the keystone invariant wants it reported every run.
+    assert "4 over seniority" in line
+    assert "2 uncertain band" in line
     assert _shortlist_line(PipelineSummary(run_id=1)) == "ranker did not run"
 
 
