@@ -7,8 +7,12 @@ lesson). The gate keeps `us` and — fail-open, Mit's ruling — `unknown`, and 
 
 The per-segment resolution ORDER is load-bearing:
 
-  ambiguous-region → US-marker → US-state-abbrev → US-state-name →
-  non-US-country → non-US-city → non-US-region → US-ZIP → bare-"US" → US-city → unknown
+  ambiguous-region → US-marker → US-state-abbrev → US-state-name → bare-"US" →
+  non-US-country → non-US-city → non-US-region → US-ZIP → US-city → unknown
+
+Bare "US"/"U.S." is checked BEFORE the non-US tokens so an explicit US signal wins within a
+segment that also names a foreign place ("US, Canada") — the posting is offered in the US.
+US-city stays AFTER them so a foreign city sharing a US name ("Manchester, UK") reads non-US.
 
 US STATE signals (abbrev / full name) are checked BEFORE any non-US token, so a US town that
 shares a foreign name — "Vienna, VA", "Athens, GA", "Lebanon, NH", "Mexico, MO" — is KEPT, not
@@ -87,6 +91,15 @@ def _classify_segment(segment: str) -> LocationClass:
             return "us"
     if _US_STATE_NAME_RE.search(low):
         return "us"
+    # A bare "US"/"U.S." is an EXPLICIT US signal and must win within a segment that also names
+    # a foreign place ("US, Canada", "Remote - US, Canada", "US, EMEA") — the posting is offered
+    # in the US, so it is US-eligible. `_SEGMENT_SPLIT` never separates a comma / "and" / "&", so
+    # such a pair arrives as one segment and the explicit US token would otherwise lose to the
+    # foreign country below. A US CITY name, by contrast, stays AFTER the non-US tokens: a
+    # foreign city sharing a US city's name ("Manchester, UK") must still read non-US, so only
+    # the explicit bare token is promoted here, not the city allowlist.
+    if _US_BARE_RE.search(low):
+        return "us"
     if _NON_US_COUNTRY_RE.search(low) or _NON_US_CITY_RE.search(low):
         return "non_us"
     if _NON_US_REGION_RE.search(low):
@@ -95,7 +108,7 @@ def _classify_segment(segment: str) -> LocationClass:
     # ("Berlin, Germany 10115") reads non-US; a bare US ZIP with no other signal still reads US.
     if _US_ZIP_RE.search(segment):
         return "us"
-    if _US_BARE_RE.search(low) or _US_CITY_RE.search(low):
+    if _US_CITY_RE.search(low):
         return "us"
     return "unknown"
 
