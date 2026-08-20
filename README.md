@@ -527,6 +527,22 @@ What to expect from an unattended run:
   authored résumé; this needs a **current projection approval** (`profile-bundle
   approve-projection`), and without one the run refuses rather than silently falling back.
 
+**Alerting when a run never happens.** launchd, cron, and systemd timers share one blind spot:
+if the machine is off or asleep across the whole scheduled window, the job simply never runs —
+and nothing *on* the machine can notice a run that did not occur. To close that, a successful
+`run` pings a heartbeat URL (a "dead-man's-switch"), read only from the environment:
+
+```bash
+export BOARDWATCH_HEARTBEAT_URL=https://hc-ping.com/<your-check-uuid>
+```
+
+Point it at a free cron-monitor (e.g. healthchecks.io, Cronitor) whose check is set to your
+schedule plus a grace window, and have that service email or message you when a ping does not
+arrive. The ping fires **only on a clean run**, so a run that failed, crashed, or never started
+all leave the monitor silent and it alerts — the failure mode a local check can't see. It is
+presence-gated (unset ⇒ no ping) and, like the webhook URL, the value is a secret read from the
+environment, never `config.toml`; put it in the agent's `EnvironmentVariables` alongside `PATH`.
+
 Everything the `scan` schedule notes — environment variables, running as the same user that ran
 `init`, and running the command once by hand first — applies here too.
 

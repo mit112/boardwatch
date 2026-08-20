@@ -40,6 +40,12 @@ environment:
 One payload works for Slack incoming webhooks, Discord webhooks, and generic/structured
 consumers. Like the LLM API key below, this URL is never stored in `config.toml`.
 
+A second env-only URL is the unattended run's dead-man's-switch: a successful `boardwatch run`
+pings it, so an external monitor can alert when a scheduled run never happens (see "Run the full
+daily pipeline unattended" in the README). Presence-gated, off unless set:
+
+    export BOARDWATCH_HEARTBEAT_URL=https://hc-ping.com/<your-check-uuid>
+
 ## Résumé tailoring
 
 `boardwatch tailor` introduces no new config keys. It follows the same `config_dir` /
