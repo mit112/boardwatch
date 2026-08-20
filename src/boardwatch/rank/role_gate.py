@@ -234,11 +234,16 @@ _DENY_BUSINESS_SOFT: tuple[str, ...] = tuple([
     # 0 `swe`-classified titles contain the word, so this cannot bury a software job. The
     # anchored guard additionally spares 4 administrative roles at engineering schools.
     _NOENG + r"\bcoordinator\b",
-    # Bare `... Manager` / `... Director`, anchor-guarded (owner decision, 2026-08-20:
-    # hard-exclude non-engineering management). `_NOENG` spares every engineering title
-    # (Engineering Manager, Director of Engineering; "Software Development Manager" is
-    # rescued first), and the SOFT lane keeps any signalled software title out of reach.
-    _NOENG + r"\b(manager|director)\b",
+    # Bare `... Manager` / `... Director` / `... Lead`, anchor-guarded (owner decision,
+    # 2026-08-20: hard-exclude non-engineering management). `_NOENG` spares every engineering
+    # title (Engineering Manager, Director of Engineering, Lead Engineer; "Software Development
+    # Manager" is rescued first), and the SOFT lane keeps any signalled software title out of
+    # reach. `lead` added after run 65: removing bare `Lead` from `exclude_titles` (it
+    # over-vetoed product nouns) left business/ops "Lead" titles — Technical Account Management,
+    # Programs Operations, Insights — with no gate, and they crowded real software roles out
+    # under the top-N cap. It is the exact mirror of the manager/director removal, which was
+    # compensated here in the same session.
+    _NOENG + r"\b(manager|director|lead)\b",
     # D-252 consistency gaps: the gate already denied "Solutions ENGINEER", "field support
     # engineer", and bare sales, but not these pre-sales / support / non-sales-BD twins. All
     # are in the SOFT lane, so a real "Software Architect" (rescued) or a signalled IC title is
