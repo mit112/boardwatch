@@ -291,3 +291,37 @@ class TestBusinessOpsDeny:
     ])
     def test_real_software_titles_are_not_vetoed(self, title: str) -> None:
         assert role_verdict(title)[0] != "not_swe"
+
+
+class TestBareLeadDeny:
+    """A bare `... Lead` / `Lead, ...` with no engineering noun is not a software role.
+
+    Run 65 regression (2026-08-20): the precision pass removed bare `Lead` from the operator's
+    `exclude_titles` (it over-vetoed product nouns) and compensated the parallel `Manager` /
+    `Director` removal with the `_NOENG` management deny above -- but `Lead` was left with no
+    gate, so business / ops "Lead" titles (Technical Account Management, Programs Operations,
+    Insights) passed both stages and crowded real software roles out under the top-N cap. `lead`
+    is the exact mirror of the manager/director deny: the `_NOENG` anchor spares any title
+    carrying an engineering noun, and the SOFT lane keeps a rescued or signalled software title
+    out of reach.
+    """
+
+    @pytest.mark.parametrize("title", [
+        "Lead, Technical Account Management (SMB Merchants)",  # run-65 leak
+        "Programs Operations Lead, Growth Levers",             # run-65 leak
+        "Insights Lead, Instacart Business",                   # run-65 leak
+        "Product Lead",
+    ])
+    def test_non_engineering_lead_titles_are_vetoed(self, title: str) -> None:
+        verdict, reason = role_verdict(title)
+        assert verdict == "not_swe"
+        assert "lead" in reason.lower()
+
+    @pytest.mark.parametrize("title", [
+        "Lead Software Engineer",                     # rescued software-first
+        "Lead Engineer",                              # carries an engineering noun -> spared
+        "Engineering Lead",                           # carries an engineering noun -> spared
+        "Software Engineer, Lead Scoring Platform",   # product noun 'Lead' -> rescued
+    ])
+    def test_engineering_lead_titles_are_never_vetoed(self, title: str) -> None:
+        assert role_verdict(title)[0] != "not_swe"
