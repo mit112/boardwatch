@@ -240,11 +240,17 @@ class TestHardFilters:
         assert passes_hard_filters("Staff Software Engineer", ["NY"], "unknown", profile, "soft") is False
         assert passes_hard_filters("Senior Software Engineer", ["NY"], "unknown", profile, "soft") is True
 
-    def test_hard_location_mode_drops_mismatches(self) -> None:
+    def test_hard_location_mode_drops_non_us_keeps_us_and_unknown(self) -> None:
+        # D-251: hard mode is a US-only gate. A confirmed non-US posting drops; US is kept even
+        # when it matches no profile location; an unclassifiable location is kept (fail-open,
+        # Mit's ruling — never silently delete a real US role behind a weak location string).
         profile = _profile()
-        assert passes_hard_filters("Backend Engineer", ["San Francisco"], "unknown", profile, "hard") is False
-        assert passes_hard_filters("Backend Engineer", ["San Francisco"], "unknown", profile, "soft") is True
+        assert passes_hard_filters("Backend Engineer", ["London, United Kingdom"], "unknown", profile, "hard") is False
+        assert passes_hard_filters("Backend Engineer", ["San Francisco"], "unknown", profile, "hard") is True
         assert passes_hard_filters("Backend Engineer", ["New York, NY"], "unknown", profile, "hard") is True
+        assert passes_hard_filters("Backend Engineer", ["Americas"], "unknown", profile, "hard") is True
+        # soft mode never vetoes on location, non-US included
+        assert passes_hard_filters("Backend Engineer", ["London, United Kingdom"], "unknown", profile, "soft") is True
 
     def test_hard_mode_with_remote_only(self) -> None:
         profile = _profile(remote_only=True)

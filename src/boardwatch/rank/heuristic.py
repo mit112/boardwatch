@@ -29,6 +29,7 @@ from rapidfuzz import fuzz
 from rapidfuzz.utils import default_process
 
 from boardwatch.core.settings import RankWeights
+from boardwatch.rank.location_gate import classify_location
 from boardwatch.rank.seniority_gate import mask_non_seniority_phrases
 
 
@@ -190,8 +191,15 @@ def passes_hard_filters(
         if _exclusion_pattern(excluded).search(masked_title):
             return False
     if location_filter_mode == "hard":
-        fit = location_fit(posting_locations, remote_policy, profile)
-        if fit == 0.0:
+        # A remote-only profile keeps its non-remote veto (unchanged).
+        if profile.remote_only and remote_policy != "remote":
+            return False
+        # US-only hard gate (D-251, Mit's visa requirement). `classify_location` is a positive
+        # US allowlist, not a non-US denylist: it drops only a CONFIRMED non-US posting and
+        # keeps both US and anything it cannot resolve — fail-open, so a real US role whose
+        # location string is a bare "Remote" or an office nickname is never silently deleted
+        # (Mit's ruling). `location_fit` above stays the SOFT scorer; this is the hard veto.
+        if classify_location(posting_locations) == "non_us":
             return False
     return True
 
