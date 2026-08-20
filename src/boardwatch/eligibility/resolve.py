@@ -159,6 +159,17 @@ def _resolve_work_auth(detection: Detection, facts: Facts, family: FamilySpec) -
         if scoped_to is not None and scoped_to != juris:
             return Resolution(UNKNOWN, f"requirement names {scoped_to}, fact states {juris}")
         if pattern.implies == "sponsorship_available":
+            # P2a: the explicit bit is authoritative here too, mirroring the unavailable
+            # branch below. Without it, an ead_or_similar holder who declares a need was
+            # forced to UNKNOWN on a posting that OFFERS sponsorship -- the one case this
+            # rule exists to CLEAR. Bit absent falls back to the status inference unchanged.
+            if wa.needs_sponsorship is not None:
+                bit_support = _fact_support(
+                    "work_authorization.needs_sponsorship", wa.needs_sponsorship
+                )
+                if wa.needs_sponsorship:
+                    return Resolution(MET, "sponsorship is offered", bit_support)
+                return Resolution(UNKNOWN, "nothing to decide: no sponsorship needed")
             if status == "needs_sponsorship":
                 return Resolution(MET, "sponsorship is offered", support)
             return Resolution(UNKNOWN, "nothing to decide: no sponsorship needed")
@@ -377,6 +388,12 @@ def _resolve_degree(detection: Detection, facts: Facts, family: FamilySpec) -> R
     if bar is None:
         if rank == 0:
             return Resolution(UNMET, "no degree completed", support)
+        if pattern.implies == "degree_required":
+            # A degree is REQUIRED with no level named (any_degree_required): any completed
+            # degree satisfies it. It is the only `degree_required` pattern that reaches an
+            # unleveled bar, so the MET line below (which needs a numeric bar) never fires
+            # for it -- without this it could never resolve MET for a degree-holder.
+            return Resolution(MET, "holds a degree; no level required", support)
         return Resolution(UNKNOWN, "requirement names no degree level")
     if rank >= bar:
         return Resolution(MET, f"rank {rank} >= {bar}", support)

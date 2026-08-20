@@ -204,6 +204,44 @@ def test_needs_sponsorship_unset_falls_back_to_todays_status_inference(
     assert _one(catalog, body, facts, "no_sponsorship_offered") == expected
 
 
+# ---- needs_sponsorship bit on the sponsorship-OFFERED branch: it must read the bit the
+# ---- same way its unavailable twin does, or the one rule that exists to CLEAR a
+# ---- sponsorship-needing candidate on a sponsoring posting can never fire.
+
+def test_sponsorship_offer_clears_an_ead_holder_who_declares_a_need(catalog) -> None:
+    """An ead_or_similar holder who declares a sponsorship need is CLEARED by a posting that
+    offers sponsorship -- previously forced to `unknown` because the branch read only status."""
+    body = "Visa sponsorship is available."
+    facts = Facts(work_authorization=WorkAuthFact(
+        status="ead_or_similar", jurisdiction="us", needs_sponsorship=True
+    ))
+    assert _one(catalog, body, facts, "sponsorship_available") == "met"
+
+
+def test_sponsorship_offer_is_nothing_to_decide_for_someone_who_needs_none(catalog) -> None:
+    body = "Visa sponsorship is available."
+    facts = Facts(work_authorization=WorkAuthFact(
+        status="ead_or_similar", jurisdiction="us", needs_sponsorship=False
+    ))
+    assert _one(catalog, body, facts, "sponsorship_available") == "unknown"
+
+
+@pytest.mark.parametrize(
+    ("status", "expected"),
+    [("citizen", "unknown"), ("permanent_resident", "unknown"),
+     ("ead_or_similar", "unknown"), ("needs_sponsorship", "met"),
+     ("prefer_not_to_say", "unknown")],
+)
+def test_sponsorship_offer_bit_unset_falls_back_to_status_inference(
+    catalog, status: str, expected: str
+) -> None:
+    """Bit absent (None) must be byte-identical to the status-only behaviour before the bit
+    was read on this branch."""
+    body = "Visa sponsorship is available."
+    facts = Facts(work_authorization=WorkAuthFact(status=status, jurisdiction="us"))
+    assert _one(catalog, body, facts, "sponsorship_available") == expected
+
+
 def test_needs_sponsorship_false_does_not_satisfy_a_citizenship_only_restriction(catalog) -> None:
     """CRITICAL SAFETY (facts.py:3-6): an EAD holder who needs no sponsorship is still not a
     citizen. The bit must only ever influence the sponsorship branch, never citizenship."""
@@ -396,8 +434,10 @@ def test_a_field_of_study_constraint_blocks_met_but_keeps_unmet(catalog) -> None
 def test_an_unleveled_requirement_is_unmet_only_with_no_degree(catalog) -> None:
     assert _one(catalog, "A degree is required.", Facts(highest_degree="none"),
                 "any_degree_required") == "unmet"
+    # A degree is REQUIRED with no level named: any completed degree satisfies it. This must
+    # be `met`, not `unknown` -- the unleveled bar previously had no MET path at all.
     assert _one(catalog, "A degree is required.", Facts(highest_degree="bachelor"),
-                "any_degree_required") == "unknown"
+                "any_degree_required") == "met"
 
 
 # ---- support and rationale
