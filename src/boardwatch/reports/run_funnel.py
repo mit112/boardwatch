@@ -862,9 +862,12 @@ def build_run_funnel(
             entered=None,
             advanced=None,
             note=(
-                "NOT INSTRUMENTED. jobs and postings are 1:1, so grouping has never run and "
-                "duplicate leakage is structurally unmeasurable. Owned by P6 — reported as "
-                "unmeasured rather than as zero duplicates, which is the opposite claim."
+                "NOT INSTRUMENTED. Grouping HAS run — this note asserted the opposite until "
+                "2026-08-19, when the store contradicted it (89 grouping events, 70 jobs "
+                "carrying more than one posting), so it no longer claims 1:1. What is still "
+                "true is that this stage counts nothing: duplicate leakage over a window is "
+                "owned by P6 and unmeasured. Reported as unmeasured rather than as zero "
+                "duplicates, which is the opposite claim."
             ),
         ),
         Stage(
