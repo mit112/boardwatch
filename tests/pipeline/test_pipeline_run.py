@@ -808,3 +808,44 @@ def test_a_normal_run_that_produced_leads_stays_non_fatal(env: Path, tmp_path: P
 
     assert summary.tailored, "the fixture produced no lead, so this proves nothing"
     assert summary.fatal is None, summary.fatal
+
+
+def test_a_successful_run_pings_the_heartbeat(
+    env: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A clean run fires the dead-man's-switch exactly once. The whole design rests on a
+    successful run being the ONLY thing that pings, so that a missed run produces silence."""
+    _ready(env)
+
+    import boardwatch.pipeline.runner as runner_mod
+
+    pings: list[int] = []
+    monkeypatch.setattr(runner_mod, "send_heartbeat", lambda: pings.append(1), raising=False)
+
+    summary = _pipeline(env, tmp_path / "apps")
+
+    assert summary.fatal is None, "guard: this must be the success path"
+    assert summary.tailored, "guard: the fixture produced no lead, so success proves nothing"
+    assert pings == [1], "a clean run did not ping the heartbeat exactly once"
+
+
+def test_a_fatal_run_does_not_ping_the_heartbeat(
+    env: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The point of a dead-man's-switch: a failed run must NOT ping, so the monitor still
+    goes silent and alerts. Every lead failing to tailor is fatal (see the sibling test)."""
+    _ready(env)
+
+    import boardwatch.pipeline.runner as runner_mod
+
+    def boom(*_a: object, **_k: object) -> None:
+        raise RuntimeError("resume.yaml is missing")
+
+    pings: list[int] = []
+    monkeypatch.setattr(runner_mod, "run_tailor", boom)
+    monkeypatch.setattr(runner_mod, "send_heartbeat", lambda: pings.append(1), raising=False)
+
+    summary = _pipeline(env, tmp_path / "apps")
+
+    assert summary.fatal is not None, "guard: this must be the fatal path"
+    assert pings == [], "a fatal run pinged the heartbeat — the monitor would never alert"

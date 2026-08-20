@@ -40,6 +40,7 @@ from boardwatch.eligibility.audit import AuditView, load_audit
 from boardwatch.eligibility.catalog import load_rules
 from boardwatch.eligibility.engine import ENGINE_KIND, engine_version
 from boardwatch.eligibility.preflight import current_identity
+from boardwatch.notify.heartbeat import send_heartbeat
 from boardwatch.pipeline.freshness import folders_reconcile
 from boardwatch.pipeline.funnel_writer import collect_run_funnel
 from boardwatch.pipeline.liveness import LivenessProber, check_leads
@@ -1089,6 +1090,17 @@ def run_pipeline(
             summary.morning = _emit_morning(engine, settings, summary, day_dir)
         except Exception as exc:  # noqa: BLE001 - never mask the run's own outcome
             console.print(f"  ! morning artifact not written: {exc}", markup=False)
+        # Dead-man's-switch: ping the monitor ONLY on a clean outcome, so a failed or
+        # crashed run (fatal set above, or set-before-raise on the crash path) stays silent
+        # and the external monitor still alerts. Gated on `fatal`, not on reaching a return —
+        # the late guards fall through here with `fatal` set. Swallowed like the emits above:
+        # telemetry must never be the thing that fails the run (D-076). No-op unless the
+        # operator set BOARDWATCH_HEARTBEAT_URL, so it is off by default for every other user.
+        if summary.fatal is None:
+            try:
+                send_heartbeat()
+            except Exception as exc:  # noqa: BLE001 - never mask the run's own outcome
+                console.print(f"  ! heartbeat not sent: {exc}", markup=False)
 
 
 def _emit_funnel(
