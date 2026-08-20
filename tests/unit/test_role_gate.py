@@ -260,3 +260,34 @@ class TestDataRolesOutOfScope:
     ])
     def test_data_engineering_titles_are_never_vetoed(self, title: str) -> None:
         assert role_verdict(title)[0] != "not_swe"
+
+
+class TestBusinessOpsDeny:
+    """Non-software business / ops / admin / pricing surfaces that leaked into run 63's ranked
+    pool (owner decision, 2026-08-20). All SOFT-lane, so a rescued or signalled software title
+    is never reached; the engineer-guard spares a real IC variant like 'Business Operations
+    Engineer' where one plausibly exists.
+    """
+
+    @pytest.mark.parametrize("title", [
+        "Strategy & Ops, Enterprise",
+        "Strategy and Operations",
+        "Business Operations Associate",
+        "Business Partner Analyst",
+        "Stock Plan Administrator",
+        "Trucking Pricing Associate",
+        "Pricing Analyst",
+    ])
+    def test_business_ops_titles_are_vetoed(self, title: str) -> None:
+        verdict, reason = role_verdict(title)
+        assert verdict == "not_swe"
+        assert reason  # never silent
+
+    @pytest.mark.parametrize("title", [
+        "Software Engineer, Pricing Platform",   # rescued software-first
+        "Business Operations Engineer",          # engineer-guarded -> not vetoed
+        "Platform Engineer, Business Systems",   # signalled software
+        "Software Engineer, Strategy Tools",     # rescued
+    ])
+    def test_real_software_titles_are_not_vetoed(self, title: str) -> None:
+        assert role_verdict(title)[0] != "not_swe"

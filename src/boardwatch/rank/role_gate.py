@@ -189,6 +189,14 @@ _DENY_BUSINESS_SOFT: tuple[str, ...] = tuple([
     # literal scientist/analyst token cannot match a "Data Engineer" / "Analytics Engineer"
     # title, and the SOFT lane means a signalled/rescued software title never reaches it.
     r"\bdata\s+(scientist|analyst)\b",
+    # Run-63 ranked-pool leaks (owner decision, 2026-08-20): non-software business / ops /
+    # admin / pricing surfaces that reached the visible top with no software signal. SOFT-lane,
+    # so a rescued/signalled software title never reaches them; the engineer-guard on the
+    # business pair spares a real IC "Business Operations Engineer".
+    r"\bstrategy\s*(?:&|and|/)\s*(?:ops|operations)\b",
+    r"\bbusiness\s+(?:operations|partner)\b(?!.*\bengineer\b)",
+    r"\bstock\s+plan\b",
+    r"\bpricing\s+(?:analyst|associate|manager|strategist|lead|specialist)\b",
     # Bare `logistics` narrowed ("Engineer, Logistics Platform"); bare `planner` narrowed
     # (0 marginal; "Engineer, Planner Platform"). The noise rows survive both.
     r"\bsupply\s+chain\b|\bprocurement\b|\bbuyer\b|"
