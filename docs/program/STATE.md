@@ -17,9 +17,22 @@
 **The headline number: 0.** Zero job applications have ever been sent from boardwatch (`applications` has 0
 rows) — the machine produces leads, it never applies (out of scope). Against that: 3 published releases
 (none since **0.3.0**), ~53k lines of source, **6,789 tests collected**, 70 leaf CLI commands, 6 ATS
-providers, an ~800 MB store. **The build is complete and the daily driver is now LIVE (D-244):** on
-2026-08-19 the first full unattended run (run 61) completed clean end-to-end — 8 leads, 8 one-page PDFs — via
-a launchd agent. Working tree clean.
+providers, a **936 MB** store. The build is complete and the launchd agent is installed, but **the 08:00
+schedule has never fired** (D-248). Run 61 completed clean end-to-end — 8 leads, 8 one-page PDFs — and it was
+a `launchctl kickstart` issued 70 seconds after the plist was written, 40 minutes after the 08:00 window had
+already passed. `launchctl print` reports `runs = 1`, and the calendar event channel reads `active = 0`.
+**No scheduled run has ever executed.**
+
+**Eligibility now DECIDES, after 0 ineligible verdicts in 120,330 evaluations (D-249).** The cause was one
+unset field, not a design fault: `work_auth` is the only `blocker` family, and Mit's
+`work_authorization.needs_sponsorship` was absent, so `resolve.py:188` returned UNKNOWN for every
+`ead_or_similar` holder — `no_sponsorship_offered` fired 1,696 times and abstained 1,696 times. Setting the
+field turned 1,650 of the 1,739 `uncertain` into `ineligible`; `eligible` did not move (25,258 both sides).
+**All 1,692 unmet rows carry a JD span and every quoted span contains "sponsor" — 0 violations.** Net effect
+on the ranked pool is **401**, not 1,650: the other 1,249 were already dropped by the title/role gates. The
+keystone invariant worked — it showed this as a 100% abstain rate in every funnel artifact. Nobody read it.
+**17 of 44 rules are still at 100% abstain**, incl. `experience_years:scoped_years_minimum` on all 16,007
+observations.
 
 **The roadmap is UNFROZEN (D-240); its remaining gates are OPERATIONAL, not build.** P0/P1/P2/P5 gates are
 **MET**. On 2026-08-18 Mit lifted D-155's freeze on P3, P6 and the 14-day clock. The builds for P3/P4/P6 are
@@ -28,8 +41,9 @@ last P3 build item (a same-OS two-writer test + a runtime refusal of WAL-unsafe 
 CI-untestable cross-OS case) — is DONE (D-241);** Gate P3 now needs only its operational half: 7 consecutive
 clean unattended runs. Gate P4 is Mit's blind craft review, barred by the ordering rule until P3's gate is
 met. Gate P6 needs a real 7-day dedup window plus liveness-probed leads. The 14-day acceptance clock starts
-after P6; **P7 breadth stays last.** **The window is now OPEN (D-244)** — the launchd agent is installed and
-run 61 was clean; **the remaining P3 work is accrual, not code.** Details in the blockers table below.
+after P6; **P7 breadth stays last.** The agent is installed and run 61 was clean, but the schedule has never
+fired (D-248), so **the remaining P3 work is not accrual yet — it is proving the trigger works.** Details in
+the blockers table below.
 
 **The bundle → résumé + projection + render tracks are COMPLETE and merged; nothing is queued there.**
 Gate B is **MET** (0 blockers, D-201); all 11 entities' bullets are refined and within the 220-char ceiling
@@ -118,7 +132,7 @@ live-API comparison. **Unfixed:** `scratchpad/gen_corpus.py` was never committed
 | P0 Instrumentation | **COMPLETE** — all nine items | **MET** (D-030) |
 | P1 Résumé artifact gate | **COMPLETE** — P1a + P1b | **MET** (D-032, D-033) |
 | P2 Profile + keystone | items 1–7 shipped; item 4 inert for bundled `[software]`; **item 8 NOT STARTED** | **MET AS RECONCILED** (D-075) — evidence is fixtures, not a live run |
-| P3 Unattended one command | **COMPLETE + LIVE** — launchd agent installed, run 61 clean (D-244) | **NOT MET — 1 of 7** — run 61 ruled day 1 (D-245), 6 to go; **unfrozen** (D-240) |
+| P3 Unattended one command | **COMPLETE, INSTALLED, NEVER SCHEDULED** — agent installed, run 61 clean, but the 08:00 trigger has fired 0 times (D-248) | **NOT MET — 1 of 7 by Mit's ruling (D-245), 0 of 7 unattended.** Run 61 was a kickstart; **unfrozen** (D-240) |
 | P4 Craft gate | **COMPLETE** — items 1–7 | **NOT MET** — the blind craft review is the owner's, never run |
 | P5 Eligibility decides | **COMPLETE** | **MET** — INELIGIBLE precision 16/16, 0 span violations |
 | P6 Liveness + dedup | **BUILD COMPLETE** — three slices (D-110, D-111, D-113) | **NOT MET — 2 of 4**, below; **unfrozen** (D-240) — needs real runs |
@@ -150,16 +164,16 @@ live-API comparison. **Unfixed:** `scratchpad/gen_corpus.py` was never committed
    and a `{config_dir}/leveling-bindings.yaml` entry for any company whose levels should resolve.
    **The `policy_version` re-key (11 ledger rows, `ledger reopen --stale`) happens on the FIRST RUN
    AFTER UPGRADING, not when the band is set** — the field enters `profile_row_hash` at its default.
-*(Recently resolved: **D-245's relevance leaks — ONE CLOSED, ONE MADE VISIBLE (D-246)**, option (b); **that branch's four review findings — all CLOSED, gate green (D-247)**.
-The Airbnb coordinator leak is closed by a guarded bare-`coordinator` deny in `role_gate` (135 postings
-flip, 0 `swe` touched). **The Snap `Level 5` leak is NOT closed** — with no bindings file every level
-token abstains, so it is still shortlisted, now carrying its reason; closing it takes one binding line,
-deliberately, because boardwatch ships no verifiable claim about any company's ladder. The mechanism is a
-rank-time `seniority_gate` over a versioned, company-free `leveling.yaml`, binding in user config (the
-registry is a 37-entry `extra="forbid"` seed catalog with no Snap/Twilio/Google). Deferred by design: the
-role gate's fail-open `uncertain` lane, only 1.2% closed. Also:
-projection in the daily pipeline — opt-in, D-225; P5b's criteria — NAMED, D-229; the four backfilled `runs`
-rows close `ok` — D-230; a bullet-less entry — declared, D-226; Windows — best-effort, D-212.)*
+The Airbnb coordinator leak is closed on `main` (bare-`coordinator` deny; **101** postings flip in the
+funnel, not the 135 the commit message claims — only 101 reach the role gate). **The Snap `Level 5` leak is
+NOT closed** — with no bindings file every level token abstains, so it is still shortlisted, now carrying its
+reason; closing it takes one binding line, deliberately, because boardwatch ships no verifiable claim about
+any company's ladder. The registry is a 37-entry `extra="forbid"` seed catalog with no Snap/Twilio/Google.
+Deferred by design: the role gate's fail-open `uncertain` lane — **71% of the ranked pool** (4,439 of 6,279).
+
+*(Recently resolved: the seniority gate — **MERGED** (D-246, D-247); the sister-project rebuttal — D-248,
+D-249; projection in the daily pipeline — opt-in, D-225; P5b's criteria — NAMED, D-229; a bullet-less entry —
+declared, D-226; Windows — best-effort, D-212.)*
 
 ## Windows and the lock reclaim window
 
@@ -194,9 +208,10 @@ record, do not widen the window.**
 |---|---|---|
 | **`resume.yaml` is an IMPORT SOURCE, never hand-fixed** | D-155. Content comes from the wiki; the bundle renders; wording is `edit-fact`'s job. Mit pins `resume_max_pages=1`; never advise 2 | Mit |
 | **D-230 migration — ALREADY APPLIED to live (D-243)** | Verified 2026-08-18 on a byte copy: 0 stuck rows, alembic at `runs_status_backfill_repair` head; `stats` is a no-op. **Do NOT use `doctor`'s exit as the check** — it exits 1 on ~12 dead Workday boards, unrelated. Read-only check: `sqlite3 "file:<db>?immutable=1" "SELECT COUNT(*) FROM runs WHERE status='running' AND finished_at IS NOT NULL"` → 0 | resolved |
-| **Daily driver LIVE — Gate P3 now accruing (D-244)** | Projection approved (TTY, 2026-08-19); launchd agent `com.boardwatch.run` runs `run --project` at 8:00 AM daily with an explicit homebrew PATH (the D-204 trap). Run 61 clean: 8 leads, 8 one-page PDFs. **1 of 7** — Mit ruled run 61 = day 1 (D-245), 6 to go | Mit / P3 |
+| **Daily driver INSTALLED but never SCHEDULED (D-248)** | Projection approved (TTY, 2026-08-19); agent `com.boardwatch.run` is set for 08:00 with an explicit homebrew PATH (the D-204 trap). Run 61 clean: 8 leads, 8 one-page PDFs — **but it was a kickstart, and `runs = 1` means the 08:00 trigger has never fired.** Nothing outside a run can detect a missed one: the funnel artifact carries the heartbeat data, but `folders_reconcile` is only called from inside `runner.py:43`. **Next action: confirm one real scheduled firing, and add an external staleness alarm** | Mit / P3 |
 | **`add-evidence` takes no bundle lock** | Only `promote`/`rebase`/`approve` take `bundle_lock`; two concurrent captures race on up to 13 files (D-143) | owner-gated |
 | **P2 item 8 — the onboarding gatherer** | What would make the field tier fire for anyone. D-054 forbids us authoring non-tech field content | owner-gated |
 | **`boardwatch top` advances the queue by default** | Records `seen` unless `--no-record`, so exploratory ranking mutates dedup state — relevant to Gate P6's clean 7-day window | P6 |
-| **Seniority gate — GREEN and READY, on `seniority-gate-spec` (PR #99)** | All 8 plan tasks done; D-246 + D-247 recorded. **`make check` passes end to end for the first time** — 6,785 passed + 4 xfailed, 16:43, coverage 95.67%, all five stages. **All four review findings are CLOSED (D-247).** CI on that sha: `generalization`/`gitleaks`/`perf`/**3.13 green**; **3.12 red from a PRE-EXISTING `tectonic` network flake** (same signature on `main`, 4 of 12 runs — not this branch); **3.11 HUNG on both this sha and its base**, unresolved. Two TTY acts remain Mit's — see open question 4. Spec + self-review in `docs/superpowers/specs/2026-08-19-seniority-gate-design.md` | **Mit — review + merge** |
+| **Seniority gate — MERGED** | PR #99 squash-merged to `main` as `8c97db6` on 2026-08-20. All 7 checks green on head `d04102a8` (3.11/3.12/3.13/gitleaks/perf/generalization); the earlier 3.12 `tectonic` flake and 3.11 hang did not reproduce. Two TTY acts remain Mit's — see open question 4. Spec in `docs/superpowers/specs/2026-08-19-seniority-gate-design.md` | resolved |
+| **Title veto was SUBSTRING, not word-boundary (PR #100)** | `passes_hard_filters` matched `excluded.casefold() in title`, so `Sr` fired inside "Israel"/"SRE" (10), `Staff` inside "Member of Technical Staff" (90), and `III` was unreachable behind `II`. 100 drops no other gate would make. Fixed word-bounded + reusing `seniority_gate.mask_non_seniority_phrases`; strictly narrowing, so nothing newly vetoed | **Mit — review PR #100** |
 | **`make check` must be launched DETACHED** | The Bash tool clamps `timeout` to **600,000 ms**, so any gate run over 10 minutes is SIGTERMed mid-suite and reads as `make: *** [test] Error 143` — a tooling kill that looks exactly like a build break. Launch it double-`fork` + `setsid` from Python (macOS ships no `setsid` binary) and poll the log. Cost two full runs on 2026-08-19 | tooling |
