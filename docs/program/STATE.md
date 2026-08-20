@@ -23,8 +23,10 @@ store.
 launchd trigger fired unattended: `launchctl` `runs` went 1→2 and **run 63 completed clean** (exit 0, ~50 min,
 funnel RECONCILES, 8 leads / 8 one-page PDFs, all US-located). This resolves D-248 — the trigger was never
 *broken*, it had simply had no prior opportunity (the Aug-19 plist post-dated that day's window; run 61 was a
-kickstart). **Gate P3 is now 1 of 7 UNATTENDED** — it needs 7 consecutive clean scheduled runs. There is still
-**no external alarm for a MISSED window**: only a run that happens can notice one that didn't.
+kickstart). **Gate P3 is now 1 of 7 UNATTENDED** — it needs 7 consecutive clean scheduled runs. A **missed-window alarm
+now ships (D-260, #110):** a successful run pings `BOARDWATCH_HEARTBEAT_URL` (a dead-man's-switch), so an
+external cron-monitor alerts when a scheduled run never happens — the one failure a local check cannot see (the
+Mac off/asleep all day). Off until the operator sets the URL.
 
 **Run 63 funnel:** 135 boards → 26,442 corpus → **13,756 eligible / 11,034 uncertain (D-250) / 1,652
 ineligible** → shortlist **8**. **3,453 postings cleared every filter and were cut only by `DEFAULT_TOP_N`** —
@@ -49,17 +51,29 @@ manager/director deny is redundant with his `exclude_titles`, but it is the corr
 the unclassifiable, Mit's visa ruling). Run 63 confirmed it: all 8 leads carry US `locations_json` (the funnel's
 "never measured firing" line is a stale template string). Default stays `soft` for other users.
 
-**Armed pending Mit's ONE TTY act (D-258):** seniority band = `entry` (activates the merged-but-inert gate;
-ambiguous level tokens like "Level 3" still ABSTAIN and pass — ladders are not guessed) **and** internships via
-`exclude_titles` (`Intern`, `Internship`, `Co-op` — title-based, trap-safe; the engine is body-only so it
-cannot do this — see below). `boardwatch profile edit`, answer "no" to eligibility, then `ledger reopen --stale`
-after the next run (both fields re-key `policy_version`, ~11 rows).
+**Seniority band = `entry` and internships excluded — SET and verified live (D-258).** `profile edit` proved
+to be pipeable (NOT one of the TTY-guarded gates), so this was applied without Mit's terminal: band `entry`
+activates the merged-but-inert gate (ambiguous level tokens like "Level 3" still ABSTAIN and pass — ladders are
+not guessed), and `exclude_titles` gained `Intern`/`Internship`/`Co-op` (title-based, trap-safe; the engine is
+body-only, below). **Still owed:** `ledger reopen --stale` after the next run (band + `exclude_titles` re-key
+`policy_version`, ~11 rows).
 
 **The eligibility engine is body-only** — `preflight.py` feeds it `posting_versions.body_text` with no title
 column — so title-based filtering (internship, seniority words) lives in the ranker (`exclude_titles`,
 `role_gate`, `seniority_gate`), never the engine. job-apps (consulted this session) detects intern/co-op BY
 TITLE for exactly this reason; boardwatch's body-only `internship_role_declared` is 100%-precision/~27%-recall
 and already suppresses the "internships count" trap.
+
+**A whole-branch review of the precision merges found three false-drop defects; the two HIGH are fixed (D-261).**
+The location hard gate dropped US-eligible postings whose one location string mixed a bare `US` with a foreign
+place (`"US, Canada"` → `non_us`, while `"US/Canada"` was kept) — fixed to resolve a US signal first within a
+segment (#111). The seniority gate, now live at `band=entry`, dropped entry SWE roles whose product noun
+collides with a management word (`"Software Engineer, Password Manager"` → `above_band`) — now an ambiguous
+`manager`/`lead`/`director`/`leader` raises the band only when a role token shares its comma-clause (#112), and
+`exclude_titles` was likewise refined (bare `Lead`/`Manager`/`Director` → specific phrases like `Tech Lead`,
+`Engineering Manager`). **Deferred (MEDIUM, safe-direction):** the zero-output guard can false-*alarm* on a
+genuine zero-lead day now that the ranker hides `not_swe`/`above_band`/`non_us`, not just `ineligible` — a
+false alarm on the unattended run, never data loss.
 
 **CI health — two intermittent flakes.** Tectonic LaTeX-over-network `compile_failed` and
 `test_two_writer_concurrency` "database is locked" (under `-n auto`) redden the nightly (#95) and block
