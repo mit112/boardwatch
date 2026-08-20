@@ -47,10 +47,19 @@ new verdicts (the engine digest moved, so it re-keys on the next `eligibility ru
 in `location_data.py`) replaces the old profile-substring match, which dropped real US jobs ("Boston, MA")
 and kept non-US remote. Hard mode drops confirmed non-US, keeps US and the unclassifiable (fail-open, Mit's
 ruling); `location_fit` stays the soft scorer. Measured on 26,997 open: US 61% keep, non-US 34% drop,
-unknown 4.7% keep. **Not yet active** — activate with `boardwatch config set location_filter_mode hard`
-AFTER this ships (default stays `soft`; setting it before ships the old buggy gate). Deferred: a location-
-specific drop count and a per-lead "unverified" flag. **The lead cap (`DEFAULT_TOP_N`) is deliberately
-untouched** — Mit ruled precision-first over capping (show everything eligible, work it daily).
+unknown 4.7% keep. **ACTIVE** — `location_filter_mode=hard` was set 2026-08-19 after #103 merged
+(default stays `soft` for other users). Deferred: a location-specific drop count, a per-lead "unverified"
+flag, and a zero-output-guard exemption for all-non-US days (review LOW). **The lead cap (`DEFAULT_TOP_N`)
+is deliberately untouched** — Mit ruled precision-first over capping (show everything eligible, work it daily).
+
+**Role-gate precision + abstain clarity (D-252, D-253).** From an overnight analysis of the ranked pool:
+the role gate's fail-open `uncertain` lane (~67% of the scored pool) was ~half non-software business roles.
+Closed the pre-sales/support/BD consistency gaps (Solutions Architect, technical/customer Support Engineer,
+non-sales Development rep/manager) + added "SW Engineer" to the signal — **swe unchanged (0 software lost),
+~491 uncertain→not_swe**. The `eligibility abstain` report now separates the 2 structurally-undecidable
+rules (schema gap) from the fixable 100%-abstains. **Owner-gated, documented in the overnight briefing:**
+`security_clearance={state:none}` (clears ~6 rules), role-gate P1 (hard-exclude all mgrs/directors, ~4,200),
+Data Scientist/Analyst scope, the seniority band (open Q4), and 2 low-impact `resolve.py` fixes.
 
 **The roadmap is UNFROZEN (D-240); its remaining gates are OPERATIONAL, not build.** P0/P1/P2/P5 gates are
 **MET**. On 2026-08-18 Mit lifted D-155's freeze on P3, P6 and the 14-day clock. The builds for P3/P4/P6 are
