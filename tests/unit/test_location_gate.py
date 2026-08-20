@@ -62,16 +62,50 @@ class TestUnambiguousNonUS:
 
 
 class TestCollisions:
-    def test_in_is_india_not_indiana_when_the_city_is_indian(self) -> None:
-        # job-apps regression: `is_non_us_location` read "IN" as Indiana and kept it.
-        assert _c("Bangalore, IN") == "non_us"
+    @pytest.mark.parametrize(
+        "loc",
+        [
+            # US towns that share a foreign city/country name — a US STATE suffix must keep
+            # them (the reviewed regression: the reverse order silently DROPPED these real US
+            # postings in hard mode, the worst error for a visa gate).
+            "Vienna, VA",
+            "Vienna, Virginia",
+            "Lebanon, NH",
+            "Panama City, FL",
+            "Athens, GA",
+            "Manchester, NH",
+            "Rome, NY",
+            "Mexico, MO",
+            "Peru, IN",
+            "London, KY",
+            "Berlin, NH",
+            "Lima, OH",
+            "China, TX",
+            "Paris, TX",
+        ],
+    )
+    def test_a_us_state_suffix_keeps_a_town_that_shares_a_foreign_name(self, loc: str) -> None:
+        assert _c(loc) == "us"
 
-    def test_a_us_state_abbrev_wins_over_a_city_name_shared_with_a_foreign_one(self) -> None:
-        # "Paris, TX" is Texas, not France — the state suffix disambiguates.
-        assert _c("Paris, TX") == "us"
+    @pytest.mark.parametrize(
+        "loc",
+        [
+            "Vienna, Austria",
+            "Athens, Greece",
+            "London, United Kingdom",
+            "Paris, France",
+            "Rome, Italy",
+        ],
+    )
+    def test_the_same_names_with_a_foreign_country_are_non_us(self, loc: str) -> None:
+        assert _c(loc) == "non_us"
 
-    def test_the_same_city_name_with_a_foreign_country_is_non_us(self) -> None:
-        assert _c("Paris, France") == "non_us"
+    def test_a_bare_state_code_that_is_also_a_country_code_leaks_to_us_not_dropped(self) -> None:
+        # "Bangalore, IN" is India, but ", IN" is also Indiana's code. It resolves `us` (kept)
+        # rather than `non_us` (dropped) — a deliberate FAIL-OPEN leak, never a false drop. The
+        # spelled-out country form is still read correctly as non-US.
+        assert _c("Bangalore, IN") == "us"
+        assert _c("Bangalore, India") == "non_us"
 
 
 class TestMultiLocation:

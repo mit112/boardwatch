@@ -7,13 +7,17 @@ lesson). The gate keeps `us` and — fail-open, Mit's ruling — `unknown`, and 
 
 The per-segment resolution ORDER is load-bearing:
 
-  ambiguous-region → US-marker → non-US-country → non-US-city → non-US-region →
-  US-state-name → US-ZIP → US-state-abbrev → bare-"US" → US-city → unknown
+  ambiguous-region → US-marker → US-state-abbrev → US-state-name →
+  non-US-country → non-US-city → non-US-region → US-ZIP → bare-"US" → US-city → unknown
 
-Non-US city/country are checked BEFORE the US state-abbrev heuristic so "Bangalore, IN" reads
-as India (city wins) rather than Indiana (", IN" suffix). Ambiguous whole-segment names that
-INCLUDE the US ("Americas", "Worldwide") short-circuit to `unknown` rather than guessing.
-Matching is word-bounded, so region token "uk" does not fire inside "Milwaukee".
+US STATE signals (abbrev / full name) are checked BEFORE any non-US token, so a US town that
+shares a foreign name — "Vienna, VA", "Athens, GA", "Lebanon, NH", "Mexico, MO" — is KEPT, not
+silently dropped (a false US drop is the worst error a visa gate can make). The residual
+collision is a foreign city carrying a token that is also a US state code ("Bangalore, IN"):
+it resolves `us` (kept) — a fail-open leak, never a drop; the spelled-out "Bangalore, India"
+still reads non-US via the country name. Ambiguous whole-segment names that INCLUDE the US
+("Americas", "Worldwide") short-circuit to `unknown` rather than guessing. Matching is
+word-bounded, so region token "uk" does not fire inside "Milwaukee".
 """
 
 from __future__ import annotations
@@ -70,15 +74,27 @@ def _classify_segment(segment: str) -> LocationClass:
         return "unknown"
     if _US_MARKER_RE.search(low):
         return "us"
+    # US STATE signals (abbrev / full name) are checked BEFORE any non-US token, so a US town
+    # that shares a foreign name — "Vienna, VA", "Athens, GA", "Lebanon, NH", "Mexico, MO" — is
+    # kept, not silently dropped. This ordering is the whole defense against false US drops in
+    # hard mode (the worst error for the visa gate); the reviewer found the reverse order
+    # deleting real US postings. The remaining collision is a foreign city carrying a token
+    # that is ALSO a US state code ("Bangalore, IN"): it resolves US (kept) — a fail-open leak,
+    # never a drop, which is the safe direction. A bare "Bangalore, India" still reads non-US
+    # via the country name below.
+    for match in _STATE_ABBREV_RE.finditer(segment):
+        if match.group(1).casefold() in US_STATE_ABBREVS:
+            return "us"
+    if _US_STATE_NAME_RE.search(low):
+        return "us"
     if _NON_US_COUNTRY_RE.search(low) or _NON_US_CITY_RE.search(low):
         return "non_us"
     if _NON_US_REGION_RE.search(low):
         return "non_us"
-    if _US_STATE_NAME_RE.search(low) or _US_ZIP_RE.search(segment):
+    # US ZIP is checked AFTER non-US country/region so a foreign postal beside its country
+    # ("Berlin, Germany 10115") reads non-US; a bare US ZIP with no other signal still reads US.
+    if _US_ZIP_RE.search(segment):
         return "us"
-    for match in _STATE_ABBREV_RE.finditer(segment):
-        if match.group(1).casefold() in US_STATE_ABBREVS:
-            return "us"
     if _US_BARE_RE.search(low) or _US_CITY_RE.search(low):
         return "us"
     return "unknown"

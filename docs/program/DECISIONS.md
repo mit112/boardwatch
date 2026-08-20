@@ -284,7 +284,7 @@ and is a no-op when the index is already right. `make index-check` reports drift
 | D-248 | DECISIONS.md | 11218 | The launchd calendar trigger has fired ZERO times: the plist was created 39 min after the 08:00 window and run 61 began 70 s later, so it was a kickstart; `runs = 1`. Gate P3 is 1 of 7 by D-245's ruling, 0 of 7 unattended. Kickstart and scheduled paths ARE identical (same plist/argv/env/domain); the gap is an unproven trigger plus no external staleness alarm |
 | D-249 | DECISIONS.md | 11257 | Eligibility produced 0 ineligible in 120,330 evaluations because `work_authorization.needs_sponsorship` was unset, so `resolve.py:188` abstained for every `ead_or_similar` holder; setting it turned 1,739 uncertain into 1,650 ineligible + 89, `eligible` unmoved, all 1,692 unmet rows span-backed and every span contains "sponsor". Net pool effect 401, not 1,650. Keystone worked; the dial went unread. STILL OPEN: zero-row `eligible` (41.3%) must abstain |
 | D-250 | DECISIONS.md | 11310 | A zero-evidence `eligible` (11,158 of 26,997 = 41.3%; 98% truly thin at median 5,922 chars) now abstains to `uncertain`: `eligible` requires a requirement row OR an ignore/skip-excluded family that would have detected one, so multi-tenant opt-outs stay `eligible` (corpus `p0002` preserved). Label-only — the ranker hides only `ineligible`, so leads are unchanged. The zero-output guard now counts `eligible`+`uncertain` candidate work. Mit chose flip-and-rebaseline; 320 frozen corpus cases flip. Rejected: length guard (98% are long), synthetic abstain rows (corrupts never_fired vs fully_abstaining), keep-and-monitor |
-| D-251 | DECISIONS.md | 11360 | Hard location gate becomes US-only (Mit's visa requirement). New `rank/location_gate.classify_location` — a positive US allowlist (states/cities/markers/US-remote), word-bounded, non-US-before-state-abbrev so "Bangalore, IN"=India, any-US-wins; tokens versioned in `location_data.py`. `passes_hard_filters` hard mode drops `non_us`, keeps `us`+`unknown` (fail-open, Mit's ruling); `remote_only` veto preserved; `location_fit` stays soft scorer; drops reuse `hidden_hard_filter` (no new bucket). Measured 26,997: US 61% keep, non-US 34% drop, unknown 4.7% keep. Old `location_fit` substring dropped real US ("Boston, MA") and kept non-US remote. Deferred: separate drop count + per-lead unverified flag. Activate: `config set location_filter_mode hard` AFTER merge |
+| D-251 | DECISIONS.md | 11360 | Hard location gate becomes US-only (Mit's visa requirement). New `rank/location_gate.classify_location` — a positive US allowlist (states/cities/markers/US-remote), word-bounded, **US-state-signal-before-non-US so "Vienna, VA"/"Athens, GA" are KEPT not dropped** (review caught the reverse order deleting real US postings; fixed pre-merge, 0 US-drops-with-signal); "Bangalore, IN" leaks to us fail-open; tokens versioned in `location_data.py`. `passes_hard_filters` hard mode drops `non_us`, keeps `us`+`unknown` (fail-open, Mit's ruling); `remote_only` veto preserved; `location_fit` stays soft scorer; drops reuse `hidden_hard_filter` (no new bucket). Measured 26,997: US 61% keep, non-US 34% drop, unknown 4.7% keep. Old `location_fit` substring dropped real US ("Boston, MA") and kept non-US remote. Deferred: separate drop count + per-lead unverified flag. Activate: `config set location_filter_mode hard` AFTER merge |
 
 ---
 
@@ -11376,9 +11376,13 @@ location proxy — the location STRING is decisive.
 
 **Choice.** New `rank/location_gate.classify_location` — a POSITIVE US allowlist (job-apps'
 `_radancy_location_is_us` lesson: a denylist cannot be a hard gate, because anything it has not heard of
-leaks). Segment-wise, word-bounded (region token "uk" never fires inside "Milwaukee"), non-US city/country
-checked BEFORE the US state-abbrev heuristic so "Bangalore, IN" reads as India not Indiana, and any US
-segment keeps the posting (the applicant can take the US one). Tokens ship as versioned frozensets in
+leaks). Segment-wise, word-bounded (region token "uk" never fires inside "Milwaukee"), **US state signals
+(abbrev/name) checked BEFORE any non-US token** so a US town sharing a foreign name — "Vienna, VA",
+"Athens, GA", "Lebanon, NH", "Mexico, MO" — is kept, not dropped (an independent review caught the reverse
+order silently deleting real US postings; corrected pre-merge, verified 0 US-drops-with-a-US-signal over
+26,997). The residual "Bangalore, IN" (IN = India code AND Indiana) resolves `us` — a fail-open leak, never
+a drop; "Bangalore, India" still reads non-US. Any US segment keeps the posting (the applicant can take the
+US one). Tokens ship as versioned frozensets in
 `rank/location_data.py`. `passes_hard_filters` in hard mode now drops `classify_location == "non_us"` and
 keeps `us` and `unknown`; the pre-existing `remote_only` veto is preserved; `location_fit` stays the SOFT
 scorer. Non-US drops flow into the existing `hidden_hard_filter` bucket — **no new drop bucket** (that is
