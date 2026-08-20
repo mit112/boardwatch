@@ -38,6 +38,17 @@ DispositionCounts = Mapping[tuple[str | None, str], int]
 # rule_id.
 CLOSED_DISPOSITIONS = frozenset({MET, UNMET, UNKNOWN})
 
+# Rule_ids whose resolver returns UNKNOWN UNCONDITIONALLY — the datum they need does not exist
+# in the schema for ANY profile, so their 100% abstain is structural, not a fixable blind spot.
+# Detection still fires on purpose (it keeps the requirement row visible and prevents an
+# `eligible`-by-silence), so the rule is not deleted; it is reported apart from the fixable
+# fully-abstaining rules. A closed, versioned list: a new unconditional-abstain resolver must be
+# added here deliberately (D-253). Sources: `eligibility/resolve.py` — `scoped_years_minimum`
+# (no per-skill durations stored) and `clearable_required` (obtain-after-hire not stored).
+STRUCTURALLY_UNDECIDABLE = frozenset(
+    {"experience_years:scoped_years_minimum", "clearance:clearable_required"}
+)
+
 
 @dataclass(frozen=True)
 class RuleAbstain:
@@ -56,6 +67,11 @@ class RuleAbstain:
     # career_field, so its zero rows are correct scoping, NOT a monitoring failure. Never a
     # persisted disposition — the requirement CHECK allows only met|unmet|unknown.
     not_applicable: bool = False
+    # Report-only: this rule's resolver abstains UNCONDITIONALLY — the datum it needs is absent
+    # from the schema for every profile, so a 100% abstain is structural, not a fixable blind
+    # spot (D-253). It stays visible, but reported apart from the fixable fully-abstaining rules
+    # so it does not inflate that headline and mask the ones a fact or a code line would fix.
+    structurally_undecidable: bool = False
 
     @property
     def observed(self) -> int:
@@ -111,6 +127,19 @@ class AbstainReport:
     @property
     def not_applicable(self) -> tuple[RuleAbstain, ...]:
         return tuple(rule for rule in self.rules if rule.not_applicable)
+
+    @property
+    def structurally_undecidable(self) -> tuple[RuleAbstain, ...]:
+        """Rules whose resolver abstains unconditionally (schema gap, not a fixable blind spot)."""
+        return tuple(rule for rule in self.rules if rule.structurally_undecidable)
+
+    @property
+    def fully_abstaining_fixable(self) -> tuple[RuleAbstain, ...]:
+        """The fully-abstaining rules that are NOT structurally undecidable — the ones a profile
+        fact or a resolver fix could make decide. This is the number worth acting on."""
+        return tuple(
+            rule for rule in self.fully_abstaining if not rule.structurally_undecidable
+        )
 
     @property
     def observed_rows(self) -> int:
@@ -180,6 +209,7 @@ def build_abstain_report(
                 if disposition not in ("met", "unmet", "unknown")
             ),
             not_applicable=family_id in not_applicable_families,
+            structurally_undecidable=rule_id in STRUCTURALLY_UNDECIDABLE,
         )
         for rule_id, family_id in declared.items()
     )

@@ -91,6 +91,36 @@ def test_never_fired_is_not_counted_as_fully_abstaining() -> None:
     assert len(report.never_fired) == 44
 
 
+def test_a_structurally_undecidable_rule_is_reported_apart_from_the_fixable_ones() -> None:
+    """D-253: `scoped_years_minimum` abstains unconditionally (the schema stores no per-skill
+    durations), so its 100% abstain is a schema gap, not a fixable blind spot. It must stay
+    visible but must NOT inflate the actionable 'fire but never decide' count and mask the
+    rules a profile fact or a code line would fix."""
+    from boardwatch.reports.abstain import STRUCTURALLY_UNDECIDABLE
+
+    cat = catalog()
+    structural = "experience_years:scoped_years_minimum"
+    assert structural in STRUCTURALLY_UNDECIDABLE  # the constant names a real catalog rule
+    fixable = next(r for r in rule_ids(cat) if r not in STRUCTURALLY_UNDECIDABLE)
+    report = build_abstain_report(
+        cat, {(structural, "unknown"): 16007, (fixable, "unknown"): 5}
+    )
+
+    by_id = {rule.rule_id: rule for rule in report.rules}
+    assert by_id[structural].structurally_undecidable is True
+    assert by_id[fixable].structurally_undecidable is False
+    # both fire and only ever abstain, so both are fully_abstaining (unchanged semantics)...
+    assert {structural, fixable} <= {rule.rule_id for rule in report.fully_abstaining}
+    # ...but the structural one is bucketed apart and dropped from the actionable count. The
+    # structurally-undecidable set is intrinsic (flagged from the constant), so it lists every
+    # such catalog rule regardless of rows — both scoped_years_minimum and clearable_required.
+    structural_ids = {rule.rule_id for rule in report.structurally_undecidable}
+    assert structural_ids == set(STRUCTURALLY_UNDECIDABLE)
+    fixable_ids = {rule.rule_id for rule in report.fully_abstaining_fixable}
+    assert structural not in fixable_ids
+    assert fixable in fixable_ids
+
+
 def test_a_rule_id_outside_the_catalog_is_surfaced_not_bucketed() -> None:
     """Closed catalog: an unknown rule_id is a failure, never a new row in the table."""
     cat = catalog()
