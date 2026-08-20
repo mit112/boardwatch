@@ -120,6 +120,44 @@ class TestMultiLocation:
         assert _c("EMEA", "Bordeaux", "Remote - France") == "non_us"
 
 
+class TestUSAndForeignInOneSegment:
+    """A single location string naming the US AND a foreign place is US-eligible — the posting
+    is offered in the US. Regression: the gate dropped these as non_us because bare "US" was
+    resolved AFTER the foreign country token, and only ';|/•| or ' split segments so a comma /
+    "and" / "&" never separated them."""
+
+    @pytest.mark.parametrize(
+        "loc",
+        [
+            "US, Canada",
+            "US and Canada",
+            "US & Canada",
+            "Remote - US, Canada",
+            "US, EMEA",
+            "U.S., Canada",
+        ],
+    )
+    def test_bare_us_beside_a_foreign_place_is_us(self, loc: str) -> None:
+        assert _c(loc) == "us"
+
+    @pytest.mark.parametrize(
+        "loc",
+        [
+            # Controls that must NOT flip: a foreign place with no US signal stays non_us. In
+            # particular a US CITY that merely shares a foreign name is still resolved AFTER the
+            # non-US tokens, so "Manchester, UK" is not rescued to US by the fix.
+            "London, UK",
+            "Manchester, UK",
+            "Toronto, Canada",
+            "Berlin, Germany",
+            "Bangalore, India",
+            "Remote - EMEA",
+        ],
+    )
+    def test_a_foreign_place_without_a_us_signal_stays_non_us(self, loc: str) -> None:
+        assert _c(loc) == "non_us"
+
+
 class TestRemote:
     def test_us_scoped_remote_is_us(self) -> None:
         assert _c("Remote - US") == "us"
