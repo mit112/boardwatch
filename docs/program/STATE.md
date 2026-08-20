@@ -55,8 +55,8 @@ the unclassifiable, Mit's visa ruling). Run 63 confirmed it: all 8 leads carry U
 to be pipeable (NOT one of the TTY-guarded gates), so this was applied without Mit's terminal: band `entry`
 activates the merged-but-inert gate (ambiguous level tokens like "Level 3" still ABSTAIN and pass — ladders are
 not guessed), and `exclude_titles` gained `Intern`/`Internship`/`Co-op` (title-based, trap-safe; the engine is
-body-only, below). **Still owed:** `ledger reopen --stale` after the next run (band + `exclude_titles` re-key
-`policy_version`, ~11 rows).
+body-only, below). **Done (run 65):** `ledger reopen --stale` released **19** decisions — the one-time
+`policy_version` re-key the band + `exclude_titles` edit forced (run 65 was the first run after it).
 
 **The eligibility engine is body-only** — `preflight.py` feeds it `posting_versions.body_text` with no title
 column — so title-based filtering (internship, seniority words) lives in the ranker (`exclude_titles`,
@@ -74,6 +74,19 @@ collides with a management word (`"Software Engineer, Password Manager"` → `ab
 `Engineering Manager`). **Deferred (MEDIUM, safe-direction):** the zero-output guard can false-*alarm* on a
 genuine zero-lead day now that the ranker hides `not_swe`/`above_band`/`non_us`, not just `ineligible` — a
 false alarm on the unattended run, never data loss.
+
+**A manual verification run (run 65) then exposed a `Lead` hole the `exclude_titles` refine reopened — now
+fixed (D-262, #114).** `run --project` was launched by hand (identical argv to the launchd job, but NOT a P3
+tick — the schedule counter is untouched) to watch every tightened gate fire together on live data before the
+next scheduled run. It was clean (reconciles, exit 0, ~37 min, 8 leads, 0 fabrications) and confirmed #108
+(Business Operations Associate gone) — but **5 of 8 leads were non-software `Lead` business/ops roles** (Affirm
+TAM ×2, Airbnb Programs Ops, Instacart Insights ×2) crowding real SWE out under the cap (2 US SWE vs run 63's
+5). Cause: D-261 removed bare `Lead` from `exclude_titles`, and unlike `Manager`/`Director` (compensated by the
+role gate's `_NOENG` deny, D-255) `Lead` was left ungated. Fix: `_NOENG + \b(manager|director|lead)\b` in
+`role_gate` (TDD, `make check` 6943, merged after one tectonic-flake 3.11 CI rerun). **Still open — Mit's, next
+session:** the run-65 GE HealthCare `Full Stack` role in **Buc, France** reached the shortlist because the
+US-only gate fail-opens on the unrecognized non-US city; closing it needs a non-US signal that does not fight
+the visa fail-open ruling.
 
 **CI health — two intermittent flakes.** Tectonic LaTeX-over-network `compile_failed` and
 `test_two_writer_concurrency` "database is locked" (under `-n auto`) redden the nightly (#95) and block
