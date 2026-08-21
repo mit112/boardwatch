@@ -11803,6 +11803,13 @@ including the run-65 leak (posting 31365).
 mistake one layer along: a title substring standing in for a location, which fails the moment a foreign
 posting carries an English title.
 
+**The claim was true; only the citation was noise.** This is the distinction the retraction must not blur.
+`Buc` really was in run 66's ranked pool — at **rank 16 of 3,484 survivors**, measured through the snapshot
+ranker under D-264 and deliberately NOT through the `top` run that produced the baseline. Run 66 ran
+pre-#116, so its all-software lead list was `DEFAULT_TOP_N` cutting above `Buc`, not a fix. Retracting the
+grep therefore removes an instrument, not a conclusion: read as "Buc was never in the pool" this entry would
+mislead in the opposite direction.
+
 **The gap this exposes, left OPEN for the owner.** The hard location gate is the one gate whose failure is a
 visa-ineligible lead, and it leaves no trace in the artifact it emits. The `Lead` docstring states the
 provenance fields exist so Gate P0's *"which source produced each lead"* is answerable **from the artifact
