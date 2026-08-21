@@ -191,7 +191,7 @@ handoff can report `bundle_lock_held` while nobody holds the lock. **Ruled: reco
 
 | Item | Detail | Owner |
 |---|---|---|
-| **One-time ledger re-key owed (D-266)** | the engine digest changed, so the next run re-evaluates the whole corpus once and `ledger reopen --stale` may be owed after it — exactly as D-258's profile re-key was | next session |
+| **Run 67 was IN FLIGHT at session close** | launched manually 2026-08-21 09:13:29 on `301c7e9` to absorb D-266's one-time corpus re-key (NOT a P3 tick). Verify it first: exit 0, reconciles, `Buc` gone from the ranked pool too, and whether `ledger reopen --stale` is owed | next session |
 | **CI has two intermittent flakes** | tectonic network + `test_two_writer_concurrency`; re-run failed jobs to recover; local `make check` stays green | tooling |
 | **No external missed-window alarm** | nothing outside a run can detect a missed 08:00; the funnel heartbeat is only written from inside `runner.py` | P3 |
 | **`resume.yaml` is an IMPORT SOURCE, never hand-fixed** | D-155. Mit pins `resume_max_pages=1`; never advise 2 | Mit |
