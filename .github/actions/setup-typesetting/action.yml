@@ -30,7 +30,7 @@ runs:
     - uses: actions/cache@v4
       with:
         path: ${{ runner.temp }}/tectonic-cache
-        key: tectonic-${{ inputs.tectonic-version }}-${{ runner.os }}-v1
+        key: tectonic-${{ inputs.tectonic-version }}-${{ runner.os }}-v2
 
     - name: linux — poppler from apt, tectonic from the pinned release
       if: runner.os == 'Linux'
@@ -98,6 +98,15 @@ runs:
     # Both binaries are proved to RUN, not merely to exist, and the bundle is warmed by an actual
     # compile — the same thing the Dockerfile does. Without this, a broken install surfaces as 33
     # confusing test failures deep in the suite instead of one red step that names the cause.
+    #
+    # The warmup compiles the RESUME TEMPLATE'S OWN PREAMBLE, not a minimal `article`. A minimal
+    # document pulls almost none of what the suite needs (fontspec, the Latin Modern OTF faces,
+    # titlesec, tabularx, marvosym, hyperref, babel, …), so the packages were still fetched over
+    # the network during the test run — and `actions/cache` only SAVES on a miss, so the partial
+    # bundle written by the very first run was restored unchanged forever after. That is the
+    # tectonic `compile_failed` flake: every run needed the network for the same missing files,
+    # and any CDN hiccup took ~52 render tests with it. Deriving the warmup from the template
+    # means it cannot drift from what the tests compile.
     - name: prove both binaries work and warm the bundle
       shell: bash
       working-directory: ${{ runner.temp }}
@@ -105,7 +114,12 @@ runs:
         set -euxo pipefail
         tectonic --version
         pdfinfo -v
-        printf '\\documentclass{article}\\begin{document}x\\end{document}' > warmup.tex
+        template="$GITHUB_WORKSPACE/src/boardwatch/tailor/render/templates/resume_base.tex"
+        test -f "$template"
+        awk '/\\begin\{document\}/{exit} {print}' "$template" > warmup.tex
+        printf '\\begin{document}x\\end{document}\n' >> warmup.tex
+        # Fail loudly if the preamble did not come through, rather than warming a stub bundle.
+        grep -q 'fontspec' warmup.tex
         tectonic warmup.tex
         pdfinfo warmup.pdf | grep -q '^Pages:'
         rm -f warmup.tex warmup.pdf

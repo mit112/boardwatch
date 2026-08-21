@@ -1,3 +1,4 @@
+import sqlite3
 from datetime import datetime
 from pathlib import Path
 
@@ -253,3 +254,27 @@ def test_no_scores_table_no_flags_column(engine: Engine) -> None:
             select(text("name")).select_from(text("sqlite_master")).where(text("type='table'"))
         ).scalars().all()
     assert "scores" not in names
+
+
+def test_a_new_store_is_in_wal_from_the_moment_the_schema_exists(tmp_path: Path) -> None:
+    """WAL must be established when the store is CREATED, not on some later connection.
+
+    `get_engine` is lazy, and `ensure_schema` runs alembic through an engine alembic builds
+    itself from the URL — so alembic never fires the `connect` listener that sets the pragmas.
+    Without a warm connection first, the database is created in `delete` mode and the switch to
+    WAL is deferred to whichever connection happens to run first. That deferred switch is a
+    CONVERSION, which no lock held by any other connection permits: it returns "database is
+    locked" after the busy timeout against a reader, and instantly against a writer. Two
+    processes opening a fresh store therefore race, and one of them fails — which is what
+    reddens `test_two_writer_concurrency` on macOS and Windows.
+    """
+    engine = get_engine(tmp_path)
+    ensure_schema(engine)
+    engine.dispose()
+    # Read the persisted header through a plain connection, not the instrumented engine, so the
+    # assertion cannot be satisfied by the very pragma whose absence is under test.
+    raw = sqlite3.connect(tmp_path / DB_FILENAME)
+    try:
+        assert raw.execute("PRAGMA journal_mode").fetchone()[0] == "wal"
+    finally:
+        raw.close()

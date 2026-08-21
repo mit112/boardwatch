@@ -62,7 +62,20 @@ def _alembic_config(engine: Engine) -> Config:
 
 
 def ensure_schema(engine: Engine) -> None:
-    """Apply all migrations to head (idempotent)."""
+    """Apply all migrations to head (idempotent), with WAL established first."""
+    # Open one connection through `engine` before alembic runs, purely so `_set_pragmas` fires
+    # while this is still the only connection. Alembic builds its OWN engine from the URL, so it
+    # never triggers that listener; without this the database is CREATED in `delete` mode and the
+    # switch to WAL is deferred to whichever connection happens to run first.
+    #
+    # That deferred switch is a journal-mode CONVERSION, and no lock held by any other connection
+    # permits one: measured against a competing reader it returns "database is locked" only after
+    # the full busy timeout, and against a competing writer it returns instantly, with the busy
+    # handler never invoked. So two processes opening a fresh store race, and the loser fails to
+    # open it at all. Establishing WAL at creation makes every later `PRAGMA journal_mode=WAL` the
+    # cheap no-op it was always assumed to be.
+    with engine.connect():
+        pass
     command.upgrade(_alembic_config(engine), "head")
 
 
