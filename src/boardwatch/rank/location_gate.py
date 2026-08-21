@@ -52,9 +52,20 @@ def _alternation(tokens: Sequence[str] | frozenset[str]) -> re.Pattern[str]:
 
     `(?<![a-z])`/`(?![a-z])` rather than `\\b` because tokens carry dots ("u.s.") where `\\b`
     asserts the wrong side. Longest-first so "united states of america" wins over "u.s.".
+
+    The `(?:...)` around the body is LOAD-BEARING and its absence was a live defect. `|` binds
+    looser than concatenation, so an ungrouped body compiles as
+    `((?<![a-z])first) | (second) | ... | (last(?![a-z]))`: the lookbehind guards only the
+    first token, the lookahead only the last, and every token between them matches as a bare
+    substring. The observed damage was that region token "uk" fired inside "Waukesha" and
+    "West Milwaukee", so 41 real GE HealthCare Wisconsin postings — "Software Engineer" among
+    them — were dropped by a US-only gate as non-US. It was intermittent, not constant: which
+    token lands last depends on `frozenset` iteration order, which varies with per-process hash
+    randomisation, so the same store and the same code classified a city differently run to
+    run. `test_no_token_matches_inside_a_longer_word` pins the invariant seed-independently.
     """
     body = "|".join(re.escape(t) for t in sorted(tokens, key=len, reverse=True))
-    return re.compile(rf"(?<![a-z]){body}(?![a-z])")
+    return re.compile(rf"(?<![a-z])(?:{body})(?![a-z])")
 
 
 _US_MARKER_RE = _alternation(US_MARKERS)

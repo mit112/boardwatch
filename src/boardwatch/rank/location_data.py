@@ -76,6 +76,8 @@ NON_US_COUNTRIES = frozenset(
         "sweden", "norway", "denmark", "finland", "switzerland", "austria", "belgium",
         "czech", "czechia", "hungary", "greece", "turkey", "ukraine", "russia", "egypt",
         "south africa", "nigeria", "kenya", "uae", "united arab emirates", "saudi arabia",
+        # Spelled-out forms that the ungrouped alternation used to catch only by accident.
+        "deutschland", "russian federation",
         "qatar", "pakistan", "bangladesh", "vietnam", "thailand", "malaysia", "indonesia",
         "philippines", "hong kong", "luxembourg", "estonia", "lithuania", "latvia",
         "bulgaria", "croatia", "serbia", "slovakia", "slovenia", "iceland", "costa rica",
@@ -113,7 +115,7 @@ NON_US_CITIES = frozenset(
         "nagoya", "fukuoka", "yokohama", "kyoto", "busan", "incheon", "kaohsiung", "hsinchu",
         "guangzhou", "chengdu", "hangzhou", "nanjing", "suzhou", "perth", "brisbane",
         "adelaide", "auckland", "wellington", "christchurch", "edmonton", "winnipeg",
-        "quebec city", "taoyuan", "sao paulo", "são paulo",
+        "quebec city", "taoyuan", "sao paulo", "são paulo", "milano",
     }
 )
 

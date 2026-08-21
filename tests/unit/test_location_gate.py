@@ -12,7 +12,16 @@ take the US one).
 
 import pytest
 
-from boardwatch.rank.location_gate import classify_location
+from boardwatch.rank.location_data import (
+    AMBIGUOUS_REGIONS,
+    NON_US_CITIES,
+    NON_US_COUNTRIES,
+    NON_US_REGIONS,
+    US_CITIES,
+    US_MARKERS,
+    US_STATE_NAMES,
+)
+from boardwatch.rank.location_gate import _alternation, classify_location
 
 
 def _c(*locations: str) -> str:
@@ -184,3 +193,69 @@ class TestUnknown:
         # "Hybrid"/"Remote" carry no geography, so a real non-US city still decides.
         assert _c("Hybrid", "Mexico City, MX") == "non_us"
         assert _c("Hybrid") == "unknown"
+
+
+class TestAlternationWordBoundary:
+    """The `(?:...)` grouping inside `_alternation`.
+
+    Without it, `|` binds looser than concatenation, so only the FIRST token keeps the
+    lookbehind and only the LAST keeps the lookahead — every token between them matched as a
+    bare substring. Region token "uk" therefore fired inside "Waukesha" and "West Milwaukee",
+    and a US-only gate dropped 41 real GE HealthCare Wisconsin postings as non-US. It was
+    intermittent: which token lands last follows `frozenset` iteration order, which varies with
+    per-process hash randomisation, so the same store classified the same city differently from
+    one run to the next.
+    """
+
+    @pytest.mark.parametrize(
+        "catalog",
+        [
+            NON_US_REGIONS,
+            NON_US_CITIES,
+            NON_US_COUNTRIES,
+            US_CITIES,
+            US_STATE_NAMES,
+            AMBIGUOUS_REGIONS,
+            frozenset(US_MARKERS),
+        ],
+        ids=["regions", "non_us_cities", "countries", "us_cities", "states", "ambiguous",
+             "markers"],
+    )
+    def test_no_token_matches_inside_a_longer_word(self, catalog: frozenset[str]) -> None:
+        # Seed-independent: the ungrouped form leaves EVERY token but two unbounded, so whichever
+        # ordering a process picks, some token in each catalog fails this.
+        pattern = _alternation(catalog)
+        for token in catalog:
+            embedded = f"zz{token}zz"
+            assert pattern.search(embedded) is None, (
+                f"{token!r} matched inside {embedded!r} — the alternation is not grouped"
+            )
+
+    @pytest.mark.parametrize(
+        "loc",
+        [
+            "Waukesha",          # GE HealthCare, Wisconsin — "uk" fired inside it
+            "West Milwaukee",    # GE HealthCare, Wisconsin
+            "Milwaukee",
+            "Waukegan",
+            "Keuka Park",
+            "Dukes County",
+            "Europa Center",     # "europe" must not fire on a partial
+            "Asiatown",
+        ],
+    )
+    def test_us_places_containing_a_foreign_token_are_never_dropped(self, loc: str) -> None:
+        assert _c(loc) != "non_us"
+
+    @pytest.mark.parametrize(
+        "loc",
+        [
+            # The other direction: drops that the substring accident made correct BY LUCK now
+            # need a real token, so fixing the boundary does not lose precision.
+            "Milano",
+            "Remote (Deutschland)",
+            "Moscow Oblast, Russian Federation",
+        ],
+    )
+    def test_spelled_out_foreign_forms_are_still_non_us(self, loc: str) -> None:
+        assert _c(loc) == "non_us"
