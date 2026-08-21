@@ -19,18 +19,20 @@ machine produces leads, it never applies (out of scope). Against that: 3 publish
 **0.3.0**), ~53k lines of source, **~6,900 tests**, 70 leaf CLI commands, 6 ATS providers, a **~1.0 GB**
 store.
 
-**P3 MILESTONE — the 08:00 schedule fired for the first time (D-254).** On **2026-08-20 08:00:22 CDT** the
-launchd trigger fired unattended: `launchctl` `runs` went 1→2 and **run 63 completed clean** (exit 0, ~50 min,
-funnel RECONCILES, 8 leads / 8 one-page PDFs, all US-located). This resolves D-248 — the trigger was never
-*broken*, it had simply had no prior opportunity (the Aug-19 plist post-dated that day's window; run 61 was a
-kickstart). **Gate P3 is now 1 of 7 UNATTENDED** — it needs 7 consecutive clean scheduled runs. A **missed-window alarm
-now ships (D-260, #110):** a successful run pings `BOARDWATCH_HEARTBEAT_URL` (a dead-man's-switch), so an
-external cron-monitor alerts when a scheduled run never happens — the one failure a local check cannot see (the
-Mac off/asleep all day). Off until the operator sets the URL.
+**P3 IS ACCRUING — two consecutive clean scheduled runs.** The 08:00 launchd trigger fired unattended on
+**2026-08-20** (run 63, `runs` 1→2) and again on **2026-08-21 at 08:00:10** (run 66, `runs` 2→3, exit 0,
+~26 min, funnel RECONCILES, 8 leads / 8 PDFs / 8 projected, 0 withheld as gone). **Gate P3 is 2 of 7
+UNATTENDED** — it needs 7 consecutive clean scheduled runs, and only a SCHEDULED tick counts (a manual
+`run --project` does not touch the counter). Run 66 was the first scheduled run to exercise the #114 `Lead`
+fix and **all 8 of its leads were software roles** — run 65 had 5 of 8 as business/ops `Lead` titles. A
+**missed-window alarm ships (D-260, #110):** a successful run pings `BOARDWATCH_HEARTBEAT_URL` (a
+dead-man's-switch), so an external cron-monitor alerts when a scheduled run never happens — the one failure a
+local check cannot see (the Mac off/asleep all day). Off until the operator sets the URL.
 
-**Run 63 funnel:** 135 boards → 26,442 corpus → **13,756 eligible / 11,034 uncertain (D-250) / 1,652
-ineligible** → shortlist **8**. **3,453 postings cleared every filter and were cut only by `DEFAULT_TOP_N`** —
-the precision tension Mit rules on: fix precision, never tune the cap (ideally show everything eligible).
+**Run 66 funnel:** 135 boards (81 complete, 12 failed) → 29,450 corpus → 12,354 uncertain (D-250) / 2,059
+ineligible → `hidden_hard_filter` 17,189 → shortlist **8**. **~3,400 postings clear every filter and are cut
+only by `DEFAULT_TOP_N`** — the precision tension Mit rules on: fix precision, never tune the cap (ideally
+show everything eligible).
 
 **Eligibility now decides AND removes.** `work_authorization.needs_sponsorship=true` set (D-249); a
 zero-evidence `eligible` abstains to `uncertain` (D-250); two rules that could never resolve MET are fixed —
@@ -38,18 +40,31 @@ zero-evidence `eligible` abstains to `uncertain` (D-250); two rules that could n
 a `blocker`** with `security_clearance={state:none,level:none}` (D-257) so the ~138 clearance-required
 postings resolve UNMET → ineligible → dropped.
 
-**Role-gate precision tightened across three passes.** Pre-sales/support/BD consistency denies + "SW Engineer"
-signal (D-252/253); non-eng managers/directors + Data Scientist/Analyst out of scope (D-255, #106); and the
-run-63 business/ops/admin/pricing leaks — Strategy & Ops, Business Operations/Partner, Stock Plan, Pricing
-(D-259, #108). Run 63's ranked top 40 was **~28% non-software** before #108. **Deferred to owner** (borderline):
-Team Leader, Data Center Engineer, bare Administrator. **NOT excluding "User Researcher"** — it overlaps real
-ML/Research *Engineer* roles, so a broad researcher deny would drop software (Mit's call). Note: for Mit, the
-manager/director deny is redundant with his `exclude_titles`, but it is the correct generic (multi-tenant) form.
+**The role gate is tight and holding.** Four passes of SOFT denies — pre-sales/support/BD, non-eng
+managers/directors, Data Scientist/Analyst, business/ops/admin/pricing, and bare `Lead`
+(D-252/253/255/259/262). All 8 of run 66's leads were software, against 3 of 8 in run 65. The
+`_NOENG` guard spares any engineering noun and is the correct multi-tenant form even where Mit's
+`exclude_titles` would also catch it. **Deferred to owner** (borderline): Team Leader, Data Center Engineer,
+bare Administrator. **NOT excluding "User Researcher"** — it overlaps real ML/Research *Engineer* roles.
 
 **Hard location gate is US-only, ARMED and verified firing (D-251).** `config.toml`
 `location_filter_mode=hard`; `rank/location_gate.classify_location` is a positive US allowlist (fail-open on
-the unclassifiable, Mit's visa ruling). Run 63 confirmed it: all 8 leads carry US `locations_json` (the funnel's
-"never measured firing" line is a stale template string). Default stays `soft` for other users.
+the unclassifiable, Mit's visa ruling). Default stays `soft` for other users. The funnel's stale "never
+measured firing" note is now corrected (D-265) — that bucket carried 17,189 drops in run 66.
+
+**Two real defects in that gate are fixed this session.** (1) **D-263:** `_alternation` built its pattern
+without grouping the alternation body, so the word-boundary lookarounds bound only to the first and last
+token and everything between matched as a bare substring. Region token `uk` fired inside `Waukesha` and
+`West Milwaukee`, and the gate silently dropped **41 real GE HealthCare Wisconsin postings** — `Software
+Engineer` among them. It was INTERMITTENT: which token lands last follows `frozenset` order under per-process
+hash randomisation, so 43 postings' drop decision differed between `PYTHONHASHSEED` 0 and 4 — the same store
+and code disagreeing run to run. (2) **D-264:** the deferred Buc/France leak is closed by three independent
+non-US signals — 57 curated foreign city tokens, a structural ISO alpha-3 country code, and a new
+`rank/foreign_ad_gate` reading DACH `(m/w/d)` / French `(H/F)` / `Ingénieur` off the TITLE (the only signal
+that reaches three postings whose `locations_json` is exactly `["Remote"]`). Net **299 corpus drops, 36 US
+false drops recovered, 280 of 444 `unknown` survivors still passing** — fail-open intact. `Dublin` and ten
+other US-namesake names are left leaking BY RULING; the rejected list lives in the `location_data` docstring
+so a later pass does not "complete" it.
 
 **Seniority band = `entry` and internships excluded — SET and verified live (D-258).** `profile edit` proved
 to be pipeable (NOT one of the TTY-guarded gates), so this was applied without Mit's terminal: band `entry`
@@ -64,29 +79,14 @@ column — so title-based filtering (internship, seniority words) lives in the r
 TITLE for exactly this reason; boardwatch's body-only `internship_role_declared` is 100%-precision/~27%-recall
 and already suppresses the "internships count" trap.
 
-**A whole-branch review of the precision merges found three false-drop defects; the two HIGH are fixed (D-261).**
-The location hard gate dropped US-eligible postings whose one location string mixed a bare `US` with a foreign
-place (`"US, Canada"` → `non_us`, while `"US/Canada"` was kept) — fixed to resolve a US signal first within a
-segment (#111). The seniority gate, now live at `band=entry`, dropped entry SWE roles whose product noun
-collides with a management word (`"Software Engineer, Password Manager"` → `above_band`) — now an ambiguous
-`manager`/`lead`/`director`/`leader` raises the band only when a role token shares its comma-clause (#112), and
-`exclude_titles` was likewise refined (bare `Lead`/`Manager`/`Director` → specific phrases like `Tech Lead`,
-`Engineering Manager`). **Deferred (MEDIUM, safe-direction):** the zero-output guard can false-*alarm* on a
-genuine zero-lead day now that the ranker hides `not_swe`/`above_band`/`non_us`, not just `ineligible` — a
-false alarm on the unattended run, never data loss.
+**Reviews of the precision merges have found five false-drop defects; all are fixed** — the US+foreign
+location segment (#111), the seniority product-noun collision (#112), the `Lead` hole those reopened (#114),
+and this session's two (D-263/D-264). **Deferred (MEDIUM, safe-direction):** the zero-output guard can
+false-*alarm* on a genuine zero-lead day now that the ranker hides `not_swe`/`above_band`/`non_us`, not just
+`ineligible` — a false alarm on the unattended run, never data loss.
 
-**A manual verification run (run 65) then exposed a `Lead` hole the `exclude_titles` refine reopened — now
-fixed (D-262, #114).** `run --project` was launched by hand (identical argv to the launchd job, but NOT a P3
-tick — the schedule counter is untouched) to watch every tightened gate fire together on live data before the
-next scheduled run. It was clean (reconciles, exit 0, ~37 min, 8 leads, 0 fabrications) and confirmed #108
-(Business Operations Associate gone) — but **5 of 8 leads were non-software `Lead` business/ops roles** (Affirm
-TAM ×2, Airbnb Programs Ops, Instacart Insights ×2) crowding real SWE out under the cap (2 US SWE vs run 63's
-5). Cause: D-261 removed bare `Lead` from `exclude_titles`, and unlike `Manager`/`Director` (compensated by the
-role gate's `_NOENG` deny, D-255) `Lead` was left ungated. Fix: `_NOENG + \b(manager|director|lead)\b` in
-`role_gate` (TDD, `make check` 6943, merged after one tectonic-flake 3.11 CI rerun). **Still open — Mit's, next
-session:** the run-65 GE HealthCare `Full Stack` role in **Buc, France** reached the shortlist because the
-US-only gate fail-opens on the unrecognized non-US city; closing it needs a non-US signal that does not fight
-the visa fail-open ruling.
+**A manual `run --project` is the way to exercise a gate change on live data before a scheduled tick** — it
+uses identical argv but does NOT move the P3 counter. Run 65 did this and caught the `Lead` hole (D-262).
 
 **CI health — two intermittent flakes.** Tectonic LaTeX-over-network `compile_failed` and
 `test_two_writer_concurrency` "database is locked" (under `-n auto`) redden the nightly (#95) and block
@@ -139,7 +139,7 @@ an import source, never hand-fixed (D-155).
 | P0 Instrumentation | **COMPLETE** | **MET** (D-030) |
 | P1 Résumé artifact gate | **COMPLETE** | **MET** (D-032/033) |
 | P2 Profile + keystone | items 1–7 shipped; item 8 NOT STARTED | **MET AS RECONCILED** (D-075) |
-| P3 Unattended one command | **COMPLETE, INSTALLED, FIRING** — run 63 was the first genuine scheduled run (D-254) | **NOT MET — 1 of 7 unattended.** Accrual has begun |
+| P3 Unattended one command | **COMPLETE, INSTALLED, FIRING** — runs 63 and 66 were genuine scheduled ticks (D-254) | **NOT MET — 2 of 7 unattended.** Accruing |
 | P4 Craft gate | **COMPLETE** | **NOT MET** — the owner's blind craft review, barred until P3's gate |
 | P5 Eligibility decides | **COMPLETE** | **MET** — INELIGIBLE precision 16/16, 0 span violations |
 | P6 Liveness + dedup | **BUILD COMPLETE** (D-110/111/113) | **NOT MET — 2 of 4** — needs a real 7-day run |
@@ -191,8 +191,7 @@ handoff can report `bundle_lock_held` while nobody holds the lock. **Ruled: reco
 
 | Item | Detail | Owner |
 |---|---|---|
-| **Mit's ONE TTY act (D-258)** | `profile edit` → band `entry` + add Intern/Internship/Co-op to `exclude_titles` + "no" to eligibility; then `ledger reopen --stale` after the next run | **Mit** |
-| **#108 final pull owed** | #108 (business/ops role gate) was auto-merging at session close; `git pull` the live checkout once it lands so tomorrow's run has it | next session |
+| **One-time ledger re-key owed (D-266)** | the engine digest changed, so the next run re-evaluates the whole corpus once and `ledger reopen --stale` may be owed after it — exactly as D-258's profile re-key was | next session |
 | **CI has two intermittent flakes** | tectonic network + `test_two_writer_concurrency`; re-run failed jobs to recover; local `make check` stays green | tooling |
 | **No external missed-window alarm** | nothing outside a run can detect a missed 08:00; the funnel heartbeat is only written from inside `runner.py` | P3 |
 | **`resume.yaml` is an IMPORT SOURCE, never hand-fixed** | D-155. Mit pins `resume_max_pages=1`; never advise 2 | Mit |
