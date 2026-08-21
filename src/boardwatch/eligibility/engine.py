@@ -67,8 +67,41 @@ def source_of(filename: str) -> str:
     return path.read_text(encoding="utf-8")
 
 
+def canonical_dump(node: ast.AST | list[object] | object) -> str:
+    """Serialise an AST to a string that is stable across Python versions.
+
+    `ast.dump` is NOT usable here, because its output is interpreter-dependent and the digest
+    built from it keys the eligibility ledger. Python 3.13 changed `ast.dump` to omit fields
+    holding their default, so 3.12 writes `args=[], keywords=[], type_params=[]` where 3.13
+    writes nothing; and `type_params` did not exist before 3.12. Over the four digested
+    modules that produced three different digests for byte-identical source — `6f9feb84bfee`
+    on 3.11, `a1d0be72a338` on 3.12, `7e88ed2b193d` on 3.13 — so every posting's verdict
+    re-keyed on a Python upgrade, and the three CI interpreters each computed a different
+    engine version.
+
+    Walking `_fields` directly makes those defaults irrelevant. Empty lists are skipped, which
+    is what absorbs a grammar field added by a later version but unused by this code
+    (`type_params` is the live example). `None` is KEPT rather than skipped, so `Constant(None)`
+    — the literal `None` — stays distinguishable from a node with an absent optional.
+
+    Comments and formatting stay invisible, which is the property D-P2-22 wanted from `ast.dump`
+    in the first place: parsing discards them, so only a semantic edit re-keys the corpus.
+    """
+    if isinstance(node, ast.AST):
+        fields = []
+        for name in node._fields:
+            value = getattr(node, name, None)
+            if isinstance(value, list) and not value:
+                continue
+            fields.append(f"{name}={canonical_dump(value)}")
+        return f"{type(node).__name__}({','.join(fields)})"
+    if isinstance(node, list):
+        return "[" + ",".join(canonical_dump(item) for item in node) + "]"
+    return repr(node)
+
+
 def digest_of_sources(sources: list[str]) -> str:
-    """SHA-256 over the AST dumps, length-prefixed.
+    """SHA-256 over the canonical AST dumps, length-prefixed.
 
     Raises SyntaxError on unparseable source rather than skipping it: a version computed
     over a subset is a stale-verdict machine. Length prefixes rather than a separator join,
@@ -76,8 +109,7 @@ def digest_of_sources(sources: list[str]) -> str:
     """
     running = hashlib.sha256()
     for source in sources:
-        dump = ast.dump(ast.parse(source), annotate_fields=True, include_attributes=False)
-        encoded = dump.encode("utf-8")
+        encoded = canonical_dump(ast.parse(source)).encode("utf-8")
         running.update(str(len(encoded)).encode("utf-8"))
         running.update(b":")
         running.update(encoded)
