@@ -195,6 +195,144 @@ class TestUnknown:
         assert _c("Hybrid") == "unknown"
 
 
+class TestForeignCityCatalogAdditions:
+    """Cities that reached run 65's shortlist through the `unknown` fail-open.
+
+    Every token was checked against the corpus before being added: it names no US town a
+    posting could plausibly carry, so promoting it to `non_us` cannot delete a real US role.
+    """
+
+    @pytest.mark.parametrize(
+        "loc",
+        [
+            "Buc",
+            "Basel",
+            "Penzberg",
+            "Kleinmachnow",
+            "Suresnes",
+            "Kaiseraugst",
+            "Grenzach",
+            "Böblingen",
+            "Mannheim",
+            "Lodz",
+            "Petaling Jaya",
+            "Sao Jose dos Campos",
+            "Uppsala",
+            "Seongnam",
+            "Klagenfurt",
+            "Barueri",
+            "Ciudad Juarez",
+            "Drachten",
+            "Diegem",
+            "Rio de Janeiro",
+            "Islamabad",
+            "Rehovot",
+            "Saskatoon",
+            "Warszawa",
+            "Abidjan",
+            "Wuhan",
+            "Hino",
+            "Danderyd",
+        ],
+    )
+    def test_unambiguous_foreign_cities_are_non_us(self, loc: str) -> None:
+        assert _c(loc) == "non_us"
+
+    @pytest.mark.parametrize("loc", ["Saxony", "Thuringia"])
+    def test_foreign_subnational_regions_are_non_us(self, loc: str) -> None:
+        assert _c(loc) == "non_us"
+
+    def test_a_new_city_token_still_loses_to_an_explicit_us_signal(self) -> None:
+        # The additions go in BELOW the US checks, so the ordering that protects US towns is
+        # untouched: a US state suffix or a bare "US" beside the city still wins.
+        assert _c("Sunnyvale, CA; Basel") == "us"
+        assert _c("US, Basel") == "us"
+
+
+class TestUSNamesakesStayFailOpen:
+    """The curation rule's other half. A name shared with a real US town is deliberately left
+    OUT of the catalog, so it stays `unknown` (kept) rather than `non_us` (dropped): a future
+    Dublin OH / Limerick PA / Birmingham AL posting must never be silently deleted. Mit's
+    ruling, and the same standard that already keeps Paris and Cambridge out.
+    """
+
+    @pytest.mark.parametrize(
+        "loc",
+        [
+            "Dublin",
+            "Cambridge",
+            "Limerick",
+            "Uxbridge",
+            "Abingdon",
+            "Birmingham",
+            "Warren",
+            "Ontario",
+            "Valencia",
+            "Best",
+            "Moscow",
+        ],
+    )
+    def test_a_name_with_a_us_namesake_is_never_dropped(self, loc: str) -> None:
+        assert _c(loc) != "non_us"
+
+    @pytest.mark.parametrize(
+        "loc",
+        ["Princeton University", "Armonk", "NY office", "UT MAIN CAMPUS", "Waukesha", "Lehi"],
+    )
+    def test_us_places_outside_the_city_allowlist_stay_unknown(self, loc: str) -> None:
+        # These are real US locations the allowlist does not name. Fail-open keeps them; the
+        # new tokens must not have widened far enough to catch them.
+        assert _c(loc) == "unknown"
+
+
+class TestStructuralCountryCode:
+    """Some providers emit an ISO-3166 alpha-3 country code where no city token exists —
+    a site code ("VNM06-01-Ho Chi Minh"), a dash prefix ("BGR-Varna"), or a parenthesised
+    suffix ("Remote (IND)"). Three letters, so unlike a 2-letter code it collides with no US
+    state abbreviation, which is why only the alpha-3 form is read.
+    """
+
+    @pytest.mark.parametrize(
+        "loc",
+        [
+            "BGR-Varna",
+            "SGP-Robinson Road SO",
+            "VNM06-01-Ho Chi Minh- Crescent Plaza",
+            "HUN04-01-Paty-Csonka Janos 1-3",
+            "IDN05-01-Jakarta- Jl.R. A Kartini Kav. 8",
+            "MYS03-01-Kuala Lumpur-Plaza Sentral",
+            "RUS06-01-Moscow-Naberezhnaya Tower",
+            "VNM.Ho Chi Minh",
+            "Remote (IND)",
+            "Dublin (IRL)",
+        ],
+    )
+    def test_a_structural_non_us_country_code_is_non_us(self, loc: str) -> None:
+        assert _c(loc) == "non_us"
+
+    def test_the_code_decides_where_the_city_token_deliberately_does_not(self) -> None:
+        # "Dublin" alone stays fail-open (US namesake), but "Dublin (IRL)" names its country.
+        assert _c("Dublin") == "unknown"
+        assert _c("Dublin (IRL)") == "non_us"
+
+    @pytest.mark.parametrize(
+        "loc",
+        [
+            "USA-GA-Remote Location",
+            "USA-NJ-Remote Location",
+            "USA-California-San Jose-1320 Ridder Park",
+        ],
+    )
+    def test_the_us_alpha_3_in_the_same_shape_is_us(self, loc: str) -> None:
+        assert _c(loc) == "us"
+
+    @pytest.mark.parametrize("loc", ["IN - Indianapolis", "CA - San Francisco", "OR - Portland"])
+    def test_a_two_letter_prefix_is_not_read_as_a_country(self, loc: str) -> None:
+        # Deliberately unread: "IN"/"CA"/"OR" are Indiana/California/Oregon as often as
+        # India/Canada/nothing, and "IT -"/"SE -" are department and compass prefixes.
+        assert _c(loc) != "non_us"
+
+
 class TestAlternationWordBoundary:
     """The `(?:...)` grouping inside `_alternation`.
 

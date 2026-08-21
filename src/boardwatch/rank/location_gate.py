@@ -8,7 +8,7 @@ lesson). The gate keeps `us` and — fail-open, Mit's ruling — `unknown`, and 
 The per-segment resolution ORDER is load-bearing:
 
   ambiguous-region → US-marker → US-state-abbrev → US-state-name → bare-"US" →
-  non-US-country → non-US-city → non-US-region → US-ZIP → US-city → unknown
+  non-US-country → non-US-city → non-US-ISO3-code → non-US-region → US-ZIP → US-city → unknown
 
 Bare "US"/"U.S." is checked BEFORE the non-US tokens so an explicit US signal wins within a
 segment that also names a foreign place ("US, Canada") — the posting is offered in the US.
@@ -34,6 +34,7 @@ from boardwatch.rank.location_data import (
     AMBIGUOUS_REGIONS,
     NON_US_CITIES,
     NON_US_COUNTRIES,
+    NON_US_ISO3,
     NON_US_REGIONS,
     POLICY_ONLY,
     US_CITIES,
@@ -79,6 +80,22 @@ _US_ZIP_RE = re.compile(r"(?<!\d)\d{5}(?:-\d{4})?(?!\d)")
 # A US state abbrev as a "City, ST" suffix. Requires the comma AND an UPPERCASE code in the
 # ORIGINAL text (the "City, ST" convention), so a lowercase "in"/"or" inside prose never fires.
 _STATE_ABBREV_RE = re.compile(r",\s*([A-Z]{2})(?![A-Za-z])")
+# An ISO-3166 alpha-3 country code where a provider names no city: a site code
+# ("VNM06-01-Ho Chi Minh"), a dash prefix ("BGR-Varna"), or a parenthesised suffix
+# ("Remote (IND)"). UPPERCASE in the ORIGINAL text is required for the same reason
+# `_STATE_ABBREV_RE` requires it: a lowercase "can-do" must never read as Canada.
+_ISO3_PREFIX_RE = re.compile(r"^([A-Z]{3})(?:[-.]|\d)")
+_ISO3_PAREN_RE = re.compile(r"\(([A-Z]{3})\)\s*$")
+
+
+def _non_us_country_code(segment: str) -> bool:
+    """True when a segment carries a structural non-US alpha-3 country code."""
+    stripped = segment.strip()
+    for pattern in (_ISO3_PREFIX_RE, _ISO3_PAREN_RE):
+        match = pattern.search(stripped)
+        if match and match.group(1).casefold() in NON_US_ISO3:
+            return True
+    return False
 
 
 def _classify_segment(segment: str) -> LocationClass:
@@ -112,6 +129,10 @@ def _classify_segment(segment: str) -> LocationClass:
     if _US_BARE_RE.search(low):
         return "us"
     if _NON_US_COUNTRY_RE.search(low) or _NON_US_CITY_RE.search(low):
+        return "non_us"
+    # After every US signal above, so "USA-GA-Remote Location" has already resolved US and a
+    # US state code in the same shape can never reach here.
+    if _non_us_country_code(segment):
         return "non_us"
     if _NON_US_REGION_RE.search(low):
         return "non_us"

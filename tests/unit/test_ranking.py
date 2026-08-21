@@ -252,6 +252,31 @@ class TestHardFilters:
         # soft mode never vetoes on location, non-US included
         assert passes_hard_filters("Backend Engineer", ["London, United Kingdom"], "unknown", profile, "soft") is True
 
+    def test_hard_mode_drops_a_non_us_ad_convention_when_the_location_cannot_decide(self) -> None:
+        # The GE HealthCare DACH postings: locations_json is exactly ["Remote"], so no location
+        # catalog can ever reach them. The German title decides instead.
+        profile = _profile()
+        german = "Applikationsspezialist/in Molekulare Bildgebung DACH (w/m/d)"
+        assert passes_hard_filters(german, ["Remote"], "remote", profile, "hard") is False
+        assert passes_hard_filters(german, ["Buc"], "unknown", profile, "hard") is False
+        # An English title in the same unclassifiable location is still KEPT — fail-open holds
+        # for everything the ad-convention rule does not positively recognise.
+        assert passes_hard_filters("Backend Engineer", ["Remote"], "remote", profile, "hard") is True
+
+    def test_a_confirmed_us_location_outranks_a_non_us_ad_convention(self) -> None:
+        # Belt and braces on the fail-safe direction: the ad marker only fires where the
+        # location has NOT confirmed US, so a US-located posting with a German title is kept.
+        # Zero such postings were observed in 28,287 open postings; this pins the direction.
+        profile = _profile()
+        german = "Software Entwickler (m/w/d)"
+        assert passes_hard_filters(german, ["Austin, TX"], "unknown", profile, "hard") is True
+        assert passes_hard_filters(german, ["US"], "unknown", profile, "hard") is True
+
+    def test_soft_mode_never_vetoes_on_an_ad_convention(self) -> None:
+        profile = _profile()
+        german = "Applikationsspezialist/in Molekulare Bildgebung DACH (w/m/d)"
+        assert passes_hard_filters(german, ["Remote"], "remote", profile, "soft") is True
+
     def test_hard_mode_with_remote_only(self) -> None:
         profile = _profile(remote_only=True)
         assert passes_hard_filters("Backend Engineer", ["NY"], "unknown", profile, "hard") is False
