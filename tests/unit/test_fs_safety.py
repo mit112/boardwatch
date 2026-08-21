@@ -11,6 +11,8 @@ platform constant — the guard's wiring is exercised separately by patching the
 
 from __future__ import annotations
 
+import sys
+
 import pytest
 
 from boardwatch.store.db import WalUnsafeFilesystemError, get_engine
@@ -61,36 +63,61 @@ _SPACED_BIND = """\
 """
 
 
+# The fixtures below are POSIX mount tables addressed by POSIX paths, and the detector resolves
+# its argument with `os.path.realpath` before comparing. On Windows that rewrites "/data" to
+# "\\data", which can never match a POSIX mount point, so every case here collapses onto the root
+# mount: the three that expect a fstype FAIL, and the ones that expect None PASS FOR THE WRONG
+# REASON — they would pass with an empty catalog too. A vacuous pass is worse than an honest skip,
+# so the whole POSIX-addressed set is skipped rather than the failures alone.
+#
+# Production is unaffected, which is why this is a test-only skip: Windows has no
+# /proc/self/mountinfo, so `unsafe_wal_filesystem` returns None before it ever compares a path.
+# Detection is Linux-only by design (see the module docstring of store/fs_safety.py). The three
+# platform-independent tests at the bottom of this file deliberately still run everywhere.
+_posix_mount_table = pytest.mark.skipif(
+    sys.platform == "win32",
+    reason="POSIX mount-table fixture: Windows path normalization cannot match a POSIX mount point",
+)
+
+
+@_posix_mount_table
 def test_a_bind_mounted_host_dir_reads_as_virtiofs() -> None:
     assert unsafe_wal_filesystem("/data", mountinfo_text=_BIND_VIRTIOFS) == "virtiofs"
 
 
+@_posix_mount_table
 def test_the_older_grpc_fuse_bind_mount_is_caught_by_the_fuse_prefix() -> None:
     assert unsafe_wal_filesystem("/data", mountinfo_text=_BIND_GRPCFUSE) == "fuse.grpcfuse"
 
 
+@_posix_mount_table
 def test_a_named_docker_volume_on_ext4_is_safe() -> None:
     assert unsafe_wal_filesystem("/data", mountinfo_text=_NAMED_VOLUME) is None
 
 
+@_posix_mount_table
 def test_a_path_on_the_container_overlay_root_is_safe() -> None:
     assert unsafe_wal_filesystem("/srv/app", mountinfo_text=_BIND_VIRTIOFS) is None
 
 
+@_posix_mount_table
 def test_an_nfs_mounted_directory_is_unsafe() -> None:
     assert unsafe_wal_filesystem("/mnt/nfs/boardwatch", mountinfo_text=_NFS_MOUNT) == "nfs4"
 
 
+@_posix_mount_table
 def test_longest_prefix_wins_a_safe_parent_does_not_clear_an_unsafe_child() -> None:
     assert unsafe_wal_filesystem("/data/store", mountinfo_text=_NESTED) == "nfs4"
     assert unsafe_wal_filesystem("/data", mountinfo_text=_NESTED) is None
 
 
+@_posix_mount_table
 def test_a_local_fuseblk_drive_is_not_refused() -> None:
     # ntfs-3g / exfat-fuse report `fuseblk`; it is local disk, so it must clear the "fuse" net.
     assert unsafe_wal_filesystem("/data/store", mountinfo_text=_FUSEBLK) is None
 
 
+@_posix_mount_table
 def test_a_bind_mount_point_with_a_space_is_still_detected() -> None:
     # The mount point is octal-escaped (\\040) in mountinfo; without decoding it, the guard
     # would fail to match the real path and miss an unsafe mount (a fail-open).
