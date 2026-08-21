@@ -1,6 +1,7 @@
 """ENGINE_VERSION is DERIVED, grouping is exact set semantics, and roll-up is a set of
 order-independent any() tests over requirement ROWS."""
 
+import ast
 from pathlib import Path
 
 import pytest
@@ -144,8 +145,8 @@ def test_the_version_changes_when_any_covered_module_changes() -> None:
 
 
 def test_a_comment_only_edit_does_not_change_the_digest(tmp_path: Path) -> None:
-    """The digest is over ast.dump, not raw bytes, or every comment edit re-evaluates the
-    whole corpus."""
+    """The digest is over a parsed AST, not raw bytes, or every comment edit re-evaluates
+    the whole corpus."""
     from boardwatch.eligibility.engine import digest_of_sources
 
     original = Path("src/boardwatch/eligibility/detect.py").read_text(encoding="utf-8")
@@ -174,6 +175,45 @@ def test_the_digest_refuses_a_missing_module(tmp_path: Path) -> None:
 
     with pytest.raises(FileNotFoundError):
         source_of("no_such_module.py")
+
+
+def test_the_canonical_dump_omits_empty_list_fields() -> None:
+    """The mechanism that makes the digest interpreter-independent.
+
+    `ast.dump` is version-dependent: 3.13 omits fields holding their default where 3.12 writes
+    `args=[], keywords=[], type_params=[]`, and `type_params` did not exist before 3.12. Over
+    the four digested modules that produced a DIFFERENT digest on each of 3.11 / 3.12 / 3.13
+    for byte-identical source, so a Python upgrade silently re-keyed every posting's verdict.
+    Skipping empty lists is what absorbs a grammar field a later version adds but this code
+    does not use.
+    """
+    from boardwatch.eligibility.engine import canonical_dump
+
+    dumped = canonical_dump(ast.parse("x = 1\n"))
+    assert "=[]" not in dumped
+    assert "type_params" not in dumped
+
+
+def test_an_empty_grammar_field_does_not_change_the_dump() -> None:
+    """Directly encodes the forward-compatibility claim: a node carrying an extra field that
+    is an empty list must serialise identically to one without the field at all."""
+    from boardwatch.eligibility.engine import canonical_dump
+
+    node = ast.parse("def f():\n    return 1\n")
+    without = canonical_dump(node)
+    function = node.body[0]
+    function._fields = (*function._fields, "_probe_future_field")
+    function._probe_future_field = []  # type: ignore[attr-defined]
+    assert canonical_dump(node) == without
+
+
+def test_a_none_valued_field_is_kept_so_the_none_literal_stays_distinguishable() -> None:
+    """`None` is NOT skipped alongside empty lists. `Constant(None)` is the literal `None`;
+    dropping it would collapse `x = None` into a node with no fields."""
+    from boardwatch.eligibility.engine import canonical_dump, digest_of_sources
+
+    assert "value=None" in canonical_dump(ast.parse("x = None\n"))
+    assert digest_of_sources(["x = None\n"]) != digest_of_sources(["x = 0\n"])
 
 
 def test_unparseable_source_is_not_silently_skipped() -> None:

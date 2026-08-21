@@ -11,12 +11,30 @@ and abroad (Paris TX / France, Cambridge MA / UK, Dublin OH / Ireland, San Jose 
 Rica, Naples FL / Italy) is left OUT of both sets, so a state/country suffix disambiguates it
 rather than a bare token guessing wrong. That is why the classifier can read "Paris, TX" as US
 and "Paris, France" as non-US.
+
+The rule bites hardest on names a review is tempted to "complete". These were each considered
+for `NON_US_CITIES` and DELIBERATELY REJECTED, because every one has a real US town a posting
+could plausibly name: **Dublin** (OH, CA), **Limerick** (PA, ME), **Birmingham** (AL, MI),
+**Uxbridge** (MA), **Abingdon** (VA, MD), **Cambridge** (MA), **Warren** (MI, OH, NJ),
+**Ontario** (CA), **Valencia** (CA), **Moscow** (ID), **Zwolle** (LA), **Best** (an English
+word). Leaving them out costs real foreign postings — 23 Irish `Dublin` roles stay in the pool
+— and that is the accepted price: the gate must never silently delete a US role (Mit's ruling).
+Do not add them without a country suffix doing the work instead.
+
+"Plausibly" is the operative word, and it means a US namesake that could realistically appear
+as a job location, not merely one that exists in a gazetteer. `Warren` is out because Warren MI
+is GM's headquarters; `Dublin` because Dublin OH is Cardinal Health's. `Milano` is IN despite
+Milano TX existing, because that is a Milam County hamlet of a few hundred people with no
+employer, while Milano is how Italian-sourced ATS feeds spell Milan. Apply the same test to
+anything added later: name the US employer the token would cost you. If you cannot, it is safe;
+if you can, leave it out. (`Zwolle` is out on caution rather than this test — Zwolle LA is also
+a hamlet, so it could be admitted, but nothing in the corpus needs it.)
 """
 
 from __future__ import annotations
 
 # Bump when any set below changes, so a downstream cache or report can detect drift.
-LOCATION_DATA_VERSION = 1
+LOCATION_DATA_VERSION = 2
 
 US_STATE_ABBREVS = frozenset(
     {
@@ -76,6 +94,8 @@ NON_US_COUNTRIES = frozenset(
         "sweden", "norway", "denmark", "finland", "switzerland", "austria", "belgium",
         "czech", "czechia", "hungary", "greece", "turkey", "ukraine", "russia", "egypt",
         "south africa", "nigeria", "kenya", "uae", "united arab emirates", "saudi arabia",
+        # Spelled-out forms that the ungrouped alternation used to catch only by accident.
+        "deutschland", "russian federation",
         "qatar", "pakistan", "bangladesh", "vietnam", "thailand", "malaysia", "indonesia",
         "philippines", "hong kong", "luxembourg", "estonia", "lithuania", "latvia",
         "bulgaria", "croatia", "serbia", "slovakia", "slovenia", "iceland", "costa rica",
@@ -113,13 +133,50 @@ NON_US_CITIES = frozenset(
         "nagoya", "fukuoka", "yokohama", "kyoto", "busan", "incheon", "kaohsiung", "hsinchu",
         "guangzhou", "chengdu", "hangzhou", "nanjing", "suzhou", "perth", "brisbane",
         "adelaide", "auckland", "wellington", "christchurch", "edmonton", "winnipeg",
-        "quebec city", "taoyuan", "sao paulo", "são paulo",
+        "quebec city", "taoyuan", "sao paulo", "são paulo", "milano",
+        # Added after run 65: every one of these reached a ranked shortlist through the
+        # `unknown` fail-open, and each was checked against the corpus for a US namesake
+        # before being admitted (see the rejected list in the module docstring).
+        "buc", "basel", "penzberg", "kleinmachnow", "suresnes", "kaiseraugst", "grenzach",
+        "böblingen", "boblingen", "mannheim", "lodz", "łódź", "klagenfurt", "danderyd",
+        "uppsala", "petaling jaya", "seongnam", "hino", "taichung", "warszawa", "carnaxide",
+        "sant cugat del vallès", "sant cugat del valles", "sao jose dos campos",
+        "são josé dos campos", "belo horizonte", "rio de janeiro", "joinville", "barueri",
+        "varginha", "florianópolis", "florianopolis", "ciudad juarez", "ciudad juárez",
+        "huixquilucan de degollado", "alajuela", "san salvador", "drachten", "diegem",
+        "lindesnes", "islamabad", "lahore", "dhaka", "rehovot", "astana", "saskatoon",
+        "abidjan", "douala", "foshan", "zhuzhou", "wuhan", "kunming", "jiaxing", "hefei",
+        "xianyang", "nanchang", "xian", "jining", "yinchuan",
     }
 )
 
-# Non-US macro-regions: no US component, so a hard US gate drops them.
+# Non-US macro-regions and subnational regions: no US component, so a hard US gate drops them.
+# The subnational names ("Saxony", "Thuringia") arrive as a whole location string where a
+# provider names the state instead of the city.
 NON_US_REGIONS = frozenset(
-    {"emea", "apac", "latam", "europe", "uk", "eu", "asia", "anz", "middle east", "africa"}
+    {
+        "emea", "apac", "latam", "europe", "uk", "eu", "asia", "anz", "middle east", "africa",
+        "saxony", "thuringia",
+    }
+)
+
+# ISO 3166-1 alpha-3 country codes, for providers that emit a country code where no city token
+# exists: a site code ("VNM06-01-Ho Chi Minh"), a dash prefix ("BGR-Varna"), or a parenthesised
+# suffix ("Remote (IND)"). Only the ALPHA-3 form is read: a 2-letter code collides with 51 US
+# state abbreviations ("IN" is Indiana as often as India, "DE" Delaware as often as Germany)
+# and with department and compass prefixes ("IT -", "SE -"). "usa" is deliberately absent.
+NON_US_ISO3 = frozenset(
+    {
+        "afg", "alb", "and", "are", "arg", "arm", "aus", "aut", "aze", "bel", "bgd", "bgr",
+        "bih", "blr", "bra", "can", "che", "chl", "chn", "civ", "cmr", "cod", "col", "cri",
+        "cyp", "cze", "deu", "dnk", "dom", "ecu", "egy", "esp", "est", "eth", "fin", "fra",
+        "gbr", "geo", "gha", "grc", "gtm", "hkg", "hnd", "hrv", "hun", "idn", "ind", "irl",
+        "isl", "isr", "ita", "jor", "jpn", "kaz", "ken", "khm", "kor", "kwt", "lbn", "lka",
+        "ltu", "lux", "lva", "mar", "mda", "mex", "mkd", "mlt", "mmr", "mus", "mys", "nga",
+        "nld", "nor", "npl", "nzl", "pak", "pan", "per", "phl", "pol", "prt", "pry", "qat",
+        "rou", "rus", "rwa", "sau", "sgp", "slv", "srb", "svk", "svn", "swe", "tha", "tun",
+        "tur", "twn", "tza", "uga", "ukr", "ury", "uzb", "ven", "vnm", "zaf",
+    }
 )
 
 # Multi-region tokens that INCLUDE the US: genuinely undecidable for a strict gate, so unknown.

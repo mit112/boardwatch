@@ -29,6 +29,7 @@ from rapidfuzz import fuzz
 from rapidfuzz.utils import default_process
 
 from boardwatch.core.settings import RankWeights
+from boardwatch.rank.foreign_ad_gate import has_non_us_ad_marker
 from boardwatch.rank.location_gate import classify_location
 from boardwatch.rank.seniority_gate import mask_non_seniority_phrases
 
@@ -199,7 +200,14 @@ def passes_hard_filters(
         # keeps both US and anything it cannot resolve — fail-open, so a real US role whose
         # location string is a bare "Remote" or an office nickname is never silently deleted
         # (Mit's ruling). `location_fit` above stays the SOFT scorer; this is the hard veto.
-        if classify_location(posting_locations) == "non_us":
+        location = classify_location(posting_locations)
+        if location == "non_us":
+            return False
+        # Second axis: a place catalog can only drop a city it has already heard of, and three
+        # postings name no place at all (`locations_json == ["Remote"]`). A German or French
+        # job ad is not a US role whatever city it names. Gated on `!= "us"` so a CONFIRMED US
+        # location always wins — the fail-safe direction, even though 0 such postings exist.
+        if location != "us" and has_non_us_ad_marker(posting_title):
             return False
     return True
 
