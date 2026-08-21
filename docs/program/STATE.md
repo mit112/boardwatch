@@ -117,7 +117,12 @@ Windows jobs — `os.path.realpath` rewrites `/data` to `\data`, so the POSIX fi
 mount and the `None`-expecting cases passed **vacuously**. (3) tectonic: `actions/cache` only saves on a
 **miss**, so the minimal-`article` warmup bundle was frozen forever and every run fetched the template's real
 packages over the network — one hiccup cost ~52 render tests. **Windows/macOS evidence comes ONLY from a
-`workflow_dispatch` of `ci.yml` and the nightly itself** — never from a PR's checks.
+`workflow_dispatch` of `ci.yml` and the nightly itself** — never from a PR's checks. **That evidence is now
+IN: run 32514934447 is the first fully green full matrix — all 12 jobs, windows and macos 3.11/3.12/3.13
+included.** Windows 3.11 went from 5 failed / 6888 passed / 50 skipped to **7003 passed / 58 skipped / 0
+failed** (50m19s → 35m08s); the +8 skipped is exactly the eight `fs_safety` cases marked, so the pass is for
+the right reason. **#95 stays OPEN by design** — `nightly-watch` is schedule-only, so it closes only on a
+green scheduled nightly.
 
 **The roadmap is UNFROZEN (D-240); its remaining gates are OPERATIONAL, not build.** P0/P1/P2/P5 gates are
 **MET**. P3/P4/P6 builds are essentially done; their gates now close by *running* boardwatch daily. Gate P4
