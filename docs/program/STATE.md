@@ -27,7 +27,19 @@ UNATTENDED** — it needs 7 consecutive clean scheduled runs, and only a SCHEDUL
 fix and **all 8 of its leads were software roles** — run 65 had 5 of 8 as business/ops `Lead` titles.
 **Run 67 (MANUAL, 2026-08-21, verified clean)** absorbed D-266's one-time full-corpus re-key so tomorrow's
 tick does not pay it: exit 0, 42m41s, reconciles, 30,243 of 30,243 re-evaluated, 8 leads / 8 PDFs, **all 8
-`us`** with none on fail-open. A
+`us`** with none on fail-open.
+
+**Run 68 is ARMED and PRE-VERIFIED (D-268).** The next scheduled tick takes Gate P3 to **3 of 7**. Confirm it
+fired with `launchctl print gui/$(id -u)/com.boardwatch.run | grep -E "runs|last exit"` — **`runs` must go
+3 → 4**, and that counter is the ONLY authority (a manual `run --project` moves nothing). Artifacts:
+`~/boardwatch-applications/2026-08-22/funnel-68.*`, log `~/Library/Logs/boardwatch-run.log`; match on the run
+NUMBER, never the date. The 16 decisions reopened after run 67 re-enter its shortlist, and **all six known
+leaks are already blocked by the current gates** — five non-SWE `Lead` titles in the role gate, GE HealthCare
+posting 31365 (`Buc` → `non_us`) in the hard filter — so any of the six appearing in `funnel-68.json`'s
+`leads` is a real regression to investigate before anything else. The other ten are legitimate SWE roles that
+may re-surface and consume the cap with repeats, which Mit accepted when reopening. A
+
+
 **missed-window alarm ships (D-260, #110):** a successful run pings `BOARDWATCH_HEARTBEAT_URL` (a
 dead-man's-switch), so an external cron-monitor alerts when a scheduled run never happens — the one failure a
 local check cannot see (the Mac off/asleep all day). Off until the operator sets the URL.
@@ -196,10 +208,11 @@ handoff can report `bundle_lock_held` while nobody holds the lock. **Ruled: reco
 
 | Item | Detail | Owner |
 |---|---|---|
-| **A metric that could not fail (D-267)** | `grep -ic buc funnel-N.json` was read as a Buc count; it counts the word "bucket" and is 4 on runs 61/63/65/66 regardless. The funnel enumerates **no ranked pool** and a `leads` row carries **no location** — so the hard location gate, the one gate whose failure is a visa-ineligible lead, leaves no trace in its own artifact. Closing it needs `locations` on `Lead` + an `artifact_version` bump | **Mit** (shipped-schema change) |
+| **A metric that could not fail (D-267)** | `grep -ic buc funnel-N.json` was read as a Buc count; it counts the word "bucket" and is 4 on runs 61/63/65/66 regardless. The funnel enumerates **no ranked pool** and a `leads` row carries **no location** — so the hard location gate, the one gate whose failure is a visa-ineligible lead, leaves no trace in its own artifact. Closing it needs `locations` on `Lead` + an `artifact_version` bump. **Re-raised 2026-08-21c; still Mit's.** D-268 corrects this row's replacement metric too: "0 of 62" had the 0 robust under every bounded rule (27/27/69/70 matched, 0 surviving) but the **62 unreproducible** — match rule and corpus size were never recorded beside it, and a bare substring gives 103 matched / **39 surviving**. A ratio now records its match rule AND corpus size | **Mit** (shipped-schema change) |
 | **CI has two intermittent flakes** | tectonic network + `test_two_writer_concurrency`; re-run failed jobs to recover; local `make check` stays green | tooling |
 | **No external missed-window alarm** | nothing outside a run can detect a missed 08:00; the funnel heartbeat is only written from inside `runner.py` | P3 |
 | **`resume.yaml` is an IMPORT SOURCE, never hand-fixed** | D-155. Mit pins `resume_max_pages=1`; never advise 2 | Mit |
 | **`boardwatch top` advances the queue by default** | records `seen` unless `--no-record`; relevant to Gate P6's clean window | P6 |
 | **`add-evidence` takes no bundle lock** | two concurrent captures race on up to 13 files (D-143) | owner-gated |
+| **A live store is readable ONLY via Python `sqlite3` `?mode=ro`** | the `sqlite3` CLI with `?mode=ro` fails `CANTOPEN(14)` on a cleanly-checkpointed store (no `-shm`; not the sandbox), and `?immutable=1` skips the WAL so it is STALE against a live writer. Mid-run progress: `SELECT COUNT(*) FROM eligibility_evaluations WHERE run_id=N` (D-268) | tooling |
 | **`make check` must be launched DETACHED** | the Bash tool clamps `timeout` to 10 min; a longer gate reads as `Error 143`. Launch double-fork + `setsid` and poll the log | tooling |
