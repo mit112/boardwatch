@@ -105,10 +105,19 @@ false-*alarm* on a genuine zero-lead day now that the ranker hides `not_swe`/`ab
 **A manual `run --project` is the way to exercise a gate change on live data before a scheduled tick** — it
 uses identical argv but does NOT move the P3 counter. Run 65 did this and caught the `Lead` hole (D-262).
 
-**CI health — two intermittent flakes.** Tectonic LaTeX-over-network `compile_failed` and
-`test_two_writer_concurrency` "database is locked" (under `-n auto`) redden the nightly (#95) and block
-auto-merge. Recovery is `gh run rerun <id> --failed` (Mit's ruling: re-run, not admin-bypass or refactor);
-local `make check` stays green (a CI-only divergence). Hardening is a deferred reliability win.
+**CI health — the nightly's THREE causes are fixed (D-269); #95 closes on a green scheduled run.** It had
+failed **7 of its last 8** scheduled runs, which is not intermittency: ubuntu always passed, so every cause
+sat in the schedule-only jobs and `make check` stayed green locally throughout. (1) A **production defect** —
+`ensure_schema` runs alembic through an engine alembic builds itself, so the pragma listener never fires and a
+store is **created in `delete` mode**; the deferred switch to WAL is a *conversion*, which no other
+connection's lock permits (raises after the full busy timeout against a reader, **instantly** against a
+writer), so two processes opening a fresh store race and the loser cannot open it. Mit's live store already
+reads `wal`, so nothing needs migrating. (2) Five **deterministic** Windows `fs_safety` failures on all three
+Windows jobs — `os.path.realpath` rewrites `/data` to `\data`, so the POSIX fixtures collapse onto the root
+mount and the `None`-expecting cases passed **vacuously**. (3) tectonic: `actions/cache` only saves on a
+**miss**, so the minimal-`article` warmup bundle was frozen forever and every run fetched the template's real
+packages over the network — one hiccup cost ~52 render tests. **Windows/macOS evidence comes ONLY from a
+`workflow_dispatch` of `ci.yml` and the nightly itself** — never from a PR's checks.
 
 **The roadmap is UNFROZEN (D-240); its remaining gates are OPERATIONAL, not build.** P0/P1/P2/P5 gates are
 **MET**. P3/P4/P6 builds are essentially done; their gates now close by *running* boardwatch daily. Gate P4
@@ -137,8 +146,12 @@ an import source, never hand-fixed (D-155).
   (D-202…D-210, D-237); Education Slice C (D-239); D-184 finding 2 (D-238).
 - **Fixture + corpus drift (D-228):** R13/R14/R15 in `tools/generalization/fixtures.py`. The corpus content
   pin was re-recorded this session for the m0105 fix (987 rows unchanged). **On 2026-09-11** the greenhouse
-  fixture reds `make check` — drain or re-capture. `scratchpad/gen_corpus.py` is uncommitted, so the oracle is
-  unregenerable.
+  fixture reds `make check` (enforced at `fixtures.py` R15, `now > review_by`) — and that tripwire already has
+  its drain: `python -m tools.fixture_refresh --extend <provider> --days N --reason "..."` records an audited
+  extension, or re-check the live API and re-record. **The corpus is regenerable in principle:** only
+  `scratchpad/gen_corpus.py` is missing — its inputs all survive in `.agent/p2-catalog/` (`proto.py` the
+  oracle, `matrix.py`, `adv.py`). They are **gitignored**, so a `.agent/` clean is what would make the 987-row
+  oracle truly unrecoverable; committing a generator plus its inputs is an owner call, not done.
 
 ### Owner-gated — do NOT start unilaterally
 
