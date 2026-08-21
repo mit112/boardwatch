@@ -24,15 +24,18 @@ store.
 ~26 min, funnel RECONCILES, 8 leads / 8 PDFs / 8 projected, 0 withheld as gone). **Gate P3 is 2 of 7
 UNATTENDED** — it needs 7 consecutive clean scheduled runs, and only a SCHEDULED tick counts (a manual
 `run --project` does not touch the counter). Run 66 was the first scheduled run to exercise the #114 `Lead`
-fix and **all 8 of its leads were software roles** — run 65 had 5 of 8 as business/ops `Lead` titles. A
+fix and **all 8 of its leads were software roles** — run 65 had 5 of 8 as business/ops `Lead` titles.
+**Run 67 (MANUAL, 2026-08-21, verified clean)** absorbed D-266's one-time full-corpus re-key so tomorrow's
+tick does not pay it: exit 0, 42m41s, reconciles, 30,243 of 30,243 re-evaluated, 8 leads / 8 PDFs, **all 8
+`us`** with none on fail-open. A
 **missed-window alarm ships (D-260, #110):** a successful run pings `BOARDWATCH_HEARTBEAT_URL` (a
 dead-man's-switch), so an external cron-monitor alerts when a scheduled run never happens — the one failure a
 local check cannot see (the Mac off/asleep all day). Off until the operator sets the URL.
 
-**Run 66 funnel:** 135 boards (81 complete, 12 failed) → 29,450 corpus → 12,354 uncertain (D-250) / 2,059
-ineligible → `hidden_hard_filter` 17,189 → shortlist **8**. **~3,400 postings clear every filter and are cut
-only by `DEFAULT_TOP_N`** — the precision tension Mit rules on: fix precision, never tune the cap (ideally
-show everything eligible).
+**Run 67 funnel (latest):** 30,243 corpus → 12,697 uncertain (D-250) / 2,167 ineligible →
+`hidden_hard_filter` 17,891 → shortlist **8**, all 8 leads `us`. **3,502 postings clear every filter and are
+cut only by `DEFAULT_TOP_N`** (run 66: 3,595) — the precision tension Mit rules on: fix precision, never tune
+the cap (ideally show everything eligible).
 
 **Eligibility now decides AND removes.** `work_authorization.needs_sponsorship=true` set (D-249); a
 zero-evidence `eligible` abstains to `uncertain` (D-250); two rules that could never resolve MET are fixed —
@@ -52,7 +55,7 @@ bare Administrator. **NOT excluding "User Researcher"** — it overlaps real ML/
 the unclassifiable, Mit's visa ruling). Default stays `soft` for other users. The funnel's stale "never
 measured firing" note is now corrected (D-265) — that bucket carried 17,189 drops in run 66.
 
-**Two real defects in that gate are fixed this session.** (1) **D-263:** `_alternation` built its pattern
+**Two real defects in that gate are fixed (D-263, D-264).** (1) **D-263:** `_alternation` built its pattern
 without grouping the alternation body, so the word-boundary lookarounds bound only to the first and last
 token and everything between matched as a bare substring. Region token `uk` fired inside `Waukesha` and
 `West Milwaukee`, and the gate silently dropped **41 real GE HealthCare Wisconsin postings** — `Software
@@ -71,7 +74,9 @@ to be pipeable (NOT one of the TTY-guarded gates), so this was applied without M
 activates the merged-but-inert gate (ambiguous level tokens like "Level 3" still ABSTAIN and pass — ladders are
 not guessed), and `exclude_titles` gained `Intern`/`Internship`/`Co-op` (title-based, trap-safe; the engine is
 body-only, below). **Done (run 65):** `ledger reopen --stale` released **19** decisions — the one-time
-`policy_version` re-key the band + `exclude_titles` edit forced (run 65 was the first run after it).
+`policy_version` re-key the band + `exclude_titles` edit forced. **Done again (after run 67):** 16 more,
+D-266's fingerprint re-key. `engine_version` feeds `policy_version`, so the drain is owed after ANY change to
+it; a stamp mismatch never re-opens on its own, so no run self-heals this.
 
 **The eligibility engine is body-only** — `preflight.py` feeds it `posting_versions.body_text` with no title
 column — so title-based filtering (internship, seniority words) lives in the ranker (`exclude_titles`,
@@ -81,7 +86,7 @@ and already suppresses the "internships count" trap.
 
 **Reviews of the precision merges have found five false-drop defects; all are fixed** — the US+foreign
 location segment (#111), the seniority product-noun collision (#112), the `Lead` hole those reopened (#114),
-and this session's two (D-263/D-264). **Deferred (MEDIUM, safe-direction):** the zero-output guard can
+and the location gate's two (D-263/D-264). **Deferred (MEDIUM, safe-direction):** the zero-output guard can
 false-*alarm* on a genuine zero-lead day now that the ranker hides `not_swe`/`above_band`/`non_us`, not just
 `ineligible` — a false alarm on the unattended run, never data loss.
 
@@ -191,7 +196,7 @@ handoff can report `bundle_lock_held` while nobody holds the lock. **Ruled: reco
 
 | Item | Detail | Owner |
 |---|---|---|
-| **Run 67 was IN FLIGHT at session close** | launched manually 2026-08-21 09:13:29 on `301c7e9` to absorb D-266's one-time corpus re-key (NOT a P3 tick). Verify it first: exit 0, reconciles, `Buc` gone from the ranked pool too, and whether `ledger reopen --stale` is owed | next session |
+| **A metric that could not fail (D-267)** | `grep -ic buc funnel-N.json` was read as a Buc count; it counts the word "bucket" and is 4 on runs 61/63/65/66 regardless. The funnel enumerates **no ranked pool** and a `leads` row carries **no location** — so the hard location gate, the one gate whose failure is a visa-ineligible lead, leaves no trace in its own artifact. Closing it needs `locations` on `Lead` + an `artifact_version` bump | **Mit** (shipped-schema change) |
 | **CI has two intermittent flakes** | tectonic network + `test_two_writer_concurrency`; re-run failed jobs to recover; local `make check` stays green | tooling |
 | **No external missed-window alarm** | nothing outside a run can detect a missed 08:00; the funnel heartbeat is only written from inside `runner.py` | P3 |
 | **`resume.yaml` is an IMPORT SOURCE, never hand-fixed** | D-155. Mit pins `resume_max_pages=1`; never advise 2 | Mit |
