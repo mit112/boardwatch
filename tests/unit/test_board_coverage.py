@@ -131,6 +131,8 @@ def test_enumerated_only_board_with_ratio_1_0_is_a_construction_bug() -> None:
 
 
 def test_measured_board_missing_a_ratio_is_a_construction_bug() -> None:
+    """Also covers fix round 2's "tightened case still raises" requirement: a positive stated
+    total with no ratio is still a construction bug after the zero-total relaxation below."""
     with pytest.raises(ContradictoryCoverage):
         BoardCoverage(company_id=1, name="Adobe", provider="workday", bucket="measured",
                       held=600, board_reported_total=740, board_enumerated=740,
@@ -155,7 +157,17 @@ def test_a_zero_stated_total_does_not_inflate_the_global_ratio() -> None:
                       detail_deferred=500, shortfall=500, ratio=500 / 1000),
         BoardCoverage(company_id=2, name="B", provider="workday", bucket="measured",
                       held=5, board_reported_total=0, board_enumerated=0,
-                      detail_deferred=0, shortfall=-5, ratio=float("inf")),
+                      detail_deferred=0, shortfall=-5, ratio=None),
     ])
     assert rep.global_ratio == pytest.approx(0.5)
     assert rep.measured_zero_total == 1
+
+
+def test_measured_board_with_zero_total_accepts_no_ratio() -> None:
+    """Fix round 2: the ratio for a zero-stated-total board is genuinely undefined — no real
+    number answers "held against a claimed total of zero" — so `ratio=None` is the right word
+    for it, the same word the four non-measured buckets already use for "no claim". `inf` was
+    rejected: it is not valid JSON (RFC 8259) and the next task emits `--json`."""
+    BoardCoverage(company_id=1, name="B", provider="workday", bucket="measured",
+                  held=5, board_reported_total=0, board_enumerated=0,
+                  detail_deferred=0, shortfall=-5, ratio=None)

@@ -19,6 +19,14 @@ denominator — held postings against a stated total of zero would otherwise inf
 ratio with a denominator contribution of nothing. Excluded boards are counted, not dropped, in
 `CoverageReport.measured_zero_total`.
 
+A zero-stated-total board's OWN `ratio` is genuinely undefined — there is no real number for
+"postings held against a board that claims to have none" — and `None` is the right word for
+that, the same word the four non-measured buckets already use for "no claim". `inf` was
+considered and rejected: `json.dumps({"ratio": float("inf")})` emits `{"ratio": Infinity}`,
+which RFC 8259 forbids (Python accepts it only as a non-standard extension), and the next
+task's `--json` output is a real consumer. Inventing a sentinel to satisfy a type is how a
+metric starts lying.
+
 This module has no I/O and no database access. It consumes the coverage columns Task 2 added to
 `board_scans` (already resolved to plain values by the caller) and classifies them.
 """
@@ -81,7 +89,15 @@ class BoardCoverage:
 
     def __post_init__(self) -> None:
         if self.bucket == "measured":
-            consistent = self.ratio is not None and self.board_reported_total is not None
+            if self.board_reported_total is None:
+                consistent = False
+            elif self.board_reported_total > 0:
+                consistent = self.ratio is not None
+            else:
+                # board_reported_total == 0: the board's own ratio is genuinely undefined (no
+                # real number answers "held against a claimed total of zero"), so `ratio=None`
+                # is accepted here exactly like the four non-measured buckets below.
+                consistent = True
         else:
             consistent = self.ratio is None
         if not consistent:
