@@ -64,6 +64,17 @@ def test_complete_snapshot_parses_array_of_postings(tmp_path: Path) -> None:
 
 
 @respx.mock
+def test_lever_states_no_board_total(tmp_path: Path) -> None:
+    """A bare JSON array has no count field. None is a CLAIM: the board stated nothing.
+
+    Backfilling len(postings) here would make coverage 100% by arithmetic, forever."""
+    respx.get(BOARD_URL).mock(return_value=httpx.Response(200, content=_fixture_bytes("normal.json")))
+    snapshot = provider.fetch_board(_fetcher(tmp_path), _request())
+    assert snapshot.board_reported_total is None
+    assert snapshot.board_enumerated == len(snapshot.postings)
+
+
+@respx.mock
 def test_created_at_is_epoch_milliseconds_not_seconds(tmp_path: Path) -> None:
     # the ms-vs-s guard (issue #16): a 13-digit epoch-ms createdAt must land in this
     # decade, not 1970. If the provider divided by the wrong factor this fails loudly.
@@ -172,3 +183,26 @@ def test_healthcheck_mapping(
 def test_healthcheck_transport_failure_is_unreachable(tmp_path: Path) -> None:
     respx.get(BOARD_URL).mock(side_effect=httpx.ConnectError("boom"))
     assert provider.healthcheck(_fetcher(tmp_path), "acme") == BoardHealth.UNREACHABLE
+
+
+@respx.mock
+def test_board_enumerated_counts_listed_ids_not_surviving_postings(tmp_path: Path) -> None:
+    """`board_enumerated` means the same thing on every provider: DISTINCT POSTING IDS LISTED,
+    before the detail budget and before parse failures drop anything (core/models.py). Lever
+    stated no total, so this column is the only listing census it contributes — counting
+    survivors made it a parse-failure count instead, and no two providers agreed.
+
+    Three rows, one unparseable, one id-less: 3 listed, 2 keyable, 2 parsed."""
+    payload = [
+        {"id": "a", "text": "Engineer A", "hostedUrl": "https://jobs.lever.co/acme/a",
+         "createdAt": 1750000000000, "descriptionPlain": "body", "categories": {}},
+        {"id": "b", "hostedUrl": "https://jobs.lever.co/acme/b",
+         "createdAt": 1750000000000, "descriptionPlain": "body", "categories": {}},
+        {"hostedUrl": "https://jobs.lever.co/acme/c", "text": "No id",
+         "createdAt": 1750000000000, "descriptionPlain": "body", "categories": {}},
+    ]
+    respx.get(BOARD_URL).mock(return_value=httpx.Response(200, json=payload))
+    snapshot = provider.fetch_board(_fetcher(tmp_path), _request())
+    assert snapshot.board_enumerated == 2  # "a" and "b"; the id-less row cannot be keyed
+    assert len(snapshot.postings) == 1  # "b" has no title
+    assert snapshot.board_reported_total is None

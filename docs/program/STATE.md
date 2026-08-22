@@ -89,16 +89,32 @@ LinkedIn + Indeed via JobSpy. **Bespoke first-party adapters are OUT** (Amazon/A
 own dead sources are *all* bespoke adapters or niche APIs, never aggregators. `PROGRAM.md` §4's three
 blocking rows are struck.
 
-**The coverage instrument is a PERSISTENCE problem, not a fetching problem (D-271).** Every provider already
-enumerates its whole board; workday and smartrecruiters already parse a server total, and greenhouse returns
-`meta.total` on the cheap `_health_url` shape `probe_health` already fetches (stripe 576, databricks 818).
-None reaches the DB. Persisting three nullable `board_scans` columns plus the facet sum costs **zero new
-HTTP requests**. Coverage must publish as a five-bucket partition — `measured` / `enumerated_only` /
-`censored` / `dark` / `stale`, never folded, mirroring ABSTAIN — because a ratio over our own array length
-cannot fail. Design and eight ways the metric could lie:
-`docs/superpowers/specs/2026-08-22-coverage-assurance-design.md`. **Track 1 ships FIRST, before any lane** — a banned or broken lane dies
-silently today, and P7 judges a source by leads produced over ≥3 runs. **`DEFAULT_TOP_N` goes 8 → 40**
-(D-272). Still Mit's: the funnel `artifact_version` bump, `detail_fetch_budget`, and the 17 silent boards.
+**The coverage instrument is BUILT and MEASURED (D-271/D-272; branch `feat/coverage-instrument`,
+green under `make check`, NOT merged).** `boardwatch coverage` reports every watched board as a
+**seven-way partition** — `measured` / `enumerated_only` / `censored` / `dark` / `stale` /
+`unscanned` / `unreadable` — that never folds a bucket into a neighbour, and prints "not
+measurable" rather than 0% or 100% when nothing can be measured. Four nullable `board_scans`
+columns carry it, populated from values the six providers already computed, at **zero additional
+HTTP cost**.
+
+**Real 135-board scan against a store copy: global coverage 82.7%, 26,183 held of 31,643 stated**,
+buckets summing to exactly 135 (measured 90 · enumerated_only 11 · censored 4 · dark 12 · stale
+18). **Workday's `total` is censored at 2,000 and its facet sums are not — Target's real board is
+12,097 postings against 649 held, 5.4%: the largest hole in the corpus, and invisible before this
+work.** Citi 4,573, NVIDIA 2,656, T-Mobile 2,200. Worst measured: Capital One 34.7%, Wells Fargo
+36.4%, Salesforce 42.3%.
+
+**`DEFAULT_TOP_N` is 40 on that branch and is NOT live.** The daily driver runs the editable venv
+from the main checkout, so the cap changes only once that checkout holds the code.
+
+**The gap this does NOT close, and it bounds the deliverable:** nothing reads the new columns
+unattended. `run_pipeline`, the morning digest and `notify` are untouched; `coverage` is a manual
+command, and a `board_coverage` section in the funnel artifact needs an `artifact_version` bump.
+A scheduled run persists coverage and reports nothing.
+
+Design, and eight ways this metric could lie:
+`docs/superpowers/specs/2026-08-22-coverage-assurance-design.md`. **Still Mit's:** the
+`artifact_version` bump, `detail_fetch_budget`, the 17 silent boards, and whether to merge.
 
 **Eligibility now decides AND removes.** `work_authorization.needs_sponsorship=true` set (D-249); a
 zero-evidence `eligible` abstains to `uncertain` (D-250); two rules that could never resolve MET are fixed —

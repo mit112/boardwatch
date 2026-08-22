@@ -158,6 +158,12 @@ board_scans = Table(
     Column("status", Text, nullable=False),
     Column("postings_listed", Integer, nullable=False, default=0),
     Column("error", Text, nullable=True),
+    # Coverage instrument (D-271). Nullable: NULL means the board stated no total, which is
+    # not the same claim as zero.
+    Column("board_reported_total", Integer, nullable=True),
+    Column("board_enumerated", Integer, nullable=True),
+    Column("detail_deferred", Integer, nullable=True),
+    Column("board_total_censored", Integer, nullable=True),
     CheckConstraint(
         "status IN ('complete', 'partial', 'failed', 'unchanged')", name="status_enum"
     ),

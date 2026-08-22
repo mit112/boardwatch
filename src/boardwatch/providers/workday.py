@@ -201,6 +201,75 @@ def _failed(url: str, error: str) -> BoardSnapshot:
     )
 
 
+# Workday censors `total` at exactly this value and wraps the pager past it. The facets block
+# is aggregated server-side by a different path and is NOT capped — measured 2026-08-22:
+# Citi total=2000 / facets=4589, NVIDIA total=2000 / facets=2656, while four uncensored boards
+# agreed exactly (Adobe 740, Intel 645, Regeneron 592, Fidelity 565). See D-271.
+_TOTAL_CENSOR = 2000
+
+
+def _facet_sum(payload: dict[str, Any]) -> int | None:
+    """The board's size by the facets' own aggregation path, or None if it yields nothing.
+
+    Every facet dimension partitions the same corpus, so they agree; the largest non-zero one
+    is taken because `locationMainGroup` can sum to 0 on some tenants and would otherwise drag
+    the maximum down. This runs on EVERY payload, censored or not, so the known-positive
+    control (`_facet_sum(payload) == payload["total"]` on an uncensored board) exercises the
+    same arithmetic the censored path depends on — Adobe 740/740, Intel 645/645,
+    Regeneron 592/592 and Fidelity 565/565 live on 2026-08-22.
+
+    Live payloads are not schema-validated (the same premise `_worker_subtype_buckets`
+    tolerates), so every shape is walked defensively: a non-list `facets`, a non-dict facet or
+    facet value, and a null `count` (`.get(key, default)` only substitutes for an ABSENT key,
+    never for a present `null`) must never raise past this function and turn the whole board
+    `status="failed"` — precisely for the large, censored tenants this exists to measure.
+    """
+    raw_facets = payload.get("facets")
+    facets = raw_facets if isinstance(raw_facets, list) else []
+    sums: list[int] = []
+    for facet in facets:
+        if not isinstance(facet, dict):
+            continue
+        values = facet.get("values")
+        if not isinstance(values, list):
+            continue
+        facet_sum = 0
+        for value in values:
+            if not isinstance(value, dict):
+                continue
+            count = value.get("count")
+            if isinstance(count, (int, float)) and not isinstance(count, bool):
+                facet_sum += int(count)
+        sums.append(facet_sum)
+    non_zero = [s for s in sums if s > 0]
+    return max(non_zero) if non_zero else None
+
+
+def _uncapped_total(payload: dict[str, Any]) -> tuple[int | None, bool | None]:
+    """Return (board_total, censored). None means the board stated no total — never 0, and
+    censored is itself None in that case: with no total there is nothing to have censored, so
+    False (a claim of "not censored") would be a claim this function cannot support.
+
+    When `total` reads exactly _TOTAL_CENSOR the real size is unknown and >= it, so the facet
+    sum is taken instead. If the facets yield nothing the answer is `(None, True)`, NOT
+    `(2000, True)`: the censor value is the server refusing to answer, and returning it as a
+    total would collapse two different epistemic states into one persisted row —
+    "4,589, recovered by a second path" and "at least 2,000, floor only" both reading
+    `censored=1`. With None, `censored and board_reported_total is not None` means
+    "facet-recovered" and nothing downstream has to parse a message to learn it (D-271).
+    """
+    raw = payload.get("total")
+    if raw is None:
+        return None, None
+    try:
+        total = max(0, int(raw))
+    except (TypeError, ValueError):
+        return None, None
+    if total != _TOTAL_CENSOR:
+        return total, False
+    return _facet_sum(payload), True
+
+
 class WorkdayProvider:
     name = "workday"
     # Workday hostnames are UNBOUNDED ({tenant}.wd{N}.myworkdayjobs.com; wd1..wd12 observed),
@@ -257,6 +326,10 @@ class WorkdayProvider:
         # if the loop ran AND took the page_index == 0 branch, and the empty-list default is
         # exactly the "tenant serves no facets block" case.
         facets: list[Any] = []
+        board_total: int | None = None
+        # None, not False: `_uncapped_total`'s own contract is that with no total there is
+        # nothing to have censored, so False would be a claim this initializer cannot support.
+        board_censored: bool | None = None
         observed = None
         capped = True
 
@@ -298,6 +371,7 @@ class WorkdayProvider:
                     total = max(0, int(payload["total"]))
                 except (KeyError, TypeError, ValueError):
                     total = None
+                board_total, board_censored = _uncapped_total(payload)
                 raw_facets = payload.get("facets")
                 facets = raw_facets if isinstance(raw_facets, list) else []
             before = len(listed)
@@ -332,6 +406,17 @@ class WorkdayProvider:
             # 2000 is the server's own reported cap, so a shortfall against it is expected
             errors.append(f"incomplete listing: collected {len(listed)} of {total} postings")
 
+        if board_censored and board_total is not None:
+            # human-readable note for the run log ONLY — the typed pair
+            # (board_total_censored, board_reported_total) already carries the whole fact, and
+            # nothing may ever recover it by grepping `errors`. Keyed on `is not None`, not on
+            # `board_total != _TOTAL_CENSOR`: a facet dimension that legitimately sums to 2000
+            # IS a recovery and used to go unnoted, while an unrecovered board used to be
+            # indistinguishable from it because both persisted 2000.
+            errors.append(
+                f"board total censored at {_TOTAL_CENSOR}; facet sum reports {board_total}"
+            )
+
         subtypes = _subtypes_by_path(fetcher, request.url, facets, errors)
 
         # The FULL live inventory, computed BEFORE the detail phase: known and
@@ -347,6 +432,9 @@ class WorkdayProvider:
         unseen = [
             (pid, row) for pid, row in by_id.items() if pid not in request.known_posting_ids
         ]
+        # Captured BEFORE the detail-budget slice below rebinds `unseen`, so detail_deferred
+        # reflects what the budget actually cut, not the post-truncation length (D-271).
+        unseen_before_truncation = unseen
         if len(unseen) > request.detail_budget:
             errors.append(
                 f"detail budget of {request.detail_budget} exceeded "
@@ -390,6 +478,10 @@ class WorkdayProvider:
             observed_validators=observed,
             error=None if not errors else "; ".join(errors),
             listed_ids=listed_ids,
+            board_reported_total=board_total,
+            board_enumerated=len(listed_ids),
+            detail_deferred=max(0, len(unseen_before_truncation) - request.detail_budget),
+            board_total_censored=board_censored,
         )
 
     def healthcheck(self, fetcher: Fetcher, slug: str) -> BoardHealth:

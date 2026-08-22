@@ -53,6 +53,18 @@ def test_complete_snapshot_parses_all_jobs(tmp_path: Path) -> None:
 
 
 @respx.mock
+def test_workable_states_no_board_total(tmp_path: Path) -> None:
+    """The {name, description, jobs} envelope carries no count field. None is a CLAIM: the
+    board stated nothing.
+
+    Backfilling len(postings) here would make coverage 100% by arithmetic, forever."""
+    respx.get(BOARD_URL).mock(return_value=httpx.Response(200, content=_fixture_bytes("normal.json")))
+    snap = provider.fetch_board(_fetcher(tmp_path), _request())
+    assert snap.board_reported_total is None
+    assert snap.board_enumerated == len(snap.postings)
+
+
+@respx.mock
 def test_per_job_parse_errors_produce_partial(tmp_path: Path) -> None:
     payload = _fixture_json("normal.json")
     del payload["jobs"][0]["title"]  # corrupt exactly one job
@@ -158,3 +170,25 @@ def test_pasted_shortlink_is_rejected_end_to_end_with_canonical_guidance() -> No
     with pytest.raises(UnknownBoardURL, match=r"apply\.workable\.com/\{org\}/j/"):
         parse_board_target("apply.workable.com/j/ABC123")
     assert parse_board_target("apply.workable.com/acme/j/ABC123") == ("workable", "acme")
+
+
+@respx.mock
+def test_board_enumerated_counts_listed_shortcodes_not_surviving_postings(
+    tmp_path: Path,
+) -> None:
+    """`board_enumerated` means the same thing on every provider: DISTINCT POSTING IDS LISTED,
+    before the detail budget and before parse failures drop anything (core/models.py). Workable
+    keys on `shortcode`, never `id` (see this module's header), so that is the field counted."""
+    payload = {"name": "Acme", "jobs": [
+        {"shortcode": "AAA", "title": "Engineer A", "url": "https://apply.workable.com/acme/j/AAA",
+         "description": "<p>body</p>"},
+        {"shortcode": "BBB", "url": "https://apply.workable.com/acme/j/BBB",
+         "description": "<p>body</p>"},
+        {"title": "No shortcode", "url": "https://apply.workable.com/acme/j/CCC",
+         "description": "<p>body</p>"},
+    ]}
+    respx.get(BOARD_URL).mock(return_value=httpx.Response(200, json=payload))
+    snap = provider.fetch_board(_fetcher(tmp_path), _request())
+    assert snap.board_enumerated == 2  # AAA and BBB; the shortcode-less row cannot be keyed
+    assert len(snap.postings) == 1  # BBB has no title
+    assert snap.board_reported_total is None

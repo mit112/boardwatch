@@ -12,7 +12,8 @@ from typing import Any
 from alembic import command
 from alembic.config import Config
 from alembic.script import ScriptDirectory
-from sqlalchemy import Engine, create_engine, event
+from sqlalchemy import Connection, Engine, create_engine, event, text
+from sqlalchemy.exc import OperationalError
 
 from boardwatch.store.fs_safety import unsafe_wal_filesystem
 
@@ -83,3 +84,17 @@ def schema_revision() -> str:
     """Head revision of the bundled migration scripts; needs no database."""
     script = ScriptDirectory(str(_MIGRATIONS))
     return script.get_current_head() or "unknown"
+
+
+def db_revision(conn: Connection) -> str | None:
+    """The DB's applied Alembic revision, or None if the DB is unversioned/uninitialized.
+
+    Beside `schema_revision()` because the only useful thing to do with either is compare it
+    with the other. It was previously private to `cli/doctor_cmd.py`, which forced every other
+    caller into a `cli` -> `cli` import of a `_`-prefixed name for what is a plain store probe.
+    """
+    try:
+        result = conn.execute(text("SELECT version_num FROM alembic_version")).scalar_one_or_none()
+    except OperationalError:  # alembic_version table absent -> schema never applied
+        return None
+    return str(result) if result is not None else None

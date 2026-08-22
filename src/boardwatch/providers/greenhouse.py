@@ -18,7 +18,33 @@ from boardwatch.core.clock import to_naive_utc
 from boardwatch.core.html_text import html_to_text
 from boardwatch.core.models import BoardRequest, BoardSnapshot, RawPosting, RemotePolicy
 from boardwatch.core.politeness import Fetcher, FetchFailure
-from boardwatch.providers.base import BoardHealth
+from boardwatch.providers.base import BoardHealth, count_listed_ids
+
+
+def _meta_total(payload: dict[str, Any]) -> int | None:
+    """`meta.total`, or None when the board stated nothing usable — never 0 as a stand-in.
+
+    Present on both the content=true board URL and the cheaper _health_url shape (confirmed
+    live: stripe 576, databricks 818), absent on some tenants. A metadata glitch must never
+    fail the whole board over postings that parsed fine, so every rejection below returns None:
+
+    - `bool` is excluded before the numeric check. `True` is an `int` in Python, so
+      `meta: {"total": true}` used to persist `board_reported_total = 1` and a 500-job board
+      read "500 held of 1 stated". `workday.py:_uncapped_total` already excludes it this way.
+    - `int()` raises on NaN/Infinity, which `json.loads` accepts by default — the one numeric
+      input that escaped the caller's try/except and failed the board outright.
+    - `max(0, ...)` clamps, matching `workday.py` and `smartrecruiters.py`. A negative total is
+      a bad parse or a bad scrape, and `reports/board_coverage.py` treats one as a contradiction;
+      letting it through made a single malformed board unclassifiable.
+    """
+    meta = payload.get("meta")
+    total_val = meta.get("total") if isinstance(meta, dict) else None
+    if not isinstance(total_val, (int, float)) or isinstance(total_val, bool):
+        return None
+    try:
+        return max(0, int(total_val))
+    except (ValueError, OverflowError):  # NaN, Infinity
+        return None
 
 
 class GreenhouseProvider:
@@ -57,6 +83,7 @@ class GreenhouseProvider:
                 status="failed", postings=[], url=request.url,
                 observed_validators=None, error=f"invalid board payload: {exc}",
             )
+        board_total = _meta_total(payload)
         postings: list[RawPosting] = []
         errors: list[str] = []
         for job in jobs:
@@ -79,6 +106,9 @@ class GreenhouseProvider:
             url=request.url,
             observed_validators=result.observed_validators,
             error=error,
+            board_reported_total=board_total,
+            board_enumerated=count_listed_ids(jobs, "id"),
+            detail_deferred=0,
         )
 
     def healthcheck(self, fetcher: Fetcher, slug: str) -> BoardHealth:

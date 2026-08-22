@@ -76,6 +76,7 @@ A retired or mistyped site slug answers **HTTP 404** with body `{"errorCode": "S
 | `detail_normal.json` | A detail payload for the Senior Platform Engineer posting: full `jobPostingInfo` including `remoteType: "Fully Remote"`, `jobReqId: "JR1000001"` (bare), and `jobPostingId: "JR1000001-1"` (carries the instance suffix). |
 | `dead_s21.json` | The wrong-site-slug signature: HTTP 404 with `errorCode: "S21"`. |
 | `normal_response_headers.json` | `{"etag": null, "last_modified": null}` — Workday sends **neither** validator on the list endpoint; recorded explicitly so the absence is deliberate, not an oversight. |
+| `list_censored_with_facets.json` | `total: 2000` (the censor value) with three facet dimensions summing to 3000+1589=4589, 4589, and 0 — pins that `_uncapped_total` returns a facet dimension's own sum (4589) rather than the sum of all dimensions (9178) when total is censored. The two non-zero dimensions tie at 4589, so this fixture cannot distinguish "largest" from "first", and dropping the zero dimension does not change the result either way, so it does not exercise the zero-skip (D-271). |
 
 The non-JSON maintenance-page case (a live signature seen on another tenant) is
 deliberately **not** a fixture file here — it is a literal `b"<html>...</html>"` body

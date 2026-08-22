@@ -85,3 +85,20 @@ def test_known_posting_ids_round_trips_and_is_frozen() -> None:
         provider="p", slug="s", url="https://x/y", known_posting_ids=frozenset({"a", "b"})
     )
     assert req.known_posting_ids == frozenset({"a", "b"})
+
+
+def test_board_snapshot_coverage_fields_default_to_none() -> None:
+    """None means the board stated no total. It must NEVER be backfilled with len(postings)."""
+    snap = BoardSnapshot(status="complete", postings=[], url="https://x/y")
+    assert snap.board_reported_total is None
+    assert snap.board_enumerated is None
+    assert snap.detail_deferred is None
+
+
+def test_board_snapshot_coverage_fields_round_trip() -> None:
+    snap = BoardSnapshot(
+        status="partial", postings=[], url="https://x/y",
+        board_reported_total=4589, board_enumerated=2214, detail_deferred=1614,
+    )
+    assert snap.model_dump()["board_reported_total"] == 4589
+    assert BoardSnapshot(**snap.model_dump()).detail_deferred == 1614

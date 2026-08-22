@@ -54,6 +54,18 @@ def test_complete_snapshot_uses_html_to_text(tmp_path: Path) -> None:
 
 
 @respx.mock
+def test_ashby_states_no_board_total(tmp_path: Path) -> None:
+    """The {apiVersion, jobs} envelope carries no count field. None is a CLAIM: the board
+    stated nothing.
+
+    Backfilling len(postings) here would make coverage 100% by arithmetic, forever."""
+    respx.get(BOARD_URL).mock(return_value=httpx.Response(200, content=_fixture_bytes("normal.json")))
+    snapshot = provider.fetch_board(_fetcher(tmp_path), _request())
+    assert snapshot.board_reported_total is None
+    assert snapshot.board_enumerated == len(snapshot.postings)
+
+
+@respx.mock
 def test_single_range_recognized_interval_maps_salary_scalars(tmp_path: Path) -> None:
     respx.get(BOARD_URL).mock(return_value=httpx.Response(200, content=_fixture_bytes("normal.json")))
     snapshot = provider.fetch_board(_fetcher(tmp_path), _request())
@@ -230,3 +242,24 @@ def test_huge_board_parses_under_memory_ceiling(capsys: pytest.CaptureFixture[st
     assert report["status"] == "complete"
     assert report["postings"] >= 100
     assert report["peak_bytes"] <= 64 * 1024 * 1024, report
+
+
+@respx.mock
+def test_board_enumerated_counts_listed_ids_not_surviving_postings(tmp_path: Path) -> None:
+    """`board_enumerated` means the same thing on every provider: DISTINCT POSTING IDS LISTED,
+    before the detail budget and before parse failures drop anything (core/models.py).
+    Counting survivors made this a parse-failure count on the single-request providers and a
+    listing census on the paged ones — one persisted column, two meanings."""
+    payload = {"jobs": [
+        {"id": "a", "title": "Engineer A", "jobUrl": "https://jobs.ashbyhq.com/acme/a",
+         "descriptionHtml": "<p>body</p>", "location": "Remote"},
+        {"id": "b", "jobUrl": "https://jobs.ashbyhq.com/acme/b",
+         "descriptionHtml": "<p>body</p>", "location": "Remote"},
+        {"title": "No id", "jobUrl": "https://jobs.ashbyhq.com/acme/c",
+         "descriptionHtml": "<p>body</p>", "location": "Remote"},
+    ]}
+    respx.get(BOARD_URL).mock(return_value=httpx.Response(200, json=payload))
+    snapshot = provider.fetch_board(_fetcher(tmp_path), _request())
+    assert snapshot.board_enumerated == 2  # "a" and "b"; the id-less row cannot be keyed
+    assert len(snapshot.postings) == 1  # "b" has no title
+    assert snapshot.board_reported_total is None

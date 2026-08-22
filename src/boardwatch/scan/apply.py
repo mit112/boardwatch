@@ -80,7 +80,7 @@ def apply_board(
             _persist_validators(conn, snapshot)
         _scan_row(
             conn, run_id, company_id, started_at, snapshot.status,
-            len(snapshot.postings), snapshot.error,
+            len(snapshot.postings), snapshot.error, snapshot=snapshot,
         )
         return result
 
@@ -356,6 +356,8 @@ def _scan_row(
     status: str,
     listed: int,
     error: str | None,
+    *,
+    snapshot: BoardSnapshot | None = None,
 ) -> None:
     conn.execute(
         insert(board_scans).values(
@@ -366,5 +368,14 @@ def _scan_row(
             status=status,
             postings_listed=listed,
             error=error,
+            # NULL, not 0, when there is no snapshot: a failed board's coverage is undefined.
+            board_reported_total=None if snapshot is None else snapshot.board_reported_total,
+            board_enumerated=None if snapshot is None else snapshot.board_enumerated,
+            detail_deferred=None if snapshot is None else snapshot.detail_deferred,
+            board_total_censored=(
+                None
+                if snapshot is None or snapshot.board_total_censored is None
+                else int(snapshot.board_total_censored)
+            ),
         )
     )

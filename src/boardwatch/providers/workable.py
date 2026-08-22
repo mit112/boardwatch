@@ -29,7 +29,7 @@ from boardwatch.core.clock import to_naive_utc
 from boardwatch.core.html_text import html_to_text
 from boardwatch.core.models import BoardRequest, BoardSnapshot, RawPosting, RemotePolicy
 from boardwatch.core.politeness import Fetcher, FetchFailure
-from boardwatch.providers.base import BoardHealth, health_from_failure
+from boardwatch.providers.base import BoardHealth, count_listed_ids, health_from_failure
 
 
 class WorkableProvider:
@@ -102,6 +102,10 @@ class WorkableProvider:
             url=request.url,
             observed_validators=result.observed_validators,
             error=error,
+            # This API states no total. None, deliberately — see D-271 and D-028.
+            board_reported_total=None,
+            board_enumerated=count_listed_ids(jobs, "shortcode"),
+            detail_deferred=0,
         )
 
     def healthcheck(self, fetcher: Fetcher, slug: str) -> BoardHealth:

@@ -16,14 +16,13 @@ import typer
 from rich.console import Console
 from rich.table import Table
 from sqlalchemy import Connection, select, text
-from sqlalchemy.exc import OperationalError
 
 from boardwatch.cli.context import build_context
 from boardwatch.core.clock import utcnow
 from boardwatch.scan.coordinator import default_providers
 from boardwatch.scan.health import probe_health
 from boardwatch.store import tables
-from boardwatch.store.db import schema_revision
+from boardwatch.store.db import db_revision, schema_revision
 from boardwatch.store.queries import RUN_RUNNING, last_complete_scan_ages, reap_stale_runs
 
 console = Console()
@@ -90,15 +89,6 @@ def check_pdfinfo() -> bool:
     return shutil.which("pdfinfo") is not None
 
 
-def _db_revision(conn: Connection) -> str | None:
-    """The DB's applied Alembic revision, or None if the DB is unversioned/uninitialized."""
-    try:
-        result = conn.execute(text("SELECT version_num FROM alembic_version")).scalar_one_or_none()
-    except OperationalError:  # alembic_version table absent → schema never applied
-        return None
-    return str(result) if result is not None else None
-
-
 def _integrity_check(conn: Connection) -> str:
     """PRAGMA integrity_check result ('ok' on a healthy DB). A module-level seam so tests
     can force a corruption result without writing bad SQLite pages."""
@@ -112,9 +102,9 @@ def doctor(ctx: typer.Context, offline: bool = typer.Option(False, "--offline"))
     app_ctx = build_context(ctx.obj, ensure=False)
 
     with app_ctx.engine.connect() as conn:
-        db_revision = _db_revision(conn)
-    schema_ok = db_revision == schema_revision()
-    if db_revision is None:  # absent/unversioned schema — report and stop before probing
+        revision = db_revision(conn)
+    schema_ok = revision == schema_revision()
+    if revision is None:  # absent/unversioned schema — report and stop before probing
         console.print(f"boardwatch {package_version('boardwatch')}")
         console.print("schema: ABSENT (run a boardwatch command that initializes the database)")
         raise typer.Exit(code=1)
@@ -211,12 +201,12 @@ def doctor(ctx: typer.Context, offline: bool = typer.Option(False, "--offline"))
         )
 
     # schema check compares the DB's applied revision against the code's expected script head
-    schema_ok = db_revision == schema_revision()
+    schema_ok = revision == schema_revision()
     integrity_ok = integrity == "ok"
     console.print(f"boardwatch {package_version('boardwatch')}")
     console.print(
         f"integrity: {integrity} · schema: "
-        f"{'ok' if schema_ok else f'MISMATCH (db={db_revision}, code={schema_revision()})'}"
+        f"{'ok' if schema_ok else f'MISMATCH (db={revision}, code={schema_revision()})'}"
     )
 
     tectonic_check = check_tectonic()

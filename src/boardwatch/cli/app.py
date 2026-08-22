@@ -8,6 +8,7 @@ from rich.console import Console
 
 from boardwatch.cli.companies_cmd import companies_app
 from boardwatch.cli.config_cmd import config_app
+from boardwatch.cli.coverage_cmd import coverage as _coverage
 from boardwatch.cli.digest_cmd import digest as _digest
 from boardwatch.cli.doctor_cmd import doctor as _doctor
 from boardwatch.cli.eligibility_cmd import eligibility_app
@@ -61,6 +62,7 @@ app.command("show")(_show)
 app.add_typer(config_app, name="config")
 app.add_typer(settings_app, name="settings")
 app.command("doctor")(_doctor)
+app.command("coverage")(_coverage)
 app.command("digest")(_digest)
 app.command("notify")(_notify)
 app.add_typer(eligibility_app, name="eligibility")
