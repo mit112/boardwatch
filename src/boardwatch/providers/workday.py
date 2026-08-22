@@ -208,25 +208,50 @@ def _failed(url: str, error: str) -> BoardSnapshot:
 _TOTAL_CENSOR = 2000
 
 
-def _uncapped_total(payload: dict[str, Any]) -> tuple[int | None, bool]:
-    """Return (board_total, censored). None means the board stated no total — never 0.
+def _uncapped_total(payload: dict[str, Any]) -> tuple[int | None, bool | None]:
+    """Return (board_total, censored). None means the board stated no total — never 0, and
+    censored is itself None in that case: with no total there is nothing to have censored, so
+    False (a claim of "not censored") would be a claim this function cannot support.
 
     When `total` reads exactly _TOTAL_CENSOR the real size is unknown and >= it, so we take the
     largest non-zero facet dimension instead. Every dimension partitions the same corpus, so
     they agree; `locationMainGroup` can sum to 0 on some tenants and is skipped rather than
     dragging the maximum down.
+
+    Live payloads are not schema-validated (the same premise `_worker_subtype_buckets`
+    tolerates), so every shape below is walked defensively: a non-list `facets`, a non-dict
+    facet or facet value, and a null `count` (`.get(key, default)` only substitutes for an
+    ABSENT key, never for a present `null`) must never raise past this function and turn the
+    whole board `status="failed"` — precisely for the large, censored tenants this exists to
+    measure.
     """
     raw = payload.get("total")
     if raw is None:
-        return None, False
-    total = max(0, int(raw))
+        return None, None
+    try:
+        total = max(0, int(raw))
+    except (TypeError, ValueError):
+        return None, None
     censored = total == _TOTAL_CENSOR
     if not censored:
         return total, False
-    sums = [
-        sum(int(v.get("count", 0)) for v in (facet.get("values") or []))
-        for facet in (payload.get("facets") or [])
-    ]
+    raw_facets = payload.get("facets")
+    facets = raw_facets if isinstance(raw_facets, list) else []
+    sums: list[int] = []
+    for facet in facets:
+        if not isinstance(facet, dict):
+            continue
+        values = facet.get("values")
+        if not isinstance(values, list):
+            continue
+        facet_sum = 0
+        for value in values:
+            if not isinstance(value, dict):
+                continue
+            count = value.get("count")
+            if isinstance(count, (int, float)) and not isinstance(count, bool):
+                facet_sum += int(count)
+        sums.append(facet_sum)
     non_zero = [s for s in sums if s > 0]
     return (max(non_zero) if non_zero else total), True
 
@@ -288,7 +313,7 @@ class WorkdayProvider:
         # exactly the "tenant serves no facets block" case.
         facets: list[Any] = []
         board_total: int | None = None
-        board_censored = False
+        board_censored: bool | None = False
         observed = None
         capped = True
 
@@ -369,8 +394,12 @@ class WorkdayProvider:
             # human-readable note for the run log ONLY — board_total_censored is the typed
             # signal; nothing may ever recover this fact by grepping `errors`. Only worth a
             # note when the facet sum actually beat the censor value; when facets carried no
-            # (or no better) number, board_total falls back to the same 2000 and a note would
-            # say nothing pagination's own notes have not already covered.
+            # (or no better) number, board_total falls back to the same 2000. That silence is
+            # NOT always redundant with another note: the offset-wrap and page-cap paths do
+            # leave their own note, but a board that terminates cleanly on a short page with
+            # total==2000 and no usable facets gets no note anywhere else either — the
+            # shortfall check above deliberately declines to flag against a total >= 2000. The
+            # silence there is a deliberate "nothing new to say," not proof something else said it.
             errors.append(
                 f"board total censored at {_TOTAL_CENSOR}; facet sum reports {board_total}"
             )

@@ -1005,5 +1005,36 @@ def test_missing_facets_falls_back_to_total_and_is_not_invented() -> None:
 
 
 def test_absent_total_yields_none_never_zero() -> None:
-    """None means the board stated nothing. Zero would be a claim we cannot support."""
-    assert _uncapped_total({"jobPostings": []}) == (None, False)
+    """None means the board stated nothing. Zero would be a claim we cannot support, and so
+    is `censored=False`: with no total there is nothing to have been censored, and `False`
+    would falsely claim we know this board was NOT censored."""
+    assert _uncapped_total({"jobPostings": []}) == (None, None)
+
+
+def test_zero_facet_dimensions_are_skipped_not_returned() -> None:
+    """Pins the non-zero filter: without it an all-zero facets block would return `0`, which
+    violates "never 0, None means stated nothing" just as badly as the absent-total case."""
+    payload = {"total": 2000, "facets": [{"values": [{"count": 0}]}]}
+    assert _uncapped_total(payload) == (2000, True)
+
+
+def test_a_non_numeric_total_yields_none_not_a_crash() -> None:
+    assert _uncapped_total({"total": "not-a-number"}) == (None, None)
+    assert _uncapped_total({"total": {}}) == (None, None)
+
+
+def test_ragged_facets_never_raise() -> None:
+    """Live payloads are not schema-validated (same premise as `_worker_subtype_buckets`'s own
+    ragged-input test). Every one of these shapes was observed to raise before this fix, which
+    turns the whole board `status="failed"` via coordinator.py's belt-and-braces except —
+    for precisely the large, censored tenants this instrument exists to measure."""
+    # facets is not a list at all
+    assert _uncapped_total({"total": 2000, "facets": {"not": "a list"}}) == (2000, True)
+    # a facet in the list is not a dict
+    assert _uncapped_total({"total": 2000, "facets": ["not a dict", 7]}) == (2000, True)
+    # a facet's "values" contains a non-dict entry alongside a real one
+    payload = {"total": 2000, "facets": [{"values": ["nope", {"count": 5}]}]}
+    assert _uncapped_total(payload) == (5, True)
+    # "count" is a present JSON null, not an absent key — .get(key, default) does not catch it
+    payload = {"total": 2000, "facets": [{"values": [{"count": None}, {"count": 10}]}]}
+    assert _uncapped_total(payload) == (10, True)
