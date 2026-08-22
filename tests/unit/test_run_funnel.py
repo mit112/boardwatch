@@ -19,6 +19,9 @@ from pathlib import Path
 
 from boardwatch.eligibility.catalog import RulesCatalog, load_rules
 from boardwatch.reports.abstain import AbstainReport, build_abstain_report
+from boardwatch.reports.board_coverage import BoardCoverage
+from boardwatch.reports.board_coverage import CoverageReport as BoardCoverageReport
+from boardwatch.reports.board_coverage import build_report as build_board_report
 from boardwatch.reports.run_funnel import (
     Lead,
     LivenessCheck,
@@ -116,6 +119,7 @@ def funnel(
     stub_postings: int = 0,
     rewrite_rows: list[dict[str, object]] | None = None,
     coverages: list[CoverageReport | None] | None = None,
+    board_coverage: BoardCoverageReport | None = None,
 ) -> RunFunnel:
     leads = [lead()] if leads is None else leads
     # Default to a CONSISTENT tailor stage. Every shortlisted posting either produced a lead
@@ -150,6 +154,7 @@ def funnel(
             applied=marked_applied,
         )]
     return build_run_funnel(
+        board_coverage=board_coverage,
         run_id=42,
         started_at=None,
         finished_at=None,
@@ -728,8 +733,9 @@ def test_both_halves_are_written_and_named_by_run(tmp_path: Path) -> None:
     # Bumped to 3 by P0 item 4/6/8, which added the manifest, stub_rate and fabrication
     # sections; to 4 by P6 item 6, which added the top-level `liveness` block; to 5 by P5a,
     # which added the `projection` stage and changed what `tailor.entered` means on a
-    # projected run.
-    assert payload["artifact_version"] == 5
+    # projected run; to 6 by D-274, which added the `board_coverage` section so a scheduled
+    # run reports the discovery coverage it was already persisting.
+    assert payload["artifact_version"] == 6
     assert written.markdown_path.read_text().startswith("# boardwatch run 42")
 
 
@@ -1378,3 +1384,75 @@ def test_coverage_section_renders_in_the_markdown_artifact() -> None:
 def test_coverage_section_says_measured_zero_when_no_coverage() -> None:
     body = funnel_to_markdown(funnel(leads=[lead()]))
     assert "0 lead(s) measured" in body
+
+
+# --------------------------------------------------------------------------------------
+# The board_coverage section (D-274)
+# --------------------------------------------------------------------------------------
+
+
+def _one_measured_board() -> BoardCoverageReport:
+    return build_board_report(
+        [
+            BoardCoverage(
+                company_id=1,
+                name="Acme",
+                provider="greenhouse",
+                bucket="measured",
+                held=500,
+                board_reported_total=1000,
+                board_enumerated=1000,
+                detail_deferred=0,
+                shortfall=500,
+                ratio=0.5,
+            )
+        ]
+    )
+
+
+def test_board_coverage_is_null_when_it_could_not_be_measured() -> None:
+    """`null`, never a zeroed block: a run whose coverage load FAILED must not be
+    indistinguishable from a run that measured every board at nothing."""
+    payload = funnel_to_dict(funnel(board_coverage=None))
+
+    assert payload["board_coverage"] is None
+
+
+def test_board_coverage_is_a_separate_key_from_resume_keyword_coverage() -> None:
+    """`coverage` in this artifact has meant resume KEYWORD coverage since P4 item 6. Two
+    different measurements one word apart would mislead every future reader, so the board
+    instrument gets its own key and the old one keeps its meaning."""
+    payload = funnel_to_dict(funnel(board_coverage=_one_measured_board()))
+
+    assert set(payload["coverage"]) == {  # type: ignore[arg-type]
+        "leads_measured",
+        "leads_with_fraction",
+        "mean_fraction",
+        "median_fraction",
+        "top_missing",
+    }
+    assert payload["board_coverage"] is not None
+    assert "bucket_counts" in payload["board_coverage"]  # type: ignore[operator]
+
+
+def test_board_coverage_reaches_both_halves_of_the_artifact() -> None:
+    """A JSON-only section would leave the operator's own reading surface mute, which is the
+    defect this change exists to fix."""
+    built = funnel(board_coverage=_one_measured_board())
+
+    payload = funnel_to_dict(built)
+    rendered = funnel_to_markdown(built)
+
+    assert payload["board_coverage"]["global_ratio"] == 0.5  # type: ignore[index]
+    assert "## Board coverage" in rendered
+    assert "50.0%" in rendered
+    assert "greenhouse:Acme" in rendered
+
+
+def test_the_markdown_still_renders_a_board_coverage_section_when_it_is_absent() -> None:
+    """The heading is unconditional. A missing section reads as "this artifact predates the
+    instrument"; a present section saying "not measured" reads as what actually happened."""
+    rendered = funnel_to_markdown(funnel(board_coverage=None))
+
+    assert "## Board coverage" in rendered
+    assert "not measured this run" in rendered

@@ -12,7 +12,10 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+from boardwatch.reports.board_coverage import BoardCoverage
+from boardwatch.reports.board_coverage import build_report as build_board_report
 from boardwatch.reports.morning import (
+    ARTIFACT_VERSION,
     MorningLead,
     build_morning,
     morning_to_dict,
@@ -143,3 +146,92 @@ def test_write_morning_names_both_halves_by_run_id(tmp_path: Path) -> None:
     assert written.json_path.exists()
     assert written.markdown_path.exists()
     assert json.loads(written.json_path.read_text())["run_id"] == 13
+
+
+# --------------------------------------------------------------------------------------
+# Discovery reach (D-274) — the one block in this file that is not about a lead
+# --------------------------------------------------------------------------------------
+
+
+def _reach(held: int = 500, stated: int = 1000) -> object:
+    return build_board_report(
+        [
+            BoardCoverage(
+                company_id=1,
+                name="Acme",
+                provider="greenhouse",
+                bucket="measured",
+                held=held,
+                board_reported_total=stated,
+                board_enumerated=stated,
+                detail_deferred=0,
+                shortfall=stated - held,
+                ratio=held / stated,
+            )
+        ]
+    )
+
+
+def test_the_artifact_version_is_bumped_for_the_discovery_reach_block() -> None:
+    """v1 had no version-history test at all, so nothing would have caught a silent bump. v2
+    adds the run-level `board_coverage` block — a new top-level section, not an additive key
+    inside one."""
+    assert ARTIFACT_VERSION == 2
+    artifact = build_morning(run_id=1, funnel_name="funnel-1.md", leads=[lead()])
+    assert morning_to_dict(artifact)["artifact_version"] == 2
+
+
+def test_discovery_reach_renders_for_the_operator() -> None:
+    artifact = build_morning(
+        run_id=1, funnel_name="funnel-1.md", leads=[lead()], board_coverage=_reach()
+    )
+
+    rendered = morning_to_markdown(artifact)
+
+    assert "## Discovery reach" in rendered
+    assert "50.0%" in rendered
+    # Points at the funnel for the 135-row table rather than restating it here.
+    assert "Per-board detail: `funnel-1.md`" in rendered
+
+
+def test_discovery_reach_is_never_titled_coverage() -> None:
+    """Every lead below already prints a `coverage:` line meaning resume KEYWORD coverage. A
+    second, unrelated measurement under the same word in the same document is the collision
+    the design flagged, made worse: in JSON they are two keys, but on the page a human reads
+    one word twice."""
+    artifact = build_morning(
+        run_id=1, funnel_name="funnel-1.md", leads=[lead()], board_coverage=_reach()
+    )
+
+    rendered = morning_to_markdown(artifact)
+
+    assert "## Discovery reach" in rendered
+    assert "## Coverage" not in rendered
+    assert "## coverage" not in rendered
+    # The per-lead keyword line is untouched and still means what it always did.
+    assert "- **coverage:**" in rendered
+
+
+def test_a_zero_lead_morning_still_reports_discovery_reach() -> None:
+    """THE case this block exists for. A morning with no leads is exactly when the operator
+    needs to know whether discovery collapsed or the market was merely quiet — and the
+    zero-lead path used to return before anything else could render."""
+    artifact = build_morning(
+        run_id=1, funnel_name="funnel-1.md", leads=[], board_coverage=_reach()
+    )
+
+    rendered = morning_to_markdown(artifact)
+
+    assert "## Discovery reach" in rendered
+    assert "50.0%" in rendered
+    assert "none." in rendered
+
+
+def test_discovery_reach_says_not_measured_rather_than_vanishing() -> None:
+    artifact = build_morning(run_id=1, funnel_name="funnel-1.md", leads=[lead()])
+
+    rendered = morning_to_markdown(artifact)
+
+    assert "## Discovery reach" in rendered
+    assert "not measured this run" in rendered
+    assert morning_to_dict(artifact)["board_coverage"] is None

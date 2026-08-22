@@ -58,6 +58,8 @@ from boardwatch.projection.run import (
     resolve_projection_run,
 )
 from boardwatch.projection.scoring import DEFAULT_SCORER_ID
+from boardwatch.reports.board_coverage import CoverageReport as BoardCoverageReport
+from boardwatch.reports.board_coverage import build_report as build_board_coverage_report
 from boardwatch.reports.morning import MorningLead, build_morning, write_morning
 from boardwatch.reports.resume_gate import LeadArtifactError, RenderToolMissingError
 from boardwatch.reports.run_funnel import (
@@ -69,6 +71,7 @@ from boardwatch.reports.run_funnel import (
 )
 from boardwatch.reports.tailor import ResumeLineageMismatch, default_compile_runner, run_tailor
 from boardwatch.scan.coordinator import ScanSummary, is_systemic_scan_outage, run_scan
+from boardwatch.store.coverage_queries import load_board_coverage
 from boardwatch.store.db import ensure_schema
 from boardwatch.store.ledger_queries import record_disposition
 from boardwatch.store.queries import (
@@ -173,6 +176,10 @@ class PipelineSummary:
     # Where the per-run morning artifact landed (P3 item 7). Same fail-safe as `funnel`: a
     # reporting failure is swallowed and reported to the console, never allowed to fail the run.
     morning: WrittenArtifact | None = None
+    # D-274. This run's board-coverage report, loaded ONCE in the finally block and shared by
+    # both artifacts. `None` means the load failed (reported to the console), never that
+    # coverage is zero.
+    board_coverage: BoardCoverageReport | None = None
     # P6 slice 2: postings moved onto a canonical job this run, and the groups left ungrouped.
     # Refusals are carried rather than dropped — a refusal that is invisible is a leak in the
     # same way an unlistable suppression is.
@@ -1083,6 +1090,13 @@ def run_pipeline(
         # run as still in progress. Failure to write is reported and swallowed on purpose:
         # this block runs while an exception may be propagating, and raising here would
         # replace the real cause of the failure with a reporting error.
+        # Loaded ONCE, before either artifact, and handed to both (D-274). `held` is a live
+        # count of open postings with no run dimension, so loading it per artifact would let
+        # the funnel and the morning file disagree about one run's coverage whenever a
+        # posting closed in between. Its own failure costs the SECTION, not the artifact:
+        # this returns None and the renderers say so, where an escaping exception would take
+        # the whole funnel down with it through the except below.
+        summary.board_coverage = _load_board_coverage(engine, run_id, console)
         try:
             summary.funnel = _emit_funnel(engine, settings, summary, scan_summary, day_dir)
         except Exception as exc:  # noqa: BLE001 - never mask the run's own outcome
@@ -1105,6 +1119,31 @@ def run_pipeline(
                 send_heartbeat()
             except Exception as exc:  # noqa: BLE001 - never mask the run's own outcome
                 console.print(f"  ! heartbeat not sent: {exc}", markup=False)
+
+
+def _load_board_coverage(
+    engine: Engine, run_id: int, console: Console
+) -> BoardCoverageReport | None:
+    """This run's board-coverage report, or `None` if it could not be read (D-274).
+
+    Scoped to THIS run's `board_scans` rows, not the latest scanned run: the artifact is
+    stamped with a run number and must describe that run's boards. Every run before the
+    coverage columns existed therefore reports honestly rather than borrowing a later run's
+    numbers.
+
+    Catches broadly and on purpose. `load_board_coverage` already degrades a single bad ROW
+    to `unreadable`, but a store whose schema predates the four columns raises
+    `OperationalError` for the whole SELECT, and this is called from a `finally` that may
+    already be unwinding an exception. A reporting failure must cost this section only --
+    letting it escape would lose the entire funnel, which is the artifact that explains the
+    run.
+    """
+    try:
+        with engine.connect() as conn:
+            return build_board_coverage_report(load_board_coverage(conn, run_id=run_id))
+    except Exception as exc:  # noqa: BLE001 - a mute section beats a missing artifact
+        console.print(f"  ! board coverage not measured: {exc}", markup=False)
+        return None
 
 
 def _emit_funnel(
@@ -1146,6 +1185,8 @@ def _emit_funnel(
         projection_ran=summary.projection_availability is not None,
         projection_outcomes=summary.projection_outcomes,
         rewrite_rows=summary.rewrite_rows,
+        # Already loaded once above; the morning artifact receives this identical object.
+        board_coverage=summary.board_coverage,
         # P4 item 6: one coverage report per lead, same order as `tailored`, for the funnel's
         # coverage summary. Mirrors how `rewrite_rows` is passed separately, not via the Lead.
         coverages=[lead.coverage for lead in summary.tailored],
@@ -1236,7 +1277,11 @@ def _emit_morning(
             )
 
     artifact = build_morning(
-        run_id=summary.run_id, funnel_name=f"funnel-{summary.run_id}.md", leads=rows
+        run_id=summary.run_id,
+        funnel_name=f"funnel-{summary.run_id}.md",
+        leads=rows,
+        # The SAME object the funnel got, not a second load — see the call site.
+        board_coverage=summary.board_coverage,
     )
     return write_morning(artifact, day_dir)
 

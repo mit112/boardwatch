@@ -525,8 +525,8 @@ def test_the_artifact_version_is_bumped() -> None:
     """A new stage is a new section, and more than that: on a projected run `tailor.entered` stops
     meaning `shortlisted`. Every bump so far signalled a new top-level section, and D-113 is the
     precedent for DECLINING one on a merely additive key — this is not one."""
-    assert ARTIFACT_VERSION == 5
-    assert funnel_to_dict(funnel(outcomes=FOUR_TERMINAL_STATES))["artifact_version"] == 5
+    assert ARTIFACT_VERSION == 6
+    assert funnel_to_dict(funnel(outcomes=FOUR_TERMINAL_STATES))["artifact_version"] == 6
 
 
 def test_the_stage_sits_between_shortlist_and_tailor() -> None:
