@@ -10,7 +10,12 @@ from __future__ import annotations
 
 import pytest
 
-from boardwatch.reports.board_coverage import BoardCoverage, build_report, classify_board
+from boardwatch.reports.board_coverage import (
+    BoardCoverage,
+    ContradictoryCoverage,
+    build_report,
+    classify_board,
+)
 
 
 def test_a_board_with_no_stated_total_never_gets_a_ratio() -> None:
@@ -71,3 +76,86 @@ def test_over_full_coverage_is_reported_not_clamped() -> None:
                       detail_deferred=104, shortfall=-35, ratio=600 / 565),
     ])
     assert rep.global_ratio > 1.0
+
+
+def test_classify_board_returns_measured_when_total_is_known() -> None:
+    """Fix round 1, finding 1: every other test in this suite constructs `measured`
+    BoardCoverage instances directly, so nothing ever called classify_board with inputs that
+    should yield "measured" — deleting the final `return "measured"` (or falling through to
+    `enumerated_only`) would red nothing without this test."""
+    for status in ("complete", "partial"):
+        assert classify_board(status=status, board_reported_total=740,
+                              board_enumerated=740, held=600, censored=False) == "measured"
+
+
+def test_global_ratio_is_none_for_an_empty_report() -> None:
+    """Fix round 1, finding 2: the module docstring states global_ratio is None when nothing
+    is measurable, but no test ever called build_report([]) or with zero measured boards."""
+    rep = build_report([])
+    assert rep.global_ratio is None
+    assert rep.corpus_boards == 0
+
+
+def test_global_ratio_is_none_with_no_measured_boards() -> None:
+    """The one existing "unmeasurable" test mixes a measured board in, so global_ratio was
+    never actually asserted to be None — only pytest.approx'd against a real ratio."""
+    rep = build_report([
+        BoardCoverage(company_id=1, name="Snowflake", provider="workday", bucket="dark",
+                      held=0, board_reported_total=None, board_enumerated=None,
+                      detail_deferred=None, shortfall=None, ratio=None),
+        BoardCoverage(company_id=2, name="Peloton", provider="workday", bucket="stale",
+                      held=430, board_reported_total=None, board_enumerated=None,
+                      detail_deferred=None, shortfall=None, ratio=None),
+    ])
+    assert rep.global_ratio is None
+    assert rep.corpus_boards == 2
+
+
+def test_measured_board_with_ratio_and_total_constructs_cleanly() -> None:
+    """Fix round 1, finding 3, the valid direction."""
+    BoardCoverage(company_id=1, name="Adobe", provider="workday", bucket="measured",
+                  held=600, board_reported_total=740, board_enumerated=740,
+                  detail_deferred=140, shortfall=140, ratio=600 / 740)
+
+
+def test_enumerated_only_board_with_ratio_1_0_is_a_construction_bug() -> None:
+    """Fix round 1, finding 3, the inconsistent direction: precedent is
+    `Liveness.__post_init__` (core/liveness.py:127-146) raising `ContradictoryLiveness` for an
+    inconsistent verdict/signal pair. `bucket="enumerated_only"` with `ratio=1.0` is exactly the
+    unfailable-ratio trap this module exists to prevent, and build_report filters only on
+    `bucket` — it never inspects `ratio` — so this must be caught at construction."""
+    with pytest.raises(ContradictoryCoverage):
+        BoardCoverage(company_id=1, name="Lever Co", provider="lever", bucket="enumerated_only",
+                      held=120, board_reported_total=None, board_enumerated=120,
+                      detail_deferred=0, shortfall=None, ratio=1.0)
+
+
+def test_measured_board_missing_a_ratio_is_a_construction_bug() -> None:
+    with pytest.raises(ContradictoryCoverage):
+        BoardCoverage(company_id=1, name="Adobe", provider="workday", bucket="measured",
+                      held=600, board_reported_total=740, board_enumerated=740,
+                      detail_deferred=140, shortfall=140, ratio=None)
+
+
+def test_measured_board_missing_a_total_is_a_construction_bug() -> None:
+    with pytest.raises(ContradictoryCoverage):
+        BoardCoverage(company_id=1, name="Adobe", provider="workday", bucket="measured",
+                      held=600, board_reported_total=None, board_enumerated=740,
+                      detail_deferred=140, shortfall=140, ratio=0.81)
+
+
+def test_a_zero_stated_total_does_not_inflate_the_global_ratio() -> None:
+    """Fix round 1, finding 4: a board stating total==0 makes a real claim ("nothing open")
+    and stays `measured`, but must never contribute a numerator with no denominator. Without
+    the fix, 500/1000 held elsewhere plus 5 held against a stated total of 0 silently becomes
+    505/1000 = 50.5% instead of the correct 50.0%."""
+    rep = build_report([
+        BoardCoverage(company_id=1, name="A", provider="workday", bucket="measured",
+                      held=500, board_reported_total=1000, board_enumerated=1000,
+                      detail_deferred=500, shortfall=500, ratio=500 / 1000),
+        BoardCoverage(company_id=2, name="B", provider="workday", bucket="measured",
+                      held=5, board_reported_total=0, board_enumerated=0,
+                      detail_deferred=0, shortfall=-5, ratio=float("inf")),
+    ])
+    assert rep.global_ratio == pytest.approx(0.5)
+    assert rep.measured_zero_total == 1

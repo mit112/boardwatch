@@ -5,11 +5,19 @@ never folded into a neighbour — the same invariant that makes ABSTAIN load-bea
 eligibility engine. Folding `enumerated_only` into `measured` would print a ratio that is 100%
 by arithmetic on every run forever: lever, ashby, and workable state no total at all, so the
 only "total" available for them is our own array length, and held / held cannot ever fail.
+`BoardCoverage.__post_init__` enforces the pairing between `bucket` and `ratio` at construction,
+the same way `Liveness.__post_init__` (core/liveness.py) enforces verdict/signal pairing —
+because `build_report` filters only on `bucket` and never inspects `ratio`, so a caller that
+built `enumerated_only` with `ratio=1.0` would sail through undetected.
 
 The global ratio is a weighted roll-up over `measured` ONLY, published beside the counts of the
 other four buckets. A `dark` board must not be averaged in as 100% coverage, but it must still
 count toward `corpus_boards` — it does not stop being a board we watch just because today's scan
-could not read it.
+could not read it. Within `measured`, a board stating a total of `0` makes a real claim ("I have
+nothing open") and keeps the bucket, but it is excluded from the global roll-up's numerator and
+denominator — held postings against a stated total of zero would otherwise inflate the headline
+ratio with a denominator contribution of nothing. Excluded boards are counted, not dropped, in
+`CoverageReport.measured_zero_total`.
 
 This module has no I/O and no database access. It consumes the coverage columns Task 2 added to
 `board_scans` (already resolved to plain values by the caller) and classifies them.
@@ -32,6 +40,27 @@ _ALL_BUCKETS: tuple[CoverageBucket, ...] = (
 )
 
 
+class ContradictoryCoverage(Exception):
+    """A board's bucket and its ratio disagree — a distinct fault from a bad classification.
+
+    `bucket="enumerated_only"` with `ratio=1.0` is exactly the unfailable-ratio trap this module
+    exists to prevent, and nothing downstream inspects `ratio` against `bucket` again once a
+    `BoardCoverage` exists. Raising here, at construction, closes the hole for every future
+    caller, not only the one who reads the module docstring.
+    """
+
+    def __init__(
+        self, *, bucket: CoverageBucket, ratio: float | None, board_reported_total: int | None
+    ) -> None:
+        super().__init__(
+            f"bucket {bucket!r} is inconsistent with ratio={ratio!r}, "
+            f"board_reported_total={board_reported_total!r}"
+        )
+        self.bucket = bucket
+        self.ratio = ratio
+        self.board_reported_total = board_reported_total
+
+
 @dataclass(frozen=True)
 class BoardCoverage:
     """One board's coverage verdict for one scan."""
@@ -50,6 +79,18 @@ class BoardCoverage:
     shortfall: int | None
     ratio: float | None
 
+    def __post_init__(self) -> None:
+        if self.bucket == "measured":
+            consistent = self.ratio is not None and self.board_reported_total is not None
+        else:
+            consistent = self.ratio is None
+        if not consistent:
+            raise ContradictoryCoverage(
+                bucket=self.bucket,
+                ratio=self.ratio,
+                board_reported_total=self.board_reported_total,
+            )
+
 
 @dataclass(frozen=True)
 class CoverageReport:
@@ -62,6 +103,10 @@ class CoverageReport:
     measured_total: int
     global_ratio: float | None
     corpus_boards: int
+    # `measured` boards excluded from the roll-up because their stated total is 0 — visible here
+    # rather than silently absorbed into either `measured_total` (as a no-op denominator) or a
+    # neighbouring bucket.
+    measured_zero_total: int
 
 
 def classify_board(
@@ -89,8 +134,11 @@ def classify_board(
 def build_report(boards: list[BoardCoverage]) -> CoverageReport:
     counts = Counter(b.bucket for b in boards)
     measured = [b for b in boards if b.bucket == "measured"]
-    held = sum(b.held for b in measured)
-    total = sum(b.board_reported_total or 0 for b in measured)
+    # A board stating total == 0 stays `measured` (it is a real claim), but contributes no
+    # numerator without a denominator: (500,1000) + (5,0) must roll up to 0.5, never 505/1000.
+    ratable = [b for b in measured if (b.board_reported_total or 0) > 0]
+    held = sum(b.held for b in ratable)
+    total = sum(b.board_reported_total or 0 for b in ratable)
     return CoverageReport(
         boards=boards,
         bucket_counts={bucket: counts.get(bucket, 0) for bucket in _ALL_BUCKETS},
@@ -100,4 +148,5 @@ def build_report(boards: list[BoardCoverage]) -> CoverageReport:
         # coverage.
         global_ratio=(held / total) if total > 0 else None,
         corpus_boards=len(boards),
+        measured_zero_total=len(measured) - len(ratable),
     )
