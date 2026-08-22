@@ -208,7 +208,7 @@ class BoardCoverage:
 @dataclass(frozen=True)
 class CoverageReport:
     """The whole corpus, partitioned. `global_ratio` covers `measured` boards only; the other
-    five buckets are named in `bucket_counts` rather than merged into the ratio's denominator."""
+    six buckets are named in `bucket_counts` rather than merged into the ratio's denominator."""
 
     boards: list[BoardCoverage]
     bucket_counts: dict[CoverageBucket, int]
