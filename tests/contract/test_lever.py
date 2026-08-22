@@ -64,6 +64,17 @@ def test_complete_snapshot_parses_array_of_postings(tmp_path: Path) -> None:
 
 
 @respx.mock
+def test_lever_states_no_board_total(tmp_path: Path) -> None:
+    """A bare JSON array has no count field. None is a CLAIM: the board stated nothing.
+
+    Backfilling len(postings) here would make coverage 100% by arithmetic, forever."""
+    respx.get(BOARD_URL).mock(return_value=httpx.Response(200, content=_fixture_bytes("normal.json")))
+    snapshot = provider.fetch_board(_fetcher(tmp_path), _request())
+    assert snapshot.board_reported_total is None
+    assert snapshot.board_enumerated == len(snapshot.postings)
+
+
+@respx.mock
 def test_created_at_is_epoch_milliseconds_not_seconds(tmp_path: Path) -> None:
     # the ms-vs-s guard (issue #16): a 13-digit epoch-ms createdAt must land in this
     # decade, not 1970. If the provider divided by the wrong factor this fails loudly.

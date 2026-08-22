@@ -88,6 +88,10 @@ class AshbyProvider:
         return BoardSnapshot(
             status=status,
             postings=postings, url=url, observed_validators=None, error=error,
+            # This API states no total. None, deliberately — see D-271 and D-028.
+            board_reported_total=None,
+            board_enumerated=len(postings),
+            detail_deferred=0,
         )
 
     def healthcheck(self, fetcher: Fetcher, slug: str) -> BoardHealth:

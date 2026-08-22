@@ -69,6 +69,16 @@ def test_complete_snapshot_parses_all_jobs(tmp_path: Path) -> None:
 
 
 @respx.mock
+def test_greenhouse_reports_meta_total(tmp_path: Path) -> None:
+    """Confirmed live 2026-08-22: stripe meta.total=576, databricks 818."""
+    respx.get(BOARD_URL).mock(return_value=httpx.Response(200, content=_fixture_bytes("normal.json")))
+    snapshot = provider.fetch_board(_fetcher(tmp_path), _request())
+    assert snapshot.board_reported_total == 5  # tests/fixtures/greenhouse/normal.json meta.total
+    assert snapshot.board_enumerated == 5
+    assert snapshot.detail_deferred == 0
+
+
+@respx.mock
 def test_pay_input_ranges_captured_in_raw_json_never_projected(tmp_path: Path) -> None:
     respx.get(BOARD_URL).mock(
         return_value=httpx.Response(200, content=_fixture_bytes("normal.json"))

@@ -54,6 +54,18 @@ def test_complete_snapshot_uses_html_to_text(tmp_path: Path) -> None:
 
 
 @respx.mock
+def test_ashby_states_no_board_total(tmp_path: Path) -> None:
+    """The {apiVersion, jobs} envelope carries no count field. None is a CLAIM: the board
+    stated nothing.
+
+    Backfilling len(postings) here would make coverage 100% by arithmetic, forever."""
+    respx.get(BOARD_URL).mock(return_value=httpx.Response(200, content=_fixture_bytes("normal.json")))
+    snapshot = provider.fetch_board(_fetcher(tmp_path), _request())
+    assert snapshot.board_reported_total is None
+    assert snapshot.board_enumerated == len(snapshot.postings)
+
+
+@respx.mock
 def test_single_range_recognized_interval_maps_salary_scalars(tmp_path: Path) -> None:
     respx.get(BOARD_URL).mock(return_value=httpx.Response(200, content=_fixture_bytes("normal.json")))
     snapshot = provider.fetch_board(_fetcher(tmp_path), _request())

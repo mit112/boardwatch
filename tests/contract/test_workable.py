@@ -53,6 +53,18 @@ def test_complete_snapshot_parses_all_jobs(tmp_path: Path) -> None:
 
 
 @respx.mock
+def test_workable_states_no_board_total(tmp_path: Path) -> None:
+    """The {name, description, jobs} envelope carries no count field. None is a CLAIM: the
+    board stated nothing.
+
+    Backfilling len(postings) here would make coverage 100% by arithmetic, forever."""
+    respx.get(BOARD_URL).mock(return_value=httpx.Response(200, content=_fixture_bytes("normal.json")))
+    snap = provider.fetch_board(_fetcher(tmp_path), _request())
+    assert snap.board_reported_total is None
+    assert snap.board_enumerated == len(snap.postings)
+
+
+@respx.mock
 def test_per_job_parse_errors_produce_partial(tmp_path: Path) -> None:
     payload = _fixture_json("normal.json")
     del payload["jobs"][0]["title"]  # corrupt exactly one job

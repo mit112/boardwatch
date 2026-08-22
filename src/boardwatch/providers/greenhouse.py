@@ -57,6 +57,11 @@ class GreenhouseProvider:
                 status="failed", postings=[], url=request.url,
                 observed_validators=None, error=f"invalid board payload: {exc}",
             )
+        # meta.total is present on both the content=true board URL and the cheaper
+        # _health_url shape (confirmed live: stripe 576, databricks 818). Absent on some
+        # tenants, so .get() — and None means "stated nothing", never 0.
+        meta = payload.get("meta")
+        board_total = int(meta["total"]) if isinstance(meta, dict) and "total" in meta else None
         postings: list[RawPosting] = []
         errors: list[str] = []
         for job in jobs:
@@ -79,6 +84,9 @@ class GreenhouseProvider:
             url=request.url,
             observed_validators=result.observed_validators,
             error=error,
+            board_reported_total=board_total,
+            board_enumerated=len(postings),
+            detail_deferred=0,
         )
 
     def healthcheck(self, fetcher: Fetcher, slug: str) -> BoardHealth:
