@@ -59,9 +59,12 @@ class GreenhouseProvider:
             )
         # meta.total is present on both the content=true board URL and the cheaper
         # _health_url shape (confirmed live: stripe 576, databricks 818). Absent on some
-        # tenants, so .get() — and None means "stated nothing", never 0.
+        # tenants, so .get() — and None means "stated nothing", never 0. Guarded against a
+        # present-but-null or non-numeric total (a metadata glitch must never fail the whole
+        # board over postings that parsed fine).
         meta = payload.get("meta")
-        board_total = int(meta["total"]) if isinstance(meta, dict) and "total" in meta else None
+        total_val = meta.get("total") if isinstance(meta, dict) else None
+        board_total = int(total_val) if isinstance(total_val, (int, float)) else None
         postings: list[RawPosting] = []
         errors: list[str] = []
         for job in jobs:

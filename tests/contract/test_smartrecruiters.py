@@ -220,6 +220,9 @@ def test_budget_exceeded_is_partial(tmp_path: Path) -> None:
     assert snap.status == "partial"
     assert len(snap.postings) == 1
     assert "budget" in (snap.error or "").lower()
+    # 3 unseen postings truncated to budget=1: a post-truncation read of `unseen` would give
+    # 0 here, the exact regression detail_deferred exists to catch (D-271).
+    assert snap.detail_deferred == 2
 
 
 @respx.mock

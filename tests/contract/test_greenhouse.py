@@ -79,6 +79,51 @@ def test_greenhouse_reports_meta_total(tmp_path: Path) -> None:
 
 
 @respx.mock
+def test_greenhouse_meta_total_is_not_backfilled_from_posting_count(tmp_path: Path) -> None:
+    """meta.total (97) deliberately differs from len(jobs) (2), so this fails immediately
+    under a len(postings) backfill — the fixture's normal.json cannot discriminate the two
+    because its meta.total happens to equal its job count (D-271, D-028)."""
+    payload = {
+        "meta": {"total": 97},
+        "jobs": [{"id": 1, "title": "Engineer A"}, {"id": 2, "title": "Engineer B"}],
+    }
+    respx.get(BOARD_URL).mock(return_value=httpx.Response(200, json=payload))
+    snapshot = provider.fetch_board(_fetcher(tmp_path), _request())
+    assert snapshot.board_reported_total == 97
+    assert snapshot.board_enumerated == 2
+
+
+_ABSENT_META = object()  # sentinel: omit the "meta" key entirely, distinct from meta=None
+
+
+@respx.mock
+@pytest.mark.parametrize(
+    ("meta_value", "why"),
+    [
+        ({"total": None}, "total key present but null"),
+        ({"total": "unknown"}, "total is non-numeric"),
+        ("not-a-dict", "meta is not a dict"),
+        (_ABSENT_META, "meta key absent entirely"),
+    ],
+)
+def test_malformed_meta_total_falls_back_to_none_not_a_crash(
+    tmp_path: Path, meta_value: Any, why: str
+) -> None:
+    """A metadata glitch must never fail the whole board over postings that parsed fine —
+    the identical defect class fixed in workday.py's _uncapped_total this round."""
+    payload: dict[str, Any] = {
+        "jobs": [{"id": 1, "title": "Engineer A"}, {"id": 2, "title": "Engineer B"}],
+    }
+    if meta_value is not _ABSENT_META:
+        payload["meta"] = meta_value
+    respx.get(BOARD_URL).mock(return_value=httpx.Response(200, json=payload))
+    snapshot = provider.fetch_board(_fetcher(tmp_path), _request())
+    assert snapshot.status == "complete", why
+    assert len(snapshot.postings) == 2, why
+    assert snapshot.board_reported_total is None, why
+
+
+@respx.mock
 def test_pay_input_ranges_captured_in_raw_json_never_projected(tmp_path: Path) -> None:
     respx.get(BOARD_URL).mock(
         return_value=httpx.Response(200, content=_fixture_bytes("normal.json"))
