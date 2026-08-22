@@ -49,6 +49,17 @@ local check cannot see (the Mac off/asleep all day). Off until the operator sets
 cut only by `DEFAULT_TOP_N`** (run 66: 3,595) — the precision tension Mit rules on: fix precision, never tune
 the cap (ideally show everything eligible).
 
+**Discovery is budget-capped and the corpus is a PARTIAL crawl (D-270).** `detail_fetch_budget` is **50**
+unseen postings per board per run, so a day's "new postings" figure measures our throughput, not the market
+— 19 Workday boards sit at exactly 600 rows and gain exactly 50 × runs each day. Run 67 left **15,535 listed
+postings unmaterialised** on 20 boards (Citi 1,614 … Fidelity 104), visible only as prose inside
+`board_scans.error` and absent from the funnel. Known corpus is 30,243 open + 4,124 closed + 15,535 deferred
+= **45,778**. Twelve boards fail outright (all Workday, 401/403/422) and 17 registered companies have never
+produced a posting. Re-keying is NOT the explanation for the daily rate (~92% of each day's rows are new to
+the store under every identity kind), and budget-skipped postings are **not** falsely closed (0 closures on
+the 20 partial boards). **Raising the budget, a first-class backlog counter, and the 12 dead boards are each
+Mit's** — all three add input, and breadth is last.
+
 **Eligibility now decides AND removes.** `work_authorization.needs_sponsorship=true` set (D-249); a
 zero-evidence `eligible` abstains to `uncertain` (D-250); two rules that could never resolve MET are fixed —
 `degree:any_degree_required` and `work_auth:sponsorship_available` (D-256, #107); and **clearance is armed as
@@ -186,7 +197,7 @@ an import source, never hand-fixed (D-155).
 
 | Clause | Standing |
 |---|---|
-| Duplicate leakage over 7 days ≤ 5% | **NOT met.** One-shot baseline 0.79%, but not over 7 days |
+| Duplicate leakage over 7 days ≤ 5% | **NOT met.** One-shot baseline 0.79%, not over 7 days. `posting_identities` already holds the collisions — 1,118 body-hash and 1,062 company+title+location keys whose postings sit in DIFFERENT jobs — so the clause needs Mit's ruling on which kinds count as a duplicate, not new code (D-270) |
 | **0** dead postings reaching leads | **NOT met.** Needs a real probed run; recall low by design |
 | Injected hash-collision test | **MET** (D-100) |
 | Audit of 20 sampled suppressions | **MET** (D-101) |
@@ -227,7 +238,7 @@ handoff can report `bundle_lock_held` while nobody holds the lock. **Ruled: reco
 | Item | Detail | Owner |
 |---|---|---|
 | **A metric that could not fail (D-267)** | `grep -ic buc funnel-N.json` was read as a Buc count; it counts the word "bucket" and is 4 on runs 61/63/65/66 regardless. The funnel enumerates **no ranked pool** and a `leads` row carries **no location** — so the hard location gate, the one gate whose failure is a visa-ineligible lead, leaves no trace in its own artifact. Closing it needs `locations` on `Lead` + an `artifact_version` bump. **Re-raised 2026-08-21c; still Mit's.** D-268 corrects this row's replacement metric too: "0 of 62" had the 0 robust under every bounded rule (27/27/69/70 matched, 0 surviving) but the **62 unreproducible** — match rule and corpus size were never recorded beside it, and a bare substring gives 103 matched / **39 surviving**. A ratio now records its match rule AND corpus size | **Mit** (shipped-schema change) |
-| **CI has two intermittent flakes** | tectonic network + `test_two_writer_concurrency`; re-run failed jobs to recover; local `make check` stays green | tooling |
+| **Discovery backlog is invisible to the artifact** | 15,535 listed postings unmaterialised in run 67 (20 Workday boards), reachable only by a regex over `board_scans.error`; 12 boards fail 401/403/422; 17 companies never produced a posting. Same shape as D-267 — the quantity that bounds what we can see leaves no trace in the run report | **Mit** (input-side) |
 | **No external missed-window alarm** | nothing outside a run can detect a missed 08:00; the funnel heartbeat is only written from inside `runner.py` | P3 |
 | **`resume.yaml` is an IMPORT SOURCE, never hand-fixed** | D-155. Mit pins `resume_max_pages=1`; never advise 2 | Mit |
 | **`boardwatch top` advances the queue by default** | records `seen` unless `--no-record`; relevant to Gate P6's clean window | P6 |
