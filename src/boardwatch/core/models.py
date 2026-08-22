@@ -70,6 +70,17 @@ class BoardSnapshot(BaseModel):
     # (SmartRecruiters skips known postings). _process_missing prefers this; single-
     # request providers leave it empty and it falls back to the applied postings.
     listed_ids: frozenset[str] = frozenset()
+    # Coverage instrument (D-271). None means the board stated no total — NEVER backfill
+    # with len(postings); an unfailable ratio is worse than no ratio.
+    board_reported_total: int | None = None
+    # Distinct posting ids we LISTED this run, before the detail budget truncated anything.
+    board_enumerated: int | None = None
+    # Listed but not materialised because detail_fetch_budget was exceeded. Typed here so the
+    # number stops living only as English inside board_scans.error.
+    detail_deferred: int | None = None
+    # True when the provider's stated total was a censor value and board_reported_total came
+    # from a second, uncapped path. A TYPED flag: never re-derive this by parsing a message.
+    board_total_censored: bool | None = None
 
     @model_validator(mode="after")
     def _postings_empty_for_unchanged_and_failed(self) -> BoardSnapshot:
