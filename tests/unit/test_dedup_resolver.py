@@ -17,6 +17,7 @@ from boardwatch.core.dedup import (
     resolve_duplicates,
 )
 from boardwatch.core.identity_kinds import IdentityKindSpec
+from boardwatch.core.normalize import content_hash
 from boardwatch.core.posting_identity import (
     IdentityInputs,
     PostingIdentity,
@@ -382,3 +383,39 @@ def test_a_suppressing_kind_without_a_resolver_raises_a_typed_error():
         with pytest.raises(MissingSuppressionResolver) as excinfo:
             resolve_duplicates(rows, identities)
     assert excinfo.value.name == "content_hash_only"
+
+
+# --- body evidence on the STORED path (design §4.3 of the JD-acquisition spec) ---------
+
+
+@pytest.mark.parametrize("blank", ["", "   \n\t "])
+def test_a_stale_exact_quad_cannot_suppress_two_bodyless_postings(blank):
+    """Presence, not equality, exactly as for locations — and for the same reason.
+
+    `compute_identities` no longer emits an `exact_quad` without body evidence, but this
+    resolver groups **stored** identities and nothing in the scan path rewrites them on its
+    own schedule. The live corpus already holds rows written before the body check existed.
+    Two absent bodies compare EQUAL, so an equality-only check would pass and suppress on
+    evidence the catalog marks non-suppressing.
+    """
+    a = _p(1, body_text=blank, content_hash=content_hash(blank))
+    b = _p(2, body_text=blank, content_hash=content_hash(blank))
+    stale = (PostingIdentity("exact_quad", "a-key-written-before-the-body-check"),)
+    assert _resolve(a, b, overrides={1: stale, 2: stale}) == ()
+
+
+def test_one_bodyless_side_cannot_be_suppressed_by_a_real_posting():
+    """Asymmetric case: a real body and a stub are not the same posting."""
+    a = _p(1, body_text="we are hiring a tam")
+    b = _p(2, body_text="   ", content_hash=content_hash("   "))
+    stale = (PostingIdentity("exact_quad", "a-key-written-before-the-body-check"),)
+    assert _resolve(a, b, overrides={1: stale, 2: stale}) == ()
+
+
+def test_two_real_postings_with_one_body_still_suppress():
+    """The fix must not disarm suppression where the evidence is genuinely present."""
+    a = _p(1, body_text="we are hiring a tam")
+    b = _p(2, body_text="we are hiring a tam")
+    suppressions = _resolve(a, b)
+    assert [s.posting_id for s in suppressions] == [2]
+    assert suppressions[0].kind == "exact_quad"
