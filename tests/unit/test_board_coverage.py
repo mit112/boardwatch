@@ -1,4 +1,4 @@
-"""Per-board discovery coverage as a six-bucket partition (D-271).
+"""Per-board discovery coverage as a seven-bucket partition (D-271, D-273).
 
 The test that matters most here is the unfailable-ratio guard: lever/ashby/workable state no
 total at all, so the only "total" available for them is our own array length. A ratio of
@@ -14,6 +14,9 @@ from boardwatch.reports.board_coverage import (
     BoardCoverage,
     ContradictoryCoverage,
     UnknownScanStatus,
+    board_coverage_headline,
+    board_coverage_table,
+    board_coverage_to_dict,
     build_report,
     classify_board,
 )
@@ -290,3 +293,153 @@ def test_censored_shortfall_is_none_not_zero_when_no_total_was_recovered() -> No
     ])
     assert rep.censored_shortfall is None
     assert rep.bucket_counts["censored"] == 1
+
+
+# --------------------------------------------------------------------------------------
+# The reporting surfaces (D-274). The instrument was correct and mute; these pin what an
+# unattended run actually says, which is the only part the operator ever reads.
+# --------------------------------------------------------------------------------------
+
+
+def _board(
+    *,
+    name: str = "Acme",
+    bucket: str = "measured",
+    held: int = 500,
+    stated: int | None = 1000,
+    ratio: float | None = 0.5,
+    shortfall: int | None = 500,
+    deferred: int | None = None,
+) -> BoardCoverage:
+    return BoardCoverage(
+        company_id=1,
+        name=name,
+        provider="greenhouse",
+        bucket=bucket,  # type: ignore[arg-type]
+        held=held,
+        board_reported_total=stated,
+        board_enumerated=None,
+        detail_deferred=deferred,
+        shortfall=shortfall,
+        ratio=ratio,
+    )
+
+
+def test_the_serializer_says_nothing_rather_than_zero_when_there_is_no_report() -> None:
+    """`None`, never a zeroed block. A dict of zeros would claim every board was measured at
+    nothing, which is the opposite of "we could not measure" — the same distinction the seven
+    buckets exist to keep."""
+    assert board_coverage_to_dict(None) is None
+
+
+def test_the_serializer_carries_the_held_caveat_into_the_json() -> None:
+    """`held` is a live count with no run dimension, so a section stamped into a per-run
+    artifact is not a historical record. A machine consumer must be able to read that without
+    parsing prose."""
+    payload = board_coverage_to_dict(build_report([_board()]))
+
+    assert payload is not None
+    assert "no run dimension" in str(payload["note"])
+
+
+def test_a_report_with_nothing_measurable_renders_not_measurable_never_zero_percent() -> None:
+    """0% is a claim that boards were read and found empty. Not measurable is the honest word
+    for a corpus where no board stated a total we can trust."""
+    report = build_report(
+        [_board(bucket="dark", stated=None, ratio=None, shortfall=None)]
+    )
+
+    rendered = "\n".join(board_coverage_headline(report))
+
+    assert report.global_ratio is None
+    assert "not measurable" in rendered
+    assert "0.0%" not in rendered
+
+
+def test_an_absent_report_reads_differently_from_an_unmeasurable_one() -> None:
+    """Two different failures: we could not READ the columns, versus we read them and no board
+    stated a trustworthy total. Collapsing them would hide a broken query behind a real
+    result."""
+    absent = "\n".join(board_coverage_headline(None))
+    unmeasurable = "\n".join(
+        board_coverage_headline(
+            build_report([_board(bucket="dark", stated=None, ratio=None, shortfall=None)])
+        )
+    )
+
+    assert "not measured this run" in absent
+    assert "not measurable" in unmeasurable
+    assert absent != unmeasurable
+
+
+def test_the_headline_names_all_seven_buckets_even_at_zero() -> None:
+    """An absent line is ambiguous between "checked, found none" and "never checked" — the
+    reason `coverage_cmd.py` prints its notes unconditionally too."""
+    rendered = "\n".join(board_coverage_headline(build_report([_board()])))
+
+    for bucket in (
+        "measured",
+        "enumerated_only",
+        "censored",
+        "dark",
+        "stale",
+        "unscanned",
+        "unreadable",
+    ):
+        assert bucket in rendered
+
+
+def test_the_headline_publishes_the_censored_shortfall_and_still_no_ratio() -> None:
+    """The censored boards hold the largest known holes in the corpus (Target: 649 held of a
+    facet-recovered 12,096) and publish NO ratio, so they contribute nothing to the headline
+    figure. The absolute shortfall is the only thing that makes them visible at all."""
+    report = build_report(
+        [_board(name="Target", bucket="censored", held=649, stated=12096, ratio=None,
+                shortfall=11447)]
+    )
+
+    rendered = "\n".join(board_coverage_headline(report))
+
+    assert "11,447" in rendered
+    assert "No ratio is published for them" in rendered
+
+
+def test_the_headline_calls_the_total_board_stated_not_independent() -> None:
+    """`total` arrives in the same response as the listing it describes, so it is the board's
+    own claim. Calling it independent is one of the eight ways this metric could lie."""
+    rendered = "\n".join(board_coverage_headline(build_report([_board()])))
+
+    assert "board-stated" in rendered
+    assert "independent audit of it" in rendered
+
+
+def test_the_table_sorts_boards_with_no_ratio_after_a_genuine_zero_percent() -> None:
+    """`is not None`, not truthiness: a real 0.0% is a measured board with a stated total and
+    nothing held, and it belongs with the ratios, not with the boards making no claim."""
+    rows = board_coverage_table(
+        build_report(
+            [
+                _board(name="NoClaim", bucket="enumerated_only", stated=None, ratio=None,
+                       shortfall=None),
+                _board(name="RealZero", held=0, stated=10, ratio=0.0, shortfall=10),
+            ]
+        )
+    )
+
+    body = [row for row in rows if row.startswith("|") and "---" not in row][1:]
+    assert "RealZero" in body[0]
+    assert "NoClaim" in body[1]
+
+
+def test_the_table_is_empty_rather_than_a_header_when_there_is_no_report() -> None:
+    assert board_coverage_table(None) == []
+
+
+def test_a_board_with_no_ratio_renders_a_dash_never_a_percentage() -> None:
+    rows = board_coverage_table(
+        build_report(
+            [_board(bucket="dark", stated=None, ratio=None, shortfall=None)]
+        )
+    )
+
+    assert any("| — | dark |" in row for row in rows)

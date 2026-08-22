@@ -90,8 +90,8 @@ own dead sources are *all* bespoke adapters or niche APIs, never aggregators. `P
 blocking rows are struck.
 
 **The coverage instrument is SHIPPED and ON `main` (D-271/D-272/D-273, PR #125, green under
-`make check` and full CI). It is NOT ARMED — see the next paragraph, which is the load-bearing
-part.** `boardwatch coverage` reports every watched board as a
+`make check` and full CI), and D-274 makes it report itself unattended — see below.**
+`boardwatch coverage` reports every watched board as a
 **seven-way partition** — `measured` / `enumerated_only` / `censored` / `dark` / `stale` /
 `unscanned` / `unreadable` — that never folds a bucket into a neighbour, and prints "not
 measurable" rather than 0% or 100% when nothing can be measured. Four nullable `board_scans`
@@ -108,7 +108,8 @@ work.** Citi 4,573, NVIDIA 2,656, T-Mobile 2,200. Worst measured: Capital One 34
 **`DEFAULT_TOP_N` is 40 and LIVE** (armed 2026-08-22 08:17). The launchd job runs
 `.venv/bin/boardwatch run --project`, and that venv is an **editable** install resolving to `src/`
 in the primary working tree — so the tick executes whatever is CHECKED OUT there, not what is
-merged. That tree is now at `18d8ae7`, and code and store both report `p_board_coverage`.
+merged. Code and store both report `p_board_coverage` (verified this session by reading the live store
+`?mode=ro`). No sha is recorded here on purpose (D-017) — check `git log` in that tree.
 
 **Run 68's scheduled tick FAILED and Gate P3 stays at 2 of 7.** A subagent had run a `boardwatch`
 command against the DEFAULT data dir during the overnight build, migrating the live store to
@@ -124,14 +125,31 @@ failed, 14,238 postings seen, and `capped_by_top_n` **3,628**: even at 40, that 
 clear every gate and are cut by rank alone. First live coverage reading **82.4% (26,075 of
 31,629)**, within 0.3 points of the store-copy rehearsal.
 
-**The gap this does NOT close, and it bounds the deliverable:** nothing reads the new columns
-unattended. `run_pipeline`, the morning digest and `notify` are untouched; `coverage` is a manual
-command, and a `board_coverage` section in the funnel artifact needs an `artifact_version` bump.
-A scheduled run persists coverage and reports nothing.
+**The instrument is no longer mute (D-274) — built, green, UNMERGED on
+`make-board-coverage-visible-unattended`.** A scheduled run now reports coverage in the two
+artifacts it already writes: a `board_coverage` section in the funnel (**`artifact_version`
+5 → 6**) and a `## Discovery reach` block in the morning digest (**1 → 2**), plus one
+`board coverage →` line on stdout, which is what a launchd run leaves in its log. The report is
+loaded **once** in `runner.py`'s `finally` and the same object is rendered into both, because
+`held` has no run dimension and two loads seconds apart can differ. `boardwatch coverage --json`
+now shares that serializer, so the command and the artifacts cannot describe one number two ways.
+A coverage failure costs the **section**, never the artifact.
+
+**Correction to the row above:** `notify` was never a candidate surface — it is a standalone CLI
+command, `runner.py` imports nothing from it, and the launchd plist runs only `run --project`.
+
+**Two owner calls, and they are the only thing between this and the deliverable:** (1) the two
+`artifact_version` bumps, and therefore merging; (2) **arming** — the launchd venv is an editable
+install resolving to the primary tree's `src/`, so `git pull` in that checkout is what arms it and
+merging alone arms nothing. Note on D-267: whether adding `locations` to `Lead` needs a bump of
+its own is **unresolved** — that row says it does, while `run_funnel.py`'s own version comment cites
+D-113 as the precedent for declining a bump on a key added inside a block that already exists.
+Either way it is a separate ruling and was deliberately NOT folded into this change.
 
 Design, and eight ways this metric could lie:
-`docs/superpowers/specs/2026-08-22-coverage-assurance-design.md`. **Still Mit's:** the
-`artifact_version` bump, `detail_fetch_budget`, the 17 silent boards, and whether to merge.
+`docs/superpowers/specs/2026-08-22-coverage-assurance-design.md` (its §3.1 table predates
+`unscanned`/`unreadable` and names five buckets; the shipped partition is seven). **Still Mit's:**
+whether `censored` boards publish a ratio, `detail_fetch_budget`, and the 17 silent boards.
 
 **Eligibility now decides AND removes.** `work_authorization.needs_sponsorship=true` set (D-249); a
 zero-evidence `eligible` abstains to `uncertain` (D-250); two rules that could never resolve MET are fixed —

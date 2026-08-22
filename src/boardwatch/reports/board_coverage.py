@@ -52,7 +52,7 @@ This module has no I/O and no database access. It consumes the coverage columns 
 from __future__ import annotations
 
 from collections import Counter
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
 from typing import Literal, get_args
 
 from boardwatch.core.models import SnapshotStatus
@@ -287,3 +287,145 @@ def build_report(boards: list[BoardCoverage]) -> CoverageReport:
         measured_zero_total=len(measured) - len(ratable),
         censored_shortfall=sum(censored_gaps) if censored_gaps else None,
     )
+
+
+# --- Reporting surfaces -----------------------------------------------------
+#
+# The instrument above was mute: `boardwatch coverage` had to be typed by hand, so a scheduled
+# run persisted its four columns and reported nothing. These renderers exist so the funnel and
+# the morning artifact can each show the SAME report object without either one recomputing it.
+# Recomputing would not merely duplicate work — `held` is a live count of open postings with no
+# run dimension, so two loads seconds apart can legitimately disagree, and two artifacts from
+# one run disagreeing about coverage is worse than neither reporting it.
+
+# Stated in both artifacts' JSON, not only in their prose, so a machine consumer reads the same
+# caveat the CLI prints in its footer. `held` is counted straight out of `postings` and is not
+# scoped to a run (store/coverage_queries.py), so a stamped section is accurate as of the moment
+# it was written and is NOT a historical record of the run it is stamped into.
+HELD_NOTE = (
+    "stated totals are this run's; `held` is a live count of open postings and has no run "
+    "dimension, so this section describes the store as of the moment the artifact was written, "
+    "not a frozen record of the run"
+)
+
+# `total` arrives in the same response as the array it describes, so it is the board's own claim
+# and never an independent audit of it. The word is load-bearing: calling it independent is one
+# of the eight ways this metric could lie (design §3.3).
+_STATED = "board-stated"
+
+
+def board_coverage_to_dict(report: CoverageReport | None) -> dict[str, object] | None:
+    """`None` — never a dict of zeros — when the report could not be built.
+
+    A zeroed dict would claim every board was measured at nothing, which is the opposite of
+    "we did not measure". Keys mirror `boardwatch coverage --json` exactly so the artifact and
+    the command cannot drift into describing the same numbers differently.
+    """
+    if report is None:
+        return None
+    return {
+        "bucket_counts": dict(report.bucket_counts),
+        "measured_held": report.measured_held,
+        "measured_total": report.measured_total,
+        "measured_zero_total": report.measured_zero_total,
+        "global_ratio": report.global_ratio,
+        "censored_shortfall": report.censored_shortfall,
+        "corpus_boards": report.corpus_boards,
+        "boards": [asdict(board) for board in report.boards],
+        "note": HELD_NOTE,
+    }
+
+
+def _ratio_text(ratio: float | None) -> str:
+    """`—`, never `0.0%`: no ratio means no claim, and a printed zero is a claim."""
+    return "—" if ratio is None else f"{100 * ratio:.1f}%"
+
+
+def _count_text(value: int | None) -> str:
+    return "—" if value is None else f"{value:,}"
+
+
+def board_coverage_headline(report: CoverageReport | None) -> list[str]:
+    """The run-level roll-up as markdown lines, shared verbatim by both artifacts.
+
+    Every line is emitted unconditionally, including the ones that read as "nothing to report".
+    A "0" line is evidence the check ran; an absent line is ambiguous between "checked, found
+    none" and "never checked" — the same reason `coverage_cmd.py` prints its notes at zero.
+    """
+    if report is None:
+        # No trailing blank line here would merge this into whatever the caller appends next,
+        # which is a `Per-board detail:` line in the morning artifact. The measured branch below
+        # ends with one for the same reason.
+        #
+        # "the load failed OR was never attempted" rather than a flat "failed": `None` also
+        # reaches here when a caller omits the argument entirely, and in that case no
+        # `! board coverage not measured:` line was ever printed. Naming only the cause that
+        # leaves a log line would send a reader looking for an entry that is not there.
+        return [
+            "**not measured this run** — the coverage load failed or was never attempted. A "
+            "failed load prints `! board coverage not measured:` in the run log; nothing is "
+            "logged when the report was simply not requested.",
+            "",
+        ]
+    ratio = (
+        "**not measurable**"
+        if report.global_ratio is None
+        else f"**{100 * report.global_ratio:.1f}%**"
+    )
+    lines = [
+        f"{ratio} — {report.measured_held:,} held of {report.measured_total:,} {_STATED} "
+        f"postings, across the {report.bucket_counts['measured']} of {report.corpus_boards} "
+        "watched boards that state a total we can trust.",
+        "",
+        " · ".join(f"{bucket} {count}" for bucket, count in report.bucket_counts.items()),
+        "",
+        f"*The ratio covers `measured` boards only. The other six buckets are counted above "
+        f"and never folded into it — a `dark` board is a board we could not read, not a board "
+        f"with no jobs. `{_STATED}` is the board's own claim, arriving in the same response as "
+        f"the listing it describes; it is not an independent audit of it.*",
+        "",
+    ]
+    lines.append(
+        f"- **{report.measured_zero_total}** measured board(s) state a total of 0 and are "
+        "excluded from that ratio's numerator and denominator, not folded into it."
+    )
+    censored = report.bucket_counts["censored"]
+    if report.censored_shortfall is None:
+        lines.append(
+            f"- **{censored}** censored board(s) recovered no uncapped total, so their "
+            "shortfall is UNKNOWN, not zero. No ratio is published for them."
+        )
+    else:
+        lines.append(
+            f"- **{censored}** censored board(s) are short **{report.censored_shortfall:,}** "
+            "postings against their facet-recovered totals. No ratio is published for them, "
+            "so they contribute nothing to the figure above — these are the largest known "
+            "holes in the corpus."
+        )
+    lines += ["", f"*{HELD_NOTE}.*", ""]
+    return lines
+
+
+def board_coverage_table(report: CoverageReport | None) -> list[str]:
+    """Every watched board, worst measurable coverage first. Boards with no ratio sort after
+    every real ratio, in the order they arrived — `is not None`, not truthiness, so a genuine
+    0.0% sorts with the real ratios instead of joining the no-claim boards at the bottom."""
+    if report is None:
+        return []
+    lines = [
+        "| ratio | bucket | board | held | stated | shortfall | deferred |",
+        "|---|---|---|---:|---:|---:|---:|",
+    ]
+    for board in sorted(
+        report.boards,
+        key=lambda b: (b.ratio is None, b.ratio if b.ratio is not None else 0.0),
+    ):
+        shortfall = "—" if board.shortfall is None else f"{board.shortfall:+,}"
+        lines.append(
+            f"| {_ratio_text(board.ratio)} | {board.bucket} | "
+            f"{board.provider}:{board.name} | {board.held:,} | "
+            f"{_count_text(board.board_reported_total)} | {shortfall} | "
+            f"{_count_text(board.detail_deferred)} |"
+        )
+    lines.append("")
+    return lines

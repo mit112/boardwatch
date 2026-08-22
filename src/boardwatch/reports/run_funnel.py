@@ -49,6 +49,12 @@ from pathlib import Path
 
 from boardwatch.projection.run import ProjectionLeadOutcome
 from boardwatch.reports.abstain import AbstainReport
+from boardwatch.reports.board_coverage import CoverageReport as BoardCoverageReport
+from boardwatch.reports.board_coverage import (
+    board_coverage_headline,
+    board_coverage_table,
+    board_coverage_to_dict,
+)
 from boardwatch.store.run_funnel_queries import (
     CorpusCounts,
     SourceOutcome,
@@ -83,7 +89,16 @@ _TOP_MISSING = 10
 # without the flag" guarantee covers stages, lineage keys, lead outcomes and dispositions — not
 # this field, which moves for every run. An earlier wording claimed byte-identical no-flag output
 # alongside the bump; the two cannot both hold and the claim, not the bump, was the error.
-ARTIFACT_VERSION = 5
+#
+# **v6 is the `board_coverage` section (D-274).** A new top-level SECTION, so D-113's
+# declining-a-bump precedent does not reach it. Unlike v5 it changes no existing value's
+# meaning: `scan` still counts what boards LISTED this run, and the new section supplies the
+# denominator that section never had. It is named `board_coverage` and not `coverage`
+# because this artifact already has a `coverage` key holding resume KEYWORD coverage
+# (`tailor/coverage.py`) — two different measurements one word apart would mislead every
+# future reader, so the collision is closed in the key name rather than in a comment.
+# `null` when the load failed, never a zeroed block: see `board_coverage_to_dict`.
+ARTIFACT_VERSION = 6
 
 # The stored verdict that carries the keystone invariant's ABSTAIN. Named here once so the
 # rename is visible rather than scattered through the renderers as a string literal.
@@ -609,6 +624,10 @@ class RunFunnel:
     unattributed_evaluations: int
     errors: tuple[str, ...] = ()
     fatal: str | None = None
+    # D-274. `None` means the coverage load FAILED, not that coverage is zero — a run whose
+    # boards were all unreadable still produces a real report (every board `unscanned`,
+    # `global_ratio` None), so the two cases stay distinguishable.
+    board_coverage: BoardCoverageReport | None = None
 
     @property
     def instrumented_stages(self) -> tuple[Stage, ...]:
@@ -680,6 +699,10 @@ def build_run_funnel(
     unattributed_evaluations: int,
     abstain: AbstainReport,
     coverages: Sequence[CoverageReport | None] = (),
+    # D-274, and NOT built here: the caller loads it once and hands the same object to the
+    # morning artifact too. `held` is a live count with no run dimension, so two loads
+    # seconds apart can disagree, and one run's two artifacts must not.
+    board_coverage: BoardCoverageReport | None = None,
     errors: Sequence[str] = (),
     fatal: str | None = None,
 ) -> RunFunnel:
@@ -1078,6 +1101,7 @@ def build_run_funnel(
         unattributed_evaluations=unattributed_evaluations,
         errors=tuple(errors),
         fatal=fatal,
+        board_coverage=board_coverage,
     )
 
 
@@ -1170,6 +1194,10 @@ def funnel_to_dict(funnel: RunFunnel) -> dict[str, object]:
             "boards_failed": funnel.scan.boards_failed,
             "postings_seen": funnel.scan.postings_seen,
         },
+        # Board DISCOVERY coverage (D-274), deliberately adjacent to `scan` because it is
+        # the denominator `scan` never had. Not to be read as the `coverage` key above,
+        # which is resume keyword coverage.
+        "board_coverage": board_coverage_to_dict(funnel.board_coverage),
         "stages": [_stage_json(stage) for stage in funnel.stages],
         "cross_checks": [
             {
@@ -1332,6 +1360,13 @@ def funnel_to_markdown(funnel: RunFunnel) -> str:
         )
     else:
         lines.append("skipped (`--no-scan`) — the corpus below is whatever was already stored.")
+
+    # The denominator the section above never had: how much of each board we can actually
+    # see. Rendered here rather than at the end because a reader who has just been told
+    # 14,238 postings were listed needs "out of how many" in the same breath.
+    lines += ["", "## Board coverage", ""]
+    lines += board_coverage_headline(funnel.board_coverage)
+    lines += board_coverage_table(funnel.board_coverage)
 
     lines += [
         "",
@@ -1677,6 +1712,7 @@ def write_run_funnel(funnel: RunFunnel, out_dir: Path) -> WrittenArtifact:
 # Re-exported so callers assembling a funnel need one import, not four.
 __all__ = [
     "ARTIFACT_VERSION",
+    "BoardCoverageReport",
     "CoverageSummary",
     "CrossCheck",
     "Drop",

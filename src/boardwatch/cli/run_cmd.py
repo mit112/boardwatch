@@ -21,6 +21,31 @@ console = Console()
 DEFAULT_OUT_ROOT = Path.home() / "boardwatch-applications"
 
 
+def _coverage_line(summary: PipelineSummary) -> str:
+    """One line of board-discovery reach for the run log (D-274).
+
+    "not measured" and "not measurable" are different facts and are worded differently: the
+    first is our failure to read the columns, the second is a real report in which no board
+    stated a total we can trust. Neither is ever printed as 0%.
+    """
+    report = summary.board_coverage
+    if report is None:
+        return "not measured (load failed; see the ! line above)"
+    ratio = (
+        "not measurable"
+        if report.global_ratio is None
+        else f"{100 * report.global_ratio:.1f}%"
+    )
+    counts = report.bucket_counts
+    return (
+        f"{ratio} ({report.measured_held:,} held of {report.measured_total:,} stated) · "
+        f"{counts['measured']} measured · {counts['enumerated_only']} no total · "
+        f"{counts['censored']} censored · {counts['dark']} dark · {counts['stale']} stale · "
+        f"{counts['unscanned']} unscanned · {counts['unreadable']} unreadable "
+        f"of {report.corpus_boards} watched"
+    )
+
+
 def _shortlist_line(summary: PipelineSummary) -> str:
     """Says the ranker did not run, rather than printing zeros as if it had."""
     if summary.shortlist is None:
@@ -130,6 +155,10 @@ def run(
     for lead in summary.tailored:
         mark = "✓" if lead.pdf_built else "·"
         console.print(f"  {mark} {lead.company} — {lead.title} → {lead.out_dir}", markup=False)
+    # D-274: printed for every run, including one whose coverage could not be read — the
+    # launchd job redirects stdout to ~/Library/Logs/boardwatch-run.log, so this is the only
+    # place an unattended run's reach is visible without opening a file.
+    console.print(f"  board coverage → {_coverage_line(summary)}", markup=False)
     if summary.funnel is not None:
         console.print(f"  funnel → {summary.funnel.markdown_path}", markup=False)
     if summary.morning is not None:

@@ -29,10 +29,27 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
 
+from boardwatch.reports.board_coverage import CoverageReport as BoardCoverageReport
+from boardwatch.reports.board_coverage import (
+    board_coverage_headline,
+    board_coverage_to_dict,
+)
 from boardwatch.reports.run_funnel import WrittenArtifact
 from boardwatch.tailor.coverage import CoverageReport, coverage_to_dict
 
-ARTIFACT_VERSION = 1
+# v2 adds the run-level `board_coverage` block (D-274) — how much of each watched board
+# boardwatch can actually see. It is the one number in this file that is NOT about a lead,
+# and it is here because this is the file the operator opens: a run that surfaced 40 good
+# leads out of a corpus covering 82% of its boards is a different morning from the same 40
+# leads out of 40%, and nothing unattended used to say which one had happened.
+#
+# This does NOT breach the module docstring's rule against restating the funnel. The rule
+# exists to stop two WRITERS computing one fact and drifting; here the caller loads the
+# report once and hands the same object to both artifacts, so there is one computation and
+# one number. It is rendered as `## Discovery reach`, never as the bare word `coverage`,
+# because every lead below already prints a `coverage:` line meaning resume keyword
+# coverage — the two must not read as the same measurement.
+ARTIFACT_VERSION = 2
 
 
 @dataclass(frozen=True)
@@ -68,10 +85,16 @@ class MorningArtifact:
     run_id: int
     funnel_name: str
     leads: tuple[MorningLead, ...]
+    # `None` means the coverage load FAILED, not that coverage is zero (D-274).
+    board_coverage: BoardCoverageReport | None = None
 
 
 def build_morning(
-    *, run_id: int, funnel_name: str, leads: Sequence[MorningLead]
+    *,
+    run_id: int,
+    funnel_name: str,
+    leads: Sequence[MorningLead],
+    board_coverage: BoardCoverageReport | None = None,
 ) -> MorningArtifact:
     """Assemble the artifact from already-built lead rows. Pure: no engine, no clock, no I/O.
 
@@ -79,7 +102,12 @@ def build_morning(
     keeps the caller's original relative order (`sorted` is stable).
     """
     ordered = tuple(sorted(leads, key=lambda lead: lead.score, reverse=True))
-    return MorningArtifact(run_id=run_id, funnel_name=funnel_name, leads=ordered)
+    return MorningArtifact(
+        run_id=run_id,
+        funnel_name=funnel_name,
+        leads=ordered,
+        board_coverage=board_coverage,
+    )
 
 
 def morning_to_dict(artifact: MorningArtifact) -> dict[str, object]:
@@ -87,6 +115,7 @@ def morning_to_dict(artifact: MorningArtifact) -> dict[str, object]:
         "artifact_version": ARTIFACT_VERSION,
         "run_id": artifact.run_id,
         "funnel": artifact.funnel_name,
+        "board_coverage": board_coverage_to_dict(artifact.board_coverage),
         "leads": [
             {
                 "posting_id": lead.posting_id,
@@ -144,6 +173,21 @@ def morning_to_markdown(artifact: MorningArtifact) -> str:
         f"# boardwatch run {artifact.run_id} — morning",
         "",
         f"Full accounting (counts, drops, cross-checks): see `{artifact.funnel_name}`.",
+        "",
+        "## Discovery reach",
+        "",
+    ]
+    # Rendered BEFORE the zero-lead return: a morning with no leads is precisely when the
+    # operator needs to know whether discovery collapsed or the market was merely quiet.
+    # Titled "Discovery reach", never "coverage" — each lead below prints its own
+    # `coverage:` line meaning something entirely different.
+    lines += board_coverage_headline(artifact.board_coverage)
+    lines += [f"Per-board detail: `{artifact.funnel_name}`.", ""]
+    # `## Leads` is not decoration. Without it the lead count and the zero-lead `none.` sit
+    # under the Discovery reach heading with nothing between them, so a reader on a zero-lead
+    # morning reads `none.` as the coverage answer — in the one case this block exists for.
+    lines += [
+        "## Leads",
         "",
         f"{len(artifact.leads)} lead(s) tailored this run, ranked by score.",
         "",

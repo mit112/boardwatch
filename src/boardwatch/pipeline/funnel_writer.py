@@ -33,6 +33,7 @@ from boardwatch.rank.leveling import load_leveling
 from boardwatch.reports.abstain import AbstainReport, build_abstain_report
 from boardwatch.reports.manifest import config_hash, profile_row_hash
 from boardwatch.reports.run_funnel import (
+    BoardCoverageReport,
     Lead,
     LivenessCheck,
     RunFunnel,
@@ -112,6 +113,10 @@ def collect_run_funnel(
     projection_outcomes: Mapping[ProjectionLeadOutcome, int] | None = None,
     rewrite_rows: list[dict[str, object]],
     coverages: Sequence[CoverageReport | None] = (),
+    # D-274. Loaded by the CALLER (`runner._load_board_coverage`) and passed in, because the
+    # morning artifact must render the identical object: `held` has no run dimension, so two
+    # loads can disagree. Building it here would reintroduce exactly that drift.
+    board_coverage: BoardCoverageReport | None = None,
     errors: list[str],
     fatal: str | None,
 ) -> RunFunnel:
@@ -253,6 +258,7 @@ def collect_run_funnel(
         unattributed_evaluations=unattributed,
         abstain=abstain,
         coverages=coverages,
+        board_coverage=board_coverage,
         errors=errors,
         fatal=fatal,
     )

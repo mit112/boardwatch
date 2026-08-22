@@ -15,7 +15,6 @@ schema is absent. Harmless, shared with `doctor`, and stated here rather than co
 from __future__ import annotations
 
 import json
-from dataclasses import asdict
 
 import typer
 from rich.console import Console
@@ -23,7 +22,11 @@ from rich.table import Table
 from sqlalchemy import select
 
 from boardwatch.cli.context import build_context
-from boardwatch.reports.board_coverage import BoardCoverage, build_report
+from boardwatch.reports.board_coverage import (
+    BoardCoverage,
+    board_coverage_to_dict,
+    build_report,
+)
 from boardwatch.store.coverage_queries import load_board_coverage
 from boardwatch.store.db import db_revision, schema_revision
 from boardwatch.store.tables import runs
@@ -87,21 +90,11 @@ def coverage(
         report = build_report(load_board_coverage(conn, run_id=run))
 
     if as_json:
-        typer.echo(
-            json.dumps(
-                {
-                    "bucket_counts": report.bucket_counts,
-                    "measured_held": report.measured_held,
-                    "measured_total": report.measured_total,
-                    "measured_zero_total": report.measured_zero_total,
-                    "global_ratio": report.global_ratio,
-                    "censored_shortfall": report.censored_shortfall,
-                    "corpus_boards": report.corpus_boards,
-                    "boards": [asdict(b) for b in report.boards],
-                },
-                indent=2,
-            )
-        )
+        # The SAME serializer the funnel and morning artifacts use (D-274). Sharing it is
+        # what makes `boardwatch coverage --json` and the artifacts' `board_coverage`
+        # sections incapable of describing one number two different ways; a duplicated
+        # dict literal here would only be checkable by a test asserting they agree.
+        typer.echo(json.dumps(board_coverage_to_dict(report), indent=2))
         return
 
     table = Table("ratio", "bucket", "board", "held", "stated", "shortfall")
