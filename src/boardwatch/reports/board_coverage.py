@@ -93,11 +93,16 @@ class BoardCoverage:
                 consistent = False
             elif self.board_reported_total > 0:
                 consistent = self.ratio is not None
-            else:
-                # board_reported_total == 0: the board's own ratio is genuinely undefined (no
-                # real number answers "held against a claimed total of zero"), so `ratio=None`
-                # is accepted here exactly like the four non-measured buckets below.
+            elif self.board_reported_total == 0:
+                # The board's own ratio is genuinely undefined (no real number answers "held
+                # against a claimed total of zero"), so `ratio=None` is accepted here exactly
+                # like the four non-measured buckets below.
                 consistent = True
+            else:
+                # A negative total can only come from a bad parse or a bad scrape — this
+                # dataclass exists to turn that impossible combination into a loud construction
+                # error, not a number that quietly flows into a report.
+                consistent = False
         else:
             consistent = self.ratio is None
         if not consistent:

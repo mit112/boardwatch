@@ -171,3 +171,13 @@ def test_measured_board_with_zero_total_accepts_no_ratio() -> None:
     BoardCoverage(company_id=1, name="B", provider="workday", bucket="measured",
                   held=5, board_reported_total=0, board_enumerated=0,
                   detail_deferred=0, shortfall=-5, ratio=None)
+
+
+def test_measured_board_with_negative_total_is_a_construction_bug() -> None:
+    """Fix round 3: the zero-total relaxation's `else` branch caught `board_reported_total < 0`
+    too, so a negative total (only ever a bad parse or a bad scrape) constructed successfully
+    with any ratio, including None. Pins the boundary at exactly zero."""
+    with pytest.raises(ContradictoryCoverage):
+        BoardCoverage(company_id=1, name="Bad", provider="workday", bucket="measured",
+                      held=5, board_reported_total=-3, board_enumerated=0,
+                      detail_deferred=0, shortfall=None, ratio=None)
