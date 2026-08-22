@@ -5567,6 +5567,40 @@ ENOSPC in this repo presents as phantom tooling failures. The seeded store was b
 That the numbers reproduce D-273's store-copy rehearsal (82.7% there, 82.4% live) is the point of
 recording them twice: the second measurement came through a different path than the first.
 
+### Run 69 — the live exercise (MANUAL, does not move the P3 counter)
+
+Merged as PR #127 and armed, then exercised on live data before any scheduled tick (D-273's rule).
+
+| figure | run 68 (08:xx) | run 69 (16:25) |
+|---|---:|---:|
+| outcome | exit 0, ~24 min | **exit 0, 22m29s** |
+| leads / PDFs | 40 / 40 | 40 / 40 |
+| global coverage | 82.4% (26,075 of 31,629) | **76.5% (16,602 of 21,697)** |
+| measured boards | 90 | **37** |
+| `stale` (304, no fresh total) | 18 | **81** |
+| `enumerated_only` | 11 | **0** |
+| `censored` / shortfall | 4 / 18,927 | 4 / **18,727** |
+| `dark` | 12 | 13 |
+| buckets sum | 135 | **135** |
+
+**The drop from 82.4% to 76.5% is not a regression — it is the 304 edge case, refused correctly.**
+Run 69 ran ~3 hours after run 68, so 81 boards answered `unchanged` and carried no fresh total.
+Those went to `stale`, which publishes no ratio, so the headline is computed over 37 boards instead
+of 90. This is the "304 staleness" lie-vector the design named: a carried total beside a live
+numerator would have looked green. `enumerated_only` fell 11 → 0 for the same reason — `stale` is a
+property of THIS scan and wins over any stored total (`classify_board`'s documented ordering).
+**A back-to-back run therefore reports a smaller measured set by design.** At the once-a-day
+cadence this barely bites.
+
+**Verified on the artifacts, not on the run's self-report:** `funnel-69.json` `artifact_version` 6,
+`morning-69.json` 2, 135 board rows, buckets summing to exactly 135, and the two artifacts'
+`board_coverage` sections **byte-identical** — the single-load property observed rather than
+asserted. The résumé-keyword `coverage` key is untouched and still carries its own five fields.
+
+**Cross-run movement is real:** Capital One 34.7% → 37.4% (650 → 700 held), Wells Fargo 36.3% →
+39.1%, Salesforce 42.5% → 45.8% — the detail budget draining ~50/run, exactly as D-270 predicts.
+The instrument tracks a real change rather than restating a constant.
+
 ### Process record
 
 One defect found by a test while it was being written, which is the finding worth keeping:
