@@ -73,7 +73,13 @@ class BoardSnapshot(BaseModel):
     # Coverage instrument (D-271). None means the board stated no total — NEVER backfill
     # with len(postings); an unfailable ratio is worse than no ratio.
     board_reported_total: int | None = None
-    # Distinct posting ids we LISTED this run, before the detail budget truncated anything.
+    # DISTINCT posting ids the board listed this run — counted off the raw rows, BEFORE the
+    # detail budget truncated anything and BEFORE any per-row parse failure dropped one, with
+    # id-less rows excluded. All six providers mean exactly this (`providers/base.py`'s
+    # count_listed_ids for the four single-request ones, `len(listed_ids)` for SmartRecruiters
+    # and Workday); the column is persisted, so a provider meaning something else by it writes
+    # a row that can never be corrected. `board_reported_total - board_enumerated` is therefore
+    # a LISTING shortfall, never a parse-failure count.
     board_enumerated: int | None = None
     # Listed but not materialised because detail_fetch_budget was exceeded. Typed here so the
     # number stops living only as English inside board_scans.error.

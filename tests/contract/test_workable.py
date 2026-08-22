@@ -170,3 +170,25 @@ def test_pasted_shortlink_is_rejected_end_to_end_with_canonical_guidance() -> No
     with pytest.raises(UnknownBoardURL, match=r"apply\.workable\.com/\{org\}/j/"):
         parse_board_target("apply.workable.com/j/ABC123")
     assert parse_board_target("apply.workable.com/acme/j/ABC123") == ("workable", "acme")
+
+
+@respx.mock
+def test_board_enumerated_counts_listed_shortcodes_not_surviving_postings(
+    tmp_path: Path,
+) -> None:
+    """`board_enumerated` means the same thing on every provider: DISTINCT POSTING IDS LISTED,
+    before the detail budget and before parse failures drop anything (core/models.py). Workable
+    keys on `shortcode`, never `id` (see this module's header), so that is the field counted."""
+    payload = {"name": "Acme", "jobs": [
+        {"shortcode": "AAA", "title": "Engineer A", "url": "https://apply.workable.com/acme/j/AAA",
+         "description": "<p>body</p>"},
+        {"shortcode": "BBB", "url": "https://apply.workable.com/acme/j/BBB",
+         "description": "<p>body</p>"},
+        {"title": "No shortcode", "url": "https://apply.workable.com/acme/j/CCC",
+         "description": "<p>body</p>"},
+    ]}
+    respx.get(BOARD_URL).mock(return_value=httpx.Response(200, json=payload))
+    snap = provider.fetch_board(_fetcher(tmp_path), _request())
+    assert snap.board_enumerated == 2  # AAA and BBB; the shortcode-less row cannot be keyed
+    assert len(snap.postings) == 1  # BBB has no title
+    assert snap.board_reported_total is None

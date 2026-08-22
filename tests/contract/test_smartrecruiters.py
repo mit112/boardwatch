@@ -295,3 +295,45 @@ def test_healthcheck_404_is_error_not_dead(tmp_path: Path) -> None:
     result = provider.healthcheck(_fetcher(tmp_path), "acme")
     assert result != BoardHealth.DEAD
     assert result == BoardHealth.ERROR
+
+
+@respx.mock
+def test_an_id_less_row_lowers_board_enumerated_so_the_shortfall_is_visible(
+    tmp_path: Path,
+) -> None:
+    """THE Mastercard case, run 67: the board reported 1129 and only 1128 could be keyed.
+    SmartRecruiters already DETECTS that (the "incomplete listing" note, built from
+    `listed_ids`) and then persisted `len(listed)` — every raw row, id-less ones included — so
+    `board_reported_total - board_enumerated` was 0 and the defect was invisible in the very
+    column added to expose it. `board_enumerated` is now DISTINCT LISTED IDS, the same meaning
+    every other provider carries (core/models.py).
+
+    Scaled to the fixture: 3 stated, 3 rows, one with no `id`."""
+    payload = _fx_json("list_normal.json")
+    del payload["content"][2]["id"]
+    respx.get(LIST_URL).mock(return_value=httpx.Response(200, json=payload))
+    _mock_all_details()
+    # Pre-existing, unchanged by this test: the detail loop keys on `str(entry.get("id"))`, so
+    # an id-less row still costs one doomed request. Mocked, not asserted on.
+    respx.get(_detail_url("None")).mock(return_value=httpx.Response(404))
+    snap = provider.fetch_board(_fetcher(tmp_path), _request())
+    assert snap.board_reported_total == 3
+    assert snap.board_enumerated == 2
+    assert snap.board_reported_total - snap.board_enumerated == 1  # the id-less row, visible
+    assert "collected 2 of 3" in (snap.error or "")
+
+
+@respx.mock
+def test_a_cross_page_duplicate_is_counted_once_in_board_enumerated(tmp_path: Path) -> None:
+    """The other half of `len(listed)`: it also counted a posting twice when two pages carried
+    it, which could push `board_enumerated` ABOVE the board's own stated total and turn the
+    shortfall negative for a reason that has nothing to do with coverage."""
+    first = _fx_json("list_normal.json")
+    first["totalFound"] = 4
+    second = {"totalFound": 4, "content": [dict(first["content"][0])]}  # the same posting again
+    respx.get(LIST_URL).mock(return_value=httpx.Response(200, json=first))
+    respx.get(_page_url(100)).mock(return_value=httpx.Response(200, json=second))
+    _mock_all_details()
+    snap = provider.fetch_board(_fetcher(tmp_path), _request())
+    assert snap.board_reported_total == 4
+    assert snap.board_enumerated == 3  # 4 rows collected, 3 distinct ids

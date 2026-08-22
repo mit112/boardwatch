@@ -181,7 +181,10 @@ class SmartRecruitersProvider:
             error=error,
             listed_ids=board_ids,
             board_reported_total=total,
-            board_enumerated=len(listed),
+            # DISTINCT ids, not len(listed): `listed` carries id-less rows and cross-page
+            # duplicates, so it made `total - board_enumerated` read 0 on exactly the boards
+            # whose id-less rows the subtraction exists to expose (D-271).
+            board_enumerated=len(listed_ids),
             detail_deferred=max(0, len(unseen_before_truncation) - budget),
         )
 
