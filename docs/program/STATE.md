@@ -89,8 +89,9 @@ LinkedIn + Indeed via JobSpy. **Bespoke first-party adapters are OUT** (Amazon/A
 own dead sources are *all* bespoke adapters or niche APIs, never aggregators. `PROGRAM.md` §4's three
 blocking rows are struck.
 
-**The coverage instrument is BUILT and MEASURED (D-271/D-272; branch `feat/coverage-instrument`,
-green under `make check`, NOT merged).** `boardwatch coverage` reports every watched board as a
+**The coverage instrument is SHIPPED and ON `main` (D-271/D-272/D-273, PR #125, green under
+`make check` and full CI). It is NOT ARMED — see the next paragraph, which is the load-bearing
+part.** `boardwatch coverage` reports every watched board as a
 **seven-way partition** — `measured` / `enumerated_only` / `censored` / `dark` / `stale` /
 `unscanned` / `unreadable` — that never folds a bucket into a neighbour, and prints "not
 measurable" rather than 0% or 100% when nothing can be measured. Four nullable `board_scans`
@@ -104,8 +105,15 @@ buckets summing to exactly 135 (measured 90 · enumerated_only 11 · censored 4 
 work.** Citi 4,573, NVIDIA 2,656, T-Mobile 2,200. Worst measured: Capital One 34.7%, Wells Fargo
 36.4%, Salesforce 42.3%.
 
-**`DEFAULT_TOP_N` is 40 on that branch and is NOT live.** The daily driver runs the editable venv
-from the main checkout, so the cap changes only once that checkout holds the code.
+**`DEFAULT_TOP_N` is 40 on `main` and is NOT LIVE.** The launchd job runs
+`.venv/bin/boardwatch run --project`, and that venv is an **editable** install resolving to `src/`
+in the primary working tree — so the 08:00 tick executes whatever is CHECKED OUT there, regardless
+of what is merged. **That tree is deliberately pinned behind `main` at `151e7c4` (D-273), so the
+cap is still 8 and the instrument is dormant.** `git pull` in that directory is what arms it;
+merging did not. An untracked `ARMING-NOTE.md` sits in the checkout saying so. Expect a materially
+longer run once armed: 40 tailored résumés and up to two tectonic compiles each, against 8.
+**Exercise it with a manual `run --project` first** — a manual run does not move the Gate P3
+counter, so it costs only time.
 
 **The gap this does NOT close, and it bounds the deliverable:** nothing reads the new columns
 unattended. `run_pipeline`, the morning digest and `notify` are untouched; `coverage` is a manual
