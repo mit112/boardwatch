@@ -78,6 +78,9 @@ Add to `BoardSnapshot` immediately after `listed_ids`, before the `@model_valida
     # Listed but not materialised because detail_fetch_budget was exceeded. Typed here so the
     # number stops living only as English inside board_scans.error.
     detail_deferred: int | None = None
+    # True when the provider's stated total was a censor value and board_reported_total came
+    # from a second, uncapped path. A TYPED flag: never re-derive this by parsing a message.
+    board_total_censored: bool | None = None
 ```
 
 - [ ] **Step 4: Run test to verify it passes**
@@ -103,7 +106,8 @@ git commit -m "Add coverage fields to BoardSnapshot (D-271)"
 
 **Interfaces:**
 - Consumes: Task 1's field names.
-- Produces: `board_scans.board_reported_total`, `board_scans.board_enumerated`, `board_scans.detail_deferred`, all `Integer, nullable=True`. Alembic revision id `p_board_coverage`.
+- Produces: `board_scans.board_reported_total`, `board_scans.board_enumerated`, `board_scans.detail_deferred`, `board_scans.board_total_censored`, all `Integer, nullable=True`. Alembic revision id `p_board_coverage`.
+- **Controller ruling R1:** `board_total_censored` is a FOURTH column, added because the original plan classified the censor by grepping `board_scans.error` — which the Global Constraints forbid. It stores 0/1, or NULL when the provider states nothing.
 
 - [ ] **Step 1: Write the failing test**
 
@@ -120,7 +124,7 @@ def test_board_scans_has_nullable_coverage_columns(tmp_path) -> None:
     engine = get_engine(tmp_path / "t.db")
     ensure_schema(engine)
     cols = {c["name"]: c for c in inspect(engine).get_columns("board_scans")}
-    for name in ("board_reported_total", "board_enumerated", "detail_deferred"):
+    for name in ("board_reported_total", "board_enumerated", "detail_deferred", "board_total_censored"):
         assert name in cols, f"{name} missing from board_scans"
         assert cols[name]["nullable"] is True, f"{name} must be nullable, not 0-defaulted"
 ```
@@ -156,7 +160,12 @@ down_revision = "p_seniority_band"
 branch_labels = None
 depends_on = None
 
-_COLUMNS = ("board_reported_total", "board_enumerated", "detail_deferred")
+# board_total_censored is 0/1, or NULL when the provider states no total. It is a TYPED flag
+# because the alternative — grepping the error string — would classify behaviour by parsing a
+# message, which this repo forbids.
+_COLUMNS = (
+    "board_reported_total", "board_enumerated", "detail_deferred", "board_total_censored",
+)
 
 
 def upgrade() -> None:
@@ -178,6 +187,7 @@ Then in `src/boardwatch/store/tables.py`, inside the `board_scans` Table, after
     Column("board_reported_total", Integer, nullable=True),
     Column("board_enumerated", Integer, nullable=True),
     Column("detail_deferred", Integer, nullable=True),
+    Column("board_total_censored", Integer, nullable=True),
 ```
 
 - [ ] **Step 4: Run test to verify it passes**
@@ -272,6 +282,11 @@ def _scan_row(
             board_reported_total=None if snapshot is None else snapshot.board_reported_total,
             board_enumerated=None if snapshot is None else snapshot.board_enumerated,
             detail_deferred=None if snapshot is None else snapshot.detail_deferred,
+            board_total_censored=(
+                None
+                if snapshot is None or snapshot.board_total_censored is None
+                else int(snapshot.board_total_censored)
+            ),
         )
     )
 ```
@@ -432,6 +447,7 @@ Initialise `board_total: int | None = None` and `board_censored = False` beside 
             board_reported_total=board_total,
             board_enumerated=len(listed_ids),
             detail_deferred=max(0, len(unseen_before_truncation) - request.detail_budget),
+            board_total_censored=board_censored,
 ```
 
 where `unseen_before_truncation` is the `unseen` list captured **before** the existing
@@ -870,9 +886,6 @@ from sqlalchemy.engine import Connection
 from boardwatch.reports.board_coverage import BoardCoverage, classify_board
 from boardwatch.store.tables import board_scans, companies, postings
 
-_CENSOR_NOTE = "board total censored at"
-
-
 def load_board_coverage(conn: Connection, *, run_id: int | None = None) -> list[BoardCoverage]:
     if run_id is None:
         run_id = conn.execute(select(func.max(board_scans.c.run_id))).scalar_one_or_none()
@@ -886,9 +899,9 @@ def load_board_coverage(conn: Connection, *, run_id: int | None = None) -> list[
     rows = conn.execute(
         select(
             companies.c.id, companies.c.name, companies.c.provider,
-            board_scans.c.status, board_scans.c.error,
+            board_scans.c.status,
             board_scans.c.board_reported_total, board_scans.c.board_enumerated,
-            board_scans.c.detail_deferred,
+            board_scans.c.detail_deferred, board_scans.c.board_total_censored,
         )
         .select_from(companies.join(board_scans, board_scans.c.company_id == companies.c.id))
         .where(board_scans.c.run_id == run_id)
@@ -897,9 +910,8 @@ def load_board_coverage(conn: Connection, *, run_id: int | None = None) -> list[
     out: list[BoardCoverage] = []
     for r in rows:
         held = int(held_by_company.get(r.id, 0))
-        # The censor is recorded by the provider as a typed number plus a note; we detect it
-        # structurally, not by parsing the note, so the string is never load-bearing.
-        censored = r.board_reported_total is not None and (r.error or "").find(_CENSOR_NOTE) >= 0
+        # Typed flag written by the provider (controller ruling R1). Never parse the note.
+        censored = bool(r.board_total_censored)
         bucket = classify_board(
             status=str(r.status), board_reported_total=r.board_reported_total,
             board_enumerated=r.board_enumerated, held=held, censored=censored,
