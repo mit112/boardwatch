@@ -93,7 +93,11 @@ if TYPE_CHECKING:
     # keeps the annotation below a string, so nothing is evaluated at import time.
     from boardwatch.cli.top_cmd import RankedPosting
 
-DEFAULT_TOP_N = 8
+# D-272. Was 8, which discarded 3,502 postings per run that had cleared every gate. A display
+# limit, never a filter: everything beyond it is counted into `capped_by_top_n` and stays
+# status='open'. 40 matches job-apps' measured median of 42/day. The cost is the render — 40
+# leads means 40 tailored résumés and 40 PDFs.
+DEFAULT_TOP_N = 40
 
 
 @dataclass
