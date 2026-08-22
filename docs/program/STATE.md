@@ -49,16 +49,56 @@ local check cannot see (the Mac off/asleep all day). Off until the operator sets
 cut only by `DEFAULT_TOP_N`** (run 66: 3,595) — the precision tension Mit rules on: fix precision, never tune
 the cap (ideally show everything eligible).
 
-**Discovery is budget-capped and the corpus is a PARTIAL crawl (D-270).** `detail_fetch_budget` is **50**
-unseen postings per board per run, so a day's "new postings" figure measures our throughput, not the market
-— 19 Workday boards sit at exactly 600 rows and gain exactly 50 × runs each day. Run 67 left **15,535 listed
-postings unmaterialised** on 20 boards (Citi 1,614 … Fidelity 104), visible only as prose inside
-`board_scans.error` and absent from the funnel. Known corpus is 30,243 open + 4,124 closed + 15,535 deferred
-= **45,778**. Twelve boards fail outright (all Workday, 401/403/422) and 17 registered companies have never
-produced a posting. Re-keying is NOT the explanation for the daily rate (~92% of each day's rows are new to
-the store under every identity kind), and budget-skipped postings are **not** falsely closed (0 closures on
-the 20 partial boards). **Raising the budget, a first-class backlog counter, and the 12 dead boards are each
-Mit's** — all three add input, and breadth is last.
+**Discovery is budget-capped, and the backlog DRAINS on a known clock (D-270, confirmed D-271).**
+`detail_fetch_budget` is **50** unseen postings per board per run, so a day's "new postings" figure measures
+our throughput, not the market — 19 Workday boards sit at exactly 600 rows and gain exactly 50 × runs each
+day. Run 67 left **15,535 listed postings unmaterialised** on 20 boards (Citi 1,614 … Fidelity 104), visible
+only as prose inside `board_scans.error` and absent from the funnel. Every board's backlog falls
+**monotonically, 26–49 per scan**; 15 boards have already drained. **ETA to empty: 48 more runs (~7 weeks at
+1/day)**, worst board Citi. A contrary claim that Workday's newest-first ordering means tails are never read
+was FALSIFIED by `posted_at` — Databricks reaches 2019-11, Cisco 2025-12, Adobe 2026-03; Citi is an outlier.
+Budget-skipped postings are **not** falsely closed (0 closures on the 20 partial boards).
+
+**Workday's own `total` is censored at 2,000 — the facet counts are not (D-271).** Summing a partition
+facet's `values[].count` is a second, uncapped aggregation path, and the known-positive control PASSED
+(Adobe 740/740, Intel 645/645, Regeneron 592/592, Fidelity 565/565 agree exactly). Measured: **Citi's real
+board is 4,589 postings against 600 held — 13.1%**; NVIDIA 2,656 against 600. Our pager also wraps at
+~2,000, so **after the backlog drains Citi stays at ~2,214 of 4,589 — a permanent, invisible hole that is
+NOT the budget.** Mirror defect: Regeneron 101.4% and Fidelity 106.2% coverage mean we hold postings the
+board no longer lists, because a permanently `partial` board never runs `_process_missing`.
+
+**Seventeen boards produce nothing, and five of them report GREEN (D-271).** Snyk, Vercel, HubSpot, Plaid
+and Qualcomm scan cleanly, carry `last_health='empty'` and a current `last_ok_at`, and have returned zero
+postings across 12 scans — the dangerous class, because a board that fails loudly gets fixed. The other 12
+fail outright with exactly {401 × 4, 403 × 1, 422 × 7}; **Workday sends 422 for a malformed request body,
+not for auth**, so those seven are probably wrong slugs and therefore recoverable. No backoff, no
+auto-disable, no quarantine — `get_watched_companies` filters on `watched` alone.
+
+**boardwatch cannot see 92% of what job-apps surfaces, and that REOPENS D-008 (D-271).** Of job-apps' 530
+eligible records over 2026-08-12…08-21, **41 (7.7%)** are at a company boardwatch watches; the set spans
+**352 distinct companies** and boardwatch watches **24**. Largest missing: Amazon 25, TikTok 20, AWS 8,
+Apple 7, ByteDance 7, SpaceX 6 — **none uses any of the six supported ATS**, so adding a slug cannot reach
+them. Lane value by loss-if-removed: commercial aggregators 421 of 446, **GitHub new-grad lists 73 of 103
+(19.1% of yield for ~5 public-repo GETs)**, direct ATS 5 of 14; cross-lane overlap only 5.8%. Where
+boardwatch is BETTER: on greenhouse/lever/ashby it stores what job-apps title-filters away at fetch, and
+job-apps' Workday lane is 3 hardcoded queries × 2 pages × 12 details = 77 roles over 39 boards with 16
+returning zero. Counterweight: ~1/5 of job-apps' yield is staffing firms and list artifacts. **The 8-vs-42
+shortfall is a SEPARATE problem** — `capped_by_top_n` is 3,502 and job-apps has no top-N anywhere, so
+raising the cap matches volume but not parity (~8% overlap). **RULED 2026-08-22 (D-272): three lanes go in** — GitHub new-grad lists, then hiring.cafe, then
+LinkedIn + Indeed via JobSpy. **Bespoke first-party adapters are OUT** (Amazon/Apple/TikTok): job-apps'
+own dead sources are *all* bespoke adapters or niche APIs, never aggregators. `PROGRAM.md` §4's three
+blocking rows are struck.
+
+**The coverage instrument is a PERSISTENCE problem, not a fetching problem (D-271).** Every provider already
+enumerates its whole board; workday and smartrecruiters already parse a server total, and greenhouse returns
+`meta.total` on the cheap `_health_url` shape `probe_health` already fetches (stripe 576, databricks 818).
+None reaches the DB. Persisting three nullable `board_scans` columns plus the facet sum costs **zero new
+HTTP requests**. Coverage must publish as a five-bucket partition — `measured` / `enumerated_only` /
+`censored` / `dark` / `stale`, never folded, mirroring ABSTAIN — because a ratio over our own array length
+cannot fail. Design and eight ways the metric could lie:
+`docs/superpowers/specs/2026-08-22-coverage-assurance-design.md`. **Track 1 ships FIRST, before any lane** — a banned or broken lane dies
+silently today, and P7 judges a source by leads produced over ≥3 runs. **`DEFAULT_TOP_N` goes 8 → 40**
+(D-272). Still Mit's: the funnel `artifact_version` bump, `detail_fetch_budget`, and the 17 silent boards.
 
 **Eligibility now decides AND removes.** `work_authorization.needs_sponsorship=true` set (D-249); a
 zero-evidence `eligible` abstains to `uncertain` (D-250); two rules that could never resolve MET are fixed —
@@ -233,12 +273,29 @@ handoff can report `bundle_lock_held` while nobody holds the lock. **Ruled: reco
 
 ---
 
+**A discovery lane without a JD body produces ZERO leads (D-272).** The eligibility engine is
+**body-only** — `eligibility/preflight.py` selects `posting_versions.body_text` and passes it alone to
+`evaluate`. A stub is a whitespace-only body (`count_stub_postings`; currently 17 of 30,243 = 0.056%), and
+under D-250 a zero-evidence verdict abstains to `uncertain`. Aggregator postings arrive as title + URL, so
+any of the three approved lanes shipped without JD acquisition would add corpus and surface nothing. This
+MEETS the condition `PROGRAM.md` §4 set when it deferred the 2,200-line JD chain to "P7 where a non-API
+source might first appear". **boardwatch needs far less than job-apps' 2,200 lines**: P7 already requires a
+dereferencing step for any aggregator lane, and that same step is the fix — an aggregator link mostly
+resolves to a Greenhouse/Lever/Ashby/Workday posting whose parser already exists. A link that resolves to
+nothing parseable stays a stub and is REPORTED as one, never quietly dropped.
+
+---
+
 ## Live blockers and carried gaps
 
 | Item | Detail | Owner |
 |---|---|---|
 | **A metric that could not fail (D-267)** | `grep -ic buc funnel-N.json` was read as a Buc count; it counts the word "bucket" and is 4 on runs 61/63/65/66 regardless. The funnel enumerates **no ranked pool** and a `leads` row carries **no location** — so the hard location gate, the one gate whose failure is a visa-ineligible lead, leaves no trace in its own artifact. Closing it needs `locations` on `Lead` + an `artifact_version` bump. **Re-raised 2026-08-21c; still Mit's.** D-268 corrects this row's replacement metric too: "0 of 62" had the 0 robust under every bounded rule (27/27/69/70 matched, 0 surviving) but the **62 unreproducible** — match rule and corpus size were never recorded beside it, and a bare substring gives 103 matched / **39 surviving**. A ratio now records its match rule AND corpus size | **Mit** (shipped-schema change) |
-| **Discovery backlog is invisible to the artifact** | 15,535 listed postings unmaterialised in run 67 (20 Workday boards), reachable only by a regex over `board_scans.error`; 12 boards fail 401/403/422; 17 companies never produced a posting. Same shape as D-267 — the quantity that bounds what we can see leaves no trace in the run report | **Mit** (input-side) |
+| **boardwatch cannot see 92% of job-apps' eligible yield** | 41 of 530 records (7.7%) at a watched company; 352 companies in the set, 24 watched. Amazon/TikTok/Apple/ByteDance use none of the 6 ATS, so a slug cannot reach them. Closing it means a new discovery lane — GitHub new-grad lists are 19.1% of yield for ~5 public-repo GETs and are NOT the ToS trap the v2 decision was written about. **Reopens D-008** | **Mit** (reverses a shipped decision) |
+| **Citi sits at 13.1% coverage, permanently** | Workday's `total` censors at 2,000; the facet sum (uncapped, control-verified) says 4,589. Our pager wraps at ~2,000 too, so post-drain Citi holds ~2,214 of 4,589 and nothing reports it | **Mit** (input-side) |
+| **Five boards report GREEN and return zero, ever** | Snyk, Vercel, HubSpot, Plaid, Qualcomm — clean scans, `last_health='empty'`, 0 postings across 12 scans. 7 of the 12 dead boards are HTTP 422 (malformed request ⇒ probably wrong slugs, recoverable). No backoff, no quarantine, no drain | **Mit** (input-side) |
+| **`unchanged` is an unaudited coverage assumption** | 59 of 135 boards listed nothing in run 67 on a payload hash. No test exists for a hash misreporting a changed board. A false `unchanged` is silent, permanent and undetectable by any current instrument | open |
+| **`hidden_hard_filter` has no drain** | 17,891 drops = 59% of the corpus, the single largest cut, and the only bucket with no `--include-` flag — the rows behind it cannot be listed. Against `CLAUDE.md`'s "every quarantine needs a drain" | open |
 | **No external missed-window alarm** | nothing outside a run can detect a missed 08:00; the funnel heartbeat is only written from inside `runner.py` | P3 |
 | **`resume.yaml` is an IMPORT SOURCE, never hand-fixed** | D-155. Mit pins `resume_max_pages=1`; never advise 2 | Mit |
 | **`boardwatch top` advances the queue by default** | records `seen` unless `--no-record`; relevant to Gate P6's clean window | P6 |
