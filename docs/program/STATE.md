@@ -89,8 +89,9 @@ LinkedIn + Indeed via JobSpy. **Bespoke first-party adapters are OUT** (Amazon/A
 own dead sources are *all* bespoke adapters or niche APIs, never aggregators. `PROGRAM.md` §4's three
 blocking rows are struck.
 
-**The coverage instrument is BUILT and MEASURED (D-271/D-272; branch `feat/coverage-instrument`,
-green under `make check`, NOT merged).** `boardwatch coverage` reports every watched board as a
+**The coverage instrument is SHIPPED and ON `main` (D-271/D-272/D-273, PR #125, green under
+`make check` and full CI). It is NOT ARMED — see the next paragraph, which is the load-bearing
+part.** `boardwatch coverage` reports every watched board as a
 **seven-way partition** — `measured` / `enumerated_only` / `censored` / `dark` / `stale` /
 `unscanned` / `unreadable` — that never folds a bucket into a neighbour, and prints "not
 measurable" rather than 0% or 100% when nothing can be measured. Four nullable `board_scans`
@@ -104,8 +105,24 @@ buckets summing to exactly 135 (measured 90 · enumerated_only 11 · censored 4 
 work.** Citi 4,573, NVIDIA 2,656, T-Mobile 2,200. Worst measured: Capital One 34.7%, Wells Fargo
 36.4%, Salesforce 42.3%.
 
-**`DEFAULT_TOP_N` is 40 on that branch and is NOT live.** The daily driver runs the editable venv
-from the main checkout, so the cap changes only once that checkout holds the code.
+**`DEFAULT_TOP_N` is 40 and LIVE** (armed 2026-08-22 08:17). The launchd job runs
+`.venv/bin/boardwatch run --project`, and that venv is an **editable** install resolving to `src/`
+in the primary working tree — so the tick executes whatever is CHECKED OUT there, not what is
+merged. That tree is now at `18d8ae7`, and code and store both report `p_board_coverage`.
+
+**Run 68's scheduled tick FAILED and Gate P3 stays at 2 of 7.** A subagent had run a `boardwatch`
+command against the DEFAULT data dir during the overnight build, migrating the live store to
+`p_board_coverage` while the checkout was still pinned to older code — so alembic refused a
+revision the code did not contain (`runs` 3 → 4, exit 1). Damage was schema-only: four nullable
+columns, zero rows written, nothing corrupted. **The rule it buys: an agent handed a `boardwatch`
+command must be REQUIRED to set `BOARDWATCH_DATA_DIR` to scratch on every invocation — the live
+store is the default, so a forgotten flag reaches production.**
+
+**Run 68 re-run manually with the new code: exit 0, ~24 minutes, 40 leads / 40 PDFs, reconciles,
+no fatal** — roughly the wall-clock 8 leads used to cost. 135 boards attempted, 85 complete, 12
+failed, 14,238 postings seen, and `capped_by_top_n` **3,628**: even at 40, that many postings still
+clear every gate and are cut by rank alone. First live coverage reading **82.4% (26,075 of
+31,629)**, within 0.3 points of the store-copy rehearsal.
 
 **The gap this does NOT close, and it bounds the deliverable:** nothing reads the new columns
 unattended. `run_pipeline`, the morning digest and `notify` are untouched; `coverage` is a manual
