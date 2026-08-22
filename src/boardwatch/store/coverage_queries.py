@@ -21,6 +21,7 @@ from sqlalchemy import Connection, Row, func, select
 from boardwatch.reports.board_coverage import (
     BoardCoverage,
     ContradictoryCoverage,
+    UnknownCensorFlag,
     UnknownScanStatus,
     classify_board,
 )
@@ -43,7 +44,7 @@ def _resolve_censored(raw: int | None) -> bool:
         return False
     if raw == 1:
         return True
-    raise ValueError(f"board_total_censored must be 0, 1, or NULL; got {raw!r}")
+    raise UnknownCensorFlag(raw)
 
 
 def load_board_coverage(conn: Connection, *, run_id: int | None = None) -> list[BoardCoverage]:
@@ -88,14 +89,18 @@ def load_board_coverage(conn: Connection, *, run_id: int | None = None) -> list[
         held = int(held_by_company.get(r.id, 0))
         try:
             out.append(_board_coverage(r, held))
-        except (UnknownScanStatus, ContradictoryCoverage):
+        except (UnknownScanStatus, ContradictoryCoverage, UnknownCensorFlag):
             # ONE board degrades, never the whole report. Reproduced with a two-board store
             # holding a single `board_reported_total=-5` row: the exception escaped this
             # function and the healthy board's coverage became unreachable — a single bad row
             # hiding the other 134. The row keeps its raw column values so the defect stays
             # debuggable, and lands in `unreadable` rather than being dropped or folded into a
             # bucket that would make a claim about it (`dark` says "the scan failed"; this scan
-            # may well have succeeded and written a column we cannot read).
+            # may well have succeeded and written a column we cannot read). `UnknownCensorFlag`
+            # joins this tuple for the same reason: `board_total_censored` carries no
+            # CheckConstraint (`store/tables.py`), so a malformed value there reached
+            # `_resolve_censored` and crashed the whole report exactly the way an unknown
+            # status once did.
             out.append(
                 BoardCoverage(
                     company_id=int(r.id),

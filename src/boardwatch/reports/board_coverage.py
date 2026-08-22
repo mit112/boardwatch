@@ -130,6 +130,25 @@ class UnknownScanStatus(Exception):
         self.status = status
 
 
+class UnknownCensorFlag(Exception):
+    """`board_scans.board_total_censored` held a value outside its closed tri-state catalog
+    `{0, 1, NULL}`.
+
+    Unlike `status`, this column has no CheckConstraint at the schema level (`store/tables.py`'s
+    `status_enum` covers `status` only), so nothing at the write side stops a bad value from
+    existing. Typed at the raise site for the same reason as `UnknownScanStatus`: it needs a
+    name `load_board_coverage`'s except tuple can catch specifically, rather than a bare
+    `ValueError` broad enough to also swallow an unrelated bug.
+    """
+
+    def __init__(self, value: int) -> None:
+        super().__init__(
+            f"board_scans.board_total_censored={value!r} is outside the closed tri-state "
+            f"catalog {{0, 1, NULL}}"
+        )
+        self.value = value
+
+
 @dataclass(frozen=True)
 class BoardCoverage:
     """One board's coverage verdict for one scan."""

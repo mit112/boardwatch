@@ -105,7 +105,7 @@ def coverage(
         return
 
     table = Table("ratio", "bucket", "board", "held", "stated", "shortfall")
-    # Worst coverage first; boards with no ratio (the other five buckets, plus a measured
+    # Worst coverage first; boards with no ratio (the other six buckets, plus a measured
     # board stating a total of zero) sort after every real ratio, in the order they came in.
     # `is not None`, not truthiness: a literal 0.0 ratio must sort with the real ratios, not
     # silently join the no-ratio boards at the bottom (fix round 1, minor 3).

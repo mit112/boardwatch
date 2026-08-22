@@ -16,6 +16,7 @@ from typer.testing import CliRunner
 
 from boardwatch.cli.app import app
 from boardwatch.core.clock import utcnow
+from boardwatch.reports.board_coverage import UnknownCensorFlag
 from boardwatch.store.coverage_queries import _resolve_censored
 from boardwatch.store.db import ensure_schema, get_engine
 from boardwatch.store.queries import insert_run
@@ -223,11 +224,13 @@ def test_resolve_censored_handles_the_three_states_explicitly() -> None:
     """Unit-level pin on the tri-state mapping itself: 0 and NULL both resolve to `False`
     (classify_board's `censored` parameter has no third state to give them), but the mapping
     is an explicit branch over {None, 0, 1} rather than a bare `bool()` coercion — proven here
-    by the fact that an out-of-domain value raises instead of silently truthying through."""
+    by the fact that an out-of-domain value raises instead of silently truthying through.
+    Raises `UnknownCensorFlag`, not a bare `ValueError`, so `load_board_coverage`'s except
+    tuple can name it specifically (D-271)."""
     assert _resolve_censored(1) is True
     assert _resolve_censored(0) is False
     assert _resolve_censored(None) is False
-    with pytest.raises(ValueError):
+    with pytest.raises(UnknownCensorFlag):
         _resolve_censored(2)
 
 
@@ -346,6 +349,43 @@ def test_one_unclassifiable_row_degrades_that_board_alone(tmp_path: Path) -> Non
     assert by_name["Bad Co"]["ratio"] is None
     assert by_name["Bad Co"]["shortfall"] is None
     assert by_name["Bad Co"]["board_reported_total"] == -5  # kept, so the defect is debuggable
+    # THE POINT: the healthy board is still reachable and still correct.
+    assert by_name["Good Co"]["bucket"] == "measured"
+    assert by_name["Good Co"]["ratio"] == 0.4
+    assert payload["global_ratio"] == 0.4
+    assert payload["corpus_boards"] == 2
+
+
+def test_a_malformed_censor_flag_degrades_that_board_alone(tmp_path: Path) -> None:
+    """The same finding as `test_one_unclassifiable_row_degrades_that_board_alone`, through the
+    uncovered exception type: `board_total_censored` carries no CheckConstraint (unlike
+    `status`, `store/tables.py`), so a value outside its closed tri-state catalog {0, 1, NULL}
+    reaches `_resolve_censored`, which used to raise a bare `ValueError` — not a member of
+    `load_board_coverage`'s except tuple — and took the whole report down with it."""
+    data_dir = tmp_path / "data"
+    engine = get_engine(data_dir)
+    ensure_schema(engine)
+    run_id = insert_run(engine)
+
+    bad_id = _add_company(engine, provider="greenhouse", slug="bad-censor-co", name="Bad Censor Co")
+    _scan_row(engine, run_id=run_id, company_id=bad_id, status="complete",
+              board_reported_total=100, board_enumerated=100, board_total_censored=7)
+    _add_posting(engine, company_id=bad_id, provider_posting_id="bad-censor-0")
+
+    good_id = _add_company(engine, provider="greenhouse", slug="good-co", name="Good Co")
+    _scan_row(engine, run_id=run_id, company_id=good_id, status="complete",
+              board_reported_total=100, board_enumerated=100)
+    for i in range(40):
+        _add_posting(engine, company_id=good_id, provider_posting_id=f"good-{i}")
+
+    result = _cli(data_dir, ["coverage", "--json"])
+    assert result.exit_code == 0
+    payload = json.loads(result.stdout)
+    by_name = {b["name"]: b for b in payload["boards"]}
+    assert by_name["Bad Censor Co"]["bucket"] == "unreadable"
+    assert by_name["Bad Censor Co"]["ratio"] is None
+    assert by_name["Bad Censor Co"]["shortfall"] is None
+    assert by_name["Bad Censor Co"]["board_reported_total"] == 100  # kept, so it stays debuggable
     # THE POINT: the healthy board is still reachable and still correct.
     assert by_name["Good Co"]["bucket"] == "measured"
     assert by_name["Good Co"]["ratio"] == 0.4
