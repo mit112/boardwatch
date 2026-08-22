@@ -8,6 +8,43 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- **Per-board discovery coverage — `boardwatch coverage`.** Every scan already asked each board how
+  many postings it holds, and threw the answer away. Now it is persisted and reported, so a day where
+  44 of 135 boards finished no longer looks identical to a day where 89 did.
+
+  Coverage is published as a **partition, never a single number**, following the same rule that makes
+  `ABSTAIN` load-bearing in the eligibility engine: a board whose total cannot be obtained gets its own
+  bucket and is never folded into a neighbour. The seven are `measured` (a trustworthy board-stated
+  total exists), `enumerated_only` (the API states no total — lever, ashby, workable — so no ratio is
+  published, because `held / held` is 1.0 by arithmetic on every run forever), `censored` (Workday
+  reports its cap), `dark` (the board failed — undefined, not zero), `stale` (the board answered 304),
+  `unscanned` (watched, but no scan row for this run), and `unreadable` (a row that could not be
+  classified, isolated so one bad board cannot hide the other 134). The global figure is a weighted
+  roll-up over `measured` only, printed beside the counts of the other six, and it renders as
+  "not measurable" rather than 0% or 100% when nothing can be measured.
+
+  Three new nullable columns on `board_scans` plus a typed censor flag carry it
+  (`board_reported_total`, `board_enumerated`, `detail_deferred`, `board_total_censored`), all
+  populated from values the providers already computed. **The scan makes no additional HTTP
+  requests.** The deferred-posting count in particular is now a typed column rather than a number
+  embedded in an English error string.
+
+- **Workday's real board size, past its own 2,000 cap.** `total` is censored at exactly 2000; the
+  response's facet dimensions are aggregated by a different path and are not. Measured on a live
+  135-board scan: Target reports 2,000 and actually holds **12,097**; Citi 4,573; NVIDIA 2,656. The
+  known-positive control passed on four uncensored boards, where the facet sum equals `total` exactly.
+  When no facet dimension is usable the provider reports no total at all rather than the censor value,
+  so a floor is never mistaken for a measurement.
+
+### Changed
+
+- **`DEFAULT_TOP_N` raised from 8 to 40.** The cap is a display limit, not a filter: run 67 discarded
+  **3,502 postings that had cleared every gate** — eligibility, title, role, seniority, location and
+  dedup — to show eight. Everything beyond the cap was already counted into `capped_by_top_n` and
+  stayed `status='open'`, so nothing was ever deleted by it and nothing is un-deleted now. This also
+  unblocks P7's own gate, which cannot run while per-source yield is `8/26,997` with the numerator
+  fixed by construction.
+
 - **The canonical career-profile bundle — `boardwatch profile-bundle`.** A private, revisioned,
   filesystem-only store for the career facts a résumé is assembled from. It lives at
   `{config_dir}/career-profile`, with `--bundle PATH` overriding that; it is machine-local, is not a
