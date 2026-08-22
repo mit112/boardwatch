@@ -84,8 +84,10 @@ boardwatch is BETTER: on greenhouse/lever/ashby it stores what job-apps title-fi
 job-apps' Workday lane is 3 hardcoded queries × 2 pages × 12 details = 77 roles over 39 boards with 16
 returning zero. Counterweight: ~1/5 of job-apps' yield is staffing firms and list artifacts. **The 8-vs-42
 shortfall is a SEPARATE problem** — `capped_by_top_n` is 3,502 and job-apps has no top-N anywhere, so
-raising the cap matches volume but not parity (~8% overlap). `PROGRAM.md` §4 still lists parity testing
-under *Deliberately NOT doing*; superseding D-008 is Mit's ruling, not ours.
+raising the cap matches volume but not parity (~8% overlap). **RULED 2026-08-22 (D-272): three lanes go in** — GitHub new-grad lists, then hiring.cafe, then
+LinkedIn + Indeed via JobSpy. **Bespoke first-party adapters are OUT** (Amazon/Apple/TikTok): job-apps'
+own dead sources are *all* bespoke adapters or niche APIs, never aggregators. `PROGRAM.md` §4's three
+blocking rows are struck.
 
 **The coverage instrument is a PERSISTENCE problem, not a fetching problem (D-271).** Every provider already
 enumerates its whole board; workday and smartrecruiters already parse a server total, and greenhouse returns
@@ -94,9 +96,9 @@ None reaches the DB. Persisting three nullable `board_scans` columns plus the fa
 HTTP requests**. Coverage must publish as a five-bucket partition — `measured` / `enumerated_only` /
 `censored` / `dark` / `stale`, never folded, mirroring ABSTAIN — because a ratio over our own array length
 cannot fail. Design and eight ways the metric could lie:
-`docs/superpowers/specs/2026-08-22-coverage-assurance-design.md`. **Raising the budget, the cap, a
-first-class backlog counter, the 17 silent boards, and any new discovery lane are each Mit's** — all add
-input, and breadth is last.
+`docs/superpowers/specs/2026-08-22-coverage-assurance-design.md`. **Track 1 ships FIRST, before any lane** — a banned or broken lane dies
+silently today, and P7 judges a source by leads produced over ≥3 runs. **`DEFAULT_TOP_N` goes 8 → 40**
+(D-272). Still Mit's: the funnel `artifact_version` bump, `detail_fetch_budget`, and the 17 silent boards.
 
 **Eligibility now decides AND removes.** `work_authorization.needs_sponsorship=true` set (D-249); a
 zero-evidence `eligible` abstains to `uncertain` (D-250); two rules that could never resolve MET are fixed —
@@ -268,6 +270,19 @@ pending Mit's TTY (D-258); the launchd trigger — FIRED (D-254).)*
 Windows evidence comes only from a `workflow_dispatch` of `ci.yml`. **One false-refusal exposure is left
 standing DELIBERATELY (D-224):** POSIX `UnixFileLock` unlinks before releasing the flock, so a live-holder
 handoff can report `bundle_lock_held` while nobody holds the lock. **Ruled: record, do not widen.**
+
+---
+
+**A discovery lane without a JD body produces ZERO leads (D-272).** The eligibility engine is
+**body-only** — `eligibility/preflight.py` selects `posting_versions.body_text` and passes it alone to
+`evaluate`. A stub is a whitespace-only body (`count_stub_postings`; currently 17 of 30,243 = 0.056%), and
+under D-250 a zero-evidence verdict abstains to `uncertain`. Aggregator postings arrive as title + URL, so
+any of the three approved lanes shipped without JD acquisition would add corpus and surface nothing. This
+MEETS the condition `PROGRAM.md` §4 set when it deferred the 2,200-line JD chain to "P7 where a non-API
+source might first appear". **boardwatch needs far less than job-apps' 2,200 lines**: P7 already requires a
+dereferencing step for any aggregator lane, and that same step is the fix — an aggregator link mostly
+resolves to a Greenhouse/Lever/Ashby/Workday posting whose parser already exists. A link that resolves to
+nothing parseable stays a stub and is REPORTED as one, never quietly dropped.
 
 ---
 

@@ -1,6 +1,6 @@
 # Coverage assurance — can boardwatch replace job-apps without missing JDs?
 
-**2026-08-22 · design · status: awaiting owner ruling on Track 5**
+**2026-08-22 · design · status: Track 5 RULED (D-272). Tracks 1–2 approved to build.**
 
 Mit's ask, verbatim: *"boardwatch will be running daily. I need to know with confidence and clarity that
 it can replace job apps and i dont have any insecurity that it does not miss any jd's job apps wont."*
@@ -273,26 +273,42 @@ that this change did not author (a fixture whose board shrank between runs must 
 | 4 | **Defeat the Workday 2,000 wrap** | facet-partition paging | Citi stuck at 13.1% coverage permanently otherwise |
 | 5 | **Close the 92%** — owner-gated | see below | 92.3% of job-apps' eligible yield is unreachable today |
 
-**Track 5, in value order:**
+**Track 5 — RULED 2026-08-22 (D-272).** In, in this order:
 
-- **(a) GitHub new-grad lists** — 19.1% of eligible yield for ~5 HTTP GETs against public repos. Recommended.
-- **(b) First-party adapters** for Amazon, Apple, TikTok/ByteDance — ~66 records (12.5%), the biggest names
-  missing. Bespoke code, each with its own breakage risk. Arguable.
-- **(c) Commercial aggregators** — 79% of yield, and the genuine ToS/anti-bot treadmill the original
-  decision was written about. **Not recommended.**
+1. **GitHub new-grad lists** — SimplifyJobs, jobright, vanshb03, speedyapply. 19.1% of eligible yield for
+   ~5 public-repo GETs. Best materialization in job-apps' own data (simplify 75.8%, speedyapply 63.2%).
+2. **hiring.cafe** — 57.6% materialization, and its server-side filter (`seniorityLevel` entry/none,
+   `roleYoeRange [0,2]`, US, full-time, no clearance) is Mit's profile expressed as an API query.
+3. **LinkedIn + Indeed via JobSpy** — the volume lane. 37k observations, 14 of 14 recent days, no bans.
+   Lowest materialization (28.3% / 19.8%), so it ships last and is judged on leads, not on discovered count.
 
-Any Track 5 lane ships behind all existing gates plus a dereferencing step, with a hard assertion that no
-aggregator URL survives into the final apply surface (`PROGRAM.md` P7).
+**OUT: bespoke first-party adapters** (Amazon, Apple, TikTok/ByteDance). Every dead source in job-apps'
+ledger is a bespoke adapter or a niche API — `amazon_api` ran 2 days for 19 observations and was disabled,
+while Amazon roles still reach its eligible set 33 times via LinkedIn and jobright. The maintenance
+treadmill is real; it does not live where the v2 decision said it did.
 
----
+### Track 5 blocker — the engine is body-only
+
+`eligibility/preflight.py` selects `posting_versions.body_text` and passes it alone to `evaluate`. A stub
+is a whitespace-only body (`count_stub_postings`, 17 of 30,243 today), and D-250 abstains a zero-evidence
+verdict to `uncertain`. **A lane shipped without JD-body acquisition adds corpus and surfaces nothing.**
+
+This meets the condition `PROGRAM.md` §4 set when it deferred the 2,200-line JD chain to "P7 where a
+non-API source might first appear". boardwatch needs far less: P7 already requires a dereferencing step for
+any aggregator lane, and that step *is* the body fix — an aggregator link mostly resolves to a
+Greenhouse/Lever/Ashby/Workday posting whose parser already exists. Dereference, then reuse the provider. A
+link that resolves to nothing parseable stays a stub, is reported as one, and is never quietly dropped; the
+stub rate becomes the metric governing whether a lane is pulling its weight.
+
+**Ordering is fixed: Track 1 before any lane.** A banned or broken lane dies silently today. Per-lane
+coverage reporting turns that into a visible `dark` bucket, and P7's own rule — judge a source by leads
+produced over ≥3 runs — cannot run without it.
 
 ## 5. Owner rulings required
 
-1. **Reopening D-008.** Comparative measurement against job-apps is currently listed under *Deliberately
-   NOT doing*. This document is that measurement. Supersede D-008, or reject this framing.
-2. **Track 5 scope** — (a), (a)+(b), everything, or instrument-first.
-3. **The cap** — 40, keep 8, or show everything eligible (Mit's stated ideal; ~3,500 rows is not renderable
-   as PDFs and would need on-demand résumé building).
+1. ~~Reopening D-008.~~ **RULED** — reopened; `PROGRAM.md` §4 updated, D-271/D-272 recorded.
+2. ~~Track 5 scope.~~ **RULED** — lanes 1–3 in, bespoke adapters out (D-272).
+3. ~~The cap.~~ **RULED** — `DEFAULT_TOP_N` 8 → 40 (D-272).
 4. **`artifact_version` bump** for the funnel's `board_coverage` section — shipped-schema change, same
    class as D-267.
 5. **Whether "breadth is last" still binds.** `CLAUDE.md` gates input-side work behind proven conversion,

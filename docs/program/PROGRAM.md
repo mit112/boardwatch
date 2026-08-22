@@ -517,12 +517,12 @@ If the answer needs a code change, the catalog is in the wrong half of the split
 |---|---|
 | Cover letters · outreach/referrals · auto-apply, auto-fill, browser automation | Mit's explicit deferral. Not scope creep candidates. |
 | Rebuilding the tailoring architecture | Already built and correct — see §6 correction 1. job-apps' §14 steps 2/3/4/6 are done. |
-| The ~2,200-line JD acquisition + stub recovery chain | boardwatch reads structured ATS APIs, not scraped HTML. Deferred to P7 where a non-API source might first appear. Replaced now by a one-number stub-rate metric in P0. §6 correction 4. |
-| Matching job-apps' ~35 leads/day | The bar is ≥10. 942 candidates → 75 built → **0 applied** with a 465-item queue is the evidence that the marginal lead is worth ~nothing. |
+| ~~The ~2,200-line JD acquisition + stub recovery chain~~ | **THE DEFERRAL CONDITION HAS BEEN MET (D-272).** This was deferred "to P7 where a non-API source might first appear"; three now have. A body-less posting is a stub, and the engine is body-only (`preflight.py` reads `posting_versions.body_text` alone), so under D-250 every aggregator posting would abstain to `uncertain` and never surface — the lane would add corpus and **zero leads**. boardwatch does NOT need job-apps' 2,200 lines: P7's own required dereferencing step is also the fix, because an aggregator link mostly resolves to an ATS board whose parser already exists. |
+| ~~Matching job-apps' ~35 leads/day~~ | **SUPERSEDED 2026-08-22 (D-272).** `DEFAULT_TOP_N` goes 8 → 40 at the owner's ruling. The ≥10 bar was set when the cap hid nothing worth seeing; run 67 discarded **3,502 postings that cleared every gate**, and the cap also makes P7's own gate un-runnable (per-source yield is `8/26,997` with the numerator fixed by construction). |
 | A 216-bucket reason taxonomy | Closed versioned catalog; matched pattern is event metadata, never bucket identity. |
 | Transitive dedup clustering | Chains unrelated postings at a 0.85 threshold. Pairwise only, deliberately. |
 | Multi-pass Typst compile | No cross-references in the template. Revisit if that changes. |
-| Statistical parity testing vs job-apps | Superseded. The bar is absolute (§1), not comparative. The old P12 pre-registered parity design is retired — see DECISIONS D-008. |
+| ~~Statistical parity testing vs job-apps~~ | **REOPENED 2026-08-22 (D-271/D-272).** D-008 retired it and the bar stayed absolute for a year of program time; the owner then asked for a comparative guarantee and it was measured. boardwatch sees 7.7% of job-apps' eligible yield. The absolute bar in §1 still stands — parity is now an *additional* bar, not a replacement. |
 
 ---
 
