@@ -6,8 +6,8 @@ builds. Ranking is a pure DB read by design and stays that way — `rank_open_po
 network I/O and this does not change that.
 
 Scale is what makes it affordable. The ranker's corpus is ~23,000 open postings; its shortlist
-is `--top N`, in practice 5–20. Probing the shortlist is a handful of requests; probing the
-corpus would be a second full crawl and is never done.
+is `--top N`, defaulting to 40 (`DEFAULT_TOP_N`, raised from 8 by D-272). Probing the shortlist
+is tens of requests; probing the corpus would be a second full crawl and is never done.
 
 The prober is passed IN rather than constructed here, and `None` means "not probed". That is the
 fail-open direction spelled as a default: a caller that says nothing gets today's behaviour and
