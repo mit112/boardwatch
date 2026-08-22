@@ -374,11 +374,12 @@ Mit's: whether **Oracle Cloud HCM and iCIMS should be PROVIDERS** instead of or 
 (~45% of the non-six tail, fits the existing architecture, reaches neither Amazon nor Apple nor
 TikTok), and whether LinkedIn earns its per-posting request cost.
 
-**Lane work has STARTED (D-279).** The precondition shipped (#132). Phase 1 is planned with **no
-network code** — `docs/superpowers/plans/2026-08-22-lane-groundwork.md`: the ten-outcome acquisition
-catalog (a counter each, plus a reportable `is_silent_outage`), the `Lane` protocol whose
-`lane_snapshot()` makes `status="complete"` unexpressible, per-source stub attribution, the company
-cap. **Two LIVE, revisable assumptions** — offered to Mit with the measurements, no answer in window:
+**Lane work has STARTED (D-279).** The precondition shipped (#132) and **plan Task 2 shipped
+(#134)** — the ten-outcome acquisition catalog, `boardwatch.lanes.outcomes`, with a counter per
+outcome and a reportable `is_silent_outage`. Phase 1 has **no network code**; the remaining tasks are
+in `docs/superpowers/plans/2026-08-22-lane-groundwork.md`: **Task 3** the `Lane` protocol whose
+`lane_snapshot()` makes `status="complete"` unexpressible, **Task 4** per-source stub attribution,
+**Task 5** the company cap. **Two LIVE, revisable assumptions** — offered to Mit with the measurements, no answer in window:
 **lane 1 does NOT use JobSpy** (`python-jobspy` pins `NUMPY==1.26.3`, newest wheel `cp312`, against
 `requires-python >=3.11` / CI 3.13 / a 3.13.12 venv, so it cannot install on a supported interpreter
 and would break the published package; its own HTTP stack also escapes the politeness lock — use the
