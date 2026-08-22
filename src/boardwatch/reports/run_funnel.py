@@ -765,7 +765,8 @@ def build_run_funnel(
                     note=(
                         "excluded title; ALSO a non-US location, or a non-US job-ad "
                         "convention on the title, when location_filter_mode is `hard` "
-                        "(not the default)"
+                        "(not the default). Drain with `top --include-hard-filter`, which "
+                        "names the clause and the text that vetoed each row"
                     ),
                 ),
                 Drop(reason="hidden_non_swe", count=shortlist.hidden_non_swe,

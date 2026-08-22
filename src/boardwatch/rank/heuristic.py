@@ -24,6 +24,7 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import datetime
 from functools import lru_cache
+from typing import Literal
 
 from rapidfuzz import fuzz
 from rapidfuzz.utils import default_process
@@ -162,13 +163,38 @@ def _exclusion_pattern(excluded: str) -> re.Pattern[str]:
     return re.compile(rf"(?<!\w){re.escape(excluded.strip())}(?!\w)", re.IGNORECASE)
 
 
-def passes_hard_filters(
+# Closed catalog. `hidden_hard_filter` deliberately stays ONE bucket (D-251, D-264: a new
+# bucket has >=27 hand-maintained mirror sites), so the clause rides on the ROW instead --
+# which is what lets `top --include-hard-filter` say why without moving any mirror site.
+HardFilterClause = Literal[
+    "excluded_title",
+    "remote_only",
+    "non_us_location",
+    "foreign_ad_marker",
+]
+
+
+@dataclass(frozen=True)
+class HardFilterVeto:
+    clause: HardFilterClause
+    # The text that decided it: the profile entry that matched, or the location that
+    # classified non-US. Never a rendered sentence -- callers format, this reports.
+    detail: str
+
+
+def hard_filter_verdict(
     posting_title: str,
     posting_locations: Sequence[str],
     remote_policy: str,
     profile: ProfileView,
     location_filter_mode: str,
-) -> bool:
+) -> HardFilterVeto | None:
+    """The veto that fired, or None if the posting cleared every clause.
+
+    `passes_hard_filters` is a wrapper over this, so the bool and the reason can never
+    disagree about the same title -- the failure mode that made the 2026-08-06 "100%
+    exclude_titles" split survive 16 days after the config that produced it changed.
+    """
     # Word-boundary veto (§6.1), NOT substring containment. Containment was the original rule
     # and it deleted real jobs in three ways, measured over 26,997 live open postings: `Sr` fired
     # inside "Israel" and "SRE" (10 postings), `Staff` fired inside "Member of Technical Staff"
@@ -190,11 +216,11 @@ def passes_hard_filters(
     masked_title = mask_non_seniority_phrases(posting_title)
     for excluded in profile.exclude_titles:
         if _exclusion_pattern(excluded).search(masked_title):
-            return False
+            return HardFilterVeto("excluded_title", excluded)
     if location_filter_mode == "hard":
         # A remote-only profile keeps its non-remote veto (unchanged).
         if profile.remote_only and remote_policy != "remote":
-            return False
+            return HardFilterVeto("remote_only", f"remote_policy={remote_policy!r}")
         # US-only hard gate (D-251, Mit's visa requirement). `classify_location` is a positive
         # US allowlist, not a non-US denylist: it drops only a CONFIRMED non-US posting and
         # keeps both US and anything it cannot resolve — fail-open, so a real US role whose
@@ -202,14 +228,31 @@ def passes_hard_filters(
         # (Mit's ruling). `location_fit` above stays the SOFT scorer; this is the hard veto.
         location = classify_location(posting_locations)
         if location == "non_us":
-            return False
+            return HardFilterVeto("non_us_location", "; ".join(posting_locations))
         # Second axis: a place catalog can only drop a city it has already heard of, and three
         # postings name no place at all (`locations_json == ["Remote"]`). A German or French
         # job ad is not a US role whatever city it names. Gated on `!= "us"` so a CONFIRMED US
         # location always wins — the fail-safe direction, even though 0 such postings exist.
         if location != "us" and has_non_us_ad_marker(posting_title):
-            return False
-    return True
+            # `has_non_us_ad_marker` answers yes/no, not which convention, so the title IS
+            # the evidence here. Enough for the drain: the operator reads the title and sees it.
+            return HardFilterVeto("foreign_ad_marker", posting_title)
+    return None
+
+
+def passes_hard_filters(
+    posting_title: str,
+    posting_locations: Sequence[str],
+    remote_policy: str,
+    profile: ProfileView,
+    location_filter_mode: str,
+) -> bool:
+    return (
+        hard_filter_verdict(
+            posting_title, posting_locations, remote_policy, profile, location_filter_mode
+        )
+        is None
+    )
 
 
 def score_posting(

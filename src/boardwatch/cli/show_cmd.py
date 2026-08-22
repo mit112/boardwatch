@@ -22,7 +22,11 @@ from boardwatch.eligibility.preflight import current_identity
 from boardwatch.extract.preflight import run_preflight
 from boardwatch.extract.taxonomy import load_taxonomy
 from boardwatch.rank.explain import explain
-from boardwatch.rank.heuristic import profile_view_from_row, score_posting
+from boardwatch.rank.heuristic import (
+    hard_filter_verdict,
+    profile_view_from_row,
+    score_posting,
+)
 from boardwatch.rank.leveling import load_leveling, resolve_schemes
 from boardwatch.rank.role_gate import role_verdict
 from boardwatch.rank.seniority_gate import TargetBand, seniority_verdict
@@ -176,6 +180,20 @@ def show(
             " — hidden from top unless --include-over-seniority" if band == "above_band" else ""
         )
         console.print(f"Band: {band_reason}{band_note}", markup=False)
+        # And the same contract for the hard filters -- the LARGEST cut in the pipeline, and the
+        # one this surface said nothing about. A row `top` drops for an excluded title or a
+        # non-US location has to be explainable by looking it up, or the bucket is unauditable.
+        hard_veto = hard_filter_verdict(
+            row.title, list(row.locations_json or []), row.remote_policy,
+            profile_view_from_row(profile), settings.location_filter_mode,
+        )
+        hard_line = (
+            f"{hard_veto.clause} ({hard_veto.detail}) "
+            "— hidden from top unless --include-hard-filter"
+            if hard_veto is not None
+            else "cleared every hard filter"
+        )
+        console.print(f"Hard filter: {hard_line}", markup=False)
 
     catalog = load_rules(settings.config_dir)
     with engine.connect() as conn:

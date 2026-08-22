@@ -30,7 +30,9 @@ from boardwatch.extract.preflight import run_preflight
 from boardwatch.extract.taxonomy import load_taxonomy
 from boardwatch.rank.explain import why_summary
 from boardwatch.rank.heuristic import (
+    HardFilterClause,
     Score,
+    hard_filter_verdict,
     passes_hard_filters,
     profile_view_from_row,
     score_posting,
@@ -85,6 +87,12 @@ class RankedPosting:
     # The application status that suppressed this row, set only when it is surfaced by the
     # `--include-applied` drain (P6 slice 3). A normally-visible posting has None.
     applied_as: str | None = None
+    # The hard-filter clause that vetoed this row, set only when it is surfaced by the
+    # `--include-hard-filter` drain. A normally-visible posting has None. Twin fields, the
+    # same shape as `band`/`band_reason`: the clause is a closed catalog for machines, the
+    # reason is the text that decided it for humans.
+    hard_filter: HardFilterClause | None = None
+    hard_filter_reason: str = ""
 
 
 @dataclass(frozen=True)
@@ -154,9 +162,14 @@ class RankedResults:
     # Postings the ranker looked at: open postings joined to their company. Measured
     # independently of the loop below, which is what lets the identity above fail.
     considered: int = 0
-    # Vetoed before the role gate or any score. Two clauses, but only one has ever been
-    # observed firing: measured 2026-08-06, all 11,517 were exclude-title vetoes and none was
-    # a location veto, because `location_filter_mode` defaults to `soft`.
+    # Vetoed before the role gate or any score. FOUR clauses, and at least two of them fire
+    # live: `exclude_titles` in both modes, plus remote-only, the hard US location gate and the
+    # foreign-ad title marker when `location_filter_mode` is `hard` (D-251, D-264). The former
+    # comment here claimed two clauses with one never observed, citing a 2026-08-06 measurement
+    # taken when the mode was `soft` and two of the clauses did not exist; D-265 corrected the
+    # same sentence in the funnel note and left this one. Drained by `--include-hard-filter`,
+    # which is unbounded by the rank cutoff (Mit's ruling: 59% of the corpus is exactly where a
+    # silently truncated audit would hide).
     hidden_hard_filter: int = 0
     # Cleared every filter but ranked outside `limit`. The bucket that did not exist before
     # item 3: on a real run at --top 5, 4,442 postings left here and appeared in no counter at
@@ -207,6 +220,7 @@ def rank_open_postings(
     include_ineligible: bool = False,
     include_non_swe: bool = False,
     include_over_seniority: bool = False,
+    include_hard_filter: bool = False,
     include_duplicates: bool = False,
     include_handled: bool = False,
     include_applied: bool = False,
@@ -308,13 +322,14 @@ def rank_open_postings(
         if new_ids is not None and int(row.id) not in new_ids:
             skipped_not_new += 1
             continue
-        if not passes_hard_filters(
+        veto = hard_filter_verdict(
             row.title,
             list(row.locations_json or []),
             row.remote_policy,
             profile,
             settings.location_filter_mode,
-        ):
+        )
+        if veto is not None and not include_hard_filter:
             hidden_hard_filter += 1
             continue
         # The role gate is categorical, so it runs beside the score rather than inside it:
@@ -353,6 +368,8 @@ def rank_open_postings(
             verdict=verdicts.get(int(row.id)),
             role=role, role_reason=role_reason,
             band=band, band_reason=band_reason,
+            hard_filter=veto.clause if veto is not None else None,
+            hard_filter_reason=veto.detail if veto is not None else "",
         ))
     scored.sort(key=lambda r: r.score.total, reverse=True)
     # Hide persisted-ineligible postings BEFORE the limit, so `top N` returns up to N shown
@@ -465,6 +482,14 @@ def rank_open_postings(
             continue
         if disposition is not None:
             visible.append(replace(posting, handled_as=disposition.disposition))
+            continue
+        if posting.hard_filter is not None:
+            # Unbounded by ruling, and it `continue`s BEFORE `surfaced_job_ids` for the same
+            # reason the duplicate drain does: looking into a quarantine must not record `seen`,
+            # or the drain closes behind you (D-110). Not counted against `limit` either -- a
+            # drain bounded by the cutoff reaches only the vetoed rows that would also have
+            # ranked, which cannot audit the 59% of the corpus that never gets near it.
+            visible.append(posting)
             continue
         if kept < limit:
             # A drained row is NOT surfaced. `--include-over-seniority` and `--include-non-swe`
@@ -596,6 +621,8 @@ def _why_cell(posting: RankedPosting) -> str:
     # `continue`s in the ranker), so at most two annotations ever appear. `uncertain` is
     # deliberately NOT annotated: it is not a drain, it is a normally-visible row.
     notes: list[str] = []
+    if posting.hard_filter is not None:
+        notes.append(f"hard filter: {posting.hard_filter} ({posting.hard_filter_reason})")
     if posting.band == "above_band":
         notes.append(posting.band_reason)
     if posting.duplicate_of is not None:
@@ -624,6 +651,7 @@ def _print_hidden_notices(
     include_ineligible: bool,
     include_non_swe: bool,
     include_over_seniority: bool,
+    include_hard_filter: bool,
     include_duplicates: bool,
     include_handled: bool,
     include_applied: bool,
@@ -655,6 +683,14 @@ def _print_hidden_notices(
         target.print(
             f"{results.hidden_over_seniority} hidden as above your target seniority band — see "
             "them with --include-over-seniority, each with the title text that vetoed it.",
+            markup=False,
+        )
+    if results.hidden_hard_filter and not include_hard_filter:
+        # The largest bucket in the pipeline, and until now the only one with no drain to name.
+        target.print(
+            f"{results.hidden_hard_filter} hidden by hard filters (excluded title, or a "
+            "non-US location/job-ad convention in hard mode) — see them with "
+            "--include-hard-filter, each naming the clause and the text that vetoed it.",
             markup=False,
         )
     if results.band_tokens_seen_while_inert:
@@ -732,6 +768,11 @@ def top(
         "--include-over-seniority",
         help="Show postings whose title names a band above your target seniority band.",
     ),
+    include_hard_filter: bool = typer.Option(
+        False,
+        "--include-hard-filter",
+        help="Show postings vetoed by the hard filters, each naming the clause that did it.",
+    ),
     include_duplicates: bool = typer.Option(
         False, "--include-duplicates", help="Show postings suppressed as duplicates."
     ),
@@ -767,6 +808,7 @@ def top(
             include_ineligible=include_ineligible,
             include_non_swe=include_non_swe,
             include_over_seniority=include_over_seniority,
+            include_hard_filter=include_hard_filter,
             include_duplicates=include_duplicates,
             include_handled=include_handled,
             include_applied=include_applied,
@@ -789,6 +831,7 @@ def top(
             include_ineligible=include_ineligible,
             include_non_swe=include_non_swe,
             include_over_seniority=include_over_seniority,
+            include_hard_filter=include_hard_filter,
             include_duplicates=include_duplicates,
             include_handled=include_handled,
             include_applied=include_applied,
@@ -843,6 +886,7 @@ def top(
             include_ineligible=include_ineligible,
             include_non_swe=include_non_swe,
             include_over_seniority=include_over_seniority,
+            include_hard_filter=include_hard_filter,
             include_duplicates=include_duplicates,
             include_handled=include_handled,
             include_applied=include_applied,
@@ -868,6 +912,7 @@ def top(
         include_ineligible=include_ineligible,
         include_non_swe=include_non_swe,
         include_over_seniority=include_over_seniority,
+        include_hard_filter=include_hard_filter,
         include_duplicates=include_duplicates,
         include_handled=include_handled,
         include_applied=include_applied,

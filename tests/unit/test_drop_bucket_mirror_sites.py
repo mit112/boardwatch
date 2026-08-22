@@ -29,10 +29,14 @@ RANKER_BUCKETS = frozenset(
 )
 
 # `_shortlist_line` is the operator's one-line summary and deliberately does NOT name every
-# bucket -- it omits the two that are scoping choices rather than rejections the operator would
+# bucket -- it omits the ones that are scoping choices rather than rejections the operator would
 # act on. Exempting them explicitly keeps the check honest: anything else added here is a
 # decision someone had to write down.
-SUMMARY_LINE_EXEMPT = frozenset({"hidden_hard_filter", "hidden_below_cutoff"})
+#
+# `hidden_hard_filter` LEFT this set when its drain shipped. The exemption was defensible only
+# while the bucket was un-inspectable; a 59%-of-corpus cut that the operator can now list with
+# `top --include-hard-filter` has to appear in the line that reports the day.
+SUMMARY_LINE_EXEMPT = frozenset({"hidden_below_cutoff"})
 
 # The funnel names one drop for what it IS rather than for the counter that feeds it. That
 # divergence is exactly what makes the mirror-site walk error-prone, so it is recorded here
