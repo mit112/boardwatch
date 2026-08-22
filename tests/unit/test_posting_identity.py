@@ -1,12 +1,15 @@
 """Identity computation (design §1.2, §2, §2.1)."""
 
+import hashlib
 from datetime import datetime
 
 import pytest
 
 from boardwatch.core.identity_kinds import IDENTITY_KIND_NAMES
+from boardwatch.core.normalize import content_hash
 from boardwatch.core.posting_identity import (
     IdentityInputs,
+    body_evidence,
     compute_identities,
     normalized_locations,
 )
@@ -184,3 +187,63 @@ def test_key_components_cannot_be_shifted_across_the_separator():
     assert ctl(_inputs(company_id=10, title="1data")) != ctl(
         _inputs(company_id=101, title="data")
     )
+
+
+# --- body evidence (design §4.3 of the JD-acquisition spec) ---------------------------
+
+
+def test_empty_and_whitespace_bodies_share_one_content_hash():
+    """The premise of every test below, asserted so it cannot rot silently.
+
+    `postings.body_text` is NOT NULL, but NOT NULL is not non-empty. A stub posting stores
+    "" or whitespace, and `content_hash` folds both to the SHA-256 of the empty string — so
+    the hash component of `exact_quad` carries no information at all for a stub.
+    """
+    assert content_hash("") == content_hash("   \n\t ")
+    assert content_hash("") == hashlib.sha256(b"").hexdigest()
+
+
+@pytest.mark.parametrize("absent", ["", "   ", "  \n\t "])
+def test_absent_body_evidence_is_None_not_an_empty_sentinel(absent):
+    """None, for the same reason `normalized_locations` returns None (design §2.1).
+
+    An "" sentinel makes every body-less posting equal to every other one on the hash
+    component, and neither the string re-verify nor the §6.3 recount can catch it: both
+    sides genuinely compare equal, so they agree on the wrong answer.
+    """
+    assert body_evidence(absent) is None
+
+
+def test_body_evidence_is_the_normalized_body_when_present():
+    assert body_evidence("  We Are\tHIRING ") == "we are hiring"
+
+
+@pytest.mark.parametrize("absent", ["", "   \n\t "])
+def test_exact_quad_is_omitted_when_there_is_no_body_evidence(absent):
+    """Suppression requires body evidence; an empty body is its absence (D-250's reasoning).
+
+    Without this, two genuinely different body-less postings at one company sharing a
+    normalized title and locations suppress each other — `exact_quad` is the only
+    suppressing kind, and its hash component is identical for every stub.
+    """
+    kinds = {i.kind for i in compute_identities(_inputs(body_text=absent))}
+    assert "exact_quad" not in kinds
+
+
+@pytest.mark.parametrize("absent", ["", "   \n\t "])
+def test_only_exact_quad_is_withheld_when_the_body_is_absent(absent):
+    """The non-suppressing kinds still land, so `identities_complete` stays true.
+
+    It counts distinct posting_ids carrying any current-version row, not kinds per posting.
+    A stub that emitted nothing at all would make it False and turn suppression off
+    corpus-wide.
+    """
+    kinds = {i.kind for i in compute_identities(_inputs(body_text=absent))}
+    assert kinds == set(IDENTITY_KIND_NAMES) - {"exact_quad"}
+    assert kinds
+
+
+def test_a_body_bearing_stub_hash_still_earns_an_exact_quad():
+    """The guard reads the body, not the hash: a real body with a hand-set hash is fine."""
+    kinds = {i.kind for i in compute_identities(_inputs(body_text="we are hiring"))}
+    assert "exact_quad" in kinds
