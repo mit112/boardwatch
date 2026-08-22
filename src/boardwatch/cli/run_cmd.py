@@ -65,10 +65,15 @@ def _shortlist_line(summary: PipelineSummary) -> str:
     # accounting rather than inside it, where summing the buckets would over-count. It is named
     # at all because nothing else puts the gate's abstain rate in front of the operator daily,
     # and a gate that cannot fire has to be visible as a number.
+    # `hidden_hard_filter` is named here as of the drain landing. It was deliberately exempt
+    # while it was un-inspectable -- naming a number the operator could not act on is noise --
+    # but it is the LARGEST cut in the pipeline (17,891 on run 67, 59% of the corpus), so once
+    # `top --include-hard-filter` exists the daily line has to say it is there.
     uncertain = f" · {counts.uncertain_band} uncertain band" if counts.uncertain_band else ""
     return (
         f"{counts.shortlisted} shortlisted of {counts.considered} considered "
-        f"({counts.hidden_ineligible} ineligible, {counts.hidden_non_swe} non-SWE, "
+        f"({counts.hidden_hard_filter} hard-filtered, "
+        f"{counts.hidden_ineligible} ineligible, {counts.hidden_non_swe} non-SWE, "
         f"{counts.hidden_over_seniority} over seniority, "
         f"{counts.hidden_duplicate} duplicate, {counts.hidden_applied} already applied, "
         f"{counts.hidden_handled} already handled, "
