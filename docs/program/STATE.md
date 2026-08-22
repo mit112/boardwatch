@@ -125,8 +125,7 @@ failed, 14,238 postings seen, and `capped_by_top_n` **3,628**: even at 40, that 
 clear every gate and are cut by rank alone. First live coverage reading **82.4% (26,075 of
 31,629)**, within 0.3 points of the store-copy rehearsal.
 
-**The instrument is no longer mute (D-274) — built, green, UNMERGED on
-`make-board-coverage-visible-unattended`.** A scheduled run now reports coverage in the two
+**The instrument is no longer mute — MERGED AND ARMED (D-274, PR #127).** A scheduled run now reports coverage in the two
 artifacts it already writes: a `board_coverage` section in the funnel (**`artifact_version`
 5 → 6**) and a `## Discovery reach` block in the morning digest (**1 → 2**), plus one
 `board coverage →` line on stdout, which is what a launchd run leaves in its log. The report is
@@ -138,13 +137,28 @@ A coverage failure costs the **section**, never the artifact.
 **Correction to the row above:** `notify` was never a candidate surface — it is a standalone CLI
 command, `runner.py` imports nothing from it, and the launchd plist runs only `run --project`.
 
-**Two owner calls, and they are the only thing between this and the deliverable:** (1) the two
-`artifact_version` bumps, and therefore merging; (2) **arming** — the launchd venv is an editable
-install resolving to the primary tree's `src/`, so `git pull` in that checkout is what arms it and
-merging alone arms nothing. Note on D-267: whether adding `locations` to `Lead` needs a bump of
-its own is **unresolved** — that row says it does, while `run_funnel.py`'s own version comment cites
-D-113 as the precedent for declining a bump on a key added inside a block that already exists.
-Either way it is a separate ruling and was deliberately NOT folded into this change.
+**Exercised on live data before any scheduled tick, per D-273's rule (run 69, MANUAL).** exit 0,
+22m29s, 40 leads / 40 PDFs, both artifacts carrying the section, the two sections **byte-identical**
+(the single-load property, observed rather than asserted). The checkout is on `main` and the
+editable venv resolves to it, so the next 08:00 tick reports coverage. **Run 69 does not move the
+P3 counter** — Gate P3 stays at 2 of 7.
+
+**Run 69 also exercised the 304 edge case by accident, and the partition held.** It ran ~3 hours
+after run 68, so **81 boards answered `unchanged`** against run 68's 18. A 304 carries no fresh
+total, so those went to `stale` and the headline fell to **76.5% over 37 measured boards** (16,602
+of 21,697) from 82.4% over 90. That is the design's own "304 staleness" lie-vector, refused the way
+it was meant to be: withhold the ratio rather than pair a carried total with a live numerator. **A
+back-to-back run therefore reports a smaller measured set — that is not a regression.** On the
+once-a-day cadence it barely bites. `enumerated_only` fell 11 → 0 for the same reason: `stale` is a
+property of THIS scan and wins over any stored total.
+
+**Cross-run movement is real and visible:** Capital One 34.7% → 37.4% (650 → 700 held), the detail
+budget draining 50/run exactly as D-270 predicts.
+
+Note on D-267: whether adding `locations` to `Lead` needs a bump of its own is **unresolved** —
+that row says it does, while `run_funnel.py`'s own version comment cites D-113 as the precedent for
+declining a bump on a key added inside a block that already exists. Either way it is a separate
+ruling and was deliberately NOT folded into this change.
 
 Design, and eight ways this metric could lie:
 `docs/superpowers/specs/2026-08-22-coverage-assurance-design.md` (its §3.1 table predates
