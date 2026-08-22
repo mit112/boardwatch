@@ -12248,23 +12248,61 @@ and it broke" with "we never tried".
 Workday censors `total` at exactly 2,000, so it was invisible. Citi 4,573, NVIDIA 2,656, T-Mobile
 2,200. Worst measured: Capital One 34.7%, Wells Fargo 36.4%, Salesforce 42.3%.
 
-### THE OPERATIONAL FACT, and it is the one that matters
+### THE OPERATIONAL FACT — and the incident it produced
 
-**Merging did not arm anything.** The launchd job runs `.venv/bin/boardwatch run --project`, and
-that venv is an **editable** install resolving to `src/` in the primary working tree. The 08:00 tick
-therefore executes whatever is **checked out** there, not what is merged. That tree is pinned at
-`151e7c4`; `git pull` is what arms the change.
+**Merging arms nothing.** The launchd job runs `.venv/bin/boardwatch run --project`, and that venv
+is an **editable** install resolving to `src/` in the primary working tree. The 08:00 tick executes
+whatever is **checked out** there, not what is merged. The tree was pinned at `151e7c4` overnight so
+the tick would run known-good code — a scheduled tick must not be a change's first live exercise,
+and Gate P3 sits at 2 of 7.
 
-**Ruled: pin it.** The change is green under `make check` and CI and was exercised against a store
-copy, but it has **never run end to end at 40 leads**, and this program's own rule is that a
-scheduled tick must not be a change's first live exercise. Gate P3 sits at 2 of 7 and a failed tick
-costs a day. An untracked `ARMING-NOTE.md` in the checkout records this. Rejected: pulling, which
-would make an unattended run the first exercise of a migration plus a 5× lead-count increase.
+**The pin did not protect, because the live store had already been migrated.** The 08:00 tick
+failed, exit 1:
+
+> `CommandError: Can't locate revision identified by 'p_board_coverage'`
+
+**Root cause: a subagent ran a `boardwatch` command against the DEFAULT data dir instead of a
+temporary one**, applying `p_board_coverage` to Mit's live store during the build. The store was
+therefore *ahead* of the deliberately-pinned code, and alembic refused a revision the checkout did
+not contain. Damage was schema-only — four nullable columns added, **zero rows written**, `max
+run_id` still 67, nothing corrupted. The cost is one Gate P3 day: `runs` went 3 → 4 with exit 1, so
+run 68's scheduled attempt does not count and the gate stays at **2 of 7**.
+
+**The rule this buys, and it is the durable part:** an agent given a `boardwatch` command must be
+required to set `BOARDWATCH_DATA_DIR` to a scratch directory on *every* invocation. "Do not touch
+the live store" is not sufficient — the live store is the *default*, so any forgotten flag reaches
+production. Forbid the default, do not merely discourage the destination.
+
+**Resolution, 2026-08-22 08:17, at Mit's request.** The checkout was pulled to `18d8ae7`; code and
+store now both report `p_board_coverage`. `DEFAULT_TOP_N` is 40 and live. The failed tick was
+re-run manually — and because the day's gate was already lost, that was the free moment to exercise
+40 leads for the first time.
+
+### Run 68, re-run manually with the new code — the instrument's first live output
+
+Exit 0 in ~24 minutes, which is roughly what **8** leads used to cost. `reconciles: true`, no fatal,
+**40 leads and 40 PDFs**, 135 boards attempted / 85 complete / 12 failed, 14,238 postings seen.
+`capped_by_top_n` is **3,628** — even at 40, that many postings still clear every gate and are cut
+by rank alone.
+
+Live coverage on the real store, first ever reading:
+
+```
+measured 90 · enumerated_only 11 · censored 4 · dark 12 · stale 18 · unscanned 0 · unreadable 0 = 135
+global measured coverage 82.4%   (26,075 held of 31,629 stated)
+
+Target  649 of 12,096  short +11,447      Capital One 34.7% (650 of 1,872)
+Citi    650 of  4,574  short  +3,924      Wells Fargo 36.3%
+NVIDIA  650 of  2,656  short  +2,006      Salesforce  42.5%
+```
+
+Within 0.3 points of the 82.7% measured against the store copy overnight — the snapshot exercise
+predicted production correctly.
 
 **Also ruled: `rank_open_postings` keeps its own `limit: int = 10`.** The pipeline passes
 `limit=top_n`, so the cap change moves `run --project` to 40 and leaves the interactive
-`boardwatch top` paging at 10. That is correct — `top` is a browse command — but it means "the cap
-is 40" is a statement about the pipeline only.
+`boardwatch top` paging at 10. That is correct — `top` is a browse command — but "the cap is 40" is
+a statement about the pipeline only.
 
 ### What the reviews found that the tests did not
 

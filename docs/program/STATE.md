@@ -105,15 +105,24 @@ buckets summing to exactly 135 (measured 90 · enumerated_only 11 · censored 4 
 work.** Citi 4,573, NVIDIA 2,656, T-Mobile 2,200. Worst measured: Capital One 34.7%, Wells Fargo
 36.4%, Salesforce 42.3%.
 
-**`DEFAULT_TOP_N` is 40 on `main` and is NOT LIVE.** The launchd job runs
+**`DEFAULT_TOP_N` is 40 and LIVE** (armed 2026-08-22 08:17). The launchd job runs
 `.venv/bin/boardwatch run --project`, and that venv is an **editable** install resolving to `src/`
-in the primary working tree — so the 08:00 tick executes whatever is CHECKED OUT there, regardless
-of what is merged. **That tree is deliberately pinned behind `main` at `151e7c4` (D-273), so the
-cap is still 8 and the instrument is dormant.** `git pull` in that directory is what arms it;
-merging did not. An untracked `ARMING-NOTE.md` sits in the checkout saying so. Expect a materially
-longer run once armed: 40 tailored résumés and up to two tectonic compiles each, against 8.
-**Exercise it with a manual `run --project` first** — a manual run does not move the Gate P3
-counter, so it costs only time.
+in the primary working tree — so the tick executes whatever is CHECKED OUT there, not what is
+merged. That tree is now at `18d8ae7`, and code and store both report `p_board_coverage`.
+
+**Run 68's scheduled tick FAILED and Gate P3 stays at 2 of 7.** A subagent had run a `boardwatch`
+command against the DEFAULT data dir during the overnight build, migrating the live store to
+`p_board_coverage` while the checkout was still pinned to older code — so alembic refused a
+revision the code did not contain (`runs` 3 → 4, exit 1). Damage was schema-only: four nullable
+columns, zero rows written, nothing corrupted. **The rule it buys: an agent handed a `boardwatch`
+command must be REQUIRED to set `BOARDWATCH_DATA_DIR` to scratch on every invocation — the live
+store is the default, so a forgotten flag reaches production.**
+
+**Run 68 re-run manually with the new code: exit 0, ~24 minutes, 40 leads / 40 PDFs, reconciles,
+no fatal** — roughly the wall-clock 8 leads used to cost. 135 boards attempted, 85 complete, 12
+failed, 14,238 postings seen, and `capped_by_top_n` **3,628**: even at 40, that many postings still
+clear every gate and are cut by rank alone. First live coverage reading **82.4% (26,075 of
+31,629)**, within 0.3 points of the store-copy rehearsal.
 
 **The gap this does NOT close, and it bounds the deliverable:** nothing reads the new columns
 unattended. `run_pipeline`, the morning digest and `notify` are untouched; `coverage` is a manual
