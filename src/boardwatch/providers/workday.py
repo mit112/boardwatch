@@ -201,6 +201,36 @@ def _failed(url: str, error: str) -> BoardSnapshot:
     )
 
 
+# Workday censors `total` at exactly this value and wraps the pager past it. The facets block
+# is aggregated server-side by a different path and is NOT capped — measured 2026-08-22:
+# Citi total=2000 / facets=4589, NVIDIA total=2000 / facets=2656, while four uncensored boards
+# agreed exactly (Adobe 740, Intel 645, Regeneron 592, Fidelity 565). See D-271.
+_TOTAL_CENSOR = 2000
+
+
+def _uncapped_total(payload: dict[str, Any]) -> tuple[int | None, bool]:
+    """Return (board_total, censored). None means the board stated no total — never 0.
+
+    When `total` reads exactly _TOTAL_CENSOR the real size is unknown and >= it, so we take the
+    largest non-zero facet dimension instead. Every dimension partitions the same corpus, so
+    they agree; `locationMainGroup` can sum to 0 on some tenants and is skipped rather than
+    dragging the maximum down.
+    """
+    raw = payload.get("total")
+    if raw is None:
+        return None, False
+    total = max(0, int(raw))
+    censored = total == _TOTAL_CENSOR
+    if not censored:
+        return total, False
+    sums = [
+        sum(int(v.get("count", 0)) for v in (facet.get("values") or []))
+        for facet in (payload.get("facets") or [])
+    ]
+    non_zero = [s for s in sums if s > 0]
+    return (max(non_zero) if non_zero else total), True
+
+
 class WorkdayProvider:
     name = "workday"
     # Workday hostnames are UNBOUNDED ({tenant}.wd{N}.myworkdayjobs.com; wd1..wd12 observed),
@@ -257,6 +287,8 @@ class WorkdayProvider:
         # if the loop ran AND took the page_index == 0 branch, and the empty-list default is
         # exactly the "tenant serves no facets block" case.
         facets: list[Any] = []
+        board_total: int | None = None
+        board_censored = False
         observed = None
         capped = True
 
@@ -298,6 +330,7 @@ class WorkdayProvider:
                     total = max(0, int(payload["total"]))
                 except (KeyError, TypeError, ValueError):
                     total = None
+                board_total, board_censored = _uncapped_total(payload)
                 raw_facets = payload.get("facets")
                 facets = raw_facets if isinstance(raw_facets, list) else []
             before = len(listed)
@@ -332,6 +365,16 @@ class WorkdayProvider:
             # 2000 is the server's own reported cap, so a shortfall against it is expected
             errors.append(f"incomplete listing: collected {len(listed)} of {total} postings")
 
+        if board_censored and board_total != _TOTAL_CENSOR:
+            # human-readable note for the run log ONLY — board_total_censored is the typed
+            # signal; nothing may ever recover this fact by grepping `errors`. Only worth a
+            # note when the facet sum actually beat the censor value; when facets carried no
+            # (or no better) number, board_total falls back to the same 2000 and a note would
+            # say nothing pagination's own notes have not already covered.
+            errors.append(
+                f"board total censored at {_TOTAL_CENSOR}; facet sum reports {board_total}"
+            )
+
         subtypes = _subtypes_by_path(fetcher, request.url, facets, errors)
 
         # The FULL live inventory, computed BEFORE the detail phase: known and
@@ -347,6 +390,9 @@ class WorkdayProvider:
         unseen = [
             (pid, row) for pid, row in by_id.items() if pid not in request.known_posting_ids
         ]
+        # Captured BEFORE the detail-budget slice below rebinds `unseen`, so detail_deferred
+        # reflects what the budget actually cut, not the post-truncation length (D-271).
+        unseen_before_truncation = unseen
         if len(unseen) > request.detail_budget:
             errors.append(
                 f"detail budget of {request.detail_budget} exceeded "
@@ -390,6 +436,10 @@ class WorkdayProvider:
             observed_validators=observed,
             error=None if not errors else "; ".join(errors),
             listed_ids=listed_ids,
+            board_reported_total=board_total,
+            board_enumerated=len(listed_ids),
+            detail_deferred=max(0, len(unseen_before_truncation) - request.detail_budget),
+            board_total_censored=board_censored,
         )
 
     def healthcheck(self, fetcher: Fetcher, slug: str) -> BoardHealth:

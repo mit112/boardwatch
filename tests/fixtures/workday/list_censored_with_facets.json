@@ -1,0 +1,14 @@
+{
+  "total": 2000,
+  "jobPostings": [],
+  "facets": [
+    {"facetParameter": "jobFamilyGroup",
+     "values": [{"id": "a", "descriptor": "Eng", "count": 3000},
+                {"id": "b", "descriptor": "Ops", "count": 1589}]},
+    {"facetParameter": "timeType",
+     "values": [{"id": "ft", "descriptor": "Full time", "count": 4589}]},
+    {"facetParameter": "locationMainGroup",
+     "values": [{"id": "z", "descriptor": "Zero facet", "count": 0}]}
+  ],
+  "userAuthenticated": false
+}

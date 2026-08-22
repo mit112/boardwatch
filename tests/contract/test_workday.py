@@ -22,6 +22,7 @@ from boardwatch.providers.base import BoardHealth
 from boardwatch.providers.workday import (
     WorkdayProvider,
     _posting_id,
+    _uncapped_total,
     parse_posting,
     split_slug,
 )
@@ -630,6 +631,41 @@ def test_detail_budget_is_respected_and_reported(tmp_path: Path) -> None:
 
 
 @respx.mock
+def test_coverage_fields_are_populated_on_a_normal_board(tmp_path: Path) -> None:
+    respx.post(LIST_URL).mock(return_value=httpx.Response(200, json=_fx("list_normal.json")))
+    _mock_all_details()
+    snapshot = provider.fetch_board(_fetcher(tmp_path), _request())
+    assert snapshot.board_reported_total == 3
+    assert snapshot.board_enumerated == 3
+    assert snapshot.board_total_censored is False
+    assert snapshot.detail_deferred == 0
+
+
+@respx.mock
+def test_detail_deferred_counts_the_pre_truncation_unseen_list(tmp_path: Path) -> None:
+    # THE SUBTLE PART: `unseen` is rebound by the detail-budget slice, so
+    # detail_deferred must be computed from a copy taken before that slice runs. Getting
+    # this backwards yields a constant 0 no matter how much was actually deferred.
+    respx.post(LIST_URL).mock(return_value=httpx.Response(200, json=_fx("list_normal.json")))
+    _mock_all_details()
+    snapshot = provider.fetch_board(_fetcher(tmp_path), _request(budget=1))
+    assert snapshot.board_enumerated == 3
+    assert snapshot.detail_deferred == 2  # 3 unseen, 1 detailed -> 2 deferred, never 0
+
+
+@respx.mock
+def test_board_reported_total_reads_the_uncapped_facet_sum(tmp_path: Path) -> None:
+    respx.post(LIST_URL).mock(
+        return_value=httpx.Response(200, json=_fx("list_censored_with_facets.json"))
+    )
+    snapshot = provider.fetch_board(_fetcher(tmp_path), _request())
+    assert snapshot.board_reported_total == 4589
+    assert snapshot.board_total_censored is True
+    assert snapshot.status == "partial"
+    assert "censored at 2000" in (snapshot.error or "")
+
+
+@respx.mock
 def test_every_diagnostic_survives_never_truncated(tmp_path: Path) -> None:
     # REGRESSION: `error` used to truncate at errors[:3], so a board with several page-level
     # notes silently dropped its LATE detail-budget note — the only record of a board's
@@ -939,3 +975,35 @@ def test_worker_subtype_buckets_tolerates_a_ragged_facets_block() -> None:
     assert _worker_subtype_buckets(
         [{"facetParameter": "workerSubType", "values": ["nope", {"descriptor": "Intern"}]}]
     ) == []
+
+
+def test_facet_sum_beats_the_2000_censor() -> None:
+    """Workday caps `total` at 2000; facets are aggregated by another path and are not capped."""
+    payload = _fx("list_censored_with_facets.json")
+    total, censored = _uncapped_total(payload)
+    assert censored is True
+    assert total == 4589
+
+
+def test_uncensored_board_agrees_with_total() -> None:
+    """KNOWN-POSITIVE CONTROL. Verified live: Adobe 740/740, Intel 645/645, Regeneron 592/592.
+
+    Without this the censor detection could return anything and no test would notice."""
+    payload = {
+        "total": 740, "jobPostings": [],
+        "facets": [{"facetParameter": "jobFamilyGroup",
+                    "values": [{"id": "a", "descriptor": "Eng", "count": 740}]}],
+    }
+    total, censored = _uncapped_total(payload)
+    assert censored is False
+    assert total == 740
+
+
+def test_missing_facets_falls_back_to_total_and_is_not_invented() -> None:
+    total, censored = _uncapped_total({"total": 512, "jobPostings": [], "facets": []})
+    assert (total, censored) == (512, False)
+
+
+def test_absent_total_yields_none_never_zero() -> None:
+    """None means the board stated nothing. Zero would be a claim we cannot support."""
+    assert _uncapped_total({"jobPostings": []}) == (None, False)
