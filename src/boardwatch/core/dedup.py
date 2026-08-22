@@ -23,10 +23,11 @@ from dataclasses import dataclass
 
 from boardwatch.core.host_class import classify_host
 from boardwatch.core.identity_kinds import SUPPRESSING_KINDS
-from boardwatch.core.normalize import normalize_body, normalize_company, normalize_title
+from boardwatch.core.normalize import normalize_company, normalize_title
 from boardwatch.core.posting_identity import (
     IdentityInputs,
     PostingIdentity,
+    body_evidence,
     normalized_locations,
 )
 
@@ -64,25 +65,36 @@ def _elect(members: Sequence[IdentityInputs]) -> IdentityInputs:
 def _verify_quad(a: IdentityInputs, b: IdentityInputs) -> bool:
     """Re-compare the underlying strings before acting on a hash equality.
 
-    body_text and content_hash are NOT NULL in the schema, so there is no missing-body
-    branch. Locations are checked for PRESENCE, not merely for equality, and that is not
-    belt-and-braces: `compute_identities` emits no exact_quad without location evidence
-    (design §2.1), but this resolver groups **stored** identities, and nothing in the scan
-    path rewrites them. `scan/apply.py` refreshes `locations_json` on every observation
-    while `identities_complete` only checks that a current-version row EXISTS, never that
-    it is fresh. So a stale exact_quad can group two postings that today carry no location
-    evidence at all — and two Nones compare EQUAL, which would pass this check and suppress
-    on evidence the catalog marks non-suppressing. Requiring presence keeps D-083's rule
-    ("no location evidence => no location-bearing suppression") true on the stored path and
-    not just the computed one.
+    Locations AND body are checked for PRESENCE, not merely for equality, and that is not
+    belt-and-braces: `compute_identities` emits no exact_quad without either (design §2.1;
+    §4.3 of the JD-acquisition spec), but this resolver groups **stored** identities, and
+    nothing in the scan path rewrites them. `scan/apply.py` refreshes `locations_json` and
+    `body_text` on every observation while `identities_complete` only checks that a
+    current-version row EXISTS, never that it is fresh. So a stale exact_quad can group two
+    postings that today carry no evidence at all — and two absent values compare EQUAL,
+    which would pass this check and suppress on evidence the catalog marks non-suppressing.
+
+    body_text and content_hash being NOT NULL does not close this: NOT NULL is not
+    non-empty. A stub stores "" or whitespace, `content_hash` folds every stub to the
+    SHA-256 of the empty string, and `"" == ""` passes — so before the presence check, two
+    genuinely different body-less postings at one company sharing a normalized title and
+    locations suppressed each other with this verifier agreeing.
+
+    Requiring presence keeps D-083's rule ("no location evidence => no location-bearing
+    suppression") and its body counterpart true on the stored path, not just the computed
+    one. It also retires the stale rows without an IDENTITY_ALGORITHM_VERSION bump: they
+    stop being actionable here, and `write_identities` drops each one as an unwanted kind
+    the next time that posting's identities are written.
     """
     loc_a = normalized_locations(a.locations)
+    body_a = body_evidence(a.body_text)
     return (
         a.company_id == b.company_id
         and normalize_title(a.title) == normalize_title(b.title)
         and loc_a is not None
         and loc_a == normalized_locations(b.locations)
-        and normalize_body(a.body_text) == normalize_body(b.body_text)
+        and body_a is not None
+        and body_a == body_evidence(b.body_text)
     )
 
 
