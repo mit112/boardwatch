@@ -8,6 +8,33 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- **Board coverage is reported by an unattended run, not only by a command.** The instrument above
+  persisted its four columns and said nothing: seeing coverage meant typing `boardwatch coverage`.
+  A scheduled run now reports it in the two artifacts it already writes — a `board_coverage`
+  section in the funnel (per-board table, worst coverage first) and a `## Discovery reach` block in
+  the morning digest — plus one line on stdout, which is what a launchd run leaves in its log.
+
+  The report is loaded **once per run** and the same object is rendered into both artifacts. This
+  is deliberate rather than incidental: `held` is a live count of open postings with no run
+  dimension, so loading it per artifact would let one run's two files disagree about its own
+  coverage. Both carry the caveat in JSON as well as prose — stated totals are the run's, `held` is
+  as of the moment the artifact was written, and the section is not a frozen historical record.
+
+  The section is named `board_coverage`, and the morning block is titled *Discovery reach*, because
+  `coverage` in both artifacts already means résumé keyword coverage. `boardwatch coverage --json`
+  now emits through the same serializer as the artifacts, so the command and the files cannot
+  describe one number two different ways.
+
+  A coverage failure costs the section and never the artifact: both writers swallow any exception
+  and write nothing at all, so the load is guarded separately and the section reports
+  "not measured this run" instead of taking the funnel down with it.
+
+### Changed
+
+- **Funnel `artifact_version` 5 → 6** and **morning `artifact_version` 1 → 2**, both for the new
+  section. Additive: no existing key changed meaning, and `boardwatch verify` reads named keys and
+  tolerates unknown ones.
+
 - **Per-board discovery coverage — `boardwatch coverage`.** Every scan already asked each board how
   many postings it holds, and threw the answer away. Now it is persisted and reported, so a day where
   44 of 135 boards finished no longer looks identical to a day where 89 did.
