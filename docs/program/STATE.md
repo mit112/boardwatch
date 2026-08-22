@@ -21,8 +21,8 @@ store.
 
 **P3 IS ACCRUING — two consecutive clean scheduled runs.** The 08:00 launchd trigger fired unattended on
 **2026-08-20** (run 63, `runs` 1→2) and again on **2026-08-21 at 08:00:10** (run 66, `runs` 2→3, exit 0,
-~26 min, funnel RECONCILES, 8 leads / 8 PDFs / 8 projected, 0 withheld as gone). **Gate P3 is 2 of 7
-UNATTENDED** — it needs 7 consecutive clean scheduled runs, and only a SCHEDULED tick counts (a manual
+~26 min, funnel RECONCILES, 8 leads / 8 PDFs / 8 projected, 0 withheld as gone). **Gate P3 is 0 of 7
+UNATTENDED — the streak RESET (D-276)** — it needs 7 consecutive clean scheduled runs, and only a SCHEDULED tick counts (a manual
 `run --project` does not touch the counter). Run 66 was the first scheduled run to exercise the #114 `Lead`
 fix and **all 8 of its leads were software roles** — run 65 had 5 of 8 as business/ops `Lead` titles.
 **Run 67 (MANUAL, 2026-08-21, verified clean)** absorbed D-266's one-time full-corpus re-key so tomorrow's
@@ -111,7 +111,12 @@ in the primary working tree — so the tick executes whatever is CHECKED OUT the
 merged. Code and store both report `p_board_coverage` (verified this session by reading the live store
 `?mode=ro`). No sha is recorded here on purpose (D-017) — check `git log` in that tree.
 
-**Run 68's scheduled tick FAILED and Gate P3 stays at 2 of 7.** A subagent had run a `boardwatch`
+**Run 68's scheduled tick FAILED, and that RESET Gate P3 to 0 of 7 (D-276) — it does not
+"stay at 2".** The gate is *7 **consecutive** unattended runs* (`PROGRAM.md` §Gate P3), and a failed
+unattended run breaks consecutiveness. Evidence: `runs = 4`, `last exit code = 1`, and the launchd
+log carries the crash. Invocations 2 and 3 were the clean ticks (runs 63, 66); invocation 4 died.
+**The next clean scheduled tick is 1 of 7, not 3 of 7** — seven more clean days, not five. Gate P4
+(the owner's blind craft review) is barred until P3 is met, so this moves that too. A subagent had run a `boardwatch`
 command against the DEFAULT data dir during the overnight build, migrating the live store to
 `p_board_coverage` while the checkout was still pinned to older code — so alembic refused a
 revision the code did not contain (`runs` 3 → 4, exit 1). Damage was schema-only: four nullable
@@ -141,7 +146,7 @@ command, `runner.py` imports nothing from it, and the launchd plist runs only `r
 22m29s, 40 leads / 40 PDFs, both artifacts carrying the section, the two sections **byte-identical**
 (the single-load property, observed rather than asserted). The checkout is on `main` and the
 editable venv resolves to it, so the next 08:00 tick reports coverage. **Run 69 does not move the
-P3 counter** — Gate P3 stays at 2 of 7.
+P3 counter** — only a scheduled tick does, and Gate P3 is 0 of 7 (D-276).
 
 **Run 69 also exercised the 304 edge case by accident, and the partition held.** It ran ~3 hours
 after run 68, so **81 boards answered `unchanged`** against run 68's 18. A 304 carries no fresh
