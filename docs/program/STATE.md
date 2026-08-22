@@ -141,8 +141,10 @@ command, `runner.py` imports nothing from it, and the launchd plist runs only `r
 **Two owner calls, and they are the only thing between this and the deliverable:** (1) the two
 `artifact_version` bumps, and therefore merging; (2) **arming** — the launchd venv is an editable
 install resolving to the primary tree's `src/`, so `git pull` in that checkout is what arms it and
-merging alone arms nothing. Worth knowing before ruling: the funnel bump D-267 has been blocked on
-is **the same bump**, so approving 5 → 6 makes adding `locations` to `Lead` free.
+merging alone arms nothing. Note on D-267: whether adding `locations` to `Lead` needs a bump of
+its own is **unresolved** — that row says it does, while `run_funnel.py`'s own version comment cites
+D-113 as the precedent for declining a bump on a key added inside a block that already exists.
+Either way it is a separate ruling and was deliberately NOT folded into this change.
 
 Design, and eight ways this metric could lie:
 `docs/superpowers/specs/2026-08-22-coverage-assurance-design.md` (its §3.1 table predates

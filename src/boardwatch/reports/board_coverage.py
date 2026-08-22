@@ -353,9 +353,19 @@ def board_coverage_headline(report: CoverageReport | None) -> list[str]:
     none" and "never checked" — the same reason `coverage_cmd.py` prints its notes at zero.
     """
     if report is None:
+        # No trailing blank line here would merge this into whatever the caller appends next,
+        # which is a `Per-board detail:` line in the morning artifact. The measured branch below
+        # ends with one for the same reason.
+        #
+        # "the load failed OR was never attempted" rather than a flat "failed": `None` also
+        # reaches here when a caller omits the argument entirely, and in that case no
+        # `! board coverage not measured:` line was ever printed. Naming only the cause that
+        # leaves a log line would send a reader looking for an entry that is not there.
         return [
-            "**not measured this run.** The coverage load failed; the reason is in the run "
-            "log, printed as `! board coverage not measured:`.",
+            "**not measured this run** — the coverage load failed or was never attempted. A "
+            "failed load prints `! board coverage not measured:` in the run log; nothing is "
+            "logged when the report was simply not requested.",
+            "",
         ]
     ratio = (
         "**not measurable**"

@@ -174,8 +174,6 @@ def morning_to_markdown(artifact: MorningArtifact) -> str:
         "",
         f"Full accounting (counts, drops, cross-checks): see `{artifact.funnel_name}`.",
         "",
-        f"{len(artifact.leads)} lead(s) tailored this run, ranked by score.",
-        "",
         "## Discovery reach",
         "",
     ]
@@ -185,6 +183,15 @@ def morning_to_markdown(artifact: MorningArtifact) -> str:
     # `coverage:` line meaning something entirely different.
     lines += board_coverage_headline(artifact.board_coverage)
     lines += [f"Per-board detail: `{artifact.funnel_name}`.", ""]
+    # `## Leads` is not decoration. Without it the lead count and the zero-lead `none.` sit
+    # under the Discovery reach heading with nothing between them, so a reader on a zero-lead
+    # morning reads `none.` as the coverage answer — in the one case this block exists for.
+    lines += [
+        "## Leads",
+        "",
+        f"{len(artifact.leads)} lead(s) tailored this run, ranked by score.",
+        "",
+    ]
     if not artifact.leads:
         lines.append("none.")
         return "\n".join(lines) + "\n"

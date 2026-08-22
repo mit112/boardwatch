@@ -227,6 +227,39 @@ def test_a_zero_lead_morning_still_reports_discovery_reach() -> None:
     assert "none." in rendered
 
 
+def test_the_zero_lead_none_belongs_to_leads_not_to_discovery_reach() -> None:
+    """Placement, not mere presence — the defect a substring check cannot see.
+
+    The reach block was briefly rendered with the lead count and the zero-lead `none.` trailing
+    it under no heading of their own, so `none.` was the last line beneath `## Discovery reach`
+    and read as the coverage answer on exactly the morning this block exists for. Asserting on
+    section membership is what makes that regression visible.
+    """
+    rendered = morning_to_markdown(
+        build_morning(run_id=1, funnel_name="funnel-1.md", leads=[], board_coverage=_reach())
+    )
+    lines = rendered.splitlines()
+
+    reach = lines.index("## Discovery reach")
+    leads = lines.index("## Leads")
+    none_at = lines.index("none.")
+    assert reach < leads < none_at, f"`none.` is not inside the Leads section:\n{rendered}"
+
+
+def test_the_lead_count_belongs_to_leads_not_to_discovery_reach() -> None:
+    """Same defect, non-zero-lead form: the count sat above the reach heading, so it read as
+    that section's opening line and was separated from the leads it counts."""
+    rendered = morning_to_markdown(
+        build_morning(
+            run_id=1, funnel_name="funnel-1.md", leads=[lead()], board_coverage=_reach()
+        )
+    )
+    lines = rendered.splitlines()
+
+    assert lines.index("## Leads") < lines.index("1 lead(s) tailored this run, ranked by score.")
+    assert lines.index("## Discovery reach") < lines.index("## Leads")
+
+
 def test_discovery_reach_says_not_measured_rather_than_vanishing() -> None:
     artifact = build_morning(run_id=1, funnel_name="funnel-1.md", leads=[lead()])
 

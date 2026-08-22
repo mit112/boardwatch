@@ -8,7 +8,7 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
-- **Board coverage is reported by an unattended run, not only by a command.** The instrument above
+- **Board coverage is reported by an unattended run, not only by a command.** The instrument below
   persisted its four columns and said nothing: seeing coverage meant typing `boardwatch coverage`.
   A scheduled run now reports it in the two artifacts it already writes — a `board_coverage`
   section in the funnel (per-board table, worst coverage first) and a `## Discovery reach` block in
@@ -28,12 +28,6 @@ All notable changes to this project are documented here. The format follows
   A coverage failure costs the section and never the artifact: both writers swallow any exception
   and write nothing at all, so the load is guarded separately and the section reports
   "not measured this run" instead of taking the funnel down with it.
-
-### Changed
-
-- **Funnel `artifact_version` 5 → 6** and **morning `artifact_version` 1 → 2**, both for the new
-  section. Additive: no existing key changed meaning, and `boardwatch verify` reads named keys and
-  tolerates unknown ones.
 
 - **Per-board discovery coverage — `boardwatch coverage`.** Every scan already asked each board how
   many postings it holds, and threw the answer away. Now it is persisted and reported, so a day where
@@ -64,6 +58,10 @@ All notable changes to this project are documented here. The format follows
   so a floor is never mistaken for a measurement.
 
 ### Changed
+
+- **Funnel `artifact_version` 5 → 6** and **morning `artifact_version` 1 → 2**, both for the new
+  `board_coverage` / *Discovery reach* section. Additive: no existing key changed meaning, and
+  `boardwatch verify` reads named keys and tolerates unknown ones.
 
 - **`DEFAULT_TOP_N` raised from 8 to 40.** The cap is a display limit, not a filter: run 67 discarded
   **3,502 postings that had cleared every gate** — eligibility, title, role, seniority, location and
