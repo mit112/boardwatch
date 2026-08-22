@@ -11,7 +11,7 @@ import json
 from pathlib import Path
 
 import pytest
-from sqlalchemy import Engine, insert
+from sqlalchemy import Engine, insert, text
 from typer.testing import CliRunner
 
 from boardwatch.cli.app import app
@@ -149,7 +149,7 @@ def test_coverage_report_prints_every_bucket_even_when_empty(seeded_coverage_sto
     assert result.exit_code == 0
     payload = json.loads(result.stdout)
     assert set(payload["bucket_counts"]) == {
-        "measured", "enumerated_only", "censored", "dark", "stale", "unscanned"
+        "measured", "enumerated_only", "censored", "dark", "stale", "unscanned", "unreadable"
     }
 
 
@@ -291,3 +291,130 @@ def test_coverage_with_an_unknown_run_id_says_so(seeded_coverage_store: Path) ->
     result = _cli(seeded_coverage_store, ["coverage", "--run", "999999"])
     assert result.exit_code == 1
     assert "999999" in result.output
+
+
+def test_a_stale_schema_reports_and_stops_instead_of_tracebacking(tmp_path: Path) -> None:
+    """`coverage` runs `ensure=False`, so NOTHING on this path ever migrates: a user who
+    upgrades and runs `coverage` before their first `scan` meets a schema that has
+    `board_scans` but none of D-271's four columns. The guard checked for an ABSENT schema
+    only, so this reproduced a full Rich traceback of
+    `OperationalError: no such column: board_scans.board_reported_total`. `doctor_cmd.py`
+    already compares against `schema_revision()`; so does this now."""
+    data_dir = tmp_path / "data"
+    engine = get_engine(data_dir)
+    ensure_schema(engine)
+    with engine.begin() as conn:
+        for column in (
+            "board_reported_total", "board_enumerated", "detail_deferred", "board_total_censored"
+        ):
+            conn.execute(text(f"ALTER TABLE board_scans DROP COLUMN {column}"))
+        conn.execute(text("UPDATE alembic_version SET version_num = 'p_seniority_band'"))
+
+    result = _cli(data_dir, ["coverage"])
+    assert result.exit_code == 1
+    assert "STALE" in result.output
+    assert "OperationalError" not in result.output
+    assert "no such column" not in result.output
+
+
+def test_one_unclassifiable_row_degrades_that_board_alone(tmp_path: Path) -> None:
+    """A single malformed board must never hide the other 134. Reproduced with exactly this
+    store: one row at `board_reported_total=-5` raised
+    `ContradictoryCoverage: bucket 'measured' is inconsistent with ratio=-0.0, ...` out of
+    `load_board_coverage`, and the HEALTHY board's number became unreachable with it."""
+    data_dir = tmp_path / "data"
+    engine = get_engine(data_dir)
+    ensure_schema(engine)
+    run_id = insert_run(engine)
+
+    bad_id = _add_company(engine, provider="greenhouse", slug="bad-co", name="Bad Co")
+    _scan_row(engine, run_id=run_id, company_id=bad_id, status="complete",
+              board_reported_total=-5, board_enumerated=10)
+    _add_posting(engine, company_id=bad_id, provider_posting_id="bad-0")
+
+    good_id = _add_company(engine, provider="greenhouse", slug="good-co", name="Good Co")
+    _scan_row(engine, run_id=run_id, company_id=good_id, status="complete",
+              board_reported_total=100, board_enumerated=100)
+    for i in range(40):
+        _add_posting(engine, company_id=good_id, provider_posting_id=f"good-{i}")
+
+    result = _cli(data_dir, ["coverage", "--json"])
+    assert result.exit_code == 0
+    payload = json.loads(result.stdout)
+    by_name = {b["name"]: b for b in payload["boards"]}
+    assert by_name["Bad Co"]["bucket"] == "unreadable"
+    assert by_name["Bad Co"]["ratio"] is None
+    assert by_name["Bad Co"]["shortfall"] is None
+    assert by_name["Bad Co"]["board_reported_total"] == -5  # kept, so the defect is debuggable
+    # THE POINT: the healthy board is still reachable and still correct.
+    assert by_name["Good Co"]["bucket"] == "measured"
+    assert by_name["Good Co"]["ratio"] == 0.4
+    assert payload["global_ratio"] == 0.4
+    assert payload["corpus_boards"] == 2
+
+
+def test_a_censored_boards_shortfall_reaches_the_report_and_its_footer(tmp_path: Path) -> None:
+    """Citi's shape: 600 held against a facet-recovered 4,589 — the largest hole in the corpus,
+    which appeared in NO summary line while `shortfall` was withheld from `censored` alongside
+    the ratio. The ratio stays withheld (a facet sum is a second aggregation path, and
+    publishing a ratio from it is a bigger claim than §3.1 authorised); the absolute gap does
+    not."""
+    data_dir = tmp_path / "data"
+    engine = get_engine(data_dir)
+    ensure_schema(engine)
+    run_id = insert_run(engine)
+    citi_id = _add_company(engine, provider="workday", slug="citi-co", name="Citi Co")
+    _scan_row(engine, run_id=run_id, company_id=citi_id, status="partial",
+              board_reported_total=4589, board_enumerated=2214, detail_deferred=1614,
+              board_total_censored=1)
+    for i in range(600):
+        _add_posting(engine, company_id=citi_id, provider_posting_id=f"citi-{i}")
+
+    payload = json.loads(_cli(data_dir, ["coverage", "--json"]).stdout)
+    citi = next(b for b in payload["boards"] if b["name"] == "Citi Co")
+    assert citi["bucket"] == "censored"
+    assert citi["ratio"] is None
+    assert citi["shortfall"] == 3989
+    assert payload["censored_shortfall"] == 3989
+    footer = " ".join(_cli(data_dir, ["coverage"]).output.split())
+    assert "short 3,989 postings" in footer
+
+
+def test_an_unrecovered_censor_reports_an_unknown_gap_not_a_zero_one(tmp_path: Path) -> None:
+    """A censored board whose facets recovered nothing persists `board_reported_total = NULL`
+    (workday.py:_uncapped_total). Its gap is UNKNOWN; a 0 in the footer would read as "no
+    gap" — the fold this partition exists to refuse."""
+    data_dir = tmp_path / "data"
+    engine = get_engine(data_dir)
+    ensure_schema(engine)
+    run_id = insert_run(engine)
+    opaque_id = _add_company(engine, provider="workday", slug="opaque-co", name="Opaque Co")
+    _scan_row(engine, run_id=run_id, company_id=opaque_id, status="partial",
+              board_reported_total=None, board_enumerated=2000, board_total_censored=1)
+
+    payload = json.loads(_cli(data_dir, ["coverage", "--json"]).stdout)
+    opaque = next(b for b in payload["boards"] if b["name"] == "Opaque Co")
+    assert opaque["bucket"] == "censored"
+    assert opaque["shortfall"] is None
+    assert payload["censored_shortfall"] is None
+    footer = " ".join(_cli(data_dir, ["coverage"]).output.split())
+    assert "shortfall is UNKNOWN, not zero" in footer
+
+
+def test_the_report_states_that_held_is_not_run_scoped(seeded_coverage_store: Path) -> None:
+    """`--run <historical>` divides TODAY's holdings by that run's stated total:
+    `load_board_coverage` counts `held` with no run filter, while `board_reported_total` comes
+    from the selected run. Making `held` run-scoped is a larger change and is not done here, so
+    the caveat is stated in both places a reader could meet the number."""
+    output = " ".join(_cli(seeded_coverage_store, ["coverage"]).output.split())
+    assert "held is counted as of now, not as of the selected run" in output
+    help_text = _cli(seeded_coverage_store, ["coverage", "--help"]).output
+    assert "as of NOW" in " ".join(help_text.split())
+
+
+def test_the_command_help_says_which_coverage_this_is(seeded_coverage_store: Path) -> None:
+    """`coverage` also names resume KEYWORD coverage (`tailor/coverage.py`, and the funnel's
+    own `coverage` key). There is no other `boardwatch coverage` verb, so the command keeps the
+    word the owner will type — the help text disambiguates instead."""
+    help_text = " ".join(_cli(seeded_coverage_store, ["coverage", "--help"]).output.split())
+    assert "BOARD DISCOVERY" in help_text

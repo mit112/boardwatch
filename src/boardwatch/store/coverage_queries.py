@@ -14,9 +14,16 @@ followed by a bare `boardwatch coverage` (which defaults to the latest run). A b
 
 from __future__ import annotations
 
-from sqlalchemy import Connection, func, select
+from typing import Any
 
-from boardwatch.reports.board_coverage import BoardCoverage, classify_board
+from sqlalchemy import Connection, Row, func, select
+
+from boardwatch.reports.board_coverage import (
+    BoardCoverage,
+    ContradictoryCoverage,
+    UnknownScanStatus,
+    classify_board,
+)
 from boardwatch.store.tables import board_scans, companies, postings
 
 
@@ -79,31 +86,56 @@ def load_board_coverage(conn: Connection, *, run_id: int | None = None) -> list[
     out: list[BoardCoverage] = []
     for r in rows:
         held = int(held_by_company.get(r.id, 0))
-        censored = _resolve_censored(r.board_total_censored)
-        # r.status is None when the LEFT JOIN found no board_scans row at all for this run —
-        # classify_board's first check turns that into "unscanned", never "measured" or "dark".
-        bucket = classify_board(
-            status=r.status,
-            board_reported_total=r.board_reported_total,
-            board_enumerated=r.board_enumerated,
-            held=held,
-            censored=censored,
-        )
-        measured = bucket == "measured"
-        out.append(
-            BoardCoverage(
-                company_id=int(r.id),
-                name=str(r.name),
-                provider=str(r.provider),
-                bucket=bucket,
-                held=held,
-                board_reported_total=r.board_reported_total,
-                board_enumerated=r.board_enumerated,
-                detail_deferred=r.detail_deferred,
-                shortfall=(r.board_reported_total - held) if measured else None,
-                ratio=(held / r.board_reported_total)
-                if measured and r.board_reported_total
-                else None,
+        try:
+            out.append(_board_coverage(r, held))
+        except (UnknownScanStatus, ContradictoryCoverage):
+            # ONE board degrades, never the whole report. Reproduced with a two-board store
+            # holding a single `board_reported_total=-5` row: the exception escaped this
+            # function and the healthy board's coverage became unreachable — a single bad row
+            # hiding the other 134. The row keeps its raw column values so the defect stays
+            # debuggable, and lands in `unreadable` rather than being dropped or folded into a
+            # bucket that would make a claim about it (`dark` says "the scan failed"; this scan
+            # may well have succeeded and written a column we cannot read).
+            out.append(
+                BoardCoverage(
+                    company_id=int(r.id),
+                    name=str(r.name),
+                    provider=str(r.provider),
+                    bucket="unreadable",
+                    held=held,
+                    board_reported_total=r.board_reported_total,
+                    board_enumerated=r.board_enumerated,
+                    detail_deferred=r.detail_deferred,
+                    shortfall=None,
+                    ratio=None,
+                )
             )
-        )
     return out
+
+
+def _board_coverage(r: Row[Any], held: int) -> BoardCoverage:
+    censored = _resolve_censored(r.board_total_censored)
+    # r.status is None when the LEFT JOIN found no board_scans row at all for this run —
+    # classify_board's first check turns that into "unscanned", never "measured" or "dark".
+    bucket = classify_board(
+        status=r.status, board_reported_total=r.board_reported_total, censored=censored
+    )
+    stated = r.board_reported_total
+    # A shortfall needs a stated total to be a gap FROM, and `censored` boards now publish one:
+    # their facet-recovered total is a real number (Citi 4,589) even though no RATIO is
+    # published against it, and while shortfall was `measured`-only the biggest hole in the
+    # corpus reached no summary line. `board_coverage.BoardCoverage.__post_init__` pins the
+    # same pairing, so a caller that gets this wrong raises rather than under-reports.
+    bears_shortfall = bucket in ("measured", "censored") and stated is not None
+    return BoardCoverage(
+        company_id=int(r.id),
+        name=str(r.name),
+        provider=str(r.provider),
+        bucket=bucket,
+        held=held,
+        board_reported_total=stated,
+        board_enumerated=r.board_enumerated,
+        detail_deferred=r.detail_deferred,
+        shortfall=(stated - held) if bears_shortfall else None,
+        ratio=(held / stated) if bucket == "measured" and stated else None,
+    )
