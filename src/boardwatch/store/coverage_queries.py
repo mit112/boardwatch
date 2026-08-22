@@ -3,6 +3,13 @@
 The only data-access path behind `boardwatch coverage`. Every statement here is a SELECT;
 nothing is inserted, updated, or committed — `coverage` is a read-only command, unlike
 `doctor` (`cli/doctor_cmd.py`), which writes `companies.last_health` as a side effect.
+
+Fix round 1, finding 1: this is a LEFT JOIN from `companies`, never an INNER JOIN on
+`board_scans`. `scan/coordinator.py`'s `run_scan(company=..., provider=...)` mints a fresh
+`run_id` containing rows for only the filtered subset, so an inner join silently dropped every
+other watched board from the corpus the moment someone ran `boardwatch scan --company X`
+followed by a bare `boardwatch coverage` (which defaults to the latest run). A board with no
+`board_scans` row for the selected run is classified `unscanned` — see `classify_board`.
 """
 
 from __future__ import annotations
@@ -48,6 +55,13 @@ def load_board_coverage(conn: Connection, *, run_id: int | None = None) -> list[
         .group_by(postings.c.company_id)
     )
     held_by_company: dict[int, int] = {row[0]: row[1] for row in conn.execute(held_stmt).all()}
+    # LEFT JOIN: a watched company with no board_scans row for run_id (never scanned this run,
+    # not scanned-and-failed) must still appear in the corpus. The join condition carries the
+    # run filter — putting `run_id` in a WHERE instead would silently turn this back into an
+    # inner join, since SQL compares NULL = run_id as NULL (dropped), not true.
+    join_condition = (board_scans.c.company_id == companies.c.id) & (
+        board_scans.c.run_id == run_id
+    )
     rows = conn.execute(
         select(
             companies.c.id,
@@ -59,16 +73,17 @@ def load_board_coverage(conn: Connection, *, run_id: int | None = None) -> list[
             board_scans.c.detail_deferred,
             board_scans.c.board_total_censored,
         )
-        .select_from(companies.join(board_scans, board_scans.c.company_id == companies.c.id))
-        .where(board_scans.c.run_id == run_id)
+        .select_from(companies.outerjoin(board_scans, join_condition))
         .where(companies.c.watched.is_(True))
     ).all()
     out: list[BoardCoverage] = []
     for r in rows:
         held = int(held_by_company.get(r.id, 0))
         censored = _resolve_censored(r.board_total_censored)
+        # r.status is None when the LEFT JOIN found no board_scans row at all for this run —
+        # classify_board's first check turns that into "unscanned", never "measured" or "dark".
         bucket = classify_board(
-            status=str(r.status),
+            status=r.status,
             board_reported_total=r.board_reported_total,
             board_enumerated=r.board_enumerated,
             held=held,

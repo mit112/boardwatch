@@ -1,4 +1,4 @@
-"""Per-board discovery coverage as a five-bucket partition (D-271).
+"""Per-board discovery coverage as a six-bucket partition (D-271).
 
 The test that matters most here is the unfailable-ratio guard: lever/ashby/workable state no
 total at all, so the only "total" available for them is our own array length. A ratio of
@@ -38,6 +38,15 @@ def test_failed_board_is_dark_not_zero_coverage() -> None:
 def test_unchanged_board_is_stale_not_measured() -> None:
     assert classify_board(status="unchanged", board_reported_total=None,
                           board_enumerated=None, held=430, censored=False) == "stale"
+
+
+def test_unscanned_board_is_its_own_bucket_not_dark() -> None:
+    """Fix round 1, finding 1: `status=None` means no `board_scans` row exists for this board
+    in the selected run at all — a different fact from `dark` (a row exists and it failed).
+    Reproduced live: an INNER JOIN on board_scans dropped these boards from the corpus
+    entirely instead of classifying them, which this bucket exists to make visible."""
+    assert classify_board(status=None, board_reported_total=None,
+                          board_enumerated=None, held=0, censored=False) == "unscanned"
 
 
 def test_measured_board_gets_a_ratio_and_an_absolute_shortfall() -> None:

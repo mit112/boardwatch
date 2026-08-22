@@ -149,7 +149,7 @@ def test_coverage_report_prints_every_bucket_even_when_empty(seeded_coverage_sto
     assert result.exit_code == 0
     payload = json.loads(result.stdout)
     assert set(payload["bucket_counts"]) == {
-        "measured", "enumerated_only", "censored", "dark", "stale"
+        "measured", "enumerated_only", "censored", "dark", "stale", "unscanned"
     }
 
 
@@ -240,3 +240,54 @@ def test_coverage_report_table_mode_writes_nothing(seeded_coverage_store: Path) 
     second = _cli(seeded_coverage_store, ["coverage", "--json"]).stdout
     assert first == second
     assert json.loads(second)["corpus_boards"] == 6
+
+
+def test_watched_board_with_no_scan_row_for_the_run_is_unscanned_not_dropped(
+    tmp_path: Path,
+) -> None:
+    """Fix round 1, finding 1. `scan/coordinator.py`'s `run_scan(company=...)` mints a run_id
+    containing rows for only the filtered subset — an INNER JOIN on board_scans silently
+    dropped every other watched board from the corpus. A board with no board_scans row for the
+    selected run must appear as `unscanned` and still be counted in `corpus_boards`."""
+    data_dir = tmp_path / "data"
+    engine = get_engine(data_dir)
+    ensure_schema(engine)
+    run_id = insert_run(engine)
+
+    scanned_id = _add_company(engine, provider="lever", slug="scanned-co", name="Scanned Co")
+    _scan_row(engine, run_id=run_id, company_id=scanned_id, status="complete", board_enumerated=5)
+
+    # Watched, but this run never touched it (e.g. `scan --company scanned-co` excluded it).
+    _add_company(engine, provider="greenhouse", slug="untouched-co", name="Untouched Co")
+
+    payload = json.loads(_cli(data_dir, ["coverage", "--json", "--run", str(run_id)]).stdout)
+    assert payload["corpus_boards"] == 2
+    untouched = next(b for b in payload["boards"] if b["name"] == "Untouched Co")
+    assert untouched["bucket"] == "unscanned"
+    assert untouched["ratio"] is None
+    assert payload["bucket_counts"]["unscanned"] == 1
+    # The scanned board is unaffected by the fix.
+    assert next(b for b in payload["boards"] if b["name"] == "Scanned Co")["bucket"] == (
+        "enumerated_only"
+    )
+
+
+def test_coverage_against_an_uninitialized_data_dir_fails_cleanly(tmp_path: Path) -> None:
+    """Fix round 1, finding 2. `ensure=False` (needed to stay read-only) means a never-`init`'d
+    data dir has no tables at all. Must report and exit(1), like doctor's schema-ABSENT path —
+    not leak a raw `sqlalchemy.exc.OperationalError` traceback out of the CLI."""
+    data_dir = tmp_path / "data"
+    result = _cli(data_dir, ["coverage"])
+    assert result.exit_code == 1
+    assert "OperationalError" not in result.output
+    assert "no such table" not in result.output
+    assert "schema" in result.output.lower()
+
+
+def test_coverage_with_an_unknown_run_id_says_so(seeded_coverage_store: Path) -> None:
+    """Fix round 1, minor 2: a typo'd --run must not read identically to "zero watched boards
+    this run" — the LEFT JOIN fix means a bogus run id would otherwise render every watched
+    board as `unscanned` with no indication the run itself does not exist."""
+    result = _cli(seeded_coverage_store, ["coverage", "--run", "999999"])
+    assert result.exit_code == 1
+    assert "999999" in result.output

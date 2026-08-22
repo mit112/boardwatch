@@ -1,4 +1,4 @@
-"""Per-board discovery coverage as a five-bucket partition (D-271).
+"""Per-board discovery coverage as a six-bucket partition (D-271).
 
 Coverage is NOT one number. A board whose total we cannot obtain gets its own bucket and is
 never folded into a neighbour — the same invariant that makes ABSTAIN load-bearing in the
@@ -11,13 +11,21 @@ because `build_report` filters only on `bucket` and never inspects `ratio`, so a
 built `enumerated_only` with `ratio=1.0` would sail through undetected.
 
 The global ratio is a weighted roll-up over `measured` ONLY, published beside the counts of the
-other four buckets. A `dark` board must not be averaged in as 100% coverage, but it must still
+other five buckets. A `dark` board must not be averaged in as 100% coverage, but it must still
 count toward `corpus_boards` — it does not stop being a board we watch just because today's scan
 could not read it. Within `measured`, a board stating a total of `0` makes a real claim ("I have
 nothing open") and keeps the bucket, but it is excluded from the global roll-up's numerator and
 denominator — held postings against a stated total of zero would otherwise inflate the headline
 ratio with a denominator contribution of nothing. Excluded boards are counted, not dropped, in
 `CoverageReport.measured_zero_total`.
+
+`unscanned` is a SEPARATE bucket from `dark` (fix round 4, finding 1): `dark` means a scan was
+attempted this run and failed; `unscanned` means no `board_scans` row exists for this board in
+the selected run at all — most commonly because `scan --company X` (`scan/coordinator.py`) mints
+a run containing rows for only the filtered subset. Folding the two together would say "this
+board failed" about a board that was never touched, and a LEFT JOIN that dropped it instead
+would be worse: the board would vanish from `corpus_boards` rather than merely being
+misclassified — exactly the leak this partition exists to prevent.
 
 A zero-stated-total board's OWN `ratio` is genuinely undefined — there is no real number for
 "postings held against a board that claims to have none" — and `None` is the right word for
@@ -37,7 +45,9 @@ from collections import Counter
 from dataclasses import dataclass
 from typing import Literal
 
-CoverageBucket = Literal["measured", "enumerated_only", "censored", "dark", "stale"]
+CoverageBucket = Literal[
+    "measured", "enumerated_only", "censored", "dark", "stale", "unscanned"
+]
 
 _ALL_BUCKETS: tuple[CoverageBucket, ...] = (
     "measured",
@@ -45,6 +55,7 @@ _ALL_BUCKETS: tuple[CoverageBucket, ...] = (
     "censored",
     "dark",
     "stale",
+    "unscanned",
 )
 
 
@@ -116,7 +127,7 @@ class BoardCoverage:
 @dataclass(frozen=True)
 class CoverageReport:
     """The whole corpus, partitioned. `global_ratio` covers `measured` boards only; the other
-    four buckets are named in `bucket_counts` rather than merged into the ratio's denominator."""
+    five buckets are named in `bucket_counts` rather than merged into the ratio's denominator."""
 
     boards: list[BoardCoverage]
     bucket_counts: dict[CoverageBucket, int]
@@ -132,15 +143,20 @@ class CoverageReport:
 
 def classify_board(
     *,
-    status: str,
+    status: str | None,
     board_reported_total: int | None,
     board_enumerated: int | None,
     held: int,
     censored: bool,
 ) -> CoverageBucket:
-    """Order matters: dark and stale are properties of THIS SCAN and win over any stored total —
-    a failed or skipped scan tells us nothing new about the board's real size, however complete
-    a total it may have reported on some earlier run."""
+    """Order matters: `unscanned` is checked first because it is a claim about a DIFFERENT run
+    dimension than the rest — the caller passes `status=None` to mean "no `board_scans` row
+    exists for this board in the selected run", which is not the same fact as `dark` (a row
+    exists and its status is `failed`). `dark` and `stale` are then properties of THIS SCAN and
+    win over any stored total — a failed or skipped scan tells us nothing new about the board's
+    real size, however complete a total it may have reported on some earlier run."""
+    if status is None:
+        return "unscanned"
     if status == "failed":
         return "dark"
     if status == "unchanged":
