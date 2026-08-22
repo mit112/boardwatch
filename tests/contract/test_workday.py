@@ -21,6 +21,7 @@ from boardwatch.core.settings import Settings
 from boardwatch.providers.base import BoardHealth
 from boardwatch.providers.workday import (
     WorkdayProvider,
+    _facet_sum,
     _posting_id,
     _uncapped_total,
     parse_posting,
@@ -666,6 +667,24 @@ def test_board_reported_total_reads_the_uncapped_facet_sum(tmp_path: Path) -> No
 
 
 @respx.mock
+def test_an_unrecovered_censor_persists_no_total_beside_the_censored_flag(
+    tmp_path: Path,
+) -> None:
+    """The persisted pair is the whole signal. A censored board whose facets carried nothing
+    used to persist `board_reported_total=2000` — indistinguishable from the recovered case in
+    the very column the instrument added, with the difference surviving only as English in
+    `error`. Asserted against the recovered board above: same flag, different total."""
+    payload = dict(_fx("list_censored_with_facets.json"))
+    payload["facets"] = []
+    respx.post(LIST_URL).mock(return_value=httpx.Response(200, json=payload))
+    snapshot = provider.fetch_board(_fetcher(tmp_path), _request())
+    assert snapshot.board_total_censored is True
+    assert snapshot.board_reported_total is None
+    # and the run-log note is not emitted, because there is no recovered number to report
+    assert "censored at 2000" not in (snapshot.error or "")
+
+
+@respx.mock
 def test_every_diagnostic_survives_never_truncated(tmp_path: Path) -> None:
     # REGRESSION: `error` used to truncate at errors[:3], so a board with several page-level
     # notes silently dropped its LATE detail-budget note — the only record of a board's
@@ -985,10 +1004,12 @@ def test_facet_sum_beats_the_2000_censor() -> None:
     assert total == 4589
 
 
-def test_uncensored_board_agrees_with_total() -> None:
-    """KNOWN-POSITIVE CONTROL. Verified live: Adobe 740/740, Intel 645/645, Regeneron 592/592.
-
-    Without this the censor detection could return anything and no test would notice."""
+def test_uncensored_board_is_not_flagged_censored_and_keeps_its_own_total() -> None:
+    """The CENSOR-DETECTION control, and only that: `_uncapped_total` returns at `if total !=
+    _TOTAL_CENSOR` before any facet code runs, so this would pass with the whole facet block
+    deleted. The facet arithmetic's control is
+    `test_facet_sum_agrees_with_an_uncensored_boards_total` below — this test used to claim to
+    be it."""
     payload = {
         "total": 740, "jobPostings": [],
         "facets": [{"facetParameter": "jobFamilyGroup",
@@ -997,6 +1018,43 @@ def test_uncensored_board_agrees_with_total() -> None:
     total, censored = _uncapped_total(payload)
     assert censored is False
     assert total == 740
+
+
+def test_facet_sum_agrees_with_an_uncensored_boards_total() -> None:
+    """THE KNOWN-POSITIVE CONTROL for the facet arithmetic itself, run against a payload whose
+    `total` is BELOW the censor so the answer is independently known. Live 2026-08-22 this held
+    on four real boards: Adobe 740/740, Intel 645/645, Regeneron 592/592, Fidelity 565/565.
+
+    `list_normal.json` is the strongest available in-repo case because it was authored for the
+    pager contract, long before this instrument existed, so its facets were not built to yield
+    a number this assertion wants — `workerSubType` sums to its `total` of 3 while `locations`
+    sums to 1, which also pins the largest-non-zero-dimension rule against a smaller sibling.
+
+    Deleting the facet block makes this red; the fixture's own `total` is the oracle."""
+    payload = _fx("list_normal.json")
+    assert payload["total"] < 2000, "the control must run on an UNCENSORED board"
+    assert _facet_sum(payload) == payload["total"]
+
+    # And on the shape the live control measured: several dimensions, all partitioning the
+    # same 740 postings, one of them split across values.
+    adobe = {
+        "total": 740,
+        "facets": [
+            {"facetParameter": "jobFamilyGroup",
+             "values": [{"id": "a", "count": 500}, {"id": "b", "count": 240}]},
+            {"facetParameter": "timeType", "values": [{"id": "ft", "count": 740}]},
+            {"facetParameter": "locationMainGroup", "values": [{"id": "z", "count": 0}]},
+        ],
+    }
+    assert _facet_sum(adobe) == adobe["total"]
+
+
+def test_facet_sum_is_none_when_the_facets_carry_no_number() -> None:
+    """`None`, never 0: an absent aggregate is not an empty board. Pairs with the test above so
+    the helper is pinned in both directions."""
+    assert _facet_sum({"facets": []}) is None
+    assert _facet_sum({"facets": [{"values": [{"count": 0}]}]}) is None
+    assert _facet_sum({}) is None
 
 
 def test_missing_facets_falls_back_to_total_and_is_not_invented() -> None:
@@ -1011,10 +1069,27 @@ def test_absent_total_yields_none_never_zero() -> None:
     assert _uncapped_total({"jobPostings": []}) == (None, None)
 
 
-def test_zero_facet_dimensions_are_skipped_not_returned() -> None:
-    """Pins the non-zero filter: without it an all-zero facets block would return `0`, which
-    violates "never 0, None means stated nothing" just as badly as the absent-total case."""
-    payload = {"total": 2000, "facets": [{"values": [{"count": 0}]}]}
+def test_an_unrecovered_censor_yields_no_total_not_the_censor_value() -> None:
+    """`censored=1` used to collapse two different epistemic states into one persisted row:
+    `(4589, True)` — a real size recovered by a second aggregation path — and `(2000, True)` —
+    facets unusable, so 2,000 is only a FLOOR. Returning the censor value as a total is the
+    server refusing to answer, recorded as an answer.
+
+    With `(None, True)`, `censored and board_reported_total is not None` means "facet-recovered"
+    and nothing has to parse a message to learn it. Both states are asserted side by side here,
+    because the defect was that they were indistinguishable."""
+    recovered = _uncapped_total(_fx("list_censored_with_facets.json"))
+    unrecovered = _uncapped_total({"total": 2000, "facets": [{"values": [{"count": 0}]}]})
+    assert recovered == (4589, True)
+    assert unrecovered == (None, True)
+    assert recovered[0] is not None and unrecovered[0] is None
+
+
+def test_a_facet_dimension_summing_to_exactly_the_censor_value_is_still_a_recovery() -> None:
+    """The old note guard was `board_total != _TOTAL_CENSOR`, so a board whose facets
+    legitimately sum to 2,000 was silently treated as unrecovered. It is a recovery: the facets
+    are a second, uncapped aggregation path that happens to agree with the cap."""
+    payload = {"total": 2000, "facets": [{"values": [{"count": 2000}]}]}
     assert _uncapped_total(payload) == (2000, True)
 
 
@@ -1028,10 +1103,10 @@ def test_ragged_facets_never_raise() -> None:
     ragged-input test). Every one of these shapes was observed to raise before this fix, which
     turns the whole board `status="failed"` via coordinator.py's belt-and-braces except —
     for precisely the large, censored tenants this instrument exists to measure."""
-    # facets is not a list at all
-    assert _uncapped_total({"total": 2000, "facets": {"not": "a list"}}) == (2000, True)
+    # facets is not a list at all (unusable => no total recovered, NOT the censor value)
+    assert _uncapped_total({"total": 2000, "facets": {"not": "a list"}}) == (None, True)
     # a facet in the list is not a dict
-    assert _uncapped_total({"total": 2000, "facets": ["not a dict", 7]}) == (2000, True)
+    assert _uncapped_total({"total": 2000, "facets": ["not a dict", 7]}) == (None, True)
     # a facet's "values" contains a non-dict entry alongside a real one
     payload = {"total": 2000, "facets": [{"values": ["nope", {"count": 5}]}]}
     assert _uncapped_total(payload) == (5, True)

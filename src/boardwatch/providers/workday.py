@@ -208,33 +208,22 @@ def _failed(url: str, error: str) -> BoardSnapshot:
 _TOTAL_CENSOR = 2000
 
 
-def _uncapped_total(payload: dict[str, Any]) -> tuple[int | None, bool | None]:
-    """Return (board_total, censored). None means the board stated no total — never 0, and
-    censored is itself None in that case: with no total there is nothing to have censored, so
-    False (a claim of "not censored") would be a claim this function cannot support.
+def _facet_sum(payload: dict[str, Any]) -> int | None:
+    """The board's size by the facets' own aggregation path, or None if it yields nothing.
 
-    When `total` reads exactly _TOTAL_CENSOR the real size is unknown and >= it, so we take the
-    largest non-zero facet dimension instead. Every dimension partitions the same corpus, so
-    they agree; `locationMainGroup` can sum to 0 on some tenants and is skipped rather than
-    dragging the maximum down.
+    Every facet dimension partitions the same corpus, so they agree; the largest non-zero one
+    is taken because `locationMainGroup` can sum to 0 on some tenants and would otherwise drag
+    the maximum down. This runs on EVERY payload, censored or not, so the known-positive
+    control (`_facet_sum(payload) == payload["total"]` on an uncensored board) exercises the
+    same arithmetic the censored path depends on — Adobe 740/740, Intel 645/645,
+    Regeneron 592/592 and Fidelity 565/565 live on 2026-08-22.
 
     Live payloads are not schema-validated (the same premise `_worker_subtype_buckets`
-    tolerates), so every shape below is walked defensively: a non-list `facets`, a non-dict
-    facet or facet value, and a null `count` (`.get(key, default)` only substitutes for an
-    ABSENT key, never for a present `null`) must never raise past this function and turn the
-    whole board `status="failed"` — precisely for the large, censored tenants this exists to
-    measure.
+    tolerates), so every shape is walked defensively: a non-list `facets`, a non-dict facet or
+    facet value, and a null `count` (`.get(key, default)` only substitutes for an ABSENT key,
+    never for a present `null`) must never raise past this function and turn the whole board
+    `status="failed"` — precisely for the large, censored tenants this exists to measure.
     """
-    raw = payload.get("total")
-    if raw is None:
-        return None, None
-    try:
-        total = max(0, int(raw))
-    except (TypeError, ValueError):
-        return None, None
-    censored = total == _TOTAL_CENSOR
-    if not censored:
-        return total, False
     raw_facets = payload.get("facets")
     facets = raw_facets if isinstance(raw_facets, list) else []
     sums: list[int] = []
@@ -253,7 +242,32 @@ def _uncapped_total(payload: dict[str, Any]) -> tuple[int | None, bool | None]:
                 facet_sum += int(count)
         sums.append(facet_sum)
     non_zero = [s for s in sums if s > 0]
-    return (max(non_zero) if non_zero else total), True
+    return max(non_zero) if non_zero else None
+
+
+def _uncapped_total(payload: dict[str, Any]) -> tuple[int | None, bool | None]:
+    """Return (board_total, censored). None means the board stated no total — never 0, and
+    censored is itself None in that case: with no total there is nothing to have censored, so
+    False (a claim of "not censored") would be a claim this function cannot support.
+
+    When `total` reads exactly _TOTAL_CENSOR the real size is unknown and >= it, so the facet
+    sum is taken instead. If the facets yield nothing the answer is `(None, True)`, NOT
+    `(2000, True)`: the censor value is the server refusing to answer, and returning it as a
+    total would collapse two different epistemic states into one persisted row —
+    "4,589, recovered by a second path" and "at least 2,000, floor only" both reading
+    `censored=1`. With None, `censored and board_reported_total is not None` means
+    "facet-recovered" and nothing downstream has to parse a message to learn it (D-271).
+    """
+    raw = payload.get("total")
+    if raw is None:
+        return None, None
+    try:
+        total = max(0, int(raw))
+    except (TypeError, ValueError):
+        return None, None
+    if total != _TOTAL_CENSOR:
+        return total, False
+    return _facet_sum(payload), True
 
 
 class WorkdayProvider:
@@ -313,7 +327,9 @@ class WorkdayProvider:
         # exactly the "tenant serves no facets block" case.
         facets: list[Any] = []
         board_total: int | None = None
-        board_censored: bool | None = False
+        # None, not False: `_uncapped_total`'s own contract is that with no total there is
+        # nothing to have censored, so False would be a claim this initializer cannot support.
+        board_censored: bool | None = None
         observed = None
         capped = True
 
@@ -390,16 +406,13 @@ class WorkdayProvider:
             # 2000 is the server's own reported cap, so a shortfall against it is expected
             errors.append(f"incomplete listing: collected {len(listed)} of {total} postings")
 
-        if board_censored and board_total != _TOTAL_CENSOR:
-            # human-readable note for the run log ONLY — board_total_censored is the typed
-            # signal; nothing may ever recover this fact by grepping `errors`. Only worth a
-            # note when the facet sum actually beat the censor value; when facets carried no
-            # (or no better) number, board_total falls back to the same 2000. That silence is
-            # NOT always redundant with another note: the offset-wrap and page-cap paths do
-            # leave their own note, but a board that terminates cleanly on a short page with
-            # total==2000 and no usable facets gets no note anywhere else either — the
-            # shortfall check above deliberately declines to flag against a total >= 2000. The
-            # silence there is a deliberate "nothing new to say," not proof something else said it.
+        if board_censored and board_total is not None:
+            # human-readable note for the run log ONLY — the typed pair
+            # (board_total_censored, board_reported_total) already carries the whole fact, and
+            # nothing may ever recover it by grepping `errors`. Keyed on `is not None`, not on
+            # `board_total != _TOTAL_CENSOR`: a facet dimension that legitimately sums to 2000
+            # IS a recovery and used to go unnoted, while an unrecovered board used to be
+            # indistinguishable from it because both persisted 2000.
             errors.append(
                 f"board total censored at {_TOTAL_CENSOR}; facet sum reports {board_total}"
             )
