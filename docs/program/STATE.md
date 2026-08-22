@@ -29,6 +29,12 @@ fix and **all 8 of its leads were software roles** — run 65 had 5 of 8 as busi
 tick does not pay it: exit 0, 42m41s, reconciles, 30,243 of 30,243 re-evaluated, 8 leads / 8 PDFs, **all 8
 `us`** with none on fail-open.
 
+**Run 68's exit 1 was process, not code (D-279):** the live store was stamped `p_board_coverage` by
+a run whose tree had that migration, 17 minutes before the file reached the primary checkout at
+08:17 — so the 08:00 tick ran `main`'s tree, which had no such revision. Repaired: both heads agree
+and run 69 was clean at 11:47. **Force every agent onto a scratch `BOARDWATCH_DATA_DIR`** — the live
+store is the DEFAULT, and a migration breaks the NEXT scheduled run, not the one that erred.
+
 **The next scheduled tick is 2026-08-23 08:00, and a clean one is 1 of 7.** Confirm it fired with
 `launchctl print gui/$(id -u)/com.boardwatch.run | grep -E "runs|last exit"` — **`runs` must go 4 → 5 with
 `last exit code = 0`**, and that counter is the ONLY authority (a manual `run --project` moves nothing).
@@ -366,7 +372,21 @@ hand-maintained host regexes gate every fetch, and Apple and TikTok have no hand
 honest route to those companies is an aggregator that carries the body, not a page reader. Still
 Mit's: whether **Oracle Cloud HCM and iCIMS should be PROVIDERS** instead of or before any lane
 (~45% of the non-six tail, fits the existing architecture, reaches neither Amazon nor Apple nor
-TikTok), the cap's number, and whether LinkedIn earns its per-posting request cost.
+TikTok), and whether LinkedIn earns its per-posting request cost.
+
+**Lane work has STARTED (D-279).** The precondition shipped (#132). Phase 1 is planned with **no
+network code** — `docs/superpowers/plans/2026-08-22-lane-groundwork.md`: the ten-outcome acquisition
+catalog (a counter each, plus a reportable `is_silent_outage`), the `Lane` protocol whose
+`lane_snapshot()` makes `status="complete"` unexpressible, per-source stub attribution, the company
+cap. **Two LIVE, revisable assumptions** — offered to Mit with the measurements, no answer in window:
+**lane 1 does NOT use JobSpy** (`python-jobspy` pins `NUMPY==1.26.3`, newest wheel `cp312`, against
+`requires-python >=3.11` / CI 3.13 / a 3.13.12 venv, so it cannot install on a supported interpreter
+and would break the published package; its own HTTP stack also escapes the politeness lock — use the
+`httpx`/`Fetcher` already shipped, which leaves every D-278 ruling intact since only the client
+changes), and **the cap is 10 companies/run**. The Indeed client is deferred to its own plan whose
+first step pins the GraphQL document and headers against the live endpoint — unverified here, and not
+transcribed from a summary. Owed with the client, not phase 1: §4.5's four quality controls, §4.7's
+browser-UA `Fetcher`, and a drain for any stub bucket the lane creates.
 
 ---
 
@@ -380,7 +400,7 @@ TikTok), the cap's number, and whether LinkedIn earns its per-posting request co
 | **Five boards report GREEN and return zero, ever** | Snyk, Vercel, HubSpot, Plaid, Qualcomm — clean scans, `last_health='empty'`, 0 postings across 12 scans. 7 of the 12 dead boards are HTTP 422 (malformed request ⇒ probably wrong slugs, recoverable). No backoff, no quarantine, no drain | **Mit** (input-side) |
 | **`unchanged` is an unaudited coverage assumption** | 59 of 135 boards listed nothing in run 67 on a payload hash. No test exists for a hash misreporting a changed board. A false `unchanged` is silent, permanent and undetectable by any current instrument | open |
 | **`hidden_hard_filter` drain — SHIPPED (#129)** | `top --include-hard-filter`, unbounded by the rank cutoff (Mit's ruling). The blocker was never the flag: `passes_hard_filters` returned a bare `bool`, so the clause and the matched token were discarded at the `return`. `hard_filter_verdict` now carries them and the bool is a wrapper. **The bucket is FOUR clauses, not "all `exclude_titles`"** — that split was measured when the mode was `soft` and two clauses did not exist (D-277) | closed |
-| **A body-less posting can suppress another one** | `content_hash("")` == `content_hash(whitespace)` == `e3b0c442…`, and that hash feeds `exact_quad` — the ONLY suppressing identity kind — while `_verify_quad` agrees because `"" == ""`. Live store: 32,229 open, **13** whitespace-only bodies, all on that hash, **0 colliding (company,title,locations) groups — latent, not firing.** Must be fixed before any aggregator lane lands a row (D-278) | open |
+| **A body-less posting suppressing another — FIXED (#132)** | Was demonstrated, not just argued: two body-less postings at one company sharing a normalized title and locations produced `Suppression(posting_id=2, survivor_posting_id=1, kind='exact_quad')`. Fixed on BOTH paths — `body_evidence()` withholds `exact_quad` when the body is blank, and `_verify_quad` now requires body PRESENCE not equality, because it groups STORED rows and two absent bodies compare equal. **No `IDENTITY_ALGORITHM_VERSION` bump**, so no re-backfill and no dedup outage: stale rows are unactionable and `write_identities` drops them on the next write (D-279) | closed |
 | **No external missed-window alarm** | nothing outside a run can detect a missed 08:00; the funnel heartbeat is only written from inside `runner.py` | P3 |
 | **`resume.yaml` is an IMPORT SOURCE, never hand-fixed** | D-155. Mit pins `resume_max_pages=1`; never advise 2 | Mit |
 | **`boardwatch top` advances the queue by default** | records `seen` unless `--no-record`; relevant to Gate P6's clean window | P6 |
