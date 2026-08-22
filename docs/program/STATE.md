@@ -19,7 +19,7 @@ machine produces leads, it never applies (out of scope). Against that: 3 publish
 **0.3.0**), ~53k lines of source, **~6,900 tests**, 70 leaf CLI commands, 6 ATS providers, a **~1.0 GB**
 store.
 
-**P3 IS ACCRUING — two consecutive clean scheduled runs.** The 08:00 launchd trigger fired unattended on
+**P3'S STREAK IS RESET TO ZERO (D-276).** The 08:00 launchd trigger fired cleanly unattended on
 **2026-08-20** (run 63, `runs` 1→2) and again on **2026-08-21 at 08:00:10** (run 66, `runs` 2→3, exit 0,
 ~26 min, funnel RECONCILES, 8 leads / 8 PDFs / 8 projected, 0 withheld as gone). **Gate P3 is 0 of 7
 UNATTENDED — the streak RESET (D-276)** — it needs 7 consecutive clean scheduled runs, and only a SCHEDULED tick counts (a manual
@@ -29,18 +29,15 @@ fix and **all 8 of its leads were software roles** — run 65 had 5 of 8 as busi
 tick does not pay it: exit 0, 42m41s, reconciles, 30,243 of 30,243 re-evaluated, 8 leads / 8 PDFs, **all 8
 `us`** with none on fail-open.
 
-**Run 68 is ARMED and PRE-VERIFIED (D-268).** The next scheduled tick takes Gate P3 to **3 of 7**. Confirm it
-fired with `launchctl print gui/$(id -u)/com.boardwatch.run | grep -E "runs|last exit"` — **`runs` must go
-3 → 4**, and that counter is the ONLY authority (a manual `run --project` moves nothing). Artifacts:
-`~/boardwatch-applications/2026-08-22/funnel-68.*`, log `~/Library/Logs/boardwatch-run.log`; match on the run
-NUMBER, never the date. The 16 decisions reopened after run 67 re-enter its shortlist, and **all six known
-leaks are already blocked by the current gates** — five non-SWE `Lead` titles in the role gate, GE HealthCare
-posting 31365 (`Buc` → `non_us`) in the hard filter — so any of the six appearing in `funnel-68.json`'s
-`leads` is a real regression to investigate before anything else. The other ten are legitimate SWE roles that
-may re-surface and consume the cap with repeats, which Mit accepted when reopening. A
-
-
-**missed-window alarm ships (D-260, #110):** a successful run pings `BOARDWATCH_HEARTBEAT_URL` (a
+**The next scheduled tick is 2026-08-23 08:00, and a clean one is 1 of 7.** Confirm it fired with
+`launchctl print gui/$(id -u)/com.boardwatch.run | grep -E "runs|last exit"` — **`runs` must go 4 → 5 with
+`last exit code = 0`**, and that counter is the ONLY authority (a manual `run --project` moves nothing).
+Artifacts: `~/boardwatch-applications/<date>/funnel-<N>.*`, log `~/Library/Logs/boardwatch-run.log`; match on
+the run NUMBER, never the date. Standing tripwire from the 16 decisions run 67 reopened (D-268): **all six
+known leaks are blocked by the current gates** — five non-SWE `Lead` titles in the role gate, GE HealthCare
+posting 31365 (`Buc` → `non_us`) in the hard filter — so any of the six appearing in a funnel's `leads` is a
+real regression to investigate before anything else. The other ten are legitimate SWE roles that may
+re-surface and consume the cap with repeats, which Mit accepted when reopening. A **missed-window alarm ships (D-260, #110):** a successful run pings `BOARDWATCH_HEARTBEAT_URL` (a
 dead-man's-switch), so an external cron-monitor alerts when a scheduled run never happens — the one failure a
 local check cannot see (the Mac off/asleep all day). Off until the operator sets the URL.
 
@@ -84,8 +81,11 @@ boardwatch is BETTER: on greenhouse/lever/ashby it stores what job-apps title-fi
 job-apps' Workday lane is 3 hardcoded queries × 2 pages × 12 details = 77 roles over 39 boards with 16
 returning zero. Counterweight: ~1/5 of job-apps' yield is staffing firms and list artifacts. **The 8-vs-42
 shortfall is a SEPARATE problem** — `capped_by_top_n` is 3,502 and job-apps has no top-N anywhere, so
-raising the cap matches volume but not parity (~8% overlap). **RULED 2026-08-22 (D-272): three lanes go in** — GitHub new-grad lists, then hiring.cafe, then
-LinkedIn + Indeed via JobSpy. **Bespoke first-party adapters are OUT** (Amazon/Apple/TikTok): job-apps'
+raising the cap matches volume but not parity (~8% overlap). **RULED 2026-08-22 (D-272): three lanes go in.** **The ORDER then reversed (D-278): Indeed via
+JobSpy first**, because its body arrives free inside the search response; then hiring.cafe (one
+unauthenticated GET); then the GitHub lists **last**, because they carry no body at all and 53.3% of
+their active entries duplicate boards already scanned. The lanes exist to reach companies no
+existing route can reach — Mit's ruling — and D-272's ordering was set on yield, not on that. **Bespoke first-party adapters are OUT** (Amazon/Apple/TikTok): job-apps'
 own dead sources are *all* bespoke adapters or niche APIs, never aggregators. `PROGRAM.md` §4's three
 blocking rows are struck.
 
@@ -295,7 +295,7 @@ an import source, never hand-fixed (D-155).
 | P0 Instrumentation | **COMPLETE** | **MET** (D-030) |
 | P1 Résumé artifact gate | **COMPLETE** | **MET** (D-032/033) |
 | P2 Profile + keystone | items 1–7 shipped; item 8 NOT STARTED | **MET AS RECONCILED** (D-075) |
-| P3 Unattended one command | **COMPLETE, INSTALLED, FIRING** — runs 63 and 66 were genuine scheduled ticks (D-254) | **NOT MET — 2 of 7 unattended.** Accruing |
+| P3 Unattended one command | **COMPLETE, INSTALLED, FIRING** — runs 63 and 66 were genuine scheduled ticks (D-254) | **NOT MET — 0 of 7 unattended.** Streak reset by run 68's failed tick (D-276) |
 | P4 Craft gate | **COMPLETE** | **NOT MET** — the owner's blind craft review, barred until P3's gate |
 | P5 Eligibility decides | **COMPLETE** | **MET** — INELIGIBLE precision 16/16, 0 span violations |
 | P6 Liveness + dedup | **BUILD COMPLETE** (D-110/111/113) | **NOT MET — 2 of 4** — needs a real 7-day run |
@@ -354,6 +354,20 @@ dereferencing step for any aggregator lane, and that same step is the fix — an
 resolves to a Greenhouse/Lever/Ashby/Workday posting whose parser already exists. A link that resolves to
 nothing parseable stays a stub and is REPORTED as one, never quietly dropped.
 
+**The JD-acquisition design is RECORDED and awaits Mit's review (D-278):**
+`docs/superpowers/specs/2026-08-22-jd-acquisition-design.md`. Four rulings taken — purpose (reach the
+unreachable), lane order (reversed), a per-run new-company cap because adding a board IS breadth, and
+UA scope (honest on the six providers, browser UA only on new aggregator fetches). The decisive
+measurement: **job-apps' headless-browser tier is worth 13% historically and 0% currently** — dead
+since 2026-08-11, 11 consecutive runs at zero, invisible because one `except Exception: return ""`
+makes a missing dependency, a timeout and an empty page the same empty string. So the no-browser
+rule costs almost nothing. But **job-apps has no generic careers-page extraction either** — 14
+hand-maintained host regexes gate every fetch, and Apple and TikTok have no handling at all — so the
+honest route to those companies is an aggregator that carries the body, not a page reader. Still
+Mit's: whether **Oracle Cloud HCM and iCIMS should be PROVIDERS** instead of or before any lane
+(~45% of the non-six tail, fits the existing architecture, reaches neither Amazon nor Apple nor
+TikTok), the cap's number, and whether LinkedIn earns its per-posting request cost.
+
 ---
 
 ## Live blockers and carried gaps
@@ -365,7 +379,8 @@ nothing parseable stays a stub and is REPORTED as one, never quietly dropped.
 | **Citi sits at 13.1% coverage, permanently** | Workday's `total` censors at 2,000; the facet sum (uncapped, control-verified) says 4,589. Our pager wraps at ~2,000 too, so post-drain Citi holds ~2,214 of 4,589 and nothing reports it | **Mit** (input-side) |
 | **Five boards report GREEN and return zero, ever** | Snyk, Vercel, HubSpot, Plaid, Qualcomm — clean scans, `last_health='empty'`, 0 postings across 12 scans. 7 of the 12 dead boards are HTTP 422 (malformed request ⇒ probably wrong slugs, recoverable). No backoff, no quarantine, no drain | **Mit** (input-side) |
 | **`unchanged` is an unaudited coverage assumption** | 59 of 135 boards listed nothing in run 67 on a payload hash. No test exists for a hash misreporting a changed board. A false `unchanged` is silent, permanent and undetectable by any current instrument | open |
-| **`hidden_hard_filter` has no drain** | 17,891 drops = 59% of the corpus, the single largest cut, and the only bucket with no `--include-` flag — the rows behind it cannot be listed. Against `CLAUDE.md`'s "every quarantine needs a drain" | open |
+| **`hidden_hard_filter` drain — BUILT, PR #129 open** | `top --include-hard-filter`, unbounded by the rank cutoff (Mit's ruling). The blocker was never the flag: `passes_hard_filters` returned a bare `bool`, so the clause and the matched token were discarded at the `return`. `hard_filter_verdict` now carries them and the bool is a wrapper. **The bucket is FOUR clauses, not "all `exclude_titles`"** — that split was measured when the mode was `soft` and two clauses did not exist (D-277) | merged? |
+| **A body-less posting can suppress another one** | `content_hash("")` == `content_hash(whitespace)` == `e3b0c442…`, and that hash feeds `exact_quad` — the ONLY suppressing identity kind — while `_verify_quad` agrees because `"" == ""`. Live store: 32,229 open, **13** whitespace-only bodies, all on that hash, **0 colliding (company,title,locations) groups — latent, not firing.** Must be fixed before any aggregator lane lands a row (D-278) | open |
 | **No external missed-window alarm** | nothing outside a run can detect a missed 08:00; the funnel heartbeat is only written from inside `runner.py` | P3 |
 | **`resume.yaml` is an IMPORT SOURCE, never hand-fixed** | D-155. Mit pins `resume_max_pages=1`; never advise 2 | Mit |
 | **`boardwatch top` advances the queue by default** | records `seen` unless `--no-record`; relevant to Gate P6's clean window | P6 |
