@@ -129,6 +129,9 @@ class SmartRecruitersProvider:
 
         budget = request.detail_budget
         unseen = [e for e in listed if str(e.get("id")) not in request.known_posting_ids]
+        # Captured BEFORE the detail-budget slice below rebinds `unseen`, so detail_deferred
+        # reflects what the budget actually cut, not the post-truncation length (D-271).
+        unseen_before_truncation = unseen
         if len(unseen) > budget:
             errors.append(
                 f"detail budget of {budget} exceeded ({len(unseen)} unseen postings); "
@@ -177,6 +180,9 @@ class SmartRecruitersProvider:
             observed_validators=result.observed_validators,
             error=error,
             listed_ids=board_ids,
+            board_reported_total=total,
+            board_enumerated=len(listed),
+            detail_deferred=max(0, len(unseen_before_truncation) - budget),
         )
 
     def healthcheck(self, fetcher: Fetcher, slug: str) -> BoardHealth:

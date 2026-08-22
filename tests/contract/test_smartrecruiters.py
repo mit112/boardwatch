@@ -93,6 +93,17 @@ def test_complete_snapshot_fetches_a_detail_per_posting(tmp_path: Path) -> None:
 
 
 @respx.mock
+def test_smartrecruiters_reports_totalfound_as_board_total(tmp_path: Path) -> None:
+    """totalFound is the board's own count; the contract pins totalFound == len(content)."""
+    respx.get(LIST_URL).mock(return_value=httpx.Response(200, content=_fx("list_normal.json")))
+    _mock_all_details()
+    snap = provider.fetch_board(_fetcher(tmp_path), _request())
+    assert snap.board_reported_total == 3
+    assert snap.board_enumerated == 3
+    assert snap.detail_deferred == 0
+
+
+@respx.mock
 def test_company_description_is_excluded_from_body(tmp_path: Path) -> None:
     respx.get(LIST_URL).mock(return_value=httpx.Response(200, content=_fx("list_normal.json")))
     _mock_all_details()
