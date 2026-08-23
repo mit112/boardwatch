@@ -76,14 +76,29 @@ def test_workable_round_trip() -> None:
         assert target.posting_ref == posting.provider_posting_id
 
 
-def test_smartrecruiters_round_trip() -> None:
+def test_smartrecruiters_posting_url_refuses() -> None:
+    """The pinned `postingUrl` fixture is explicitly synthetic (see
+    tests/fixtures/smartrecruiters/README.md) and was authored to mimic this provider's
+    own CONSTRUCTED FALLBACK (.../{identifier}/{posting_id}), not a real public
+    SmartRecruiters posting URL — see test below for what the real shape actually is.
+    Refuse rather than trust a shape only the fixture's author, not evidence, supports."""
     listed = _fixture_json("smartrecruiters", "list_normal.json")["content"][0]
     detail = _fixture_json("smartrecruiters", "detail_normal.json")
     posting = smartrecruiters.parse_posting(listed, detail)
-    target = parse_posting_target(posting.url)
-    assert target.provider == "smartrecruiters"
-    assert target.slug == "acme"
-    assert target.posting_ref == posting.provider_posting_id
+    with pytest.raises(UnresolvablePostingURL):
+        parse_posting_target(posting.url)
+
+
+def test_smartrecruiters_real_shape_combines_id_and_slug_in_one_segment() -> None:
+    """Pins the hazard in code, not only in prose: SmartRecruiters' own public API
+    documentation shows a real posting URL's last path segment is "{id}-{title-slug}"
+    (e.g. .../12308096-quality-assurance-manager), not the bare id the fixture's
+    synthetic postingUrl mimics. A naive last-segment extraction against this shape would
+    return "12308096-quality-assurance-manager", not the id "12308096" — this must also
+    refuse, exactly like the fixture-derived URL above."""
+    real_shaped_url = "https://jobs.smartrecruiters.com/acme/12308096-quality-assurance-manager"
+    with pytest.raises(UnresolvablePostingURL):
+        parse_posting_target(real_shaped_url)
 
 
 def test_workday_posting_url_refuses() -> None:
