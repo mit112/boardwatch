@@ -245,6 +245,50 @@ def upsert_watch(conn: Connection, *, provider: str, slug: str, name: str, sourc
     )
 
 
+def upsert_lane_company(conn: Connection, *, provider: str, slug: str, name: str) -> None:
+    """Record a company an aggregator lane discovered: `source='lane'`, and NOT watched (D-285).
+
+    Unwatched is load-bearing, not caution. `scan/coordinator.py` looks every watched company's
+    provider up in the registry and appends `unknown provider` to `summary.errors` on a miss, so
+    a watched `hiringcafe` row would add an error line to every run forever. Nothing downstream
+    of the scan filters on `watched`, so the lane's postings still reach the shortlist.
+
+    A sibling of `upsert_watch` rather than a parameter on it: a defaulted `watched=` would
+    silently backfill every existing caller with a value none of them chose.
+
+    On conflict this touches NOTHING but the name. A lane must never unwatch a board the user
+    watches, and must never relabel a `registry` company as lane-discovered — either would make
+    the store's own account of where a company came from a lie. `DO UPDATE SET name` rather than
+    `DO NOTHING` so an employer's display name stays current; `name` carries no provenance.
+    """
+    stmt = sqlite_insert(companies).values(
+        name=name, provider=provider, slug=slug, source="lane", watched=False
+    )
+    conn.execute(
+        stmt.on_conflict_do_update(
+            index_elements=[companies.c.provider, companies.c.slug],
+            set_={"name": stmt.excluded.name},
+        )
+    )
+
+
+def company_exists(conn: Connection, *, provider: str, slug: str) -> bool:
+    """Is this `(provider, slug)` already stored, watched or not?
+
+    The lane budget's is-new check. `get_watched_companies` cannot answer it: a lane-discovered
+    company is unwatched, so asking that would charge a cap slot to a company already stored,
+    every run, and reach would never widen.
+    """
+    return (
+        conn.execute(
+            select(companies.c.id).where(
+                companies.c.provider == provider, companies.c.slug == slug
+            )
+        ).scalar_one_or_none()
+        is not None
+    )
+
+
 # keep the P0 signature working — it is now a thin wrapper (no caller churn)
 def upsert_watched_company(conn: Connection, *, provider: str, slug: str, name: str) -> None:
     upsert_watch(conn, provider=provider, slug=slug, name=name, source="user")

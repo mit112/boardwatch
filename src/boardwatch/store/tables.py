@@ -52,7 +52,10 @@ companies = Table(
     Column("last_health", Text, nullable=True),
     Column("last_ok_at", DateTime, nullable=True),
     UniqueConstraint("provider", "slug"),
-    CheckConstraint("source IN ('registry', 'user')", name="source_enum"),
+    # 'lane' is a company an aggregator lane discovered: neither shipped in the registry nor
+    # typed by the user (D-285). Lane rows are inserted unwatched, so they never enter the
+    # scan corpus or the coverage corpus.
+    CheckConstraint("source IN ('registry', 'user', 'lane')", name="source_enum"),
     CheckConstraint(
         "last_health IN ('ok', 'empty', 'dead', 'error', 'unreachable')", name="last_health_enum"
     ),
@@ -164,9 +167,14 @@ board_scans = Table(
     Column("board_enumerated", Integer, nullable=True),
     Column("detail_deferred", Integer, nullable=True),
     Column("board_total_censored", Integer, nullable=True),
+    # Which subsystem wrote this row (D-285). A lane touching an already-watched board writes a
+    # SECOND row for the same (company_id, run_id); coverage joins one BoardCoverage per row, so
+    # without this the company is counted twice. Defaulted 'board': every pre-existing row is one.
+    Column("scan_kind", Text, nullable=False, server_default="board"),
     CheckConstraint(
         "status IN ('complete', 'partial', 'failed', 'unchanged')", name="status_enum"
     ),
+    CheckConstraint("scan_kind IN ('board', 'lane')", name="scan_kind_enum"),
 )
 
 posting_events = Table(

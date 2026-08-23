@@ -104,3 +104,30 @@ def test_censored_false_persists_as_zero_not_null(engine: Engine) -> None:
     with engine.connect() as conn:
         row = conn.execute(select(board_scans)).one()
     assert row.board_total_censored == 0
+
+
+def test_scan_kind_defaults_to_board(engine: Engine) -> None:
+    """Every caller on the six-provider scan path IS a board scan, so the default states a
+    fact. Coverage joins on this value, and a lane row that read `board` would double-count."""
+    company_id = _insert_company(engine)
+    run_id = insert_run(engine)
+    snap = BoardSnapshot(status="complete", postings=[], url="https://x/y")
+    apply_board(engine, snap, company_id, run_id)
+    with engine.connect() as conn:
+        assert conn.execute(select(board_scans.c.scan_kind)).scalar_one() == "board"
+
+
+@pytest.mark.parametrize("status", ["complete", "partial", "failed", "unchanged"])
+def test_a_lane_caller_marks_every_status_lane(engine: Engine, status: str) -> None:
+    """`failed` and `unchanged` return before the main scan row is written, through their own
+    `_scan_row` calls — a threading that stopped at the happy path would leave a lane's failed
+    board indistinguishable from a board scan's, and back in the coverage corpus."""
+    company_id = _insert_company(engine)
+    run_id = insert_run(engine)
+    snap = BoardSnapshot(
+        status=status, postings=[], url="https://x/y",
+        error="HTTP 401" if status == "failed" else None,
+    )
+    apply_board(engine, snap, company_id, run_id, scan_kind="lane")
+    with engine.connect() as conn:
+        assert conn.execute(select(board_scans.c.scan_kind)).scalar_one() == "lane"
