@@ -9,6 +9,11 @@
 > **States only what is true now**; no sha or commit count (D-017). **Rewrite it, never prepend.** Keep it
 > near 170 lines: how something got here is narration, and narration belongs in `DECISIONS.md` /
 > `METRICS.md`. Before cutting a sentence, check it exists somewhere else (D-149).
+>
+> **THE COMPRESSION PASS IS STILL OWED.** The triple narration of the P3 reset was merged on
+> 2026-08-23 (~24 lines). Remaining candidates, in order: the run-67/68/69 coverage readings, which
+> restate D-270/D-271 already summarised above; and the `Live blockers` table, several rows of which
+> are marked `closed` and belong in `CHANGELOG.md`.
 
 ---
 
@@ -65,27 +70,32 @@ exactly that reason, and 12 `built` rows are currently reopened. **B1 is scored 
 engine's own `eligible` verdict, not "not ineligible"); both readings pass at cap 40, three of four recent
 days would fail at cap 8.
 
-**P3'S STREAK IS RESET TO ZERO (D-276).** The 08:00 launchd trigger fired cleanly unattended on
-**2026-08-20** (run 63, `runs` 1→2) and again on **2026-08-21 at 08:00:10** (run 66, `runs` 2→3, exit 0,
-~26 min, funnel RECONCILES, 8 leads / 8 PDFs / 8 projected, 0 withheld as gone). **Gate P3 is 0 of 7
-UNATTENDED — the streak RESET (D-276)** — it needs 7 consecutive clean scheduled runs, and only a SCHEDULED tick counts (a manual
-`run --project` does not touch the counter). Run 66 was the first scheduled run to exercise the #114 `Lead`
-fix and **all 8 of its leads were software roles** — run 65 had 5 of 8 as business/ops `Lead` titles.
-**Run 67 (MANUAL, 2026-08-21, verified clean)** absorbed D-266's one-time full-corpus re-key so tomorrow's
-tick does not pay it: exit 0, 42m41s, reconciles, 30,243 of 30,243 re-evaluated, 8 leads / 8 PDFs, **all 8
-`us`** with none on fail-open.
+**GATE P3 IS 0 OF 7, AND THE NEXT CLEAN TICK IS 1 OF 7 — NOT 3 (D-276).** The gate is *7
+**consecutive** unattended runs* (`PROGRAM.md` §Gate P3), so a failed unattended run resets it rather
+than pausing it; **Gate P4 (the owner's blind craft review) is barred until P3 is met**, so this moves
+that too. Only a SCHEDULED tick counts — a manual `run --project` does not touch the counter.
+Invocations 2 and 3 were the clean ticks: **run 63** (2026-08-20, `runs` 1→2) and **run 66**
+(2026-08-21 at 08:00:10, `runs` 2→3, exit 0, ~26 min, funnel RECONCILES, 8 leads / 8 PDFs / 8
+projected, 0 withheld as gone). Invocation 4 died. Current evidence: **`runs = 4`, `last exit code =
+1`**, crash in the launchd log. Run 66 was also the first scheduled run to exercise the #114 `Lead`
+fix — **all 8 of its leads were software**, against 3 of 8 in run 65. **Run 67 (MANUAL, verified
+clean)** absorbed D-266's one-time full-corpus re-key so no scheduled tick pays it: exit 0, 42m41s,
+reconciles, 30,243 of 30,243 re-evaluated, 8 leads / 8 PDFs, **all 8 `us`**, none on fail-open.
 
-**Run 68's exit 1 was process, not code (D-279):** the live store was stamped `p_board_coverage` by
-a run whose tree had that migration, 17 minutes before the file reached the primary checkout at
-08:17 — so the 08:00 tick ran `main`'s tree, which had no such revision. Repaired: both heads agree
-and run 69 was clean at 11:47. **Force every agent onto a scratch `BOARDWATCH_DATA_DIR`** — the live
-store is the DEFAULT, and a migration breaks the NEXT scheduled run, not the one that erred. **That rule is
-INSUFFICIENT on its own: `config_dir` obeys a separate `BOARDWATCH_CONFIG_DIR`, so a run isolated only by
-`BOARDWATCH_DATA_DIR` still READS `resume.yaml` / `career-profile/` / the template from the live config dir
-and still WRITES its artifacts to the live `~/boardwatch-applications/` tree (D-281). Set BOTH.** Two
-consequences: a scratch run's `funnel-N` collides with the next real run's, because run numbering on a store
-copy continues from the live sequence; and the artifact directory is **UTC-dated**, so match on the run
-NUMBER, never the date.
+**Run 68's exit 1 was PROCESS, not code (D-279), and it is already repaired.** A subagent ran a
+`boardwatch` command against the DEFAULT data dir during the overnight build, stamping the live store
+`p_board_coverage` 17 minutes before that migration reached the primary checkout at 08:17 — so the
+08:00 tick ran `main`'s tree, which had no such revision, and alembic refused it (`runs` 3→4, exit 1).
+Damage was schema-only: four nullable columns, zero rows written, nothing corrupted. Both heads now
+agree and run 69 was clean at 11:47. **Do not escalate that log line as a live blocker.** The rule it
+buys: **force every agent onto a scratch `BOARDWATCH_DATA_DIR` on every invocation** — the live store
+is the DEFAULT, so a forgotten flag reaches production, and a migration breaks the NEXT scheduled run,
+not the one that erred. **That rule is INSUFFICIENT alone: `config_dir` obeys a separate
+`BOARDWATCH_CONFIG_DIR`, so a run isolated only by `BOARDWATCH_DATA_DIR` still READS `resume.yaml` /
+`career-profile/` / the template from the live config dir and still WRITES artifacts into the live
+`~/boardwatch-applications/` tree (D-281). Set BOTH.** Two consequences: a scratch run's `funnel-N`
+collides with the next real run's, because numbering on a store copy continues from the live sequence;
+and the artifact directory is **UTC-dated**, so match on the run NUMBER, never the date.
 
 **The next scheduled tick is 2026-08-23 08:00, and a clean one is 1 of 7.** Confirm it fired with
 `launchctl print gui/$(id -u)/com.boardwatch.run | grep -E "runs|last exit"` — **`runs` must go 4 → 5 with
@@ -168,19 +178,6 @@ work.** Citi 4,573, NVIDIA 2,656, T-Mobile 2,200. Worst measured: Capital One 34
 in the primary working tree — so the tick executes whatever is CHECKED OUT there, not what is
 merged. Code and store both report `p_board_coverage` (verified this session by reading the live store
 `?mode=ro`). No sha is recorded here on purpose (D-017) — check `git log` in that tree.
-
-**Run 68's scheduled tick FAILED, and that RESET Gate P3 to 0 of 7 (D-276) — it does not
-"stay at 2".** The gate is *7 **consecutive** unattended runs* (`PROGRAM.md` §Gate P3), and a failed
-unattended run breaks consecutiveness. Evidence: `runs = 4`, `last exit code = 1`, and the launchd
-log carries the crash. Invocations 2 and 3 were the clean ticks (runs 63, 66); invocation 4 died.
-**The next clean scheduled tick is 1 of 7, not 3 of 7** — seven more clean days, not five. Gate P4
-(the owner's blind craft review) is barred until P3 is met, so this moves that too. A subagent had run a `boardwatch`
-command against the DEFAULT data dir during the overnight build, migrating the live store to
-`p_board_coverage` while the checkout was still pinned to older code — so alembic refused a
-revision the code did not contain (`runs` 3 → 4, exit 1). Damage was schema-only: four nullable
-columns, zero rows written, nothing corrupted. **The rule it buys: an agent handed a `boardwatch`
-command must be REQUIRED to set `BOARDWATCH_DATA_DIR` to scratch on every invocation — the live
-store is the default, so a forgotten flag reaches production.**
 
 **Run 68 re-run manually with the new code: exit 0, ~24 minutes, 40 leads / 40 PDFs, reconciles,
 no fatal** — roughly the wall-clock 8 leads used to cost. 135 boards attempted, 85 complete, 12
