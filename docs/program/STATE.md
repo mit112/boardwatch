@@ -19,6 +19,17 @@ machine produces leads, it never applies (out of scope). Against that: 3 publish
 **0.3.0**), ~53k lines of source, **~6,900 tests**, 70 leaf CLI commands, 6 ATS providers, a **~1.0 GB**
 store.
 
+**A planning session on 2026-08-22 set the ASAP execution plan (D-280), and it SUPERSEDES the daily-tick
+babysitting below.** "Done" is redefined to a **provisional pass** — 3 clean FROZEN daily runs meeting all
+seven bar metrics (B1–B7) — after which the full 14-day acceptance runs PASSIVELY in the background to
+confirm. **Breadth (the three discovery lanes) is IN scope now**, built before the provisional pass. Work
+proceeds in 6 self-contained sessionized parts; **next action is Part 1** — measure net-new/day, bank P6-b
+(liveness `dead==0`), write the leakage query, fix the zero-output-guard false-alarm. The P6 duplicate-kind
+ruling is **decided: only `exact_quad` counts** (D-280). P3's 7-tick gate is human-adjudicated off launchd's
+counter and is therefore **compressible** (plan Part 6); the 14-day acceptance is the one true calendar
+wall. Plan: `~/.claude/plans/lets-use-this-session-staged-wren.md` + project memory. No code shipped this
+session; no gate moved.
+
 **P3'S STREAK IS RESET TO ZERO (D-276).** The 08:00 launchd trigger fired cleanly unattended on
 **2026-08-20** (run 63, `runs` 1→2) and again on **2026-08-21 at 08:00:10** (run 66, `runs` 2→3, exit 0,
 ~26 min, funnel RECONCILES, 8 leads / 8 PDFs / 8 projected, 0 withheld as gone). **Gate P3 is 0 of 7
