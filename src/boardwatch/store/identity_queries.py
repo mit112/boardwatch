@@ -235,6 +235,16 @@ def load_surfaced_exact_quad(conn: Connection) -> tuple[SurfacedJob, ...]:
     resolves to that one shared key or, when nothing under the job is identified, to `NULL` —
     it is not doing anything a plain "pick one" couldn't, given that invariant.
 
+    That invariant holds only at merge time, under the algorithm version then in force. Merges
+    are one-way (`store/regroup.py` only moves `postings.job_id` onto the survivor; nothing
+    un-merges), and `core/identity_kinds.py` documents a version bump that already happened and
+    SPLITS keys — p6.2 folded "+"/"#" to words, so `C++`/`C#`/`C` stopped sharing a title
+    component. Two postings merged under p6.1 can therefore carry two different p6.2 keys while
+    still anchored to one job, and `func.max` silently keeps the lexicographically larger,
+    discarding the other. If the discarded key matches another surfaced job's key, that
+    redundancy becomes invisible here — leakage reads lower than it is, the direction that makes
+    the <=5% gate easier to pass. Nothing currently reports a job holding two keys.
+
     No window filter here on purpose: `reports/leakage.compute_leakage` applies the 7-day cut
     over `first_decided_at`, mirroring the split `reports/stats.summarize` already draws
     between a dumb store read and the one place window logic lives.

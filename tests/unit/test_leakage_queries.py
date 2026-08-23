@@ -11,9 +11,10 @@ from __future__ import annotations
 
 from datetime import timedelta
 
-from sqlalchemy import select
+from sqlalchemy import select, update
 
 from boardwatch.core.dedup import resolve_duplicates
+from boardwatch.core.identity_kinds import IDENTITY_ALGORITHM_VERSION
 from boardwatch.core.regroup import plan_regrouping
 from boardwatch.store.identity_queries import (
     SurfacedJob,
@@ -59,10 +60,22 @@ def _independent_reconstruction(engine) -> dict[int, str | None]:
     # Mirrors the query's INNER JOIN through postings: a job with a disposition row but ZERO
     # currently-anchored postings (drained after a merge moved them all away) is excluded
     # entirely, not reported as "unidentified".
-    return {
-        job_id: (next(iter(by_job[job_id])) if job_id in by_job else None)
-        for job_id in job_ids & anchored_jobs
-    }
+    out: dict[int, str | None] = {}
+    for job_id in job_ids & anchored_jobs:
+        keys = by_job.get(job_id)
+        if keys is None:
+            out[job_id] = None
+            continue
+        # `load_surfaced_exact_quad`'s docstring argues a job anchors more than one posting
+        # only when `regroup` verified they share one `exact_quad` key — so this set must be
+        # a singleton. Asserting it rather than picking one with `next(iter(...))` turns a
+        # violation into a failing test instead of a coin flip over set iteration order.
+        assert len(keys) == 1, (
+            f"job {job_id} carries {len(keys)} distinct exact_quad keys {keys!r}; "
+            "the one-key-per-job invariant does not hold here"
+        )
+        out[job_id] = next(iter(keys))
+    return out
 
 
 def test_two_independently_surfaced_duplicates_share_one_identity_key(
@@ -134,6 +147,52 @@ def test_a_body_less_surfaced_job_carries_no_identity(seed_dedup, backfill_ident
 
     expected = _independent_reconstruction(seed.engine)
     assert expected == {job_id: None}
+
+
+def test_a_stale_algorithm_version_identity_is_not_counted_as_identified(
+    seed_dedup, backfill_identities
+):
+    """`load_surfaced_exact_quad` filters `posting_identities` to `IDENTITY_ALGORITHM_VERSION`
+    (see its docstring), the same way `load_identities` does. Every OTHER fixture in this file
+    writes at the current version, so none of them can tell a filtered read apart from an
+    unfiltered one — deleting the clause leaves them all green. Job B's only `exact_quad` row is
+    downgraded to a retired version here; it must land in the unidentified bucket, not be
+    counted as a current identity that happens to still be on disk. Job A is seeded at the
+    current version alongside it so the test shows both sides.
+
+    This test intentionally does NOT cross-check against `_independent_reconstruction`: that
+    helper reads `exact_quad` rows without an `algorithm_version` filter at all, so it would
+    report job B's stale key as identified too — the very thing this test exists to catch.
+    """
+    seed = seed_dedup(count=2, identical=True)
+    backfill_identities(seed)
+    with seed.engine.connect() as conn:
+        anchors = job_anchors(conn, seed.posting_ids)
+    posting_a, posting_b = seed.posting_ids
+    job_a, job_b = anchors[posting_a], anchors[posting_b]
+    stale_version = "p6.1"
+    assert stale_version != IDENTITY_ALGORITHM_VERSION  # the fixture must actually be stale
+    with seed.engine.begin() as conn:
+        conn.execute(
+            update(posting_identities)
+            .where(
+                posting_identities.c.posting_id == posting_b,
+                posting_identities.c.kind == "exact_quad",
+            )
+            .values(algorithm_version=stale_version)
+        )
+        record_disposition(
+            conn, job_a, disposition="built", reason="lead_built",
+            policy_version="p1", now=seed.now,
+        )
+        record_disposition(
+            conn, job_b, disposition="built", reason="lead_built",
+            policy_version="p1", now=seed.now,
+        )
+    with seed.engine.connect() as conn:
+        rows = {r.job_id: r for r in load_surfaced_exact_quad(conn)}
+    assert rows[job_a].identity_key is not None
+    assert rows[job_b].identity_key is None
 
 
 def test_a_leak_that_regroup_later_reconciles_stops_appearing_twice(

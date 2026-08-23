@@ -28,6 +28,12 @@ moment a job first became a lead, so a job first surfaced 30 days ago that merel
 judgement call — the alternative (posting `first_seen_at`, or `decided_at`'s TTL-refresh
 timestamp) is defensible too; see the CLI docstring for what to confirm.
 
+`identities regroup` can also move this timestamp: when a merge's survivor job has no
+disposition row of its own, `store/regroup.py::_carry_dispositions` stamps its
+`first_decided_at` at the merge's `now` rather than the loser's original surfacing time
+(`core/ledger.py::plan_upsert`'s missing-row branch) — so window membership can depend on when
+`regroup` last ran, not only on when the job first reached leads.
+
 **Body-less/unidentified postings are their own bucket, never folded into either
 neighbour** (CLAUDE.md: folding a bucket into a neighbour is a defect). A job with no
 identified posting under it is `unidentified` and is excluded from both the numerator and
