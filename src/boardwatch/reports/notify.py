@@ -24,6 +24,7 @@ from boardwatch.rank.heuristic import ProfileView, passes_hard_filters, score_po
 from boardwatch.rank.leveling import load_leveling, resolve_schemes
 from boardwatch.rank.role_gate import role_verdict
 from boardwatch.rank.seniority_gate import TargetBand, seniority_verdict
+from boardwatch.store.param_chunks import id_chunks
 from boardwatch.store.queries import current_posting_versions
 from boardwatch.store.tables import companies, extractions, posting_events, postings
 
@@ -86,7 +87,7 @@ def select_new_matches(
     if not new_ids:
         return NotifyResult(items=(), since_event_id=since_event_id, max_event_id=max_event_id)
     version = load_taxonomy(settings.config_dir).version
-    rows = conn.execute(
+    base = (
         select(
             postings.c.id,
             postings.c.title,
@@ -108,8 +109,17 @@ def select_new_matches(
             & (extractions.c.engine_version == version),
         )
         .where(postings.c.status == "open")
-        .where(postings.c.id.in_(new_ids))
-    ).all()
+    )
+    # Chunked past SQLite's bound-parameter cap. `new_ids` is NOT bounded by one run: the
+    # cursor only advances when matches are delivered or when there are none, so on an install
+    # with no delivery channel configured (both default off) it stays at 0 and this set is the
+    # whole history of `new` events — 37,438 today. Concatenation is exact here: no GROUP BY or
+    # DISTINCT, and the ordering happens in Python after every chunk is read.
+    rows = [
+        row
+        for chunk in id_chunks(sorted(new_ids))
+        for row in conn.execute(base.where(postings.c.id.in_(chunk))).all()
+    ]
     versions = current_posting_versions(conn, list(new_ids))
     # Read-only: the live profile's (profile_hash, rules_hash) without running the lane.
     identity = current_identity(conn, settings)

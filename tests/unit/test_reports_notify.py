@@ -16,10 +16,11 @@ is the real mechanism, rather than a bare target-title mismatch.
 
 from __future__ import annotations
 
+import sqlite3
 from datetime import datetime
 from pathlib import Path
 
-from sqlalchemy import Engine, insert
+from sqlalchemy import Engine, insert, select
 
 from boardwatch.core.settings import Settings
 from boardwatch.eligibility.facts import Facts, Policy, facts_payload
@@ -29,7 +30,7 @@ from boardwatch.reports.notify import select_new_matches
 from boardwatch.store.db import ensure_schema, get_engine
 from boardwatch.store.events import append_event
 from boardwatch.store.queries import get_profile, insert_run, save_eligibility, save_profile
-from boardwatch.store.tables import companies, jobs, posting_versions, postings
+from boardwatch.store.tables import companies, jobs, posting_events, posting_versions, postings
 
 NOW = datetime(2026, 7, 30, 12, 0, 0)
 
@@ -287,3 +288,61 @@ def test_notify_ignores_the_band_when_the_profile_targets_any(tmp_path: Path) ->
         profile = profile_view_from_row(get_profile(conn))
         result = select_new_matches(conn, 0, profile, settings)
     assert [item.title for item in result.items] == ["Staff Software Engineer"]
+
+
+def test_select_new_matches_survives_more_new_ids_than_the_bound_parameter_cap(
+    tmp_path: Path,
+) -> None:
+    """`new_ids` is NOT bounded by one run, so it outgrows SQLite's parameter cap.
+
+    The notify cursor advances only when matches are delivered or when the window is empty, and
+    both delivery channels default off — so on an install with none configured it stays at 0
+    and this set becomes the whole history of `new` events. On the live store that is 37,438
+    posting ids against a cap of 32,766, measured 2026-08-23.
+
+    Seeds ONE id past the live cap rather than a comfortable batch: a smaller list passes
+    against the unchunked query and only moves the wall to a later date. Every seeded posting
+    but one is `closed`, so the bound list still exceeds the cap while only the single open row
+    reaches the scoring loop — the cap is on parameters, not on rows. That open posting is
+    given the HIGHEST id, so it lands in the last chunk and an implementation that kept only
+    the first chunk's rows would return nothing.
+    """
+    settings = _settings(tmp_path)
+    engine = _engine(settings)
+    _seed_profile(engine)
+    run_id = insert_run(engine)
+    cap = sqlite3.connect(":memory:").getlimit(sqlite3.SQLITE_LIMIT_VARIABLE_NUMBER)
+    filler = cap  # + the one open posting below => cap + 1 bound parameters
+    with engine.begin() as conn:
+        company_id = int(conn.execute(insert(companies).values(
+            name="acme", provider="greenhouse", slug="acme", source="user", watched=True,
+        )).inserted_primary_key[0])
+        # job_id looks nullable in tables.py but a DB trigger requires it, so one shared
+        # job row stands in — several postings sharing a job is a legal duplicate group, and
+        # notify never reads the grouping.
+        job_id = int(conn.execute(insert(jobs).values(created_at=NOW)).inserted_primary_key[0])
+        common = {
+            "company_id": company_id, "job_id": job_id,
+            "normalized_title": "software engineer",
+            "remote_policy": "unknown", "first_seen_at": NOW, "last_seen_at": NOW,
+            "consecutive_missing": 0, "body_text": PLAIN_BODY, "title": "Software Engineer",
+        }
+        conn.execute(insert(postings), [
+            {**common, "provider_posting_id": f"pp-{n}", "content_hash": f"h{n}",
+             "status": "closed"}
+            for n in range(filler)
+        ])
+        open_id = int(conn.execute(insert(postings).values(
+            **common, provider_posting_id="pp-open", content_hash="h-open", status="open",
+        )).inserted_primary_key[0])
+        all_ids = [int(row[0]) for row in conn.execute(select(postings.c.id)).all()]
+        assert len(all_ids) == filler + 1
+        assert open_id == max(all_ids), "the open posting must land in the LAST chunk"
+        conn.execute(insert(posting_events), [
+            {"posting_id": pid, "kind": "new", "run_id": run_id, "created_at": NOW}
+            for pid in all_ids
+        ])
+    with engine.connect() as conn:
+        profile = profile_view_from_row(get_profile(conn))
+        result = select_new_matches(conn, 0, profile, settings, now=NOW)
+    assert [item.posting_id for item in result.items] == [open_id]

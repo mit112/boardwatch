@@ -16,6 +16,7 @@ from sqlalchemy import (
     Connection,
     Engine,
     Row,
+    Select,
     func,
     insert,
     literal_column,
@@ -27,6 +28,7 @@ from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 
 from boardwatch.core.clock import utcnow
 from boardwatch.core.models import ResponseValidators
+from boardwatch.store.param_chunks import id_chunks
 from boardwatch.store.tables import (
     board_scans,
     companies,
@@ -455,16 +457,25 @@ def current_posting_versions(
         .join(postings, _pv.c.posting_id == postings.c.id)
         .where(~newer)
     )
+    def rows_of(selectable: Select[Any]) -> dict[int, CurrentVersion]:
+        return {
+            int(row.posting_id): CurrentVersion(
+                posting_version_id=int(row.posting_version_id),
+                posting_id=int(row.posting_id),
+                body_text=str(row.body_text),
+                captured_at=row.captured_at,
+            )
+            for row in conn.execute(selectable).all()
+        }
+
     if posting_ids is None:
-        stmt = stmt.where(postings.c.status == "open")
-    else:
-        stmt = stmt.where(postings.c.id.in_(posting_ids))
-    return {
-        int(row.posting_id): CurrentVersion(
-            posting_version_id=int(row.posting_version_id),
-            posting_id=int(row.posting_id),
-            body_text=str(row.body_text),
-            captured_at=row.captured_at,
-        )
-        for row in conn.execute(stmt).all()
-    }
+        return rows_of(stmt.where(postings.c.status == "open"))
+    # Chunked past SQLite's bound-parameter cap. `export` passes every open posting id UNION
+    # every tracked one, which crossed the cap at 32,771 open postings — the `None` branch
+    # above never had the problem, this one has been failing since. Chunk-and-merge is exact:
+    # `~newer` is correlated per posting and considers all of that posting's versions
+    # whatever the filter, so a posting's current version does not depend on its chunk.
+    out: dict[int, CurrentVersion] = {}
+    for chunk in id_chunks(list(posting_ids)):
+        out.update(rows_of(stmt.where(postings.c.id.in_(chunk))))
+    return out
