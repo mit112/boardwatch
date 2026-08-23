@@ -87,8 +87,24 @@ close to guaranteed for ~92 runs by ledger drain alone; the real threat is a **l
 re-serves built jobs and scores them 0 net-new. **B5 is UNSCOREABLE** until run-scoped rank attribution
 exists — do not score it on exit status alone.
 
-**RULINGS 1-4 ARE AUDITED, FIXED AND GATED on `feat/d293-precision-rulings` (D-294).** The branch arrived
-ungated, untested and unreviewed; it is now none of those. Rulings 1, 2 and 4 land as ruled — D-263's
+**RULINGS 1-4 ARE AUDITED, FIXED AND GATED on `feat/d293-precision-rulings` — PR #148, OPEN, NOT MERGED
+(D-294).** The branch arrived ungated, untested and unreviewed. `make check` is now green on it twice
+(7,470 passed, 0 failures, 6m58s, coverage 95.79%) and CI's `generalization`, `gitleaks` and `perf` pass.
+
+**THREE THINGS ARE OWED BEFORE MERGING, and none is optional:**
+1. **CI's test matrix (3.11/3.12/3.13) was still PENDING at session end.** Green `make check` is not green
+   CI. Check `gh pr checks 148` first.
+2. **The third review round was dispatched and KILLED at session end having produced nothing.** Rounds 1
+   and 2 each found a defect the previous round missed — round 2 found a CRITICAL one *introduced* by round
+   1's fix — so this branch has an unreviewed delta (`255d90e..50a1e3b`). Its scope is written into D-294
+   round 2; re-run it before merging rather than treating two rounds as enough.
+3. **One doc edit is owed and was deliberately NOT made**, to avoid ending the session the way it began —
+   with an ungated commit. The "weakest kind on the chain" relabel in `core/dedup.py` is provably sound
+   ONLY because `company_title_location`'s key components are a strict subset of `exact_quad`'s, which
+   makes the shared key transitive. **Enabling `cross_host` would break that proof** — its key uses the
+   normalized company NAME, not `company_id` — so a relabelled chain could point at a pair sharing no key
+   of its stamped kind. That is a second, previously unrecorded reason for the standing `cross_host`
+   deferral and belongs in `core/identity_kinds.py`'s catalog docstring. Rulings 1, 2 and 4 land as ruled — D-263's
 missing known-positive check was run and the gate loosens **nothing** (989 `uncertain -> not_swe`, 8
 `swe -> not_swe`, all 8 intended). **Ruling 3 was changed on a measurement and the owner approved the
 change:** as ruled it hid **269** lead-reachable software postings of which only **103** were real repeats,
@@ -120,10 +136,9 @@ call and is now informed on both sides (D-293, D-294).
 
 ## Next action
 
-**Merge `feat/d293-precision-rulings`, then build Part 4.** The branch is green under `make check` and
-carries D-294. Nothing on it is armed by config — the role and dedup changes take effect on the next tick
-the moment it is on `main`, so merge deliberately rather than mid-tick (`launchctl print
-gui/$(id -u)/com.boardwatch.run | grep state`), and the tick at 17:00 is the first that would run it.
+**Clear the three items above, then merge PR #148, then build Part 4.** Nothing on the branch is armed by
+config — the role and dedup changes take effect on the FIRST TICK after merge, so merge deliberately
+between ticks (`launchctl print gui/$(id -u)/com.boardwatch.run | grep state`), never during one.
 
 **Build Part 4.** Both halves are probed and ruled (D-290, D-291); neither is built. Order is 1→2→3→4→6
 with Part 5 anytime; 1–3 are merged. Build the **GitHub-lists client first** — it needs no new provider code
