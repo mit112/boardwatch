@@ -12,8 +12,14 @@ from pathlib import Path
 import pytest
 from alembic import command
 from alembic.config import Config
-from sqlalchemy import create_engine, text
+from sqlalchemy import create_engine, func, select, text
 from sqlalchemy.exc import IntegrityError, OperationalError
+
+from boardwatch.core.models import BoardSnapshot, RawPosting
+from boardwatch.scan.apply import apply_board
+from boardwatch.store.db import ensure_schema, get_engine
+from boardwatch.store.queries import insert_run, upsert_lane_company
+from boardwatch.store.tables import board_scans, companies, postings
 
 BASE = "p_board_coverage"  # the head this revision stacks on
 HEAD = "p_lane_companies"
@@ -118,14 +124,11 @@ def test_lane_source_and_scan_kind_round_trip(tmp_path: Path) -> None:
     for slug, row in legacy.items():
         assert after_down[slug] == row, f"{slug} changed across the round trip"
 
-    # The lane company is RELABELLED, not deleted: the narrowed CHECK cannot express 'lane', so
-    # a rollback necessarily loses that label — but losing a label is the honest cost of a
-    # downgrade, and destroying the postings hanging off it is not. See the migration's own
-    # comment; `test_downgrade_does_not_orphan_a_lane_companys_postings` is what pins it.
-    assert after_down["slug-lane"][5] == "registry"
-    # Both scan rows survive. Once `scan_kind` is dropped a lane row is indistinguishable from a
-    # board row by construction, so deleting it would throw away run history to fix a bug the
-    # downgraded schema still has.
+    # the lane company is RELABELLED, not deleted — the narrowed schema cannot hold the label,
+    # but it holds the company, and `postings.company_id` points at it
+    assert after_down["slug-lane"][5] == "registry"  # source, index 5 with id prepended
+    # and both scan rows survive: after the column is dropped a lane row is indistinguishable
+    # from a board row by construction, which is the state being rolled back to
     with engine.connect() as conn:
         assert conn.execute(text("SELECT count(*) FROM board_scans")).scalar_one() == 2
 
@@ -135,53 +138,68 @@ def test_lane_source_and_scan_kind_round_trip(tmp_path: Path) -> None:
         assert _company_snapshot(engine)[slug] == row
 
 
-def test_downgrade_does_not_orphan_a_lane_companys_postings(tmp_path: Path) -> None:
-    """A lane company with postings must survive the rollback with its postings attached.
+def test_downgrade_keeps_a_lane_companys_postings(tmp_path: Path) -> None:
+    """The rollback must not take the lane's POSTINGS down with the lane's companies.
 
-    This is the case the round-trip above cannot see, because it never inserts a posting — and
-    a lane whose whole purpose is to store postings under companies it discovered will always
-    have some. `postings.company_id` is a foreign key to `companies.id`, so an earlier
-    `DELETE FROM companies WHERE source = 'lane'` orphaned every one of them.
+    `postings.company_id` is a foreign key to `companies.id`, and postings under lane-discovered
+    companies are the entire yield of a lane run. Alembic builds its own engine, so `store/db.py`'s
+    `PRAGMA foreign_keys=ON` connect listener never fires for a migration (D-269) — measured here:
+    a `DELETE FROM companies WHERE source = 'lane'` raises nothing and leaves every posting
+    pointing at an id that no longer exists. Silent orphaning, which nothing reports.
 
-    It would not even have failed loudly. Alembic runs through an engine it builds itself, so
-    `store/db.py`'s `PRAGMA foreign_keys=ON` connect listener never fires — the same seam D-269
-    records for WAL — and the delete succeeded silently. `PRAGMA foreign_key_check` is asserted
-    here rather than a row count, because that is the check that distinguishes "the rows are
-    still there" from "the rows are still there and still point at something".
+    Seeded through the real `apply_board` rather than by hand, so the `jobs`, `posting_versions`,
+    `posting_version_sources`, `posting_events` and `posting_identities` rows a lane run actually
+    leaves behind are all present and all in the blast radius.
     """
-    db = tmp_path / "orphan.db"
-    engine = create_engine(f"sqlite:///{db}")
-    cfg = _cfg(f"sqlite:///{db}")
+    data_dir = tmp_path / "data"
+    engine = get_engine(data_dir)
+    ensure_schema(engine)
+    cfg = _cfg(f"sqlite:///{data_dir / 'boardwatch.db'}")
 
-    command.upgrade(cfg, HEAD)
-    _insert_company(engine, slug="lane-co", source="lane")
     with engine.begin() as conn:
-        company_id = conn.execute(
-            text("SELECT id FROM companies WHERE slug = 'lane-co'")
-        ).scalar_one()
-        job_id = conn.execute(
-            text("INSERT INTO jobs (created_at) VALUES ('2026-08-23 00:00:00') RETURNING id")
-        ).scalar_one()
-        conn.execute(
-            text(
-                "INSERT INTO postings (company_id, job_id, provider_posting_id, title, "
-                "normalized_title, first_seen_at, last_seen_at, status, consecutive_missing, "
-                "content_hash, body_text, remote_policy) VALUES (:c, :j, 'p-1', 'Engineer', "
-                "'engineer', '2026-08-23 00:00:00', '2026-08-23 00:00:00', 'open', 0, 'h', "
-                "'A job.', 'unknown')"
-            ),
-            {"c": company_id, "j": job_id},
+        upsert_lane_company(conn, provider="hiringcafe", slug="greenhouse:acme", name="Acme")
+        company_id = int(
+            conn.execute(
+                select(companies.c.id).where(companies.c.slug == "greenhouse:acme")
+            ).scalar_one()
         )
+    run_id = insert_run(engine)
+    apply_board(
+        engine,
+        BoardSnapshot(
+            status="partial",
+            url="https://hiringcafe.example/",
+            postings=[
+                RawPosting(
+                    provider_posting_id="hc-1", title="Software Engineer",
+                    url="https://boards.greenhouse.io/acme/jobs/1", locations=["Boston, MA"],
+                    body_text="Requirements: build things.", raw_json={},
+                )
+            ],
+        ),
+        company_id,
+        run_id,
+        scan_kind="lane",
+    )
+    with engine.connect() as conn:
+        assert conn.execute(select(func.count()).select_from(postings)).scalar_one() == 1
 
     command.downgrade(cfg, BASE)
 
     with engine.connect() as conn:
-        assert conn.execute(text("PRAGMA foreign_key_check")).all() == [], (
-            "downgrade left a posting pointing at a company row that no longer exists"
-        )
-        assert conn.execute(text("SELECT count(*) FROM postings")).scalar_one() == 1
-        row = conn.execute(
-            text("SELECT source FROM companies WHERE slug = 'lane-co'")
-        ).one_or_none()
-        assert row is not None, "the lane company was deleted rather than relabelled"
-        assert row.source == "registry"
+        orphans = conn.execute(
+            text(
+                "SELECT p.id FROM postings p LEFT JOIN companies c ON c.id = p.company_id "
+                "WHERE c.id IS NULL"
+            )
+        ).all()
+        assert orphans == [], "the downgrade orphaned postings under a deleted company"
+        assert conn.execute(select(func.count()).select_from(postings)).scalar_one() == 1
+        # The narrowed schema cannot EXPRESS lane provenance, so the label is necessarily lost.
+        # Losing the label is inherent to the rollback; losing the postings is not.
+        assert conn.execute(
+            select(companies.c.source).where(companies.c.id == company_id)
+        ).scalar_one() == "registry"
+        # Run history survives too: after the column is dropped a lane row is indistinguishable
+        # from a board row by construction, which is precisely the state being rolled back to.
+        assert conn.execute(select(func.count()).select_from(board_scans)).scalar_one() == 1
