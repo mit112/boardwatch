@@ -8,6 +8,42 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- **Lane groundwork — the persistence and attribution guarantees a JD-acquisition lane needs.** A lane is
+  not a seventh ATS provider. It returns the same `BoardSnapshot` a provider returns and goes through the
+  existing `apply_board`, so it inherits every persistence invariant instead of restating them.
+
+  `lane_snapshot()` is the only sanctioned way to build one, and it makes `status="complete"`
+  **unexpressible**. That is load-bearing rather than cautious: a snapshot may carry an empty `complete`,
+  which marks every open posting of that company missing and closes them after two consecutive scans. A lane
+  never enumerates a whole board, so it can never make that claim truthfully. `listed_ids` stays empty and
+  the four board-coverage fields stay `None` for the same reason — a ratio that cannot fail is worse than no
+  ratio.
+
+- **A per-run cap on the companies a lane may add**, defaulting to 10, with every refusal recorded **by
+  name**. Adding a company's whole board is breadth, and breadth multiplies whatever sits downstream of it.
+  A company dropped silently is indistinguishable from one the lane never saw, and that difference is the
+  entire diagnostic value.
+
+- **Per-source stub attribution.** A stub is an open posting with an empty JD body. The existing count was
+  corpus-wide with no source filter, so a new source's stub rate would move the global number with nothing
+  naming the source. `SourceOutcome` now carries a `stubs` field that is instrumented — it reports a measured
+  0 rather than `None` or an absent key, because an absent key would read as "not measured". Note that the
+  field does not yet reach either persisted artifact; surfacing it needs a funnel schema-version bump that is
+  deliberately deferred.
+
+- **`parse_posting_target` — recovering the posting reference a board URL carries.** Board-target parsing
+  returned `(provider, slug)` and discarded the rest of the path, so nothing could turn a posting link back
+  into a posting identifier. The new helper reuses that parsing for the provider and slug, then extracts the
+  reference, and raises a typed `UnresolvablePostingURL` where a provider's public-URL contract is not
+  evidenced in this repository rather than guessing one.
+
+  Two providers refuse today, and both refusals are deliberate. Workday's detail endpoint needs an
+  `externalPath` path-string rather than an id, and the mapping from its public URL form is verified nowhere
+  here. SmartRecruiters refuses because its pinned fixture's URL values are synthetic by the fixture's own
+  documentation and happen to mirror a constructed fallback, while its real posting URLs combine the id and
+  a title slug in a single path segment — so the obvious extraction would silently return the wrong
+  reference for the one provider where it would actually be used. Each needs a single live probe to close.
+
 - **`boardwatch identities leakage` — Gate P6's duplicate-leakage clause becomes readable.** The gate
   asks for duplicate leakage over 7 days at or under 5%; nothing could report it. The new command
   answers it over a configurable window (`--days`, default 7, plus `--json`).

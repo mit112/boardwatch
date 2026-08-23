@@ -1,0 +1,74 @@
+"""The Lane protocol (JD-acquisition spec §4.1, §4.2).
+
+A lane is NOT a seventh Provider, for two verified reasons: the provider registry test
+asserts set EQUALITY against the six names, and fixture rule R13 requires a flat pinned
+fixture dir per registered provider in both directions. A lane also does not fit the
+protocol — `Provider` declares board_url / fetch_board / healthcheck and no fetch_posting,
+and `registry` duck-types five further undeclared members.
+
+What a lane does instead is return the same `BoardSnapshot` that a provider returns, so it
+reuses `scan.apply.apply_board` and inherits every persistence invariant rather than
+restating them.
+"""
+
+from __future__ import annotations
+
+from dataclasses import dataclass
+from typing import Protocol
+
+from boardwatch.core.models import BoardSnapshot, RawPosting
+from boardwatch.core.politeness import Fetcher
+from boardwatch.lanes.outcomes import AcquisitionTally
+
+
+def lane_snapshot(postings: list[RawPosting], url: str) -> BoardSnapshot:
+    """The only sanctioned way to build a lane's snapshot. Always `partial`.
+
+    `partial` rather than `complete` is load-bearing, not conservative: `_process_missing`
+    runs on `complete` only, and `BoardSnapshot` permits an EMPTY `complete`, which sets
+    `effective = frozenset()` and marks every open posting of that company missing — two
+    consecutive such scans close them all (`CLOSE_AFTER_MISSES = 2`). A lane never
+    enumerates a whole board, so it can never make that claim truthfully.
+
+    `listed_ids` stays empty for the same reason. `_reset_listed_but_unrefreshed` returns
+    immediately on an empty set, which is the correct behaviour here; a non-empty set would
+    assert an enumeration the lane did not perform.
+
+    The coverage fields stay None. `board_reported_total` must never be backfilled from
+    `len(postings)` — D-271 records that an unfailable ratio is worse than no ratio.
+    """
+    return BoardSnapshot(status="partial", postings=postings, url=url)
+
+
+@dataclass(frozen=True)
+class LaneCompanySnapshot:
+    """One company's postings from this lane, keyed the way `apply_board` can be reached.
+
+    `apply_board(engine, snapshot, company_id, run_id)` takes a `company_id`, and the only
+    route to one is `(provider, slug)` — `companies` is UNIQUE(provider, slug), which is
+    what `queries.upsert_watch` and `queries.get_watched_companies` both key on. A display
+    name cannot get there, so grouping a lane's postings by name is the wrong granularity
+    twice over: an employer with two boards yields ONE name-grouped snapshot, which applied
+    against one `company_id` writes the other board's postings under the wrong company,
+    where they can never converge and close after two misses; and one employer whose name
+    varies across aggregator listings yields several snapshots for one row.
+
+    This is the same identity `admission.CompanyBudget` charges against, and the same pair
+    `dereference.parse_posting_target` already recovers from a posting URL.
+    """
+
+    provider: str
+    slug: str
+    snapshot: BoardSnapshot
+
+
+@dataclass(frozen=True)
+class LaneResult:
+    snapshots: tuple[LaneCompanySnapshot, ...]
+    tally: AcquisitionTally
+
+
+class Lane(Protocol):
+    name: str
+
+    def collect(self, fetcher: Fetcher) -> LaneResult: ...

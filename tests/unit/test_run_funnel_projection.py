@@ -168,6 +168,7 @@ def funnel(
                 eligible=100,
                 leads=tailored_artifacts.rows,
                 applied=0,
+                stubs=0,
             )
         ],
         marked_applied=0,
