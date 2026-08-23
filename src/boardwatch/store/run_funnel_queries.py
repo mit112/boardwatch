@@ -163,6 +163,32 @@ def count_stub_postings(conn: Connection) -> int:
     )
 
 
+def count_stub_postings_by_company(conn: Connection) -> dict[int, int]:
+    """Open stub postings per company — the per-source numerator (spec §4.4).
+
+    Sources ARE company_id in this schema (see SourceOutcome's docstring), so a per-company
+    count is a per-source count. Every company with an open posting appears, at 0 if it has
+    no stubs: this counter is instrumented, so 0 is a measurement, and an absent key would
+    read as "not measured" — the distinction D-022/D-023 record as nearly having cost
+    job-apps a working adapter.
+
+    The two-arg `trim` names the strip set explicitly, exactly as `count_stub_postings`
+    does: SQLite's one-arg `trim` removes spaces ONLY, so a body of tabs or newlines would
+    otherwise pass as non-empty.
+    """
+    rows = conn.execute(
+        select(
+            postings.c.company_id,
+            func.sum(
+                case((func.trim(postings.c.body_text, " \t\n\r\f\v") == "", 1), else_=0)
+            ),
+        )
+        .where(postings.c.status == "open")
+        .group_by(postings.c.company_id)
+    ).all()
+    return {int(company_id): int(stubs or 0) for company_id, stubs in rows}
+
+
 def count_corpus(
     conn: Connection,
     *,
@@ -403,6 +429,11 @@ class SourceOutcome:
     arrived second" — the naive attribution D-022/D-023 record as having nearly cost
     job-apps a working adapter. It becomes measurable when an aggregator posting can be
     dereferenced to exact requisition evidence.
+
+    **`stubs` is instrumented and reports 0, unlike `assisted`, which reports `None`
+    because no mechanism could count one** — that distinction is the whole point of the
+    field: an open posting with an empty body is directly countable per company, so a
+    company with none gets a measured 0, never an absence.
     """
 
     provider: str
@@ -412,6 +443,7 @@ class SourceOutcome:
     eligible: int
     leads: int
     applied: int
+    stubs: int
     unique: int | None = None
     assisted: int | None = None
 
@@ -455,6 +487,10 @@ def count_by_source(
             .group_by(postings.c.company_id)
         ).all()
     }
+
+    # Same open-posting universe as open_by_company, so every key here is already a key
+    # there — no separate entry in the company_ids union is needed for this sweep.
+    stub_by_company = count_stub_postings_by_company(conn)
 
     eligible_by_company: dict[int, int] = {}
     if identity is not None:
@@ -559,6 +595,7 @@ def count_by_source(
             eligible=int(eligible_by_company.get(company_id, 0)),
             leads=int(leads_by_company.get(company_id, 0)),
             applied=int(applied_by_company.get(company_id, 0)),
+            stubs=int(stub_by_company.get(company_id, 0)),
             unique=unique_by_company.get(company_id, 0) if complete else None,
             # `assisted` stays not-instrumented: no suppressing kind in this slice can cross
             # a source boundary, so 0 would be a structural zero dressed as a measurement.
