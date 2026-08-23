@@ -13,6 +13,7 @@ restating them.
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Protocol
 
@@ -68,7 +69,26 @@ class LaneResult:
     tally: AcquisitionTally
 
 
+# (provider, slug) -> may this lane spend requests on that company. The runner supplies it:
+# the decision needs a store connection to tell an already-known company from a new one, and
+# `admission.CompanyBudget` says in its own docstring that it cannot make that call.
+CompanyAdmission = Callable[[str, str], bool]
+
+
 class Lane(Protocol):
     name: str
 
-    def collect(self, fetcher: Fetcher) -> LaneResult: ...
+    def collect(self, fetcher: Fetcher, admits: CompanyAdmission) -> LaneResult:
+        """Collect this lane's postings, asking `admits` before spending on a company.
+
+        `admits` MUST be called exactly once per distinct `(provider, slug)`, never once per
+        posting. The per-run cap counts companies, so a per-posting call would charge one
+        employer's four listings against four slots; and the answer is a property of the
+        company, so re-asking cannot change it, only make the refusal report lie.
+
+        The call also has to come BEFORE the bodies are fetched, which is why the predicate
+        is passed in rather than applied to the result: a body costs one request per posting,
+        so a runner that filters a finished `LaneResult` has already paid for everything it
+        is about to discard.
+        """
+        ...
