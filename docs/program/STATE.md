@@ -26,8 +26,10 @@ once. Fixed and merged (D-287). The launchd job now fires **eight times a day** 
 any absolute comparison against that number is void. The gate counts consecutive clean **ticks**, not
 launchd invocations.
 
-**GATE P3 IS 1 OF 7. Run 71 (2026-08-23 11:00) is the first clean scheduled tick on the fixed tree** —
-exit 0, 22m47s, 135 board scans, funnel-71 written, 40 leads. Its `errors_json` carries the same 13 known
+**GATE P3 IS 2 OF 7.** Run 71 (11:00) was the first clean scheduled tick on the fixed tree — exit 0,
+22m47s, 135 board scans, funnel-71 written, 40 leads. **Run 72 (14:00) is the second** — `runs.status='ok'`,
+19:00:05-19:20:04 UTC (19m59s), funnel-72 written at 14:20 local, confirmed through both the artifact and
+the `runs` row rather than launchd's self-report alone. Its `errors_json` carries the same 13 known
 board failures run 70 had **minus** the `too many SQL variables` abort, which is the before/after on one
 corpus. A failed unattended run RESETS the streak rather than pausing it, and **Gate P4 is barred until P3
 is met**. Only a SCHEDULED tick counts — a manual `run --project` moves nothing. At 8 fires a day the
@@ -85,28 +87,43 @@ close to guaranteed for ~92 runs by ledger drain alone; the real threat is a **l
 re-serves built jobs and scores them 0 net-new. **B5 is UNSCOREABLE** until run-scoped rank attribution
 exists — do not score it on exit status alone.
 
-**`DEFAULT_TOP_N` is 10 — LOWERED from 40 (D-293) as a HOLDING value, and the uncapped set was MEASURED with the real ranker (D-292).**
-`boardwatch top 5000 --no-record` on a snapshot returns **3,771** postings, arriving at **~220-430/day**.
-But **67.6% of them are `role=uncertain`** — the role gate abstaining, not confirming — so the honest
-confirmed-software, in-band arrival is only **~70/day**, the same order as job-apps' delivered 20-60.
-**Quote neither number without saying which population it counts; they differ by 4x.**
+**RULINGS 1-4 ARE AUDITED, FIXED AND GATED on `feat/d293-precision-rulings` (D-294).** The branch arrived
+ungated, untested and unreviewed; it is now none of those. Rulings 1, 2 and 4 land as ruled — D-263's
+missing known-positive check was run and the gate loosens **nothing** (989 `uncertain -> not_swe`, 8
+`swe -> not_swe`, all 8 intended). **Ruling 3 was changed on a measurement and the owner approved the
+change:** as ruled it hid **269** lead-reachable software postings of which only **103** were real repeats,
+so a suppression on `company_title_location` now also requires the two job descriptions to be **>= 0.90
+similar**. That keeps all three duplicates that actually built two résumés (0.943/0.967/0.998) and spares a
+Stripe pair at 0.740 that turned out to be two different teams. 269 -> **78**.
 
-**THE CAP IS 10 UNTIL THE PRECISION WORK LANDS (D-293). Do not raise it before then, and do NOT set it to
-0** — 0 fails B1 (>= 10 net-new leads/day) outright and would stall the provisional pass while Gate P3's
-counter kept running. At 8 fires/day, 10 is 80 résumés/day; 40 was **320**. D-272 justified 40 as matching
-job-apps' median of 42 **a day**, which the 8x cadence silently made false. The cap sets **burn rate, not
-supply**: every run yields net-new only because it draws a standing backlog of ~1,843, and long-run output
-equals the arrival rate (~122/day) whatever the cap is.
+**Three defects were fixed that no measurement against today's corpus could have found**, because the
+titles do not exist in it yet and Part 4's breadth is what supplies them. The worst: the branch added the
+first deny stage that runs BEFORE the software rescue, which is reachable by *every* software title, and it
+vetoed `SRE`/`DevOps`/`Backend`/`Frontend`/`Full Stack Team Leader` — all `swe` on `main`. That stage is
+deleted; the real bug was the bare `front end` token rescuing a store checkout area, and it is fixed at the
+rescue. **The lesson worth keeping: a corpus-absence argument is not a safety argument.**
 
-**Mit wants no cap eventually, and the measurement says fix the role gate FIRST.** Uncapped output is 3,771 rows of
-which 2,550 are role-unknown — job-apps' 465-item queue that nobody worked through. Mit's own standing
-ruling already says **fix precision, never tune the cap**; the 2,550 unknowns are the whole gap between
-300/day and 70/day, so they are the lever. **The cap decision itself is deferred to Mit and is now
-informed.**
+**The precision work is a PREREQUISITE for raising the cap, not a yield gain.** Measured against delivered
+output rather than the corpus: 6 of the 146 résumés ever built were for roles the new gate rejects, and
+exactly **1 of run 71's 40 leads** would have been denied. D-292's "51.1% carries no software signal" is a
+property of the *uncapped* 3,771 — the ranker already sorts most of it below the cap.
+
+**`DEFAULT_TOP_N` is 10 — a HOLDING value until the precision work lands (D-293), and the uncapped set was
+MEASURED, not estimated (D-292): 3,771 postings arriving ~220-430/day, of which 67.6% are `role=uncertain`,
+so honest confirmed-software arrival is ~70/day. Quote neither figure without naming its population —
+they differ by 4x.** Do **not** raise the cap before the precision work is merged, and do **not** set it to
+0: that fails B1 (>= 10 net-new leads/day) outright while Gate P3's counter keeps running. The cap sets
+**burn rate, not supply** — long-run output equals the arrival rate whatever it is. Lifting it is Mit's
+call and is now informed on both sides (D-293, D-294).
 
 ---
 
 ## Next action
+
+**Merge `feat/d293-precision-rulings`, then build Part 4.** The branch is green under `make check` and
+carries D-294. Nothing on it is armed by config — the role and dedup changes take effect on the next tick
+the moment it is on `main`, so merge deliberately rather than mid-tick (`launchctl print
+gui/$(id -u)/com.boardwatch.run | grep state`), and the tick at 17:00 is the first that would run it.
 
 **Build Part 4.** Both halves are probed and ruled (D-290, D-291); neither is built. Order is 1→2→3→4→6
 with Part 5 anytime; 1–3 are merged. Build the **GitHub-lists client first** — it needs no new provider code
@@ -141,6 +158,13 @@ does not exist, and 4 of the 6 GitHub repos ship no licence at all.
 6. **P2 item 8 — the onboarding field-taxonomy gatherer.** Needs its own brainstorm; D-054 forbids us
    authoring non-tech field content.
 7. **`add-evidence` takes no bundle lock** (D-143) — raise before two authoring agents run against one bundle.
+8. **Extending the leakage query past `exact_quad`** — the Gate P6 clause cannot fail for the
+   `company_title_location` class (D-294). Fixing it reverses D-132/D-283's ratified "only `exact_quad`
+   counts" **while the gate is being measured**, which is why it was raised and not taken. One join
+   condition, `store/identity_queries.py:296`.
+9. **A per-kind `hidden_duplicate` breakdown** — one funnel number now mixes identical-body and
+   same-role-and-place evidence, so the risk the owner accepted on ruling 3 is not separately countable.
+   Additive funnel field ⇒ owes an `ARTIFACT_VERSION` bump, which is the same shipped-schema call as item 4.
 
 ---
 
@@ -166,7 +190,7 @@ records it and the run still does not fail. Clearance IS a blocker (D-257). Seni
 | P0 Instrumentation | **COMPLETE** | **MET** (D-030) |
 | P1 Résumé artifact gate | **COMPLETE** | **MET** (D-032/033) |
 | P2 Profile + keystone | items 1–7 shipped; item 8 NOT STARTED | **MET AS RECONCILED** (D-075) |
-| P3 Unattended one command | **COMPLETE, INSTALLED, FIRING** — runs 63 and 66 were genuine scheduled ticks (D-254) | **NOT MET — 0 of 7 unattended.** Streak reset by run 68's failed tick (D-276) |
+| P3 Unattended one command | **COMPLETE, INSTALLED, FIRING** at ~3h (D-288) | **NOT MET — 2 of 7 unattended.** Runs 71 and 72 both clean on the fixed tree (2026-08-23 11:00 and 14:00). Next tick 17:00; 5 more ticks is ~15 hours |
 | P4 Craft gate | **COMPLETE** | **NOT MET** — the owner's blind craft review, barred until P3's gate |
 | P5 Eligibility decides | **COMPLETE** | **MET** — INELIGIBLE precision 16/16, 0 span violations |
 | P6 Liveness + dedup | **BUILD COMPLETE** (D-110/111/113); leakage report shipped (D-283) | **3 of 4** — liveness MET (D-281), leakage measurable and reading **0.00%** but needs a 7-day ledger span (~2026-08-26) |
@@ -178,7 +202,7 @@ records it and the run still does not fail. Clearance IS a blocker (D-257). Seni
 
 | Clause | Standing |
 |---|---|
-| Duplicate leakage over 7 days ≤ 5% | **MEASURABLE AND PASSING, awaiting span (D-283).** `boardwatch identities leakage [--days N] [--json]` ships. **Live: 100 surfaced jobs / 100 distinct `exact_quad` groups / 0 redundant = 0.00%.** Only `exact_quad` counts (Mit's ruling, ratified); counted over jobs that REACHED LEADS, not the corpus; body-less jobs sit in their own `unidentified` bucket, never folded. **Not yet "over 7 days"** — the ledger starts 2026-08-19 so ~3.2 days exist, and the 7-day `seen` TTL cannot be observed faster than itself. First true window **~2026-08-26**, inside Parts 2–4, so off the critical path |
+| Duplicate leakage over 7 days ≤ 5% | **STILL CANNOT FAIL FOR ONE CLASS — see D-294 before quoting it.** `identity_queries.py:296` hardcodes `kind == "exact_quad"`, so a job whose only identity is `company_title_location` lands in `unidentified` and can never be counted redundant. Ruling 3 stopped those duplicates reaching leads but did NOT extend this metric, so it reads 0.00% for a structural reason. Measured honestly over the 146 delivered résumés (grouping by company+title+location) the real figure is **3 redundant = 2.05%** — under the bar, not zero. Extending the query reverses D-132/D-283 mid-gate and is the owner's. Original standing: **measurable, awaiting span (D-283).** `boardwatch identities leakage [--days N] [--json]` ships. **Live: 100 surfaced jobs / 100 distinct `exact_quad` groups / 0 redundant = 0.00%.** Only `exact_quad` counts (Mit's ruling, ratified); counted over jobs that REACHED LEADS, not the corpus; body-less jobs sit in their own `unidentified` bucket, never folded. **Not yet "over 7 days"** — the ledger starts 2026-08-19 so ~3.2 days exist, and the 7-day `seen` TTL cannot be observed faster than itself. First true window **~2026-08-26**, inside Parts 2–4, so off the critical path |
 | **0** dead postings reaching leads | **MET (D-281).** Two runs on a scratch store copy: `checked 40, dead 0, unknown 2, alive 38, gone_after_redirect 0`, identical in both, agreeing across three read paths (funnel JSON, funnel markdown, stdout). Detector demonstrably ARMED — `checked > 0`, so not the disarmed 0/0 signature. The `runs` table has no liveness columns, so no DB-row path exists; those three are all there are |
 | Injected hash-collision test | **MET** (D-100) |
 | Audit of 20 sampled suppressions | **MET** (D-101) |
@@ -194,7 +218,7 @@ records it and the run still does not fail. Clearance IS a blocker (D-257). Seni
 | **Citi sits at 13.1% coverage, permanently** | Workday's `total` censors at 2,000; the facet sum (uncapped, control-verified) says 4,589. Our pager wraps at ~2,000 too, so post-drain Citi holds ~2,214 of 4,589 and nothing reports it | **Mit** (input-side) |
 | **Five boards report GREEN and return zero, ever** | Snyk, Vercel, HubSpot, Plaid, Qualcomm — clean scans, `last_health='empty'`, 0 postings across 12 scans. 7 of the 12 dead boards are HTTP 422 (malformed request ⇒ probably wrong slugs, recoverable). No backoff, no quarantine, no drain | **Mit** (input-side) |
 | **`unchanged` is an unaudited coverage assumption** | 59 of 135 boards listed nothing in run 67 on a payload hash. No test exists for a hash misreporting a changed board. A false `unchanged` is silent, permanent and undetectable by any current instrument | open |
-| **`top`'s drain flags break in ~2 DAYS** | with `--include-hard-filter` / `--include-non-swe` / `--include-over-seniority` open — D-277's ONLY drain for a `hidden_hard_filter` that is 59% of the corpus — `eligible_ids` is **30,419** measured against a cap of 32,766: **2,528** postings of headroom at ~**1,264/day** net growth. Runs exit 0 today. The scheduled tick stays safe (~3,683). Chunk `identity_queries.py:45/97`, `regroup.py:52/88`, `ledger_queries.py:48`, and `reopen_jobs:148` which needs a SUMMED rowcount (D-288) | **IMMEDIATE next task** |
+| ~~`top`'s drain flags break in ~2 days~~ | **CLOSED by #145** (D-289): all six corpus-sized `IN` lists chunk through `store/param_chunks.id_chunks`, three merge shapes each mutation-tested, including `reopen_jobs`' summed rowcount | done |
 | **No external missed-window alarm** | nothing outside a run can detect a missed 08:00; the funnel heartbeat is only written from inside `runner.py` | P3 |
 | **`resume.yaml` is an IMPORT SOURCE, never hand-fixed** | D-155. Mit pins `resume_max_pages=1`; never advise 2 | Mit |
 | **`boardwatch top` advances the queue by default** | records `seen` unless `--no-record`; relevant to Gate P6's clean window | P6 |

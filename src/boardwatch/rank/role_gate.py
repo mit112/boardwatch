@@ -19,12 +19,12 @@ Evaluating TITLE_SWE_RESCUE first fixes all 16 at zero measured precision cost a
 runs 2.3x faster (0.30s vs 0.71s over a 19,262-posting rank), because a software
 title short-circuits before any deny pattern is tried:
 
-    pre-rescue denies -> rescue -> hard denies -> soft denies (only if no software
-    signal) -> signal -> uncertain
+    rescue -> hard denies -> soft denies (only if no software signal) -> signal -> uncertain
 
-The one stage that runs BEFORE the rescue holds a single measured exception and is
-documented at `_DENY_PRE_RESCUE`; it exists because a rescue token can be a false
-positive, and when it is, no later stage can reach the title.
+Nothing runs before the rescue. When a rescue token turns out to be a false positive the
+fix belongs in the RESCUE, not in a stage that outranks it: a pre-rescue deny is reachable
+by every software title, so it trades one measured false rescue for an unbounded number of
+false vetoes (D-294).
 
 `uncertain` passes through to scoring unchanged. That pass-through is why the gate
 retains 100% of the protected population (software-titled postings whose skills the
@@ -56,39 +56,18 @@ RoleVerdict = Literal["swe", "not_swe", "uncertain"]
 # left. Used where a trailing `(?!...)` guard would be blind in the wrong direction.
 _NOENG = r"^(?!.*\b(?:engineer|engineering|developer|architect|programmer|swe|sde|sdet)\b).*"
 
-# Owner ruling 2 (D-294): `Team Leader` is denied BEFORE the rescue, and it is the only
-# member of this lane.
-#
-# Every other deny in this module runs after `_TITLE_SWE_RESCUE`, because a software-first
-# title must never meet a deny pattern (see the ordering note above). `Team Leader` is the
-# one measured exception, and the measurement is what forced it: of 380 live titles carrying
-# the phrase, **five** are classified `swe` today and all five are the same retail row --
-# "Executive Team Leader Service & Engagement (Assistant Manager Front End)", rescued because
-# a store's checkout area is called the FRONT END. Four of them reached the uncapped
-# shortlist, and they are the entire "software" yield of the retailer that contributes 11% of
-# it. A soft or hard deny cannot reach them; only a pre-rescue one can, which is what
-# "block it outright" has to mean.
-#
-# `_NOENG` still guards it, so a real "Engineering Team Leader" or "Software Team Leader" is
-# spared -- the same multi-tenant form the manager/director/lead denies use. Measured cost of
-# the guard on the live corpus: it spares exactly one title, "EI Solution Architect and Team
-# Leader", which the business lane already denies. Of the 379 it does catch, **zero** carry
-# any engineering sense, so the borderline case the earlier deferral was protecting does not
-# exist in this corpus.
-#
-# Adding a second member to this lane needs the same evidence: a title family with a MEASURED
-# false rescue, not merely one that is unwanted. Everything else belongs in the soft lane.
-# `_NOENG` plus `software`: this lane runs before the rescue, so unlike every other
-# `_NOENG` pattern it cannot rely on the rescue to spare "Software Team Leader". The extra
-# token is NOT added to `_NOENG` itself -- "Software Sales" is still sales.
-_PRE_RESCUE_GUARD = (
-    r"^(?!.*\b(?:software|engineer|engineering|developer|architect|programmer|swe|sde|sdet)"
-    r"\b).*"
+# Like `_NOENG`, but spares the software SURFACE words that are not signals on their own.
+# `_NOENG` is enough for a deny that runs after the rescue on a title whose software evidence
+# is a head noun ("Engineering Manager"). It is NOT enough where the evidence is a surface
+# word instead: "Backend Team Leader" carries no `engineer` token, so `_NOENG` would let the
+# deny fire on a real software lead. Used only by denies whose head noun is a generic
+# org word (`team leader`) rather than a job family.
+_NOSW = (
+    r"^(?!.*\b(?:software|engineer|engineering|developer|development|architect|programmer|"
+    r"swe|sde|sdet|backend|back\s+end|frontend|front\s+end|full\s*stack|fullstack|devops|"
+    r"sre|site\s+reliability|data|platform|infrastructure|cloud|machine\s+learning|ml|ai|"
+    r"qa|automation|security|network|mobile|ios|android|web)\b).*"
 )
-
-_DENY_PRE_RESCUE: tuple[str, ...] = tuple([
-    _PRE_RESCUE_GUARD + r"\bteam\s+leader\b",
-])
 
 # Non-software engineering and technical disciplines.
 _DENY_DISCIPLINE: tuple[str, ...] = tuple([
@@ -157,10 +136,8 @@ _DENY_CLINICAL: tuple[str, ...] = tuple([
     r"\b(physical|occupational|respiratory|speech|behavior\w*)\s+therap\w*\b|\btherapist\b",
     r"\bdental\b|\bhygienist\b|\bpharmac\w*\b|\bphlebotom\w*\b|\bsonograph\w*\b",
     r"\bradiolog\w*\b|\bmedical\s+(assistant|technologist|scribe|coder)\b",
-    r"\bpatient\s+(access|care|service|journey|experience)\b|\bcaregiver\b|"
-    r"\bveterinar\w*\b",
-    r"\bclinical\s+(specialist|coordinator|research|trial|liaison|educator|"
-    r"applications?|operations?|affairs)\b",
+    r"\bpatient\s+(access|care|service)\b|\bcaregiver\b|\bveterinar\w*\b",
+    r"\bclinical\s+(specialist|coordinator|research|trial|liaison|educator)\b",
     r"\b(biolog|chemist|geolog|toxicolog|microbiolog|pathol)\w*\b",
     r"\blab(oratory)?\s+(technician|assistant|manager)\b",
 ])
@@ -303,6 +280,11 @@ _DENY_BUSINESS_SOFT: tuple[str, ...] = tuple([
 # is a structural guarantee, not a review outcome, and it is why a family list this broad is
 # safe to add in one change.
 _DENY_FAMILIES_SOFT: tuple[str, ...] = tuple([
+    # Ruling 2: `Team Leader` is retail/ops throughout this corpus (364 of 380 live hits are
+    # one retailer, 0 carry any engineering sense). SOFT, so a signalled software title never
+    # reaches it, and `_NOSW` additionally spares the surface-word forms ("Backend Team
+    # Leader") that carry no head noun for `_NOENG` to see.
+    _NOSW + r"\bteam\s+leader\b",
     # Retail floor and store operations. `assets protection` / `loss prevention` is retail
     # physical security; it is not the `security engineer` family, which the SWE signal
     # already claims. NOT added, deliberately: bare `security specialist`, whose 73 live
@@ -319,10 +301,18 @@ _DENY_FAMILIES_SOFT: tuple[str, ...] = tuple([
     r"\bfood\s+(service|and\s+beverage|&\s*beverage)\b|\bkitchen\s+operations\b",
     # People, admin and finance surfaces the business lanes above do not name.
     r"\b(employee|people)\s+relations\b",
-    r"\badministrative\s+(associate|coordinator|specialist|support)\b",
-    r"\bfinance\s+(analyst|associate|manager|specialist)\b|\bstrategic\s+finance\b",
-    r"\baccounts\s+(payable|receivable)\b",
-    r"\b(revenue|expense)\s+operations\b|\border\s+management\b",
+    _NOENG + r"\badministrative\s+(associate|coordinator|specialist|support)\b",
+    # `(?:...)` is load-bearing: a guard prefixed to a top-level alternation would apply to
+    # the first branch only, leaving "strategic finance" unguarded.
+    _NOENG + r"(?:\bfinance\s+(analyst|associate|manager|specialist)\b|\bstrategic\s+finance\b)",
+    _NOENG + r"\baccounts\s+(payable|receivable)\b",
+    _NOENG + r"(?:\b(revenue|expense)\s+operations\b|\border\s+management\b)",
+    # Clinical and patient PRODUCT surfaces. Soft, not hard: "Patient Experience" and
+    # "Clinical Operations" are real software product-area names (Epic, Cedar, Oscar), so a
+    # signalled software title has to skip them. The noise rows carry no signal and are
+    # still caught -- "Patient Journey Partner" is denied either way.
+    r"\bpatient\s+(journey|experience)\b",
+    r"\bclinical\s+(applications?|operations?|affairs)\b",
     # Life sciences production.
     r"\bbiotech\w*\b|\bfill\s*/\s*finish\b|\bbioprocess\w*\b",
     # Silicon: chip design, fab process and test. `_DENY_DISCIPLINE` already denies
@@ -377,14 +367,24 @@ _TITLE_SWE_SIGNAL = (
 _TITLE_SWE_RESCUE = (
     r"\bsoftware\b.{0,40}\b(engineer|developer|development|architect)\w*\b|"
     r"\b(sde|swe|sdet)\b|"
-    r"\b(full[\s-]?stack|fullstack|front[\s-]?end|frontend|back[\s-]?end|backend)\b|"
+    r"\b(full[\s-]?stack|fullstack|back[\s-]?end|backend)\b|"
+    # `front end` is the ONE surface token with a non-software sense -- a store checkout
+    # area -- so it alone needs a head noun. Bare, it rescued five retail rows
+    # ("... Assistant Manager Front End"), and a rescue is unconditional, so that single
+    # false positive cleared every deny below it. The other three tokens have no such
+    # sense and stay bare, which is what keeps "AI First Full Stack Tech Lead" and
+    # "Senior Backend Java Engineer - Vice President" classified software (D-294).
+    r"\b(front[\s-]?end|frontend)\b.{0,30}\b(engineer|developer|development|architect|"
+    r"programmer)\w*\b|"
+    # ...and the same pair in the other order ("AI/ML Agent Engineer - Front-End Focus").
+    r"\b(engineer|developer|development|architect|programmer)\w*\b.{0,30}"
+    r"\b(front[\s-]?end|frontend)\b|"
     r"\b(ios|android|mobile)\s+(engineer|developer)\b|"
     r"\bweb\s+develop\w*\b|\bapplication\s+develop\w*\b|"
     r"\b(devops|sre|site\s+reliability)\b"
 )
 
 # Compiled once at import: the gate runs per posting over a full rank.
-_DENY_FIRST = tuple(re.compile(pattern, re.IGNORECASE) for pattern in _DENY_PRE_RESCUE)
 _RESCUE = re.compile(_TITLE_SWE_RESCUE, re.IGNORECASE)
 _SIGNAL = re.compile(_TITLE_SWE_SIGNAL, re.IGNORECASE)
 _DENY_HARD = tuple(
@@ -407,10 +407,6 @@ def role_verdict(title: str) -> tuple[RoleVerdict, str]:
     Returns the verdict and a one-line reason naming the text that decided it, so a
     `not_swe` veto can always be audited against the posting it hid.
     """
-    for pattern in _DENY_FIRST:
-        first = pattern.search(title)
-        if first is not None:  # denied even against a software signal -- see _DENY_PRE_RESCUE
-            return "not_swe", f'not software (matched "{first.group(0).strip()}")'
     rescue = _RESCUE.search(title)
     if rescue is not None:  # software-first title: every deny below is skipped
         return "swe", f'software title (matched "{rescue.group(0)}")'

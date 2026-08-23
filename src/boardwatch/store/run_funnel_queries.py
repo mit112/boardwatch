@@ -430,9 +430,11 @@ class SourceOutcome:
     two apart. A version bump therefore degrades `unique` to None until a re-backfill, which
     is the honest report.
 
-    **`assisted` is not instrumented at all, and reports None — never 0.** The only kind
-    permitted to suppress is `exact_quad`, which is keyed on company_id; sources ARE
-    company_id, so no suppression this build can produce crosses a source boundary. There is
+    **`assisted` is not instrumented at all, and reports None — never 0.** Every kind
+    permitted to suppress — `exact_quad` and, since D-294, `company_title_location` — keys on
+    company_id; sources ARE company_id, so no suppression this build can produce crosses a
+    source boundary. That is a property of the KEYS, checked against the catalog, not of
+    there being only one of them. There is
     no mechanism that could count one. Reporting 0 would assert "we looked and no source
     arrived second" — the naive attribution D-022/D-023 record as having nearly cost
     job-apps a working adapter. It becomes measurable when an aggregator posting can be

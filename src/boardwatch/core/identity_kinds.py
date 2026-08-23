@@ -7,9 +7,11 @@ TWO kinds suppress, and they suppress in DIFFERENT senses. Read `merges` beside
     hash, so two members are the same posting by every stored component; the ranker hides
     the loser and `identities regroup` moves it permanently onto the survivor's job.
   - `company_title_location` suppresses but MUST NOT merge (owner ruling, D-294). Its key
-    is company + normalized title + normalized locations and carries no body evidence, so
-    two members are the same ROLE at the same PLACE, which is not the same claim. The
-    ranker hides the loser; nothing is written to `postings.job_id`.
+    is company + normalized title + normalized locations, so two members are the same ROLE
+    at the same PLACE, which is not the same claim. Because that alone does not establish
+    they are the same JOB, `core/dedup.py` additionally requires near-identical job
+    descriptions before it suppresses. The ranker hides the loser; nothing is written to
+    `postings.job_id`.
 
 The distinction is not decorative. A merge rewrites job anchors and is undone only through
 `job_grouping_events`, so a wrong merge on a weaker key is expensive; a wrong suppression is
@@ -23,7 +25,10 @@ posting to exact requisition evidence (design §3.1). `content_hash_only` stays 
 on its own measurement: the live corpus holds 809 hash-collision groups of which 727 span a
 different title or location, so a hash-keyed dedup demonstrably collapses different jobs.
 That figure is about the HASH key and says nothing about company_title_location, which was
-measured separately — 1,101 groups over 33,572 open postings, 1,597 redundant (4.76%).
+measured separately — 1,101 groups over 33,572 open postings, 1,597 redundant (4.76%). Of
+the subset that actually reaches leads, only about a third are true repeats, which is why
+the body-similarity floor in `core/dedup.py` is part of the ruling rather than a refinement
+of it.
 
 Bump IDENTITY_ALGORITHM_VERSION whenever any normalizer, key tuple, or host-class table
 changes. Readers filter to the current version, so a bump degrades to "no identities yet"

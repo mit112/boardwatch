@@ -57,10 +57,18 @@ _FRENCH_GENDER_MARKER = re.compile(r"\(\s*h\s*/\s*f\s*\)", re.IGNORECASE)
 # Deliberately NOT word-bounded on the left: the French inclusive suffix ("Ingénieur(e)") and
 # the German compound ("Betriebsingenieur") both have to hit. No English word contains it.
 _ENGINEER_FR_DE = re.compile(r"ing[eé]nieur", re.IGNORECASE)
-# CJK script: Han ideographs (Extension A + Unified), kana, hangul. Deliberately NOT the
-# U+3000 punctuation block — the full-width parentheses in "（高级）治疗领域专员" are
-# punctuation, and matching them would fire on a Latin title that merely borrows one.
-_CJK_SCRIPT = re.compile(r"[\u3400-\u4dbf\u4e00-\u9fff\u3040-\u30ff\uac00-\ud7af]")
+# CJK script: Han ideographs (Extension A + Unified), kana, hangul. SCRIPT only — every
+# punctuation range is excluded, because a Latin title that merely borrows a CJK punctuation
+# mark is still a Latin title. Three exclusions, each with a real counterexample:
+#   - the U+3000 block ("Software Engineer 【Remote】", U+3010/U+3011);
+#   - Halfwidth and Fullwidth Forms, which is where the parentheses in "（高级）治疗领域专员"
+#     actually live (U+FF08/U+FF09, NOT U+3000 as the shape of that character suggests);
+#   - U+30FB "・" and U+30FC "ー", which sit INSIDE the kana block but are punctuation, so the
+#     kana range is split around them ("Software Engineer・Remote" must not fire).
+# A title written in real kana always carries a kana letter too, so the split costs nothing.
+_CJK_SCRIPT = re.compile(
+    r"[\u3400-\u4dbf\u4e00-\u9fff\u3040-\u30fa\u30fd-\u30ff\uac00-\ud7af]"
+)
 
 _MARKERS = (_DACH_GENDER_MARKER, _FRENCH_GENDER_MARKER, _ENGINEER_FR_DE, _CJK_SCRIPT)
 

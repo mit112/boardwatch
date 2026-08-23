@@ -67,10 +67,12 @@ def regroup(
             raise typer.Exit(code=1)
         rows = load_identity_inputs(conn)
         suppressions = resolve_duplicates(rows, load_identities(conn))
+        by_kind = mergeable_suppressions(suppressions)
+        mergeable = sum(len(g) for g in by_kind.values())
         planned = 0
         moved = 0
         refusals: list[Refusal] = []
-        for kind, group in mergeable_suppressions(suppressions).items():
+        for kind, group in by_kind.items():
             member_ids = sorted(
                 {s.posting_id for s in group} | {s.survivor_posting_id for s in group}
             )
@@ -85,7 +87,6 @@ def regroup(
                 moved += apply_merges(conn, plan.merges, identity_kind=kind, now=utcnow())
     verb = "would move" if dry_run else "moved"
     count = planned if dry_run else moved
-    mergeable = sum(len(g) for g in mergeable_suppressions(suppressions).values())
     typer.echo(
         f"regroup: {len(suppressions)} suppressed postings ({mergeable} mergeable), "
         f"{verb} {count} onto a canonical job, {len(refusals)} group(s) refused"
@@ -150,8 +151,10 @@ def leakage(
 ) -> None:
     """Gate P6's "duplicate leakage over 7 days" number (design §2, `reports/leakage.py`).
 
-    Only `exact_quad` counts as a duplicate (the owner's ruling — see
-    `core/identity_kinds.py`), and only jobs that actually reached the operator
+    Only `exact_quad` counts as a duplicate HERE (the owner's ruling, and NOT changed by
+    D-294 — which made `company_title_location` suppress at rank time without extending this
+    metric, so a regression in that suppression is invisible to Gate P6; see
+    `reports/leakage.py`). Only jobs that actually reached the operator
     (`job_dispositions`: `seen`, `skipped`, or `built`) count as "leaked" — a duplicate the
     ranker suppressed before it ever surfaced never leaked. Body-less/unbackfilled postings
     have no `exact_quad` identity by design and are reported as their own `unidentified`

@@ -127,7 +127,18 @@ class TestDoesNotFire:
     def test_cjk_punctuation_alone_is_not_the_signal(self) -> None:
         # U+3000..U+303F (full-width parens, the ideographic comma) is CJK PUNCTUATION and is
         # deliberately outside the ranges: a Latin title that borrows one is not a CJK ad.
+        # U+FF08/U+FF09 (Halfwidth and Fullwidth Forms) -- NOT the U+3000 CJK-punctuation
+        # block the range list deliberately omits, so this case alone cannot prove that
+        # omission. The bracket pair below is U+3010/U+3011 and is the one that can.
         assert has_non_us_ad_marker("Software Engineer（Remote）") is False
+        assert has_non_us_ad_marker("Software Engineer 【Remote】") is False
+        assert has_non_us_ad_marker("Software Engineer、Remote") is False
+        # U+30FB and U+30FC sit inside the kana block but are punctuation, so the range is
+        # split around them. A Latin title borrowing either must not read as a Japanese ad.
+        assert has_non_us_ad_marker("Software Engineer・Remote") is False
+        assert has_non_us_ad_marker("Software Engineer ー Remote") is False
+        # ...while real kana still fires, because it carries a kana LETTER as well.
+        assert has_non_us_ad_marker("サーバーサイドエンジニア") is True
 
     def test_a_german_city_alone_is_a_location_signal_not_an_ad_marker(self) -> None:
         # Frankfurt belongs to the location catalog. This gate reads the AD CONVENTION only, so

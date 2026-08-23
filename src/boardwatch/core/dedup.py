@@ -12,10 +12,11 @@ stronger kind is never re-examined by a weaker one. Two kinds reach a suppressio
 `exact_quad` and, since D-294, `company_title_location`.
 
 `company_title_location` does NOT merge — see identity_kinds.MERGING_KINDS. It is the
-weaker claim ("the same role at the same place") and its key carries no body evidence, so
-the two postings under it may legitimately be two different openings. The owner accepted
-that cost against a measured 1,597 redundant open postings (4.76%) whose members all carry
-distinct `exact_quad` keys and which therefore reached leads twice. Callers that PERSIST a
+weaker claim ("the same role at the same place"), so a suppression on it additionally
+requires the two job descriptions to be near-identical (`_bodies_are_near_identical`). The
+key alone cannot tell "one job posted twice" from "two openings sharing a generic title in
+one city", and measuring it showed the second case is the MAJORITY: 146 of 269 software
+postings it would have hidden carry a visibly different description. Callers that PERSIST a
 grouping must filter to MERGING_KINDS first; the ranker's read path does not.
 
 The cross_host election lives here, is exercised directly by tests, and is currently
@@ -29,10 +30,15 @@ from __future__ import annotations
 
 from collections import defaultdict
 from collections.abc import Mapping, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
+from difflib import SequenceMatcher
 
 from boardwatch.core.host_class import classify_host
-from boardwatch.core.identity_kinds import MERGING_KIND_NAMES, SUPPRESSING_KINDS
+from boardwatch.core.identity_kinds import (
+    MERGING_KIND_NAMES,
+    MERGING_KINDS,
+    SUPPRESSING_KINDS,
+)
 from boardwatch.core.normalize import normalize_company, normalize_title
 from boardwatch.core.posting_identity import (
     IdentityInputs,
@@ -50,6 +56,14 @@ class MissingSuppressionResolver(ValueError):
     def __init__(self, name: str) -> None:
         super().__init__(f"suppressing kind has no resolver: {name!r}")
         self.name = name
+
+
+class SuppressionChainCycle(ValueError):
+    """A suppression chain did not terminate. Structurally impossible; typed, not asserted."""
+
+    def __init__(self, posting_id: int) -> None:
+        super().__init__(f"suppression chain did not terminate from posting {posting_id}")
+        self.posting_id = posting_id
 
 
 @dataclass(frozen=True)
@@ -139,20 +153,58 @@ def elect_cross_host_survivor(members: Sequence[IdentityInputs]) -> IdentityInpu
     return ats[0]
 
 
+def _bodies_are_near_identical(a: IdentityInputs, b: IdentityInputs) -> bool:
+    """Do two postings share substantially the same job description?
+
+    This is what separates "one job posted twice" from "two openings that happen to share a
+    generic title in one city", which the company_title_location key cannot tell apart on its
+    own. Measured on the live corpus over the postings that actually reach leads: without this
+    clause the key suppresses 269 software postings, of which only 103 are real repeats and
+    **146 carry a visibly different description** — eight separate Adobe "Software Development
+    Engineer" openings in San Jose, each its own requisition, collapse to one (D-294).
+
+    Calibrated against known cases on both sides rather than picked: the three duplicate pairs
+    that actually built two resumes score 0.943 / 0.967 / 0.998, and a Stripe pair sharing the
+    title "Backend Engineer, Payments and Risk" in one city — but belonging to the Bank
+    Connections and Optimized Checkout teams, with different requisition ids — scores 0.740.
+    The distinct-opening side of the corpus runs 0.518-0.756, so 0.90 sits in a ~19-point gap
+    rather than on a boundary.
+
+    `difflib` and NOT `rapidfuzz`, even though rapidfuzz is already a dependency and is 400x
+    faster: `fuzz.ratio` scores that same Stripe pair **92.6**, above any floor that still
+    admits the 0.943 true duplicate, because its Indel metric forgives the block reordering
+    that distinguishes the two job descriptions. The faster library silently loses the one
+    case this clause exists to get right. `quick_ratio` is an upper bound, so it prefilters
+    the expensive comparison without changing the answer.
+
+    An absent body scores 0 and therefore never suppresses — the same fail-safe direction as
+    the rest of this module: a leaked duplicate is countable and recoverable, a suppressed
+    real opening is neither.
+    """
+    if not a.body_text or not b.body_text:
+        return False
+    matcher = SequenceMatcher(None, a.body_text, b.body_text)
+    if matcher.quick_ratio() < _BODY_SIMILARITY_FLOOR:
+        return False
+    return matcher.ratio() >= _BODY_SIMILARITY_FLOOR
+
+
 def _verify_company_title_location(a: IdentityInputs, b: IdentityInputs) -> bool:
     """Re-compare the strings behind a company_title_location hash before acting on it.
 
-    The `exact_quad` verifier's reasoning applies here minus the body clause, and the
-    location PRESENCE check is the load-bearing half. `compute_identities` emits no
-    company_title_location without locations (design §2.1), but this resolver groups STORED
-    identities and `scan/apply.py` refreshes `locations_json` without rewriting them, so a
-    stale key can group two postings that today carry no location evidence at all — and two
-    absent values compare EQUAL. `normalized_locations` returns None for absence rather than
-    "[]" precisely so that case is representable; requiring non-None is what keeps D-083's
-    rule ("no location evidence => no location-bearing suppression") true on the stored path.
+    The `exact_quad` verifier's reasoning applies here, and the location PRESENCE check is the
+    load-bearing half. `compute_identities` emits no company_title_location without locations
+    (design §2.1), but this resolver groups STORED identities and `scan/apply.py` refreshes
+    `locations_json` without rewriting them, so a stale key can group two postings that today
+    carry no location evidence at all — and two absent values compare EQUAL.
+    `normalized_locations` returns None for absence rather than "[]" precisely so that case is
+    representable; requiring non-None is what keeps D-083's rule ("no location evidence => no
+    location-bearing suppression") true on the stored path.
 
-    The body is deliberately NOT compared. Comparing it would reconstruct `exact_quad` and
-    this kind would suppress nothing that exact_quad had not already taken.
+    The body is compared for SIMILARITY, not equality. Equality would reconstruct `exact_quad`
+    and this kind would suppress nothing exact_quad had not already taken; similarity is what
+    lets it catch the same job re-posted with an edited description while sparing two different
+    openings that share a title — see `_bodies_are_near_identical`.
     """
     loc_a = normalized_locations(a.locations)
     return (
@@ -160,6 +212,7 @@ def _verify_company_title_location(a: IdentityInputs, b: IdentityInputs) -> bool
         and normalize_title(a.title) == normalize_title(b.title)
         and loc_a is not None
         and loc_a == normalized_locations(b.locations)
+        and _bodies_are_near_identical(a, b)
     )
 
 
@@ -192,6 +245,10 @@ def _resolve_cross_host(
 # Dispatch table. resolve_duplicates iterates SUPPRESSING_KINDS — exact_quad and
 # company_title_location — so the cross_host entry is deliberately unreachable; see the
 # module docstring.
+_BODY_SIMILARITY_FLOOR = 0.90
+"""Floor for a company_title_location suppression. See `_bodies_are_near_identical`."""
+
+
 _RESOLVERS = {
     "exact_quad": _resolve_exact_quad,
     "company_title_location": _resolve_company_title_location,
@@ -218,7 +275,13 @@ def mergeable_suppressions(
     for suppression in suppressions:
         if suppression.kind in MERGING_KIND_NAMES:
             grouped.setdefault(suppression.kind, []).append(suppression)
-    return {kind: tuple(items) for kind, items in grouped.items()}
+    # Keyed in CATALOG rank order, not the order suppressions happened to arrive in.
+    # `MERGING_KINDS` is deliberately rank-sorted, and callers apply each kind in its own
+    # transaction re-reading anchors between them, so a data-dependent order would make the
+    # write sequence depend on the corpus. Latent with one merging kind; not free later.
+    return {
+        spec.name: tuple(grouped[spec.name]) for spec in MERGING_KINDS if spec.name in grouped
+    }
 
 
 def resolve_duplicates(
@@ -254,4 +317,35 @@ def resolve_duplicates(
                     survivor_posting_id=survivor.posting_id,
                     kind=spec.name,
                 )
-    return tuple(sorted(suppressed.values(), key=lambda s: s.posting_id))
+    return tuple(
+        sorted(
+            (
+                # A second suppressing kind makes CHAINS reachable: an `exact_quad` survivor is
+                # not itself skipped when the weaker kind groups, so it can be suppressed in a
+                # later round and leave the earlier suppression pointing at a hidden posting.
+                # Both consumers break on that — `top --include-duplicates` would name a
+                # survivor the operator cannot see, and `identities regroup` would write a
+                # permanent grouping row anchored on it. Walk to the terminal survivor instead.
+                # Impossible with one suppressing kind, which is why it appears now (D-294).
+                replace(s, survivor_posting_id=_terminal_survivor(s, suppressed))
+                for s in suppressed.values()
+            ),
+            key=lambda s: s.posting_id,
+        )
+    )
+
+
+def _terminal_survivor(suppression: Suppression, suppressed: Mapping[int, Suppression]) -> int:
+    """The first survivor in the chain that is not itself suppressed.
+
+    The chain is acyclic because a posting is only ever suppressed onto a survivor elected
+    from its own group and each posting is suppressed at most once, but the bound is kept
+    explicit rather than trusted: a malformed store must not spin the ranker.
+    """
+    survivor_id = suppression.survivor_posting_id
+    for _ in range(len(suppressed) + 1):
+        next_hop = suppressed.get(survivor_id)
+        if next_hop is None:
+            return survivor_id
+        survivor_id = next_hop.survivor_posting_id
+    raise SuppressionChainCycle(suppression.posting_id)
