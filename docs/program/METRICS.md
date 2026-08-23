@@ -6587,3 +6587,54 @@ the Stripe pair, which is not a duplicate at all.
 At least seven watched companies sit at **exactly 800** open postings (Disney, Cisco, Adobe, Visa, Philips,
 GE HealthCare, Verizon), so absolute counts at large employers are **censored by a fetch ceiling** and
 Target's "11.0% of everything" is a property of the *shortlist*, not the corpus.
+
+### Round 2 — reviewing the fix round (same session)
+
+**The critical defect the fix round introduced, measured on the live corpus before and after:**
+
+| | before | after |
+|---|---:|---:|
+| suppressions | 849 | 847 |
+| planned merges | 378 | 417 |
+| **merges whose pair shares no key of the stamped kind** | **25** | **0** |
+| suppressions pointing at a hidden survivor | 0 | 0 |
+| suppressions whose pair shares no key of their own kind | 25 | **0** |
+
+**`difflib` asymmetry, over 3,078 live `company_title_location` candidate pairs:**
+
+| metric | asymmetric pairs | verdict flips on argument order | full pass |
+|---|---:|---:|---:|
+| char, `autojunk=True` (round 1) | **2,048** | **19** | 25.8s |
+| word, `autojunk=False` (shipped) | 1,694 | **0** | 7.0s |
+
+**Floor recalibration on the corrected metric** (round 1's figures were computed on the asymmetric one):
+
+| pair | truth | char `autojunk=True` | word `autojunk=False` |
+|---|---|---:|---:|
+| Affirm 1930/1931 | duplicate | 0.9671 | **0.9593** |
+| Affirm 24314/24315 | duplicate | 0.9426 | **0.9421** |
+| Philips 23188/23199 | duplicate | 0.9977 | **0.9974** |
+| Stripe 10946/10947 | **not** a duplicate | 0.7404 | **0.8986** |
+| Adobe 17988/36627 | different reqs | 0.5542 | 0.5857 |
+| Fidelity 33156/33159 | different reqs | 0.6154 | 0.6016 |
+
+Safe window on the shipped metric is **(0.8986, 0.9421]** — about 4 points wide, not the ~19 round 1
+claimed. Floor **0.92** sits mid-window; 0.90 would have left 0.0014 of margin against a known negative.
+
+| candidate metric | min true dup | max non-dup | gap |
+|---|---:|---:|---:|
+| char, `autojunk=False` | 0.9493 | 0.9253 | 0.024 |
+| **word, `autojunk=False`** | **0.9421** | **0.8986** | **0.044** |
+
+**Role gate after the round-2 corrections, `main` vs HEAD over 34,169 open postings** — unchanged from
+round 1, so the front-end repairs cost nothing:
+
+| transition | count |
+|---|---:|
+| `uncertain -> not_swe` | 989 |
+| `swe -> not_swe` | 8 |
+| `swe -> uncertain` | 3 |
+| **anything -> less strict** | **0** |
+
+All **418** `team leader` postings are denied and **0** software leads are lost. `foreign_ad_gate` is
+byte-identical in behaviour to the pre-round-2 branch over live titles (0 differences).

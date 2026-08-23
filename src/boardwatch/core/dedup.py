@@ -38,6 +38,7 @@ from boardwatch.core.identity_kinds import (
     MERGING_KIND_NAMES,
     MERGING_KINDS,
     SUPPRESSING_KINDS,
+    kind_spec,
 )
 from boardwatch.core.normalize import normalize_company, normalize_title
 from boardwatch.core.posting_identity import (
@@ -163,27 +164,46 @@ def _bodies_are_near_identical(a: IdentityInputs, b: IdentityInputs) -> bool:
     **146 carry a visibly different description** — eight separate Adobe "Software Development
     Engineer" openings in San Jose, each its own requisition, collapse to one (D-294).
 
-    Calibrated against known cases on both sides rather than picked: the three duplicate pairs
-    that actually built two resumes score 0.943 / 0.967 / 0.998, and a Stripe pair sharing the
-    title "Backend Engineer, Payments and Risk" in one city — but belonging to the Bank
-    Connections and Optimized Checkout teams, with different requisition ids — scores 0.740.
-    The distinct-opening side of the corpus runs 0.518-0.756, so 0.90 sits in a ~19-point gap
-    rather than on a boundary.
+    Calibrated against known cases on both sides rather than picked. The three duplicate pairs
+    that actually built two resumes score **0.942 / 0.959 / 0.997**; the highest-scoring pair
+    known NOT to be a duplicate is a Stripe pair sharing the title "Backend Engineer, Payments
+    and Risk" in one city while belonging to the Bank Connections and Optimized Checkout teams,
+    at **0.899**. The floor sits in the middle of that window, not on either edge. **The window
+    is ~4 points wide, not the ~19 an earlier pass claimed** — that figure came from the
+    character-level metric below, which is not a stable measurement at all.
 
-    `difflib` and NOT `rapidfuzz`, even though rapidfuzz is already a dependency and is 400x
+    WORD tokens with `autojunk=False`, in CANONICAL argument order, and each of those three is
+    load-bearing:
+
+      - `autojunk` (on by default) discards elements occurring more than `len(b)//100 + 1`
+        times, and it applies to the SECOND sequence only. On character sequences over a few KB
+        that makes `ratio()` ASYMMETRIC: measured over 3,078 live candidate pairs, **2,048 were
+        asymmetric and 19 changed their verdict depending on argument order**. The survivor
+        election decides which posting is first, so the shipped answer depended on it.
+      - Words rather than characters, because it is both stabler and cheaper: on the same 3,078
+        pairs the word metric separates the known cases by **0.044** against the
+        character metric's 0.024 with `autojunk=False`, and runs the whole pass in 7s against
+        26s. It also ignores the whitespace and punctuation churn that a re-post introduces.
+      - Canonical order (`sorted`) because `ratio()` is still not exactly symmetric even with
+        `autojunk=False` — the differences are far below the floor, but sorting makes
+        order-independence a property of the code rather than of the input.
+
+    `difflib` and NOT `rapidfuzz`, even though rapidfuzz is already a dependency and is much
     faster: `fuzz.ratio` scores that same Stripe pair **92.6**, above any floor that still
-    admits the 0.943 true duplicate, because its Indel metric forgives the block reordering
-    that distinguishes the two job descriptions. The faster library silently loses the one
-    case this clause exists to get right. `quick_ratio` is an upper bound, so it prefilters
-    the expensive comparison without changing the answer.
+    admits the 0.942 true duplicate, because its Indel metric forgives the block reordering
+    that distinguishes the two job descriptions. The faster library silently loses the one case
+    this clause exists to get right. `quick_ratio` is a true upper bound on `ratio` (fuzzed over
+    63,000 pairs, 0 violations), so it prefilters without changing the answer.
 
     An absent body scores 0 and therefore never suppresses — the same fail-safe direction as
     the rest of this module: a leaked duplicate is countable and recoverable, a suppressed
     real opening is neither.
     """
-    if not a.body_text or not b.body_text:
+    if body_evidence(a.body_text) is None or body_evidence(b.body_text) is None:
         return False
-    matcher = SequenceMatcher(None, a.body_text, b.body_text)
+    # Canonical argument order, so the answer cannot depend on which posting won the election.
+    first, second = sorted((a.body_text, b.body_text))
+    matcher = SequenceMatcher(None, first.split(), second.split(), autojunk=False)
     if matcher.quick_ratio() < _BODY_SIMILARITY_FLOOR:
         return False
     return matcher.ratio() >= _BODY_SIMILARITY_FLOOR
@@ -245,7 +265,7 @@ def _resolve_cross_host(
 # Dispatch table. resolve_duplicates iterates SUPPRESSING_KINDS — exact_quad and
 # company_title_location — so the cross_host entry is deliberately unreachable; see the
 # module docstring.
-_BODY_SIMILARITY_FLOOR = 0.90
+_BODY_SIMILARITY_FLOOR = 0.92
 """Floor for a company_title_location suppression. See `_bodies_are_near_identical`."""
 
 
@@ -327,7 +347,15 @@ def resolve_duplicates(
                 # survivor the operator cannot see, and `identities regroup` would write a
                 # permanent grouping row anchored on it. Walk to the terminal survivor instead.
                 # Impossible with one suppressing kind, which is why it appears now (D-294).
-                replace(s, survivor_posting_id=_terminal_survivor(s, suppressed))
+                #
+                # The KIND is rewritten with it, and that is the load-bearing half. Retargeting
+                # an `exact_quad` suppression at the end of a chain points it at a posting it
+                # shares no exact_quad key with, and `mergeable_suppressions` keys on kind — so
+                # carrying the strong label would turn a hidden-survivor DISPLAY bug into a
+                # permanent `postings.job_id` write stamped with a provenance that is false.
+                # Measured on the live corpus before the fix: 25 of 378 planned merges. The
+                # chain is only as strong as its weakest link, so take the weakest kind on it.
+                _relabelled(s, suppressed)
                 for s in suppressed.values()
             ),
             key=lambda s: s.posting_id,
@@ -335,17 +363,26 @@ def resolve_duplicates(
     )
 
 
-def _terminal_survivor(suppression: Suppression, suppressed: Mapping[int, Suppression]) -> int:
-    """The first survivor in the chain that is not itself suppressed.
+def _relabelled(suppression: Suppression, suppressed: Mapping[int, Suppression]) -> Suppression:
+    """Point a suppression at the terminal survivor of its chain, under the weakest kind on it.
 
-    The chain is acyclic because a posting is only ever suppressed onto a survivor elected
-    from its own group and each posting is suppressed at most once, but the bound is kept
-    explicit rather than trusted: a malformed store must not spin the ranker.
+    Walks to the first survivor that is not itself suppressed. The chain is acyclic because a
+    posting is only ever suppressed onto a survivor elected from its own group and each posting
+    is suppressed at most once; the bound is kept explicit rather than trusted, because a
+    malformed store must not spin the ranker.
+
+    Kind is the weakest (highest catalog rank) link traversed. An unwalked suppression keeps its
+    own kind, so the single-kind case is unchanged.
     """
     survivor_id = suppression.survivor_posting_id
+    weakest = suppression.kind
     for _ in range(len(suppressed) + 1):
         next_hop = suppressed.get(survivor_id)
         if next_hop is None:
-            return survivor_id
+            if weakest == suppression.kind and survivor_id == suppression.survivor_posting_id:
+                return suppression
+            return replace(suppression, survivor_posting_id=survivor_id, kind=weakest)
+        if kind_spec(next_hop.kind).rank > kind_spec(weakest).rank:
+            weakest = next_hop.kind
         survivor_id = next_hop.survivor_posting_id
     raise SuppressionChainCycle(suppression.posting_id)

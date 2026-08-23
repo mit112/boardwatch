@@ -8,6 +8,8 @@ titles were buried that way in the measured prototype. Rescue-first fixes all 16
 these tests pin that ordering so it cannot silently regress.
 """
 
+import re
+
 import pytest
 
 from boardwatch.rank import role_gate
@@ -400,6 +402,13 @@ class TestOwnerRulingNonSoftwareFamilies:
         ],
     )
     def test_software_titles_on_those_surfaces_survive(self, title: str) -> None:
+        """`!= "not_swe"` and not `== "swe"` on purpose, and the difference is real.
+
+        Most of these land on `uncertain`, not `swe`: `_TITLE_SWE_SIGNAL` requires an
+        adjacency, so a bare `Engineer` head noun beside a business noun is not a positive
+        software signal. `uncertain` still passes through to scoring, which is the property
+        under test — the guard must stop the veto, not manufacture a signal.
+        """
         verdict, reason = role_verdict(title)
         assert verdict != "not_swe", (title, reason)
 
@@ -422,7 +431,10 @@ class TestOwnerRulingTeamLeader:
             "Beauty Team Leader",
             "Inbound Operations Team Leader",
             "Small Format Team Leader",
-            # The five rows that motivated the ruling: rescued on `Front End` before the fix.
+            # The rows that motivated the ruling: rescued on the bare `Front End` token before
+            # the fix. Note they are denied by the pre-existing anchored `manager` deny once
+            # the false rescue stops shielding them, NOT by the `team leader` pattern above --
+            # which is why fixing the rescue was the right place and a pre-rescue lane was not.
             "Executive Team Leader Service & Engagement (Assistant Manager Front End)",
             "Executive Team Leader Service & Engagement (Assistant Manager Front End)- Cypress",
         ],
@@ -470,28 +482,60 @@ class TestOwnerRulingTeamLeader:
 
 
 class TestGuardedPatternsGuardEveryBranch:
-    """An anchored guard prefixed to a TOP-LEVEL alternation guards only the first branch.
+    """An anchored PREFIX guard applied to a top-level alternation guards only the first branch.
 
-    `_NOENG + r"\\bA\\b|\\bB\\b"` parses as `(guard.*A)|(B)`, so B is unguarded and can veto an
-    engineering title from the left — the exact failure the guard exists to prevent. This is
-    a property of every guarded pattern in the module, so it is asserted structurally rather
-    than by naming titles one at a time.
+    `_NOENG + r"\bA\b|\bB\b"` parses as `(guard.*A)|(B)`, so B is unguarded and can veto an
+    engineering title from the left — the exact failure the guard exists to prevent. This is a
+    property of every prefix-guarded pattern in the module, so it is asserted structurally
+    rather than by naming titles one at a time.
+
+    SCOPE, stated because a check whose reach is overestimated is worse than none: this covers
+    `^(?!...)` PREFIX guards only. The mirror shape — a TRAILING `(?!...)` that binds to the last
+    branch instead of all of them — exists at the `fellow`/`fellowship`/`postdoc` pattern in
+    `_DENY_BUSINESS_HARD` and is NOT covered here. That one is pre-existing, its practical
+    exposure is "Engineering Fellowship" (the rescue already protects "Software Engineering
+    …"), and changing a shipped deny pattern's semantics needs its own ruling — recorded in
+    D-294 rather than fixed in passing.
     """
 
-    def test_no_guarded_pattern_has_an_unguarded_alternative(self) -> None:
-        offenders = []
-        for pattern in (*role_gate._DENY_HARD, *role_gate._DENY_SOFT):
-            text = pattern.pattern
-            if not text.startswith("^(?!"):
-                continue
-            body = text[text.index(").*") + 3 :]
-            depth = 0
-            for char in body:
-                if char == "(":
-                    depth += 1
-                elif char == ")":
-                    depth -= 1
-                elif char == "|" and depth == 0:
-                    offenders.append(text)
-                    break
+    @staticmethod
+    def _top_level_alternation_after_guard(pattern: str) -> bool:
+        """Does a prefix-guarded pattern have a `|` outside every group?
+
+        Character classes and escaped parens are stripped first. Counting raw `(` and `)` gets
+        both wrong: `[)]` is a literal paren that would unbalance the depth counter and hide a
+        real unguarded branch, and `[|]` is a literal pipe that would be reported as one.
+        """
+        if not pattern.startswith("^(?!"):
+            return False
+        body = pattern[pattern.index(").*") + 3 :]
+        body = re.sub(r"\\.", "", body)  # drop escapes, so `\(` and `\|` are not read as syntax
+        body = re.sub(r"\[[^]]*]", "", body)  # drop character classes wholesale
+        depth = 0
+        for char in body:
+            if char == "(":
+                depth += 1
+            elif char == ")":
+                depth -= 1
+            elif char == "|" and depth == 0:
+                return True
+        return False
+
+    def test_no_prefix_guarded_pattern_has_an_unguarded_alternative(self) -> None:
+        offenders = [
+            pattern.pattern
+            for pattern in (*role_gate._DENY_HARD, *role_gate._DENY_SOFT)
+            if self._top_level_alternation_after_guard(pattern.pattern)
+        ]
         assert offenders == []
+
+    def test_the_detector_catches_the_bug_it_is_looking_for(self) -> None:
+        """A structural check that cannot fire is decoration. These are its known positives."""
+        detect = self._top_level_alternation_after_guard
+        assert detect(role_gate._NOENG + r"\bfoo\b|\bbar\b") is True
+        # ...and it is not fooled by a literal paren or a literal pipe.
+        assert detect(role_gate._NOENG + r"\bfoo[)]\b|\bengineer\s+bar\b") is True
+        assert detect(role_gate._NOENG + r"\bfoo[|]bar\b") is False
+        assert detect(role_gate._NOENG + r"\bfoo\(x\|y\)bar\b") is False
+        assert detect(role_gate._NOENG + r"\b(?:foo|bar)\b") is False
+        assert detect(r"\bunguarded\b|\banything\b") is False  # no prefix guard at all

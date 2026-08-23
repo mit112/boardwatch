@@ -512,8 +512,8 @@ measurement is provisional until audited.
 1. **Posting-identity table** separate from URLs, multiple ranked identity kinds per posting. Suppression
    was restricted to exact identities; **amended by D-294** to admit `company_title_location` as a second
    suppressing kind, on two conditions that keep the original constraint's intent: it may **never merge**
-   (so `core/identity.py`'s "nothing merges across identities" still holds literally, and no job anchor is
-   rewritten), and it suppresses only when the two job descriptions are **near-identical**, which is what
+   (so the new kind rewrites no job anchor; `exact_quad` merges still do, as they always have), and it
+   suppresses only when the two job descriptions are **near-identical**, which is what
    separates a re-post from two openings sharing a generic title. `cross_host` and `content_hash_only`
    remain annotate-only.
 2. **Allowlist URL normalization** (not a denylist) + `sorted(kept)` + **string-verify on hash hit**.

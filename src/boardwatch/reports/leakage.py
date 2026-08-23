@@ -10,8 +10,11 @@ ranker suppressed before it ever surfaced never leaked anything.
 **Only `exact_quad` counts**, per the owner's ruling (D-132). That ruling was made when
 exact_quad was the only suppressing kind, and D-294 changed that premise WITHOUT changing this
 report: `company_title_location` now suppresses at rank time, but `load_surfaced_exact_quad`
-still joins on `kind == "exact_quad"` alone, so a job whose only identity is the weaker kind
-lands in `unidentified` and can never be counted `redundant`.
+still joins on `kind == "exact_quad"` alone, so this report never sees the weaker key at all.
+The route is NOT that such jobs land in `unidentified` — `compute_identities` emits an
+`exact_quad` for any posting carrying a body and locations, so they land in `identified` with a
+key that is unique BY CONSTRUCTION, quietly inflating the denominator and `distinct_groups`
+while never contributing to `redundant`.
 
 **Consequence, recorded rather than fixed:** this number cannot rise for that class no matter
 how badly the new suppression regresses. It reads 0.00% for a structural reason, not an

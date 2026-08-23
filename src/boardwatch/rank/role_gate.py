@@ -374,11 +374,19 @@ _TITLE_SWE_RESCUE = (
     # false positive cleared every deny below it. The other three tokens have no such
     # sense and stay bare, which is what keeps "AI First Full Stack Tech Lead" and
     # "Senior Backend Java Engineer - Vice President" classified software (D-294).
-    r"\b(front[\s-]?end|frontend)\b.{0,30}\b(engineer|developer|development|architect|"
-    r"programmer)\w*\b|"
+    r"\b(front[\s-]?end|frontend)\b.{0,30}\b(engineer|developer|architect|programmer|"
+    r"lead)\w*\b|"
     # ...and the same pair in the other order ("AI/ML Agent Engineer - Front-End Focus").
-    r"\b(engineer|developer|development|architect|programmer)\w*\b.{0,30}"
+    r"\b(engineer|developer|architect|programmer|lead)\w*\b.{0,30}"
     r"\b(front[\s-]?end|frontend)\b|"
+    # `lead` is in the head-noun list because "Front End Tech Lead" is a real software
+    # title that would otherwise lose the rescue and then be vetoed by the bare `lead`
+    # deny. `\blead\b` does NOT match "Leader", so the retail rows stay denied.
+    # `manager` is deliberately ABSENT and `development` was REMOVED: both re-rescue the
+    # very rows this narrowing exists to catch -- "(Assistant Manager Front End)" matches
+    # `manager` directly, and "Assistant Manager Front End Development Program" matches
+    # `development`. Every real title they would have saved carries `engineer`,
+    # `developer` or `lead` as well, so dropping them costs nothing measurable.
     r"\b(ios|android|mobile)\s+(engineer|developer)\b|"
     r"\bweb\s+develop\w*\b|\bapplication\s+develop\w*\b|"
     r"\b(devops|sre|site\s+reliability)\b"

@@ -14,6 +14,7 @@ from boardwatch.core.dedup import (
     MissingSuppressionResolver,
     _elect,
     elect_cross_host_survivor,
+    mergeable_suppressions,
     resolve_duplicates,
 )
 from boardwatch.core.identity_kinds import IdentityKindSpec
@@ -508,3 +509,15 @@ def test_no_suppression_survives_pointing_at_a_hidden_posting():
             f"posting {suppression.posting_id} points at hidden survivor "
             f"{suppression.survivor_posting_id}"
         )
+    # ...and the KIND must be downgraded with the pointer, which is the half that matters.
+    # Posting 2 was suppressed by `exact_quad` onto 1; retargeting it at 3 without relabelling
+    # leaves an `exact_quad`-labelled suppression between two postings that share no exact_quad
+    # key, and `mergeable_suppressions` keys on kind — so it would be WRITTEN to
+    # `postings.job_id` and stamped with a provenance that is false.
+    assert {(s.posting_id, s.kind) for s in result} == {
+        (1, "company_title_location"),
+        (2, "company_title_location"),
+    }
+    assert mergeable_suppressions(result) == {}, (
+        "a relabelled chain must not be persistable as an exact_quad merge"
+    )
