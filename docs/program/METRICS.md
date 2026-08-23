@@ -6286,13 +6286,26 @@ Review findings, measured rather than asserted:
 | Finding | Number |
 |---|---|
 | `eligible_ids` on the SCHEDULED path | ~**3,683** (~11% of corpus) — safe, cap needs ~300k postings |
-| `eligible_ids` with `top`'s drain flags OPEN | ≈ 0.93 × corpus ≈ **30,400** vs cap 32,766 |
-| open postings at which that breaks | ~**35,300** |
-| corpus growth over the preceding ~2 weeks | 28,287 → 30,243 → **32,771** |
-| so the drain path's remaining fuse | ~**8–14 days** |
+| `eligible_ids` with `top`'s drain flags OPEN | **30,419** measured, **92.8%** of corpus, vs cap 32,766 |
+| headroom | **2,347** eligible ids = **2,528** more open postings |
+| net open-corpus growth, run 67 (08-21) → now (08-23) | 30,243 → **32,771**, ≈ **1,264/day** |
+| gross new postings/day, last 7 days | **1,909/day** (2,208 and 2,324 on the last two full days) |
+| so the drain path's remaining fuse | ~**2 days** |
 | `identities regroup`'s `member_ids` (CLI-only) | **9,374** over 3,469 duplicate groups (28.6% of corpus) |
 | `SQLITE_MAX_VARIABLE_NUMBER`, `uv` interpreter (3.12.12 / sqlite 3.50.4) | **32,766** |
 | same, this machine's system `python3` (3.14.7 / sqlite 3.53.4) | **250,000** |
+
+**Correction, measured after the review.** The review estimated the drain fuse at 8–14 days from a
+"~2 weeks" reading of the corpus series. Measured directly, it is **~2 days**: `eligible_ids` under the
+drain flags is 30,419 (verified by running `top --include-hard-filter --include-non-swe
+--include-over-seniority` against the snapshot — **exit 0, 0 cap errors**, 2,352 hidden as ineligible out of
+32,771 open), leaving 2,528 postings of headroom against a net growth of ~1,264/day. An order-of-magnitude
+error in a published number, and the cause is worth naming: the estimate divided a headroom by a growth
+rate averaged over a span that included a 13,590-posting backfill day, which flattened it ~6×. A rate is
+only as good as the window it is averaged over.
+
+Chunking cost at a patched 250,000-parameter limit, measured: 250,001 ids in **501** statements in
+**0.02s** — so raising the test guard's threshold costs nothing even on such a build.
 
 That last pair is why the cap tests' skip guard was a defect: it fired above 200,000, so on the system
 interpreter the entire file skipped and printed green, and being `autouse` it also skipped the static
