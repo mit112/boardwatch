@@ -256,19 +256,20 @@ def upsert_lane_company(conn: Connection, *, provider: str, slug: str, name: str
     A sibling of `upsert_watch` rather than a parameter on it: a defaulted `watched=` would
     silently backfill every existing caller with a value none of them chose.
 
-    On conflict this touches NOTHING but the name. A lane must never unwatch a board the user
-    watches, and must never relabel a `registry` company as lane-discovered — either would make
-    the store's own account of where a company came from a lie. `DO UPDATE SET name` rather than
-    `DO NOTHING` so an employer's display name stays current; `name` carries no provenance.
+    On conflict this touches NOTHING. A lane must never unwatch a board the user watches, and
+    must never relabel a `registry` company as lane-discovered — either would make the store's
+    own account of where a company came from a lie. `name` is left alone too, and that is not
+    fussiness: `scan/apply.py` reads `companies.name` into `IdentityInputs.company_name`, a
+    component of the `cross_host` posting identity, so letting an aggregator's rendering of an
+    employer overwrite a curated one silently re-keys that company's identities. Keeping a
+    display name current is worth less than that, and `DO NOTHING` is robust to however a
+    runner chooses to call this.
     """
     stmt = sqlite_insert(companies).values(
         name=name, provider=provider, slug=slug, source="lane", watched=False
     )
     conn.execute(
-        stmt.on_conflict_do_update(
-            index_elements=[companies.c.provider, companies.c.slug],
-            set_={"name": stmt.excluded.name},
-        )
+        stmt.on_conflict_do_nothing(index_elements=[companies.c.provider, companies.c.slug])
     )
 
 

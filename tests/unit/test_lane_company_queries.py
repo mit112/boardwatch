@@ -2,9 +2,10 @@
 
 The load-bearing claim is what the upsert does NOT do. A lane sees hundreds of aggregator hits
 per run and many of them are boards the user already watches; if the upsert wrote its own
-`watched`/`source` on conflict it would silently unwatch a watched board and relabel a shipped
-registry company as lane-discovered. Neither is recoverable from the store afterwards, because
-nothing records what the row said before.
+`watched`/`source`/`name` on conflict it would silently unwatch a watched board, relabel a
+shipped registry company as lane-discovered, and re-key that company's posting identities
+(`companies.name` is a `cross_host` identity component). None of the three is recoverable from
+the store afterwards, because nothing records what the row said before.
 """
 
 from __future__ import annotations
@@ -60,7 +61,22 @@ def test_upserting_over_a_watched_registry_company_changes_neither_flag(engine: 
     row = _row(engine, provider="greenhouse", slug="acme")
     assert row.watched is True, "a lane must never unwatch a board the user watches"
     assert row.source == "registry", "a lane must never relabel a registry company"
-    assert row.name == "Acme Inc.", "the display name carries no provenance and stays current"
+    assert row.name == "Acme", "an aggregator's rendering must not overwrite a curated name"
+
+
+def test_the_name_is_never_overwritten_because_it_keys_posting_identities(
+    engine: Engine,
+) -> None:
+    """`scan/apply.py` feeds `companies.name` into `IdentityInputs.company_name`, a component
+    of the `cross_host` posting identity. An upsert that refreshed the name would silently
+    re-key every identity that company already has, for a cosmetic gain."""
+    with engine.begin() as conn:
+        upsert_watch(
+            conn, provider="greenhouse", slug="acme", name="Acme Corporation", source="registry"
+        )
+    with engine.begin() as conn:
+        upsert_lane_company(conn, provider="greenhouse", slug="acme", name="acme")
+    assert _row(engine, provider="greenhouse", slug="acme").name == "Acme Corporation"
 
 
 def test_upserting_a_lane_company_twice_is_idempotent(engine: Engine) -> None:

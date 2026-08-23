@@ -120,17 +120,22 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
-    # A rebuild does not re-validate existing rows, so anything the widened schema allowed
-    # would survive the narrowing as silently illegal data. Both kinds are deleted rather than
-    # remapped: unlike b7e41c0a9f23's health probe, a lane row has no honest board equivalent —
-    # calling a lane scan a board scan is what `scan_kind` exists to prevent, and it would
-    # restore the coverage double-count. Nothing is lost that a lane run cannot rediscover.
-    op.execute("DELETE FROM board_scans WHERE scan_kind = 'lane'")
-    op.execute(
-        "DELETE FROM board_scans WHERE company_id IN "
-        "(SELECT id FROM companies WHERE source = 'lane')"
-    )
-    op.execute("DELETE FROM companies WHERE source = 'lane'")
+    # A rebuild does not re-validate existing rows, so a `source = 'lane'` row would survive
+    # the narrowing as silently illegal data. Relabel it `registry`; do NOT delete it.
+    # `postings.company_id` is a foreign key to `companies.id` and a lane's postings are the
+    # whole yield of a lane run, so deleting the company destroys real data — and it does so
+    # SILENTLY: alembic builds its own engine, so `store/db.py`'s `PRAGMA foreign_keys=ON`
+    # connect listener never fires for a migration (D-269, measured), and the delete raises
+    # nothing while leaving every posting pointing at an id that no longer exists.
+    #
+    # The narrowed schema simply cannot EXPRESS lane provenance, so a rollback necessarily
+    # loses that distinction. Losing an audit label is inherent to downgrading; losing the
+    # postings is not, and it is by far the worse trade.
+    op.execute("UPDATE companies SET source = 'registry' WHERE source = 'lane'")
+    # `board_scans` rows are KEPT and only the column is dropped. Once `scan_kind` is gone a
+    # lane row is indistinguishable from a board row by construction, so yes the coverage
+    # double-count returns — but that IS the pre-migration behaviour being rolled back to.
+    # Deleting scan rows would throw away run history to fix a bug the target schema still has.
     with op.batch_alter_table(
         "board_scans", copy_from=_board_scans(with_scan_kind=True), recreate="always"
     ) as batch_op:
