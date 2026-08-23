@@ -26,6 +26,8 @@ import pytest
 from sqlalchemy import Engine, insert
 
 from boardwatch.core.clock import utcnow
+from boardwatch.core.posting_identity import PostingIdentity
+from boardwatch.core.regroup import JobMerge
 from boardwatch.eligibility import final_gate
 from boardwatch.eligibility.catalog import load_rules
 from boardwatch.eligibility.engine import evaluate, write_evaluation
@@ -40,7 +42,15 @@ from boardwatch.eligibility.read import (
 from boardwatch.eligibility.resolve import declared_fields
 from boardwatch.store.abstain_queries import count_requirement_dispositions
 from boardwatch.store.db import ensure_schema, get_engine
+from boardwatch.store.identity_queries import (
+    load_identities,
+    load_identity_inputs,
+    write_identities,
+)
+from boardwatch.store.ledger_queries import load_dispositions, record_disposition, reopen_jobs
+from boardwatch.store.param_chunks import ID_CHUNK_SIZE
 from boardwatch.store.queries import current_posting_versions
+from boardwatch.store.regroup import apply_merges, job_anchors
 from boardwatch.store.tables import companies, jobs, posting_versions, postings
 
 BLOCK_ALL = Policy(families={
@@ -82,6 +92,27 @@ needs_a_real_cap = pytest.mark.skipif(
     VAR_LIMIT > 1_000_000,
     reason=f"SQLite here allows {VAR_LIMIT} bound parameters; the id list would be absurd",
 )
+
+
+def test_the_chunk_size_is_small_enough_for_the_spanning_tests_to_span() -> None:
+    """Every `_oversized_spanning` test's discriminating power rests on this inequality.
+
+    Those tests catch a dropped chunk only because their two real ids land in DIFFERENT
+    chunks, which holds only while `ID_CHUNK_SIZE` is under the parameter cap. `needs_a_real_cap`
+    bounds `VAR_LIMIT` from ABOVE only, so nothing else here notices a build that patches
+    `SQLITE_MAX_VARIABLE_NUMBER` *down* below 500, or a future session raising `ID_CHUNK_SIZE`
+    toward the cap for fewer round-trips. Either collapses every list into one chunk, and an
+    implementation that keeps only the last chunk would then pass all six.
+
+    A test rather than a module-level assert, deliberately: an import-time assert aborts
+    COLLECTION of this file, which is exactly how the whole set is verified — forcing
+    `ID_CHUNK_SIZE` to 10**9 and requiring every test here to go red. An assert would make that
+    check impossible to run instead of merely failing it.
+    """
+    assert ID_CHUNK_SIZE < VAR_LIMIT, (
+        f"chunk size {ID_CHUNK_SIZE} >= parameter cap {VAR_LIMIT}: the spanning tests would "
+        "fit in a single chunk and could no longer catch a dropped one"
+    )
 
 
 @pytest.fixture()
@@ -309,3 +340,215 @@ def test_current_posting_versions_reads_more_posting_ids_than_the_cap(
         got = current_posting_versions(conn, _oversized(posting_id))
     assert set(got) == {posting_id}
     assert got[posting_id].posting_version_id == version_id
+
+
+# --------------------------------------------------------------------------------------
+# The DRAIN path (D-288 review finding b). Everything above is reached on every scheduled
+# run; everything below is reached only with `top`'s audit flags open —
+# `--include-hard-filter` / `--include-non-swe` / `--include-over-seniority`, which are
+# D-277's only drain for a `hidden_hard_filter` holding 59% of the corpus. With them open
+# `eligible_ids` was MEASURED at 30,419 against a cap of 32,766: not broken yet, ~2 days of
+# headroom at the corpus's ~1,264/day net growth. Same bug class as D-287, one call path
+# over, and the only reason it had not fired is that nobody had run the audit that week.
+#
+# The merge semantics differ per site and getting one wrong RAISES NOTHING — it silently
+# returns a short answer. THREE shapes, matching `param_chunks.id_chunks`' contract:
+# `dict.update` at the FOUR sites whose result is keyed on the chunked column itself
+# (`load_identities`, `job_anchors`, `apply_merges`' re-read, `load_dispositions`);
+# CONCATENATE at `load_identity_inputs`, which returns a flat tuple keyed on nothing; and a
+# SUMMED `rowcount` at `reopen_jobs`, which returns a scalar rather than a mapping.
+# Every test below places two real ids in DIFFERENT chunks, so an implementation that keeps
+# only one chunk fails on the missing row rather than passing on the survivor.
+# --------------------------------------------------------------------------------------
+
+
+@pytest.fixture()
+def two_postings(db: Engine) -> tuple[int, int, int, int, int]:
+    """(survivor_job, job_a, posting_a, job_b, posting_b), created in that id order.
+
+    The survivor job is created FIRST so its id is below both real job ids, and therefore
+    outside the padding range `_oversized_spanning` builds above `max(first, last)`. A
+    padding id that collided with a real row would make the test agree with itself.
+    """
+    now = utcnow()
+    with db.begin() as conn:
+        cid = int(conn.execute(insert(companies).values(
+            name="Acme", provider="greenhouse", slug="acme-drain", source="user", watched=True,
+        )).inserted_primary_key[0])
+        survivor = int(conn.execute(insert(jobs).values(created_at=now)).inserted_primary_key[0])
+        made: list[int] = []
+        for n in (1, 2):
+            jid = int(conn.execute(insert(jobs).values(created_at=now)).inserted_primary_key[0])
+            pid = int(conn.execute(insert(postings).values(
+                company_id=cid, job_id=jid, provider_posting_id=f"drain-{n}", title="Eng",
+                normalized_title="eng", first_seen_at=now, last_seen_at=now, status="open",
+                consecutive_missing=0, content_hash=f"dh{n}", body_text=JD,
+            )).inserted_primary_key[0])
+            made += [jid, pid]
+    return (survivor, made[0], made[1], made[2], made[3])
+
+
+@needs_a_real_cap
+def test_load_identity_inputs_reads_more_posting_ids_than_the_cap(
+    db: Engine, two_postings: tuple[int, int, int, int, int]
+) -> None:
+    """`top_cmd.py:421` passes `eligible_ids` straight in — 30,419 with the drain flags open.
+
+    The `posting_ids=None` branch issues no `IN` list and was never broken; this is the
+    explicit-list branch. The result is a flat tuple, so the chunks CONCATENATE — a merge
+    that overwrote instead of extending would return only the last chunk's rows.
+    """
+    _, _, posting_a, _, posting_b = two_postings
+    with db.connect() as conn:
+        got = load_identity_inputs(conn, _oversized_spanning(posting_a, posting_b))
+    # A LIST, not a set: cardinality is exactly the property this site's merge rule owns, and
+    # a set comparison passes for a merge that returns each row twice as readily as once.
+    assert [row.posting_id for row in got] == [posting_a, posting_b]
+
+
+@needs_a_real_cap
+def test_load_identities_reads_more_posting_ids_than_the_cap(
+    db: Engine, two_postings: tuple[int, int, int, int, int]
+) -> None:
+    """`top_cmd.py:416`, the dedup read, on the same `eligible_ids` list.
+
+    Rows accumulate across chunks and the dict is built once at the end, rather than merging
+    per-chunk dicts: a posting's identities all share its `posting_id`, so a per-chunk
+    `dict.update` would be sound here too — but only because chunking splits on that same
+    column, and building the dict once removes the need to rely on it.
+    """
+    _, _, posting_a, _, posting_b = two_postings
+    now = utcnow()
+    with db.begin() as conn:
+        for pid in (posting_a, posting_b):
+            write_identities(conn, pid, [PostingIdentity("exact_quad", f"q-{pid}")], now=now)
+    with db.connect() as conn:
+        got = load_identities(conn, _oversized_spanning(posting_a, posting_b))
+    assert set(got) == {posting_a, posting_b}
+    assert got[posting_a] == (PostingIdentity("exact_quad", f"q-{posting_a}"),)
+
+
+@needs_a_real_cap
+def test_job_anchors_reads_more_posting_ids_than_the_cap(
+    db: Engine, two_postings: tuple[int, int, int, int, int]
+) -> None:
+    """`top_cmd.py:432` — and its answer feeds the ledger read below, so a short result here
+    would quietly narrow that one too.
+
+    D-288 finding (a) is why this is on the list at all: D-287's table attributed this site a
+    <=950 bound, but that bound belongs to `runner._regroup`'s `member_ids`, not to the
+    function. The SECOND caller passes corpus-scaled `eligible_ids`. A bound belongs to a
+    caller, never to a site.
+    """
+    _, job_a, posting_a, job_b, posting_b = two_postings
+    with db.connect() as conn:
+        got = job_anchors(conn, _oversized_spanning(posting_a, posting_b))
+    assert got == {posting_a: job_a, posting_b: job_b}
+
+
+@needs_a_real_cap
+def test_apply_merges_re_reads_more_posting_ids_than_the_cap(
+    db: Engine, two_postings: tuple[int, int, int, int, int]
+) -> None:
+    """`apply_merges` re-reads every merge's anchor inside the writing transaction.
+
+    That re-read is the guard which keeps an event out of the append-only trail for an UPDATE
+    that would match no rows, so losing a chunk of it does not merely under-merge — it drops
+    real merges while reporting success. The padding merges name postings that do not exist,
+    which is exactly what a stale plan looks like: they are correctly filtered out, and only
+    the two real ones move.
+    """
+    survivor, job_a, posting_a, job_b, posting_b = two_postings
+    stale = [
+        JobMerge(posting_id=pid, from_job_id=survivor, to_job_id=survivor)
+        for pid in range(max(posting_a, posting_b) + 1, max(posting_a, posting_b) + 1 + VAR_LIMIT)
+    ]
+    merges = [
+        JobMerge(posting_id=posting_a, from_job_id=job_a, to_job_id=survivor),
+        *stale,
+        JobMerge(posting_id=posting_b, from_job_id=job_b, to_job_id=survivor),
+    ]
+    with db.begin() as conn:
+        moved = apply_merges(conn, merges, identity_kind="exact_quad", now=utcnow())
+    assert moved == 2, "a dropped chunk loses a real merge and still reports success"
+    with db.connect() as conn:
+        assert job_anchors(conn, [posting_a, posting_b]) == {
+            posting_a: survivor, posting_b: survivor
+        }
+
+
+@needs_a_real_cap
+def test_load_dispositions_reads_more_job_ids_than_the_cap(
+    db: Engine, two_postings: tuple[int, int, int, int, int]
+) -> None:
+    """`top_cmd.py:433` reaches this through `live_dispositions`, keyed on `job_anchors`'
+    values — so with the drain flags open it binds one job id per eligible posting.
+
+    A short answer here does not raise: it reports a `built` job as un-handled, and the
+    ranker re-serves a lead the program already built. That is the exact defect the ledger
+    exists to prevent, reintroduced through the read that enforces it.
+    """
+    _, job_a, _, job_b, _ = two_postings
+    now = utcnow()
+    with db.begin() as conn:
+        for jid in (job_a, job_b):
+            record_disposition(
+                conn, jid, disposition="built", reason="lead_built",
+                policy_version="pv-1", now=now,
+            )
+    with db.connect() as conn:
+        got = load_dispositions(conn, _oversized_spanning(job_a, job_b))
+    assert set(got) == {job_a, job_b}
+
+
+@needs_a_real_cap
+def test_reopen_jobs_sums_rowcount_across_more_job_ids_than_the_cap(
+    db: Engine, two_postings: tuple[int, int, int, int, int]
+) -> None:
+    """The drain's WRITE side — `ledger reopen`, and `regroup._carry_dispositions`.
+
+    The one site here that is NOT a mapping: it returns a scalar `rowcount`, so the chunks
+    must be ADDED. The two rows sit in different chunks on purpose — an implementation that
+    returns the last chunk's `rowcount` reports 1 while having correctly reopened 2, and the
+    operator reads a drain that under-counts what it drained. Same shape as D-287's
+    `abstain_queries` finding, which a `dict.update` would have silently understated.
+    """
+    _, job_a, _, job_b, _ = two_postings
+    now = utcnow()
+    with db.begin() as conn:
+        for jid in (job_a, job_b):
+            record_disposition(
+                conn, jid, disposition="built", reason="lead_built",
+                policy_version="pv-1", now=now,
+            )
+    with db.begin() as conn:
+        released = reopen_jobs(conn, _oversized_spanning(job_a, job_b), now=now)
+    assert released == 2, "per-chunk rowcounts must be summed, not overwritten"
+    with db.connect() as conn:
+        rows = load_dispositions(conn, [job_a, job_b])
+    assert all(row.reopened_at is not None for row in rows.values())
+
+
+@needs_a_real_cap
+def test_a_repeated_id_spanning_two_chunks_is_not_returned_twice(
+    db: Engine, two_postings: tuple[int, int, int, int, int]
+) -> None:
+    """`IN (7, 7)` yields posting 7 once; chunk-then-concatenate would yield it once PER CHUNK.
+
+    The one semantic difference chunking introduces that is not a dropped row but an INVENTED
+    one, and it is invisible to every other test here because they all pass distinct ids. It
+    reaches the two sites that concatenate or accumulate; the four `dict.update` sites collapse
+    duplicates for free, and `reopen_jobs` is protected by its own `reopened_at IS NULL` guard.
+
+    No caller passes a duplicate today — `top_cmd`'s `eligible_ids` comes from a query with at
+    most one row per posting — so this pins a precondition rather than fixing a live bug. It is
+    worth pinning because the failure is silent: a duplicated `IdentityInputs` row would make
+    one posting look like a two-member duplicate group to `resolve_duplicates`.
+    """
+    _, _, posting_a, _, posting_b = two_postings
+    spanning = _oversized_spanning(posting_a, posting_b)
+    with db.connect() as conn:
+        inputs = load_identity_inputs(conn, [*spanning, posting_a])
+        identities = load_identities(conn, [*spanning, posting_a])
+    assert [row.posting_id for row in inputs] == [posting_a, posting_b]
+    assert set(identities) <= {posting_a, posting_b}

@@ -16,6 +16,7 @@ from sqlalchemy import Row, insert, select, update
 from sqlalchemy.engine import Connection
 
 from boardwatch.core.ledger import LedgerRow, is_live, plan_upsert
+from boardwatch.store.param_chunks import id_chunks
 from boardwatch.store.tables import job_dispositions
 
 
@@ -37,16 +38,36 @@ def load_dispositions(
     """Every stored disposition, live or not, for the named jobs or for all of them.
 
     `job_ids=None` issues no `IN` list — SQLite caps bound parameters at 32766 on the bundled
-    3.45.1 and the corpus is already 24,073 jobs, so an unconditional `IN` would make the
-    audit path itself a scheduled failure as breadth grows (the same reasoning as
-    `load_identities`). An empty list means an empty result, not "all".
+    3.50.4 — so an unconditional `IN` would make the audit path itself a scheduled failure as
+    breadth grows (the same reasoning as `load_identities`). **This previously cited "24,073
+    jobs", which D-287 retracted as the wrong quantity, not merely a stale one:** nothing ever
+    builds a job-id list from the `jobs` table here. The bound that matters is whatever a
+    caller passes — 100 for `ledger show` (the whole ledger, measured), up to 30,419 for
+    `top_cmd`'s drain path. An empty list means an empty result, not "all".
+
+    An explicit list is CHUNKED (D-288). `top_cmd` reaches this through `live_dispositions`
+    keyed on `job_anchors`' values, so with the drain flags open it binds one job id per
+    eligible posting. A short answer here raises nothing — it reports an already-`built` job
+    as unhandled and the ranker re-serves a lead the program has already delivered, which is
+    the one defect this ledger exists to prevent. `dict.update` is exact: the result is keyed
+    on `job_id`, the column being chunked.
     """
     if job_ids is not None and not job_ids:
         return {}
     stmt = select(job_dispositions)
-    if job_ids is not None:
-        stmt = stmt.where(job_dispositions.c.job_id.in_(list(job_ids)))
-    return {int(raw.job_id): _row(raw) for raw in conn.execute(stmt).all()}
+    if job_ids is None:
+        return {int(raw.job_id): _row(raw) for raw in conn.execute(stmt).all()}
+    out: dict[int, LedgerRow] = {}
+    for chunk in id_chunks(list(job_ids)):
+        out.update(
+            {
+                int(raw.job_id): _row(raw)
+                for raw in conn.execute(
+                    stmt.where(job_dispositions.c.job_id.in_(chunk))
+                ).all()
+            }
+        )
+    return out
 
 
 def live_dispositions(
@@ -139,15 +160,29 @@ def reopen_jobs(conn: Connection, job_ids: Sequence[int], *, now: datetime) -> i
 
     Sets `reopened_at` rather than deleting: draining a bucket must not erase the record that
     the bucket ever held anything, and `ledger show` can still report a drained decision.
+
+    Chunked (D-288), and the ONE site in that change whose chunks are not a mapping: this
+    returns a scalar `rowcount`, so the pieces are ADDED. A `dict.update`-shaped merge — or
+    simply keeping the last chunk's result — would report a smaller drain than it performed
+    while raising nothing, understating the very number the operator drains by. Same shape as
+    D-287's `abstain_queries` finding, one call path over.
+
+    Duplicate job ids across chunks are safe here, non-obviously: the `reopened_at IS NULL`
+    guard is on the column this writes, and a later chunk sees an earlier chunk's write inside
+    the same transaction, so a job listed twice is counted once. That reasoning is what makes
+    the sum exact — it does not survive changing the guard.
     """
     if not job_ids:
         return 0
-    result = conn.execute(
-        update(job_dispositions)
-        .where(
-            job_dispositions.c.job_id.in_(list(job_ids)),
-            job_dispositions.c.reopened_at.is_(None),
+    released = 0
+    for chunk in id_chunks(list(job_ids)):
+        result = conn.execute(
+            update(job_dispositions)
+            .where(
+                job_dispositions.c.job_id.in_(chunk),
+                job_dispositions.c.reopened_at.is_(None),
+            )
+            .values(reopened_at=now)
         )
-        .values(reopened_at=now)
-    )
-    return int(result.rowcount)
+        released += int(result.rowcount)
+    return released

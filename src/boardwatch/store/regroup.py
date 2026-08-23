@@ -17,6 +17,7 @@ from boardwatch.core.identity_kinds import IDENTITY_ALGORITHM_VERSION
 from boardwatch.core.ledger import is_live
 from boardwatch.core.regroup import JobMerge
 from boardwatch.store.ledger_queries import load_dispositions, record_disposition, reopen_jobs
+from boardwatch.store.param_chunks import id_chunks
 from boardwatch.store.tables import applications, artifacts, job_grouping_events, postings
 
 
@@ -44,15 +45,34 @@ def job_anchors(conn: Connection, posting_ids: Sequence[int]) -> dict[int, int]:
 
     An omission is what `plan_regrouping` reads as `missing_job_anchor`, so a NULL `job_id`
     surfaces as a counted refusal instead of a merge onto nothing.
+
+    Chunked (D-288). **Five** callers reach this, and only one is corpus-scaled: `top_cmd`'s
+    dedup block passes `eligible_ids` — 30,419 with the audit/drain flags open, against a cap
+    of 32,766. The other four are small — `runner._regroup` and `identities_cmd` pass
+    duplicate-group `member_ids`, and `runner` passes `tailored + unshippable_ids` and
+    `dead_ids`, both bounded by `top_n`. A bound belongs to a CALLER, not to a site, so the
+    site has to survive its largest one; enumerating two of five is how that gets missed.
+
+    No figure is quoted for `member_ids` on purpose. D-288's table records 9,374 (28.6% of
+    the corpus) and D-287's records <=950 (2.6%), and they cannot both be right — neither wrote
+    down its match rule or corpus size, which is the defect D-268 already named once. A
+    read-only count of open postings in a multi-member `exact_quad` group says **718**. It is
+    far under the cap on every reading, so nothing here turns on it; resolving the record does
+    not belong in a docstring.
+
+    `dict.update` is exact because the result is keyed on the very column being chunked.
     """
     if not posting_ids:
         return {}
-    rows = conn.execute(
-        select(postings.c.id, postings.c.job_id).where(
-            postings.c.id.in_(list(posting_ids)), postings.c.job_id.is_not(None)
-        )
-    ).all()
-    return {int(row.id): int(row.job_id) for row in rows}
+    anchors: dict[int, int] = {}
+    for chunk in id_chunks(list(posting_ids)):
+        rows = conn.execute(
+            select(postings.c.id, postings.c.job_id).where(
+                postings.c.id.in_(chunk), postings.c.job_id.is_not(None)
+            )
+        ).all()
+        anchors.update({int(row.id): int(row.job_id) for row in rows})
+    return anchors
 
 
 def apply_merges(
@@ -81,14 +101,19 @@ def apply_merges(
     # UPDATE that then matches 0 rows claims a move that never happened, and rebuilding the
     # projection from a trail like that would move a posting nobody moved. The guard on the UPDATE
     # below still stands — this narrows what gets a trail entry, it does not replace the guard.
-    current = {
-        int(row.id): row.job_id
-        for row in conn.execute(
-            select(postings.c.id, postings.c.job_id).where(
-                postings.c.id.in_([merge.posting_id for merge in merges])
-            )
-        ).all()
-    }
+    # Chunked (D-288) for the same reason `job_anchors` is: `merges` is bounded by the caller,
+    # and losing a chunk here would not under-merge safely — it would silently reclassify real
+    # merges as stale, so the postings never move and the run reports success anyway.
+    current: dict[int, int | None] = {}
+    for chunk in id_chunks([merge.posting_id for merge in merges]):
+        current.update(
+            {
+                int(row.id): row.job_id
+                for row in conn.execute(
+                    select(postings.c.id, postings.c.job_id).where(postings.c.id.in_(chunk))
+                ).all()
+            }
+        )
     live = [merge for merge in merges if current.get(merge.posting_id) == merge.from_job_id]
     if not live:
         return 0
