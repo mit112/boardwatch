@@ -22,24 +22,29 @@ id rather than minting its own; run standalone, each still mints one, which is w
 from __future__ import annotations
 
 from collections import Counter
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
 from datetime import timedelta
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+import httpx
 from rich.console import Console
 from sqlalchemy import Engine, select
 
 from boardwatch.core.clock import utcnow
 from boardwatch.core.dedup import Suppression
 from boardwatch.core.lineage import ResumeSourceLineage
+from boardwatch.core.politeness import Fetcher
 from boardwatch.core.regroup import plan_regrouping
 from boardwatch.core.settings import Settings
 from boardwatch.eligibility.audit import AuditView, load_audit
 from boardwatch.eligibility.catalog import load_rules
 from boardwatch.eligibility.engine import ENGINE_KIND, engine_version
 from boardwatch.eligibility.preflight import current_identity
+from boardwatch.lanes.admission import CompanyBudget
+from boardwatch.lanes.base import Lane
+from boardwatch.lanes.hiringcafe import HiringCafeLane
 from boardwatch.notify.heartbeat import send_heartbeat
 from boardwatch.pipeline.freshness import folders_reconcile
 from boardwatch.pipeline.funnel_writer import collect_run_funnel
@@ -63,6 +68,7 @@ from boardwatch.reports.board_coverage import build_report as build_board_covera
 from boardwatch.reports.morning import MorningLead, build_morning, write_morning
 from boardwatch.reports.resume_gate import LeadArtifactError, RenderToolMissingError
 from boardwatch.reports.run_funnel import (
+    LaneReport,
     LivenessCheck,
     ScanContext,
     ShortlistCounts,
@@ -70,6 +76,7 @@ from boardwatch.reports.run_funnel import (
     write_run_funnel,
 )
 from boardwatch.reports.tailor import ResumeLineageMismatch, default_compile_runner, run_tailor
+from boardwatch.scan.apply import apply_board
 from boardwatch.scan.coordinator import ScanSummary, is_systemic_scan_outage, run_scan
 from boardwatch.store.coverage_queries import load_board_coverage
 from boardwatch.store.db import ensure_schema
@@ -77,13 +84,15 @@ from boardwatch.store.ledger_queries import record_disposition
 from boardwatch.store.queries import (
     RUN_FAILED,
     RUN_OK,
+    company_exists,
     ensure_run,
     finish_run,
     reap_stale_runs,
+    upsert_lane_company,
 )
 from boardwatch.store.regroup import apply_merges, job_anchors, protected_job_ids
 from boardwatch.store.run_funnel_queries import count_candidate_judged_this_run, lead_provenance
-from boardwatch.store.tables import postings
+from boardwatch.store.tables import companies, postings
 from boardwatch.tailor.coverage import CoverageReport
 from boardwatch.tailor.load import ResumeLoadError
 from boardwatch.tailor.persona import PersonaError
@@ -101,6 +110,38 @@ if TYPE_CHECKING:
 # status='open'. 40 matches job-apps' measured median of 42/day. The cost is the render — 40
 # leads means 40 tailored résumés and 40 PDFs.
 DEFAULT_TOP_N = 40
+
+# A lane is constructed from `Settings` rather than from nothing, so the one knob it owns —
+# `lane_posting_budget`, the ceiling on JD-body GETs it may make in a run — reaches it without
+# the lane importing config itself. `LaneResult` is the only thing it hands back.
+LaneFactory = Callable[[Settings], Lane]
+
+# The lane registry: the name a user writes in `settings.lanes_enabled` -> a factory for it. A
+# MAPPING and not a branch inside `_run_lanes`, so a second lane is one row here and no change
+# to the stage that drives it.
+#
+# A name in `lanes_enabled` with no row here is reported into `summary.errors` and skipped —
+# never silently ignored, because a typo in config would then be indistinguishable from a lane
+# that ran and found nothing, which is the exact absent-versus-zero confusion the acquisition
+# tally exists to prevent.
+#
+# Registered is NOT enabled: `settings.lanes_enabled` is empty by default, so nothing in this
+# map runs until an operator names it. Registration only makes a lane reachable.
+LANE_FACTORIES: dict[str, LaneFactory] = {
+    HiringCafeLane.name: lambda settings: HiringCafeLane(
+        posting_budget=settings.lane_posting_budget
+    ),
+}
+
+# The UA the lane fetcher sends. Not boardwatch's identifying UA, and NOT app impersonation:
+# no lifted API key, no vendor app headers, no `verify=False`. That pattern is why the Indeed
+# lane is parked, and reusing it here would park this one too. What this is instead is an
+# ordinary browser UA against an ordinary public web page, which is the same request a person
+# opening that page makes.
+_LANE_USER_AGENT = (
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+    "(KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36"
+)
 
 
 @dataclass
@@ -228,10 +269,158 @@ class PipelineSummary:
     # bundle or the machine, and burying the lead for it would delete an opportunity that
     # tomorrow's run would have built.
     projection_failed_ids: list[int] = field(default_factory=list)
+    # One entry per enabled lane that RETURNED a result (JD-acquisition spec §4). Empty is the
+    # default and means no lane ran — `settings.lanes_enabled` ships `()`. A lane that RAISED is
+    # absent here and named in `errors` instead, which is the honest pair: it produced no counts,
+    # and an entry of zeros would claim it attempted work and recovered nothing.
+    lanes: list[LaneReport] = field(default_factory=list)
 
     @property
     def leads_with_pdf(self) -> int:
         return sum(1 for lead in self.tailored if lead.pdf_built)
+
+
+def _lane_fetcher(settings: Settings) -> Fetcher:
+    """The lane's own `Fetcher`, carrying a browser UA, kept SEPARATE from the scan's.
+
+    Two instances rather than one client with a swapped header, because the six ATS providers
+    keep the honest identifying UA: that is the D22 politeness contract, and an aggregator's
+    edge behaviour is no reason to stop identifying ourselves to boards that answer us honestly.
+
+    The cost is real and is why the separation is stated rather than assumed: per-host pacing
+    state lives per `Fetcher` instance, so these two do not share a delay. That is safe here
+    ONLY because they never target the same host — the providers get provider hosts, the lane
+    gets its aggregator. A lane that resolved a body through a provider's own API would defeat
+    the per-host serialization on both sides at once, with neither instance able to see it.
+    """
+    return Fetcher(
+        settings,
+        httpx.Client(
+            headers={"User-Agent": _LANE_USER_AGENT}, timeout=30.0, follow_redirects=True
+        ),
+    )
+
+
+def _run_lanes(
+    engine: Engine, settings: Settings, run_id: int
+) -> tuple[list[LaneReport], list[str]]:
+    """Run every enabled lane; return what each did and every non-fatal problem.
+
+    **A lane may never fail the run.** A lane is additive breadth: the corpus without it is
+    exactly the corpus this pipeline has always ranked, so the fail-safe direction is open — the
+    same direction an unreachable board already gets, and for the same reason. An aggregator
+    that is down, has moved its markup, or has started refusing us must cost the run its extra
+    reach and nothing else. The catch is therefore broad and per LANE, so one lane's failure
+    does not take a second lane's results with it.
+
+    The failure is still LOUD: it lands in `summary.errors`, which the run row persists and the
+    CLI prints, and the lane is absent from the reported list rather than present with zeros.
+    """
+    reports: list[LaneReport] = []
+    errors: list[str] = []
+    if not settings.lanes_enabled:
+        # No client is constructed at all on the default path, so a run with lanes off opens no
+        # extra connection pool and sends nothing anywhere.
+        return reports, errors
+    # ONE fetcher for the whole stage. Pacing is per-host inside it, so lanes on different hosts
+    # do not block each other, and two lanes that ever shared a host would correctly serialize.
+    fetcher = _lane_fetcher(settings)
+    for name in settings.lanes_enabled:
+        factory = LANE_FACTORIES.get(name)
+        if factory is None:
+            registered = ", ".join(sorted(LANE_FACTORIES)) or "none"
+            errors.append(f"lane {name}: not a registered lane (registered: {registered})")
+            continue
+        try:
+            reports.append(_collect_lane(engine, settings, factory(settings), fetcher, run_id))
+        except Exception as exc:  # noqa: BLE001 - additive breadth never fails the run
+            errors.append(f"lane {name}: collection failed: {exc!r}")
+    return reports, errors
+
+
+def _collect_lane(
+    engine: Engine, settings: Settings, lane: Lane, fetcher: Fetcher, run_id: int
+) -> LaneReport:
+    """Drive one lane: admit companies under the cap, then land what it collected.
+
+    The admission closure is the substantive half of the cap and it lives HERE, with the runner,
+    because it needs the store. `CompanyBudget.admit()` has no notion of *new* and deliberately
+    does not build one (`lanes/admission.py` says so in its own docstring): without the
+    is-it-known check every one of the ten slots goes to a company already stored, reach never
+    widens, and the refusal list looks exactly like a normal capped run — a control failure that
+    nothing reports. An already-known company is therefore admitted FREE and is not charged.
+
+    Each `admits` call opens and closes its OWN short connection. Holding one open across
+    `collect()` would pin a SQLite reader — and its read snapshot — for the whole of the lane's
+    paced network work, blocking WAL checkpointing and standing in the path of a migration for
+    minutes. The protocol calls `admits` once per distinct `(provider, slug)`, so this is a few
+    dozen calls a run, which is nothing beside a one-second-per-host fetch pace.
+    """
+    budget = CompanyBudget(settings.lane_new_companies_per_run)
+
+    def admits(provider: str, slug: str) -> bool:
+        with engine.connect() as conn:
+            if company_exists(conn, provider=provider, slug=slug):
+                return True
+        return budget.admit(provider, slug)
+
+    result = lane.collect(fetcher, admits)
+    for company in result.snapshots:
+        # `upsert_lane_company` is called for EVERY snapshot, including a company the store
+        # already holds — the convergence case a lane exists to produce. It is conflict-safe by
+        # design and leaves an existing row's `source` and `watched` alone, so this can never
+        # relabel a registry company or unwatch a board the user watches; running it
+        # unconditionally is what guarantees a `company_id` to apply against without a branch.
+        #
+        # `watched=False` is what the upsert writes for a NEW row, and it is load-bearing:
+        # `scan/coordinator` looks a watched company's provider up in the six-provider map and
+        # appends `unknown provider` to `summary.errors` on a miss. A watched company keyed to a
+        # lane's own provider name would add that line to every run forever, and ten new
+        # companies a run makes the run error count meaningless inside a week.
+        #
+        # One short transaction per company, not one around the loop: `apply_board` opens and
+        # commits its own per-board transaction, which is the per-board atomicity guarantee an
+        # outer transaction would silently take away.
+        with engine.begin() as conn:
+            upsert_lane_company(
+                conn,
+                provider=company.provider,
+                slug=company.slug,
+                # The employer's display name, which the funnel's leads table and the morning
+                # artifact render. It only reaches `companies.name` on INSERT: the upsert leaves
+                # an existing row's name alone, so a lane can never overwrite a curated registry
+                # name — which matters because `scan/apply.py` feeds `companies.name` into the
+                # `cross_host` posting identity, so rewriting it would silently re-key that
+                # company's identities.
+                name=company.name,
+            )
+            company_id = int(
+                conn.execute(
+                    select(companies.c.id).where(
+                        companies.c.provider == company.provider,
+                        companies.c.slug == company.slug,
+                    )
+                ).scalar_one()
+            )
+        # `scan_kind="lane"`, and the default is not good enough here: `apply_board` writes a
+        # `board_scans` row every time, and board coverage outer-joins that table on
+        # `(company_id, run_id)`. A lane touching an already-watched company would otherwise
+        # emit a SECOND row for that pair, so the company appears twice — once measured, once
+        # enumerated-only — inflating `corpus_boards` and every bucket count.
+        apply_board(engine, company.snapshot, company_id, run_id, scan_kind="lane")
+
+    tally = result.tally
+    return LaneReport(
+        name=lane.name,
+        counts=tally.counts,
+        attempted=tally.attempted,
+        resolved=tally.resolved,
+        is_silent_outage=tally.is_silent_outage,
+        # Only companies the store did NOT already hold reach the budget, so `admitted` is the
+        # reach this run ADDED rather than the companies the lane touched.
+        admitted=budget.admitted,
+        refused=budget.refused,
+    )
 
 
 def _retract_projected(outcomes: Counter[ProjectionLeadOutcome]) -> None:
@@ -676,6 +865,29 @@ def run_pipeline(
                 stage_errors.append(message)
                 summary.errors.append(message)
                 return summary
+
+        # The lane stage (JD-acquisition spec §4) — additive breadth, run before the ranker so
+        # that a posting a lane discovers is judged by THIS run rather than by tomorrow's. It
+        # reaches employers no ATS provider can and lands their postings through the SAME
+        # `apply_board` every provider uses, so every persistence invariant is inherited rather
+        # than restated.
+        #
+        # Placed after the `--project` preflight rather than immediately after the scan, and
+        # deliberately: a refused projection returns before the ranker, while a lane's cost is
+        # minutes of politeness-paced network, so paying it on a run that is about to refuse
+        # buys nothing. The preflight's own guarantee is untouched — it is that no LEAD
+        # DISPOSITION is written before it, and this stage writes companies and postings, the
+        # two tables the scan stage already wrote before the preflight ran.
+        #
+        # No `fatal` arm. `_run_lanes` catches per lane and returns what went wrong, because a
+        # lane is additive: the corpus without it is exactly the corpus this pipeline has always
+        # ranked, so a dead aggregator costs the run its extra reach and nothing else.
+        if settings.lanes_enabled:
+            console.print("[bold]lanes[/bold]")
+        lane_reports, lane_errors = _run_lanes(engine, settings, run_id)
+        summary.lanes.extend(lane_reports)
+        stage_errors.extend(lane_errors)
+        summary.errors.extend(lane_errors)
 
         console.print("[bold]eligibility[/bold]")
         try:
@@ -1197,6 +1409,11 @@ def _emit_funnel(
         rewrite_rows=summary.rewrite_rows,
         # Already loaded once above; the morning artifact receives this identical object.
         board_coverage=summary.board_coverage,
+        # D7. Passed straight through — a lane's counters are in-memory tallies of requests it
+        # made, so there is nothing to read back out of the store for them. What the lane
+        # PERSISTED is recounted independently anyway: its postings arrive in the per-source
+        # table under `company_source='lane'`, through a query that never saw this list.
+        lanes=summary.lanes,
         # P4 item 6: one coverage report per lead, same order as `tailored`, for the funnel's
         # coverage summary. Mirrors how `rewrite_rows` is passed separately, not via the Lead.
         coverages=[lead.coverage for lead in summary.tailored],

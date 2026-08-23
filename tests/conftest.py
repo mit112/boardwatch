@@ -114,6 +114,45 @@ class DedupSeed:
     now: datetime
 
 
+@pytest.fixture(autouse=True)
+def _never_reach_the_real_data_dir(
+    tmp_path_factory: pytest.TempPathFactory, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Point `BOARDWATCH_DATA_DIR` at a scratch dir for EVERY test. Autouse, no opt-out.
+
+    This exists because the suite migrated Mit's production database. `load_settings()` falls
+    back to `default_data_dir()` when no `data_dir` is passed, and `default_data_dir()` reads
+    this variable or else returns the real user data dir. Several fixtures — `dedup_env` below
+    among them — set only `BOARDWATCH_CONFIG_DIR`, so any CLI test reaching `load_settings()`
+    without `--data-dir` resolved to the live ~1.4 GB store and ran `ensure_schema` against it.
+
+    What that costs is not a dirty temp file. `ensure_schema` runs alembic to HEAD, so a branch
+    adding a migration silently migrates the production store the first time its tests run — and
+    the unattended daily driver then executes `main`'s tree, which has no such revision, and dies
+    with `Can't locate revision`. That is D-279 exactly, and it recurred on 2026-08-23 with
+    `p_lane_companies`. Gate P3 counts CONSECUTIVE clean scheduled ticks, so one such failure
+    costs a day and resets the streak.
+
+    A redirect rather than a hard failure: a test that wanted the default now gets an empty
+    store. Any fixture that sets the variable itself still wins — it runs after this one and its
+    `monkeypatch.setenv` overwrites this.
+
+    **This closes the env-var route, not every route.** `load_settings` prefers a `data_dir` key
+    in the real `config.toml` over this variable (`settings.py`: `data_dir or file_data_dir or
+    default_data_dir()`), and this fixture deliberately does not pin `BOARDWATCH_CONFIG_DIR`, so
+    a machine whose config pins `data_dir` would still resolve to that path. Nothing in the
+    codebase ever WRITES that key and Mit's config does not carry one, so the hole is not open
+    today — but do not read this fixture as a proof that no test can reach a real store.
+
+    Deliberately NOT extended to `BOARDWATCH_CONFIG_DIR`. That variable has the same shape of
+    hazard (D-281: a run isolated only by `DATA_DIR` still reads the live `resume.yaml` and
+    career-profile bundle), but many tests read real packaged config on purpose, so pinning it
+    here would be a much larger behavioural change than this fix should carry. It remains a
+    known gap.
+    """
+    monkeypatch.setenv("BOARDWATCH_DATA_DIR", str(tmp_path_factory.mktemp("bw-data")))
+
+
 @pytest.fixture()
 def dedup_env(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     """Config dir == data dir, so a CLI-driven `eligibility run` and the engine under test

@@ -64,6 +64,19 @@ _CONFIG_IRRELEVANT: frozenset[str] = frozenset(
         "detail_fetch_budget",     # throughput
         "reap_stale_after_hours",  # run bookkeeping/liveness — never which postings become leads
         "notify",              # delivery, post-selection: changes who is told, not which leads
+        # The three lane knobs are ACQUISITION, in the same class as `detail_fetch_budget`:
+        # they decide how much corpus arrives, not how the corpus is judged. Corpus membership
+        # has never been in this hash — watching a board changes it too, and that lives in the
+        # store, not in `Settings`.
+        #
+        # The deciding argument is downstream: `policy_version` is derived from `config_hash`,
+        # so classifying these IN would mark every permanent `built`/`skipped` disposition
+        # stale the moment a lane is armed or disarmed — a corpus-wide drain event triggered by
+        # a knob that judged nothing. And the artifact is not silent about lanes either way:
+        # the funnel's `lanes` section names every lane that ran, with its outcome counts.
+        "lanes_enabled",
+        "lane_new_companies_per_run",
+        "lane_posting_budget",
     }
 )
 

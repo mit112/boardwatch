@@ -97,6 +97,31 @@ class Settings(BaseModel):
     # which is the "free 1" §3.6 forbids just as much as a punitive 0. The midpoint of
     # the component's own range needs no corpus statistic, so it stays D17-compatible.
     zero_skill_coverage_prior: float = Field(default=0.50, ge=0.0, le=1.0)
+    # The JD-acquisition lanes the pipeline runs after the scan stage, by name. A LIST rather
+    # than a boolean so lanes 2..N need another name here and never another flag.
+    #
+    # **Empty is not caution, it is Gate P3.** The gate needs 7 consecutive clean SCHEDULED
+    # ticks and stands at 0 of 7. A lane is an unproven network dependency against a host
+    # nobody here operates, so arming one in the daily driver puts the streak at risk and buys
+    # nothing the gate measures — the lane can be exercised by a manual `boardwatch run`, which
+    # does not touch the counter. Arm it after a scratch run proves it, which is the same
+    # build-then-arm order every prior network feature used.
+    lanes_enabled: tuple[str, ...] = ()
+    # How many companies a lane may add to the store per run, matching
+    # `lanes.admission.DEFAULT_NEW_COMPANIES_PER_RUN`. "Breadth is last": a lane that reads an
+    # aggregator sees thousands of employers, and adding a company's whole board is breadth, so
+    # every addition is capped and both sides of the cap are reported. A company the store
+    # ALREADY holds is admitted free and is not charged here — the cap counts reach added.
+    lane_new_companies_per_run: int = Field(default=10, ge=0)
+    # Hard ceiling on JD-body requests one lane may make in one run. A body costs one GET, so
+    # this is the lane's whole network cost.
+    #
+    # Floor of 1, NOT 0. A budget of 0 admits companies and then records every one of their
+    # postings `not_attemptable`, which makes `attempted > 0` with `resolved == 0` — the exact
+    # signature of `AcquisitionTally.is_silent_outage`. Every run would print SILENT OUTAGE
+    # while behaving as configured, which is the cry-wolf failure that predicate's own
+    # docstring exists to avoid. Disarming a lane is what `lanes_enabled` is for.
+    lane_posting_budget: int = Field(default=60, ge=1)
     weights: RankWeights = Field(default_factory=RankWeights)
     llm: LLMTier = Field(default_factory=LLMTier)
     notify: NotifyTier = Field(default_factory=NotifyTier)

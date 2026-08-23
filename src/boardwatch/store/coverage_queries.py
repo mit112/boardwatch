@@ -56,7 +56,12 @@ def load_board_coverage(conn: Connection, *, run_id: int | None = None) -> list[
     a different path than the one that produced it" rule `run_funnel_queries.py` follows.
     """
     if run_id is None:
-        run_id = conn.execute(select(func.max(board_scans.c.run_id))).scalar_one_or_none()
+        # The latest run that BOARD-scanned something. A run whose only board_scans rows are a
+        # lane's has measured no board, so defaulting to it would report the whole corpus
+        # `unscanned` — a WHERE is safe here because this aggregate never sees a NULL run_id.
+        run_id = conn.execute(
+            select(func.max(board_scans.c.run_id)).where(board_scans.c.scan_kind == "board")
+        ).scalar_one_or_none()
     held_stmt = (
         select(postings.c.company_id, func.count())
         .where(postings.c.status == "open")
@@ -67,8 +72,16 @@ def load_board_coverage(conn: Connection, *, run_id: int | None = None) -> list[
     # not scanned-and-failed) must still appear in the corpus. The join condition carries the
     # run filter — putting `run_id` in a WHERE instead would silently turn this back into an
     # inner join, since SQL compares NULL = run_id as NULL (dropped), not true.
-    join_condition = (board_scans.c.company_id == companies.c.id) & (
-        board_scans.c.run_id == run_id
+    #
+    # `scan_kind` rides the SAME join condition for the SAME reason (D-285). A lane writes its
+    # own board_scans row, and when it touches an already-watched board that is a second row
+    # for one (company_id, run_id) — one BoardCoverage each, so the company is counted twice
+    # and corpus_boards inflates. Only board scans measure a board's coverage; a lane samples
+    # an aggregator and makes no claim about the board's total.
+    join_condition = (
+        (board_scans.c.company_id == companies.c.id)
+        & (board_scans.c.run_id == run_id)
+        & (board_scans.c.scan_kind == "board")
     )
     rows = conn.execute(
         select(

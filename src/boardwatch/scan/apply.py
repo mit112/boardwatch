@@ -57,15 +57,32 @@ class ApplyResult:
 
 
 def apply_board(
-    engine: Engine, snapshot: BoardSnapshot, company_id: int, run_id: int
+    engine: Engine,
+    snapshot: BoardSnapshot,
+    company_id: int,
+    run_id: int,
+    scan_kind: str = "board",
 ) -> ApplyResult:
+    """Apply one board snapshot. `scan_kind` says which subsystem produced it (D-285).
+
+    The default is not a hidden decision: every caller on the six-provider scan path genuinely
+    IS a board scan, so `"board"` states that fact. A lane passes `"lane"` explicitly, which is
+    what keeps `coverage_queries.load_board_coverage` from counting a company twice when a lane
+    touches a board the scan already covered this run.
+    """
     started_at = utcnow()
     with engine.begin() as conn:
         if snapshot.status == "failed":
-            _scan_row(conn, run_id, company_id, started_at, "failed", 0, snapshot.error)
+            _scan_row(
+                conn, run_id, company_id, started_at, "failed", 0, snapshot.error,
+                scan_kind=scan_kind,
+            )
             return ApplyResult(status="failed")
         if snapshot.status == "unchanged":
-            _scan_row(conn, run_id, company_id, started_at, "unchanged", 0, None)
+            _scan_row(
+                conn, run_id, company_id, started_at, "unchanged", 0, None,
+                scan_kind=scan_kind,
+            )
             return ApplyResult(status="unchanged")
         result = _apply_listed(conn, snapshot.postings, company_id, run_id, snapshot.url)
         result.status = snapshot.status
@@ -80,7 +97,7 @@ def apply_board(
             _persist_validators(conn, snapshot)
         _scan_row(
             conn, run_id, company_id, started_at, snapshot.status,
-            len(snapshot.postings), snapshot.error, snapshot=snapshot,
+            len(snapshot.postings), snapshot.error, snapshot=snapshot, scan_kind=scan_kind,
         )
         return result
 
@@ -358,6 +375,7 @@ def _scan_row(
     error: str | None,
     *,
     snapshot: BoardSnapshot | None = None,
+    scan_kind: str = "board",
 ) -> None:
     conn.execute(
         insert(board_scans).values(
@@ -368,6 +386,7 @@ def _scan_row(
             status=status,
             postings_listed=listed,
             error=error,
+            scan_kind=scan_kind,
             # NULL, not 0, when there is no snapshot: a failed board's coverage is undefined.
             board_reported_total=None if snapshot is None else snapshot.board_reported_total,
             board_enumerated=None if snapshot is None else snapshot.board_enumerated,

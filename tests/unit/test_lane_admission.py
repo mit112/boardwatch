@@ -64,3 +64,14 @@ def test_two_display_names_for_one_slug_are_one_company():
     assert budget.admitted == (("greenhouse", "acme"),)
     assert budget.admit("greenhouse", "beta") is True
     assert budget.admit("greenhouse", "gamma") is False
+
+
+def test_refusing_the_same_company_twice_records_it_once():
+    """A refusal COUNT that lists one employer three times overstates what the cap cost, and
+    that number is the whole reason the refusal list exists. `admitted` already dedupes; an
+    aggregator returning many postings per employer makes the two sides disagree otherwise."""
+    budget = CompanyBudget(limit=1)
+    budget.admit("greenhouse", "kept")
+    for _ in range(3):
+        assert budget.admit("greenhouse", "dropped") is False
+    assert budget.refused == (("greenhouse", "dropped"),)

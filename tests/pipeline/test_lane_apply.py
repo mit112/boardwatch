@@ -10,7 +10,13 @@ from sqlalchemy import Engine, insert, select
 from boardwatch.core.models import BoardSnapshot, RawPosting
 from boardwatch.core.politeness import Fetcher
 from boardwatch.core.settings import Settings
-from boardwatch.lanes.base import Lane, LaneCompanySnapshot, LaneResult, lane_snapshot
+from boardwatch.lanes.base import (
+    CompanyAdmission,
+    Lane,
+    LaneCompanySnapshot,
+    LaneResult,
+    lane_snapshot,
+)
 from boardwatch.lanes.outcomes import AcquisitionTally
 from boardwatch.scan.apply import apply_board
 from boardwatch.store import tables
@@ -117,8 +123,12 @@ class _StubLane:
     def __init__(self, snapshots: tuple[LaneCompanySnapshot, ...]) -> None:
         self._snapshots = snapshots
 
-    def collect(self, fetcher: Fetcher) -> LaneResult:
-        return LaneResult(snapshots=self._snapshots, tally=AcquisitionTally())
+    def collect(self, fetcher: Fetcher, admits: CompanyAdmission) -> LaneResult:
+        # Asked once per company even though this stub admits unconditionally: the
+        # protocol's contract is that the question is put BEFORE any body is fetched,
+        # and a stub that never asks would let a runner regression through.
+        kept = tuple(s for s in self._snapshots if admits(s.provider, s.slug))
+        return LaneResult(snapshots=kept, tally=AcquisitionTally())
 
 
 def _open_ids_by_company(engine: Engine) -> dict[int, set[str]]:
@@ -158,16 +168,20 @@ def test_a_lane_result_carries_the_company_identity_apply_board_needs(
             LaneCompanySnapshot(
                 provider="greenhouse",
                 slug="acme",
+                name="Acme",
                 snapshot=lane_snapshot([_raw("gh-1")], "https://example.test/search"),
             ),
             LaneCompanySnapshot(
                 provider="lever",
                 slug="acme",
+                name="Acme",
                 snapshot=lane_snapshot([_raw("lv-1")], "https://example.test/search"),
             ),
         )
     )
-    result = lane.collect(Fetcher(Settings(data_dir=tmp_path, config_dir=tmp_path)))
+    result = lane.collect(
+        Fetcher(Settings(data_dir=tmp_path, config_dir=tmp_path)), lambda _p, _s: True
+    )
 
     run_id = insert_run(engine)
     for company in result.snapshots:

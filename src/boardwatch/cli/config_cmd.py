@@ -5,6 +5,7 @@ user's unknown-but-harmless keys survive a set."""
 from __future__ import annotations
 
 import tomllib
+from collections.abc import Callable
 from typing import Any
 
 import tomli_w
@@ -21,6 +22,17 @@ from boardwatch.notify.webhook import WEBHOOK_URL_ENV
 config_app = typer.Typer(no_args_is_help=True, help="Show or change settings.")
 console = Console()
 
+
+def _lane_names(raw: str) -> list[str]:
+    """`lanes_enabled` from one CLI string. A LIST, not a tuple: this value is written straight
+    into config.toml by `tomli_w`, which has no tuple form. Pydantic coerces it back on load.
+
+    Blank (and any all-whitespace entry) disarms every lane rather than registering a lane
+    named "", which would then be reported as unknown on every run.
+    """
+    return [part.strip() for part in raw.split(",") if part.strip()]
+
+
 # key → (caster, "takes effect", units note). weights.* are nested under [weights].
 # Every scalar `Settings` field except the two paths, which are CLI/env-level and not settable
 # here. `test_every_scalar_setting_is_reachable_from_the_cli` asserts that exhaustively, because
@@ -29,7 +41,10 @@ console = Console()
 # `recency_half_life_days` all shipped invisible to `config show` and unsettable by `config set`,
 # while the README promised the command "prints every key". Range and enum validation happens by
 # constructing a `Settings` with the new value, so a caster here only has to parse.
-_SCALAR_KEYS = {
+# Annotated because `lanes_enabled`'s caster is a function returning a list while every
+# other one is a scalar type; without this mypy joins them to `object` and the call below
+# stops type-checking.
+_SCALAR_KEYS: dict[str, tuple[Callable[[str], Any], str, str]] = {
     "per_host_delay_seconds": (float, "next scan", "seconds, floor 0.25"),
     "retry_attempts": (int, "next scan", "total attempts 1–10 (1 = no retry)"),
     "scan_workers": (int, "next scan", "1–8"),
@@ -48,6 +63,13 @@ _SCALAR_KEYS = {
     ),
     "recency_half_life_days": (float, "next top", "days at which the recency score halves"),
     "busy_timeout_ms": (int, "next command", "SQLite busy timeout in milliseconds"),
+    "lanes_enabled": (
+        _lane_names, "next run", "comma-separated lane names; blank disarms every lane"
+    ),
+    "lane_new_companies_per_run": (
+        int, "next run", "companies one lane may ADD per run, ≥0 (already-known ones are free)"
+    ),
+    "lane_posting_budget": (int, "next run", "JD-body requests one lane may make per run, ≥0"),
 }
 _WEIGHT_KEYS = {"skill_coverage", "title_match", "recency", "location_fit"}
 
@@ -201,7 +223,8 @@ def set_(ctx: typer.Context, key: str, value: str) -> None:
     if key == "llm.max_calls_per_run":
         old = settings.llm.max_calls_per_run
         try:
-            new: int | float = int(value)
+            # `list[str]` is here for `lanes_enabled`, the one non-scalar in `_SCALAR_KEYS`.
+            new: int | float | list[str] = int(value)
             LLMTier(**{**settings.llm.model_dump(), "max_calls_per_run": new})  # ge=1 check
         except (ValueError, ValidationError) as exc:
             console.print(f"[red]invalid value for {key}: {exc}[/red]")

@@ -36,7 +36,12 @@ AcquisitionOutcome = Literal[
     "rejected_login_wall",
     # Extracted, but below the quality floor, or the body declared a different role family.
     "rejected_quality_gate",
-    # No resolvable posting URL existed to attempt. Counted, never skipped silently.
+    # Seen, but no acquisition was attempted for it. Three ways to get here: no resolvable
+    # posting reference existed; the per-run body budget was already spent; or it duplicates a
+    # posting this run already took. Widened from "no resolvable posting URL" when the first
+    # aggregator lane shipped and hit the other two -- deliberately, rather than inventing an
+    # outcome per cause, because what a reader needs from this bucket is that the posting was
+    # seen and NOT fetched. Counted, never skipped silently: that is the whole point.
     "not_attemptable",
 ]
 
