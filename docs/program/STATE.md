@@ -10,10 +10,13 @@
 > near 170 lines: how something got here is narration, and narration belongs in `DECISIONS.md` /
 > `METRICS.md`. Before cutting a sentence, check it exists somewhere else (D-149).
 >
-> **THE COMPRESSION PASS IS STILL OWED.** The triple narration of the P3 reset was merged on
-> 2026-08-23 (~24 lines). Remaining candidates, in order: the run-67/68/69 coverage readings, which
-> restate D-270/D-271 already summarised above; and the `Live blockers` table, several rows of which
-> are marked `closed` and belong in `CHANGELOG.md`.
+> **COMPRESSION: all three named candidates are now merged.** The triple narration of the P3 reset
+> (2026-08-23a, ~24 lines); the two `closed` `Live blockers` rows, which were shipped work
+> `CHANGELOG.md` is authoritative for; and the run-67/68/69 coverage narration, merged into four
+> paragraphs (~29 lines) with all 34 distinct facts grepped back out under whitespace normalisation.
+> Deliberate deduplications are marked in place — **do not "restore" them.** The file still sits well
+> above its ~170 budget, and the next honest cut is structural rather than another merge: most of what
+> remains is per-decision narration that `DECISIONS.md` already holds in full.
 
 ---
 
@@ -30,10 +33,38 @@ a **provisional pass** — 3 clean FROZEN runs meeting all seven bar metrics (B1
 scope, built before the freeze. Six sessionized parts; plan at
 `~/.claude/plans/lets-use-this-session-staged-wren.md` + project memory.
 
-**PARTS 1 AND 2 ARE COMPLETE AND ON `main`. Next action is PART 3 — lane wiring + the hiring.cafe
-client** (first non-ATS leads, end to end). Then 4 → 6, with Part 5 anytime. Part 2 shipped the `Lane`
-protocol, per-source stub attribution, the per-run company cap and a URL-to-posting-reference utility
-(D-284).
+**PARTS 1, 2 AND 3 ARE COMPLETE. Next action is PART 4 — the GitHub-lists client, then LinkedIn
+probe-first.** Then 6, with Part 5 anytime. Part 3 shipped the hiring.cafe lane end to end (D-286): the
+`Lane` protocol gained an admission callback so the cap is charged BEFORE bodies are bought,
+`companies.source` admits `'lane'`, `board_scans.scan_kind` closes D-284's coverage double-count, and the
+is-new check lives in the runner where the connection is.
+
+**The lane is BUILT but NOT ARMED, and it has never run against the live service.** `lanes_enabled` is
+empty by default. Exit criterion 2 — a lead at a company none of the six providers reach, carrying a real
+JD body — is **unevidenced**; a scratch run (`BOARDWATCH_DATA_DIR` *and* `BOARDWATCH_CONFIG_DIR` both set)
+is the next thing owed on it. Arming is deliberate and comes after that, because Gate P3 counts
+CONSECUTIVE clean scheduled ticks and is at 0 of 7.
+
+**Owner-visible ruling inside D-286:** hiring.cafe's `v5_processed_job_data.workplace_*` fields are read as
+provider-asserted location metadata, at the level greenhouse's `location.name` is already trusted. D-278
+called that payload untrusted, reasoning from the keystone invariant — which governs eligibility RULES, and
+the engine is body-only so it cannot reach these. The measurement that decided it: `classify_location([])`
+returns `unknown` and the hard US gate PASSES `unknown`, so withholding locations does not filter a
+3.89M-posting general job board, it admits all of it. On a broader reading the lane needs another location
+source before arming; one function either way.
+
+**TWO WAYS THE STORE GETS MIGRATED BY ACCIDENT — one fixed, one standing (D-286).** (1) **The test suite
+did it.** A CLI test invoked without `--data-dir` while only `BOARDWATCH_CONFIG_DIR` was set let
+`load_settings()` fall through to `default_data_dir()`, and `ensure_schema` ran `alembic upgrade head`
+against the live 1.36 GB store — stamping it with a worktree-only revision, which would have killed the
+next scheduled tick. Damage was schema-only and it was repaired by downgrade; nothing was lost. An autouse
+fixture in `tests/conftest.py` now pins `BOARDWATCH_DATA_DIR` for every test. It closes the env-var route
+only: a `data_dir` key in a real `config.toml` outranks it, and `BOARDWATCH_CONFIG_DIR` is deliberately
+unpinned. (2) **STANDING, not fixed: the launchd job runs an editable venv resolving to `src/` in the
+PRIMARY working tree, so a scheduled tick executes whatever branch is CHECKED OUT there.** Leave that tree
+on `main`. Related and measured: **foreign keys are NOT enforced during an alembic migration** — alembic
+builds its own engine, so `store/db.py`'s `PRAGMA foreign_keys=ON` listener never fires, and a migration
+deleting a parent row orphans children silently instead of raising.
 
 **Lane 1 is hiring.cafe, NOT Indeed, and four owner calls are settled (D-285).** Indeed's body really is
 free inside its GraphQL search response, but the only route serving it carries a 64-hex API key lifted
@@ -166,54 +197,44 @@ measurable" rather than 0% or 100% when nothing can be measured. Four nullable `
 columns carry it, populated from values the six providers already computed, at **zero additional
 HTTP cost**.
 
-**Real 135-board scan against a store copy: global coverage 82.7%, 26,183 held of 31,643 stated**,
-buckets summing to exactly 135 (measured 90 · enumerated_only 11 · censored 4 · dark 12 · stale
-18). **Workday's `total` is censored at 2,000 and its facet sums are not — Target's real board is
-12,097 postings against 649 held, 5.4%: the largest hole in the corpus, and invisible before this
-work.** Citi 4,573, NVIDIA 2,656, T-Mobile 2,200. Worst measured: Capital One 34.7%, Wells Fargo
-36.4%, Salesforce 42.3%.
+**The coverage instrument is ARMED and reports itself unattended (D-274, PR #127).** A scheduled run
+writes coverage into the two artifacts it already produces — a `board_coverage` section in the funnel
+(**`artifact_version` 5 → 6**) and a `## Discovery reach` block in the morning digest (**1 → 2**) — plus one
+`board coverage →` line on stdout, which is what a launchd run leaves in its log. The report is loaded
+**once** in `runner.py`'s `finally` and the same object renders into both, because `held` has no run
+dimension and two loads seconds apart can differ; `boardwatch coverage --json` shares that serializer, so
+the command and the artifacts cannot describe one number two ways. A coverage failure costs the
+**section**, never the artifact. (`notify` was never a candidate surface — it is a standalone command,
+`runner.py` imports nothing from it, and the plist runs only `run --project`.)
 
-**`DEFAULT_TOP_N` is 40 and LIVE** (armed 2026-08-22 08:17). The launchd job runs
-`.venv/bin/boardwatch run --project`, and that venv is an **editable** install resolving to `src/`
-in the primary working tree — so the tick executes whatever is CHECKED OUT there, not what is
-merged. Code and store both report `p_board_coverage` (verified this session by reading the live store
-`?mode=ro`). No sha is recorded here on purpose (D-017) — check `git log` in that tree.
+**Three readings, and they agree.** Store-copy rehearsal **82.7%** (26,183 of 31,643), buckets summing to
+exactly 135 — measured 90 · enumerated_only 11 · censored 4 · dark 12 · stale 18. First live reading, run
+68: **82.4%** (26,075 of 31,629), within 0.3 points of the rehearsal. Run 69: **76.5% over 37 measured
+boards** (16,602 of 21,697). **Target is the largest hole in the corpus and was invisible before this
+work: 12,097 stated against 649 held, 5.4%.** Worst *measured*: Capital One 34.7%, Wells Fargo 36.4%,
+Salesforce 42.3%.
 
-**Run 68 re-run manually with the new code: exit 0, ~24 minutes, 40 leads / 40 PDFs, reconciles,
-no fatal** — roughly the wall-clock 8 leads used to cost. 135 boards attempted, 85 complete, 12
-failed, 14,238 postings seen, and `capped_by_top_n` **3,628**: even at 40, that many postings still
-clear every gate and are cut by rank alone. First live coverage reading **82.4% (26,075 of
-31,629)**, within 0.3 points of the store-copy rehearsal.
+**The 76.5% is NOT a regression** — it is the design refusing to lie. Run 69 ran ~3 hours after run 68, so
+**81 boards answered `unchanged`** against run 68's 18; a 304 carries no fresh total, so those go to
+`stale` and the ratio is withheld rather than pairing a carried total with a live numerator. That is the
+design's own "304 staleness" lie-vector, refused the way it was meant to be. `enumerated_only` fell 11 → 0
+for the same reason: `stale` is a property of THIS scan and wins over any stored total. **A back-to-back
+run therefore reports a smaller measured set**; on the once-a-day cadence it barely bites.
 
-**The instrument is no longer mute — MERGED AND ARMED (D-274, PR #127).** A scheduled run now reports coverage in the two
-artifacts it already writes: a `board_coverage` section in the funnel (**`artifact_version`
-5 → 6**) and a `## Discovery reach` block in the morning digest (**1 → 2**), plus one
-`board coverage →` line on stdout, which is what a launchd run leaves in its log. The report is
-loaded **once** in `runner.py`'s `finally` and the same object is rendered into both, because
-`held` has no run dimension and two loads seconds apart can differ. `boardwatch coverage --json`
-now shares that serializer, so the command and the artifacts cannot describe one number two ways.
-A coverage failure costs the **section**, never the artifact.
+**Runs 68 and 69 were both MANUAL, so neither moved the P3 counter.** Run 68: exit 0, ~24 minutes, 135
+boards attempted / 85 complete / 12 failed, 14,238 postings seen, `capped_by_top_n` **3,628** — even at 40,
+that many postings clear every gate and are cut by rank alone. Run 69: exit 0, 22m29s, both artifacts
+carrying the section and the two **byte-identical** (the single-load property, observed rather than
+asserted). Both produced 40 leads / 40 PDFs, roughly the wall clock 8 leads used to cost. **Cross-run
+movement is real and visible:** Capital One 34.7% → 37.4% (650 → 700 held), the detail budget draining
+50/run exactly as D-270 predicts.
 
-**Correction to the row above:** `notify` was never a candidate surface — it is a standalone CLI
-command, `runner.py` imports nothing from it, and the launchd plist runs only `run --project`.
+**`DEFAULT_TOP_N` is 40 and LIVE** (armed 2026-08-22 08:17). No sha is recorded here on purpose (D-017) —
+check `git log` in the primary tree.
 
-**Exercised on live data before any scheduled tick, per D-273's rule (run 69, MANUAL).** exit 0,
-22m29s, 40 leads / 40 PDFs, both artifacts carrying the section, the two sections **byte-identical**
-(the single-load property, observed rather than asserted). The checkout is on `main` and the
-editable venv resolves to it, so the next 08:00 tick reports coverage. **Run 69 does not move the
-P3 counter** — only a scheduled tick does, and Gate P3 is 0 of 7 (D-276).
-
-**Run 69 also exercised the 304 edge case by accident, and the partition held.** It ran ~3 hours
-after run 68, so **81 boards answered `unchanged`** against run 68's 18. A 304 carries no fresh
-total, so those went to `stale` and the headline fell to **76.5% over 37 measured boards** (16,602
-of 21,697) from 82.4% over 90. That is the design's own "304 staleness" lie-vector, refused the way
-it was meant to be: withhold the ratio rather than pair a carried total with a live numerator. **A
-back-to-back run therefore reports a smaller measured set — that is not a regression.** On the
-once-a-day cadence it barely bites. `enumerated_only` fell 11 → 0 for the same reason: `stale` is a
-property of THIS scan and wins over any stored total.
-
-**Cross-run movement is real and visible:** Capital One 34.7% → 37.4% (650 → 700 held), the detail
-budget draining 50/run exactly as D-270 predicts.
+*(Deliberately deduplicated on 2026-08-23b, do not "restore": Workday's censored 2,000 total, its uncapped
+facet sums, and the Citi / NVIDIA board sizes are stated once in the D-271 paragraph above; the editable-venv
+hazard is stated once in the Part 3 block near the top, where it now carries the standing warning.)*
 
 Note on D-267: whether adding `locations` to `Lead` needs a bump of its own is **still a separate
 ruling**, but the precedent is no longer in doubt — **D-285 verified it**: D-113's own entry says
@@ -372,7 +393,7 @@ version holds at 6; `companies.source` — gains `'lane'` by migration; the four
 | P5 Eligibility decides | **COMPLETE** | **MET** — INELIGIBLE precision 16/16, 0 span violations |
 | P6 Liveness + dedup | **BUILD COMPLETE** (D-110/111/113); leakage report shipped (D-283) | **3 of 4** — liveness MET (D-281), leakage measurable and reading **0.00%** but needs a 7-day ledger span (~2026-08-26) |
 | 14-day acceptance | not started | starts after P6 |
-| P7 Breadth | not started | gated on P0 attribution data |
+| P7 Breadth | lane 1 (hiring.cafe) BUILT, **not armed and never run live** (D-286); lanes 2-4 not started | gated on P0 attribution data |
 | *Gate A / Gate B* | *complete, merged* | ***MET*** — *has moved no program gate* |
 
 ### Gate P6, clause by clause
@@ -466,8 +487,6 @@ browser-UA `Fetcher`, and a drain for any stub bucket the lane creates.
 | **Citi sits at 13.1% coverage, permanently** | Workday's `total` censors at 2,000; the facet sum (uncapped, control-verified) says 4,589. Our pager wraps at ~2,000 too, so post-drain Citi holds ~2,214 of 4,589 and nothing reports it | **Mit** (input-side) |
 | **Five boards report GREEN and return zero, ever** | Snyk, Vercel, HubSpot, Plaid, Qualcomm — clean scans, `last_health='empty'`, 0 postings across 12 scans. 7 of the 12 dead boards are HTTP 422 (malformed request ⇒ probably wrong slugs, recoverable). No backoff, no quarantine, no drain | **Mit** (input-side) |
 | **`unchanged` is an unaudited coverage assumption** | 59 of 135 boards listed nothing in run 67 on a payload hash. No test exists for a hash misreporting a changed board. A false `unchanged` is silent, permanent and undetectable by any current instrument | open |
-| **`hidden_hard_filter` drain — SHIPPED (#129)** | `top --include-hard-filter`, unbounded by the rank cutoff (Mit's ruling). The blocker was never the flag: `passes_hard_filters` returned a bare `bool`, so the clause and the matched token were discarded at the `return`. `hard_filter_verdict` now carries them and the bool is a wrapper. **The bucket is FOUR clauses, not "all `exclude_titles`"** — that split was measured when the mode was `soft` and two clauses did not exist (D-277) | closed |
-| **A body-less posting suppressing another — FIXED (#132)** | Was demonstrated, not just argued: two body-less postings at one company sharing a normalized title and locations produced `Suppression(posting_id=2, survivor_posting_id=1, kind='exact_quad')`. Fixed on BOTH paths — `body_evidence()` withholds `exact_quad` when the body is blank, and `_verify_quad` now requires body PRESENCE not equality, because it groups STORED rows and two absent bodies compare equal. **No `IDENTITY_ALGORITHM_VERSION` bump**, so no re-backfill and no dedup outage: stale rows are unactionable and `write_identities` drops them on the next write (D-279) | closed |
 | **No external missed-window alarm** | nothing outside a run can detect a missed 08:00; the funnel heartbeat is only written from inside `runner.py` | P3 |
 | **`resume.yaml` is an IMPORT SOURCE, never hand-fixed** | D-155. Mit pins `resume_max_pages=1`; never advise 2 | Mit |
 | **`boardwatch top` advances the queue by default** | records `seen` unless `--no-record`; relevant to Gate P6's clean window | P6 |

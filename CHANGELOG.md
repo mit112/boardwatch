@@ -8,6 +8,38 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- **The first discovery lane: hiring.cafe, behind a per-run company cap, off by default.** boardwatch can now
+  reach employers no ATS provider covers. Over a 160-hit sample, 8 (5.0%) sit on one of the six supported
+  providers and 152 do not — that 95% is the whole point of the lane.
+
+  Two requests, and no others: one GET of the server-rendered search page (`__NEXT_DATA__` →
+  `props.pageProps.ssrHits`), then one GET per posting for its JD body. No key, no cookie, no TLS bypass, no
+  app impersonation. Paging is deliberately absent: the response records `ssrPage` and `ssrIsLastPage`, but
+  the parameter that turns a page is not, and inventing one would fabricate a request contract.
+
+  `objectID` is treated as an opaque key. It looks like `{source}___{board_token}___{id}` and is exactly that
+  for 128 of 160 hits, so a round-trip test over a typical sample passes — while a `___` split mis-attributes
+  36 of 160 (22.5%) in three distinct ways. The explicit `source` and `board_token` fields are read instead.
+
+  A lane is not a seventh provider and its companies are stored **unwatched**, so they never enter the scan
+  or coverage corpus, and their postings still reach the shortlist. Enabling it is `lanes_enabled`; it ships
+  empty, because Gate P3 counts consecutive clean unattended runs.
+
+- **`companies.source` admits `'lane'`, and `board_scans.scan_kind` distinguishes a lane's scan row from a
+  board's.** Without the second, a lane touching a board already scanned this run made that company appear
+  twice in the coverage report — once `measured`, once `enumerated_only` — inflating `corpus_boards` and
+  every bucket count.
+
+### Fixed
+
+- **The test suite could migrate the real database.** A CLI test invoked without `--data-dir`, while only
+  `BOARDWATCH_CONFIG_DIR` was set, let `load_settings()` fall through to the default data directory and run
+  `alembic upgrade head` against the user's live store. On a branch adding a migration that stamps the store
+  with a revision the released code does not have, and the next unattended run then fails to start. An
+  autouse fixture now pins `BOARDWATCH_DATA_DIR` to a scratch directory for every test. This closes the
+  environment-variable route; a `data_dir` key in a real `config.toml` still outranks it.
+
+
 - **Lane groundwork — the persistence and attribution guarantees a JD-acquisition lane needs.** A lane is
   not a seventh ATS provider. It returns the same `BoardSnapshot` a provider returns and goes through the
   existing `apply_board`, so it inherits every persistence invariant instead of restating them.
