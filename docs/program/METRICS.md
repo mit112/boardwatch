@@ -6181,3 +6181,36 @@ Zero rows written, zero lost. A 1.36 GB backup was taken before the downgrade an
 **Review yield.** One whole-branch review found **5 defects**, 3 of them in seams between slices, after each slice had reviewed its own work. Two were independently found and fixed twice (once by the review, once by the slice owner), and the duplicate fixes were merged by conflict resolution.
 
 **Not measured this session.** No scratch run of the lane against the live service, so exit criterion 2 — a lead at a company none of the six providers reach, carrying a real JD body — is **unevidenced**. The lane is off by default, so nothing is armed on that basis. Gate P3 is still **0 of 7**; the 08:00 tick had not fired when the session's work completed.
+
+**Post-merge addendum.** #141 merged 07:53Z. `main`'s head then moved to `p_lane_companies` while the store
+sat at `p_board_coverage`, so the 08:00 tick would have had to migrate a 1.36 GB production database
+unattended. It was applied **by hand instead**, and verified:
+
+| | before | after |
+|---|---|---|
+| `alembic_version` | `p_board_coverage` | `p_lane_companies` (= `main`'s head) |
+| `board_scans.scan_kind` | absent | present, **1,890 of 1,890 rows `'board'`** |
+| runs / companies / postings / board_scans | 69 / 135 / 36,575 / 1,890 | 69 / 135 / 36,575 / 1,890 |
+| `PRAGMA foreign_key_check` | — | clean |
+| `journal_mode` | — | `wal` |
+
+So the store was migrated twice this session and lost nothing either time. The generalisable rule: **after
+any PR that adds a migration, apply it to the live store deliberately and verify** — never leave it for the
+next scheduled tick to discover.
+
+**The 08:00 tick fired and FAILED — a new, permanent blocker unrelated to this session's work.**
+`runs` 4 → 5, exit 1, Gate P3 still **0 of 7**.
+
+| Quantity | Value |
+|---|---|
+| open postings | **32,771** |
+| `SQLITE_MAX_VARIABLE_NUMBER` (sqlite 3.53.4) | **32,766** |
+| exceeded by | **5** |
+| failing call path | `top_cmd.py:291` → `eligibility/read.py` `current_verdicts` / `current_gate_verdicts` |
+| error | `OperationalError: too many SQL variables` |
+
+Attribution checked rather than assumed: `eligibility/read.py` last changed **2026-08-08**, PR #141
+touched none of `eligibility/`, `top_cmd.py` or `engine.py`, and `lanes_enabled` is empty so the lane
+contributed zero postings. This is a scale threshold crossed by ordinary discovery growth between run 69
+and this tick — **and it is monotonic, so every future run fails identically** until the query is bounded.
+
