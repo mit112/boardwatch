@@ -106,11 +106,25 @@ if TYPE_CHECKING:
     # keeps the annotation below a string, so nothing is evaluated at import time.
     from boardwatch.cli.top_cmd import RankedPosting
 
-# D-272. Was 8, which discarded 3,502 postings per run that had cleared every gate. A display
-# limit, never a filter: everything beyond it is counted into `capped_by_top_n` and stays
-# status='open'. 40 matches job-apps' measured median of 42/day. The cost is the render — 40
-# leads means 40 tailored résumés and 40 PDFs.
-DEFAULT_TOP_N = 40
+# A display limit, never a filter: everything beyond it is counted into `capped_by_top_n` and
+# stays status='open'.
+#
+# D-272 raised this 8 -> 40 because 8 discarded 3,502 postings per run that had cleared every
+# gate, and because **40 matched job-apps' measured median of 42 A DAY**. That justification was
+# per-DAY and it did not survive D-288: the launchd job now fires 8 times a day, so 40 per RUN is
+# 320 a day — 7.6x the median it was chosen to match. The two decisions were taken separately and
+# neither noticed the other.
+#
+# Lowered to 10 (D-293, Mit's ruling) as a HOLDING value, not a new equilibrium. The cost of this
+# cap is the render — every lead is a tailored résumé and a PDF — and D-292 measured that ~51% of
+# what currently reaches the shortlist is not a software role at all. Producing 320 résumés a day
+# against a half-junk pile is the waste this avoids; 10 x 8 runs = 80/day, which still clears
+# B1's >= 10 net-new leads/day comfortably.
+#
+# **Do not raise this until the D-293 precision work has landed.** 0 was considered and REFUSED:
+# it produces no leads at all, so it fails B1 outright and would stall the provisional pass while
+# Gate P3's clean-tick counter kept running.
+DEFAULT_TOP_N = 10
 
 # A lane is constructed from `Settings` rather than from nothing, so the one knob it owns —
 # `lane_posting_budget`, the ceiling on JD-body GETs it may make in a run — reaches it without

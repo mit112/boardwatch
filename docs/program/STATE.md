@@ -85,13 +85,20 @@ close to guaranteed for ~92 runs by ledger drain alone; the real threat is a **l
 re-serves built jobs and scores them 0 net-new. **B5 is UNSCOREABLE** until run-scoped rank attribution
 exists — do not score it on exit status alone.
 
-**`DEFAULT_TOP_N` is 40 and LIVE, and the uncapped set was MEASURED with the real ranker (D-292).**
+**`DEFAULT_TOP_N` is 10 — LOWERED from 40 (D-293) as a HOLDING value, and the uncapped set was MEASURED with the real ranker (D-292).**
 `boardwatch top 5000 --no-record` on a snapshot returns **3,771** postings, arriving at **~220-430/day**.
 But **67.6% of them are `role=uncertain`** — the role gate abstaining, not confirming — so the honest
 confirmed-software, in-band arrival is only **~70/day**, the same order as job-apps' delivered 20-60.
 **Quote neither number without saying which population it counts; they differ by 4x.**
 
-**Mit wants no cap, and the measurement says fix the role gate FIRST.** Uncapped output is 3,771 rows of
+**THE CAP IS 10 UNTIL THE PRECISION WORK LANDS (D-293). Do not raise it before then, and do NOT set it to
+0** — 0 fails B1 (>= 10 net-new leads/day) outright and would stall the provisional pass while Gate P3's
+counter kept running. At 8 fires/day, 10 is 80 résumés/day; 40 was **320**. D-272 justified 40 as matching
+job-apps' median of 42 **a day**, which the 8x cadence silently made false. The cap sets **burn rate, not
+supply**: every run yields net-new only because it draws a standing backlog of ~1,843, and long-run output
+equals the arrival rate (~122/day) whatever the cap is.
+
+**Mit wants no cap eventually, and the measurement says fix the role gate FIRST.** Uncapped output is 3,771 rows of
 which 2,550 are role-unknown — job-apps' 465-item queue that nobody worked through. Mit's own standing
 ruling already says **fix precision, never tune the cap**; the 2,550 unknowns are the whole gap between
 300/day and 70/day, so they are the lever. **The cap decision itself is deferred to Mit and is now
