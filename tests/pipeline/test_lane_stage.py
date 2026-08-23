@@ -80,6 +80,7 @@ class StubLane:
                 LaneCompanySnapshot(
                     provider=provider,
                     slug=slug,
+                    name=f"{slug.title()} Inc.",
                     snapshot=lane_snapshot([_raw(f"{slug}-1")], LANE_URL),
                 )
             )

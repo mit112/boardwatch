@@ -44,6 +44,7 @@ from boardwatch.eligibility.engine import ENGINE_KIND, engine_version
 from boardwatch.eligibility.preflight import current_identity
 from boardwatch.lanes.admission import CompanyBudget
 from boardwatch.lanes.base import Lane
+from boardwatch.lanes.hiringcafe import HiringCafeLane
 from boardwatch.notify.heartbeat import send_heartbeat
 from boardwatch.pipeline.freshness import folders_reconcile
 from boardwatch.pipeline.funnel_writer import collect_run_funnel
@@ -119,13 +120,18 @@ LaneFactory = Callable[[Settings], Lane]
 # MAPPING and not a branch inside `_run_lanes`, so a second lane is one row here and no change
 # to the stage that drives it.
 #
-# **Empty on this commit, and by construction rather than by omission.** A lane's client lives
-# in its own `boardwatch.lanes.*` module; naming one here before that module exists is an
-# ImportError at startup, not a placeholder. A name in `lanes_enabled` with no row here is
-# reported into `summary.errors` and skipped — never silently ignored, because a typo in config
-# would then be indistinguishable from a lane that ran and found nothing, which is the exact
-# absent-versus-zero confusion the acquisition tally exists to prevent.
-LANE_FACTORIES: dict[str, LaneFactory] = {}
+# A name in `lanes_enabled` with no row here is reported into `summary.errors` and skipped —
+# never silently ignored, because a typo in config would then be indistinguishable from a lane
+# that ran and found nothing, which is the exact absent-versus-zero confusion the acquisition
+# tally exists to prevent.
+#
+# Registered is NOT enabled: `settings.lanes_enabled` is empty by default, so nothing in this
+# map runs until an operator names it. Registration only makes a lane reachable.
+LANE_FACTORIES: dict[str, LaneFactory] = {
+    HiringCafeLane.name: lambda settings: HiringCafeLane(
+        posting_budget=settings.lane_posting_budget
+    ),
+}
 
 # The UA the lane fetcher sends. Not boardwatch's identifying UA, and NOT app impersonation:
 # no lifted API key, no vendor app headers, no `verify=False`. That pattern is why the Indeed
@@ -380,11 +386,13 @@ def _collect_lane(
                 conn,
                 provider=company.provider,
                 slug=company.slug,
-                # The slug, because `LaneCompanySnapshot` carries no display name. See the
-                # note in this module's lane stage: the funnel and the morning artifact render
-                # this string, so a lane's leads read as `provider:slug` until the snapshot
-                # grows a name. Honest, and never a fabricated one.
-                name=company.slug,
+                # The employer's display name, which the funnel's leads table and the morning
+                # artifact render. It only reaches `companies.name` on INSERT: the upsert leaves
+                # an existing row's name alone, so a lane can never overwrite a curated registry
+                # name — which matters because `scan/apply.py` feeds `companies.name` into the
+                # `cross_host` posting identity, so rewriting it would silently re-key that
+                # company's identities.
+                name=company.name,
             )
             company_id = int(
                 conn.execute(

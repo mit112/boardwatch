@@ -202,7 +202,14 @@ class HiringCafeLane:
                 # and the refusal is already counted in the tally.
                 snapshots.append(
                     LaneCompanySnapshot(
-                        provider=provider, slug=slug, snapshot=lane_snapshot(postings, SEARCH_URL)
+                        provider=provider,
+                        slug=slug,
+                        # Taken from the first hit in the group. Every hit in it shares one
+                        # `(source, board_token)`, so they describe one employer; the probe
+                        # found `enriched_company_data.name` non-blank on 159 of 159 hits, and
+                        # `company_name` falls back to `board_token` rather than to a blank.
+                        name=company_name(company_hits[0][1]),
+                        snapshot=lane_snapshot(postings, SEARCH_URL),
                     )
                 )
         return LaneResult(snapshots=tuple(snapshots), tally=tally)

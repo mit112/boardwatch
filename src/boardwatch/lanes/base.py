@@ -56,10 +56,19 @@ class LaneCompanySnapshot:
 
     This is the same identity `admission.CompanyBudget` charges against, and the same pair
     `dereference.parse_posting_target` already recovers from a posting URL.
+
+    `name` is the employer's DISPLAY name, and it rides alongside the identity rather than
+    standing in for it. It is what `queries.upsert_lane_company` writes into `companies.name`,
+    which the funnel's leads table, the morning artifact and every rendered lead read. Required
+    rather than defaulted: a lane that cannot name an employer should say so by falling back to
+    something it can evidence — hiring.cafe uses `board_token` when
+    `enriched_company_data.name` is blank — not by silently inheriting a placeholder from this
+    dataclass, where no reader could tell the two apart.
     """
 
     provider: str
     slug: str
+    name: str
     snapshot: BoardSnapshot
 
 
