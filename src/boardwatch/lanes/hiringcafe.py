@@ -65,6 +65,7 @@ _JOB_DESCRIPTION_URL = "https://hiringcafe.com/api/job-description?id="
 # page returns ~159 hits and the runner's company cap does not bound postings, only companies.
 DEFAULT_POSTING_BUDGET = 60
 
+
 class SearchPageError(ValueError):
     """The search page was served but carried no usable `ssrHits`.
 
@@ -143,9 +144,9 @@ def hit_identity(hit: dict[str, Any]) -> HitIdentity:
 def company_name(hit: dict[str, Any]) -> str:
     """`enriched_company_data.name` -- non-blank on 159/159 probed hits -- else `board_token`.
 
-    NOTE for the caller that inserts the company row: `LaneCompanySnapshot` carries no name
-    field, so this is the only route from a `LaneResult` back to a display name, via each
-    posting's `raw_json["hit"]`.
+    Never blank, which is what `LaneCompanySnapshot.name` requires: the fallback is a field the
+    contract records as non-blank on every hit, so an employer this lane cannot name properly is
+    still named by something it can evidence rather than by an empty string.
     """
     enriched = hit.get("enriched_company_data")
     name = _text(enriched.get("name")) if isinstance(enriched, dict) else ""
@@ -282,6 +283,7 @@ def _group_by_company(
     same reason, and a lane can refuse it a whole request earlier.
     """
     grouped: dict[tuple[str, str], list[tuple[HitIdentity, dict[str, Any]]]] = {}
+    seen: set[tuple[str, str, str]] = set()
     for hit in hits:
         try:
             identity = hit_identity(hit)
@@ -291,6 +293,26 @@ def _group_by_company(
         if not _title(hit):
             tally.record("not_attemptable")
             continue
+        key = (identity.provider, identity.slug, identity.posting_id)
+        if key in seen:
+            # A SECOND hit resolving to a posting already taken this run. Dropped here, and the
+            # drop is not defensive tidiness -- without it the run aborts. `apply.py` snapshots
+            # `existing` once before its loop and never re-reads it, so two rows with one
+            # `provider_posting_id` both take the INSERT branch and the second violates
+            # UNIQUE(company_id, provider_posting_id). That raises inside `apply_board`'s single
+            # transaction, rolling the whole board back, and the exception escapes to the lane
+            # stage's handler -- so every company after this one is skipped and the tally that
+            # would have explained it is discarded with the report.
+            #
+            # Every ATS provider enumerates a board once and may assume distinct ids. An
+            # AGGREGATOR may not, and this one says so in its own payload: `ssrHits` carry
+            # `strict_dedup_cluster_id` and `liberal_dedup_cluster`, which exist precisely
+            # because the index holds duplicate listings. Two hits from different `source`s can
+            # also dereference to one greenhouse posting through `apply_url`, landing in the
+            # same group by design -- that convergence is the point of the dereference step.
+            tally.record("not_attemptable")
+            continue
+        seen.add(key)
         grouped.setdefault((identity.provider, identity.slug), []).append((identity, hit))
     return grouped
 

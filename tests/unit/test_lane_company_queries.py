@@ -60,7 +60,10 @@ def test_upserting_over_a_watched_registry_company_changes_neither_flag(engine: 
     row = _row(engine, provider="greenhouse", slug="acme")
     assert row.watched is True, "a lane must never unwatch a board the user watches"
     assert row.source == "registry", "a lane must never relabel a registry company"
-    assert row.name == "Acme Inc.", "the display name carries no provenance and stays current"
+    assert row.name == "Acme", (
+        "a lane must not overwrite a curated name: companies.name feeds the cross_host "
+        "posting identity, so rewriting it silently re-keys that company's identities"
+    )
 
 
 def test_upserting_a_lane_company_twice_is_idempotent(engine: Engine) -> None:

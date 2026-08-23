@@ -125,12 +125,30 @@ def downgrade() -> None:
     # remapped: unlike b7e41c0a9f23's health probe, a lane row has no honest board equivalent —
     # calling a lane scan a board scan is what `scan_kind` exists to prevent, and it would
     # restore the coverage double-count. Nothing is lost that a lane run cannot rediscover.
-    op.execute("DELETE FROM board_scans WHERE scan_kind = 'lane'")
-    op.execute(
-        "DELETE FROM board_scans WHERE company_id IN "
-        "(SELECT id FROM companies WHERE source = 'lane')"
-    )
-    op.execute("DELETE FROM companies WHERE source = 'lane'")
+    # A rebuild does not re-validate existing rows, so anything the widened schema allowed would
+    # survive the narrowing as silently illegal data. `source = 'lane'` is therefore RELABELLED,
+    # not deleted.
+    #
+    # Deleting was the first attempt and it was wrong twice over. `postings.company_id` is a
+    # foreign key to `companies.id`, and a lane's whole purpose is to put postings under those
+    # companies — so the delete had to account for `postings` and everything hanging off them
+    # (`posting_versions`, `version_sources`, `posting_events`, `posting_identities`,
+    # `job_dispositions`). Worse, it would not even have failed loudly: alembic runs through an
+    # engine it builds itself, so `store/db.py`'s `PRAGMA foreign_keys=ON` connect listener
+    # never fires (the same seam D-269 records for WAL), and the delete would silently orphan
+    # every one of those rows. `identities_complete()` joins only `postings` and would still
+    # report True while `load_identity_inputs` inner-joins `companies` and silently dropped
+    # them — dedup running over a corpus quietly missing rows.
+    #
+    # So: the pre-migration schema simply cannot express lane provenance, and a rollback
+    # necessarily loses that distinction. Losing a label is the honest cost of a downgrade;
+    # destroying real postings to preserve one is not.
+    op.execute("UPDATE companies SET source = 'registry' WHERE source = 'lane'")
+    # `board_scans` rows are KEPT and the column is simply dropped. Once `scan_kind` is gone a
+    # lane row is indistinguishable from a board row by construction, so there is nothing left
+    # to preserve by deleting them — and yes, coverage double-counts again, which IS the
+    # pre-migration behaviour being rolled back to. Throwing away run history to fix a bug the
+    # target schema still has would be the worse trade.
     with op.batch_alter_table(
         "board_scans", copy_from=_board_scans(with_scan_kind=True), recreate="always"
     ) as batch_op:

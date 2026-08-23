@@ -114,8 +114,14 @@ class Settings(BaseModel):
     # ALREADY holds is admitted free and is not charged here — the cap counts reach added.
     lane_new_companies_per_run: int = Field(default=10, ge=0)
     # Hard ceiling on JD-body requests one lane may make in one run. A body costs one GET, so
-    # this is the lane's whole network cost; 0 disarms the body fetch without disarming the lane.
-    lane_posting_budget: int = Field(default=60, ge=0)
+    # this is the lane's whole network cost.
+    #
+    # Floor of 1, NOT 0. A budget of 0 admits companies and then records every one of their
+    # postings `not_attemptable`, which makes `attempted > 0` with `resolved == 0` — the exact
+    # signature of `AcquisitionTally.is_silent_outage`. Every run would print SILENT OUTAGE
+    # while behaving as configured, which is the cry-wolf failure that predicate's own
+    # docstring exists to avoid. Disarming a lane is what `lanes_enabled` is for.
+    lane_posting_budget: int = Field(default=60, ge=1)
     weights: RankWeights = Field(default_factory=RankWeights)
     llm: LLMTier = Field(default_factory=LLMTier)
     notify: NotifyTier = Field(default_factory=NotifyTier)

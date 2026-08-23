@@ -133,9 +133,16 @@ def _never_reach_the_real_data_dir(
     `p_lane_companies`. Gate P3 counts CONSECUTIVE clean scheduled ticks, so one such failure
     costs a day and resets the streak.
 
-    A redirect rather than a hard failure: the point is that no test CAN reach the real store,
-    and a test that wanted the default now gets an empty one. Any fixture that sets the variable
-    itself still wins — it runs after this one and its `monkeypatch.setenv` overwrites this.
+    A redirect rather than a hard failure: a test that wanted the default now gets an empty
+    store. Any fixture that sets the variable itself still wins — it runs after this one and its
+    `monkeypatch.setenv` overwrites this.
+
+    **This closes the env-var route, not every route.** `load_settings` prefers a `data_dir` key
+    in the real `config.toml` over this variable (`settings.py`: `data_dir or file_data_dir or
+    default_data_dir()`), and this fixture deliberately does not pin `BOARDWATCH_CONFIG_DIR`, so
+    a machine whose config pins `data_dir` would still resolve to that path. Nothing in the
+    codebase ever WRITES that key and Mit's config does not carry one, so the hole is not open
+    today — but do not read this fixture as a proof that no test can reach a real store.
 
     Deliberately NOT extended to `BOARDWATCH_CONFIG_DIR`. That variable has the same shape of
     hazard (D-281: a run isolated only by `DATA_DIR` still reads the live `resume.yaml` and

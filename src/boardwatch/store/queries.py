@@ -256,19 +256,27 @@ def upsert_lane_company(conn: Connection, *, provider: str, slug: str, name: str
     A sibling of `upsert_watch` rather than a parameter on it: a defaulted `watched=` would
     silently backfill every existing caller with a value none of them chose.
 
-    On conflict this touches NOTHING but the name. A lane must never unwatch a board the user
-    watches, and must never relabel a `registry` company as lane-discovered — either would make
-    the store's own account of where a company came from a lie. `DO UPDATE SET name` rather than
-    `DO NOTHING` so an employer's display name stays current; `name` carries no provenance.
+    On conflict this touches NOTHING AT ALL, name included. A lane must never unwatch a board
+    the user watches and must never relabel a `registry` company as lane-discovered — either
+    would make the store's own account of where a company came from a lie.
+
+    `name` looked inert and is not: `scan/apply.py` reads `companies.name` and feeds it into
+    `IdentityInputs.company_name`, a component of the `cross_host` posting identity. So letting
+    an aggregator's rendering of an employer ("Acme Technologies") overwrite a curated registry
+    name ("Acme") would silently re-key that company's stored identities, and `identities
+    verify` would report every posting written under the old name as stale until a full board
+    scan rewrote it. The display name is also unrecoverable once overwritten — nothing records
+    the prior value.
+
+    The cost is that a lane company's name is frozen at first discovery. That is the right
+    trade: it is cosmetic, it is stable, and it makes this function safe no matter how often or
+    from where a caller invokes it.
     """
     stmt = sqlite_insert(companies).values(
         name=name, provider=provider, slug=slug, source="lane", watched=False
     )
     conn.execute(
-        stmt.on_conflict_do_update(
-            index_elements=[companies.c.provider, companies.c.slug],
-            set_={"name": stmt.excluded.name},
-        )
+        stmt.on_conflict_do_nothing(index_elements=[companies.c.provider, companies.c.slug])
     )
 
 
