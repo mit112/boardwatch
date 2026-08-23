@@ -22,35 +22,27 @@
 
 ## Current standing
 
-**THE DAILY DRIVER IS DOWN, AND IT WILL FAIL EVERY RUN UNTIL SOMEONE FIXES IT.** The 2026-08-23 08:00
-tick fired and exited 1 (`runs` 4 → 5), so **Gate P3 is still 0 of 7**. Cause, measured:
+**THE DAILY DRIVER'S BLOCKER IS FIXED, and no scheduled tick has run on the fix yet.** The 2026-08-23
+08:00 tick (run 70) died on a corpus-sized `IN (...)`: **32,771 open postings** against SQLite's
+**32,766** parameter cap, exceeded by 5. Every corpus-scale bind is now chunked (**D-287**) — the
+ranker's two ledger reads, the funnel's abstain read, `export`, `eligibility summary` and `notify`, each
+measured over the cap before the fix. The fix stays OUT of `engine.py` on purpose: it is a digested
+module, so editing it would move `engine_version` and owe a ledger drain for a change that alters no
+verdict. Verified on a backup-API snapshot of the live store: `top` exits 0, and
+`run --project --no-scan` exits 0 **and writes its funnel** — the symptom that used to be swallowed.
 
-> open postings **32,771** · SQLite `SQLITE_MAX_VARIABLE_NUMBER` **32,766** · exceeded by **5**
+**Gate P3 is 0 of 7; the next scheduled tick is the first candidate.** Confirm with
+`launchctl print gui/$(id -u)/com.boardwatch.run | grep -E "runs|last exit"` — `runs` must go 5 → 6 with
+`last exit code = 0`. A manual `run --project` moves nothing.
 
-The failed tick is **run 70**; the store now holds 37,438 postings and 2,025 `board_scans`.
-
-`eligibility/read.py`'s `current_verdicts` / `current_gate_verdicts` pass **every** open posting's
-version id into one `IN (...)`, reached from `top_cmd.py:291` through `rank_open_postings`. At 32,771
-open postings that is more bound parameters than SQLite accepts, and the run dies with
-`OperationalError: too many SQL variables`. The funnel write fails first and is swallowed into a
-printed warning (`! funnel artifact not written`) — open question 1 — then the ranker hits the same
-query and takes the run down.
-
-**This is NOT a Part 3 regression and not the lane.** `read.py` has not changed since 2026-08-08,
-PR #141 touched none of that path, and `lanes_enabled` is empty so the lane added zero postings. The
-corpus simply crossed the cap through ordinary discovery growth between run 69 and this tick. **It is
-therefore permanent and worsening** — the corpus only grows, so every subsequent run fails the same
-way, and no scheduled tick can ever be clean until the query is bounded.
-
-**Shape of the fix, not yet built:** chunk the id list, or drop the id list entirely the way
-`run_funnel_queries.load_identities` already does — its docstring says in as many words that "at corpus
-scale it would exceed SQLite's bound-parameter cap and take the funnel artifact down with it", which is
-exactly what has now happened one module over. That comment is the precedent to follow. A fix needs a
-test that fails at >32,766 ids, not merely a smaller batch size, or the same wall arrives again later.
+**The cadence is ONCE DAILY, so Gate P3 is seven days, not one or two.** The plist is
+`StartCalendarInterval` Hour 8 Minute 0. D-281 recorded Mit's ruling to compress the cadence to ~3h and
+**it was never applied** — that is a one-line plist edit and Mit's call, and it is the only thing that
+makes the ASAP plan's compressed timeline true.
 
 **The headline number: 0.** Zero job applications have ever been sent (`applications` has 0 rows) — the
 machine produces leads, it never applies (out of scope). Against that: 3 published releases (none since
-**0.3.0**), ~53k lines of source, **7,367 tests**, 71 leaf CLI commands, 6 ATS providers, a **~1.4 GB**
+**0.3.0**), ~53k lines of source, **7,374 tests**, 71 leaf CLI commands, 6 ATS providers, a **~1.4 GB**
 store.
 
 **The ASAP execution plan (D-280) governs, and it SUPERSEDES the daily-tick babysitting below.** "Done" is
@@ -450,6 +442,11 @@ version holds at 6; `companies.source` — gains `'lane'` by migration; the four
 ## Open questions — Mit's, not to be resolved by fiat
 
 1. **Should `pipeline/runner.py` keep swallowing a funnel-write failure into a printed warning?** (D-076.)
+   Now measured (D-287): the swallow sets neither `summary.fatal` nor `summary.errors`, and only `fatal`
+   fails a run — so **a tick whose funnel never wrote still exits 0 and would count toward Gate P3, while
+   B1 and B5 are read from the funnel that does not exist.** Unexercised so far: the warning has fired
+   exactly once, on run 70, which exited 1 anyway. Three options: leave it fail-open, make it fatal, or
+   keep it non-fatal but append it to `summary.errors` so a funnel-less tick is at least visible.
 2. **The projection spec's six open questions** (§12) — soonest: whether `tailor run` should validate the
    projection manifest, and whether persona's `entries` list survives stage 2.
 3. **The Snap `Level 5`/`Level 3` leak stays open by design** — with no bindings file every level token
@@ -527,6 +524,7 @@ browser-UA `Fetcher`, and a drain for any stub bucket the lane creates.
 | **Citi sits at 13.1% coverage, permanently** | Workday's `total` censors at 2,000; the facet sum (uncapped, control-verified) says 4,589. Our pager wraps at ~2,000 too, so post-drain Citi holds ~2,214 of 4,589 and nothing reports it | **Mit** (input-side) |
 | **Five boards report GREEN and return zero, ever** | Snyk, Vercel, HubSpot, Plaid, Qualcomm — clean scans, `last_health='empty'`, 0 postings across 12 scans. 7 of the 12 dead boards are HTTP 422 (malformed request ⇒ probably wrong slugs, recoverable). No backoff, no quarantine, no drain | **Mit** (input-side) |
 | **`unchanged` is an unaudited coverage assumption** | 59 of 135 boards listed nothing in run 67 on a payload hash. No test exists for a hash misreporting a changed board. A false `unchanged` is silent, permanent and undetectable by any current instrument | open |
+| **A funnel-less tick still exits 0** | the swallow sets neither `fatal` nor `summary.errors`, so it would count toward Gate P3 with no artifact to score B1/B5 from (D-287). Fired once, on run 70, which exited 1 anyway | **Mit** (open Q1) |
 | **No external missed-window alarm** | nothing outside a run can detect a missed 08:00; the funnel heartbeat is only written from inside `runner.py` | P3 |
 | **`resume.yaml` is an IMPORT SOURCE, never hand-fixed** | D-155. Mit pins `resume_max_pages=1`; never advise 2 | Mit |
 | **`boardwatch top` advances the queue by default** | records `seen` unless `--no-record`; relevant to Gate P6's clean window | P6 |
