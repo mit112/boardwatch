@@ -2,426 +2,141 @@
 
 > The one file a fresh session with zero memory reads to know where the program stands.
 > **If it disagrees with the repo, the repo wins** — fix this file and record the correction in
-> `DECISIONS.md`. Plan: `PROGRAM.md`. Numbers: `METRICS.md`. Shipped: `CHANGELOG.md`. **Do not re-derive
-> `STANDING-FACTS.md`** (D-139). Both logs carry an index spanning themselves and a closed archive
-> (D-108): read the index, then the one range — never the whole file.
+> `DECISIONS.md`. Plan: `PROGRAM.md`. Numbers: `METRICS.md`. Shipped: `CHANGELOG.md`. Settled
+> per-subsystem background: **`STANDING-FACTS.md`** — read the one section for what you are touching,
+> never the whole file (D-139). Both logs carry an index spanning themselves and a closed archive
+> (D-108): read the index, then the one range.
 >
-> **States only what is true now**; no sha or commit count (D-017). **Rewrite it, never prepend.** Keep it
-> near 170 lines: how something got here is narration, and narration belongs in `DECISIONS.md` /
-> `METRICS.md`. Before cutting a sentence, check it exists somewhere else (D-149).
->
-> **COMPRESSION: all three named candidates are now merged.** The triple narration of the P3 reset
-> (2026-08-23a, ~24 lines); the two `closed` `Live blockers` rows, which were shipped work
-> `CHANGELOG.md` is authoritative for; and the run-67/68/69 coverage narration, merged into four
-> paragraphs (~29 lines) with all 34 distinct facts grepped back out under whitespace normalisation.
-> Deliberate deduplications are marked in place — **do not "restore" them.** The file still sits well
-> above its ~170 budget, and the next honest cut is structural rather than another merge: most of what
-> remains is per-decision narration that `DECISIONS.md` already holds in full.
+> **States only what is true now**; no sha or commit count (D-017). **Rewrite it, never prepend.**
+> **This file holds only what changes between sessions** — current standing, next action, live blockers,
+> owner calls. Settled subsystem history was moved WHOLE into `STANDING-FACTS.md` on 2026-08-23d by
+> Mit's ruling; nothing was deleted. Do not narrate a decision here that `DECISIONS.md` already holds —
+> cite its number instead.
 
 ---
 
 ## Current standing
 
-**THE DAILY DRIVER'S BLOCKER IS FIXED, and no scheduled tick has run on the fix yet.** The 2026-08-23
-08:00 tick (run 70) died on a corpus-sized `IN (...)`: **32,771 open postings** against SQLite's
-**32,766** parameter cap, exceeded by 5. Every corpus-scale bind is now chunked (**D-287**) — the
-ranker's two ledger reads, the funnel's abstain read, `export`, `eligibility summary` and `notify`, each
-measured over the cap before the fix. The fix stays OUT of `engine.py` on purpose: it is a digested
-module, so editing it would move `engine_version` and owe a ledger drain for a change that alters no
-verdict. Verified on a backup-API snapshot of the live store: `top` exits 0, and
-`run --project --no-scan` exits 0 **and writes its funnel** — the symptom that used to be swallowed.
+**THE DAILY DRIVER IS FIXED AND THE CADENCE IS RAISED.** Run 70 (2026-08-23 08:00) died on a corpus-sized
+`IN` list crossing SQLite's 32,766 bound-parameter cap at 32,771 open postings; six sites were over at
+once. Fixed and merged (D-287). The launchd job now fires **eight times a day** — 02, 05, 08, 11, 14, 17,
+20, 23 — instead of once (D-288).
 
-**Gate P3 is 0 of 7; the next scheduled tick is the first candidate.** Confirm with
-`launchctl print gui/$(id -u)/com.boardwatch.run | grep -E "runs|last exit"` — watch for `runs`
-INCREMENTING with `last exit code = 0`. The absolute number restarted at 0 when the plist was reloaded
-(D-288), so the old "5 → 6" is void. A manual `run --project` moves nothing.
+**`runs` RESET TO 0 when the job was reloaded.** The pre-reload reading was `runs = 5, last exit code = 1`;
+any absolute comparison against that number is void. The gate counts consecutive clean **ticks**, not
+launchd invocations.
 
-**Mit has ruled the cadence up to ~3h (D-288), and it is PREPARED BUT NOT YET APPLIED — the live job is
-still once daily.** D-281 ruled the same thing and the edit was never made. A validated 8-occurrence plist
-(02, 05, 08, 11, 14, 17, 20, 23) sits at `~/Library/LaunchAgents/com.boardwatch.run.plist.proposed-3h`,
-with the current one backed up as `.bak-daily-20260823`.
+**GATE P3 IS 0 OF 7 and the next clean tick is 1 of 7 (D-276).** A failed unattended run RESETS the streak
+rather than pausing it, and **Gate P4 is barred until P3 is met**. Only a SCHEDULED tick counts — a manual
+`run --project` moves nothing. At 8 fires a day this is now roughly a 21-hour gate rather than a 7-day one.
 
-> **DO NOT apply it before the primary working tree has the fix.** The launchd job runs the editable venv
-> resolving to `src/` in this tree, so raising the cadence while the tree sits on a `main` without D-287
-> buys eight failing runs a day instead of one. Order: `git -C ~/dev/projectY/boardwatch pull` → confirm
-> `read.py` has `current_evaluations_chunked` → `cp` the proposed plist over the live one →
-> `launchctl bootout gui/$(id -u)/com.boardwatch.run` then `bootstrap` → verify 8 `Hour` entries.
-
-Two consequences to record when it IS applied: **reloading resets launchd's `runs` counter to 0**, so read
-progress from `last exit code` and `METRICS.md` rather than an absolute `runs` number; and a **manual**
-`boardwatch run` racing a tick exits 2 on the scan lock and would reset Gate P3 — 8× likelier at this
-cadence, so check `launchctl print … | grep state` before running one by hand.
+> **A MANUAL RUN RACING A TICK EXITS 2 AND RESETS GATE P3**, and at 8 fires a day that is 8× likelier than
+> it was. Check `launchctl print gui/$(id -u)/com.boardwatch.run | grep state` before starting one by hand.
+> Two *scheduled* fires cannot collide — launchd never runs two instances of one label.
 
 **The headline number: 0.** Zero job applications have ever been sent (`applications` has 0 rows) — the
 machine produces leads, it never applies (out of scope). Against that: 3 published releases (none since
-**0.3.0**), ~53k lines of source, **7,374 tests**, 71 leaf CLI commands, 6 ATS providers, a **~1.4 GB**
-store.
+**0.3.0**), ~53k lines of source, **7,386 tests**, 71 leaf CLI commands, 6 ATS providers, a **~1.4 GB**
+store holding 37,438 postings / 32,771 open.
 
-**The ASAP execution plan (D-280) governs, and it SUPERSEDES the daily-tick babysitting below.** "Done" is
-a **provisional pass** — 3 clean FROZEN runs meeting all seven bar metrics (B1–B7) — after which the full
-14-day acceptance runs PASSIVELY in the background to confirm. Breadth (the three discovery lanes) is IN
-scope, built before the freeze. Six sessionized parts; plan at
-`~/.claude/plans/lets-use-this-session-staged-wren.md` + project memory.
+**The ASAP execution plan (D-280) governs.** "Done" is a **provisional pass** — 3 clean FROZEN runs meeting
+all seven bar metrics (B1–B7) — after which the full 14-day acceptance runs PASSIVELY to confirm. Six
+sessionized parts; the plan file at `~/.claude/plans/lets-use-this-session-staged-wren.md` **still names
+Part 3 "Indeed" and Part 4 "hiring.cafe + GitHub lists" — that ordering was REVERSED by D-285 and the file
+was never rewritten. Trust D-285/D-286, not the plan file.**
 
-**PARTS 1, 2 AND 3 ARE COMPLETE. Next action is PART 4 — the GitHub-lists client, then LinkedIn
-probe-first.** Then 6, with Part 5 anytime. Part 3 shipped the hiring.cafe lane end to end (D-286): the
-`Lane` protocol gained an admission callback so the cap is charged BEFORE bodies are bought,
-`companies.source` admits `'lane'`, `board_scans.scan_kind` closes D-284's coverage double-count, and the
-is-new check lives in the runner where the connection is.
+**PARTS 1, 2 AND 3 ARE COMPLETE, AND PART 4 IS PROBED BUT NOT BUILT.** Both probes ran 2026-08-23d and
+both are ruled, so the next action is the BUILD, in this order: the **GitHub-lists client** (D-291 — company
+discovery, no JD body anywhere in 34,984 records, but **887 of 920 boards are new**), then **LinkedIn**
+(D-290 — Mit ruled BUILD; the body is free and unauthenticated, and `robots.txt` disallows the route). Then
+Part 6, with Part 5 anytime. Plan: `.agent/` scratch notes carry the shape; the rulings are in D-290/D-291.
 
-**The lane is BUILT but NOT ARMED, and it has never run against the live service.** `lanes_enabled` is
-empty by default. Exit criterion 2 — a lead at a company none of the six providers reach, carrying a real
-JD body — is **unevidenced**; a scratch run (`BOARDWATCH_DATA_DIR` *and* `BOARDWATCH_CONFIG_DIR` both set)
-is the next thing owed on it. Arming is deliberate and comes after that, because Gate P3 counts
-CONSECUTIVE clean scheduled ticks and is at 0 of 7.
+**The lane (hiring.cafe) is BUILT but NOT ARMED and has never run against the live service.**
+`lanes_enabled` defaults empty. Part 3's exit criterion 2 — a lead at a company none of the six providers
+reach, carrying a real JD body — is **unevidenced**; a scratch run is owed before arming, and arming waits
+on Gate P3 anyway. Detail: D-286.
 
-**Owner-visible ruling inside D-286:** hiring.cafe's `v5_processed_job_data.workplace_*` fields are read as
-provider-asserted location metadata, at the level greenhouse's `location.name` is already trusted. D-278
-called that payload untrusted, reasoning from the keystone invariant — which governs eligibility RULES, and
-the engine is body-only so it cannot reach these. The measurement that decided it: `classify_location([])`
-returns `unknown` and the hard US gate PASSES `unknown`, so withholding locations does not filter a
-3.89M-posting general job board, it admits all of it. On a broader reading the lane needs another location
-source before arming; one function either way.
+**THE STORE IS AT `p_lane_companies`, which is `main`'s head**, so `ensure_schema` on the next tick is a
+no-op. **The rule this bought: after any PR that adds a migration, apply it to the live store deliberately
+and verify, rather than letting the next unattended tick discover it** (D-279/D-286). **There is no
+rollback snapshot** — all three stale backups were verified redundant and deleted (2026-08-23b, ~2.9 GB
+reclaimed). Take one before any destructive operation rather than assuming one exists.
 
-**TWO WAYS THE STORE GETS MIGRATED BY ACCIDENT — one fixed, one standing (D-286).** (1) **The test suite
-did it.** A CLI test invoked without `--data-dir` while only `BOARDWATCH_CONFIG_DIR` was set let
-`load_settings()` fall through to `default_data_dir()`, and `ensure_schema` ran `alembic upgrade head`
-against the live 1.36 GB store — stamping it with a worktree-only revision, which would have killed the
-next scheduled tick. Damage was schema-only; nothing was lost. An autouse fixture in `tests/conftest.py`
-now pins `BOARDWATCH_DATA_DIR` for every test. It closes the env-var route only: a `data_dir` key in a
-real `config.toml` outranks it, and `BOARDWATCH_CONFIG_DIR` is deliberately unpinned. (2) **STANDING, not
-fixed: the launchd job runs an editable venv resolving to `src/` in the PRIMARY working tree, so a
-scheduled tick executes whatever branch is CHECKED OUT there.** Leave that tree on `main`.
+**THE LAUNCHD JOB RUNS AN EDITABLE VENV RESOLVING TO `src/` IN THE PRIMARY WORKING TREE**, so a scheduled
+tick executes whatever branch is CHECKED OUT there. **Leave that tree on `main`.** Use a worktree for
+parallel work, and never `git stash` — it is shared across worktrees.
 
-**Where the store actually stands now:** revision **`p_lane_companies`**, which is the head of `main`, so
-`ensure_schema` on the next tick is a no-op. It got there twice — first by accident, then deliberately.
-The accidental stamp was reversed by `downgrade` while `main` still had no such revision; once Part 3
-merged, `main`'s head moved to `p_lane_companies` and the migration was **applied by hand rather than left
-to the 08:00 tick**, because a scheduled unattended run migrating a 1.36 GB production database is the
-exact combination D-279 cost a P3 day for. Verified by comparing before against after,
-and every count was identical — 69 runs / 135 companies / 36,575 postings / 1,890 `board_scans`
-(counts as of that check; the 08:00 tick has since run and moved them), `PRAGMA foreign_key_check` clean, `journal_mode=wal` intact, and all 1,890
-pre-existing scan rows defaulted to `scan_kind='board'`. **The rule this leaves: after any PR that adds a
-migration, apply it to the live store deliberately and verify, rather than letting the next tick discover
-it.** The store directory is now clean: all three stale backups were verified redundant and **deleted**
-(2026-08-23b, ~2.9 GB reclaimed, the directory going 4.2 GB → 1.3 GB), after `PRAGMA integrity_check`
-returned `ok` and `PRAGMA foreign_key_check` came back clean on the live store. **There is no rollback
-snapshot now** — take one before any future destructive operation rather than assuming one exists. Related and measured: **foreign keys are NOT enforced during an alembic migration** — alembic
-builds its own engine, so `store/db.py`'s `PRAGMA foreign_keys=ON` listener never fires, and a migration
-deleting a parent row orphans children silently instead of raising.
+**Every agent invocation needs BOTH `BOARDWATCH_DATA_DIR` and `BOARDWATCH_CONFIG_DIR` on a scratch dir**
+(D-281). `DATA_DIR` alone still READS the live `resume.yaml` / `career-profile/` / template and still
+WRITES into the live `~/boardwatch-applications/`. The live store is the DEFAULT, so a forgotten flag
+reaches production, and a migration breaks the NEXT scheduled run, not the one that erred. Two
+consequences: a scratch run's `funnel-N` collides with the next real run's, and the artifact directory is
+**UTC-dated** — match on the run NUMBER, never the date.
 
-**Lane 1 is hiring.cafe, NOT Indeed, and four owner calls are settled (D-285).** Indeed's body really is
-free inside its GraphQL search response, but the only route serving it carries a 64-hex API key lifted
-from Indeed's iOS app, a spoofed `com.indeed.jobsearch` identity and `verify=False`, from a repo that is
-public — so **Indeed is parked** and D-278's Ruling 2 is amended, not deleted. Order is now
-**hiring.cafe → GitHub lists → LinkedIn → Indeed only if a credentialed route appears.** Also ruled:
-`SourceOutcome.stubs` publishes with `artifact_version` **held at 6** (D-147/D-148 precedent, verified);
-`companies.source` gains **`'lane'`** by migration; and **LinkedIn IS the fourth lane**, last, probe-first
-— it is the only one of job-apps' seven sources the three approved lanes do not already cover.
+**Standing tripwire (D-268):** all six known precision leaks are blocked by the current gates — five
+non-SWE `Lead` titles in the role gate, GE HealthCare posting 31365 (`Buc` → `non_us`) in the hard filter.
+Any of the six appearing in a funnel's `leads` is a real regression to investigate before anything else.
 
-**Part 2 delivered one result that changes Part 3's shape: the dereference utility serves neither provider
-that needs it.** SmartRecruiters and Workday both refuse — Workday needs an `externalPath`
-whose public-URL mapping is evidenced nowhere here, and SmartRecruiters' apparently-passing round-trip rested
-on a fixture whose own README says "All text is synthetic". Each needs one live probe. Nothing is blocked:
-the four body-inlined providers resolve, and for them a recovered `provider_posting_id` converges an
-aggregator posting with a later board scan instead of duplicating it. **Part 3 also inherits two debts from
-D-284** — `SourceOutcome.stubs` reaches no artifact until someone bumps `artifact_version`, and
-`companies.source` has no legal value for a lane-discovered company.
+**B1 and B5 caveats, both live (D-281/D-282).** A 14-day B1 pass does NOT evidence discovery health — it is
+close to guaranteed for ~92 runs by ledger drain alone; the real threat is a **ledger reopen**, which
+re-serves built jobs and scores them 0 net-new. **B5 is UNSCOREABLE** until run-scoped rank attribution
+exists — do not score it on exit status alone.
 
-**Two of D-280's premises are measured FALSE (D-281), and the plan survives both on Mit's ruling.**
-`built` is a permanent disposition, so every run retires its whole shortlist for good. (1) **Breadth does
-NOT protect B1** — `capped_by_top_n` is **3,683**, ~368 days at ≥10/day, and it is GROWING. The lanes keep
-only the justification D-272 actually gave them: parity and company reach. (2) **Intraday runs yield FULL
-net-new** — run 69 got **40 of 40 net-new three hours after run 68**, lead sets 100% disjoint. Mit ruled:
-**lane order STANDS** (build Parts 2–4 before the freeze) and **COMPRESS EVERYTHING** — raise the launchd
-cadence to ~3h, the first 7 consecutive clean ticks close P3, and 3 of those same ticks are the provisional
-pass; ~1–2 days, not ~10. **Recorded cost:** B1 and B5 are written per DAY, so the provisional pass
-certifies per-RUN behaviour and the 14-day confirm on true daily cadence is the control.
+**`DEFAULT_TOP_N` is 40 and LIVE.** `capped_by_top_n` is **3,683** — that many postings clear every filter
+and are cut by rank alone. Mit's standing ruling: **fix precision, never tune the cap.**
 
-**Caveat on the bar itself (D-281): a 14-day B1 pass does NOT evidence discovery health** — it is close to
-guaranteed for ~92 runs by ledger drain alone. The real threat to a B1 day is a **ledger reopen**, which
-re-serves built jobs as repeats and scores them 0 net-new; run 66 produced 8 leads and **0** net-new for
-exactly that reason, and 12 `built` rows are currently reopened. **B1 is scored on the strict reading** (the
-engine's own `eligible` verdict, not "not ineligible"); both readings pass at cap 40, three of four recent
-days would fail at cap 8.
+---
 
-**GATE P3 IS 0 OF 7, AND THE NEXT CLEAN TICK IS 1 OF 7 — NOT 3 (D-276).** The gate is *7
-**consecutive** unattended runs* (`PROGRAM.md` §Gate P3), so a failed unattended run resets it rather
-than pausing it; **Gate P4 (the owner's blind craft review) is barred until P3 is met**, so this moves
-that too. Only a SCHEDULED tick counts — a manual `run --project` does not touch the counter.
-Invocations 2 and 3 were the clean ticks: **run 63** (2026-08-20, `runs` 1→2) and **run 66**
-(2026-08-21 at 08:00:10, `runs` 2→3, exit 0, ~26 min, funnel RECONCILES, 8 leads / 8 PDFs / 8
-projected, 0 withheld as gone). Invocation 4 died. Current evidence: **`runs = 4`, `last exit code =
-1`**, crash in the launchd log. Run 66 was also the first scheduled run to exercise the #114 `Lead`
-fix — **all 8 of its leads were software**, against 3 of 8 in run 65. **Run 67 (MANUAL, verified
-clean)** absorbed D-266's one-time full-corpus re-key so no scheduled tick pays it: exit 0, 42m41s,
-reconciles, 30,243 of 30,243 re-evaluated, 8 leads / 8 PDFs, **all 8 `us`**, none on fail-open.
+## Next action
 
-**Run 68's exit 1 was PROCESS, not code (D-279), and it is already repaired.** A subagent ran a
-`boardwatch` command against the DEFAULT data dir during the overnight build, stamping the live store
-`p_board_coverage` 17 minutes before that migration reached the primary checkout at 08:17 — so the
-08:00 tick ran `main`'s tree, which had no such revision, and alembic refused it (`runs` 3→4, exit 1).
-Damage was schema-only: four nullable columns, zero rows written, nothing corrupted. Both heads now
-agree and run 69 was clean at 11:47. **Do not escalate that log line as a live blocker.** The rule it
-buys: **force every agent onto a scratch `BOARDWATCH_DATA_DIR` on every invocation** — the live store
-is the DEFAULT, so a forgotten flag reaches production, and a migration breaks the NEXT scheduled run,
-not the one that erred. **That rule is INSUFFICIENT alone: `config_dir` obeys a separate
-`BOARDWATCH_CONFIG_DIR`, so a run isolated only by `BOARDWATCH_DATA_DIR` still READS `resume.yaml` /
-`career-profile/` / the template from the live config dir and still WRITES artifacts into the live
-`~/boardwatch-applications/` tree (D-281). Set BOTH.** Two consequences: a scratch run's `funnel-N`
-collides with the next real run's, because numbering on a store copy continues from the live sequence;
-and the artifact directory is **UTC-dated**, so match on the run NUMBER, never the date.
+**Build Part 4.** Both halves are probed and ruled (D-290, D-291); neither is built. Order is 1→2→3→4→6
+with Part 5 anytime; 1–3 are merged. Build the **GitHub-lists client first** — it needs no new provider code
+(slugs come out in registry shape) and carries no permission question — then **LinkedIn**, off by default
+like hiring.cafe and not armed while Gate P3 accrues.
 
-**The next scheduled tick is 2026-08-23 08:00, and a clean one is 1 of 7.** Confirm it fired with
-`launchctl print gui/$(id -u)/com.boardwatch.run | grep -E "runs|last exit"` — **`runs` must go 4 → 5 with
-`last exit code = 0`**, and that counter is the ONLY authority (a manual `run --project` moves nothing).
-Artifacts: `~/boardwatch-applications/<date>/funnel-<N>.*`, log `~/Library/Logs/boardwatch-run.log`; match on
-the run NUMBER, never the date. Standing tripwire from the 16 decisions run 67 reopened (D-268): **all six
-known leaks are blocked by the current gates** — five non-SWE `Lead` titles in the role gate, GE HealthCare
-posting 31365 (`Buc` → `non_us`) in the hard filter — so any of the six appearing in a funnel's `leads` is a
-real regression to investigate before anything else. The other ten are legitimate SWE roles that may
-re-surface and consume the cap with repeats, which Mit accepted when reopening. A **missed-window alarm ships (D-260, #110):** a successful run pings `BOARDWATCH_HEARTBEAT_URL` (a
-dead-man's-switch), so an external cron-monitor alerts when a scheduled run never happens — the one failure a
-local check cannot see (the Mac off/asleep all day). Off until the operator sets the URL.
+Two constraints that must survive into the build, both measured: LinkedIn exposes **no external apply URL**
+(`externalApply` appears 0 times), so converge on the company **slug**, never the link; and **`f_WT=2`
+(remote) is silently ignored**, returning a byte-identical set to unfiltered. Commit **no** captured JD body
+from either source — the generalization gate refuses third-party data that would oblige a licence which
+does not exist, and 4 of the 6 GitHub repos ship no licence at all.
 
-**Run 67 funnel (latest):** 30,243 corpus → 12,697 uncertain (D-250) / 2,167 ineligible →
-`hidden_hard_filter` 17,891 → shortlist **8**, all 8 leads `us`. **3,502 postings clear every filter and are
-cut only by `DEFAULT_TOP_N`** (run 66: 3,595) — the precision tension Mit rules on: fix precision, never tune
-the cap (ideally show everything eligible).
+---
 
-**Discovery is budget-capped, and the backlog DRAINS on a known clock (D-270, confirmed D-271).**
-`detail_fetch_budget` is **50** unseen postings per board per run, so a day's "new postings" figure measures
-our throughput, not the market — 19 Workday boards sit at exactly 600 rows and gain exactly 50 × runs each
-day. Run 67 left **15,535 listed postings unmaterialised** on 20 boards (Citi 1,614 … Fidelity 104), visible
-only as prose inside `board_scans.error` and absent from the funnel. Every board's backlog falls
-**monotonically, 26–49 per scan**; 15 boards have already drained. **ETA to empty: 48 more runs (~7 weeks at
-1/day)**, worst board Citi. A contrary claim that Workday's newest-first ordering means tails are never read
-was FALSIFIED by `posted_at` — Databricks reaches 2019-11, Cisco 2025-12, Adobe 2026-03; Citi is an outlier.
-Budget-skipped postings are **not** falsely closed (0 closures on the 20 partial boards).
+## Owner-gated — do NOT start or decide unilaterally
 
-**Workday's own `total` is censored at 2,000 — the facet counts are not (D-271).** Summing a partition
-facet's `values[].count` is a second, uncapped aggregation path, and the known-positive control PASSED
-(Adobe 740/740, Intel 645/645, Regeneron 592/592, Fidelity 565/565 agree exactly). Measured: **Citi's real
-board is 4,589 postings against 600 held — 13.1%**; NVIDIA 2,656 against 600. Our pager also wraps at
-~2,000, so **after the backlog drains Citi stays at ~2,214 of 4,589 — a permanent, invisible hole that is
-NOT the budget.** Mirror defect: Regeneron 101.4% and Fidelity 106.2% coverage mean we hold postings the
-board no longer lists, because a permanently `partial` board never runs `_process_missing`.
-
-**Seventeen boards produce nothing, and five of them report GREEN (D-271).** Snyk, Vercel, HubSpot, Plaid
-and Qualcomm scan cleanly, carry `last_health='empty'` and a current `last_ok_at`, and have returned zero
-postings across 12 scans — the dangerous class, because a board that fails loudly gets fixed. The other 12
-fail outright with exactly {401 × 4, 403 × 1, 422 × 7}; **Workday sends 422 for a malformed request body,
-not for auth**, so those seven are probably wrong slugs and therefore recoverable. No backoff, no
-auto-disable, no quarantine — `get_watched_companies` filters on `watched` alone.
-
-**boardwatch cannot see 92% of what job-apps surfaces, and that REOPENS D-008 (D-271).** Of job-apps' 530
-eligible records over 2026-08-12…08-21, **41 (7.7%)** are at a company boardwatch watches; the set spans
-**352 distinct companies** and boardwatch watches **24**. Largest missing: Amazon 25, TikTok 20, AWS 8,
-Apple 7, ByteDance 7, SpaceX 6 — **none uses any of the six supported ATS**, so adding a slug cannot reach
-them. Lane value by loss-if-removed: commercial aggregators 421 of 446, **GitHub new-grad lists 73 of 103
-(19.1% of yield for ~5 public-repo GETs)**, direct ATS 5 of 14; cross-lane overlap only 5.8%. Where
-boardwatch is BETTER: on greenhouse/lever/ashby it stores what job-apps title-filters away at fetch, and
-job-apps' Workday lane is 3 hardcoded queries × 2 pages × 12 details = 77 roles over 39 boards with 16
-returning zero. Counterweight: ~1/5 of job-apps' yield is staffing firms and list artifacts. **The 8-vs-42
-shortfall is a SEPARATE problem** — `capped_by_top_n` is 3,502 and job-apps has no top-N anywhere, so
-raising the cap matches volume but not parity (~8% overlap). **RULED 2026-08-22 (D-272): three lanes go in.** **The ORDER then reversed (D-278): Indeed via
-JobSpy first**, because its body arrives free inside the search response; then hiring.cafe (one
-unauthenticated GET); then the GitHub lists **last**, because they carry no body at all and 53.3% of
-their active entries duplicate boards already scanned. The lanes exist to reach companies no
-existing route can reach — Mit's ruling — and D-272's ordering was set on yield, not on that. **Bespoke first-party adapters are OUT** (Amazon/Apple/TikTok): job-apps'
-own dead sources are *all* bespoke adapters or niche APIs, never aggregators. `PROGRAM.md` §4's three
-blocking rows are struck.
-
-**The coverage instrument is SHIPPED and ON `main` (D-271/D-272/D-273, PR #125, green under
-`make check` and full CI), and D-274 makes it report itself unattended — see below.**
-`boardwatch coverage` reports every watched board as a
-**seven-way partition** — `measured` / `enumerated_only` / `censored` / `dark` / `stale` /
-`unscanned` / `unreadable` — that never folds a bucket into a neighbour, and prints "not
-measurable" rather than 0% or 100% when nothing can be measured. Four nullable `board_scans`
-columns carry it, populated from values the six providers already computed, at **zero additional
-HTTP cost**.
-
-**The coverage instrument is ARMED and reports itself unattended (D-274, PR #127).** A scheduled run
-writes coverage into the two artifacts it already produces — a `board_coverage` section in the funnel
-(**`artifact_version` 5 → 6**) and a `## Discovery reach` block in the morning digest (**1 → 2**) — plus one
-`board coverage →` line on stdout, which is what a launchd run leaves in its log. The report is loaded
-**once** in `runner.py`'s `finally` and the same object renders into both, because `held` has no run
-dimension and two loads seconds apart can differ; `boardwatch coverage --json` shares that serializer, so
-the command and the artifacts cannot describe one number two ways. A coverage failure costs the
-**section**, never the artifact. (`notify` was never a candidate surface — it is a standalone command,
-`runner.py` imports nothing from it, and the plist runs only `run --project`.)
-
-**Three readings, and they agree.** Store-copy rehearsal **82.7%** (26,183 of 31,643), buckets summing to
-exactly 135 — measured 90 · enumerated_only 11 · censored 4 · dark 12 · stale 18. First live reading, run
-68: **82.4%** (26,075 of 31,629), within 0.3 points of the rehearsal. Run 69: **76.5% over 37 measured
-boards** (16,602 of 21,697). **Target is the largest hole in the corpus and was invisible before this
-work: 12,097 stated against 649 held, 5.4%.** Worst *measured*: Capital One 34.7%, Wells Fargo 36.4%,
-Salesforce 42.3%.
-
-**The 76.5% is NOT a regression** — it is the design refusing to lie. Run 69 ran ~3 hours after run 68, so
-**81 boards answered `unchanged`** against run 68's 18; a 304 carries no fresh total, so those go to
-`stale` and the ratio is withheld rather than pairing a carried total with a live numerator. That is the
-design's own "304 staleness" lie-vector, refused the way it was meant to be. `enumerated_only` fell 11 → 0
-for the same reason: `stale` is a property of THIS scan and wins over any stored total. **A back-to-back
-run therefore reports a smaller measured set**; on the once-a-day cadence it barely bites.
-
-**Runs 68 and 69 were both MANUAL, so neither moved the P3 counter.** Run 68: exit 0, ~24 minutes, 135
-boards attempted / 85 complete / 12 failed, 14,238 postings seen, `capped_by_top_n` **3,628** — even at 40,
-that many postings clear every gate and are cut by rank alone. Run 69: exit 0, 22m29s, both artifacts
-carrying the section and the two **byte-identical** (the single-load property, observed rather than
-asserted). Both produced 40 leads / 40 PDFs, roughly the wall clock 8 leads used to cost. **Cross-run
-movement is real and visible:** Capital One 34.7% → 37.4% (650 → 700 held), the detail budget draining
-50/run exactly as D-270 predicts.
-
-**`DEFAULT_TOP_N` is 40 and LIVE** (armed 2026-08-22 08:17). No sha is recorded here on purpose (D-017) —
-check `git log` in the primary tree.
-
-*(Deliberately deduplicated on 2026-08-23b, do not "restore": Workday's censored 2,000 total, its uncapped
-facet sums, and the Citi / NVIDIA board sizes are stated once in the D-271 paragraph above; the editable-venv
-hazard is stated once in the Part 3 block near the top, where it now carries the standing warning.)*
-
-Note on D-267: whether adding `locations` to `Lead` needs a bump of its own is **still a separate
-ruling**, but the precedent is no longer in doubt — **D-285 verified it**: D-113's own entry says
-nothing about versions, yet D-147 R3 / D-148 R3 deliberately named it the precedent for declining a
-bump on an additive key and retracted the D-031 citation. D-285 then declined a bump on exactly that
-reading.
-
-Design, and eight ways this metric could lie:
-`docs/superpowers/specs/2026-08-22-coverage-assurance-design.md` (its §3.1 table predates
-`unscanned`/`unreadable` and names five buckets; the shipped partition is seven). **Still Mit's:**
-whether `censored` boards publish a ratio, `detail_fetch_budget`, and the 17 silent boards.
-
-**Eligibility now decides AND removes.** `work_authorization.needs_sponsorship=true` set (D-249); a
-zero-evidence `eligible` abstains to `uncertain` (D-250); two rules that could never resolve MET are fixed —
-`degree:any_degree_required` and `work_auth:sponsorship_available` (D-256, #107); and **clearance is armed as
-a `blocker`** with `security_clearance={state:none,level:none}` (D-257) so the ~138 clearance-required
-postings resolve UNMET → ineligible → dropped.
-
-**The role gate is tight and holding.** Four passes of SOFT denies — pre-sales/support/BD, non-eng
-managers/directors, Data Scientist/Analyst, business/ops/admin/pricing, and bare `Lead`
-(D-252/253/255/259/262). All 8 of run 66's leads were software, against 3 of 8 in run 65. The
-`_NOENG` guard spares any engineering noun and is the correct multi-tenant form even where Mit's
-`exclude_titles` would also catch it. **Deferred to owner** (borderline): Team Leader, Data Center Engineer,
-bare Administrator. **NOT excluding "User Researcher"** — it overlaps real ML/Research *Engineer* roles.
-
-**Hard location gate is US-only, ARMED and verified firing (D-251).** `config.toml`
-`location_filter_mode=hard`; `rank/location_gate.classify_location` is a positive US allowlist (fail-open on
-the unclassifiable, Mit's visa ruling). Default stays `soft` for other users. The funnel's stale "never
-measured firing" note is now corrected (D-265) — that bucket carried 17,189 drops in run 66.
-
-**Two real defects in that gate are fixed (D-263, D-264).** (1) **D-263:** `_alternation` built its pattern
-without grouping the alternation body, so the word-boundary lookarounds bound only to the first and last
-token and everything between matched as a bare substring. Region token `uk` fired inside `Waukesha` and
-`West Milwaukee`, and the gate silently dropped **41 real GE HealthCare Wisconsin postings** — `Software
-Engineer` among them. It was INTERMITTENT: which token lands last follows `frozenset` order under per-process
-hash randomisation, so 43 postings' drop decision differed between `PYTHONHASHSEED` 0 and 4 — the same store
-and code disagreeing run to run. (2) **D-264:** the deferred Buc/France leak is closed by three independent
-non-US signals — 57 curated foreign city tokens, a structural ISO alpha-3 country code, and a new
-`rank/foreign_ad_gate` reading DACH `(m/w/d)` / French `(H/F)` / `Ingénieur` off the TITLE (the only signal
-that reaches three postings whose `locations_json` is exactly `["Remote"]`). Net **299 corpus drops, 36 US
-false drops recovered, 280 of 444 `unknown` survivors still passing** — fail-open intact. `Dublin` and ten
-other US-namesake names are left leaking BY RULING; the rejected list lives in the `location_data` docstring
-so a later pass does not "complete" it.
-
-**Seniority band = `entry` and internships excluded — SET and verified live (D-258).** `profile edit` proved
-to be pipeable (NOT one of the TTY-guarded gates), so this was applied without Mit's terminal: band `entry`
-activates the merged-but-inert gate (ambiguous level tokens like "Level 3" still ABSTAIN and pass — ladders are
-not guessed), and `exclude_titles` gained `Intern`/`Internship`/`Co-op` (title-based, trap-safe; the engine is
-body-only, below). **Done (run 65):** `ledger reopen --stale` released **19** decisions — the one-time
-`policy_version` re-key the band + `exclude_titles` edit forced. **Done again (after run 67):** 16 more,
-D-266's fingerprint re-key. `engine_version` feeds `policy_version`, so the drain is owed after ANY change to
-it; a stamp mismatch never re-opens on its own, so no run self-heals this.
-
-**The eligibility engine is body-only** — `preflight.py` feeds it `posting_versions.body_text` with no title
-column — so title-based filtering (internship, seniority words) lives in the ranker (`exclude_titles`,
-`role_gate`, `seniority_gate`), never the engine. job-apps (consulted this session) detects intern/co-op BY
-TITLE for exactly this reason; boardwatch's body-only `internship_role_declared` is 100%-precision/~27%-recall
-and already suppresses the "internships count" trap.
-
-**Reviews of the precision merges have found five false-drop defects; all are fixed** — the US+foreign
-location segment (#111), the seniority product-noun collision (#112), the `Lead` hole those reopened (#114),
-and the location gate's two (D-263/D-264). **The zero-output guard was NOT changed, and B5 has no working instrument (D-282).** Two record
-corrections. (1) **The false alarm is not reachable on this store, so it was never a P3 blocker** — firing
-needs `hidden_handled == 0` (measured **8 / 48 / 128** on runs 68 / 69 / 71) and an empty shortlist
-(`capped_by_top_n` is 3,603–3,683, so `visible` is 40 every run). (2) **The docstring's "D-246" attribution
-was never a ruling** — D-246 is the seniority-gate decision and says nothing about this guard. The obvious
-fix was built and **rejected before merge**: disarming on a rejection bucket makes the fatal UNREACHABLE,
-because `hidden_hard_filter` is corpus-scoped at **18,472–18,932** every run. **Root cause, and it
-generalises: the `hidden_*` buckets are an EXHAUSTIVE partition of the corpus, so "can this run explain the
-empty day?" is always yes by construction — a complete partition cannot evidence a silent failure.** Only
-the stale-premise docstrings were corrected, at both sites. **Owner call: run-scoped rank attribution is the
-only honest fix, and until it exists B5 is unscoreable.**
-
-**A manual `run --project` is the way to exercise a gate change on live data before a scheduled tick** — it
-uses identical argv but does NOT move the P3 counter. Run 65 did this and caught the `Lead` hole (D-262).
-
-**CI health — the nightly's THREE causes are fixed (D-269); #95 closes on a green scheduled run.** It had
-failed **7 of its last 8** scheduled runs, which is not intermittency: ubuntu always passed, so every cause
-sat in the schedule-only jobs and `make check` stayed green locally throughout. (1) A **production defect** —
-`ensure_schema` runs alembic through an engine alembic builds itself, so the pragma listener never fires and a
-store is **created in `delete` mode**; the deferred switch to WAL is a *conversion*, which no other
-connection's lock permits (raises after the full busy timeout against a reader, **instantly** against a
-writer), so two processes opening a fresh store race and the loser cannot open it. Mit's live store already
-reads `wal`, so nothing needs migrating. (2) Five **deterministic** Windows `fs_safety` failures on all three
-Windows jobs — `os.path.realpath` rewrites `/data` to `\data`, so the POSIX fixtures collapse onto the root
-mount and the `None`-expecting cases passed **vacuously**. (3) tectonic: `actions/cache` only saves on a
-**miss**, so the minimal-`article` warmup bundle was frozen forever and every run fetched the template's real
-packages over the network — one hiccup cost ~52 render tests. **Windows/macOS evidence comes ONLY from a
-`workflow_dispatch` of `ci.yml` and the nightly itself** — never from a PR's checks. **That evidence is now
-IN: run 32514934447 is the first fully green full matrix — all 12 jobs, windows and macos 3.11/3.12/3.13
-included.** Windows 3.11 went from 5 failed / 6888 passed / 50 skipped to **7003 passed / 58 skipped / 0
-failed** (50m19s → 35m08s); the +8 skipped is exactly the eight `fs_safety` cases marked, so the pass is for
-the right reason. **#95 stays OPEN by design** — `nightly-watch` is schedule-only, so it closes only on a
-green scheduled nightly.
-
-**The roadmap is UNFROZEN (D-240); its remaining gates are OPERATIONAL, not build.** P0/P1/P2/P5 gates are
-**MET**. P3/P4/P6 builds are essentially done; their gates now close by *running* boardwatch daily. Gate P4
-(Mit's blind craft review) is barred until P3's gate is met. Gate P6 needs a real 7-day dedup window plus
-liveness-probed leads. The 14-day acceptance clock starts after P6; **P7 breadth stays last.**
-
-**The bundle → résumé + projection + render tracks are COMPLETE and merged; nothing is queued there.** Gate B
-is **MET** (0 blockers, D-201); 11 entities refined within the 220-char ceiling; projection reaches the daily
-pipeline behind opt-in `run --project` (D-225); the render stack shipped ATS-parsable PDFs (D-233),
-`fill_to_page` (D-234), `link_in_first_bullet` + `sort_projects_by_date` (D-235). **What is left on the résumé
-is Mit's alone**: whether to send a document, and the two owner-gated prose rewrites of D-220. `resume.yaml` is
-an import source, never hand-fixed (D-155).
-
-### Reference facts (do not re-derive)
-
-- **Bundle track:** live revision 22, 11 entities. Do not quote its digest (restamps daily, D-017); re-derive
-  with `profile-bundle inventory`. Facts stay `owner_attested` (D-191). Editing is incremental (D-190):
-  `checkout --draft` → `edit-fact` → `validate --draft` → Mit's **TTY** `approve` → `promote`. `approve` does
-  NOT validate; a plain `validate` cannot see Gate B; `_catalog_admits` is a DIFF — always `validate --draft`
-  and diff the blocker COUNT before Mit approves.
-- **Stage 2** is live; the one-page budget is a **character** budget ≤ **3,439** (D-219). `mean_per_bullet` is
-  the default scorer; `ADMISSION_FLOOR` stays `Decimal(0)` (D-197/8).
-- **P5b criteria NAMED (D-229):** 3 clean projected runs, ≥30 postings, 0 preflight fatals, 0 résumé-QA
-  failures, 0 fabrications. Four of five evidenced on a store copy.
-- **Settled — do not reopen:** Projection (D-156/163); Gate A MET (D-157); autonomous backlog COMPLETE
-  (D-202…D-210, D-237); Education Slice C (D-239); D-184 finding 2 (D-238).
-- **Fixture + corpus drift (D-228):** R13/R14/R15 in `tools/generalization/fixtures.py`. The corpus content
-  pin was re-recorded this session for the m0105 fix (987 rows unchanged). **On 2026-09-11** the greenhouse
-  fixture reds `make check` (enforced at `fixtures.py` R15, `now > review_by`) — and that tripwire already has
-  its drain: `python -m tools.fixture_refresh --extend <provider> --days N --reason "..."` records an audited
-  extension, or re-check the live API and re-record. **The corpus is regenerable in principle:** only
-  `scratchpad/gen_corpus.py` is missing — its inputs all survive in `.agent/p2-catalog/` (`proto.py` the
-  oracle, `matrix.py`, `adv.py`). They are **gitignored**, so a `.agent/` clean is what would make the 987-row
-  oracle truly unrecoverable; committing a generator plus its inputs is an owner call, not done.
-
-### Owner-gated — do NOT start unilaterally
-
-1. **P2 item 8 — the onboarding field-taxonomy gatherer** (needs its own brainstorm). D-054 forbids us
-   authoring non-tech field content.
-2. **Mit's two résumé content calls** — whether to send; the D-220 prose rewrites.
-3. **`add-evidence` takes no bundle lock** (D-143) — raise before two authoring agents run against one bundle.
-4. **Oracle Cloud HCM / iCIMS as PROVIDERS** — D-278's still-open provider question, explicitly NOT
-   settled by D-285 (that ruled on lanes). ~45% of the non-six tail, fits the existing architecture,
-   reaches neither Amazon nor Apple nor TikTok.
-5. **Run-scoped rank attribution** — the only honest fix for B5, which is UNSCOREABLE until it exists
+1. **hiring.cafe's `v5_processed_job_data.workplace_*` fields** — read as provider-asserted location
+   metadata, at the level greenhouse's `location.name` is already trusted (D-286 Ruling 4). D-278 called
+   that payload untrusted, reasoning from the keystone invariant — which governs eligibility RULES, and the
+   engine is body-only so it cannot reach these. The measurement that decided it: `classify_location([])`
+   returns `unknown` and the hard US gate PASSES `unknown`, so withholding locations does not filter a
+   3.89M-posting board, it admits all of it. On a broader reading the lane needs another location source
+   before arming. **One function either way.**
+2. **Oracle Cloud HCM / iCIMS as PROVIDERS** — D-278's still-open provider question, explicitly NOT settled
+   by D-285 (that ruled on lanes). ~45% of the non-six tail; reaches neither Amazon nor Apple nor TikTok.
+3. **Run-scoped rank attribution** — the only honest fix for B5, which is UNSCOREABLE until it exists
    (D-282). Four drop sites plus the funnel reconciliation identity. Matters before Part 6 scores B5.
+4. **`locations` on `Lead` + an `artifact_version` bump** — the funnel can evidence no lead's LOCATION, so
+   the one gate whose failure is a visa-ineligible lead leaves no trace in its own artifact (D-267). A
+   shipped-schema change.
+5. **Mit's two résumé content calls** — whether to send a document at all; the D-220 prose rewrites.
+6. **P2 item 8 — the onboarding field-taxonomy gatherer.** Needs its own brainstorm; D-054 forbids us
+   authoring non-tech field content.
+7. **`add-evidence` takes no bundle lock** (D-143) — raise before two authoring agents run against one bundle.
 
-*(Settled 2026-08-23 by D-285, no longer owner-gated: the `stubs` `artifact_version` bump — declined,
-version holds at 6; `companies.source` — gains `'lane'` by migration; the fourth lane — LinkedIn, last.)*
+---
+
+## Open questions — Mit's, not to be resolved by fiat
+
+1. **The projection spec's six open questions** (§12) — soonest: whether `tailor run` should validate the
+   projection manifest, and whether persona's `entries` list survives stage 2.
+2. **The Snap `Level 5`/`Level 3` leak stays open by design** — with no bindings file every level token
+   abstains, so a level-named title is shortlisted carrying its reason. boardwatch ships no verifiable
+   claim about any company's ladder.
+3. **Whether `censored` boards publish a coverage ratio**, `detail_fetch_budget`, and the 17 silent boards.
+
+*(Resolved and no longer open: whether `runner.py` should keep swallowing a funnel-write failure — D-288
+records it and the run still does not fail. Clearance IS a blocker (D-257). Seniority band = `entry`
+(D-258). The launchd trigger fires (D-254), and its cadence is now ~3h (D-288).)*
 
 ---
 
@@ -448,76 +163,6 @@ version holds at 6; `companies.source` — gains `'lane'` by migration; the four
 | **0** dead postings reaching leads | **MET (D-281).** Two runs on a scratch store copy: `checked 40, dead 0, unknown 2, alive 38, gone_after_redirect 0`, identical in both, agreeing across three read paths (funnel JSON, funnel markdown, stdout). Detector demonstrably ARMED — `checked > 0`, so not the disarmed 0/0 signature. The `runs` table has no liveness columns, so no DB-row path exists; those three are all there are |
 | Injected hash-collision test | **MET** (D-100) |
 | Audit of 20 sampled suppressions | **MET** (D-101) |
-
----
-
-## Open questions — Mit's, not to be resolved by fiat
-
-1. **The projection spec's six open questions** (§12) — soonest: whether `tailor run` should validate the
-   projection manifest, and whether persona's `entries` list survives stage 2.
-2. **The Snap `Level 5`/`Level 3` leak stays open by design** — with no bindings file every level token
-   abstains, so a level-named title is shortlisted carrying its reason. Closing it takes one deliberate
-   binding line; boardwatch ships no verifiable claim about any company's ladder ("Level 3" is entry at some
-   shops, senior at others — Mit's point: read the JD's fine print, don't guess).
-
-*(Recently resolved: **open Q1 — a swallowed funnel failure is now RECORDED in `summary.errors` and the run row, and the run still does not fail (D-288)**; open Q2 — clearance IS now a blocker (D-257); open Q4 — seniority band = `entry`, arming
-pending Mit's TTY (D-258); the launchd trigger — FIRED (D-254).)*
-
----
-
-## Windows and the lock reclaim window
-
-**Windows is best-effort (D-212)** — in the nightly, out of the pyproject classifiers, caveated in README. A
-`nightly-watch` job files a "Nightly CI is failing" issue on a failed scheduled run and closes it on recovery
-— **#95 is OPEN now** (the two CI flakes above); it will auto-close on the next green scheduled run.
-
-**The stale-lock race is FIXED at the root; all four `xfail` markers are gone on `main`** (D-224/227).
-`core/lock_reclaim.py` owns the constants — **1.0s on `win32`, 0.0 elsewhere, so POSIX is bit-identical**.
-Windows evidence comes only from a `workflow_dispatch` of `ci.yml`. **One false-refusal exposure is left
-standing DELIBERATELY (D-224):** POSIX `UnixFileLock` unlinks before releasing the flock, so a live-holder
-handoff can report `bundle_lock_held` while nobody holds the lock. **Ruled: record, do not widen.**
-
----
-
-**A discovery lane without a JD body produces ZERO leads (D-272).** The eligibility engine is
-**body-only** — `eligibility/preflight.py` selects `posting_versions.body_text` and passes it alone to
-`evaluate`. A stub is a whitespace-only body (`count_stub_postings`; currently 17 of 30,243 = 0.056%), and
-under D-250 a zero-evidence verdict abstains to `uncertain`. Aggregator postings arrive as title + URL, so
-any of the three approved lanes shipped without JD acquisition would add corpus and surface nothing. This
-MEETS the condition `PROGRAM.md` §4 set when it deferred the 2,200-line JD chain to "P7 where a non-API
-source might first appear". **boardwatch needs far less than job-apps' 2,200 lines**: P7 already requires a
-dereferencing step for any aggregator lane, and that same step is the fix — an aggregator link mostly
-resolves to a Greenhouse/Lever/Ashby/Workday posting whose parser already exists. A link that resolves to
-nothing parseable stays a stub and is REPORTED as one, never quietly dropped.
-
-**The JD-acquisition design is RECORDED and awaits Mit's review (D-278):**
-`docs/superpowers/specs/2026-08-22-jd-acquisition-design.md`. Four rulings taken — purpose (reach the
-unreachable), lane order (reversed), a per-run new-company cap because adding a board IS breadth, and
-UA scope (honest on the six providers, browser UA only on new aggregator fetches). The decisive
-measurement: **job-apps' headless-browser tier is worth 13% historically and 0% currently** — dead
-since 2026-08-11, 11 consecutive runs at zero, invisible because one `except Exception: return ""`
-makes a missing dependency, a timeout and an empty page the same empty string. So the no-browser
-rule costs almost nothing. But **job-apps has no generic careers-page extraction either** — 14
-hand-maintained host regexes gate every fetch, and Apple and TikTok have no handling at all — so the
-honest route to those companies is an aggregator that carries the body, not a page reader. Still
-Mit's: whether **Oracle Cloud HCM and iCIMS should be PROVIDERS** instead of or before any lane
-(~45% of the non-six tail, fits the existing architecture, reaches neither Amazon nor Apple nor
-TikTok), and whether LinkedIn earns its per-posting request cost.
-
-**Lane work has STARTED (D-279).** The precondition shipped (#132) and **plan Task 2 shipped
-(#134)** — the ten-outcome acquisition catalog, `boardwatch.lanes.outcomes`, with a counter per
-outcome and a reportable `is_silent_outage`. Phase 1 has **no network code**; the remaining tasks are
-in `docs/superpowers/plans/2026-08-22-lane-groundwork.md`: **Task 3** the `Lane` protocol whose
-`lane_snapshot()` makes `status="complete"` unexpressible, **Task 4** per-source stub attribution,
-**Task 5** the company cap. **Two LIVE, revisable assumptions** — offered to Mit with the measurements, no answer in window:
-**lane 1 does NOT use JobSpy** (`python-jobspy` pins `NUMPY==1.26.3`, newest wheel `cp312`, against
-`requires-python >=3.11` / CI 3.13 / a 3.13.12 venv, so it cannot install on a supported interpreter
-and would break the published package; its own HTTP stack also escapes the politeness lock — use the
-`httpx`/`Fetcher` already shipped, which leaves every D-278 ruling intact since only the client
-changes), and **the cap is 10 companies/run**. The Indeed client is deferred to its own plan whose
-first step pins the GraphQL document and headers against the live endpoint — unverified here, and not
-transcribed from a summary. Owed with the client, not phase 1: §4.5's four quality controls, §4.7's
-browser-UA `Fetcher`, and a drain for any stub bucket the lane creates.
 
 ---
 

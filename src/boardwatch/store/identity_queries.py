@@ -11,6 +11,7 @@ from sqlalchemy.engine import Connection
 
 from boardwatch.core.identity_kinds import IDENTITY_ALGORITHM_VERSION
 from boardwatch.core.posting_identity import IdentityInputs, PostingIdentity
+from boardwatch.store.param_chunks import id_chunks
 from boardwatch.store.tables import companies, job_dispositions, posting_identities, postings
 
 
@@ -22,8 +23,15 @@ def load_identity_inputs(
     `posting_ids=None` means "all of them" and is what `backfill`, `verify` and the funnel
     want. The ranker passes an explicit list because it only deduplicates the postings that
     survived every earlier filter, and `body_text` is the largest column in the schema —
-    there is no reason to pull 23,455 bodies to deduplicate a few thousand leads.
+    there is no reason to pull 32,771 bodies to deduplicate a few thousand leads.
     An empty list means an empty result, not "all".
+
+    The explicit-list branch CHUNKS (D-288). `top_cmd`'s dedup block passes `eligible_ids`,
+    which is ~3,683 on the scheduled path but **30,419** with the audit/drain flags open
+    (`--include-hard-filter` and friends) — inside the same cap that took the daily driver
+    down on 2026-08-23, with about two days of corpus growth to spare. Chunks CONCATENATE
+    here — the result is a flat tuple with nothing to key on — so the id list is DEDUPED
+    first, because `IN` collapses a repeated id and chunk-then-concatenate would not.
     """
     if posting_ids is not None and not posting_ids:
         return ()
@@ -41,8 +49,16 @@ def load_identity_inputs(
     ).join(companies, postings.c.company_id == companies.c.id)
     if open_only:
         stmt = stmt.where(postings.c.status == "open")
-    if posting_ids is not None:
-        stmt = stmt.where(postings.c.id.in_(list(posting_ids)))
+    if posting_ids is None:
+        rows = list(conn.execute(stmt).all())
+    else:
+        # `dict.fromkeys` DEDUPES while preserving order, and that is load-bearing rather than
+        # tidiness: `IN (7, 7)` returns posting 7 once, but two 7s in DIFFERENT chunks return
+        # it once per chunk, and a concatenating merge keeps both. The four `dict.update`
+        # sites are duplicate-safe by construction; this one and `load_identities` are not.
+        rows = []
+        for chunk in id_chunks(list(dict.fromkeys(posting_ids))):
+            rows.extend(conn.execute(stmt.where(postings.c.id.in_(chunk))).all())
     return tuple(
         IdentityInputs(
             posting_id=int(r[0]),
@@ -66,7 +82,7 @@ def load_identity_inputs(
             url=None if r[8] is None else str(r[8]),
             first_seen_at=r[9],
         )
-        for r in conn.execute(stmt).all()
+        for r in rows
     )
 
 
@@ -77,14 +93,15 @@ def load_identities(
 
     `posting_ids=None` means "all" and issues NO `IN` list, mirroring
     `load_identity_inputs`. That is not symmetry for its own sake: SQLite caps bound
-    parameters at `SQLITE_LIMIT_VARIABLE_NUMBER` — measured 32766 on the bundled 3.45.1
-    (23,455 parameters succeed, 32,767 raises `OperationalError`), and only 999 before
-    SQLite 3.32. Both the funnel's `unique` sweep and `identities verify` pass every open
-    posting id, and the corpus is already 23,455, so an `IN` list made the *verification*
-    path a scheduled failure as the program adds breadth. Returning identities for closed
+    parameters at `SQLITE_LIMIT_VARIABLE_NUMBER` — measured 32766 on the bundled 3.50.4, and
+    only 999 before SQLite 3.32. Both the funnel's `unique` sweep and `identities verify` pass
+    every open posting id, and the corpus is **32,771** — already past that cap, so an `IN`
+    list here is not a future failure but a present one. Returning identities for closed
     postings too is harmless: every caller looks rows up by id from its own row set.
 
-    An empty list still means an empty result, not "all".
+    An empty list still means an empty result, not "all". When one IS passed it is chunked
+    (D-288) — `top_cmd`'s dedup read reaches this with the drain flags' 30,419 ids, and the
+    `None` branch's exemption does nothing for a caller that needs a specific set.
     """
     if posting_ids is not None and not posting_ids:
         return {}
@@ -93,9 +110,21 @@ def load_identities(
         posting_identities.c.kind,
         posting_identities.c.identity_key,
     ).where(posting_identities.c.algorithm_version == IDENTITY_ALGORITHM_VERSION)
-    if posting_ids is not None:
-        stmt = stmt.where(posting_identities.c.posting_id.in_(list(posting_ids)))
-    rows = conn.execute(stmt).all()
+    if posting_ids is None:
+        rows = list(conn.execute(stmt).all())
+    else:
+        # Rows accumulate and the dict is built ONCE below, rather than merging a dict per
+        # chunk. Per-chunk merging would be sound — a posting's identity rows all carry the
+        # posting_id being chunked on, so no group straddles a chunk — but accumulating
+        # removes the need to depend on that. Deduped for the same reason as
+        # `load_identity_inputs`: a repeated id in two chunks would append its identity twice.
+        rows = []
+        for chunk in id_chunks(list(dict.fromkeys(posting_ids))):
+            rows.extend(
+                conn.execute(
+                    stmt.where(posting_identities.c.posting_id.in_(chunk))
+                ).all()
+            )
     out: dict[int, list[PostingIdentity]] = {}
     for posting_id, kind, key in rows:
         out.setdefault(int(posting_id), []).append(PostingIdentity(str(kind), str(key)))

@@ -79,6 +79,12 @@ def check_leads(
     if not posting_ids:
         return {}
     with engine.connect() as conn:
+        # NOT chunked, and that is a precondition rather than an oversight: `posting_ids` is
+        # `ranked.visible`, which `runner.py` bounds by `top_n` because it calls
+        # `rank_open_postings` with every `include_*` at its False default. Open ONE of those
+        # flags from the pipeline and `visible` becomes corpus-scaled — ~19k — and this binds
+        # past SQLite's parameter cap and dies exactly as run 70 did (D-287/D-289). If that
+        # ever changes, this needs `store.param_chunks.id_chunks` like the rest.
         urls = {
             int(row.id): (row.url or "")
             for row in conn.execute(
