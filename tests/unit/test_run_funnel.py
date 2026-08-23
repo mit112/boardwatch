@@ -152,6 +152,7 @@ def funnel(
             eligible=counts.by_verdict.get("eligible", 0),
             leads=tailored_artifacts.rows,
             applied=marked_applied,
+            stubs=stub_postings,
         )]
     return build_run_funnel(
         board_coverage=board_coverage,
@@ -767,10 +768,12 @@ def test_the_json_keeps_every_drop_rather_than_pre_summing_them(tmp_path: Path) 
 def source(
     slug: str = "stripe", *, provider: str = "greenhouse", company_source: str = "registry",
     open_postings: int = 100, eligible: int = 40, leads: int = 1, applied: int = 0,
+    stubs: int = 0,
 ) -> SourceOutcome:
     return SourceOutcome(
         provider=provider, board_slug=slug, company_source=company_source,
         open_postings=open_postings, eligible=eligible, leads=leads, applied=applied,
+        stubs=stubs,
     )
 
 

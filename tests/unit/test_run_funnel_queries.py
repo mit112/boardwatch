@@ -25,6 +25,7 @@ from boardwatch.store.run_funnel_queries import (
     count_candidate_judged_this_run,
     count_corpus,
     count_stub_postings,
+    count_stub_postings_by_company,
     count_tailored_artifacts,
     count_unattributed_evaluations,
     lead_provenance,
@@ -381,13 +382,15 @@ def _board(conn: Connection, slug: str, *, source: str = "user", provider: str =
     )).inserted_primary_key[0])
 
 
-def _posting_on(conn: Connection, company_id: int, tag: str, *, status: str = "open") -> int:
+def _posting_on(
+    conn: Connection, company_id: int, tag: str, *, status: str = "open", body_text: str = "b",
+) -> int:
     """A posting on an EXISTING board, so several can share one company row."""
     job_id = int(conn.execute(insert(jobs).values(created_at=NOW)).inserted_primary_key[0])
     return int(conn.execute(insert(postings).values(
         company_id=company_id, job_id=job_id, provider_posting_id=tag, title="Eng",
         normalized_title="eng", first_seen_at=NOW, last_seen_at=NOW, status=status,
-        consecutive_missing=0, content_hash=tag, body_text="b",
+        consecutive_missing=0, content_hash=tag, body_text=body_text,
     )).inserted_primary_key[0])
 
 
@@ -642,3 +645,42 @@ def test_count_stub_postings_counts_only_open_empty_bodies(engine: Engine) -> No
         _posting(conn, "closed-empty", status="closed", body_text="")
     with engine.connect() as conn:
         assert count_stub_postings(conn) == 2
+
+
+# --------------------------------------------------------------------------------------
+# Per-source stub attribution (spec §4.4)
+# --------------------------------------------------------------------------------------
+
+
+def test_per_company_stub_counts_sum_to_the_corpus_count(engine: Engine) -> None:
+    """Counted through a different path than the corpus number, per CLAUDE.md."""
+    with engine.begin() as conn:
+        big = _board(conn, "big")
+        small = _board(conn, "small")
+        _posting_on(conn, big, "b1", body_text="")
+        _posting_on(conn, big, "b2", body_text="\t\n")
+        _posting_on(conn, big, "b3", body_text="a full job description")
+        _posting_on(conn, small, "s1", body_text="   ")
+    with engine.connect() as conn:
+        per_company = count_stub_postings_by_company(conn)
+        assert sum(per_company.values()) == count_stub_postings(conn)
+
+
+def test_a_company_with_no_stubs_reports_zero_not_absent(engine: Engine) -> None:
+    """It is instrumented, so 0 is honest. Absence would read as 'not measured'."""
+    with engine.begin() as conn:
+        stubby = _board(conn, "stubby")
+        clean = _board(conn, "clean")
+        _posting_on(conn, stubby, "s1", body_text="")
+        _posting_on(conn, clean, "c1", body_text="a full job description")
+    with engine.connect() as conn:
+        per_company = count_stub_postings_by_company(conn)
+    assert per_company[clean] == 0
+
+
+def test_a_whitespace_only_body_of_tabs_and_newlines_counts_as_a_stub(engine: Engine) -> None:
+    """SQLite's one-arg trim strips spaces ONLY; tabs and newlines must be in the strip set."""
+    with engine.begin() as conn:
+        _posting(conn, "x", body_text="\t\n  ")
+    with engine.connect() as conn:
+        assert sum(count_stub_postings_by_company(conn).values()) == 1
