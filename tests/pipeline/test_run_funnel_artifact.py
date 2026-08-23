@@ -15,6 +15,7 @@ from rich.console import Console
 from sqlalchemy import select
 
 from boardwatch.core.settings import load_settings
+from boardwatch.pipeline import runner
 from boardwatch.pipeline.runner import run_pipeline
 from boardwatch.store import tables
 from boardwatch.store.db import get_engine
@@ -239,3 +240,40 @@ def test_a_failure_to_write_the_funnel_does_not_fail_the_run(
     assert summary.funnel is None
     assert summary.fatal is None, "a reporting failure was promoted into a run failure"
     assert len(summary.tailored) == 1, "the run's real output was discarded"
+
+
+def test_a_funnel_that_fails_to_write_is_recorded_rather_than_only_printed(
+    env: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A funnel-less run must stop being indistinguishable from a clean one in the store.
+
+    The emit stays fail-open on purpose — a reporting failure must never discard a run that
+    produced real leads and PDFs. But until D-287 the failure reached neither `summary.fatal`
+    nor `summary.errors`, only the console, and `finish_run` had already committed. So a
+    scheduled tick whose funnel never wrote still exited 0 and looked byte-identical to a
+    clean one to anything reading the database, while **Gate P3 counts clean unattended runs
+    and B1/B5 are read out of the funnel that does not exist** (STATE open question 1; Mit's
+    ruling was to keep it non-fatal and record it).
+
+    Fails on `main` three ways: `summary.errors` is empty, the run row's `errors_json` is
+    empty, and nothing distinguishes this run from a clean one.
+    """
+    _ready(env)
+
+    def _boom(*_args: object, **_kw: object) -> None:
+        raise RuntimeError("boom")
+
+    monkeypatch.setattr(runner, "_emit_funnel", _boom)
+
+    summary = _pipeline(env, tmp_path / "apps")
+
+    assert summary.funnel is None
+    assert summary.fatal is None, "a reporting failure must never fail the run"
+    assert any("funnel artifact not written" in e for e in summary.errors), summary.errors
+    with get_engine(env).connect() as conn:
+        row = conn.execute(
+            select(tables.runs).where(tables.runs.c.id == summary.run_id)
+        ).one()
+    assert any(
+        "funnel artifact not written" in e for e in (row.errors_json or [])
+    ), row.errors_json

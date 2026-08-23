@@ -32,13 +32,17 @@ verdict. Verified on a backup-API snapshot of the live store: `top` exits 0, and
 `run --project --no-scan` exits 0 **and writes its funnel** — the symptom that used to be swallowed.
 
 **Gate P3 is 0 of 7; the next scheduled tick is the first candidate.** Confirm with
-`launchctl print gui/$(id -u)/com.boardwatch.run | grep -E "runs|last exit"` — `runs` must go 5 → 6 with
-`last exit code = 0`. A manual `run --project` moves nothing.
+`launchctl print gui/$(id -u)/com.boardwatch.run | grep -E "runs|last exit"` — watch for `runs`
+INCREMENTING with `last exit code = 0`. The absolute number restarted at 0 when the plist was reloaded
+(D-288), so the old "5 → 6" is void. A manual `run --project` moves nothing.
 
-**The cadence is ONCE DAILY, so Gate P3 is seven days, not one or two.** The plist is
-`StartCalendarInterval` Hour 8 Minute 0. D-281 recorded Mit's ruling to compress the cadence to ~3h and
-**it was never applied** — that is a one-line plist edit and Mit's call, and it is the only thing that
-makes the ASAP plan's compressed timeline true.
+**The cadence is now ~3h (D-288, Mit's ruling), applied to the plist at last** — D-281 ruled it and the
+edit was never made, so it had been one fire a day. Eight occurrences, 3h apart, anchored on 08:00. Gate
+P3 can therefore close in ~1 day rather than 7. **Reloading the job RESET launchd's `runs` counter to 0**,
+so read progress from `METRICS.md` and from `last exit code`, not from an absolute `runs` number. Two
+scheduled fires cannot overlap (launchd never runs two instances of one label), but a **manual**
+`boardwatch run` racing a tick exits 2 on the scan lock and would reset the gate — 8× likelier now, so do
+not run one by hand without checking `launchctl print … | grep state` first.
 
 **The headline number: 0.** Zero job applications have ever been sent (`applications` has 0 rows) — the
 machine produces leads, it never applies (out of scope). Against that: 3 published releases (none since
@@ -441,20 +445,14 @@ version holds at 6; `companies.source` — gains `'lane'` by migration; the four
 
 ## Open questions — Mit's, not to be resolved by fiat
 
-1. **Should `pipeline/runner.py` keep swallowing a funnel-write failure into a printed warning?** (D-076.)
-   Now measured (D-287): the swallow sets neither `summary.fatal` nor `summary.errors`, and only `fatal`
-   fails a run — so **a tick whose funnel never wrote still exits 0 and would count toward Gate P3, while
-   B1 and B5 are read from the funnel that does not exist.** Unexercised so far: the warning has fired
-   exactly once, on run 70, which exited 1 anyway. Three options: leave it fail-open, make it fatal, or
-   keep it non-fatal but append it to `summary.errors` so a funnel-less tick is at least visible.
-2. **The projection spec's six open questions** (§12) — soonest: whether `tailor run` should validate the
+1. **The projection spec's six open questions** (§12) — soonest: whether `tailor run` should validate the
    projection manifest, and whether persona's `entries` list survives stage 2.
-3. **The Snap `Level 5`/`Level 3` leak stays open by design** — with no bindings file every level token
+2. **The Snap `Level 5`/`Level 3` leak stays open by design** — with no bindings file every level token
    abstains, so a level-named title is shortlisted carrying its reason. Closing it takes one deliberate
    binding line; boardwatch ships no verifiable claim about any company's ladder ("Level 3" is entry at some
    shops, senior at others — Mit's point: read the JD's fine print, don't guess).
 
-*(Recently resolved: open Q2 — clearance IS now a blocker (D-257); open Q4 — seniority band = `entry`, arming
+*(Recently resolved: **open Q1 — a swallowed funnel failure is now RECORDED in `summary.errors` and the run row, and the run still does not fail (D-288)**; open Q2 — clearance IS now a blocker (D-257); open Q4 — seniority band = `entry`, arming
 pending Mit's TTY (D-258); the launchd trigger — FIRED (D-254).)*
 
 ---
@@ -524,7 +522,7 @@ browser-UA `Fetcher`, and a drain for any stub bucket the lane creates.
 | **Citi sits at 13.1% coverage, permanently** | Workday's `total` censors at 2,000; the facet sum (uncapped, control-verified) says 4,589. Our pager wraps at ~2,000 too, so post-drain Citi holds ~2,214 of 4,589 and nothing reports it | **Mit** (input-side) |
 | **Five boards report GREEN and return zero, ever** | Snyk, Vercel, HubSpot, Plaid, Qualcomm — clean scans, `last_health='empty'`, 0 postings across 12 scans. 7 of the 12 dead boards are HTTP 422 (malformed request ⇒ probably wrong slugs, recoverable). No backoff, no quarantine, no drain | **Mit** (input-side) |
 | **`unchanged` is an unaudited coverage assumption** | 59 of 135 boards listed nothing in run 67 on a payload hash. No test exists for a hash misreporting a changed board. A false `unchanged` is silent, permanent and undetectable by any current instrument | open |
-| **A funnel-less tick still exits 0** | the swallow sets neither `fatal` nor `summary.errors`, so it would count toward Gate P3 with no artifact to score B1/B5 from (D-287). Fired once, on run 70, which exited 1 anyway | **Mit** (open Q1) |
+| **`top`'s drain flags are a ~2-week bound-parameter fuse** | with `--include-hard-filter` / `--include-non-swe` / `--include-over-seniority` open — D-277's ONLY drain for a `hidden_hard_filter` that is 59% of the corpus — `eligible_ids` ≈ 0.93 × corpus ≈ **30,400 today** against a cap of 32,766, breaking at ~35,300 open postings. The scheduled tick is safe (~3,683). Chunk `identity_queries.py:45/97`, `regroup.py:52/88`, `ledger_queries.py:48`, and `reopen_jobs:148` which needs a SUMMED rowcount (D-288) | **next task** |
 | **No external missed-window alarm** | nothing outside a run can detect a missed 08:00; the funnel heartbeat is only written from inside `runner.py` | P3 |
 | **`resume.yaml` is an IMPORT SOURCE, never hand-fixed** | D-155. Mit pins `resume_max_pages=1`; never advise 2 | Mit |
 | **`boardwatch top` advances the queue by default** | records `seen` unless `--no-record`; relevant to Gate P6's clean window | P6 |

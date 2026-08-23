@@ -11,6 +11,7 @@ from boardwatch.store.queries import (
     RUN_FAILED,
     RUN_OK,
     RUN_RUNNING,
+    append_run_error,
     finalize_run,
     finish_run,
     get_validators,
@@ -386,3 +387,44 @@ def test_current_posting_versions_skips_a_posting_with_no_versions(tmp_path) -> 
     with engine.connect() as conn:
         assert current_posting_versions(conn) == {}
         assert current_posting_versions(conn, [pid]) == {}
+
+
+# --- append_run_error (D-287, open question 1) ---------------------------------------
+
+
+def test_append_run_error_appends_without_clobbering_prior_errors(engine: Engine) -> None:
+    """Appending an error AFTER `finish_run` must not lose what the run already recorded.
+
+    The funnel/morning emits run after `finish_run` in `runner.py`'s finally block, so the
+    only way a reporting failure reaches the run row is a second, additive write. Atomic
+    `json_insert` rather than a read-modify-write, matching `reap_stale_runs`.
+    """
+    run_id = insert_run(engine)
+    finish_run(engine, run_id, errors=["scan: board x failed"])
+    append_run_error(engine, run_id, "funnel artifact not written: boom")
+    with engine.connect() as conn:
+        row = conn.execute(select(tables.runs).where(tables.runs.c.id == run_id)).one()
+    assert list(row.errors_json) == [
+        "scan: board x failed",
+        "funnel artifact not written: boom",
+    ]
+
+
+def test_append_run_error_leaves_the_runs_terminal_status_and_finished_at_alone(
+    engine: Engine,
+) -> None:
+    """A reporting failure is not a run outcome, so this must not re-stamp either field.
+
+    Re-running `finish_run` would have been the cheap way to append and would have moved
+    `finished_at`, making the artifact's own timestamp disagree with the run's.
+    """
+    run_id = insert_run(engine)
+    finish_run(engine, run_id, status=RUN_OK)
+    with engine.connect() as conn:
+        before = conn.execute(select(tables.runs).where(tables.runs.c.id == run_id)).one()
+    append_run_error(engine, run_id, "funnel artifact not written: boom")
+    with engine.connect() as conn:
+        after = conn.execute(select(tables.runs).where(tables.runs.c.id == run_id)).one()
+    assert after.status == before.status == RUN_OK
+    assert after.finished_at == before.finished_at
+    assert list(after.errors_json) == ["funnel artifact not written: boom"]

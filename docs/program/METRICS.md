@@ -6269,3 +6269,39 @@ cleared both. Test count **7,367 → 7,374** (+6 cap tests, +1 notify).
 | D-281's recorded ruling | raise cadence to ~3h |
 | applied? | **no** |
 | consequence | Gate P3 = **7 days**, not the ~1–2 the ASAP plan assumes |
+
+**Two owner rulings applied, and what whole-branch review added (D-288).**
+
+Cadence: plist rewritten from one `StartCalendarInterval` to **eight** at 3h spacing (02, 05, 08, 11, 14,
+17, 20, 23). Reloading the job **reset launchd's `runs` counter to 0** — the pre-reload reading was
+`runs = 5, last exit code = 1`, and any absolute comparison against that is now meaningless.
+
+Funnel visibility: a swallowed emit now appends to `summary.errors` and to `runs.errors_json` via a new
+atomic `append_run_error`. Pinned end to end by monkeypatching `_emit_funnel` to raise inside a real
+`run_pipeline`, then asserting `fatal is None` (still fail-open), the note in `summary.errors`, and the
+note in the run row — three assertions that are all empty on `main`.
+
+Review findings, measured rather than asserted:
+
+| Finding | Number |
+|---|---|
+| `eligible_ids` on the SCHEDULED path | ~**3,683** (~11% of corpus) — safe, cap needs ~300k postings |
+| `eligible_ids` with `top`'s drain flags OPEN | ≈ 0.93 × corpus ≈ **30,400** vs cap 32,766 |
+| open postings at which that breaks | ~**35,300** |
+| corpus growth over the preceding ~2 weeks | 28,287 → 30,243 → **32,771** |
+| so the drain path's remaining fuse | ~**8–14 days** |
+| `identities regroup`'s `member_ids` (CLI-only) | **9,374** over 3,469 duplicate groups (28.6% of corpus) |
+| `SQLITE_MAX_VARIABLE_NUMBER`, `uv` interpreter (3.12.12 / sqlite 3.50.4) | **32,766** |
+| same, this machine's system `python3` (3.14.7 / sqlite 3.53.4) | **250,000** |
+
+That last pair is why the cap tests' skip guard was a defect: it fired above 200,000, so on the system
+interpreter the entire file skipped and printed green, and being `autouse` it also skipped the static
+import-pin that cannot be affected by the limit at all. Threshold raised to 1,000,000 and narrowed to the
+five tests that bind over the cap.
+
+Added-statement cost of chunking, measured warm on the live store: 73 chunked PK lookups in **33 ms**, 73
+chunked eligibility group-by reads in **940 ms**; ~396 extra statements per scheduled run against a ~26
+minute run, under 0.1%.
+
+`make check` after the funnel change and the test hardening: **7,378 passed, 4 xfailed**, ruff clean,
+`mypy --strict` clean on 303 files.

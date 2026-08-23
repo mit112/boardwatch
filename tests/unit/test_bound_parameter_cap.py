@@ -70,10 +70,18 @@ def _oversized(real_id: int) -> list[int]:
     return [*padding, real_id]
 
 
-@pytest.fixture(autouse=True)
-def _cap_is_worth_testing() -> None:
-    if VAR_LIMIT > 200_000:
-        pytest.skip(f"SQLite here allows {VAR_LIMIT} parameters; the list would be absurd")
+# Applied ONLY to the tests that must bind over the cap — never to the static import-pin
+# below, which has no dependence on the parameter limit and must not be skipped with them.
+#
+# The threshold is deliberately far above both real-world values. `uv`'s interpreter reports
+# 32,766, but some distro builds (and this machine's system python3) patch
+# SQLITE_MAX_VARIABLE_NUMBER to 250,000 — at which point these tests must bind 250,001 ids and
+# run slowly, NOT skip. A skip here would be green for the wrong reason, which is precisely the
+# failure mode this whole file exists to prevent, and `pytest.skip` announces nothing.
+needs_a_real_cap = pytest.mark.skipif(
+    VAR_LIMIT > 1_000_000,
+    reason=f"SQLite here allows {VAR_LIMIT} bound parameters; the id list would be absurd",
+)
 
 
 @pytest.fixture()
@@ -125,6 +133,7 @@ def _write_deterministic(db: Engine, catalog, version_id: int, facts: Facts) -> 
         )
 
 
+@needs_a_real_cap
 def test_current_evaluations_chunked_reads_more_ids_than_the_bound_parameter_cap(
     db: Engine, catalog, seeded: tuple[int, int]
 ) -> None:
@@ -157,15 +166,19 @@ def test_nothing_outside_read_py_calls_the_engines_unchunked_evaluation_read() -
     """
     src = Path(__file__).resolve().parents[2] / "src" / "boardwatch"
     bare = re.compile(r"\bcurrent_evaluations\b")
+    # Keyed on the RELATIVE PATH, not the bare filename: excluding `"engine.py"` by name would
+    # silently exempt a future `providers/engine.py` or `store/read.py` from the whole check.
+    allowed = {"eligibility/engine.py", "eligibility/read.py"}
     offenders = sorted(
-        str(path.relative_to(src))
+        path.relative_to(src).as_posix()
         for path in src.rglob("*.py")
-        if path.name not in {"engine.py", "read.py"}
+        if path.relative_to(src).as_posix() not in allowed
         and bare.search(path.read_text(encoding="utf-8"))
     )
     assert offenders == []
 
 
+@needs_a_real_cap
 def test_current_verdicts_reads_more_ids_than_the_bound_parameter_cap(
     db: Engine, catalog, seeded: tuple[int, int]
 ) -> None:
@@ -186,6 +199,7 @@ def test_current_verdicts_reads_more_ids_than_the_bound_parameter_cap(
     assert got == {posting_id: "ineligible"}
 
 
+@needs_a_real_cap
 def test_current_gate_verdicts_reads_more_ids_than_the_bound_parameter_cap(
     db: Engine, catalog, seeded: tuple[int, int]
 ) -> None:
@@ -258,6 +272,7 @@ def two_evaluations(db: Engine, catalog) -> tuple[int, int]:
     )
 
 
+@needs_a_real_cap
 def test_count_requirement_dispositions_sums_across_more_ids_than_the_cap(
     db: Engine, two_evaluations: tuple[int, int]
 ) -> None:
@@ -277,6 +292,7 @@ def test_count_requirement_dispositions_sums_across_more_ids_than_the_cap(
     assert got, "no requirement rows at all — the fixture stopped exercising the aggregate"
 
 
+@needs_a_real_cap
 def test_current_posting_versions_reads_more_posting_ids_than_the_cap(
     db: Engine, seeded: tuple[int, int]
 ) -> None:

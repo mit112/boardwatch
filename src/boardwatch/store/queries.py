@@ -205,6 +205,37 @@ def reap_stale_runs(engine: Engine, *, older_than: timedelta) -> list[int]:
         return [int(row.id) for row in result.all()]
 
 
+def append_run_error(engine: Engine, run_id: int, note: str) -> None:
+    """Add one error to a run row that has already been finished, and nothing else.
+
+    Exists because `runner.py` emits the funnel and morning artifacts AFTER `finish_run` — it
+    has to, or the artifact would record every run as still in progress — so a reporting
+    failure there had no way to reach the store at all. It was printed to the console and
+    nothing else, which meant **a run whose funnel never wrote still exited 0 and looked
+    identical to a clean one** to anything reading the database. That matters because Gate P3
+    counts clean unattended runs while B1 and B5 are read out of the funnel (D-287, and
+    STATE's open question 1).
+
+    Deliberately NOT `finish_run(errors=[note])`: that would re-stamp `finished_at` and
+    `status`, so a reporting failure would move the run's own completion time. A reporting
+    failure is not a run outcome, and this function cannot change one — it only appends.
+
+    Atomic `json_insert` rather than a read-modify-write, matching `reap_stale_runs`: this is
+    called from a `finally` block that may already be unwinding an exception, and it can race
+    the reaper on the same row.
+    """
+    with engine.begin() as conn:
+        conn.execute(
+            update(runs)
+            .where(runs.c.id == run_id)
+            .values(
+                errors_json=func.json_insert(
+                    func.coalesce(runs.c.errors_json, literal_column("'[]'")), "$[#]", note
+                )
+            )
+        )
+
+
 def ensure_run(engine: Engine, run_id: int | None) -> int:
     """Return the caller's run id, minting a fresh run row when there is none.
 
@@ -426,11 +457,13 @@ class CurrentVersion:
 def current_posting_versions(
     conn: Connection, posting_ids: Sequence[int] | None = None
 ) -> dict[int, CurrentVersion]:
-    """posting_id -> its newest posting_versions row, in ONE statement.
+    """posting_id -> its newest posting_versions row.
 
-    With posting_ids=None this sweeps every OPEN posting, which is the preflight path.
-    With an explicit list it ignores status, which is how `show` renders a closed
-    posting's historical verdict (D-P2-9). No per-posting SQL on either path (D-P2-16).
+    With posting_ids=None this sweeps every OPEN posting in ONE statement, which is the
+    preflight path. With an explicit list it ignores status, which is how `show` renders a
+    closed posting's historical verdict (D-P2-9), and it issues one statement per 500 ids
+    because `export` passes the whole open corpus (D-287) — NOT one statement, and do not
+    read this docstring as evidence that it is. No per-posting SQL on either path (D-P2-16).
 
     The tie-break on (captured_at, id) is load-bearing: two versions captured in the same
     transaction share captured_at, and ordering by captured_at alone would make "the
