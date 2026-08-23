@@ -360,11 +360,21 @@ def _zero_output_guard(
     """P3 item 5 (B5) — 0 leads is provably right IFF this run did no NEW candidate work, **or**
     every candidate it had was already handled, already applied to, or dead.
 
-    `candidate_judged_this_run` counts `eligible` AND `uncertain` (the ranker hides only
-    `ineligible`, so both are candidate leads), run_id-attributed (not a cross-run handled
-    ledger): a steady-state day where every candidate posting is a cache hit from a PRIOR run
-    has this at 0 and is honest. > 0 with 0 leads means new candidate work existed this run and
-    nothing came of it — the silent-empty-day this guard exists to catch.
+    `candidate_judged_this_run` counts `eligible` AND `uncertain` (both CAN become leads;
+    `ineligible` cannot), run_id-attributed (not a cross-run handled ledger): a steady-state day
+    where every candidate posting is a cache hit from a PRIOR run has this at 0 and is honest.
+    > 0 with 0 leads means new candidate work existed this run and nothing came of it — the
+    silent-empty-day this guard exists to catch.
+
+    **This predicate is currently DORMANT, and widening it does not help (D-282).** Firing needs
+    `hidden_handled == 0`, measured 8/48/128 on runs 68/69/71, and an empty shortlist, while
+    `capped_by_top_n` runs 3,603-3,683 so `visible` is full every run. It cannot be repaired by
+    admitting the rank-time rejection buckets either: they are CORPUS-scoped (`hidden_hard_filter`
+    alone is 18,472-18,932 per run) while `candidate_judged_this_run` is RUN-scoped, so any such
+    clause is unconditionally true and the fatal becomes unreachable. The buckets are also an
+    exhaustive partition of the corpus, so at corpus scope "can this run explain the empty day"
+    is always yes by construction. An honest B5 needs RUN-scoped rank attribution, which the
+    ranker deliberately does not persist.
 
     `hidden_handled` is the P6 slice 2 clause, and it is a widening the ledger forces rather than
     a weakening. Under the ledger a run can judge genuinely new eligible postings and still
