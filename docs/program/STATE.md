@@ -16,19 +16,36 @@
 
 **The headline number: 0.** Zero job applications have ever been sent (`applications` has 0 rows) — the
 machine produces leads, it never applies (out of scope). Against that: 3 published releases (none since
-**0.3.0**), ~53k lines of source, **~6,900 tests**, 70 leaf CLI commands, 6 ATS providers, a **~1.0 GB**
+**0.3.0**), ~53k lines of source, **~6,900 tests**, 71 leaf CLI commands, 6 ATS providers, a **~1.0 GB**
 store.
 
-**A planning session on 2026-08-22 set the ASAP execution plan (D-280), and it SUPERSEDES the daily-tick
-babysitting below.** "Done" is redefined to a **provisional pass** — 3 clean FROZEN daily runs meeting all
-seven bar metrics (B1–B7) — after which the full 14-day acceptance runs PASSIVELY in the background to
-confirm. **Breadth (the three discovery lanes) is IN scope now**, built before the provisional pass. Work
-proceeds in 6 self-contained sessionized parts; **next action is Part 1** — measure net-new/day, bank P6-b
-(liveness `dead==0`), write the leakage query, fix the zero-output-guard false-alarm. The P6 duplicate-kind
-ruling is **decided: only `exact_quad` counts** (D-280). P3's 7-tick gate is human-adjudicated off launchd's
-counter and is therefore **compressible** (plan Part 6); the 14-day acceptance is the one true calendar
-wall. Plan: `~/.claude/plans/lets-use-this-session-staged-wren.md` + project memory. No code shipped this
-session; no gate moved.
+**The ASAP execution plan (D-280) governs, and it SUPERSEDES the daily-tick babysitting below.** "Done" is
+a **provisional pass** — 3 clean FROZEN runs meeting all seven bar metrics (B1–B7) — after which the full
+14-day acceptance runs PASSIVELY in the background to confirm. Breadth (the three discovery lanes) is IN
+scope, built before the freeze. Six sessionized parts; plan at
+`~/.claude/plans/lets-use-this-session-staged-wren.md` + project memory.
+
+**PART 1 IS COMPLETE (one deliverable closed as a finding, not a fix — see D-282). Next action is PART 2 —
+lane groundwork** (`Lane` protocol, stub attribution,
+company cap, dereference utility; tasks 3–5 of
+`docs/superpowers/plans/2026-08-22-lane-groundwork.md`). Then 3 → 4 → 6, with Part 5 anytime.
+
+**Two of D-280's premises are measured FALSE (D-281), and the plan survives both on Mit's ruling.**
+`built` is a permanent disposition, so every run retires its whole shortlist for good. (1) **Breadth does
+NOT protect B1** — `capped_by_top_n` is **3,683**, ~368 days at ≥10/day, and it is GROWING. The lanes keep
+only the justification D-272 actually gave them: parity and company reach. (2) **Intraday runs yield FULL
+net-new** — run 69 got **40 of 40 net-new three hours after run 68**, lead sets 100% disjoint. Mit ruled:
+**lane order STANDS** (build Parts 2–4 before the freeze) and **COMPRESS EVERYTHING** — raise the launchd
+cadence to ~3h, the first 7 consecutive clean ticks close P3, and 3 of those same ticks are the provisional
+pass; ~1–2 days, not ~10. **Recorded cost:** B1 and B5 are written per DAY, so the provisional pass
+certifies per-RUN behaviour and the 14-day confirm on true daily cadence is the control.
+
+**Caveat on the bar itself (D-281): a 14-day B1 pass does NOT evidence discovery health** — it is close to
+guaranteed for ~92 runs by ledger drain alone. The real threat to a B1 day is a **ledger reopen**, which
+re-serves built jobs as repeats and scores them 0 net-new; run 66 produced 8 leads and **0** net-new for
+exactly that reason, and 12 `built` rows are currently reopened. **B1 is scored on the strict reading** (the
+engine's own `eligible` verdict, not "not ineligible"); both readings pass at cap 40, three of four recent
+days would fail at cap 8.
 
 **P3'S STREAK IS RESET TO ZERO (D-276).** The 08:00 launchd trigger fired cleanly unattended on
 **2026-08-20** (run 63, `runs` 1→2) and again on **2026-08-21 at 08:00:10** (run 66, `runs` 2→3, exit 0,
@@ -44,7 +61,13 @@ tick does not pay it: exit 0, 42m41s, reconciles, 30,243 of 30,243 re-evaluated,
 a run whose tree had that migration, 17 minutes before the file reached the primary checkout at
 08:17 — so the 08:00 tick ran `main`'s tree, which had no such revision. Repaired: both heads agree
 and run 69 was clean at 11:47. **Force every agent onto a scratch `BOARDWATCH_DATA_DIR`** — the live
-store is the DEFAULT, and a migration breaks the NEXT scheduled run, not the one that erred.
+store is the DEFAULT, and a migration breaks the NEXT scheduled run, not the one that erred. **That rule is
+INSUFFICIENT on its own: `config_dir` obeys a separate `BOARDWATCH_CONFIG_DIR`, so a run isolated only by
+`BOARDWATCH_DATA_DIR` still READS `resume.yaml` / `career-profile/` / the template from the live config dir
+and still WRITES its artifacts to the live `~/boardwatch-applications/` tree (D-281). Set BOTH.** Two
+consequences: a scratch run's `funnel-N` collides with the next real run's, because run numbering on a store
+copy continues from the live sequence; and the artifact directory is **UTC-dated**, so match on the run
+NUMBER, never the date.
 
 **The next scheduled tick is 2026-08-23 08:00, and a clean one is 1 of 7.** Confirm it fired with
 `launchctl print gui/$(id -u)/com.boardwatch.run | grep -E "runs|last exit"` — **`runs` must go 4 → 5 with
@@ -236,9 +259,17 @@ and already suppresses the "internships count" trap.
 
 **Reviews of the precision merges have found five false-drop defects; all are fixed** — the US+foreign
 location segment (#111), the seniority product-noun collision (#112), the `Lead` hole those reopened (#114),
-and the location gate's two (D-263/D-264). **Deferred (MEDIUM, safe-direction):** the zero-output guard can
-false-*alarm* on a genuine zero-lead day now that the ranker hides `not_swe`/`above_band`/`non_us`, not just
-`ineligible` — a false alarm on the unattended run, never data loss.
+and the location gate's two (D-263/D-264). **The zero-output guard was NOT changed, and B5 has no working instrument (D-282).** Two record
+corrections. (1) **The false alarm is not reachable on this store, so it was never a P3 blocker** — firing
+needs `hidden_handled == 0` (measured **8 / 48 / 128** on runs 68 / 69 / 71) and an empty shortlist
+(`capped_by_top_n` is 3,603–3,683, so `visible` is 40 every run). (2) **The docstring's "D-246" attribution
+was never a ruling** — D-246 is the seniority-gate decision and says nothing about this guard. The obvious
+fix was built and **rejected before merge**: disarming on a rejection bucket makes the fatal UNREACHABLE,
+because `hidden_hard_filter` is corpus-scoped at **18,472–18,932** every run. **Root cause, and it
+generalises: the `hidden_*` buckets are an EXHAUSTIVE partition of the corpus, so "can this run explain the
+empty day?" is always yes by construction — a complete partition cannot evidence a silent failure.** Only
+the stale-premise docstrings were corrected, at both sites. **Owner call: run-scoped rank attribution is the
+only honest fix, and until it exists B5 is unscoreable.**
 
 **A manual `run --project` is the way to exercise a gate change on live data before a scheduled tick** — it
 uses identical argv but does NOT move the P3 counter. Run 65 did this and caught the `Lead` hole (D-262).
@@ -315,7 +346,7 @@ an import source, never hand-fixed (D-155).
 | P3 Unattended one command | **COMPLETE, INSTALLED, FIRING** — runs 63 and 66 were genuine scheduled ticks (D-254) | **NOT MET — 0 of 7 unattended.** Streak reset by run 68's failed tick (D-276) |
 | P4 Craft gate | **COMPLETE** | **NOT MET** — the owner's blind craft review, barred until P3's gate |
 | P5 Eligibility decides | **COMPLETE** | **MET** — INELIGIBLE precision 16/16, 0 span violations |
-| P6 Liveness + dedup | **BUILD COMPLETE** (D-110/111/113) | **NOT MET — 2 of 4** — needs a real 7-day run |
+| P6 Liveness + dedup | **BUILD COMPLETE** (D-110/111/113); leakage report shipped (D-283) | **3 of 4** — liveness MET (D-281), leakage measurable and reading **0.00%** but needs a 7-day ledger span (~2026-08-26) |
 | 14-day acceptance | not started | starts after P6 |
 | P7 Breadth | not started | gated on P0 attribution data |
 | *Gate A / Gate B* | *complete, merged* | ***MET*** — *has moved no program gate* |
@@ -324,8 +355,8 @@ an import source, never hand-fixed (D-155).
 
 | Clause | Standing |
 |---|---|
-| Duplicate leakage over 7 days ≤ 5% | **NOT met.** One-shot baseline 0.79%, not over 7 days. `posting_identities` already holds the collisions — 1,118 body-hash and 1,062 company+title+location keys whose postings sit in DIFFERENT jobs — so the clause needs Mit's ruling on which kinds count as a duplicate, not new code (D-270) |
-| **0** dead postings reaching leads | **NOT met.** Needs a real probed run; recall low by design |
+| Duplicate leakage over 7 days ≤ 5% | **MEASURABLE AND PASSING, awaiting span (D-283).** `boardwatch identities leakage [--days N] [--json]` ships. **Live: 100 surfaced jobs / 100 distinct `exact_quad` groups / 0 redundant = 0.00%.** Only `exact_quad` counts (Mit's ruling, ratified); counted over jobs that REACHED LEADS, not the corpus; body-less jobs sit in their own `unidentified` bucket, never folded. **Not yet "over 7 days"** — the ledger starts 2026-08-19 so ~3.2 days exist, and the 7-day `seen` TTL cannot be observed faster than itself. First true window **~2026-08-26**, inside Parts 2–4, so off the critical path |
+| **0** dead postings reaching leads | **MET (D-281).** Two runs on a scratch store copy: `checked 40, dead 0, unknown 2, alive 38, gone_after_redirect 0`, identical in both, agreeing across three read paths (funnel JSON, funnel markdown, stdout). Detector demonstrably ARMED — `checked > 0`, so not the disarmed 0/0 signature. The `runs` table has no liveness columns, so no DB-row path exists; those three are all there are |
 | Injected hash-collision test | **MET** (D-100) |
 | Audit of 20 sampled suppressions | **MET** (D-101) |
 

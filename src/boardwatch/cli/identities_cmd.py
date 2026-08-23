@@ -1,6 +1,9 @@
-"""`boardwatch identities backfill|verify` (design §6.3, §7)."""
+"""`boardwatch identities backfill|regroup|verify|leakage` (design §6.3, §7)."""
 
 from __future__ import annotations
+
+import json
+from dataclasses import asdict
 
 import typer
 
@@ -9,6 +12,7 @@ from boardwatch.core.clock import utcnow
 from boardwatch.core.dedup import resolve_duplicates
 from boardwatch.core.posting_identity import compute_identities
 from boardwatch.core.regroup import plan_regrouping
+from boardwatch.reports.leakage import DEFAULT_WINDOW_DAYS, compute_leakage_report
 from boardwatch.store.identity_queries import (
     identities_complete,
     load_identities,
@@ -122,3 +126,47 @@ def verify(ctx: typer.Context) -> None:
     if missing or stale:
         raise typer.Exit(code=1)
     typer.echo(f"identities: {len(rows)} postings verified")
+
+
+@identities_app.command("leakage")
+def leakage(
+    ctx: typer.Context,
+    days: int = typer.Option(
+        DEFAULT_WINDOW_DAYS,
+        "--days",
+        help="Trailing window, anchored on when each job FIRST reached leads.",
+    ),
+    as_json: bool = typer.Option(False, "--json", help="Emit JSON instead of text."),
+) -> None:
+    """Gate P6's "duplicate leakage over 7 days" number (design §2, `reports/leakage.py`).
+
+    Only `exact_quad` counts as a duplicate (the owner's ruling — see
+    `core/identity_kinds.py`), and only jobs that actually reached the operator
+    (`job_dispositions`: `seen`, `skipped`, or `built`) count as "leaked" — a duplicate the
+    ranker suppressed before it ever surfaced never leaked. Body-less/unbackfilled postings
+    have no `exact_quad` identity by design and are reported as their own `unidentified`
+    bucket, excluded from the rate rather than folded into "unique".
+
+    Prints "not measurable" rather than 0% or 100% when nothing in the window carries an
+    identity.
+    """
+    engine = build_context(ctx.obj).engine
+    report = compute_leakage_report(engine, window_days=days)
+    if as_json:
+        typer.echo(json.dumps({**asdict(report), "rate": report.rate}))
+        return
+    if report.identified == 0:
+        typer.echo(
+            f"leakage (last {report.window_days}d): not measurable — "
+            f"{report.surfaced_total} job(s) reached leads, {report.unidentified} of them "
+            "unidentified, 0 carry an exact_quad identity"
+        )
+        return
+    assert report.rate is not None  # narrowed by the identified == 0 check above
+    typer.echo(
+        f"leakage (last {report.window_days}d): {report.rate:.1%} "
+        f"({report.redundant} redundant of {report.identified} identified across "
+        f"{report.distinct_groups} distinct exact_quad group(s); "
+        f"{report.unidentified} unidentified excluded; {report.surfaced_total} total "
+        "reached leads)"
+    )

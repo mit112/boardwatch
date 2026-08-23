@@ -245,13 +245,20 @@ def count_candidate_judged_this_run(
     `uncertain`) AND was itself judged by THIS run (`run_id` attribution) — the P3 item 5 (B5)
     zero-output guard's predicate.
 
-    `uncertain` counts, not only `eligible`: the ranker hides only `ineligible` (D-P2-10,
-    top_cmd), so an `uncertain` posting is a candidate lead exactly like an `eligible` one, and
+    `uncertain` counts, not only `eligible`: an `uncertain` posting can become a lead exactly like
+    an `eligible` one, where an `ineligible` one cannot, and
     a run that judged new candidate work yet produced 0 leads is the silent empty day this
     guard exists to catch regardless of which of the two verdicts the candidate carries. This
     also keeps the guard's coverage intact now that a body firing no family abstains to
     `uncertain` rather than clearing to `eligible` by silence (D-250): the same normal posting
     that used to count as `eligible` still counts, under its corrected verdict.
+
+    NOT "the ranker hides only `ineligible`" — that was this docstring's earlier claim and it is
+    false (D-282). `cli/top_cmd.py` also hides `hidden_hard_filter`, `hidden_non_swe`,
+    `hidden_over_seniority` and `hidden_duplicate`, so a posting counted here can still be
+    withheld. This count is RUN-scoped and those buckets are CORPUS-scoped; see
+    `pipeline/runner.py::_zero_output_guard` for why that mismatch leaves B5 without an
+    instrument.
 
     Deliberately run_id-attributed rather than a cross-run "handled ledger": a steady-state day
     where every candidate posting is a cache hit from a PRIOR run has this count at 0 and is

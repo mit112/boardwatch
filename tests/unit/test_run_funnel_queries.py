@@ -596,7 +596,7 @@ def test_an_eligible_posting_judged_by_this_run_counts(engine: Engine) -> None:
 
 
 def test_an_uncertain_posting_judged_by_this_run_counts(engine: Engine) -> None:
-    """`uncertain` is a candidate lead too — the ranker hides only `ineligible` — so a run that
+    """`uncertain` can become a lead too, where `ineligible` cannot — so a run that
     judged new uncertain work yet produced 0 leads is the same silent empty day. This also
     guards D-250: a body that fires no family now abstains to `uncertain`, and must still count
     as candidate work rather than escaping the zero-output guard by relabeling."""
