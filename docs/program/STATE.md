@@ -26,9 +26,12 @@ once. Fixed and merged (D-287). The launchd job now fires **eight times a day** 
 any absolute comparison against that number is void. The gate counts consecutive clean **ticks**, not
 launchd invocations.
 
-**GATE P3 IS 0 OF 7 and the next clean tick is 1 of 7 (D-276).** A failed unattended run RESETS the streak
-rather than pausing it, and **Gate P4 is barred until P3 is met**. Only a SCHEDULED tick counts — a manual
-`run --project` moves nothing. At 8 fires a day this is now roughly a 21-hour gate rather than a 7-day one.
+**GATE P3 IS 1 OF 7. Run 71 (2026-08-23 11:00) is the first clean scheduled tick on the fixed tree** —
+exit 0, 22m47s, 135 board scans, funnel-71 written, 40 leads. Its `errors_json` carries the same 13 known
+board failures run 70 had **minus** the `too many SQL variables` abort, which is the before/after on one
+corpus. A failed unattended run RESETS the streak rather than pausing it, and **Gate P4 is barred until P3
+is met**. Only a SCHEDULED tick counts — a manual `run --project` moves nothing. At 8 fires a day the
+remaining 6 ticks are ~18 hours, not 6 days.
 
 > **A MANUAL RUN RACING A TICK EXITS 2 AND RESETS GATE P3**, and at 8 fires a day that is 8× likelier than
 > it was. Check `launchctl print gui/$(id -u)/com.boardwatch.run | grep state` before starting one by hand.
@@ -82,8 +85,17 @@ close to guaranteed for ~92 runs by ledger drain alone; the real threat is a **l
 re-serves built jobs and scores them 0 net-new. **B5 is UNSCOREABLE** until run-scoped rank attribution
 exists — do not score it on exit status alone.
 
-**`DEFAULT_TOP_N` is 40 and LIVE.** `capped_by_top_n` is **3,683** — that many postings clear every filter
-and are cut by rank alone. Mit's standing ruling: **fix precision, never tune the cap.**
+**`DEFAULT_TOP_N` is 40 and LIVE, and the uncapped set was MEASURED with the real ranker (D-292).**
+`boardwatch top 5000 --no-record` on a snapshot returns **3,771** postings, arriving at **~220-430/day**.
+But **67.6% of them are `role=uncertain`** — the role gate abstaining, not confirming — so the honest
+confirmed-software, in-band arrival is only **~70/day**, the same order as job-apps' delivered 20-60.
+**Quote neither number without saying which population it counts; they differ by 4x.**
+
+**Mit wants no cap, and the measurement says fix the role gate FIRST.** Uncapped output is 3,771 rows of
+which 2,550 are role-unknown — job-apps' 465-item queue that nobody worked through. Mit's own standing
+ruling already says **fix precision, never tune the cap**; the 2,550 unknowns are the whole gap between
+300/day and 70/day, so they are the lever. **The cap decision itself is deferred to Mit and is now
+informed.**
 
 ---
 
