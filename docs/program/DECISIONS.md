@@ -314,6 +314,9 @@ and is a no-op when the index is already right. `make index-check` reports drift
 | D-278 | DECISIONS.md | 12604 | **JD-body acquisition: owner rulings on the D-272/D-275 blocker. Design only, nothing built** (`docs/superpowers/specs/2026-08-22-jd-acquisition-design.md`). RULING 1: the lanes exist to reach companies **no existing route can reach**. RULING 2: **the lane order REVERSES D-272** — Indeed (JobSpy) first because its body arrives FREE inside the search response (`description { html }` is a field of the search query, zero extra requests), then hiring.cafe (one unauthenticated GET, verified 3,463 chars), then the GitHub lists, which carry **no body at all** and whose active entries are **53.3% duplicates** of the six boards already scanned against 34.7% serving Ruling 1. RULING 3: adding a whole board **IS breadth** — permitted only under a per-run new-company cap, reported (unbounded, one Simplify pull adds 5,695 companies). RULING 4: honest UA stays on the six providers, browser UA only on new aggregator fetches — re-ruled after the first framing omitted that boardwatch ALREADY ships an honest UA and is a published package. PREMISE CHECK (37,442 rows / 9 lists, netloc rule + sample size stated): 4 of 5 named companies present (TikTok 804, ByteDance 312, Amazon 227, Apple 171) but **SpaceX is on Greenhouse** so D-271's five is a four; **half the non-six tail is three more ATS families** (Oracle Cloud HCM 31.3%, iCIMS 13.6%, eightfold), and the largest non-six company is Sainsbury's at 1,639 postings, a UK grocer the US gate discards. PRIOR ART: job-apps' browser tier is **13% historically and 0% currently** — dead since 2026-08-11, 11 consecutive runs at zero, invisible because `except Exception: return ""` makes a missing dependency, a timeout and an empty page one empty string (corroborated by unchanged candidate mix 185->146 OK vs 53->0, and wall clock 13m58s->1m40s->28s); LinkedIn plain HTTP carries **60.6% at a 97.7% hit rate**. **It has NO generic careers-page extraction** — 14 hand-maintained host regexes gate every fetch, Apple and TikTok have none, Amazon has a bespoke adapter of the rotting class (zapply silently 585-600/day -> 0 on 08-19). LATENT DEFECT: `content_hash("")` == `content_hash(whitespace)` == `e3b0c442...`, feeding `exact_quad`, the only SUPPRESSING identity kind, and `_verify_quad` agrees because `"" == ""` — live store has 13 such postings and **0 colliding groups**, so latent not firing; fix before any lane lands a row. Lane mechanics: **not a 7th Provider** (set-equality test + fixture rule R13), must emit `partial` (an EMPTY `complete` is legal and marks every open posting missing), must insert `jobs` first (ABORT trigger), must call `_write_posting_identity` (skipping one posting disables dedup CORPUS-WIDE). Corrects D-275 (`ashby.parse_payload` is a METHOD; `smartrecruiters.parse_posting` is called by no test; greenhouse is `?content=true&pay_transparency=true`) and D-272's source list (two repos now redirect to their 2027 successors; jobright is 100% tracker with no JSON; Simplify is 86.8% direct ATS, 1 of 18,823 a tracker). Rejected: a generic careers-page reader, bespoke adapters, browser automation, **trusting hiring.cafe's 90 pre-extracted eligibility fields** (they cite no span from the frozen JD), DuckDuckGo fan-out. Also required with lane 1: per-source stub attribution. Owner-gated: Oracle/iCIMS as PROVIDERS, the cap's number, and whether LinkedIn earns its O(n) cost |
 | D-279 | DECISIONS.md | 12713 | **The body-less suppression is FIXED on both paths (#132), and lane 1's client REVERSES D-278's "via JobSpy".** The defect is now DEMONSTRATED, not argued: two body-less postings at one company sharing a normalized title and locations produced `Suppression(posting_id=2, survivor_posting_id=1, kind='exact_quad')` — a real posting suppressed on no evidence. `body_evidence()` mirrors `normalized_locations` (absence => None => no `exact_quad`), AND `_verify_quad` now requires body **PRESENCE** not equality, because that resolver groups STORED identities that nothing rewrites on its own schedule and two absent bodies compare EQUAL — the same belt-and-braces D-083 applied to locations. Its docstring had asserted the defect away ("NOT NULL ... so there is no missing-body branch"); NOT NULL is not non-empty. **Rejected: an IDENTITY_ALGORITHM_VERSION bump** (no normalizer, key tuple or host-class table changed; a bump would take suppression and every `unique` to None across 32,229 postings for nothing — the presence check neutralises the stale rows and `write_identities` DROPS each as an unwanted kind on the next write, so they self-heal). **Rejected: withholding `content_hash_only`** (annotate-only, and keeping it is what keeps `identities_complete()` true — a posting emitting NOTHING would disable suppression corpus-wide, the very failure being fixed). **JobSpy is UNINSTALLABLE here: `python-jobspy` 1.1.82 pins `NUMPY==1.26.3`, newest wheel `cp312`**, against `requires-python >=3.11`, CI on 3.13 and a 3.13.12 dev venv — it would break the published package for 3.13 users, and its own `requests`/`tls-client` stack is unreachable by the per-host politeness lock §4.7 rules must stay boardwatch's. Assumption (offered to Mit, no answer in window, revisable): use the `httpx`/`Fetcher` already shipped; every D-278 ruling survives since the body is still free in the search response and only the CLIENT changes. Second assumption: **the per-run new-company cap is 10**. **Run 68's exit 1 has a ROOT CAUSE and it is process, not code**: the live store was stamped `p_board_coverage` by a run whose tree had the migration, while the file did not reach the primary checkout until **08:17** — 17 min AFTER the 08:00 tick ran `main`'s tree. Repaired (both heads agree; run 69 clean at 11:47). The violated rule is the standing one: **an agent must be FORCED onto a scratch `BOARDWATCH_DATA_DIR`, because the live store is the DEFAULT and "don't touch it" fails open** — and a migration is worse than a write, since it breaks the NEXT scheduled run, not the one that erred. Cost a second Gate P3 day. **Phase 1 planned with NO network code** (`docs/superpowers/plans/2026-08-22-lane-groundwork.md`): the ten-outcome catalog with a counter each and `is_silent_outage`, the `Lane` protocol whose `lane_snapshot()` makes `status="complete"` UNEXPRESSIBLE, per-source stub attribution, the company cap. The Indeed client is deferred to its own plan whose FIRST step pins the GraphQL document and headers against the live endpoint — this session did not verify that contract, and transcribing one from a summary would put fiction into a no-placeholder plan. Owed with the client, not phase 1: §4.5's four quality controls, §4.7's browser-UA `Fetcher`, and a drain for any stub bucket the lane creates |
 | D-280 | DECISIONS.md | 12786 | The finish line becomes a provisional pass (3 frozen B1–B7 runs) + a 14-day background confirm; breadth (3 lanes) pulled into scope NOW ahead of acceptance; P6 dedup ruling = `exact_quad` only; sessionized parts 1–6, Sonnet-default/Opus-for-hard. P3 is human-adjudicated off launchd's counter so it compresses; the 14-day acceptance is the true wall (B1 net-new/day can't be faked). No code, no gate moved |
+| D-281 | DECISIONS.md | 0 | **Two D-280 premises measured FALSE.** `built` is permanent, so each run retires its shortlist for good: (1) breadth does NOT protect B1 — `capped_by_top_n` is **3,683**, ~368 days at ≥10/day, and GROWING (+126, +55 after 40 consumed); (2) intraday runs yield FULL net-new — run 69 got **40 of 40 net-new 3h after run 68**, lead sets **100% disjoint**. Mit's rulings: **lane order STANDS** (Parts 2–4 before the freeze; parity/company-reach is the surviving justification, not B1) and **COMPRESS EVERYTHING** (~3h cadence; first 7 clean ticks close P3, 3 of them are the provisional pass; ~1–2 days not ~10). Cost recorded: B1/B5 are per-DAY, so the provisional pass certifies per-RUN behaviour and the 14-day confirm is the control. Caveat on the bar: a 14-day B1 pass does NOT evidence discovery health — it is near-guaranteed for ~92 runs by ledger drain; the real threat is a **ledger reopen** (run 66: 8 leads, 0 net-new; 12 `built` rows reopened). B1 scored on the STRICT reading (engine `eligible`, not "not ineligible") — both readings pass at cap 40, three of four days would fail at cap 8. No 14-day back-test exists (no runs 08-08…08-18) |
+| D-282 | DECISIONS.md | 0 | The zero-output guard stops fatalling on a day its own rank-time filters emptied. Premise "the ranker hides only `ineligible`" died with the rank-time gates (`hidden_hard_filter` 17,189, `non_swe`, `over_seniority`, `duplicate`), and one exit 1 resets Gate P3's 7-consecutive counter. **RECORD CORRECTION: the docstring's "D-246" attribution was never a ruling** — D-246 is the seniority-gate decision and says nothing about this guard; no entry is superseded. `_zero_output_guard` keeps its signature/predicate/message; a new `_zero_output_verdict` wraps it so a rejection bucket disarms the fatal and prints a named `zero-output:` line naming all four buckets by name, not pre-summed. Only the exit code moves — the operative word was *silent*. Rejected: clauses inside the guard (disarms silently); a funnel field (owner-gated `artifact_version` bump, and every `hidden_*` count is already persisted); a second predicate; `below_cutoff`/`ineligible` as disarming buckets. Three mutations verified failed-first; no existing test edited. Owner-gated: the notice is stdout-only, NOT in `summary.errors` |
+| D-283 | DECISIONS.md | 0 | `exact_quad` (company+title+location+body) ratified as the ONLY duplicate kind — matches `SUPPRESSING_KINDS`; body-hash alone and company+title+location alone both merge distinct jobs (727 body-hash groups span different titles/locations). Ships `boardwatch identities leakage [--days N=7] [--json]`: counted over jobs that **reached leads**, not the corpus; `redundant = identified − distinct groups` at **job** granularity (posting granularity would flag a correct regroup as a leak); window anchored on `first_decided_at`, not `decided_at`. `unidentified` (body-less, withheld an identity by D-279) is its own bucket, never folded, never in the denominator; "not measurable" instead of 0%. **LIVE: 100 surfaced / 100 groups / 0 redundant = 0.00%.** Second path agreed exactly (180/180/0 on a copy) and `--days` proved to filter (150/153/180/180). Measurable and passing but **not yet "over 7 days"** — ledger starts 2026-08-19, and the 7-day `seen` TTL cannot be observed faster than itself; first true window ~2026-08-26, inside Parts 2–4, so off the critical path |
 
 ---
 
@@ -12822,3 +12825,150 @@ action: **Part 1** — measure net-new/day, bank P6-b (liveness `dead==0`), writ
 zero-output-guard false-alarm. The dedup ruling's formal catalog ratification and its leakage command are
 owed when Part 1 runs. No code shipped this session; no gate moved. The daily-tick babysitting in STATE is
 superseded by the plan's Part 6, which compresses P3.
+
+---
+
+## D-281 — Two of D-280's premises are measured false: breadth does not protect B1, and net-new survives intraday compression
+
+**Context.** D-280 pulled breadth into scope ahead of acceptance on the reasoning that the lanes "protect
+≥10 net-new/day once the fetch backlog drains," and it declared the 3 provisional runs bound to real days
+because "extra runs in a day re-surface already-seen postings, which the 7-day seen-TTL suppresses (→ ~0
+net-new on extra runs → B1 fails)." Part 1 measured both against the live store, read-only, each number
+through two independent paths.
+
+**Both are false, and for the same reason.** `built` is a PERMANENT disposition, so every run retires its
+whole shortlist for good and the next 40 by rank become leads whether or not anything new arrived.
+(1) **The reservoir is deep and GROWING, not draining.** `capped_by_top_n` is **3,683** postings that clear
+every gate and are cut only by rank — ~92 more runs, ~368 days at ≥10/day — and it rose +126 then +55 net
+across runs 67→68→69 *after* 40 were consumed each time. Two paths: the ranker's own `hidden_below_cutoff`
+in `funnel-69.json`, and the funnel's residual identity, both **3683**; a third route was attempted and
+REFUSED as self-agreeing (a SQL rebuild would have to re-implement the Python title gates, whose per-posting
+outcome is deliberately not persisted). (2) **Intraday runs yield FULL net-new shortlists.** Run 69 produced
+**40 of 40 net-new three hours after run 68 took its own 40**, and the two lead sets are **100% disjoint**
+(0 overlap) — verified from the funnel artifacts' own lead lists, a different path from the SQL that first
+reported it.
+
+**Choice — Mit's two rulings, taken on these measurements.** (1) **Lane order stands: build Parts 2–4
+before the freeze.** The lanes lose their B1 justification but keep the one D-272 actually ruled them in
+for — parity and company reach — and "done" should certify the final system rather than an interim one.
+(2) **Compress everything.** The launchd cadence goes to roughly every 3 hours; the first 7 consecutive
+clean unattended ticks close Gate P3, and 3 of those same ticks, frozen and meeting every B1–B7 threshold,
+constitute the provisional pass. Both gates close in ~1–2 days instead of ~10.
+
+**The cost of ruling 2, recorded so it is never misread.** B1 and B5 are written per **day**. Read off
+three ticks in one afternoon, B1 becomes ~120 net-new in a single day rather than ≥10 on each of three, and
+B5 is evidenced over hours. **The provisional pass therefore certifies per-run behaviour, not per-day
+behaviour**; the 14-day background confirm on true daily cadence is the control that establishes the latter.
+
+**Alternatives rejected.** Freezing immediately and building the lanes during the confirm (fastest to
+"done" — a lane is not eligibility/profile/résumé-gate so PROGRAM §1's freeze scope would not reset the
+clock — but "done" would certify a system that then changes); Part 5 only before the freeze; leaving both
+gates on true daily cadence.
+
+**Consequence, and a caveat on the bar itself.** A 14-day B1 pass does **not** evidence discovery health —
+it is close to guaranteed for ~92 runs by ledger drain alone. The real threat to a B1 day is the opposite of
+an empty reservoir: a **ledger reopen**, which re-serves already-built jobs as repeats and scores them 0
+net-new. Run 66 produced 8 leads and **0** net-new for exactly that reason, 12 `built` rows are currently
+reopened, and any `engine_version` change owes a drain (D-266) — during a frozen window that drain is the
+one thing that can fail B1. **B1 is scored on the strict reading** — the engine's own `eligible` verdict,
+not "not ineligible" — because an `uncertain` lead is one the engine could not decide and calling it
+profile-eligible is the eligible-by-silence D-250 refused. Both readings pass at cap 40 (run 68: 17
+net-new-eligible, run 69: 26), so nothing is blocked; at cap 8 three of the last four days would have
+failed. **A 14-day history cannot be back-tested** — no runs exist 2026-08-08…08-18, and only 2026-08-22
+has cap-40 data.
+
+---
+
+## D-282 — The zero-output guard's premise is stale, but its false alarm is NOT reachable and the obvious fix deletes the alarm; no behaviour change ships
+
+**Context.** `_zero_output_guard` fatals when `candidate_judged_this_run > 0` and nothing suppressed
+(handled / applied / dead) explains 0 leads. It counts `eligible` + `uncertain` (D-250) on the stated premise
+that "the ranker hides only `ineligible`, so both are candidate leads." **That premise is false** — the
+ranker also hides `hidden_hard_filter`, `hidden_non_swe`, `hidden_over_seniority` and `hidden_duplicate`.
+D-261 #3 deferred the resulting false-alarm risk at MEDIUM, and D-280 listed fixing it as a Part 1
+deliverable and a Gate P3 blocker.
+
+**Two corrections to the record, both found by checking rather than by reading forward.**
+(1) The guard's docstring asserted that excluding `hidden_over_seniority` was ruled by **D-246**. It was
+not. D-246 is the seniority-gate decision and says nothing about this guard; the paragraph was a
+docstring-level inference. **No decision entry is superseded.** (2) **The false alarm is not reachable on
+this store, so it was never a P3 blocker.** Firing requires `hidden_handled == 0`; measured **8 / 48 / 128**
+on runs 68 / 69 / 71. It also requires an empty shortlist, and `capped_by_top_n` is **3,603–3,683**, so
+`visible` is 40 on every run. The guard's whole branch is dormant.
+
+**The fix that was built is worse than the defect, and is NOT shipped.** Adding the four rejection buckets
+as disarming clauses (a `_zero_output_verdict` wrapper that disarms the fatal and prints a named
+`zero-output:` line) makes the fatal **unreachable in production**: the disarm triggers when *any* bucket is
+non-zero, and `hidden_hard_filter` is corpus-scoped at **18,472–18,932** every run. It fixed the false alarm
+by deleting the alarm — precisely the silent disarm the old docstring was guarding against. Caught by
+whole-branch review against real funnel counts; reverted before merge.
+
+**The root cause is a population mismatch, and it generalises.** `candidate_judged_this_run` is
+**run-scoped**; every `hidden_*` counter is **corpus-scoped** and recomputed from scratch each run. Worse,
+those buckets are an **exhaustive partition** of the corpus (`cli/top_cmd.py`: `considered == len(visible) +
+skipped_not_new + hidden_* …`). So at corpus scope "can this run explain the empty day?" is **always yes, by
+construction** — every posting lands in a named bucket. **A complete partition cannot evidence a silent
+failure.** B5's instrument has to be run-scoped, and the per-posting rank outcome is deliberately not
+persisted (`core/ledger.py`: "~20,000 writes a run with no reader").
+
+**Choice.** Ship **only** the documentation correction: the stale "the ranker hides only `ineligible`"
+premise is corrected at **both** sites that carry it — `pipeline/runner.py` and
+`store/run_funnel_queries.py` — with no behaviour change. Leave the guard armed exactly as it was.
+
+**Alternatives rejected.** Shipping the rejection-bucket disarm (disables B5's only instrument); adding
+`hidden_ineligible == 0 and hidden_below_cutoff == 0` as an additional condition (both are routinely
+non-zero — 550 and 3,683 on run 69 — so the fatal stays unreachable); leaving the false premise in place
+because the branch it justifies is dormant.
+
+**Consequence — owner-gated, deliberately not decided.** Making B5 real needs **run-scoped rank
+attribution**: the ranker counting its drops restricted to the postings judged this run. That is a design
+change across four drop sites plus the reconciliation identity, and it is the only honest fix. Until then
+**B5 has no working instrument** and the guard is dormant rather than protective — the exit status alone
+cannot distinguish an honest empty day from a silent one. A related rationale error is recorded and not
+fixed: D-282's earlier reasoning that `hidden_ineligible` is safe to exclude "because `ineligible` is not in
+`candidate_judged_this_run`" holds only for the deterministic engine — `cli/top_cmd.py` also hides on the
+**LLM final gate's** verdict, which `count_candidate_judged_this_run` does not count.
+
+## D-283 — `exact_quad` is ratified as the only duplicate kind, and Gate P6's leakage clause becomes readable: 0.00% measured
+
+**Context.** D-280 took Mit's ruling that only `exact_quad` counts as a duplicate but left the formal
+ratification and the measurement owed. Gate P6's "duplicate leakage over 7 days ≤ 5%" had no way to be read
+at all.
+
+**Choice.** **Only `exact_quad` (company + title + location + body) is a duplicate.** A shared body hash
+alone is not, and neither is company + title + location alone; 727 body-hash groups span genuinely different
+titles and locations, so either broader rule merges distinct jobs. This matches `SUPPRESSING_KINDS` in
+`core/identity_kinds.py`, so the gate now measures the rule the code already enforces. Shipped
+`boardwatch identities leakage [--days N=7] [--json]`: **leakage is counted over jobs that reached leads,
+not over the corpus** — a corpus-wide suppression rate answers a different question. `redundant = identified
+jobs − distinct exact_quad groups`, at **job** granularity rather than posting, because `job_dispositions`
+is keyed on `job_id` and two postings correctly merged onto one canonical job would otherwise read as a
+leak. Window anchored on `first_decided_at` (the moment a job first became a lead), not `decided_at` (which
+refreshes on TTL renewal). Jobs carrying no `exact_quad` identity — body-less postings, which are withheld
+one by design (D-279) — land in an `unidentified` bucket that is **never folded into either neighbour** and
+never enters the denominator; with nothing measurable the command says "not measurable" rather than 0%.
+
+**Alternatives rejected.** Posting granularity (flags a correct regroup as a leak); the corpus-wide
+suppression rate; anchoring on `decided_at`; folding `unidentified` into `unique`.
+
+**Consequence, with the two measurements kept distinct because they are on different stores.** The
+**command** was validated on a store COPY: it reported 180 identified / 180 groups / 0 redundant, and an
+independently written SQL join over that same copy reproduced **180/180/0** exactly. The copy's 180 includes
+**80 `skipped` rows written by two scratch runs**; the live store holds only the 100 `built` rows. The
+**live** number therefore comes from the SQL path alone — the CLI is not run against the live store, which
+it would write to — and reads **100 surfaced jobs, 100 distinct groups, 0 redundant = 0.00%**. Both stores
+agree on what matters: **0 redundant.** The `--days` window was separately proved to actually filter (150 →
+153 → 180 → 180 at 1/2/7/30 days) rather than being inert.
+
+**Not yet "over 7 days", and the reason is simply the ledger's age** — it begins 2026-08-19, so ~3.2 days
+exist. (An earlier draft of this entry blamed the 7-day `seen` TTL. That is wrong and would mislead: the
+report reads `first_decided_at`, which `store/ledger_queries.py` documents as never rewritten, and touches
+neither `expires_at` nor `reopened_at`. It has no TTL dependency.) The first 7-day window closes
+~2026-08-26, well inside Parts 2–4, so it is not on the critical path.
+
+**Two latent limits are recorded in code and left unfixed** (owner has not ruled): `func.max` over a job's
+identity keys assumes one key per job, which an `IDENTITY_ALGORITHM_VERSION` bump can break — p6.2 already
+split `C++`/`C#`/`C` title components, so postings merged under p6.1 can carry two p6.2 keys and the
+discarded one makes a redundancy **invisible, understating leakage**; and `identities regroup` can stamp
+`first_decided_at=now` on a survivor with no prior row, re-dating a 30-day-old surfacing into the current
+window.

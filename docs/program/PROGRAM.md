@@ -25,6 +25,36 @@ eligibility, profile, or the résumé gate resets it. So the clock starts **afte
 it early and mutating underneath it produces 14 days of uninterpretable data. This is the single most
 important program-level scheduling fact and it is why no phase gate below is "run for 14 days".
 
+### The provisional pass — how "done" is called (D-280)
+
+**"Done" is called on a provisional pass; the 14-day clock confirms it afterwards instead of gating it.**
+A provisional pass is **3 consecutive clean frozen daily runs**, each meeting every B1–B7 threshold above
+and each also clearing P5b's criteria (**≥ 30** postings considered, **0** preflight fatals, **0**
+résumé-QA failures). On the third, the replacement is declared provisional and the full 14-day acceptance
+starts **passively, in the background**, on daily cadence.
+
+"Frozen" carries the same meaning it does above — no change to eligibility, profile, or the résumé gate —
+and it binds the 3 provisional runs as well as the confirm. **All build work therefore merges before the
+freeze.**
+
+**The 3 runs ARE compressible, and Mit ruled to compress them (D-281).** The belief that they were bound
+to real days rested on net-new drying up intraday; that is measured false. `built` is a permanent
+disposition, so each run retires its whole shortlist for good, and run 69 produced **40 of 40 net-new
+three hours after run 68 took its own 40** — the two lead sets are 100% disjoint. With **3,683** postings
+cut only by rank, a compressed cadence is supplied for ~92 more runs.
+
+**The mechanism:** the launchd cadence is raised to roughly every 3 hours, the first **7 consecutive clean
+unattended ticks** close Gate P3, and **3 of those same ticks** — frozen, each meeting every B1–B7
+threshold — constitute the provisional pass. Both gates close together in ~1–2 days. Daily cadence is
+restored afterwards for the 14-day confirm.
+
+**State the cost plainly, so this is never misread later.** B1 ("≥10 net-new leads/**day**") and B5
+("silent empty **days**") are written per day. Read off three ticks inside one afternoon, B1 becomes ~120
+net-new in a single day rather than ≥10 on each of three, and B5 is evidenced over hours rather than days.
+**The provisional pass therefore certifies per-run behaviour, not per-day behaviour** — which is precisely
+what the 14-day background confirm, on true daily cadence, exists to establish. Mit accepted that trade
+knowingly; the confirm is the control.
+
 ---
 
 ## 2. Ordering principle
@@ -42,9 +72,29 @@ P3  Unattended one command → it happens without Mit (LIVE GAP closed)
 P4  Craft gate             → the output reads human
 P5  Eligibility decides    → "eligible" is a claim, not a residue
 P6  Liveness + dedup       → "eligible" means TODAY, once
-──  14-day acceptance run  → the bar, measured on a frozen system
-P7  Breadth                → only now is more input worth having
+P7  Breadth                → the three discovery lanes (PULLED FORWARD, D-280)
+──  Provisional pass       → 3 frozen B1–B7 runs; "done" is called here
+──  14-day acceptance run  → the same bar, confirming in the background
 ```
+
+**Breadth now precedes acceptance (D-280), and that is a departure from the principle above, taken
+knowingly.** Breadth still multiplies whatever is downstream of it — the reason it went last — but the
+downstream is now measured rather than assumed: dedup leakage and liveness are instrumented, and boardwatch
+reaches only 7.7% of job-apps' eligible yield (D-271) because of *company reach*, not fetch depth.
+
+**Breadth is NOT required to hold B1, and the reason it was thought to be is measured false (D-281).**
+`built` is a permanent disposition, so every run retires its shortlist for good and the next 40 by rank
+become leads whether or not anything new arrived. Run 69 demonstrated this directly: 40 of 40 leads
+net-new, three hours after run 68 took its own 40. **3,683** postings currently clear every gate and are
+cut only by rank — ~92 more runs, ~368 days at ≥10/day — and that reservoir is *growing*, not draining
+(+126 then +55 net across runs 67→68→69, after 40 consumed each time). So the lanes are justified by
+**parity and company reach**, which is what D-272 ruled them in for, and not by B1 survival.
+
+**The corollary is a caveat on the bar itself:** a 14-day B1 pass does **not** evidence discovery health.
+It is close to guaranteed for the next ~92 runs by ledger drain alone. The real threat to a B1 day is the
+opposite of an empty reservoir — a **ledger reopen**, which re-serves already-built jobs as repeats and
+scores them 0 net-new. Run 66 produced 8 leads and **0** net-new for exactly that reason, and any change to
+`engine_version` owes a drain (D-266). During a frozen window that drain is the one thing that can fail B1.
 
 **Why P1 before P2/P3 — and what it costs.** *(Ratified by Mit 2026-08-06 after review flagged the
 original wording as overclaiming.)* P1 runs against a render path that already exists and gives Mit
@@ -149,13 +199,22 @@ Every bar metric in §1 has exactly one owning phase. Added after review found B
 | B2 PDF 100% | **P1** | P1 hard gate |
 | B3 QA gate 100% | **P1** (mechanical) + **P4** (craft) | per-lead pass/fail |
 | B4 0 fabrications, n≥100 | **P1** (Tier-B provenance validator) + **P4** (audit) | P0 fabrication counters |
-| B5 0 silent empty days | **P3** | zero-output guard + exit status |
+| B5 0 silent empty days | **P3** | zero-output guard + exit status — **the instrument is DORMANT, see D-282** |
 | B6 funnel reconciles 100% | **P0** | reconciliation invariant |
 | B7 work auth decisive | **P2** | per-rule abstain + `ineligible` count |
 
 **Gate P0:** three consecutive runs where the funnel reconciles to **100%**, per-rule abstain is emitted
 for **every** rule in the catalog, and *which source produced each lead, and why every non-lead was
 dropped* is answerable **from the artifact alone, without reading code**.
+
+**B5's instrument does not currently work, and this is the one bar metric with no honest reading
+(D-282).** The zero-output guard is the named instrument. Firing requires `hidden_handled == 0` (measured 8 /
+48 / 128 on runs 68 / 69 / 71) and an empty shortlist (`capped_by_top_n` is 3,603–3,683, so `visible` is 40
+every run), so it is dormant. It cannot simply be widened either: the ranker's `hidden_*` buckets are an
+**exhaustive partition** of the corpus, so "can this run explain the empty day?" is always yes by
+construction, and a complete partition cannot evidence a silent failure. Making B5 real needs **run-scoped**
+rank attribution, which is not built and is an owner call. **Scoring B5 as passing on exit status alone
+would be scoring the absence of an alarm that cannot sound.**
 
 ### P1 — Résumé artifact integrity (live gap, cheapest first)
 
@@ -465,16 +524,34 @@ measurement is provisional until audited.
 lead list; a deliberately-injected hash-collision test proving the wrong job cannot be deduped; and a
 suppression audit of 20 sampled suppressions confirming each was a genuine duplicate or policy skip.
 
+**What counts as a duplicate, for the leakage clause: only an `exact_quad` identity** — company + title +
+location + body (D-283). A shared body hash alone is not a duplicate, and neither is company + title +
+location alone; 727 body-hash groups span genuinely different titles and locations, so either broader rule
+merges distinct jobs. This matches `SUPPRESSING_KINDS` in `core/identity_kinds.py`, so the gate measures
+the rule the code already enforces. **Leakage is counted over JOBS that reached leads, not over the
+corpus** — a corpus-wide suppression rate answers a different question, and the unit is the job because
+`job_dispositions` is keyed on `job_id`, so counting postings would read a correct `regroup` merge as a leak.
+A body-less posting is withheld an `exact_quad` identity by design, is therefore unjudgeable here, and is
+reported in its own bucket that is never folded into either neighbour.
+
 ### Acceptance — the 14-day run
 
 System frozen. All seven bar metrics (§1) measured daily into `docs/program/METRICS.md`. Any code change
 to eligibility, profile, or the résumé gate resets the clock and that reset is recorded.
 
-### P7 — Breadth, and only now
+**It runs as a background confirm, after the provisional pass (§1, D-280)** — it no longer gates the
+"done" call. It is still the only measurement of the bar over a full 14 days, and a reset still costs the
+whole window, so the freeze is real for its whole duration.
 
-**Unlock condition:** P0's attribution data shows, *in boardwatch's own funnel*, that direct-ATS-only is
-starving it. job-apps' data suggests this strongly (greenhouse_api 701 unique → 0 built on 2026-08-05) but
-that is job-apps' filter stack, not boardwatch's. **Measure it here before spending a week on adapters.**
+### P7 — Breadth
+
+**The unlock condition is MET and breadth is in scope now (D-271, D-272, D-280).** It required attribution
+data from boardwatch's own funnel showing that direct-ATS-only is starving it, rather than inferring it
+from job-apps' filter stack. Measured: of job-apps' 530 eligible records over 2026-08-12…08-21, **41
+(7.7%)** are at a company boardwatch watches; the set spans **352** companies against boardwatch's **24**,
+and the largest misses (Amazon, TikTok, AWS, Apple, ByteDance, SpaceX) use **none** of the six supported
+ATS providers — so no slug can reach them. Three lanes are approved, bespoke first-party adapters are not
+(D-272).
 
 Then: company list as a user asset, not a repo constant · a growth mechanism *and* a slug-rot repair
 mechanism (inventory decays on its own) · any aggregator lane behind all the same gates plus a
