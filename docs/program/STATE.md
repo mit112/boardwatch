@@ -30,7 +30,7 @@ leads, end to end). Then 4 → 6, with Part 5 anytime. Part 2 shipped the `Lane`
 attribution, the per-run company cap and a URL-to-posting-reference utility (D-284).
 
 **Part 2 delivered one result that changes Part 3's shape: the dereference utility serves neither provider
-that needs it.** Both members of `DEREFERENCE_REQUIRED_PROVIDERS` refuse — Workday needs an `externalPath`
+that needs it.** SmartRecruiters and Workday both refuse — Workday needs an `externalPath`
 whose public-URL mapping is evidenced nowhere here, and SmartRecruiters' apparently-passing round-trip rested
 on a fixture whose own README says "All text is synthetic". Each needs one live probe. Nothing is blocked:
 the four body-inlined providers resolve, and for them a recovered `provider_posting_id` converges an

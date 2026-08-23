@@ -5999,7 +5999,7 @@ findings against that description, each checked in the code rather than reasoned
 |---|---|---|
 | An aggregator link needs dereferencing to get a body | **4 of 6** board endpoints already inline every body (`greenhouse ?content=true`, `lever ?mode=json`, `ashby ?includeCompensation=true`, `workable ?details=true`) — for those it is COMPANY DISCOVERY, which already ships | **WRONG SHAPE** |
 | Reuse the shipped parser behind one dispatch | The 6 parsers share no signature: `smartrecruiters.parse_posting` takes 2 payloads, `workday.parse_posting` takes 5 arguments | **NOT BUILDABLE as one dispatch** |
-| Dereferencing unblocks the providers that need it | Both members of `DEREFERENCE_REQUIRED_PROVIDERS` now REFUSE. Neither is dereferenceable yet | **SERVES NOBODY YET** |
+| Dereferencing unblocks the providers that need it | SmartRecruiters and Workday — the only two whose bodies are not inlined — both REFUSE. Neither is dereferenceable yet | **SERVES NOBODY YET** |
 
 ### Why SmartRecruiters' passing round-trip was not evidence
 
@@ -6025,6 +6025,23 @@ does the same, so nothing crashes and nothing is recorded. Closing it needs an `
 6), which is owner-gated, so it is deferred to Part 3. Separately, `CompanyBudget.refused` is not
 deduplicated while `.admitted` is, so a refusal *count* will overstate companies if the eventual runner calls
 `.admit()` once per posting rather than once per company.
+
+### What the whole-branch review found that four task reviews could not
+
+Each task review saw only its own diff. The defects below lived in the **seams**, and the whole-branch pass
+is the only thing that saw them. Recorded because the ratio is the useful number: four task reviews returned
+spec ✅ / quality approved on all four pieces, and the branch was still not mergeable.
+
+| Severity | Finding | Why a task review could not see it |
+|---|---|---|
+| **Critical** | The last-segment rule returned `apply` / `application` as the posting reference for Lever's and Ashby's canonical apply URLs. That value becomes `provider_posting_id` under `UNIQUE(company_id, provider_posting_id)`, so two lane postings at one employer collapsed to one and the second overwrote the first as a `revised` event | The defect is the interaction between `dereference.py` and `scan/apply.py`. Neither file's own review had the other in scope |
+| Important | `parse_board_target` prefixes `https://` for scheme-less input; `_path_segments` did not, so `boards.greenhouse.io/acme` parsed as a posting whose reference was the slug. The refusal test passed only because it used the scheme-ful form | Two functions in one call chain disagreeing about their input domain |
+| Important | `CompanyBudget` and `LaneCompanySnapshot` keyed on a display name; `companies` has `UNIQUE(provider, slug)` and `apply_board` needs a `company_id` reachable only from that pair | Spans two tasks built in different worktrees plus a third file neither touched |
+| Important | The `status == "open"` clause of the per-company stub query was undefended — deleting the line left **2,013 tests passing** | Requires mutating the source; no amount of reading the diff shows it |
+| Important | A reflection-derived constant had no reader, and its self-agreement test asked the same question of the same registry on both sides, so it could not fail | Needs a repo-wide grep for consumers, which a task-scoped review has no reason to run |
+
+Two of these were plan-mandated, and the ruling recorded in D-284 is that the **spec wins over the plan**: a
+type that cannot reach `apply_board` contradicts the spec requiring a lane to go through it.
 
 ### Process note
 

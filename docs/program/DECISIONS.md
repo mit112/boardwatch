@@ -317,7 +317,7 @@ and is a no-op when the index is already right. `make index-check` reports drift
 | D-281 | DECISIONS.md | 12832 | **Two D-280 premises measured FALSE.** `built` is permanent, so each run retires its shortlist for good: (1) breadth does NOT protect B1 — `capped_by_top_n` is **3,683**, ~368 days at ≥10/day, and GROWING (+126, +55 after 40 consumed); (2) intraday runs yield FULL net-new — run 69 got **40 of 40 net-new 3h after run 68**, lead sets **100% disjoint**. Mit's rulings: **lane order STANDS** (Parts 2–4 before the freeze; parity/company-reach is the surviving justification, not B1) and **COMPRESS EVERYTHING** (~3h cadence; first 7 clean ticks close P3, 3 of them are the provisional pass; ~1–2 days not ~10). Cost recorded: B1/B5 are per-DAY, so the provisional pass certifies per-RUN behaviour and the 14-day confirm is the control. Caveat on the bar: a 14-day B1 pass does NOT evidence discovery health — it is near-guaranteed for ~92 runs by ledger drain; the real threat is a **ledger reopen** (run 66: 8 leads, 0 net-new; 12 `built` rows reopened). B1 scored on the STRICT reading (engine `eligible`, not "not ineligible") — both readings pass at cap 40, three of four days would fail at cap 8. No 14-day back-test exists (no runs 08-08…08-18) |
 | D-282 | DECISIONS.md | 12883 | **The zero-output guard was NOT changed, and B5 has no working instrument.** Two record corrections. (1) **The false alarm is NOT reachable** — firing needs `hidden_handled == 0` (measured **8/48/128** on runs 68/69/71) and an empty shortlist (`capped_by_top_n` 3,603–3,683, so `visible` is full every run), so it was never the Gate P3 blocker D-280 called it. (2) **The docstring's "D-246" attribution was NEVER a ruling** — D-246 is the seniority-gate decision and says nothing about this guard; no entry is superseded. The obvious fix (rejection buckets disarm the fatal, loudly) was built and **REJECTED before merge**: it makes the fatal UNREACHABLE, because `hidden_hard_filter` is corpus-scoped at **18,472–18,932** every run — it fixed the false alarm by deleting the alarm. **Root cause, and it generalises: `candidate_judged_this_run` is RUN-scoped while every `hidden_*` bucket is CORPUS-scoped, and those buckets are an EXHAUSTIVE PARTITION — so "can this run explain the empty day?" is always yes by construction. A complete partition cannot evidence a silent failure.** Ships only the stale-premise docstring correction at BOTH sites (`pipeline/runner.py`, `store/run_funnel_queries.py`); guard left armed. Rejected: the disarm; adding `hidden_ineligible == 0 and hidden_below_cutoff == 0` (both routinely non-zero — 550 and 3,683 on run 69). **Owner-gated: run-scoped rank attribution is the only honest fix, and until it exists B5 is UNSCOREABLE — do not score it on exit status alone.** Also recorded unfixed: excluding `hidden_ineligible` "because `ineligible` is not in `candidate_judged_this_run`" holds only for the deterministic engine; `top_cmd.py` also hides on the LLM final gate's verdict |
 | D-283 | DECISIONS.md | 12933 | `exact_quad` (company+title+location+body) ratified as the ONLY duplicate kind — matches `SUPPRESSING_KINDS`; body-hash alone and company+title+location alone both merge distinct jobs (727 body-hash groups span different titles/locations). Ships `boardwatch identities leakage [--days N=7] [--json]`: counted over jobs that **reached leads**, not the corpus; `redundant = identified − distinct groups` at **job** granularity (posting granularity would flag a correct regroup as a leak); window anchored on `first_decided_at`, not `decided_at`. `unidentified` (body-less, withheld an identity by D-279) is its own bucket, never folded, never in the denominator; "not measurable" instead of 0%. **LIVE: 100 surfaced / 100 groups / 0 redundant = 0.00%.** Second path agreed exactly (180/180/0 on a copy) and `--days` proved to filter (150/153/180/180). Measurable and passing but **not yet "over 7 days"** — ledger starts 2026-08-19, and the 7-day `seen` TTL cannot be observed faster than itself; first true window ~2026-08-26, inside Parts 2–4, so off the critical path |
-| D-284 | DECISIONS.md | 12977 | **Part 2 lane groundwork ships** (`Lane` protocol whose `lane_snapshot()` makes `complete` UNEXPRESSIBLE — an empty `complete` closes a company's whole board after `CLOSE_AFTER_MISSES=2`; instrumented `SourceOutcome.stubs` reporting a measured 0; `CompanyBudget` cap 10/run with refusals NAMED; `parse_posting_target` recovering the posting id `parse_board_target` discards). **The ASAP plan's one-line description of the dereference utility was WRONG:** 4 of 6 board endpoints already inline every body, so for those an aggregator link is COMPANY DISCOVERY (ships already), and the 6 parsers share no signature, so no uniform `parse_body` dispatch. **Both `DEREFERENCE_REQUIRED_PROVIDERS` now REFUSE, so the capability serves nobody yet** — Workday needs an unmapped `externalPath`; SmartRecruiters' passing round-trip rested on a fixture whose README says "All text is synthetic", mimicking the CONSTRUCTED fallback, while real URLs put id+title-slug in ONE segment. Delivered value is the 4 body-inlined providers, where a recovered id CONVERGES an aggregator posting with a later scan. **Lesson: a round-trip through a pinned fixture is evidence only where OUR code constructs the value; payload-read URL fields make it agree with the fixture's author.** Owner-gated and deferred: the `artifact_version` bump that would let `stubs` reach an artifact, and `companies.source` for a lane-discovered company |
+| D-284 | DECISIONS.md | 12977 | **Part 2 lane groundwork ships** (`Lane` protocol whose `lane_snapshot()` makes `complete` UNEXPRESSIBLE — an empty `complete` closes a company's whole board after `CLOSE_AFTER_MISSES=2`; instrumented `SourceOutcome.stubs` reporting a measured 0; `CompanyBudget` cap 10/run with refusals NAMED; `parse_posting_target` recovering the posting id `parse_board_target` discards). **The ASAP plan's one-line description of the dereference utility was WRONG:** 4 of 6 board endpoints already inline every body, so for those an aggregator link is COMPANY DISCOVERY (ships already), and the 6 parsers share no signature, so no uniform `parse_body` dispatch. **SmartRecruiters and Workday both REFUSE, so the capability serves nobody yet** — Workday needs an unmapped `externalPath`; SmartRecruiters' passing round-trip rested on a fixture whose README says "All text is synthetic", mimicking the CONSTRUCTED fallback, while real URLs put id+title-slug in ONE segment. Delivered value is the 4 body-inlined providers, where a recovered id CONVERGES an aggregator posting with a later scan. **The whole-branch review then caught a CRITICAL the four task reviews could not: the last-segment rule returned `apply`/`application` as the posting ref** for Lever's and Ashby's canonical apply URLs, and since that becomes `provider_posting_id` under `UNIQUE(company_id, provider_posting_id)`, two lane postings at one employer collapsed to one and the second overwrote the first as a REVISION. Fixed by an exact per-provider segment shape. **Spec beats plan on company identity:** `CompanyBudget` and `LaneCompanySnapshot` re-keyed from display name to `(provider, slug)`, since `apply_board` needs a `company_id` reachable only from that. **Lessons: a round-trip through a pinned fixture is evidence only where OUR code constructs the value; and a complete-looking test suite left the `status="open"` clause undefended (2,013 tests passed with it deleted).** Owner-gated and deferred: the `artifact_version` bump that would let `stubs` reach an artifact; `companies.source` for a lane-discovered company. Part 3 owes the board-coverage double-count fix (a lane adds a 2nd `board_scans` row for an already-scanned company, inflating D-274's denominators) |
 
 ---
 
@@ -13006,9 +13006,14 @@ so for those an aggregator link is a **company-discovery** problem that `parse_b
 `parse_body(provider, payload)` would be a leaky wrapper over four incompatible shapes. Phase 1 therefore
 ships the URL half only, with **no network code at all**.
 
-**Choice — both `DEREFERENCE_REQUIRED_PROVIDERS` refuse, so the capability serves nobody yet.** The constant
-resolves by reflection (providers defining `_detail_url`) to exactly `{smartrecruiters, workday}` — the two
-whose bodies are not inlined and therefore the only two dereferencing is *for*. Workday refuses because its
+**Choice — SmartRecruiters and Workday both refuse, so the capability serves nobody yet.** Those two are
+the providers whose bodies are not inlined (they are the only two defining `_detail_url`), and therefore the
+only two dereferencing is *for*. A constant deriving that set by reflection was written and then **deleted
+before merge**: nothing read it, because refusal is decided by the per-provider URL-shape rule, and its
+self-agreement test walked the same registry asking the same `hasattr` question on both sides, so a provider
+renaming or dropping `_detail_url` moved both sides together and the test could not fail. Branching refusal
+on it would also have encoded the wrong predicate — a provider that *gained* `_detail_url` would begin
+refusing at exactly the moment a recovered id became more useful. Workday refuses because its
 detail endpoint needs an `externalPath` path-string rather than an id and the public
 `en-US/{site}/job/...` → CXS mapping is evidenced nowhere here. **SmartRecruiters now refuses too, and
 finding that took a second look.** Its round-trip test passed, but on the wrong evidence:
@@ -13053,3 +13058,49 @@ company is neither. `CompanyBudget` writes no company row, so nothing forces the
 so not an implementation defect, but if the lane runner calls `.admit()` once per **posting** rather than
 once per **company**, an over-cap company appears many times in `.refused` and a refusal *count* overstates
 companies. Part 3 owes either a once-per-company call site or a dedup at the reporting boundary.
+
+**The whole-branch review caught a Critical that four task-scoped reviews could not, and it is the reason
+this entry exists in its present form.** Each task review saw only its own diff; the defect lived in the
+seam between `dereference.py` and `scan/apply.py`. Taking the **last** path segment as the posting reference
+meant `https://jobs.lever.co/acme/abc-123/apply` yielded `posting_ref='apply'` — and `/{id}/apply` is
+Lever's canonical application URL, `/{id}/application` is Ashby's, and aggregator listings deep-link to them
+routinely. Because `posting_ref` becomes `provider_posting_id`, `apply_board` keys its `existing` map on that
+column, and the table has `UNIQUE(company_id, provider_posting_id)`, two different lane postings at one
+employer both collapsed to `'apply'`: the second would be applied as a **revision of the first**, overwriting
+a real posting's body and emitting a `revised` event, and the next `complete` board scan would close it after
+two misses. The convergence this utility exists to enable could not happen at all. **Fixed by requiring the
+exact segment shape per provider and refusing anything longer** — greenhouse `{slug}/jobs/{id}`, lever and
+ashby `{slug}/{id}`, workable `{slug}/j/{code}`, each derived from the provider's own URL construction and
+its pinned fixture — which is a closed rule rather than a growing exclusion list of chrome suffixes. A
+related defect from the same review: `parse_board_target` accepts scheme-less input and prefixes `https://`,
+while `_path_segments` did not, so `boards.greenhouse.io/acme` parsed as a posting whose reference was the
+slug. The existing refusal test passed only because it used the scheme-ful form.
+
+**Ruling — the spec wins over the plan on company identity, in two places.** The plan mandated
+`CompanyBudget.admit(company_name)` and `LaneCompanySnapshot(company_name, snapshot)`. But `companies` has
+`UNIQUE(provider, slug)`, and `apply_board` needs a `company_id` reachable only from `(provider, slug)` — so
+a type carrying only a display name **cannot serve the purpose the spec assigns it**, and that is a defect
+rather than a preference. Both are re-keyed to `(provider, slug)`. Two consequences the name-keyed version
+carried: one employer whose aggregator name varied ("Acme", "Acme Inc.") would burn three of ten cap slots
+against one store row, and two different employers sharing a name across providers would burn one, silently
+exceeding a cap that is the enforcement mechanism for "breadth is last". A cap that miscounts is a control
+failure. Still not built, and now stated in the docstring: `admit()` has no notion of *new*, so a runner
+calling it for every company a lane saw would spend the cap on already-watched companies while the refusal
+list looked like normal operation. That check needs a store query and belongs with the runner.
+
+**Parked with a ruling — routing lanes through `apply_board` will double-count a company in the
+board-coverage report.** `apply_board` always writes a `board_scans` row, and `load_board_coverage`
+outer-joins `board_scans` on `(company_id, run_id)` emitting one `BoardCoverage` per joined row. Today every
+provider writes exactly one row per board per run, so the join is one-to-one; a lane touching a company
+already scanned this run — the common case, since convergence is the point — adds a second row, and the
+company appears twice, once `measured` and once `enumerated_only`, inflating `corpus_boards` and
+`bucket_counts` in the coverage instrument shipped days earlier (D-274). Not fixed here: it cannot fire until
+a lane runner exists, and both candidate fixes (a lane-aware filter in the coverage join, or a separate
+scan-row path) are designs for that runner. Fixing it now would change shipped reporting code with nothing
+able to exercise the change. **Part 3 owes it in the same change that wires the first lane.**
+
+**One test gap was found by mutation rather than by reading.** The `status == "open"` clause of
+`count_stub_postings_by_company` was undefended: deleting that one line left 2,013 tests passing, because no
+new test inserted a *closed* stub and the sum test compared against `count_stub_postings`, which filters the
+same way, so both sides moved together. The corpus-level twin was covered for exactly this; the new
+per-company function was the undefended twin. Closed, and the fix verified by the same mutation route.
