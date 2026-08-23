@@ -6418,3 +6418,61 @@ arrived.
 | Blocker | `robots.txt` disallows `/jobs-guest/` in **all 77** agent groups, Claude by name | licence: **4 of 6 repos have none** |
 | Reach | — | **920 boards, 887 new (96.4%)** vs 135 watched |
 | Ruling | **BUILD** (Mit, D-290), off by default | build as board discovery (D-291) |
+
+
+### Gate P3 tick 1 of 7, and the yield measured with the real ranker (D-292)
+
+**Run 71 (2026-08-23 11:00) is the first clean SCHEDULED tick on the fixed tree.**
+
+| | |
+|---|---|
+| exit code | **0** (`launchctl`: `runs = 1`, `last exit code = 0`) |
+| store | run 71 `status=ok`, **22m47s** |
+| board scans | **135** |
+| artifacts | `funnel-71.json` + `funnel-71.md` written, `artifact_version` 6 |
+| leads | **40** |
+| `errors_json` | the same **13** known board failures run 70 had (401/403/422), **minus** `pipeline: aborted: OperationalError('too many SQL variables')` |
+
+That last row is the before/after on one corpus: same boards, same failures, no abort.
+
+**The uncapped yield, measured rather than estimated.** `boardwatch top 5000 --no-record --json` on a
+backup-API snapshot (both `DATA_DIR` and `CONFIG_DIR` on scratch), exit 0, 33,572 open postings, live
+database mtime byte-identical afterwards.
+
+| first seen | still in the uncapped set |
+|---|---:|
+| 08-23 (partial day) | 180 |
+| 08-22 | **251** |
+| 08-21 | **223** |
+| 08-20 | **432** |
+| 08-19 | **363** |
+| 08-04 (backfill) | 1,367 |
+| **total** | **3,771** |
+
+Only **100** jobs have ever been `built`, so the pool is essentially unserved and these are arrivals.
+
+| composition of the 3,771 | count | share |
+|---|---:|---|
+| `role=uncertain` (gate could not confirm software) | **2,550** | **67.6%** |
+| `role=swe` | 1,221 | 32.4% |
+| `band=in_band` | 3,746 | 99.3% |
+| senior/staff/principal/manager/director/YOE in title | 282 | 7.5% |
+| `duplicate_of` set | **0** | 0% |
+
+**~300/day clears the filters; ~70/day is confirmed-software and in-band.** Both are true, of different
+populations, and job-apps' delivered 20-60/day is the same order as the second.
+
+**The duplicate blind spot, measured over open postings:**
+
+| | |
+|---|---:|
+| groups sharing a `company_title_location` key (>=2 members) | **1,101** |
+| postings in them | 2,698 |
+| **redundant (n-1)** | **1,597** (**4.76%** of 33,572) |
+| groups where EVERY member has a distinct `exact_quad` | **762** |
+| `duplicate_of` set in the 3,771-row ranked set | **0** |
+
+Affirm postings **1930** and **1931** — identical title, identical `company_title_location` key, identical
+`cross_host` key, different `exact_quad` — both reached leads and **both built PDFs**. The completeness
+gate was **True** (33,572 of 33,572), so dedup ran and could not fire. Gate P6's leakage clause counts
+`exact_quad` only and reads **0.00%**.
