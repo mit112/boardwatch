@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Sequence
+from dataclasses import dataclass
 from datetime import datetime
 
 from sqlalchemy import delete, distinct, func, insert, select, update
@@ -10,7 +11,7 @@ from sqlalchemy.engine import Connection
 
 from boardwatch.core.identity_kinds import IDENTITY_ALGORITHM_VERSION
 from boardwatch.core.posting_identity import IdentityInputs, PostingIdentity
-from boardwatch.store.tables import companies, posting_identities, postings
+from boardwatch.store.tables import companies, job_dispositions, posting_identities, postings
 
 
 def load_identity_inputs(
@@ -192,3 +193,78 @@ def identities_complete(conn: Connection) -> bool:
         )
     ).scalar_one()
     return int(open_count) == int(covered)
+
+
+@dataclass(frozen=True)
+class SurfacedJob:
+    """One job that reached `job_dispositions` — `seen`, `skipped`, or `built` all mean the
+    job was surfaced to the operator (`pipeline/runner.py`, `cli/top_cmd.py`) — paired with
+    the `exact_quad` identity its currently-anchored posting(s) carry.
+
+    `identity_key` is `None` when none of the job's current postings carry a current-version
+    `exact_quad` identity: a body-less posting withholds that identity by design (D-132), and
+    an un-backfilled one simply has no row yet. This report cannot and does not try to tell
+    those two apart — both are "unjudgeable" for leakage and land in the same bucket
+    (`reports/leakage.compute_leakage`'s `unidentified`), never folded into "unique".
+    """
+
+    job_id: int
+    first_decided_at: datetime
+    identity_key: str | None
+
+
+def load_surfaced_exact_quad(conn: Connection) -> tuple[SurfacedJob, ...]:
+    """Every job ever recorded in `job_dispositions`, paired with the `exact_quad` identity
+    key its currently-anchored posting(s) carry (design §2, Gate P6's leakage clause).
+
+    Joined through the CURRENT `postings.job_id` projection, not through
+    `job_grouping_events` history. A job `identities regroup` has already merged away — zero
+    postings anchored to it now, per `regroup.apply_merges` moving them onto the survivor —
+    is therefore invisible here, deliberately: once a genuine duplicate is consolidated onto
+    one canonical job, re-running this report should show it gone, which is the point of
+    running `regroup` at all. This is a report on the corpus's CURRENT job structure, not a
+    permanent historical tally of every surfacing that ever happened.
+
+    Filtered to `IDENTITY_ALGORITHM_VERSION`, same as `load_identities` and for the same
+    reason: an identity computed under a retired algorithm is not comparable to a current
+    one, so a posting whose only identity predates a bump reads as unidentified here rather
+    than as a stale key that happens to still be on disk.
+
+    A job can anchor more than one posting only when `regroup` verified they share one
+    `exact_quad` key (`core/dedup._verify_quad`), so `func.max` over the group either
+    resolves to that one shared key or, when nothing under the job is identified, to `NULL` —
+    it is not doing anything a plain "pick one" couldn't, given that invariant.
+
+    No window filter here on purpose: `reports/leakage.compute_leakage` applies the 7-day cut
+    over `first_decided_at`, mirroring the split `reports/stats.summarize` already draws
+    between a dumb store read and the one place window logic lives.
+
+    Not filtered on `postings.status` — a posting that reached leads while open and has since
+    closed still really reached leads, and excluding it would understate leakage on exactly
+    the postings old enough to have closed since.
+    """
+    stmt = (
+        select(
+            job_dispositions.c.job_id,
+            job_dispositions.c.first_decided_at,
+            func.max(posting_identities.c.identity_key).label("identity_key"),
+        )
+        .select_from(job_dispositions)
+        .join(postings, postings.c.job_id == job_dispositions.c.job_id)
+        .join(
+            posting_identities,
+            (posting_identities.c.posting_id == postings.c.id)
+            & (posting_identities.c.kind == "exact_quad")
+            & (posting_identities.c.algorithm_version == IDENTITY_ALGORITHM_VERSION),
+            isouter=True,
+        )
+        .group_by(job_dispositions.c.job_id, job_dispositions.c.first_decided_at)
+    )
+    return tuple(
+        SurfacedJob(
+            job_id=int(row.job_id),
+            first_decided_at=row.first_decided_at,
+            identity_key=None if row.identity_key is None else str(row.identity_key),
+        )
+        for row in conn.execute(stmt).all()
+    )
