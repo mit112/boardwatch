@@ -678,6 +678,24 @@ def test_a_company_with_no_stubs_reports_zero_not_absent(engine: Engine) -> None
     assert per_company[clean] == 0
 
 
+def test_a_closed_empty_posting_is_not_a_stub_for_its_company(engine: Engine) -> None:
+    """The per-company twin of `test_count_stub_postings_counts_only_open_empty_bodies`.
+
+    Asserted against a LITERAL, deliberately not against `count_stub_postings`: that
+    function filters on `status == "open"` too, so comparing the two moves both sides
+    together and cannot see the clause go missing. Without this, a board that closed 300
+    empty postings reports more stubs than it has open postings — contradicting the field's
+    own definition — with nothing red.
+    """
+    with engine.begin() as conn:
+        board = _board(conn, "closing")
+        _posting_on(conn, board, "open-stub", body_text="")
+        _posting_on(conn, board, "closed-stub", status="closed", body_text="")
+        _posting_on(conn, board, "closed-real", status="closed", body_text="a full jd")
+    with engine.connect() as conn:
+        assert count_stub_postings_by_company(conn) == {board: 1}
+
+
 def test_a_whitespace_only_body_of_tabs_and_newlines_counts_as_a_stub(engine: Engine) -> None:
     """SQLite's one-arg trim strips spaces ONLY; tabs and newlines must be in the strip set."""
     with engine.begin() as conn:

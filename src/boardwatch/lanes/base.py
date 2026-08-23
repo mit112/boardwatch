@@ -42,9 +42,23 @@ def lane_snapshot(postings: list[RawPosting], url: str) -> BoardSnapshot:
 
 @dataclass(frozen=True)
 class LaneCompanySnapshot:
-    """One company's postings from this lane. `apply_board` is per-company."""
+    """One company's postings from this lane, keyed the way `apply_board` can be reached.
 
-    company_name: str
+    `apply_board(engine, snapshot, company_id, run_id)` takes a `company_id`, and the only
+    route to one is `(provider, slug)` — `companies` is UNIQUE(provider, slug), which is
+    what `queries.upsert_watch` and `queries.get_watched_companies` both key on. A display
+    name cannot get there, so grouping a lane's postings by name is the wrong granularity
+    twice over: an employer with two boards yields ONE name-grouped snapshot, which applied
+    against one `company_id` writes the other board's postings under the wrong company,
+    where they can never converge and close after two misses; and one employer whose name
+    varies across aggregator listings yields several snapshots for one row.
+
+    This is the same identity `admission.CompanyBudget` charges against, and the same pair
+    `dereference.parse_posting_target` already recovers from a posting URL.
+    """
+
+    provider: str
+    slug: str
     snapshot: BoardSnapshot
 
 
