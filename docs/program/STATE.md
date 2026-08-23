@@ -25,10 +25,18 @@ a **provisional pass** — 3 clean FROZEN runs meeting all seven bar metrics (B1
 scope, built before the freeze. Six sessionized parts; plan at
 `~/.claude/plans/lets-use-this-session-staged-wren.md` + project memory.
 
-**PART 1 IS COMPLETE (one deliverable closed as a finding, not a fix — see D-282). Next action is PART 2 —
-lane groundwork** (`Lane` protocol, stub attribution,
-company cap, dereference utility; tasks 3–5 of
-`docs/superpowers/plans/2026-08-22-lane-groundwork.md`). Then 3 → 4 → 6, with Part 5 anytime.
+**PARTS 1 AND 2 ARE COMPLETE. Next action is PART 3 — lane wiring + the Indeed client** (first non-ATS
+leads, end to end). Then 4 → 6, with Part 5 anytime. Part 2 shipped the `Lane` protocol, per-source stub
+attribution, the per-run company cap and a URL-to-posting-reference utility (D-284).
+
+**Part 2 delivered one result that changes Part 3's shape: the dereference utility serves neither provider
+that needs it.** Both members of `DEREFERENCE_REQUIRED_PROVIDERS` refuse — Workday needs an `externalPath`
+whose public-URL mapping is evidenced nowhere here, and SmartRecruiters' apparently-passing round-trip rested
+on a fixture whose own README says "All text is synthetic". Each needs one live probe. Nothing is blocked:
+the four body-inlined providers resolve, and for them a recovered `provider_posting_id` converges an
+aggregator posting with a later board scan instead of duplicating it. **Part 3 also inherits two debts from
+D-284** — `SourceOutcome.stubs` reaches no artifact until someone bumps `artifact_version`, and
+`companies.source` has no legal value for a lane-discovered company.
 
 **Two of D-280's premises are measured FALSE (D-281), and the plan survives both on Mit's ruling.**
 `built` is a permanent disposition, so every run retires its whole shortlist for good. (1) **Breadth does
@@ -333,6 +341,20 @@ an import source, never hand-fixed (D-155).
    authoring non-tech field content.
 2. **Mit's two résumé content calls** — whether to send; the D-220 prose rewrites.
 3. **`add-evidence` takes no bundle lock** (D-143) — raise before two authoring agents run against one bundle.
+4. **The `artifact_version` bump that would let `SourceOutcome.stubs` reach an artifact** (D-284). It is
+   computed and persisted nowhere; adding a key to the funnel's `sources` block is a shipped-schema change,
+   and this log records that such a bump is never taken unilaterally. Deferred to Part 3.
+5. **`companies.source` for a lane-discovered company** (D-284). Constrained to `('registry','user')` and a
+   lane-discovered company is neither. Reusing `'registry'` versus migrating to a third value is a schema
+   change. Nothing forces it until Part 3 writes a company row.
+6. **Whether to add a FOURTH discovery lane, and which** — Mit asked for one on 2026-08-22 and the choice was
+   not made. Four candidates were measured against the four binding constraints; three are disqualified on
+   evidence. LinkedIn ranks first on shape (unambiguous aggregator, no new dependency, needs no
+   dereferencing) but its body is NOT free, it carries the worst downstream conversion job-apps ever measured
+   for a lane (28.3% materialization, against simplify's 75.8%), and it is the only candidate whose ToS
+   exposure on a published package is a values call. Oracle Cloud HCM / iCIMS is the honest route to the
+   Amazon/Apple/TikTok gap but is PROVIDER work, not lane work. Memo:
+   `.superpowers/sdd/2026-08-22-lane-groundwork/fourth-lane-memo.md`.
 
 ---
 
