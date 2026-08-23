@@ -153,6 +153,7 @@ reports drift without writing, and `make check` depends on it (D-109).
 | METRICS.md | 5618 | Session — 2026-08-22d (the largest drop bucket gets a drain, and the JD-acquisition lane order reverses — D-277/D-278) |
 | METRICS.md | 5711 | Session — 2026-08-22e (the body-less suppression is fixed and lane phase 1 begins; JobSpy is uninstallable on a supported Python — D-279) |
 | METRICS.md | 5834 | Session — 2026-08-22f (the ASAP execution plan is set: finish line becomes a provisional pass + 14-day background confirm, breadth moves in now, work splits into sessionized parts — D-280) |
+| METRICS.md | 0 | Session — 2026-08-22g (ASAP plan Part 1: two of D-280's premises measured false, Gate P6 becomes readable at 0.00%, and the zero-output "fix" is rejected because it deletes the alarm — D-281/D-282/D-283) |
 
 ---
 
@@ -5842,3 +5843,129 @@ three discovery lanes) pulled into scope ahead of acceptance; P6 duplicate-kind 
 `exact_quad`-only. The detailed plan lives outside the repo at
 `~/.claude/plans/lets-use-this-session-staged-wren.md` and in project memory. Gate P3 still 0 of 7
 unattended; still 0 sent.
+
+---
+
+## Session — 2026-08-22g (ASAP plan Part 1: two of D-280's premises measured false, Gate P6 becomes readable at 0.00%, and the zero-output "fix" is rejected because it deletes the alarm — D-281/D-282/D-283) · Attended. Four parallel workstreams, one merged code PR + one docs PR. Retracts this file's own 2026-08-22f claim that net-new leads/day "cannot be faked by cadence." Gate P3 still 0 of 7 unattended; still 0 sent.
+
+### The two falsified premises
+
+`built` is a PERMANENT disposition, so every run retires its whole shortlist for good. Both of D-280's
+calendar arguments rested on the opposite.
+
+| Claim (D-280) | Measured | Verdict |
+|---|---|---|
+| Breadth protects ≥10 net-new/day once the backlog drains | `capped_by_top_n` = **3,683**; ~92 runs / ~368 days at ≥10/day; **growing** +126 then +55 net across runs 67→68→69 after 40 consumed each | **FALSE** |
+| Extra intraday runs score ~0 net-new (seen-TTL suppresses) | Run 69: **40 of 40 net-new, 3h after run 68**; the two lead sets are **100% disjoint** (0 overlap) | **FALSE** |
+
+Second paths, per the count-it-differently rule. Reservoir: the ranker's own `hidden_below_cutoff` in
+`funnel-69.json` and the funnel's residual identity, both **3683**. A third route was attempted and
+**refused as self-agreeing** — a SQL rebuild would have to re-implement the Python title gates, whose
+per-posting outcome is deliberately not persisted. Disjointness: re-derived from the funnel artifacts' own
+lead lists, a different path from the SQL that first reported it.
+
+### Net-new leads per run (artifacts path; ledger path agreed on 5 of 8)
+
+| run | cap | leads | net-new | net-new AND `eligible` |
+|---|---|---|---|---|
+| 63 | 8 | 8 | 8 | 5 |
+| 65 | 8 | 8 | 8 | 3 |
+| 66 | 8 | 8 | **0** | 0 |
+| 67 | 8 | 8 | 3 | 1 |
+| 68 | **40** | 40 | 29 | 17 |
+| 69 | **40** | 40 | **40** | 26 |
+
+The three ledger/artifact divergences all have one cause: the ledger calls a job net-new when its first-ever
+lead predates the ledger's own start (2026-08-19). The artifact path reaches back to 2026-08-06 and is the
+correct one. **Run 66's 0 net-new is the named hazard** — every one of its 8 leads was a job the ledger had
+released, which is what a reopen does to a B1 day.
+
+### Steady-state inflow is a fetch budget, not a market rate (D-270 re-confirmed)
+
+Two independent tables (`postings.first_seen_at` and `posting_events(kind='new')`) agree **exactly on every
+day**. Budget-boundedness is now direct rather than inferred: the maximum new postings from any single board
+is **exactly 50** in every run from 63 on, and `boards_at_or_over_50 == boards_exactly_50` throughout. Run
+68: 20 of 89 boards saturated → **1,000 of 1,310 new postings (76.3%)** came from saturated boards. Run 69:
+17 of 21 → **850 of 898 (94.7%)**. `board_scans.detail_deferred` measures the clipping directly — **13,709**
+listed-but-not-materialised in run 68, **12,810** in run 69.
+
+Survival to candidate is **not measurable per day** — the per-posting candidacy flag is deliberately not
+persisted. Corpus candidate rate is 11.55%; per-cohort eligibility runs 46–53% and the SQL reconstruction
+reproduces run 69's funnel verdict stage exactly (32229 / 16311 / 2371 / 13547), which validates the route.
+
+### Gate P6, both clauses
+
+**P6-b — 0 dead postings reaching leads: BANKED.** Two runs against a scratch store copy, `liveness`
+block identical in both: `checked 40, dead 0, unknown 2, alive 38, gone_after_redirect 0`. Three
+independent read paths agree (funnel JSON, funnel markdown, raw stdout). The detector is demonstrably
+**armed** — `checked > 0`, so this is not the disarmed 0/0 signature — and `gone_after_redirect = 0` rules
+out a redirect-masked dead. Limit stated: the `runs` table has no liveness columns, so a DB-row path does
+not exist and the three above are all there are.
+
+**P6-a — duplicate leakage: 0.00%, and the two stores are reported separately on purpose.** The **command**
+was validated on a store COPY — 180 identified / 180 groups / 0 redundant — against an independently written
+SQL join over that same copy reading **180/180/0**, exactly matching. The copy's 180 includes **80 `skipped`
+rows written by this session's two scratch runs**; the live store holds only the 100 `built` rows. So the
+**live** figure comes from the SQL path alone (the CLI is never run against the live store, which it would
+write to): **100 surfaced jobs, 100 distinct groups, 0 redundant = 0.00%**. Both stores agree on the thing
+that matters — **0 redundant**. `--days` was separately proved to filter (150 / 153 / 180 / 180 at 1 / 2 /
+7 / 30) rather than being inert.
+
+**Not yet "over 7 days", and the reason is the ledger's age, not the TTL.** It starts 2026-08-19, so ~3.2
+days exist; first full window ~2026-08-26, inside Parts 2–4. An earlier draft blamed the 7-day `seen` TTL —
+wrong, and worth naming: the report reads `first_decided_at`, documented as never rewritten, and touches
+neither `expires_at` nor `reopened_at`.
+
+### The zero-output guard: a deliverable closed as a finding
+
+Part 1 was to "fix the zero-output-guard false alarm." **Two measurements retired the task instead.**
+
+| Question | Measured | Consequence |
+|---|---|---|
+| Is the false alarm reachable? | Firing needs `hidden_handled == 0`; it is **8 / 48 / 128** on runs 68 / 69 / 71, and `capped_by_top_n` 3,603–3,683 means `visible` is 40 every run | **No.** It was never a P3 blocker |
+| Does the obvious fix work? | Disarming on any rejection bucket triggers on `hidden_hard_filter`, which is **18,472–18,932** every run | **No.** The fatal becomes unreachable — the alarm is deleted |
+
+The fix was built, reviewed against these funnel counts, and **reverted before merge**. Only the stale
+premise ("the ranker hides only `ineligible`") was corrected, at both sites carrying it —
+`pipeline/runner.py` and `store/run_funnel_queries.py`.
+
+**The generalisable finding: a complete partition cannot evidence a silent failure.** The ranker's `hidden_*`
+buckets are an exhaustive partition of the corpus (`considered == len(visible) + skipped_not_new + hidden_*
+…`), so every posting lands in a named bucket and "can this run explain the empty day?" is always yes by
+construction. The population is also mismatched — `candidate_judged_this_run` is run-scoped while every
+bucket is corpus-scoped. **B5 therefore has no working instrument**, and scoring it on exit status alone
+would score the absence of an alarm that cannot sound. Run-scoped rank attribution is the only honest fix and
+is an owner call.
+
+**Also corrected:** the docstring's claim that D-246 ruled `hidden_over_seniority` out of the guard. D-246 is
+the seniority-gate decision and says nothing about this guard — the citation was an inference, and it had
+been briefed to a worker as a ruling it would have to overturn.
+
+### The render failure that was not one
+
+Both scratch runs failed with `every lead failed to project or tailor (40/40)` —
+`tailored=bullet_too_long, untailored=page_limit_exceeded`. **Cause: the runs omitted `--project`.** Run 69's
+funnel carries a `projection` stage 40→40, then tailor 40→40, pdf 40→40; the scratch funnels have **no
+projection stage at all** and tailor 40→0. Without stage-2 projection the authored résumé overflows the page
+gate. **B2/B3 are not implicated** — but a provisional run without `--project` produces 0 PDFs, and the
+launchd plist already passes it.
+
+### Process record
+
+- **`BOARDWATCH_DATA_DIR` alone does NOT isolate a run.** `config_dir` is governed by a separate
+  `BOARDWATCH_CONFIG_DIR`, so `out_root` defaulted to the live tree and both scratch runs wrote
+  `funnel-70/71.*`, `morning-70/71.*` and 80 `_failed/*.log` into `~/boardwatch-applications/2026-08-23/`,
+  while `resume.yaml` / `career-profile/` / the template were **read from the live config dir**. Content was
+  byte-identical so there was no behavioural effect, and no writes landed in the live `tailored/`,
+  `projected/` or `career-profile/` directories. The whole `2026-08-23` tree was verified 100% scratch-run
+  output (90 entries, all newer than the run start) and moved to the scratchpad. **The standing
+  scratch-data-dir rule is insufficient as written and must name both variables.**
+- Artifacts are **UTC-dated**: the directory was `2026-08-23` while local time was still the evening of
+  2026-08-22. A real trap for matching artifacts by date; match on the run NUMBER.
+- Run numbering on a store copy continues from the live sequence, so a scratch run's `funnel-N` collides
+  with the next real run's. Relocating scratch artifacts is mandatory, not tidiness.
+- `job_dispositions` **cannot** serve as a per-run historical lead count: it is a per-job UPSERT, so `run_id`
+  is the last run that touched the row. A containment join on `[started_at, finished_at]` also double-counts,
+  because failed run 64's 26-hour window swallows runs 65–67 (sum 111 vs 100 actual). Bucket by the greatest
+  `started_at <= timestamp`.
+- `setsid` does not exist on macOS; `nohup … & disown` is the working detach pattern.

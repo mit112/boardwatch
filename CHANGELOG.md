@@ -8,6 +8,22 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- **`boardwatch identities leakage` — Gate P6's duplicate-leakage clause becomes readable.** The gate
+  asks for duplicate leakage over 7 days at or under 5%; nothing could report it. The new command
+  answers it over a configurable window (`--days`, default 7, plus `--json`).
+
+  Three choices make the number mean what the gate asks. Only an **`exact_quad`** identity
+  (company + title + location + body) counts as a duplicate, matching `SUPPRESSING_KINDS` — a shared
+  body hash alone spans genuinely different titles and locations. Leakage is counted over **jobs that
+  reached leads**, not over the corpus, because a corpus-wide suppression rate answers a different
+  question. And the unit is the **job**, not the posting, since a correct `regroup` merge would
+  otherwise read as a leak.
+
+  A posting with no body is deliberately withheld an `exact_quad` identity, so it cannot be judged
+  here. Those jobs are reported in their own `unidentified` bucket, never folded into either
+  neighbour and never counted in the denominator; with nothing measurable the command prints "not
+  measurable" rather than 0%.
+
 - **Board coverage is reported by an unattended run, not only by a command.** The instrument below
   persisted its four columns and said nothing: seeing coverage meant typing `boardwatch coverage`.
   A scheduled run now reports it in the two artifacts it already writes — a `board_coverage`
