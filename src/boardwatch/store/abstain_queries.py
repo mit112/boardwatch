@@ -12,6 +12,7 @@ from collections.abc import Sequence
 
 from sqlalchemy import Connection, func, select
 
+from boardwatch.store.param_chunks import id_chunks
 from boardwatch.store.tables import eligibility_requirements
 
 
@@ -25,13 +26,29 @@ def count_requirement_dispositions(
     """
     if not evaluation_ids:
         return {}
-    rows = conn.execute(
-        select(
-            eligibility_requirements.c.rule_id,
-            eligibility_requirements.c.disposition,
-            func.count(),
-        )
-        .where(eligibility_requirements.c.evaluation_id.in_(evaluation_ids))
-        .group_by(eligibility_requirements.c.rule_id, eligibility_requirements.c.disposition)
-    ).all()
-    return {(row[0], row[1]): int(row[2]) for row in rows}
+    # Chunked past SQLite's bound-parameter cap: the funnel passes one id per open posting
+    # with a current evaluation (33,429 today) and the corpus only grows. See
+    # store.param_chunks.
+    #
+    # The counts are ADDED, not merged. Unlike the ledger reads, the GROUP BY key here is
+    # (rule_id, disposition) — NOT the chunked column — so one key legitimately appears in
+    # every chunk, and a dict update would silently return the last chunk's count as the
+    # whole answer. That would understate a rule's abstain rate, which is the one number the
+    # keystone invariant is monitored by, and it would raise nothing while doing it.
+    out: dict[tuple[str | None, str], int] = {}
+    for chunk in id_chunks(evaluation_ids):
+        rows = conn.execute(
+            select(
+                eligibility_requirements.c.rule_id,
+                eligibility_requirements.c.disposition,
+                func.count(),
+            )
+            .where(eligibility_requirements.c.evaluation_id.in_(chunk))
+            .group_by(
+                eligibility_requirements.c.rule_id, eligibility_requirements.c.disposition
+            )
+        ).all()
+        for row in rows:
+            key = (row[0], row[1])
+            out[key] = out.get(key, 0) + int(row[2])
+    return out

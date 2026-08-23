@@ -13,7 +13,55 @@ from sqlalchemy import Connection, func, select
 
 from boardwatch.eligibility.engine import current_evaluations
 from boardwatch.eligibility.final_gate import GATE_VERSION_PREFIX
+from boardwatch.store.param_chunks import id_chunks
 from boardwatch.store.tables import eligibility_evaluations, eligibility_inputs, posting_versions
+
+
+def current_evaluations_chunked(
+    conn: Connection,
+    posting_version_ids: list[int],
+    profile_hash: str,
+    rules_hash: str,
+) -> dict[int, tuple[int, str]]:
+    """`engine.current_evaluations`, safe for a list longer than SQLite's parameter cap.
+
+    Use this, never the engine's function directly, wherever the id list is sized by the
+    corpus. Every such caller passes the current version of every OPEN posting, and that list
+    crossed `SQLITE_LIMIT_VARIABLE_NUMBER` (32766) on 2026-08-23 at 32,771 open postings: the
+    funnel write hit it first and swallowed `too many SQL variables` into a printed warning,
+    then the ranker hit it and took the run down. The corpus only grows, so it was permanent.
+
+    It lives HERE rather than inside `engine.py` deliberately. `engine.py` is a digested
+    module (`engine.digested_modules`), so batching the read in place would move
+    `engine_version` — re-keying every verdict in the corpus and, through
+    `pipeline.policy.run_policy_version`, every permanent ledger stamp, which owes a manual
+    `ledger reopen --stale` that re-surfaces already-built leads. All of that for a change
+    that cannot alter a single verdict.
+
+    Chunk-then-merge is exact: the engine's read is a per-posting-version lookup with no
+    aggregate, so the union over chunks is the un-chunked result.
+    """
+    out: dict[int, tuple[int, str]] = {}
+    for chunk in id_chunks(posting_version_ids):
+        out.update(current_evaluations(conn, chunk, profile_hash, rules_hash))
+    return out
+
+
+def _posting_by_version(conn: Connection, posting_version_ids: list[int]) -> dict[int, int]:
+    """posting_version_id -> posting_id, chunked past the bound-parameter cap.
+
+    Shared by both public reads below, which each need the same mapping to key their result
+    by posting rather than by version.
+    """
+    out: dict[int, int] = {}
+    for chunk in id_chunks(posting_version_ids):
+        rows = conn.execute(
+            select(posting_versions.c.id, posting_versions.c.posting_id).where(
+                posting_versions.c.id.in_(chunk)
+            )
+        ).all()
+        out.update({int(row.id): int(row.posting_id) for row in rows})
+    return out
 
 
 def current_verdicts(
@@ -35,13 +83,8 @@ def current_verdicts(
         return {}
     if not posting_version_ids:
         return {}
-    evals = current_evaluations(conn, posting_version_ids, profile_hash, rules_hash)
-    rows = conn.execute(
-        select(posting_versions.c.id, posting_versions.c.posting_id).where(
-            posting_versions.c.id.in_(posting_version_ids)
-        )
-    ).all()
-    version_to_posting = {int(row.id): int(row.posting_id) for row in rows}
+    evals = current_evaluations_chunked(conn, posting_version_ids, profile_hash, rules_hash)
+    version_to_posting = _posting_by_version(conn, posting_version_ids)
     return {
         version_to_posting[vid]: (evals.get(vid) or (None, None))[1]
         for vid in posting_version_ids
@@ -62,29 +105,34 @@ def current_gate_verdicts(
     """
     if profile_hash is None or rules_hash is None or not posting_version_ids:
         return {}
-    latest = (
-        select(eligibility_inputs.c.posting_version_id,
-               func.max(eligibility_evaluations.c.id).label("eid"))
-        .join(eligibility_inputs, eligibility_evaluations.c.input_id == eligibility_inputs.c.id)
-        .where(
-            eligibility_inputs.c.posting_version_id.in_(posting_version_ids),
-            eligibility_inputs.c.profile_hash == profile_hash,
-            eligibility_inputs.c.rules_hash == rules_hash,
-            eligibility_evaluations.c.engine_kind == "llm",
-            eligibility_evaluations.c.engine_version.like(f"{GATE_VERSION_PREFIX}%"),
+    # Chunked past SQLite's bound-parameter cap, which the open corpus crossed on 2026-08-23
+    # (see current_evaluations_chunked). Sound here because the chunked column IS the group
+    # key: every posting_version's rows fall in exactly one chunk, so max(id) per
+    # posting_version is the same answer chunked or whole.
+    verdict_by_version: dict[int, str] = {}
+    for chunk in id_chunks(posting_version_ids):
+        latest = (
+            select(eligibility_inputs.c.posting_version_id,
+                   func.max(eligibility_evaluations.c.id).label("eid"))
+            .join(eligibility_inputs, eligibility_evaluations.c.input_id == eligibility_inputs.c.id)
+            .where(
+                eligibility_inputs.c.posting_version_id.in_(chunk),
+                eligibility_inputs.c.profile_hash == profile_hash,
+                eligibility_inputs.c.rules_hash == rules_hash,
+                eligibility_evaluations.c.engine_kind == "llm",
+                eligibility_evaluations.c.engine_version.like(f"{GATE_VERSION_PREFIX}%"),
+            )
+            .group_by(eligibility_inputs.c.posting_version_id)
+            .subquery()
         )
-        .group_by(eligibility_inputs.c.posting_version_id)
-        .subquery()
-    )
-    rows = conn.execute(
-        select(eligibility_inputs.c.posting_version_id, eligibility_evaluations.c.verdict)
-        .join(latest, eligibility_evaluations.c.id == latest.c.eid)
-        .join(eligibility_inputs, eligibility_evaluations.c.input_id == eligibility_inputs.c.id)
-    ).all()
-    version_rows = conn.execute(
-        select(posting_versions.c.id, posting_versions.c.posting_id)
-        .where(posting_versions.c.id.in_(posting_version_ids))
-    ).all()
-    v2p = {int(r.id): int(r.posting_id) for r in version_rows}
-    return {v2p[int(r.posting_version_id)]: str(r.verdict)
-            for r in rows if int(r.posting_version_id) in v2p}
+        rows = conn.execute(
+            select(eligibility_inputs.c.posting_version_id, eligibility_evaluations.c.verdict)
+            .join(latest, eligibility_evaluations.c.id == latest.c.eid)
+            .join(eligibility_inputs, eligibility_evaluations.c.input_id == eligibility_inputs.c.id)
+        ).all()
+        verdict_by_version.update(
+            {int(r.posting_version_id): str(r.verdict) for r in rows}
+        )
+    v2p = _posting_by_version(conn, posting_version_ids)
+    return {v2p[vid]: verdict
+            for vid, verdict in verdict_by_version.items() if vid in v2p}

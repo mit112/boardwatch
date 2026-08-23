@@ -383,3 +383,31 @@ def test_eligibility_summary_reports_family_and_disposition(env: Path, tmp_path:
     assert "no current-engine evaluation" in out
     assert "degree" in out
     assert "unmet" in out
+
+
+def test_eligibility_summary_sums_a_family_across_postings(env: Path, tmp_path: Path) -> None:
+    """The family fold must ADD the per-rule counts, not count each rule once.
+
+    `summary` no longer fetches one row per requirement; it folds `count_requirement_dispositions`'
+    pre-aggregated `(rule_id, disposition) -> count` up into families (D-287), which is what makes
+    it cap-safe. That fold is only distinguishable from `+= 1` when two postings share a
+    (family, disposition), so this seeds two degree-blocked postings and asserts the printed
+    **2**. Reverting `+= count` to `+= 1` prints `degree · unmet: 1` and fails here.
+    """
+    engine = get_engine(tmp_path)
+    ensure_schema(engine)
+    with engine.begin() as conn:
+        save_profile(
+            conn, text="Backend engineer.", target_titles=[], exclude_titles=[],
+            locations=[], remote_only=False, skills=[], taxonomy_version="t",
+            resume_max_pages=1,
+        )
+    _seed_one(tmp_path, title="Blocked One", body=DEGREE_BODY, slug="blocked-one")
+    _seed_one(tmp_path, title="Blocked Two", body=DEGREE_BODY, slug="blocked-two")
+    assert _invoke(tmp_path, ["eligibility", "facts", "set", "highest_degree", "none"]).exit_code == 0
+    assert _invoke(tmp_path, ["eligibility", "policy", "set", "degree", "blocker"]).exit_code == 0
+    assert _invoke(tmp_path, ["eligibility", "run"]).exit_code == 0
+
+    result = _invoke(tmp_path, ["eligibility", "summary"])
+    assert result.exit_code == 0
+    assert "degree · unmet: 2" in result.stdout, result.stdout

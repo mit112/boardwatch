@@ -21,12 +21,11 @@ from typing import Any, NoReturn, get_args
 import typer
 from rich.console import Console
 from rich.table import Table
-from sqlalchemy import select
 
 from boardwatch.cli.context import build_context
 from boardwatch.core.settings import Settings
 from boardwatch.eligibility.catalog import FamilySpec, FieldSpec, RulesCatalog, load_rules
-from boardwatch.eligibility.engine import current_evaluations, not_applicable_field_families
+from boardwatch.eligibility.engine import not_applicable_field_families
 from boardwatch.eligibility.extract_llm import extract_and_record
 from boardwatch.eligibility.facts import (
     Facts,
@@ -44,6 +43,7 @@ from boardwatch.eligibility.oracle import (
     read_worksheet,
 )
 from boardwatch.eligibility.preflight import current_identity, run_eligibility
+from boardwatch.eligibility.read import current_evaluations_chunked
 from boardwatch.eligibility.scoring import SHIP_AUDIT_COVERAGE_BAR, load_labeled_set, score
 from boardwatch.llm.cache import ResponseCache
 from boardwatch.llm.client import LaneDeathReason, LLMLaneDeadError
@@ -61,7 +61,6 @@ from boardwatch.store.queries import (
     get_profile,
     save_eligibility,
 )
-from boardwatch.store.tables import eligibility_requirements
 
 console = Console()
 
@@ -435,26 +434,24 @@ def summary_cmd(ctx: typer.Context) -> None:
         versions = current_posting_versions(conn, None)
         version_ids = [cv.posting_version_id for cv in versions.values()]
         evals = (
-            current_evaluations(conn, version_ids, *identity) if identity is not None else {}
+            current_evaluations_chunked(conn, version_ids, *identity)
+            if identity is not None
+            else {}
         )
         eval_ids = [eval_id for eval_id, _ in evals.values()]
-        requirement_rows = (
-            conn.execute(
-                select(
-                    eligibility_requirements.c.rule_id,
-                    eligibility_requirements.c.disposition,
-                ).where(eligibility_requirements.c.evaluation_id.in_(eval_ids))
-            ).all()
-            if eval_ids
-            else []
-        )
+        # Reuses `abstain`'s read rather than keeping a second copy of it. That copy bound
+        # every eval id in ONE statement — 33,429 today, past SQLite's 32,766 cap — so it was
+        # broken in exactly the way the funnel was, while this read is chunked and has a test
+        # that binds over the cap. Folding per-rule counts up into families is exact:
+        # summation over a coarser partition of the same rows.
+        rule_counts = count_requirement_dispositions(conn, eval_ids)
     evaluated = len(evals)
     unevaluated = len(version_ids) - evaluated
     verdicts: Counter[str] = Counter(verdict for _, verdict in evals.values())
     by_family: Counter[tuple[str, str]] = Counter()
-    for row in requirement_rows:
-        family = row.rule_id.split(":")[0] if row.rule_id else "(unknown)"
-        by_family[(family, row.disposition)] += 1
+    for (rule_id, disposition), count in rule_counts.items():
+        family = rule_id.split(":")[0] if rule_id else "(unknown)"
+        by_family[(family, disposition)] += count
 
     console.print(f"evaluated: {evaluated} · no current-engine evaluation: {unevaluated}")
     if verdicts:
@@ -487,7 +484,9 @@ def abstain_cmd(ctx: typer.Context) -> None:
         versions = current_posting_versions(conn, None)
         version_ids = [cv.posting_version_id for cv in versions.values()]
         evals = (
-            current_evaluations(conn, version_ids, *identity) if identity is not None else {}
+            current_evaluations_chunked(conn, version_ids, *identity)
+            if identity is not None
+            else {}
         )
         eval_ids = [eval_id for eval_id, _ in evals.values()]
         counts = count_requirement_dispositions(conn, eval_ids)

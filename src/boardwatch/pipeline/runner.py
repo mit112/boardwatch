@@ -84,6 +84,7 @@ from boardwatch.store.ledger_queries import record_disposition
 from boardwatch.store.queries import (
     RUN_FAILED,
     RUN_OK,
+    append_run_error,
     company_exists,
     ensure_run,
     finish_run,
@@ -1322,7 +1323,17 @@ def run_pipeline(
         try:
             summary.funnel = _emit_funnel(engine, settings, summary, scan_summary, day_dir)
         except Exception as exc:  # noqa: BLE001 - never mask the run's own outcome
-            console.print(f"  ! funnel artifact not written: {exc}", markup=False)
+            # Recorded, not just printed (D-287, open question 1). Still fail-open — a
+            # reporting failure must never discard a run that produced real leads — but
+            # `finish_run` has already committed above, so until this write a funnel-less run
+            # was byte-identical to a clean one in the store. That is the wrong thing to be
+            # invisible: Gate P3 counts clean unattended runs while B1 and B5 are read out of
+            # the funnel. `append_run_error` only appends; it cannot touch status or
+            # finished_at, because a reporting failure is not a run outcome.
+            note = f"funnel artifact not written: {exc}"
+            console.print(f"  ! {note}", markup=False)
+            summary.errors.append(note)
+            append_run_error(engine, run_id, note)
         # AFTER the funnel: the morning artifact links to `funnel-<run_id>.md` by name rather
         # than by the WrittenArtifact above, so it renders that link even when the funnel
         # itself failed to write (the name is deterministic from run_id either way).

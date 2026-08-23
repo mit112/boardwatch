@@ -22,12 +22,12 @@ from boardwatch.core.settings import Settings
 from boardwatch.eligibility.catalog import load_rules
 from boardwatch.eligibility.engine import (
     ENGINE_KIND,
-    current_evaluations,
     engine_version,
     not_applicable_field_families,
 )
 from boardwatch.eligibility.facts import parse_facts
 from boardwatch.eligibility.preflight import current_identity
+from boardwatch.eligibility.read import current_evaluations_chunked
 from boardwatch.projection.run import ProjectionLeadOutcome
 from boardwatch.rank.leveling import load_leveling
 from boardwatch.reports.abstain import AbstainReport, build_abstain_report
@@ -159,7 +159,7 @@ def collect_run_funnel(
             # Same scope as `eligibility abstain`: the CURRENT evaluation of every OPEN
             # posting. Keeping the scopes identical is what lets the two be compared at all.
             versions = current_posting_versions(conn, None)
-            evals = current_evaluations(
+            evals = current_evaluations_chunked(
                 conn, [cv.posting_version_id for cv in versions.values()], *identity
             )
             counts = count_requirement_dispositions(conn, [eid for eid, _ in evals.values()])
