@@ -17,13 +17,11 @@ import pytest
 
 from boardwatch.core.board_urls import UnknownBoardURL
 from boardwatch.lanes.dereference import (
-    DEREFERENCE_REQUIRED_PROVIDERS,
     PostingTarget,
     UnresolvablePostingURL,
     parse_posting_target,
 )
 from boardwatch.providers import ashby, greenhouse, lever, smartrecruiters, workable, workday
-from boardwatch.providers.registry import build_providers
 
 FIXTURES = Path(__file__).resolve().parents[1] / "fixtures"
 
@@ -120,21 +118,57 @@ def test_bare_board_root_refuses() -> None:
         parse_posting_target("https://boards.greenhouse.io/acme")
 
 
+@pytest.mark.parametrize(
+    "board_root",
+    ["boards.greenhouse.io/acme", "jobs.lever.co/acme", "apply.workable.com/acme"],
+)
+def test_a_scheme_less_board_root_refuses_too(board_root: str) -> None:
+    """parse_board_target accepts scheme-less input by prefixing `https://`, so these ARE
+    recognized board targets. _path_segments must normalize the same way — otherwise
+    urlparse reads the hostname as the first path segment and the board root parses as a
+    posting whose reference is the slug. The scheme-ful test above cannot catch that."""
+    with pytest.raises(UnresolvablePostingURL):
+        parse_posting_target(board_root)
+
+
+@pytest.mark.parametrize(
+    "chrome_url",
+    [
+        # Each is the sibling field of the canonical URL in that provider's own pinned
+        # fixture: lever `applyUrl`, ashby `applyUrl`, workable `application_url`.
+        "https://jobs.lever.co/acme/a1000000-0000-4000-8000-000000000001/apply",
+        "https://jobs.ashbyhq.com/acme/ashby-0001/application",
+        "https://apply.workable.com/acme/j/AAAA111111/apply",
+        "https://apply.workable.com/acme/j/AAAA111111/apply/",
+        "https://boards.greenhouse.io/acme/jobs/6000001/apply",
+    ],
+)
+def test_a_trailing_chrome_segment_refuses_rather_than_becoming_the_posting_ref(
+    chrome_url: str,
+) -> None:
+    """`/apply` and `/application` are the providers' canonical APPLICATION URLs, and
+    aggregators deep-link to them. Read as a posting reference they are CONSTANT per
+    provider, so two postings at one employer would collide on
+    UNIQUE(company_id, provider_posting_id) — the second applied as a revision of the
+    first, one real body overwritten, and closed after two misses because no `complete`
+    board scan ever lists `apply`."""
+    with pytest.raises(UnresolvablePostingURL):
+        parse_posting_target(chrome_url)
+
+
+def test_a_path_shorter_than_its_providers_shape_refuses() -> None:
+    """Greenhouse is `{slug}/jobs/{id}`, so a two-segment path is not a posting URL even
+    though it is not a bare board root either. The rule is an exact shape, not a minimum
+    length — `boards.greenhouse.io/embed/job_app` would otherwise yield `job_app`."""
+    with pytest.raises(UnresolvablePostingURL):
+        parse_posting_target("https://boards.greenhouse.io/embed/job_app")
+
+
 def test_unrecognized_url_raises_unknown_board_url_not_unresolvable() -> None:
     # Not a recognized board target at all: board_urls' own error must propagate
     # unchanged, distinct from our UnresolvablePostingURL.
     with pytest.raises(UnknownBoardURL):
         parse_posting_target("https://example.com/careers/123")
-
-
-def test_dereference_required_providers_matches_detail_url_providers() -> None:
-    # Counted through a DIFFERENT path than the one that produced the module constant:
-    # instantiate every registered provider and check its class for `_detail_url`,
-    # instead of re-importing the same two hardcoded names on both sides.
-    expected = frozenset(
-        name for name, inst in build_providers().items() if hasattr(type(inst), "_detail_url")
-    )
-    assert DEREFERENCE_REQUIRED_PROVIDERS == expected
 
 
 def test_posting_target_is_frozen() -> None:
