@@ -137,6 +137,14 @@ def _carry_dispositions(conn: Connection, merges: Sequence[JobMerge], *, now: da
     uses everywhere else — so it stops governing without erasing that it ever did. A live row on a
     job that anchors no postings would be a quarantine with no re-entry path, which CLAUDE.md
     forbids outright.
+
+    A survivor with no disposition row of its own gets `first_decided_at=now` here — `plan_upsert`
+    (`core/ledger.py`) treats a missing existing row as brand new, and `record_disposition`'s
+    INSERT branch (`store/ledger_queries.py`) stamps whatever `plan_upsert` returns. So a
+    surfacing from weeks ago can acquire the merge's own timestamp as its "first reached leads"
+    moment on the survivor, which `reports/leakage.py`'s window is anchored on. The redundancy
+    arithmetic is unaffected; only which window the job falls into moves, and that now depends on
+    when this last ran.
     """
     from_jobs = {merge.from_job_id for merge in merges}
     to_by_from = {merge.from_job_id: merge.to_job_id for merge in merges}
