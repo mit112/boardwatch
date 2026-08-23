@@ -25,9 +25,19 @@ a **provisional pass** — 3 clean FROZEN runs meeting all seven bar metrics (B1
 scope, built before the freeze. Six sessionized parts; plan at
 `~/.claude/plans/lets-use-this-session-staged-wren.md` + project memory.
 
-**PARTS 1 AND 2 ARE COMPLETE. Next action is PART 3 — lane wiring + the Indeed client** (first non-ATS
-leads, end to end). Then 4 → 6, with Part 5 anytime. Part 2 shipped the `Lane` protocol, per-source stub
-attribution, the per-run company cap and a URL-to-posting-reference utility (D-284).
+**PARTS 1 AND 2 ARE COMPLETE AND ON `main`. Next action is PART 3 — lane wiring + the hiring.cafe
+client** (first non-ATS leads, end to end). Then 4 → 6, with Part 5 anytime. Part 2 shipped the `Lane`
+protocol, per-source stub attribution, the per-run company cap and a URL-to-posting-reference utility
+(D-284).
+
+**Lane 1 is hiring.cafe, NOT Indeed, and four owner calls are settled (D-285).** Indeed's body really is
+free inside its GraphQL search response, but the only route serving it carries a 64-hex API key lifted
+from Indeed's iOS app, a spoofed `com.indeed.jobsearch` identity and `verify=False`, from a repo that is
+public — so **Indeed is parked** and D-278's Ruling 2 is amended, not deleted. Order is now
+**hiring.cafe → GitHub lists → LinkedIn → Indeed only if a credentialed route appears.** Also ruled:
+`SourceOutcome.stubs` publishes with `artifact_version` **held at 6** (D-147/D-148 precedent, verified);
+`companies.source` gains **`'lane'`** by migration; and **LinkedIn IS the fourth lane**, last, probe-first
+— it is the only one of job-apps' seven sources the three approved lanes do not already cover.
 
 **Part 2 delivered one result that changes Part 3's shape: the dereference utility serves neither provider
 that needs it.** SmartRecruiters and Workday both refuse — Workday needs an `externalPath`
@@ -208,10 +218,11 @@ property of THIS scan and wins over any stored total.
 **Cross-run movement is real and visible:** Capital One 34.7% → 37.4% (650 → 700 held), the detail
 budget draining 50/run exactly as D-270 predicts.
 
-Note on D-267: whether adding `locations` to `Lead` needs a bump of its own is **unresolved** —
-that row says it does, while `run_funnel.py`'s own version comment cites D-113 as the precedent for
-declining a bump on a key added inside a block that already exists. Either way it is a separate
-ruling and was deliberately NOT folded into this change.
+Note on D-267: whether adding `locations` to `Lead` needs a bump of its own is **still a separate
+ruling**, but the precedent is no longer in doubt — **D-285 verified it**: D-113's own entry says
+nothing about versions, yet D-147 R3 / D-148 R3 deliberately named it the precedent for declining a
+bump on an additive key and retracted the D-031 citation. D-285 then declined a bump on exactly that
+reading.
 
 Design, and eight ways this metric could lie:
 `docs/superpowers/specs/2026-08-22-coverage-assurance-design.md` (its §3.1 table predates
@@ -341,20 +352,14 @@ an import source, never hand-fixed (D-155).
    authoring non-tech field content.
 2. **Mit's two résumé content calls** — whether to send; the D-220 prose rewrites.
 3. **`add-evidence` takes no bundle lock** (D-143) — raise before two authoring agents run against one bundle.
-4. **The `artifact_version` bump that would let `SourceOutcome.stubs` reach an artifact** (D-284). It is
-   computed and persisted nowhere; adding a key to the funnel's `sources` block is a shipped-schema change,
-   and this log records that such a bump is never taken unilaterally. Deferred to Part 3.
-5. **`companies.source` for a lane-discovered company** (D-284). Constrained to `('registry','user')` and a
-   lane-discovered company is neither. Reusing `'registry'` versus migrating to a third value is a schema
-   change. Nothing forces it until Part 3 writes a company row.
-6. **Whether to add a FOURTH discovery lane, and which** — Mit asked for one on 2026-08-22 and the choice was
-   not made. Four candidates were measured against the four binding constraints; three are disqualified on
-   evidence. LinkedIn ranks first on shape (unambiguous aggregator, no new dependency, needs no
-   dereferencing) but its body is NOT free, it carries the worst downstream conversion job-apps ever measured
-   for a lane (28.3% materialization, against simplify's 75.8%), and it is the only candidate whose ToS
-   exposure on a published package is a values call. Oracle Cloud HCM / iCIMS is the honest route to the
-   Amazon/Apple/TikTok gap but is PROVIDER work, not lane work. Memo:
-   `docs/superpowers/research/2026-08-22-fourth-lane-candidates.md`.
+4. **Oracle Cloud HCM / iCIMS as PROVIDERS** — D-278's still-open provider question, explicitly NOT
+   settled by D-285 (that ruled on lanes). ~45% of the non-six tail, fits the existing architecture,
+   reaches neither Amazon nor Apple nor TikTok.
+5. **Run-scoped rank attribution** — the only honest fix for B5, which is UNSCOREABLE until it exists
+   (D-282). Four drop sites plus the funnel reconciliation identity. Matters before Part 6 scores B5.
+
+*(Settled 2026-08-23 by D-285, no longer owner-gated: the `stubs` `artifact_version` bump — declined,
+version holds at 6; `companies.source` — gains `'lane'` by migration; the fourth lane — LinkedIn, last.)*
 
 ---
 
@@ -472,4 +477,4 @@ browser-UA `Fetcher`, and a drain for any stub bucket the lane creates.
 | **`add-evidence` takes no bundle lock** | two concurrent captures race on up to 13 files (D-143) | owner-gated |
 | **A live store is readable ONLY via Python `sqlite3` `?mode=ro`** | the `sqlite3` CLI with `?mode=ro` fails `CANTOPEN(14)` on a cleanly-checkpointed store (no `-shm`; not the sandbox), and `?immutable=1` skips the WAL so it is STALE against a live writer. Mid-run progress: `SELECT COUNT(*) FROM eligibility_evaluations WHERE run_id=N` (D-268) | tooling |
 | **Disk pressure now costs GATE TIME, silently** | The same suite ran **4m51s** at ~7.4 GiB free and **34m40s** at 5.7 GiB / 98% — no error, nothing logged, and a bounded waiter timed out, which reads as a hang. Cause was pytest's own temp trees at **1.1 GB** across 5 runs in `/private/var/folders/*/*/T/pytest-of-mitsheth/`; clearing the stale ones (keep the newest, it is live) plus branch cleanup took the volume to **9.1 GiB / 96%**. The two stale store backups beside the live database are a further **1.67 GB** | **Mit** (the backups) |
-| **`make check` must be launched DETACHED** | the Bash tool clamps `timeout` to 10 min; a longer gate reads as `Error 143`. Launch double-fork + `setsid` and poll the log | tooling |
+| **`make check` must be launched DETACHED** | the Bash tool clamps `timeout` to ~10 min; a longer gate reads as `make: *** [test] Error 143` — that is SIGTERM, not a build break. **`setsid` does not exist on macOS**: use `nohup sh -c '<export PATH>; make check > LOG 2>&1; echo $? > DONE' & disown`, set PATH INSIDE the subshell, and gate on the sentinel file, never the launcher's exit code. The clamp is WALL-CLOCK, so CPU contention converts a comfortable run into a kill — a suite that ran 5m17s alone was SIGTERMed at 62% while one subagent ran its own pytest. Never pipe the gate through `head`/`tail` | tooling |
