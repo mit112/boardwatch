@@ -9,13 +9,10 @@ Refusals are IDENTIFIED, not merely counted. A company dropped silently is
 indistinguishable from one the lane never saw, and the difference is the whole diagnostic
 value. Each side is reported as the `(provider, slug)` pair it was keyed on, in order.
 
-Open question (not decided here): `companies.source` is constrained to `('registry','user')`.
-A lane-discovered company is neither — it was not shipped in the registry and the user did
-not type it. Two options exist: (1) reuse `'registry'`, since the company is program-discovered
-rather than user-entered, or (2) migrate the column to add a third value (e.g. `'lane'`) that
-distinguishes lane-discovered companies from the shipped registry. Option 2 is a schema change
-and is the owner's call, not this task's. Nothing in this task inserts a company row, so the
-choice is not forced yet — it is recorded here for whoever writes that insert.
+A lane-discovered company is stored under `companies.source = 'lane'`, a third value the
+`p_lane_companies` migration added (D-285). Reusing `'registry'` was rejected: it would make the
+shipped registry indistinguishable from whatever an aggregator happened to surface, so nobody
+could audit either. `queries.upsert_lane_company` is the only sanctioned insert.
 """
 
 from __future__ import annotations
@@ -43,8 +40,9 @@ class CompanyBudget:
 
     WHAT THIS CLASS CANNOT VERIFY, and its caller therefore owes. `admit()` has NO notion of
     *new*. It caps distinct companies presented to it; it cannot tell an unwatched company
-    from one already watched, because that needs a store query
-    (`queries.get_watched_companies(conn, provider=, slug=)`). A runner that calls `admit()`
+    from one already stored, because that needs a store query
+    (`queries.company_exists(conn, provider=, slug=)` — not the watched-only lookup, since a
+    lane company is stored unwatched and would read as new forever). A runner that calls `admit()`
     for every company a lane saw spends all ten slots on companies already watched: reach
     never widens, and the refusal list looks exactly like a normal capped run, so nothing
     reports the failure. The is-it-new check belongs with the runner that holds the
@@ -64,7 +62,12 @@ class CompanyBudget:
             # Already paid for. Two postings from one employer are one company.
             return True
         if len(self._admitted) >= self._limit:
-            self._refused.append(key)
+            # Deduplicated on the same rule as `_admitted`, and for the same reason: a refusal
+            # COUNT that lists one employer three times overstates how much reach the cap cost,
+            # which is the one number this report exists to give. Re-asking about an already
+            # refused company is still False — the budget is spent either way.
+            if key not in self._refused:
+                self._refused.append(key)
             return False
         self._admitted.append(key)
         return True
