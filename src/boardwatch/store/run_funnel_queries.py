@@ -169,8 +169,9 @@ def count_stub_postings_by_company(conn: Connection) -> dict[int, int]:
     Sources ARE company_id in this schema (see SourceOutcome's docstring), so a per-company
     count is a per-source count. Every company with an open posting appears, at 0 if it has
     no stubs: this counter is instrumented, so 0 is a measurement, and an absent key would
-    read as "not measured" — the distinction D-022/D-023 record as nearly having cost
-    job-apps a working adapter.
+    read as "not measured" — the same distinction D-022/D-023 draw for the funnel's own
+    stages, where `reconciled` returns `None` when unmeasured, "so an uninstrumented stage
+    is excluded from the gate rather than silently passing it" (D-023).
 
     The two-arg `trim` names the strip set explicitly, exactly as `count_stub_postings`
     does: SQLite's one-arg `trim` removes spaces ONLY, so a body of tabs or newlines would
@@ -461,7 +462,7 @@ def count_by_source(
     run_id: int,
     posting_ids: list[int],
 ) -> tuple[SourceOutcome, ...]:
-    """Per-board outcomes, as five independent sweeps merged on company id.
+    """Per-board outcomes, as six independent sweeps merged on company id.
 
     Separate sweeps rather than one joined query because `artifacts` and `applications` are both
     many-per-posting in principle: folding them into a single GROUP BY would fan out and
@@ -545,7 +546,7 @@ def count_by_source(
             ).all()
         }
 
-    # Fifth sweep: survivor attribution (design §6.1). Gated on completeness, not on
+    # Sixth sweep: survivor attribution (design §6.1). Gated on completeness, not on
     # existence: a number computed over a partial backfill is not a measurement, and
     # `if identities:` cannot tell the two apart. A version bump empties the current-version
     # rows, closes this gate, and degrades `unique` to None — which is the honest report.
