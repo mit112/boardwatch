@@ -25,6 +25,14 @@ EXPECTED_SETTINGS_DEFAULTS: dict[str, object] = {
     "Settings.seen_ttl_days": 7,
     "Settings.location_filter_mode": "soft",
     "Settings.zero_skill_coverage_prior": 0.50,
+    # Empty ships every lane OFF. Neutral by construction — a lane is an unproven network
+    # dependency, and an empty list encodes no view about roles, geography or field.
+    "Settings.lanes_enabled": (),
+    # How many companies a lane may ADD per run, and how many JD bodies it may fetch. Both are
+    # caps on acquisition cost, not preferences: they bound the request budget against a host
+    # nobody here operates and say nothing about which postings are wanted.
+    "Settings.lane_new_companies_per_run": 10,
+    "Settings.lane_posting_budget": 60,
     "Settings.weights": {
         "skill_coverage": 0.5,
         "title_match": 0.25,
@@ -74,6 +82,9 @@ SETTINGS_FIELD_CLASS: dict[str, str] = {
     "Settings.seen_ttl_days": "preference",
     "Settings.location_filter_mode": "preference",
     "Settings.zero_skill_coverage_prior": "preference",
+    "Settings.lanes_enabled": "capability",
+    "Settings.lane_new_companies_per_run": "operational",
+    "Settings.lane_posting_budget": "operational",
     "Settings.weights": "preference",
     "Settings.llm": "capability",
     "RankWeights.skill_coverage": "preference",

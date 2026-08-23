@@ -98,6 +98,16 @@ _TOP_MISSING = 10
 # (`tailor/coverage.py`) — two different measurements one word apart would mislead every
 # future reader, so the collision is closed in the key name rather than in a comment.
 # `null` when the load failed, never a zeroed block: see `board_coverage_to_dict`.
+#
+# **The `lanes` key does NOT bump it, and the ruling is deliberate.** It is an ADDITIVE key on
+# the D-113 → D-147 R3 / D-148 R3 precedent, the same one D-285 applied to `SourceOutcome.stubs`.
+# What v5 and v6 each bought was something this does not: v5 changed an EXISTING value's meaning
+# (`tailor.entered` stopped being the ranker's `shortlisted`), and v6 supplied a denominator the
+# `scan` block had been read without. `lanes` changes no existing value — `scan` still counts
+# what the six providers listed, every stage's `entered`/`advanced` is untouched — and no
+# consumer reads it: `cli/verify_cmd.py` pulls named keys out of the frozen JSON and tolerates
+# whatever else is there, with no schema, no golden fixture and no full-dict equality anywhere.
+# A run with no lane enabled emits `"lanes": []`, which is honest and costs a reader nothing.
 ARTIFACT_VERSION = 6
 
 # The stored verdict that carries the keystone invariant's ABSTAIN. Named here once so the
@@ -588,6 +598,40 @@ def build_coverage_summary(
 
 
 @dataclass(frozen=True)
+class LaneReport:
+    """What one JD-acquisition lane did this run (spec §4.4, §4.6).
+
+    Deliberately NOT a funnel stage, for the same reason `ScanContext` is not: a lane ADDS to the
+    corpus, so its attempts do not enter at any stage's `entered` and cannot be reconciled
+    against one. Chaining it into the funnel would be arithmetic that is wrong on every run.
+
+    `counts` carries all ten `AcquisitionOutcome` keys, always, because `AcquisitionTally`
+    instruments all ten: a 0 here is a MEASURED zero. Dropping the empty ones would turn it back
+    into an absence, which is the confusion that hid the prior art's browser tier for 11 runs.
+
+    `is_silent_outage` is carried rather than left to the reader to derive. It is deliberately
+    not `resolved == 0`: a lane with nothing to do is not an outage, and reporting one would
+    train the reader to ignore the signal on the day it means something.
+
+    `admitted` and `refused` are the two sides of the per-run company cap, as the
+    `(provider, slug)` pairs the store keys a company on. Refusals are IDENTIFIED and not merely
+    counted — a company dropped silently is indistinguishable from one the lane never saw, and
+    that difference is the whole diagnostic value. `admitted` holds only companies the store did
+    NOT already have, so its length is the reach this run ADDED rather than the companies the
+    lane touched; a lane that spent its whole cap on companies already stored would otherwise
+    report a full admission list and no new reach at all.
+    """
+
+    name: str
+    counts: Mapping[str, int]
+    attempted: int
+    resolved: int
+    is_silent_outage: bool
+    admitted: tuple[tuple[str, str], ...]
+    refused: tuple[tuple[str, str], ...]
+
+
+@dataclass(frozen=True)
 class ScanContext:
     """Scan throughput. Deliberately NOT a funnel edge.
 
@@ -628,6 +672,10 @@ class RunFunnel:
     # boards were all unreadable still produces a real report (every board `unscanned`,
     # `global_ratio` None), so the two cases stay distinguishable.
     board_coverage: BoardCoverageReport | None = None
+    # One entry per lane that RETURNED a result this run. Empty means no lane ran — the default,
+    # since `settings.lanes_enabled` ships `()`. A lane that raised is absent from here and
+    # present in `errors`, which is the honest pair: it produced no counts to report.
+    lanes: tuple[LaneReport, ...] = ()
 
     @property
     def instrumented_stages(self) -> tuple[Stage, ...]:
@@ -703,6 +751,12 @@ def build_run_funnel(
     # morning artifact too. `held` is a live count with no run dimension, so two loads
     # seconds apart can disagree, and one run's two artifacts must not.
     board_coverage: BoardCoverageReport | None = None,
+    # D7. One entry per lane that returned a result; `()` is the default and means no lane ran,
+    # which is what every run emits until `settings.lanes_enabled` names one. Unlike
+    # `projection` there is no omission hazard to guard against here: a lane report cannot
+    # change what any stage claims, so an omitted list and a genuinely empty one describe the
+    # same artifact.
+    lanes: Sequence[LaneReport] = (),
     errors: Sequence[str] = (),
     fatal: str | None = None,
 ) -> RunFunnel:
@@ -1103,6 +1157,7 @@ def build_run_funnel(
         errors=tuple(errors),
         fatal=fatal,
         board_coverage=board_coverage,
+        lanes=tuple(lanes),
     )
 
 
@@ -1199,6 +1254,27 @@ def funnel_to_dict(funnel: RunFunnel) -> dict[str, object]:
         # the denominator `scan` never had. Not to be read as the `coverage` key above,
         # which is resume keyword coverage.
         "board_coverage": board_coverage_to_dict(funnel.board_coverage),
+        # D7 — the JD-acquisition lanes (§4). Beside `scan` and `board_coverage` because all
+        # three answer "how much did this run reach", and this is the only one of the three
+        # that can reach a company no provider can. Always present, `[]` when no lane ran: a
+        # missing key would read as an older artifact rather than as a run with lanes off.
+        "lanes": [
+            {
+                "name": lane.name,
+                # All ten catalog keys, in catalog order, every time. A zero here is measured.
+                "counts": dict(lane.counts),
+                "attempted": lane.attempted,
+                "resolved": lane.resolved,
+                # attempted > 0 and resolved == 0 — a tier that tried and recovered nothing.
+                # Not derivable as `resolved == 0`, which is also true of a lane with no work.
+                "is_silent_outage": lane.is_silent_outage,
+                # The per-run company cap, both sides, as `provider:slug`. `admitted` counts
+                # only companies the store did not already hold, so it IS the reach added.
+                "admitted": [f"{provider}:{slug}" for provider, slug in lane.admitted],
+                "refused": [f"{provider}:{slug}" for provider, slug in lane.refused],
+            }
+            for lane in funnel.lanes
+        ],
         "stages": [_stage_json(stage) for stage in funnel.stages],
         "cross_checks": [
             {
@@ -1309,6 +1385,50 @@ def _provider_rollup(sources: Sequence[SourceOutcome]) -> list[tuple[str, int, i
     )
 
 
+def _lane_section(lanes: Sequence[LaneReport]) -> list[str]:
+    """The `## Lanes` section, or nothing at all when no lane ran.
+
+    Every one of the ten outcomes gets a row, including the zeros, because `AcquisitionTally`
+    measured all ten — a table that listed only the non-zero rows would make an outcome that
+    was measured at 0 indistinguishable from one that is not instrumented. `SILENT OUTAGE` is
+    spelled out rather than left as a bool, because it is the line a reader is meant to act on.
+    """
+    if not lanes:
+        return []
+    lines = ["", "## Lanes", ""]
+    for lane in lanes:
+        outage = (
+            " — **SILENT OUTAGE: attempted work, recovered no body**"
+            if lane.is_silent_outage
+            else ""
+        )
+        lines += [
+            f"### {lane.name}",
+            "",
+            f"{lane.attempted} attempted · {lane.resolved} resolved · "
+            f"{len(lane.admitted)} new companies admitted · "
+            f"{len(lane.refused)} refused by the cap{outage}",
+            "",
+            "| outcome | count |",
+            "|---|---:|",
+        ]
+        lines += [f"| {name} | {count} |" for name, count in lane.counts.items()]
+        lines += [
+            "",
+            "*Companies already in the store are admitted free and appear in neither list — "
+            "`admitted` is the reach this run ADDED, not the companies the lane touched.*",
+            "",
+            f"- **admitted:** {_lane_companies(lane.admitted)}",
+            f"- **refused:** {_lane_companies(lane.refused)}",
+        ]
+    return lines
+
+
+def _lane_companies(keys: Sequence[tuple[str, str]]) -> str:
+    """`provider:slug`, in the order the lane presented them, or an explicit `none`."""
+    return ", ".join(f"`{provider}:{slug}`" for provider, slug in keys) or "none"
+
+
 def funnel_to_markdown(funnel: RunFunnel) -> str:
     """The half a human reads. Gate P0 requires the artifact to answer, on its own, which
     source produced each lead and why every non-lead was dropped — so every drop is named
@@ -1368,6 +1488,12 @@ def funnel_to_markdown(funnel: RunFunnel) -> str:
     lines += ["", "## Board coverage", ""]
     lines += board_coverage_headline(funnel.board_coverage)
     lines += board_coverage_table(funnel.board_coverage)
+
+    # Rendered only when a lane ran. The JSON half always carries `lanes` (as `[]`), which is
+    # what a machine reader needs to tell "lanes off" from "older artifact"; a human reading a
+    # run with every lane off is better served by the section being absent than by a heading
+    # over a sentence saying nothing happened.
+    lines += _lane_section(funnel.lanes)
 
     lines += [
         "",
