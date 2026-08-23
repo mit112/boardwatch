@@ -16,7 +16,7 @@
 
 **The headline number: 0.** Zero job applications have ever been sent (`applications` has 0 rows) — the
 machine produces leads, it never applies (out of scope). Against that: 3 published releases (none since
-**0.3.0**), ~53k lines of source, **~6,900 tests**, 71 leaf CLI commands, 6 ATS providers, a **~1.0 GB**
+**0.3.0**), ~53k lines of source, **7,273 tests**, 71 leaf CLI commands, 6 ATS providers, a **~1.0 GB**
 store.
 
 **The ASAP execution plan (D-280) governs, and it SUPERSEDES the daily-tick babysitting below.** "Done" is
