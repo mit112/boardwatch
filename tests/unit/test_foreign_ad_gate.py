@@ -7,9 +7,16 @@ A city denylist is also structurally incomplete: Buc, Basel, Penzberg and Kleinm
 names boardwatch had never heard of, and the next foreign site will be too.
 
 Only STRUCTURAL conventions are read, never vocabulary: the DACH gender marker that German
-employment law effectively mandates, the French `(H/F)` equivalent, and `Ingénieur`. A hand-
-picked German noun list was measured and dropped — every token either never fired or was
-already caught by the gender marker, and `koch` risked firing on "Koch Industries".
+employment law effectively mandates, the French `(H/F)` equivalent, `Ingénieur`, and a title
+written in CJK script. A hand-picked German noun list was measured and dropped — every token
+either never fired or was already caught by the gender marker, and `koch` risked firing on
+"Koch Industries".
+
+The CJK clause (D-294) is the script test, NOT a non-ASCII test, and the difference is what
+these tests exist to pin. Over 33,572 live open postings, 379 titles carry CJK script and 0
+of them classify as US; 1,440 titles contain SOME non-ASCII character and 1,061 of those are
+ordinary English titles carrying an en-dash, an em-dash or a trademark sign. Widening the
+clause to "not ASCII" would drop all 1,061.
 """
 
 import pytest
@@ -38,6 +45,26 @@ class TestFires:
         ],
     )
     def test_non_us_ad_conventions_fire(self, title: str) -> None:
+        assert has_non_us_ad_marker(title) is True
+
+    @pytest.mark.parametrize(
+        "title",
+        [
+            # Simplified Chinese, verbatim from the 16 Genentech postings that cleared the
+            # hard US-only gate on an unrecognised city (D-294).
+            "实习医药信息顾问",
+            "战略合作经理",
+            "项目经理 - 商业多元业务 - 乳腺癌治疗领域",
+            "（高级）治疗领域专员 - 肺癌治疗领域 - 长沙",
+            # Japanese: kanji, plus a title that is mostly Latin and only partly kana.
+            "DMR（営業職_栃木）",
+            "Field Service Engineer (担当：MA/US、勤務地：広島支店)",
+            "【岐阜】Sales Account Manager（担当製品：在宅医療向けの睡眠・呼吸製品）",
+            # Korean hangul — the third script in the range, defended before it is needed.
+            "백엔드 소프트웨어 엔지니어",
+        ],
+    )
+    def test_a_cjk_script_title_fires(self, title: str) -> None:
         assert has_non_us_ad_marker(title) is True
 
 
@@ -76,6 +103,31 @@ class TestDoesNotFire:
     )
     def test_the_us_eeo_string_does_not_fire(self, title: str) -> None:
         assert has_non_us_ad_marker(title) is False
+
+    @pytest.mark.parametrize(
+        "title",
+        [
+            # THE INVERSE ERROR the CJK clause exists to avoid. Every one of these is an
+            # ordinary English title carrying one non-ASCII punctuation mark, and a
+            # "not ASCII" test would drop all of them — 1,061 of the live corpus.
+            "Staff Machine Learning Engineer – (ADAS/Autonomous Driving)",
+            "Staff Front-end Engineer (CX) — Coupang Play",
+            "Senior Manager – Application Security",
+            "Sr. Designated Support Engineer, Apache Spark™",
+            "Software Engineer, Women’s Health",
+            "Backend Engineer (Café Platform)",
+            # Cyrillic and Greek are non-ASCII and non-CJK: out of scope for THIS clause,
+            # which is a script test for three named scripts, not a Latin-only test.
+            "Инженер-программист",
+        ],
+    )
+    def test_a_non_ascii_but_non_cjk_title_does_not_fire(self, title: str) -> None:
+        assert has_non_us_ad_marker(title) is False
+
+    def test_cjk_punctuation_alone_is_not_the_signal(self) -> None:
+        # U+3000..U+303F (full-width parens, the ideographic comma) is CJK PUNCTUATION and is
+        # deliberately outside the ranges: a Latin title that borrows one is not a CJK ad.
+        assert has_non_us_ad_marker("Software Engineer（Remote）") is False
 
     def test_a_german_city_alone_is_a_location_signal_not_an_ad_marker(self) -> None:
         # Frankfurt belongs to the location catalog. This gate reads the AD CONVENTION only, so

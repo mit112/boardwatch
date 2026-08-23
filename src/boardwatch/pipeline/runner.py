@@ -33,7 +33,7 @@ from rich.console import Console
 from sqlalchemy import Engine, select
 
 from boardwatch.core.clock import utcnow
-from boardwatch.core.dedup import Suppression
+from boardwatch.core.dedup import Suppression, mergeable_suppressions
 from boardwatch.core.lineage import ResumeSourceLineage
 from boardwatch.core.politeness import Fetcher
 from boardwatch.core.regroup import plan_regrouping
@@ -693,29 +693,38 @@ def _record_shortlist_dispositions(
 
 
 def _regroup(engine: Engine, suppressions: Sequence[Suppression]) -> tuple[int, list[str]]:
-    """Move each suppressed posting onto its survivor's job. Returns (moved, messages).
+    """Move each MERGEABLE suppressed posting onto its survivor's job. Returns (moved, messages).
+
+    Not every suppression may be persisted. `company_title_location` hides a duplicate at rank
+    time but must never rewrite a job anchor (D-294), so the split is taken from the catalog
+    via `mergeable_suppressions` rather than assumed here.
 
     Refusals are returned as non-fatal messages, not swallowed: a group left ungrouped because a
     member's job carries an application is a correct outcome, but an invisible one is a leak.
     """
-    if not suppressions:
+    by_kind = mergeable_suppressions(suppressions)
+    if not by_kind:
+        # Either nothing was suppressed, or everything that was came from a kind the catalog
+        # forbids merging (company_title_location, D-294). Both mean "write nothing".
         return 0, []
-    member_ids = sorted(
-        {s.posting_id for s in suppressions} | {s.survivor_posting_id for s in suppressions}
-    )
     messages: list[str] = []
-    with engine.begin() as conn:
-        plan = plan_regrouping(
-            suppressions,
-            job_anchors(conn, member_ids),
-            protected_job_ids=protected_job_ids(conn),
+    moved = 0
+    for kind, group in by_kind.items():
+        member_ids = sorted(
+            {s.posting_id for s in group} | {s.survivor_posting_id for s in group}
         )
-        moved = apply_merges(conn, plan.merges, identity_kind="exact_quad", now=utcnow())
-    for refusal in plan.refusals:
-        messages.append(
-            f"regroup: group of posting {refusal.survivor_posting_id} left ungrouped "
-            f"({refusal.reason}): {', '.join(str(p) for p in refusal.member_posting_ids)}"
-        )
+        with engine.begin() as conn:
+            plan = plan_regrouping(
+                group,
+                job_anchors(conn, member_ids),
+                protected_job_ids=protected_job_ids(conn),
+            )
+            moved += apply_merges(conn, plan.merges, identity_kind=kind, now=utcnow())
+        for refusal in plan.refusals:
+            messages.append(
+                f"regroup: group of posting {refusal.survivor_posting_id} left ungrouped "
+                f"({refusal.reason}): {', '.join(str(p) for p in refusal.member_posting_ids)}"
+            )
     return moved, messages
 
 

@@ -15,11 +15,27 @@ Only STRUCTURAL conventions are read, never vocabulary:
   - the DACH gender marker — "(m/w/d)", "(w/m/d)", "(d/f/m)", "(m/f/d)" — which German,
     Austrian and Swiss equal-treatment law makes near-universal in job ads;
   - the French equivalent "(H/F)";
-  - "Ingénieur" / "Ingenieur", the French job noun and its German cognate.
+  - "Ingénieur" / "Ingenieur", the French job noun and its German cognate;
+  - a title written in CJK script — Han ideographs, kana or hangul.
 
-Measured over 28,287 live open postings, these fire on **0** US-classified postings. A
-hand-picked German role-noun list was measured and REMOVED: every token either never fired or
-was already caught by the gender marker, and a bare "koch" would fire on "Koch Industries".
+Measured over 28,287 live open postings, the first three fire on **0** US-classified
+postings. A hand-picked German role-noun list was measured and REMOVED: every token either
+never fired or was already caught by the gender marker, and a bare "koch" would fire on
+"Koch Industries".
+
+The CJK clause is the same shape as the other three and was added for the same reason
+(D-294): 16 Genentech postings named Changchun, Jinan, Shijiazhuang, Changsha, Urumqi,
+Zhengzhou, Shenyang, Shaoxing, Changde and Saitama — every one an explicit foreign city
+the location catalog had simply never heard of — and cleared the hard US-only gate because
+`classify_location` fails OPEN on `unknown`. Enumerating world cities is unbounded; a
+script test is not. Measured over 33,572 live open postings: 379 titles carry CJK script
+and **0** of them classify as US.
+
+SCRIPT RANGES, NOT "NON-ASCII", and the difference is the whole point. Over the same
+corpus, 1,440 titles contain a non-ASCII character and 1,061 of those carry no CJK script
+at all — ordinary English titles punctuated with an en-dash or em-dash ("Staff Machine
+Learning Engineer - (ADAS/Autonomous Driving)"), or carrying a trademark sign. A
+non-ASCII test would drop every one of them.
 
 KNOWN, BOUNDED EXPOSURE — recorded, not widened. US job ads carry their own slash-separated
 marker, the EEO string "M/F/D/V". The four-letter form does not match (V is not a gendered
@@ -41,8 +57,12 @@ _FRENCH_GENDER_MARKER = re.compile(r"\(\s*h\s*/\s*f\s*\)", re.IGNORECASE)
 # Deliberately NOT word-bounded on the left: the French inclusive suffix ("Ingénieur(e)") and
 # the German compound ("Betriebsingenieur") both have to hit. No English word contains it.
 _ENGINEER_FR_DE = re.compile(r"ing[eé]nieur", re.IGNORECASE)
+# CJK script: Han ideographs (Extension A + Unified), kana, hangul. Deliberately NOT the
+# U+3000 punctuation block — the full-width parentheses in "（高级）治疗领域专员" are
+# punctuation, and matching them would fire on a Latin title that merely borrows one.
+_CJK_SCRIPT = re.compile(r"[\u3400-\u4dbf\u4e00-\u9fff\u3040-\u30ff\uac00-\ud7af]")
 
-_MARKERS = (_DACH_GENDER_MARKER, _FRENCH_GENDER_MARKER, _ENGINEER_FR_DE)
+_MARKERS = (_DACH_GENDER_MARKER, _FRENCH_GENDER_MARKER, _ENGINEER_FR_DE, _CJK_SCRIPT)
 
 
 def has_non_us_ad_marker(title: str) -> bool:
