@@ -354,7 +354,7 @@ an import source, never hand-fixed (D-155).
    for a lane (28.3% materialization, against simplify's 75.8%), and it is the only candidate whose ToS
    exposure on a published package is a values call. Oracle Cloud HCM / iCIMS is the honest route to the
    Amazon/Apple/TikTok gap but is PROVIDER work, not lane work. Memo:
-   `.superpowers/sdd/2026-08-22-lane-groundwork/fourth-lane-memo.md`.
+   `docs/superpowers/research/2026-08-22-fourth-lane-candidates.md`.
 
 ---
 
