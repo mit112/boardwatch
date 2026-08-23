@@ -27,6 +27,8 @@ tick fired and exited 1 (`runs` 4 → 5), so **Gate P3 is still 0 of 7**. Cause,
 
 > open postings **32,771** · SQLite `SQLITE_MAX_VARIABLE_NUMBER` **32,766** · exceeded by **5**
 
+The failed tick is **run 70**; the store now holds 37,438 postings and 2,025 `board_scans`.
+
 `eligibility/read.py`'s `current_verdicts` / `current_gate_verdicts` pass **every** open posting's
 version id into one `IN (...)`, reached from `top_cmd.py:291` through `rank_open_postings`. At 32,771
 open postings that is more bound parameters than SQLite accepts, and the run dies with
@@ -97,8 +99,10 @@ and every count was identical — 69 runs / 135 companies / 36,575 postings / 1,
 (counts as of that check; the 08:00 tick has since run and moved them), `PRAGMA foreign_key_check` clean, `journal_mode=wal` intact, and all 1,890
 pre-existing scan rows defaulted to `scan_kind='board'`. **The rule this leaves: after any PR that adds a
 migration, apply it to the live store deliberately and verify, rather than letting the next tick discover
-it.** A pre-repair backup sits beside the live DB (`boardwatch.db.pre-lane-repair-20260823`, 1.36 GB) and
-is Mit's to delete — it makes three stale backups there, ~3 GB. Related and measured: **foreign keys are NOT enforced during an alembic migration** — alembic
+it.** The store directory is now clean: all three stale backups were verified redundant and **deleted**
+(2026-08-23b, ~2.9 GB reclaimed, the directory going 4.2 GB → 1.3 GB), after `PRAGMA integrity_check`
+returned `ok` and `PRAGMA foreign_key_check` came back clean on the live store. **There is no rollback
+snapshot now** — take one before any future destructive operation rather than assuming one exists. Related and measured: **foreign keys are NOT enforced during an alembic migration** — alembic
 builds its own engine, so `store/db.py`'s `PRAGMA foreign_keys=ON` listener never fires, and a migration
 deleting a parent row orphans children silently instead of raising.
 
