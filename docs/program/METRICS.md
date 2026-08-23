@@ -6272,9 +6272,12 @@ cleared both. Test count **7,367 → 7,374** (+6 cap tests, +1 notify).
 
 **Two owner rulings applied, and what whole-branch review added (D-288).**
 
-Cadence: plist rewritten from one `StartCalendarInterval` to **eight** at 3h spacing (02, 05, 08, 11, 14,
-17, 20, 23). Reloading the job **reset launchd's `runs` counter to 0** — the pre-reload reading was
-`runs = 5, last exit code = 1`, and any absolute comparison against that is now meaningless.
+Cadence: a plist with **eight** `StartCalendarInterval` entries at 3h spacing (02, 05, 08, 11, 14, 17, 20,
+23) was written and `plutil -lint`ed, but **NOT applied** — the primary working tree was back on a `main`
+without D-287, and the launchd job runs that tree, so raising the cadence first would have bought eight
+failing runs a day. Staged at `~/Library/LaunchAgents/com.boardwatch.run.plist.proposed-3h`; the live job
+is unchanged at Hour 8 and still reads `runs = 5, last exit code = 1`. Expect that counter to reset to 0
+when the reload finally happens.
 
 Funnel visibility: a swallowed emit now appends to `summary.errors` and to `runs.errors_json` via a new
 atomic `append_run_error`. Pinned end to end by monkeypatching `_emit_funnel` to raise inside a real

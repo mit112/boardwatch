@@ -36,13 +36,21 @@ verdict. Verified on a backup-API snapshot of the live store: `top` exits 0, and
 INCREMENTING with `last exit code = 0`. The absolute number restarted at 0 when the plist was reloaded
 (D-288), so the old "5 → 6" is void. A manual `run --project` moves nothing.
 
-**The cadence is now ~3h (D-288, Mit's ruling), applied to the plist at last** — D-281 ruled it and the
-edit was never made, so it had been one fire a day. Eight occurrences, 3h apart, anchored on 08:00. Gate
-P3 can therefore close in ~1 day rather than 7. **Reloading the job RESET launchd's `runs` counter to 0**,
-so read progress from `METRICS.md` and from `last exit code`, not from an absolute `runs` number. Two
-scheduled fires cannot overlap (launchd never runs two instances of one label), but a **manual**
-`boardwatch run` racing a tick exits 2 on the scan lock and would reset the gate — 8× likelier now, so do
-not run one by hand without checking `launchctl print … | grep state` first.
+**Mit has ruled the cadence up to ~3h (D-288), and it is PREPARED BUT NOT YET APPLIED — the live job is
+still once daily.** D-281 ruled the same thing and the edit was never made. A validated 8-occurrence plist
+(02, 05, 08, 11, 14, 17, 20, 23) sits at `~/Library/LaunchAgents/com.boardwatch.run.plist.proposed-3h`,
+with the current one backed up as `.bak-daily-20260823`.
+
+> **DO NOT apply it before the primary working tree has the fix.** The launchd job runs the editable venv
+> resolving to `src/` in this tree, so raising the cadence while the tree sits on a `main` without D-287
+> buys eight failing runs a day instead of one. Order: `git -C ~/dev/projectY/boardwatch pull` → confirm
+> `read.py` has `current_evaluations_chunked` → `cp` the proposed plist over the live one →
+> `launchctl bootout gui/$(id -u)/com.boardwatch.run` then `bootstrap` → verify 8 `Hour` entries.
+
+Two consequences to record when it IS applied: **reloading resets launchd's `runs` counter to 0**, so read
+progress from `last exit code` and `METRICS.md` rather than an absolute `runs` number; and a **manual**
+`boardwatch run` racing a tick exits 2 on the scan lock and would reset Gate P3 — 8× likelier at this
+cadence, so check `launchctl print … | grep state` before running one by hand.
 
 **The headline number: 0.** Zero job applications have ever been sent (`applications` has 0 rows) — the
 machine produces leads, it never applies (out of scope). Against that: 3 published releases (none since
