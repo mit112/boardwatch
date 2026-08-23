@@ -46,6 +46,32 @@ def _coverage_line(summary: PipelineSummary) -> str:
     )
 
 
+def _lane_lines(summary: PipelineSummary) -> list[str]:
+    """One line of lane reach per lane that ran, for the run log (D7).
+
+    Nothing is printed when no lane ran, which is every run until `lanes_enabled` names one:
+    a daily "lanes → none" would be noise, and a lane that IS enabled but produced no report
+    already prints its reason through the `!` error lines below.
+
+    `SILENT OUTAGE` is spelled out rather than left for the reader to infer from `0 resolved`.
+    A lane with nothing to attempt also resolves 0 and is fine; a lane that attempted work and
+    recovered no body is the condition this whole tally exists to make visible, and the prior
+    art's browser tier ran 11 scheduled runs in exactly that state with nothing saying so.
+
+    `admitted` counts only companies the store did not already hold, so it reads as reach ADDED.
+    A run whose admitted count is 0 while `refused` is non-zero is a lane at its cap; one where
+    both are 0 is a lane that found only companies already known.
+    """
+    lines: list[str] = []
+    for lane in summary.lanes:
+        outage = " · SILENT OUTAGE (attempted, recovered nothing)" if lane.is_silent_outage else ""
+        lines.append(
+            f"  lane {lane.name} → {lane.attempted} attempted · {lane.resolved} resolved · "
+            f"{len(lane.admitted)} new companies · {len(lane.refused)} refused by the cap{outage}"
+        )
+    return lines
+
+
 def _shortlist_line(summary: PipelineSummary) -> str:
     """Says the ranker did not run, rather than printing zeros as if it had."""
     if summary.shortlist is None:
@@ -164,6 +190,11 @@ def run(
     # launchd job redirects stdout to ~/Library/Logs/boardwatch-run.log, so this is the only
     # place an unattended run's reach is visible without opening a file.
     console.print(f"  board coverage → {_coverage_line(summary)}", markup=False)
+    # Beside board coverage, and for the same reason it is printed at all: the launchd job
+    # redirects stdout to a log file, and this is the only place an unattended run's lane reach
+    # is visible without opening the funnel artifact.
+    for line in _lane_lines(summary):
+        console.print(line, markup=False)
     if summary.funnel is not None:
         console.print(f"  funnel → {summary.funnel.markdown_path}", markup=False)
     if summary.morning is not None:

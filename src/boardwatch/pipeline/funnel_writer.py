@@ -34,6 +34,7 @@ from boardwatch.reports.abstain import AbstainReport, build_abstain_report
 from boardwatch.reports.manifest import config_hash, profile_row_hash
 from boardwatch.reports.run_funnel import (
     BoardCoverageReport,
+    LaneReport,
     Lead,
     LivenessCheck,
     RunFunnel,
@@ -117,6 +118,13 @@ def collect_run_funnel(
     # morning artifact must render the identical object: `held` has no run dimension, so two
     # loads can disagree. Building it here would reintroduce exactly that drift.
     board_coverage: BoardCoverageReport | None = None,
+    # D7. Built by the pipeline's lane stage and passed straight through — there is nothing to
+    # read back out of the store for it: a lane's outcome counters are in-memory tallies of
+    # requests it made, and the postings it DID land are already counted by the per-source table
+    # (a lane company carries `company_source='lane'`, so the attribution comes free). Required
+    # rather than defaulted here, unlike in the pure builder: this module has exactly one caller
+    # and a forgotten argument should be a type error rather than a silently lane-less artifact.
+    lanes: Sequence[LaneReport],
     errors: list[str],
     fatal: str | None,
 ) -> RunFunnel:
@@ -259,6 +267,7 @@ def collect_run_funnel(
         abstain=abstain,
         coverages=coverages,
         board_coverage=board_coverage,
+        lanes=lanes,
         errors=errors,
         fatal=fatal,
     )
