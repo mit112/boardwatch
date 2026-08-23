@@ -22,9 +22,35 @@
 
 ## Current standing
 
+**THE DAILY DRIVER IS DOWN, AND IT WILL FAIL EVERY RUN UNTIL SOMEONE FIXES IT.** The 2026-08-23 08:00
+tick fired and exited 1 (`runs` 4 → 5), so **Gate P3 is still 0 of 7**. Cause, measured:
+
+> open postings **32,771** · SQLite `SQLITE_MAX_VARIABLE_NUMBER` **32,766** · exceeded by **5**
+
+The failed tick is **run 70**; the store now holds 37,438 postings and 2,025 `board_scans`.
+
+`eligibility/read.py`'s `current_verdicts` / `current_gate_verdicts` pass **every** open posting's
+version id into one `IN (...)`, reached from `top_cmd.py:291` through `rank_open_postings`. At 32,771
+open postings that is more bound parameters than SQLite accepts, and the run dies with
+`OperationalError: too many SQL variables`. The funnel write fails first and is swallowed into a
+printed warning (`! funnel artifact not written`) — open question 1 — then the ranker hits the same
+query and takes the run down.
+
+**This is NOT a Part 3 regression and not the lane.** `read.py` has not changed since 2026-08-08,
+PR #141 touched none of that path, and `lanes_enabled` is empty so the lane added zero postings. The
+corpus simply crossed the cap through ordinary discovery growth between run 69 and this tick. **It is
+therefore permanent and worsening** — the corpus only grows, so every subsequent run fails the same
+way, and no scheduled tick can ever be clean until the query is bounded.
+
+**Shape of the fix, not yet built:** chunk the id list, or drop the id list entirely the way
+`run_funnel_queries.load_identities` already does — its docstring says in as many words that "at corpus
+scale it would exceed SQLite's bound-parameter cap and take the funnel artifact down with it", which is
+exactly what has now happened one module over. That comment is the precedent to follow. A fix needs a
+test that fails at >32,766 ids, not merely a smaller batch size, or the same wall arrives again later.
+
 **The headline number: 0.** Zero job applications have ever been sent (`applications` has 0 rows) — the
 machine produces leads, it never applies (out of scope). Against that: 3 published releases (none since
-**0.3.0**), ~53k lines of source, **7,273 tests**, 71 leaf CLI commands, 6 ATS providers, a **~1.0 GB**
+**0.3.0**), ~53k lines of source, **7,367 tests**, 71 leaf CLI commands, 6 ATS providers, a **~1.4 GB**
 store.
 
 **The ASAP execution plan (D-280) governs, and it SUPERSEDES the daily-tick babysitting below.** "Done" is
@@ -57,12 +83,26 @@ source before arming; one function either way.
 did it.** A CLI test invoked without `--data-dir` while only `BOARDWATCH_CONFIG_DIR` was set let
 `load_settings()` fall through to `default_data_dir()`, and `ensure_schema` ran `alembic upgrade head`
 against the live 1.36 GB store — stamping it with a worktree-only revision, which would have killed the
-next scheduled tick. Damage was schema-only and it was repaired by downgrade; nothing was lost. An autouse
-fixture in `tests/conftest.py` now pins `BOARDWATCH_DATA_DIR` for every test. It closes the env-var route
-only: a `data_dir` key in a real `config.toml` outranks it, and `BOARDWATCH_CONFIG_DIR` is deliberately
-unpinned. (2) **STANDING, not fixed: the launchd job runs an editable venv resolving to `src/` in the
-PRIMARY working tree, so a scheduled tick executes whatever branch is CHECKED OUT there.** Leave that tree
-on `main`. Related and measured: **foreign keys are NOT enforced during an alembic migration** — alembic
+next scheduled tick. Damage was schema-only; nothing was lost. An autouse fixture in `tests/conftest.py`
+now pins `BOARDWATCH_DATA_DIR` for every test. It closes the env-var route only: a `data_dir` key in a
+real `config.toml` outranks it, and `BOARDWATCH_CONFIG_DIR` is deliberately unpinned. (2) **STANDING, not
+fixed: the launchd job runs an editable venv resolving to `src/` in the PRIMARY working tree, so a
+scheduled tick executes whatever branch is CHECKED OUT there.** Leave that tree on `main`.
+
+**Where the store actually stands now:** revision **`p_lane_companies`**, which is the head of `main`, so
+`ensure_schema` on the next tick is a no-op. It got there twice — first by accident, then deliberately.
+The accidental stamp was reversed by `downgrade` while `main` still had no such revision; once Part 3
+merged, `main`'s head moved to `p_lane_companies` and the migration was **applied by hand rather than left
+to the 08:00 tick**, because a scheduled unattended run migrating a 1.36 GB production database is the
+exact combination D-279 cost a P3 day for. Verified by comparing before against after,
+and every count was identical — 69 runs / 135 companies / 36,575 postings / 1,890 `board_scans`
+(counts as of that check; the 08:00 tick has since run and moved them), `PRAGMA foreign_key_check` clean, `journal_mode=wal` intact, and all 1,890
+pre-existing scan rows defaulted to `scan_kind='board'`. **The rule this leaves: after any PR that adds a
+migration, apply it to the live store deliberately and verify, rather than letting the next tick discover
+it.** The store directory is now clean: all three stale backups were verified redundant and **deleted**
+(2026-08-23b, ~2.9 GB reclaimed, the directory going 4.2 GB → 1.3 GB), after `PRAGMA integrity_check`
+returned `ok` and `PRAGMA foreign_key_check` came back clean on the live store. **There is no rollback
+snapshot now** — take one before any future destructive operation rather than assuming one exists. Related and measured: **foreign keys are NOT enforced during an alembic migration** — alembic
 builds its own engine, so `store/db.py`'s `PRAGMA foreign_keys=ON` listener never fires, and a migration
 deleting a parent row orphans children silently instead of raising.
 
