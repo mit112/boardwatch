@@ -40,8 +40,8 @@ counts — a manual `run --project` moves nothing. **The last two ticks are ~5 h
 
 **The headline number: 0.** Zero job applications have ever been sent (`applications` has 0 rows) — the
 machine produces leads, it never applies (out of scope). Against that: 3 published releases (none since
-**0.3.0**), ~53k lines of source, **7,386 tests**, 71 leaf CLI commands, 6 ATS providers, a **~1.4 GB**
-store holding 37,438 postings / 32,771 open.
+**0.3.0**), ~53k lines of source, **7,464 tests**, 71 leaf CLI commands, 6 ATS providers, a **~1.4 GB**
+store holding 41,006 postings / 35,721 open.
 
 **The ASAP execution plan (D-280) governs.** "Done" is a **provisional pass** — 3 clean FROZEN runs meeting
 all seven bar metrics (B1–B7) — after which the full 14-day acceptance runs PASSIVELY to confirm. Six
