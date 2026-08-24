@@ -8,6 +8,14 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- **LinkedIn guest discovery lane (`lanes/linkedin.py`), registered but off by default (D-297).** The last of
+  the approved discovery lanes. A posting source keyed on the company **slug** — LinkedIn exposes no external
+  apply URL, so convergence with an ATS copy of the same role is left to the P6 dedup identity, not a link.
+  Two unauthenticated GETs (guest search, then one body per posting), a browser UA, no key/cookie/app
+  impersonation, and **nothing captured is committed**. It ships reachable but NOT enabled (`linkedin` is not
+  in `lanes_enabled`) and has never run against the live service; the card selectors are reconstructed from
+  the recorded probe and want live verification before the lane is armed.
+
 - **`boardwatch companies discover` — company discovery from the two public GitHub new-grad lists, behind a
   human review step.** boardwatch watches 135 boards; these two files name **926** and **897 of them are
   new**. Two unauthenticated GETs, no token and no key, and **nothing captured is committed**.
