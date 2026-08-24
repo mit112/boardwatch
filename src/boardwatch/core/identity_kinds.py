@@ -21,7 +21,19 @@ DIFFERENT openings under one title in one city, and the second is now hidden.
 
 `cross_host` is computed and stored — the host-class election in core/dedup.py is written
 and tested against it — but it does not suppress until it can dereference an aggregator
-posting to exact requisition evidence (design §3.1). `content_hash_only` stays annotate-only
+posting to exact requisition evidence (design §3.1). There is a SECOND reason it may not be
+flipped on without more work: it would void the relabel proof in `core/dedup.py::_relabelled`.
+Two suppressing kinds make suppression chains reachable, and a walked chain is stamped with
+the WEAKEST kind on it. That is only honest while the weaker key's components are a subset of
+the stronger one's — `company_title_location` is (company_id, title, locations) against
+`exact_quad`'s (company_id, title, locations, content_hash) — because a subset makes "shares a
+key of the stamped kind" transitive along the chain. `cross_host` keys on the normalized
+company NAME, not `company_id`, so it is a subset of neither and neither is a subset of it: a
+`cross_host` link followed by a `company_title_location` link would be stamped
+`company_title_location` across two DIFFERENT company_ids, which is the pair sharing no key of
+its own stamped kind. Merges stay safe either way (`exact_quad` is the only merging kind, and
+a chain is stamped `exact_quad` only if every link is), so what breaks is the audit invariant
+the ranker's suppression reasons rest on. `content_hash_only` stays annotate-only
 on its own measurement: the live corpus holds 809 hash-collision groups of which 727 span a
 different title or location, so a hash-keyed dedup demonstrably collapses different jobs.
 That figure is about the HASH key and says nothing about company_title_location, which was
