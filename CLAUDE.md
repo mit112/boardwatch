@@ -16,10 +16,14 @@ followed — keep incidents out of this file.
 3. **Pick the next task from `docs/program/PROGRAM.md`.** Work one phase at a time. **Do not start a phase
    whose predecessor's gate has not been met.** A gate is met when its metric says so, not when the work
    feels done.
-4. **Work.** Run the tests (below). 
+4. **Work.** Run the tests (below). **Preserve dirty files and linked worktrees** — do not reset or clean
+   another worker's changes.
 5. **Before ending, update `STATE.md` and `METRICS.md`** — even if the session accomplished little. An
    honest "blocked on X" is worth more than silence. Append to `DECISIONS.md` for any architectural choice
    so it is never re-litigated after a context reset.
+   **Write them ONCE, at the end.** Keep running notes in `.agent/` (gitignored) and do the real write at
+   close. Live-editing `STATE.md` through a session is churn, not memory — one measured session rewrote it
+   43 times — and it guarantees a conflict with any branch that rewrites the file wholesale.
 
 ---
 
@@ -36,10 +40,19 @@ followed — keep incidents out of this file.
 | `docs/program/METRICS-ARCHIVE.md` | The closed P0–P5 session records. **Closed** — never append here. |
 | `CHANGELOG.md` | Authoritative for what actually shipped. |
 
-**Neither log is read end to end** — together they are ~100k tokens. Each live file opens with an index
-spanning itself and its archive: find the entry or section you want, then read only that range with
-`sed -n '<start>,<end>p'`. Line numbers drift on any edit above a heading, so confirm one with `grep -n`
-before trusting it. **After appending an entry, add its index row and run `make reindex`**; `make check`
+**Neither log is read end to end** — together they are ~100k tokens. **Nor is the index**: the one in
+`DECISIONS.md` is 114 KB (~28.6k tokens) on its own, so reading it to find a single entry costs more than
+most sessions can afford. Use the lookup instead:
+
+```sh
+python -m tools.decisions --find windows ci     # matching index rows + the sed range
+python -m tools.decisions --show D-151          # the entry itself
+python -m tools.decisions --log metrics --find gate
+```
+
+Titles are truncated at 160 chars; `--full` opts out. Exit 1 means no match, 2 means the log could not be
+read. Falling back to the index by hand still works: find the row, then `sed -n '<start>,<end>p'`. Line
+numbers drift on any edit above a heading, so confirm one with `grep -n` before trusting it. **After appending an entry, add its index row and run `make reindex`**; `make check`
 fails on a stale index (D-109). Cross-references are by number (`D-028`), never by file, so they resolve
 across the split.
 
@@ -103,6 +116,9 @@ Split rules into **universal** (nothing user-specific) / **profile-dependent** (
 experience, employment terms) / **field-dependent** (role families, credentials, title taxonomies) from the
 start, and ship the taxonomy as versioned **data**, not code.
 
+Keep the generalized mechanism in the repository; keep Mit's profile, persona, résumé, targeting policy,
+live store, and credentials local.
+
 ---
 
 ## Breadth is last
@@ -144,3 +160,5 @@ emission, unattended running) is exempt because it multiplies nothing.
 - **No AI attribution anywhere** — not in commits, PRs, branches, tags, or release notes. No
   `Co-Authored-By` for Claude/Anthropic/any AI tool, no "Generated with" lines. Check the final message
   before committing and strip anything a tool inserted.
+- Do not commit local `.agent/` or `.superpowers/` working material, personal data, secrets, or live-store
+  artifacts.
