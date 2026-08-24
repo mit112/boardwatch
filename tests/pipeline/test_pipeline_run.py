@@ -593,6 +593,7 @@ def test_cli_reports_the_run_id_and_exits_zero_on_a_clean_run(env: Path, tmp_pat
     assert result.exit_code == 0, result.output
     assert "run 1 ·" in result.output
     assert "evaluated" in result.output
+    assert "boardwatch track add" in result.output
 
 
 def test_cli_exits_two_when_the_scan_lock_is_held(env: Path, tmp_path: Path) -> None:

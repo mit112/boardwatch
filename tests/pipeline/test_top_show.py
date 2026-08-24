@@ -151,6 +151,7 @@ def test_show_open_posting_renders_breakdown(
     assert "skill_coverage" in out and "title_match" in out
     assert "recency" in out and "location_fit" in out
     assert "Python" in out  # body text rendered
+    assert "boardwatch track add" in out
 
 
 def test_show_closed_posting_banner_no_score_no_extraction(

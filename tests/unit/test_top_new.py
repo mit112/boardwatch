@@ -50,6 +50,8 @@ def test_new_shows_only_postings_with_a_new_event_past_the_cursor(
     assert "beta" in result.stdout
     assert "gamma" not in result.stdout
     assert "delta" not in result.stdout
+    assert "boardwatch show" in result.stdout
+    assert "boardwatch track add" in result.stdout
 
 
 def test_new_is_empty_after_a_digest_consumes_the_window(env: Path, seeded_events) -> None:

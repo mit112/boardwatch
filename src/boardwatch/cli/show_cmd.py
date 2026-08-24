@@ -14,6 +14,7 @@ from rich.console import Console
 from rich.table import Table
 from sqlalchemy import select
 
+from boardwatch.cli._hints import print_next_step
 from boardwatch.cli.context import build_context
 from boardwatch.core.clock import utcnow
 from boardwatch.eligibility.audit import AuditView, VerdictPresentation, load_audit, load_llm_audit
@@ -213,3 +214,4 @@ def show(
         _render_llm_audit(llm_audit)
 
     console.print(row.body_text)
+    print_next_step(console, "`boardwatch track add <#>` to record an application")

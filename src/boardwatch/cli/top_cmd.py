@@ -19,6 +19,7 @@ from rich.console import Console
 from rich.table import Table
 from sqlalchemy import Connection, Engine, select
 
+from boardwatch.cli._hints import print_next_step
 from boardwatch.cli.context import build_context
 from boardwatch.core.clock import utcnow
 from boardwatch.core.dedup import Suppression, resolve_duplicates
@@ -916,4 +917,9 @@ def top(
         include_duplicates=include_duplicates,
         include_handled=include_handled,
         include_applied=include_applied,
+    )
+    print_next_step(
+        console,
+        "`boardwatch show <#>` for the full posting and eligibility evidence",
+        "`boardwatch track add <#>` once you apply",
     )

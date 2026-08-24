@@ -189,6 +189,7 @@ def test_scan_cli_smoke(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, case: P
     assert result.exit_code == 0
     assert "Scanned 1 companies" in result.stdout
     assert "open postings" in result.stdout
+    assert "boardwatch top" in result.stdout
 
 
 def test_coordinator_passes_known_posting_ids_after_first_scan(
