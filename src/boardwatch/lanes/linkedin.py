@@ -38,11 +38,12 @@ gate and the role gate run downstream. Both are contract §4/§5 and both are cl
 from __future__ import annotations
 
 from dataclasses import asdict, dataclass
-from datetime import UTC, datetime
+from datetime import datetime
 from urllib.parse import urlsplit
 
 from selectolax.parser import HTMLParser, Node
 
+from boardwatch.core.clock import to_naive_utc
 from boardwatch.core.models import RawPosting
 from boardwatch.core.politeness import Fetcher, FetchFailure
 from boardwatch.lanes.base import CompanyAdmission, LaneCompanySnapshot, LaneResult, lane_snapshot
@@ -101,15 +102,21 @@ class SearchCard:
 
 
 def card_nodes(page_html: str) -> list[Node]:
-    """The `<li>` card units in a guest search fragment.
+    """The card containers in a guest search fragment: `div.base-card`, one per result.
 
-    `<li>` and not `div.base-card[data-entity-urn]`, deliberately: a card whose id is missing is
-    still a card that was SEEN, and must be counted `not_attemptable` rather than vanishing from
-    every tally. Selecting on the id would make a missing id invisible.
+    The card CONTAINER, and neither the enclosing `<li>` nor `div.base-card[data-entity-urn]`.
+    The `<li>` is too loose — a challenge or login FULL page carries generic nav/footer `<li>`
+    chrome that is not a card, and a card's own body can nest `<li>`; both would be miscounted as
+    seen postings and skew `attempted` / `is_silent_outage`. Keying on the id is too tight — a
+    card whose id is missing is still one that was SEEN and must be counted `not_attemptable`, so
+    the container class (present on every card) is the unit and `parse_card` reads the id off it.
+
+    Zero containers is a STRUCTURAL failure the runner must see — the fragment moved, or a
+    challenge/error page answered in its place — never a benign quiet day.
     """
-    nodes = HTMLParser(page_html).css("li")
+    nodes = HTMLParser(page_html).css("div.base-card")
     if not nodes:
-        raise SearchPageError("no <li> card nodes in the search fragment")
+        raise SearchPageError("no div.base-card card containers in the search fragment")
     return nodes
 
 
@@ -254,17 +261,19 @@ def _raw_posting(card: SearchCard, *, body_text: str) -> RawPosting:
         locations=[card.location] if card.location else [],
         # `remote_policy` stays `unknown`: `f_WT` is silently ignored, so no reliable remote signal
         # is available and unknown is the honest default.
-        posted_at=_date_to_naive_utc(card.posted_date),
+        posted_at=_parse_posted_at(card.posted_date),
         body_text=body_text,
         raw_json={"card": asdict(card)},
     )
 
 
 def _description(content: bytes) -> str:
-    """The `.show-more-less-html__markup` inner HTML -- the body, the field the search omits.
+    """The `.show-more-less-html__markup` body -- the field the search omits.
 
-    An absent markup div returns "" rather than raising: `assess_body` then reports
-    `extracted_empty`, the catalog's name for "a response arrived and extraction produced nothing".
+    `Node.html` is the div's OUTER HTML (the wrapper div included), which is harmless here: it is
+    handed straight to `assess_body`, whose `html_to_text` drops every tag. An absent markup div
+    returns "" rather than raising: `assess_body` then reports `extracted_empty`, the catalog's
+    name for "a response arrived and extraction produced nothing".
     """
     node = HTMLParser(content.decode("utf-8", "replace")).css_first(
         "div.show-more-less-html__markup"
@@ -286,9 +295,13 @@ def _failure_outcome(exc: FetchFailure) -> AcquisitionOutcome:
 
 
 def _urn_job_id(node: Node) -> str:
-    """The posting id from `data-entity-urn="urn:li:jobPosting:{id}"`, never from the URL tail."""
-    holder = node.css_first("[data-entity-urn]")
-    urn = (holder.attributes.get("data-entity-urn") or "") if holder else ""
+    """The posting id from `data-entity-urn="urn:li:jobPosting:{id}"`, never from the URL tail.
+
+    Read off the card container itself, falling back to a descendant so the parser survives the
+    attribute sitting one level in — `css_first` searches descendants only, not the node itself.
+    """
+    holder = node if node.attributes.get("data-entity-urn") else node.css_first("[data-entity-urn]")
+    urn = (holder.attributes.get("data-entity-urn") or "") if holder is not None else ""
     return urn.rsplit(":", 1)[-1].strip() if "urn:li:jobPosting:" in urn else ""
 
 
@@ -312,15 +325,19 @@ def _text(node: Node | None) -> str:
     return node.text(strip=True) if node is not None else ""
 
 
-def _date_to_naive_utc(value: str) -> datetime | None:
-    """The card's `datetime` is date-only ("2026-08-23"); interpret it as UTC midnight, naive.
+def _parse_posted_at(value: str) -> datetime | None:
+    """The card's `datetime` as naive UTC.
 
-    Naive UTC matches every provider's `posted_at` (`core.clock.to_naive_utc`); a tz-aware value
-    here would compare unequal against the store's naive column.
+    The probe recorded it date-only ("2026-08-23"), but it is parsed with `fromisoformat` rather
+    than a fixed `%Y-%m-%d`, so a drift to a full ISO timestamp does not silently drop the
+    freshness signal for every posting. Naive UTC matches every provider's `posted_at`
+    (`core.clock.to_naive_utc`); an aware value would compare unequal against the store's naive
+    column. `fromisoformat` reads a date-only string as midnight, so no branch is needed.
     """
-    if not value.strip():
+    text = value.strip()
+    if not text:
         return None
     try:
-        return datetime.strptime(value.strip(), "%Y-%m-%d").replace(tzinfo=UTC).replace(tzinfo=None)
+        return to_naive_utc(datetime.fromisoformat(text.replace("Z", "+00:00")))
     except ValueError:
         return None

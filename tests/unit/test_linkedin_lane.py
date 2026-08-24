@@ -12,6 +12,7 @@ Every request is mocked. Nothing in this file reaches the network -- the lane hi
 from __future__ import annotations
 
 import inspect
+from dataclasses import replace
 from datetime import date
 from pathlib import Path
 from urllib.parse import urlsplit
@@ -211,7 +212,10 @@ def test_a_posting_carries_the_view_url_location_title_and_urn_id(tmp_path):
     assert posting.url == view_url(first)  # the job-view URL, the only one exposed
     assert posting.title == first.title
     assert posting.locations == [first.location]
-    assert posting.body_text.startswith(first.title)
+    # The title appears in the body prose, not as a synthetic leading heading (see the fixture's
+    # note): the real body carries no title line, so asserting `startswith` would test only what
+    # the fixture constructs.
+    assert first.title.lower() in posting.body_text.lower()
     assert posting.posted_at is not None
     assert posting.posted_at.date().isoformat() == first.posted_date
     assert posting.remote_policy == "unknown"
@@ -347,6 +351,37 @@ def test_a_search_page_with_no_cards_raises_instead_of_returning_nothing(page):
     """No card nodes is a structural failure the runner must see, not a quiet day."""
     with pytest.raises(SearchPageError):
         linkedin.card_nodes(page)
+
+
+def test_a_full_page_with_stray_list_items_but_no_cards_raises():
+    """A challenge/error/login full page carries generic `<li>` nav/footer chrome but no job
+    card. It must not read as a quiet day of bad cards: with no card container present,
+    `card_nodes` raises so the runner sees the failure. Selecting `<li>` globally would find the
+    chrome, return zero snapshots, and mask a refusal as an empty result."""
+    page = (
+        "<html><body><nav><ul>"
+        "<li><a href='/'>Home</a></li><li><a href='/jobs'>Jobs</a></li>"
+        "</ul></nav><main><p>Please verify you are human.</p>"
+        "<ul><li>Help</li><li>Privacy</li></ul></main></body></html>"
+    )
+    with pytest.raises(SearchPageError):
+        linkedin.card_nodes(page)
+
+
+@respx.mock
+def test_a_full_iso_datetime_on_a_card_still_parses_posted_at(tmp_path):
+    """LinkedIn's `time[datetime]` may drift from the recorded date-only form to a full ISO
+    timestamp. `posted_at` must survive that rather than silently going None and losing the
+    freshness signal across the whole lane."""
+    card = replace(search_cards()[0], posted_date="2026-08-23T00:00:00.000Z")
+    _mock_search([card])
+    _mock_bodies([card])
+
+    result = LinkedInLane().collect(_fetcher(tmp_path), lambda provider, slug: True)
+    posting = result.snapshots[0].snapshot.postings[0]
+
+    assert posting.posted_at is not None
+    assert posting.posted_at.date().isoformat() == "2026-08-23"
 
 
 def test_the_job_posting_url_is_built_from_the_id():

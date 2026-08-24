@@ -101,14 +101,22 @@ def search_page_html(cards: list[Card] | None = None, *, extra_li: str = "") -> 
 
 
 def job_description_body(title: str, employer: str) -> str:
-    """A JD body in the recorded shape: a heading, real section headings, a footer sign-in.
+    """A JD body in the recorded shape: description prose, real section headings, a footer sign-in.
+
+    No leading `<h1>` title: the contract (§3) records the body only as the text under
+    `.show-more-less-html__markup`, and on a real card the title lives in a separate topcard
+    element `_description` excludes -- so the body opens with prose, and the title appears WITHIN
+    it, not as the first line. That keeps two things honest against production: `declared_role_line`
+    reads the long opening sentence and returns None (so `role_body_mismatch` is correctly dormant),
+    and `body_text` does not start with the title.
 
     The footer `Sign in` is load-bearing, not decoration: nearly every real posting page carries
-    one, so a one-sided login-wall test would reject the whole corpus. This fixture makes that
-    regression fail rather than pass.
+    one, so a one-sided login-wall test (reject on ANY wall marker) would reject the whole corpus.
+    Its presence here, on a body that still clears the floor, makes that regression FAIL rather
+    than silently pass -- the two-sided guard is only defended if the passing case carries a wall
+    marker.
     """
     return (
-        f"<h1>{title}</h1>"
         f"<p>{employer} is hiring a {title.lower()} to join a small team that ships weekly. "
         "This role is open to applicants already able to work in the United States, and the team "
         "is on site four days a week.</p>"
@@ -127,6 +135,7 @@ def job_description_body(title: str, employer: str) -> str:
         "</ul>"
         "<h2>Benefits</h2>"
         "<p>Health cover from day one, a training budget, and paid time off.</p>"
+        "<footer><a href='/login'>Sign in</a> to save this job.</footer>"
     )
 
 
