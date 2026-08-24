@@ -220,7 +220,7 @@ the count appears under the table, `stats` reports it, `show <id>` explains any 
 `top --include-over-seniority` lists the hidden rows with the title text that decided each one.
 
 Only a confident hit hides a posting; an unresolved level token abstains rather than guessing.
-Level-aware gating is optional and documented in [configuration](docs/configuration.md).
+Level-aware gating is optional and documented in [configuration](docs/configuration.md#level-aware-gating).
 
 ---
 

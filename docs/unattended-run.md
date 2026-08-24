@@ -5,7 +5,7 @@ scans, evaluates eligibility, ranks, and tailors a résumé for the top leads, a
 row it writes to a single `runs` entry and dropping a `morning-<run_id>.{json,md}` report
 beside the day's output. This is the command to schedule for an unattended daily driver.
 
-Schedule it exactly like `scan` above — same cron, launchd, and systemd mechanics — with the
+Schedule it exactly like `scan` (see [scheduling](scheduling.md)) — same cron, launchd, and systemd mechanics — with the
 command swapped from `scan` to `run` and its own log file. A macOS launchd example:
 
 ```xml
