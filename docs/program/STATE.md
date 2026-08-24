@@ -26,12 +26,13 @@ once. Fixed and merged (D-287). The launchd job now fires **eight times a day** 
 any absolute comparison against that number is void. The gate counts consecutive clean **ticks**, not
 launchd invocations.
 
-**GATE P3 IS 5 OF 7. Run 71 (2026-08-23 11:00) is the first clean scheduled tick on the fixed tree** —
-exit 0, 22m47s, 135 board scans, funnel-71 written, 40 leads. Its `errors_json` carries the same 13 known
-board failures run 70 had **minus** the `too many SQL variables` abort, which is the before/after on one
-corpus. A failed unattended run RESETS the streak rather than pausing it, and **Gate P4 is barred until P3
-is met**. Only a SCHEDULED tick counts — a manual `run --project` moves nothing. At 8 fires a day the
-remaining 6 ticks are ~18 hours, not 6 days.
+**GATE P3 IS MET — 8 CONSECUTIVE CLEAN SCHEDULED TICKS (runs 71-78).** All eight carry `runs.status='ok'` at
+the scheduled 3h slots (16:00 UTC 2026-08-23 through 13:00 UTC 2026-08-24), each `fatal=None`,
+`reconciles=True`, every lead a PDF, `skipped_not_new=0` so every lead net-new. Run 70 (13:00 UTC 08-23) was
+the last failure. **Verified from the live `runs` table and the per-run funnels, not from this file's count**
+— STATE lagged because the job fires 8×/day and is written once per session. **7 required, 8 clean → MET;
+Gate P4 is now UNBLOCKED.** Only a SCHEDULED tick counts — a manual `run --project` moves nothing; a failed
+unattended run resets the streak.
 
 > **A MANUAL RUN RACING A TICK EXITS 2 AND RESETS GATE P3**, and at 8 fires a day that is 8× likelier than
 > it was. Check `launchctl print gui/$(id -u)/com.boardwatch.run | grep state` before starting one by hand.
@@ -39,7 +40,7 @@ remaining 6 ticks are ~18 hours, not 6 days.
 
 **The headline number: 0.** Zero job applications have ever been sent (`applications` has 0 rows) — the
 machine produces leads, it never applies (out of scope). Against that: 3 published releases (none since
-**0.3.0**), ~53k lines of source, **7,435 tests**, 71 leaf CLI commands, 6 ATS providers, a **~1.4 GB**
+**0.3.0**), ~53k lines of source, **7,464 tests**, 71 leaf CLI commands, 6 ATS providers, a **~1.4 GB**
 store holding 41,006 postings / 35,721 open.
 
 **The ASAP execution plan (D-280) governs.** "Done" is a **provisional pass** — 3 clean FROZEN runs meeting
@@ -48,11 +49,15 @@ sessionized parts; the plan file at `~/.claude/plans/lets-use-this-session-stage
 Part 3 "Indeed" and Part 4 "hiring.cafe + GitHub lists" — that ordering was REVERSED by D-285 and the file
 was never rewritten. Trust D-285/D-286, not the plan file.**
 
-**PARTS 1, 2 AND 3 ARE COMPLETE, AND PART 4 IS PROBED BUT NOT BUILT.** Both probes ran 2026-08-23d and
-both are ruled, so the next action is the BUILD, in this order: the **GitHub-lists client** (D-291 — company
-discovery, no JD body anywhere in 34,984 records, but **887 of 920 boards are new**), then **LinkedIn**
-(D-290 — Mit ruled BUILD; the body is free and unauthenticated, and `robots.txt` disallows the route). Then
-Part 6, with Part 5 anytime. Plan: `.agent/` scratch notes carry the shape; the rulings are in D-290/D-291.
+**PARTS 1, 2 AND 3 ARE COMPLETE. PART 4a (GitHub-lists) IS BUILT AND LANDED (#149, D-296)** — company
+discovery only (no JD body in any of the 34,958 records), OFF by default, **NOT armed** (no boards added to
+the daily run). Next is **Part 4b: LinkedIn** (D-290 — Mit ruled BUILD; the body is free and unauthenticated,
+and `robots.txt` disallows the route). Then Part 6, with Part 5 anytime.
+
+> **D-291's "920 boards, 887 new" is real but its stated corpus is wrong**, and the difference is 4x. The
+> figure is the **two new-grad lists' `active=True` records** (3,778 → 927 boards / 898 new, reproduced), not
+> "all 6,088 active records" as the ruling reads. All four lists, unfiltered, give **3,881 / 3,813**. A board
+> count needs its list set AND its `active` filter stated beside it. Full table in METRICS 2026-08-24.
 
 **The lane (hiring.cafe) is BUILT but NOT ARMED and has never run against the live service.**
 `lanes_enabled` defaults empty. Part 3's exit criterion 2 — a lead at a company none of the six providers
@@ -85,39 +90,74 @@ close to guaranteed for ~92 runs by ledger drain alone; the real threat is a **l
 re-serves built jobs and scores them 0 net-new. **B5 is UNSCOREABLE** until run-scoped rank attribution
 exists — do not score it on exit status alone.
 
-**`DEFAULT_TOP_N` is 10 — LOWERED from 40 (D-293) as a HOLDING value, and the uncapped set was MEASURED with the real ranker (D-292).**
-`boardwatch top 5000 --no-record` on a snapshot returns **3,771** postings, arriving at **~220-430/day**.
-But **67.6% of them are `role=uncertain`** — the role gate abstaining, not confirming — so the honest
-confirmed-software, in-band arrival is only **~70/day**, the same order as job-apps' delivered 20-60.
-**Quote neither number without saying which population it counts; they differ by 4x.**
+**RULINGS 1, 2 AND 4 SHIP; RULING 3 IS DROPPED (D-294/D-295). PR #148 MERGED.** The role gate denies
+non-software title families and blocks `Team Leader`; the foreign-location gate gained a CJK-script signal.
+**Ranker-only — `engine_version` unchanged (`1+63c6f8fd5a3e`), no ledger drain.** Ruling 3
+(`company_title_location` suppression) was implemented, audited over three rounds, and dropped: no
+body-similarity floor separates a repost from a second opening (populations overlap).
 
-**THE CAP IS 10 UNTIL THE PRECISION WORK LANDS (D-293). Do not raise it before then, and do NOT set it to
-0** — 0 fails B1 (>= 10 net-new leads/day) outright and would stall the provisional pass while Gate P3's
-counter kept running. At 8 fires/day, 10 is 80 résumés/day; 40 was **320**. D-272 justified 40 as matching
-job-apps' median of 42 **a day**, which the 8x cadence silently made false. The cap sets **burn rate, not
-supply**: every run yields net-new only because it draws a standing backlog of ~1,843, and long-run output
-equals the arrival rate (~122/day) whatever the cap is.
+**Round 3 found a production defect in EACH half — three rounds, three defects, each invisible to the round
+before.** The standing lesson is now explicit: **a review round is not finished until a round finds
+nothing.**
 
-**Mit wants no cap eventually, and the measurement says fix the role gate FIRST.** Uncapped output is 3,771 rows of
-which 2,550 are role-unknown — job-apps' 465-item queue that nobody worked through. Mit's own standing
-ruling already says **fix precision, never tune the cap**; the 2,550 unknowns are the whole gap between
-300/day and 70/day, so they are the lever. **The cap decision itself is deferred to Mit and is now
-informed.**
+- **Role gate:** the front-end rescue's head nouns were `(engineer|...|lead)\w*`, so `lead` was
+  **`lead\w*` and matched "Leader"**, re-rescuing as `swe` the exact retail rows ruling 2 denies — the same
+  failure as the `manager` token D-294 had already rejected. The comment two lines below *and* D-294's own
+  record both asserted `\blead\b` does not match "Leader"; the code never had that property. Fixed by an
+  inner group, **verdict-neutral over 27,680 unique titles**, 0 live hits today — only breadth would have
+  surfaced it.
+- **Ruling 3:** its floor was calibrated at min-true-duplicate 0.9421 vs max-non-duplicate 0.8986. Reading
+  the body diff of all 40 suppressions below 0.945 found **9 are different openings** — GE HealthCare's
+  Lubbock / Salt Lake City / Chattanooga postings (all `locations=["Remote"]`), a Capital One pair whose
+  loser's own URL reads `Lead-Software-Engineer--Front-End`, Thomson Reuters Indirect vs Direct Tax. Non-
+  duplicates reach **0.9372**: the window is ~0.005 and **the populations overlap, so no floor separates
+  them**. The char→word metric change made it *worse*. And no test constrained the constant — any floor in
+  (0.1915, 0.9550] left the suite green.
+
+**Dropping ruling 3 dissolved both dedup findings at once**, because each followed from admitting a second
+suppressing kind; a forced single-kind control returns byte-identical suppressions (566/566). The cost was
+measured before the choice: delivered duplicate leakage is **3 of 146 = 2.05%**, inside Gate P6's 5% bar
+**without** ruling 3. A redesign on the real discriminators — requisition slug, the body's own city, salary
+band, YOE, all of which lie *outside* the similarity number — is **deferred, not dismissed**.
+
+**The precision work is a PREREQUISITE for raising the cap, not a yield gain.** Measured against delivered
+output rather than the corpus: 6 of the 146 résumés ever built were for roles the new gate rejects, and
+exactly **1 of run 71's 40 leads** would have been denied. D-292's "51.1% carries no software signal" is a
+property of the *uncapped* 3,771 — the ranker already sorts most of it below the cap.
+
+**`DEFAULT_TOP_N` is 10 — a HOLDING value until the precision work lands (D-293), and the uncapped set was
+MEASURED, not estimated (D-292): 3,771 postings arriving ~220-430/day, of which 67.6% are `role=uncertain`,
+so honest confirmed-software arrival is ~70/day. Quote neither figure without naming its population —
+they differ by 4x.** Do **not** raise the cap before the precision work is merged, and do **not** set it to
+0: that fails B1 (>= 10 net-new leads/day) outright while Gate P3's counter keeps running. The cap sets
+**burn rate, not supply** — long-run output equals the arrival rate whatever it is. Lifting it is Mit's
+call and is now informed on both sides (D-293, D-294).
 
 ---
 
 ## Next action
 
-**Build Part 4.** Both halves are probed and ruled (D-290, D-291); neither is built. Order is 1→2→3→4→6
-with Part 5 anytime; 1–3 are merged. Build the **GitHub-lists client first** — it needs no new provider code
-(slugs come out in registry shape) and carries no permission question — then **LinkedIn**, off by default
-like hiring.cafe and not armed while Gate P3 accrues.
+**Precision (#148), Part 4a (#149), and the lookup/instructions/CI tooling (#150) are all merged.** The build
+fork is resolved — both halves were already built PRs, not work to start. Immediate steps, in order:
 
-Two constraints that must survive into the build, both measured: LinkedIn exposes **no external apply URL**
-(`externalApply` appears 0 times), so converge on the company **slug**, never the link; and **`f_WT=2`
-(remote) is silently ignored**, returning a byte-identical set to unfiltered. Commit **no** captured JD body
-from either source — the generalization gate refuses third-party data that would oblige a licence which
-does not exist, and 4 of the 6 GitHub repos ship no licence at all.
+1. **Arm precision on the live driver** — pull the primary working tree to the integrated `main` so the next
+   tick uses the new role-deny and CJK gates. Ranker-only, gated green, no `engine_version` change, no drain;
+   P3 is met, so this cannot un-meet it.
+2. **Build Part 4b: LinkedIn** (D-290) — the last discovery lane, off by default like Part 4a. Two measured
+   constraints must survive the build: **no external apply URL** (`externalApply` = 0 — converge on the
+   company **slug**, never the link) and **`f_WT=2` (remote) silently ignored** (byte-identical to
+   unfiltered). Commit **no** captured JD body or list record — the generalization gate refuses third-party
+   data obliging a licence that does not exist.
+3. **Gate P6's 7-day leakage window completes ~2026-08-26**, after which the provisional pass (3 frozen
+   B1–B7 runs) can be certified. B1/B2/B3/B6/B7 are already demonstrated on frozen runs 72-78; B4's n≥100
+   audit and B5 (unscoreable) remain owner/attribution-gated.
+
+**Arming Part 4a's ~898 boards is a SEPARATE owner decision, NOT taken here.** A capped watched-write path
+must be built first: `upsert_lane_company` hardcodes `watched=False`, nothing scans an unwatched board
+(`get_watched_companies` filters `watched.is_(True)`), and the only `watched=True` writes (`companies
+add`/`import`) have **no cap**. 898 boards at ~7s each would exceed the 3h cadence, so ramp via the existing
+10/run cap. Do **not** add a defaulted `watched=` to `upsert_watch` — that rejection is recorded in its
+sibling's docstring. `companies.source` is `CHECK (source IN ('registry','user','lane'))`.
 
 ---
 
@@ -141,6 +181,16 @@ does not exist, and 4 of the 6 GitHub repos ship no licence at all.
 6. **P2 item 8 — the onboarding field-taxonomy gatherer.** Needs its own brainstorm; D-054 forbids us
    authoring non-tech field content.
 7. **`add-evidence` takes no bundle lock** (D-143) — raise before two authoring agents run against one bundle.
+8. **Extending the leakage query past `exact_quad`** — the Gate P6 clause **cannot fail** for the
+   `company_title_location` class, because `store/identity_queries.py:296` hardcodes `kind == "exact_quad"`.
+   Dropping ruling 3 did not close this and made it sharper: those duplicates are now neither suppressed nor
+   counted, and the corpus holds **1,597 redundant open postings (4.76%)** on that key. **Never cite a
+   passing leakage number as evidence dedup works.** One join condition, but it reverses D-132/D-283's
+   ratified "only `exact_quad` counts" **while the gate is being measured** (D-294/D-295).
+9. **A redesign of same-role-same-place dedup on real discriminators** — the requisition slug in the
+   posting's own URL, the city named in the body, the salary band, the YOE line. Ruling 3 is dropped because
+   a fuzzy body score provably cannot do this (D-295), not because the duplicates are acceptable. Its own
+   change, its own ruling.
 
 ---
 
@@ -166,19 +216,19 @@ records it and the run still does not fail. Clearance IS a blocker (D-257). Seni
 | P0 Instrumentation | **COMPLETE** | **MET** (D-030) |
 | P1 Résumé artifact gate | **COMPLETE** | **MET** (D-032/033) |
 | P2 Profile + keystone | items 1–7 shipped; item 8 NOT STARTED | **MET AS RECONCILED** (D-075) |
-| P3 Unattended one command | **COMPLETE, INSTALLED, FIRING** — runs 63 and 66 were genuine scheduled ticks (D-254) | **NOT MET — 5 of 7 unattended.** Runs 71-75 are all `ok`; launchd agrees (`runs = 5`, `last exit code = 0`). Ticks 6 and 7 fall at 02:00 and 05:00 local (D-296) |
-| P4 Craft gate | **COMPLETE** | **NOT MET** — the owner's blind craft review, barred until P3's gate |
+| P3 Unattended one command | **COMPLETE, INSTALLED, FIRING** at ~3h (D-288) | **MET** — 8 consecutive clean scheduled ticks (runs 71-78), verified from the `runs` table + funnels |
+| P4 Craft gate | **COMPLETE** | **NOT MET — now UNBLOCKED** (P3 met) — the owner's blind craft review |
 | P5 Eligibility decides | **COMPLETE** | **MET** — INELIGIBLE precision 16/16, 0 span violations |
 | P6 Liveness + dedup | **BUILD COMPLETE** (D-110/111/113); leakage report shipped (D-283) | **3 of 4** — liveness MET (D-281), leakage measurable and reading **0.00%** but needs a 7-day ledger span (~2026-08-26) |
 | 14-day acceptance | not started | starts after P6 |
-| P7 Breadth | lane 1 (hiring.cafe) BUILT, **not armed and never run live** (D-286); lanes 2-4 not started | gated on P0 attribution data |
+| P7 Breadth | lane 1 (hiring.cafe) BUILT not armed (D-286); **Part 4a GitHub-lists discovery BUILT + LANDED (#149/D-296), not armed**; Part 4b LinkedIn + remaining lanes not started | unlock MET (D-271/272) |
 | *Gate A / Gate B* | *complete, merged* | ***MET*** — *has moved no program gate* |
 
 ### Gate P6, clause by clause
 
 | Clause | Standing |
 |---|---|
-| Duplicate leakage over 7 days ≤ 5% | **MEASURABLE AND PASSING, awaiting span (D-283).** `boardwatch identities leakage [--days N] [--json]` ships. **Live: 100 surfaced jobs / 100 distinct `exact_quad` groups / 0 redundant = 0.00%.** Only `exact_quad` counts (Mit's ruling, ratified); counted over jobs that REACHED LEADS, not the corpus; body-less jobs sit in their own `unidentified` bucket, never folded. **Not yet "over 7 days"** — the ledger starts 2026-08-19 so ~3.2 days exist, and the 7-day `seen` TTL cannot be observed faster than itself. First true window **~2026-08-26**, inside Parts 2–4, so off the critical path |
+| Duplicate leakage over 7 days ≤ 5% | **STILL CANNOT FAIL FOR ONE CLASS — see D-294 before quoting it.** `identity_queries.py:296` hardcodes `kind == "exact_quad"`, so a job whose only identity is `company_title_location` lands in `unidentified` and can never be counted redundant. Ruling 3 stopped those duplicates reaching leads but did NOT extend this metric, so it reads 0.00% for a structural reason. Measured honestly over the 146 delivered résumés (grouping by company+title+location) the real figure is **3 redundant = 2.05%** — under the bar, not zero. Extending the query reverses D-132/D-283 mid-gate and is the owner's. Original standing: **measurable, awaiting span (D-283).** `boardwatch identities leakage [--days N] [--json]` ships. **Live: 100 surfaced jobs / 100 distinct `exact_quad` groups / 0 redundant = 0.00%.** Only `exact_quad` counts (Mit's ruling, ratified); counted over jobs that REACHED LEADS, not the corpus; body-less jobs sit in their own `unidentified` bucket, never folded. **Not yet "over 7 days"** — the ledger starts 2026-08-19 so ~3.2 days exist, and the 7-day `seen` TTL cannot be observed faster than itself. First true window **~2026-08-26**, inside Parts 2–4, so off the critical path |
 | **0** dead postings reaching leads | **MET (D-281).** Two runs on a scratch store copy: `checked 40, dead 0, unknown 2, alive 38, gone_after_redirect 0`, identical in both, agreeing across three read paths (funnel JSON, funnel markdown, stdout). Detector demonstrably ARMED — `checked > 0`, so not the disarmed 0/0 signature. The `runs` table has no liveness columns, so no DB-row path exists; those three are all there are |
 | Injected hash-collision test | **MET** (D-100) |
 | Audit of 20 sampled suppressions | **MET** (D-101) |
@@ -194,7 +244,7 @@ records it and the run still does not fail. Clearance IS a blocker (D-257). Seni
 | **Citi sits at 13.1% coverage, permanently** | Workday's `total` censors at 2,000; the facet sum (uncapped, control-verified) says 4,589. Our pager wraps at ~2,000 too, so post-drain Citi holds ~2,214 of 4,589 and nothing reports it | **Mit** (input-side) |
 | **Five boards report GREEN and return zero, ever** | Snyk, Vercel, HubSpot, Plaid, Qualcomm — clean scans, `last_health='empty'`, 0 postings across 12 scans. 7 of the 12 dead boards are HTTP 422 (malformed request ⇒ probably wrong slugs, recoverable). No backoff, no quarantine, no drain | **Mit** (input-side) |
 | **`unchanged` is an unaudited coverage assumption** | 59 of 135 boards listed nothing in run 67 on a payload hash. No test exists for a hash misreporting a changed board. A false `unchanged` is silent, permanent and undetectable by any current instrument | open |
-| **`top`'s drain flags break in ~2 DAYS** | with `--include-hard-filter` / `--include-non-swe` / `--include-over-seniority` open — D-277's ONLY drain for a `hidden_hard_filter` that is 59% of the corpus — `eligible_ids` is **30,419** measured against a cap of 32,766: **2,528** postings of headroom at ~**1,264/day** net growth. Runs exit 0 today. The scheduled tick stays safe (~3,683). Chunk `identity_queries.py:45/97`, `regroup.py:52/88`, `ledger_queries.py:48`, and `reopen_jobs:148` which needs a SUMMED rowcount (D-288) | **IMMEDIATE next task** |
+| ~~`top`'s drain flags break in ~2 days~~ | **CLOSED by #145** (D-289): all six corpus-sized `IN` lists chunk through `store/param_chunks.id_chunks`, three merge shapes each mutation-tested, including `reopen_jobs`' summed rowcount | done |
 | **No external missed-window alarm** | nothing outside a run can detect a missed 08:00; the funnel heartbeat is only written from inside `runner.py` | P3 |
 | **`resume.yaml` is an IMPORT SOURCE, never hand-fixed** | D-155. Mit pins `resume_max_pages=1`; never advise 2 | Mit |
 | **`boardwatch top` advances the queue by default** | records `seen` unless `--no-record`; relevant to Gate P6's clean window | P6 |

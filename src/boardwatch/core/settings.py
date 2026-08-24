@@ -101,7 +101,9 @@ class Settings(BaseModel):
     # than a boolean so lanes 2..N need another name here and never another flag.
     #
     # **Empty is not caution, it is Gate P3.** The gate needs 7 consecutive clean SCHEDULED
-    # ticks and stands at 0 of 7. A lane is an unproven network dependency against a host
+    # ticks; the live count belongs in STATE.md, not here, because a number in a comment goes
+    # stale silently (this one read "0 of 7" while the store said 5). A lane is an unproven
+    # network dependency against a host
     # nobody here operates, so arming one in the daily driver puts the streak at risk and buys
     # nothing the gate measures — the lane can be exercised by a manual `boardwatch run`, which
     # does not touch the counter. Arm it after a scratch run proves it, which is the same

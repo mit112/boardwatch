@@ -21,6 +21,11 @@ title short-circuits before any deny pattern is tried:
 
     rescue -> hard denies -> soft denies (only if no software signal) -> signal -> uncertain
 
+Nothing runs before the rescue. When a rescue token turns out to be a false positive the
+fix belongs in the RESCUE, not in a stage that outranks it: a pre-rescue deny is reachable
+by every software title, so it trades one measured false rescue for an unbounded number of
+false vetoes (D-294).
+
 `uncertain` passes through to scoring unchanged. That pass-through is why the gate
 retains 100% of the protected population (software-titled postings whose skills the
 taxonomy missed): those titles exit at the rescue or signal stage and never meet a
@@ -50,6 +55,19 @@ RoleVerdict = Literal["swe", "not_swe", "uncertain"]
 # the tail, so a bare business-domain noun can never veto an engineering title from the
 # left. Used where a trailing `(?!...)` guard would be blind in the wrong direction.
 _NOENG = r"^(?!.*\b(?:engineer|engineering|developer|architect|programmer|swe|sde|sdet)\b).*"
+
+# Like `_NOENG`, but spares the software SURFACE words that are not signals on their own.
+# `_NOENG` is enough for a deny that runs after the rescue on a title whose software evidence
+# is a head noun ("Engineering Manager"). It is NOT enough where the evidence is a surface
+# word instead: "Backend Team Leader" carries no `engineer` token, so `_NOENG` would let the
+# deny fire on a real software lead. Used only by denies whose head noun is a generic
+# org word (`team leader`) rather than a job family.
+_NOSW = (
+    r"^(?!.*\b(?:software|engineer|engineering|developer|development|architect|programmer|"
+    r"swe|sde|sdet|backend|back\s+end|frontend|front\s+end|full\s*stack|fullstack|devops|"
+    r"sre|site\s+reliability|data|platform|infrastructure|cloud|machine\s+learning|ml|ai|"
+    r"qa|automation|security|network|mobile|ios|android|web)\b).*"
+)
 
 # Non-software engineering and technical disciplines.
 _DENY_DISCIPLINE: tuple[str, ...] = tuple([
@@ -103,10 +121,10 @@ _DENY_TRADE: tuple[str, ...] = tuple([
     r"\b(truck|delivery|cdl|route|shuttle|bus|forklift)\s+drivers?\b|"
     r"\bdrivers?\s*[-–]\s*(cdl|class\s+[ab])\b",
     r"\bassembler\b|\bassembly\s+(operator|associate|technician)\b",
-    r"\b(machine|equipment|plant|production|forklift|press|line)\s+operator\b",
+    r"\b(machine|equipment|plant|production|manufacturing|forklift|press|line)\s+operator\b",
     r"\binstaller\b|\blineman\b|\brigger\b|\broofer\b|\blandscap\w*\b",
     # Bare `maintenance` narrowed (0 fires; buried "Software Engineer, Maintenance Platform").
-    r"\bmaintenance\s+(technician|mechanic|worker|planner|supervisor|associate|crew)\b",
+    r"\bmaintenance\s+(tech(nician)?|mechanic|worker|planner|supervisor|associate|crew)\b",
     r"\bmaterial handler\b|\bpicker\b|\bpacker\b",
     r"\bsecurity\s+(guard|officer)\b",
     r"\bcustodial\b|\bgroundskeep\w*\b",
@@ -171,7 +189,7 @@ _DENY_BUSINESS_HARD: tuple[str, ...] = tuple([
 
 # SOFT half: skipped whenever the title carries any software signal.
 _DENY_BUSINESS_SOFT: tuple[str, ...] = tuple([
-    r"\bhuman\s+resources\b|\bhr\s+(generalist|business partner|coordinator)\b",
+    r"\bhuman\s+resources?\b|\bhr\s+(generalist|business partner|coordinator)\b",
     # Bare `benefits`/`payroll` narrowed — "Software Engineer, Payroll" (Gusto/Rippling)
     # and "Engineer, Benefits Platform" are real software titles.
     r"\bpeople\s+(partner|operations)\b|"
@@ -200,7 +218,7 @@ _DENY_BUSINESS_SOFT: tuple[str, ...] = tuple([
     # Bare `logistics` narrowed ("Engineer, Logistics Platform"); bare `planner` narrowed
     # (0 marginal; "Engineer, Planner Platform"). The noise rows survive both.
     r"\bsupply\s+chain\b|\bprocurement\b|\bbuyer\b|"
-    r"\blogistics\s+(specialist|coordinator|manager|analyst|associate|supervisor|"
+    r"\blogistics?\s+(specialist|coordinator|manager|analyst|associate|supervisor|"
     r"planner|clerk)\b|\b(inbound|outbound|reverse)\s+logistics\b|"
     r"\b(demand|supply|material|production|capacity|financial|merchandise)\s+planner\b",
     # Bare `claims`/`loan`/`mortgage` narrowed — "Claims Platform Engineer" (Lemonade)
@@ -254,6 +272,71 @@ _DENY_BUSINESS_SOFT: tuple[str, ...] = tuple([
     r"\b(customer|technical|it|desktop|help\s*desk)\s+support\s+engineer\b",
 ])
 
+# Owner ruling 1 (D-294): the non-software title families that dominate what clears every
+# other gate. Measured with the real ranker over a 33,572-posting snapshot: 51.1% of the
+# uncapped shortlist carried no software signal at all, and these are the families it was
+# made of. SOFT lane on purpose — every pattern here is skipped the moment a title carries
+# any software signal, so none of them can bury a signalled or rescued software title. That
+# is a structural guarantee, not a review outcome, and it is why a family list this broad is
+# safe to add in one change.
+_DENY_FAMILIES_SOFT: tuple[str, ...] = tuple([
+    # Ruling 2: `Team Leader` is retail/ops throughout this corpus (364 of 380 live hits are
+    # one retailer, 0 carry any engineering sense). SOFT, so a signalled software title never
+    # reaches it, and `_NOSW` additionally spares the surface-word forms ("Backend Team
+    # Leader") that carry no head noun for `_NOENG` to see.
+    _NOSW + r"\bteam\s+leader\b",
+    # Retail floor and store operations. `assets protection` / `loss prevention` is retail
+    # physical security; it is not the `security engineer` family, which the SWE signal
+    # already claims. NOT added, deliberately: bare `security specialist`, whose 73 live
+    # hits are one retailer's in-store loss-prevention role but whose name is also a real
+    # information-security title. That population is a COMPANY-list question, not a title one.
+    r"\bassets?\s+protection\b|\bloss\s+prevention\b",
+    r"\b(general\s+merchandise|service\s*(?:&|and)\s*engagement|small\s+format|"
+    r"inbound\s+operations|fulfillment\s+operations|front\s+of\s+store|guest\s+advocate)\b",
+    r"\bfulfillment\s+(specialist|associate|expert|attendant)\b",
+    # `mobile` is a software word, which is exactly why these need the retail head noun:
+    # "Mobile Associate, Store-in-Store" is a phone-shop job, "Mobile Engineer" is not here.
+    r"\bmobile\s+(associate|expert)\b|\bstudio\s+associate\b|\bdelivery\s+associate\b",
+    # Food service.
+    r"\bfood\s+(service|and\s+beverage|&\s*beverage)\b|\bkitchen\s+operations\b",
+    # People, admin and finance surfaces the business lanes above do not name.
+    r"\b(employee|people)\s+relations\b",
+    _NOENG + r"\badministrative\s+(associate|coordinator|specialist|support)\b",
+    # `(?:...)` is load-bearing: a guard prefixed to a top-level alternation would apply to
+    # the first branch only, leaving "strategic finance" unguarded.
+    _NOENG + r"(?:\bfinance\s+(analyst|associate|manager|specialist)\b|\bstrategic\s+finance\b)",
+    _NOENG + r"\baccounts\s+(payable|receivable)\b",
+    _NOENG + r"(?:\b(revenue|expense)\s+operations\b|\border\s+management\b)",
+    # Clinical and patient PRODUCT surfaces. Soft, not hard: "Patient Experience" and
+    # "Clinical Operations" are real software product-area names (Epic, Cedar, Oscar), so a
+    # signalled software title has to skip them. The noise rows carry no signal and are
+    # still caught -- "Patient Journey Partner" is denied either way.
+    r"\bpatient\s+(journey|experience)\b",
+    r"\bclinical\s+(applications?|operations?|affairs)\b",
+    # Life sciences production.
+    r"\bbiotech\w*\b|\bfill\s*/\s*finish\b|\bbioprocess\w*\b",
+    # Silicon: chip design, fab process and test. `_DENY_DISCIPLINE` already denies
+    # "<discipline> Engineer", but the semiconductor titles that reach a shortlist put a
+    # noun BETWEEN the discipline and the head noun -- "ASIC Design Engineer", "CPU Physical
+    # Design Engineer" -- so the existing adjacency never fires. Bare `design engineer` was
+    # measured as the alternative and REJECTED: it also catches "AI Native Design Engineer"
+    # and "Infrastructure Design Engineer", which are software.
+    r"\b(asic|soc|ic|cpu|gpu|rtl|dft|analog|mixed[\s-]?signal|physical|circuit|logic|"
+    r"memory|digital|packag\w*|silicon)\s+design\b",
+    r"\b(packaging\s+)?module\s+(development|equipment)\b|\bprocess\s+integration\b",
+    # `foundry` is deliberately absent: it is also a shipped software product name, and this
+    # package has already burned itself once on a gate colliding with a product noun.
+    r"\bwafer\b|\blithograph\w*\b|\bmetrolog\w*\b|\bdry\s+etch\b|\bpost.?silicon\b|"
+    r"\bsilicon\s+(product|process|design|packaging)\b",
+    r"\bfailure\s+analysis\b|\bdevice\s+modeling\b",
+    r"\bate\s+(test|hardware|engineer)\b",
+    # Telecom outside plant and cell sites: civil/RF field work, not network software.
+    r"\bcell\s+site\b|\boutside\s+plant\b",
+    # Technical marketing is marketing. `_DENY_BUSINESS_HARD` denies "Marketing Manager"
+    # and friends but not the "<X> Engineer" form this family uses.
+    r"\btechnical\s+marketing\b",
+])
+
 # Positive SWE signal on the title. Bare `reliability` is deliberately absent: it made a
 # manufacturing "Reliability Engineer" a positive match while `reliability physics` was a
 # deny. `site reliability` and `sre` still match, so genuine SRE titles are unaffected.
@@ -284,7 +367,34 @@ _TITLE_SWE_SIGNAL = (
 _TITLE_SWE_RESCUE = (
     r"\bsoftware\b.{0,40}\b(engineer|developer|development|architect)\w*\b|"
     r"\b(sde|swe|sdet)\b|"
-    r"\b(full[\s-]?stack|fullstack|front[\s-]?end|frontend|back[\s-]?end|backend)\b|"
+    r"\b(full[\s-]?stack|fullstack|back[\s-]?end|backend)\b|"
+    # `front end` is the ONE surface token with a non-software sense -- a store checkout
+    # area -- so it alone needs a head noun. Bare, it rescued five retail rows
+    # ("... Assistant Manager Front End"), and a rescue is unconditional, so that single
+    # false positive cleared every deny below it. The other three tokens have no such
+    # sense and stay bare, which is what keeps "AI First Full Stack Tech Lead" and
+    # "Senior Backend Java Engineer - Vice President" classified software (D-294).
+    r"\b(front[\s-]?end|frontend)\b.{0,30}"
+    r"\b(?:(?:engineer|developer|architect|programmer)\w*|lead)\b|"
+    # ...and the same pair in the other order ("AI/ML Agent Engineer - Front-End Focus").
+    r"\b(?:(?:engineer|developer|architect|programmer)\w*|lead)\b.{0,30}"
+    r"\b(front[\s-]?end|frontend)\b|"
+    # `lead` is in the head-noun list because "Front End Tech Lead" is a real software
+    # title that would otherwise lose the rescue and then be vetoed by the bare `lead`
+    # deny. It must stay OUTSIDE the `\w*` suffix, which is why the head nouns are an
+    # inner group: `(engineer|...|lead)\w*` spells `lead\w*`, which matches "Leader" and
+    # re-rescued the exact retail rows this narrowing exists to deny -- "Front End Team
+    # Leader", "Assistant Store Manager - Front End Leader", and Target's "Executive Team
+    # Leader ... (Assistant Manager Front End)" at any gap under 30 characters. The other
+    # four nouns keep `\w*` because "engineers"/"developers"/"programming" are wanted.
+    # Verdict-neutral on the live corpus (0 changes over 27,680 unique titles) -- it closes
+    # a latent hole rather than fixing a present miss, which is why only breadth would
+    # have surfaced it (D-294 round 3).
+    # `manager` is deliberately ABSENT and `development` was REMOVED: both re-rescue the
+    # very rows this narrowing exists to catch -- "(Assistant Manager Front End)" matches
+    # `manager` directly, and "Assistant Manager Front End Development Program" matches
+    # `development`. Every real title they would have saved carries `engineer`,
+    # `developer` or `lead` as well, so dropping them costs nothing measurable.
     r"\b(ios|android|mobile)\s+(engineer|developer)\b|"
     r"\bweb\s+develop\w*\b|\bapplication\s+develop\w*\b|"
     r"\b(devops|sre|site\s+reliability)\b"
@@ -301,7 +411,10 @@ _DENY_HARD = tuple(
     + _DENY_SERVICE
     + _DENY_BUSINESS_HARD
 )
-_DENY_SOFT = tuple(re.compile(pattern, re.IGNORECASE) for pattern in _DENY_BUSINESS_SOFT)
+_DENY_SOFT = tuple(
+    re.compile(pattern, re.IGNORECASE)
+    for pattern in _DENY_BUSINESS_SOFT + _DENY_FAMILIES_SOFT
+)
 
 
 def role_verdict(title: str) -> tuple[RoleVerdict, str]:
