@@ -128,6 +128,35 @@ def test_malformed_meta_total_falls_back_to_none_not_a_crash(
 
 
 @respx.mock
+@pytest.mark.parametrize(
+    ("total_token", "why"),
+    [
+        ("NaN", "NaN -> int() raises ValueError"),
+        ("Infinity", "Infinity -> int() raises OverflowError"),
+        ("-Infinity", "-Infinity -> int() raises OverflowError"),
+    ],
+)
+def test_meta_total_nan_or_infinity_falls_back_to_none_not_a_crash(
+    tmp_path: Path, total_token: str, why: str
+) -> None:
+    """json.loads accepts NaN/Infinity by default and int() raises on them (ValueError for NaN,
+    OverflowError for Infinity) — the one numeric input that clears _meta_total's
+    isinstance(int | float) guard yet must not fail the board over postings that parsed fine.
+    Guards greenhouse.py _meta_total's `except (ValueError, OverflowError)`; the dict-valued
+    parametrization above can never carry a non-finite float, so without this case removing that
+    except leaves the suite green while a live board crashes on json.loads' NaN."""
+    content = (
+        '{"meta": {"total": ' + total_token + '}, '
+        '"jobs": [{"id": 1, "title": "Engineer A"}, {"id": 2, "title": "Engineer B"}]}'
+    ).encode()
+    respx.get(BOARD_URL).mock(return_value=httpx.Response(200, content=content))
+    snapshot = provider.fetch_board(_fetcher(tmp_path), _request())
+    assert snapshot.status == "complete", why
+    assert len(snapshot.postings) == 2, why
+    assert snapshot.board_reported_total is None, why
+
+
+@respx.mock
 def test_pay_input_ranges_captured_in_raw_json_never_projected(tmp_path: Path) -> None:
     respx.get(BOARD_URL).mock(
         return_value=httpx.Response(200, content=_fixture_bytes("normal.json"))
