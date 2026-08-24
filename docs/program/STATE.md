@@ -26,7 +26,7 @@ once. Fixed and merged (D-287). The launchd job now fires **eight times a day** 
 any absolute comparison against that number is void. The gate counts consecutive clean **ticks**, not
 launchd invocations.
 
-**GATE P3 IS 1 OF 7. Run 71 (2026-08-23 11:00) is the first clean scheduled tick on the fixed tree** —
+**GATE P3 IS 5 OF 7. Run 71 (2026-08-23 11:00) is the first clean scheduled tick on the fixed tree** —
 exit 0, 22m47s, 135 board scans, funnel-71 written, 40 leads. Its `errors_json` carries the same 13 known
 board failures run 70 had **minus** the `too many SQL variables` abort, which is the before/after on one
 corpus. A failed unattended run RESETS the streak rather than pausing it, and **Gate P4 is barred until P3
@@ -39,8 +39,8 @@ remaining 6 ticks are ~18 hours, not 6 days.
 
 **The headline number: 0.** Zero job applications have ever been sent (`applications` has 0 rows) — the
 machine produces leads, it never applies (out of scope). Against that: 3 published releases (none since
-**0.3.0**), ~53k lines of source, **7,386 tests**, 71 leaf CLI commands, 6 ATS providers, a **~1.4 GB**
-store holding 37,438 postings / 32,771 open.
+**0.3.0**), ~53k lines of source, **7,435 tests**, 71 leaf CLI commands, 6 ATS providers, a **~1.4 GB**
+store holding 41,006 postings / 35,721 open.
 
 **The ASAP execution plan (D-280) governs.** "Done" is a **provisional pass** — 3 clean FROZEN runs meeting
 all seven bar metrics (B1–B7) — after which the full 14-day acceptance runs PASSIVELY to confirm. Six
@@ -166,7 +166,7 @@ records it and the run still does not fail. Clearance IS a blocker (D-257). Seni
 | P0 Instrumentation | **COMPLETE** | **MET** (D-030) |
 | P1 Résumé artifact gate | **COMPLETE** | **MET** (D-032/033) |
 | P2 Profile + keystone | items 1–7 shipped; item 8 NOT STARTED | **MET AS RECONCILED** (D-075) |
-| P3 Unattended one command | **COMPLETE, INSTALLED, FIRING** — runs 63 and 66 were genuine scheduled ticks (D-254) | **NOT MET — 0 of 7 unattended.** Streak reset by run 68's failed tick (D-276) |
+| P3 Unattended one command | **COMPLETE, INSTALLED, FIRING** — runs 63 and 66 were genuine scheduled ticks (D-254) | **NOT MET — 5 of 7 unattended.** Runs 71-75 are all `ok`; launchd agrees (`runs = 5`, `last exit code = 0`). Ticks 6 and 7 fall at 02:00 and 05:00 local (D-296) |
 | P4 Craft gate | **COMPLETE** | **NOT MET** — the owner's blind craft review, barred until P3's gate |
 | P5 Eligibility decides | **COMPLETE** | **MET** — INELIGIBLE precision 16/16, 0 span violations |
 | P6 Liveness + dedup | **BUILD COMPLETE** (D-110/111/113); leakage report shipped (D-283) | **3 of 4** — liveness MET (D-281), leakage measurable and reading **0.00%** but needs a 7-day ledger span (~2026-08-26) |

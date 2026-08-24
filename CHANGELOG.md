@@ -8,6 +8,29 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- **`boardwatch companies discover` — company discovery from the two public GitHub new-grad lists, behind a
+  human review step.** boardwatch watches 135 boards; these two files name **926** and **897 of them are
+  new**. Two unauthenticated GETs, no token and no key, and **nothing captured is committed**.
+
+  It is company discovery and not a posting source, which is a measurement rather than a preference: no
+  field in any of the 34,958 records carries a job description, and `parse_posting_target` covers four of
+  the six providers where `parse_board_target` covers all six. So each record's `url` is resolved to a
+  `(provider, slug)` **board** and the posting is thrown away. Of 19,955 records read: 16,179 inactive,
+  1,820 on a host no provider here serves, 1,956 matched. Every record lands in exactly one bucket.
+
+  **It writes nothing to the store.** It emits a registry-format candidate file; `companies import`,
+  unchanged, does the watched-write on the file a human read. That is deliberate — a bad slug becomes a
+  permanently failing board and there is no quarantine or backoff for one, and this corpus contains a live
+  example: an `embed/job_app?token=` URL that parses to the board `embed`. Every candidate therefore carries
+  the evidence URL it was parsed from, the employer name, and how many records named it.
+
+  Boards ramp cheapest-first in three cost tiers — the four inline-body providers, then workday, then
+  smartrecruiters — and round-robin inside a tier. `Fetcher` holds a per-host lock for each request's full
+  duration and five of the six providers serve every board from one host, so ten boards on one provider are
+  ten serial requests where ten across four providers are not. The cap is
+  `lane_new_companies_per_run`, so there is one knob rather than two, and `companies.source` stays `'user'`
+  — no migration.
+
 - **The first discovery lane: hiring.cafe, behind a per-run company cap, off by default.** boardwatch can now
   reach employers no ATS provider covers. Over a 160-hit sample, 8 (5.0%) sit on one of the six supported
   providers and 152 do not — that 95% is the whole point of the lane.
