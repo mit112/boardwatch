@@ -49,10 +49,13 @@ sessionized parts; the plan file at `~/.claude/plans/lets-use-this-session-stage
 Part 3 "Indeed" and Part 4 "hiring.cafe + GitHub lists" — that ordering was REVERSED by D-285 and the file
 was never rewritten. Trust D-285/D-286, not the plan file.**
 
-**PARTS 1, 2 AND 3 ARE COMPLETE. PART 4a (GitHub-lists) IS BUILT AND LANDED (#149, D-296)** — company
-discovery only (no JD body in any of the 34,958 records), OFF by default, **NOT armed** (no boards added to
-the daily run). Next is **Part 4b: LinkedIn** (D-290 — Mit ruled BUILD; the body is free and unauthenticated,
-and `robots.txt` disallows the route). Then Part 6, with Part 5 anytime.
+**PARTS 1, 2, 3, 4a AND 4b ARE COMPLETE.** Part 4a (GitHub-lists) landed #149/D-296. **PART 4b (LinkedIn) IS
+BUILT (D-297)** — a lane sibling of hiring.cafe, OFF by default (`linkedin` not in `lanes_enabled`), **NOT
+armed, never run live**. Built from D-290's recorded contract, not a fresh probe (Mit's "build from recorded
+contract" ruling), so the card **selectors are RECONSTRUCTED, not freshly pinned** — arm-time live
+verification is owed before enabling. Identity keys on the company **slug** (`externalApply`=0, no apply URL);
+id from the URN not the URL tail; only `f_TPR=r86400` sent. No capture committed; authored fixtures. Next is
+**Part 6** (freeze + 3 frozen B1–B7 runs), with Part 5 anytime.
 
 > **D-291's "920 boards, 887 new" is real but its stated corpus is wrong**, and the difference is 4x. The
 > figure is the **two new-grad lists' `active=True` records** (3,778 → 927 boards / 898 new, reproduced), not
@@ -143,11 +146,10 @@ fork is resolved — both halves were already built PRs, not work to start. Imme
 1. **Arm precision on the live driver** — pull the primary working tree to the integrated `main` so the next
    tick uses the new role-deny and CJK gates. Ranker-only, gated green, no `engine_version` change, no drain;
    P3 is met, so this cannot un-meet it.
-2. **Build Part 4b: LinkedIn** (D-290) — the last discovery lane, off by default like Part 4a. Two measured
-   constraints must survive the build: **no external apply URL** (`externalApply` = 0 — converge on the
-   company **slug**, never the link) and **`f_WT=2` (remote) silently ignored** (byte-identical to
-   unfiltered). Commit **no** captured JD body or list record — the generalization gate refuses third-party
-   data obliging a licence that does not exist.
+2. **Part 4b: LinkedIn is DONE (D-297).** Built off by default; both measured constraints honoured — keys on
+   the company **slug** (`externalApply`=0, no apply URL) and sends only `f_TPR=r86400` (`f_WT=2` ignored). No
+   capture committed. **Owed before arming:** a live probe to confirm the RECONSTRUCTED card selectors and to
+   pin `start` paging (the client makes one search GET; paging and a keywords/location facet are deferred).
 3. **Gate P6's 7-day leakage window completes ~2026-08-26**, after which the provisional pass (3 frozen
    B1–B7 runs) can be certified. B1/B2/B3/B6/B7 are already demonstrated on frozen runs 72-78; B4's n≥100
    audit and B5 (unscoreable) remain owner/attribution-gated.
@@ -221,7 +223,7 @@ records it and the run still does not fail. Clearance IS a blocker (D-257). Seni
 | P5 Eligibility decides | **COMPLETE** | **MET** — INELIGIBLE precision 16/16, 0 span violations |
 | P6 Liveness + dedup | **BUILD COMPLETE** (D-110/111/113); leakage report shipped (D-283) | **3 of 4** — liveness MET (D-281), leakage measurable and reading **0.00%** but needs a 7-day ledger span (~2026-08-26) |
 | 14-day acceptance | not started | starts after P6 |
-| P7 Breadth | lane 1 (hiring.cafe) BUILT not armed (D-286); **Part 4a GitHub-lists discovery BUILT + LANDED (#149/D-296), not armed**; Part 4b LinkedIn + remaining lanes not started | unlock MET (D-271/272) |
+| P7 Breadth | lane 1 (hiring.cafe) BUILT not armed (D-286); **Part 4a GitHub-lists discovery BUILT + LANDED (#149/D-296), not armed**; **Part 4b LinkedIn lane BUILT (D-297), off by default, not armed, selectors reconstructed**; remaining lanes not started | unlock MET (D-271/272) |
 | *Gate A / Gate B* | *complete, merged* | ***MET*** — *has moved no program gate* |
 
 ### Gate P6, clause by clause
