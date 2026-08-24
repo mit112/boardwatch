@@ -86,6 +86,8 @@ boardwatch scan              # poll the watched boards (polite, conditional GETs
 boardwatch top               # ranked shortlist
 ```
 
+New here? Run `boardwatch guide` at any time to see the whole journey.
+
 `boardwatch init` is interactive. Pick **[1] Starter set** to watch a curated group of
 well-known boards in one keystroke, **[2] Search registry** to pick from the bundled
 catalog, or **[3] Paste** any `provider:slug` or board URL. Then paste your résumé text
