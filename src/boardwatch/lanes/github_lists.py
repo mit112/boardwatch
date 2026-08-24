@@ -12,7 +12,7 @@ THIS IS NOT A `Lane`, and the difference is structural rather than a naming pref
 returns `LaneResult` -- postings plus an `AcquisitionTally` -- and this source has neither. No field
 in any of the 34,958 records carries a job description, so there is no body to acquire; and
 `lanes.dereference.parse_posting_target` covers four of the six providers, so a POSTING identity
-cannot even be recovered for the workday and smartrecruiters records, which are 1,136 of the 1,991
+cannot even be recovered for the workday and smartrecruiters records, which are 1,127 of the 1,956
 in scope. What the records do carry is a board URL, which `core.board_urls.parse_board_target`
 resolves for all six. So the deliverable is `(provider, slug)` COMPANIES and the postings are
 thrown away. It is deliberately absent from `pipeline.runner.LANE_FACTORIES`: the pipeline would
@@ -130,8 +130,13 @@ class RecordCensus:
 
     The four non-`matched` buckets are not failures in equal measure and are kept apart because a
     reader needs the difference: `inactive` is the owner's scope filter doing its job,
-    `unparseable_url` is a host no provider here serves (47% of the corpus, and the reason a
-    discovery source exists at all), and `no_url` is a defect in the source list.
+    `unparseable_url` is a host no provider here serves (1,820 of 3,776 in-scope records, 48%, and
+    the reason a discovery source exists at all), and `no_url` is a defect in the source list.
+
+    `records` counts what `read_listings` HANDED OVER, not what the file held: a non-object element
+    of the JSON array is dropped at the parse boundary and is invisible to every counter here. That
+    is the right layer for it -- the census is about listings, and a stray `7` in the array is not
+    one -- but it means these five numbers do not reconcile against the raw file's length.
     """
 
     records: int = 0
@@ -139,10 +144,6 @@ class RecordCensus:
     no_url: int = 0
     unparseable_url: int = 0
     matched: int = 0
-
-    @property
-    def partitions(self) -> bool:
-        return self.records == self.inactive + self.no_url + self.unparseable_url + self.matched
 
 
 @dataclass(frozen=True)
@@ -238,9 +239,11 @@ def discover(sources: Mapping[str, Sequence[Mapping[str, Any]]]) -> Discovery:
             try:
                 provider, slug = parse_board_target(url)
             except UnknownBoardURL:
-                # The ordinary case for 47% of records, not an error path: they sit on hosts no
-                # provider here serves, which is what a discovery source is for. The 7 malformed
-                # single-slash URLs land here too, and correctly -- an empty host is not a board.
+                # The ordinary case for 48% of in-scope records, not an error path: they sit on
+                # hosts no provider here serves, which is what a discovery source is for. The 7
+                # malformed single-slash URLs land here too, and correctly: an empty host is not a
+                # board. So does a stray bracket, which `parse_board_target` now converts from the
+                # bare `ValueError` that used to abort the whole run.
                 unparseable += 1
                 continue
             matched += 1
@@ -374,13 +377,45 @@ def _header(selection: Selection, census: RecordCensus, generated_on: date) -> s
     if selection.admitted:
         lines.append("# Check each evidence URL names a real employer board and not ATS chrome:")
         lines += [
-            f"#   {c.provider}:{c.slug} | {c.name} | {c.records} record(s) | {c.evidence_url}"
+            f"#   {c.provider}:{_one_line(c.slug)} | {_one_line(c.name)} "
+            f"| {c.records} record(s) | {_one_line(c.evidence_url)}"
             for c in selection.admitted
         ]
     else:
         lines.append("# No new boards. Nothing to import.")
     lines.append("")
     return "\n".join(lines) + "\n"
+
+
+# C0 controls plus DEL, each mapped to a space. Applied to every untrusted value echoed into the
+# header. Not a display nicety: see `_one_line`.
+_CONTROL_CHARS = dict.fromkeys(range(0x20), " ") | {0x7F: " "}
+
+
+def _one_line(value: str) -> str:
+    """Flatten an untrusted value so it cannot escape a `#` comment line.
+
+    `company_name` and the raw `url` come from a public repo anyone can open a pull request
+    against, and `parse_board_target` does not validate the slug it derives -- it returns
+    `'ac\x00me'` for a URL containing a NUL. All three are echoed into the header.
+
+    The measured failure is worse than a broken file. `"Acme\nEvil: pwned"` does not fail to
+    parse: the comment ends at the newline and the remainder becomes a TOP-LEVEL YAML key, so
+    `safe_load` silently returns an extra `Evil` entry. A C0 char instead raises `ReaderError`
+    pointing at `companies:`, nowhere near the cause.
+
+    The `companies:` body was never at risk -- `safe_dump` quotes and folds correctly, the header
+    always precedes the body, and `safe_load` keeps the LAST duplicate key, so an injected
+    `companies:` loses to the real one. What is at risk is the REVIEW: the header is the surface a
+    human reads to decide, and a value that can forge a line in it defeats the human step this
+    whole command exists to serve.
+
+    A lone surrogate is deliberately NOT handled here. It survives this and then makes
+    `Path.write_text` raise `UnicodeEncodeError`, which is the fail-safe direction: replacing it
+    would emit a mangled slug that `companies import` would happily watch as a permanently failing
+    board, and a loud crash on unencodable third-party bytes is better than a quiet bad write.
+    """
+    return " ".join(value.translate(_CONTROL_CHARS).split())
 
 
 def _by_provider(candidates: Sequence[BoardCandidate]) -> list[tuple[str, int]]:

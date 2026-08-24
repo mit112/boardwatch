@@ -6538,6 +6538,42 @@ parametrisation in `tests/unit/test_companies_cmd.py`. Narrow run 81 passed. `my
 **304** source files (was 303). `ruff` clean. `generalization: OK` with the new files staged — R7 never
 sees a `.py`, and nothing captured is committed.
 
+**Review round, two lenses, after a green gate and six green CI checks.** Both reviewers were told to
+write findings to a file as they confirmed them; an earlier pair that held everything for a final report
+was lost to a transient API 529 and left **nothing** recoverable, because a subagent's `thinking` is
+stored EMPTY (encrypted signature only, 716-4320 bytes) and only emitted text survives.
+
+**Six defects the suite did not catch, all fixed.** Header injection from untrusted
+`company_name`/`url`/slug (measured: `"Acme\nEvil: pwned"` PARSES and silently adds a top-level YAML
+key); a bare `ValueError("Invalid IPv6 URL")` from `urlparse` on a stray bracket aborting the whole
+19,955-record run; `companies discover` running `alembic upgrade head` against the live store while its
+docstring promised no store write; `yaml.YAMLError` not being a `ValueError`, so `companies import`
+tracebacked on the file this feature exists to hand a human; four vacuous tests; and no requirement that
+the review header reach the `--out` file at all.
+
+**`test_the_employer_name_is_stripped` COULD NOT FAIL** — deleting `.strip()` left all 81 tests green,
+proven by mutation on a scratch copy. The fixture's padded record was the THIRD record of its board and
+`discover` names a candidate from the FIRST, so the trap was modelled where the guarded path was
+unobservable. After the fix, the same mutation fails **2** tests.
+
+**Five numbers in this session's own contract doc were wrong.** "One live record" with the
+`embed/job_app` shape -> **15** in-scope `active` records (59 over all in-scope). "1,136 of the 1,991
+in-scope provider records" -> **1,127 of 1,956**, where 1,956 is what the doc's own §4 table reports 70
+lines away; **1,991 traces to no measurement**, and the derived "47.1% / 47%" -- which had reached two
+shipped docstrings -- is its artifact, correctly **48.2%** (1,820 of 3,776). `date_updated < date_posted`
+is **1** in scope, not 5. "6 boards' worth of typo" is **5 boards / 6 URLs**. "`é` in one employer name"
+is **two**. Everything else reproduced exactly against independent stdlib counting, including the whole
+§3 census and the whole §4 board and ramp table.
+
+**Import claim confirmed independently on real data, not the fixture:** all **926** live boards validate
+through `companies import`'s own path with **0** slugs rewritten by `_normalized` (365 workday
+composites and the 3 percent-encoded ashby slugs included), and the real CLI returns exit 0 into a
+scratch store.
+
+**Gate after the fixes: exit 0, 7,438 passed, 4 xfailed, 5m01s, coverage 95.89%.** The 1,992
+`unclosed database` ResourceWarnings are **pre-existing and repo-wide** -- identical count in the gates
+before and after this change -- and are not attributable to it.
+
 **Contract-doc traps that a guessed fixture would have got wrong.** The two in-scope sources do **not**
 share a schema — `vanshb03/New-Grad-2027` has no `category` and no `degrees`. Absence is always a missing
 key, never JSON `null`. `company_url` names an ATS host on **0 of 3,129** records. `company_name` is

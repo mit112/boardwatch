@@ -18,6 +18,12 @@ a few hours earlier while every all-records number reproduced to the digit. An `
 live quantity; pinning one here would red the gate on somebody else's merge. The counts live in the
 contract, behind `REVIEW_BY`.
 
+RECORDED TRAPS THIS FIXTURE DELIBERATELY DOES NOT MODEL, because `discover` reads exactly three
+fields -- `active`, `url`, `company_name` -- so everything else is inert with respect to today's code
+and a case for it would assert nothing: padded/tabbed `title`, the 37-character `id` with an embedded
+backtick, `locations` at its recorded max of 55, `category`'s open vocabulary, and the 19 records that
+are inactive AND hidden. **A change that starts reading any of those owes its case here first.**
+
 FOUR CHECKS TODAY'S CORPUS CANNOT EXERCISE, which is the whole reason they are authored here: a
 missing `url` key (0 live records), a non-string `url` (0), an empty-host URL (7, all in one source
 that could stop carrying them tomorrow), and `active` disagreeing with `is_visible` (1). "0 today"
@@ -169,7 +175,8 @@ BOARD_PLAN: tuple[tuple[str, str, str, str, int, str], ...] = (
      "https://jobs.smartrecruiters.com/Acme30/744000000004{n}-engineer", 1, "S1"),
 )
 
-# Contract §4: 47.1% of in-scope records sit on hosts no provider here serves. Invented, except
+# Contract §4: 1,820 of 3,776 in-scope records (48.2%) sit on hosts no provider here serves. Invented,
+# except
 # where the shape IS the point (the EU-greenhouse and myworkdaysite gaps, above).
 UNSERVED_URLS: tuple[str, ...] = (
     "https://careers.acme40.test/jobs/1001",
@@ -246,8 +253,16 @@ def listings(shape: str) -> list[dict[str, Any]]:
         # `companies.name`: `scan/apply.py` feeds that column into the `cross_host` identity.
         seq += 1
         records.append(_record(
-            shape=shape, seq=seq, employer="  Acme 02  ",
+            shape=shape, seq=seq, employer="  Acme 02 Holdings  ",
             url="https://job-boards.greenhouse.io/acme02/jobs/4099",
+        ))
+        # A board whose ONLY record is padded. Without it the strip is unverifiable: `name` comes
+        # from the group's FIRST record, and every other padded record here sits behind a clean one
+        # -- so removing `.strip()` left the whole suite green.
+        seq += 1
+        records.append(_record(
+            shape=shape, seq=seq, employer="  Acme 34  ",
+            url="https://job-boards.greenhouse.io/acme34/jobs/4446",
         ))
         # The one record that is active while the list itself hides it. 1 live record has this.
         seq += 1
@@ -285,6 +300,14 @@ def listings(shape: str) -> list[dict[str, Any]]:
             ))
         # A missing `url` KEY, and a non-string one. Zero live records; both would crash a reader
         # that passed the value straight to `parse_board_target`.
+        # A stray bracket makes `urlparse` raise a BARE `ValueError` ("Invalid IPv6 URL"), not
+        # `UnknownBoardURL`. Zero live records, one third-party pull request away -- and one of them
+        # aborted the entire 19,955-record run before the parse fix.
+        seq += 1
+        records.append(_record(
+            shape=shape, seq=seq, employer="Bracket",
+            url="https://job-boards.greenhouse.io]/bracket/jobs/1",
+        ))
         seq += 1
         records.append(_record(shape=shape, seq=seq, employer="No URL", url=None, omit_url=True))
         seq += 1

@@ -18,7 +18,6 @@ Every request is mocked. Nothing in this file reaches the network.
 from __future__ import annotations
 
 import json
-import unicodedata
 from datetime import date
 from pathlib import Path
 
@@ -28,6 +27,7 @@ import respx
 import yaml
 from github_lists_shape import (
     ACCENTED_NAME,
+    DEGREE_VALUES,
     EMBED_URL,
     MALFORMED_URLS,
     REVIEW_BY,
@@ -35,6 +35,7 @@ from github_lists_shape import (
     S1_REPO,
     S2_KEYS,
     S2_REPO,
+    SPONSORSHIP_VALUES,
     listings,
 )
 
@@ -60,10 +61,16 @@ _DETAIL_BUDGET = ("workday", "smartrecruiters")
 
 # `listings()` is deterministic, so the fixture's own board population is a fixed fact. Written
 # here so a fixture edit that changes the corpus reds this file rather than sliding through.
-_FIXTURE_BOARDS = 35
-_FIXTURE_INLINE_BOARDS = 21  # greenhouse 8 + lever 4 + ashby 6 + workable 3
+_FIXTURE_BOARDS = 36
+_FIXTURE_INLINE_BOARDS = 22  # greenhouse 9 + lever 4 + ashby 6 + workable 3
 _FIXTURE_WORKDAY_BOARDS = 9
 _FIXTURE_SMARTRECRUITERS_BOARDS = 5
+# The fixture's census, as literals. Written here rather than read back from `discover()`: an
+# expectation derived from the code under test agrees with itself, and this is the one place the
+# bucket arithmetic is pinned.
+_FIXTURE_CENSUS = {
+    "records": 70, "inactive": 4, "no_url": 2, "unparseable_url": 20, "matched": 44,
+}
 
 
 def _sources() -> dict[str, list[dict]]:
@@ -115,15 +122,18 @@ def test_absence_is_always_a_missing_key_and_never_a_null():
 
 def test_the_closed_vocabularies_are_the_recorded_ones():
     """Contract §3: `sponsorship` is closed at four values; `degrees` at fourteen."""
-    sponsorship = {r["sponsorship"] for r in _all_records()}
-    assert sponsorship <= {
+    # EQUALITY, not `<=`. A subset assertion refuses a value from outside the set but cannot see the
+    # fixture shrinking: dropping `SPONSORSHIP_VALUES` from 4 entries to 1 and `DEGREE_VALUES` from 14
+    # to 2 left this test green, which makes it useless as the drift guard it exists to be.
+    assert set(SPONSORSHIP_VALUES) == {
         "Other", "U.S. Citizenship is Required", "Does Not Offer Sponsorship", "Offers Sponsorship",
     }
-    degrees = {value for r in listings("S1") for value in r["degrees"]}
-    assert degrees <= {
+    assert set(DEGREE_VALUES) == {
         "Bachelor's", "Master's", "PhD", "Associate's", "Certificate", "MBA", "Bootcamp",
         "MD", "JD", "PharmD", "Incomplete", "DO", "DDS", "DVM",
     }
+    assert {r["sponsorship"] for r in _all_records()} <= set(SPONSORSHIP_VALUES)
+    assert {v for r in listings("S1") for v in r["degrees"]} <= set(DEGREE_VALUES)
     # 29.3% of live S1 records carry an EMPTY list, so a reader must not assume one element.
     assert any(r["degrees"] == [] for r in listings("S1"))
 
@@ -166,11 +176,17 @@ def test_there_is_no_cjk_anywhere_and_the_real_non_ascii_is_present():
     it would model something the corpus does not contain -- and the corpus DOES contain an en
     dash and an accented employer name, which is what a reader has to survive.
     """
+    # CODEPOINT RANGES, not Unicode names. Matching only "CJK"/"HIRAGANA"/"KATAKANA"/"HANGUL" in a
+    # character's NAME misses U+3000 IDEOGRAPHIC SPACE, U+FF21 FULLWIDTH LATIN CAPITAL A and
+    # U+3300 SQUARE APAATO -- three of the five ranges the contract claims to have scanned. Injecting
+    # an ideographic space into every employer name left the old detector green.
     blob = json.dumps(_all_records(), ensure_ascii=False)
-    cjk = [
-        ch for ch in blob
-        if any(tag in unicodedata.name(ch, "") for tag in ("CJK", "HIRAGANA", "KATAKANA", "HANGUL"))
-    ]
+    ranges = (
+        (0x3000, 0x303F), (0x3040, 0x30FF), (0x3100, 0x312F), (0x3130, 0x318F),
+        (0x3300, 0x33FF), (0x3400, 0x4DBF), (0x4E00, 0x9FFF), (0xAC00, 0xD7AF),
+        (0xF900, 0xFAFF), (0xFF00, 0xFFEF), (0x20000, 0x2A6DF),
+    )
+    cjk = [ch for ch in blob if any(lo <= ord(ch) <= hi for lo, hi in ranges)]
     assert cjk == []
     assert "–" in blob  # EN DASH, 610 live S1 records
     assert ACCENTED_NAME in blob
@@ -275,15 +291,20 @@ def test_the_census_partitions_every_record_it_read():
 
 
 def test_the_seven_malformed_urls_are_refused_as_ordinary_input():
-    """Contract §5 trap 1: `UnknownBoardURL`, the same class 47% of records raise.
+    """Contract §5 trap 1: `UnknownBoardURL`, the same class 48% of in-scope records raise.
 
     So there is no exception path. What must NOT happen is a traceback, and what must not happen
     either is a board named after an empty host.
     """
     result = discover(_sources())
-    assert result.census.unparseable_url >= len(MALFORMED_URLS)
+    # The exact count, not `>= 7`: if a future `parse_board_target` started resolving these to boards
+    # the total would FALL and a `>=` assertion would still pass.
+    assert result.census.unparseable_url == _FIXTURE_CENSUS["unparseable_url"]
+    # And none of the 7 produced a board, checked by slug rather than by counting.
+    typo_slugs = {url.split("/")[2] for url in MALFORMED_URLS} | {"", "trexquant", "scitec"}
     for candidate in result.candidates:
         assert candidate.slug
+        assert candidate.slug not in typo_slugs
         assert "workable.com" not in candidate.slug
 
 
@@ -332,16 +353,21 @@ def test_a_board_is_distinct_on_provider_and_slug_and_counts_its_records():
     acme02 = next(c for c in candidates if (c.provider, c.slug) == ("greenhouse", "acme02"))
     # Two planned records plus the whitespace-padded one, all on one board.
     assert acme02.records == 3
-    assert acme02.evidence_url.startswith("https://job-boards.greenhouse.io/acme02/jobs/")
+    # Exact, not `startswith`: all three of this board's URLs share that prefix, so a prefix
+    # assertion could not tell the first record from the last.
+    assert acme02.evidence_url == "https://job-boards.greenhouse.io/acme02/jobs/401"
 
 
 def test_the_employer_name_is_stripped():
     """114 live S1 records are padded, and `companies.name` feeds the `cross_host` identity."""
-    acme02 = next(
-        c for c in discover(_sources()).candidates
-        if (c.provider, c.slug) == ("greenhouse", "acme02")
-    )
-    assert acme02.name == "Acme 02"
+    candidates = {(c.provider, c.slug): c for c in discover(_sources()).candidates}
+    # A board whose ONLY record carries a padded name, so removing `.strip()` reds this test. With
+    # only the multi-record board it did not: `name` reads the group's FIRST record and the padded
+    # one sits last.
+    assert candidates[("greenhouse", "acme34")].name == "Acme 34"
+    # ...and the group's FIRST record is the one that names it. The last record of this board says
+    # "Acme 02 Holdings", so `[-1]` instead of `[0]` reds this too.
+    assert candidates[("greenhouse", "acme02")].name == "Acme 02"
 
 
 def test_ats_chrome_that_parses_is_surfaced_with_the_evidence_that_condemns_it():
@@ -463,15 +489,33 @@ def test_the_emitted_document_is_accepted_by_the_registry_validator():
 
 
 def test_the_header_carries_the_census_the_sources_and_the_cap():
-    """A file a human reviews asynchronously has to say what it excluded, not just what it kept."""
+    """A file a human reviews asynchronously has to say what it excluded, not just what it kept.
+
+    Asserted as LABELLED PAIRS against literals, not as bare numbers in a blob. `assert str(n) in
+    blob` was vacuous here: the header already contains an ISO date and two URLs, so every
+    single-digit count matched by accident and swapping one label's number for another's survived.
+    """
     document = _document()
     header = [line for line in document.splitlines() if line.startswith("#")]
     blob = "\n".join(header)
     assert S1_REPO in blob and S2_REPO in blob
     assert "2026-08-24" in blob
-    census = discover(_sources()).census
-    for number in (census.records, census.inactive, census.unparseable_url, _FIXTURE_BOARDS):
-        assert str(number) in blob
+    assert (
+        f"records read {_FIXTURE_CENSUS['records']} "
+        f"| inactive {_FIXTURE_CENSUS['inactive']} "
+        f"| no usable url {_FIXTURE_CENSUS['no_url']} "
+        f"| host not served {_FIXTURE_CENSUS['unparseable_url']} "
+        f"| matched {_FIXTURE_CENSUS['matched']}"
+    ) in blob
+    assert f"distinct boards {_FIXTURE_BOARDS} " in blob
+    # The cap's own report: every held-back provider named with its count, or the reader cannot
+    # tell a finished ramp from a broken one. Deleting the block used to leave this test green.
+    assert "HELD BACK BY THE CAP:" in blob
+    for provider, expected in (
+        ("greenhouse", 9 - 3), ("lever", 4 - 3), ("ashby", 6 - 2), ("workable", 3 - 2),
+        ("workday", _FIXTURE_WORKDAY_BOARDS), ("smartrecruiters", _FIXTURE_SMARTRECRUITERS_BOARDS),
+    ):
+        assert f"{provider} {expected}" in blob
     # Every admitted board is reviewable from the header alone: identity, employer, evidence.
     for row in yaml.safe_load(document)["companies"]:
         candidate = next(
@@ -507,6 +551,72 @@ def test_an_empty_selection_still_emits_a_readable_file():
     document = _document(limit=0)
     assert yaml.safe_load(document)["companies"] == []
     assert "#" in document
+
+
+def test_untrusted_text_cannot_forge_a_line_in_the_review_header():
+    """`company_name`, the raw `url`, and the slug derived from it are all echoed into the header.
+
+    A newline in any of them does NOT break the document loudly. Measured: it silently adds a
+    TOP-LEVEL YAML key, so the document a human reads stops being the document that parses. A C0
+    character instead raises `ReaderError` pointing at `companies:`, nowhere near the cause.
+
+    The `companies:` body was never at risk -- `safe_dump` quotes it, and the header precedes it so
+    an injected `companies:` loses to the real one. What is at risk is the review, which is the only
+    thing standing between a public list and what the machine watches.
+    """
+    result = discover({
+        "authored": [{
+            "active": True,
+            "company_name": "Acme\nEvil: pwned",
+            "url": "https://job-boards.greenhouse.io/acme/jobs/1\nboom: 1",
+        }]
+    })
+    document = candidate_document(
+        select(result, is_known=_never_known, budget=CompanyBudget(10)),
+        census=result.census,
+        generated_on=date(2026, 8, 24),
+    )
+
+    loaded = yaml.safe_load(document)
+    assert set(loaded) == {"companies"}, "untrusted text injected a top-level key"
+    assert len(loaded["companies"]) == 1
+
+    # The header is comments, all of it. Asserted separately from the key check so that either one
+    # failing localises the defect.
+    header = document[: document.index("companies:")]
+    assert all(not line or line.startswith("#") for line in header.splitlines())
+
+
+def test_a_control_character_in_a_slug_cannot_break_the_document():
+    """`parse_board_target` does not validate the slug it derives -- it returns `'ac\x00me'`."""
+    result = discover({
+        "authored": [{
+            "active": True, "company_name": "Acme",
+            "url": "https://job-boards.greenhouse.io/ac\x00me/jobs/1",
+        }]
+    })
+    document = candidate_document(
+        select(result, is_known=_never_known, budget=CompanyBudget(10)),
+        census=result.census,
+        generated_on=date(2026, 8, 24),
+    )
+    assert yaml.safe_load(document)["companies"][0]["slug"] == "ac\x00me"
+
+
+def test_an_employer_the_list_cannot_name_falls_back_to_the_slug():
+    """`CompanyEntry.name` is required and a blank one is not reviewable, so the fallback matters.
+
+    Zero live records strip to an empty `company_name`, so nothing in the corpus exercises this and
+    deleting the `or slug` fallback left the whole suite green.
+    """
+    for blank in ("", "   ", "\t\n", None):
+        candidates = discover({
+            "authored": [{
+                "active": True, "company_name": blank,
+                "url": "https://job-boards.greenhouse.io/nameless/jobs/1",
+            }]
+        }).candidates
+        assert candidates[0].name == "nameless", blank
 
 
 def test_the_module_is_not_a_lane():
@@ -568,8 +678,28 @@ def test_a_batch_is_spread_across_a_tier_rather_than_draining_one_provider():
     assert order[10:] == ["workday", "workday", "smartrecruiters", "smartrecruiters"]
 
 
-def test_the_census_reports_whether_it_partitions():
-    from boardwatch.lanes.github_lists import RecordCensus
+def test_a_stray_bracket_is_counted_rather_than_aborting_the_run():
+    """`urlparse` raises a BARE ValueError on an unbalanced bracket, which `parse_board_target`
+    caught nothing of. One such record among 19,955 good ones returned no census and no file.
 
-    assert RecordCensus(records=4, inactive=1, no_url=1, unparseable_url=1, matched=1).partitions
-    assert not RecordCensus(records=4, matched=1).partitions
+    Zero live records have it. The module\'s own no_url comment states the standard: absence in
+    today\'s corpus means inert, not safe.
+    """
+    from boardwatch.core.board_urls import UnknownBoardURL, parse_board_target
+
+    for hostile in (
+        "https://[job-boards.greenhouse.io/acme",
+        "https://job-boards.greenhouse.io]/acme",
+        "https://acme[1].workable.com/j/1",
+    ):
+        with pytest.raises(UnknownBoardURL):
+            parse_board_target(hostile)
+
+    # And the good records around it still land.
+    census = discover({
+        "authored": [
+            {"active": True, "url": "https://job-boards.greenhouse.io/good/jobs/1"},
+            {"active": True, "url": "https://job-boards.greenhouse.io]/bad/jobs/1"},
+        ]
+    }).census
+    assert (census.records, census.matched, census.unparseable_url) == (2, 1, 1)

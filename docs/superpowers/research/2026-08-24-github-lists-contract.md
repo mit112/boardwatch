@@ -17,8 +17,8 @@ Two independent reasons the boards — not the postings — are the deliverable:
 
 1. No body. A lane with no JD body yields zero leads, because the eligibility engine is body-only.
 2. `lanes.dereference.parse_posting_target` covers greenhouse / lever / ashby / workable only, so a
-   *posting* identity cannot be recovered for the workday and smartrecruiters records, which are 1,136
-   of the 1,991 in-scope provider records. `parse_board_target` covers all six.
+   *posting* identity cannot be recovered for the workday and smartrecruiters records, which are 1,127
+   of the 1,956 in-scope provider records. `parse_board_target` covers all six.
 
 So this reads each record's `url`, keeps the `(provider, slug)` **board** it names, and throws the
 posting away.
@@ -29,14 +29,20 @@ posting away.
 |---|---|---|
 | `SimplifyJobs/New-Grad-Positions` | 404 | **none** |
 | `vanshb03/New-Grad-2027` | 200 | MIT |
-| `SimplifyJobs/Summer2026-Internships` | 301 | not MIT (redirects) |
+| `SimplifyJobs/Summer2026-Internships` | 301 -> 404 | **none** |
 | `vanshb03/Summer2027-Internships` | 200 | MIT |
 
 The build brief recorded "both repos in that scope are MIT-licensed, so the licensing question
 disappears". **That is not true** — the larger of the two in-scope repos ships no licence at all.
 
-It changes nothing, and the reason is worth stating so the premise is not re-litigated: **no byte of
-this data is committed.** The licence question would only bite on redistribution, and R7's
+It changes nothing, and the reason is worth stating precisely, because the loose version of it is
+false. **No listing record and no JD body is committed** -- and R7, which is what would catch an
+attempt, governs *data files* and does not scan `.py` at all. What the authored fixture does carry is a
+handful of individual facts as the recorded shapes: the 7 malformed URLs verbatim (their employer
+segments included), one real `embed/job_app` URL and token, one real percent-encoded ashby board name,
+and two real employer names. Those are facts about a public page, not a corpus and not creative content,
+and they are the traceability the fixture's own tests check. "No byte of this data" would be a stronger
+claim than is true or needed. The licence question would only bite on redistribution, and R7's
 provenance -> source -> licence chain is what would catch an attempt. Reading a public file to derive a
 list of board slugs, then writing those slugs into a file in the *user's* config directory, redistributes
 nothing. The licensing question is moot, not resolved.
@@ -66,13 +72,13 @@ scope by the owner's ruling; they are transcribed only so the fixture can say wh
 | `title` | 100% | 100% | str | 2 S2 values padded, one with a literal TAB |
 | `active` | 100% | 100% | **bool** | never a string |
 | `is_visible` | 100% | 100% | **bool** | S1 has 20 `false`; S2 has none |
-| `date_updated` / `date_posted` | 100% | 100% | **int** | epoch seconds; `updated >= posted` is violated by 5 records |
+| `date_updated` / `date_posted` | 100% | 100% | **int** | epoch seconds; `updated >= posted` is violated by **1** in-scope record (5 over all four sources) |
 | `url` | 100% | 100% | str | never null, never blank, never non-string, in any source |
 | `locations` | 100% | 100% | list[str] | **never empty**, min 1, max 55 |
 | `company_url` | 100% | 100% | str | `simplify.jobs/c/<slug>` on S1; **`""` on all 1,142 S2 records** |
-| `sponsorship` | 100% | 100% | str | closed, 4 values, 98.4% is the useless `"Other"` |
+| `sponsorship` | 100% | 100% | str | closed, 4 values; `"Other"` is 98.4% of in-scope records and **96.8%** of the `active` set |
 | `category` | 100% | **absent** | str | not closed: `Software` and `Software Engineering` both exist |
-| `degrees` | 100% | **absent** | list[str] | 14-value vocabulary, **29.3% empty lists**, may repeat a value |
+| `degrees` | 100% | **absent** | list[str] | 14-value vocabulary, **29.3% empty lists**, **max length 21**, may repeat a value |
 | `season` | absent | **2 of 1,142** | str | vestigial; `"Summer"` |
 
 **Absence is always a missing key, never JSON `null`.** Not one field in any source is ever null. So a
@@ -131,10 +137,12 @@ count is worth showing a reviewer, because it is the only evidence of the slug t
    `https:/.workable.com/<company>/j/<id>/`. Scanning all 34,958 records finds the same 7 and no others.
    `parse_board_target` refuses them as ordinary input — it raises `UnknownBoardURL`, the same class it
    raises for the 1,820 records on hosts we do not serve — so **there is no exception path to write.**
-   One pair differs only by a trailing slash, so they are 6 boards' worth of typo, not 7.
+   Two collapse -- one pair differs only by a trailing slash, and `qodeworld` appears twice with
+   *different* job ids -- so the 7 URLs are **5 distinct boards'** worth of typo.
 2. **`boards.greenhouse.io/embed/job_app?token=<n>` parses to the slug `embed`.** The board is identified
    by the `token` query parameter, which names a *job*, not a board, so there is no slug in that path at
-   all and `parse_board_target` returns one anyway. One live record has this shape. **A shipped defect in
+   all and `parse_board_target` returns one anyway. **15 in-scope `active` records** have this shape (59 over all in-scope records), all resolving to the
+   one board `greenhouse:embed` -- so a reviewer meets it on most runs, not as a curiosity. **A shipped defect in
    `parse_board_target`, reachable today by `companies add`, and deliberately NOT fixed in this change:**
    changing a provider's slug extraction changes `companies add` for every user and is its own ruling.
    What this change owes instead is that the candidate carries its evidence URL, so a reviewer sees
@@ -154,7 +162,7 @@ count is worth showing a reviewer, because it is the only evidence of the slug t
 6. **There is no CJK anywhere in these lists.** Scanned `company_name`, `title` and every `locations`
    element over CJK Unified Ideographs, Hangul, Kana, Compatibility and Halfwidth/Fullwidth forms across
    all 34,958 records: **0 hits in all four sources.** The real non-ASCII is U+2013 EN DASH (610 in S1),
-   curly quotes, one U+2011 non-breaking hyphen, and `é` in one employer name. A fixture carrying CJK
+   curly quotes, one U+2011 non-breaking hyphen, and Latin-1 accents in **two** employer names. A fixture carrying CJK
    would be modelling something that is not there.
 7. **Four checks the live corpus cannot exercise**, so the fixture carries them and the suite is the only
    place they can fire: a missing `url` key (0 records today), a non-string `url` (0), an empty-host URL
@@ -167,7 +175,8 @@ count is worth showing a reviewer, because it is the only evidence of the slug t
 
 ## 6. What is deliberately not committed
 
-**No captured record, in any form.** The repo is public. R7 admits a data file only with a declared
+**No captured record, and no JD body, in any form** -- see §2 for the handful of individual URLs and
+employer names the authored fixture does carry as recorded shapes. The repo is public. R7 admits a data file only with a declared
 `provenance`, and the only honest value for a third party's job listings is `public`, which then obliges
 a `license` — and the larger in-scope repo has none (§2). `synthetic` would be a lie. R8 independently
 refuses a second `company_enumeration` at any path, so the *emitted candidate file* cannot be committed

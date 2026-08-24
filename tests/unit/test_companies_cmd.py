@@ -1,9 +1,12 @@
+import sqlite3
+from contextlib import closing
+
 import httpx
 import pytest
 import respx
 import yaml
 from github_lists_shape import listings
-from sqlalchemy import func, select
+from sqlalchemy import select
 from sqlalchemy.exc import OperationalError
 from typer.testing import CliRunner
 
@@ -11,7 +14,7 @@ from boardwatch.cli.app import app
 from boardwatch.lanes.github_lists import LIST_URLS
 from boardwatch.providers.base import BoardHealth
 from boardwatch.store import tables
-from boardwatch.store.db import get_engine
+from boardwatch.store.db import DB_FILENAME, get_engine
 
 runner = CliRunner()
 
@@ -89,11 +92,27 @@ def test_discover_writes_no_watch_and_emits_a_file_import_accepts(tmp_path) -> N
         app, [*base, "companies", "discover", "--limit", "4", "--out", str(out)]
     )
     assert written.exit_code == 0, written.stdout
-    with get_engine(tmp_path / "data").connect() as conn:
-        assert conn.execute(select(func.count()).select_from(tables.companies)).scalar() == 0
+    # Not "zero companies" but "NO SCHEMA": `discover` uses ensure=False, so it must not migrate.
+    # SQLAlchemy touches the file just by inspecting it, so the file's existence proves nothing --
+    # the absence of every table does. Read through stdlib sqlite3 rather than the same
+    # `inspect(engine)` call the command itself makes, so this cannot agree with itself.
+    # `closing`, not a bare `with`: `sqlite3.Connection.__exit__` commits the transaction and does
+    # NOT close the connection, which leaks it and raises ResourceWarning under the gate.
+    with closing(sqlite3.connect(tmp_path / "data" / DB_FILENAME)) as raw:
+        assert raw.execute(
+            "SELECT name FROM sqlite_master WHERE type = 'table'"
+        ).fetchall() == []
 
-    rows = yaml.safe_load(out.read_text(encoding="utf-8"))["companies"]
+    written_text = out.read_text(encoding="utf-8")
+    rows = yaml.safe_load(written_text)["companies"]
     assert len(rows) == 4
+    # The header has to be IN THE FILE, not only on stdout. `yaml.safe_load` ignores comments, so
+    # emitting the bare body passed every other assertion here -- and the header is the whole
+    # artifact the design says the owner reviews away from the terminal that produced it.
+    assert written_text.startswith("# boardwatch companies discover")
+    assert "held back by the cap" in written_text
+    for row in rows:
+        assert f"{row['provider']}:{row['slug']}" in written_text
     assert runner.invoke(app, [*base, "companies", "import", str(out)]).exit_code == 0
     for row in rows:
         watched = _watch_count(tmp_path, row["provider"], row["slug"])

@@ -13943,3 +13943,84 @@ alter `companies add` for every user, so each is its own ruling.
 **Not a `Lane`, and deliberately absent from `LANE_FACTORIES`.** It returns no postings and no
 `AcquisitionTally`, so it cannot satisfy `LaneResult`; registering it would make the pipeline call
 `collect(fetcher, admits)` on it every run.
+
+**REVIEW ROUND, same session: two lenses, six defects, and five of D-296's own numbers were wrong.**
+The build passed `make check` and all six CI checks before either reviewer started, so every finding
+below is a defect the suite did not catch.
+
+*Fixed here.*
+
+- **The review header could be forged by the data being reviewed.** `company_name`, the raw `url` and
+  the slug derived from it are echoed into `#` comment lines, and `.strip()` removes only leading and
+  trailing whitespace. Measured, and worse than predicted: `"Acme\nEvil: pwned"` does **not** fail to
+  parse — it silently adds a TOP-LEVEL YAML key, so the document a human reads stops being the
+  document that parses. A C0 character instead raises `ReaderError` pointing at `companies:`, nowhere
+  near the cause. The `companies:` body was never at risk (`safe_dump` quotes it; the header precedes
+  it and `safe_load` keeps the last duplicate). What was at risk is the review — the only thing
+  standing between a public list and what the machine watches. Fixed by flattening C0 + DEL and
+  collapsing whitespace at the three echo sites. **A lone surrogate is deliberately left to crash
+  `write_text`:** replacing it would emit a mangled slug that `companies import` would watch as a
+  permanently failing board, and the fail-safe direction for a file destined for the store is a loud
+  crash, not a quiet bad write.
+- **One stray bracket aborted the entire run.** `urlparse` raises a BARE `ValueError("Invalid IPv6
+  URL")` on an unbalanced `[`/`]`, which `parse_board_target` did not convert, so a single such record
+  among 19,955 returned no census and no file — contradicting this module's own claim that there is no
+  exception path. Fixed at the root, in `core/board_urls.parse_board_target`, which also closes it for
+  `companies add`, `companies remove`, `init` and the hiring.cafe lane. `UnknownBoardURL` already
+  subclasses `ValueError`, so no caller's `except` widens. **This is a different kind of change from
+  the `embed` slug defect deliberately left alone:** that one alters what a VALID parse returns and
+  needs a ruling; this one turns a crash into the function's own documented error.
+- **`companies discover` ran `alembic upgrade head` against the live store**, via `build_context`'s
+  default, while its own docstring promised no store write. Now `ensure=False`, the same reason
+  `doctor` uses it. The fresh-machine path is handled by ASKING the schema
+  (`inspect(...).has_table("companies")`) rather than catching the query's failure: string-matching an
+  `OperationalError` message is what this repo forbids, and a bare `except OperationalError` would
+  equally swallow a locked or corrupt store. An absent schema is not an error — nothing is watched, so
+  every board really is new.
+- **`yaml.YAMLError` is not a `ValueError`**, so `companies import` tracebacked on a malformed file
+  instead of reporting it. Newly reachable: this feature exists to hand a human a YAML file to edit.
+- **Four vacuous tests.** `test_the_employer_name_is_stripped` **could not fail** — proven by
+  mutation: deleting `.strip()` left all 81 tests green, because the fixture's padded record was the
+  *third* record of its board and `discover` names a candidate from the *first*. The trap was modelled
+  in a position where the guarded path was unobservable. Also: `assert str(census.inactive) in blob`
+  was unfalsifiable (`"4"` appears throughout a header full of URLs and dates); the closed-vocabulary
+  guards used `<=`, so shrinking the fixture's 4 sponsorship values to 1 and 14 degrees to 2 stayed
+  green; and the CJK guard matched Unicode *names*, missing three of the five ranges the contract
+  claims to have scanned. Fixed, and the strip fix re-verified by mutation on a copy: 2 tests now fail.
+- **Nothing required the review header to reach the `--out` file.** Emitting the bare YAML body passed
+  every assertion, because `safe_load` ignores comments — and the header is the artifact the design
+  says the owner reviews away from the terminal.
+- **`RecordCensus.partitions` had no production caller** and is deleted; a check that cannot fire is
+  deleted. Its docstring now also states that `records` counts what `read_listings` handed over, so a
+  non-object element of the JSON array is dropped at the parse boundary and is invisible to the five
+  counters.
+
+*Five of D-296's own numbers were wrong, and the doc contradicted itself.* "One live record" has the
+`embed/job_app` shape → **15 in-scope `active` records** (59 over all in-scope records) on the one board
+`greenhouse:embed`, which turns the trap from a curiosity into a shape a reviewer meets most runs and
+recalibrates how much the human step is trusted. "1,136 of the 1,991 in-scope provider records" →
+**1,127 of 1,956**, where 1,956 is what §4 of the same document reports 70 lines away; **1,991 traces to
+no measurement at all**, and the derived "47.1% / 47%" — which had reached two shipped docstrings — is
+its second-order artifact, correctly **48.2%** (1,820 of 3,776). `date_updated < date_posted` is **1**
+in scope, not 5 (5 is all four sources, quoted inside a table whose columns are S1 and S2). "6 boards'
+worth of typo" is **5 boards / 6 URLs**. "`é` in one employer name" is **two**. All corrected in the
+contract, the fixture and `src/`.
+
+*And one claim was false as written.* "Nothing captured is committed, here or anywhere" and "no byte of
+this data is committed" — the authored fixture carries the 7 malformed URLs verbatim including their
+employer segments, one real `embed/job_app` URL and token, one real percent-encoded ashby board name,
+and two real employer names. The substance survives (no listing record, no JD body, no redistribution,
+and R7 does not scan `.py` at all) but the absolute phrasing was the licence premise, so it now states
+precisely what is carried and why that is safe.
+
+*Recorded, not fixed — a fifth alongside the four in this entry's earlier list.* `discover --out` writes
+UTF-8 while `companies import` takes a `typer.FileText`, which reads with the **locale default**, so on
+a non-UTF-8 Windows codepage an accented employer name mojibakes silently into `companies.name` — which
+feeds the `cross_host` posting identity. Mechanism certain, real-world impact unverified, and Windows is
+best-effort. It is a change to a shipped CLI signature, so it is its own ruling.
+
+*Independently confirmed by the second lens, on real data rather than the fixture:* all 926 live boards
+validate through `companies import`'s own path with **0** slugs rewritten by `_normalized` — including
+365 workday composites and the 3 percent-encoded ashby slugs — `extra="forbid"` satisfied, and the real
+CLI returning exit 0 on a scratch store. Every number in §3's census table and the whole of §4's board
+and ramp table reproduced exactly against independent stdlib counting.
