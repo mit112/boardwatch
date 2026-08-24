@@ -17,6 +17,11 @@ EXPECTED_SETTINGS_DEFAULTS: dict[str, object] = {
     "Settings.reap_stale_after_hours": 24,
     "Settings.scan_workers": 4,
     "Settings.detail_fetch_budget": 50,
+    # A revalidation bound, not a preference: after this many hours a board's cached ETag/
+    # Last-Modified is dropped and refetched unconditionally, so a permanently-stale upstream
+    # validator cannot freeze a board forever. 24 is neutral — one day caps the silent-staleness
+    # window at a natural period and says nothing about roles, geography or field.
+    "Settings.validator_max_age_hours": 24,
     "Settings.recency_half_life_days": 14.0,
     # How long a surfaced-but-unbuilt job stays suppressed (P6 slice 2). 7 is neutral: one
     # week is the shortest period that outlives a single work week, so a job shown on Monday
@@ -78,6 +83,7 @@ SETTINGS_FIELD_CLASS: dict[str, str] = {
     "Settings.reap_stale_after_hours": "operational",
     "Settings.scan_workers": "operational",
     "Settings.detail_fetch_budget": "operational",
+    "Settings.validator_max_age_hours": "operational",
     "Settings.recency_half_life_days": "preference",
     "Settings.seen_ttl_days": "preference",
     "Settings.location_filter_mode": "preference",

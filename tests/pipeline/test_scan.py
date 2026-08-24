@@ -1,5 +1,6 @@
 """Coordinator round-trip, state test d, failure isolation, CLI smoke."""
 
+from datetime import timedelta
 from pathlib import Path
 from typing import Any
 
@@ -12,6 +13,7 @@ from sqlalchemy import Engine, insert, select
 from typer.testing import CliRunner
 
 from boardwatch.cli.app import app
+from boardwatch.core.clock import utcnow
 from boardwatch.core.settings import Settings
 from boardwatch.providers.base import BoardHealth
 from boardwatch.scan.coordinator import run_scan
@@ -74,6 +76,41 @@ def test_validator_round_trip_across_scans(
     # scan's BoardRequest for the same canonical URL (D22 round trip)
     assert route.calls[0].request.headers["If-None-Match"] == 'W/"rt1"'
     assert second.unchanged == 1
+
+
+def test_stale_validator_triggers_unconditional_refetch(
+    engine: Engine, tmp_path: Path, case: ProviderCase
+) -> None:
+    """A validator older than validator_max_age_hours is dropped: the next scan refetches
+    unconditionally (no If-None-Match) rather than trusting a possibly-stale upstream ETag
+    forever, which would otherwise yield silent 304s and permanently frozen postings."""
+    _add_company(engine, "acme", case.name)
+    url = case.board_url()
+    settings = _settings(tmp_path)
+    with respx.mock:
+        respx.get(url).mock(
+            return_value=httpx.Response(
+                200, content=case.wrap(case.jobs()[:2]), headers={"ETag": 'W/"rt1"'}
+            )
+        )
+        first = run_scan(engine, settings)
+    assert first.complete == 1
+    # Age the stored validator just past the TTL, then rescan.
+    with engine.begin() as conn:
+        conn.execute(
+            tables.http_cache.update()
+            .where(tables.http_cache.c.url == url)
+            .values(fetched_at=utcnow() - timedelta(hours=settings.validator_max_age_hours + 1))
+        )
+    with respx.mock:
+        route = respx.get(url).mock(
+            return_value=httpx.Response(
+                200, content=case.wrap(case.jobs()[:2]), headers={"ETag": 'W/"rt2"'}
+            )
+        )
+        second = run_scan(engine, settings)
+    assert "If-None-Match" not in route.calls[0].request.headers
+    assert second.complete == 1  # refetched as a full inventory, not `unchanged`
 
 
 def test_d_company_filtered_scan_touches_only_that_board(

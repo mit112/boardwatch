@@ -17,6 +17,7 @@ from collections import defaultdict
 from collections.abc import Sequence
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass, field
+from datetime import timedelta
 from pathlib import Path
 from typing import Any
 
@@ -271,7 +272,9 @@ def _scan_body(
                     prov,
                     BoardRequest(
                         provider=row.provider, slug=row.slug, url=url,
-                        validators=get_validators(conn, url),
+                        validators=get_validators(
+                            conn, url, max_age=timedelta(hours=settings.validator_max_age_hours)
+                        ),
                         known_posting_ids=frozenset(grouped.get(row.id, ())),
                         detail_budget=settings.detail_fetch_budget,
                     ),
