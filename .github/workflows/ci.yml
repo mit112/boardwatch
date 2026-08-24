@@ -8,6 +8,16 @@ on:
     - cron: "0 7 * * *"
   workflow_dispatch:
 
+# Superseded PR runs are cancelled; `main` pushes and the nightly are not. A PR branch that is
+# pushed several times used to run every revision to completion — fix/sqlite-bound-parameter-cap
+# burned four full runs (28+29+22+29 min) to land one change. Cancelling only on `pull_request`
+# keeps every signal that a merge or the schedule produces, and drops only the runs whose commit
+# is already superseded. Do NOT widen this to `push`: a cancelled `main` run would leave the
+# branch with no completed CI for the commit that actually shipped.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 permissions:
   contents: read
   pull-requests: read
