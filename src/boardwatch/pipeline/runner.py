@@ -45,6 +45,7 @@ from boardwatch.eligibility.preflight import current_identity
 from boardwatch.lanes.admission import CompanyBudget
 from boardwatch.lanes.base import Lane
 from boardwatch.lanes.hiringcafe import HiringCafeLane
+from boardwatch.lanes.linkedin import LinkedInLane
 from boardwatch.notify.heartbeat import send_heartbeat
 from boardwatch.pipeline.freshness import folders_reconcile
 from boardwatch.pipeline.funnel_writer import collect_run_funnel
@@ -144,6 +145,9 @@ LaneFactory = Callable[[Settings], Lane]
 # map runs until an operator names it. Registration only makes a lane reachable.
 LANE_FACTORIES: dict[str, LaneFactory] = {
     HiringCafeLane.name: lambda settings: HiringCafeLane(
+        posting_budget=settings.lane_posting_budget
+    ),
+    LinkedInLane.name: lambda settings: LinkedInLane(
         posting_budget=settings.lane_posting_budget
     ),
 }
