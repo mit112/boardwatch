@@ -8,6 +8,16 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- **Validator TTL forcing periodic board revalidation (D-298).** `get_validators` drops a cached
+  conditional-request validator (ETag / Last-Modified) older than the new `validator_max_age_hours` setting
+  (default 24), so the next scan refetches the board unconditionally instead of trusting a possibly-stale
+  upstream validator forever — a permanently-stale ETag can no longer silently freeze a board's postings
+  (`304 → unchanged` with no self-healing). Provider-agnostic; classified out of `config_hash` (throughput,
+  not decision-relevant, so it does not restamp `policy_version`); `max_age=None` preserves prior behaviour.
+
+- **Greenhouse `_meta_total` NaN/Infinity guard test.** Pins the `except (ValueError, OverflowError)` branch
+  that keeps a non-finite `meta.total` from failing the whole board (`json.loads` accepts `NaN`/`Infinity`).
+
 - **LinkedIn guest discovery lane (`lanes/linkedin.py`), registered but off by default (D-297).** The last of
   the approved discovery lanes. A posting source keyed on the company **slug** — LinkedIn exposes no external
   apply URL, so convergence with an ATS copy of the same role is left to the P6 dedup identity, not a link.
