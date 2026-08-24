@@ -6,6 +6,7 @@ from __future__ import annotations
 import typer
 from rich.console import Console
 
+from boardwatch.cli._hints import print_next_step
 from boardwatch.cli.context import build_context
 from boardwatch.scan.coordinator import ScanLockHeldError, run_scan
 
@@ -37,3 +38,4 @@ def scan(
         # contradict `top` once `top` hides postings persisted as ineligible.
         line += f" · {matches} match ranking filters"
     console.print(line)
+    print_next_step(console, "run `boardwatch top` to see your ranked shortlist")

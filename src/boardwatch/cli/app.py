@@ -13,6 +13,7 @@ from boardwatch.cli.digest_cmd import digest as _digest
 from boardwatch.cli.doctor_cmd import doctor as _doctor
 from boardwatch.cli.eligibility_cmd import eligibility_app
 from boardwatch.cli.export_cmd import export as _export
+from boardwatch.cli.guide_cmd import guide as _guide
 from boardwatch.cli.identities_cmd import identities_app
 from boardwatch.cli.init_cmd import init as _init
 from boardwatch.cli.ledger_cmd import ledger_app
@@ -59,6 +60,7 @@ app.command("init")(_init)
 app.add_typer(profile_app, name="profile")
 app.command("top")(_top)
 app.command("show")(_show)
+app.command("guide")(_guide)
 app.add_typer(config_app, name="config")
 app.add_typer(settings_app, name="settings")
 app.command("doctor")(_doctor)

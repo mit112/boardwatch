@@ -11,6 +11,7 @@ from pathlib import Path
 import typer
 from rich.console import Console
 
+from boardwatch.cli._hints import print_next_step
 from boardwatch.cli.context import build_context
 from boardwatch.pipeline.liveness import build_prober
 from boardwatch.pipeline.runner import DEFAULT_TOP_N, PipelineSummary, run_pipeline
@@ -201,6 +202,12 @@ def run(
         console.print(f"  morning → {summary.morning.markdown_path}", markup=False)
     for err in summary.errors:
         console.print(f"  ! {err}", markup=False)
+
+    if summary.fatal is None and summary.tailored:
+        print_next_step(
+            console,
+            "review the leads above, then `boardwatch track add <#>` after you apply",
+        )
 
     # Only a FATAL condition fails the run. A few unreachable boards and a few leads that
     # would not tailor are the documented norm across 85 watched boards, and `boardwatch scan`

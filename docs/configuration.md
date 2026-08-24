@@ -144,6 +144,25 @@ The bundle is separate from `{config_dir}/resume.yaml` and does not feed it. `bo
 reads `resume.yaml` and nothing else; there is no bundle-to-résumé bridge in this release. See
 [the authoring guide](profile-bundle-authoring.md) for the format, the exit contract, and recovery.
 
+## Level-aware gating
+
+Only a confident hit hides a posting. A title carrying a level token boardwatch cannot resolve —
+and most bare `L2`/`T3` tokens are not levels at all, but OSI layers, support tiers or facility
+codes — is **abstained**: passed through, and counted under the table so you can see the gate's
+blind spot rather than inherit it silently. To resolve levels for a company you watch, bind it to one
+of the shipped company-free rung ladders in `{config_dir}/leveling-bindings.yaml`:
+
+```yaml
+bindings:
+  - provider: workday
+    slug: example.wd1.myworkdayjobs.com/example/careers
+    scheme: ic_1_to_7
+```
+
+The schemes themselves ship with boardwatch and name no companies — which company uses which ladder
+is yours to declare, exactly like your board list. With no bindings file, every level token abstains,
+which is the honest default.
+
 ## Settings menu
 
 `boardwatch settings` is a read-only view of every opt-in feature (the `[llm]` and
