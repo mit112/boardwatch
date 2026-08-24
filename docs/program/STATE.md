@@ -26,14 +26,13 @@ once. Fixed and merged (D-287). The launchd job now fires **eight times a day** 
 any absolute comparison against that number is void. The gate counts consecutive clean **ticks**, not
 launchd invocations.
 
-**GATE P3 IS 2 OF 7.** Run 71 (11:00) was the first clean scheduled tick on the fixed tree — exit 0,
-22m47s, 135 board scans, funnel-71 written, 40 leads. **Run 72 (14:00) is the second** — `runs.status='ok'`,
-19:00:05-19:20:04 UTC (19m59s), funnel-72 written at 14:20 local, confirmed through both the artifact and
-the `runs` row rather than launchd's self-report alone. Its `errors_json` carries the same 13 known
-board failures run 70 had **minus** the `too many SQL variables` abort, which is the before/after on one
-corpus. A failed unattended run RESETS the streak rather than pausing it, and **Gate P4 is barred until P3
-is met**. Only a SCHEDULED tick counts — a manual `run --project` moves nothing. At 8 fires a day the
-remaining 6 ticks are ~18 hours, not 6 days.
+**GATE P3 IS 5 OF 7.** Runs 71-75 all carry `runs.status='ok'` — 16:00, 19:00, 22:00, 01:00 and 04:00 UTC,
+19m32s to 22m47s, 24-36 boards each. Run 70 (13:00 UTC) was the last failure. **launchd independently
+reports `runs = 5` and `last exit code = 0`, which matches the store 1:1 since the reload** — that
+correspondence is what makes all five *scheduled* rather than manual, and it is the check to repeat rather
+than trusting either source alone. Cadence verified at 8 `calendarinterval` streams. A failed unattended run
+RESETS the streak rather than pausing it, and **Gate P4 is barred until P3 is met**. Only a SCHEDULED tick
+counts — a manual `run --project` moves nothing. **The last two ticks are ~5 hours away, not 5 days.**
 
 > **A MANUAL RUN RACING A TICK EXITS 2 AND RESETS GATE P3**, and at 8 fires a day that is 8× likelier than
 > it was. Check `launchctl print gui/$(id -u)/com.boardwatch.run | grep state` before starting one by hand.
@@ -50,11 +49,15 @@ sessionized parts; the plan file at `~/.claude/plans/lets-use-this-session-stage
 Part 3 "Indeed" and Part 4 "hiring.cafe + GitHub lists" — that ordering was REVERSED by D-285 and the file
 was never rewritten. Trust D-285/D-286, not the plan file.**
 
-**PARTS 1, 2 AND 3 ARE COMPLETE, AND PART 4 IS PROBED BUT NOT BUILT.** Both probes ran 2026-08-23d and
-both are ruled, so the next action is the BUILD, in this order: the **GitHub-lists client** (D-291 — company
-discovery, no JD body anywhere in 34,984 records, but **887 of 920 boards are new**), then **LinkedIn**
-(D-290 — Mit ruled BUILD; the body is free and unauthenticated, and `robots.txt` disallows the route). Then
-Part 6, with Part 5 anytime. Plan: `.agent/` scratch notes carry the shape; the rulings are in D-290/D-291.
+**PARTS 1, 2 AND 3 ARE COMPLETE, AND PART 4 IS PROBED, RULED, SCOPED AND NOT BUILT.** Order: the
+**GitHub-lists client** (D-291 — company discovery, **no JD body in any of the 34,958 records**, re-confirmed
+2026-08-24), then **LinkedIn** (D-290 — Mit ruled BUILD; the body is free and unauthenticated, and
+`robots.txt` disallows the route). Then Part 6, with Part 5 anytime.
+
+> **D-291's "920 boards, 887 new" is real but its stated corpus is wrong**, and the difference is 4x. The
+> figure is the **two new-grad lists' `active=True` records** (3,778 → 927 boards / 898 new, reproduced), not
+> "all 6,088 active records" as the ruling reads. All four lists, unfiltered, give **3,881 / 3,813**. A board
+> count needs its list set AND its `active` filter stated beside it. Full table in METRICS 2026-08-24.
 
 **The lane (hiring.cafe) is BUILT but NOT ARMED and has never run against the live service.**
 `lanes_enabled` defaults empty. Part 3's exit criterion 2 — a lead at a company none of the six providers
@@ -87,37 +90,34 @@ close to guaranteed for ~92 runs by ledger drain alone; the real threat is a **l
 re-serves built jobs and scores them 0 net-new. **B5 is UNSCOREABLE** until run-scoped rank attribution
 exists — do not score it on exit status alone.
 
-**RULINGS 1-4 ARE AUDITED, FIXED AND GATED on `feat/d293-precision-rulings` — PR #148, OPEN, NOT MERGED
-(D-294).** The branch arrived ungated, untested and unreviewed. `make check` is now green on it twice
-(7,470 passed, 0 failures, 6m58s, coverage 95.79%) and CI's `generalization`, `gitleaks` and `perf` pass.
+**RULINGS 1, 2 AND 4 SHIP. RULING 3 IS DROPPED (D-295).** PR #148 on `feat/d293-precision-rulings`, open,
+reviewed three rounds, gated green. **All three items D-294 left owed are cleared:** CI passed on
+3.11/3.12/3.13 plus the three CI-only jobs; the unreviewed delta was reviewed; the `cross_host` docstring
+was written and then reverted with the rest of the dedup half, its reasoning preserved in D-295.
 
-**THREE THINGS ARE OWED BEFORE MERGING, and none is optional:**
-1. **CI's test matrix (3.11/3.12/3.13) was still PENDING at session end.** Green `make check` is not green
-   CI. Check `gh pr checks 148` first.
-2. **The third review round was dispatched and KILLED at session end having produced nothing.** Rounds 1
-   and 2 each found a defect the previous round missed — round 2 found a CRITICAL one *introduced* by round
-   1's fix — so this branch has an unreviewed delta (`255d90e..50a1e3b`). Its scope is written into D-294
-   round 2; re-run it before merging rather than treating two rounds as enough.
-3. **One doc edit is owed and was deliberately NOT made**, to avoid ending the session the way it began —
-   with an ungated commit. The "weakest kind on the chain" relabel in `core/dedup.py` is provably sound
-   ONLY because `company_title_location`'s key components are a strict subset of `exact_quad`'s, which
-   makes the shared key transitive. **Enabling `cross_host` would break that proof** — its key uses the
-   normalized company NAME, not `company_id` — so a relabelled chain could point at a pair sharing no key
-   of its stamped kind. That is a second, previously unrecorded reason for the standing `cross_host`
-   deferral and belongs in `core/identity_kinds.py`'s catalog docstring. Rulings 1, 2 and 4 land as ruled — D-263's
-missing known-positive check was run and the gate loosens **nothing** (989 `uncertain -> not_swe`, 8
-`swe -> not_swe`, all 8 intended). **Ruling 3 was changed on a measurement and the owner approved the
-change:** as ruled it hid **269** lead-reachable software postings of which only **103** were real repeats,
-so a suppression on `company_title_location` now also requires the two job descriptions to be **>= 0.90
-similar**. That keeps all three duplicates that actually built two résumés (0.943/0.967/0.998) and spares a
-Stripe pair at 0.740 that turned out to be two different teams. 269 -> **78**.
+**Round 3 found a production defect in EACH half — three rounds, three defects, each invisible to the round
+before.** The standing lesson is now explicit: **a review round is not finished until a round finds
+nothing.**
 
-**Three defects were fixed that no measurement against today's corpus could have found**, because the
-titles do not exist in it yet and Part 4's breadth is what supplies them. The worst: the branch added the
-first deny stage that runs BEFORE the software rescue, which is reachable by *every* software title, and it
-vetoed `SRE`/`DevOps`/`Backend`/`Frontend`/`Full Stack Team Leader` — all `swe` on `main`. That stage is
-deleted; the real bug was the bare `front end` token rescuing a store checkout area, and it is fixed at the
-rescue. **The lesson worth keeping: a corpus-absence argument is not a safety argument.**
+- **Role gate:** the front-end rescue's head nouns were `(engineer|...|lead)\w*`, so `lead` was
+  **`lead\w*` and matched "Leader"**, re-rescuing as `swe` the exact retail rows ruling 2 denies — the same
+  failure as the `manager` token D-294 had already rejected. The comment two lines below *and* D-294's own
+  record both asserted `\blead\b` does not match "Leader"; the code never had that property. Fixed by an
+  inner group, **verdict-neutral over 27,680 unique titles**, 0 live hits today — only breadth would have
+  surfaced it.
+- **Ruling 3:** its floor was calibrated at min-true-duplicate 0.9421 vs max-non-duplicate 0.8986. Reading
+  the body diff of all 40 suppressions below 0.945 found **9 are different openings** — GE HealthCare's
+  Lubbock / Salt Lake City / Chattanooga postings (all `locations=["Remote"]`), a Capital One pair whose
+  loser's own URL reads `Lead-Software-Engineer--Front-End`, Thomson Reuters Indirect vs Direct Tax. Non-
+  duplicates reach **0.9372**: the window is ~0.005 and **the populations overlap, so no floor separates
+  them**. The char→word metric change made it *worse*. And no test constrained the constant — any floor in
+  (0.1915, 0.9550] left the suite green.
+
+**Dropping ruling 3 dissolved both dedup findings at once**, because each followed from admitting a second
+suppressing kind; a forced single-kind control returns byte-identical suppressions (566/566). The cost was
+measured before the choice: delivered duplicate leakage is **3 of 146 = 2.05%**, inside Gate P6's 5% bar
+**without** ruling 3. A redesign on the real discriminators — requisition slug, the body's own city, salary
+band, YOE, all of which lie *outside* the similarity number — is **deferred, not dismissed**.
 
 **The precision work is a PREREQUISITE for raising the cap, not a yield gain.** Measured against delivered
 output rather than the corpus: 6 of the 146 résumés ever built were for roles the new gate rejects, and
@@ -136,20 +136,36 @@ call and is now informed on both sides (D-293, D-294).
 
 ## Next action
 
-**Clear the three items above, then merge PR #148, then build Part 4.** Nothing on the branch is armed by
-config — the role and dedup changes take effect on the FIRST TICK after merge, so merge deliberately
-between ticks (`launchctl print gui/$(id -u)/com.boardwatch.run | grep state`), never during one.
+**Merge PR #148 once Gate P3 is MET, then build Part 4.** Nothing on the branch is behind a config flag, so
+the role and CJK changes take effect on the FIRST TICK after merge. **Mit's call was to hold the merge until
+the 7th tick rather than merge between ticks** — at 5 of 7 a failed tick costs ~21 hours and bars Gate P4,
+whereas after the gate is met a later failure cannot un-meet it. Merging earlier is safe on the evidence
+(zero new SQL anywhere in the branch, so run 70's bound-parameter class is not reintroduced) but the
+asymmetry decided it.
 
-**Build Part 4.** Both halves are probed and ruled (D-290, D-291); neither is built. Order is 1→2→3→4→6
-with Part 5 anytime; 1–3 are merged. Build the **GitHub-lists client first** — it needs no new provider code
-(slugs come out in registry shape) and carries no permission question — then **LinkedIn**, off by default
-like hiring.cafe and not armed while Gate P3 accrues.
+**Then build Part 4, GitHub-lists client first** (D-291), then **LinkedIn** (D-290), both off by default.
+**All three open build decisions were taken 2026-08-24 (D-295/METRICS):**
+1. **Reach = the two new-grad lists' open postings — ~898 new boards.** Both repos are MIT-licensed, so the
+   licensing question disappears. **This is also exactly the corpus D-291's headline was measured on**, which
+   its prose mis-attributed to all four lists.
+2. **Write path = emit a candidate file for review, then `companies import`.** Not an unattended store write.
+3. **Ramp = the existing cap of 10 per run, cheapest providers first** — the four inline-body providers, then
+   Workday, then SmartRecruiters last.
 
-Two constraints that must survive into the build, both measured: LinkedIn exposes **no external apply URL**
+**The structural blocker to expect: the ramp control is not on the path that needs it.**
+`upsert_lane_company` hardcodes `watched=False`, nothing scans an unwatched board
+(`get_watched_companies` filters `watched.is_(True)`), and the only writes that set `watched=True`
+(`upsert_watch`, via `companies add`/`import`) have **no cap at all**. `lane_new_companies_per_run` is
+consulted in exactly one place, on the unwatched path. A capped watched-write has to be built. Do **not** add
+a defaulted `watched=` to `upsert_watch` — that rejection is already recorded in its sibling's docstring.
+`companies.source` is `CHECK (source IN ('registry','user','lane'))`, so a new value needs a migration;
+`'user'` is what `companies add` already writes.
+
+Two LinkedIn constraints that must survive into the build, both measured: it exposes **no external apply URL**
 (`externalApply` appears 0 times), so converge on the company **slug**, never the link; and **`f_WT=2`
 (remote) is silently ignored**, returning a byte-identical set to unfiltered. Commit **no** captured JD body
-from either source — the generalization gate refuses third-party data that would oblige a licence which
-does not exist, and 4 of the 6 GitHub repos ship no licence at all.
+or list record from either source — the generalization gate refuses third-party data that would oblige a
+licence which does not exist.
 
 ---
 
@@ -173,13 +189,16 @@ does not exist, and 4 of the 6 GitHub repos ship no licence at all.
 6. **P2 item 8 — the onboarding field-taxonomy gatherer.** Needs its own brainstorm; D-054 forbids us
    authoring non-tech field content.
 7. **`add-evidence` takes no bundle lock** (D-143) — raise before two authoring agents run against one bundle.
-8. **Extending the leakage query past `exact_quad`** — the Gate P6 clause cannot fail for the
-   `company_title_location` class (D-294). Fixing it reverses D-132/D-283's ratified "only `exact_quad`
-   counts" **while the gate is being measured**, which is why it was raised and not taken. One join
-   condition, `store/identity_queries.py:296`.
-9. **A per-kind `hidden_duplicate` breakdown** — one funnel number now mixes identical-body and
-   same-role-and-place evidence, so the risk the owner accepted on ruling 3 is not separately countable.
-   Additive funnel field ⇒ owes an `ARTIFACT_VERSION` bump, which is the same shipped-schema call as item 4.
+8. **Extending the leakage query past `exact_quad`** — the Gate P6 clause **cannot fail** for the
+   `company_title_location` class, because `store/identity_queries.py:296` hardcodes `kind == "exact_quad"`.
+   Dropping ruling 3 did not close this and made it sharper: those duplicates are now neither suppressed nor
+   counted, and the corpus holds **1,597 redundant open postings (4.76%)** on that key. **Never cite a
+   passing leakage number as evidence dedup works.** One join condition, but it reverses D-132/D-283's
+   ratified "only `exact_quad` counts" **while the gate is being measured** (D-294/D-295).
+9. **A redesign of same-role-same-place dedup on real discriminators** — the requisition slug in the
+   posting's own URL, the city named in the body, the salary band, the YOE line. Ruling 3 is dropped because
+   a fuzzy body score provably cannot do this (D-295), not because the duplicates are acceptable. Its own
+   change, its own ruling.
 
 ---
 
@@ -205,7 +224,7 @@ records it and the run still does not fail. Clearance IS a blocker (D-257). Seni
 | P0 Instrumentation | **COMPLETE** | **MET** (D-030) |
 | P1 Résumé artifact gate | **COMPLETE** | **MET** (D-032/033) |
 | P2 Profile + keystone | items 1–7 shipped; item 8 NOT STARTED | **MET AS RECONCILED** (D-075) |
-| P3 Unattended one command | **COMPLETE, INSTALLED, FIRING** at ~3h (D-288) | **NOT MET — 2 of 7 unattended.** Runs 71 and 72 both clean on the fixed tree (2026-08-23 11:00 and 14:00). Next tick 17:00; 5 more ticks is ~15 hours |
+| P3 Unattended one command | **COMPLETE, INSTALLED, FIRING** at ~3h (D-288) | **NOT MET — 5 of 7 unattended.** Runs 71-75 all `ok` (16:00-04:00 UTC), corroborated by launchd's own `runs = 5` since the reload. **2 ticks left, ~5 hours** |
 | P4 Craft gate | **COMPLETE** | **NOT MET** — the owner's blind craft review, barred until P3's gate |
 | P5 Eligibility decides | **COMPLETE** | **MET** — INELIGIBLE precision 16/16, 0 span violations |
 | P6 Liveness + dedup | **BUILD COMPLETE** (D-110/111/113); leakage report shipped (D-283) | **3 of 4** — liveness MET (D-281), leakage measurable and reading **0.00%** but needs a 7-day ledger span (~2026-08-26) |

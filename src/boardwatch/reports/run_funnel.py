@@ -244,12 +244,9 @@ class ShortlistCounts:
     hidden_ineligible: int = 0
     hidden_below_cutoff: int = 0
     skipped_not_new: int = 0
-    # P6 slice 1. Both suppressing kinds reach this counter since D-294 — `exact_quad` and
-    # `company_title_location` — and only when identities are complete, so 0 here can mean
-    # either "no duplicates" or "not backfilled". `unique` in the per-source table
-    # distinguishes those two. It does NOT distinguish the two KINDS: a per-kind split is an
-    # artifact change and is deferred to the owner, so read this as "suppressed as a
-    # duplicate", never as "provably identical".
+    # P6 slice 1. Only `exact_quad` reaches this counter, and only when identities are
+    # complete — a partial backfill suppresses nothing, so 0 here can mean either "no
+    # duplicates" or "not backfilled". `unique` in the per-source table distinguishes them.
     hidden_duplicate: int = 0
     # P6 slice 2: suppressed by a live ledger disposition — already built, already refused, or
     # surfaced recently enough to still be inside its `seen` TTL. Unlike `hidden_duplicate` this
@@ -840,7 +837,7 @@ def build_run_funnel(
                 Drop(
                     reason="hidden_duplicate",
                     count=shortlist.hidden_duplicate,
-                    note="suppressed duplicate; drain with `top --include-duplicates`",
+                    note="provable exact_quad duplicate; drain with `top --include-duplicates`",
                 ),
                 Drop(
                     reason="hidden_applied",

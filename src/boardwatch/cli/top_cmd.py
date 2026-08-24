@@ -178,12 +178,9 @@ class RankedResults:
     # Narrowed away by `--new`. A scoping choice rather than a rejection, kept as its own
     # bucket so the identity holds for `top --new` too instead of only for the pipeline.
     skipped_not_new: int = 0
-    # Suppressed as a duplicate of a surviving posting (P6 slice 1), and only when
-    # identities are COMPLETE — a partial backfill suppresses nothing. TWO kinds land a
-    # posting here since D-294, on different strengths of evidence: `exact_quad` (identical
-    # body) and `company_title_location` (same role and place, near-identical body). This
-    # counter does not distinguish them; `identities regroup` is the only place that splits
-    # them today. Drained by `--include-duplicates`.
+    # Suppressed as a provable duplicate of a surviving posting (P6 slice 1). Only
+    # `exact_quad` can land a posting here, and only when identities are COMPLETE — a
+    # partial backfill suppresses nothing. Drained by `--include-duplicates`.
     hidden_duplicate: int = 0
     # Whether the dedup gate was actually open. Defaults to False, the noisy direction: a
     # caller that forgets to set it gets "suppression disabled" rather than silently

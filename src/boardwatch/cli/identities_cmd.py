@@ -9,9 +9,9 @@ import typer
 
 from boardwatch.cli.context import build_context
 from boardwatch.core.clock import utcnow
-from boardwatch.core.dedup import mergeable_suppressions, resolve_duplicates
+from boardwatch.core.dedup import resolve_duplicates
 from boardwatch.core.posting_identity import compute_identities
-from boardwatch.core.regroup import Refusal, plan_regrouping
+from boardwatch.core.regroup import plan_regrouping
 from boardwatch.reports.leakage import DEFAULT_WINDOW_DAYS, compute_leakage_report
 from boardwatch.store.identity_queries import (
     identities_complete,
@@ -43,11 +43,7 @@ def regroup(
         False, "--dry-run", help="Report what would move without writing anything."
     ),
 ) -> None:
-    """Move every MERGEABLE duplicate posting onto its survivor's canonical job (P6 slice 2 §3).
-
-    "Mergeable" is the catalog's word, not this command's: `company_title_location` suppresses
-    at rank time but may not rewrite a job anchor (D-294), so the count of suppressed postings
-    and the count considered for a merge are reported separately rather than folded.
+    """Move every duplicate posting onto its survivor's canonical job (P6 slice 2 §3).
 
     The corpus-wide counterpart to what the pipeline does over the population it ranked. Safe to
     re-run: a posting already on the canonical job plans no move, so a second pass writes
@@ -67,31 +63,24 @@ def regroup(
             raise typer.Exit(code=1)
         rows = load_identity_inputs(conn)
         suppressions = resolve_duplicates(rows, load_identities(conn))
-        by_kind = mergeable_suppressions(suppressions)
-        mergeable = sum(len(g) for g in by_kind.values())
-        planned = 0
-        moved = 0
-        refusals: list[Refusal] = []
-        for kind, group in by_kind.items():
-            member_ids = sorted(
-                {s.posting_id for s in group} | {s.survivor_posting_id for s in group}
-            )
-            plan = plan_regrouping(
-                group,
-                job_anchors(conn, member_ids),
-                protected_job_ids=protected_job_ids(conn),
-            )
-            planned += len(plan.merges)
-            refusals.extend(plan.refusals)
-            if not dry_run:
-                moved += apply_merges(conn, plan.merges, identity_kind=kind, now=utcnow())
+        member_ids = sorted(
+            {s.posting_id for s in suppressions} | {s.survivor_posting_id for s in suppressions}
+        )
+        plan = plan_regrouping(
+            suppressions,
+            job_anchors(conn, member_ids),
+            protected_job_ids=protected_job_ids(conn),
+        )
+        moved = 0 if dry_run else apply_merges(
+            conn, plan.merges, identity_kind="exact_quad", now=utcnow()
+        )
     verb = "would move" if dry_run else "moved"
-    count = planned if dry_run else moved
+    count = len(plan.merges) if dry_run else moved
     typer.echo(
-        f"regroup: {len(suppressions)} suppressed postings ({mergeable} mergeable), "
-        f"{verb} {count} onto a canonical job, {len(refusals)} group(s) refused"
+        f"regroup: {len(suppressions)} suppressed postings, {verb} {count} onto a "
+        f"canonical job, {len(plan.refusals)} group(s) refused"
     )
-    for refusal in refusals:
+    for refusal in plan.refusals:
         typer.echo(
             f"  refused ({refusal.reason}): postings "
             f"{', '.join(str(p) for p in refusal.member_posting_ids)}"
@@ -151,10 +140,8 @@ def leakage(
 ) -> None:
     """Gate P6's "duplicate leakage over 7 days" number (design §2, `reports/leakage.py`).
 
-    Only `exact_quad` counts as a duplicate HERE (the owner's ruling, and NOT changed by
-    D-294 — which made `company_title_location` suppress at rank time without extending this
-    metric, so a regression in that suppression is invisible to Gate P6; see
-    `reports/leakage.py`). Only jobs that actually reached the operator
+    Only `exact_quad` counts as a duplicate (the owner's ruling — see
+    `core/identity_kinds.py`), and only jobs that actually reached the operator
     (`job_dispositions`: `seen`, `skipped`, or `built`) count as "leaked" — a duplicate the
     ranker suppressed before it ever surfaced never leaked. Body-less/unbackfilled postings
     have no `exact_quad` identity by design and are reported as their own `unidentified`

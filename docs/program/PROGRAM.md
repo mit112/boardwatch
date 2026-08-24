@@ -509,13 +509,8 @@ measurement is provisional until audited.
 
 ### P6 — Liveness and dedup
 
-1. **Posting-identity table** separate from URLs, multiple ranked identity kinds per posting. Suppression
-   was restricted to exact identities; **amended by D-294** to admit `company_title_location` as a second
-   suppressing kind, on two conditions that keep the original constraint's intent: it may **never merge**
-   (so the new kind rewrites no job anchor; `exact_quad` merges still do, as they always have), and it
-   suppresses only when the two job descriptions are **near-identical**, which is what
-   separates a re-post from two openings sharing a generic title. `cross_host` and `content_hash_only`
-   remain annotate-only.
+1. **Posting-identity table** separate from URLs, multiple ranked identity kinds per posting; only exact
+   identities may suppress.
 2. **Allowlist URL normalization** (not a denylist) + `sorted(kept)` + **string-verify on hash hit**.
 3. **Cross-host identity** — `company + normalized_title (+ location)` as a second key; on collision keep
    the direct-ATS URL, drop the aggregator.

@@ -8,45 +8,22 @@ from boardwatch.core.host_class import classify_host
 from boardwatch.core.identity_kinds import (
     IDENTITY_KIND_NAMES,
     IDENTITY_KINDS,
-    MERGING_KIND_NAMES,
-    MERGING_KINDS,
     SUPPRESSING_KINDS,
     UnknownIdentityKind,
     kind_spec,
 )
 
 
-def test_the_suppressing_kinds_are_exactly_the_two_the_spec_admits():
-    """PINNED. Do not add a kind to this list without changing the spec first.
+def test_exact_quad_is_the_only_suppressing_kind():
+    """PINNED. Do not change this assertion to add a kind — change the spec first.
 
-    The spec WAS changed: PROGRAM P6 item 1 read "only exact identities may suppress", and
-    the owner's ruling (D-294) admits `company_title_location` as a second suppressing kind
-    on the strength of a measurement — postings sharing company, title and location reached
-    leads twice and built two resumes each. Two things keep design §3.1's counterexample
-    (two different requisitions, same normalized company/title/location, one suppressed) from
-    coming true: the new kind may not MERGE, so no job anchor is rewritten, and it suppresses
-    only when the two job descriptions are near-identical, which is the clause that tells a
-    re-post apart from two openings sharing a generic title.
-
-    `cross_host` stays out. It has neither company_id nor content_hash in its key, and unlike
-    company_title_location it cannot compare bodies either — it spans hosts, so the same job
-    legitimately carries different body text on each.
+    PROGRAM P6 item 1: "only exact identities may suppress". core/identity.py:3 records the
+    same as a standing contract: "cross-ID heuristics may only annotate". `cross_host` has
+    neither company_id nor content_hash in its key, so it is not an exact identity; design
+    §3.1 carries the concrete false-suppression counterexample (two different requisitions,
+    same normalized company/title/location, one suppressed).
     """
-    assert [s.name for s in SUPPRESSING_KINDS] == ["exact_quad", "company_title_location"]
-
-
-def test_merging_is_a_strict_subset_of_suppressing():
-    """A kind that cannot hide a posting must never be able to rewrite its job anchor.
-
-    Documented as an invariant on `IdentityKindSpec.merges`; asserted here because the
-    catalog is one line per kind and `merges=True, suppresses=False` is a plausible typo
-    that would otherwise produce a silent no-op — a kind in MERGING_KIND_NAMES that no
-    suppression can ever carry.
-    """
-    assert [s.name for s in MERGING_KINDS] == ["exact_quad"]
-    assert MERGING_KIND_NAMES <= {s.name for s in SUPPRESSING_KINDS}
-    for spec in IDENTITY_KINDS:
-        assert not (spec.merges and not spec.suppresses), spec.name
+    assert [s.name for s in SUPPRESSING_KINDS] == ["exact_quad"]
 
 
 def test_cross_host_annotates_but_never_suppresses():
@@ -64,19 +41,7 @@ def test_content_hash_alone_never_suppresses():
     # The live corpus holds 809 hash-collision groups, 727 of which span different titles
     # or locations (design §2). Suppressing on the bare hash collapses different jobs.
     assert kind_spec("content_hash_only").suppresses is False
-    assert kind_spec("content_hash_only").merges is False
-
-
-def test_company_title_location_suppresses_but_never_merges():
-    """The asymmetry D-294 turns on, and the reason the two flags are separate.
-
-    Hiding a posting is recoverable through `top --include-duplicates`; moving it onto
-    another posting's job is undone only through `job_grouping_events`. The owner accepted
-    the first on this key and not the second.
-    """
-    spec = kind_spec("company_title_location")
-    assert spec.suppresses is True
-    assert spec.merges is False
+    assert kind_spec("company_title_location").suppresses is False
 
 
 def test_suppressing_kinds_are_rank_ordered():

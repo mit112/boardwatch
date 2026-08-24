@@ -7,20 +7,9 @@ reached the operator, how many were a duplicate of another one that ALSO reached
 operator" — the only thing the gate's "leaked" wording can mean, since a duplicate the
 ranker suppressed before it ever surfaced never leaked anything.
 
-**Only `exact_quad` counts**, per the owner's ruling (D-132). That ruling was made when
-exact_quad was the only suppressing kind, and D-294 changed that premise WITHOUT changing this
-report: `company_title_location` now suppresses at rank time, but `load_surfaced_exact_quad`
-still joins on `kind == "exact_quad"` alone, so this report never sees the weaker key at all.
-The route is NOT that such jobs land in `unidentified` — `compute_identities` emits an
-`exact_quad` for any posting carrying a body and locations, so they land in `identified` with a
-key that is unique BY CONSTRUCTION, quietly inflating the denominator and `distinct_groups`
-while never contributing to `redundant`.
-
-**Consequence, recorded rather than fixed:** this number cannot rise for that class no matter
-how badly the new suppression regresses. It reads 0.00% for a structural reason, not an
-observed one. Extending it is an owner call because it moves a GATE metric mid-gate — see
-D-294's open questions. Until then, a passing leakage number is not evidence that dedup
-works.
+**Only `exact_quad` counts**, per the owner's ruling (D-132/identity_kinds.py): the catalog's
+other kinds are explicitly non-suppressing, and a hash-only or company-title-location match
+routinely spans genuinely different jobs (727 of 809 measured groups).
 
 **The unit that "reached leads" is a JOB, not a posting.** `job_dispositions` is keyed on
 `job_id` (one row per job, upserted — `store/tables.py`), and `pipeline/runner.py` /
