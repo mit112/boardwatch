@@ -374,14 +374,22 @@ _TITLE_SWE_RESCUE = (
     # false positive cleared every deny below it. The other three tokens have no such
     # sense and stay bare, which is what keeps "AI First Full Stack Tech Lead" and
     # "Senior Backend Java Engineer - Vice President" classified software (D-294).
-    r"\b(front[\s-]?end|frontend)\b.{0,30}\b(engineer|developer|architect|programmer|"
-    r"lead)\w*\b|"
+    r"\b(front[\s-]?end|frontend)\b.{0,30}"
+    r"\b(?:(?:engineer|developer|architect|programmer)\w*|lead)\b|"
     # ...and the same pair in the other order ("AI/ML Agent Engineer - Front-End Focus").
-    r"\b(engineer|developer|architect|programmer|lead)\w*\b.{0,30}"
+    r"\b(?:(?:engineer|developer|architect|programmer)\w*|lead)\b.{0,30}"
     r"\b(front[\s-]?end|frontend)\b|"
     # `lead` is in the head-noun list because "Front End Tech Lead" is a real software
     # title that would otherwise lose the rescue and then be vetoed by the bare `lead`
-    # deny. `\blead\b` does NOT match "Leader", so the retail rows stay denied.
+    # deny. It must stay OUTSIDE the `\w*` suffix, which is why the head nouns are an
+    # inner group: `(engineer|...|lead)\w*` spells `lead\w*`, which matches "Leader" and
+    # re-rescued the exact retail rows this narrowing exists to deny -- "Front End Team
+    # Leader", "Assistant Store Manager - Front End Leader", and Target's "Executive Team
+    # Leader ... (Assistant Manager Front End)" at any gap under 30 characters. The other
+    # four nouns keep `\w*` because "engineers"/"developers"/"programming" are wanted.
+    # Verdict-neutral on the live corpus (0 changes over 27,680 unique titles) -- it closes
+    # a latent hole rather than fixing a present miss, which is why only breadth would
+    # have surfaced it (D-294 round 3).
     # `manager` is deliberately ABSENT and `development` was REMOVED: both re-rescue the
     # very rows this narrowing exists to catch -- "(Assistant Manager Front End)" matches
     # `manager` directly, and "Assistant Manager Front End Development Program" matches
