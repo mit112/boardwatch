@@ -8,8 +8,11 @@ titles were buried that way in the measured prototype. Rescue-first fixes all 16
 these tests pin that ordering so it cannot silently regress.
 """
 
+import re
+
 import pytest
 
+from boardwatch.rank import role_gate
 from boardwatch.rank.role_gate import role_verdict
 
 # Live false positives the gate exists to demote — all three surfaced in a real `top` run.
@@ -325,3 +328,214 @@ class TestBareLeadDeny:
     ])
     def test_engineering_lead_titles_are_never_vetoed(self, title: str) -> None:
         assert role_verdict(title)[0] != "not_swe"
+
+
+class TestOwnerRulingNonSoftwareFamilies:
+    """Ruling 1 (D-294): deny the non-software title families that dominate the shortlist.
+
+    Measured before the change: 51.1% of everything clearing every other filter carried no
+    software signal at all. These are the families it was made of.
+    """
+
+    @pytest.mark.parametrize(
+        "title",
+        [
+            # Retail floor and store operations.
+            "General Merchandise Team Leader",
+            "Service & Engagement Team Leader",
+            "Assets Protection Specialist",
+            "Fulfillment Specialist",
+            "Mobile Associate, Store-in-Store",
+            "Sr Mobile Expert",
+            # Food service.
+            "Food & Beverage Team Leader",
+            "Kitchen Operations Associate, DashMart",
+            # People, admin and finance surfaces.
+            "Human Resource Expert",
+            "Administrative Coordinator",
+            "Accounts Payable Specialist",
+            "Strategic Finance Manager",
+            # Clinical.
+            "Patient Journey Partner",
+            "Clinical Operations Manager",
+            # Silicon: chip design, fab process and test.
+            "ASIC Design Engineer",
+            "CPU Physical Design Engineer",
+            "Analog Circuit Design Engineer",
+            "Senior CPU RTL Design Engineer",
+            "Packaging Module Development Engineer",
+            "Process Integration Development Engineer",
+            "Package Failure Analysis Engineer",
+            "ATE Test Development Engineer",
+            "Shift Yield Defect Metrology Engineer",
+            "Manufacturing Operator 1",
+            # Telecom outside plant and cell sites.
+            "Cell Site Engineer",
+            "Outside Plant Engineer",
+            # Technical marketing is marketing.
+            "Technical Marketing Engineer",
+        ],
+    )
+    def test_family_titles_are_denied(self, title: str) -> None:
+        verdict, reason = role_verdict(title)
+        assert verdict == "not_swe", (title, reason)
+
+    @pytest.mark.parametrize(
+        "title",
+        [
+            # A guarded business/commerce surface must not bury the software team that owns
+            # it. Order management, AP/AR and revenue operations are literal product-team
+            # names at Shopify, Ramp, Coupa and Stripe.
+            "Engineer, Order Management Platform",
+            "Order Management Engineer",
+            "Engineer, Accounts Payable Platform",
+            "Engineer, Revenue Operations",
+            "Administrative Specialist, School of Engineering",
+            "Finance Manager, Engineering",
+            # Health-tech product areas. These went into the SOFT lane precisely so a
+            # signalled software title skips them.
+            "Senior Data Engineer, Patient Experience",
+            "ML Engineer, Patient Experience",
+            "Data Engineer, Clinical Operations",
+            "Platform Engineer, Clinical Operations",
+            "Software Engineer, Patient Experience",
+        ],
+    )
+    def test_software_titles_on_those_surfaces_survive(self, title: str) -> None:
+        """`!= "not_swe"` and not `== "swe"` on purpose, and the difference is real.
+
+        Most of these land on `uncertain`, not `swe`: `_TITLE_SWE_SIGNAL` requires an
+        adjacency, so a bare `Engineer` head noun beside a business noun is not a positive
+        software signal. `uncertain` still passes through to scoring, which is the property
+        under test — the guard must stop the veto, not manufacture a signal.
+        """
+        verdict, reason = role_verdict(title)
+        assert verdict != "not_swe", (title, reason)
+
+
+class TestOwnerRulingTeamLeader:
+    """Ruling 2 (D-294): `Team Leader` is retail/ops, and blocking it must not cost a real
+    software lead.
+
+    The measurement that forced the SHAPE of this: five retail rows were classified `swe`
+    because a store's checkout area is called the FRONT END and the bare token rescued them.
+    The fix is in the rescue, not in a stage that outranks it — a deny evaluated before the
+    rescue is reachable by every software title.
+    """
+
+    @pytest.mark.parametrize(
+        "title",
+        [
+            "Team Leader",
+            "Closing Team Leader",
+            "Beauty Team Leader",
+            "Inbound Operations Team Leader",
+            "Small Format Team Leader",
+            # The rows that motivated the ruling: rescued on the bare `Front End` token before
+            # the fix. Note they are denied by the pre-existing anchored `manager` deny once
+            # the false rescue stops shielding them, NOT by the `team leader` pattern above --
+            # which is why fixing the rescue was the right place and a pre-rescue lane was not.
+            "Executive Team Leader Service & Engagement (Assistant Manager Front End)",
+            "Executive Team Leader Service & Engagement (Assistant Manager Front End)- Cypress",
+        ],
+    )
+    def test_retail_team_leaders_are_denied(self, title: str) -> None:
+        verdict, reason = role_verdict(title)
+        assert verdict == "not_swe", (title, reason)
+
+    @pytest.mark.parametrize(
+        "title",
+        [
+            # A head noun `_NOENG` can see.
+            "Engineering Team Leader",
+            "Software Team Leader",
+            "Team Leader, Software Engineering",
+            # ...and the SURFACE words it cannot: these carry no engineer/developer token, so
+            # `_NOENG` alone would let the deny fire on a real software lead.
+            "Backend Team Leader",
+            "Team Leader, Backend",
+            "Frontend Team Leader",
+            "Full Stack Team Leader",
+            "DevOps Team Leader",
+            "SRE Team Leader",
+            "Site Reliability Team Leader",
+            "Team Leader - Data Platform",
+            "Team Leader Machine Learning",
+            "QA Automation Team Leader",
+            "Web Development Team Leader",
+        ],
+    )
+    def test_software_team_leaders_are_never_denied(self, title: str) -> None:
+        verdict, reason = role_verdict(title)
+        assert verdict != "not_swe", (title, reason)
+
+    def test_front_end_still_rescues_a_real_front_end_role(self) -> None:
+        for title in (
+            "Front End Engineer",
+            "Frontend Developer",
+            "Front-End Software Engineer",
+            "Full Stack Java Developer - Vice President",
+            "Senior Backend Java Engineer - Aladdin Engineering, Vice President",
+            "AI/ML Agent Engineer - Front-End Focus",
+        ):
+            assert role_verdict(title)[0] == "swe", title
+
+
+class TestGuardedPatternsGuardEveryBranch:
+    """An anchored PREFIX guard applied to a top-level alternation guards only the first branch.
+
+    `_NOENG + r"\bA\b|\bB\b"` parses as `(guard.*A)|(B)`, so B is unguarded and can veto an
+    engineering title from the left — the exact failure the guard exists to prevent. This is a
+    property of every prefix-guarded pattern in the module, so it is asserted structurally
+    rather than by naming titles one at a time.
+
+    SCOPE, stated because a check whose reach is overestimated is worse than none: this covers
+    `^(?!...)` PREFIX guards only. The mirror shape — a TRAILING `(?!...)` that binds to the last
+    branch instead of all of them — exists at the `fellow`/`fellowship`/`postdoc` pattern in
+    `_DENY_BUSINESS_HARD` and is NOT covered here. That one is pre-existing, its practical
+    exposure is "Engineering Fellowship" (the rescue already protects "Software Engineering
+    …"), and changing a shipped deny pattern's semantics needs its own ruling — recorded in
+    D-294 rather than fixed in passing.
+    """
+
+    @staticmethod
+    def _top_level_alternation_after_guard(pattern: str) -> bool:
+        """Does a prefix-guarded pattern have a `|` outside every group?
+
+        Character classes and escaped parens are stripped first. Counting raw `(` and `)` gets
+        both wrong: `[)]` is a literal paren that would unbalance the depth counter and hide a
+        real unguarded branch, and `[|]` is a literal pipe that would be reported as one.
+        """
+        if not pattern.startswith("^(?!"):
+            return False
+        body = pattern[pattern.index(").*") + 3 :]
+        body = re.sub(r"\\.", "", body)  # drop escapes, so `\(` and `\|` are not read as syntax
+        body = re.sub(r"\[[^]]*]", "", body)  # drop character classes wholesale
+        depth = 0
+        for char in body:
+            if char == "(":
+                depth += 1
+            elif char == ")":
+                depth -= 1
+            elif char == "|" and depth == 0:
+                return True
+        return False
+
+    def test_no_prefix_guarded_pattern_has_an_unguarded_alternative(self) -> None:
+        offenders = [
+            pattern.pattern
+            for pattern in (*role_gate._DENY_HARD, *role_gate._DENY_SOFT)
+            if self._top_level_alternation_after_guard(pattern.pattern)
+        ]
+        assert offenders == []
+
+    def test_the_detector_catches_the_bug_it_is_looking_for(self) -> None:
+        """A structural check that cannot fire is decoration. These are its known positives."""
+        detect = self._top_level_alternation_after_guard
+        assert detect(role_gate._NOENG + r"\bfoo\b|\bbar\b") is True
+        # ...and it is not fooled by a literal paren or a literal pipe.
+        assert detect(role_gate._NOENG + r"\bfoo[)]\b|\bengineer\s+bar\b") is True
+        assert detect(role_gate._NOENG + r"\bfoo[|]bar\b") is False
+        assert detect(role_gate._NOENG + r"\bfoo\(x\|y\)bar\b") is False
+        assert detect(role_gate._NOENG + r"\b(?:foo|bar)\b") is False
+        assert detect(r"\bunguarded\b|\banything\b") is False  # no prefix guard at all
