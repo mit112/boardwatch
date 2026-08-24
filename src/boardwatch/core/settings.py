@@ -85,6 +85,12 @@ class Settings(BaseModel):
     # posting because their list carries no bodies. Bounds a first scan of a large
     # board; exceeding it yields a partial snapshot, never a silent truncation.
     detail_fetch_budget: int = Field(default=50, ge=1, le=1000)
+    # Force periodic revalidation of watched boards: a cached conditional-request validator
+    # (ETag / Last-Modified) older than this is dropped, so the next scan refetches
+    # unconditionally instead of trusting a possibly-stale upstream ETag forever. Without it a
+    # server that keeps echoing the same validator yields silent 304s and permanently frozen
+    # postings, with no self-healing path.
+    validator_max_age_hours: int = Field(default=24, ge=1)
     recency_half_life_days: float = 14.0
     # How long a job stays suppressed after being surfaced as a lead without a deliverable
     # being produced (P6 slice 2). The TTL is itself a drain: a job you were shown and did not

@@ -63,6 +63,12 @@ _CONFIG_IRRELEVANT: frozenset[str] = frozenset(
         "scan_workers",            # throughput
         "detail_fetch_budget",     # throughput
         "reap_stale_after_hours",  # run bookkeeping/liveness — never which postings become leads
+        # Bounds how stale a board's cached validator may get before a forced unconditional
+        # refetch. Throughput/liveness, same class as detail_fetch_budget/reap_stale_after_hours:
+        # it changes WHEN a board is refetched, never how the corpus is judged. Classifying it IN
+        # would stale every permanent disposition via policy_version the moment the TTL moved — a
+        # corpus-wide drain from a knob that judged nothing.
+        "validator_max_age_hours",
         "notify",              # delivery, post-selection: changes who is told, not which leads
         # The three lane knobs are ACQUISITION, in the same class as `detail_fetch_budget`:
         # they decide how much corpus arrives, not how the corpus is judged. Corpus membership

@@ -247,11 +247,27 @@ def ensure_run(engine: Engine, run_id: int | None) -> int:
     return insert_run(engine) if run_id is None else run_id
 
 
-def get_validators(conn: Connection, url: str) -> ResponseValidators | None:
+def get_validators(
+    conn: Connection,
+    url: str,
+    *,
+    max_age: timedelta | None = None,
+    now: datetime | None = None,
+) -> ResponseValidators | None:
+    """Cached conditional-request validators for ``url``, or None when none are usable.
+
+    ``max_age`` forces periodic revalidation: a validator whose ``fetched_at`` is older than it
+    is dropped, so the next scan refetches unconditionally instead of trusting a possibly-stale
+    upstream ETag forever. ``max_age=None`` (the default) never expires a validator.
+    """
     row = conn.execute(
-        select(http_cache.c.etag, http_cache.c.last_modified).where(http_cache.c.url == url)
+        select(http_cache.c.etag, http_cache.c.last_modified, http_cache.c.fetched_at).where(
+            http_cache.c.url == url
+        )
     ).one_or_none()
     if row is None:
+        return None
+    if max_age is not None and (utcnow() if now is None else now) - row.fetched_at > max_age:
         return None
     return ResponseValidators(etag=row.etag, last_modified=row.last_modified)
 

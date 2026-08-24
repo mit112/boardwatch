@@ -224,6 +224,33 @@ def test_get_validators_round_trip(engine: Engine) -> None:
         assert get_validators(conn, "https://other.example/") is None
 
 
+def test_get_validators_skips_validators_older_than_max_age(engine: Engine) -> None:
+    """A validator older than max_age is dropped so the next scan refetches unconditionally —
+    the safety net against an upstream ETag that goes permanently stale and yields silent 304s.
+    max_age=None keeps the pre-TTL behavior byte-for-byte."""
+    now = utcnow()
+    with engine.begin() as conn:
+        conn.execute(
+            insert(tables.http_cache).values(
+                url="https://fresh.example/board", etag='W/"fresh"', last_modified=None,
+                fetched_at=now - timedelta(hours=1), status=200,
+            )
+        )
+        conn.execute(
+            insert(tables.http_cache).values(
+                url="https://stale.example/board", etag='W/"stale"', last_modified=None,
+                fetched_at=now - timedelta(hours=25), status=200,
+            )
+        )
+    max_age = timedelta(hours=24)
+    with engine.connect() as conn:
+        fresh = get_validators(conn, "https://fresh.example/board", max_age=max_age, now=now)
+        assert fresh is not None and fresh.etag == 'W/"fresh"'
+        assert get_validators(conn, "https://stale.example/board", max_age=max_age, now=now) is None
+        # Default (no max_age): the stale row is still returned — unchanged pre-TTL behavior.
+        assert get_validators(conn, "https://stale.example/board") is not None
+
+
 def test_current_posting_versions_returns_the_newest_version_per_posting(tmp_path) -> None:
     """The first production read of posting_versions. Set-oriented by construction: one
     statement for the whole corpus, never a per-posting lookup (D-P2-16)."""

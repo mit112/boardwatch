@@ -51,6 +51,12 @@ _SCALAR_KEYS: dict[str, tuple[Callable[[str], Any], str, str]] = {
     "detail_fetch_budget": (
         int, "next scan", "per-posting detail fetches per board per scan, 1–1000"
     ),
+    "validator_max_age_hours": (
+        int,
+        "next scan",
+        "hours after which a board's cached ETag/Last-Modified is dropped and refetched "
+        "unconditionally, ≥1",
+    ),
     "seen_ttl_days": (
         int, "next top/run", "days a surfaced-but-unbuilt lead stays suppressed, ≥1"
     ),
