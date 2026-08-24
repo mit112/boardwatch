@@ -9,7 +9,7 @@ turn the findings into an owner-approved public-readiness plan without redoing t
 
 ## Evaluation inputs
 
-- boardwatch working checkout: `/Users/mitsheth/dev/projectY/boardwatch`
+- boardwatch working checkout: `~/dev/projectY/boardwatch`
 - boardwatch local `HEAD` during the evaluation: `0cb494089523390719411b3ac4f423ddd0c84cc9`
 - boardwatch `origin/main` after a read-only fetch: `dd45e0761940db821f574046478cee333658ae4b`
   - the one remote-only commit changed only `CHANGELOG.md` and program documents; evaluated product code
