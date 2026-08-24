@@ -1,11 +1,14 @@
 import httpx
 import pytest
+import respx
 import yaml
-from sqlalchemy import select
+from github_lists_shape import listings
+from sqlalchemy import func, select
 from sqlalchemy.exc import OperationalError
 from typer.testing import CliRunner
 
 from boardwatch.cli.app import app
+from boardwatch.lanes.github_lists import LIST_URLS
 from boardwatch.providers.base import BoardHealth
 from boardwatch.store import tables
 from boardwatch.store.db import get_engine
@@ -60,10 +63,70 @@ def _watch_count(tmp_path, provider, slug):
         return []  # no DB / no table = no watches
 
 
-@pytest.mark.parametrize("sub", ["search", "add", "remove", "list", "import", "export"])
-def test_all_six_subcommands_have_help(tmp_path, sub) -> None:
+@pytest.mark.parametrize(
+    "sub", ["search", "add", "remove", "list", "discover", "import", "export"]
+)
+def test_every_subcommand_has_help(tmp_path, sub) -> None:
     result = runner.invoke(app, [*_base(tmp_path), "companies", sub, "--help"])
     assert result.exit_code == 0
+
+
+@respx.mock
+def test_discover_writes_no_watch_and_emits_a_file_import_accepts(tmp_path) -> None:
+    """The whole write path end to end, and the only test that proves the deliverable.
+
+    `discover` writes NOTHING to the store — that is the owner's ruling (D-291 build): a human
+    sits between a public list and what the machine watches, because a bad slug becomes a
+    permanently failing board and there is no quarantine for one. `companies import`, unchanged,
+    does the watched-write on the file the human read.
+    """
+    for (_repo, url), shape in zip(LIST_URLS, ("S1", "S2"), strict=True):
+        respx.get(url).mock(return_value=httpx.Response(200, json=listings(shape)))
+    base = _base(tmp_path)
+    out = tmp_path / "candidates.yaml"
+
+    written = runner.invoke(
+        app, [*base, "companies", "discover", "--limit", "4", "--out", str(out)]
+    )
+    assert written.exit_code == 0, written.stdout
+    with get_engine(tmp_path / "data").connect() as conn:
+        assert conn.execute(select(func.count()).select_from(tables.companies)).scalar() == 0
+
+    rows = yaml.safe_load(out.read_text(encoding="utf-8"))["companies"]
+    assert len(rows) == 4
+    assert runner.invoke(app, [*base, "companies", "import", str(out)]).exit_code == 0
+    for row in rows:
+        watched = _watch_count(tmp_path, row["provider"], row["slug"])
+        assert len(watched) == 1
+        # `user`, which is what `import` already writes for a board outside the bundled catalog.
+        # No new `companies.source` value and therefore no migration against a 1.4 GB live store.
+        assert (watched[0].watched, watched[0].source) == (True, "user")
+
+    # Re-running proposes the NEXT batch, never the same one — the ramp self-advances off the
+    # store, so the cap is a burn rate rather than a permanent ceiling.
+    again = tmp_path / "candidates2.yaml"
+    assert runner.invoke(
+        app, [*base, "companies", "discover", "--limit", "4", "--out", str(again)]
+    ).exit_code == 0
+    next_rows = yaml.safe_load(again.read_text(encoding="utf-8"))["companies"]
+    assert len(next_rows) == 4
+    assert not (
+        {(r["provider"], r["slug"]) for r in next_rows} & {(r["provider"], r["slug"]) for r in rows}
+    )
+
+
+@respx.mock
+def test_discover_defaults_to_stdout_and_the_cap_from_settings(tmp_path) -> None:
+    """No `--out`, no `--limit`: the document goes to stdout unmangled and the cap is the
+    setting the lane path already uses, so there is one knob rather than two."""
+    for (_repo, url), shape in zip(LIST_URLS, ("S1", "S2"), strict=True):
+        respx.get(url).mock(return_value=httpx.Response(200, json=listings(shape)))
+
+    result = runner.invoke(app, [*_base(tmp_path), "companies", "discover"])
+    assert result.exit_code == 0, result.stdout
+    document = yaml.safe_load(result.stdout)
+    assert len(document["companies"]) == 10  # Settings.lane_new_companies_per_run
+    assert "held back by the cap" in result.stdout
 
 
 def test_search_is_case_insensitive_and_offline(tmp_path) -> None:
