@@ -1,14 +1,20 @@
+import sqlite3
+from contextlib import closing
+
 import httpx
 import pytest
+import respx
 import yaml
+from github_lists_shape import listings
 from sqlalchemy import select
 from sqlalchemy.exc import OperationalError
 from typer.testing import CliRunner
 
 from boardwatch.cli.app import app
+from boardwatch.lanes.github_lists import LIST_URLS
 from boardwatch.providers.base import BoardHealth
 from boardwatch.store import tables
-from boardwatch.store.db import get_engine
+from boardwatch.store.db import DB_FILENAME, get_engine
 
 runner = CliRunner()
 
@@ -60,10 +66,86 @@ def _watch_count(tmp_path, provider, slug):
         return []  # no DB / no table = no watches
 
 
-@pytest.mark.parametrize("sub", ["search", "add", "remove", "list", "import", "export"])
-def test_all_six_subcommands_have_help(tmp_path, sub) -> None:
+@pytest.mark.parametrize(
+    "sub", ["search", "add", "remove", "list", "discover", "import", "export"]
+)
+def test_every_subcommand_has_help(tmp_path, sub) -> None:
     result = runner.invoke(app, [*_base(tmp_path), "companies", sub, "--help"])
     assert result.exit_code == 0
+
+
+@respx.mock
+def test_discover_writes_no_watch_and_emits_a_file_import_accepts(tmp_path) -> None:
+    """The whole write path end to end, and the only test that proves the deliverable.
+
+    `discover` writes NOTHING to the store — that is the owner's ruling (D-291 build): a human
+    sits between a public list and what the machine watches, because a bad slug becomes a
+    permanently failing board and there is no quarantine for one. `companies import`, unchanged,
+    does the watched-write on the file the human read.
+    """
+    for (_repo, url), shape in zip(LIST_URLS, ("S1", "S2"), strict=True):
+        respx.get(url).mock(return_value=httpx.Response(200, json=listings(shape)))
+    base = _base(tmp_path)
+    out = tmp_path / "candidates.yaml"
+
+    written = runner.invoke(
+        app, [*base, "companies", "discover", "--limit", "4", "--out", str(out)]
+    )
+    assert written.exit_code == 0, written.stdout
+    # Not "zero companies" but "NO SCHEMA": `discover` uses ensure=False, so it must not migrate.
+    # SQLAlchemy touches the file just by inspecting it, so the file's existence proves nothing --
+    # the absence of every table does. Read through stdlib sqlite3 rather than the same
+    # `inspect(engine)` call the command itself makes, so this cannot agree with itself.
+    # `closing`, not a bare `with`: `sqlite3.Connection.__exit__` commits the transaction and does
+    # NOT close the connection, which leaks it and raises ResourceWarning under the gate.
+    with closing(sqlite3.connect(tmp_path / "data" / DB_FILENAME)) as raw:
+        assert raw.execute(
+            "SELECT name FROM sqlite_master WHERE type = 'table'"
+        ).fetchall() == []
+
+    written_text = out.read_text(encoding="utf-8")
+    rows = yaml.safe_load(written_text)["companies"]
+    assert len(rows) == 4
+    # The header has to be IN THE FILE, not only on stdout. `yaml.safe_load` ignores comments, so
+    # emitting the bare body passed every other assertion here -- and the header is the whole
+    # artifact the design says the owner reviews away from the terminal that produced it.
+    assert written_text.startswith("# boardwatch companies discover")
+    assert "held back by the cap" in written_text
+    for row in rows:
+        assert f"{row['provider']}:{row['slug']}" in written_text
+    assert runner.invoke(app, [*base, "companies", "import", str(out)]).exit_code == 0
+    for row in rows:
+        watched = _watch_count(tmp_path, row["provider"], row["slug"])
+        assert len(watched) == 1
+        # `user`, which is what `import` already writes for a board outside the bundled catalog.
+        # No new `companies.source` value and therefore no migration against a 1.4 GB live store.
+        assert (watched[0].watched, watched[0].source) == (True, "user")
+
+    # Re-running proposes the NEXT batch, never the same one — the ramp self-advances off the
+    # store, so the cap is a burn rate rather than a permanent ceiling.
+    again = tmp_path / "candidates2.yaml"
+    assert runner.invoke(
+        app, [*base, "companies", "discover", "--limit", "4", "--out", str(again)]
+    ).exit_code == 0
+    next_rows = yaml.safe_load(again.read_text(encoding="utf-8"))["companies"]
+    assert len(next_rows) == 4
+    assert not (
+        {(r["provider"], r["slug"]) for r in next_rows} & {(r["provider"], r["slug"]) for r in rows}
+    )
+
+
+@respx.mock
+def test_discover_defaults_to_stdout_and_the_cap_from_settings(tmp_path) -> None:
+    """No `--out`, no `--limit`: the document goes to stdout unmangled and the cap is the
+    setting the lane path already uses, so there is one knob rather than two."""
+    for (_repo, url), shape in zip(LIST_URLS, ("S1", "S2"), strict=True):
+        respx.get(url).mock(return_value=httpx.Response(200, json=listings(shape)))
+
+    result = runner.invoke(app, [*_base(tmp_path), "companies", "discover"])
+    assert result.exit_code == 0, result.stdout
+    document = yaml.safe_load(result.stdout)
+    assert len(document["companies"]) == 10  # Settings.lane_new_companies_per_run
+    assert "held back by the cap" in result.stdout
 
 
 def test_search_is_case_insensitive_and_offline(tmp_path) -> None:

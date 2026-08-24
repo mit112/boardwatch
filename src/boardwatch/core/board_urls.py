@@ -71,7 +71,16 @@ def parse_board_target(value: str) -> Target:
         # must keep falling through to the URL branch rather than raising "unknown provider".
         if "/" not in value:
             raise UnknownBoardURL(f"unknown provider in {value!r}; {_SUPPORTED}")
-    parsed = urlparse(value if "://" in value else f"https://{value}")
+    try:
+        parsed = urlparse(value if "://" in value else f"https://{value}")
+    except ValueError as exc:
+        # `urlsplit` raises a BARE ValueError ("Invalid IPv6 URL") for an unbalanced `[` or `]`
+        # anywhere in the authority -- a stray-bracket paste artifact does it. Every caller here
+        # catches `UnknownBoardURL` and none catches ValueError, so without this a single such
+        # string tracebacks out of `companies add`, `companies remove`, `init`, the hiring.cafe
+        # lane and the GitHub-lists discovery, and in the last case it aborts a whole 20,000-record
+        # run. `UnknownBoardURL` already subclasses ValueError, so no caller's except widens.
+        raise UnknownBoardURL(f"unparseable board target {value!r}: {exc}; {_SUPPORTED}") from exc
     host = (parsed.hostname or "").lower()
     parts = [p for p in parsed.path.split("/") if p]
     matched = _match_host(host)

@@ -1,23 +1,30 @@
-"""boardwatch companies — search / add / remove / list / import / export (§2.3).
+"""boardwatch companies — search / add / remove / list / discover / import / export (§2.3).
 `export` is the registry-format contribution funnel; data-portability export
 (--format jsonl|csv) is P2 and intentionally absent."""
 
 from __future__ import annotations
 
+from pathlib import Path
+from typing import Annotated
+
 import typer
 import yaml
 from rich.console import Console
 from rich.table import Table
+from sqlalchemy import inspect
 
 from boardwatch.cli.context import build_context
 from boardwatch.core.board_urls import UnknownBoardURL, parse_board_target
+from boardwatch.core.clock import utcnow
 from boardwatch.core.politeness import Fetcher
 from boardwatch.core.settings import Settings
+from boardwatch.lanes.admission import CompanyBudget
+from boardwatch.lanes.github_lists import candidate_document, discover, fetch_listings, select
 from boardwatch.providers.base import BoardHealth, Provider
 from boardwatch.registry.loader import load_catalog
 from boardwatch.registry.validate import CatalogError, CompanyEntry, validate_entries
 from boardwatch.scan.coordinator import default_providers
-from boardwatch.store.queries import list_watches, unwatch, upsert_watch
+from boardwatch.store.queries import company_exists, list_watches, unwatch, upsert_watch
 
 companies_app = typer.Typer(no_args_is_help=True, help="Manage watched company boards.")
 console = Console()
@@ -54,6 +61,22 @@ def _healthcheck(provider: Provider, fetcher: Fetcher, slug: str) -> BoardHealth
 
 def _catalog_index() -> dict[tuple[str, str], CompanyEntry]:
     return {(e.provider, e.slug): e for e in load_catalog()}
+
+
+def _nothing_stored(provider: str, slug: str) -> bool:
+    """No `companies` table, so nothing is stored and every candidate is new.
+
+    Reached by ASKING the schema (`inspect(...).has_table`), not by catching the query's failure.
+    Two reasons. Classifying behaviour by string-matching an `OperationalError` message is exactly
+    what this repo forbids; and a bare `except OperationalError` would equally swallow a locked or
+    corrupt store, which is a different problem with a different answer.
+
+    On a fresh machine an absent schema is not an error — nothing is watched, so every board really
+    is new, and the header's "already stored 0" says so. A named function rather than
+    `lambda p, s: False` so the reason lives with the behaviour and it cannot be mistaken for a
+    stub somebody forgot to finish.
+    """
+    return False
 
 
 def _normalized(entry: CompanyEntry) -> CompanyEntry:
@@ -146,6 +169,68 @@ def export(ctx: typer.Context) -> None:
     console.print(yaml.safe_dump(payload, sort_keys=False))
 
 
+@companies_app.command("discover")
+def discover_(
+    ctx: typer.Context,
+    limit: int | None = typer.Option(
+        None, "--limit", min=0,
+        help="How many new boards to propose (default: lane_new_companies_per_run).",
+    ),
+    out: Annotated[
+        Path | None,
+        typer.Option("--out", help="Write the candidate file here instead of stdout."),
+    ] = None,
+) -> None:
+    """Propose company boards from the two public GitHub new-grad lists, for review.
+
+    Writes a registry-format file and NOTHING ELSE — no store write, watched or otherwise. Review
+    it, delete any row whose evidence URL is not an employer board, then `companies import` it.
+    That human step is the owner's ruling (D-291 build): a bad slug becomes a permanently failing
+    board, and this repo has no quarantine and no backoff for one.
+    """
+    # ensure=False, the same reason `doctor` uses it: this command reads the store and must never
+    # migrate it. `build_context`'s default runs `alembic upgrade head`, so without this a command
+    # whose own docstring promises no store write would silently upgrade a 1.4 GB production
+    # database as a side effect of being asked what boards exist (D-279).
+    app_ctx = build_context(ctx.obj, ensure=False)
+    cap = app_ctx.settings.lane_new_companies_per_run if limit is None else limit
+    result = discover(fetch_listings(Fetcher(app_ctx.settings)))
+    if not inspect(app_ctx.engine).has_table("companies"):
+        # Nothing stored, so every candidate is new. `ensure=False` deliberately does not create
+        # the schema here; `companies import` does, which is the write half of this workflow and
+        # the right place for it.
+        selection = select(result, is_known=_nothing_stored, budget=CompanyBudget(cap))
+    else:
+        with app_ctx.engine.connect() as conn:
+            # One point query per candidate rather than one `IN (...)` over the whole set.
+            # Deliberate: `(provider, slug)` is UNIQUE and indexed so this is a few hundred index
+            # seeks, and a corpus-sized `IN` list is the exact shape that crossed SQLite's 32,766
+            # bound-parameter cap and killed run 70 (D-287). It also reuses the sanctioned
+            # lookup — `company_exists`, not the watched-only view, because an unwatched row
+            # would read as new forever.
+            selection = select(
+                result,
+                is_known=lambda provider, slug: company_exists(
+                    conn, provider=provider, slug=slug
+                ),
+                budget=CompanyBudget(cap),
+            )
+    document = candidate_document(
+        selection, census=result.census, generated_on=utcnow().date()
+    )
+    if out is None:
+        # Plain stdout, not `console.print`: the document is YAML a human pipes into a file, and
+        # rich would read its brackets as markup.
+        typer.echo(document, nl=False)
+        return
+    out.write_text(document, encoding="utf-8")
+    console.print(
+        f"Wrote {len(selection.admitted)} candidate board(s) to {out} "
+        f"({len(selection.already_known)} already stored, {len(selection.refused)} held back by "
+        f"the cap of {cap}). Review it, then: boardwatch companies import {out}"
+    )
+
+
 @companies_app.command("import")
 def import_(
     ctx: typer.Context,
@@ -162,7 +247,10 @@ def import_(
         entries = validate_entries(
             [_normalized(CompanyEntry.model_validate(row)) for row in (raw.get("companies") or [])]
         )
-    except (CatalogError, UnknownBoardURL, ValueError) as exc:
+    except (CatalogError, UnknownBoardURL, ValueError, yaml.YAMLError) as exc:
+        # `yaml.YAMLError` subclasses Exception, NOT ValueError, so it escaped this clause and the
+        # operator got a traceback. `companies discover` exists to hand a human a YAML file to edit
+        # before importing it, which makes a hand-introduced syntax error an ordinary event.
         console.print(f"[red]invalid import file: {exc}[/red]")
         raise typer.Exit(code=1) from exc
     app_ctx = build_context(ctx.obj)

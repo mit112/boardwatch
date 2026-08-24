@@ -26,13 +26,13 @@ once. Fixed and merged (D-287). The launchd job now fires **eight times a day** 
 any absolute comparison against that number is void. The gate counts consecutive clean **ticks**, not
 launchd invocations.
 
-**GATE P3 IS 5 OF 7.** Runs 71-75 all carry `runs.status='ok'` — 16:00, 19:00, 22:00, 01:00 and 04:00 UTC,
-19m32s to 22m47s, 24-36 boards each. Run 70 (13:00 UTC) was the last failure. **launchd independently
-reports `runs = 5` and `last exit code = 0`, which matches the store 1:1 since the reload** — that
-correspondence is what makes all five *scheduled* rather than manual, and it is the check to repeat rather
-than trusting either source alone. Cadence verified at 8 `calendarinterval` streams. A failed unattended run
-RESETS the streak rather than pausing it, and **Gate P4 is barred until P3 is met**. Only a SCHEDULED tick
-counts — a manual `run --project` moves nothing. **The last two ticks are ~5 hours away, not 5 days.**
+**GATE P3 IS MET — 8 CONSECUTIVE CLEAN SCHEDULED TICKS (runs 71-78).** All eight carry `runs.status='ok'` at
+the scheduled 3h slots (16:00 UTC 2026-08-23 through 13:00 UTC 2026-08-24), each `fatal=None`,
+`reconciles=True`, every lead a PDF, `skipped_not_new=0` so every lead net-new. Run 70 (13:00 UTC 08-23) was
+the last failure. **Verified from the live `runs` table and the per-run funnels, not from this file's count**
+— STATE lagged because the job fires 8×/day and is written once per session. **7 required, 8 clean → MET;
+Gate P4 is now UNBLOCKED.** Only a SCHEDULED tick counts — a manual `run --project` moves nothing; a failed
+unattended run resets the streak.
 
 > **A MANUAL RUN RACING A TICK EXITS 2 AND RESETS GATE P3**, and at 8 fires a day that is 8× likelier than
 > it was. Check `launchctl print gui/$(id -u)/com.boardwatch.run | grep state` before starting one by hand.
@@ -49,10 +49,10 @@ sessionized parts; the plan file at `~/.claude/plans/lets-use-this-session-stage
 Part 3 "Indeed" and Part 4 "hiring.cafe + GitHub lists" — that ordering was REVERSED by D-285 and the file
 was never rewritten. Trust D-285/D-286, not the plan file.**
 
-**PARTS 1, 2 AND 3 ARE COMPLETE, AND PART 4 IS PROBED, RULED, SCOPED AND NOT BUILT.** Order: the
-**GitHub-lists client** (D-291 — company discovery, **no JD body in any of the 34,958 records**, re-confirmed
-2026-08-24), then **LinkedIn** (D-290 — Mit ruled BUILD; the body is free and unauthenticated, and
-`robots.txt` disallows the route). Then Part 6, with Part 5 anytime.
+**PARTS 1, 2 AND 3 ARE COMPLETE. PART 4a (GitHub-lists) IS BUILT AND LANDED (#149, D-296)** — company
+discovery only (no JD body in any of the 34,958 records), OFF by default, **NOT armed** (no boards added to
+the daily run). Next is **Part 4b: LinkedIn** (D-290 — Mit ruled BUILD; the body is free and unauthenticated,
+and `robots.txt` disallows the route). Then Part 6, with Part 5 anytime.
 
 > **D-291's "920 boards, 887 new" is real but its stated corpus is wrong**, and the difference is 4x. The
 > figure is the **two new-grad lists' `active=True` records** (3,778 → 927 boards / 898 new, reproduced), not
@@ -90,10 +90,11 @@ close to guaranteed for ~92 runs by ledger drain alone; the real threat is a **l
 re-serves built jobs and scores them 0 net-new. **B5 is UNSCOREABLE** until run-scoped rank attribution
 exists — do not score it on exit status alone.
 
-**RULINGS 1, 2 AND 4 SHIP. RULING 3 IS DROPPED (D-295).** PR #148 on `feat/d293-precision-rulings`, open,
-reviewed three rounds, gated green. **All three items D-294 left owed are cleared:** CI passed on
-3.11/3.12/3.13 plus the three CI-only jobs; the unreviewed delta was reviewed; the `cross_host` docstring
-was written and then reverted with the rest of the dedup half, its reasoning preserved in D-295.
+**RULINGS 1, 2 AND 4 SHIP; RULING 3 IS DROPPED (D-294/D-295). PR #148 MERGED.** The role gate denies
+non-software title families and blocks `Team Leader`; the foreign-location gate gained a CJK-script signal.
+**Ranker-only — `engine_version` unchanged (`1+63c6f8fd5a3e`), no ledger drain.** Ruling 3
+(`company_title_location` suppression) was implemented, audited over three rounds, and dropped: no
+body-similarity floor separates a repost from a second opening (populations overlap).
 
 **Round 3 found a production defect in EACH half — three rounds, three defects, each invisible to the round
 before.** The standing lesson is now explicit: **a review round is not finished until a round finds
@@ -136,36 +137,27 @@ call and is now informed on both sides (D-293, D-294).
 
 ## Next action
 
-**Merge PR #148 once Gate P3 is MET, then build Part 4.** Nothing on the branch is behind a config flag, so
-the role and CJK changes take effect on the FIRST TICK after merge. **Mit's call was to hold the merge until
-the 7th tick rather than merge between ticks** — at 5 of 7 a failed tick costs ~21 hours and bars Gate P4,
-whereas after the gate is met a later failure cannot un-meet it. Merging earlier is safe on the evidence
-(zero new SQL anywhere in the branch, so run 70's bound-parameter class is not reintroduced) but the
-asymmetry decided it.
+**Precision (#148), Part 4a (#149), and the lookup/instructions/CI tooling (#150) are all merged.** The build
+fork is resolved — both halves were already built PRs, not work to start. Immediate steps, in order:
 
-**Then build Part 4, GitHub-lists client first** (D-291), then **LinkedIn** (D-290), both off by default.
-**All three open build decisions were taken 2026-08-24 (D-295/METRICS):**
-1. **Reach = the two new-grad lists' open postings — ~898 new boards.** Both repos are MIT-licensed, so the
-   licensing question disappears. **This is also exactly the corpus D-291's headline was measured on**, which
-   its prose mis-attributed to all four lists.
-2. **Write path = emit a candidate file for review, then `companies import`.** Not an unattended store write.
-3. **Ramp = the existing cap of 10 per run, cheapest providers first** — the four inline-body providers, then
-   Workday, then SmartRecruiters last.
+1. **Arm precision on the live driver** — pull the primary working tree to the integrated `main` so the next
+   tick uses the new role-deny and CJK gates. Ranker-only, gated green, no `engine_version` change, no drain;
+   P3 is met, so this cannot un-meet it.
+2. **Build Part 4b: LinkedIn** (D-290) — the last discovery lane, off by default like Part 4a. Two measured
+   constraints must survive the build: **no external apply URL** (`externalApply` = 0 — converge on the
+   company **slug**, never the link) and **`f_WT=2` (remote) silently ignored** (byte-identical to
+   unfiltered). Commit **no** captured JD body or list record — the generalization gate refuses third-party
+   data obliging a licence that does not exist.
+3. **Gate P6's 7-day leakage window completes ~2026-08-26**, after which the provisional pass (3 frozen
+   B1–B7 runs) can be certified. B1/B2/B3/B6/B7 are already demonstrated on frozen runs 72-78; B4's n≥100
+   audit and B5 (unscoreable) remain owner/attribution-gated.
 
-**The structural blocker to expect: the ramp control is not on the path that needs it.**
-`upsert_lane_company` hardcodes `watched=False`, nothing scans an unwatched board
-(`get_watched_companies` filters `watched.is_(True)`), and the only writes that set `watched=True`
-(`upsert_watch`, via `companies add`/`import`) have **no cap at all**. `lane_new_companies_per_run` is
-consulted in exactly one place, on the unwatched path. A capped watched-write has to be built. Do **not** add
-a defaulted `watched=` to `upsert_watch` — that rejection is already recorded in its sibling's docstring.
-`companies.source` is `CHECK (source IN ('registry','user','lane'))`, so a new value needs a migration;
-`'user'` is what `companies add` already writes.
-
-Two LinkedIn constraints that must survive into the build, both measured: it exposes **no external apply URL**
-(`externalApply` appears 0 times), so converge on the company **slug**, never the link; and **`f_WT=2`
-(remote) is silently ignored**, returning a byte-identical set to unfiltered. Commit **no** captured JD body
-or list record from either source — the generalization gate refuses third-party data that would oblige a
-licence which does not exist.
+**Arming Part 4a's ~898 boards is a SEPARATE owner decision, NOT taken here.** A capped watched-write path
+must be built first: `upsert_lane_company` hardcodes `watched=False`, nothing scans an unwatched board
+(`get_watched_companies` filters `watched.is_(True)`), and the only `watched=True` writes (`companies
+add`/`import`) have **no cap**. 898 boards at ~7s each would exceed the 3h cadence, so ramp via the existing
+10/run cap. Do **not** add a defaulted `watched=` to `upsert_watch` — that rejection is recorded in its
+sibling's docstring. `companies.source` is `CHECK (source IN ('registry','user','lane'))`.
 
 ---
 
@@ -224,12 +216,12 @@ records it and the run still does not fail. Clearance IS a blocker (D-257). Seni
 | P0 Instrumentation | **COMPLETE** | **MET** (D-030) |
 | P1 Résumé artifact gate | **COMPLETE** | **MET** (D-032/033) |
 | P2 Profile + keystone | items 1–7 shipped; item 8 NOT STARTED | **MET AS RECONCILED** (D-075) |
-| P3 Unattended one command | **COMPLETE, INSTALLED, FIRING** at ~3h (D-288) | **NOT MET — 5 of 7 unattended.** Runs 71-75 all `ok` (16:00-04:00 UTC), corroborated by launchd's own `runs = 5` since the reload. **2 ticks left, ~5 hours** |
-| P4 Craft gate | **COMPLETE** | **NOT MET** — the owner's blind craft review, barred until P3's gate |
+| P3 Unattended one command | **COMPLETE, INSTALLED, FIRING** at ~3h (D-288) | **MET** — 8 consecutive clean scheduled ticks (runs 71-78), verified from the `runs` table + funnels |
+| P4 Craft gate | **COMPLETE** | **NOT MET — now UNBLOCKED** (P3 met) — the owner's blind craft review |
 | P5 Eligibility decides | **COMPLETE** | **MET** — INELIGIBLE precision 16/16, 0 span violations |
 | P6 Liveness + dedup | **BUILD COMPLETE** (D-110/111/113); leakage report shipped (D-283) | **3 of 4** — liveness MET (D-281), leakage measurable and reading **0.00%** but needs a 7-day ledger span (~2026-08-26) |
 | 14-day acceptance | not started | starts after P6 |
-| P7 Breadth | lane 1 (hiring.cafe) BUILT, **not armed and never run live** (D-286); lanes 2-4 not started | gated on P0 attribution data |
+| P7 Breadth | lane 1 (hiring.cafe) BUILT not armed (D-286); **Part 4a GitHub-lists discovery BUILT + LANDED (#149/D-296), not armed**; Part 4b LinkedIn + remaining lanes not started | unlock MET (D-271/272) |
 | *Gate A / Gate B* | *complete, merged* | ***MET*** — *has moved no program gate* |
 
 ### Gate P6, clause by clause
