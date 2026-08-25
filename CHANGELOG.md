@@ -6,7 +6,24 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-08-24
+
+Catches the published package up to `main` (608 commits since 0.3.0). The headline change for users
+is a clearer first run: the beginner path is wired end to end and the README leads with a single
+golden path, with operator detail moved into linked guides.
+
+### Notes
+
+- Upgrading from 0.3.0 applies a one-time store migration automatically on the first `scan` or `run`
+  (see the Migration section below). No manual step is required.
+
 ### Added
+
+- **A clearer first run (onboarding).** Each step now points to the next — `scan`, `top`, `show`, and
+  `run` print a `→ do this next` hint, and a new `boardwatch guide` command shows the whole journey
+  (`init → scan → top → show → track`) on one screen. The README now leads with one golden path
+  (`install → init → scan → top`) instead of a platform wall, and scheduling, unattended runs, résumé
+  tailoring, and per-provider limits moved into linked `docs/` guides.
 
 - **Validator TTL forcing periodic board revalidation (D-298).** `get_validators` drops a cached
   conditional-request validator (ETag / Last-Modified) older than the new `validator_max_age_hours` setting

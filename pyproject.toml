@@ -9,7 +9,7 @@ exclude = [
 
 [project]
 name = "boardwatch"
-version = "0.3.0"
+version = "0.5.0"
 description = "Self-hosted job radar over official ATS APIs"
 readme = "README.md"
 license = "MIT"
