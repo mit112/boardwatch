@@ -406,7 +406,9 @@ back reachable are watched (a reachable-but-empty board is watched with a note),
 that return 404 or cannot be reached are skipped rather than written. `import --verify`
 exits non-zero if it skipped anything, so a partial import does not read as a clean one.
 
-Per-provider coverage limits: see [provider notes](docs/providers.md).
+Provider capabilities at a glance — bodies, registry counts, starter membership, and honest
+limits — are in the [provider matrix](docs/provider-matrix.md); per-provider coverage limits
+are in [provider notes](docs/providers.md).
 
 ---
 
@@ -484,10 +486,11 @@ Have a company on a board boardwatch doesn't reach yet, or an ATS you want suppo
 
 ## Contributing
 
-Contributions welcome: code, registry entries, or bug reports. See
-[CONTRIBUTING.md](CONTRIBUTING.md) for dev setup (`uv sync`, `make check`) and
-[the registry guide](src/boardwatch/registry/README.md) for adding a company board.
-All changes land via PR against a branch-protected `main`.
+Contributions welcome: code, registry entries, or bug reports. The smallest useful one is
+adding a public board — see the [Contributing a board walkthrough](CONTRIBUTING.md#contributing-a-board),
+which has a one-command local check. See [CONTRIBUTING.md](CONTRIBUTING.md) for dev setup
+(`uv sync`, `make check`) and the [registry guide](src/boardwatch/registry/README.md) for the
+catalog schema. All changes land via PR against a branch-protected `main`.
 
 ## License
 

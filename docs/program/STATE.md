@@ -50,6 +50,14 @@ depth moved into five linked guides (PR #156); a Windows-only nightly failure in
 was fixed test-only (PR #157); `0.5.0` is published to PyPI, GHCR, and a GitHub Release, verified with a
 clean isolated install (PR #158) — the first release since `0.3.0`.
 
+**PHASE 6 (COMMUNITY-HOME) GROUNDWORK IS OPEN AS DOCS-ONLY PR #160 — gate-neutral, `make check` green,
+UNMERGED (Mit's to merge).** A GitHub Discussions launch plan (`docs/community.md`; **prep-and-hold** — Mit
+enables Discussions manually at launch), a 6-provider capability matrix (`docs/provider-matrix.md`), and a
+"Contributing a board" walkthrough in `CONTRIBUTING.md` (narrow local check = `pytest tests/unit/test_registry.py`).
+Moves no program gate (the memo's continuation boundary). Stale nightly issue #142 closed — its commit
+predates #157's fix, verified green on the full-matrix `workflow_dispatch` on `794eae2`. **Good-first issues
+HELD** (Mit's call). Remaining owner launch decisions from the memo are still unsettled.
+
 **The ASAP execution plan (D-280) governs.** "Done" is a **provisional pass** — 3 clean FROZEN runs meeting
 all seven bar metrics (B1–B7) — after which the full 14-day acceptance runs PASSIVELY to confirm. Six
 sessionized parts; the plan file at `~/.claude/plans/lets-use-this-session-staged-wren.md` **still names
