@@ -23,9 +23,9 @@ from boardwatch.store.queries import insert_run
 from boardwatch.store.tables import board_scans, companies, jobs, postings
 
 
-def _cli(data_dir: Path, args: list[str]):
+def _cli(data_dir: Path, args: list[str], env: dict[str, str] | None = None):
     """Invocation shape copied from tests/cli/test_identities_cmd.py::_run."""
-    return CliRunner().invoke(app, ["--data-dir", str(data_dir), *args])
+    return CliRunner().invoke(app, ["--data-dir", str(data_dir), *args], env=env)
 
 
 def _add_company(engine: Engine, *, provider: str, slug: str, name: str) -> int:
@@ -448,7 +448,10 @@ def test_the_report_states_that_held_is_not_run_scoped(seeded_coverage_store: Pa
     the caveat is stated in both places a reader could meet the number."""
     output = " ".join(_cli(seeded_coverage_store, ["coverage"]).output.split())
     assert "held is counted as of now, not as of the selected run" in output
-    help_text = _cli(seeded_coverage_store, ["coverage", "--help"]).output
+    # Pin a wide COLUMNS: the caveat lives in the `--run` option help, which Rich truncates at
+    # the narrow width a non-tty Windows runner reports (macOS/Linux passed only because their
+    # default render is wide enough). A fixed width makes the check platform-stable.
+    help_text = _cli(seeded_coverage_store, ["coverage", "--help"], env={"COLUMNS": "200"}).output
     assert "as of NOW" in " ".join(help_text.split())
 
 
