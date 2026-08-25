@@ -45,3 +45,42 @@ All changes land via PR — `main` is branch-protected. One issue per PR.
 
 The bundled registry catalog (company boards) has its own bar — see
 [`src/boardwatch/registry/README.md`](src/boardwatch/registry/README.md).
+
+## Contributing a board
+
+Adding a public company board to the bundled registry is the smallest useful contribution.
+The registry (`src/boardwatch/registry/companies.yaml`) is a plain YAML catalog; a board on a
+[supported provider](docs/provider-matrix.md) — Greenhouse, Lever, Ashby, Workable,
+SmartRecruiters, or Workday — is a few lines.
+
+1. **Confirm the board is public and reachable.** Let boardwatch probe it for you:
+
+   ```
+   boardwatch companies add <board-url-or-provider:slug> --verify
+   ```
+
+   `--verify` skips a board it cannot confirm, so a reachable one is real. (One caveat: a
+   SmartRecruiters board cannot be distinguished from a typo — see the
+   [provider matrix](docs/provider-matrix.md).) This only proves reachability; it does not edit
+   the catalog.
+
+2. **Add the entry.** Append to `companies.yaml` following the schema and rules in the
+   [registry README](src/boardwatch/registry/README.md) — exactly `name`, `provider`, `slug`,
+   `tags`. Do **not** add a `starter` tag; the starter set has its own owner-signed-off bar.
+
+3. **Run the one narrow local check** before the full gate:
+
+   ```
+   uv run pytest tests/unit/test_registry.py --no-cov -n 0 -q
+   ```
+
+   It loads and validates the whole catalog — an unknown provider, a duplicate slug, or a stray
+   field fails here, naming the offending entry. It is fast (well under a second) and needs no
+   network.
+
+4. **Run the full gate and open the PR.** `make check` is still the merge gate (it runs the
+   generalization, index, ruff, mypy, and full pytest checks that CI also runs); the narrow check
+   in step 3 is only to catch the common mistake early. One board per PR keeps review simple.
+
+Not sure which provider a board is on, or want a provider boardwatch does not support yet? That
+is a good [Discussions](docs/community.md) thread before a PR.
