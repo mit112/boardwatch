@@ -24,8 +24,15 @@ from boardwatch.reports.run_funnel import ShortlistCounts
 
 # Buckets the ranker owns. Derived from the dataclass, never restated, so a new field is
 # picked up automatically instead of needing this list edited.
+#
+# `_this_run` fields are excluded on purpose (B5): they are run-scoped TWINS of four of the
+# buckets above, diagnostics for the zero-output guard, and are deliberately NOT part of the
+# `considered == Σ drops` reconciliation identity — so they must not be swept into the mirror-
+# site walk that identity's buckets are held to.
 RANKER_BUCKETS = frozenset(
-    f.name for f in dataclasses.fields(top_cmd.RankedResults) if f.name.startswith("hidden_")
+    f.name
+    for f in dataclasses.fields(top_cmd.RankedResults)
+    if f.name.startswith("hidden_") and not f.name.endswith("_this_run")
 )
 
 # `_shortlist_line` is the operator's one-line summary and deliberately does NOT name every
