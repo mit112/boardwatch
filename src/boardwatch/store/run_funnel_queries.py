@@ -259,6 +259,33 @@ def count_corpus(
     )
 
 
+def posting_ids_judged_this_run(
+    conn: Connection,
+    *,
+    profile_hash: str,
+    rules_hash: str,
+    engine_kind: str,
+    engine_version: str,
+    run_id: int,
+) -> set[int]:
+    """Open postings whose CURRENT-identity evaluation is a CANDIDATE verdict (`eligible` OR
+    `uncertain`) AND was judged by THIS run — the id-returning form of
+    `count_candidate_judged_this_run`. Shares `_current_identity_evaluations` so the count and the
+    set cannot drift; the count now delegates here (P3 item 5 / B5)."""
+    sub = _current_identity_evaluations(
+        profile_hash=profile_hash,
+        rules_hash=rules_hash,
+        engine_kind=engine_kind,
+        engine_version=engine_version,
+    ).subquery()
+    rows = conn.execute(
+        select(sub.c.posting_id).where(
+            sub.c.verdict.in_(("eligible", "uncertain")), sub.c.run_id == run_id
+        )
+    ).scalars().all()
+    return set(rows)
+
+
 def count_candidate_judged_this_run(
     conn: Connection,
     *,
@@ -270,7 +297,8 @@ def count_candidate_judged_this_run(
 ) -> int:
     """Open postings whose CURRENT-identity evaluation is a CANDIDATE verdict (`eligible` OR
     `uncertain`) AND was itself judged by THIS run (`run_id` attribution) — the P3 item 5 (B5)
-    zero-output guard's predicate.
+    zero-output guard's predicate. Delegates to `posting_ids_judged_this_run` so the count and the
+    id set cannot drift.
 
     `uncertain` counts, not only `eligible`: an `uncertain` posting can become a lead exactly like
     an `eligible` one, where an `ineligible` one cannot, and
@@ -294,18 +322,15 @@ def count_candidate_judged_this_run(
     `_current_identity_evaluations` — the same subquery `count_corpus` partitions — rather than
     a new one, per CLAUDE.md's closed-catalog default.
     """
-    sub = _current_identity_evaluations(
-        profile_hash=profile_hash,
-        rules_hash=rules_hash,
-        engine_kind=engine_kind,
-        engine_version=engine_version,
-    ).subquery()
-    return int(
-        conn.execute(
-            select(func.count())
-            .select_from(sub)
-            .where(sub.c.verdict.in_(("eligible", "uncertain")), sub.c.run_id == run_id)
-        ).scalar_one()
+    return len(
+        posting_ids_judged_this_run(
+            conn,
+            profile_hash=profile_hash,
+            rules_hash=rules_hash,
+            engine_kind=engine_kind,
+            engine_version=engine_version,
+            run_id=run_id,
+        )
     )
 
 

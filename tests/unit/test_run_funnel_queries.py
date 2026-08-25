@@ -24,6 +24,7 @@ from boardwatch.store.run_funnel_queries import (
     count_by_source,
     count_candidate_judged_this_run,
     count_corpus,
+    posting_ids_judged_this_run,
     count_stub_postings,
     count_stub_postings_by_company,
     count_tailored_artifacts,
@@ -633,6 +634,38 @@ def test_an_ineligible_posting_judged_by_this_run_is_not_counted(engine: Engine)
         )
 
     assert _candidate_judged_this_run(engine, run_id) == 0
+
+
+def test_posting_ids_judged_this_run_matches_count(engine: Engine) -> None:
+    """The id-returning form must agree with `count_candidate_judged_this_run` on the same
+    inputs — the count now delegates to this set, so they cannot drift (B5)."""
+    with engine.begin() as conn:
+        run_a, run_b = _run(conn), _run(conn)
+        posting_a = _posting(conn, "a")
+        posting_b = _posting(conn, "b")
+        posting_c = _posting(conn, "c")
+        posting_ineligible = _posting(conn, "d")
+        _judge(conn, _version(conn, posting_a, "a"), verdict="eligible", run_id=run_b)
+        _judge(conn, _version(conn, posting_b, "b"), verdict="uncertain", run_id=run_b)
+        _judge(conn, _version(conn, posting_c, "c"), verdict="eligible", run_id=run_a)
+        _judge(
+            conn, _version(conn, posting_ineligible, "d"), verdict="ineligible", run_id=run_b,
+        )
+
+    with engine.connect() as conn:
+        ids = posting_ids_judged_this_run(
+            conn, profile_hash=PROFILE, rules_hash=RULES,
+            engine_kind=KIND, engine_version=VERSION, run_id=run_b,
+        )
+        count = count_candidate_judged_this_run(
+            conn, profile_hash=PROFILE, rules_hash=RULES,
+            engine_kind=KIND, engine_version=VERSION, run_id=run_b,
+        )
+
+    assert ids == {posting_a, posting_b}
+    assert posting_c not in ids
+    assert posting_ineligible not in ids
+    assert len(ids) == count
 
 
 def test_count_stub_postings_counts_only_open_empty_bodies(engine: Engine) -> None:
