@@ -185,6 +185,23 @@ def doctor(ctx: typer.Context, offline: bool = typer.Option(False, "--offline"))
             "\n[dim]* SmartRecruiters returns an empty board for unknown companies, so "
             "'empty' here is unverifiable — it may be a typo'd slug.[/dim]"
         )
+    if report.migrations:
+        # A dead/empty watched board often means the company moved its board to another ATS, not
+        # that it stopped hiring. Suggest-only: the operator re-points the watch (the same
+        # human-in-the-loop rule `companies discover`/`import` follow). Informational — this does
+        # NOT set the exit code; the dead board it derives from already did.
+        console.print(
+            "\n[yellow]Possible board migrations[/yellow] (a watched board is unhealthy, but the "
+            "same company is live on another provider):"
+        )
+        for m in report.migrations:
+            console.print(f"  {m.old_provider}:{m.old_slug}", markup=False)
+            console.print(f"    → [green]{m.new_provider}:{m.new_slug}[/green] is OK. Re-point:")
+            console.print(
+                f"      boardwatch companies remove {m.old_provider}:{m.old_slug} && "
+                f"boardwatch companies add {m.new_provider}:{m.new_slug}",
+                markup=False,
+            )
     if running:
         # Deliberately not "a scan is in progress": since run attribution landed, an
         # unfinished run is also a `boardwatch run` still tailoring, or a standalone

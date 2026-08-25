@@ -7,14 +7,20 @@ Per-provider connectivity = reachable iff ≥1 probe got an HTTP response
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from typing import Any
 
-from sqlalchemy import Engine, update
+from sqlalchemy import Engine, Row, update
 
 from boardwatch.core.clock import utcnow
 from boardwatch.core.politeness import Fetcher
 from boardwatch.core.settings import Settings
 from boardwatch.providers.base import BoardHealth, Provider
 from boardwatch.registry.loader import load_catalog, starter_entries
+from boardwatch.scan.board_migration import (
+    MIGRATION_TRIGGER,
+    MigrationSuggestion,
+    suggest_migrations,
+)
 from boardwatch.scan.coordinator import default_providers
 from boardwatch.store import tables
 from boardwatch.store.queries import get_watched_companies
@@ -37,6 +43,7 @@ class DoctorReport:
     board_health: dict[str, BoardHealth] = field(default_factory=dict)  # "provider:slug" -> status
     connectivity: list[ProviderConnectivity] = field(default_factory=list)
     actionable: bool = False  # drives the non-zero exit
+    migrations: list[MigrationSuggestion] = field(default_factory=list)  # live elsewhere
 
 
 def probe_health(
@@ -73,7 +80,38 @@ def probe_health(
                 report.actionable = True  # provider unreachable (all probes UNREACHABLE)
         else:
             report.connectivity.append(_fallback(fetcher, providers, name, report))
+    report.migrations = _detect_migrations(watched, report.board_health, fetcher, providers)
     return report
+
+
+def _detect_migrations(
+    watched: list[Row[Any]],  # rows from get_watched_companies
+    board_health: dict[str, BoardHealth],
+    fetcher: Fetcher,
+    providers: dict[str, Provider],
+) -> list[MigrationSuggestion]:
+    """For every watched board that probed DEAD/ERROR/EMPTY, look for the same company live on
+    another provider. The candidate probes are for boards NOT in the watched set, so — like the
+    connectivity `_fallback` — they write NO health row. Already-watched pairs are skipped so a
+    company still covered elsewhere is not re-suggested. Costs zero extra requests when every
+    board is healthy (`suggest_migrations` returns before probing on an empty trigger set)."""
+    unhealthy = [
+        (row.provider, row.slug)
+        for row in watched
+        if board_health.get(f"{row.provider}:{row.slug}") in MIGRATION_TRIGGER
+    ]
+    watched_pairs = {(row.provider, row.slug) for row in watched}
+
+    def probe(targets: list[tuple[str, str]]) -> dict[tuple[str, str], BoardHealth]:
+        out: dict[tuple[str, str], BoardHealth] = {}
+        for prov, slug in targets:
+            try:
+                out[(prov, slug)] = providers[prov].healthcheck(fetcher, slug)
+            except Exception:  # one unreachable candidate is not a failed doctor run
+                out[(prov, slug)] = BoardHealth.UNREACHABLE
+        return out
+
+    return suggest_migrations(unhealthy, probe, skip=watched_pairs)
 
 
 def _write_board_health(engine: Engine, company_id: int, status: BoardHealth) -> None:
