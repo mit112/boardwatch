@@ -24,12 +24,12 @@ from boardwatch.store.run_funnel_queries import (
     count_by_source,
     count_candidate_judged_this_run,
     count_corpus,
-    posting_ids_judged_this_run,
     count_stub_postings,
     count_stub_postings_by_company,
     count_tailored_artifacts,
     count_unattributed_evaluations,
     lead_provenance,
+    posting_ids_judged_this_run,
 )
 from boardwatch.store.tables import applications, companies, jobs, posting_versions, postings, runs
 

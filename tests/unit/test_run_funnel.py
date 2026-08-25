@@ -102,9 +102,15 @@ def funnel(
     skipped_not_new: int = 0,
     hidden_duplicate: int = 0,
     hidden_applied: int = 0,
+    hidden_handled: int = 0,
     hidden_over_seniority: int = 0,
     uncertain_band: int = 0,
     band_tokens_seen_while_inert: int = 0,
+    judged_this_run: int = 0,
+    handled_this_run: int = 0,
+    applied_this_run: int = 0,
+    duplicate_this_run: int = 0,
+    dead_this_run: int = 0,
     liveness: LivenessCheck | None = None,
     considered: int | None = None,
     tailor_failed: int = 0,
@@ -133,7 +139,7 @@ def funnel(
         considered = (
             shortlisted + hidden_ineligible + hidden_non_swe
             + hidden_hard_filter + hidden_below_cutoff + skipped_not_new
-            + hidden_duplicate + hidden_applied + hidden_over_seniority
+            + hidden_duplicate + hidden_applied + hidden_over_seniority + hidden_handled
         )
     # `uncertain_band` and `band_tokens_seen_while_inert` are deliberately ABSENT from that
     # sum: they count postings that PASSED and are already inside `shortlisted`. Adding them
@@ -180,9 +186,15 @@ def funnel(
             skipped_not_new=skipped_not_new,
             hidden_duplicate=hidden_duplicate,
             hidden_applied=hidden_applied,
+            hidden_handled=hidden_handled,
             hidden_over_seniority=hidden_over_seniority,
             uncertain_band=uncertain_band,
             band_tokens_seen_while_inert=band_tokens_seen_while_inert,
+            judged_this_run=judged_this_run,
+            handled_this_run=handled_this_run,
+            applied_this_run=applied_this_run,
+            duplicate_this_run=duplicate_this_run,
+            dead_this_run=dead_this_run,
         ) if ranker_ran else None,
         liveness=liveness,
         leads=leads,
@@ -447,6 +459,23 @@ def test_the_shortlist_stage_reconciles_with_the_new_bucket() -> None:
     shortlist = stage(report, "shortlist")
     assert shortlist.entered == 10
     assert shortlist.reconciled is True
+
+
+def test_funnel_carries_run_scoped_attribution() -> None:
+    """B5: the run-scoped attribution surfaces as an ADDITIVE shortlist field. A run that judged
+    3 candidates this run, handled 1 of them this run, and produced 0 leads leaves 2
+    unexplained. The corpus reconciliation identity (`reconciled`) is untouched by this field."""
+    report = funnel(
+        considered=10, shortlisted=0, hidden_ineligible=0, hidden_non_swe=0,
+        hidden_below_cutoff=10, leads=[], tailor_failed=0,
+        judged_this_run=3, handled_this_run=1,
+    )
+
+    shortlist = stage(report, "shortlist")
+    assert shortlist.reconciled is True
+    assert shortlist.run_scoped_attribution == {
+        "judged": 3, "handled": 1, "applied": 0, "duplicate": 0, "dead": 0, "unexplained": 2,
+    }
 
 
 def test_the_markdown_names_the_over_seniority_drop_with_its_count() -> None:

@@ -23,7 +23,7 @@ from __future__ import annotations
 
 from collections import Counter
 from collections.abc import Callable, Sequence
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import timedelta
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -928,6 +928,12 @@ def run_pipeline(
             hidden_over_seniority=ranked.hidden_over_seniority,
             uncertain_band=ranked.uncertain_band,
             band_tokens_seen_while_inert=ranked.band_tokens_seen_while_inert,
+            judged_this_run=len(ranked.judged_this_run_ids),
+            handled_this_run=ranked.hidden_handled_this_run,
+            applied_this_run=ranked.hidden_applied_this_run,
+            duplicate_this_run=ranked.hidden_duplicate_this_run,
+            # `dead_this_run` is not knowable yet — liveness runs after this point — and is
+            # filled in below once it is, via `dataclasses.replace` (ShortlistCounts is frozen).
         )
 
         # P6 slice 2 §3.4: project this run's duplicate groups onto canonical jobs, so a lead
@@ -1223,9 +1229,13 @@ def run_pipeline(
         # `dead_lead_ids` and why this guard takes them: `shortlisted > 0` no longer implies the
         # fatal already fired. Checked BEFORE cohort completeness (design's stated order) so the
         # more specific empty-day message wins when both would otherwise fire on the same run.
+        judged = ranked.judged_this_run_ids
+        dead_this_run = len(set(summary.dead_lead_ids) & judged)
+        if summary.shortlist is not None:
+            # Filled in here, not at the initial population above: liveness (which produces
+            # `dead_lead_ids`) runs after that point. `ShortlistCounts` is frozen.
+            summary.shortlist = replace(summary.shortlist, dead_this_run=dead_this_run)
         if summary.fatal is None and not summary.tailored:
-            judged = ranked.judged_this_run_ids
-            dead_this_run = len(set(summary.dead_lead_ids) & judged)
             summary.fatal = _zero_output_guard(
                 len(judged),
                 handled_this_run=ranked.hidden_handled_this_run,

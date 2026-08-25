@@ -136,6 +136,10 @@ class Stage:
     # True when one drop bucket is the remainder of the others, so `reconciled` holds by
     # construction. Recorded so a reader never mistakes arithmetic for verification.
     derived: bool = False
+    # B5 — present ONLY on the `shortlist` stage: `{judged, handled, applied, duplicate, dead,
+    # unexplained}`, run-scoped. A diagnostic for the zero-output guard, not a drop: it is not
+    # summed into `dropped`/`reconciled` above. None on every other stage.
+    run_scoped_attribution: dict[str, int] | None = None
 
     @property
     def instrumented(self) -> bool:
@@ -272,6 +276,15 @@ class ShortlistCounts:
     # counters above are structurally 0 and 'inert' is otherwise indistinguishable from
     # 'nothing to gate'. Reported, not dropped, for the same reason as `uncertain_band`.
     band_tokens_seen_while_inert: int = 0
+    # B5 — run-scoped twins of four of the buckets above, restricted to postings THIS run
+    # judged (`eligible`/`uncertain`, run_id-attributed). Diagnostics for the zero-output guard,
+    # surfaced additively in the funnel (no `artifact_version` bump, D-285 precedent) and
+    # deliberately NOT part of the `considered == Σ drops` identity above.
+    judged_this_run: int = 0
+    handled_this_run: int = 0
+    applied_this_run: int = 0
+    duplicate_this_run: int = 0
+    dead_this_run: int = 0
 
 
 @dataclass(frozen=True)
@@ -868,6 +881,23 @@ def build_run_funnel(
             # P0 item 3 turned from bookkeeping into evidence, and it is what catches a new
             # bucket added to the ranker but not mirrored here.
             derived=False,
+            # B5 — additive, diagnostic, NOT part of the identity above (see the field's own
+            # docstring on `Stage`). `unexplained` can be non-zero on a healthy day: it counts
+            # candidates that were DELIVERED, not just ones that were suppressed.
+            run_scoped_attribution={
+                "judged": shortlist.judged_this_run,
+                "handled": shortlist.handled_this_run,
+                "applied": shortlist.applied_this_run,
+                "duplicate": shortlist.duplicate_this_run,
+                "dead": shortlist.dead_this_run,
+                "unexplained": (
+                    shortlist.judged_this_run
+                    - shortlist.handled_this_run
+                    - shortlist.applied_this_run
+                    - shortlist.duplicate_this_run
+                    - shortlist.dead_this_run
+                ),
+            },
             note=(
                 "The ranker's whole considered population. NOT a continuation of `verdict` — "
                 "the two count different populations, so the numbers here will not match it. "
@@ -1174,6 +1204,7 @@ def _stage_json(stage: Stage) -> dict[str, object]:
         "instrumented": stage.instrumented,
         "derived": stage.derived,
         "note": stage.note,
+        "run_scoped_attribution": stage.run_scoped_attribution,
     }
 
 
