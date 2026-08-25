@@ -110,10 +110,17 @@ consequences: a scratch run's `funnel-N` collides with the next real run's, and 
 non-SWE `Lead` titles in the role gate, GE HealthCare posting 31365 (`Buc` → `non_us`) in the hard filter.
 Any of the six appearing in a funnel's `leads` is a real regression to investigate before anything else.
 
-**B1 and B5 caveats, both live (D-281/D-282).** A 14-day B1 pass does NOT evidence discovery health — it is
-close to guaranteed for ~92 runs by ledger drain alone; the real threat is a **ledger reopen**, which
-re-serves built jobs and scores them 0 net-new. **B5 is UNSCOREABLE** until run-scoped rank attribution
-exists — do not score it on exit status alone.
+**B5 IS NOW SCOREABLE — the zero-output guard is ARMED on run-scoped rank attribution (D-302, PR #164, UNMERGED).**
+The guard counts the four SUPPRESSION drops restricted to the postings judged this run
+(`hidden_handled_this_run`/`hidden_applied_this_run`/`hidden_duplicate_this_run` + `dead_this_run`) and fires
+when `J − Σsuppressions_this_run > 0` with 0 leads; a negative raises a typed reconciliation error. Rejections
+(hard-filter/non-SWE/over-seniority/below-cutoff) are meant to FIRE the guard (D-246), by owner ruling. No
+`artifact_version`/`engine_version` change → no drain; freeze-safe. `make check` green (7584); whole-branch
+review APPROVE. B5 can be certified in the frozen runs once the PR merges.
+
+**B1 caveat, still live (D-281).** A 14-day B1 pass does NOT evidence discovery health — it is close to
+guaranteed for ~92 runs by ledger drain alone; the real threat is a **ledger reopen**, which re-serves built
+jobs and scores them 0 net-new.
 
 **RULINGS 1, 2 AND 4 SHIP; RULING 3 IS DROPPED (D-294/D-295). PR #148 MERGED.** The role gate denies
 non-software title families and blocks `Team Leader`; the foreign-location gate gained a CJK-script signal.
@@ -171,9 +178,10 @@ Immediate steps, in order:
    the company **slug** (`externalApply`=0, no apply URL) and sends only `f_TPR=r86400` (`f_WT=2` ignored). No
    capture committed. **Owed before arming:** a live probe to confirm the RECONSTRUCTED card selectors and to
    pin `start` paging (the client makes one search GET; paging and a keywords/location facet are deferred).
-2. **Gate P6's 7-day leakage window completes ~2026-08-26**, after which the provisional pass (3 frozen
-   B1–B7 runs) can be certified. B1/B2/B3/B6/B7 are already demonstrated on frozen runs 72-78; B4's n≥100
-   audit and B5 (unscoreable) remain owner/attribution-gated.
+2. **Merge PR #164 (B5), then Gate P6's 7-day leakage window completes ~2026-08-26**, after which the
+   provisional pass (3 frozen B1–B7 runs) can be certified. B1/B2/B3/B6/B7 are already demonstrated on frozen
+   runs 72-78; **B5 is now scoreable (D-302)**; only B4's n≥100 audit and the P4 blind craft review remain
+   owner-gated.
 
 **Arming Part 4a's ~898 boards is a SEPARATE owner decision, NOT taken here.** The capped watched-write ramp
 is **already shipped** (D-300 correction): `companies discover` caps at `lane_new_companies_per_run` and
@@ -195,8 +203,9 @@ sibling's docstring. `companies.source` is `CHECK (source IN ('registry','user',
    before arming. **One function either way.**
 2. **Oracle Cloud HCM / iCIMS as PROVIDERS** — D-278's still-open provider question, explicitly NOT settled
    by D-285 (that ruled on lanes). ~45% of the non-six tail; reaches neither Amazon nor Apple nor TikTok.
-3. **Run-scoped rank attribution** — the only honest fix for B5, which is UNSCOREABLE until it exists
-   (D-282). Four drop sites plus the funnel reconciliation identity. Matters before Part 6 scores B5.
+3. ~~**Run-scoped rank attribution** — the only honest fix for B5~~ **DELIVERED (D-302, PR #164).** Four
+   run-scoped suppression twins + the reconciliation invariant; B5 is scoreable. Certification waits only on
+   the PR merge.
 4. **`locations` on `Lead` + an `artifact_version` bump** — the funnel can evidence no lead's LOCATION, so
    the one gate whose failure is a visa-ineligible lead leaves no trace in its own artifact (D-267). A
    shipped-schema change.
