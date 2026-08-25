@@ -39,9 +39,16 @@ unattended run resets the streak.
 > Two *scheduled* fires cannot collide — launchd never runs two instances of one label.
 
 **The headline number: 0.** Zero job applications have ever been sent (`applications` has 0 rows) — the
-machine produces leads, it never applies (out of scope). Against that: 3 published releases (none since
-**0.3.0**), ~53k lines of source, **7,464 tests**, 71 leaf CLI commands, 6 ATS providers, a **~1.4 GB**
+machine produces leads, it never applies (out of scope). Against that: **4 published releases, latest
+`0.5.0`**, ~53k lines of source, **7,464 tests**, 71 leaf CLI commands, 6 ATS providers, a **~1.4 GB**
 store holding 41,006 postings / 35,721 open.
+
+**A BOUNDED PUBLIC-READINESS EFFORT SHIPPED AND `0.5.0` IS LIVE (D-299).** Scope was exactly three
+workstreams — onboarding, README/ease-of-use, release currency — no feature expansion. `boardwatch guide`
+and next-step CLI hints ship (PR #156); the README is compressed onto one canonical path with reference
+depth moved into five linked guides (PR #156); a Windows-only nightly failure in the coverage-help test
+was fixed test-only (PR #157); `0.5.0` is published to PyPI, GHCR, and a GitHub Release, verified with a
+clean isolated install (PR #158) — the first release since `0.3.0`.
 
 **The ASAP execution plan (D-280) governs.** "Done" is a **provisional pass** — 3 clean FROZEN runs meeting
 all seven bar metrics (B1–B7) — after which the full 14-day acceptance runs PASSIVELY to confirm. Six
