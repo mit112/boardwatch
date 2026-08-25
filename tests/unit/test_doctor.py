@@ -420,3 +420,71 @@ def test_doctor_does_not_flag_a_normally_closed_row(tmp_path, monkeypatch) -> No
 
     assert result.exit_code == 0, result.output
     assert "no write path can produce" not in result.output
+
+
+# ---- cross-provider migration suggestions ----
+def test_probe_health_suggests_a_migration_for_a_dead_board(tmp_path) -> None:
+    # a dead workday board whose company (tenant `veeva`) is live on lever -> a suggestion
+    eng = _engine(tmp_path)
+    dead = "veeva.wd5.myworkdayjobs.com/veeva/veeva_external"
+    _watch(eng, "workday", dead)
+    providers = {
+        "workday": FakeProvider({dead: BoardHealth.DEAD}),
+        "greenhouse": FakeProvider({"veeva": BoardHealth.EMPTY}),
+        "lever": FakeProvider({"veeva": BoardHealth.OK}),
+        "ashby": FakeProvider({"veeva": BoardHealth.EMPTY}),
+        "workable": FakeProvider({"veeva": BoardHealth.EMPTY}),
+    }
+    report = probe_health(eng, _settings(tmp_path), fetcher=object(), providers=providers)
+    assert [(m.old_provider, m.new_provider, m.new_slug) for m in report.migrations] == [
+        ("workday", "lever", "veeva")
+    ]
+
+
+def test_probe_health_reports_no_migration_when_all_boards_healthy(tmp_path) -> None:
+    eng = _engine(tmp_path)
+    _watch(eng, "greenhouse", "acme")
+    providers = {"greenhouse": FakeProvider({"acme": BoardHealth.OK})}
+    report = probe_health(eng, _settings(tmp_path), fetcher=object(), providers=providers)
+    assert report.migrations == []  # healthy boards trigger no cross-provider probe
+
+
+def test_doctor_cli_prints_a_migration_suggestion(tmp_path, monkeypatch) -> None:
+    monkeypatch.delenv("GITHUB_ACTIONS", raising=False)
+    monkeypatch.setenv("BOARDWATCH_CONFIG_DIR", str(tmp_path / "cfg"))
+    data = tmp_path / "data"
+    eng = _engine(data)
+    dead = "veeva.wd5.myworkdayjobs.com/veeva/veeva_external"
+    _watch(eng, "workday", dead)
+    providers = {
+        "workday": FakeProvider({dead: BoardHealth.DEAD}),
+        "greenhouse": FakeProvider({"veeva": BoardHealth.EMPTY}),
+        "lever": FakeProvider({"veeva": BoardHealth.OK}),
+        "ashby": FakeProvider({"veeva": BoardHealth.EMPTY}),
+        "workable": FakeProvider({"veeva": BoardHealth.EMPTY}),
+    }
+    monkeypatch.setattr("boardwatch.scan.health.default_providers", lambda: providers)
+    monkeypatch.setattr("boardwatch.scan.health.Fetcher", lambda settings: object())
+    result = runner.invoke(app, ["--data-dir", str(data), "doctor"])
+    assert result.exit_code == 1, result.output  # the dead board is actionable
+    # collapse whitespace: rich wraps the command to the (narrow) test console width
+    collapsed = " ".join(result.output.split())
+    assert "Possible board migrations" in collapsed
+    assert "companies add lever:veeva" in collapsed
+
+
+def test_migration_on_an_empty_board_does_not_flip_the_exit_code(tmp_path) -> None:
+    # EMPTY is a migration trigger but is NOT in _WATCHED_ACTIONABLE; a suggestion for an EMPTY
+    # board must leave the exit code at 0 (the feature is informational). DEAD boards are already
+    # actionable, so only an EMPTY-triggered suggestion exercises this boundary.
+    eng = _engine(tmp_path)
+    _watch(eng, "greenhouse", "acme")
+    providers = {
+        "greenhouse": FakeProvider({"acme": BoardHealth.EMPTY}),
+        "lever": FakeProvider({"acme": BoardHealth.OK}),
+        "ashby": FakeProvider({"acme": BoardHealth.EMPTY}),
+        "workable": FakeProvider({"acme": BoardHealth.EMPTY}),
+    }
+    report = probe_health(eng, _settings(tmp_path), fetcher=object(), providers=providers)
+    assert [(m.new_provider, m.new_slug) for m in report.migrations] == [("lever", "acme")]
+    assert report.actionable is False  # informational: an EMPTY board + a suggestion stays exit 0
