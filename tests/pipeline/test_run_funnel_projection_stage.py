@@ -168,6 +168,27 @@ def test_a_refused_projected_run_still_carries_an_UNMEASURED_stage(
     assert ProjectionAvailability.MISSING_APPROVAL.value in str(payload["fatal"])
 
 
+def test_shortlist_stage_carries_run_scoped_attribution(env: Path, tmp_path: Path) -> None:
+    """B5, read off the real frozen artifact rather than the pure builder. The one posting is
+    judged this run AND delivered as a lead — not suppressed — so `unexplained` is 1, not 0:
+    the field counts what is unaccounted for by the four SUPPRESSIONS, and a delivered lead is
+    neither of those. The corpus reconciliation identity (`reconciled`) is untouched."""
+    _ready(env, 1)
+
+    summary = _pipeline(env, tmp_path / "apps", project=False)
+
+    assert summary.fatal is None, summary.errors
+    assert summary.tailored, "nothing was tailored, so this proves nothing"
+    assert summary.funnel is not None
+    payload = json.loads(summary.funnel.json_path.read_text(encoding="utf-8"))
+
+    shortlist = _stages(payload)["shortlist"]
+    assert shortlist["reconciled"] is True
+    assert shortlist["run_scoped_attribution"] == {
+        "judged": 1, "handled": 0, "applied": 0, "duplicate": 0, "dead": 0, "unexplained": 1,
+    }
+
+
 # -- the late run-scoped abort still reconciles -------------------------------------------
 #
 # Preflight says AVAILABLE, lead 1 projects, and lead 2 then hits a RUN-scoped cause from inside

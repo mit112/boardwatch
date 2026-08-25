@@ -25,6 +25,7 @@ from boardwatch.providers.registry import build_providers
 from boardwatch.scan.coordinator import ScanLockHeldError
 from boardwatch.store import tables
 from boardwatch.store.db import ensure_schema, get_engine
+from boardwatch.store.ledger_queries import record_disposition
 
 # The seeded company is a real watched greenhouse board, so any test that runs the scan stage
 # must mock it. Three of these tests previously reached boards-api.greenhouse.io for real,
@@ -772,6 +773,59 @@ def test_steady_state_where_eligible_work_is_all_prior_run_cache_hits_is_not_fat
     assert second.shortlist.shortlisted == 0
     assert second.tailored == []
     assert second.fatal is None, second.fatal
+
+
+def test_runner_fatal_on_silent_empty_day(env: Path, tmp_path: Path) -> None:
+    """B5 — the regression this whole change closes. A prior-run posting that is now `built`
+    makes the CORPUS-scoped `hidden_handled` non-zero, which is exactly what disarmed the OLD
+    guard (D-282): its `hidden_handled == 0` clause never fired again once anything anywhere
+    had ever been built. The run-scoped twin does not credit that posting — it was not judged
+    THIS run — so a second, genuinely NEW eligible posting rejected by the cutoff (`--top 0`)
+    still leaves an unexplained candidate, and the new guard fires where the old one could not.
+    """
+    _ready(env)
+    out_root = tmp_path / "apps"
+    first = _pipeline(env, out_root)
+    assert first.fatal is None, first.fatal
+    assert first.tailored, "the fixture produced no lead on run 1, so run 2 proves nothing"
+
+    _seed_posting(env, slug="acme3")  # a second, NEW posting for run 2
+
+    second = _pipeline(env, out_root, top_n=0)
+
+    assert second.shortlist is not None
+    assert second.shortlist.hidden_handled == 1, "the prior lead must still read as handled"
+    assert second.tailored == []
+    assert second.fatal is not None
+    assert "empty day not provably right" in second.fatal
+
+
+def test_runner_ok_on_ledger_drain_day(env: Path, tmp_path: Path) -> None:
+    """A NEW eligible-this-run posting that already carries a live `built` disposition (the
+    ledger drain, P6 slice 2) is an honest empty day: `handled_this_run` explains the whole
+    candidate population this run judged, so the guard stays silent."""
+    posting_id = _seed_posting(env)
+    assert _cli(env, ["init"], INIT_INPUT).exit_code == 0
+    assert _cli(env, ["tailor", "init"]).exit_code == 0
+
+    engine = get_engine(env)
+    with engine.begin() as conn:
+        job_id = int(
+            conn.execute(
+                select(tables.postings.c.job_id).where(tables.postings.c.id == posting_id)
+            ).scalar_one()
+        )
+        record_disposition(
+            conn, job_id, disposition="built", reason="lead_built", policy_version="v1",
+            now=utcnow(),
+        )
+
+    summary = _pipeline(env, tmp_path / "apps")
+
+    assert summary.shortlist is not None
+    assert summary.shortlist.shortlisted == 0
+    assert summary.tailored == []
+    assert summary.fatal is None, summary.fatal
 
 
 def test_a_lead_whose_folder_disappeared_after_tailoring_is_filesystem_truth_fatal(

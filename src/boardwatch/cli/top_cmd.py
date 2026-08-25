@@ -25,6 +25,7 @@ from boardwatch.core.clock import utcnow
 from boardwatch.core.dedup import Suppression, resolve_duplicates
 from boardwatch.core.ledger import LedgerRow
 from boardwatch.core.settings import Settings
+from boardwatch.eligibility.engine import ENGINE_KIND, engine_version
 from boardwatch.eligibility.preflight import run_eligibility
 from boardwatch.eligibility.read import current_gate_verdicts, current_verdicts
 from boardwatch.extract.preflight import run_preflight
@@ -56,6 +57,7 @@ from boardwatch.store.identity_queries import (
 from boardwatch.store.ledger_queries import live_dispositions, record_disposition
 from boardwatch.store.queries import current_posting_versions, get_profile
 from boardwatch.store.regroup import job_anchors
+from boardwatch.store.run_funnel_queries import posting_ids_judged_this_run
 from boardwatch.store.tables import companies, extractions, posting_events, postings
 
 console = Console()
@@ -202,6 +204,14 @@ class RankedResults:
     # make it stale. Drained by `--include-applied`, and by `track status <id> withdrawn`, which
     # moves the row out of `APPLIED_STATUSES` at the source.
     hidden_applied: int = 0
+    # Run-scoped twins of the four SUPPRESSION drops, restricted to postings this run judged
+    # (`eligible`/`uncertain`, run_id-attributed). Diagnostics for the B5 zero-output guard —
+    # deliberately NOT part of the `considered == Σ drops` reconciliation identity above. `dead`
+    # is the runner's liveness fate and lives there, not here.
+    judged_this_run_ids: frozenset[int] = frozenset()
+    hidden_handled_this_run: int = 0
+    hidden_applied_this_run: int = 0
+    hidden_duplicate_this_run: int = 0
     # The duplicate groups this run resolved, threaded out so the pipeline can project them onto
     # canonical jobs without recomputing dedup over the corpus a second time. Empty when
     # identities are incomplete, which is the same condition that leaves `hidden_duplicate` at 0.
@@ -410,6 +420,22 @@ def rank_open_postings(
     applied: dict[int, str] = {}
     eligible_ids = [p.posting_id for p in eligible]
     with engine.connect() as dedup_conn:
+        # The run-scoped twins' membership test (B5). Empty when there is no run — `top`/gate
+        # callers pass none and get zeros, matching every other run-scoped counter.
+        judged_this_run: set[int] = (
+            posting_ids_judged_this_run(
+                dedup_conn,
+                # A profile row was required to reach here (the NoProfileError check above),
+                # so `run_eligibility` always returns a real identity when a run is present.
+                profile_hash=cast(str, stats.profile_hash),
+                rules_hash=cast(str, stats.rules_hash),
+                engine_kind=ENGINE_KIND,
+                engine_version=engine_version(),
+                run_id=run_id,
+            )
+            if run_id is not None
+            else set()
+        )
         # Completeness is evaluated over ALL open postings, not just the eligible ones — it
         # is a property of the backfill, not of this query.
         ids_complete = identities_complete(dedup_conn)
@@ -452,11 +478,16 @@ def rank_open_postings(
     kept = 0
     hidden_handled = 0
     hidden_applied = 0
+    hidden_handled_this_run = 0
+    hidden_applied_this_run = 0
+    hidden_duplicate_this_run = 0
     surfaced_job_ids: list[int] = []
     for posting in eligible:
         suppression = suppressions.get(posting.posting_id)
         if suppression is not None and not include_duplicates:
             hidden_duplicate += 1
+            if posting.posting_id in judged_this_run:
+                hidden_duplicate_this_run += 1
             continue
         if suppression is not None:
             visible.append(replace(posting, duplicate_of=suppression.survivor_posting_id))
@@ -473,6 +504,8 @@ def rank_open_postings(
         applied_status = applied.get(job_id) if job_id is not None else None
         if applied_status is not None and not include_applied:
             hidden_applied += 1
+            if posting.posting_id in judged_this_run:
+                hidden_applied_this_run += 1
             continue
         if applied_status is not None:
             visible.append(replace(posting, applied_as=applied_status))
@@ -480,6 +513,8 @@ def rank_open_postings(
         disposition = handled.get(job_id) if job_id is not None else None
         if disposition is not None and not include_handled:
             hidden_handled += 1
+            if posting.posting_id in judged_this_run:
+                hidden_handled_this_run += 1
             continue
         if disposition is not None:
             visible.append(replace(posting, handled_as=disposition.disposition))
@@ -527,6 +562,10 @@ def rank_open_postings(
         identities_are_complete=ids_complete,
         hidden_handled=hidden_handled,
         hidden_applied=hidden_applied,
+        judged_this_run_ids=frozenset(judged_this_run),
+        hidden_handled_this_run=hidden_handled_this_run,
+        hidden_applied_this_run=hidden_applied_this_run,
+        hidden_duplicate_this_run=hidden_duplicate_this_run,
         suppressions=tuple(suppressions.values()),
     )
 

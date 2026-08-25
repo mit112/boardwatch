@@ -32,10 +32,13 @@ from typer.testing import CliRunner
 from boardwatch.cli.app import app
 from boardwatch.cli.top_cmd import RankedResults, rank_open_postings
 from boardwatch.core.clock import utcnow
+from boardwatch.core.posting_identity import compute_identities
 from boardwatch.core.settings import Settings
 from boardwatch.store.db import ensure_schema, get_engine
+from boardwatch.store.identity_queries import load_identity_inputs, write_identities
+from boardwatch.store.ledger_queries import record_disposition
 from boardwatch.store.queries import save_profile
-from boardwatch.store.tables import companies, jobs, posting_versions, postings
+from boardwatch.store.tables import companies, jobs, posting_versions, postings, runs
 
 NOW = utcnow()
 
@@ -219,3 +222,115 @@ def test_a_posting_hidden_as_ineligible_is_not_also_counted_as_capped(env: Path)
     assert results.hidden_below_cutoff == 0, "an ineligible posting was also counted as capped"
     assert [posting.title for posting in results.visible] == ["Platform Engineer"]
     assert _accounted(results) == results.considered == 2
+
+
+# --------------------------------------------------------------------------------------
+# B5 — run-scoped twins of the suppression drops
+# --------------------------------------------------------------------------------------
+
+
+def _company(engine: Engine, slug: str) -> int:
+    with engine.begin() as conn:
+        return int(
+            conn.execute(
+                insert(companies).values(
+                    name="Acme", provider="greenhouse", slug=slug, source="user", watched=True,
+                )
+            ).inserted_primary_key[0]
+        )
+
+
+def _posting_with_job(
+    engine: Engine, company_id: int, *, tag: str, content_hash: str, offset: int
+) -> tuple[int, int]:
+    """One posting on its own job, distinct posted_at so ranking is total."""
+    with engine.begin() as conn:
+        job_id = int(conn.execute(insert(jobs).values(created_at=NOW)).inserted_primary_key[0])
+        posting_id = int(
+            conn.execute(
+                insert(postings).values(
+                    company_id=company_id, job_id=job_id, provider_posting_id=f"pp-{tag}",
+                    title="Backend Engineer", normalized_title="backend engineer",
+                    locations_json=["Remote"], remote_policy="remote",
+                    posted_at=NOW - timedelta(days=offset), first_seen_at=NOW, last_seen_at=NOW,
+                    status="open", consecutive_missing=0, content_hash=content_hash,
+                    body_text="We are hiring a backend engineer.",
+                )
+            ).inserted_primary_key[0]
+        )
+        conn.execute(
+            insert(posting_versions).values(
+                posting_id=posting_id, content_hash=content_hash,
+                body_text="We are hiring a backend engineer.",
+                captured_at=NOW, capture_reason="new",
+            )
+        )
+    return posting_id, job_id
+
+
+def _backfill_all_identities(engine: Engine) -> None:
+    """Every open posting must carry an identity for `identities_complete` to gate dedup on."""
+    with engine.begin() as conn:
+        for row in load_identity_inputs(conn, None):
+            write_identities(conn, row.posting_id, compute_identities(row), now=NOW)
+
+
+def _run_row(engine: Engine) -> int:
+    with engine.begin() as conn:
+        return int(
+            conn.execute(
+                insert(runs).values(started_at=NOW, boards_attempted=0)
+            ).inserted_primary_key[0]
+        )
+
+
+def test_rank_twins_count_only_this_run_suppressions(env: Path) -> None:
+    """Run-scoped twins count ONLY postings THIS run judged, restricted to the suppression
+    drops that make an empty day honest — a prior-run posting's suppression must not bleed
+    into this run's twins even though the corpus counter sees it."""
+    engine = get_engine(env)
+    ensure_schema(engine)
+    with engine.begin() as conn:
+        save_profile(
+            conn, text="Backend engineer.", target_titles=[], exclude_titles=[],
+            locations=[], remote_only=False, skills=[], taxonomy_version="t",
+            resume_max_pages=1,
+        )
+    company_id = _company(engine, "acme-twins")
+    settings = _settings(env)
+
+    # P3: judged by a prior run, gets a live `built` disposition.
+    p3, j3 = _posting_with_job(engine, company_id, tag="p3", content_hash="hh-p3", offset=0)
+    _backfill_all_identities(engine)
+    run_prior = _run_row(engine)
+    rank_open_postings(engine, settings, run_id=run_prior, record_surfaced=False, limit=10)
+    with engine.begin() as conn:
+        record_disposition(
+            conn, j3, disposition="built", reason="lead_built", policy_version="v1",
+            now=NOW, run_id=run_prior,
+        )
+
+    # P1: judged by THIS run, gets a live `built` disposition this run.
+    p1, j1 = _posting_with_job(engine, company_id, tag="p1", content_hash="hh-p1", offset=1)
+    # P2a/P2b: an exact_quad duplicate pair, both judged by THIS run.
+    p2a, _j2a = _posting_with_job(engine, company_id, tag="p2a", content_hash="hh-p2", offset=2)
+    p2b, _j2b = _posting_with_job(engine, company_id, tag="p2b", content_hash="hh-p2", offset=3)
+    _backfill_all_identities(engine)
+
+    run_this = _run_row(engine)
+    with engine.begin() as conn:
+        record_disposition(
+            conn, j1, disposition="built", reason="lead_built", policy_version="v1",
+            now=NOW, run_id=run_this,
+        )
+
+    ranked = rank_open_postings(engine, settings, run_id=run_this, record_surfaced=False, limit=10)
+
+    assert ranked.judged_this_run_ids == {p1, p2a, p2b}
+    assert ranked.hidden_handled_this_run == 1  # P1 only; P3 is prior-run
+    assert ranked.hidden_duplicate_this_run == 1  # one of the P2 pair
+    assert ranked.hidden_applied_this_run == 0
+    # Corpus counters still see all of it:
+    assert ranked.hidden_handled == 2  # P1 + P3
+    assert p1 in ranked.judged_this_run_ids
+    assert p3 not in ranked.judged_this_run_ids
