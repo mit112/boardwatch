@@ -162,17 +162,16 @@ call and is now informed on both sides (D-293, D-294).
 
 ## Next action
 
-**Precision (#148), Part 4a (#149), and the lookup/instructions/CI tooling (#150) are all merged.** The build
-fork is resolved — both halves were already built PRs, not work to start. Immediate steps, in order:
+**Precision (#148), Part 4a (#149), and the lookup/instructions/CI tooling (#150) are all merged, and
+precision is confirmed ALREADY ARMED on `main`** — the earlier "arm precision" next-action was a no-op: the
+launchd driver runs the editable venv resolving to `src/` in the primary tree, which is on `main` (D-300).
+Immediate steps, in order:
 
-1. **Arm precision on the live driver** — pull the primary working tree to the integrated `main` so the next
-   tick uses the new role-deny and CJK gates. Ranker-only, gated green, no `engine_version` change, no drain;
-   P3 is met, so this cannot un-meet it.
-2. **Part 4b: LinkedIn is DONE (D-297).** Built off by default; both measured constraints honoured — keys on
+1. **Part 4b: LinkedIn is DONE (D-297).** Built off by default; both measured constraints honoured — keys on
    the company **slug** (`externalApply`=0, no apply URL) and sends only `f_TPR=r86400` (`f_WT=2` ignored). No
    capture committed. **Owed before arming:** a live probe to confirm the RECONSTRUCTED card selectors and to
    pin `start` paging (the client makes one search GET; paging and a keywords/location facet are deferred).
-3. **Gate P6's 7-day leakage window completes ~2026-08-26**, after which the provisional pass (3 frozen
+2. **Gate P6's 7-day leakage window completes ~2026-08-26**, after which the provisional pass (3 frozen
    B1–B7 runs) can be certified. B1/B2/B3/B6/B7 are already demonstrated on frozen runs 72-78; B4's n≥100
    audit and B5 (unscoreable) remain owner/attribution-gated.
 
