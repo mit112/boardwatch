@@ -249,11 +249,11 @@ def test_a_shortlist_that_is_entirely_dead_is_an_HONEST_empty_day(  # noqa: N802
 
 def test_the_zero_output_guard_still_fires_with_nothing_dead_and_nothing_handled() -> None:
     """The widening stays narrow. A run that can explain nothing must still fail."""
-    assert _zero_output_guard(5, 0, 0, 0) is not None
-    assert _zero_output_guard(5, 0, 1, 0) is None  # explained by liveness
-    assert _zero_output_guard(5, 1, 0, 0) is None  # explained by the ledger
-    assert _zero_output_guard(5, 0, 0, 1) is None  # explained by applied state
-    assert _zero_output_guard(0, 0, 0, 0) is None  # no new eligible work at all
+    assert _zero_output_guard(5) is not None
+    assert _zero_output_guard(5, dead_this_run=5) is None  # explained by liveness
+    assert _zero_output_guard(5, handled_this_run=5) is None  # explained by the ledger
+    assert _zero_output_guard(5, applied_this_run=5) is None  # explained by applied state
+    assert _zero_output_guard(0) is None  # no new eligible work at all
 
 
 def test_a_day_where_every_candidate_was_already_applied_to_is_an_HONEST_empty_day(  # noqa: N802

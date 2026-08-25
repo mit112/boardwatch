@@ -40,7 +40,6 @@ from boardwatch.core.regroup import plan_regrouping
 from boardwatch.core.settings import Settings
 from boardwatch.eligibility.audit import AuditView, load_audit
 from boardwatch.eligibility.catalog import load_rules
-from boardwatch.eligibility.engine import ENGINE_KIND, engine_version
 from boardwatch.eligibility.preflight import current_identity
 from boardwatch.lanes.admission import CompanyBudget
 from boardwatch.lanes.base import Lane
@@ -93,7 +92,7 @@ from boardwatch.store.queries import (
     upsert_lane_company,
 )
 from boardwatch.store.regroup import apply_merges, job_anchors, protected_job_ids
-from boardwatch.store.run_funnel_queries import count_candidate_judged_this_run, lead_provenance
+from boardwatch.store.run_funnel_queries import lead_provenance
 from boardwatch.store.tables import companies, postings
 from boardwatch.tailor.coverage import CoverageReport
 from boardwatch.tailor.load import ResumeLoadError
@@ -559,71 +558,54 @@ def _cohort_guard(
     return None
 
 
+class ZeroOutputReconciliationError(RuntimeError):
+    """A run-scoped suppression twin exceeded the this-run candidate count — a counting bug in
+    the ranker/liveness attribution, surfaced loudly rather than clamped (P3 item 5 / B5)."""
+
+
 def _zero_output_guard(
     candidate_judged_this_run: int,
-    hidden_handled: int = 0,
-    dead_leads: int = 0,
-    hidden_applied: int = 0,
+    handled_this_run: int = 0,
+    applied_this_run: int = 0,
+    duplicate_this_run: int = 0,
+    dead_this_run: int = 0,
 ) -> str | None:
-    """P3 item 5 (B5) — 0 leads is provably right IFF this run did no NEW candidate work, **or**
-    every candidate it had was already handled, already applied to, or dead.
+    """P3 item 5 (B5) — 0 leads is provably right IFF every candidate THIS run judged
+    (`eligible`/`uncertain`) was either delivered or honestly SUPPRESSED (already built/skipped/
+    seen, already applied, a provable duplicate, or gone). All four explainers are RUN-scoped
+    (D-282): the corpus-scoped `hidden_*` buckets are an exhaustive partition and can explain any
+    empty day, so a clause built from them can never fire. A rejection (hard-filter, non-SWE,
+    over-seniority, below-cutoff) is NOT an explainer — a filter or cap that ate the whole
+    shortlist is exactly the silent empty day this guard exists to catch (D-246).
 
     `candidate_judged_this_run` counts `eligible` AND `uncertain` (both CAN become leads;
     `ineligible` cannot), run_id-attributed (not a cross-run handled ledger): a steady-state day
     where every candidate posting is a cache hit from a PRIOR run has this at 0 and is honest.
-    > 0 with 0 leads means new candidate work existed this run and nothing came of it — the
-    silent-empty-day this guard exists to catch.
 
-    **This predicate is currently DORMANT, and widening it does not help (D-282).** Firing needs
-    `hidden_handled == 0`, measured 8/48/128 on runs 68/69/71, and an empty shortlist, while
-    `capped_by_top_n` runs 3,603-3,683 so `visible` is full every run. It cannot be repaired by
-    admitting the rank-time rejection buckets either: they are CORPUS-scoped (`hidden_hard_filter`
-    alone is 18,472-18,932 per run) while `candidate_judged_this_run` is RUN-scoped, so any such
-    clause is unconditionally true and the fatal becomes unreachable. The buckets are also an
-    exhaustive partition of the corpus, so at corpus scope "can this run explain the empty day"
-    is always yes by construction. An honest B5 needs RUN-scoped rank attribution, which the
-    ranker deliberately does not persist.
-
-    `hidden_handled` is the P6 slice 2 clause, and it is a widening the ledger forces rather than
-    a weakening. Under the ledger a run can judge genuinely new eligible postings and still
-    produce 0 leads because every candidate carries a live disposition. That is an honest empty
-    day with a reason it can name, and without this clause the daily driver's exit status would
-    be 1 every day once the queue is caught up — the precise signal destruction
-    `PipelineSummary`'s own docstring exists to prevent. A run with NO handled candidates still
-    cannot explain itself, and still fires.
-
-    `dead_leads` is the P6 item 6 clause and is the same shape of widening for the same reason: a
-    run that ranked a full shortlist and found every posting on it gone has produced 0 leads for
-    a reason it can name and evidence. Without this clause, liveness working perfectly would read
-    as the silent empty day it exists to prevent.
-
-    `hidden_applied` is P6 item 5's clause, and it is a **regression fix as much as a widening**.
-    Applied state is checked ahead of the ledger, so a job that is both applied-to and `built`
-    moved out of `hidden_handled` and into `hidden_applied` — which would have re-armed this
-    guard on exactly the steady-state day the `hidden_handled` clause was added to disarm: a
-    profile edit re-judges the whole corpus, every candidate is suppressed as applied, and the
-    daily driver exits 1 with nothing wrong.
-
-    All three widenings stay narrow in the way that matters — a run with nothing handled, nothing
-    applied and nothing dead still cannot explain itself, and still fires.
-
-    **`hidden_over_seniority` is deliberately NOT a clause here (D-246), and adding one would be
-    a weakening, not a widening.** The three clauses above are SUPPRESSIONS — the program already
-    delivered on those jobs, or the posting is gone — so they explain an empty day. Being above
-    the operator's target band is a REJECTION: the run judged new eligible work and rejected all
-    of it on a filter the operator configured. A misconfigured `target_seniority_band` that ate
-    the whole shortlist is exactly the silent empty day this guard exists to catch, and a clause
-    for it would make that run exit 0 with nothing to show.
+    Each of the four twins is a run-scoped SUBSET of the candidates judged this run, and the
+    four subsets are disjoint — a posting leaves the ranker at exactly one `continue`, and
+    `dead` is a post-rank fate of a posting that was surfaced, disjoint from the three
+    suppressions that `continue` before surfacing. `unexplained` is what is left after
+    subtracting all four; a negative value is a counting bug and raises
+    `ZeroOutputReconciliationError` rather than being silently clamped to 0.
     """
-    if (
-        candidate_judged_this_run > 0
-        and hidden_handled == 0
-        and dead_leads == 0
-        and hidden_applied == 0
-    ):
+    unexplained = (
+        candidate_judged_this_run
+        - handled_this_run
+        - applied_this_run
+        - duplicate_this_run
+        - dead_this_run
+    )
+    if unexplained < 0:
+        raise ZeroOutputReconciliationError(
+            f"run-scoped suppression twins ({handled_this_run}+{applied_this_run}+"
+            f"{duplicate_this_run}+{dead_this_run}) exceed candidates judged this run "
+            f"({candidate_judged_this_run})"
+        )
+    if unexplained > 0:
         return (
-            f"empty day not provably right: {candidate_judged_this_run} candidate postings "
-            "(eligible or uncertain) judged this run but 0 leads"
+            f"empty day not provably right: {unexplained} of {candidate_judged_this_run} "
+            "candidate postings judged this run were neither delivered nor honestly suppressed"
         )
     return None
 
@@ -1242,29 +1224,14 @@ def run_pipeline(
         # fatal already fired. Checked BEFORE cohort completeness (design's stated order) so the
         # more specific empty-day message wins when both would otherwise fire on the same run.
         if summary.fatal is None and not summary.tailored:
-            with engine.connect() as conn:
-                identity = current_identity(conn, settings)
-                # None only when the profile vanished mid-run after `rank_open_postings`
-                # already required one to exist — unreachable in practice. Treated as "no
-                # NEW candidate work is knowable", not as suspicious, per the fail-safe stance:
-                # ambiguity here must not manufacture a false alarm.
-                candidate_judged_this_run = (
-                    count_candidate_judged_this_run(
-                        conn,
-                        profile_hash=identity[0],
-                        rules_hash=identity[1],
-                        engine_kind=ENGINE_KIND,
-                        engine_version=engine_version(),
-                        run_id=run_id,
-                    )
-                    if identity is not None
-                    else 0
-                )
+            judged = ranked.judged_this_run_ids
+            dead_this_run = len(set(summary.dead_lead_ids) & judged)
             summary.fatal = _zero_output_guard(
-                candidate_judged_this_run,
-                ranked.hidden_handled,
-                len(summary.dead_lead_ids),
-                ranked.hidden_applied,
+                len(judged),
+                handled_this_run=ranked.hidden_handled_this_run,
+                applied_this_run=ranked.hidden_applied_this_run,
+                duplicate_this_run=ranked.hidden_duplicate_this_run,
+                dead_this_run=dead_this_run,
             )
 
         # P3 item 9 — cohort completeness. Every SHORTLISTED candidate (`ranked.visible`, which

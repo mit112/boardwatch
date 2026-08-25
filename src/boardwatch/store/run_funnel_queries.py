@@ -311,9 +311,10 @@ def count_candidate_judged_this_run(
     NOT "the ranker hides only `ineligible`" — that was this docstring's earlier claim and it is
     false (D-282). `cli/top_cmd.py` also hides `hidden_hard_filter`, `hidden_non_swe`,
     `hidden_over_seniority` and `hidden_duplicate`, so a posting counted here can still be
-    withheld. This count is RUN-scoped and those buckets are CORPUS-scoped; see
-    `pipeline/runner.py::_zero_output_guard` for why that mismatch leaves B5 without an
-    instrument.
+    withheld. This count is RUN-scoped and those buckets are CORPUS-scoped — which is why the
+    zero-output guard reasons over `posting_ids_judged_this_run` and the ranker's RUN-scoped
+    twin counters (`hidden_*_this_run`), not over these corpus-scoped buckets directly. The
+    guard is armed, not dormant: see `pipeline/runner.py::_zero_output_guard`.
 
     Deliberately run_id-attributed rather than a cross-run "handled ledger": a steady-state day
     where every candidate posting is a cache hit from a PRIOR run has this count at 0 and is

@@ -178,9 +178,9 @@ def test_the_zero_output_guard_still_fires_when_nothing_was_handled() -> None:
     """The other direction, which is what keeps the widening from being a weakening: a run that
     judged new eligible work, produced no leads, and had NO handled candidates cannot explain
     itself and is still fatal."""
-    assert _zero_output_guard(5, 0) is not None
-    assert _zero_output_guard(5, 3) is None
-    assert _zero_output_guard(0, 0) is None
+    assert _zero_output_guard(5, handled_this_run=0) is not None
+    assert _zero_output_guard(5, handled_this_run=5) is None
+    assert _zero_output_guard(0, handled_this_run=0) is None
 
 
 def test_reopening_a_built_job_brings_it_back_to_the_shortlist(
