@@ -29,7 +29,7 @@ from boardwatch.rank.heuristic import (
     score_posting,
 )
 from boardwatch.rank.leveling import load_leveling, resolve_schemes
-from boardwatch.rank.role_gate import role_verdict
+from boardwatch.rank.role_gate import role_verdict, zero_signal_verdict
 from boardwatch.rank.seniority_gate import TargetBand, seniority_verdict
 from boardwatch.store.queries import get_profile
 from boardwatch.store.tables import companies, extractions, postings
@@ -168,6 +168,17 @@ def show(
         role, role_reason = role_verdict(row.title)
         hidden_note = " — hidden from top unless --include-non-swe" if role == "not_swe" else ""
         console.print(f"Role: {role_reason}{hidden_note}", markup=False)
+        # Same contract for the zero-signal rule, and it needs no extra query: `extraction` was
+        # already read above for the score, and it is the ROW (None when absent), not a
+        # collapsed `or {}`, so this surface can tell "found nothing" from "never looked".
+        zero_signal, zero_signal_reason = zero_signal_verdict(role, extraction)
+        if zero_signal != "pass":
+            signal_note = (
+                " — hidden from top unless --include-zero-signal"
+                if zero_signal == "veto"
+                else " — the rule could not fire, so this row is NOT filtered"
+            )
+            console.print(f"Signal: {zero_signal_reason}{signal_note}", markup=False)
         # Same contract for the seniority gate: a row `top` hides as above_band must be
         # explainable by looking it up, or the quarantine is unauditable.
         leveling = load_leveling(settings.config_dir)

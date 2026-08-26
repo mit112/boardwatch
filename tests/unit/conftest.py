@@ -16,6 +16,12 @@ from boardwatch.store.tables import companies, jobs, posting_versions, postings
 # Naive UTC, matching boardwatch.core.clock.utcnow() (A2).
 NOW = datetime(2026, 7, 30, 12, 0, 0)
 
+# The JD body every seeded posting carries. The `Python` mention is LOAD-BEARING: the titles
+# below are single words, which the role gate reads as `uncertain`, so a body that recognises
+# no taxonomy term at all would put every posting in the zero-signal quarantine and the
+# ranking tests that consume this fixture would assert against an empty shortlist.
+BODY = "We are hiring a {title} engineer. Python experience required."
+
 # Ordered: posting ids and event ids both follow this sequence.
 EVENTS = (
     ("alpha", "new"), ("beta", "new"), ("gamma", "reopened"),
@@ -66,14 +72,14 @@ def seeded_events() -> Callable[[Path], Seed]:
                             status="closed" if kind == "closed" else "open",
                             closed_at=NOW if kind == "closed" else None,
                             consecutive_missing=0, content_hash=f"h-{title}",
-                            body_text=f"We are hiring a {title} engineer.",
+                            body_text=BODY.format(title=title),
                         )
                     ).inserted_primary_key[0]
                 )
                 conn.execute(
                     insert(posting_versions).values(
                         posting_id=posting_id, content_hash=f"h-{title}",
-                        body_text=f"We are hiring a {title} engineer.",
+                        body_text=BODY.format(title=title),
                         captured_at=NOW, capture_reason="new",
                     )
                 )

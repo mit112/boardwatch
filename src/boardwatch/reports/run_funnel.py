@@ -265,6 +265,18 @@ class ShortlistCounts:
     # D-246: the title names a seniority band above the operator's `target_seniority_band`. A
     # genuine DROP and part of the identity above. Drained by `top --include-over-seniority`.
     hidden_over_seniority: int = 0
+    # Neither the title nor the body carried any recognised signal: the role gate abstained
+    # (`uncertain`) AND the taxonomy extraction ran and recognised exactly zero terms. A genuine
+    # DROP and part of the identity above, in the same shape as `hidden_over_seniority`. Drained
+    # by `top --include-zero-signal`.
+    hidden_zero_signal: int = 0
+    # The zero-signal rule's abstain rate: `uncertain`-titled postings whose body signal could
+    # not be READ at all (no extraction row at the current taxonomy version). REPORTED, NEVER
+    # DROPPED, and deliberately NOT part of the identity above — these postings are inside
+    # `shortlisted` already, so a `Drop` for them would subtract them twice. Reported for the
+    # same reason `uncertain_band` is: without it, `hidden_zero_signal == 0` cannot be told
+    # apart from a gate that never got the input it reads.
+    signal_unmeasured: int = 0
     # D-246, the seniority gate's abstain rate: a level token it could not resolve, because no
     # scheme is bound for the company or the rung falls outside the bound one. REPORTED, NEVER
     # DROPPED, and deliberately NOT part of the identity above — these postings are inside
@@ -838,6 +850,15 @@ def build_run_funnel(
                 ),
                 Drop(reason="hidden_non_swe", count=shortlist.hidden_non_swe,
                      note="title role gate"),
+                Drop(
+                    reason="zero_signal_uncertain",
+                    count=shortlist.hidden_zero_signal,
+                    note=(
+                        "role unrecognised and the job description yielded no recognised "
+                        "requirement terms, so there is nothing to tailor to; drain with "
+                        "`top --include-zero-signal`"
+                    ),
+                ),
                 Drop(
                     reason="hidden_over_seniority",
                     count=shortlist.hidden_over_seniority,

@@ -310,8 +310,9 @@ def count_candidate_judged_this_run(
 
     NOT "the ranker hides only `ineligible`" — that was this docstring's earlier claim and it is
     false (D-282). `cli/top_cmd.py` also hides `hidden_hard_filter`, `hidden_non_swe`,
-    `hidden_over_seniority` and `hidden_duplicate`, so a posting counted here can still be
-    withheld. This count is RUN-scoped and those buckets are CORPUS-scoped — which is why the
+    `hidden_zero_signal`, `hidden_over_seniority` and `hidden_duplicate`, so a posting counted
+    here can still be withheld. This count is RUN-scoped and those buckets are CORPUS-scoped —
+    which is why the
     zero-output guard reasons over `posting_ids_judged_this_run` and the ranker's RUN-scoped
     twin counters (`hidden_*_this_run`), not over these corpus-scoped buckets directly. The
     guard is armed, not dormant: see `pipeline/runner.py::_zero_output_guard`.

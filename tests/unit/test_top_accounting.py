@@ -116,6 +116,7 @@ def _accounted(results: RankedResults) -> int:
         + results.skipped_not_new
         + results.hidden_hard_filter
         + results.hidden_non_swe
+        + results.hidden_zero_signal
         + results.hidden_over_seniority
         + results.hidden_ineligible
         + results.hidden_below_cutoff
@@ -166,6 +167,15 @@ def test_raising_the_limit_moves_postings_out_of_the_cutoff_bucket(env: Path) ->
 
     Without this, `hidden_below_cutoff` could be hard-coded to `considered - 1` and the test
     above would still pass.
+
+    "Systems Engineer" is `uncertain` to the role gate and `_seed`'s default body ("b")
+    recognises no taxonomy term, so the zero-signal veto now removes it BEFORE the cutoff and
+    only two postings reach the limit. The expected counts therefore moved 2 -> 1 at `limit=1`;
+    the property under test is unchanged and still discriminating, because `considered` is 3
+    and the mutation this test exists to catch (`hidden_below_cutoff = considered - 1`) yields
+    2 at `limit=1` and 2 at `limit=3`, disagreeing with both assertions. The third assertion
+    pins WHERE the missing posting went, so a future change that loses it silently — rather
+    than moving it to a named bucket — fails here instead of passing quietly.
     """
     engine = _seed(env, ["Backend Engineer", "Platform Engineer", "Systems Engineer"])
     settings = _settings(env)
@@ -174,12 +184,13 @@ def test_raising_the_limit_moves_postings_out_of_the_cutoff_bucket(env: Path) ->
     # on every call, the second call's `hidden_below_cutoff == 0` held because the third posting was
     # hidden as already-handled, not because the limit rose — so the mutation this test exists to
     # catch (hard-coding the counter) would have survived it.
-    assert rank_open_postings(
-        engine, settings, limit=1, record_surfaced=False
-    ).hidden_below_cutoff == 2
+    capped = rank_open_postings(engine, settings, limit=1, record_surfaced=False)
+    assert capped.hidden_below_cutoff == 1
     assert rank_open_postings(
         engine, settings, limit=3, record_surfaced=False
     ).hidden_below_cutoff == 0
+    assert capped.hidden_zero_signal == 1
+    assert _accounted(capped) == capped.considered == 3
 
 
 def test_postings_narrowed_away_by_only_new_are_counted(env: Path) -> None:

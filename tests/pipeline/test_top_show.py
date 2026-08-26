@@ -48,6 +48,12 @@ def _seed_postings(engine: Engine, company_id: int, run_id: int) -> dict[str, in
     strong = set_body(clone_with_id(jobs[0], 111), "<p>Python, Go, and PostgreSQL daily.</p>")
     strong["title"] = "Backend Engineer"
     strong["location"] = {"name": "Remote — US"}
+    # "Gardener" is `uncertain` to the role gate and this body recognises no taxonomy term, so
+    # the pair (uncertain, zero terms) puts it in the zero-signal quarantine — which is exactly
+    # the population that rule exists for. Deliberately UNCHANGED: `test_show_no_recognized_
+    # skills_message` depends on the empty extraction, and inventing a skill mention here to
+    # dodge the new veto would break it. The two `top` tests that need this row visible open the
+    # drain instead, which is what a drain is for.
     weak = set_body(clone_with_id(jobs[1], 222), "<p>Watering plants and pruning roses.</p>")
     weak["title"] = "Gardener"
     weak["location"] = {"name": "On-site greenhouse"}
@@ -68,12 +74,34 @@ def test_top_ranks_strong_match_first(
 ) -> None:
     _seed_postings(engine, company_id, run_id)
     _seed_profile(engine, env / "cfg")
-    result = _invoke(tmp_path, ["top"])
+    # The drain is opened because the weak row is now zero-signal quarantined, and the RANK
+    # ORDER is what this test is about. A drained row keeps its score and its place in the
+    # ordering, so the assertion below is unchanged and still discriminating.
+    result = _invoke(tmp_path, ["top", "--include-zero-signal"])
     assert result.exit_code == 0
     out = result.stdout
     assert "Backend Engineer" in out and "Gardener" in out
     assert out.index("Backend Engineer") < out.index("Gardener")
     assert "covers" in out  # the why column
+
+
+def test_top_hides_the_zero_signal_row_by_default(
+    env: Path, engine: Engine, company_id: int, run_id: int, tmp_path: Path
+) -> None:
+    """The other half of the test above: without the drain the weak row is quarantined.
+
+    Both are needed. Together they show the row is SUPPRESSED rather than lost, and that the
+    default and drained paths differ — which is the only thing that distinguishes a veto with a
+    re-entry path from a deletion.
+    """
+    _seed_postings(engine, company_id, run_id)
+    _seed_profile(engine, env / "cfg")
+    result = _invoke(tmp_path, ["top"])
+    assert result.exit_code == 0
+    assert "Backend Engineer" in result.stdout
+    assert "Gardener" not in result.stdout
+    # The quarantine names its own drain, or it is a leak.
+    assert "--include-zero-signal" in result.stdout
 
 
 def test_top_json_outputs_ranked_postings(
@@ -128,7 +156,10 @@ def test_top_excludes_closed_postings(
     strong = set_body(clone_with_id(jobs[0], 111), "<p>Python, Go, and PostgreSQL daily.</p>")
     strong["title"] = "Backend Engineer"
     apply_board(engine, snapshot_for([strong]), company_id, run_id)  # Gardener: miss 2 -> closed
-    result = _invoke(tmp_path, ["top"])
+    # The drain is opened so this test stays about CLOSED postings. Without it the weak row is
+    # also zero-signal quarantined, and the assertion below would hold whether or not the
+    # posting had ever been closed — passing for a reason this test knows nothing about.
+    result = _invoke(tmp_path, ["top", "--include-zero-signal"])
     assert result.exit_code == 0
     assert "Gardener" not in result.stdout
     assert ids  # silence unused warning
@@ -249,7 +280,14 @@ def test_help_smoke(env: Path) -> None:
     assert runner.invoke(app, ["show", "--help"]).exit_code == 0
 
 
-DEGREE_BODY = "We are hiring a backend engineer. A Bachelor's degree is required."
+# The trailing skill sentence is load-bearing, not decoration. Every title below ("Blocked
+# Role", "Unseen Role", …) is `uncertain` to the role gate, so without a recognised taxonomy
+# term in the body the zero-signal veto would remove these postings BEFORE the eligibility
+# filter ever ran — and each of these tests would then pass for the wrong reason, asserting a
+# posting's absence that the bucket under test had nothing to do with.
+DEGREE_BODY = (
+    "We are hiring a backend engineer. A Bachelor's degree is required. Python experience helps."
+)
 PLAIN_BODY = "Python and Go services with PostgreSQL."
 
 

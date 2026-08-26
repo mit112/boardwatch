@@ -48,7 +48,10 @@ SUMMARY_LINE_EXEMPT = frozenset({"hidden_below_cutoff"})
 # The funnel names one drop for what it IS rather than for the counter that feeds it. That
 # divergence is exactly what makes the mirror-site walk error-prone, so it is recorded here
 # explicitly instead of being papered over by a looser assertion.
-DROP_REASON_ALIASES = {"hidden_below_cutoff": "capped_by_top_n"}
+DROP_REASON_ALIASES = {
+    "hidden_below_cutoff": "capped_by_top_n",
+    "hidden_zero_signal": "zero_signal_uncertain",
+}
 
 
 def test_the_ranker_owns_at_least_the_buckets_we_know_about() -> None:
@@ -93,7 +96,7 @@ def test_reported_counters_are_not_drops() -> None:
     """An abstain counts postings that PASSED. As a Drop it would double-subtract and the
     shortlist stage would stop reconciling on every run that had one."""
     source = inspect.getsource(run_funnel)
-    for reported in ("uncertain_band", "band_tokens_seen_while_inert"):
+    for reported in ("uncertain_band", "band_tokens_seen_while_inert", "signal_unmeasured"):
         assert hasattr(ShortlistCounts(considered=0, shortlisted=0), reported)
         assert f'reason="{reported}"' not in source, (
             f"{reported} counts postings that passed; it must not be a Drop"
