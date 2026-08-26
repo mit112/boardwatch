@@ -17,6 +17,43 @@
 
 ## Current standing
 
+**GATE P4 IS MET — the owner blind craft review PASSED cleanly (2026-08-26).** Mit reviewed 13 anonymised
+résumés (8 boardwatch + 5 job-apps decoys) rendered-page-only. All five he judged WORSE were job-apps decoys;
+all three he judged BETTER were boardwatch (Perplexity/Anthropic/Figma); the other 5 boardwatch were on-par.
+Both orphan-page-2 defects were decoys — the failure mode D-303's fill fix eliminated. **P4 objective half
+(0 anti-slop violations) + subjective half both pass → P4 gate MET.** Assembler/key in
+`.agent/2026-08-25-craft-findings/` (build_p4_blind_sample.py, p4_blind_key.md).
+
+**TWO SCAN-ROBUSTNESS FIXES SHIPPED + LIVE (D-306 #167, D-307 #168, 2026-08-26).** (1) `apply.py` now collapses
+a duplicate `provider_posting_id` within one board snapshot — a Workable board (`alexander-dennis`) that lists
+one shortcode twice was crashing the whole run on `UNIQUE(company_id, provider_posting_id)`. (2) `_scan_body`
+now isolates a board's `apply_board` failure per-board (count failed, continue) instead of aborting the run.
+Both TDD, both merged and pulled to the primary tree (HEAD `c949e18`). Neither is an eligibility module →
+`engine_version` unchanged, no drain, freeze-safe. Found by firing runs, not by review.
+
+**THE THREE DISCOVERY LANES ARE ARMED (owner-directed, D-308) — and facet-less they LEAK non-SWE noise into
+delivery.** GitHub-lists (+10 boards), hiring.cafe (live-probed clean) and LinkedIn (config-armed; its
+RECONSTRUCTED selectors were VALIDATED live in run 94 — 8 real JD bodies, no silent outage). A one-off import
+of job-apps' targets lifted coverage of job-apps' 465-item eligible set from ~3% to **13.1%** (native ceiling
+39.6%, aggregator-only 60.4%). `lanes_enabled` is OUT of `config_hash`, so arming did not touch the cert freeze.
+**BUT the lanes are net-negative as configured:** facet-less searches return ops/retail titles whose
+`role_verdict` is `uncertain` (fail-open passes them), so they DELIVER non-SWE résumés (Business Unit Leader,
+Front Office Agent, Instructional Aide — runs 106/112). 0 relevant SWE leads across ~22 runs. **OWNER DECISION
+OWED (see owner-gated §): disarm / add a profile-derived lane search facet / extend the role deny-catalog.**
+
+**COVERAGE vs job-apps — ANSWERED (2026-08-26).** boardwatch does NOT match job-apps and the facet-less lanes
+can't close it: job-apps' reach is Indeed/JobRight/HN/TikTok (boardwatch deliberately doesn't scrape those);
+boardwatch's lanes (hiring.cafe/LinkedIn) tap different aggregators AND return SWE-irrelevant noise. Native ATS
+imports top out at ~40%. Detail in `.agent/2026-08-25-craft-findings/COVERAGE-VS-JOBAPPS.md`.
+
+**SYSTEM PROVEN STABLE — 21 clean runs (92, 94–113), 1 failure (run 93, the pre-fix crash).** Corpus grew to
+57,175 postings / 48,084 open; watched 140 (CMU's recurring-422 dead board removed as hygiene); 85 lane-
+discovered companies recorded unwatched. 4 clean SCHEDULED ticks (92/95/101/108) + many clean manual runs; both
+fixes hold every run; lanes healthy (no silent outage). Manual-run cadence was eased to scheduled-ticks-only at
+session end to cut lane-leak accrual + conserve the rate-limit window. **The provisional pass (D-280) is
+effectively met on quality** — P4 gate met, B1–B7 pass every run, freeze stable — pending only whatever formal
+scheduled-tick count Mit wants to require.
+
 **P4 CRAFT UNDER-FILL FIXED — the daily run now fills résumés to the page (D-303, 2026-08-25).** The P4
 blind review FAILED on ~3 under-filled résumés: the daily run projected with base `projection.yaml`
 (`runner.py:848`), whose `fill_to_page` defaults False; the earlier fill fix went only to the DORMANT
@@ -215,35 +252,38 @@ call and is now informed on both sides (D-293, D-294).
 
 ## Next action
 
-**Precision (#148), Part 4a (#149), and the lookup/instructions/CI tooling (#150) are all merged, and
-precision is confirmed ALREADY ARMED on `main`** — the earlier "arm precision" next-action was a no-op: the
-launchd driver runs the editable venv resolving to `src/` in the primary tree, which is on `main` (D-300).
-Immediate steps, in order:
+**The provisional pass (D-280) is effectively met on quality** — P4 gate MET (objective 0-violations + owner
+blind review passed), B1–B7 pass on every run (verified via `.agent/2026-08-25-craft-findings/finish_line_cert.py
+--runs <N>`), freeze tuple stable across runs 92/94 (`config_hash f56a0166…`, engine_version `1+63c6f8fd5a3e`),
+P6 leakage 0.00% over 7d, B4 370/0. 21 clean runs (92, 94–113). **No build left.** Immediate items:
 
-1. **Part 4b: LinkedIn is DONE (D-297).** Built off by default; both measured constraints honoured — keys on
-   the company **slug** (`externalApply`=0, no apply URL) and sends only `f_TPR=r86400` (`f_WT=2` ignored). No
-   capture committed. **Owed before arming:** a live probe to confirm the RECONSTRUCTED card selectors and to
-   pin `start` paging (the client makes one search GET; paging and a keywords/location facet are deferred).
-2. **PROVISIONAL PASS is close — only runtime + the owner blind review remain (2026-08-26).** Done this
-   session: P4 under-fill fixed+live (D-303); role/seniority precision fixed+live (D-305, #166); B4 PASS +
-   non-vacuous (350/3,426/0); P4 objective checks 0 violations (non-vacuous); B5 guard reviewed sound; **P6
-   leakage 0.00% over a full 7-day window** (08-19→08-26); B1/B2/B3/B6/B7 demonstrated on run 90 via
-   `.agent/2026-08-25-craft-findings/finish_line_cert.py`. **Remaining: (a) 3 clean post-(fill+role) B1–B7
-   scheduled runs — count from run 92 (the first tick after both fixes went live), score with
-   `finish_line_cert.py --runs 92 93 94`; (b) the owner P4 BLIND CRAFT REVIEW — assemble with
-   `build_p4_blind_sample.py` once run 92+ deliver ≥10 filled distinct-company résumés.** No build left.
-   *(The `.agent/2026-08-25-craft-findings/` harnesses are gitignored working material — re-derive if pruned.)*
+1. **DECIDE the lane leak (owner-gated §0).** The armed facet-less lanes deliver 0 relevant SWE leads and
+   periodically leak non-SWE résumés — disarm (`config set lanes_enabled ""`), add a profile-derived search
+   facet, or extend the role deny-catalog. This is the one live open decision.
+2. **Confirm the formal cert bar.** Quality is proven; if a strict "N clean SCHEDULED ticks" count is still
+   wanted, scheduled ticks 92/95/101/108 are clean (manual runs 94/96–100/102–107/109–113 don't count as
+   scheduled but are all clean). Score any run with `finish_line_cert.py --runs <N>`.
 
-**Arming Part 4a's ~898 boards is a SEPARATE owner decision, NOT taken here.** The capped watched-write ramp
-is **already shipped** (D-300 correction): `companies discover` caps at `lane_new_companies_per_run` and
-emits a reviewed candidate file, and `companies import` is the sanctioned watched-write. Arming is the
-operational `discover`→review→`import` loop, run in batches of ~10; there is nothing to build. (898 boards
-at ~7s each would still exceed the 3h cadence, so ramp gradually.) Do **not** add a defaulted `watched=` to `upsert_watch` — that rejection is recorded in its
-sibling's docstring. `companies.source` is `CHECK (source IN ('registry','user','lane'))`.
+**Arming Part 4a's ~898 boards remains a SEPARATE owner decision, NOT taken.** The capped `discover`→review→
+`import` loop is shipped; ramp in batches of ~10 (898 at ~7s each exceeds the 3h cadence). Do **not** add a
+defaulted `watched=` to `upsert_watch`. `companies.source` is `CHECK (source IN ('registry','user','lane'))`.
+
+*(The `.agent/2026-08-25-craft-findings/` harnesses + this session's notes — AUTONOMOUS-SESSION-LOG.md,
+COVERAGE-VS-JOBAPPS.md, LANE-ARMING.md — are gitignored working material; re-derive if pruned.)*
 
 ---
 
 ## Owner-gated — do NOT start or decide unilaterally
+
+0. **THE ARMED LANES LEAK non-SWE noise into delivery — pick one (D-308).** Facet-less hiring.cafe/LinkedIn
+   deliver 0 relevant SWE leads but periodically DELIVER absurd non-SWE résumés (Business Unit Leader, Front
+   Office Agent, Instructional Aide) via the `uncertain`-role fail-open. Options: **(a) disarm** — `boardwatch
+   config set lanes_enabled ""` — zero cost, they add no relevant leads; **(b) add a profile-derived search
+   facet** to the lane queries (the contracts' deferred §4/§5 extension; LinkedIn needs a live probe; the
+   facet must come from user targets, not a hardcoded query, to preserve multi-tenancy); **(c) extend the role
+   deny-catalog** for clear non-eng "X Leader"/ops titles (needs a D-305-style verdict-neutrality review). Left
+   armed pending your call. Note item 1 below is now largely MEASURED: the hiring.cafe probe showed 100%
+   location fill (0 empty), so the location fail-open is not the issue — the ROLE fail-open is.
 
 1. **hiring.cafe's `v5_processed_job_data.workplace_*` fields** — read as provider-asserted location
    metadata, at the level greenhouse's `location.name` is already trusted (D-286 Ruling 4). D-278 called
