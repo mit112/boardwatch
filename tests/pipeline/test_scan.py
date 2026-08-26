@@ -167,6 +167,40 @@ def test_failure_isolation_one_failed_board_never_blocks_others(
     assert run_row.boards_attempted == 2
 
 
+def test_apply_failure_on_one_board_never_aborts_the_scan(
+    engine: Engine, tmp_path: Path, case: ProviderCase, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A board whose apply_board raises (a data quirk hitting a DB constraint, as the duplicate
+    Workable shortcode did) must cost that board its reach and be counted failed — never abort the
+    whole run. The fetch path already isolates per board; the apply call did not, so one bad board
+    took every other board's results down with it."""
+    from boardwatch.scan import coordinator
+
+    acme_url = case.board_url()
+    globex_url = case.provider.board_url("globex")
+    acme_id = _add_company(engine, "acme", case.name)
+    _add_company(engine, "globex", case.name)
+    real_apply = coordinator.apply_board
+
+    def flaky_apply(engine_: Engine, snapshot: Any, company_id: int, run_id: int) -> Any:
+        if company_id == acme_id:
+            raise RuntimeError("boom in apply")
+        return real_apply(engine_, snapshot, company_id, run_id)
+
+    monkeypatch.setattr(coordinator, "apply_board", flaky_apply)
+    with respx.mock:
+        respx.get(acme_url).mock(return_value=httpx.Response(200, content=case.wrap(case.jobs()[:2])))
+        respx.get(globex_url).mock(return_value=httpx.Response(200, content=case.wrap(case.jobs()[:2])))
+        summary = run_scan(engine, _settings(tmp_path))  # must NOT raise
+    assert summary.failed == 1
+    assert summary.complete == 1
+    assert summary.errors and "acme" in summary.errors[0]
+    with engine.connect() as conn:
+        run_row = conn.execute(select(tables.runs)).one()
+    assert run_row.finished_at is not None  # the run still finalizes despite the apply failure
+    assert run_row.boards_attempted == 2
+
+
 def test_scan_cli_smoke(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, case: ProviderCase) -> None:
     # Rich force-enables terminal rendering when it detects GitHub Actions,
     # injecting ANSI styling that splits the literal option tokens this test

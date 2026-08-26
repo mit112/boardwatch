@@ -297,7 +297,17 @@ def _scan_body(
                     status="failed", postings=[], url=request.url,
                     observed_validators=None, error=f"unexpected worker error: {exc}",
                 )
-            result = apply_board(engine, snapshot, row.id, active_run_id)
+            try:
+                result = apply_board(engine, snapshot, row.id, active_run_id)
+            except Exception as exc:  # noqa: BLE001 - one board's apply must not abort the scan
+                # A single board's apply failing — a data quirk tripping a DB constraint, as a
+                # duplicate Workable shortcode did — must cost that board its reach and nothing
+                # else, the same isolation the fetch path above already gives and the "additive
+                # breadth never fails the run" rule the lanes follow. apply_board's transaction has
+                # rolled back, so no partial rows survive; the next board opens a fresh one.
+                summary.failed += 1
+                summary.errors.append(f"{row.slug}: apply failed: {exc!r}")
+                continue
             summary.postings_seen += result.listed
             summary.new += result.new
             summary.closed += result.closed
