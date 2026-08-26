@@ -17,6 +17,20 @@
 
 ## Current standing
 
+**LANE-ACQUIRED POSTINGS CAN NEVER CLOSE — there is no drain, and disarming does not stop delivery (D-314).**
+Found by smoke-testing the facet verifier: run 114 ran AFTER the 12:10 lane disarm and still delivered three
+lane-sourced non-SWE leads. Chain, each link read in source: the only writer of `status="closed"` is
+`_process_missing` (`scan/apply.py`), gated on `CLOSE_AFTER_MISSES = 2`; it runs on **`complete`** snapshots
+only; `lanes/base.py::lane_snapshot` returns **always `partial`** by design; `pipeline/liveness.py::check_leads`
+*"reads URLs; writes nothing, ever"*; and lane companies are upserted `watched=False` so the scan coordinator
+never revisits them. **A lane re-acquires by SEARCH, so absence can never be evidence** — this holds with
+lanes armed too. Measured: **282 lane postings, ALL `open`, ZERO ever closed** (197 `not_swe` / 82 `uncertain`
+/ 3 `swe`). The facet fixes INFLOW only; these 282 stay in the ranked pool indefinitely. Also: **no downstream
+consumer can trust `postings.status` for a lane row** — it reads `open` forever, and "still open" is
+indistinguishable from "unverifiable". **NOT FIXED — owner-gated:** an age-based close needs a trigger other
+than absence, which is a design question, not a tweak.
+
+
 **HOW TO REPORT YIELD — the owner's standing rule (D-312).** Every yield, coverage or job-apps comparison
 quotes **the end of the line: affirmatively `eligible` jobs** — currently **~60/day** (eligible + software +
 in-band + US + non-duplicate + unhandled). **Never** quote a broader upstream population as the headline:
@@ -36,7 +50,7 @@ Both orphan-page-2 defects were decoys — the failure mode D-303's fill fix eli
 a duplicate `provider_posting_id` within one board snapshot — a Workable board (`alexander-dennis`) that lists
 one shortcode twice was crashing the whole run on `UNIQUE(company_id, provider_posting_id)`. (2) `_scan_body`
 now isolates a board's `apply_board` failure per-board (count failed, continue) instead of aborting the run.
-Both TDD, both merged and pulled to the primary tree (HEAD `c949e18`). Neither is an eligibility module →
+Both TDD, both merged and pulled to the primary tree. Neither is an eligibility module →
 `engine_version` unchanged, no drain, freeze-safe. Found by firing runs, not by review.
 
 **THE LANE ROLE FACET IS BUILT — the lanes now ask for the USER'S target roles (D-309).** Both aggregator
@@ -61,13 +75,23 @@ job-apps' 465-item eligible set is **13.1%** (native ceiling 39.6%, aggregator-o
 **D-305 IS SOUND — do not re-investigate the "analyst titles still delivered" report.** Verified against
 the live module (`Risk Strategy Execution Analyst` → `not_swe`) and the delivery path (`runner.py:895` passes
 no `include_non_swe`). All three offending artifacts are from **run 90, pre-fix**; post-fix runs 92–114 carry
-**220 artifacts, 0 `not_swe`**. The remaining delivery-side leak is the 69 `uncertain` (31.4%), about half of
-which are REAL engineering titles the taxonomy misses — a taxonomy fix would destroy them. Noise concentrates
-in BOARDS: **AlphaHire unwatched** on Mit's ruling (59 open, 0 `swe`), fleet 235 → **234**; Genentech and
+**220 artifacts, 0 `not_swe`**. The remaining delivery-side leak is the 69 `uncertain` (31.4%), and the split
+is **46 noise / 13 real SOFTWARE / 10 real NON-software engineering** — Mit ruled hardware and silicon are
+noise for him, so the honest noise rate is **56 of 69 and only 13 are roles he wants**. (An earlier draft of
+this file said "about half are real engineering"; that was wrong in the direction that mattered and is
+corrected here — D-313.) A taxonomy fix would still destroy the 13. Noise concentrates in BOARDS:
+**AlphaHire unwatched** on Mit's ruling (59 open, 0 `swe`), fleet 235 → **234**; Genentech and
 Walmart-external measured and ruled KEEP. Delivery-side work is owned by a separate session.
 
-**LANES ARE CURRENTLY DISARMED (`lanes_enabled = []`)** — turned off while the facet was built so the leak
-stopped accruing. Re-arm after the facet merges, then confirm on a live faceted run.
+**LANES ARE RE-ARMED WITH THE FACET LIVE (2026-08-26 18:51Z).** `lanes_enabled = ["hiringcafe","linkedin"]`,
+fleet **234** boards. #169 merged (`2895dec`) and was pulled into the primary checkout; the editable venv was
+verified to resolve `lanes/facets.py` and to build both PROBED request forms
+(`hiringcafe.com/jobs/software-engineer` and `?keywords=software%20engineer&f_TPR=r86400`).
+**Run 115 (19:00Z) is the FIRST faceted tick and was still in flight at session close** — 1,088 body captures
+in 27 min against 234 boards, `boards_attempted` not yet written. **VERIFY IT FIRST NEXT SESSION** with
+`.agent/2026-08-26-lane-facet/verify_facet_run.py 115`, which reports lane yield by role verdict against the
+1.1%-SWE pre-facet baseline. Note today has FOUR regimes and no figure may be compared across them: fleet
+140→235 at ~11:40 CDT, AlphaHire unwatched ~12:10, lanes disarmed 12:10→18:51, facet armed 18:51.
 
 **COVERAGE vs job-apps — RE-MEASURED, and the earlier read was WRONG ABOUT WHERE THE GAP IS (D-310/D-311).**
 The prior note said native ATS imports "top out at ~40%" and that only the lanes could close the gap. The
@@ -301,10 +325,11 @@ blind review passed), B1–B7 pass on every run (verified via `.agent/2026-08-25
 --runs <N>`), freeze tuple stable across runs 92/94 (`config_hash f56a0166…`, engine_version `1+63c6f8fd5a3e`),
 P6 leakage 0.00% over 7d, B4 370/0. 21 clean runs (92, 94–113). **No build left.** Immediate items:
 
-1. **RE-ARM the lanes and confirm the facet on a live run.** The facet is built and merged (D-309); the
-   lanes were disarmed during the build. `boardwatch config set lanes_enabled "hiringcafe,linkedin"`, then
-   check the next scheduled tick delivers software leads and no ops/retail titles. `lanes_enabled` is out of
-   `config_hash`, so arming touches no freeze.
+1. **VERIFY RUN 115, the first faceted tick.** Re-arming is DONE (18:51Z). Run
+   `.agent/2026-08-26-lane-facet/verify_facet_run.py 115` — it prints lane yield by role verdict and the
+   delivered set with sources, and flags any `not_swe` delivery (which would mean the role veto did not fire).
+   Expect lane inflow to be software-relevant; expect SOME lane-sourced `uncertain` still delivered, because
+   the 282 pre-facet lane postings are immortal (D-314) and the facet only changes inflow.
 2. **Consider raising the LinkedIn body budget (`lane_posting_budget`).** D-311 measured LinkedIn at 49.7%
    of the reachable market and the setting is OUT of `config_hash`, so it is freeze-safe to change. The facet
    makes those bodies software-relevant for the first time; the budget is now the binding constraint, not the
@@ -335,6 +360,13 @@ request contract again — it drives the production `Fetcher`, so its output IS 
    that a broad deny would lose. **Do not propose a lane-noise fix in the role taxonomy again**; the fix is
    always upstream in what the lane asks for. Item 1 below is also settled by the same probe: hiring.cafe
    showed 100% location fill, so the location fail-open was never the issue — the ROLE fail-open was.
+
+0b. **NO DRAIN EXISTS FOR LANE-ACQUIRED POSTINGS (D-314).** 282 postings, all `open`, none ever closed, and
+   the mechanism makes it structural rather than a bug: a lane re-acquires by SEARCH, so absence can never be
+   evidence, and `lane_snapshot` is always `partial` so `_process_missing` never runs. An age-based close needs
+   a trigger other than absence and a fail-safe direction chosen (closing a live job is the expensive error).
+   Also decide whether anything may show an open/closed label for a lane row at all — `postings.status` reads
+   `open` forever and cannot distinguish "still open" from "unverifiable".
 
 1. **hiring.cafe's `v5_processed_job_data.workplace_*` fields** — read as provider-asserted location
    metadata, at the level greenhouse's `location.name` is already trusted (D-286 Ruling 4). D-278 called
