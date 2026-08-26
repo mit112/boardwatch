@@ -630,3 +630,42 @@ def test_one_empty_facet_among_several_is_tolerated_rather_than_fatal(tmp_path):
 
     assert result.tally.counts["body_fetched"] == 3
     assert result.tally.is_silent_outage is False
+
+
+@respx.mock
+def test_one_facet_whose_request_fails_does_not_cost_the_others_their_results(tmp_path):
+    """Per-facet isolation, the same shape D-307 gave a board's apply failure.
+
+    The unfaceted lane made ONE search request, so a failure there could only cost that one
+    request. A faceted lane makes fourteen, and letting the seventh abort the collection
+    discards six facets' worth of already-paid-for work. The fetcher has already retried with
+    backoff by the time it raises, so this is the surviving-failure case, not a transient one.
+    """
+    hits = search_hits()[:3]
+    _mock_facet("software-engineer", hits)
+    respx.get(_facet_url("ios-engineer")).mock(return_value=httpx.Response(503))
+    _mock_bodies(hits)
+
+    result = HiringCafeLane(
+        search_facets=("software-engineer", "ios-engineer")
+    ).collect(_fetcher(tmp_path), lambda provider, slug: True)
+
+    assert result.tally.counts["body_fetched"] == 3
+    assert result.tally.is_silent_outage is False
+
+
+@respx.mock
+def test_every_facet_request_failing_raises_rather_than_reporting_a_quiet_day(tmp_path):
+    """Isolation must not become suppression: if the host refuses every facet, that is the
+    outage case and it has to reach the runner, exactly as an all-empty result does."""
+    respx.get(url__startswith="https://hiringcafe.com/jobs/").mock(
+        return_value=httpx.Response(403)
+    )
+    bodies = _mock_bodies([])
+
+    with pytest.raises(SearchPageError, match="facet"):
+        HiringCafeLane(search_facets=("software-engineer", "ios-engineer")).collect(
+            _fetcher(tmp_path), lambda provider, slug: True
+        )
+
+    assert bodies.call_count == 0

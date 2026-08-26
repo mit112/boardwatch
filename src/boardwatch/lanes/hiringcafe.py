@@ -291,21 +291,40 @@ class HiringCafeLane:
         let the first facet consume all of it and every later target title contribute nothing --
         a lane reporting fourteen facets while delivering only the profile's first one.
         """
-        per_facet: list[list[_SearchEntry]] = []
-        for url in search_urls(self._search_facets):
-            result = fetcher.get(url)
+        urls = search_urls(self._search_facets)
+        if not self._search_facets:
+            # The unfaceted fallback keeps the single-search contract it shipped with: a
+            # transport or structural failure propagates, because with one search there are no
+            # other results for it to cost.
+            result = fetcher.get(urls[0])
             hits = search_hits(result.content.decode("utf-8", "replace"))
+            return [(urls[0], hit) for hit in hits]
+
+        per_facet: list[list[_SearchEntry]] = []
+        failed = 0
+        for url in urls:
+            try:
+                result = fetcher.get(url)
+                hits = search_hits(result.content.decode("utf-8", "replace"))
+            except (FetchFailure, SearchPageError):
+                # Per-facet isolation, the same shape D-307 gave a board's apply failure.
+                # Fourteen requests means the seventh must not discard the six before it, and
+                # the fetcher has already retried with backoff by the time it raises, so this
+                # is a surviving failure rather than a blip. Isolation must not become
+                # suppression, which is what the all-empty check below is for.
+                failed += 1
+                per_facet.append([])
+                continue
             per_facet.append([(url, hit) for hit in hits])
 
-        if self._search_facets and not any(per_facet):
+        if not any(per_facet):
             # Not a quiet day. A bogus facet answers 200 with an empty list, so if the role
             # route moves, every facet empties, nothing raises, and no counter moves -- the
-            # tally cannot see it either, because nothing was ever attempted. Scoped to the
-            # faceted path: it asserts something about THIS request shape, and the unfaceted
-            # fallback's behaviour is left exactly as it shipped.
+            # tally cannot see it either, because nothing was ever attempted.
             raise SearchPageError(
-                f"every role facet returned zero hits ({len(per_facet)} searched): the role "
-                "route has moved, or none of the profile's target titles match one"
+                f"every role facet yielded nothing ({len(per_facet)} searched, {failed} request "
+                "failures): the role route has moved, the host is refusing us, or none of the "
+                "profile's target titles match a role page"
             )
         return [entry for row in zip_longest(*per_facet) for entry in row if entry is not None]
 
