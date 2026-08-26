@@ -58,6 +58,14 @@ facets contributing, 0 duplicate `provider_posting_id`. `engine_version` **verif
 (`1+63c6f8fd5a3e`) in both trees and no new `Settings` field, so **no ledger drain and no freeze change**.
 GitHub-lists arming (+10 boards) and the one-off import of job-apps' targets stand from D-308: coverage of
 job-apps' 465-item eligible set is **13.1%** (native ceiling 39.6%, aggregator-only 60.4%).
+**D-305 IS SOUND — do not re-investigate the "analyst titles still delivered" report.** Verified against
+the live module (`Risk Strategy Execution Analyst` → `not_swe`) and the delivery path (`runner.py:895` passes
+no `include_non_swe`). All three offending artifacts are from **run 90, pre-fix**; post-fix runs 92–114 carry
+**220 artifacts, 0 `not_swe`**. The remaining delivery-side leak is the 69 `uncertain` (31.4%), about half of
+which are REAL engineering titles the taxonomy misses — a taxonomy fix would destroy them. Noise concentrates
+in BOARDS: **AlphaHire unwatched** on Mit's ruling (59 open, 0 `swe`), fleet 235 → **234**; Genentech and
+Walmart-external measured and ruled KEEP. Delivery-side work is owned by a separate session.
+
 **LANES ARE CURRENTLY DISARMED (`lanes_enabled = []`)** — turned off while the facet was built so the leak
 stopped accruing. Re-arm after the facet merges, then confirm on a live faceted run.
 

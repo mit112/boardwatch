@@ -7036,6 +7036,31 @@ LinkedIn half; every one killed by its intended test. Full suite pre-merge: **7,
 ruff clean, `mypy --strict` clean over 311 source files, generalization OK, both program indexes current.
 Shipped as PR #169.
 
+**D-305 RE-VERIFIED LIVE — it has no hole, and the report that it did was a measurement-window error.**
+A peer session reported SoFi "Risk Strategy Execution Analyst" and Instacart "Oracle Fusion ERP Technical
+Analyst" delivered *after* `cbe6df9`, implying a gap in `_DENY_FAMILIES_SOFT`. Tested against the live module:
+both return **`not_swe`**, and `runner.py:895` calls `rank_open_postings` WITHOUT `include_non_swe`, so the
+`top_cmd.py:350` veto fires on the daily-driver path too. Joining `artifacts → posting_versions → postings`
+and bucketing by `run_id`: all three offending artifacts belong to **run 90** (pre-fix); their `created_at`
+merely falls inside a 24h window that spans runs 88–114. **Post-fix (runs 92–114): 220 artifacts — 151 `swe`,
+69 `uncertain`, ZERO `not_swe`.** The peer's "231 delivered today" was 251 artifacts across 26 runs; the `N`
+cap held at exactly 10 in every run. **Do not re-investigate this.**
+
+**The real delivery-side leak, scoped: 69 of 220 (31.4%) `uncertain`** — by `companies.source`, user 50 ·
+lane 13 · registry 6. **Roughly half are genuine engineering** the title taxonomy does not recognize (ASIC
+Implementation Engineer STA, CPU Core Logic Designer, Silicon Photonics PIC Design Engineer, Quantum
+Computing Measurement Engineer, Cloud Native Architect, Android Systems Engineer, Performance Engineer), i.e.
+exactly the protected population the `uncertain` pass-through exists for — so a taxonomy fix would destroy
+real leads. The noise concentrates in BOARDS, not the taxonomy: 6 boards produce 26 of the 69, led by
+AlphaHire 9/9, Genentech 4/4, Walmart-external 3/3, SoFi 3/3, Citi 3/4.
+
+**Board hygiene, owner-ruled 2026-08-26.** AlphaHire (`workable:alphax`) measured **59 open postings, 0 `swe`
+(0.0%)**, 19 uncertain, 40 not_swe — pure noise, and the single largest contributor. **Unwatched on Mit's
+ruling; fleet 235 → 234.** Genentech (1,461 open, 80 `swe` = 5.5%) and Walmart-external (1,412 open, 59 `swe`
+= 4.2%) were measured too and Mit ruled **KEEP** — their software share is low but non-zero and their titles
+skew above the entry band, where the seniority gate already handles them. Revisit only if their junk count
+grows.
+
 **Lanes DISARMED** (`lanes_enabled = []`) at session start so the leak stopped accruing during the build.
 
 **Coverage vs job-apps, RE-MEASURED (D-310/D-311).** Its 465-item eligible queue is a CUMULATIVE pending
