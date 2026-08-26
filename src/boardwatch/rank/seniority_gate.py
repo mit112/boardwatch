@@ -100,12 +100,14 @@ _ROMAN = re.compile(r"\b(I{2,3}|IV)\b")
 # an unguarded word match is how a real job disappears. `frozenset([...])` is a constructor call,
 # the escape hatch this module already uses for R9-scoped title data.
 _MANAGEMENT_AMBIGUOUS = frozenset(["lead", "leader", "manager", "director"])
-# `development` is a role token so "Software Development Manager" reads as management OF a dev
+# `software` is a role token so "Software Development Manager" reads as management of a software
 # discipline. It only ever matters beside a management-ambiguous word (this token is consulted
-# nowhere else), so it cannot drop an IC role on its own; "Business Development Manager" it would
-# now grade as senior is already `not_swe` at the role gate and never reaches this gate.
+# nowhere else), so it cannot drop an IC role on its own. Bare `development` was measured and
+# REJECTED in its place: as a token it also carries the product/domain sense ("Lead Development
+# Platform", "AI Agent Development Lead") and would grade a real IC `Lead` there as senior, while
+# `software` has no such non-role sense here.
 _ROLE_TOKEN = re.compile(
-    r"\b(?:engineer|engineering|developer|development|dev|swe|sde|sdet|sre|programmer|architect)\b",
+    r"\b(?:software|engineer|engineering|developer|dev|swe|sde|sdet|sre|programmer|architect)\b",
     re.IGNORECASE,
 )
 
@@ -124,6 +126,16 @@ def _qualifies_as_management_seniority(title: str, pos: int) -> bool:
       qualifies, and a real IC role is never dropped. The comma-delimiting is what tells the
       two apart — a product noun sits in its own clause after the role ("Software Engineer, Lead
       Scoring"), a management head noun sits in its own clause before it.
+
+    Residual, measured to ZERO on the live corpus (37,979 distinct titles) and left unclosed
+    because no lexical guard closes it without losing real catches: a title whose LEADING clause
+    is a product-noun compound built on a management word, followed by an IC role ("Lead Scoring,
+    Software Engineer" / "Password Manager, Backend Engineer"), would qualify here and be dropped.
+    Requiring the management word to be its clause's final token would close it but also spare
+    "Manager I, Engineering" and "Lead Data Scientist, AI Engineering" — genuine management titles
+    that share the exact shape — so the two are indistinguishable by position. The ordering it
+    needs (product/team first, IC role second) does not occur in real postings; every inverted
+    drop on the live corpus is a genuine manager, lead or director.
     """
     start = title.rfind(",", 0, pos) + 1
     end = title.find(",", pos)

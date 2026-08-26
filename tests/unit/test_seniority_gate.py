@@ -301,6 +301,11 @@ class TestInvertedManagementTitle:
         "Software Engineer, Ads Manager",
         "Backend Engineer, Fleet Manager",
         "Software Engineer, Package Manager",
+        # A role token in a LATER clause than the product-noun manager. This pins the
+        # `_ROLE_TOKEN.search(title[:start]) is None` before-guard specifically: the earlier
+        # cases all have the manager last (no later clause), so only this one fails if that
+        # branch of the directional guard is dropped while the `end != -1` branch is kept.
+        "Software Engineer, Ads Manager, Platform Engineering",
     ])
     def test_trailing_product_noun_manager_is_kept(self, title, cat, tier):
         assert V(title, cat, tier)[0] == "in_band", title
