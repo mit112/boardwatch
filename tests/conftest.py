@@ -153,6 +153,32 @@ def _never_reach_the_real_data_dir(
     monkeypatch.setenv("BOARDWATCH_DATA_DIR", str(tmp_path_factory.mktemp("bw-data")))
 
 
+@pytest.fixture(autouse=True)
+def _never_reach_the_real_queue_root(
+    tmp_path_factory: pytest.TempPathFactory, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Point the run hook's delivery-queue root at a scratch dir for EVERY test. No opt-out.
+
+    The same hazard as `_never_reach_the_real_data_dir`, one root over: `pipeline/runner.py` syncs
+    the delivery queue at the end of every run, and `DEFAULT_QUEUE_ROOT` is `~/boardwatch-queue`.
+    Thirteen test modules call `run_pipeline`, so without this the suite writes lead folders for
+    fake companies into the owner's real queue — measured, not hypothetical — and, once the owner
+    has drained a lead into `_applied/`, `reconcile_queue` reads the *test's* empty store and moves
+    that folder back out. A test run would silently un-apply real applications.
+
+    Patched by name on the CONSUMER, `pipeline.runner`, because that is where the hook resolves the
+    root; patching `delivery.queue`'s definition would not reach the binding the hook reads. Any
+    test that wants its own root still wins — it patches the same name after this fixture has run.
+
+    The import is deferred for the reason `backfill_identities` gives below: this module is
+    imported at collection time for every test in the repo, so a module-scope import here would
+    couple repo-wide collection to `pipeline.runner` importing cleanly.
+    """
+    from boardwatch.pipeline import runner
+
+    monkeypatch.setattr(runner, "DEFAULT_QUEUE_ROOT", tmp_path_factory.mktemp("bw-queue"))
+
+
 @pytest.fixture()
 def dedup_env(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     """Config dir == data dir, so a CLI-driven `eligibility run` and the engine under test

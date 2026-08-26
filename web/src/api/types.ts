@@ -1,0 +1,211 @@
+/*
+ * The HTTP contract, transcribed from the implementation plan's contract table. This file is the
+ * single place the frontend's idea of a shape lives; if the server disagrees, this is the one file
+ * to reconcile.
+ *
+ * Two shapes the contract table leaves open, resolved here and flagged so they are easy to find:
+ *
+ *  1. `score`, `coverage` and `off_target_reason` are NOT on the store-level `QueueRow` dataclass,
+ *     but the queue row must show a score and a coverage figure and the minimum-score filter needs
+ *     a number to compare. They are computed live (design §6.2: score via `rank/heuristic`,
+ *     coverage via `tailor/coverage`, neither persisted), so they belong to the API layer beside
+ *     the three derived booleans it already adds.
+ *  2. `RequirementView` is named by the contract but not defined. It is modelled here as one row
+ *     per recognised requirement, carrying both the coverage answer (`covered`) and the eligibility
+ *     evidence for it (`rule`, `disposition`, `profile_field`, `quote`). Entries with a `rule` are
+ *     rendered as evidence; all entries are rendered in the covered / missing lists.
+ *
+ * `rank` is deliberately absent: the contract says the rows arrive ranked, so rank is the position
+ * in the array and is never a field that could disagree with the ordering it describes.
+ */
+
+/** The three verdicts arrive from the API verbatim and are never computed or inferred client-side. */
+export type Verdict = "eligible" | "uncertain" | "ineligible";
+
+export type PostingStatus = "open" | "closed";
+
+export interface QueueRow {
+  posting_id: number;
+  job_id: number;
+  title: string;
+  company: string;
+  location: string | null;
+  remote_policy: string | null;
+  /** From the nullable `postings.posted_at`. `null` renders as an em dash, NEVER as `0d`. */
+  posted_days: number | null;
+  first_seen: string;
+  status: PostingStatus;
+  verdict: Verdict | null;
+  apply_url: string | null;
+  delivered_run_id: number | null;
+  tex_uri: string;
+  pdf_uri: string | null;
+  target_flag: boolean | null;
+
+  /* Derived by the API, not the store. */
+  thin_jd: boolean;
+  off_target: boolean;
+  pdf_available: boolean;
+
+  /* Computed live by the API; labelled "as of now" wherever they are shown. */
+  score: number | null;
+  /** Résumé keyword coverage as a fraction 0..1. `null` exactly when `thin_jd` is true. */
+  coverage: number | null;
+  /**
+   * Why the role gate vetoed the title, carrying the text it actually matched. Displayed beside
+   * the badge so a veto is auditable. The frontend never re-derives this from the title: a
+   * hand-written title pattern is a second, wrong opinion about a shipped gate.
+   */
+  off_target_reason: string | null;
+}
+
+export interface QueueCounts {
+  in_queue: number;
+  /** The affirmatively-eligible count and the headline yield. `uncertain` is NEVER summed in. */
+  eligible: number;
+  /** Its own visible bucket. "Not yet known" — not a warning, and not a step below eligible. */
+  uncertain: number;
+  applied_ever: number;
+  skipped: number;
+  delivered_last_run: number;
+  last_run_finished: string | null;
+}
+
+export interface QueueResponse {
+  rows: QueueRow[];
+  counts: QueueCounts;
+}
+
+export interface RequirementView {
+  requirement: string;
+  covered: boolean;
+  rule: string | null;
+  disposition: string | null;
+  profile_field: string | null;
+  /** A span quoted out of the FROZEN posting version. Rendered as text, never as markup. */
+  quote: string | null;
+  rationale: string | null;
+}
+
+export interface QueueDetail {
+  row: QueueRow;
+  /** `null` means no current posting version. Never `""` for that case. */
+  jd_body: string | null;
+  requirements: RequirementView[];
+  board_target: string | null;
+}
+
+export type MarkOutcome =
+  | "created"
+  | "transitioned"
+  | "unchanged"
+  | "no_posting"
+  | "no_job"
+  | "skipped"
+  | "unskipped";
+
+export interface AppliedResponse {
+  outcome: MarkOutcome;
+  job_id: number | null;
+}
+
+export interface SkipResponse {
+  outcome: MarkOutcome;
+}
+
+export interface RevealResponse {
+  ok: boolean;
+  reason?: string;
+}
+
+export interface AnswerQuestion {
+  q: string;
+  a: string;
+  /** Shown, and NEVER copied. Some notes are warnings against reusing the answer as written. */
+  note?: string | null;
+}
+
+export interface Answers {
+  identity: Record<string, string | null>;
+  work_auth: Record<string, string | null>;
+  education: Record<string, string | null>[];
+  questions: AnswerQuestion[];
+}
+
+export interface RunSummary {
+  id: number;
+  started: string | null;
+  finished: string | null;
+  status: string | null;
+  boards_attempted: number | null;
+  boards_complete: number | null;
+  postings_seen: number | null;
+  new_count: number | null;
+  leads: number | null;
+}
+
+export interface RunsResponse {
+  runs: RunSummary[];
+}
+
+/* The funnel artifact, passed through by `GET /api/runs/{run_id}`. Keys transcribed from
+ * `reports/run_funnel.funnel_to_dict`; only what the page renders is typed. */
+
+export interface FunnelDrop {
+  reason: string;
+  count: number;
+  note: string;
+}
+
+export interface FunnelStage {
+  name: string;
+  entered: number | null;
+  advanced: number | null;
+  drops: FunnelDrop[];
+  reconciled: boolean | null;
+  instrumented: boolean;
+  /** One drop bucket is the remainder of the others, so `reconciled` holds by construction. */
+  derived: boolean;
+  note: string;
+  run_scoped_attribution: Record<string, number> | null;
+}
+
+export interface FunnelCoverage {
+  leads_measured: number;
+  leads_with_fraction: number;
+  mean_fraction: number | null;
+  median_fraction: number | null;
+  top_missing: { term: string; count: number }[];
+}
+
+export interface FunnelSource {
+  provider: string;
+  board_slug: string;
+  company_source: string;
+  open_postings: number;
+  unique: number | null;
+  assisted: number | null;
+  eligible: number;
+  leads: number;
+  applied: number;
+}
+
+export interface RunFunnel {
+  artifact_version: number;
+  run_id: number;
+  started_at: string | null;
+  finished_at: string | null;
+  reconciles: boolean;
+  fatal: boolean;
+  errors: string[];
+  stages: FunnelStage[];
+  coverage: FunnelCoverage;
+  scan: {
+    ran: boolean;
+    boards_attempted: number | null;
+    boards_complete: number | null;
+    boards_failed: number | null;
+    postings_seen: number | null;
+  };
+  sources: FunnelSource[];
+}

@@ -104,6 +104,45 @@ SHIPPED_DATA: dict[str, DataEntry] = {
         reason="The one public starter registry of company job boards. Schema-validated, "
         "health-verified in CI, tags limited to ALLOWED_REGISTRY_TAGS",
     ),
+    "web/package.json": DataEntry(
+        kind="template",
+        reason=(
+            "The frontend's dependency and script declaration for the local review web app. "
+            "Declares build tooling only, no person, employer, posting or metric. Pinned "
+            "because a change to the dependency set of a bundle that ships inside the wheel "
+            "is security-sensitive and must be a deliberate act rather than a drift."
+        ),
+        pin="sha256:457f6e0121c39c176bc302596e13022d6fe9b19d525d7712f3aed0a52277603f",
+    ),
+    "web/package-lock.json": DataEntry(
+        kind="template",
+        reason=(
+            "The resolved dependency tree behind the committed frontend bundle. Ships so a "
+            "clean checkout rebuilds the exact bytes in src/boardwatch/web/static/, which "
+            "the CI web-bundle job verifies. Pinned for the same reason as package.json, "
+            "more strongly: this file decides which third-party code is compiled into a "
+            "published artifact."
+        ),
+        pin="sha256:bb1058eef052b0279878d6fe9801c7f73f627b7b4d439894314a86636b5f7f35",
+    ),
+    "web/tsconfig.json": DataEntry(
+        kind="template",
+        reason=(
+            "TypeScript compiler settings for the frontend. Describes compilation, not "
+            "data."
+        ),
+        pin="sha256:a35c9cfab65389e8d51e9c2b79569decd72f73c94edafb261d12580176ad63f1",
+    ),
+    "src/boardwatch/delivery/answers.example.yaml": DataEntry(
+        kind="template",
+        reason="Placeholder-only schema for the read-and-copy answers panel served by "
+        "`boardwatch web` (delivery design §9). Declares the field names an application form "
+        "asks for; carries no real name, email, phone or link, and deliberately ships NO "
+        "work-authorisation value at all, because that is the one answer a first-run user must "
+        "not inherit from a template. The user copies it to {config_dir}/answers.yaml and their "
+        "copy is never committed. Pinned so a real value cannot be added without the pin failing.",
+        pin="sha256:1cec1cd8c400bed7f212fb221393d73887df16625f37e2e79f293702e0788824",
+    ),
     "src/boardwatch/profile_bundle/resources/career-profile.schema.json": DataEntry(
         kind="template",
         reason="JSON Schema generated from the career-profile bundle's typed models, shipped so an "

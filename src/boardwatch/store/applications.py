@@ -7,13 +7,17 @@ Functions take the caller's open Connection.
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from datetime import datetime
+from enum import StrEnum
 from typing import Any, Literal
 
 from sqlalchemy import Connection, Row, func, insert, select, update
 
 from boardwatch.core.clock import utcnow
-from boardwatch.store.tables import application_events, applications
+from boardwatch.store.funnel_queries import job_id_for_posting
+from boardwatch.store.queries import current_posting_versions
+from boardwatch.store.tables import application_events, applications, postings
 
 ApplicationStatus = Literal[
     "interested", "applied", "interviewing", "offer", "rejected", "withdrawn"
@@ -172,3 +176,132 @@ def get_application_events(conn: Connection, application_id: int) -> list[Row[An
             .order_by(application_events.c.id)
         ).all()
     )
+
+
+class MarkOutcome(StrEnum):
+    """What `mark_job_applied` did, typed so no caller classifies it by string-matching prose.
+
+    `NO_POSTING` and `NO_JOB` are separate members because `track add` collapses them into one
+    message ("no posting <id>") while they are different faults: an id the user mistyped versus a
+    posting the grouper never anchored. `postings.job_id` is nullable in the table and held NOT
+    NULL by a trigger, so `NO_JOB` is the defensive branch for a store written before that trigger
+    existed, not a state this codebase can produce.
+    """
+
+    CREATED = "created"
+    TRANSITIONED = "transitioned"
+    UNCHANGED = "unchanged"
+    NO_POSTING = "no_posting"
+    NO_JOB = "no_job"
+
+
+@dataclass(frozen=True)
+class MarkResult:
+    """The outcome plus the ids it applies to. Both ids are None on a lookup failure."""
+
+    outcome: MarkOutcome
+    job_id: int | None = None
+    application_id: int | None = None
+
+
+def mark_job_applied(conn: Connection, *, posting_id: int, source: str) -> MarkResult:
+    """Record "I applied to this" for the job behind `posting_id`, idempotently.
+
+    The single writer for that intent: `track add` returns early when the job carries ANY
+    application (including the `interested` one it just made), `track status` needs an
+    application id rather than a posting id, and `set_application_status` appends an event
+    unconditionally. None of the three is safe for an endpoint a browser can re-POST.
+
+    So the applied-already case returns `UNCHANGED` and appends **no** `application_events`
+    row and touches no column — not even `updated_at`. An immutable event log is only readable
+    if every row in it records something that happened, and a refresh is not an event.
+
+    The unit is the canonical `job_id`, never the posting (`applications` keys on it), so
+    marking one posting applied makes every sibling posting on the same job read as applied.
+    `submitted_at` is set by `set_application_status` on the first transition into applied and
+    is never re-stamped, because the `UNCHANGED` path never writes.
+
+    Runs entirely in the caller's transaction; it never begins or commits.
+    """
+    job_id = job_id_for_posting(conn, posting_id)
+    if job_id is None:
+        # job_id_for_posting returns None for both "no such posting" and "posting has no job",
+        # so the posting's existence is what separates them.
+        found = conn.execute(
+            select(postings.c.id).where(postings.c.id == posting_id)
+        ).scalar_one_or_none()
+        return MarkResult(MarkOutcome.NO_POSTING if found is None else MarkOutcome.NO_JOB)
+    attempts = get_applications(conn, job_id)
+    if attempts:
+        # Ordered by attempt_no, so the last row is the live attempt. A `--new-attempt` row
+        # sitting at `interested` above a submitted one is what the user is now marking.
+        latest = attempts[-1]
+        application_id = int(latest.id)
+        if latest.status in APPLIED_STATUSES:
+            return MarkResult(MarkOutcome.UNCHANGED, job_id=job_id, application_id=application_id)
+        set_application_status(
+            conn, application_id=application_id, to_status="applied", source=source
+        )
+        return MarkResult(MarkOutcome.TRANSITIONED, job_id=job_id, application_id=application_id)
+    # A4: link the version the application was made against. A posting with no version row
+    # links nothing rather than failing.
+    current = current_posting_versions(conn, [posting_id]).get(posting_id)
+    return MarkResult(
+        MarkOutcome.CREATED,
+        job_id=job_id,
+        application_id=create_application(
+            conn,
+            job_id=job_id,
+            posting_version_id=current.posting_version_id if current is not None else None,
+            status="applied",
+            source=source,
+        ),
+    )
+
+
+def mark_job_unapplied(conn: Connection, *, posting_id: int, source: str) -> MarkResult:
+    """Undo "I applied to this" for the job behind `posting_id`, idempotently.
+
+    The exact inverse of `mark_job_applied`, and it exists because the review page's undo
+    otherwise only restores a row on screen: the `applications` row it just wrote stays
+    `applied` forever, `applied_job_ids` keeps reporting the job as a conversion, and
+    `delivered_unapplied` never offers the lead again. An undo that leaves the store asserting
+    the opposite of what the owner now says is worse than no undo at all.
+
+    The transition is to **`withdrawn`**, which is deliberately outside `APPLIED_STATUSES` — so
+    the lead returns to the queue by itself, through the same read that removed it, with no
+    second mechanism to keep in step. `track status <id> withdrawn` is already documented as
+    that drain; this is the same drain reached from a posting id.
+
+    **The applied event is never deleted or rewritten.** `set_application_status` appends a
+    second `status_change` row, so the log reads "applied, then withdrawn" — which is what
+    happened. `submitted_at` is left standing for the same reason: it is stamped once, on the
+    first transition into applied, and erasing it would make an application that really was
+    submitted read as one that never was.
+
+    Idempotency mirrors `mark_job_applied` and is the exact complement of it. That function
+    returns `UNCHANGED` precisely when the latest attempt is in `APPLIED_STATUSES`; this one
+    acts precisely then, and returns `UNCHANGED` with **no** event for every other state — a
+    job with no attempts at all, an attempt still at `interested`, and an attempt already
+    `withdrawn`. All three already read as not-applied, so there is nothing to undo, and a
+    re-POST from a browser must not append an event that records nothing.
+
+    Runs entirely in the caller's transaction; it never begins or commits.
+    """
+    job_id = job_id_for_posting(conn, posting_id)
+    if job_id is None:
+        found = conn.execute(
+            select(postings.c.id).where(postings.c.id == posting_id)
+        ).scalar_one_or_none()
+        return MarkResult(MarkOutcome.NO_POSTING if found is None else MarkOutcome.NO_JOB)
+    attempts = get_applications(conn, job_id)
+    if not attempts:
+        return MarkResult(MarkOutcome.UNCHANGED, job_id=job_id)
+    latest = attempts[-1]
+    application_id = int(latest.id)
+    if latest.status not in APPLIED_STATUSES:
+        return MarkResult(MarkOutcome.UNCHANGED, job_id=job_id, application_id=application_id)
+    set_application_status(
+        conn, application_id=application_id, to_status="withdrawn", source=source
+    )
+    return MarkResult(MarkOutcome.TRANSITIONED, job_id=job_id, application_id=application_id)

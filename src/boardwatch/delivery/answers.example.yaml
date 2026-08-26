@@ -1,0 +1,63 @@
+# answers.example.yaml — the read-and-copy answers panel.
+#
+# Copy this file to {config_dir}/answers.yaml and replace every value with your own. Your copy
+# stays on your disk and is never committed; this one ships with the tool and holds placeholders
+# only. `boardwatch config show` prints your config directory.
+#
+# The panel is a clipboard, not a form filler. Nothing here is typed into an employer's page.
+#
+# Two sections you do NOT fill in here:
+#
+#   work_auth  Read from your stored eligibility facts first (`boardwatch profile eligibility`),
+#              and only falls back to this file for a fact you have not declared. Nothing is
+#              defaulted: a field neither source answers is shown as missing, because a wrong
+#              work-authorisation answer on a real application is worse than a blank one. See
+#              the commented block below for the field names if you do want them here.
+#
+#   education  Read from {config_dir}/resume.yaml, so it can never disagree with the resume you
+#              are sending. An `education:` key in this file is refused, not ignored.
+
+identity:
+  full_name: "Your Name"
+  email: "you@example.com"
+  phone: "your phone number"
+  city_state: "Your City, ST"
+  # Full URLs, as an employer's form expects them.
+  linkedin: "https://example.com/your-linkedin"
+  github: "https://example.com/your-github"
+  portfolio: "https://example.com/your-site"
+
+# work_auth:
+#   # Your legal status, as a short phrase you are willing to paste verbatim.
+#   status: ""
+#   # The country the status applies to. A status without one is jurisdiction-blind: "citizen"
+#   # does not answer "must be a US citizen".
+#   jurisdiction: ""
+#   # true or false, and only if you are certain. Left out means the panel says nothing.
+#   needs_sponsorship:
+
+questions:
+  # `note` is shown in the panel and is NEVER copied to the clipboard. Put the caveats, the
+  # "check this before sending", and anything you would not want pasted into a form, in `note`.
+  - q: "Notice period"
+    a: "Your notice period"
+
+  - q: "Salary expectation"
+    a: "Your expected range"
+    note: >-
+      This is the entry `note` exists for. Any warning that belongs beside an answer but must
+      never land in an employer's form goes here.
+
+  - q: "Why this company?"
+    a: "Your two sentences."
+    note: "Edit per employer before sending. A reused answer reads like one."
+
+  - q: "How did you hear about this role?"
+    a: "Your answer"
+
+  # Demographic and voluntary-disclosure questions, only if you choose to store them. Delete
+  # the ones you would rather answer in the form each time.
+  - q: "Are you a protected veteran?"
+    a: "Your answer"
+  - q: "Do you have a disability?"
+    a: "Your answer"

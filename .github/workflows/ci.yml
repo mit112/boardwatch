@@ -94,6 +94,56 @@ jobs:
       - run: uv sync --frozen
       - run: uv run python -m tools.generalization
 
+  # The only job with a node toolchain, and the only one that can prove the committed React
+  # bundle is what `web/` currently builds. `make check` cannot: it runs on three operating
+  # systems with no node, so there it is a hash of the build inputs
+  # (tests/unit/test_web_bundle_freshness.py) — which catches an un-rebuilt edit, but cannot
+  # catch a bundle rebuilt from a dirty tree or a lockfile that resolves differently.
+  # Linux-only and deliberately outside the Python matrix: nothing here is OS-dependent.
+  web-bundle:
+    name: web bundle
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      # Pinned to the major the committed bundle is built with. rollup and esbuild are pinned by
+      # web/package-lock.json, so the emitted bytes should not move with node's major — but a
+      # difference here is read as "the bundle is stale", so the toolchain must not drift on its
+      # own and spend that signal on noise.
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - uses: astral-sh/setup-uv@v5
+        with:
+          python-version: "3.12"
+      # `make web` records the freshness manifest through the repo's own python.
+      - run: uv sync --frozen
+      - run: npm ci
+        working-directory: web
+      # TypeScript and eslint run here and nowhere else, for the same reason as above.
+      - run: npx tsc --noEmit
+        working-directory: web
+      - run: npx eslint .
+        working-directory: web
+      # Hashed BEFORE `make web` overwrites it — Vite builds with emptyOutDir. Asset file names
+      # are content-hashed, so this one listing is the asset manifest AND the per-asset content
+      # hashes: a changed asset, a renamed one and a dropped one are all visible. A raw byte
+      # diff of the directory would report the same failure without naming which asset moved.
+      - name: Hash the committed bundle
+        run: |
+          cd src/boardwatch/web/static
+          find . -type f -print0 | sort -z | xargs -0 sha256sum > "$RUNNER_TEMP/committed-assets.sha256"
+      - run: make web
+      - name: The rebuilt bundle must match the committed one
+        run: |
+          cd src/boardwatch/web/static
+          find . -type f -print0 | sort -z | xargs -0 sha256sum > "$RUNNER_TEMP/rebuilt-assets.sha256"
+          if ! diff -u "$RUNNER_TEMP/committed-assets.sha256" "$RUNNER_TEMP/rebuilt-assets.sha256"; then
+            echo "::error::src/boardwatch/web/static/ is not what web/ builds. Run 'make web' and commit the bundle together with web/bundle-inputs.sha256."
+            exit 1
+          fi
+
   # The nightly is the ONLY build whose matrix contains Windows (D-151), and for three consecutive
   # days nothing read its result — so a deliberate CADENCE decision had quietly become an unnoticed
   # COVERAGE decision (D-211/D-212). This job is what reads it. Without a consumer, "CI is green"
@@ -107,7 +157,7 @@ jobs:
   nightly-watch:
     name: nightly-watch
     if: ${{ always() && github.event_name == 'schedule' }}
-    needs: [test, gitleaks, perf, generalization]
+    needs: [test, gitleaks, perf, generalization, web-bundle]
     runs-on: ubuntu-latest
     permissions:
       contents: read

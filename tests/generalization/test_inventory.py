@@ -54,12 +54,20 @@ def test_scope_covers_data_files_repo_wide() -> None:
     assert "src/boardwatch/profile_bundle/examples/comprehensive/manifest.yaml" in scope
     assert "src/boardwatch/profile_bundle/resources/predicate-catalog-v1.yaml" in scope
     # D-246 added the seniority leveling catalog, 79 -> 80. D-271 added the Workday
-    # censored-facets fixture, 80 -> 81. The count is pinned so a data file cannot enter
-    # the wheel without someone acknowledging it here; bumping this line IS that
-    # acknowledgement, and it must be paired with a SHIPPED_DATA entry in allowlists.py.
+    # censored-facets fixture, 80 -> 81. The delivery queue added the answers-panel example
+    # and the frontend's three build-config files, 81 -> 85. The count is pinned so a data
+    # file cannot enter the wheel without someone acknowledging it here; bumping this line IS
+    # that acknowledgement, and it must be paired with a SHIPPED_DATA entry in allowlists.py.
     assert "src/boardwatch/rank/leveling.yaml" in scope
     assert "tests/fixtures/workday/list_censored_with_facets.json" in scope
-    assert len(scope) == 81
+    # The answers example ships placeholders only and deliberately carries no work-authorisation
+    # value; the three web files decide which third-party code is compiled into the committed
+    # bundle, which is why they are pinned rather than exempted.
+    assert "src/boardwatch/delivery/answers.example.yaml" in scope
+    assert "web/package.json" in scope
+    assert "web/package-lock.json" in scope
+    assert "web/tsconfig.json" in scope
+    assert len(scope) == 85
 
 
 def test_every_bundle_example_file_is_pinned_and_synthetic() -> None:
