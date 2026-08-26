@@ -17,6 +17,87 @@
 
 ## Current standing
 
+**HOW TO REPORT YIELD — the owner's standing rule (D-312).** Every yield, coverage or job-apps comparison
+quotes **the end of the line: affirmatively `eligible` jobs** — currently **~60/day** (eligible + software +
+in-band + US + non-duplicate + unhandled). **Never** quote a broader upstream population as the headline:
+"new postings/day" and "software-titled/day" are different quantities, and doing so overstated yield ~8× in
+this session before Mit caught it (the hard US filter alone removes 57% of the corpus). **`uncertain` is
+never folded into `eligible`** — the keystone invariant, not a preference; the ~82/day abstains get their own
+line. Measure with `stats` / `top --no-record --json` / the run funnel, never ad-hoc SQL over `postings`.
+
+**GATE P4 IS MET — the owner blind craft review PASSED cleanly (2026-08-26).** Mit reviewed 13 anonymised
+résumés (8 boardwatch + 5 job-apps decoys) rendered-page-only. All five he judged WORSE were job-apps decoys;
+all three he judged BETTER were boardwatch (Perplexity/Anthropic/Figma); the other 5 boardwatch were on-par.
+Both orphan-page-2 defects were decoys — the failure mode D-303's fill fix eliminated. **P4 objective half
+(0 anti-slop violations) + subjective half both pass → P4 gate MET.** Assembler/key in
+`.agent/2026-08-25-craft-findings/` (build_p4_blind_sample.py, p4_blind_key.md).
+
+**TWO SCAN-ROBUSTNESS FIXES SHIPPED + LIVE (D-306 #167, D-307 #168, 2026-08-26).** (1) `apply.py` now collapses
+a duplicate `provider_posting_id` within one board snapshot — a Workable board (`alexander-dennis`) that lists
+one shortcode twice was crashing the whole run on `UNIQUE(company_id, provider_posting_id)`. (2) `_scan_body`
+now isolates a board's `apply_board` failure per-board (count failed, continue) instead of aborting the run.
+Both TDD, both merged and pulled to the primary tree (HEAD `c949e18`). Neither is an eligibility module →
+`engine_version` unchanged, no drain, freeze-safe. Found by firing runs, not by review.
+
+**THE LANE ROLE FACET IS BUILT — the lanes now ask for the USER'S target roles (D-309).** Both aggregator
+lanes searched FACET-LESS, which returns the general labour market rather than the user's. Measured on the
+live store 2026-08-26 over 282 open lane-provider postings: **3 `swe` (1.1%), 82 `uncertain`, 197 `not_swe`**
+— and the three real ones (Siemens ×2 semiconductor digital-twin SWE, Zensar data engineering) are
+US-eligible but rank BELOW the N=10 cap. **The gates were not rejecting software work; there was almost none
+to reject** — lane discovery turned up zaxbys, dominos, twinkletoesnanny, best-choice-roofing. The delivered
+non-SWE résumés (Business Unit Leader, Front Office Agent, Instructional Aide — runs 106/112) came through
+the `uncertain` role fail-open, not a gate failing to fire. Fixed UPSTREAM: `lanes/facets.py` derives search
+facets from `profile.target_titles_json` (never a query written into a lane — that is the multi-tenancy
+requirement and why both contracts deferred it), and each lane issues one search per facet, interleaved so
+the body budget reaches every facet. hiring.cafe uses the robots-**PERMITTED** path route `/jobs/{role}` —
+its own `?searchState=` query search is `Disallow`ed, so the obvious build would have broken a compliant
+lane. LinkedIn uses `keywords=` (owner-probed: baseline 0/10 SWE → keyworded **10/10**; `start` pages but
+buys nothing against the body budget; `location=` is silently ignored so it is never sent). Live end-to-end
+through the real lane on the live profile: **16 `swe` + 2 technical `uncertain`, 0 `not_swe`**, 13 of 14
+facets contributing, 0 duplicate `provider_posting_id`. `engine_version` **verified identical**
+(`1+63c6f8fd5a3e`) in both trees and no new `Settings` field, so **no ledger drain and no freeze change**.
+GitHub-lists arming (+10 boards) and the one-off import of job-apps' targets stand from D-308: coverage of
+job-apps' 465-item eligible set is **13.1%** (native ceiling 39.6%, aggregator-only 60.4%).
+**D-305 IS SOUND — do not re-investigate the "analyst titles still delivered" report.** Verified against
+the live module (`Risk Strategy Execution Analyst` → `not_swe`) and the delivery path (`runner.py:895` passes
+no `include_non_swe`). All three offending artifacts are from **run 90, pre-fix**; post-fix runs 92–114 carry
+**220 artifacts, 0 `not_swe`**. The remaining delivery-side leak is the 69 `uncertain` (31.4%), about half of
+which are REAL engineering titles the taxonomy misses — a taxonomy fix would destroy them. Noise concentrates
+in BOARDS: **AlphaHire unwatched** on Mit's ruling (59 open, 0 `swe`), fleet 235 → **234**; Genentech and
+Walmart-external measured and ruled KEEP. Delivery-side work is owned by a separate session.
+
+**LANES ARE CURRENTLY DISARMED (`lanes_enabled = []`)** — turned off while the facet was built so the leak
+stopped accruing. Re-arm after the facet merges, then confirm on a live faceted run.
+
+**COVERAGE vs job-apps — RE-MEASURED, and the earlier read was WRONG ABOUT WHERE THE GAP IS (D-310/D-311).**
+The prior note said native ATS imports "top out at ~40%" and that only the lanes could close the gap. The
+39.6% was the CEILING, not the position: boardwatch was watching boards for only **58 of job-apps' 465**
+(12.5%). Re-derived by keying each queue posting to the `(provider, slug)` boardwatch would use — for Workday
+the FULL composite `host/tenant/site`, which an earlier pass got wrong by comparing bare tenants and so
+counted already-watched boards as new. Result: **125 postings across 97 boards were addable with ZERO new
+code**. Imported with `--verify`: **95 watched, 2 skipped** (Comcast dead, CMU errored), so the fleet went
+**140 → 235** and projected scan time 20 → **33 min** against the 180-min cadence. These are employers
+job-apps never TARGETED — it found them through Indeed/JobRight — which is why last session's import of its
+222-company target list netted only +7 and this one netted +95.
+
+**NEW ATS PROVIDER ADAPTERS ARE NOT WORTH BUILDING — measured, and it inverts the standing assumption
+(D-311).** Owner-gated item 2 recorded Oracle Cloud HCM + iCIMS as "~45% of the non-six tail". That was a
+share of a small tail, not of the market. Over job-apps' full **138,788-posting** ledger: LinkedIn **49.7%**,
+Indeed **23.4%**, Workday 10.0%, Greenhouse 3.4%, company-custom 3.6%, Ashby 1.1%, **Oracle Cloud 0.84%,
+iCIMS 0.44%, Eightfold 0.28%**, and every other platform below 0.2%. So the two "big" candidates are ~1.3%
+combined. **~73% of the market is LinkedIn + Indeed**: Indeed is out of scope, and LinkedIn is already a lane
+— which is where leverage actually is, now that it has a keyword facet. `lane_posting_budget` is OUT of
+`config_hash` (manifest.py), so raising the LinkedIn body budget is freeze-safe and is the cheapest next
+experiment. Do NOT build per-ATS adapters at 0.1–0.8% each.
+
+**SYSTEM PROVEN STABLE — 21 clean runs (92, 94–113), 1 failure (run 93, the pre-fix crash).** Corpus grew to
+57,175 postings / 48,084 open; watched 140 (CMU's recurring-422 dead board removed as hygiene); 85 lane-
+discovered companies recorded unwatched. 4 clean SCHEDULED ticks (92/95/101/108) + many clean manual runs; both
+fixes hold every run; lanes healthy (no silent outage). Manual-run cadence was eased to scheduled-ticks-only at
+session end to cut lane-leak accrual + conserve the rate-limit window. **The provisional pass (D-280) is
+effectively met on quality** — P4 gate met, B1–B7 pass every run, freeze stable — pending only whatever formal
+scheduled-tick count Mit wants to require.
+
 **P4 CRAFT UNDER-FILL FIXED — the daily run now fills résumés to the page (D-303, 2026-08-25).** The P4
 blind review FAILED on ~3 under-filled résumés: the daily run projected with base `projection.yaml`
 (`runner.py:848`), whose `fill_to_page` defaults False; the earlier fill fix went only to the DORMANT
@@ -215,35 +296,45 @@ call and is now informed on both sides (D-293, D-294).
 
 ## Next action
 
-**Precision (#148), Part 4a (#149), and the lookup/instructions/CI tooling (#150) are all merged, and
-precision is confirmed ALREADY ARMED on `main`** — the earlier "arm precision" next-action was a no-op: the
-launchd driver runs the editable venv resolving to `src/` in the primary tree, which is on `main` (D-300).
-Immediate steps, in order:
+**The provisional pass (D-280) is effectively met on quality** — P4 gate MET (objective 0-violations + owner
+blind review passed), B1–B7 pass on every run (verified via `.agent/2026-08-25-craft-findings/finish_line_cert.py
+--runs <N>`), freeze tuple stable across runs 92/94 (`config_hash f56a0166…`, engine_version `1+63c6f8fd5a3e`),
+P6 leakage 0.00% over 7d, B4 370/0. 21 clean runs (92, 94–113). **No build left.** Immediate items:
 
-1. **Part 4b: LinkedIn is DONE (D-297).** Built off by default; both measured constraints honoured — keys on
-   the company **slug** (`externalApply`=0, no apply URL) and sends only `f_TPR=r86400` (`f_WT=2` ignored). No
-   capture committed. **Owed before arming:** a live probe to confirm the RECONSTRUCTED card selectors and to
-   pin `start` paging (the client makes one search GET; paging and a keywords/location facet are deferred).
-2. **PROVISIONAL PASS is close — only runtime + the owner blind review remain (2026-08-26).** Done this
-   session: P4 under-fill fixed+live (D-303); role/seniority precision fixed+live (D-305, #166); B4 PASS +
-   non-vacuous (350/3,426/0); P4 objective checks 0 violations (non-vacuous); B5 guard reviewed sound; **P6
-   leakage 0.00% over a full 7-day window** (08-19→08-26); B1/B2/B3/B6/B7 demonstrated on run 90 via
-   `.agent/2026-08-25-craft-findings/finish_line_cert.py`. **Remaining: (a) 3 clean post-(fill+role) B1–B7
-   scheduled runs — count from run 92 (the first tick after both fixes went live), score with
-   `finish_line_cert.py --runs 92 93 94`; (b) the owner P4 BLIND CRAFT REVIEW — assemble with
-   `build_p4_blind_sample.py` once run 92+ deliver ≥10 filled distinct-company résumés.** No build left.
-   *(The `.agent/2026-08-25-craft-findings/` harnesses are gitignored working material — re-derive if pruned.)*
+1. **RE-ARM the lanes and confirm the facet on a live run.** The facet is built and merged (D-309); the
+   lanes were disarmed during the build. `boardwatch config set lanes_enabled "hiringcafe,linkedin"`, then
+   check the next scheduled tick delivers software leads and no ops/retail titles. `lanes_enabled` is out of
+   `config_hash`, so arming touches no freeze.
+2. **Consider raising the LinkedIn body budget (`lane_posting_budget`).** D-311 measured LinkedIn at 49.7%
+   of the reachable market and the setting is OUT of `config_hash`, so it is freeze-safe to change. The facet
+   makes those bodies software-relevant for the first time; the budget is now the binding constraint, not the
+   search. Measure a run before and after rather than assuming.
+3. **Confirm the formal cert bar.** Quality is proven; if a strict "N clean SCHEDULED ticks" count is still
+   wanted, scheduled ticks 92/95/101/108 are clean (manual runs 94/96–100/102–107/109–113 don't count as
+   scheduled but are all clean). Score any run with `finish_line_cert.py --runs <N>`.
 
-**Arming Part 4a's ~898 boards is a SEPARATE owner decision, NOT taken here.** The capped watched-write ramp
-is **already shipped** (D-300 correction): `companies discover` caps at `lane_new_companies_per_run` and
-emits a reviewed candidate file, and `companies import` is the sanctioned watched-write. Arming is the
-operational `discover`→review→`import` loop, run in batches of ~10; there is nothing to build. (898 boards
-at ~7s each would still exceed the 3h cadence, so ramp gradually.) Do **not** add a defaulted `watched=` to `upsert_watch` — that rejection is recorded in its
-sibling's docstring. `companies.source` is `CHECK (source IN ('registry','user','lane'))`.
+**Arming Part 4a's ~898 boards remains a SEPARATE owner decision, NOT taken.** The capped `discover`→review→
+`import` loop is shipped; ramp in batches of ~10 (898 at ~7s each exceeds the 3h cadence). Do **not** add a
+defaulted `watched=` to `upsert_watch`. `companies.source` is `CHECK (source IN ('registry','user','lane'))`.
+
+*(The `.agent/2026-08-25-craft-findings/` harnesses — AUTONOMOUS-SESSION-LOG.md, COVERAGE-VS-JOBAPPS.md,
+LANE-ARMING.md — and `.agent/2026-08-26-lane-facet/` (NOTES.md with every probe number, DOC-DRAFT.md,
+`probe_linkedin_keywords.py`, and the raw `linkedin-probe/` HTML + summary.json) are gitignored working
+material; re-derive if pruned. The LinkedIn probe script is the one to re-run before trusting that lane's
+request contract again — it drives the production `Fetcher`, so its output IS the contract.)*
 
 ---
 
 ## Owner-gated — do NOT start or decide unilaterally
+
+0. ~~**THE ARMED LANES LEAK non-SWE noise into delivery — pick one (D-308).**~~ **DECIDED by Mit
+   2026-08-26: option (b), build the facet — shipped as D-309.** Recorded because the reasoning bounds the
+   next lane: option (c) (extend the role deny-catalog) was measured and REJECTED, not merely passed over —
+   the `uncertain` tail is Busser / Water Spider / Dish Steward / Donation Processor / Nannies / Janitorial,
+   an unbounded list, and the same bucket holds Linux Engineer, Senior HPC Engineer and Principal Architect
+   that a broad deny would lose. **Do not propose a lane-noise fix in the role taxonomy again**; the fix is
+   always upstream in what the lane asks for. Item 1 below is also settled by the same probe: hiring.cafe
+   showed 100% location fill, so the location fail-open was never the issue — the ROLE fail-open was.
 
 1. **hiring.cafe's `v5_processed_job_data.workplace_*` fields** — read as provider-asserted location
    metadata, at the level greenhouse's `location.name` is already trusted (D-286 Ruling 4). D-278 called
@@ -252,8 +343,12 @@ sibling's docstring. `companies.source` is `CHECK (source IN ('registry','user',
    returns `unknown` and the hard US gate PASSES `unknown`, so withholding locations does not filter a
    3.89M-posting board, it admits all of it. On a broader reading the lane needs another location source
    before arming. **One function either way.**
-2. **Oracle Cloud HCM / iCIMS as PROVIDERS** — D-278's still-open provider question, explicitly NOT settled
-   by D-285 (that ruled on lanes). ~45% of the non-six tail; reaches neither Amazon nor Apple nor TikTok.
+2. ~~**Oracle Cloud HCM / iCIMS as PROVIDERS**~~ **CLOSED by measurement (D-311): do NOT build them.** The
+   "~45% of the non-six tail" figure was a share of a small tail. Over job-apps' 138,788-posting ledger,
+   Oracle Cloud is **0.84%** and iCIMS **0.44%** — ~1.3% combined, and every remaining platform is under
+   0.2%. LinkedIn is 49.7% and Indeed 23.4% of that corpus, so ~73% of the market sits on one lane boardwatch
+   already has and one source that is out of scope. **The lever is the LinkedIn lane's budget/paging, not new
+   adapters.** Reopen only if a measurement on a different corpus contradicts this.
 3. ~~**Run-scoped rank attribution** — the only honest fix for B5~~ **DELIVERED + MERGED (D-302, PR #164 =
    `0fb50a7`).** Four run-scoped suppression twins + the reconciliation invariant; B5 is scoreable and armed
    on the live driver. No code left for B5.
