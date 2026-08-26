@@ -17,6 +17,14 @@
 
 ## Current standing
 
+**HOW TO REPORT YIELD — the owner's standing rule (D-312).** Every yield, coverage or job-apps comparison
+quotes **the end of the line: affirmatively `eligible` jobs** — currently **~60/day** (eligible + software +
+in-band + US + non-duplicate + unhandled). **Never** quote a broader upstream population as the headline:
+"new postings/day" and "software-titled/day" are different quantities, and doing so overstated yield ~8× in
+this session before Mit caught it (the hard US filter alone removes 57% of the corpus). **`uncertain` is
+never folded into `eligible`** — the keystone invariant, not a preference; the ~82/day abstains get their own
+line. Measure with `stats` / `top --no-record --json` / the run funnel, never ad-hoc SQL over `postings`.
+
 **GATE P4 IS MET — the owner blind craft review PASSED cleanly (2026-08-26).** Mit reviewed 13 anonymised
 résumés (8 boardwatch + 5 job-apps decoys) rendered-page-only. All five he judged WORSE were job-apps decoys;
 all three he judged BETTER were boardwatch (Perplexity/Anthropic/Figma); the other 5 boardwatch were on-par.

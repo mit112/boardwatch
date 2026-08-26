@@ -7057,6 +7057,29 @@ Lever 0.57% · **iCIMS 0.44%** · Eightfold 0.28% · ADP 0.18% · everything els
 providers cover **15.9%** of that corpus. The standing "Oracle+iCIMS ≈ 45% of the non-six tail" was a share
 of a small tail, not of the market — they are ~1.3% combined, which is why D-311 builds no adapters.
 
-**boardwatch's own discovery rate** (live store, same day): **3,989 new open postings/day** over 7 days, of
-which **515/day** are title-confirmed `swe`; last 24h 7,894 new / 895 `swe`. Open corpus 48,285. Volume was
-never the constraint — overlap and the delivery cap were.
+**THE END-OF-LINE NUMBER — the only one to quote (owner ruling, D-312).** Affirmatively **`eligible`** +
+software + in-band + US + not-duplicate + not-already-handled, measured through `top --no-record` and `stats`:
+
+| population | per day | note |
+|---|---|---|
+| **affirmatively `eligible`** | **~60** | **THE metric.** JD states requirements and they are met |
+| `uncertain` (abstain) | ~82 | JD states NO gating requirement; **never** add this to the row above |
+| delivered résumés | 8–10 | the deliberate `N` cap, not a discovery limit |
+
+Gate cascade behind it, from 48,285 open: −27,352 hard filters (non-US location / excluded title) −15,181
+non-software titles −923 above the entry band −660 persisted ineligible −76 duplicates −469 already handled
+→ **~3,624 ranked**, of whose top 3,000 **35.3% are `eligible`** and 64.7% `uncertain`.
+
+*Diagnostic-only, never a headline:* 3,989 new open postings/day and 515/day title-confirmed `swe`. Those are
+UPSTREAM populations — the hard US filter alone removes 57% of the corpus — and quoting the 515 as if it were
+eligible overstated yield ~8× in this session before Mit caught it. Label the population or do not print it.
+
+**Why two-thirds abstain, diagnosed.** Under the current `engine_version` `1+63c6f8fd5a3e`: `uncertain` with
+zero requirement rows **928**, `eligible` with evidence **569**, `uncertain` with evidence **24**, and
+`eligible` with zero evidence **0** — so D-296's zero-evidence-abstains fix is holding. **96.6% of abstains
+have no catalogued requirement in the JD at all**: most descriptions simply never state work auth,
+experience, clearance or degree. This is not a broken rule and not a missing profile field, so no extraction
+work recovers it — the only lever is a policy call on how to treat silence, and today silence still reaches
+the shortlist and still gets ranked. Where a requirement IS stated but unresolvable the counts are small and
+named: `scoped_years_minimum` 38, `us_citizen_required` 30, `us_citizen_or_lpr_required` 29,
+`clearable_required` 11.
