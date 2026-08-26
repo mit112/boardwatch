@@ -2,20 +2,42 @@
 
 Every request shape here is one this repo has actually made. Two of them, and no others:
 
-    GET https://hiringcafe.com/                              -- search, server-rendered
+    GET https://hiringcafe.com/jobs/{role}                   -- role search, server-rendered
+    GET https://hiringcafe.com/                              -- the same, unfaceted
     GET https://hiringcafe.com/api/job-description?id={id}   -- one body, one request
 
 No key, no cookie, no TLS bypass, no app impersonation. That last clause is why this lane
 exists at all: Indeed's free body is reachable only behind a key lifted from its iOS app with
 certificate verification switched off, so Indeed is parked and hiring.cafe took lane 1.
 
-ONE GET OF `/`, AND PAGING IS DELIBERATELY ABSENT. The response records `ssrPage`,
-`ssrPageSize` and `ssrIsLastPage`, so a second page plainly exists; the request parameter that
-turns one does NOT appear anywhere the probe reached. Inventing it would fabricate a request
-contract, which is the exact defect `lanes/dereference.py` refuses SmartRecruiters and Workday
-for. One response carries ~159 hits — four `ssrPageSize`s' worth — so the cost of refusing is
-small and the cost of guessing is a client that silently fetches the wrong thing. Paging needs
-its own probe.
+THE ROLE FACET IS A PATH, NOT A QUERY, AND `robots.txt` IS WHY (probed 2026-08-26). The
+obvious way to ask for one role is the site's own query-parameter search; it is DISALLOWED --
+`Disallow: /*?searchState=*`, alongside `Disallow: /*?page=*`. What is permitted is the path
+form: `Allow: /jobs/`, advertised in a `job-search-sitemap.xml` listing 10,000+ role pages. So
+the facet is a path segment, and `search_urls` is unit-tested on the string it builds rather
+than trusted, because the disallowed form differs from the allowed one by punctuation alone.
+
+WHY A FACET AT ALL. Unfaceted, this lane returns the general labour market: of the 282 open
+postings the armed lanes had acquired by 2026-08-26, 3 were software roles and 197 were
+explicitly not (nurse, barista, crew member, dishwasher). The downstream role gate was not at
+fault -- the lane was not rejecting software postings, it was barely surfacing any. The probed
+role page returned 20 of 20 software roles. The facets come from `profile.target_titles_json`
+via `lanes.facets`, never from a query written down here, which is what keeps the lane fit for
+a user whose targets are not software at all.
+
+A BOGUS FACET ANSWERS 200 WITH ZERO HITS, NOT 404 -- probed. So an empty result does NOT report
+itself: if the role route ever moves, every facet returns nothing, no request fails, and the
+lane reports a clean quiet day forever -- the prior art's 11-run silent outage exactly. The
+tally cannot catch it either, because with no hits nothing is ever attempted and
+`is_silent_outage` stays False. Hence EVERY facet empty raises `SearchPageError`, while one
+empty facet among several does not: that is a profile-data matter, not an outage, and raising
+would let one odd target title disable the whole lane.
+
+PAGING IS STILL DELIBERATELY ABSENT. The response records `ssrPage`, `ssrPageSize` and
+`ssrIsLastPage`, so a second page plainly exists; the request parameter that turns one does NOT
+appear anywhere the probe reached, and `robots.txt` disallows the `?page=` form regardless.
+Inventing it would fabricate a request contract, the exact defect `lanes/dereference.py`
+refuses SmartRecruiters and Workday for.
 
 `objectID` IS AN OPAQUE KEY. It looks like `{source}___{board_token}___{id}` and is exactly
 that for 128 of 160 sampled hits, which is what makes it dangerous: a round-trip test over a
@@ -36,7 +58,9 @@ it structurally cannot read these fields. The location TEXT lives nowhere else i
 from __future__ import annotations
 
 import json
+from collections.abc import Sequence
 from dataclasses import dataclass
+from itertools import zip_longest
 from typing import Any
 from urllib.parse import quote
 
@@ -59,6 +83,8 @@ LANE_PROVIDER = "hiringcafe"
 # `hiring.cafe` 308-redirects to `hiringcafe.com`; the canonical host moved since the design
 # was written. Recorded so a future reader does not "correct" it back.
 SEARCH_URL = "https://hiringcafe.com/"
+# The role route. A PATH facet, because the query form is disallowed -- see the module docstring.
+_ROLE_SEARCH_URL = "https://hiringcafe.com/jobs/"
 _JOB_DESCRIPTION_URL = "https://hiringcafe.com/api/job-description?id="
 
 # D8's ceiling on body GETs per lane per run. A hard cap rather than a pacing knob: the search
@@ -91,6 +117,23 @@ class HitIdentity:
     provider: str
     slug: str
     posting_id: str
+
+
+# One hit and the search page it was found on. The URL rides with the hit rather than being
+# tracked alongside it, so a hit can never be attributed to the wrong facet.
+_SearchEntry = tuple[str, dict[str, Any]]
+
+
+@dataclass
+class _CompanyHits:
+    """One company's hits, and the search page it was FIRST seen on.
+
+    First-seen rather than a set of every page it appeared on: `BoardSnapshot.url` is one
+    string, and a company found under three facets has no single truthful list to put there.
+    """
+
+    url: str
+    hits: list[tuple[HitIdentity, dict[str, Any]]]
 
 
 def search_hits(page_html: str) -> list[dict[str, Any]]:
@@ -157,24 +200,47 @@ def job_description_url(object_id: str) -> str:
     return f"{_JOB_DESCRIPTION_URL}{quote(object_id, safe='')}"
 
 
+def search_urls(facets: Sequence[str]) -> tuple[str, ...]:
+    """One permitted role page per facet, or the unfaceted search when there are none.
+
+    `quote` with no safe characters keeps a facet inside ONE path segment: `lanes.facets`
+    already normalizes a title to a single slug, so this cannot normally fire, but a caller
+    passing raw text must not be able to reshape the route into `/jobs/a/b`.
+
+    The no-facet fallback is the behaviour that shipped, and it is a fallback rather than an
+    error because a profile that names no target titles is a legitimate profile -- it is what
+    every user has before onboarding fills one in.
+    """
+    if not facets:
+        return (SEARCH_URL,)
+    return tuple(f"{_ROLE_SEARCH_URL}{quote(facet, safe='')}" for facet in facets)
+
+
 class HiringCafeLane:
     name = LANE_NAME
 
-    def __init__(self, posting_budget: int = DEFAULT_POSTING_BUDGET) -> None:
+    def __init__(
+        self,
+        posting_budget: int = DEFAULT_POSTING_BUDGET,
+        search_facets: Sequence[str] = (),
+    ) -> None:
         self._posting_budget = posting_budget
+        # Injected rather than read here, for the reason the registry comment in `runner.py`
+        # gives: the facets come from the user's profile row, which lives in the store, and a
+        # lane must not reach into the store to find its own configuration.
+        self._search_facets = tuple(search_facets)
 
     def collect(self, fetcher: Fetcher, admits: CompanyAdmission) -> LaneResult:
-        """One search GET, then one body GET per posting at an admitted company.
+        """One search GET per role facet, then one body GET per posting at an admitted company.
 
         `admits` is asked once per distinct `(provider, slug)`, in first-seen order, BEFORE any
         body is fetched -- the protocol's contract, and the only ordering under which the
         per-run company cap saves requests instead of discarding paid-for ones.
         """
-        result = fetcher.get(SEARCH_URL)
-        hits = search_hits(result.content.decode("utf-8", "replace"))
+        entries = self._search(fetcher)
 
         tally = AcquisitionTally()
-        by_company = _group_by_company(hits, tally)
+        by_company = _group_by_company(entries, tally)
         snapshots: list[LaneCompanySnapshot] = []
         remaining = self._posting_budget
         for (provider, slug), company_hits in by_company.items():
@@ -185,7 +251,7 @@ class HiringCafeLane:
                 # channel designed for them.
                 continue
             postings: list[RawPosting] = []
-            for identity, hit in company_hits:
+            for identity, hit in company_hits.hits:
                 if remaining <= 0:
                     # Seen, not requested. The catalog is closed, and `not_attemptable` is its
                     # only member meaning that -- its stated reason (no resolvable URL) is
@@ -209,11 +275,39 @@ class HiringCafeLane:
                         # `(source, board_token)`, so they describe one employer; the probe
                         # found `enriched_company_data.name` non-blank on 159 of 159 hits, and
                         # `company_name` falls back to `board_token` rather than to a blank.
-                        name=company_name(company_hits[0][1]),
-                        snapshot=lane_snapshot(postings, SEARCH_URL),
+                        name=company_name(company_hits.hits[0][1]),
+                        # The page this company was actually found on. Citing the unfaceted
+                        # root would name a URL a faceted run never requested.
+                        snapshot=lane_snapshot(postings, company_hits.url),
                     )
                 )
         return LaneResult(snapshots=tuple(snapshots), tally=tally)
+
+    def _search(self, fetcher: Fetcher) -> list[_SearchEntry]:
+        """Every configured search page, its hits paired with the URL they came from.
+
+        The result is INTERLEAVED across facets, round-robin, and that is load-bearing rather
+        than tidy. The body budget is spent in iteration order, so concatenating instead would
+        let the first facet consume all of it and every later target title contribute nothing --
+        a lane reporting fourteen facets while delivering only the profile's first one.
+        """
+        per_facet: list[list[_SearchEntry]] = []
+        for url in search_urls(self._search_facets):
+            result = fetcher.get(url)
+            hits = search_hits(result.content.decode("utf-8", "replace"))
+            per_facet.append([(url, hit) for hit in hits])
+
+        if self._search_facets and not any(per_facet):
+            # Not a quiet day. A bogus facet answers 200 with an empty list, so if the role
+            # route moves, every facet empties, nothing raises, and no counter moves -- the
+            # tally cannot see it either, because nothing was ever attempted. Scoped to the
+            # faceted path: it asserts something about THIS request shape, and the unfaceted
+            # fallback's behaviour is left exactly as it shipped.
+            raise SearchPageError(
+                f"every role facet returned zero hits ({len(per_facet)} searched): the role "
+                "route has moved, or none of the profile's target titles match one"
+            )
+        return [entry for row in zip_longest(*per_facet) for entry in row if entry is not None]
 
     def _fetch_posting(
         self,
@@ -268,8 +362,8 @@ def _description(content: bytes) -> str:
 
 
 def _group_by_company(
-    hits: list[dict[str, Any]], tally: AcquisitionTally
-) -> dict[tuple[str, str], list[tuple[HitIdentity, dict[str, Any]]]]:
+    entries: list[_SearchEntry], tally: AcquisitionTally
+) -> dict[tuple[str, str], _CompanyHits]:
     """Hits bucketed by `(provider, slug)`, first-seen order preserved.
 
     Grouping by identity rather than by `enriched_company_data.name` is the same point
@@ -282,9 +376,9 @@ def _group_by_company(
     body GET is the point -- `smartrecruiters.parse_posting` refuses an empty title for the
     same reason, and a lane can refuse it a whole request earlier.
     """
-    grouped: dict[tuple[str, str], list[tuple[HitIdentity, dict[str, Any]]]] = {}
+    grouped: dict[tuple[str, str], _CompanyHits] = {}
     seen: set[tuple[str, str, str]] = set()
-    for hit in hits:
+    for url, hit in entries:
         try:
             identity = hit_identity(hit)
         except UnidentifiableHit:
@@ -313,7 +407,8 @@ def _group_by_company(
             tally.record("not_attemptable")
             continue
         seen.add(key)
-        grouped.setdefault((identity.provider, identity.slug), []).append((identity, hit))
+        group = grouped.setdefault((identity.provider, identity.slug), _CompanyHits(url, []))
+        group.hits.append((identity, hit))
     return grouped
 
 

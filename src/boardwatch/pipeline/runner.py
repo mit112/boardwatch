@@ -43,6 +43,7 @@ from boardwatch.eligibility.catalog import load_rules
 from boardwatch.eligibility.preflight import current_identity
 from boardwatch.lanes.admission import CompanyBudget
 from boardwatch.lanes.base import Lane
+from boardwatch.lanes.facets import role_facets
 from boardwatch.lanes.hiringcafe import HiringCafeLane
 from boardwatch.lanes.linkedin import LinkedInLane
 from boardwatch.notify.heartbeat import send_heartbeat
@@ -88,6 +89,7 @@ from boardwatch.store.queries import (
     company_exists,
     ensure_run,
     finish_run,
+    get_profile,
     reap_stale_runs,
     upsert_lane_company,
 )
@@ -129,7 +131,13 @@ DEFAULT_TOP_N = 10
 # A lane is constructed from `Settings` rather than from nothing, so the one knob it owns —
 # `lane_posting_budget`, the ceiling on JD-body GETs it may make in a run — reaches it without
 # the lane importing config itself. `LaneResult` is the only thing it hands back.
-LaneFactory = Callable[[Settings], Lane]
+#
+# The second argument is the run's role facets, and it is passed in for a reason a default could
+# not serve: they are derived from the user's PROFILE row, which lives in the store, and a lane
+# that reached into the store to find its own search terms would be both untestable and the one
+# place a hardcoded role query could hide. Explicit at every registration site, so a new lane
+# cannot quietly forget to be multi-tenant.
+LaneFactory = Callable[[Settings, tuple[str, ...]], Lane]
 
 # The lane registry: the name a user writes in `settings.lanes_enabled` -> a factory for it. A
 # MAPPING and not a branch inside `_run_lanes`, so a second lane is one row here and no change
@@ -143,11 +151,11 @@ LaneFactory = Callable[[Settings], Lane]
 # Registered is NOT enabled: `settings.lanes_enabled` is empty by default, so nothing in this
 # map runs until an operator names it. Registration only makes a lane reachable.
 LANE_FACTORIES: dict[str, LaneFactory] = {
-    HiringCafeLane.name: lambda settings: HiringCafeLane(
-        posting_budget=settings.lane_posting_budget
+    HiringCafeLane.name: lambda settings, facets: HiringCafeLane(
+        posting_budget=settings.lane_posting_budget, search_facets=facets
     ),
-    LinkedInLane.name: lambda settings: LinkedInLane(
-        posting_budget=settings.lane_posting_budget
+    LinkedInLane.name: lambda settings, facets: LinkedInLane(
+        posting_budget=settings.lane_posting_budget, search_facets=facets
     ),
 }
 
@@ -340,6 +348,9 @@ def _run_lanes(
         # No client is constructed at all on the default path, so a run with lanes off opens no
         # extra connection pool and sends nothing anywhere.
         return reports, errors
+    # Read ONCE for the stage, not once per lane: it is the same profile for every lane, and a
+    # second read could only differ by racing a `profile set` mid-run.
+    facets = _profile_role_facets(engine)
     # ONE fetcher for the whole stage. Pacing is per-host inside it, so lanes on different hosts
     # do not block each other, and two lanes that ever shared a host would correctly serialize.
     fetcher = _lane_fetcher(settings)
@@ -350,10 +361,26 @@ def _run_lanes(
             errors.append(f"lane {name}: not a registered lane (registered: {registered})")
             continue
         try:
-            reports.append(_collect_lane(engine, settings, factory(settings), fetcher, run_id))
+            lane = factory(settings, facets)
+            reports.append(_collect_lane(engine, settings, lane, fetcher, run_id))
         except Exception as exc:  # noqa: BLE001 - additive breadth never fails the run
             errors.append(f"lane {name}: collection failed: {exc!r}")
     return reports, errors
+
+
+def _profile_role_facets(engine: Engine) -> tuple[str, ...]:
+    """The user's target titles as lane search facets, or none if there is no profile yet.
+
+    An absent profile is every store before onboarding runs, and an absent one yields NO facets
+    rather than an error: a lane is additive breadth, so it must still run unfaceted, exactly as
+    it did before the facet existed. `getattr` matches `rank.heuristic`'s read of the same
+    column, which is nullable.
+    """
+    with engine.connect() as conn:
+        row = get_profile(conn)
+    if row is None:
+        return ()
+    return role_facets(getattr(row, "target_titles_json", None))
 
 
 def _collect_lane(
