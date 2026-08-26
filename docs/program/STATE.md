@@ -17,6 +17,45 @@
 
 ## Current standing
 
+**P4 CRAFT UNDER-FILL FIXED — the daily run now fills résumés to the page (D-303, 2026-08-25).** The P4
+blind review FAILED on ~3 under-filled résumés: the daily run projected with base `projection.yaml`
+(`runner.py:848`), whose `fill_to_page` defaults False; the earlier fill fix went only to the DORMANT
+`projection.sde/ios/data.yaml` (persona routing is unwired — D-304). Fix = added `fill_to_page: true` +
+`sort_projects_by_date: true` to base `projection.yaml`, owner-reapproved (digest `87513b4d`→`e61a1956`,
+stamp on disk). Config-only; **no engine_version change, no ledger drain; freeze-safe.** Verified via a real
+render path (thin postings 3→7 entries; compiled PDF 1 page) and the whole delivered set audits clean.
+Fill overflow reviewed: it CANNOT ship 2 pages (two independent gates: select `_grow` + `run_tailor`
+re-gate). First delivered filled résumés = the first scheduled tick after the 01:25 UTC approval (run 90
+finished 01:21, pre-approval; a phantom run 91 took the id — see below), i.e. **run 92 onward**.
+
+**PERSONA ROUTING INTO THE RUN — DEFERRED by owner (D-304).** `select_persona`/`apply_persona` run only in
+the `tailor` REPORT path; the daily-run PROJECTION path is persona-blind and nothing maps
+role-family→`projection.<persona>.yaml` (those 3 files are dormant). D-303 fixed the under-fill uniformly, so
+per-persona projection is emphasis polish, not a fix — deferred; a real-discriminators redesign is future work.
+
+**PRECISION LEAK (10.3% non-SWE leads) FIXED + MERGED + LIVE (D-305, PR #166 = `cbe6df9`, 2026-08-25).**
+Two distinct leaks, two gates: (1) non-SWE families (analyst/specialist/administrator/advisor) — `role_verdict`
+returned `"uncertain"` for no-signal titles absent from the deny catalog and `top_cmd.py:350` vetoes only
+`"not_swe"`; fixed by a `_NOENG`-guarded deny in `rank/role_gate.py`'s `_DENY_FAMILIES_SOFT`. (2) eng-managers
+were a SENIORITY-gate bug — the management-word guard was comma-scoped, so the INVERTED form ("Manager, Software
+Engineering") shipped `in_band` while "Engineering Manager" was already `above_band`; the comma is the
+discriminator, fixed in `rank/seniority_gate.py`. **Ranker-only — engine_version unchanged, NO drain**
+(D-294/D-295). Opus-reviewed; verdict-neutral over 37,979 live titles (role `uncertain→not_swe` 2,150; band
+`in_band→above_band` 386; **ZERO swe demotions, ZERO backward band moves, ZERO newly-shipped**). Pulled into
+the primary tree this session, so the next scheduled tick runs it. **Cert (3 clean B1–B7 runs) counts from the
+first post-(fill+role) tick = run 92.** THREE autonomous owner calls flagged for Mit's veto (see
+`rolegate-nonswe-and-eng-manager-precision-shipped` memory): option-(b) seniority home for eng-mgrs; broad
+families; the bare-`security specialist` carve-out reversal.
+
+**FINISH-LINE INSTRUMENTATION BUILT (`.agent/2026-08-25-craft-findings/`, gitignored).** `finish_line_cert.py`
+scores B1–B7 + freeze + P6 per run (validated on run 90: all PASS incl. independent pdfinfo 1-page; only
+post_fill fails, correctly). B4 PASS + NON-VACUOUS (350 résumés / 3,426 bullets / 0 fabrications; negative
+control catches drift+bogus-id). P4 objective checks (title-seniority / register / buzzword / requirement-echo
+/ overmatch) 0 violations over delivered, non-vacuous (33 senior JDs stripped). **P6 leakage 0.00% over a FULL
+7-day window** (ledger spans 08-19→08-26). B5 guard reviewed SOUND TO CERTIFY. **Remaining for provisional
+pass: role fix live + 3 clean post-(fill+role) scheduled runs + the owner P4 blind review** (assembler ready:
+`build_p4_blind_sample.py`, filters delivered by `e61a1956`).
+
 **BOARD FLEET CLEANED + DOCTOR DETECTS MIGRATIONS (2026-08-24, D-300/D-301).** The 135 watched boards were
 diagnosed: exactly **17 contributed zero** — not the 59 STATE claimed, which was a `postings_listed`-on-304
 measurement artifact (the 118 `ok` boards hold 39,253 open postings). Root cause was ATS migration; **6
@@ -33,13 +72,12 @@ once. Fixed and merged (D-287). The launchd job now fires **eight times a day** 
 any absolute comparison against that number is void. The gate counts consecutive clean **ticks**, not
 launchd invocations.
 
-**GATE P3 IS MET — 8 CONSECUTIVE CLEAN SCHEDULED TICKS (runs 71-78).** All eight carry `runs.status='ok'` at
-the scheduled 3h slots (16:00 UTC 2026-08-23 through 13:00 UTC 2026-08-24), each `fatal=None`,
-`reconciles=True`, every lead a PDF, `skipped_not_new=0` so every lead net-new. Run 70 (13:00 UTC 08-23) was
-the last failure. **Verified from the live `runs` table and the per-run funnels, not from this file's count**
-— STATE lagged because the job fires 8×/day and is written once per session. **7 required, 8 clean → MET;
-Gate P4 is now UNBLOCKED.** Only a SCHEDULED tick counts — a manual `run --project` moves nothing; a failed
-unattended run resets the streak.
+**GATE P3 IS MET — 20 CONSECUTIVE CLEAN SCHEDULED TICKS (runs 71-90), verified 2026-08-26.** All twenty carry
+`runs.status='ok'` with `boards_attempted>0` at the scheduled 3h slots; run 70 (13:00 UTC 08-23) was the last
+failure. **Verified from the live `runs` table + per-run funnels, not this file's count** — STATE lagged
+because the job fires 8×/day and is written once per session. **7 required, 20 clean → MET.** Only a SCHEDULED
+tick counts (`boards_attempted>0`) — a manual `run` and the phantom **run 91** (see below) move nothing; a
+failed unattended run resets the streak.
 
 > **A MANUAL RUN RACING A TICK EXITS 2 AND RESETS GATE P3**, and at 8 fires a day that is 8× likelier than
 > it was. Check `launchctl print gui/$(id -u)/com.boardwatch.run | grep state` before starting one by hand.
@@ -47,8 +85,16 @@ unattended run resets the streak.
 
 **The headline number: 0.** Zero job applications have ever been sent (`applications` has 0 rows) — the
 machine produces leads, it never applies (out of scope). Against that: **4 published releases, latest
-`0.5.0`**, ~53k lines of source, **7,464 tests**, 71 leaf CLI commands, 6 ATS providers, a **~1.4 GB**
-store holding 41,006 postings / 35,721 open.
+`0.5.0`**, ~53k lines of source, **7,584+ tests**, 71 leaf CLI commands, 6 ATS providers, a **~1.4 GB**
+store holding **51,004 postings / 43,286 open** (2026-08-26).
+
+> **PHANTOM run 91 (benign, mine).** A `boardwatch tailor run 13549` verification without a scratch
+> `BOARDWATCH_DATA_DIR` called `ensure_run` and wrote to the LIVE store: run 91 (empty, `boards_attempted=0`,
+> 36ms) + one `artifacts` row (id 498, uri→`/tmp`). NO `job_dispositions`, posting 13549 NOT marked handled,
+> dedup/ledger UNAFFECTED, streak intact (the `boards_attempted>0` filter excludes it). Left in place (prod
+> store has no rollback snapshot; deleting is riskier than an empty row). Consequence: next scheduled tick is
+> **run 92**. Lesson: to verify projection against real postings with the LIVE edited config you must hit the
+> live store — use read-only `resume project`, never `tailor run` (it writes a run+artifact).
 
 **A BOUNDED PUBLIC-READINESS EFFORT SHIPPED AND `0.5.0` IS LIVE (D-299).** Scope was exactly three
 workstreams — onboarding, README/ease-of-use, release currency — no feature expansion. `boardwatch guide`
@@ -178,10 +224,15 @@ Immediate steps, in order:
    the company **slug** (`externalApply`=0, no apply URL) and sends only `f_TPR=r86400` (`f_WT=2` ignored). No
    capture committed. **Owed before arming:** a live probe to confirm the RECONSTRUCTED card selectors and to
    pin `start` paging (the client makes one search GET; paging and a keywords/location facet are deferred).
-2. **Gate P6's 7-day leakage window completes ~2026-08-26**, after which the provisional pass (3 frozen
-   B1–B7 runs) can be certified. B1/B2/B3/B6/B7 are already demonstrated on frozen runs 72-78; **B5 is now
-   scoreable and merged (D-302)**; only B4's n≥100 audit and the P4 blind craft review remain owner-gated —
-   no build left.
+2. **PROVISIONAL PASS is close — only runtime + the owner blind review remain (2026-08-26).** Done this
+   session: P4 under-fill fixed+live (D-303); role/seniority precision fixed+live (D-305, #166); B4 PASS +
+   non-vacuous (350/3,426/0); P4 objective checks 0 violations (non-vacuous); B5 guard reviewed sound; **P6
+   leakage 0.00% over a full 7-day window** (08-19→08-26); B1/B2/B3/B6/B7 demonstrated on run 90 via
+   `.agent/2026-08-25-craft-findings/finish_line_cert.py`. **Remaining: (a) 3 clean post-(fill+role) B1–B7
+   scheduled runs — count from run 92 (the first tick after both fixes went live), score with
+   `finish_line_cert.py --runs 92 93 94`; (b) the owner P4 BLIND CRAFT REVIEW — assemble with
+   `build_p4_blind_sample.py` once run 92+ deliver ≥10 filled distinct-company résumés.** No build left.
+   *(The `.agent/2026-08-25-craft-findings/` harnesses are gitignored working material — re-derive if pruned.)*
 
 **Arming Part 4a's ~898 boards is a SEPARATE owner decision, NOT taken here.** The capped watched-write ramp
 is **already shipped** (D-300 correction): `companies discover` caps at `lane_new_companies_per_run` and
@@ -249,7 +300,7 @@ records it and the run still does not fail. Clearance IS a blocker (D-257). Seni
 | P1 Résumé artifact gate | **COMPLETE** | **MET** (D-032/033) |
 | P2 Profile + keystone | items 1–7 shipped; item 8 NOT STARTED | **MET AS RECONCILED** (D-075) |
 | P3 Unattended one command | **COMPLETE, INSTALLED, FIRING** at ~3h (D-288) | **MET** — 8 consecutive clean scheduled ticks (runs 71-78), verified from the `runs` table + funnels |
-| P4 Craft gate | **COMPLETE** | **NOT MET — now UNBLOCKED** (P3 met) — the owner's blind craft review |
+| P4 Craft gate | **COMPLETE** (under-fill fixed D-303; objective anti-slop 0 violations, non-vacuous) | **NEARLY MET** — objective half certified; awaiting the owner's BLIND CRAFT REVIEW on post-fill résumés (run 92+) |
 | P5 Eligibility decides | **COMPLETE** | **MET** — INELIGIBLE precision 16/16, 0 span violations |
 | P6 Liveness + dedup | **BUILD COMPLETE** (D-110/111/113); leakage report shipped (D-283) | **3 of 4** — liveness MET (D-281), leakage measurable and reading **0.00%** but needs a 7-day ledger span (~2026-08-26) |
 | 14-day acceptance | not started | starts after P6 |
