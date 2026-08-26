@@ -37,6 +37,7 @@ from boardwatch.store.identity_queries import (
     load_identities,
     load_identity_inputs,
 )
+from boardwatch.store.queries import body_is_empty
 from boardwatch.store.tables import (
     applications,
     artifacts,
@@ -150,15 +151,16 @@ def count_stub_postings(conn: Connection) -> int:
     """Open postings whose JD body is empty after trimming — the stub-rate numerator (P0 item 6).
 
     Denominated over `count_open_postings`, so the two share the corpus head. `body_text` is
-    NOT NULL, so a stub is a whitespace-only body, not a missing row. The two-arg `trim` names
-    the strip set explicitly — SQLite's one-arg `trim` removes spaces ONLY, so a body of tabs
-    or newlines would otherwise slip through as non-empty."""
+    NOT NULL, so a stub is a whitespace-only body, not a missing row. The predicate itself is
+    `queries.body_is_empty` — shared with the ranking surfaces, which fail the zero-signal rule
+    OPEN on exactly the postings this instrument counts, so the two can never disagree about
+    which body is empty."""
     return int(
         conn.execute(
             select(func.count())
             .select_from(postings)
             .where(postings.c.status == "open")
-            .where(func.trim(postings.c.body_text, " \t\n\r\f\v") == "")
+            .where(body_is_empty())
         ).scalar_one()
     )
 

@@ -25,6 +25,7 @@ from sqlalchemy import Engine, insert, select
 from boardwatch.core.settings import Settings
 from boardwatch.eligibility.facts import Facts, Policy, facts_payload
 from boardwatch.eligibility.preflight import run_eligibility
+from boardwatch.extract.preflight import run_preflight
 from boardwatch.rank.heuristic import profile_view_from_row
 from boardwatch.reports.notify import select_new_matches
 from boardwatch.store.db import ensure_schema, get_engine
@@ -34,8 +35,22 @@ from boardwatch.store.tables import companies, jobs, posting_events, posting_ver
 
 NOW = datetime(2026, 7, 30, 12, 0, 0)
 
-DEGREE_BODY = "We are hiring a backend engineer. A Bachelor's degree is required."
+# The trailing skill sentence is load-bearing, not decoration. "Ineligible Role" is `uncertain`
+# to the role gate and the first two sentences yield no recognised taxonomy term, so once the
+# extraction rows exist the zero-signal veto removes this posting from `top` REGARDLESS of its
+# eligibility verdict -- and `test_selection_agrees_with_top_on_ineligible_hiding` would then
+# assert an absence the bucket it names had nothing to do with.
+DEGREE_BODY = (
+    "We are hiring a backend engineer. A Bachelor's degree is required. Python experience helps."
+)
 PLAIN_BODY = "Python and Go services with PostgreSQL."
+# `uncertain` by title with a substantive body that yields no recognised term -- the exact pair
+# the zero-signal veto exists for, and the only combination that reaches it.
+ZERO_SIGNAL_TITLE = "Water Spider"
+ZERO_SKILL_BODY = (
+    "We are looking for a motivated team member to join our growing operation. You will "
+    "coordinate with partners, keep the floor moving, and report to the shift lead."
+)
 
 
 def _settings(tmp_path: Path) -> Settings:
@@ -346,3 +361,85 @@ def test_select_new_matches_survives_more_new_ids_than_the_bound_parameter_cap(
         profile = profile_view_from_row(get_profile(conn))
         result = select_new_matches(conn, 0, profile, settings, now=NOW)
     assert [item.posting_id for item in result.items] == [open_id]
+
+
+def _zero_signal_titles(tmp_path: Path, *, include_zero_signal: bool = False) -> list[str]:
+    """Seed one zero-signal posting and one ordinary one; return what notify would push.
+
+    `run_preflight` is called ON PURPOSE, and it is what makes these tests non-vacuous.
+    `select_new_matches` never runs it -- that is the module's contract and a separate test
+    guards it -- so on a bare DB no extraction row exists, the rule abstains as `unmeasured`,
+    and a veto test would pass without the veto existing. In production the rows are there:
+    every `scan` ranks, and ranking backfills them.
+    """
+    settings = _settings(tmp_path)
+    engine = _engine(settings)
+    _seed_profile(engine)
+    _seed_posting(engine, title=ZERO_SIGNAL_TITLE, slug="zero", body=ZERO_SKILL_BODY)
+    _seed_posting(engine, title="Backend Engineer", slug="ordinary", body=PLAIN_BODY)
+    run_preflight(engine, settings)
+    with engine.connect() as conn:
+        profile = profile_view_from_row(get_profile(conn))
+        result = select_new_matches(
+            conn, 0, profile, settings, include_zero_signal=include_zero_signal
+        )
+    return sorted(item.title for item in result.items)
+
+
+def test_notify_does_not_push_a_zero_signal_posting(tmp_path: Path) -> None:
+    """`top` refuses to show this posting. If notify pushed it anyway it would land in the
+    desktop/webhook channel AND advance the cursor past it -- a delivered lead no drain can
+    bring back, on 35.9% of `uncertain` postings, permanently."""
+    assert _zero_signal_titles(tmp_path) == ["Backend Engineer"]
+
+
+def test_notify_zero_signal_drain_reveals_it(tmp_path: Path) -> None:
+    """The other half: suppressed, not lost. Without this the assertion above would hold if
+    the posting had been dropped for any unrelated reason."""
+    assert _zero_signal_titles(tmp_path, include_zero_signal=True) == [
+        "Backend Engineer", ZERO_SIGNAL_TITLE
+    ]
+
+
+def test_notify_still_pushes_a_posting_whose_body_was_never_read(tmp_path: Path) -> None:
+    """Fail-open, mirroring `top`: an abstain is never a suppression. Same corpus as above with
+    the backfill NOT run, which is the state a lagging extraction produces -- and, because
+    notify never runs the preflight itself, the state every OTHER test in this module sits in.
+    """
+    settings = _settings(tmp_path)
+    engine = _engine(settings)
+    _seed_profile(engine)
+    _seed_posting(engine, title=ZERO_SIGNAL_TITLE, slug="zero", body=ZERO_SKILL_BODY)
+    with engine.connect() as conn:
+        profile = profile_view_from_row(get_profile(conn))
+        result = select_new_matches(conn, 0, profile, settings)
+    assert [item.title for item in result.items] == [ZERO_SIGNAL_TITLE]
+
+
+def test_notify_agrees_with_top_on_zero_signal_hiding(tmp_path: Path) -> None:
+    """The parity this defect broke, counted through the OTHER path. Every ranker default is
+    mirrored into notify; a default that is not makes `notify` and `top` disagree about the
+    same DB state, which is the disagreement this test exists to refuse."""
+    from boardwatch.cli.top_cmd import rank_open_postings
+
+    settings = _settings(tmp_path)
+    engine = _engine(settings)
+    _seed_profile(engine)
+    zero_id, _ = _seed_posting(
+        engine, title=ZERO_SIGNAL_TITLE, slug="zero", body=ZERO_SKILL_BODY
+    )
+    ordinary_id, _ = _seed_posting(
+        engine, title="Backend Engineer", slug="ordinary", body=PLAIN_BODY
+    )
+    top_results = rank_open_postings(engine, settings, limit=10, record_surfaced=False)
+    top_ids = {p.posting_id for p in top_results.visible}
+    with engine.connect() as conn:
+        profile = profile_view_from_row(get_profile(conn))
+        notify_result = select_new_matches(conn, 0, profile, settings)
+    notify_ids = {item.posting_id for item in notify_result.items}
+
+    assert top_results.hidden_zero_signal == 1, "the veto must actually have fired in `top`"
+    assert zero_id not in top_ids
+    assert zero_id not in notify_ids
+    assert ordinary_id in top_ids
+    assert ordinary_id in notify_ids

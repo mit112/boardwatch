@@ -44,6 +44,7 @@ def stats(
     pipe.add_row("seen (open)", str(report.seen))
     pipe.add_row("passes filters", str(report.passes_filters))
     pipe.add_row("  of which non-software (hidden from top)", str(report.non_swe))
+    pipe.add_row("  of which zero signal (hidden from top)", str(report.zero_signal))
     pipe.add_row(
         "  of which over target band (hidden from top)", str(report.over_seniority)
     )

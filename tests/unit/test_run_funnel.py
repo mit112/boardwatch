@@ -489,8 +489,16 @@ def test_the_shortlist_stage_reconciles_with_the_zero_signal_bucket() -> None:
     assert "--include-zero-signal" in drop.note  # the drain is named where the count is
 
 
-def test_the_unmeasured_signal_abstain_is_reported_and_never_subtracted() -> None:
-    """`signal_unmeasured` counts postings that PASSED, so it must not be a `Drop`.
+def test_the_unmeasured_signal_abstain_is_reported_and_never_subtracted(tmp_path: Path) -> None:
+    """`signal_unmeasured` counts postings that PASSED, so it must not be a `Drop` — AND it has
+    to reach the durable artifact anyway.
+
+    Both halves, because pinning only the negative is what let the counter go nowhere at all.
+    `zero_signal_uncertain: 0` is ambiguous between "no such posting" and "the rule never got
+    the input it reads", and resolving that ambiguity is the ONLY reason this counter exists —
+    so a value that lives in memory and reaches no `Drop`, no note and no JSON key defeats it
+    entirely. Asserted in BOTH rendered halves: absence from the drops is not evidence of
+    presence anywhere else, and a machine consumer reads the JSON, not the prose.
 
     Set NON-ZERO against a `considered` that excludes it. If it were ever mirrored as a drop
     the stage would subtract it twice and `reconciled` would go False here.
@@ -502,6 +510,18 @@ def test_the_unmeasured_signal_abstain_is_reported_and_never_subtracted() -> Non
     assert shortlist.entered == 10
     assert shortlist.reconciled is True
     assert not [item for item in shortlist.drops if item.reason == "signal_unmeasured"]
+
+    # The COUNT, not just the name: a renderer that names the bucket and drops the figure
+    # answers nothing from the artifact alone.
+    body = funnel_to_markdown(report)
+    assert "`signal_unmeasured`: 3" in body
+
+    written = write_run_funnel(report, tmp_path)
+    payload = json.loads(written.json_path.read_text())
+    shortlist_json = next(item for item in payload["stages"] if item["name"] == "shortlist")
+    assert "`signal_unmeasured`: 3" in shortlist_json["note"]
+    # And it is still not a drop on the machine-readable side either.
+    assert "signal_unmeasured" not in {drop["reason"] for drop in shortlist_json["drops"]}
 
 
 def test_funnel_carries_run_scoped_attribution() -> None:

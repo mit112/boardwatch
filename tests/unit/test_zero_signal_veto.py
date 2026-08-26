@@ -13,6 +13,16 @@ the veto turns the rule into "veto everything un-extracted". Confirmed 0 of 48,2
 postings currently lack an extraction row, so the two states are indistinguishable on today's
 data and no ordinary test would notice — which is why
 `test_a_posting_with_no_extraction_row_at_all_still_ships` builds the state deliberately.
+
+**And the SECOND way not to have read a body, which is the one that reaches production.**
+`extract/preflight.py` backfills an extraction row for every open posting regardless of body
+content, and `taxonomy.write_extraction` writes `{"skills": []}` for a whitespace-only body —
+so a stub posting always HAS a row, `extraction is None` never fires for it, and reading that
+row as "0 recognised terms" would veto it on a claim nothing earned. That is not hypothetical:
+`store/run_funnel_queries.count_stub_postings` exists because a drifting lane adapter lands
+empty bodies, and the veto reading them as noise is exactly how the "gate went inert" alarm
+would fail to sound. `test_an_empty_jd_body_is_never_read_as_zero_signal` and its ranker-level
+twin are the tests for it.
 """
 
 from __future__ import annotations
@@ -54,6 +64,11 @@ ZERO_SKILL_BODY = (
 # systems` is the entire yield of the real Implementation Engineer body this stands in for.
 ONE_SKILL_BODY = "You will work on distributed systems supporting our platform partners."
 MANY_SKILL_BODY = "Strong Python and SQL experience, with Docker in production."
+# A stub: whitespace only, which is what a drifting lane adapter lands. `body_text` is NOT
+# NULL, so this — not a missing row — is the shape an empty JD actually takes in the store,
+# and it is the shape `count_stub_postings` counts. The tabs and newlines are deliberate:
+# SQLite's one-arg `trim` strips spaces only, so a space-only body would not discriminate.
+EMPTY_BODY = " \t\n\r "
 
 
 @pytest.fixture()
@@ -130,7 +145,7 @@ def _accounted(results: RankedResults) -> int:
 
 
 # ---------------------------------------------------------------------------------------
-# The rule itself. Four combinations of {role} x {body signal}, plus the two abstain shapes.
+# The rule itself. Four combinations of {role} x {body signal}, plus all three abstain shapes.
 # ---------------------------------------------------------------------------------------
 
 
@@ -146,40 +161,69 @@ def test_the_titles_this_module_relies_on_still_carry_the_role_verdicts_it_assum
 
 def test_only_uncertain_and_zero_skills_is_vetoed() -> None:
     """The four combinations. Three of them must NOT veto, and each for its own reason."""
-    assert zero_signal_verdict("uncertain", {"skills": []})[0] == "veto"
-    assert zero_signal_verdict("uncertain", {"skills": ["Distributed systems"]})[0] == "pass"
-    assert zero_signal_verdict("swe", {"skills": []})[0] == "pass"
-    assert zero_signal_verdict("swe", {"skills": ["Python"]})[0] == "pass"
+    assert zero_signal_verdict("uncertain", {"skills": []}, body_empty=False)[0] == "veto"
+    assert zero_signal_verdict(
+        "uncertain", {"skills": ["Distributed systems"]}, body_empty=False
+    )[0] == "pass"
+    assert zero_signal_verdict("swe", {"skills": []}, body_empty=False)[0] == "pass"
+    assert zero_signal_verdict("swe", {"skills": ["Python"]}, body_empty=False)[0] == "pass"
     # `not_swe` is the role gate's own bucket and is already gone by this point; asserted so
     # nobody widens the rule to it and quietly changes which counter a posting lands in.
-    assert zero_signal_verdict("not_swe", {"skills": []})[0] == "pass"
+    assert zero_signal_verdict("not_swe", {"skills": []}, body_empty=False)[0] == "pass"
 
 
 def test_exactly_one_recognised_term_survives() -> None:
     """The threshold is exactly zero and is not tunable. At <=1 this posting is dropped, and
     the measured loss rate more than triples."""
-    assert zero_signal_verdict("uncertain", {"skills": ["Distributed systems"]}) == ("pass", "")
+    assert zero_signal_verdict(
+        "uncertain", {"skills": ["Distributed systems"]}, body_empty=False
+    ) == ("pass", "")
 
 
 def test_a_missing_extraction_is_not_zero_skills() -> None:
     """The distinction the whole rule rests on: "we looked and found nothing" is a claim, and
     "nothing looked" is the absence of one. Only the first may fire."""
-    verdict, reason = zero_signal_verdict("uncertain", None)
+    verdict, reason = zero_signal_verdict("uncertain", None, body_empty=False)
     assert verdict == "unmeasured"
     assert "no taxonomy extraction" in reason
     # An extraction whose payload has no skills list is unreadable, not empty. Same treatment.
-    assert zero_signal_verdict("uncertain", {})[0] == "unmeasured"
-    assert zero_signal_verdict("uncertain", {"skills": None})[0] == "unmeasured"
+    assert zero_signal_verdict("uncertain", {}, body_empty=False)[0] == "unmeasured"
+    assert zero_signal_verdict("uncertain", {"skills": None}, body_empty=False)[0] == "unmeasured"
 
 
-def test_the_reason_string_distinguishes_the_two_states() -> None:
-    """Both are auditable, and they must never read the same: one hides a posting and the
-    other declines to. A shared reason string would make an outage look like a clean gate."""
-    vetoed = zero_signal_verdict("uncertain", {"skills": []})[1]
-    unmeasured = zero_signal_verdict("uncertain", None)[1]
-    assert vetoed != unmeasured
+def test_an_empty_jd_body_is_never_read_as_zero_signal() -> None:
+    """The state that actually reaches production, and the one an `extraction is None` guard
+    cannot see.
+
+    The preflight backfills a row for EVERY open posting whatever its body, and
+    `write_extraction` writes `{"skills": [], "categories": {}}` for a whitespace-only one. So
+    a stub posting arrives here with a present, well-formed, empty payload — identical to a
+    substantive body that recognised nothing — and only `body_empty` separates them. Reading it
+    as a veto would claim 0 recognised terms in a body that was never there.
+    """
+    verdict, reason = zero_signal_verdict("uncertain", {"skills": []}, body_empty=True)
+    assert verdict == "unmeasured"
+    assert reason == "empty JD body — nothing to read"
+    # `swe` still short-circuits first: an empty body under a software title is not this
+    # rule's population and must not inflate its abstain rate.
+    assert zero_signal_verdict("swe", {"skills": []}, body_empty=True)[0] == "pass"
+
+
+def test_the_reason_string_distinguishes_all_three_states() -> None:
+    """Three states, three reasons, no two alike. One hides a posting; the other two decline
+    to, for different causes that call for different operator action — a stale backfill clears
+    itself on the next ranking command, a board serving empty bodies does not. A shared or
+    borrowed reason string would make either outage look like a clean gate."""
+    vetoed = zero_signal_verdict("uncertain", {"skills": []}, body_empty=False)[1]
+    no_row = zero_signal_verdict("uncertain", None, body_empty=False)[1]
+    empty_body = zero_signal_verdict("uncertain", {"skills": []}, body_empty=True)[1]
+    assert len({vetoed, no_row, empty_body}) == 3
     assert "0 recognised requirement terms" in vetoed
-    assert "body never read" in unmeasured
+    assert "body never read" in no_row
+    assert "empty JD body" in empty_body
+    # The claim the veto makes is the one neither abstain may borrow.
+    assert "0 recognised requirement terms" not in no_row
+    assert "0 recognised requirement terms" not in empty_body
 
 
 # ---------------------------------------------------------------------------------------
@@ -278,16 +322,71 @@ def test_the_unmeasured_abstain_is_not_a_drop(env: Path) -> None:
     assert _accounted(results) == results.considered == 1
 
 
+def test_an_empty_jd_body_abstains_through_the_whole_ranker(env: Path) -> None:
+    """The production path, end to end, with the preflight LEFT RUNNING.
+
+    This is the difference between this test and the two above: they suppress the backfill to
+    build a missing row, a state the live corpus cannot reach. Here the backfill runs exactly
+    as it does in production and writes `{"skills": [], "categories": {}}` over a whitespace-
+    only body — so the posting arrives at the rule with a present, well-formed, EMPTY payload
+    that is byte-identical to the one a substantive body with no recognised term produces.
+
+    The guard the reviewer found relies on `extraction is None`, which never fires here. So
+    against the unfixed ranker this posting lands in `hidden_zero_signal` with
+    `signal_unmeasured` at 0 — a lane serving stubs reading as clean noise removal, and the
+    "gate went inert" alarm silent.
+    """
+    results = _rank(env, [
+        ("Backend Engineer", MANY_SKILL_BODY),
+        (UNCERTAIN_NOISE, EMPTY_BODY),
+    ])
+    assert results.hidden_zero_signal == 0, "an empty body must never be read as zero signal"
+    assert UNCERTAIN_NOISE in _titles(results)
+    assert results.signal_unmeasured == 1
+    assert _accounted(results) == results.considered == 2
+
+
+def test_the_empty_body_row_carries_its_own_reason_not_the_missing_row_one(env: Path) -> None:
+    """The counter says the rule was inert; only the reason says WHY, and the two causes call
+    for different action — a stale backfill clears itself on the next ranking command, a board
+    serving empty bodies does not. A shared reason string would collapse them."""
+    results = _rank(env, [(UNCERTAIN_NOISE, EMPTY_BODY)])
+    row = results.visible[0]
+    assert row.zero_signal == "unmeasured"
+    assert row.zero_signal_reason == "empty JD body — nothing to read"
+
+
 def test_the_drain_restores_the_vetoed_postings(env: Path) -> None:
-    """Every quarantine needs a re-entry path, shipped in the same change as the quarantine."""
-    rows = [
+    """Every quarantine needs a re-entry path, shipped in the same change as the quarantine.
+
+    BOTH halves, or this test is vacuous: the closed half alone duplicates
+    `test_a_zero_signal_posting_is_vetoed_and_counted` and would pass identically if
+    `include_zero_signal` were deleted from the codebase. The open half is what proves the
+    postings were suppressed rather than lost.
+    """
+    # ONE seeded corpus, ranked twice: `_rank` seeds, and seeding the same data_dir twice
+    # collides on the company's UNIQUE (provider, slug). Both reads are `record_surfaced=False`,
+    # so neither consumes the queue and the two are genuinely the same corpus.
+    engine = _seed(env, [
         ("Backend Engineer", MANY_SKILL_BODY),
         (UNCERTAIN_NOISE, ZERO_SKILL_BODY),
         (UNCERTAIN_NOISE_2, ZERO_SKILL_BODY),
-    ]
-    closed = _rank(env, rows)
+    ])
+    closed = rank_open_postings(engine, _settings(env), limit=50, record_surfaced=False)
     assert closed.hidden_zero_signal == 2
     assert len(closed.visible) == 1
+
+    opened = rank_open_postings(
+        engine, _settings(env), limit=50, record_surfaced=False, include_zero_signal=True
+    )
+    assert opened.hidden_zero_signal == 0
+    assert len(opened.visible) == 3
+    # Same corpus, same postings — the drain moved them between buckets, it did not conjure
+    # them. Asserting the identity in both modes is what makes that claim rather than assuming.
+    assert sorted(_titles(opened)) == sorted(
+        ["Backend Engineer", UNCERTAIN_NOISE, UNCERTAIN_NOISE_2]
+    )
+    assert _accounted(opened) == opened.considered == 3
 
 
 def test_a_drained_posting_names_what_triggered_it(env: Path) -> None:

@@ -60,7 +60,7 @@ from boardwatch.store.identity_queries import (
     load_identity_inputs,
 )
 from boardwatch.store.ledger_queries import live_dispositions, record_disposition
-from boardwatch.store.queries import current_posting_versions, get_profile
+from boardwatch.store.queries import body_is_empty, current_posting_versions, get_profile
 from boardwatch.store.regroup import job_anchors
 from boardwatch.store.run_funnel_queries import posting_ids_judged_this_run
 from boardwatch.store.tables import companies, extractions, posting_events, postings
@@ -148,12 +148,18 @@ class RankedResults:
     The full enumeration, including the sites deliberately NOT touched and why, is in
     `docs/superpowers/plans/2026-08-19-seniority-gate.md` and the spec it cites.
 
-    `hidden_zero_signal` walked that list and reached every site except two, both deliberate:
-    the empty-result early-return guard — which `hidden_hard_filter`, `hidden_duplicate`,
+    `hidden_zero_signal` walked that list and reached every site except one, deliberate: the
+    empty-result early-return guard — which `hidden_hard_filter`, `hidden_duplicate`,
     `hidden_handled` and `hidden_applied` also skip, because `_print_hidden_notices` runs on
-    that path regardless and the bucket is therefore never silent — and `reports/notify.py`,
-    whose digest re-derives the role gate from the title alone and has no extraction row to
-    read, so the rule is not computable there.
+    that path regardless and the bucket is therefore never silent.
+
+    `reports/notify.py` IS one of the sites, and the reverse was claimed here first: that its
+    digest re-derives the role gate from the title alone and has no extraction row to read.
+    It has one — it selects `extractions.c.json` through the same outer join and scores from
+    it — so the rule is computable there, and without it `notify` would push a posting `top`
+    refuses to show and advance its cursor past it, on 35.9% of `uncertain` postings.
+    `reports/stats.py` is a site for the same reason `hidden_non_swe` is: it re-derives this
+    chain IN ORDER, so a posting that is zero-signal is not also counted as over-band.
 
     The stage `reconciled` identities catch a miss in the `Drop` lists and in the `runner.py`
     mapping — at runtime, not statically. **Nothing catches a miss in `_shortlist_line`**, which
@@ -165,10 +171,10 @@ class RankedResults:
     hidden_ineligible: int
     hidden_non_swe: int = 0
     # Dropped because NEITHER the title nor the body carried any recognised signal: the role
-    # gate abstained (`uncertain`) AND the taxonomy extraction ran and recognised exactly zero
-    # terms. A genuine DROP and part of the identity above, modelled on `hidden_over_seniority`.
-    # Drained by `--include-zero-signal`. A posting with NO extraction row is never counted
-    # here — that lands in `signal_unmeasured` and still ships.
+    # gate abstained (`uncertain`) AND there was a body AND its taxonomy extraction ran and
+    # recognised exactly zero terms. A genuine DROP and part of the identity above, modelled on
+    # `hidden_over_seniority`. Drained by `--include-zero-signal`. A posting with an EMPTY body
+    # or NO extraction row is never counted here — both land in `signal_unmeasured` and ship.
     hidden_zero_signal: int = 0
     # Dropped by the title seniority gate: the title names a band above `target_seniority_band`
     # (D-246). Only a confident word, roman numeral, or bound-scheme hit lands a posting here —
@@ -182,8 +188,8 @@ class RankedResults:
     # fire is a monitoring failure, so this is surfaced as a number rather than as silence.
     uncertain_band: int = 0
     # The zero-signal veto's abstain rate: `uncertain`-titled postings whose body signal could
-    # not be READ, because no taxonomy extraction exists at the current version (or its payload
-    # carries no skills list). REPORTED, NEVER DROPPED, and deliberately NOT part of the
+    # not be READ, because the JD body is empty, or no taxonomy extraction exists at the current
+    # version, or its payload carries no skills list. REPORTED, NEVER DROPPED, and NOT part of the
     # reconciliation identity above — these postings are in `visible` already. It exists because
     # `hidden_zero_signal == 0` is otherwise ambiguous between "no such posting" and "the
     # extraction backfill is not running, so the gate is inert", and an inert gate that looks
@@ -318,6 +324,12 @@ def rank_open_postings(
                 companies.c.provider,
                 companies.c.slug,
                 extractions.c.json.label("extraction_json"),
+                # The zero-signal rule's third input, computed in SQLite rather than by
+                # selecting `body_text` — the largest column in the schema, over every open
+                # posting. A row with an empty body has an extraction row like any other (the
+                # preflight backfills unconditionally), so this flag is the only thing that
+                # separates "read the body, found nothing" from "there was no body".
+                body_is_empty().label("body_empty"),
             )
             .join(companies, postings.c.company_id == companies.c.id)
             .outerjoin(
@@ -387,12 +399,16 @@ def rank_open_postings(
             hidden_non_swe += 1
             continue
         # The zero-signal rule (see `role_gate.zero_signal_verdict`): the title abstained AND
-        # the body's extraction ran and recognised nothing. It sits HERE, beside the role gate
-        # whose abstain it consumes, and reads `row.extraction_json` — which the `select(...)`
-        # above already fetches, so the value is available at this point and no read had to
-        # move. `skills` is derived from the same column ~20 lines below; that later line is
-        # the SCORE's input and is deliberately left where it is.
-        zero_signal, zero_signal_reason = zero_signal_verdict(role, row.extraction_json)
+        # there was a body AND its extraction ran and recognised nothing. It sits HERE, beside
+        # the role gate whose abstain it consumes, and reads `row.extraction_json` — which the
+        # `select(...)` above already fetches, so that value is available at this point and no
+        # read had to move. `skills` is derived from the same column ~20 lines below; that later
+        # line is the SCORE's input and is deliberately left where it is. `body_empty` is a
+        # boolean computed in SQLite by the same `select(...)`, so the emptiness check costs no
+        # transfer of the body itself.
+        zero_signal, zero_signal_reason = zero_signal_verdict(
+            role, row.extraction_json, body_empty=bool(row.body_empty)
+        )
         if zero_signal == "unmeasured":
             # Counted, never dropped, for the same reason `uncertain_band` is: the rule could
             # not fire on this row, and an unreported abstain is exactly the monitoring failure
@@ -796,9 +812,10 @@ def _print_hidden_notices(
         # body was never read, so "no signal" is a claim it is not entitled to make. Non-zero
         # here means the gate is partly inert, which `hidden_zero_signal == 0` alone cannot say.
         target.print(
-            f"{results.signal_unmeasured} title(s) with no role signal had no readable body "
-            "extraction, so the zero-signal rule could not fire and they were passed through "
-            "unfiltered — run a ranking command again to let the extraction backfill finish.",
+            f"{results.signal_unmeasured} title(s) with no role signal had no readable body, "
+            "so the zero-signal rule could not fire and they were passed through unfiltered — "
+            "`show <id>` names the cause per row: a missing taxonomy extraction clears on the "
+            "next ranking command, an empty JD body means the board is serving stubs.",
             markup=False,
         )
     if results.hidden_over_seniority and not include_over_seniority:

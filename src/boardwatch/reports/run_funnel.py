@@ -266,16 +266,19 @@ class ShortlistCounts:
     # genuine DROP and part of the identity above. Drained by `top --include-over-seniority`.
     hidden_over_seniority: int = 0
     # Neither the title nor the body carried any recognised signal: the role gate abstained
-    # (`uncertain`) AND the taxonomy extraction ran and recognised exactly zero terms. A genuine
-    # DROP and part of the identity above, in the same shape as `hidden_over_seniority`. Drained
-    # by `top --include-zero-signal`.
+    # (`uncertain`) AND there was a body AND its taxonomy extraction ran and recognised exactly
+    # zero terms. A genuine DROP and part of the identity above, in the same shape as
+    # `hidden_over_seniority`. Drained by `top --include-zero-signal`.
     hidden_zero_signal: int = 0
     # The zero-signal rule's abstain rate: `uncertain`-titled postings whose body signal could
-    # not be READ at all (no extraction row at the current taxonomy version). REPORTED, NEVER
-    # DROPPED, and deliberately NOT part of the identity above — these postings are inside
-    # `shortlisted` already, so a `Drop` for them would subtract them twice. Reported for the
-    # same reason `uncertain_band` is: without it, `hidden_zero_signal == 0` cannot be told
-    # apart from a gate that never got the input it reads.
+    # not be READ at all — no extraction row at the current taxonomy version, or an empty JD
+    # body. REPORTED, NEVER DROPPED, and deliberately NOT part of the identity above — these
+    # postings are inside `shortlisted` already, so a `Drop` for them would subtract them twice.
+    # Reported the same WAY `uncertain_band` is, and not only for the same reason: it is
+    # appended to the shortlist stage's `note`, which is the only place it reaches the durable
+    # artifact. Without that, `zero_signal_uncertain: 0` could not be told apart from a gate
+    # that never got the input it reads — and that ambiguity is the only reason this counter
+    # exists, so a value that never leaves memory would defeat it.
     signal_unmeasured: int = 0
     # D-246, the seniority gate's abstain rate: a level token it could not resolve, because no
     # scheme is bound for the company or the rung falls outside the bound one. REPORTED, NEVER
@@ -931,7 +934,13 @@ def build_run_funnel(
                 "outside the bound one — and passed the posting through); "
                 f"`band_tokens_seen_while_inert`: "
                 f"{shortlist.band_tokens_seen_while_inert} (titles carrying a seniority signal "
-                "while the gate was off, i.e. `target_seniority_band: any`)."
+                "while the gate was off, i.e. `target_seniority_band: any`); "
+                f"`signal_unmeasured`: {shortlist.signal_unmeasured} (titles with no role "
+                "signal whose body the zero-signal rule could not read — no extraction row at "
+                "the current taxonomy version, or a JD body that was empty — so it declined to "
+                "fire and passed the posting through unfiltered). A non-zero value here is the "
+                "ONLY thing in this artifact that tells `zero_signal_uncertain: 0` apart from a "
+                "gate that never got the input it reads."
             ),
         )
 
@@ -1513,9 +1522,10 @@ def funnel_to_markdown(funnel: RunFunnel) -> str:
         f"| rules hash | {m.rules_hash or '—'} |",
         "",
         "*`config hash` covers the decision-relevant `Settings`; `profile row hash` covers the "
-        "five profile columns the ranker reads (incl. `exclude_titles`). Neither covers the "
-        "skill-taxonomy version — `taxonomy.yaml` can change which postings score as covered "
-        "without moving either hash.*",
+        "five profile columns the ranker reads (incl. `exclude_titles`) plus the two "
+        "user-overridable catalogs that decide a drop bucket — `leveling.yaml` and "
+        "`taxonomy.yaml`. Corpus membership is in neither: watching a board changes which "
+        "postings exist without moving any hash here.*",
         "",
         "## Scan",
         "",

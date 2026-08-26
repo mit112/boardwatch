@@ -68,7 +68,7 @@ def test_profile_row_hash_tracks_the_band() -> None:
 def test_profile_row_hash_parameter_set_is_pinned() -> None:
     assert set(inspect.signature(profile_row_hash).parameters) == {
         "skills", "target_titles", "exclude_titles", "locations", "remote_only",
-        "target_seniority_band", "leveling_digest",
+        "target_seniority_band", "leveling_digest", "taxonomy_version",
     }
 
 

@@ -171,7 +171,15 @@ def show(
         # Same contract for the zero-signal rule, and it needs no extra query: `extraction` was
         # already read above for the score, and it is the ROW (None when absent), not a
         # collapsed `or {}`, so this surface can tell "found nothing" from "never looked".
-        zero_signal, zero_signal_reason = zero_signal_verdict(role, extraction)
+        # `body_empty` is computed in Python here, not in SQL as the ranking surfaces do it:
+        # this query is a single posting and already selects `postings` whole, so `body_text`
+        # is in hand and a second predicate would be a second read of the same fact. The strip
+        # set is spelled out rather than left to a bare `.strip()`, which also strips Unicode
+        # whitespace SQLite's `trim` does not — this surface has to agree with `top` about
+        # which body is empty, or `show` would explain a row `top` did not hide.
+        zero_signal, zero_signal_reason = zero_signal_verdict(
+            role, extraction, body_empty=not (row.body_text or "").strip(" \t\n\r\f\v")
+        )
         if zero_signal != "pass":
             signal_note = (
                 " — hidden from top unless --include-zero-signal"

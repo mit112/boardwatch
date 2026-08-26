@@ -218,6 +218,58 @@ def test_show_no_recognized_skills_message(
     result = _invoke(tmp_path, ["show", str(ids["222"])])  # gardening body: no taxonomy hits
     assert result.exit_code == 0
     assert "no recognized skills" in result.stdout  # Rich may wrap across lines
+    # This is the posting `top` now hides as zero-signal, on the same premise the band gate
+    # was held to: a row `top` withholds has to be explainable by looking it up, or the
+    # quarantine is unauditable. The score section saying "no recognized skills" is NOT that
+    # explanation — it does not say the row was withheld, or by which rule, or how to see it.
+    out = " ".join(result.stdout.split())  # Rich wraps the line at the console width
+    assert "Signal:" in out
+    assert "0 recognised requirement terms in the body" in out
+    assert "hidden from top unless --include-zero-signal" in out
+
+
+def test_show_names_an_empty_body_rather_than_claiming_zero_terms(
+    env: Path, engine: Engine, company_id: int, run_id: int, tmp_path: Path
+) -> None:
+    """The stub posting, on the audit surface. `show` is where an operator goes to find out why
+    a row is missing, so it is the surface that must not repeat the veto's claim.
+
+    The body is emptied and the content hash moved with it, so the preflight re-extracts and
+    writes a present, well-formed `{"skills": []}` payload — production's exact shape for a
+    stub. Nothing distinguishes it from a substantive body that recognised nothing except the
+    body itself, and `show` has to read it.
+    """
+    ids = _seed_postings(engine, company_id, run_id)
+    _seed_profile(engine, env / "cfg")
+    with engine.begin() as conn:
+        conn.execute(
+            update(tables.postings)
+            .where(tables.postings.c.id == ids["222"])
+            .values(body_text="  \t\n ", content_hash="stub-222")
+        )
+    result = _invoke(tmp_path, ["show", str(ids["222"])])
+    assert result.exit_code == 0
+    out = " ".join(result.stdout.split())
+    assert "Signal: empty JD body — nothing to read" in out
+    # The abstain must not borrow the veto's claim, and must not offer a drain it is not in.
+    assert "0 recognised requirement terms" not in out
+    assert "--include-zero-signal" not in out
+    assert "the rule could not fire, so this row is NOT filtered" in out
+
+
+def test_show_signal_line_is_absent_for_a_posting_the_rule_passed(
+    env: Path, engine: Engine, company_id: int, run_id: int, tmp_path: Path
+) -> None:
+    """The other half: the line is a report of a verdict, not decoration printed on every row.
+
+    Without this, the assertion above would hold for a `show` that printed "Signal:" always —
+    and an operator could no longer read its presence as "this row was withheld".
+    """
+    ids = _seed_postings(engine, company_id, run_id)
+    _seed_profile(engine, env / "cfg")
+    result = _invoke(tmp_path, ["show", str(ids["111"])])  # Backend Engineer, real skills
+    assert result.exit_code == 0
+    assert "Signal:" not in result.stdout
 
 
 def test_show_prints_the_band_line(

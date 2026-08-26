@@ -12,6 +12,7 @@ from sqlalchemy.engine import Connection
 from boardwatch.core.settings import Settings
 from boardwatch.eligibility.engine import engine_version
 from boardwatch.eligibility.preflight import current_identity
+from boardwatch.extract.taxonomy import load_taxonomy
 from boardwatch.rank.leveling import load_leveling
 from boardwatch.reports.manifest import config_hash, policy_version, profile_row_hash
 from boardwatch.store.queries import get_profile
@@ -38,6 +39,7 @@ def run_policy_version(conn: Connection, settings: Settings) -> str:
                 remote_only=profile_row.remote_only,
                 target_seniority_band=profile_row.target_seniority_band,
                 leveling_digest=load_leveling(settings.config_dir).digest,
+                taxonomy_version=load_taxonomy(settings.config_dir).version,
             )
             if profile_row is not None
             else None

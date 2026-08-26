@@ -20,13 +20,14 @@ from boardwatch.core.settings import Settings
 from boardwatch.eligibility.preflight import run_eligibility
 from boardwatch.eligibility.read import current_verdicts
 from boardwatch.extract.preflight import run_preflight
+from boardwatch.extract.taxonomy import load_taxonomy
 from boardwatch.rank.heuristic import passes_hard_filters, profile_view_from_row
 from boardwatch.rank.leveling import load_leveling, resolve_schemes
-from boardwatch.rank.role_gate import role_verdict
+from boardwatch.rank.role_gate import role_verdict, zero_signal_verdict
 from boardwatch.rank.seniority_gate import TargetBand, seniority_verdict
-from boardwatch.store.queries import current_posting_versions, get_profile
+from boardwatch.store.queries import body_is_empty, current_posting_versions, get_profile
 from boardwatch.store.stats_queries import count_open_postings, count_tracked_submitted
-from boardwatch.store.tables import companies, postings
+from boardwatch.store.tables import companies, extractions, postings
 
 
 @dataclass(frozen=True)
@@ -36,9 +37,13 @@ class PostingStat:
     passes_filters: bool
     verdict: str | None  # "eligible" | "uncertain" | "ineligible" | None (unevaluated)
     non_swe: bool = False  # title role gate says non-software; `top` hides these by default
+    # No role signal in the title AND no recognised term in a body that WAS read; `top` hides
+    # these by default. Set ONLY for postings the role gate passed, same reason as below.
+    zero_signal: bool = False
     # Title seniority gate says above the target band; `top` hides these by default (D-246).
-    # Set ONLY for postings the role gate passed, mirroring `top`'s gate ORDER: see the loop in
-    # `compute_stats`. The buckets are disjoint there, so they have to be disjoint here.
+    # Set ONLY for postings the role gate AND the zero-signal rule passed, mirroring `top`'s
+    # gate ORDER: see the loop in `compute_stats`. The buckets are disjoint there, so they have
+    # to be disjoint here.
     over_seniority: bool = False
 
 
@@ -57,6 +62,10 @@ class StatsReport:
     # Reported the same way `non_swe` is, and for the same reason: `top` hides these, so a
     # readout that never counted them would disagree with the shortlist it describes (D-246).
     over_seniority: int = 0
+    # Same again for the zero-signal veto. Reported rather than merely subtracted out of
+    # `over_seniority`: a posting the ordering moves out of one bucket has to land in a named
+    # one, or ordering the gates correctly would make it vanish from the readout entirely.
+    zero_signal: int = 0
 
 
 def summarize(
@@ -77,6 +86,7 @@ def summarize(
     # folding it into `passes_filters`/`not_ineligible`/the window buckets instead would
     # redefine numbers the parity window is already measuring. Counted, not silent.
     non_swe = sum(1 for s in stats if s.passes_filters and s.non_swe)
+    zero_signal = sum(1 for s in stats if s.passes_filters and s.zero_signal)
     over_seniority = sum(1 for s in stats if s.passes_filters and s.over_seniority)
     not_ineligible = sum(1 for s in stats if s.passes_filters and s.verdict != "ineligible")
     return StatsReport(
@@ -84,6 +94,7 @@ def summarize(
         qualified=qualified, uncertain=uncertain, ineligible=ineligible, unevaluated=unevaluated,
         seen=seen, passes_filters=passes, non_swe=non_swe,
         not_ineligible=not_ineligible, tracked=tracked, over_seniority=over_seniority,
+        zero_signal=zero_signal,
     )
 
 
@@ -100,6 +111,9 @@ def compute_stats(
     run_preflight(engine, settings, output_console)
     elig = run_eligibility(engine, settings, output_console)
     now = now or utcnow()
+    # Read ONCE, outside the connection: the extraction join below keys on it, exactly as
+    # `top`'s does, so the two surfaces read the same row for the same posting.
+    version = load_taxonomy(settings.config_dir).version
     with engine.connect() as conn:
         profile_row = get_profile(conn)
         if profile_row is None:
@@ -110,8 +124,20 @@ def compute_stats(
                 postings.c.id, postings.c.title, postings.c.posted_at,
                 postings.c.locations_json, postings.c.remote_policy,
                 companies.c.provider, companies.c.slug,
+                # The zero-signal rule's two body inputs. Joined here, on the same key `top`
+                # uses, because this readout re-derives `top`'s gate chain and cannot order a
+                # gate it has no input for.
+                extractions.c.json.label("extraction_json"),
+                body_is_empty().label("body_empty"),
             )
             .join(companies, postings.c.company_id == companies.c.id)
+            .outerjoin(
+                extractions,
+                (extractions.c.posting_id == postings.c.id)
+                & (extractions.c.content_hash == postings.c.content_hash)
+                & (extractions.c.kind == "taxonomy")
+                & (extractions.c.engine_version == version),
+            )
             .where(postings.c.status == "open")
         ).all()
         versions = current_posting_versions(conn, None)
@@ -134,8 +160,16 @@ def compute_stats(
         # independently, such a posting landed in both buckets and `over_seniority` read higher
         # than the funnel's `hidden_over_seniority` for the same corpus -- two numbers for one
         # gate that could not be reconciled.
-        non_swe = role_verdict(row.title)[0] == "not_swe"
-        over_seniority = not non_swe and seniority_verdict(
+        role = role_verdict(row.title)[0]
+        non_swe = role == "not_swe"
+        # Between the two, exactly where the ranker `continue`s on it: an `uncertain` +
+        # zero-skill + above-band posting is `hidden_zero_signal` in the funnel and must not
+        # ALSO be `over_seniority` here, which is the same irreconcilable double-count the
+        # comment above records for `non_swe`.
+        zero_signal = not non_swe and zero_signal_verdict(
+            role, row.extraction_json, body_empty=bool(row.body_empty),
+        )[0] == "veto"
+        over_seniority = not non_swe and not zero_signal and seniority_verdict(
             row.title, schemes.get((row.provider, row.slug)), target_band, tier, leveling,
         )[0] == "above_band"
         stats.append(PostingStat(
@@ -147,6 +181,7 @@ def compute_stats(
             ),
             verdict=verdicts.get(int(row.id)),
             non_swe=non_swe,
+            zero_signal=zero_signal,
             over_seniority=over_seniority,
         ))
     return summarize(stats, now=now, window_days=window_days, seen=seen, tracked=tracked)

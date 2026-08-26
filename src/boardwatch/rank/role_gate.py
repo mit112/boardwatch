@@ -471,13 +471,18 @@ def role_verdict(title: str) -> tuple[RoleVerdict, str]:
 
 
 def zero_signal_verdict(
-    role: RoleVerdict, extraction: Mapping[str, Any] | None
+    role: RoleVerdict, extraction: Mapping[str, Any] | None, *, body_empty: bool
 ) -> tuple[ZeroSignalVerdict, str]:
     """Veto a posting whose TITLE carried no role signal and whose BODY carried none either.
 
     Fires only on the intersection of two independently-computed abstains: `role ==
-    "uncertain"` (never `swe`, never `not_swe`) and a taxonomy extraction that RAN and
-    recognised exactly zero terms.
+    "uncertain"` (never `swe`, never `not_swe`) and a taxonomy extraction that RAN, over a
+    body that EXISTED, and recognised exactly zero terms.
+
+    `body_empty` is keyword-only and has no default on purpose. It is the caller's assertion
+    that it looked at `postings.body_text` and found something to read; a default would let a
+    new caller inherit a claim it never checked, and every existing caller already had to be
+    edited to pass it.
 
     **The argument that does not rest on precision numbers.** A posting with zero recognised
     requirement terms cannot be TAILORED to. The coverage report comes back empty and the
@@ -550,13 +555,37 @@ def zero_signal_verdict(
     and "Associate Software Engineer" both have zero-recognised-term bodies and are `swe` by
     title; applied unconditionally this rule would delete them.
 
+    **Three states, and each reason string names its own.** "0 recognised terms" is a claim
+    about a body that was read. There are two distinct ways not to have read one, and neither
+    may borrow that claim:
+
+    * no extraction row at the current taxonomy version — the extractor never ran on this
+      content hash;
+    * an empty (whitespace-only) `body_text` — the extractor ran and had nothing to read.
+
+    The second is the one that reaches production. `extract/preflight.py` backfills an
+    extraction row for EVERY open posting regardless of body content, and
+    `extract/taxonomy.py::write_extraction` writes `{"skills": [], "categories": {}}` for a
+    whitespace-only body — so a stub posting always HAS a row and `extraction is None` never
+    fires for it. If a lane adapter drifts and starts landing empty bodies (the pathology
+    `run_funnel_queries.count_stub_postings` exists to instrument), reading that row as "0
+    terms" would drop every `uncertain`-titled posting from that lane into
+    `hidden_zero_signal` with `signal_unmeasured` at 0 — an inert gate that reads as clean
+    noise removal, which is the monitoring failure the keystone invariant forbids.
+
     Returns the verdict and a one-line reason, so a veto is auditable against the posting it
-    hid and an `unmeasured` abstain is auditable against the extraction it could not read.
+    hid and an `unmeasured` abstain is auditable against the specific thing it could not read.
     """
     if role != "uncertain":
         # Checked first so `unmeasured` counts only the population the rule could act on:
         # a missing extraction under a `swe` title is not this rule declining to fire.
         return "pass", ""
+    if body_empty:
+        # BEFORE the row check, because when there is no body the row's contents are not
+        # evidence of anything: an extraction over a whitespace-only body recognises zero
+        # terms by construction, so naming the absent row instead would send the operator
+        # after a backfill that would change nothing. The empty body is the fact.
+        return "unmeasured", "empty JD body — nothing to read"
     if extraction is None:
         # PRESENCE, not emptiness — two conditions, and the caller must not collapse them.
         # `top_cmd.py`'s scoring line reads `(row.extraction_json or {}).get("skills", [])`,
