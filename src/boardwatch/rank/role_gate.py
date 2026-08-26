@@ -335,6 +335,22 @@ _DENY_FAMILIES_SOFT: tuple[str, ...] = tuple([
     # Technical marketing is marketing. `_DENY_BUSINESS_HARD` denies "Marketing Manager"
     # and friends but not the "<X> Engineer" form this family uses.
     r"\btechnical\s+marketing\b",
+    # The analyst / specialist / administrator / advisor families. Measured over 37,979 live
+    # distinct titles: these dominated the non-SWE rows reaching DELIVERED leads (analyst and
+    # specialist most of all), because the gate only denied SPECIFIC sub-forms (`data analyst`,
+    # `business analyst`, `clinical specialist`, `logistics specialist`, ...) and left the bare
+    # family head noun `uncertain`, which the ranker passes through. Bare `_NOENG`-guarded, the
+    # exact mirror of the coordinator / manager / director / lead denies above: a title carrying
+    # engineer/engineering/developer/architect/programmer/swe/sde/sdet is spared, and the SOFT
+    # lane keeps a rescued or signalled software title out of reach. Deliberately NOT `_NOSW`-
+    # guarded: `QA Analyst` / `QA Specialist` carry the software SURFACE word `qa`, so `_NOSW`
+    # would spare the very retail/ops rows this deny exists to catch. `swe`-classified titles
+    # containing these words (e.g. "Analyst II, Full Stack", "Forward Deployed Engineer,
+    # Infrastructure Specialist", "SRE Database Administrator") all match at the rescue or signal
+    # stage and never reach here. This SUPERSEDES the earlier deliberate hold on bare `security
+    # specialist` (its retail-vs-infosec ambiguity is a company-list question, but neither
+    # reading is a software-engineer role, so `not_swe` is correct for a SWE target either way).
+    _NOENG + r"\b(?:analyst|specialist|administrator|advisor|adviser)\b",
 ])
 
 # Positive SWE signal on the title. Bare `reliability` is deliberately absent: it made a
