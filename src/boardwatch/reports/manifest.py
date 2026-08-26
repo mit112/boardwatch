@@ -25,9 +25,18 @@ user-overridable at `{config_dir}/leveling.yaml` and decides a drop bucket, so w
 operator could edit which titles are dropped and the manifest would still call two runs
 identical — the same failure `exclude_titles` above describes.
 
-The one coverage gap that remains, stated so the manifest never over-claims: neither hash
-covers the **skill-taxonomy version** — `taxonomy.yaml` can change which postings score as
-covered without moving either hash. It is called out in the manifest's own note.
+It carries the **skill-taxonomy version** for exactly the same reason, and that closes the one
+coverage gap this docstring used to state. `taxonomy.yaml` is user-overridable at
+`{config_dir}/taxonomy.yaml`, and since the zero-signal veto it decides a drop bucket too:
+"0 recognised requirement terms" is a taxonomy judgement, so editing the taxonomy changes which
+postings are dropped. While the taxonomy only *scored* postings, leaving it out cost the
+manifest some precision; once it *drops* them, leaving it out would let the manifest call two
+runs identical across a change that removed thousands of leads — and would stamp a permanent
+ledger disposition with a `policy_version` that does not describe the policy that produced it.
+
+It is NOT covered indirectly by `skills`. That column is the taxonomy applied to the operator's
+own profile text, so it moves only when the edited terms happen to appear there; every other
+taxonomy edit changes which postings are dropped while `skills` sits still.
 """
 
 from __future__ import annotations
@@ -163,11 +172,17 @@ def profile_row_hash(
     remote_only: bool,
     target_seniority_band: str = "any",
     leveling_digest: str = "",
+    taxonomy_version: str = "",
 ) -> str:
-    """SHA-256 over the six profile columns the ranker reads, plus the leveling digest.
+    """SHA-256 over the six profile columns the ranker reads, plus the two catalog versions.
 
     A missing list and an empty list are different inputs and hash differently — canonical form
     keeps an explicit null distinct from `[]`, the same guard `hashing.canonical` documents.
+
+    The two catalog arguments default to `""` in the convention this signature already set, so
+    the guard against a caller forgetting one is NOT the signature: it is
+    `test_taxonomy_drift_moves_both_identities`, which drives both production callers over two
+    taxonomies and fails if either hash sits still.
     """
     payload = {
         "skills": list(skills) if skills is not None else None,
@@ -179,6 +194,9 @@ def profile_row_hash(
         # The catalog decides a drop bucket and is user-overridable, so it belongs in
         # the identity for the same reason the band does.
         "leveling_digest": leveling_digest,
+        # And the skill taxonomy, for the same reason again: since the zero-signal veto,
+        # "0 recognised requirement terms" is a taxonomy judgement that DROPS a posting.
+        "taxonomy_version": taxonomy_version,
     }
     return digest(payload)
 
@@ -204,8 +222,9 @@ def policy_version(
     A stamp mismatch never re-opens a disposition on its own. Auto-expiry on mismatch would
     rebuild the whole shortlist on any settings tweak, and an automatic re-open cannot be
     reviewed before it happens; `ledger show --stale` lists them and `ledger reopen` releases
-    them. Inherits the manifest's one stated coverage gap — the skill-taxonomy version moves
-    neither `config_hash` nor `profile_row_hash`.
+    them. It inherits `profile_row_hash`'s coverage, which now INCLUDES the skill-taxonomy
+    version — necessarily, because a permanent disposition stamped under a taxonomy that no
+    longer describes the rule that produced it is a stamp that answers the wrong question.
     """
     return digest(
         {

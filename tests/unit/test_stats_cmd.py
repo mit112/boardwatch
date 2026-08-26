@@ -64,8 +64,27 @@ def test_stats_with_profile_but_no_evals_reports_unevaluated(data_dir: Path) -> 
     assert report.qualified == 0
 
 
-def _seed_one_posting(data_dir: Path, *, title: str, band: str) -> None:
-    """One open posting plus a profile targeting `band` — the smallest stats population."""
+# `uncertain` by title with a substantive body that yields no recognised taxonomy term -- the
+# only pair the zero-signal veto fires on. "Senior" is what makes this fixture discriminating:
+# the posting is ALSO above an `entry` target band, so it is the exact overlap the gate ORDER
+# has to resolve. Live today, 3 of the 8 titles the veto drops carry Sr./Senior.
+ZERO_SIGNAL_SENIOR_TITLE = "Senior Mixed Reality Developer"
+ZERO_SKILL_BODY = (
+    "We are looking for a motivated team member to join our growing operation. You will "
+    "coordinate with partners, keep the floor moving, and report to the shift lead."
+)
+
+
+def _seed_one_posting(
+    data_dir: Path, *, title: str, band: str, slug: str = "acme",
+    body: str = "We hire python engineers.",
+) -> None:
+    """One open posting plus a profile targeting `band` — the smallest stats population.
+
+    `slug` is per-posting because (provider, slug) is UNIQUE on companies, so a test seeding a
+    second posting needs a second company. `persist_profile` upserts, so calling this twice
+    leaves one profile at the band the last call named.
+    """
     eng = get_engine(data_dir)
     settings = load_settings(data_dir=data_dir)
     persist_profile(
@@ -75,15 +94,15 @@ def _seed_one_posting(data_dir: Path, *, title: str, band: str) -> None:
     )
     with eng.begin() as conn:
         c = int(conn.execute(insert(companies).values(
-            name="Acme", provider="greenhouse", slug="acme", source="user", watched=True,
+            name="Acme", provider="greenhouse", slug=slug, source="user", watched=True,
         )).inserted_primary_key[0])
         job_id = int(conn.execute(insert(jobs).values(created_at=NOW)).inserted_primary_key[0])
         conn.execute(insert(postings).values(
-            company_id=c, job_id=job_id, provider_posting_id="p1", title=title,
-            normalized_title=title.lower(), url="https://example.test/p1",
+            company_id=c, job_id=job_id, provider_posting_id=f"p1-{slug}", title=title,
+            normalized_title=title.lower(), url=f"https://example.test/{slug}",
             locations_json=["Remote"], remote_policy="remote", posted_at=NOW,
             first_seen_at=NOW, last_seen_at=NOW, status="open", consecutive_missing=0,
-            content_hash="p1", body_text="We hire python engineers.",
+            content_hash=f"p1-{slug}", body_text=body,
         ))
 
 
@@ -119,6 +138,11 @@ def test_the_stats_table_renders_the_over_seniority_count(tmp_path, monkeypatch)
     source = inspect.getsource(stats_cmd)
     assert "over target band" in source, "over_seniority is counted but never shown"
     assert "report.over_seniority" in source
+    # Same for the zero-signal bucket. Ordering the gates correctly moves postings OUT of
+    # `over_seniority`; if the bucket they move into is never rendered, fixing the double-count
+    # would simply make them disappear from the readout.
+    assert "zero signal" in source, "zero_signal is counted but never shown"
+    assert "report.zero_signal" in source
 def test_a_posting_that_is_both_non_swe_and_over_band_is_counted_once(data_dir: Path) -> None:
     """`top` gates in ORDER: the role gate `continue`s before the seniority gate ever runs, so
     this posting is `hidden_non_swe` there and nothing else. Counted independently here it
@@ -128,9 +152,19 @@ def test_a_posting_that_is_both_non_swe_and_over_band_is_counted_once(data_dir: 
     from boardwatch.cli.top_cmd import rank_open_postings
 
     _seed_one_posting(data_dir, title="Senior Marketing Manager", band="entry")
+    # The SECOND overlap, added with the zero-signal veto: `uncertain` title + zero recognised
+    # terms + above band. The ranker `continue`s on zero-signal BEFORE the seniority gate runs,
+    # so this posting is `hidden_zero_signal` there and nothing else. Evaluated independently
+    # here it landed in `over_seniority` as well -- the identical irreconcilable double-count,
+    # one gate later.
+    _seed_one_posting(
+        data_dir, title=ZERO_SIGNAL_SENIOR_TITLE, band="entry",
+        slug="acme-zero", body=ZERO_SKILL_BODY,
+    )
     report = _report(data_dir)
     assert report is not None
     assert report.non_swe == 1
+    assert report.zero_signal == 1
     assert report.over_seniority == 0
 
     # Counted a second time through the OTHER path -- the one the funnel writes down -- because
@@ -139,6 +173,6 @@ def test_a_posting_that_is_both_non_swe_and_over_band_is_counted_once(data_dir: 
         get_engine(data_dir), load_settings(data_dir=data_dir),
         limit=50, record_surfaced=False, output_console=Console(),
     )
-    assert (ranked.hidden_non_swe, ranked.hidden_over_seniority) == (
-        report.non_swe, report.over_seniority
+    assert (ranked.hidden_non_swe, ranked.hidden_zero_signal, ranked.hidden_over_seniority) == (
+        report.non_swe, report.zero_signal, report.over_seniority
     )

@@ -97,14 +97,22 @@ def _shortlist_line(summary: PipelineSummary) -> str:
     # but it is the LARGEST cut in the pipeline (17,891 on run 67, 59% of the corpus), so once
     # `top --include-hard-filter` exists the daily line has to say it is there.
     uncertain = f" · {counts.uncertain_band} uncertain band" if counts.uncertain_band else ""
+    # Same treatment as `uncertain_band` and for the same reason: `signal_unmeasured` counts
+    # postings inside `shortlisted`, so it is appended after the parenthesised accounting rather
+    # than inside it. Named at all because a non-zero value means the zero-signal rule was
+    # partly inert on this run, which no other line puts in front of the operator.
+    unmeasured = (
+        f" · {counts.signal_unmeasured} body signal unmeasured" if counts.signal_unmeasured else ""
+    )
     return (
         f"{counts.shortlisted} shortlisted of {counts.considered} considered "
         f"({counts.hidden_hard_filter} hard-filtered, "
         f"{counts.hidden_ineligible} ineligible, {counts.hidden_non_swe} non-SWE, "
+        f"{counts.hidden_zero_signal} zero signal, "
         f"{counts.hidden_over_seniority} over seniority, "
         f"{counts.hidden_duplicate} duplicate, {counts.hidden_applied} already applied, "
         f"{counts.hidden_handled} already handled, "
-        f"{counts.hidden_below_cutoff} below cutoff{dead}){uncertain}"
+        f"{counts.hidden_below_cutoff} below cutoff{dead}){uncertain}{unmeasured}"
     )
 
 

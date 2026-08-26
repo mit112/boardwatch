@@ -8,6 +8,13 @@ bodies genuinely empty of technical nouns (software-term density 0.50 per 1k cha
 vs 0.25 for noise and 3.75 for real targets), so a body-text gate cannot separate
 the two populations.
 
+That paragraph is untouched by `zero_signal_verdict` below, because the two answer DIFFERENT
+questions and neither is wrong. The paragraph doubts that a body-text signal can separate
+software from noise *inside* the zero-skill set; nothing since has contradicted that, and the
+new rule does not attempt it. What the new rule relies on is a different fact: the zero-skill
+RATE separates cleanly ACROSS the role boundary. The function's own docstring carries that
+table, the threshold, and the falsifier.
+
 ORDER IS LOAD-BEARING, and it is the whole reason this module exists in this shape.
 The deny patterns guard themselves with `\\bX\\b(?!.*\\bsoftware\\b)`, and a negative
 lookahead only sees text to the RIGHT of the match. "Software Quality Engineer"
@@ -47,9 +54,15 @@ escape hatch `heuristic.GENERIC_TITLE_TOKENS` uses for `frozenset(...)`.
 from __future__ import annotations
 
 import re
-from typing import Literal
+from collections.abc import Mapping
+from typing import Any, Literal
 
 RoleVerdict = Literal["swe", "not_swe", "uncertain"]
+# `unmeasured` is NOT a third outcome of the rule — it is the rule declining to fire because
+# the input it reads is absent. Kept distinct from `pass` so "we looked and found signal" can
+# never be confused with "nothing looked", which is the same reason an eligibility rule
+# abstains instead of clearing (CLAUDE.md's keystone invariant).
+ZeroSignalVerdict = Literal["pass", "veto", "unmeasured"]
 
 # Anchored guard: `^(?!...)` makes the lookahead cover the WHOLE title rather than only
 # the tail, so a bare business-domain noun can never veto an engineering title from the
@@ -455,3 +468,145 @@ def role_verdict(title: str) -> tuple[RoleVerdict, str]:
                 return "not_swe", f'not software (matched "{soft.group(0)}")'
         return "uncertain", "no role signal in title"
     return "swe", f'software title (matched "{signal.group(0)}")'
+
+
+def zero_signal_verdict(
+    role: RoleVerdict, extraction: Mapping[str, Any] | None, *, body_empty: bool
+) -> tuple[ZeroSignalVerdict, str]:
+    """Veto a posting whose TITLE carried no role signal and whose BODY carried none either.
+
+    Fires only on the intersection of two independently-computed abstains: `role ==
+    "uncertain"` (never `swe`, never `not_swe`) and a taxonomy extraction that RAN, over a
+    body that EXISTED, and recognised exactly zero terms.
+
+    `body_empty` is keyword-only and has no default on purpose. It is the caller's assertion
+    that it looked at `postings.body_text` and found something to read; a default would let a
+    new caller inherit a claim it never checked, and every existing caller already had to be
+    edited to pass it.
+
+    **The argument that does not rest on precision numbers.** A posting with zero recognised
+    requirement terms cannot be TAILORED to. The coverage report comes back empty and the
+    delivered résumé is untailored by construction, so this is not "probably noise" — it is
+    "the pipeline has nothing to work with". Every one of the 8 software-indicator titles the
+    rule drops has a substantive body (1,646 to 10,324 characters) that yields no recognised
+    term at all. That reasoning survives even if the numbers below are later disputed.
+
+    **The evidence, over all 48,285 open postings.** Zero-skill rate by role verdict:
+
+        role_verdict    open   zero-skill    rate
+        swe            8,002          121    1.5%
+        uncertain      9,277        3,334   35.9%
+        not_swe       31,006       12,193   39.3%
+
+    The zero-skill rate separates cleanly along the ROLE boundary — 23.8x between `swe` and
+    `uncertain` — and `uncertain` ∩ zero-skill sits with `not_swe` (39.3%), not with `swe`
+    (1.5%). A title that gives no role signal and a substantial body that yields no recognised
+    term behaves like the non-software population on every axis measurable here.
+
+    **This is falsifiable, and here is the falsifier.** If `swe` ∩ zero-skill were ~30% rather
+    than 1.5%, the rule would be indefensible: the zero-skill signal would be telling us about
+    the extractor's coverage rather than about the posting. That 23.8x gap is what shipping at
+    exactly zero buys, and it is the number to re-measure before anyone widens the threshold.
+
+    **How this squares with the module docstring's density measurement.** That paragraph
+    doubts that a body-text signal can separate software from noise *inside* the zero-skill
+    set (term densities 0.50 vs 0.25 per 1k chars, too close to split). Nothing here
+    contradicts it — the table above does not separate inside the set either. It separates
+    ACROSS the role boundary, which is a different question, and the one this rule rests on.
+
+    **The §3.6 tension, noticed and decided — not absent.**
+    `core/settings.py::zero_skill_coverage_prior = 0.50` is the shipped expression of §3.6's
+    rule that a posting with unknown skill coverage gets neither a "free 1" nor a punitive 0.
+    State the conflict plainly: a veto is the far end of the punitive direction §3.6 warns
+    about, and this rule lets missing signal count against a posting decisively, which is the
+    opposite of what that rule protects.
+
+    The resolution: §3.6 governs **how to SCORE a posting whose coverage is unknown**. It
+    protects such a posting from being marked down for the unknown. It does not oblige the
+    system to spend one of ten daily delivery slots on a lead it has no signal to act on —
+    a different question, and the untailorable argument above is what answers it. This is a
+    deliberate judgement with the owner's ruling behind it, not a finding that the two rules
+    never touched. Anyone who re-reads §3.6 and thinks it was overlooked should read this
+    paragraph instead.
+
+    `zero_skill_coverage_prior` is left untouched. It still governs every zero-skill posting
+    that survives here — the `swe`-titled ones, the `unmeasured` ones, and every drained row.
+
+    **Exactly zero, and NOT tunable.** Measured over those 9,277 `uncertain` postings:
+
+        threshold   vetoed   software-indicator titles lost
+                0    3,334                                8
+                1    5,116                               43
+                2    6,044                               99
+
+    The loss rate more than triples at ≤1, which starts taking a "Senior Compiler
+    Optimization Engineer – LLVM" and eight SAP/ServiceNow/Pega developer roles. Zero is
+    therefore hard-coded and no setting exposes it: a configurable threshold is an invitation
+    to move it off the only defensible value.
+
+    Of the 8 lost at zero, four are non-US and already die on the hard location gate and three
+    carry Sr./Senior and already die on the seniority gate at `band=entry`, so the INCREMENTAL
+    loss is **at least 1-2** of 3,334 — a "Mixed Reality Developer" and a "Business Systems
+    Applications Developer". At least, never exactly: the instrument is title-based and is
+    blind to a software role whose title carries no software word, which is by construction
+    this very population.
+
+    **Scoped to `uncertain`, not unconditional.** "Embedded Software Engineer - MCU Platforms"
+    and "Associate Software Engineer" both have zero-recognised-term bodies and are `swe` by
+    title; applied unconditionally this rule would delete them.
+
+    **Three states, and each reason string names its own.** "0 recognised terms" is a claim
+    about a body that was read. There are two distinct ways not to have read one, and neither
+    may borrow that claim:
+
+    * no extraction row at the current taxonomy version — the extractor never ran on this
+      content hash;
+    * an empty (whitespace-only) `body_text` — the extractor ran and had nothing to read.
+
+    The second is the one that reaches production. `extract/preflight.py` backfills an
+    extraction row for EVERY open posting regardless of body content, and
+    `extract/taxonomy.py::write_extraction` writes `{"skills": [], "categories": {}}` for a
+    whitespace-only body — so a stub posting always HAS a row and `extraction is None` never
+    fires for it. If a lane adapter drifts and starts landing empty bodies (the pathology
+    `run_funnel_queries.count_stub_postings` exists to instrument), reading that row as "0
+    terms" would drop every `uncertain`-titled posting from that lane into
+    `hidden_zero_signal` with `signal_unmeasured` at 0 — an inert gate that reads as clean
+    noise removal, which is the monitoring failure the keystone invariant forbids.
+
+    Returns the verdict and a one-line reason, so a veto is auditable against the posting it
+    hid and an `unmeasured` abstain is auditable against the specific thing it could not read.
+    """
+    if role != "uncertain":
+        # Checked first so `unmeasured` counts only the population the rule could act on:
+        # a missing extraction under a `swe` title is not this rule declining to fire.
+        return "pass", ""
+    if body_empty:
+        # BEFORE the row check, because when there is no body the row's contents are not
+        # evidence of anything: an extraction over a whitespace-only body recognises zero
+        # terms by construction, so naming the absent row instead would send the operator
+        # after a backfill that would change nothing. The empty body is the fact.
+        return "unmeasured", "empty JD body — nothing to read"
+    if extraction is None:
+        # PRESENCE, not emptiness — two conditions, and the caller must not collapse them.
+        # `top_cmd.py`'s scoring line reads `(row.extraction_json or {}).get("skills", [])`,
+        # which turns a NULL outer-join row into an empty skill set. Copying that here would
+        # make this rule "veto everything un-extracted": measured today 0 of 9,277 `uncertain`
+        # postings lack an extraction row, so the two cases are indistinguishable RIGHT NOW,
+        # which is exactly what makes it dangerous — one failed backfill, or a taxonomy version
+        # rolling ahead of it, and thousands of real jobs vanish silently. Fails OPEN, stays
+        # visible, and is counted so the outage reads as an abstain rate rather than a clean gate.
+        # Confirmed 0 of 48,285 open postings lack a row for their current content hash, so this
+        # branch never fires today — which is exactly why it exists AND is tested: a rule whose
+        # safety rests on an unmeasured coincidence is not safe.
+        return "unmeasured", "no taxonomy extraction at the current version — body never read"
+    skills = extraction.get("skills")
+    if not isinstance(skills, list):
+        # Same claim, different shape: a payload without a `skills` list is unreadable, not
+        # empty. Typed at the read site rather than trusted, because the column is JSON.
+        return "unmeasured", "extraction carries no skills list — body signal unreadable"
+    if skills:
+        return "pass", ""
+    return (
+        "veto",
+        "no role signal in title and 0 recognised requirement terms in the body",
+    )

@@ -90,3 +90,82 @@ def test_profile_row_hash_tracks_exclude_titles() -> None:
         locations=["remote"], remote_only=True,
     )
     assert base != changed
+
+
+def test_profile_row_hash_tracks_the_skill_taxonomy() -> None:
+    """The taxonomy is user-overridable and, since the zero-signal veto, decides a drop bucket.
+
+    Without it in the identity an operator could edit {config_dir}/taxonomy.yaml, change which
+    postings are dropped as having no recognised requirement term, and the manifest would still
+    report two runs as identical — the same failure the leveling catalog's digest closes.
+    """
+    base = dict(
+        skills=["python"], target_titles=[], exclude_titles=[], locations=[], remote_only=False,
+        target_seniority_band="entry", leveling_digest="lev",
+    )
+    assert profile_row_hash(**base, taxonomy_version="aaa") != profile_row_hash(
+        **base, taxonomy_version="bbb"
+    )
+
+
+_TAXONOMY_ONE = """
+patterns:
+  - name: Python
+    category: language
+    pattern: "\\\\bPython\\\\b"
+"""
+# One pattern MORE, and none of it appears in the profile text below. That is the case the
+# manifest docstring names: `skills` is the taxonomy applied to the operator's own text, so it
+# sits still here while the set of postings the zero-signal veto drops changes. If the identity
+# were covered "indirectly through `skills`", this fixture would not move either hash.
+_TAXONOMY_TWO = _TAXONOMY_ONE + """  - name: Kubernetes
+    category: platform
+    pattern: "\\\\bKubernetes\\\\b"
+"""
+
+
+def test_taxonomy_drift_moves_both_identities(tmp_path: Path) -> None:
+    """The manifest hash AND the permanent-disposition stamp, over the two production callers.
+
+    Two identities, both derived from `profile_row_hash`, reached through the two call sites
+    that actually build them — `pipeline.funnel_writer.collect_run_funnel` and
+    `pipeline.policy.run_policy_version`. Asserting the pure function alone would not catch a
+    call site that never passed the argument, which is the failure mode a defaulted parameter
+    invites. `run_preflight` is deliberately NOT run, so `profile.skills_json` is identical
+    across both halves and the taxonomy version is the only input that moved.
+    """
+    from boardwatch.pipeline.funnel_writer import collect_run_funnel
+    from boardwatch.pipeline.policy import run_policy_version
+    from boardwatch.reports.run_funnel import ScanContext
+    from boardwatch.store.db import ensure_schema, get_engine
+    from boardwatch.store.queries import insert_run, save_profile
+
+    settings = _settings(tmp_path)
+    settings.config_dir.mkdir(parents=True, exist_ok=True)
+    engine = get_engine(settings.data_dir)
+    ensure_schema(engine)
+    with engine.begin() as conn:
+        save_profile(
+            conn, text="Backend engineer who writes Python.", target_titles=[],
+            exclude_titles=[], locations=[], remote_only=False, skills=["Python"],
+            taxonomy_version="pinned", resume_max_pages=1,
+        )
+    run_id = insert_run(engine)
+
+    def _identities() -> tuple[str | None, str]:
+        funnel = collect_run_funnel(
+            engine, settings, run_id=run_id, scan=ScanContext(ran=False), shortlist=None,
+            tailored=[], tailor_failed=0, projection_ran=False, rewrite_rows=[],
+            lanes=[], errors=[], fatal=None,
+        )
+        with engine.connect() as conn:
+            return funnel.manifest.profile_row_hash, run_policy_version(conn, settings)
+
+    (settings.config_dir / "taxonomy.yaml").write_text(_TAXONOMY_ONE, encoding="utf-8")
+    first_manifest, first_stamp = _identities()
+    (settings.config_dir / "taxonomy.yaml").write_text(_TAXONOMY_TWO, encoding="utf-8")
+    second_manifest, second_stamp = _identities()
+
+    assert first_manifest is not None and second_manifest is not None
+    assert first_manifest != second_manifest, "the manifest called two runs identical"
+    assert first_stamp != second_stamp, "a permanent disposition would carry the wrong policy"

@@ -28,6 +28,7 @@ from boardwatch.eligibility.engine import (
 from boardwatch.eligibility.facts import parse_facts
 from boardwatch.eligibility.preflight import current_identity
 from boardwatch.eligibility.read import current_evaluations_chunked
+from boardwatch.extract.taxonomy import load_taxonomy
 from boardwatch.projection.run import ProjectionLeadOutcome
 from boardwatch.rank.leveling import load_leveling
 from boardwatch.reports.abstain import AbstainReport, build_abstain_report
@@ -213,6 +214,7 @@ def collect_run_funnel(
                 remote_only=profile_row.remote_only,
                 target_seniority_band=profile_row.target_seniority_band,
                 leveling_digest=load_leveling(settings.config_dir).digest,
+                taxonomy_version=load_taxonomy(settings.config_dir).version,
             )
             if profile_row is not None
             else None

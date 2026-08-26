@@ -104,6 +104,8 @@ def funnel(
     hidden_applied: int = 0,
     hidden_handled: int = 0,
     hidden_over_seniority: int = 0,
+    hidden_zero_signal: int = 0,
+    signal_unmeasured: int = 0,
     uncertain_band: int = 0,
     band_tokens_seen_while_inert: int = 0,
     judged_this_run: int = 0,
@@ -140,10 +142,12 @@ def funnel(
             shortlisted + hidden_ineligible + hidden_non_swe
             + hidden_hard_filter + hidden_below_cutoff + skipped_not_new
             + hidden_duplicate + hidden_applied + hidden_over_seniority + hidden_handled
+            + hidden_zero_signal
         )
-    # `uncertain_band` and `band_tokens_seen_while_inert` are deliberately ABSENT from that
-    # sum: they count postings that PASSED and are already inside `shortlisted`. Adding them
-    # here would be the same double-count that adding them to `drops` would be.
+    # `uncertain_band`, `band_tokens_seen_while_inert` and `signal_unmeasured` are
+    # deliberately ABSENT from that sum: they count postings that PASSED and are already
+    # inside `shortlisted`. Adding them here would be the same double-count that adding
+    # them to `drops` would be. `hidden_zero_signal` IS in the sum -- it is a real drop.
     counts = counts or corpus()
     tailored_artifacts = artifacts or TailoredArtifactCounts(
         rows=len(leads), with_pdf=sum(1 for item in leads if item.pdf_built)
@@ -188,6 +192,8 @@ def funnel(
             hidden_applied=hidden_applied,
             hidden_handled=hidden_handled,
             hidden_over_seniority=hidden_over_seniority,
+            hidden_zero_signal=hidden_zero_signal,
+            signal_unmeasured=signal_unmeasured,
             uncertain_band=uncertain_band,
             band_tokens_seen_while_inert=band_tokens_seen_while_inert,
             judged_this_run=judged_this_run,
@@ -459,6 +465,63 @@ def test_the_shortlist_stage_reconciles_with_the_new_bucket() -> None:
     shortlist = stage(report, "shortlist")
     assert shortlist.entered == 10
     assert shortlist.reconciled is True
+
+
+def test_the_shortlist_stage_reconciles_with_the_zero_signal_bucket() -> None:
+    """`hidden_zero_signal` is a genuine DROP, in the same shape as `hidden_over_seniority`.
+
+    Non-zero on purpose: a `Drop` that is merely PRESENT is proved by nothing, because a
+    zero-count drop leaves the identity balanced whether it is mirrored or not. With four
+    postings in the bucket, deleting the `Drop` from the shortlist stage takes `entered` to
+    10 against a drop sum of 6 and this test fails.
+    """
+    report = funnel(considered=10, shortlisted=6, hidden_ineligible=0, hidden_non_swe=0,
+                    hidden_zero_signal=4, leads=[lead()], tailor_failed=5)
+
+    shortlist = stage(report, "shortlist")
+    assert shortlist.entered == 10
+    assert shortlist.reconciled is True
+    drop = next(item for item in shortlist.drops if item.reason == "zero_signal_uncertain")
+    assert drop.count == 4
+    # The note has to say what the bucket MEANS, not just name it: this is the only place an
+    # operator reading the artifact learns why the postings went.
+    assert "no recognised requirement terms" in drop.note
+    assert "--include-zero-signal" in drop.note  # the drain is named where the count is
+
+
+def test_the_unmeasured_signal_abstain_is_reported_and_never_subtracted(tmp_path: Path) -> None:
+    """`signal_unmeasured` counts postings that PASSED, so it must not be a `Drop` — AND it has
+    to reach the durable artifact anyway.
+
+    Both halves, because pinning only the negative is what let the counter go nowhere at all.
+    `zero_signal_uncertain: 0` is ambiguous between "no such posting" and "the rule never got
+    the input it reads", and resolving that ambiguity is the ONLY reason this counter exists —
+    so a value that lives in memory and reaches no `Drop`, no note and no JSON key defeats it
+    entirely. Asserted in BOTH rendered halves: absence from the drops is not evidence of
+    presence anywhere else, and a machine consumer reads the JSON, not the prose.
+
+    Set NON-ZERO against a `considered` that excludes it. If it were ever mirrored as a drop
+    the stage would subtract it twice and `reconciled` would go False here.
+    """
+    report = funnel(considered=10, shortlisted=6, hidden_ineligible=0, hidden_non_swe=0,
+                    hidden_zero_signal=4, signal_unmeasured=3, leads=[lead()], tailor_failed=5)
+
+    shortlist = stage(report, "shortlist")
+    assert shortlist.entered == 10
+    assert shortlist.reconciled is True
+    assert not [item for item in shortlist.drops if item.reason == "signal_unmeasured"]
+
+    # The COUNT, not just the name: a renderer that names the bucket and drops the figure
+    # answers nothing from the artifact alone.
+    body = funnel_to_markdown(report)
+    assert "`signal_unmeasured`: 3" in body
+
+    written = write_run_funnel(report, tmp_path)
+    payload = json.loads(written.json_path.read_text())
+    shortlist_json = next(item for item in payload["stages"] if item["name"] == "shortlist")
+    assert "`signal_unmeasured`: 3" in shortlist_json["note"]
+    # And it is still not a drop on the machine-readable side either.
+    assert "signal_unmeasured" not in {drop["reason"] for drop in shortlist_json["drops"]}
 
 
 def test_funnel_carries_run_scoped_attribution() -> None:

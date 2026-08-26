@@ -13,6 +13,7 @@ from datetime import datetime, timedelta
 from typing import Any
 
 from sqlalchemy import (
+    ColumnElement,
     Connection,
     Engine,
     Row,
@@ -43,6 +44,28 @@ from boardwatch.store.tables import (
 # its own table. The pattern mirrors extract/preflight.py:63-81, which finds every
 # missing row with ONE set-oriented correlated EXISTS rather than a per-row lookup.
 _pv = posting_versions.alias("pv_current")
+
+
+def body_is_empty() -> ColumnElement[bool]:
+    """SQL predicate: this open posting's JD body is empty once trimmed (a stub).
+
+    ONE expression with four readers: `run_funnel_queries.count_stub_postings`, which is the
+    stub-rate instrument, and the three corpus-wide ranking surfaces (`top`, `notify`, `stats`)
+    whose zero-signal rule must ABSTAIN rather than veto on a body it never had. If the
+    ranker's notion of "empty" drifted from the instrument's, the alarm and the fail-open would
+    stop describing the same postings — and the fail-open exists precisely so that a lane
+    landing empty bodies raises the alarm instead of reading as clean noise removal.
+
+    Evaluated in SQLite, never in Python: `body_text` is the largest column in the schema and
+    the ranker reads every open posting, so the flag is computed where the row already is.
+    `show <id>` is the one caller that does not use this predicate — it reads a single posting
+    and already has the body in hand — and it repeats the strip set below verbatim for the same
+    agreement reason.
+
+    The two-arg `trim` names the strip set explicitly — SQLite's one-arg `trim` removes spaces
+    ONLY, so a body of tabs or newlines would otherwise read as non-empty.
+    """
+    return func.trim(postings.c.body_text, " \t\n\r\f\v") == ""
 
 # The closed catalog of run outcomes (P0 item 4). Out-of-catalog is a failure, never a new
 # bucket, so the setter raises rather than writing an unknown string.

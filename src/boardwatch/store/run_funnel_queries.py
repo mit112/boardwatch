@@ -37,6 +37,7 @@ from boardwatch.store.identity_queries import (
     load_identities,
     load_identity_inputs,
 )
+from boardwatch.store.queries import body_is_empty
 from boardwatch.store.tables import (
     applications,
     artifacts,
@@ -150,15 +151,16 @@ def count_stub_postings(conn: Connection) -> int:
     """Open postings whose JD body is empty after trimming — the stub-rate numerator (P0 item 6).
 
     Denominated over `count_open_postings`, so the two share the corpus head. `body_text` is
-    NOT NULL, so a stub is a whitespace-only body, not a missing row. The two-arg `trim` names
-    the strip set explicitly — SQLite's one-arg `trim` removes spaces ONLY, so a body of tabs
-    or newlines would otherwise slip through as non-empty."""
+    NOT NULL, so a stub is a whitespace-only body, not a missing row. The predicate itself is
+    `queries.body_is_empty` — shared with the ranking surfaces, which fail the zero-signal rule
+    OPEN on exactly the postings this instrument counts, so the two can never disagree about
+    which body is empty."""
     return int(
         conn.execute(
             select(func.count())
             .select_from(postings)
             .where(postings.c.status == "open")
-            .where(func.trim(postings.c.body_text, " \t\n\r\f\v") == "")
+            .where(body_is_empty())
         ).scalar_one()
     )
 
@@ -310,8 +312,9 @@ def count_candidate_judged_this_run(
 
     NOT "the ranker hides only `ineligible`" — that was this docstring's earlier claim and it is
     false (D-282). `cli/top_cmd.py` also hides `hidden_hard_filter`, `hidden_non_swe`,
-    `hidden_over_seniority` and `hidden_duplicate`, so a posting counted here can still be
-    withheld. This count is RUN-scoped and those buckets are CORPUS-scoped — which is why the
+    `hidden_zero_signal`, `hidden_over_seniority` and `hidden_duplicate`, so a posting counted
+    here can still be withheld. This count is RUN-scoped and those buckets are CORPUS-scoped —
+    which is why the
     zero-output guard reasons over `posting_ids_judged_this_run` and the ranker's RUN-scoped
     twin counters (`hidden_*_this_run`), not over these corpus-scoped buckets directly. The
     guard is armed, not dormant: see `pipeline/runner.py::_zero_output_guard`.

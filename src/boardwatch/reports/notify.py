@@ -22,10 +22,10 @@ from boardwatch.eligibility.read import current_verdicts
 from boardwatch.extract.taxonomy import load_taxonomy
 from boardwatch.rank.heuristic import ProfileView, passes_hard_filters, score_posting
 from boardwatch.rank.leveling import load_leveling, resolve_schemes
-from boardwatch.rank.role_gate import role_verdict
+from boardwatch.rank.role_gate import role_verdict, zero_signal_verdict
 from boardwatch.rank.seniority_gate import TargetBand, seniority_verdict
 from boardwatch.store.param_chunks import id_chunks
-from boardwatch.store.queries import current_posting_versions
+from boardwatch.store.queries import body_is_empty, current_posting_versions
 from boardwatch.store.tables import companies, extractions, posting_events, postings
 
 
@@ -80,6 +80,7 @@ def select_new_matches(
     *,
     now: datetime | None = None,
     include_non_swe: bool = False,
+    include_zero_signal: bool = False,
     include_over_seniority: bool = False,
 ) -> NotifyResult:
     now = now or utcnow()
@@ -99,6 +100,9 @@ def select_new_matches(
             companies.c.provider,
             companies.c.slug,
             extractions.c.json.label("extraction_json"),
+            # The zero-signal rule's third input, computed in SQLite so the body itself is
+            # never transferred. See `queries.body_is_empty`.
+            body_is_empty().label("body_empty"),
         )
         .join(companies, postings.c.company_id == companies.c.id)
         .outerjoin(
@@ -145,9 +149,20 @@ def select_new_matches(
             continue
         if verdicts.get(int(row.id)) == "ineligible":
             continue
+        role = role_verdict(row.title)[0]
         # Same default as `top`: a non-software title is not a "new match" worth a push.
         # Suppressed rather than dropped — `top --include-non-swe` still shows it.
-        if not include_non_swe and role_verdict(row.title)[0] == "not_swe":
+        if not include_non_swe and role == "not_swe":
+            continue
+        # Same default as `top`, and in the same ORDER (before the band gate): a posting whose
+        # title carried no role signal and whose body yielded no recognised term is not a "new
+        # match" worth a push, and pushing it would advance the cursor past a posting `top`
+        # refuses to show — a delivered lead that no drain can bring back. `unmeasured` is
+        # pushed: an abstain is never a suppression, exactly as `uncertain` band is.
+        # Suppressed rather than dropped — `top --include-zero-signal` still shows it.
+        if not include_zero_signal and zero_signal_verdict(
+            role, row.extraction_json, body_empty=bool(row.body_empty)
+        )[0] == "veto":
             continue
         # Same default as `top`: a title above the operator's target band is not a "new match"
         # worth a push. `uncertain` is pushed — an abstain is never a suppression.

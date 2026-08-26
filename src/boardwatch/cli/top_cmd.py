@@ -40,7 +40,12 @@ from boardwatch.rank.heuristic import (
     score_posting,
 )
 from boardwatch.rank.leveling import load_leveling, resolve_schemes
-from boardwatch.rank.role_gate import RoleVerdict, role_verdict
+from boardwatch.rank.role_gate import (
+    RoleVerdict,
+    ZeroSignalVerdict,
+    role_verdict,
+    zero_signal_verdict,
+)
 from boardwatch.rank.seniority_gate import (
     SeniorityVerdict,
     TargetBand,
@@ -55,7 +60,7 @@ from boardwatch.store.identity_queries import (
     load_identity_inputs,
 )
 from boardwatch.store.ledger_queries import live_dispositions, record_disposition
-from boardwatch.store.queries import current_posting_versions, get_profile
+from boardwatch.store.queries import body_is_empty, current_posting_versions, get_profile
 from boardwatch.store.regroup import job_anchors
 from boardwatch.store.run_funnel_queries import posting_ids_judged_this_run
 from boardwatch.store.tables import companies, extractions, posting_events, postings
@@ -77,6 +82,13 @@ class RankedPosting:
     verdict: str | None = None  # the current profile's eligibility verdict, None if unevaluated
     role: RoleVerdict = "uncertain"  # title role gate; "not_swe" is hidden unless asked for
     role_reason: str = ""
+    # The zero-signal rule's own verdict, twin fields in the same shape as `band`/`band_reason`:
+    # the verdict is a closed catalog for machines, the reason is the text that decided it for
+    # humans. `"veto"` reaches `visible` only through `--include-zero-signal`; `"unmeasured"` is
+    # an ordinary visible row that carries WHY the rule could not fire on it, so a fail-open is
+    # readable per-row and not only as a count.
+    zero_signal: ZeroSignalVerdict = "pass"
+    zero_signal_reason: str = ""
     # Title seniority gate (D-246). "above_band" is hidden unless asked for; "uncertain" is
     # counted and passed through, so it reaches the shortlist carrying the text that abstained.
     band: SeniorityVerdict = "in_band"
@@ -102,19 +114,19 @@ class RankedPosting:
 class RankedResults:
     """The shortlist plus every count needed to account for the postings considered.
 
-    `considered` and the eight drop counts exist so the funnel's shortlist stage can reconcile:
+    `considered` and the nine drop counts exist so the funnel's shortlist stage can reconcile:
     `considered == len(visible) + skipped_not_new + hidden_hard_filter + hidden_non_swe +
-    hidden_over_seniority + hidden_ineligible + hidden_duplicate + hidden_applied +
-    hidden_handled + hidden_below_cutoff`. Each is its own counter,
+    hidden_zero_signal + hidden_over_seniority + hidden_ineligible + hidden_duplicate +
+    hidden_applied + hidden_handled + hidden_below_cutoff`. Each is its own counter,
     incremented where the posting actually leaves, never a remainder computed by subtraction —
     a remainder cannot catch a `continue` that forgot to count, which is the only way this
     identity realistically breaks (P0 item 3).
 
-    `uncertain_band` is NOT in that identity and must never be added to it. It is a **reported
-    abstain rate, not a drop**: the postings it counts are in `visible`, already accounted for
-    there, so folding it in would double-count them and break reconciliation. It exists because
-    the keystone invariant says a rule that cannot fire has to be visible as a number rather
-    than as silence.
+    `uncertain_band` and `signal_unmeasured` are NOT in that identity and must never be added
+    to it. They are **reported abstain rates, not drops**: the postings they count are in
+    `visible`, already accounted for there, so folding either in would double-count them and
+    break reconciliation. They exist because the keystone invariant says a rule that cannot
+    fire has to be visible as a number rather than as silence.
 
     That `considered` is `len(rows)` rather than that sum is a **code-review invariant, not a
     tested one**: the loop's exits are exhaustive, so rewriting it as the sum is behaviourally
@@ -136,6 +148,19 @@ class RankedResults:
     The full enumeration, including the sites deliberately NOT touched and why, is in
     `docs/superpowers/plans/2026-08-19-seniority-gate.md` and the spec it cites.
 
+    `hidden_zero_signal` walked that list and reached every site except one, deliberate: the
+    empty-result early-return guard — which `hidden_hard_filter`, `hidden_duplicate`,
+    `hidden_handled` and `hidden_applied` also skip, because `_print_hidden_notices` runs on
+    that path regardless and the bucket is therefore never silent.
+
+    `reports/notify.py` IS one of the sites, and the reverse was claimed here first: that its
+    digest re-derives the role gate from the title alone and has no extraction row to read.
+    It has one — it selects `extractions.c.json` through the same outer join and scores from
+    it — so the rule is computable there, and without it `notify` would push a posting `top`
+    refuses to show and advance its cursor past it, on 35.9% of `uncertain` postings.
+    `reports/stats.py` is a site for the same reason `hidden_non_swe` is: it re-derives this
+    chain IN ORDER, so a posting that is zero-signal is not also counted as over-band.
+
     The stage `reconciled` identities catch a miss in the `Drop` lists and in the `runner.py`
     mapping — at runtime, not statically. **Nothing catches a miss in `_shortlist_line`**, which
     is the operator's only one-line summary, so that one is covered by a test instead
@@ -145,6 +170,12 @@ class RankedResults:
     visible: list[RankedPosting]
     hidden_ineligible: int
     hidden_non_swe: int = 0
+    # Dropped because NEITHER the title nor the body carried any recognised signal: the role
+    # gate abstained (`uncertain`) AND there was a body AND its taxonomy extraction ran and
+    # recognised exactly zero terms. A genuine DROP and part of the identity above, modelled on
+    # `hidden_over_seniority`. Drained by `--include-zero-signal`. A posting with an EMPTY body
+    # or NO extraction row is never counted here — both land in `signal_unmeasured` and ship.
+    hidden_zero_signal: int = 0
     # Dropped by the title seniority gate: the title names a band above `target_seniority_band`
     # (D-246). Only a confident word, roman numeral, or bound-scheme hit lands a posting here —
     # everything else abstains into `uncertain_band` and stays visible. Drained by
@@ -156,6 +187,14 @@ class RankedResults:
     # these postings are in `visible` and are already accounted for there. A rule that cannot
     # fire is a monitoring failure, so this is surfaced as a number rather than as silence.
     uncertain_band: int = 0
+    # The zero-signal veto's abstain rate: `uncertain`-titled postings whose body signal could
+    # not be READ, because the JD body is empty, or no taxonomy extraction exists at the current
+    # version, or its payload carries no skills list. REPORTED, NEVER DROPPED, and NOT part of the
+    # reconciliation identity above — these postings are in `visible` already. It exists because
+    # `hidden_zero_signal == 0` is otherwise ambiguous between "no such posting" and "the
+    # extraction backfill is not running, so the gate is inert", and an inert gate that looks
+    # like a clean one is the monitoring failure the keystone invariant forbids.
+    signal_unmeasured: int = 0
     # Titles carrying SOME seniority signal while the gate was inert
     # (`target_seniority_band == 'any'`). The gate short-circuits on `any` before
     # parsing, so `uncertain_band` and `hidden_over_seniority` are structurally 0
@@ -230,6 +269,7 @@ def rank_open_postings(
     limit: int = 10,
     include_ineligible: bool = False,
     include_non_swe: bool = False,
+    include_zero_signal: bool = False,
     include_over_seniority: bool = False,
     include_hard_filter: bool = False,
     include_duplicates: bool = False,
@@ -284,6 +324,12 @@ def rank_open_postings(
                 companies.c.provider,
                 companies.c.slug,
                 extractions.c.json.label("extraction_json"),
+                # The zero-signal rule's third input, computed in SQLite rather than by
+                # selecting `body_text` — the largest column in the schema, over every open
+                # posting. A row with an empty body has an extraction row like any other (the
+                # preflight backfills unconditionally), so this flag is the only thing that
+                # separates "read the body, found nothing" from "there was no body".
+                body_is_empty().label("body_empty"),
             )
             .join(companies, postings.c.company_id == companies.c.id)
             .outerjoin(
@@ -317,6 +363,8 @@ def rank_open_postings(
         new_ids = _new_posting_ids(conn) if only_new else None
     scored: list[RankedPosting] = []
     hidden_non_swe = 0
+    hidden_zero_signal = 0
+    signal_unmeasured = 0
     hidden_over_seniority = 0
     uncertain_band = 0
     band_tokens_seen_while_inert = 0
@@ -350,6 +398,25 @@ def rank_open_postings(
         if role == "not_swe" and not include_non_swe:
             hidden_non_swe += 1
             continue
+        # The zero-signal rule (see `role_gate.zero_signal_verdict`): the title abstained AND
+        # there was a body AND its extraction ran and recognised nothing. It sits HERE, beside
+        # the role gate whose abstain it consumes, and reads `row.extraction_json` — which the
+        # `select(...)` above already fetches, so that value is available at this point and no
+        # read had to move. `skills` is derived from the same column ~20 lines below; that later
+        # line is the SCORE's input and is deliberately left where it is. `body_empty` is a
+        # boolean computed in SQLite by the same `select(...)`, so the emptiness check costs no
+        # transfer of the body itself.
+        zero_signal, zero_signal_reason = zero_signal_verdict(
+            role, row.extraction_json, body_empty=bool(row.body_empty)
+        )
+        if zero_signal == "unmeasured":
+            # Counted, never dropped, for the same reason `uncertain_band` is: the rule could
+            # not fire on this row, and an unreported abstain is exactly the monitoring failure
+            # the keystone invariant exists to prevent.
+            signal_unmeasured += 1
+        if zero_signal == "veto" and not include_zero_signal:
+            hidden_zero_signal += 1
+            continue
         band, band_reason = seniority_verdict(
             row.title, schemes.get((row.provider, row.slug)),
             target_band, tier, catalog,
@@ -378,6 +445,7 @@ def rank_open_postings(
             why=f"{why} · role: {role_reason}" if role == "not_swe" else why,
             verdict=verdicts.get(int(row.id)),
             role=role, role_reason=role_reason,
+            zero_signal=zero_signal, zero_signal_reason=zero_signal_reason,
             band=band, band_reason=band_reason,
             hard_filter=veto.clause if veto is not None else None,
             hard_filter_reason=veto.detail if veto is not None else "",
@@ -528,14 +596,19 @@ def rank_open_postings(
             visible.append(posting)
             continue
         if kept < limit:
-            # A drained row is NOT surfaced. `--include-over-seniority` and `--include-non-swe`
-            # let you inspect a quarantine; recording those rows `seen` would make looking into
-            # the bucket suppress them from later runs, so the drain would close behind you.
-            # Every drain has to be a re-entry path, not a one-way consumption of the queue
-            # (CLAUDE.md). The duplicate/applied/handled drains already `continue` above this
-            # line and so were never affected; these two reach it because their rows are
-            # ordinary members of `eligible`.
-            if job_id is not None and posting.band != "above_band" and posting.role != "not_swe":
+            # A drained row is NOT surfaced. `--include-over-seniority`, `--include-non-swe` and
+            # `--include-zero-signal` let you inspect a quarantine; recording those rows `seen`
+            # would make looking into the bucket suppress them from later runs, so the drain
+            # would close behind you. Every drain has to be a re-entry path, not a one-way
+            # consumption of the queue (CLAUDE.md). The duplicate/applied/handled drains already
+            # `continue` above this line and so were never affected; these three reach it
+            # because their rows are ordinary members of `eligible`.
+            if (
+                job_id is not None
+                and posting.band != "above_band"
+                and posting.role != "not_swe"
+                and posting.zero_signal != "veto"
+            ):
                 surfaced_job_ids.append(job_id)
             visible.append(posting)
             kept += 1
@@ -551,6 +624,8 @@ def rank_open_postings(
         visible=visible,
         hidden_ineligible=hidden,
         hidden_non_swe=hidden_non_swe,
+        hidden_zero_signal=hidden_zero_signal,
+        signal_unmeasured=signal_unmeasured,
         hidden_over_seniority=hidden_over_seniority,
         uncertain_band=uncertain_band,
         band_tokens_seen_while_inert=band_tokens_seen_while_inert,
@@ -658,11 +733,15 @@ def _why_cell(posting: RankedPosting) -> str:
     # first match showed such a row as merely over-band, so the operator could not tell it was
     # also one they had already applied to — a suppression you cannot read is the leak this
     # column exists to close. The last three are mutually exclusive by construction (each
-    # `continue`s in the ranker), so at most two annotations ever appear. `uncertain` is
-    # deliberately NOT annotated: it is not a drain, it is a normally-visible row.
+    # `continue`s in the ranker), so at most three annotations ever appear (hard filter,
+    # zero signal, over band). `uncertain` and `zero_signal == "unmeasured"` are deliberately
+    # NOT annotated: neither is a drain, both are normally-visible rows, and an extraction
+    # outage would annotate the whole table with a fact the notice already states once.
     notes: list[str] = []
     if posting.hard_filter is not None:
         notes.append(f"hard filter: {posting.hard_filter} ({posting.hard_filter_reason})")
+    if posting.zero_signal == "veto":
+        notes.append(posting.zero_signal_reason)
     if posting.band == "above_band":
         notes.append(posting.band_reason)
     if posting.duplicate_of is not None:
@@ -690,6 +769,7 @@ def _print_hidden_notices(
     *,
     include_ineligible: bool,
     include_non_swe: bool,
+    include_zero_signal: bool,
     include_over_seniority: bool,
     include_hard_filter: bool,
     include_duplicates: bool,
@@ -717,6 +797,25 @@ def _print_hidden_notices(
         target.print(
             f"{results.hidden_non_swe} hidden as non-software roles — see them with "
             "--include-non-swe, each with the title text that vetoed it.",
+            markup=False,
+        )
+    if results.hidden_zero_signal and not include_zero_signal:
+        target.print(
+            f"{results.hidden_zero_signal} hidden as zero-signal — the title carried no role "
+            "signal and the job description yielded no recognised requirement terms. See them "
+            "with --include-zero-signal, each naming what triggered it.",
+            markup=False,
+        )
+    if results.signal_unmeasured:
+        # Printed unconditionally, with no drain to offer, because these rows are ALREADY
+        # visible — nothing is being withheld. It is the zero-signal rule's abstain rate: the
+        # body was never read, so "no signal" is a claim it is not entitled to make. Non-zero
+        # here means the gate is partly inert, which `hidden_zero_signal == 0` alone cannot say.
+        target.print(
+            f"{results.signal_unmeasured} title(s) with no role signal had no readable body, "
+            "so the zero-signal rule could not fire and they were passed through unfiltered — "
+            "`show <id>` names the cause per row: a missing taxonomy extraction clears on the "
+            "next ranking command, an empty JD body means the board is serving stubs.",
             markup=False,
         )
     if results.hidden_over_seniority and not include_over_seniority:
@@ -803,6 +902,12 @@ def top(
     include_non_swe: bool = typer.Option(
         False, "--include-non-swe", help="Show postings the title role gate reads as non-software."
     ),
+    include_zero_signal: bool = typer.Option(
+        False,
+        "--include-zero-signal",
+        help="Show postings whose title carried no role signal and whose job description "
+        "yielded no recognised requirement terms.",
+    ),
     include_over_seniority: bool = typer.Option(
         False,
         "--include-over-seniority",
@@ -847,6 +952,7 @@ def top(
             limit=n,
             include_ineligible=include_ineligible,
             include_non_swe=include_non_swe,
+            include_zero_signal=include_zero_signal,
             include_over_seniority=include_over_seniority,
             include_hard_filter=include_hard_filter,
             include_duplicates=include_duplicates,
@@ -870,6 +976,7 @@ def top(
             results,
             include_ineligible=include_ineligible,
             include_non_swe=include_non_swe,
+            include_zero_signal=include_zero_signal,
             include_over_seniority=include_over_seniority,
             include_hard_filter=include_hard_filter,
             include_duplicates=include_duplicates,
@@ -886,6 +993,10 @@ def top(
                         "score": p.score.total,
                         "why": p.why,
                         "role": p.role,
+                        # Emitted for every row, not only drained ones: `unmeasured` is how a
+                        # script learns the zero-signal rule could not fire on a row it is
+                        # about to trust.
+                        "zero_signal": p.zero_signal,
                         "band": p.band,
                         "duplicate_of": p.duplicate_of,
                         "handled_as": p.handled_as,
@@ -925,6 +1036,7 @@ def top(
             results,
             include_ineligible=include_ineligible,
             include_non_swe=include_non_swe,
+            include_zero_signal=include_zero_signal,
             include_over_seniority=include_over_seniority,
             include_hard_filter=include_hard_filter,
             include_duplicates=include_duplicates,
@@ -951,6 +1063,7 @@ def top(
         results,
         include_ineligible=include_ineligible,
         include_non_swe=include_non_swe,
+        include_zero_signal=include_zero_signal,
         include_over_seniority=include_over_seniority,
         include_hard_filter=include_hard_filter,
         include_duplicates=include_duplicates,

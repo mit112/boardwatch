@@ -946,6 +946,8 @@ def run_pipeline(
             shortlisted=len(ranked.visible),
             hidden_hard_filter=ranked.hidden_hard_filter,
             hidden_non_swe=ranked.hidden_non_swe,
+            hidden_zero_signal=ranked.hidden_zero_signal,
+            signal_unmeasured=ranked.signal_unmeasured,
             hidden_ineligible=ranked.hidden_ineligible,
             hidden_below_cutoff=ranked.hidden_below_cutoff,
             skipped_not_new=ranked.skipped_not_new,

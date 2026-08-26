@@ -89,7 +89,13 @@ def test_new_respects_the_limit(env: Path, seeded_events) -> None:
 # one survives `top 1 --new`.
 # ---------------------------------------------------------------------------
 
-DEGREE_BODY = "We are hiring a backend engineer. A Bachelor's degree is required."
+# The trailing skill sentence is load-bearing. "Recent Role" is `uncertain` to the role gate,
+# so a body with no recognised taxonomy term would put it in the zero-signal quarantine BEFORE
+# the eligibility filter ran — and the hide-before-limit test below would then pass because the
+# posting was gone for an unrelated reason, which is not what it is written to prove.
+DEGREE_BODY = (
+    "We are hiring a backend engineer. A Bachelor's degree is required. Python experience helps."
+)
 PLAIN_BODY = "Python and Go services with PostgreSQL."
 
 
