@@ -6909,7 +6909,7 @@ to <17.1 KB is owed (needs Mit's approval).
 
 ## Session — 2026-08-25 (B5 armed: run-scoped rank attribution — D-302)
 
-**Feature — B5 zero-output guard armed (D-302, PR #164, UNMERGED).** The dormant silent-empty-day guard is
+**Feature — B5 zero-output guard armed (D-302, PR #164 = `0fb50a7`, MERGED + live-driver armed).** The dormant silent-empty-day guard is
 now scoreable: the ranker counts four SUPPRESSION drops restricted to the postings judged this run
 (`hidden_handled_this_run`/`hidden_applied_this_run`/`hidden_duplicate_this_run` + `dead_this_run` from
 liveness ∩ the judged id-set). Guard = `unexplained = J − Σsuppressions_this_run`; `>0` with 0 leads fires,
