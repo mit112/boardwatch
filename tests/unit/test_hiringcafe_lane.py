@@ -20,12 +20,15 @@ from collections import Counter
 from datetime import date
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlsplit
 
 import httpx
 import pytest
 import respx
 from hiringcafe_shape import (
     REVIEW_BY,
+    ROBOTS_ALLOWED_PREFIX,
+    ROBOTS_DISALLOWED_FORMS,
     board_token,
     job_description_payload,
     search_hits,
@@ -158,6 +161,10 @@ def test_the_authored_shape_carries_a_review_deadline():
     Red here is actionable with no network beyond the two `curl` commands the contract ends
     with. Confirm the key names and the source mix, then move `REVIEW_BY` in
     `tests/unit/hiringcafe_shape.py` and record the date and reason beside it.
+
+    RE-READ `robots.txt` in the same pass. The role facet is a path only because the query
+    forms are disallowed, so a narrowed `Allow: /jobs/` puts the lane in violation while every
+    request keeps succeeding -- the one drift here that no assertion can catch by itself.
     """
     assert date.today() <= REVIEW_BY, (
         f"the hiring.cafe shape was last reviewed against the live service before {REVIEW_BY}. "
@@ -669,3 +676,31 @@ def test_every_facet_request_failing_raises_rather_than_reporting_a_quiet_day(tm
         )
 
     assert bodies.call_count == 0
+
+
+@pytest.mark.parametrize(
+    "facet",
+    [
+        "software-engineer",
+        "a/b",                    # a slash would make `/jobs/a/b`, a different route
+        "x?page=2",               # a disallowed query form smuggled in through the facet
+        "y?searchState=z",
+        "../admin",               # path traversal out of the permitted prefix
+    ],
+)
+def test_no_facet_however_shaped_can_build_a_url_robots_disallows(facet):
+    """The permission boundary, asserted against the recorded `robots.txt` rules.
+
+    `lanes.facets` normalizes titles before they get here, so none of these can arrive on the
+    live path today. The point is that the URL builder cannot be TALKED into a disallowed form
+    by its input -- the guarantee has to hold at this boundary rather than depend on a caller
+    upstream continuing to sanitize, because a future second caller would not know to.
+    """
+    (url,) = hiringcafe.search_urls((facet,))
+    split = urlsplit(url)
+
+    assert split.path.startswith(ROBOTS_ALLOWED_PREFIX)
+    assert split.path.count("/") == 2, f"{facet!r} escaped its path segment: {split.path}"
+    # No query string at all, so no disallowed query form can exist in one.
+    assert split.query == ""
+    assert not any(form in url for form in ROBOTS_DISALLOWED_FORMS)
