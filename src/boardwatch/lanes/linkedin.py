@@ -1,10 +1,11 @@
 """Lane 2: LinkedIn guest search (contract transcribed from D-290, 2026-08-24).
 
 Contract: `docs/superpowers/research/2026-08-24-linkedin-lane-contract.md`. Two request shapes, and
-no others:
+no others -- the search takes an optional keyword facet:
 
-    GET .../jobs-guest/jobs/api/seeMoreJobPostings/search?f_TPR=r86400  -- an HTML card list
-    GET .../jobs-guest/jobs/api/jobPosting/{id}                         -- one body, one request
+    GET .../seeMoreJobPostings/search?keywords={facet}&f_TPR=r86400  -- one facet's card list
+    GET .../seeMoreJobPostings/search?f_TPR=r86400                   -- the same list, unfaceted
+    GET .../jobs-guest/jobs/api/jobPosting/{id}                      -- one body, one request
 
 No key, no cookie, no TLS bypass, no app impersonation -- the search answers 200 with no User-Agent
 at all, so there is nothing to spoof (D-290). That is why this lane can exist where Indeed could
@@ -28,18 +29,38 @@ THE ID IS THE URN, NOT THE URL. The job id is read from `data-entity-urn="urn:li
 The job-view URL's trailing number is NOT a reliable id and is never parsed for one -- see the
 `URN_URL_MISMATCH_CARD` trap in `tests/unit/linkedin_shape.py`.
 
-PAGING AND QUERY ARE DELIBERATELY ABSENT. The client makes ONE search GET with `f_TPR=r86400` and
-no keywords or location facet. Paging (`start`) is implied by D-290's cost model but was not pinned
-as a request contract, so inventing it is the defect `lanes/dereference.py` refuses SmartRecruiters;
-and baking a role query in would make the lane Mit-specific and break multi-tenancy -- the hard US
-gate and the role gate run downstream. Both are contract §4/§5 and both are clean later extensions.
+THE QUERY FACET SHIPPED; PAGING DID NOT (probed live 2026-08-26, through this repo's own
+`Fetcher`). Unfaceted, this search returns the general labour market and not the user's: its 10
+cards were dishwasher, crew member, dish steward, cleaner, retail cleaning associate, assembler and
+bar back, and NONE were software. The same search with `keywords=software engineer` returned 10
+software roles at 9 named employers and shared 0 of 10 ids with that baseline -- so `keywords=` is
+honoured rather than decorative, which is what makes a facet worth a request.
+
+THE FACETS COME FROM THE PROFILE, NEVER FROM THIS MODULE. They are `profile.target_titles_json`
+read through `lanes.facets` and handed to the constructor. A role query written down here would fit
+exactly one user and silently mislead every other one -- the multi-tenancy requirement names that
+failure first, and it is why the contract deferred the facet rather than guessing at one. A profile
+naming no target titles falls back to the unfaceted search, which is the behaviour that shipped.
+
+`start` WORKS AND IS STILL NOT IMPLEMENTED. It is a real ITEM offset: `&start=10` and `&start=25`
+each returned 10 cards whose ids were all new against `start=0`, so one search page is 10 cards.
+Paging would buy nothing, because a realistic facet set already lists more cards than
+`DEFAULT_POSTING_BUDGET` can fetch bodies for -- a second page of any facet would only be counted
+`not_attemptable`. Breadth ahead of the budget that consumes it is not breadth.
+
+`location=` IS SILENTLY IGNORED AND MUST NEVER BE SENT. `&location=United States` returned an
+id-identical set to no location at all, exactly like `f_WT=2` (remote) before it. Sending it would
+let a run report a constraint the response never applied, which is worse than carrying none: the
+hard US location gate downstream is the real one.
 """
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from dataclasses import asdict, dataclass
 from datetime import datetime
-from urllib.parse import urlsplit
+from itertools import zip_longest
+from urllib.parse import quote, urlsplit
 
 from selectolax.parser import HTMLParser, Node
 
@@ -58,10 +79,12 @@ LANE_NAME = "linkedin"
 LANE_PROVIDER = "linkedin"
 
 # Contract §1: the guest search, last-24h filtered. `f_TPR=r86400` is the one filter parameter the
-# probe evidenced; `f_WT=2` (remote) returned a byte-identical id set to unfiltered and is not sent.
-SEARCH_URL = (
-    "https://www.linkedin.com/jobs-guest/jobs/api/seeMoreJobPostings/search?f_TPR=r86400"
-)
+# probe evidenced; `f_WT=2` (remote) and `location=` both returned a byte-identical id set to
+# unfiltered and neither is sent. The endpoint and the filter are named separately because the
+# faceted URL carries the same two -- one literal per shape would let them drift apart.
+_SEARCH_ENDPOINT = "https://www.linkedin.com/jobs-guest/jobs/api/seeMoreJobPostings/search"
+_RECENCY_PARAM = "f_TPR=r86400"
+SEARCH_URL = f"{_SEARCH_ENDPOINT}?{_RECENCY_PARAM}"
 _JOB_POSTING_URL = "https://www.linkedin.com/jobs-guest/jobs/api/jobPosting/"
 
 # The ceiling on body GETs per run. A hard cap, not a pacing knob: one search returns ~10 cards and
@@ -99,6 +122,23 @@ class SearchCard:
     location: str
     posted_date: str
     url: str
+
+
+# One card node and the search page it was found on. The URL rides WITH the node rather than being
+# tracked alongside it, so a card can never be attributed to a facet it was not listed under.
+_SearchEntry = tuple[str, Node]
+
+
+@dataclass
+class _CompanyCards:
+    """One company's cards, and the search page the company was FIRST seen on.
+
+    First-seen rather than every page it appeared on: `BoardSnapshot.url` is a single string, and a
+    company listed under three facets has no one truthful list to put there.
+    """
+
+    url: str
+    cards: list[SearchCard]
 
 
 def card_nodes(page_html: str) -> list[Node]:
@@ -154,34 +194,62 @@ def job_posting_url(job_id: str) -> str:
     return f"{_JOB_POSTING_URL}{job_id}"
 
 
+def search_urls(facets: Sequence[str]) -> tuple[str, ...]:
+    """One keyword search per facet, in order, or the unfaceted search when there are no facets.
+
+    `location` is NOT sent, at any point, for either shape: the probe returned an id-identical set
+    with and without it, so a run carrying it would report a constraint the response never applied.
+
+    `quote` with no safe characters keeps a facet inside the one parameter it belongs to. A title
+    arriving with an `&` in it would otherwise append a parameter of its own and reshape the
+    request -- the facets come from user profile data, which no module here gets to assume about.
+
+    The no-facet fallback is the behaviour that shipped, and it is a fallback rather than an error
+    because a profile naming no target titles is a legitimate profile: it is what every user has
+    before onboarding fills one in.
+    """
+    if not facets:
+        return (SEARCH_URL,)
+    return tuple(
+        f"{_SEARCH_ENDPOINT}?keywords={quote(facet, safe='')}&{_RECENCY_PARAM}"
+        for facet in facets
+    )
+
+
 class LinkedInLane:
     name = LANE_NAME
 
-    def __init__(self, posting_budget: int = DEFAULT_POSTING_BUDGET) -> None:
+    def __init__(
+        self,
+        posting_budget: int = DEFAULT_POSTING_BUDGET,
+        search_facets: Sequence[str] = (),
+    ) -> None:
         self._posting_budget = posting_budget
+        # Injected rather than read here: the facets are derived from the user's profile row, which
+        # lives in the store, and a lane must not reach into the store for its own configuration.
+        self._search_facets = tuple(search_facets)
 
     def collect(self, fetcher: Fetcher, admits: CompanyAdmission) -> LaneResult:
-        """One search GET, then one body GET per posting at an admitted company.
+        """One search GET per keyword facet, then one body GET per posting at an admitted company.
 
         `admits` is asked once per distinct `(linkedin, slug)`, in first-seen order, BEFORE any body
         is fetched -- the protocol's contract, and the only ordering under which the per-run company
         cap saves requests instead of discarding paid-for ones.
         """
-        result = fetcher.get(SEARCH_URL)
-        nodes = card_nodes(result.content.decode("utf-8", "replace"))
+        entries = self._search(fetcher)
 
         tally = AcquisitionTally()
-        by_company = _group_by_company(nodes, tally)
+        by_company = _group_by_company(entries, tally)
         snapshots: list[LaneCompanySnapshot] = []
         remaining = self._posting_budget
-        for slug, cards in by_company.items():
+        for slug, company in by_company.items():
             if not admits(LANE_PROVIDER, slug):
                 # Nothing tallied for a refused company: no request was attempted, and an outcome
                 # here would inflate `attempted` with non-attempts. Refusals are reported by name
                 # through `admission.CompanyBudget.refused`.
                 continue
             postings: list[RawPosting] = []
-            for card in cards:
+            for card in company.cards:
                 if remaining <= 0:
                     # Seen, not requested. `not_attemptable` is the closed catalog's only member
                     # meaning that; a silent drop is what the catalog exists to prevent.
@@ -198,11 +266,63 @@ class LinkedInLane:
                     LaneCompanySnapshot(
                         provider=LANE_PROVIDER,
                         slug=slug,
-                        name=cards[0].company_name or slug,
-                        snapshot=lane_snapshot(postings, SEARCH_URL),
+                        name=company.cards[0].company_name or slug,
+                        # The search page this company was actually found on. Citing the unfaceted
+                        # URL would name a page a faceted run never requested.
+                        snapshot=lane_snapshot(postings, company.url),
                     )
                 )
         return LaneResult(snapshots=tuple(snapshots), tally=tally)
+
+    def _search(self, fetcher: Fetcher) -> list[_SearchEntry]:
+        """Every configured search page, its card nodes paired with the URL they came from.
+
+        The result is INTERLEAVED across facets, round-robin, and that is load-bearing rather than
+        tidy. The body budget is spent in iteration order, so concatenating instead would let the
+        first facet consume all of it and every later target title contribute nothing -- a lane
+        reporting fourteen facets while delivering only the profile's first one.
+        """
+        urls = search_urls(self._search_facets)
+        if not self._search_facets:
+            # The unfaceted fallback keeps the single-search contract it shipped with: a transport
+            # or structural failure propagates, because with one search there are no other results
+            # for it to cost, and `card_nodes`' own message is the most specific one available.
+            result = fetcher.get(urls[0])
+            nodes = card_nodes(result.content.decode("utf-8", "replace"))
+            return [(urls[0], node) for node in nodes]
+
+        per_facet: list[list[_SearchEntry]] = []
+        failed = 0
+        for url in urls:
+            try:
+                result = fetcher.get(url)
+                nodes = card_nodes(result.content.decode("utf-8", "replace"))
+            except (FetchFailure, SearchPageError):
+                # Per-facet isolation, the same shape D-307 gave a board's apply failure inside a
+                # scan. One search per target title means a run makes many, so the seventh must
+                # not discard the six already paid for; the fetcher has retried with backoff by
+                # the time it raises, so this is a surviving failure rather than a blip.
+                # `SearchPageError` belongs here too: `card_nodes` raises it on a page with no
+                # cards, and one keyword matching nothing is a profile-data matter -- raising
+                # would let a single odd target title disable the whole lane. Isolation must not
+                # become suppression, which is what the all-empty check below is for.
+                failed += 1
+                per_facet.append([])
+                continue
+            per_facet.append([(url, node) for node in nodes])
+
+        if not any(per_facet):
+            # Not a quiet day, and the tally cannot see it either: with no cards nothing is ever
+            # attempted, so `is_silent_outage` stays False and the lane reports a clean run with no
+            # postings forever -- the prior art's 11-run silent outage. The all-FAILED case is the
+            # same guard on purpose, and both counts are named so a host refusing us stays
+            # distinguishable from a profile whose target titles match nothing.
+            raise SearchPageError(
+                f"every keyword facet yielded nothing ({len(per_facet)} searched, {failed} "
+                "request failures): the card fragment has moved, the host is refusing us, or "
+                "none of the profile's target titles match a posting"
+            )
+        return [entry for row in zip_longest(*per_facet) for entry in row if entry is not None]
 
     def _fetch_posting(
         self, fetcher: Fetcher, card: SearchCard, tally: AcquisitionTally
@@ -221,8 +341,8 @@ class LinkedInLane:
 
 
 def _group_by_company(
-    nodes: list[Node], tally: AcquisitionTally
-) -> dict[str, list[SearchCard]]:
+    entries: list[_SearchEntry], tally: AcquisitionTally
+) -> dict[str, _CompanyCards]:
     """Cards bucketed by company slug, first-seen order preserved.
 
     Grouping by slug rather than display name is the point the `NAME_COLLISION_CARDS` trap makes: a
@@ -234,10 +354,13 @@ def _group_by_company(
     violates UNIQUE(company_id, provider_posting_id) inside `apply_board`'s single transaction,
     rolling the whole board back and taking every later company's results with it. An aggregator MAY
     serve one posting twice; every ATS provider enumerates a board once and may assume distinct ids.
+    Two facets returning one posting is the ordinary case of that -- `software engineer` and
+    `backend engineer` overlap by design -- so the same `seen` set spends one body GET on it, not
+    two, and the second listing is counted rather than dropped in silence.
     """
-    grouped: dict[str, list[SearchCard]] = {}
+    grouped: dict[str, _CompanyCards] = {}
     seen: set[tuple[str, str]] = set()
-    for node in nodes:
+    for url, node in entries:
         try:
             card = parse_card(node)
         except UnparseableCard:
@@ -248,7 +371,8 @@ def _group_by_company(
             tally.record("not_attemptable")
             continue
         seen.add(key)
-        grouped.setdefault(card.company_slug, []).append(card)
+        group = grouped.setdefault(card.company_slug, _CompanyCards(url, []))
+        group.cards.append(card)
     return grouped
 
 

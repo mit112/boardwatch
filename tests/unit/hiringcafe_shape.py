@@ -40,6 +40,15 @@ PROBED = date(2026, 8, 23)
 # PROBED + 90, the window `tools/generalization/fixtures.py` uses for the six ATS captures.
 REVIEW_BY = date(2026, 11, 21)
 
+# `robots.txt`, read 2026-08-26, when the role facet shipped. RECORDED rather than remembered
+# because the lane's whole request shape follows from these three rules: the role route is a
+# PATH precisely because the query forms are disallowed. If the Allow ever narrows, or a
+# Disallow widens to cover `/jobs/`, the lane is in violation and nothing else in this repo
+# would notice -- the requests would keep succeeding. Re-read these when rolling `REVIEW_BY`.
+ROBOTS_READ = date(2026, 8, 26)
+ROBOTS_ALLOWED_PREFIX = "/jobs/"
+ROBOTS_DISALLOWED_FORMS: tuple[str, ...] = ("?searchState=", "?page=", "&page=")
+
 # ---------------------------------------------------------------------------------------
 # Recorded numbers. Everything below is generated from these; nothing else is a magic number.
 # ---------------------------------------------------------------------------------------

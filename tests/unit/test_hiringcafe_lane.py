@@ -20,12 +20,15 @@ from collections import Counter
 from datetime import date
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlsplit
 
 import httpx
 import pytest
 import respx
 from hiringcafe_shape import (
     REVIEW_BY,
+    ROBOTS_ALLOWED_PREFIX,
+    ROBOTS_DISALLOWED_FORMS,
     board_token,
     job_description_payload,
     search_hits,
@@ -158,6 +161,10 @@ def test_the_authored_shape_carries_a_review_deadline():
     Red here is actionable with no network beyond the two `curl` commands the contract ends
     with. Confirm the key names and the source mix, then move `REVIEW_BY` in
     `tests/unit/hiringcafe_shape.py` and record the date and reason beside it.
+
+    RE-READ `robots.txt` in the same pass. The role facet is a path only because the query
+    forms are disallowed, so a narrowed `Allow: /jobs/` puts the lane in violation while every
+    request keeps succeeding -- the one drift here that no assertion can catch by itself.
     """
     assert date.today() <= REVIEW_BY, (
         f"the hiring.cafe shape was last reviewed against the live service before {REVIEW_BY}. "
@@ -463,3 +470,252 @@ def test_a_hit_with_no_title_is_refused_before_its_body_is_paid_for(tmp_path):
     assert result.tally.counts["not_attemptable"] == 1
     # A hit with no processed block reports NO location rather than a coordinate.
     assert result.snapshots[0].snapshot.postings[0].locations == []
+
+
+# --- the role facet (contract §4's deferred extension) -------------------------------------
+#
+# Probed live 2026-08-26. `robots.txt` decides the SHAPE of this feature and is the reason it is
+# a path and not a query: `Disallow: /*?searchState=*` rules out the site's own query-parameter
+# search, while `Allow: /jobs/` and a `job-search-sitemap.xml` listing 10,000+ role pages make
+# the path route explicitly permitted. Building the query form would have taken this lane from
+# compliant to disallowed, which is why the URL builder is tested rather than assumed.
+
+
+def test_a_facet_becomes_the_permitted_role_path_and_never_a_search_query(tmp_path):
+    """`robots.txt` disallows `?searchState=` and allows `/jobs/`. The slug is a PATH segment.
+
+    Asserted on the built string rather than trusted, because the disallowed form differs from
+    the allowed one by punctuation alone and no downstream test would notice the difference.
+    """
+    urls = hiringcafe.search_urls(("software-engineer", "ios-engineer"))
+
+    assert urls == (
+        "https://hiringcafe.com/jobs/software-engineer",
+        "https://hiringcafe.com/jobs/ios-engineer",
+    )
+    assert not any("?" in url or "searchState" in url or "page=" in url for url in urls)
+
+
+def test_a_facet_TERM_is_hyphenated_into_the_path_and_never_sent_with_spaces():
+    """`lanes.facets` yields a canonical term ("software engineer"); this route needs a hyphen.
+
+    Pinned separately from the tests above, which pass already-hyphenated facets and so cannot
+    fail if the conversion is dropped — a mutation removing `.replace(" ", "-")` passed all of
+    them. The two lanes need OPPOSITE encodings of the same term (LinkedIn's probe evidenced
+    `keywords=software%20engineer`), so the conversion has to be asserted where it happens.
+    """
+    assert hiringcafe.search_urls(("software engineer", "ios engineer")) == (
+        "https://hiringcafe.com/jobs/software-engineer",
+        "https://hiringcafe.com/jobs/ios-engineer",
+    )
+    assert not any("%20" in url for url in hiringcafe.search_urls(("machine learning engineer",)))
+
+
+def test_no_facets_falls_back_to_the_unfaceted_search_exactly_as_before():
+    """A user whose profile names no target titles keeps the behaviour that shipped."""
+    assert hiringcafe.search_urls(()) == (SEARCH_URL,)
+
+
+def _facet_url(slug: str) -> str:
+    return f"https://hiringcafe.com/jobs/{slug}"
+
+
+def _mock_facet(slug: str, hits: list[dict[str, Any]] | None) -> respx.Route:
+    """One facet page. `None` means the 200-with-zero-results page a bogus slug returns."""
+    return respx.get(_facet_url(slug)).mock(
+        return_value=httpx.Response(200, text=search_page_html(hits if hits is not None else []))
+    )
+
+
+@respx.mock
+def test_one_search_per_facet_and_the_unfaceted_page_is_never_requested(tmp_path):
+    hits = search_hits()
+    root = _mock_search(hits)
+    swe = _mock_facet("software-engineer", hits[:4])
+    ios = _mock_facet("ios-engineer", hits[4:8])
+    _mock_bodies(hits)
+
+    HiringCafeLane(search_facets=("software-engineer", "ios-engineer")).collect(
+        _fetcher(tmp_path), lambda provider, slug: True
+    )
+
+    assert (swe.call_count, ios.call_count) == (1, 1)
+    # The whole point of the feature: the general-market listing is not fetched at all.
+    assert root.call_count == 0
+
+
+@respx.mock
+def test_a_posting_listed_under_two_facets_costs_one_body_get_not_two(tmp_path):
+    """Overlapping facets are normal — `Software Engineer` and `Backend Engineer` return the
+    same posting — and a second body GET for it is a paid-for duplicate. It is also the crash
+    D-306 fixed: two rows with one `provider_posting_id` violate UNIQUE inside one transaction.
+    """
+    shared = search_hits()[:3]
+    _mock_facet("software-engineer", shared)
+    _mock_facet("backend-engineer", shared)
+    bodies = _mock_bodies(shared)
+
+    result = HiringCafeLane(search_facets=("software-engineer", "backend-engineer")).collect(
+        _fetcher(tmp_path), lambda provider, slug: True
+    )
+
+    assert bodies.call_count == 3
+    assert result.tally.counts["body_fetched"] == 3
+    # The three re-listed hits were SEEN and not fetched; a silent drop is what the catalog exists
+    # to prevent.
+    assert result.tally.counts["not_attemptable"] == 3
+    stored = [
+        posting.provider_posting_id
+        for company in result.snapshots
+        for posting in company.snapshot.postings
+    ]
+    assert len(stored) == len(set(stored)) == 3
+
+
+@respx.mock
+def test_the_body_budget_spreads_across_facets_instead_of_being_eaten_by_the_first(tmp_path):
+    """Without interleaving, facet 1 consumes the whole budget and every later target title
+    contributes nothing — the feature would deliver only the profile's first title while
+    reporting that fourteen facets ran.
+    """
+    hits = search_hits()
+    first, second = hits[:20], hits[20:40]
+    _mock_facet("software-engineer", first)
+    _mock_facet("ios-engineer", second)
+    _mock_bodies(hits)
+
+    result = HiringCafeLane(
+        posting_budget=6, search_facets=("software-engineer", "ios-engineer")
+    ).collect(_fetcher(tmp_path), lambda provider, slug: True)
+
+    fetched = {
+        posting.provider_posting_id
+        for company in result.snapshots
+        for posting in company.snapshot.postings
+    }
+    from_first = {hit["objectID"] for hit in first} & fetched
+    from_second = {hit["objectID"] for hit in second} & fetched
+    assert len(fetched) == 6
+    assert from_first and from_second, "one facet took the entire body budget"
+
+
+@respx.mock
+def test_the_snapshot_records_the_facet_page_a_company_was_found_on(tmp_path):
+    """Provenance has to name the URL actually requested. Recording the unfaceted root would
+    cite a page this run never fetched.
+    """
+    hits = search_hits()[:2]
+    _mock_facet("ios-engineer", hits)
+    _mock_bodies(hits)
+
+    result = HiringCafeLane(search_facets=("ios-engineer",)).collect(
+        _fetcher(tmp_path), lambda provider, slug: True
+    )
+
+    assert {company.snapshot.url for company in result.snapshots} == {_facet_url("ios-engineer")}
+
+
+@respx.mock
+def test_every_facet_returning_nothing_raises_instead_of_reporting_a_quiet_day(tmp_path):
+    """The outage case, and the reason this is not left to the tally.
+
+    A bogus slug answers 200 with an EMPTY result list, not 404 — probed. So if the role route
+    moves, every facet returns zero, no request fails, and the lane reports a clean run with no
+    postings forever. That is exactly the prior art's 11-run silent outage. `attempted` cannot
+    catch it either: with no hits, nothing is ever attempted, so `is_silent_outage` stays False.
+    """
+    _mock_facet("software-engineer", None)
+    _mock_facet("ios-engineer", None)
+    bodies = _mock_bodies([])
+
+    with pytest.raises(SearchPageError, match="facet"):
+        HiringCafeLane(search_facets=("software-engineer", "ios-engineer")).collect(
+            _fetcher(tmp_path), lambda provider, slug: True
+        )
+
+    assert bodies.call_count == 0
+
+
+@respx.mock
+def test_one_empty_facet_among_several_is_tolerated_rather_than_fatal(tmp_path):
+    """A single unproductive target title is a profile-data matter, not an outage. Raising here
+    would let one odd title in a profile disable the whole lane.
+    """
+    hits = search_hits()[:3]
+    _mock_facet("software-engineer", hits)
+    _mock_facet("zzq-not-a-real-role", None)
+    _mock_bodies(hits)
+
+    result = HiringCafeLane(
+        search_facets=("software-engineer", "zzq-not-a-real-role")
+    ).collect(_fetcher(tmp_path), lambda provider, slug: True)
+
+    assert result.tally.counts["body_fetched"] == 3
+    assert result.tally.is_silent_outage is False
+
+
+@respx.mock
+def test_one_facet_whose_request_fails_does_not_cost_the_others_their_results(tmp_path):
+    """Per-facet isolation, the same shape D-307 gave a board's apply failure.
+
+    The unfaceted lane made ONE search request, so a failure there could only cost that one
+    request. A faceted lane makes fourteen, and letting the seventh abort the collection
+    discards six facets' worth of already-paid-for work. The fetcher has already retried with
+    backoff by the time it raises, so this is the surviving-failure case, not a transient one.
+    """
+    hits = search_hits()[:3]
+    _mock_facet("software-engineer", hits)
+    respx.get(_facet_url("ios-engineer")).mock(return_value=httpx.Response(503))
+    _mock_bodies(hits)
+
+    result = HiringCafeLane(
+        search_facets=("software-engineer", "ios-engineer")
+    ).collect(_fetcher(tmp_path), lambda provider, slug: True)
+
+    assert result.tally.counts["body_fetched"] == 3
+    assert result.tally.is_silent_outage is False
+
+
+@respx.mock
+def test_every_facet_request_failing_raises_rather_than_reporting_a_quiet_day(tmp_path):
+    """Isolation must not become suppression: if the host refuses every facet, that is the
+    outage case and it has to reach the runner, exactly as an all-empty result does."""
+    respx.get(url__startswith="https://hiringcafe.com/jobs/").mock(
+        return_value=httpx.Response(403)
+    )
+    bodies = _mock_bodies([])
+
+    with pytest.raises(SearchPageError, match="facet"):
+        HiringCafeLane(search_facets=("software-engineer", "ios-engineer")).collect(
+            _fetcher(tmp_path), lambda provider, slug: True
+        )
+
+    assert bodies.call_count == 0
+
+
+@pytest.mark.parametrize(
+    "facet",
+    [
+        "software-engineer",
+        "a/b",                    # a slash would make `/jobs/a/b`, a different route
+        "x?page=2",               # a disallowed query form smuggled in through the facet
+        "y?searchState=z",
+        "../admin",               # path traversal out of the permitted prefix
+    ],
+)
+def test_no_facet_however_shaped_can_build_a_url_robots_disallows(facet):
+    """The permission boundary, asserted against the recorded `robots.txt` rules.
+
+    `lanes.facets` normalizes titles before they get here, so none of these can arrive on the
+    live path today. The point is that the URL builder cannot be TALKED into a disallowed form
+    by its input -- the guarantee has to hold at this boundary rather than depend on a caller
+    upstream continuing to sanitize, because a future second caller would not know to.
+    """
+    (url,) = hiringcafe.search_urls((facet,))
+    split = urlsplit(url)
+
+    assert split.path.startswith(ROBOTS_ALLOWED_PREFIX)
+    assert split.path.count("/") == 2, f"{facet!r} escaped its path segment: {split.path}"
+    # No query string at all, so no disallowed query form can exist in one.
+    assert split.query == ""
+    assert not any(form in url for form in ROBOTS_DISALLOWED_FORMS)

@@ -35,7 +35,7 @@ from boardwatch.pipeline import runner as runner_mod
 from boardwatch.pipeline.runner import PipelineSummary, _collect_lane, _run_lanes, run_pipeline
 from boardwatch.store import tables
 from boardwatch.store.db import ensure_schema, get_engine
-from boardwatch.store.queries import insert_run
+from boardwatch.store.queries import insert_run, save_profile
 from tests.pipeline.test_pipeline_run import INIT_INPUT, _cli, _seed_posting
 
 LANE_URL = "https://aggregator.test/search"
@@ -318,7 +318,7 @@ def test_a_lane_that_raises_is_recorded_and_the_other_lanes_still_run(
     good = StubLane([("hiringcafe", "src:a")])
     boom.name, good.name = "boom", "good"
     monkeypatch.setattr(
-        runner_mod, "LANE_FACTORIES", {"boom": lambda _s: boom, "good": lambda _s: good}
+        runner_mod, "LANE_FACTORIES", {"boom": lambda _s, _f: boom, "good": lambda _s, _f: good}
     )
 
     reports, errors = _run_lanes(
@@ -359,7 +359,7 @@ def test_the_lane_fetcher_is_a_second_instance_with_a_browser_user_agent(
     one, and it must come from a SEPARATE `Fetcher` so per-host pacing is not shared with a
     provider host."""
     lane = StubLane([])
-    monkeypatch.setattr(runner_mod, "LANE_FACTORIES", {"stub": lambda _s: lane})
+    monkeypatch.setattr(runner_mod, "LANE_FACTORIES", {"stub": lambda _s, _f: lane})
 
     _run_lanes(engine, _settings(tmp_path, lanes_enabled=("stub",)), insert_run(engine))
 
@@ -472,7 +472,7 @@ def test_a_lane_failure_leaves_the_run_otherwise_unchanged(
     monkeypatch.setattr(
         runner_mod,
         "LANE_FACTORIES",
-        {"boom": lambda _s: StubLane([], raises=RuntimeError("aggregator moved"))},
+        {"boom": lambda _s, _f: StubLane([], raises=RuntimeError("aggregator moved"))},
     )
     with_lane = _pipeline(lane_dir, tmp_path / "lane-out", lanes_enabled=("boom",))
 
@@ -500,7 +500,7 @@ def test_the_funnel_carries_the_lane_section_and_still_reads_artifact_version_6(
     artifact agrees with them while carrying a section they predate."""
     _ready(env)
     lane = StubLane([("hiringcafe", "src:acme")], outcomes=("body_inline", "fetch_gone"))
-    monkeypatch.setattr(runner_mod, "LANE_FACTORIES", {"stub": lambda _s: lane})
+    monkeypatch.setattr(runner_mod, "LANE_FACTORIES", {"stub": lambda _s, _f: lane})
 
     summary = _pipeline(env, tmp_path / "apps", lanes_enabled=("stub",))
 
@@ -528,7 +528,7 @@ def test_a_lane_company_reaches_the_funnels_per_source_table_as_a_lane(
     `LaneReport` the stage built."""
     _ready(env)
     monkeypatch.setattr(
-        runner_mod, "LANE_FACTORIES", {"stub": lambda _s: StubLane([("hiringcafe", "src:acme")])}
+        runner_mod, "LANE_FACTORIES", {"stub": lambda _s, _f: StubLane([("hiringcafe", "src:acme")])}
     )
 
     _pipeline(env, tmp_path / "apps", lanes_enabled=("stub",))
@@ -537,3 +537,70 @@ def test_a_lane_company_reaches_the_funnels_per_source_table_as_a_lane(
     lane_sources = [s for s in payload["sources"] if s["company_source"] == "lane"]
     assert [s["board_slug"] for s in lane_sources] == ["src:acme"]
     assert lane_sources[0]["open_postings"] == 1
+
+
+# --- the role facet reaches the lane from the PROFILE, never from the module ---------------
+
+
+def _profile(engine: Engine, target_titles: list[str]) -> None:
+    """A profile row, saved the way `profile set` would."""
+    with engine.begin() as conn:
+        save_profile(
+            conn,
+            text="résumé text",
+            target_titles=target_titles,
+            exclude_titles=[],
+            locations=["United States"],
+            remote_only=False,
+            skills=["Python"],
+            taxonomy_version="t1",
+            resume_max_pages=1,
+        )
+
+
+def _facets_handed_to_the_lane(
+    engine: Engine, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> list[tuple[str, ...]]:
+    """Every facet tuple the stage constructed a lane with."""
+    handed: list[tuple[str, ...]] = []
+    lane = StubLane([("hiringcafe", "src:acme")])
+
+    def _factory(_settings: Settings, facets: tuple[str, ...]) -> StubLane:
+        handed.append(facets)
+        return lane
+
+    monkeypatch.setattr(runner_mod, "LANE_FACTORIES", {"stub": _factory})
+    _run_lanes(engine, _settings(tmp_path, lanes_enabled=("stub",)), insert_run(engine))
+    return handed
+
+
+def test_the_lane_stage_derives_its_facets_from_the_profiles_target_titles(
+    engine: Engine, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The multi-tenancy requirement, asserted where it can actually be broken.
+
+    If a lane ever carries its own role query, this is the test that keeps passing while the
+    product silently fits exactly one user — so it asserts the facets came from THIS profile,
+    with a title no default would ever contain.
+    """
+    _profile(engine, ["Software Engineer", "Veterinary Technician"])
+
+    assert _facets_handed_to_the_lane(engine, tmp_path, monkeypatch) == [
+        ("software engineer", "veterinary technician")
+    ]
+
+
+def test_a_profile_with_no_target_titles_leaves_the_lane_unfaceted(
+    engine: Engine, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _profile(engine, [])
+
+    assert _facets_handed_to_the_lane(engine, tmp_path, monkeypatch) == [()]
+
+
+def test_no_profile_row_at_all_leaves_the_lane_unfaceted_rather_than_failing(
+    engine: Engine, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A store with no profile is every store before onboarding runs. The lane must still run:
+    breadth is additive, and a missing profile is not a lane failure."""
+    assert _facets_handed_to_the_lane(engine, tmp_path, monkeypatch) == [()]
