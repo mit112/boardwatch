@@ -15,7 +15,7 @@ import inspect
 from dataclasses import replace
 from datetime import date
 from pathlib import Path
-from urllib.parse import urlsplit
+from urllib.parse import quote, urlsplit
 
 import httpx
 import pytest
@@ -391,13 +391,332 @@ def test_the_job_posting_url_is_built_from_the_id():
 
 
 def test_the_lane_is_registered_but_off_by_default(tmp_path):
-    """Registered makes it reachable; enabled runs it. D-290: it ships off and not armed."""
+    """Registered makes it reachable; enabled runs it. D-290: it ships off and not armed.
+
+    The factory's second argument is the run's facets, and they are asserted through it rather
+    than only on the constructor: a registry row that dropped them would leave every unit test
+    here green while the live lane searched the general labour market.
+    """
     from boardwatch.pipeline.runner import LANE_FACTORIES
 
     settings = Settings(data_dir=tmp_path, config_dir=tmp_path, lane_posting_budget=7)
     assert "linkedin" in LANE_FACTORIES
-    built = LANE_FACTORIES["linkedin"](settings)
+    built = LANE_FACTORIES["linkedin"](settings, ("software-engineer",))
     assert isinstance(built, LinkedInLane)
     assert built._posting_budget == 7
+    assert built._search_facets == ("software-engineer",)
     # Off by default: nothing in the registry runs until an operator names it.
     assert "linkedin" not in settings.lanes_enabled
+
+
+# ---------------------------------------------------------------------------------------
+# The keyword facet -- contract §5's deferred half, probed live 2026-08-26.
+#
+# `keywords=` is honoured, and the evidence is an id set rather than a plausible-looking page:
+# the faceted search returned 10 software roles at 9 named employers and shared ZERO of 10 ids
+# with the unfaceted search, whose 10 cards were dishwasher, crew member, cleaner and bar back.
+# `location=` is silently ignored -- id-identical to no-location, exactly like `f_WT=2` -- so it
+# must never be sent, which is why the URL builder is asserted on the string it builds.
+# ---------------------------------------------------------------------------------------
+
+
+def _facet_url(facet: str) -> str:
+    """The faceted search URL, built here rather than by calling `search_urls`.
+
+    Independent of the builder on purpose: a routing test that asked the implementation for the
+    URL it was about to assert would agree with any URL the implementation chose, including one
+    carrying `location=`.
+    """
+    return f"{_SEARCH_PREFIX}?keywords={quote(facet, safe='')}&f_TPR=r86400"
+
+
+def _mock_facet(facet: str, cards: list[Card] | None) -> respx.Route:
+    """One facet's search page. `None` is the no-card page, which `card_nodes` refuses."""
+    return respx.get(_facet_url(facet)).mock(
+        return_value=httpx.Response(
+            200, text=search_page_html(cards if cards is not None else [])
+        )
+    )
+
+
+def _mock_facet_refused(facet: str, status: int = 403) -> respx.Route:
+    """One facet's search REFUSED. The fetcher raises `FetchFailure` for it, not `SearchPageError`.
+
+    403 rather than a timeout because it is the failure this host actually threatens: the guest
+    routes are the ones `robots.txt` disallows, so a refusal is the expected way for one request
+    in a run to die.
+    """
+    return respx.get(_facet_url(facet)).mock(return_value=httpx.Response(status, text=""))
+
+
+def _one_card_per_company(prefix: str, id_base: int, count: int) -> list[Card]:
+    """`count` cards at `count` DISTINCT companies, so the group order is the card order.
+
+    Distinct companies are what makes an interleave observable at all: `_group_by_company`
+    collapses a facet's cards by slug and the budget is spent company by company, so a fixture
+    with several postings per company reads the same either way round.
+    """
+    return [
+        Card(
+            job_id=str(id_base + index),
+            title="Backend Engineer",
+            company_name=f"{prefix.title()} {index:02d}",
+            company_slug=f"{prefix}-{index:02d}",
+            location="Austin, TX",
+            posted_date="2026-08-23",
+        )
+        for index in range(count)
+    ]
+
+
+def test_a_facet_becomes_a_keywords_query_and_never_a_location_one():
+    """`keywords=` is honoured (0 of 10 ids shared with the unfaceted set); `location=` is not.
+
+    A silently ignored parameter is worse than an absent one: the run would report that it had
+    constrained the search to the US while the response was the same one no-location returns.
+    """
+    urls = linkedin.search_urls(("software engineer", "site reliability engineer"))
+
+    assert urls == (
+        "https://www.linkedin.com/jobs-guest/jobs/api/seeMoreJobPostings/search"
+        "?keywords=software%20engineer&f_TPR=r86400",
+        "https://www.linkedin.com/jobs-guest/jobs/api/seeMoreJobPostings/search"
+        "?keywords=site%20reliability%20engineer&f_TPR=r86400",
+    )
+    assert not any("location" in url or "start=" in url for url in urls)
+
+
+def test_no_facets_falls_back_to_the_search_url_that_shipped():
+    """A profile that names no target titles is a legitimate profile, not an error."""
+    assert linkedin.search_urls(()) == (linkedin.SEARCH_URL,)
+
+
+def test_the_facets_are_a_second_keyword_argument_and_stored_as_a_tuple():
+    """`collect`'s parameter list belongs to the protocol, so the facets are constructor state.
+
+    Position is asserted because the runner's factory passes `posting_budget` by name and a
+    facet argument that landed in front of it would still typecheck.
+    """
+    assert list(inspect.signature(LinkedInLane.__init__).parameters) == [
+        "self",
+        "posting_budget",
+        "search_facets",
+    ]
+    assert LinkedInLane(search_facets=["software engineer"])._search_facets == (
+        "software engineer",
+    )
+
+
+@respx.mock
+def test_one_search_per_facet_and_the_unfaceted_url_is_never_requested(tmp_path):
+    """The whole point of the feature: the general labour market is not fetched at all."""
+    cards = search_cards()
+    root = respx.get(linkedin.SEARCH_URL).mock(
+        return_value=httpx.Response(200, text=search_page_html(cards))
+    )
+    swe = _mock_facet("software engineer", cards[:4])
+    data = _mock_facet("data engineer", cards[4:])
+    _mock_bodies(cards)
+
+    LinkedInLane(search_facets=("software engineer", "data engineer")).collect(
+        _fetcher(tmp_path), lambda provider, slug: True
+    )
+
+    assert (swe.call_count, data.call_count) == (1, 1)
+    assert root.call_count == 0
+
+
+@respx.mock
+def test_cards_from_several_facets_are_interleaved_round_robin(tmp_path):
+    """Round-robin, not concatenated: the order the companies are worked in IS the order the
+    body budget is spent in, so concatenating puts every later target title behind the first
+    facet's entire yield.
+    """
+    first = _one_card_per_company("acme", 4_020_000_000, 3)
+    second = _one_card_per_company("beacon", 4_020_001_000, 3)
+    _mock_facet("software engineer", first)
+    _mock_facet("data engineer", second)
+    _mock_bodies(first + second)
+
+    result = LinkedInLane(search_facets=("software engineer", "data engineer")).collect(
+        _fetcher(tmp_path), lambda provider, slug: True
+    )
+
+    assert [snapshot.slug for snapshot in result.snapshots] == [
+        "acme-00",
+        "beacon-00",
+        "acme-01",
+        "beacon-01",
+        "acme-02",
+        "beacon-02",
+    ]
+
+
+@respx.mock
+def test_the_body_budget_reaches_every_facet_not_just_the_first(tmp_path):
+    """The consequence the interleave exists for. Concatenated, facet one eats the whole budget
+    and the lane reports fourteen facets while delivering only the profile's first title.
+    """
+    first = _one_card_per_company("acme", 4_020_000_000, 3)
+    second = _one_card_per_company("beacon", 4_020_001_000, 3)
+    _mock_facet("software engineer", first)
+    _mock_facet("data engineer", second)
+    _mock_bodies(first + second)
+
+    result = LinkedInLane(
+        posting_budget=2, search_facets=("software engineer", "data engineer")
+    ).collect(_fetcher(tmp_path), lambda provider, slug: True)
+
+    fetched = {
+        posting.provider_posting_id
+        for snapshot in result.snapshots
+        for posting in snapshot.snapshot.postings
+    }
+    assert len(fetched) == 2
+    assert fetched & {card.job_id for card in first}
+    assert fetched & {card.job_id for card in second}, "one facet took the entire body budget"
+
+
+@respx.mock
+def test_a_card_listed_under_two_facets_costs_one_body_get_not_two(tmp_path):
+    """Overlapping facets are normal -- `software engineer` and `backend engineer` return the
+    same posting -- and a second body GET for it is both a paid-for duplicate and the crash
+    this repo already had to fix: two rows with one `provider_posting_id` violate
+    UNIQUE(company_id, provider_posting_id) inside one transaction and roll the board back.
+    """
+    cards = search_cards()[:2]
+    _mock_facet("software engineer", cards)
+    _mock_facet("backend engineer", cards)
+    bodies = _mock_bodies(cards)
+
+    result = LinkedInLane(search_facets=("software engineer", "backend engineer")).collect(
+        _fetcher(tmp_path), lambda provider, slug: True
+    )
+
+    assert bodies.call_count == 2
+    assert result.tally.counts["body_fetched"] == 2
+    # Seen on the second facet and not requested again. A silent drop is what the catalog exists
+    # to prevent.
+    assert result.tally.counts["not_attemptable"] == 2
+    stored = [
+        posting.provider_posting_id
+        for snapshot in result.snapshots
+        for posting in snapshot.snapshot.postings
+    ]
+    assert len(stored) == len(set(stored)) == 2
+
+
+@respx.mock
+def test_the_snapshot_cites_the_facet_url_the_company_was_first_seen_on(tmp_path):
+    """Provenance has to name a URL the run actually requested, and `BoardSnapshot.url` is one
+    string -- so a company found under two facets records the first, never the unfaceted root.
+    """
+    shared = search_cards()[:1]
+    only_second = _one_card_per_company("beacon", 4_020_001_000, 1)
+    _mock_facet("software engineer", shared)
+    _mock_facet("data engineer", shared + only_second)
+    _mock_bodies(shared + only_second)
+
+    result = LinkedInLane(search_facets=("software engineer", "data engineer")).collect(
+        _fetcher(tmp_path), lambda provider, slug: True
+    )
+    urls = {snapshot.slug: snapshot.snapshot.url for snapshot in result.snapshots}
+
+    assert urls["acme-00"] == _facet_url("software engineer")
+    assert urls["beacon-00"] == _facet_url("data engineer")
+    assert linkedin.SEARCH_URL not in urls.values()
+
+
+@respx.mock
+def test_every_facet_returning_no_cards_raises_instead_of_reporting_a_quiet_day(tmp_path):
+    """The outage case, and the reason it cannot be left to the tally.
+
+    If the card fragment moves or a challenge page answers, every facet comes back with no
+    cards, nothing was ever attempted, and `is_silent_outage` stays False -- so the lane would
+    report a clean quiet day forever, which is the prior art's 11-run silent outage.
+    """
+    _mock_facet("software engineer", None)
+    _mock_facet("data engineer", None)
+    bodies = _mock_bodies([])
+
+    with pytest.raises(SearchPageError, match="facet"):
+        LinkedInLane(search_facets=("software engineer", "data engineer")).collect(
+            _fetcher(tmp_path), lambda provider, slug: True
+        )
+
+    assert bodies.call_count == 0
+
+
+@respx.mock
+def test_one_facet_whose_request_fails_does_not_cost_the_others_their_results(tmp_path):
+    """Per-facet isolation, the same shape D-307 gave a board's apply failure inside a scan.
+
+    One search per target title means a run makes many, and letting the seventh propagate throws
+    away the six facets' results already paid for. The fetcher has retried with backoff before it
+    raises, so the failure is a surviving one, not a blip worth aborting a run over.
+    """
+    cards = search_cards()[:2]
+    refused = _mock_facet_refused("software engineer")
+    survivor = _mock_facet("data engineer", cards)
+    bodies = _mock_bodies(cards)
+
+    result = LinkedInLane(search_facets=("software engineer", "data engineer")).collect(
+        _fetcher(tmp_path), lambda provider, slug: True
+    )
+
+    assert (refused.call_count, survivor.call_count) == (1, 1)
+    assert bodies.call_count == 2
+    assert result.tally.counts["body_fetched"] == 2
+    # The surviving facet's postings are kept, and they cite the page they were found on.
+    assert {snapshot.snapshot.url for snapshot in result.snapshots} == {
+        _facet_url("data engineer")
+    }
+
+
+@respx.mock
+def test_every_facet_request_failing_raises_rather_than_reporting_a_quiet_day(tmp_path):
+    """Isolation must not become suppression: swallowing per facet and stopping there would turn
+    a host that refuses every request into a clean run with no postings, which is the outage the
+    tally cannot see. The message names both counts so a refusal stays distinguishable from a
+    profile whose target titles match nothing.
+    """
+    _mock_facet_refused("software engineer")
+    _mock_facet_refused("data engineer")
+    bodies = _mock_bodies([])
+
+    with pytest.raises(SearchPageError, match="2 request failures"):
+        LinkedInLane(search_facets=("software engineer", "data engineer")).collect(
+            _fetcher(tmp_path), lambda provider, slug: True
+        )
+
+    assert bodies.call_count == 0
+
+
+@respx.mock
+def test_one_empty_facet_among_several_is_tolerated_rather_than_fatal(tmp_path):
+    """One keyword matching nothing is a profile-data matter, not an outage. Raising here would
+    let a single odd target title in a profile disable the whole lane.
+    """
+    cards = search_cards()[:2]
+    _mock_facet("software engineer", cards)
+    _mock_facet("zzq not a real role", None)
+    _mock_bodies(cards)
+
+    result = LinkedInLane(search_facets=("software engineer", "zzq not a real role")).collect(
+        _fetcher(tmp_path), lambda provider, slug: True
+    )
+
+    assert result.tally.counts["body_fetched"] == 2
+    assert result.tally.is_silent_outage is False
+
+
+@respx.mock
+def test_the_unfaceted_lane_still_raises_on_a_page_with_no_cards(tmp_path):
+    """The all-empty raise is gated on there BEING facets, so the shipped behaviour is intact:
+    no cards on the one page is still the structural failure the runner must see, and it still
+    carries `card_nodes`' own message rather than the facet one.
+    """
+    _mock_search(html=search_page_html([]))
+
+    with pytest.raises(SearchPageError, match="base-card"):
+        LinkedInLane().collect(_fetcher(tmp_path), lambda provider, slug: True)
