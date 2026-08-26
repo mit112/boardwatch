@@ -106,6 +106,20 @@ def _apply_listed(
     conn: Connection, raw_postings: list[RawPosting], company_id: int, run_id: int, source_url: str
 ) -> ApplyResult:
     now = utcnow()
+    # A board may list one provider_posting_id more than once in a single snapshot — Workable
+    # repeats a shortcode across location facets, and an aggregator may serve one posting twice.
+    # `existing` is snapshotted once below and never updated in the loop, so a duplicate would
+    # take the INSERT branch a second time and violate UNIQUE(company_id, provider_posting_id),
+    # aborting the whole scan. Collapse to the first occurrence — the same guard the lanes apply
+    # in their `_group_by_company`.
+    seen_ids: set[str] = set()
+    deduped: list[RawPosting] = []
+    for raw in raw_postings:
+        if raw.provider_posting_id in seen_ids:
+            continue
+        seen_ids.add(raw.provider_posting_id)
+        deduped.append(raw)
+    raw_postings = deduped
     result = ApplyResult(status="", listed=len(raw_postings))
     existing = {
         row.provider_posting_id: row

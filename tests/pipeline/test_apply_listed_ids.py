@@ -81,6 +81,26 @@ def test_known_postings_survive_when_details_are_skipped(tmp_path: Path) -> None
     assert _open_ids(engine, company_id) == {"A", "B", "C"}
 
 
+def test_duplicate_provider_posting_id_in_one_snapshot_is_collapsed(tmp_path: Path) -> None:
+    """A board may list one posting id more than once in a single snapshot (Workable repeats a
+    shortcode across location facets). apply snapshots `existing` once, so without a guard both
+    rows take the INSERT branch and the second violates UNIQUE(company_id, provider_posting_id) —
+    the IntegrityError that aborted a whole scan when workable:alexander-dennis was first watched.
+    apply must collapse the duplicates to one posting, the same guard the lanes apply."""
+    engine = get_engine(tmp_path)
+    ensure_schema(engine)
+    company_id = _insert_company(engine)
+    url = "https://apply.workable.com/alexander-dennis/"
+    r1 = insert_run(engine)
+    apply_board(
+        engine,
+        _complete(url, [_posting("B94B9BDDEE", body="one"), _posting("B94B9BDDEE", body="two")],
+                  frozenset({"B94B9BDDEE"})),
+        company_id, r1,
+    )
+    assert _open_ids(engine, company_id) == {"B94B9BDDEE"}  # one posting, no crash
+
+
 def test_fallback_to_postings_when_listed_ids_empty(tmp_path: Path) -> None:
     """Existing single-request providers (listed_ids empty) must behave exactly as before:
     a posting absent from snapshot.postings takes a miss."""
