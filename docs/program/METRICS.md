@@ -7108,3 +7108,21 @@ work recovers it — the only lever is a policy call on how to treat silence, an
 the shortlist and still gets ranked. Where a requirement IS stated but unresolvable the counts are small and
 named: `scoped_years_minimum` 38, `us_citizen_required` 30, `us_citizen_or_lpr_required` 29,
 `clearable_required` 11.
+
+**Lane facet ARMED, first faceted tick IN FLIGHT at session close.** #169 merged (`2895dec`), pulled, editable
+venv verified building both probed forms. `lanes_enabled = ["hiringcafe","linkedin"]` at 18:51Z, fleet 234.
+Run 115 started 19:00:05Z on schedule; at 19:27Z it had 1,088 posting-version captures (vs 263 for run 114 at
+140 boards) and had not yet written `boards_attempted`. **No yield number yet — do not infer one.** Verifier:
+`.agent/2026-08-26-lane-facet/verify_facet_run.py 115`.
+
+**Lane immortality, measured (D-314).** 282 lane postings, **all `open`, zero ever closed**: 197 `not_swe` /
+82 `uncertain` / 3 `swe`. Run 114 ran AFTER the 12:10 disarm and still delivered 3 lane-sourced non-SWE leads,
+which is how the missing drain was found.
+
+**Zero-skill rate by role verdict, all 48,285 open postings** (measured for the parallel session's veto,
+reusable evidence): `swe` 121/8,002 = **1.5%** · `uncertain` 3,334/9,277 = **35.9%** · `not_swe`
+12,193/31,006 = **39.3%**. ~24× across the role boundary; 0 postings with a missing extraction row. Threshold
+sweep, vetoed / software-indicator titles lost: 0 → 3,334/8 · 1 → 5,116/43 · 2 → 6,044/99.
+
+**FOUR REGIMES TODAY — no figure may be compared across them:** fleet 140→235 (~11:40 CDT), AlphaHire
+unwatched (~12:10), lanes disarmed (12:10→18:51), facet armed (18:51).
