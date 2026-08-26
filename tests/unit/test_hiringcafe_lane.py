@@ -496,6 +496,21 @@ def test_a_facet_becomes_the_permitted_role_path_and_never_a_search_query(tmp_pa
     assert not any("?" in url or "searchState" in url or "page=" in url for url in urls)
 
 
+def test_a_facet_TERM_is_hyphenated_into_the_path_and_never_sent_with_spaces():
+    """`lanes.facets` yields a canonical term ("software engineer"); this route needs a hyphen.
+
+    Pinned separately from the tests above, which pass already-hyphenated facets and so cannot
+    fail if the conversion is dropped — a mutation removing `.replace(" ", "-")` passed all of
+    them. The two lanes need OPPOSITE encodings of the same term (LinkedIn's probe evidenced
+    `keywords=software%20engineer`), so the conversion has to be asserted where it happens.
+    """
+    assert hiringcafe.search_urls(("software engineer", "ios engineer")) == (
+        "https://hiringcafe.com/jobs/software-engineer",
+        "https://hiringcafe.com/jobs/ios-engineer",
+    )
+    assert not any("%20" in url for url in hiringcafe.search_urls(("machine learning engineer",)))
+
+
 def test_no_facets_falls_back_to_the_unfaceted_search_exactly_as_before():
     """A user whose profile names no target titles keeps the behaviour that shipped."""
     assert hiringcafe.search_urls(()) == (SEARCH_URL,)

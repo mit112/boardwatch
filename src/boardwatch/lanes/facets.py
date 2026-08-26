@@ -35,22 +35,22 @@ _SEPARATORS = re.compile(r"[^a-z0-9]+")
 
 
 def role_facets(target_titles: Sequence[str] | None) -> tuple[str, ...]:
-    """`profile.target_titles_json` as at most `MAX_FACETS_PER_RUN` facet slugs.
+    """`profile.target_titles_json` as at most `MAX_FACETS_PER_RUN` canonical search terms.
 
     First-seen order is preserved, and the cap TRUNCATES in that order rather than sampling: a
     run whose facet set varied between invocations could not be reproduced from the profile that
     produced it.
 
-    A title that normalizes to nothing yields no facet rather than an empty one. An empty slug
+    A title that normalizes to nothing yields no facet rather than an empty one. An empty term
     would build the aggregator's UNFACETED listing, which is a different page, so a blank target
     title would silently restore the noise the facet exists to remove while the run reported that
     a facet had been applied.
     """
     facets: list[str] = []
     for title in target_titles or ():
-        slug = _SEPARATORS.sub("-", title.lower()).strip("-")
-        if slug and slug not in facets:
-            facets.append(slug)
+        term = _SEPARATORS.sub(" ", title.lower()).strip()
+        if term and term not in facets:
+            facets.append(term)
         if len(facets) == MAX_FACETS_PER_RUN:
             break
     return tuple(facets)

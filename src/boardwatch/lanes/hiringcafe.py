@@ -203,9 +203,10 @@ def job_description_url(object_id: str) -> str:
 def search_urls(facets: Sequence[str]) -> tuple[str, ...]:
     """One permitted role page per facet, or the unfaceted search when there are none.
 
-    `quote` with no safe characters keeps a facet inside ONE path segment: `lanes.facets`
-    already normalizes a title to a single slug, so this cannot normally fire, but a caller
-    passing raw text must not be able to reshape the route into `/jobs/a/b`.
+    `lanes.facets` hands over a canonical TERM ("software engineer"); the hyphenated slug is
+    this route's own encoding and is applied here, not upstream, because LinkedIn's `keywords=`
+    needs the opposite (a space). `quote` with no safe characters then keeps the facet inside ONE
+    path segment, so a caller passing raw text cannot reshape the route into `/jobs/a/b`.
 
     The no-facet fallback is the behaviour that shipped, and it is a fallback rather than an
     error because a profile that names no target titles is a legitimate profile -- it is what
@@ -213,7 +214,9 @@ def search_urls(facets: Sequence[str]) -> tuple[str, ...]:
     """
     if not facets:
         return (SEARCH_URL,)
-    return tuple(f"{_ROLE_SEARCH_URL}{quote(facet, safe='')}" for facet in facets)
+    return tuple(
+        f"{_ROLE_SEARCH_URL}{quote(facet.replace(' ', '-'), safe='')}" for facet in facets
+    )
 
 
 class HiringCafeLane:

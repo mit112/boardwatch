@@ -586,7 +586,7 @@ def test_the_lane_stage_derives_its_facets_from_the_profiles_target_titles(
     _profile(engine, ["Software Engineer", "Veterinary Technician"])
 
     assert _facets_handed_to_the_lane(engine, tmp_path, monkeypatch) == [
-        ("software-engineer", "veterinary-technician")
+        ("software engineer", "veterinary technician")
     ]
 
 

@@ -22,8 +22,16 @@ import pytest
 from boardwatch.lanes.facets import MAX_FACETS_PER_RUN, role_facets
 
 
-def test_a_target_title_becomes_a_url_safe_facet_slug():
-    assert role_facets(["Software Engineer"]) == ("software-engineer",)
+def test_a_target_title_becomes_a_normalized_search_TERM_not_a_url_slug():
+    """The facet is a search TERM, and each lane encodes it for its own route.
+
+    Returning a hyphenated slug here would be right for hiring.cafe's path route and WRONG for
+    LinkedIn's `keywords=` query: the probe that legitimises that lane made
+    `keywords=software%20engineer`, so `keywords=software-engineer` is a request shape this repo
+    has never made. Keeping the term canonical and letting each lane encode is what stops one
+    lane's URL convention leaking into another's contract.
+    """
+    assert role_facets(["Software Engineer"]) == ("software engineer",)
 
 
 def test_punctuation_and_runs_of_separators_collapse_to_single_hyphens():
@@ -32,13 +40,13 @@ def test_punctuation_and_runs_of_separators_collapse_to_single_hyphens():
     A slash surviving into the slug would change which URL is requested — `/jobs/a/b` is
     not the role route — so this is a routing invariant, not cosmetics.
     """
-    assert role_facets(["Full-Stack  Engineer / Developer"]) == ("full-stack-engineer-developer",)
-    assert role_facets(["C++ Engineer (Backend)"]) == ("c-engineer-backend",)
+    assert role_facets(["Full-Stack  Engineer / Developer"]) == ("full stack engineer developer",)
+    assert role_facets(["C++ Engineer (Backend)"]) == ("c engineer backend",)
 
 
 def test_titles_differing_only_in_case_or_spacing_cost_one_request_not_two():
     assert role_facets(["Software Engineer", "software  engineer", "SOFTWARE ENGINEER"]) == (
-        "software-engineer",
+        "software engineer",
     )
 
 
@@ -46,14 +54,14 @@ def test_first_seen_order_is_preserved_so_the_request_order_is_deterministic():
     """An unordered facet set makes a run's request sequence — and its budget spend —
     depend on set iteration order, which no test could then pin."""
     assert role_facets(["iOS Engineer", "Backend Engineer", "Web Developer"]) == (
-        "ios-engineer",
-        "backend-engineer",
-        "web-developer",
+        "ios engineer",
+        "backend engineer",
+        "web developer",
     )
 
 
 @pytest.mark.parametrize("title", ["", "   ", "!!!", "---", "/"])
-def test_a_title_that_slugifies_to_nothing_yields_no_facet(title):
+def test_a_title_that_normalizes_to_nothing_yields_no_facet(title):
     """An empty slug would build `/jobs/`, which is a DIFFERENT page — the unfaceted
     listing — so a blank target title would silently re-introduce the noise the facet
     exists to remove, while the run reported a facet had been applied."""
