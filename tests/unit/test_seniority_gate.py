@@ -267,3 +267,45 @@ class TestManagementWordNeedsRoleTokenAdjacency:
     )
     def test_management_next_to_a_role_token_still_drops(self, title, cat, tier):
         assert V(title, cat, tier)[0] == "above_band"
+
+
+class TestInvertedManagementTitle:
+    """The management word HEADS the title and the role is named in a later clause
+    (`Manager, Software Engineering`) or without a comma at all (`Software Development
+    Manager`). These are people-manager roles above the entry band, but the comma-scoped
+    clause guard missed them: 281 such titles shipped as `in_band` on the live corpus.
+
+    The fix is directional on purpose — the management word must PRECEDE the role. A trailing
+    product-noun `Manager` (`Software Engineer, Ads Manager`) has the role FIRST, so it never
+    qualifies and a real IC role is never dropped. That protection is pinned in
+    `TestManagementWordNeedsRoleTokenAdjacency::test_product_noun_collision_is_kept`.
+    """
+
+    @pytest.mark.parametrize("title", [
+        "Manager, Software Engineering",
+        "Manager, Software Engineering (Account Management)",
+        "Director, Back-End Engineering",
+        "Manager, Machine Learning Engineering (Fraud)",
+        "Manager, Web Engineering",
+        "Director, Data Engineering",
+        "Software Development Manager",
+        "Software Development Manager, Platforms",
+        "Group Manager, Platform Engineering",
+    ])
+    def test_inverted_management_titles_drop(self, title, cat, tier):
+        assert V(title, cat, tier)[0] == "above_band", title
+
+    @pytest.mark.parametrize("title", [
+        # The role comes FIRST, so the trailing management word is a product/team noun, not a
+        # seniority qualifier -- a real IC engineer that must be retained.
+        "Software Engineer, Ads Manager",
+        "Backend Engineer, Fleet Manager",
+        "Software Engineer, Package Manager",
+        # A role token in a LATER clause than the product-noun manager. This pins the
+        # `_ROLE_TOKEN.search(title[:start]) is None` before-guard specifically: the earlier
+        # cases all have the manager last (no later clause), so only this one fails if that
+        # branch of the directional guard is dropped while the `end != -1` branch is kept.
+        "Software Engineer, Ads Manager, Platform Engineering",
+    ])
+    def test_trailing_product_noun_manager_is_kept(self, title, cat, tier):
+        assert V(title, cat, tier)[0] == "in_band", title

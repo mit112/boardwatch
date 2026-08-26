@@ -100,22 +100,53 @@ _ROMAN = re.compile(r"\b(I{2,3}|IV)\b")
 # an unguarded word match is how a real job disappears. `frozenset([...])` is a constructor call,
 # the escape hatch this module already uses for R9-scoped title data.
 _MANAGEMENT_AMBIGUOUS = frozenset(["lead", "leader", "manager", "director"])
+# `software` is a role token so "Software Development Manager" reads as management of a software
+# discipline. It only ever matters beside a management-ambiguous word (this token is consulted
+# nowhere else), so it cannot drop an IC role on its own. Bare `development` was measured and
+# REJECTED in its place: as a token it also carries the product/domain sense ("Lead Development
+# Platform", "AI Agent Development Lead") and would grade a real IC `Lead` there as senior, while
+# `software` has no such non-role sense here.
 _ROLE_TOKEN = re.compile(
-    r"\b(?:engineer|engineering|developer|dev|swe|sde|sdet|sre|programmer|architect)\b",
+    r"\b(?:software|engineer|engineering|developer|dev|swe|sde|sdet|sre|programmer|architect)\b",
     re.IGNORECASE,
 )
 
 
-def _shares_clause_with_a_role(title: str, pos: int) -> bool:
-    """Does the comma-clause holding the character at `pos` also name a role token?
+def _qualifies_as_management_seniority(title: str, pos: int) -> bool:
+    """Does the management word at `pos` grade a role, rather than name a product noun?
 
-    Comma-delimited because a product noun sits in its own clause ("Software Engineer, Lead
-    Scoring"), while a seniority qualifier shares the role's clause ("Lead Engineer").
+    Two shapes qualify:
+
+    * It shares its comma-clause with a role token — the qualifier sits beside the role it
+      grades ("Engineering Manager", "Lead Engineer", "Software Development Manager").
+    * It HEADS the title and a later clause names the role ("Manager, Software Engineering",
+      "Director, Back-End Engineering") — the inverted management title. This branch is
+      DIRECTIONAL on purpose: the management word must PRECEDE the role, so a trailing
+      product-noun "Manager" ("Software Engineer, Ads Manager") has the role first, never
+      qualifies, and a real IC role is never dropped. The comma-delimiting is what tells the
+      two apart — a product noun sits in its own clause after the role ("Software Engineer, Lead
+      Scoring"), a management head noun sits in its own clause before it.
+
+    Residual, measured to ZERO on the live corpus (37,979 distinct titles) and left unclosed
+    because no lexical guard closes it without losing real catches: a title whose LEADING clause
+    is a product-noun compound built on a management word, followed by an IC role ("Lead Scoring,
+    Software Engineer" / "Password Manager, Backend Engineer"), would qualify here and be dropped.
+    Requiring the management word to be its clause's final token would close it but also spare
+    "Manager I, Engineering" and "Lead Data Scientist, AI Engineering" — genuine management titles
+    that share the exact shape — so the two are indistinguishable by position. The ordering it
+    needs (product/team first, IC role second) does not occur in real postings; every inverted
+    drop on the live corpus is a genuine manager, lead or director.
     """
     start = title.rfind(",", 0, pos) + 1
     end = title.find(",", pos)
-    clause = title[start:] if end == -1 else title[start:end]
-    return _ROLE_TOKEN.search(clause) is not None
+    own = title[start:] if end == -1 else title[start:end]
+    if _ROLE_TOKEN.search(own) is not None:
+        return True
+    # Inverted head-noun form: nothing before this clause names a role (so the management word
+    # leads the title) and a later clause does.
+    if end != -1 and _ROLE_TOKEN.search(title[:start]) is None:
+        return _ROLE_TOKEN.search(title[end + 1 :]) is not None
+    return False
 
 
 def parse_seniority(
@@ -134,7 +165,7 @@ def parse_seniority(
             continue
         # An ambiguous management word counts only when it shares a role's clause; otherwise it
         # is a product noun ("Password Manager") — skip it and keep looking for a real signal.
-        if word.lower() in _MANAGEMENT_AMBIGUOUS and not _shares_clause_with_a_role(
+        if word.lower() in _MANAGEMENT_AMBIGUOUS and not _qualifies_as_management_seniority(
             masked, match.start()
         ):
             continue

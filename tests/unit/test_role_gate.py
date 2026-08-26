@@ -481,6 +481,70 @@ class TestOwnerRulingTeamLeader:
             assert role_verdict(title)[0] == "swe", title
 
 
+class TestNonSoftwareFamiliesAnalystSpecialist:
+    """The analyst / specialist / administrator / advisor families leaked as delivered leads.
+
+    Measured over 37,979 live distinct titles: ~10% of delivered lead-rows carried a non-SWE
+    raw title, dominated by `analyst` and `specialist`. These are SOFT-lane, `_NOENG`-guarded
+    denies (the exact mirror of the coordinator / manager / lead denies above), so a title
+    carrying an engineer/developer/architect/programmer/swe token is spared, and a rescued or
+    signalled software title never reaches them at all. Going broad (a bare family word) rather
+    than `_NOSW`-guarded is deliberate: `QA Analyst` / `QA Specialist` carry the software SURFACE
+    word `qa`, so a `_NOSW` guard would spare the very rows this deny exists to catch.
+    """
+
+    @pytest.mark.parametrize("title", [
+        # analyst — the dominant leaked family (delivered as résumés).
+        "Oracle Fusion ERP Technical Analyst",
+        "Risk Strategy Execution Analyst",
+        "QA Analyst",
+        "Analyst, Inventory Analytics",
+        "Category Analyst",
+        "Quantitative Analyst",
+        "Markets Quantitative Analyst",
+        "Item Data Quality Analyst",
+        "Billing Operations Analyst",
+        "Fraud Patterns Analyst",
+        "Credit Operations Collections Analyst",
+        "Analyst",
+        # specialist.
+        "Bioinformatic Specialist",
+        "Clinical Study Specialist",
+        "Human Factors Specialist",
+        "QA Specialist",
+        "Category Specialist",
+        # administrator.
+        "Database Administrator",
+        "Stock Administrator",
+        "Contract Administrator",
+        # advisor.
+        "Parts Advisor",
+        "Service Advisor",
+        "Strategic Customer Advisor",
+    ])
+    def test_non_software_family_titles_are_vetoed(self, title: str) -> None:
+        verdict, reason = role_verdict(title)
+        assert verdict == "not_swe", (title, reason)
+        assert reason  # never silent: the veto names what it matched
+
+    @pytest.mark.parametrize("title", [
+        # A software SIGNAL or RESCUE outranks the SOFT lane -- these never reach the deny.
+        "Software Engineer / Data Analyst",          # rescued software-first
+        "Programmer Analyst",                        # a positive SWE signal
+        "Analyst II, Full Stack (Revenue Analytics)",  # rescued on `full stack`
+        "Forward Deployed Engineer, Infrastructure Specialist",  # signalled software
+        "Senior Software Engineer - Database Administrator",      # rescued software-first
+        # The `_NOENG` guard spares anything carrying an engineering noun anywhere, even
+        # without a full signal (these stay `uncertain`, which still passes to scoring).
+        "Business Systems Engineering Analyst",
+        "Systems Analyst/Storage Engineer",
+        "Senior System Administrator (Storage Engineer)",
+        "Career Advisor, Cockrell School of Engineering",
+    ])
+    def test_software_and_engineering_titles_are_never_vetoed(self, title: str) -> None:
+        assert role_verdict(title)[0] != "not_swe", title
+
+
 class TestGuardedPatternsGuardEveryBranch:
     """An anchored PREFIX guard applied to a top-level alternation guards only the first branch.
 
