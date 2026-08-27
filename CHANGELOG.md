@@ -22,6 +22,17 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- **The run funnel records FETCH wall clock per provider (D-330).** Run cost could not be attributed
+  from the record, because every existing signal was wrong in a different way:
+  `board_scans.started_at → finished_at` times the *apply* (26.5 s of a 3,286 s run),
+  `wall_clock / boards` averages a population where one provider is 20× the others (it mispredicted a
+  346-board run by 24 minutes), and the gap between scan completions sums to wall clock by construction
+  because the scan fetches through a `scan_workers`-wide pool. The fetch is now timed at the single seam
+  all six providers pass through, accumulated per provider, and reported in the funnel's `scan` block
+  costliest-first. A failed fetch is charged for the seconds it burned; an untimed board is never folded
+  in as zero; and "not measured" stays distinct from "measured, nothing timed". No `artifact_version`
+  bump, no schema change, no migration.
+
 - **The run funnel now says where each lead is, and how the hard US gate read it — artifact v7 (D-323).**
   The US-only location gate is the one gate whose failure is a lead you cannot legally take, and until now a
   `leads[]` row in `funnel-<id>.json` carried no location at all, so the gate left no trace in the record it

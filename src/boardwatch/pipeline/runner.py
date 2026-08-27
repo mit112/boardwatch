@@ -75,6 +75,7 @@ from boardwatch.reports.run_funnel import (
     DeathProbeReport,
     LaneReport,
     LivenessCheck,
+    ProviderFetchCost,
     ScanContext,
     ShortlistCounts,
     WrittenArtifact,
@@ -1481,6 +1482,16 @@ def _emit_funnel(
             boards_complete=summary.scan_boards_complete,
             boards_failed=summary.scan_boards_failed,
             postings_seen=summary.scan_postings_seen,
+            # `None` when no scan ran, so the artifact distinguishes "not measured" from
+            # "measured and empty" (D-330). A lane never reaches the timing seam and is
+            # deliberately absent rather than present at zero.
+            fetch_cost=None if scan_summary is None else tuple(
+                ProviderFetchCost(
+                    provider=provider, boards=cost.boards,
+                    seconds=cost.seconds, untimed=cost.untimed,
+                )
+                for provider, cost in scan_summary.fetch_cost.items()
+            ),
         ),
         shortlist=summary.shortlist,
         liveness=LivenessCheck(

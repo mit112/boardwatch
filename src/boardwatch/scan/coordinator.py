@@ -116,6 +116,21 @@ def is_systemic_scan_outage(*, attempted: int, complete: int, unchanged: int) ->
 
 
 @dataclass
+class ProviderFetchCost:
+    """What one provider's boards cost this run, in FETCH wall clock.
+
+    `untimed` is its own field rather than an absence: a snapshot reaching the coordinator
+    with `fetch_seconds is None` did not go through the timing seam (the belt-and-braces
+    worker-error fallback builds one directly), and folding those into `seconds` as 0.0 would
+    quietly understate the total. A reader can then see that the number is partial.
+    """
+
+    boards: int = 0
+    seconds: float = 0.0
+    untimed: int = 0
+
+
+@dataclass
 class ScanSummary:
     companies: int = 0
     providers: int = 0
@@ -128,6 +143,9 @@ class ScanSummary:
     reopened: int = 0
     postings_seen: int = 0
     open_postings: int = 0
+    # FETCH wall clock per provider (D-330). Keyed by `BoardRequest.provider`, so a provider
+    # that contributed no work is absent rather than present at zero.
+    fetch_cost: dict[str, ProviderFetchCost] = field(default_factory=dict)
     errors: list[str] = field(default_factory=list)
     # Set once the runs row exists. The pipeline reads it rather than minting its own, so the
     # INSERT stays inside the scan lock (see pipeline/runner.py).
@@ -297,6 +315,15 @@ def _scan_body(
                     status="failed", postings=[], url=request.url,
                     observed_validators=None, error=f"unexpected worker error: {exc}",
                 )
+            # Accounted BEFORE the apply, and outside its try: the fetch already cost the run
+            # its seconds whether or not the apply then succeeds, and attributing cost only to
+            # boards that applied cleanly would hide the expensive failures.
+            cost = summary.fetch_cost.setdefault(request.provider, ProviderFetchCost())
+            cost.boards += 1
+            if snapshot.fetch_seconds is None:
+                cost.untimed += 1
+            else:
+                cost.seconds += snapshot.fetch_seconds
             try:
                 result = apply_board(engine, snapshot, row.id, active_run_id)
             except Exception as exc:  # noqa: BLE001 - one board's apply must not abort the scan
