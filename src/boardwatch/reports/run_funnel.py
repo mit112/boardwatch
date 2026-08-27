@@ -773,6 +773,39 @@ class LaneReport:
 
 
 @dataclass(frozen=True)
+class ProviderFetchCost:
+    """One provider's FETCH wall clock this run — the run-cost unit that was missing.
+
+    Why the artifact needed this at all: `board_scans.started_at -> finished_at` times the
+    APPLY, because `apply_board` is handed an already-fetched snapshot, so those timestamps
+    summed to ~26 s of a ~3,300 s run and any attribution built on them is wrong. The only
+    other available signal was the gap between consecutive scan completions, and the scan
+    fetches through a `scan_workers`-wide pool, so those gaps sum to wall clock by
+    construction and cannot be read as one board's cost.
+
+    `seconds` is therefore the sum of measured FETCH durations, which is concurrency-free and
+    additive: it answers "what did this provider cost" without assuming how many workers ran.
+    Divide by `boards` for a per-board LATENCY. To predict added WALL CLOCK for new boards,
+    divide that latency by `scan_workers` — the two are different questions and conflating
+    them is what made a 14 s/board average mispredict a 346-board run by 24 minutes.
+
+    `untimed` is never folded into `boards` or `seconds`: it counts boards that reached the
+    coordinator with no measurement, so a partial number reads as partial.
+    """
+
+    provider: str
+    boards: int
+    seconds: float
+    untimed: int = 0
+
+    @property
+    def mean_latency_seconds(self) -> float | None:
+        """None when nothing was timed — an uncomputable mean is not zero."""
+        timed = self.boards - self.untimed
+        return self.seconds / timed if timed > 0 else None
+
+
+@dataclass(frozen=True)
 class ScanContext:
     """Scan throughput. Deliberately NOT a funnel edge.
 
@@ -787,6 +820,9 @@ class ScanContext:
     boards_complete: int = 0
     boards_failed: int = 0
     postings_seen: int = 0
+    # None means NOT MEASURED (a `--no-scan` run, or a stored funnel written before D-330),
+    # which is a different statement from an empty tuple ("scanned, and nothing was timed").
+    fetch_cost: tuple[ProviderFetchCost, ...] | None = None
 
 
 @dataclass(frozen=True)
@@ -1342,6 +1378,33 @@ def build_run_funnel(
     )
 
 
+def _fetch_cost_markdown(rows: tuple[ProviderFetchCost, ...] | None) -> list[str]:
+    """The per-provider fetch cost, or an explicit statement that it was not measured."""
+    if rows is None:
+        return ["", "Fetch cost: **not measured** this run."]
+    if not rows:
+        return ["", "Fetch cost: scanned, but **no board was timed**."]
+    out = [
+        "",
+        "**Fetch wall clock by provider.** Sum of measured FETCH durations — NOT divided by "
+        "`scan_workers`, so this is provider LATENCY, not the wall clock a new board adds. "
+        "`board_scans` timestamps cannot answer this: they time the apply.",
+        "",
+        "| provider | boards | fetch seconds | mean latency | untimed |",
+        "|---|---:|---:|---:|---:|",
+    ]
+    for row in sorted(rows, key=lambda r: r.seconds, reverse=True):
+        mean = row.mean_latency_seconds
+        out.append(
+            f"| `{row.provider}` | {row.boards} | {row.seconds:.1f} | "
+            f"{'—' if mean is None else f'{mean:.2f} s'} | {row.untimed} |"
+        )
+    total = sum(r.seconds for r in rows)
+    out.append(f"| **total** | {sum(r.boards for r in rows)} | **{total:.1f}** | | "
+               f"{sum(r.untimed for r in rows)} |")
+    return out
+
+
 def _stage_json(stage: Stage) -> dict[str, object]:
     return {
         "name": stage.name,
@@ -1435,6 +1498,22 @@ def funnel_to_dict(funnel: RunFunnel) -> dict[str, object]:
             "boards_complete": funnel.scan.boards_complete,
             "boards_failed": funnel.scan.boards_failed,
             "postings_seen": funnel.scan.postings_seen,
+            # Ordered most-expensive first so the constraint is the first row a reader sees.
+            "fetch_cost": None if funnel.scan.fetch_cost is None else [
+                {
+                    "provider": row.provider,
+                    "boards": row.boards,
+                    "seconds": round(row.seconds, 3),
+                    "untimed": row.untimed,
+                    "mean_latency_seconds": (
+                        None if row.mean_latency_seconds is None
+                        else round(row.mean_latency_seconds, 3)
+                    ),
+                }
+                for row in sorted(
+                    funnel.scan.fetch_cost, key=lambda r: r.seconds, reverse=True
+                )
+            ],
         },
         # Board DISCOVERY coverage (D-274), deliberately adjacent to `scan` because it is
         # the denominator `scan` never had. Not to be read as the `coverage` key above,
@@ -1675,6 +1754,7 @@ def funnel_to_markdown(funnel: RunFunnel) -> str:
             "*Throughput, not a funnel edge: an unchanged board lists nothing, so this is a "
             "different population from the corpus below.*"
         )
+        lines.extend(_fetch_cost_markdown(funnel.scan.fetch_cost))
     else:
         lines.append("skipped (`--no-scan`) — the corpus below is whatever was already stored.")
 

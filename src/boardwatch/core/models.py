@@ -87,6 +87,14 @@ class BoardSnapshot(BaseModel):
     # True when the provider's stated total was a censor value and board_reported_total came
     # from a second, uncapped path. A TYPED flag: never re-derive this by parsing a message.
     board_total_censored: bool | None = None
+    # Wall-clock seconds the FETCH took, measured at the one seam every board passes through
+    # (`scan/workers.fetch_board_job`). `None` means NOT TIMED, never zero: a lane builds its
+    # own snapshots and never goes through that seam, and a run that reports 0.0 for an
+    # untimed board would understate the only cost that matters. `board_scans.started_at`
+    # cannot answer this — `apply_board` is handed an already-fetched snapshot and stamps
+    # `started_at` at the top of the APPLY, so those timestamps sum to seconds across a
+    # ~57-minute run and time the DB write alone.
+    fetch_seconds: float | None = None
 
     @model_validator(mode="after")
     def _postings_empty_for_unchanged_and_failed(self) -> BoardSnapshot:
