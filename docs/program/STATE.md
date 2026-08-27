@@ -136,12 +136,19 @@ set and the population caveat are in `STANDING-FACTS.md` § Precision gates (D-2
 
 ## Next action
 
-1. **WATCH RUN 126 (01:00Z) AGAINST ITS PROJECTION — the live work is DONE and this is the check on it.**
-   The migration and the three owner facts were applied 2026-08-27 ~22:52Z, so 126 is the first tick on
-   engine `1+7485e3a85f38` and carries the full re-evaluation spike: **projected ~124 min against a
-   180-min cadence, 56 min of headroom, the tightest a run has ever been and a ONE-OFF.** Read the real
-   number against the projection in `METRICS.md` rather than re-deriving it. If it overruns, that
-   projection is the first thing to check, not the fleet size.
+1. **RUN 126 (01:00Z) MEASURES TWO THINGS AT ONCE — the live work is DONE and this is the check on it.**
+   (a) **The re-evaluation surcharge.** The migration and the three owner facts were applied
+   2026-08-27 ~22:52Z, so 126 is the first tick on engine `1+7485e3a85f38` and carries the full spike:
+   **projected ~124 min against a 180-min cadence, 56 min of headroom, the tightest a run has ever been
+   and a ONE-OFF.** Read the real number against the projection in `METRICS.md` rather than re-deriving
+   it; if it overruns, that projection is the first thing to check, not the fleet size.
+   (b) **The FIRST real per-provider fetch cost**, because the tree was pulled to `3619546` so 126 also
+   carries D-330's instrument. That replaces the inferred completion-gap numbers behind the batch-2
+   sizing with measured `scan.fetch_cost` — read it out of `funnel-126.json` and compare against the
+   inferred table in `METRICS.md`. Pulling #190 in was safe and checked: it adds no migration, touches no
+   `tables.py`, and `engine_version` is UNCHANGED across the pull, so there is no second re-evaluation.
+   **Expect the measured latency to be ~4x the inferred marginal figure** (a Workday board ~88 s vs the
+   ~22 s of wall clock it contributes at `scan_workers=4`) — if it is not, one of the two is wrong.
 
    **Before ANY pull or store write, guard on PROCESS liveness, never the `runs` table:**
    ```sh
