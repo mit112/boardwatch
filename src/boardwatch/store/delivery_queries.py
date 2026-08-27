@@ -4,7 +4,7 @@
 rules out `rank_open_postings` and `run_eligibility`, both of which mint a `runs` row on the way to
 an answer (design §6.3). A web request must not create a phantom run on every page load.
 
-Three shapes of honesty are load-bearing here, and each of them is a field that could have been
+Four shapes of honesty are load-bearing here, and each of them is a field that could have been
 faked with a default instead:
 
 - **`posted_days` is `None`, never 0, when the board publishes no date.** It derives from the
@@ -19,6 +19,9 @@ faked with a default instead:
   `eligibility/read.current_verdicts`, the existing identity-scoped read, so a corrected fact or
   policy is reflected the moment its re-evaluation lands. No default is invented for the
   unevaluated case.
+- **`status` is `unverifiable`, not `open`, when nothing enumerates the company's board.**
+  `postings.status` is a two-valued column and stays one; the third state is derived HERE, at the
+  read boundary, and no consumer of the column sees it (D-324).
 
 **Deduplication is by canonical job, not by posting** (design §6.1). Measured on the live store: 227
 postings fall into 100 multi-posting job groups, and `applications` keys on `job_id`, so a posting
@@ -65,6 +68,12 @@ RequirementView = AuditRequirement
 #: nothing is known — not a fourth policy. It maps to `None` so no reader has to know the sentinel.
 REMOTE_POLICY_UNKNOWN = "unknown"
 
+#: The third RENDERED posting status, derived here and never stored. `postings.status` is
+#: `CHECK (status IN ('open','closed'))` and 29 comparisons across 17 modules read it against
+#: those two values; a third enum member would silently drop the rows out of the ranked corpus, the
+#: extraction queue and the eligibility queue, which is far worse than a wrong label (D-324).
+STATUS_UNVERIFIABLE = "unverifiable"
+
 #: The one `companies.tags_json` entry this module reads. Nothing in `src/` writes that column
 #: today, so `target_flag` is `None` for every company on the live store; it is tri-state so that
 #: "this company carries no tags at all" can never render as "this company is not a target".
@@ -81,6 +90,7 @@ class QueueRow:
     remote_policy: str | None
     posted_days: int | None
     first_seen: datetime
+    #: `open`, `closed` or `unverifiable` — three values where the COLUMN has two. See `_status`.
     status: str
     verdict: str | None
     apply_url: str | None
@@ -129,6 +139,7 @@ def _delivered_select() -> Select[Any]:
             postings.c.url,
             companies.c.name.label("company"),
             companies.c.tags_json,
+            companies.c.watched,
         )
         .join(posting_versions, artifacts.c.posting_version_id == posting_versions.c.id)
         .join(postings, posting_versions.c.posting_id == postings.c.id)
@@ -165,6 +176,24 @@ def _posted_days(posted_at: datetime | None, now: datetime) -> int | None:
     return max((now - posted_at).days, 0)
 
 
+def _status(status: object, watched: object) -> str:
+    """`open` only where a board is actually enumerated; otherwise `unverifiable` (D-314).
+
+    `_process_missing` is the sole writer of `closed` and it runs on `complete` snapshots only,
+    so `closed` is always a real measurement and passes through untouched — including on a
+    company that has since been unwatched. `open`, by contrast, is only ever the ABSENCE of a
+    close, and for a company nobody enumerates no scan can ever produce one: the posting was
+    never measured as still listed, merely never contradicted. Probing 45 such rows found 40
+    alive and 0 dead, so this is not "probably gone" either — it is not known.
+
+    Keyed on `companies.watched`, which is the literal question ("does anything enumerate this
+    board?"), and NOT on `source='lane'`. Measured on the live store 2026-08-27: 274 of the 722
+    affected rows are on `source='user'` companies, and 23 lane-acquired postings sit on watched
+    companies where `open` IS a measurement. The source predicate is wrong in both directions.
+    """
+    return STATUS_UNVERIFIABLE if str(status) == "open" and not watched else str(status)
+
+
 def _queue_row(row: Row[Any], *, verdict: str | None, now: datetime) -> QueueRow:
     return QueueRow(
         posting_id=int(row.posting_id),
@@ -177,7 +206,7 @@ def _queue_row(row: Row[Any], *, verdict: str | None, now: datetime) -> QueueRow
         ),
         posted_days=_posted_days(row.posted_at, now),
         first_seen=row.first_seen_at,
-        status=str(row.status),
+        status=_status(row.status, row.watched),
         verdict=verdict,
         apply_url=str(row.url) if row.url is not None else None,
         delivered_run_id=(
@@ -322,6 +351,7 @@ def queue_detail(conn: Connection, posting_id: int) -> QueueDetail | None:
 
 __all__ = [
     "REMOTE_POLICY_UNKNOWN",
+    "STATUS_UNVERIFIABLE",
     "TARGET_TAG",
     "QueueDetail",
     "QueueRow",

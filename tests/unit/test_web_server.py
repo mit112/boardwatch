@@ -222,13 +222,14 @@ def _deliver(
     run_id: int | None = None,
     delivered_at: datetime = NOW,
     title: str = "Software Engineer",
+    watched: bool = True,
 ) -> tuple[int, int]:
     """One delivered lead: company, job, posting, frozen version, tailored artifact."""
     company_id = int(
         conn.execute(
             insert(companies).values(
                 name=f"Acme {key}", provider="greenhouse", slug=f"acme-{key}",
-                source="user", watched=True,
+                source="user", watched=watched,
             )
         ).inserted_primary_key[0]
     )
@@ -580,6 +581,30 @@ def test_the_rows_arrive_ranked_and_carry_no_rank_field(live: Live, engine: Engi
     assert "rank" not in rows[0]
     # The `why` line comes from the shipped explainer, not from a sentence composed here.
     assert rows[0]["why"]
+
+
+def test_the_queue_payload_reports_unverifiable_for_an_unenumerated_board(
+    live: Live, engine: Engine
+) -> None:
+    """The wire is where the label has to arrive: the frontend never re-derives it.
+
+    Asserted through the HTTP layer and on BOTH endpoints, because the row and the detail pane
+    are separately serialized and a lead that read `unverifiable` in the list and `open` in the
+    pane would be worse than either alone.
+    """
+    with engine.begin() as conn:
+        unwatched, _ = _deliver(conn, "unwatched", watched=False)
+        watched, _ = _deliver(conn, "watched", watched=True)
+
+    rows = {
+        row["posting_id"]: row
+        for row in call(live, "/api/queue", bearer=live.token).json()["rows"]
+    }
+    assert rows[unwatched]["status"] == "unverifiable"
+    assert rows[watched]["status"] == "open"
+
+    pane = call(live, f"/api/queue/{unwatched}", bearer=live.token).json()
+    assert pane["row"]["status"] == "unverifiable"
 
 
 

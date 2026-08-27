@@ -147,6 +147,7 @@ def _deliver(
     pdf: bool = True,
     pdf_uri: str | None | bool = True,
     delivered_at: datetime = NOW,
+    watched: bool = True,
 ) -> tuple[int, int]:
     """One delivered lead: company, job, posting, frozen version, tailored artifact, disk folder.
 
@@ -166,7 +167,7 @@ def _deliver(
                 provider="greenhouse",
                 slug=f"slug-{key}",
                 source="user",
-                watched=True,
+                watched=watched,
                 tags_json=None,
             )
         ).inserted_primary_key[0]
@@ -328,6 +329,23 @@ def test_sync_creates_a_folder_holding_the_pdf_the_link_the_jd_and_the_details(
     assert details["board_target"] == "greenhouse:slug-one"
 
     assert _files_under(folder) == sorted([pdf.name, link.name, JD_FILE, DETAILS_FILE])
+
+
+def test_details_json_records_unverifiable_for_a_board_nobody_enumerates(
+    engine: Engine, root: Path, apps: Path
+) -> None:
+    """The folder on disk states what the page states. `details.json` is the owner's own copy of
+    the lead, so writing `open` there would put the claim D-314 says is unsupported into a file
+    that outlives the store.
+    """
+    with engine.begin() as conn:
+        _deliver(conn, apps, "unwatched", company="Unwatched Co", watched=False)
+        _deliver(conn, apps, "watched", company="Watched Co", watched=True)
+    with engine.connect() as conn:
+        sync_queue(conn, root=root, owner_name=OWNER)
+
+    assert _details(root / "Unwatched_Co_Software_Engineer")["status"] == "unverifiable"
+    assert _details(root / "Watched_Co_Software_Engineer")["status"] == "open"
 
 
 def test_the_recorded_pdf_hash_is_the_hash_of_the_bytes_actually_copied(
