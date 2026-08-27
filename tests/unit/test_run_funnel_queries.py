@@ -327,6 +327,42 @@ def test_lead_provenance_names_the_board_and_whether_it_was_user_added(engine: E
     assert found[posting_id].company_source == "registry"
 
 
+def test_lead_provenance_carries_the_locations_the_posting_named(engine: Engine) -> None:
+    """D-267: the hard US gate's input, read in the SAME query as the board — so the artifact
+    can say where a lead is without a second round trip that could disagree with this one."""
+    with engine.begin() as conn:
+        posting_id = _posting(conn, "loc")
+        conn.execute(
+            postings.update()
+            .where(postings.c.id == posting_id)
+            .values(locations_json=["Austin, TX", "Remote"])
+        )
+
+    with engine.connect() as conn:
+        found = lead_provenance(conn, [posting_id])
+    assert found[posting_id].locations == ("Austin, TX", "Remote")
+
+
+@pytest.mark.parametrize("stored", [None, [], ["", "   "]])
+def test_a_posting_that_names_no_place_reports_none_and_not_an_empty_tuple(
+    engine: Engine, stored: list[str] | None
+) -> None:
+    """All three stored shapes mean the same thing — the board published no location — and the
+    honest report of that is `None`, never `()`. `()` serialises to `[]`, which asserts the
+    board published a list and it was empty; that is a different claim about the same posting,
+    and this repo has been bitten by exactly that conflation before (`_posted_days` returns
+    None rather than 0 for the same reason)."""
+    with engine.begin() as conn:
+        posting_id = _posting(conn, "blank")
+        conn.execute(
+            postings.update().where(postings.c.id == posting_id).values(locations_json=stored)
+        )
+
+    with engine.connect() as conn:
+        found = lead_provenance(conn, [posting_id])
+    assert found[posting_id].locations is None
+
+
 def _track(conn: Connection, posting_id: int, status: str) -> None:
     job_id = int(conn.execute(postings.select().where(postings.c.id == posting_id)).one().job_id)
     conn.execute(insert(applications).values(

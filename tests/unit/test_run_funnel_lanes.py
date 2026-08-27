@@ -7,8 +7,10 @@ absence — the confusion that let the prior art's browser tier recover nothing 
 nothing failing. The second is that `is_silent_outage` reaches the reader as its own field,
 because `resolved == 0` is also true of a lane that had nothing to do.
 
-`artifact_version` stays at 6. It is asserted here as well as at the three sites that already
-pin it, so the additive-key ruling is visible from the change that relies on it.
+`artifact_version` does not move for the lane section. It is asserted here as well as at the
+three sites that already pin it, so the additive-key ruling is visible from the change that
+relies on it. (The number itself is 7 since D-267 put each lead's location into the artifact —
+that bump was NOT for `lanes`, and this test says so by pinning the constant, not a literal.)
 """
 
 from __future__ import annotations
@@ -69,6 +71,7 @@ def _funnel(lanes: tuple[LaneReport, ...] = ()) -> RunFunnel:
             profile_row_hash=None,
             rules_hash=None,
             status="ok",
+            location_filter_mode="soft",
         ),
         scan=ScanContext(ran=False),
         corpus=CorpusCounts(
@@ -98,14 +101,18 @@ def _funnel(lanes: tuple[LaneReport, ...] = ()) -> RunFunnel:
 
 
 def test_the_artifact_version_does_not_move_for_the_lane_section() -> None:
-    """Plan D7: `lanes` is an ADDITIVE key on the D-113 precedent, not a v7.
+    """Plan D7: `lanes` is an ADDITIVE key on the D-113 precedent, not a bump of its own.
 
     Asserted from both directions — the constant and the emitted payload — because a bump made
-    in the constant alone would still change every artifact a consumer reads.
+    in the constant alone would still change every artifact a consumer reads. Pinned AGAINST
+    the constant rather than against a literal, so a later bump made for some other section
+    cannot be read as evidence that `lanes` earned one.
     """
-    assert ARTIFACT_VERSION == 6
-    assert funnel_to_dict(_funnel())["artifact_version"] == 6
-    assert funnel_to_dict(_funnel((_report("stub", "body_inline"),)))["artifact_version"] == 6
+    assert funnel_to_dict(_funnel())["artifact_version"] == ARTIFACT_VERSION
+    assert (
+        funnel_to_dict(_funnel((_report("stub", "body_inline"),)))["artifact_version"]
+        == ARTIFACT_VERSION
+    )
 
 
 def test_a_run_with_no_lane_still_emits_the_key_as_an_empty_list() -> None:

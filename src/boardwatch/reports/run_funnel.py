@@ -48,6 +48,7 @@ from datetime import datetime
 from pathlib import Path
 
 from boardwatch.projection.run import ProjectionLeadOutcome
+from boardwatch.rank.location_gate import LocationClass, classify_location
 from boardwatch.reports.abstain import AbstainReport
 from boardwatch.reports.board_coverage import CoverageReport as BoardCoverageReport
 from boardwatch.reports.board_coverage import (
@@ -108,7 +109,18 @@ _TOP_MISSING = 10
 # consumer reads it: `cli/verify_cmd.py` pulls named keys out of the frozen JSON and tolerates
 # whatever else is there, with no schema, no golden fixture and no full-dict equality anywhere.
 # A run with no lane enabled emits `"lanes": []`, which is honest and costs a reader nothing.
-ARTIFACT_VERSION = 6
+#
+# **v7 is a lead's `locations` and the hard US gate's verdict on them (D-267, shipped D-323).**
+# It bumps for the v5 reason and not the v6 one: this does not add a section, it changes what a
+# `leads` row IS. Until now the record the location gate produces carried no location, so the one
+# gate whose failure mode is a lead the user cannot legally take left no trace in its own
+# artifact — every
+# "all leads US-located" claim in `METRICS.md` came from a by-hand store read inside a session
+# and could not be reproduced from the artifact afterwards. `manifest.location_filter_mode` comes
+# with it, because the verdicts are unreadable without it: in the default `soft` mode a `non_us`
+# lead is documented behaviour, not a leak, and a reader who cannot see the mode cannot tell a
+# passing gate from a disarmed one.
+ARTIFACT_VERSION = 7
 
 # The stored verdict that carries the keystone invariant's ABSTAIN. Named here once so the
 # rename is visible rather than scattered through the renderers as a string literal.
@@ -209,10 +221,21 @@ class SourceTotal:
 
 @dataclass(frozen=True)
 class Lead:
-    """One tailored lead and the board it came from.
+    """One tailored lead, the board it came from, and where the posting says it is.
 
     The provenance fields are what make Gate P0's *"which source produced each lead"*
-    answerable from the artifact alone.
+    answerable from the artifact alone. `locations` is the same clause for the hard US
+    location gate (D-267, shipped D-323): it is the gate's own input, so a reader holding only
+    this file can re-derive the verdict instead of taking `location_class` on trust.
+
+    **`locations` is `None`, never `()`, when the posting names no place.** The column is
+    nullable, an empty list and a list of blank strings all mean the same thing — the board
+    published no location — and `()` would serialise to `[]`, which asserts the board published
+    a list and it was empty. Those are different claims about the same posting, and this
+    program keeps them apart everywhere (`delivery_queries._posted_days` returns `None` rather
+    than `0` for exactly this reason). The one case `None` does NOT separate is a lead whose
+    posting row could not be resolved at all; that lead's `provider`/`board_slug`/
+    `company_source` all read `"unknown"`, which is how a reader tells the two apart.
     """
 
     posting_id: int
@@ -223,6 +246,19 @@ class Lead:
     company_source: str
     out_dir: str
     pdf_built: bool
+    locations: tuple[str, ...] | None
+
+    @property
+    def location_class(self) -> LocationClass:
+        """The hard gate's own verdict, from the production classifier — not a second copy.
+
+        DERIVED rather than stored so the pair in the artifact cannot disagree: a stored class
+        beside stored locations is two facts that can drift, and a lead labelled `us` over a
+        French address is worse than no label at all. A posting naming no place is `unknown`,
+        which is what the gate FAIL-OPENS on (never silently delete a real US role, Mit's
+        ruling) — and reporting it is the point: `unknown` is not `us`.
+        """
+        return classify_location(self.locations or ())
 
 
 @dataclass(frozen=True)
@@ -315,6 +351,14 @@ class RunManifest:
     The hashes that depend on a profile are `None` on a run with no profile — the same run that
     reports the whole corpus as `no_current_evaluation`. `code_fingerprint`, `config_hash` and
     `status` are always present.
+
+    `location_filter_mode` is the one setting reported in PLAIN TEXT as well as inside
+    `config_hash` (D-323). It is not a second hash and it is not redundant: it is what makes
+    each lead's `location_class` readable. `soft` means the hard US gate never ran, so a
+    `non_us` lead is the documented behaviour rather than a leak; `hard` means the run claims
+    every lead is `us` or `unknown`. Without it a reader has a column of verdicts and no way to
+    know which claim the run was making — and re-deriving the mode from `config_hash` is not
+    possible, that being what a hash is for.
     """
 
     code_fingerprint: str
@@ -323,6 +367,7 @@ class RunManifest:
     profile_row_hash: str | None
     rules_hash: str | None
     status: str
+    location_filter_mode: str
 
 
 @dataclass(frozen=True)
@@ -1255,6 +1300,7 @@ def funnel_to_dict(funnel: RunFunnel) -> dict[str, object]:
             "profile_row_hash": funnel.manifest.profile_row_hash,
             "rules_hash": funnel.manifest.rules_hash,
             "status": funnel.manifest.status,
+            "location_filter_mode": funnel.manifest.location_filter_mode,
         },
         "liveness": {
             # All None when the shortlist was not probed. `instrumented` is emitted so a reader
@@ -1357,6 +1403,11 @@ def funnel_to_dict(funnel: RunFunnel) -> dict[str, object]:
                 "company_source": lead.company_source,
                 "out_dir": lead.out_dir,
                 "pdf_built": lead.pdf_built,
+                # null, never []: a posting that names no place has not named an empty place
+                # (D-323). Read `manifest.location_filter_mode` before reading `location_class`
+                # — in `soft` mode the hard gate never ran.
+                "locations": list(lead.locations) if lead.locations is not None else None,
+                "location_class": lead.location_class,
             }
             for lead in funnel.leads
         ],
@@ -1510,7 +1561,10 @@ def funnel_to_markdown(funnel: RunFunnel) -> str:
         "## Manifest",
         "",
         "*What this run ran AS. Two runs sharing every hash below should turn the same corpus "
-        "into the same leads. A hash tied to the profile is `—` on a run with no profile.*",
+        "into the same leads. A hash tied to the profile is `—` on a run with no profile. "
+        "`location filter mode` is not a hash — it is already inside `config hash`, and is "
+        "repeated in plain text because it is what makes each lead's `US gate` verdict "
+        "readable: in `soft` the hard US gate never ran.*",
         "",
         "| field | value |",
         "|---|---|",
@@ -1520,6 +1574,7 @@ def funnel_to_markdown(funnel: RunFunnel) -> str:
         f"| profile facts hash | {m.profile_facts_hash or '—'} |",
         f"| profile row hash | {m.profile_row_hash or '—'} |",
         f"| rules hash | {m.rules_hash or '—'} |",
+        f"| location filter mode | {m.location_filter_mode} |",
         "",
         "*`config hash` covers the decision-relevant `Settings`; `profile row hash` covers the "
         "five profile columns the ranker reads (incl. `exclude_titles`) plus the two "
@@ -1625,12 +1680,26 @@ def funnel_to_markdown(funnel: RunFunnel) -> str:
     ]
     if funnel.leads:
         lines += [
-            "| posting | title | company | source board | registry/user | PDF | folder |",
-            "|---:|---|---|---|---|---|---|",
+            # D-268's rule, applied where the claim is made: a ratio records its MATCH RULE and
+            # its CORPUS SIZE beside it, or only the numerator is quotable later. "no lead is
+            # non-US" is worth nothing without both, and the retracted metric this replaces was
+            # a grep that returned the same number whether the French city was there or not.
+            f"*`location` is what the posting itself named — `—` where it named nothing, which "
+            f"is not the same as naming an empty place. `US gate` is "
+            f"`rank/location_gate.classify_location` over exactly those strings, evaluated over "
+            f"all {len(funnel.leads)} lead(s) in this table. It is a positive US allowlist, so "
+            f"it drops only a CONFIRMED `non_us` and keeps `us` and `unknown` — and it only ran "
+            f"at all if the manifest's location filter mode above reads `hard`.*",
+            "",
+            "| posting | title | company | location | US gate | source board | registry/user "
+            "| PDF | folder |",
+            "|---:|---|---|---|---|---|---|---|---|",
         ]
         for lead in funnel.leads:
             lines.append(
                 f"| {lead.posting_id} | {lead.title} | {lead.company} | "
+                f"{'; '.join(lead.locations) if lead.locations else '—'} | "
+                f"{lead.location_class} | "
                 f"{lead.provider}:{lead.board_slug} | {lead.company_source} | "
                 f"{'yes' if lead.pdf_built else '**no**'} | {lead.out_dir} |"
             )

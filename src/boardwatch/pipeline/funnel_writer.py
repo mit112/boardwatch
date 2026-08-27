@@ -222,6 +222,10 @@ def collect_run_funnel(
         # `runs.status` is `running` until finish_run stamps it; a funnel written from the
         # pipeline's finally block reads the terminal value finish_run just wrote (D-029).
         status=row.status if row is not None else "running",
+        # D-323. In plain text beside `config_hash`, which already covers it: a hash cannot
+        # tell a reader whether the hard US gate was armed, and without that each lead's
+        # `location_class` is a verdict with no claim attached to it.
+        location_filter_mode=settings.location_filter_mode,
     )
 
     leads = [
@@ -241,6 +245,10 @@ def collect_run_funnel(
             ),
             out_dir=str(out_dir),
             pdf_built=pdf_built,
+            # D-323. `None` on a lead whose posting row did not resolve, the same anomaly the
+            # three fields above label `"unknown"` — which is what distinguishes it from a
+            # posting that resolved and named no place.
+            locations=provenance[posting_id].locations if posting_id in provenance else None,
         )
         for posting_id, company, title, out_dir, pdf_built in tailored
     ]

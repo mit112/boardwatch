@@ -33,6 +33,7 @@ from boardwatch.lanes.base import CompanyAdmission, LaneCompanySnapshot, LaneRes
 from boardwatch.lanes.outcomes import AcquisitionTally
 from boardwatch.pipeline import runner as runner_mod
 from boardwatch.pipeline.runner import PipelineSummary, _collect_lane, _run_lanes, run_pipeline
+from boardwatch.reports.run_funnel import ARTIFACT_VERSION
 from boardwatch.store import tables
 from boardwatch.store.db import ensure_schema, get_engine
 from boardwatch.store.queries import insert_run, save_profile
@@ -493,11 +494,13 @@ def test_a_lane_failure_leaves_the_run_otherwise_unchanged(
     assert status == "ok"
 
 
-def test_the_funnel_carries_the_lane_section_and_still_reads_artifact_version_6(
+def test_the_funnel_carries_the_lane_section_without_bumping_the_artifact_version(
     env: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """Plan D7. The three sites that pin the 6 stay untouched; this asserts the emitted
-    artifact agrees with them while carrying a section they predate."""
+    """Plan D7. The sites that pin the version stay untouched; this asserts the emitted
+    artifact agrees with them while carrying a section they predate. Pinned against
+    `ARTIFACT_VERSION` rather than a literal, so a bump earned elsewhere (D-267's lead
+    locations took it to 7) cannot be misread as one `lanes` earned."""
     _ready(env)
     lane = StubLane([("hiringcafe", "src:acme")], outcomes=("body_inline", "fetch_gone"))
     monkeypatch.setattr(runner_mod, "LANE_FACTORIES", {"stub": lambda _s, _f: lane})
@@ -506,7 +509,7 @@ def test_the_funnel_carries_the_lane_section_and_still_reads_artifact_version_6(
 
     assert summary.fatal is None
     payload = _payload(tmp_path / "apps")
-    assert payload["artifact_version"] == 6
+    assert payload["artifact_version"] == ARTIFACT_VERSION
     assert len(payload["lanes"]) == 1
     reported = payload["lanes"][0]
     assert reported["name"] == "stub"
