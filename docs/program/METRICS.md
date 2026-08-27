@@ -7203,7 +7203,13 @@ resets.**
 **PRODUCTION-PATH VERIFICATION of D-319, and the drain argument confirmed empirically.** A
 `boardwatch top --no-record` was started on the primary tree after the pull, persisting evaluations under the
 new engine before it was stopped part-way. Reading those rows back by SQL is a different path from the
-in-process replay that designed the fix. **4,400 postings carry an evaluation under BOTH engines**, so the
+in-process replay that designed the fix.
+
+**That call created PHANTOM run 118**, left stuck at `status='running'` with `boards_attempted=0`, 0
+artifacts and 0 `job_dispositions`. `--no-record` governs the `seen` cursor, not `ensure_run`, so a
+full-corpus read against the live store is a WRITE. The 4,400 rows below are attributed to run 118 and are
+correctly stamped, so the comparison stands; Gate P3's `boards_attempted > 0` filter excludes the row, as it
+does phantom run 91. **The first scheduled tick on the new engine is therefore run 119, not 118.** **4,400 postings carry an evaluation under BOTH engines**, so the
 comparison is paired over identical inputs:
 
 | verdict | `1+63c6f8fd5a3e` | `1+5bf77461f044` |
