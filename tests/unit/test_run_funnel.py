@@ -705,14 +705,14 @@ def test_the_markdown_reports_every_catalog_rule_including_those_that_never_fire
     """Gate P0 requires per-rule abstain for EVERY rule in the catalog.
 
     The rules worth knowing about are the ones with no rows at all, and a report built by
-    grouping the data cannot show them. Each of the 44 must be named, and a never-fired rule
+    grouping the data cannot show them. each of the 45 must be named, and a never-fired rule
     must read as `never fired` rather than as 0%.
     """
     cat = catalog()
     body = funnel_to_markdown(funnel(abstain=build_abstain_report(cat, {})))
 
     ids = [pattern.rule_id for family in cat.families for pattern in family.patterns]
-    assert len(ids) == 44
+    assert len(ids) == 45
     for rule_id in ids:
         assert rule_id in body, f"{rule_id} absent from the artifact"
     assert "never fired" in body
