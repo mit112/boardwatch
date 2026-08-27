@@ -52,11 +52,15 @@ close) · the degree-bridge fix (D-328). **`engine_version` moves the moment the
 it is DERIVED from the digested modules, so quote `doctor`, never a pinned constant (D-306). The live
 store is still on `1+af3a746837b1` because the tree is deliberately unpulled.
 
-**THE THREE OWNER FACTS ARE NOT YET APPLIED — that is the next live action, and the ONLY one left.**
-`security_clearance.obtainable=false`, `field_of_study=software_engineering`, `policy set degree blocker`,
-in ONE pass so the engine moves once. **NO ledger drain — the owner ruled to skip it (D-331)**, because the
-ledger holds zero `skipped` rows so a drain can recover nothing. Applying the facts costs one
-re-evaluation spike, projected ~124 min; nothing else is outstanding.
+**THE THREE OWNER FACTS ARE APPLIED, AND THE STORE IS ON THE NEW ENGINE (2026-08-27 ~22:52Z).**
+`security_clearance.obtainable=false`, `field_of_study=software_engineering`,
+`policy.families.degree=blocker`, written in one pass; `highest_degree` remains `master` and
+`work_authorization` / `total_years_experience` were untouched. **NO ledger drain ran and none is owed
+(D-331)** — verified independently: `job_dispositions.reopened_at` is set on 12 rows, the same 12 as
+before. **`engine_version` was `1+af3a746837b1` and read `1+7485e3a85f38` after the move — but DERIVE it,
+never quote either** (D-306): `python -c "from boardwatch.eligibility.engine import engine_version;
+print(engine_version())"`. This line has gone stale three times in one day; the value is a timestamp, the
+derivation is the fact.
 
 **BOARD COST IS PROVIDER-WEIGHTED, AND s/board IS A LYING UNIT (run 124).** Run 124 ran the OLD engine
 on the ramped fleet, which isolates fleet cost from engine cost: **346 boards, 3,424 s (57.1 min)**
@@ -111,15 +115,14 @@ source, **8,000+ tests**, 71 leaf CLI commands, 6 ATS providers, **346 watched b
 rule, reaffirmed 2026-08-27). boardwatch produces leads and deliberately does not apply: auto-apply is
 out of scope, and `applications` rows exist only where the user marks one.
 
-**THE STORE IS AT `p_lane_companies` AND `main` IS NOW AHEAD OF IT — an UNAPPLIED migration is pending.**
-#187 shipped `p_death_probe` (`down_revision: p_lane_companies`), so the store is NO LONGER at main's
-head. Verified 2026-08-27: `alembic_version` = `p_lane_companies`, and neither `postings.death_strikes`
-nor `postings.last_death_probe_at` exists yet. It is **additive only** — one `INTEGER NOT NULL DEFAULT 0`
-and one nullable `DATETIME`, no table rebuild — so it is low risk, but **apply it DELIBERATELY and verify
-`alembic_version` plus `PRAGMA table_info(postings)` BEFORE the first fact write** (D-279/D-286).
-That ordering is load-bearing: any `boardwatch` command with a default context runs `alembic upgrade head`
-through `build_context`, so an unremarkable `eligibility facts set` would otherwise apply a schema change
-as a silent side effect. **The rule this bought: after any PR that adds a migration, apply it to the live
+**THE STORE IS AT `p_death_probe`, which IS `main`'s head — verify, do not assume.** #187's migration was
+applied deliberately ahead of the fact write on 2026-08-27 and confirmed: `alembic_version` =
+`p_death_probe`, both `postings.death_strikes` and `postings.last_death_probe_at` present,
+`PRAGMA foreign_key_check` empty. **Check this rather than trusting this sentence** — it has been wrong
+before, and `SELECT * FROM alembic_version` answers it in a second. The ordering that made it safe is
+worth keeping: any `boardwatch` command with a default context runs `alembic upgrade head` through
+`build_context`, so an unremarkable `eligibility facts set` would otherwise apply a schema change as a
+silent side effect. **The rule this bought: after any PR that adds a migration, apply it to the live
 store deliberately and verify, rather than letting the next unattended tick discover it.** **There is no
 rollback snapshot** — all three stale backups were verified redundant and deleted (2026-08-23b, ~2.9 GB
 reclaimed). Take one before any destructive operation rather than assuming one exists.
@@ -133,36 +136,20 @@ set and the population caveat are in `STANDING-FACTS.md` § Precision gates (D-2
 
 ## Next action
 
-1. **APPLY `p_death_probe` FIRST, THEN THE THREE OWNER FACTS in ONE pass**, from the primary tree after
-   pulling. This is the only live action left; the code for all of it is merged.
-   **The migration comes first and is not optional ordering.** #187 added `p_death_probe` and the store
-   is still at `p_lane_companies`, so apply it deliberately and verify `alembic_version` and
-   `PRAGMA table_info(postings)` (expect `death_strikes`, `last_death_probe_at`) before writing any fact
-   — otherwise the first `eligibility facts set` applies a schema change as a silent side effect, because
-   `build_context` runs `alembic upgrade head` on every default-context command (D-279/D-286).
+1. **WATCH RUN 126 (01:00Z) AGAINST ITS PROJECTION — the live work is DONE and this is the check on it.**
+   The migration and the three owner facts were applied 2026-08-27 ~22:52Z, so 126 is the first tick on
+   engine `1+7485e3a85f38` and carries the full re-evaluation spike: **projected ~124 min against a
+   180-min cadence, 56 min of headroom, the tightest a run has ever been and a ONE-OFF.** Read the real
+   number against the projection in `METRICS.md` rather than re-deriving it. If it overruns, that
+   projection is the first thing to check, not the fleet size.
+
+   **Before ANY pull or store write, guard on PROCESS liveness, never the `runs` table:**
    ```sh
-   boardwatch eligibility facts set security_clearance.obtainable false
-   boardwatch eligibility facts set field_of_study software_engineering
-   boardwatch eligibility policy set degree blocker
+   pgrep -f "boardwatch run"   # empty = idle; any PID = still working, wait for it to exit
    ```
-   `highest_degree` is ALREADY `master` — do not re-set it. `false` is accepted (`_coerce`'s falsy set is
-   `{false,no,n,0,off}`), and `software_engineering` is a catalogued id. **`field_of_study` is NOT a
-   family `fact:` in the catalog**, so `set_fact`'s family lookup would reject it — the command works only
-   because `cli/eligibility_cmd.py` special-cases it ahead of that lookup and routes to
-   `set_field_of_study` (pinned by `tests/unit/test_eligibility_cmd.py`). Recorded because reading the
-   catalog alone says the command should fail. **Verify by direct SQL on
-   `profile.eligibility_policy_json`, never by the CLI that wrote it.** **Do NOT pull or apply while a
-   tick is running** — the profile is snapshotted mid-run and a change would straddle two profiles.
-   **The safety check is PROCESS liveness, NOT the `runs` table.** `runs.finished_at` is written BEFORE
-   the process finishes: the funnel and morning artifacts are emitted from a `finally` AFTER the run row
-   is closed (D-024). Measured on run 125 — `finished_at` 22:50:08, but `funnel-125.json`,
-   `funnel-125.md`, `morning-125.json` and `morning-125.md` were all written at 22:51, and the process
-   still held `boardwatch.db-shm` open at 64.6% CPU / 2.3 GB RSS a minute after the table said `ok`.
-   A `SELECT id,status FROM runs` guard therefore passes while a run is still writing. Use:
-   ```sh
-   pgrep -f "boardwatch run"     # empty = genuinely idle; a PID = still working, wait for it to exit
-   ```
-   **NO ledger drain (D-331, owner-ruled).**
+   `runs.finished_at` is written BEFORE the process exits — funnel and morning artifacts are emitted from
+   a `finally` after the row closes (D-024). Run 125: `finished_at` 22:50:08.8, artifacts at 22:51,
+   process gone at 22:51:40 — **92 seconds of work after the table read `ok`.**
 
 2. **Land what is still open:** #185 (D-327), #188 (this file), #190 (D-330, fetch timing). Each needs
    only a `DECISIONS.md` rebase; all three are gate-green.
