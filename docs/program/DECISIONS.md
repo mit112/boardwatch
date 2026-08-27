@@ -15342,3 +15342,25 @@ heading, not the sentence."* So `Preferred Qualifications` / `5+ years of experi
 impact is small — **2 of 286** newly blocked leads have every years mention under a preferred heading,
 because most postings state a required floor as well — so this is real but not urgent, and it is
 architectural (document-level section state in a sentence-scoped detector), not a pattern tweak.
+
+**ENGINE_VERSION MOVED A SECOND TIME, and it sharpens D-319's no-drain test.** `resolve.py` is a digested
+module, so this change moves it again: **`1+5bf77461f044` → `1+af3a746837b1`** (the full evening's chain is
+`1+63c6f8fd5a3e` → `1+5bf77461f044` (D-319) → `1+af3a746837b1` (D-320)). `rules.yaml` moves `rules_hash`
+rather than `engine_version` — the digested set is exactly `catalog.py`, `detect.py`, `resolve.py`,
+`engine.py`.
+
+**And this change is NOT strictly narrowing, so D-319's stated test was too narrow.** The gerund pattern only
+adds blocks, but the `we bring` subject suppressor *removes* a detection: a posting previously resolved
+`ineligible` on a company-tenure row now clears. Under D-319's wording ("strictly narrowing ⇒ no drain") that
+would appear to owe one. It does not, and the correct test is one level down: **a drain reopens PERMANENT
+dispositions (`built` / `skipped`), not verdicts.** An eligibility verdict is recomputed every run, so a
+loosened gate self-heals on the next tick with no intervention. A `built` disposition means a résumé was
+already produced, and loosening a gate cannot un-build one. So the question to ask is **"could a permanent
+disposition have been recorded under the old policy that the new policy would not record?"** — for both
+D-319 and D-320 the answer is no, and neither owes a drain. Keep the strictly-narrowing argument for what it
+is good for (it also proves nothing regresses), but do not use it as the drain test.
+
+**A knock-on worth knowing:** a verification script must DERIVE `engine_version()` rather than pin it. The
+first draft of `.agent/2026-08-26-years-gate/verify_years_gate_run.py` hardcoded `1+5bf77461f044` and was
+already wrong within the hour — it would have warned that the primary tree was behind `main` on the very
+first run it was written to check.

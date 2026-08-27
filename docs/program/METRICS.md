@@ -7283,3 +7283,13 @@ have made the tripwire read clean. The correct path is
 text a tripwire must read. A row-count guard now warns when artifacts fail to resolve rather than reporting a
 smaller set as complete. (2) The floor regex must exclude `N years of age` — measured 3 occurrences in the
 delivered set, and a wider pattern resolves an age minimum as an experience floor.
+
+**ENGINE_VERSION CHAIN FOR THE EVENING — three values, and no figure may be compared across them.**
+`1+63c6f8fd5a3e` (pre-fix, run 117 and earlier) → `1+5bf77461f044` (D-319 / #175) → `1+af3a746837b1`
+(D-320 / #176, because `resolve.py` is digested and #176 edits it). The paired 4,400-posting table above was
+measured on the MIDDLE value, so it isolates D-319; D-320's own effect was measured separately as
+strictly-additive 10 newly blocked / 0 spared. The first scheduled tick on `1+af3a746837b1` carries both,
+plus `internship` and `contract_not_fte` armed as blockers at 21:45 CDT — so that run reflects four changes
+and its delivered count must not be attributed to the years gate alone. The years-specific tripwire in
+`.agent/2026-08-26-years-gate/verify_years_gate_run.py` stays a clean signal regardless, because it reads
+each delivered lead's own frozen JD rather than a total.
