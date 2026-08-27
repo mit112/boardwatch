@@ -7293,3 +7293,25 @@ plus `internship` and `contract_not_fte` armed as blockers at 21:45 CDT — so t
 and its delivered count must not be attributed to the years gate alone. The years-specific tripwire in
 `.agent/2026-08-26-years-gate/verify_years_gate_run.py` stays a clean signal regardless, because it reads
 each delivered lead's own frozen JD rather than a total.
+
+**THE OTHER `preference` FAMILIES, MEASURED BEFORE ARMING (D-321).** Over 598 delivered leads, with
+`experience_years` already a blocker and the D-319 resolver in place, promoting each remaining family:
+
+| family | declared fact | newly blocked | what |
+|---|---|---|---|
+| `internship` | `internship_preference: exclude` | **2** | both Disney "WDW Engineering Interns, Spring 2027" |
+| `contract_not_fte` | `employment_type_preference: fte_only` | **1** | a UT Austin contract role |
+| `degree` | `highest_degree: master` | **1** | Intel, doctorate required |
+
+All four are correct against the declared facts and all are tiny. `internship` and `contract_not_fte` were
+armed 21:45 CDT; **`degree` was not** — the owner's call, and it is the one family where a 1-lead count
+mis-states the blast radius because it carries seven `abstain_by` patterns for degree-OR-experience forms.
+
+**SESSION-CLOSE STATE OF THE MEASUREMENTS.** Run 119 (04:00Z) was still in flight at close, so **no
+post-arming yield figure exists yet** — do not infer one. The last completed tick is 117, on the pre-fix
+engine, and its tripwire reads **5 of 10 delivered leads demanding more years than the profile declares**.
+Every number in this session's entries above is measured against either the 588/598-lead delivered set or the
+4,400-posting paired sample from phantom run 118, and each says which. **Four regimes exist tonight and no
+figure may be compared across them:** pre-fix (`1+63c6f8fd5a3e`, through run 117) → D-319
+(`1+5bf77461f044`, phantom run 118 only) → D-320 (`1+af3a746837b1`) → plus `internship` and
+`contract_not_fte` armed at 21:45 CDT, which run 119 is the first to carry.
