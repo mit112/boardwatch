@@ -40,10 +40,12 @@ from filelock import FileLock
 from sqlalchemy import Connection, Engine, insert, select, update
 
 from boardwatch.core import lock_reclaim
-from boardwatch.delivery import queue
+from boardwatch.core.settings import load_settings
+from boardwatch.delivery import DRAIN_DIRS, queue
 from boardwatch.delivery.queue import (
     APPLIED_DIR,
     DETAILS_FILE,
+    INELIGIBLE_DIR,
     JD_FILE,
     LINK_FILE,
     LOCK_FILE,
@@ -53,11 +55,24 @@ from boardwatch.delivery.queue import (
     reconcile_queue,
     sync_queue,
 )
+from boardwatch.eligibility.catalog import load_rules
+from boardwatch.eligibility.engine import evaluate, write_evaluation
+from boardwatch.eligibility.facts import Facts, Policy, WorkAuthFact, facts_payload
+from boardwatch.eligibility.hashing import build_identity
+from boardwatch.eligibility.resolve import declared_fields
 from boardwatch.store.applications import create_application, set_application_status
 from boardwatch.store.db import ensure_schema, get_engine
 from boardwatch.store.delivery_queries import QueueDetail
+from boardwatch.store.queries import save_eligibility, save_profile
 from boardwatch.store.queue_state import mark_job_skipped, unmark_job_skipped
-from boardwatch.store.tables import artifacts, companies, jobs, posting_versions, postings, runs
+from boardwatch.store.tables import (
+    artifacts,
+    companies,
+    jobs,
+    posting_versions,
+    postings,
+    runs,
+)
 
 NOW = datetime(2026, 8, 26, 12, 0, 0)
 OWNER = "Mit Sheth"
@@ -224,7 +239,9 @@ def _folders(base: Path) -> list[str]:
     return sorted(
         path.name
         for path in base.iterdir()
-        if path.is_dir() and not path.name.startswith(".") and path.name not in (APPLIED_DIR, SKIPPED_DIR)
+        if path.is_dir()
+        and not path.name.startswith(".")
+        and path.name not in (APPLIED_DIR, SKIPPED_DIR, INELIGIBLE_DIR)
     )
 
 
@@ -693,6 +710,237 @@ def test_a_skipped_lead_drains_to_skipped_and_unskipping_brings_it_back(
     assert _folders(root / SKIPPED_DIR) == []
 
 
+INELIGIBLE_JD = "Applicants must be authorized to work in the United States."
+
+
+def _make_ineligible(conn: Connection, posting_id: int) -> None:
+    """Give the lead a REAL `ineligible` verdict under a real stored profile identity.
+
+    Goes through `evaluate` + `write_evaluation` under the same facts/policy the profile stores,
+    so `current_identity` recomputes the identity the read actually looks up — a hand-written
+    `profile_hash` would pass against any implementation that hand-wrote the same constant.
+
+    The `assert` on the verdict is the test's own premise, stated out loud: if the engine ever
+    stops calling this body ineligible, these tests fail loudly instead of silently draining
+    nothing and passing.
+    """
+    facts = Facts(
+        work_authorization=WorkAuthFact(status="needs_sponsorship", jurisdiction="us")
+    )
+    policy = Policy(families={"work_auth": "blocker"})
+    save_profile(
+        conn, text="resume", target_titles=["software engineer"], exclude_titles=[],
+        locations=["Boston, MA"], remote_only=False, skills=["python"],
+        taxonomy_version="v1", resume_max_pages=1,
+    )
+    save_eligibility(
+        conn, facts_json=facts_payload(facts), policy_json=policy.model_dump(mode="json")
+    )
+    version_id = int(
+        conn.execute(
+            select(posting_versions.c.id).where(posting_versions.c.posting_id == posting_id)
+        ).scalar_one()
+    )
+    catalog = load_rules(load_settings().config_dir)
+    result = evaluate(INELIGIBLE_JD, facts, policy, catalog)
+    assert result.verdict == "ineligible", (
+        f"premise broken: this body now resolves {result.verdict!r}, so the drain tests below "
+        f"would pass without draining anything"
+    )
+    identity = build_identity(
+        posting_version_id=version_id, facts=facts, policy=policy, catalog=catalog,
+        declared_fields=declared_fields(),
+    )
+    write_evaluation(conn, posting_version_id=version_id, identity=identity, result=result)
+
+
+def test_an_ineligible_lead_drains_and_sync_does_not_rebuild_it(
+    engine: Engine, root: Path, apps: Path
+) -> None:
+    """An ineligible lead is not work, so it leaves the queue — and STAYS gone.
+
+    The second `sync_queue` is the load-bearing half: excluding the row from the drain without
+    excluding it from sync would move the folder out and immediately build a second one beside
+    it, which is worse than leaving it where it was.
+    """
+    with engine.begin() as conn:
+        posting_id, _job_id = _deliver(conn, apps, "one", body=INELIGIBLE_JD)
+    with engine.connect() as conn:
+        sync_queue(conn, root=root, owner_name=OWNER)
+    folder = _sole_folder(root).name
+
+    with engine.begin() as conn:
+        _make_ineligible(conn, posting_id)
+    with engine.connect() as conn:
+        drained = reconcile_queue(conn, root=root)
+    assert (drained.to_ineligible, drained.to_applied, drained.to_skipped, drained.failed) == (
+        1, 0, 0, 0,
+    )
+    assert _folders(root / INELIGIBLE_DIR) == [folder]
+    assert _folders(root) == []
+
+    with engine.connect() as conn:
+        report = sync_queue(conn, root=root, owner_name=OWNER)
+    assert _folders(root) == [], "sync rebuilt a folder for a lead the gate rejects"
+    assert _folders(root / INELIGIBLE_DIR) == [folder]
+    assert report.created == 0
+
+
+def test_a_verdict_that_no_longer_governs_returns_the_lead_to_the_queue(
+    engine: Engine, root: Path, apps: Path
+) -> None:
+    """The drain self-heals in BOTH directions, exactly as `_applied` and `_skipped` do.
+
+    The verdict is retired the way production retires one: `eligibility_evaluations` is
+    append-only (its own trigger says so), so a stored verdict is never deleted — it stops
+    governing when the profile identity moves and `current_verdicts` no longer matches it. That
+    is precisely what D-319 did to 267,434 rows, so this exercises the real mechanism rather
+    than a delete the schema forbids.
+    """
+    # Deliver and sync FIRST, so a real folder exists to be drained. Making it ineligible before
+    # the first sync would mean no folder was ever built, which is a different behaviour (and the
+    # one the previous test's second half pins).
+    with engine.begin() as conn:
+        posting_id, _job_id = _deliver(conn, apps, "one", body=INELIGIBLE_JD)
+    with engine.connect() as conn:
+        sync_queue(conn, root=root, owner_name=OWNER)
+    drained_folder = _folders(root)
+    assert len(drained_folder) == 1, "premise: a folder must exist before it can drain"
+
+    with engine.begin() as conn:
+        _make_ineligible(conn, posting_id)
+    with engine.connect() as conn:
+        reconcile_queue(conn, root=root)
+    assert _folders(root) == [], "premise: the lead must be drained before it can come back"
+    assert _folders(root / INELIGIBLE_DIR) == drained_folder
+
+    with engine.begin() as conn:
+        save_eligibility(
+            conn,
+            facts_json=facts_payload(Facts()),
+            policy_json=Policy().model_dump(mode="json"),
+        )
+    with engine.connect() as conn:
+        restored = reconcile_queue(conn, root=root)
+    assert restored.to_queue == 1
+    assert _folders(root / INELIGIBLE_DIR) == []
+    assert _folders(root) == drained_folder
+
+
+def test_an_applied_lead_that_is_also_ineligible_stays_in_applied(
+    engine: Engine, root: Path, apps: Path
+) -> None:
+    """Precedence, and it matters: an application is a statement the OWNER made about what they
+    did. A rule tightening months later must not sweep that record into an eligibility drain.
+
+    Note what actually holds this: `ineligible_job_ids` derives from `delivered_unapplied`, which
+    already excludes applied jobs, so an applied lead never reaches `_wanted_location`'s ordering
+    at all. Reordering the branches does NOT break this test — verified by mutation. It pins the
+    end state, and `test_wanted_location_prefers_an_owner_statement` pins the ordering itself.
+    """
+    with engine.begin() as conn:
+        posting_id, job_id = _deliver(conn, apps, "one", body=INELIGIBLE_JD)
+    with engine.connect() as conn:
+        sync_queue(conn, root=root, owner_name=OWNER)
+    folder = _sole_folder(root).name
+
+    with engine.begin() as conn:
+        _make_ineligible(conn, posting_id)
+        create_application(conn, job_id=job_id, status="applied", source="test")
+    with engine.connect() as conn:
+        drained = reconcile_queue(conn, root=root)
+    assert (drained.to_applied, drained.to_ineligible) == (1, 0)
+    assert _folders(root / APPLIED_DIR) == [folder]
+    assert _folders(root / INELIGIBLE_DIR) == []
+
+
+def test_a_skipped_lead_that_is_also_ineligible_stays_in_skipped(
+    engine: Engine, root: Path, apps: Path
+) -> None:
+    """Same precedence rule as applied: a skip is the owner's record of a decision they made."""
+    with engine.begin() as conn:
+        posting_id, job_id = _deliver(conn, apps, "one", body=INELIGIBLE_JD)
+    with engine.connect() as conn:
+        sync_queue(conn, root=root, owner_name=OWNER)
+    folder = _sole_folder(root).name
+
+    with engine.begin() as conn:
+        _make_ineligible(conn, posting_id)
+        mark_job_skipped(conn, job_id=job_id, at=NOW)
+    with engine.connect() as conn:
+        drained = reconcile_queue(conn, root=root)
+    assert (drained.to_skipped, drained.to_ineligible) == (1, 0)
+    assert _folders(root / SKIPPED_DIR) == [folder]
+    assert _folders(root / INELIGIBLE_DIR) == []
+
+
+def test_the_drain_set_has_exactly_one_source_of_truth() -> None:
+    """`names.DRAIN_DIRS` prices the byte budget; `queue._LOCATIONS` decides what is scanned and
+    created. They must name the same drains.
+
+    They diverged once already and it was silent: `_ineligible` was added to `queue.py` alone, so
+    every planned name was priced against an 8-byte drain while an 11-byte one existed, and
+    `NameBudgetError` accepted names whose drained destination it had promised to refuse. Nothing
+    failed — the cap simply stopped meaning what it says. `_LOCATIONS` is now derived, and this
+    pins the named constants to it so adding a fourth drain cannot repeat the trick.
+    """
+    assert set(queue._LOCATIONS) - {""} == set(DRAIN_DIRS)
+    assert set(DRAIN_DIRS) == {APPLIED_DIR, SKIPPED_DIR, INELIGIBLE_DIR}
+
+
+def test_no_drain_directory_is_ever_reported_as_unclassified(
+    engine: Engine, root: Path, apps: Path
+) -> None:
+    """`unclassified` means "a folder the owner must go and look at", so a drain appearing in it is
+    a false alarm that never clears.
+
+    `_child_dirs` has to skip every drain. It skipped only two, and the bug was invisible because
+    `_ineligible` did not exist until the first rejection created it — so this asserts against a
+    root where all three drains exist AND one holds a real drained folder.
+    """
+    with engine.begin() as conn:
+        posting_id, _job_id = _deliver(conn, apps, "one", body=INELIGIBLE_JD)
+    with engine.connect() as conn:
+        sync_queue(conn, root=root, owner_name=OWNER)
+    with engine.begin() as conn:
+        _make_ineligible(conn, posting_id)
+    with engine.connect() as conn:
+        drained = reconcile_queue(conn, root=root)
+    assert drained.to_ineligible == 1, "premise: a folder must actually be in the drain"
+
+    with engine.connect() as conn:
+        again = reconcile_queue(conn, root=root)
+        synced = sync_queue(conn, root=root, owner_name=OWNER)
+    for name in (APPLIED_DIR, SKIPPED_DIR, INELIGIBLE_DIR):
+        assert name not in again.unclassified, f"{name} was reported as a lead folder"
+    assert again.unclassified == ()
+    assert synced.failed == 0
+
+
+def test_wanted_location_prefers_an_owner_statement_over_a_derived_verdict() -> None:
+    """The ordering inside `_wanted_location`, tested directly.
+
+    The two integration tests above cannot both reach this: `ineligible_job_ids` never reports an
+    APPLIED job, so that path is decided upstream. Calling the function with all three sets
+    populated is the only way to pin the branch order, and reordering the branches fails this.
+    """
+    entry = queue._Entry(
+        path=Path("x"), location="", posting_id=1, job_id=7, content_hash=None
+    )
+    both = {7: "2026-08-26"}
+    verdict = {7: "ineligible"}
+    assert queue._wanted_location(
+        entry, applied=both, skipped={}, ineligible=verdict
+    ) == APPLIED_DIR
+    assert queue._wanted_location(
+        entry, applied={}, skipped=both, ineligible=verdict
+    ) == SKIPPED_DIR
+    assert queue._wanted_location(
+        entry, applied={}, skipped={}, ineligible=verdict
+    ) == INELIGIBLE_DIR
+    assert queue._wanted_location(entry, applied={}, skipped={}, ineligible={}) == ""
+
+
 def test_a_job_that_is_both_applied_and_skipped_drains_to_applied(
     engine: Engine, root: Path, apps: Path
 ) -> None:
@@ -1107,7 +1355,7 @@ def test_the_lock_is_released_so_a_second_sync_can_run(
 # ---------------------------------------------------------------------------------- housekeeping
 
 
-def test_sync_creates_both_drains_and_the_lockfile_and_nothing_else(
+def test_sync_creates_every_drain_and_the_lockfile_and_nothing_else(
     engine: Engine, root: Path
 ) -> None:
     """An empty database is not an error, and the queue is still a well-formed root afterwards."""
@@ -1116,9 +1364,13 @@ def test_sync_creates_both_drains_and_the_lockfile_and_nothing_else(
     assert (report.created, report.failed, report.contended) == (0, 0, False)
     assert (root / APPLIED_DIR).is_dir()
     assert (root / SKIPPED_DIR).is_dir()
+    # Created up front, not lazily on the first rejection. A drain that springs into existence
+    # only once a folder lands in it is invisible to every test whose root never produces one,
+    # which is what let `_child_dirs` ship without knowing `_ineligible` existed.
+    assert (root / INELIGIBLE_DIR).is_dir()
     assert _folders(root) == []
     assert sorted(path.name for path in root.iterdir() if path.is_dir()) == sorted(
-        [APPLIED_DIR, SKIPPED_DIR]
+        [APPLIED_DIR, SKIPPED_DIR, INELIGIBLE_DIR]
     )
     # The lockfile is excluded rather than asserted either way: `filelock`'s POSIX release unlinks
     # it, and `profile_bundle/locking.py` is explicit that its presence is not a signal.
@@ -1128,8 +1380,11 @@ def test_sync_creates_both_drains_and_the_lockfile_and_nothing_else(
 def test_failed_is_derived_from_failures_so_the_two_cannot_disagree() -> None:
     report = queue.SyncReport(failures=(queue.LeadFailure(posting_id=7, detail="x"),))
     assert report.failed == 1
-    recon = queue.ReconcileReport(to_applied=1, to_skipped=2, to_queue=3)
-    assert recon.moved == 6
+    # EVERY drain is set, and each contributes a distinct value, so a `moved` that forgets one
+    # cannot land on the right total by accident. Omitting `to_ineligible` here is exactly how the
+    # first version of this change shipped a `moved` that printed 0 while 294 folders moved.
+    recon = queue.ReconcileReport(to_applied=1, to_skipped=2, to_ineligible=4, to_queue=8)
+    assert recon.moved == 15
     assert recon.failed == 0
 
 

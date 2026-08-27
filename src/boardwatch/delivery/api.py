@@ -178,14 +178,24 @@ class PdfFile:
 
 
 def queue_payload(conn: Connection, ctx: ApiContext) -> dict[str, Any]:
-    """`GET /api/queue`: every delivered, unapplied, unskipped lead, ranked as of now.
+    """`GET /api/queue`: every delivered, unapplied, unskipped, non-ineligible lead, ranked now.
+
+    Ineligible leads are excluded from `rows` and reported in `counts.ineligible` instead. Their
+    folders drain to `_ineligible`, so listing them here would make the page and the folder tree
+    disagree about the same lead.
 
     Ranked here rather than in the store because the score is not persisted (design §6.2). The
     sort is stable, so leads that score equally — and every lead when there is no profile to score
     against — keep `delivered_unapplied`'s most-recent-delivery-first order rather than an
     arbitrary one.
     """
-    rows = delivered_unapplied(conn, skipped=set(skipped_job_ids(conn)))
+    every = delivered_unapplied(conn, skipped=set(skipped_job_ids(conn)))
+    # An ineligible lead is not work: it is drained to `_ineligible` on disk, so the page must
+    # not list it either, or the folder tree and the page disagree about the same lead. It is
+    # COUNTED though — see `_counts`. Silently dropping rows from a report is the failure this
+    # repository treats an unreported abstain as.
+    rows = [row for row in every if row.verdict != "ineligible"]
+    drained = len(every) - len(rows)
     facts = _live_facts(conn, ctx, rows)
     ordered = sorted(
         rows,
@@ -196,7 +206,7 @@ def queue_payload(conn: Connection, ctx: ApiContext) -> dict[str, Any]:
     )
     return {
         "rows": [_row_json(row, facts[row.posting_id], ctx) for row in ordered],
-        "counts": _counts(conn, ordered),
+        "counts": _counts(conn, ordered, ineligible=drained),
         # A capability flag, not a preference: the button is hidden where the platform has no
         # file-manager handler, because a control that can only fail is worse than no control.
         "meta": {"reveal_supported": reveal_supported(ctx.platform)},
@@ -319,7 +329,9 @@ def _coverage_entry(term: str, *, covered: bool) -> dict[str, Any]:
     }
 
 
-def _counts(conn: Connection, rows: Sequence[QueueRow]) -> dict[str, Any]:
+def _counts(
+    conn: Connection, rows: Sequence[QueueRow], *, ineligible: int = 0
+) -> dict[str, Any]:
     """The status band. `uncertain` is its own bucket and is NEVER summed into `eligible`.
 
     That is the same rule the repository applies to every other report: an abstain is never folded
@@ -334,6 +346,10 @@ def _counts(conn: Connection, rows: Sequence[QueueRow]) -> dict[str, Any]:
         "in_queue": len(rows),
         "eligible": sum(1 for row in rows if row.verdict == "eligible"),
         "uncertain": sum(1 for row in rows if row.verdict == "uncertain"),
+        # Its OWN cell, never folded into either neighbour and never left as an unexplained
+        # remainder. `in_queue` counts the work list, which excludes these, so the band now
+        # reconciles: in_queue == eligible + uncertain + (rows with no verdict yet).
+        "ineligible": ineligible,
         "applied_ever": len(applied_job_ids(conn)),
         "skipped": len(skipped_job_ids(conn)),
         "delivered_last_run": (

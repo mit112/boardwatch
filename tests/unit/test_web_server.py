@@ -52,11 +52,11 @@ from boardwatch.delivery.server import (
 )
 from boardwatch.eligibility.catalog import load_rules
 from boardwatch.eligibility.engine import evaluate, write_evaluation
-from boardwatch.eligibility.facts import Facts, Policy
+from boardwatch.eligibility.facts import Facts, Policy, WorkAuthFact, facts_payload
 from boardwatch.eligibility.hashing import build_identity
 from boardwatch.eligibility.resolve import declared_fields
 from boardwatch.store.db import DB_FILENAME, ensure_schema, get_engine
-from boardwatch.store.queries import save_profile
+from boardwatch.store.queries import save_eligibility, save_profile
 from boardwatch.store.tables import (
     application_events,
     applications,
@@ -76,6 +76,13 @@ NOW = datetime(2026, 8, 26, 12, 0, 0)
 # reaches the roll-up with zero rows, which abstains rather than clearing by silence.
 JD_ELIGIBLE = "Bachelor's degree preferred. We build lovely software in Python."
 JD_UNCERTAIN = "We build lovely software."
+JD_INELIGIBLE = "Applicants must be authorized to work in the United States."
+#: The one facts/policy pair in this file that can yield `ineligible` at all: every family ships
+#: `default_policy: preference`, and only a `blocker` family can produce that verdict (D-319).
+BLOCKING_FACTS = Facts(
+    work_authorization=WorkAuthFact(status="needs_sponsorship", jurisdiction="us")
+)
+BLOCKING_POLICY = Policy(families={"work_auth": "blocker"})
 
 PDF_BYTES = b"%PDF-1.7 the real tailored resume"
 SECRET_BYTES = b"%PDF-1.7 SECRET-OUTSIDE-THE-ROOT"
@@ -258,7 +265,14 @@ def _deliver(
     return posting_id, job
 
 
-def _judge(conn: Connection, posting_id: int, body: str) -> str:
+def _judge(
+    conn: Connection,
+    posting_id: int,
+    body: str,
+    *,
+    facts: Facts | None = None,
+    policy: Policy | None = None,
+) -> str:
     """A real deterministic evaluation under the LIVE profile's identity.
 
     Through `evaluate` + `write_evaluation` rather than hand-inserted ledger rows: a hand-written
@@ -271,12 +285,14 @@ def _judge(conn: Connection, posting_id: int, body: str) -> str:
             select(posting_versions.c.id).where(posting_versions.c.posting_id == posting_id)
         ).scalar_one()
     )
-    result = evaluate(body, Facts(), Policy(), catalog)
+    used_facts = Facts() if facts is None else facts
+    used_policy = Policy() if policy is None else policy
+    result = evaluate(body, used_facts, used_policy, catalog)
     write_evaluation(
         conn,
         posting_version_id=version_id,
         identity=build_identity(
-            posting_version_id=version_id, facts=Facts(), policy=Policy(),
+            posting_version_id=version_id, facts=used_facts, policy=used_policy,
             catalog=catalog, declared_fields=declared_fields(),
         ),
         result=result,
@@ -284,12 +300,21 @@ def _judge(conn: Connection, posting_id: int, body: str) -> str:
     return result.verdict
 
 
-def _profile(conn: Connection) -> None:
+def _profile(
+    conn: Connection, *, facts: Facts | None = None, policy: Policy | None = None
+) -> None:
+    """The default pair is `None`/`None`, which leaves eligibility unsaved exactly as before —
+    every existing caller keeps its current identity. Pass both to store a policy that can
+    actually block."""
     save_profile(
         conn, text="resume", target_titles=["software engineer"], exclude_titles=[],
         locations=["Boston, MA"], remote_only=False, skills=["python"],
         taxonomy_version="v1", resume_max_pages=1,
     )
+    if facts is not None and policy is not None:
+        save_eligibility(
+            conn, facts_json=facts_payload(facts), policy_json=policy.model_dump(mode="json")
+        )
 
 
 def _event_count(engine: Engine) -> int:
@@ -797,6 +822,46 @@ def test_uncertain_is_never_summed_into_the_eligible_count(live: Live, engine: E
     # Stated as its own assertion because the sum is the specific defect: an implementation that
     # counted "eligible or uncertain" reports 2 and passes an `>= 1` check.
     assert counts["eligible"] != counts["in_queue"]
+
+
+def test_counts_report_ineligible_as_its_own_cell_and_keep_it_out_of_the_queue(
+    live: Live, engine: Engine
+) -> None:
+    """An ineligible lead is not work, so it is not a row — but it IS a number.
+
+    Both halves matter and they fail differently. Dropping the row without counting it makes
+    `in_queue` an unexplained remainder, which is the same defect as an unreported abstain.
+    Counting it without dropping the row leaves the page disagreeing with the folder tree, since
+    `reconcile_queue` drains the folder to `_ineligible`.
+
+    The verdicts are asserted before the payload is read, so `ineligible: 1` cannot come from a
+    hand-written constant — and `assert ... == "ineligible"` is the premise stated out loud: if
+    the engine stops calling this body ineligible, this fails instead of passing vacuously.
+    """
+    with engine.begin() as conn:
+        _profile(conn, facts=BLOCKING_FACTS, policy=BLOCKING_POLICY)
+        clear, _ = _deliver(conn, "clear", body=JD_UNCERTAIN)
+        barred, _ = _deliver(conn, "barred", body=JD_INELIGIBLE)
+        assert (
+            _judge(conn, barred, JD_INELIGIBLE, facts=BLOCKING_FACTS, policy=BLOCKING_POLICY)
+            == "ineligible"
+        )
+        assert (
+            _judge(conn, clear, JD_UNCERTAIN, facts=BLOCKING_FACTS, policy=BLOCKING_POLICY)
+            != "ineligible"
+        )
+
+    payload = call(live, "/api/queue", bearer=live.token).json()
+    shown = {row["posting_id"] for row in payload["rows"]}
+    assert barred not in shown, "an ineligible lead was listed as work"
+    assert clear in shown, "a non-ineligible lead must still be listed"
+
+    counts = payload["counts"]
+    assert counts["ineligible"] == 1
+    assert counts["in_queue"] == 1
+    # Its own cell, never folded into a neighbour: an implementation that added it to `uncertain`
+    # or left it inside `in_queue` reports 2 here and passes any `>= 1` check.
+    assert counts["in_queue"] == counts["eligible"] + counts["uncertain"]
 
 
 def test_counts_report_the_last_finished_run(live: Live, engine: Engine) -> None:

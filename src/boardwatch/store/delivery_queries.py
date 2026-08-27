@@ -199,6 +199,27 @@ def _identity(conn: Connection) -> tuple[str | None, str | None]:
     return identity if identity is not None else (None, None)
 
 
+def ineligible_job_ids(conn: Connection) -> dict[int, str]:
+    """`job_id` -> its verdict, for every delivered lead the eligibility gate now rejects.
+
+    Derived from `delivered_unapplied` itself rather than from a second query over the same
+    tables, so the drain on disk and the page can never disagree about a verdict — the one
+    failure this would otherwise invite, because a folder claiming a verdict the page does not
+    show is indistinguishable from a stale folder.
+
+    `skipped=set()` is deliberate. An owner's skip is a statement about what they did and it
+    outranks a derived verdict, so the precedence lives in `_wanted_location`, not here: this
+    reports the verdict for a skipped lead too and lets the caller decide which wins. Hiding
+    them here would make a lead that is BOTH skipped and ineligible flip drain whenever the
+    caller changed.
+    """
+    return {
+        row.job_id: row.verdict
+        for row in delivered_unapplied(conn, skipped=set())
+        if row.verdict == "ineligible"
+    }
+
+
 def delivered_unapplied(conn: Connection, *, skipped: set[int]) -> list[QueueRow]:
     """Every delivered, unapplied, unskipped lead across ALL runs, one row per canonical job.
 
@@ -306,5 +327,6 @@ __all__ = [
     "QueueRow",
     "RequirementView",
     "delivered_unapplied",
+    "ineligible_job_ids",
     "queue_detail",
 ]

@@ -66,9 +66,14 @@ from filelock import FileLock, Timeout
 from sqlalchemy import Connection, select
 
 from boardwatch.core.lock_reclaim import RECLAIM_POLL_SECONDS, RECLAIM_WINDOW_SECONDS
-from boardwatch.delivery import LeadNames, plan_lead_names
+from boardwatch.delivery import DRAIN_DIRS, LeadNames, plan_lead_names
 from boardwatch.store.applications import applied_job_ids
-from boardwatch.store.delivery_queries import QueueRow, delivered_unapplied, queue_detail
+from boardwatch.store.delivery_queries import (
+    QueueRow,
+    delivered_unapplied,
+    ineligible_job_ids,
+    queue_detail,
+)
 from boardwatch.store.queue_state import skipped_job_ids
 from boardwatch.store.run_funnel_queries import TAILORED_KIND
 from boardwatch.store.tables import artifacts
@@ -81,6 +86,7 @@ DEFAULT_QUEUE_ROOT = Path.home() / "boardwatch-queue"
 LOCK_FILE = ".queue.lock"
 APPLIED_DIR = "_applied"
 SKIPPED_DIR = "_skipped"
+INELIGIBLE_DIR = "_ineligible"
 DETAILS_FILE = "details.json"
 JD_FILE = "job_description.txt"
 WEBLOC_FILE = "apply.webloc"
@@ -100,7 +106,11 @@ PLATFORM = sys.platform
 #: another, and so the scheme can be revised without silently reusing old names.
 IDENTITY_SALT = "boardwatch.delivery.queue.identity.v1"
 
-_LOCATIONS: tuple[str, ...] = ("", APPLIED_DIR, SKIPPED_DIR)
+#: DERIVED from `names.DRAIN_DIRS`, never enumerated again here. `names.py` prices the byte
+#: budget against the longest drain, so a drain listed in one place and not the other silently
+#: breaks that budget — which is exactly what happened to `_ineligible`. `""` is the queue root
+#: itself, which is a location but not a drain.
+_LOCATIONS: tuple[str, ...] = ("", *DRAIN_DIRS)
 _NO_PDF_ARTIFACT = "no_pdf_artifact"
 _PDF_FILE_MISSING = "source_file_missing"
 _NO_APPLY_URL = "no_apply_url"
@@ -182,6 +192,7 @@ class ReconcileReport:
 
     to_applied: int = 0
     to_skipped: int = 0
+    to_ineligible: int = 0
     to_queue: int = 0
     unclassified: tuple[str, ...] = ()
     failures: tuple[FolderFailure, ...] = ()
@@ -189,7 +200,12 @@ class ReconcileReport:
 
     @property
     def moved(self) -> int:
-        return self.to_applied + self.to_skipped + self.to_queue
+        # EVERY drain, including `_ineligible`. Both callers report this and nothing else
+        # (`runner.py`'s run line and the server's reconcile endpoint), and `sync_queue` cannot
+        # compensate because it excludes exactly the same rows — so omitting a drain here prints
+        # "0 moved" while hundreds of folders move, which is the same unreported-number defect
+        # this whole change exists to fix.
+        return self.to_applied + self.to_skipped + self.to_ineligible + self.to_queue
 
     @property
     def failed(self) -> int:
@@ -312,11 +328,18 @@ def _queue_lock(root: Path) -> Iterator[Path]:
 
 
 def _ensure_root(root: Path) -> None:
-    """Create the root and both drains. Idempotent, and the only writes outside the lock — the
-    lockfile has to live somewhere before it can be taken."""
+    """Create the root and every drain. Idempotent, and the only writes outside the lock — the
+    lockfile has to live somewhere before it can be taken.
+
+    Every drain is created up front rather than lazily by `_relocate`'s `mkdir`. Lazily is not
+    merely untidy: a drain that does not exist until the first folder lands in it is invisible to
+    every test whose root never produces one, which is precisely what let `_child_dirs` ship
+    without knowing about `_ineligible`.
+    """
     root.mkdir(parents=True, exist_ok=True)
-    (root / APPLIED_DIR).mkdir(exist_ok=True)
-    (root / SKIPPED_DIR).mkdir(exist_ok=True)
+    for drain in _LOCATIONS:
+        if drain:
+            (root / drain).mkdir(exist_ok=True)
 
 
 # ------------------------------------------------------------------------------------------ sync
@@ -331,7 +354,17 @@ def _sync_locked(conn: Connection, *, root: Path, owner_name: str) -> SyncReport
     landed in would depend on the query's row order.
     """
     _clear_staging(root)
-    rows = delivered_unapplied(conn, skipped=set(skipped_job_ids(conn)))
+    # An ineligible lead is not work, so it gets no top-level folder. It is EXCLUDED here rather
+    # than deleted: `reconcile_queue` has already moved any existing folder into
+    # `_ineligible`, and leaving the row out of `rows` is what stops the move-loop below pulling
+    # it straight back out. The reverse direction still works — if the verdict later clears, the
+    # row reappears here and the folder is drawn back to the top level, so the drain self-heals
+    # in both directions exactly as `_applied` and `_skipped` do.
+    rows = [
+        row
+        for row in delivered_unapplied(conn, skipped=set(skipped_job_ids(conn)))
+        if row.verdict != "ineligible"
+    ]
     artifact_ids = _tailored_artifact_ids(conn)
     entries, _ = _index(root)
     planned, failures = _plan(rows, root=root, owner_name=owner_name)
@@ -652,13 +685,25 @@ def _clear_staging(root: Path) -> None:
 def _reconcile_locked(conn: Connection, *, root: Path) -> ReconcileReport:
     applied = applied_job_ids(conn)
     skipped = skipped_job_ids(conn)
+    ineligible = ineligible_job_ids(conn)
     entries, unclassified = _index(root)
-    counts = {APPLIED_DIR: 0, SKIPPED_DIR: 0, "": 0}
+    counts = {APPLIED_DIR: 0, SKIPPED_DIR: 0, INELIGIBLE_DIR: 0, "": 0}
     failures: list[FolderFailure] = []
     for entry in sorted(entries.values(), key=lambda item: item.posting_id):
-        wanted = _wanted_location(entry, applied=applied, skipped=skipped)
+        wanted = _wanted_location(
+            entry, applied=applied, skipped=skipped, ineligible=ineligible
+        )
         if wanted == entry.location:
             continue
+        # `entry.path.name`, not a freshly planned name: reconcile moves a folder, it never
+        # renames one. One consequence is worth knowing rather than rediscovering. `_sync_locked`
+        # plans names over non-ineligible rows only, so a lead parked in `_ineligible` no longer
+        # forces a same-company-same-title sibling to disambiguate. If its verdict later clears,
+        # this move can find the plain name taken and raise, and the run line reports `1 failed`.
+        # It is SPURIOUS and self-heals in the same run: the `sync_queue` that follows plans both
+        # leads, disambiguates them, and relocates from `_ineligible` (which `_index` scans). Not
+        # fixed by widening `_plan`'s input, because that would report naming failures for leads
+        # this function deliberately never creates.
         target = (root / wanted / entry.path.name) if wanted else root / entry.path.name
         try:
             _relocate(entry.path, target)
@@ -669,6 +714,7 @@ def _reconcile_locked(conn: Connection, *, root: Path) -> ReconcileReport:
     return ReconcileReport(
         to_applied=counts[APPLIED_DIR],
         to_skipped=counts[SKIPPED_DIR],
+        to_ineligible=counts[INELIGIBLE_DIR],
         to_queue=counts[""],
         unclassified=unclassified,
         failures=tuple(failures),
@@ -676,12 +722,25 @@ def _reconcile_locked(conn: Connection, *, root: Path) -> ReconcileReport:
 
 
 def _wanted_location(
-    entry: _Entry, *, applied: dict[int, str], skipped: dict[int, str]
+    entry: _Entry,
+    *,
+    applied: dict[int, str],
+    skipped: dict[int, str],
+    ineligible: dict[int, str],
 ) -> str:
+    """Precedence, and it is not arbitrary.
+
+    Applied and skipped are both statements the OWNER made about what they did; `ineligible` is
+    a verdict the gate derived and can revise on the next run. So an owner statement wins: a
+    lead they already applied to must not be swept into an eligibility drain months later
+    because a rule tightened, and a lead they chose to skip keeps that record.
+    """
     if entry.job_id in applied:
         return APPLIED_DIR
     if entry.job_id in skipped:
         return SKIPPED_DIR
+    if entry.job_id in ineligible:
+        return INELIGIBLE_DIR
     return ""
 
 
@@ -743,8 +802,9 @@ def _child_dirs(base: Path) -> list[Path]:
     """The lead folders directly under `base`, sorted for a deterministic report.
 
     Dot-prefixed names are skipped, which is what keeps a live `.staging-…` build out of the
-    queue's own view of itself, and the two drains are skipped so they are surveyed as locations
-    rather than as leads.
+    queue's own view of itself, and every drain is skipped so they are surveyed as locations
+    rather than as leads. Miss one and `_index` reports the drain directory itself as
+    `unclassified` — a field that means "a folder the owner must go and look at" — forever.
     """
     if not base.is_dir():
         return []
@@ -753,7 +813,7 @@ def _child_dirs(base: Path) -> list[Path]:
         for path in base.iterdir()
         if path.is_dir()
         and not path.name.startswith(".")
-        and path.name not in (APPLIED_DIR, SKIPPED_DIR)
+        and path.name not in (APPLIED_DIR, SKIPPED_DIR, INELIGIBLE_DIR)
     )
 
 
@@ -800,6 +860,7 @@ __all__ = [
     "APPLIED_DIR",
     "DEFAULT_QUEUE_ROOT",
     "DETAILS_FILE",
+    "INELIGIBLE_DIR",
     "DETAILS_SCHEMA",
     "JD_FILE",
     "LINK_FILE",

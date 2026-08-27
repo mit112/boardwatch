@@ -65,6 +65,12 @@ export interface QueueCounts {
   eligible: number;
   /** Its own visible bucket. "Not yet known" — not a warning, and not a step below eligible. */
   uncertain: number;
+  /**
+   * Delivered leads the gate now rejects. They are NOT in `rows` and NOT in `in_queue`: an
+   * ineligible lead is not work, and its folder is drained to `_ineligible` on disk. Counted
+   * rather than silently dropped, so `in_queue` has no unexplained remainder.
+   */
+  ineligible: number;
   applied_ever: number;
   skipped: number;
   delivered_last_run: number;

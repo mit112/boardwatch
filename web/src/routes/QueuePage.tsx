@@ -157,6 +157,10 @@ export function QueuePage({ push }: { push: (request: ToastRequest) => void }) {
       in_queue: filtered.length,
       eligible: filtered.filter((row) => row.verdict === "eligible").length,
       uncertain: filtered.filter((row) => row.verdict === "uncertain").length,
+      // Passed through, NOT recomputed: an ineligible lead is never in `rows`, so no
+      // client-side filter can see one. Recomputing it here would always yield 0 and quietly
+      // contradict the server.
+      ineligible: data?.counts.ineligible ?? 0,
       applied_ever: (data?.counts.applied_ever ?? 0) + appliedDelta,
       skipped: (data?.counts.skipped ?? 0) + skippedDelta,
       // Run-scoped facts, not filter-scoped: they come from the server unchanged.
