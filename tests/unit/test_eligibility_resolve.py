@@ -300,6 +300,77 @@ def test_a_scoped_requirement_still_abstains_when_the_total_allows_it(
                 Facts(total_years_experience=total), "scoped_years_minimum") == "unknown"
 
 
+@pytest.mark.parametrize("body", [
+    "5+ years building and deploying web applications.",
+    "3 years developing distributed systems.",
+    "7+ years of architecting cloud platforms.",
+])
+def test_an_activity_gerund_states_a_floor_with_no_experience_noun(catalog, body: str) -> None:
+    """No "experience" noun anywhere, so neither total nor scoped could see it.
+
+    Measured against job-apps' labelled corpus, which carries this form as its own pattern and
+    names the source: aggregator summaries phrase a floor this way. hiring.cafe is one of
+    boardwatch's own lanes, so the miss lands on a population it actively ingests. Scoped, not
+    total: the duration is scoped to an ACTIVITY, so it decides only in the forced direction.
+    """
+    assert _one(catalog, body, Facts(total_years_experience=1),
+                "scoped_years_activity") == "unmet"
+
+
+def test_an_activity_gerund_on_the_company_side_is_suppressed(catalog) -> None:
+    """The subject suppressor has to reach the new pattern too. Without it the company's own
+    tenure becomes the candidate's bar."""
+    dets = [d for d in detect("Our engineers have 30 years working with distributed systems.",
+                              catalog, enabled_families=ALL)
+            if d.pattern.id == "scoped_years_activity"]
+    assert dets == []
+
+
+def test_up_to_n_years_is_a_cap_not_a_floor_for_the_gerund_form(catalog) -> None:
+    """"Up to 3 years" bounds the candidate from ABOVE. Read as a floor it rejects exactly the
+    new-grad postings this tool exists to find."""
+    dets = [d for d in detect("Up to 3 years building web applications.", catalog,
+                              enabled_families=ALL)
+            if d.pattern.id == "scoped_years_activity"]
+    assert dets == []
+
+
+def test_a_company_side_we_bring_subject_is_suppressed(catalog) -> None:
+    """"We bring 30 years of experience" is the company's tenure, not a requirement. The
+    subject suppressor keyed on "our <noun> has", so a bare "we" subject fell through and
+    resolved `unmet` against a one-year profile."""
+    dets = [d for d in detect("We bring 30 years of experience to every engagement.", catalog,
+                              enabled_families=ALL)
+            if d.family == "experience_years"]
+    assert dets == []
+
+
+def test_coursework_prose_elsewhere_does_not_waive_a_genuine_years_floor(catalog) -> None:
+    """A REJECTED transfer, pinned so it is not re-attempted.
+
+    job-apps waives a years floor when the posting says prior non-professional experience
+    counts, and it works there because its exceptions are evaluated LINE by line against the
+    line carrying the years. boardwatch's nearest mechanism, `abstain_by`, is DOCUMENT-scoped.
+    Dropped in as one, the same regex waived Anthropic's genuine "5+ years of experience as a
+    software engineer" because a different sentence read "A field relevant to the role as
+    demonstrated through coursework, training, or professional experience" -- prose about the
+    FIELD OF STUDY, not about the floor. Measured: it spared 9 of 286 blocked leads, two of
+    them Anthropic SWE roles whose 5- and 6-year floors are real.
+
+    The pattern transfers; the enclosing scope does not. Re-attempting this needs a
+    clause-scoped abstain that does not exist yet, not a wider regex.
+    """
+    body = ("Have 5+ years of experience as a software engineer.\n"
+            "Required field of study: a field relevant to the role as demonstrated through "
+            "coursework, training, or professional experience.\n")
+    dets = [d for d in detect(body, catalog, enabled_families=ALL)
+            if d.family == "experience_years"]
+    assert dets, "the floor must still be detected"
+    assert all(d.abstained is None for d in dets), (
+        "document-scoped coursework prose must not waive a floor stated in another sentence"
+    )
+
+
 def test_an_unset_years_fact_abstains(catalog) -> None:
     assert _one(catalog, "5+ years of experience required.", Facts(),
                 "total_years_minimum") == "unknown"

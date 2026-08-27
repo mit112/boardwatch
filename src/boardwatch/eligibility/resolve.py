@@ -224,6 +224,13 @@ def _resolve_work_auth(detection: Detection, facts: Facts, family: FamilySpec) -
     return Resolution(UNKNOWN, "unhandled work_auth requirement")
 
 
+# Both are a duration scoped to something NARROWER than the whole career -- a skill, or an
+# activity -- so both decide only in the direction the total forces. They are two vocabulary
+# values rather than one because `engine.evaluate` collects exclusive-group presence
+# document-wide, so only `scoped_years_minimum` may sit in that group.
+_SCOPED_YEARS = frozenset({"scoped_years_minimum", "activity_years_minimum"})
+
+
 @resolver("experience_years", inputs=("total_years_experience",))
 def _resolve_experience_years(
     detection: Detection, facts: Facts, family: FamilySpec
@@ -236,7 +243,7 @@ def _resolve_experience_years(
     # cannot name the same group twice, and a hedge can sit either side of the number.
     need = int(detection.values.get("years") or detection.values["years_alt"])
     support = _fact_support("total_years_experience", total)
-    if pattern.implies == "scoped_years_minimum":
+    if pattern.implies in _SCOPED_YEARS:
         # ONE direction is forced without any per-skill data: a duration scoped to a single
         # skill cannot exceed the career it sits inside, so `total < need` is unmet. The
         # other direction is not forced -- `total >= need` says nothing about THIS skill,

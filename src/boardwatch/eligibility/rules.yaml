@@ -311,6 +311,7 @@ families:
       - total_years_minimum
       - range_years_minimum
       - scoped_years_minimum
+      - activity_years_minimum
       - total_years_preferred
       - range_years_preferred
     # All three in ONE group: if the total, range and scoped patterns ever overlap on the
@@ -343,7 +344,12 @@ families:
         # candidate-side requirement in "Our team has 25 years of experience, and candidates
         # require 5 years of experience." The HEDGE stays a clause suppressor.
         subject_suppressors:
-          - &company_side_years "(?:our|the)\\s+(?:\\w+\\s+){0,2}(?:team|teams|engineers|founders|leadership|staff|architect|architects|folks|mentors)\\s+(?:has|have|brings?|is|are|was|were|average[sd]?|each)|founded\\s+by|average\\s+of|each\\s+(?:bring|brings|have|has)|you\\s+will\\s+(?:work\\s+with|receive|gain|get)|combined\\s+experience|collectively|between\\s+us"
+          # `we\\s+(?:bring|have|offer)` carries no noun, so the `our <noun> has` arm above
+          # cannot reach it: "We bring 30 years of experience to every engagement." resolved
+          # `unmet` against a one-year profile and rejected the posting on the company's own
+          # tenure. A requirement addresses the CANDIDATE ("you have", "we require"), never
+          # "we bring", so the three verbs are safe to claim for the company side.
+          - &company_side_years "(?:our|the)\\s+(?:\\w+\\s+){0,2}(?:team|teams|engineers|founders|leadership|staff|architect|architects|folks|mentors)\\s+(?:has|have|brings?|is|are|was|were|average[sd]?|each)|founded\\s+by|average\\s+of|each\\s+(?:bring|brings|have|has)|we\\s+(?:bring|have|offer)|you\\s+will\\s+(?:work\\s+with|receive|gain|get)|combined\\s+experience|collectively|between\\s+us"
         # A stated PREFERENCE read as a hard floor is the worst wrong verdict this family can
         # produce, so the hedge vocabulary carries the VERB and the PARTICIPLE, not only the
         # adjective: "We prefer 5 years of experience." and "5 years of experience is desired."
@@ -390,6 +396,34 @@ families:
         suppressed_by_unit: [*years_hedges]
         requirement_text: "Years of experience scoped to a specific skill or domain"
         pattern: '(?<![-–—\d])\b(?P<years>\d{1,2})\s*\+?\s*(?:or\s+more\s+)?years?\b(?>\s+of)?(?>(?:\s+(?:professional|relevant|industry|work|hands-on|total|overall|full-time))*)\s+(?:experience\s+(?:with|in|using|on|building|developing|designing|as|leading|managing|supporting)\b|(?!(?:professional|relevant|industry|work|hands-on|total|overall|full-time|experience|equivalent|of|in|with|the|a|an|and|or|to|for|as|on|at)\b)[A-Za-z][\w.+#/-]*(?:\s+[\w.+#/-]+){0,2}\s+experience\b)'
+
+      # An activity GERUND standing in for the noun. "5+ years building and deploying web
+      # applications" states a floor and never says "experience", so neither the total nor the
+      # scoped pattern above can see it -- measured, 37 of the 142 five-plus-year postings in a
+      # delivered set produced no row at all. job-apps carries this as its own pattern and names
+      # the source: aggregator summaries phrase a floor this way, and hiring.cafe is one of
+      # boardwatch's own lanes, so the miss lands on a population it actively ingests.
+      #
+      # Its own vocabulary value, and deliberately OUTSIDE the exclusive group. It resolves
+      # exactly as scoped_years_minimum does -- only in the direction the total forces (D-319) --
+      # but it must not share that value: `engine.evaluate` collects group presence
+      # DOCUMENT-wide, not per sentence, so a scoped row here would conflict with a
+      # `total_years_minimum` row in an unrelated sentence and rewrite BOTH to unknown.
+      # Measured: as `scoped_years_minimum` this destroyed Disney's genuine "A minimum of 3
+      # years of relevant experience" block, because a different line read "3 year of
+      # developing cloud native applications".
+      #
+      # `(?<!to\s)` is load-bearing: "Up to 3 years building web applications" bounds the
+      # candidate from ABOVE, and read as a floor it rejects the new-grad postings this tool
+      # exists to find.
+      - id: scoped_years_activity
+        requiredness: required
+        implies: activity_years_minimum
+        scope: sentence
+        subject_suppressors: [*company_side_years]
+        suppressed_by_unit: [*years_hedges]
+        requirement_text: "Years of experience scoped to a specific activity"
+        pattern: '(?<![-–—\d])(?<!to\s)\b(?P<years>\d{1,2})\s*\+?\s*(?:or\s+more\s+)?years?\b(?>\s+of)?\s+(?:building|developing|writing|designing|shipping|delivering|creating|working|leading|architecting|managing|maintaining|operating|scaling)\b'
 
       # Hedged variants. Without them every hedge was a hard blocker: "5+ years of experience
       # preferred." told a 2-year candidate they were INELIGIBLE. Two alternatives per

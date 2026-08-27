@@ -123,6 +123,32 @@ def version_id(db) -> int:
 
 # ---------------------------------------------------------------- derived version
 
+def test_an_activity_row_elsewhere_does_not_dissolve_a_total_years_block(catalog) -> None:
+    """The exclusive group is collected DOCUMENT-wide, not per sentence.
+
+    `rules.yaml` describes the group as firing "if the total, range and scoped patterns ever
+    overlap on the same text", but `evaluate` builds `present` from every detection in the body,
+    so two rows in unrelated sentences are enough to conflict and rewrite BOTH to unknown. That
+    is why `scoped_years_activity` carries its own `activity_years_minimum` value instead of
+    reusing `scoped_years_minimum`.
+
+    Measured on the real posting this is taken from: a Disney "Software Engineer I" stating "A
+    minimum of 3 years of relevant experience" was correctly `ineligible`, and adding an
+    activity pattern that shared the scoped value turned it `uncertain` -- delivered -- because
+    a different line read "3 year of developing cloud native applications".
+    """
+    body = (
+        "A minimum of 3 years of relevant experience.\n"
+        "A minimum of 3 year of developing cloud native applications, preferably in AWS.\n"
+    )
+    facts = Facts(total_years_experience=1)
+    policy = Policy(families={"experience_years": "blocker"})
+    result = evaluate(body, facts, policy, catalog)
+    kinds = {(r.rule_id, r.disposition) for r in result.requirements}
+    assert result.verdict == "ineligible", f"the total floor was dissolved: {kinds}"
+    assert ("experience_years:total_years_minimum", "unmet") in kinds
+
+
 def test_the_engine_version_is_stable_across_runs() -> None:
     assert engine_version() == engine_version()
     assert engine_version().startswith(f"{ENGINE_SEMANTIC}+")
