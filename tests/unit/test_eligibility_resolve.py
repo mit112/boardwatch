@@ -125,8 +125,12 @@ def test_us_authorization_against_every_status(catalog, status: str, expected: s
     ("status", "expected"),
     [("citizen", "met"), ("permanent_resident", "met"),
      # THE backwards-met case: an EAD holder needs no sponsorship yet is neither a citizen
-     # nor an LPR, so a boolean needs_sponsorship=False wrongly satisfied this.
-     ("ead_or_similar", "unknown"),
+     # nor an LPR, so a boolean needs_sponsorship=False wrongly satisfied this. Removing
+     # that `met` first parked this at `unknown`, which UNDERSHOT: the catalog's status
+     # choices are mutually exclusive, so `ead_or_similar` states the applicant is neither
+     # a citizen nor an LPR. That is UNMET -- decisively -- exactly as `permanent_resident`
+     # is decisively not a citizen against `us_citizen_required` (D-322).
+     ("ead_or_similar", "unmet"),
      ("needs_sponsorship", "unmet"), ("prefer_not_to_say", "unknown")],
 )
 def test_citizen_or_lpr_against_every_status(catalog, status: str, expected: str) -> None:
@@ -149,6 +153,37 @@ def test_a_matching_jurisdiction_resolves(catalog) -> None:
     facts = Facts(work_authorization=WorkAuthFact(status="citizen", jurisdiction="us"))
     assert _one(catalog, "Applicants must be US citizens.", facts,
                 "us_citizen_required") == "met"
+
+
+@pytest.mark.parametrize(
+    ("status", "expected"),
+    [("citizen", "met"), ("permanent_resident", "unmet"), ("ead_or_similar", "unmet"),
+     ("needs_sponsorship", "unmet"), ("prefer_not_to_say", "unknown")],
+)
+def test_us_citizenship_against_every_status(catalog, status: str, expected: str) -> None:
+    """The symmetric twin of the citizen-or-LPR table, which did not exist while
+    `ead_or_similar` was the only status this rule could not decide. The catalog's five
+    choices are MUTUALLY EXCLUSIVE (rules.yaml:86), so each of the three declared non-citizen
+    statuses states a fact incompatible with a citizenship requirement and each is `unmet`.
+    `prefer_not_to_say` is the single abstain, and it is the keystone invariant working:
+    undeclared is never decided (D-322)."""
+    facts = Facts(work_authorization=WorkAuthFact(status=status, jurisdiction="us"))
+    assert _one(catalog, "Applicants must be US citizens.", facts,
+                "us_citizen_required") == expected
+
+
+def test_the_citizenship_inference_does_not_reach_the_sponsorship_branch(catalog) -> None:
+    """The asymmetry is load-bearing and easy to over-apply. `ead_or_similar` DECIDES a
+    citizenship requirement, because the catalog's statuses are mutually exclusive. It must
+    still ABSTAIN against a sponsorship restriction when the bit is unset, because an EAD
+    covers both an F-1 OPT holder whose runway that clause ends and an asylee who needs
+    nothing -- status alone genuinely cannot tell them apart. D-322 narrows citizenship
+    only; widening it to sponsorship would resurrect the guess D-P2-11 removed."""
+    facts = Facts(work_authorization=WorkAuthFact(status="ead_or_similar", jurisdiction="us"))
+    assert _one(catalog, "Applicants must be US citizens.", facts,
+                "us_citizen_required") == "unmet"
+    assert _one(catalog, "We do not offer visa sponsorship.", facts,
+                "no_sponsorship_offered") == "unknown"
 
 
 def test_an_unset_work_auth_fact_abstains(catalog) -> None:
@@ -244,12 +279,14 @@ def test_sponsorship_offer_bit_unset_falls_back_to_status_inference(
 
 def test_needs_sponsorship_false_does_not_satisfy_a_citizenship_only_restriction(catalog) -> None:
     """CRITICAL SAFETY (facts.py:3-6): an EAD holder who needs no sponsorship is still not a
-    citizen. The bit must only ever influence the sponsorship branch, never citizenship."""
+    citizen. The bit must only ever influence the sponsorship branch, never citizenship.
+    `unmet`, not `unknown`: the bit is absent from this branch either way, and the status
+    alone decides it (D-322). Asserting the exact value is what keeps `met` unreachable."""
     facts = Facts(work_authorization=WorkAuthFact(
         status="ead_or_similar", jurisdiction="us", needs_sponsorship=False
     ))
     assert _one(catalog, "Applicants must be US citizens.", facts,
-                "us_citizen_required") == "unknown"
+                "us_citizen_required") == "unmet"
 
 
 def test_needs_sponsorship_bit_does_not_leak_into_citizen_or_lpr_branch(catalog) -> None:
