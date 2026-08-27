@@ -19,63 +19,70 @@
 
 ## Current standing
 
-**FIVE ELIGIBILITY FAMILIES ARE NOW BLOCKERS, AND RUN 119 IS THE FIRST TICK CARRYING ALL OF IT (D-321).**
-Live policy: `work_auth`, `clearance`, `experience_years`, `internship`, `contract_not_fte`. `internship` and
-`contract_not_fte` were armed 21:45 CDT 2026-08-26 after measuring them (2 and 1 newly-blocked leads over 598
-delivered), verified by direct SQL on `profile.eligibility_policy_json`. **`degree` is deliberately left at
-`preference` — the owner's call, NOT taken:** it measured at 1 lead but carries seven `abstain_by` patterns
-for degree-OR-experience forms, so a 1-lead count mis-states its blast radius.
+**THE PROVISIONAL PASS WAS MET, AND THE OWNER HAS CHOSEN TO HOLD IT.** Runs **119-123** are five
+consecutive clean scheduled ticks on frozen engine `1+af3a746837b1` — D-280 requires three. Verified per
+run from the funnels, not from a self-report: 10 leads each, 10/10 PDFs, `reconciles=True`, 0 fatals,
+0 errors, liveness `checked 10 / dead 0`, every cross-check agreeing, P5b 61,875-68,780 considered.
+**40 leads across 119-122 with ZERO overlap in any of the six pairings**, so B1 net-new is confirmed
+rather than assumed. B1 sits cap-bound at exactly 10 (`DEFAULT_TOP_N`) — the bar, not headroom.
+**Mit's ruling 2026-08-27: do NOT start the 14-day acceptance; keep fixing precision first.** There is
+therefore no clock pressure — batch eligibility changes, then freeze once.
 
-**RUN 119 (04:00Z) IS IN FLIGHT AND CARRIES FOUR CHANGES AT ONCE** — D-319, D-320, and both newly-armed
-families — on `engine_version` `1+af3a746837b1`. **Its delivered count must NOT be attributed to the years
-gate alone.** Verify it, not run 118, with
-`.venv/bin/python .agent/2026-08-26-years-gate/verify_years_gate_run.py 119` (gitignored; read-only; derives
-the current engine rather than pinning it). The years-specific tripwire is a clean signal regardless because
-it reads each delivered lead's own frozen JD. **Baseline to beat: run 117, the last pre-fix tick, delivered 10
-leads of which 5 demand more years than the profile declares** (Markon 6y, TCS 5y, Cisco 5y, T-Mobile 3y,
-Haystack 2y). Expect 0.
+**GATE P6 IS 4 OF 4.** The ledger span reached 8 days (2026-08-19 → 08-27), so the 7-day window finally
+exists: `identities leakage --days 7` reads **601 surfaced / 600 identified / 600 distinct / 0 redundant
+/ 0.00%**. The `exact_quad`-only blindness (D-294) still stands, and is now *measured* rather than merely
+noted — see the `candidate_*` bound in #185 below.
 
-**TWO PRs OPEN, BOTH WITH AUTO-MERGE ARMED, NEITHER MERGED AT SESSION CLOSE.** **#178** is the
-`_ineligible` queue drain (D-321 part 2) — its `make check` was **8001 passed / 1 failed**, the failure a
-pre-existing wall-clock flake proven unrelated (see D-321); CI is the uncontended judge. **#179** is a
-stranded docs commit recording phantom run 118. **Check both before trusting anything below that cites
-them.** When #178 lands and is pulled, the next run's sync hook will move roughly **294 folders** into
-`~/boardwatch-queue/_ineligible` on its own — intended, reversible, and worth expecting.
+**A THIRD ELIGIBILITY FAMILY COULD NEVER FIRE, AND IT DELIVERED NINE WRONG RÉSUMÉS (D-322, #182,
+MERGED).** `us_citizen_required` and `us_citizen_or_lpr_required` abstained on **100% of their rows —
+591 per run**. The funnel's own abstain block already reported both `fully_abstaining`; the report was
+correct and unread. A declared `ead_or_similar` states the applicant is neither citizen nor LPR, which
+is UNMET on exactly the ground `permanent_resident` already resolves UNMET (corpus m0005, pinned since
+P2). Measured before the change: **402 `uncertain` → `ineligible`, 162 already ineligible, ZERO
+`eligible` affected**; 393 of the 402 still open and never handled. **Nine résumés had already been
+built** against citizenship the profile cannot meet — Thomson Reuters ×2, CrowdStrike ×2 (incl.
+FedCloud), Agile Defense (CBP), Accenture ×3, CACI, whose JD reads verbatim *"This position requires
+U.S. citizenship"*. They drain themselves via D-321's `_ineligible` filter. `engine_version`
+`1+af3a746837b1` → moves on merge of the open stack.
 
-**THE YEARS-OF-EXPERIENCE GATE HAD NEVER FIRED — FIXED, ARMED AND LIVE (D-319 #175, D-320 #176).** The owner
-opened the delivery queue and the first lead demanded 5 years. Measured: **142 of 588 delivered leads (24.1%)
-state a minimum of five or more years.** Three stacked causes — (1) `experience_years` sat at the catalog
-default `preference` and only `blocker` can yield `ineligible`, so **53 required rows resolved UNMET and not
-one changed a verdict**; (2) `scoped_years_minimum` was a **100% abstain, 342 of the family's 441 rows**,
-already visible as 10,872/10,872 in `reports/abstain.py`; (3) the pattern missed `5+ years building …` and
-`12+ years in …` entirely (37 of the 142 produced no row). Fixed by one sound inference — **a duration scoped
-to a single skill cannot exceed the career it sits inside, so `total < need` is UNMET**, while `total >= need`
-keeps abstaining because a `met` there would claim a per-skill duration the profile lacks. Owner ruling: keep
-`total_years_experience = 1`, literal comparison, **accept 0–1 years and block 2+**. Live: `experience_years:
-blocker` written to the profile 21:00 CDT and verified by direct SQL; primary tree at `1dff564`;
-**`engine_version` `1+63c6f8fd5a3e` → `1+5bf77461f044`**. Measured effect: delivered **582 → 302**, **101 of
-the 142 blocked**, practical false-positive rate ~1–3%. **THE FREEZE IS BROKEN AND D-280's PROVISIONAL-PASS
-RUN COUNT RESETS — owner confirmed.** No ledger drain owed, by argument: the change is strictly narrowing (see
-D-319). **`eligible` collapses 339 → 24 while delivery only halves** — a scoped requirement within budget
-still abstains, so the D-312 end-of-line figure drops hard and that is honest, not a regression.
+**FIVE PRs ARE OPEN, ALL PUSHED, ALL WITH DECISION RECORDS, INDEX GATE GREEN ON EACH.** #183 (D-323,
+lead locations + artifact v7) · #184 (D-326, clearance-obtainability + field-of-study facts) · #185
+(near-duplicate measurement, **OWES D-327**) · #186 (D-324, `unverifiable` status) · #187 (D-325, measured-death
+close). **#187's `make check` was NOT re-run after a rate-limit kill — CI is its verdict.** Nothing in
+this stack is armed; merging it moves `engine_version` once, and a **ledger drain is owed** after.
 
-**~60/day is NOW STALE.** The D-312 rule below still governs HOW to report, but its number predates D-319.
-Re-measure before quoting anything; expect roughly half the delivered volume and a far smaller affirmatively
-`eligible` count.
+**THE PRIMARY TREE IS DELIBERATELY UNPULLED AT `91f90d8`, ON THE OLD ENGINE.** That isolates run 124's
+cost: 97 boards were imported cold (no ETag on a first scan) and an engine change would confound the
+measurement. **Read run 124's duration before pulling anything.** Baselines: 234 boards = **14.0
+s/board, ~55 min**; the first run after an engine move = **27.1 s/board, 106 min** (run 119). Cadence is
+180 min.
 
-**LANE-ACQUIRED POSTINGS CAN NEVER CLOSE — there is no drain, and disarming does not stop delivery (D-314).**
-Found by smoke-testing the facet verifier: run 114 ran AFTER the 12:10 lane disarm and still delivered three
-lane-sourced non-SWE leads. Chain, each link read in source: the only writer of `status="closed"` is
-`_process_missing` (`scan/apply.py`), gated on `CLOSE_AFTER_MISSES = 2`; it runs on **`complete`** snapshots
-only; `lanes/base.py::lane_snapshot` returns **always `partial`** by design; `pipeline/liveness.py::check_leads`
-*"reads URLs; writes nothing, ever"*; and lane companies are upserted `watched=False` so the scan coordinator
-never revisits them. **A lane re-acquires by SEARCH, so absence can never be evidence** — this holds with
-lanes armed too. Measured: **282 lane postings, ALL `open`, ZERO ever closed** (197 `not_swe` / 82 `uncertain`
-/ 3 `swe`). The facet fixes INFLOW only; these 282 stay in the ranked pool indefinitely. Also: **no downstream
-consumer can trust `postings.status` for a lane row** — it reads `open` forever, and "still open" is
-indistinguishable from "unverifiable". **NOT FIXED — owner-gated:** an age-based close needs a trigger other
-than absence, which is a design question, not a tweak.
+**THE WATCHED FLEET IS 346, UP FROM 234 (owner-authorised 2026-08-27).** 97 boards imported via
+`companies discover` → review → `import --verify`; the probe skipped `lever:cirrus` and
+`ashby:Commure-Athelas` as dead, and `lever:cirrus` had been **hand-approved in error** — the adapter
+lists `jobs.eu.lever.co` in `board_hosts` but the API call is `api.lever.co/v0/postings/{slug}`
+regardless. **Always `--verify`.** `ashby:KAYAK` was removed pre-import for a CASE collision with
+watched `ashby:kayak`. Separately, **15 lane companies on a registry ATS were promoted to `watched=1`**
+(11 ashby, 3 greenhouse, 1 lever), so zero enumerable lane companies remain unwatched and the
+cannot-close class went 745 → 722. **~765 discover candidates remain capped**; Workday 333 +
+SmartRecruiters 107 ramp last (per-posting detail budget on first scan).
 
+**LANE-ACQUIRED POSTINGS CAN NEVER CLOSE, AND ABSENCE IS NOW PROVEN MEANINGLESS (D-314, extended
+2026-08-27).** The mechanism is unchanged: `_process_missing` (`scan/apply.py`) is the only writer of
+`status="closed"`, runs on **`complete`** snapshots only; `lanes/base.py::lane_snapshot` is always
+`partial`; lane companies are upserted `watched=False`. **The new evidence is a natural experiment in
+the store:** when the D-309 role facet changed what the lanes search for, **0 of 290** pre-facet lane
+postings were ever re-seen — and probing 45 of them with the shipped prober found **40 alive (HTTP 200),
+0 dead**. They did not close; we stopped asking. At 3h cadence a **live** lane posting is absent from
+its own lane's results in **~19% of runs**, so a `CLOSE_AFTER_MISSES=2` analogue would have destroyed
+**25 live postings in 33 hours**. **Age-based and missed-run closing are therefore REJECTED by
+measurement, not merely unproven — do not propose either again.** The class was 282 at D-314 and is
+**471**, growing **~182/day**. The honest predicate is `companies.watched = 0` ("nothing enumerates this
+board") = **722 rows**, which includes ~274 unwatched `source='user'` companies with the identical
+defect — `source='lane'` is wrong in both directions. **Owner ruled 2026-08-27: build the `unverifiable`
+label (#186/D-324), promote registry-ATS lane companies (DONE — 15 of them), and add the 6.7%-power URL
+probe (#187/D-325). He did NOT choose to cap how long a lane row stays DELIVERABLE — the only option
+that shrinks the pool. Worth re-raising.**
 
 **HOW TO REPORT YIELD — the owner's standing rule (D-312).** Every yield, coverage or job-apps comparison
 quotes **the end of the line: affirmatively `eligible` jobs** — currently **~60/day** (eligible + software +
@@ -147,29 +154,49 @@ call and is now informed on both sides (D-293, D-294).
 
 ## Next action
 
-1. **VERIFY RUN 119 — the first tick on `1+af3a746837b1`.**
-   `.venv/bin/python .agent/2026-08-26-years-gate/verify_years_gate_run.py 119`. Tripwire should read 0
-   against run 117's 5-of-10. It carries four changes, so read the tripwire, not the total.
-2. **CONFIRM #178 AND #179 MERGED, then pull the primary tree.** Both were armed but unmerged at close. #178
-   changes what the queue holds, so the first sync after pulling it drains ~294 folders.
-3. **`degree` at `preference` is an open owner call** (D-321). Arming it blocks 1 measured lead and costs
-   another freeze reset.
-4. **The provisional-pass clock restarts.** `engine_version` moved twice this session and the policy three
-   times, so the frozen-run count begins at the first clean scheduled tick on `1+af3a746837b1` with the
-   five-blocker policy. Quality is otherwise proven: P4 gate MET, B1–B7 passing, P6 leakage 0.00% over 7d.
+1. **READ RUN 124's DURATION BEFORE PULLING ANYTHING — the isolation expires.**
+   ```sh
+   .venv/bin/python -c "
+   import sqlite3, os
+   db = os.path.expanduser('~/Library/Application Support/boardwatch/boardwatch.db')
+   con = sqlite3.connect(f'file:{db}?mode=ro', uri=True)
+   for r in con.execute('''SELECT id, boards_attempted,
+     CAST((julianday(finished_at)-julianday(started_at))*86400 AS INT) secs
+     FROM runs WHERE id>=122 ORDER BY id'''): print(r)
+   "
+   ```
+   The primary tree sits at `91f90d8` on the OLD engine on purpose, so run 124 measures the cost of 97
+   cold-first-scan boards **without** an engine change confounding it. Use the real seconds-per-board to
+   size batch 2 of the ~765 remaining candidates. The old "~7s/board, ramp in 10s" figure is wrong —
+   steady state is **14.0 s/board**.
+
+2. **Merge the five-PR stack, then pull ONCE.** #185 owes **D-327** before it merges. After pulling,
+   apply all three owner facts in a single pass so `engine_version` moves once:
+   `eligibility facts set security_clearance.obtainable false`, the declared field of study
+   (MS Software Engineering Systems / BE Computer Engineering, `highest_degree` stays `master`), and
+   `eligibility policy set degree blocker`. Verify by direct SQL on `profile.eligibility_policy_json`,
+   never by the CLI that wrote it. **Then run the owed ledger drain** — trust the tool, not raw SQL.
+
+3. **Re-raise the delivery cap with Mit.** He chose three of four lane-closure options; the one he did
+   not choose is the only one that shrinks a pool growing ~182/day.
+
+4. **Two pre-existing defects found and deliberately NOT fixed, each its own change:**
+   the degree field expression is bounded `{2,60}`, so a 74-char *"Computer Science, Computer
+   Engineering, Mathematics, or a related discipline"* yields **zero** rows (fails safe to `uncertain`,
+   silently degraded); and `tests/unit/test_web_server.py:678` (`assert elapsed < 3.0`) is a genuine
+   load-dependent flake, still live — **do not weaken the threshold to green a gate.**
+
 5. **Deferred with numbers, do not re-derive:** the residual years-detection gap is **24 leads, ~8 real
-   (1.3%)**, and widening the pattern rejects postings on `18 years of age` (3 occurrences) — see METRICS.
-   job-apps' preferred-vs-required HEADING state machine is **2 of 286** and architectural (D-320).
+   (1.3%)** and widening the pattern rejects `18 years of age`; job-apps' preferred-vs-required HEADING
+   state machine is **2 of 286** and architectural (D-320).
 
-**Arming Part 4a's ~898 boards remains a SEPARATE owner decision, NOT taken.** The capped `discover`→review→
-`import` loop is shipped; ramp in batches of ~10 (898 at ~7s each exceeds the 3h cadence). Do **not** add a
-defaulted `watched=` to `upsert_watch`. `companies.source` is `CHECK (source IN ('registry','user','lane'))`.
+**Arming the remaining ~765 Part 4a boards is a SEPARATE owner decision.** Ramp only after run 124's
+number is known. Do **not** add a defaulted `watched=` to `upsert_watch`. `companies.source` is
+`CHECK (source IN ('registry','user','lane'))`.
 
-*(The `.agent/2026-08-25-craft-findings/` harnesses — AUTONOMOUS-SESSION-LOG.md, COVERAGE-VS-JOBAPPS.md,
-LANE-ARMING.md — and `.agent/2026-08-26-lane-facet/` (NOTES.md with every probe number, DOC-DRAFT.md,
-`probe_linkedin_keywords.py`, and the raw `linkedin-probe/` HTML + summary.json) are gitignored working
-material; re-derive if pruned. The LinkedIn probe script is the one to re-run before trusting that lane's
-request contract again — it drives the production `Fetcher`, so its output IS the contract.)*
+*(`.agent/2026-08-27-session-handoff.md` holds the full session detail, and
+`.agent/2026-08-25-craft-findings/` + `.agent/2026-08-26-lane-facet/` remain gitignored working
+material — re-derive if pruned.)*
 
 ---
 
@@ -191,7 +218,7 @@ request contract again — it drives the production `Fetcher`, so its output IS 
    Also decide whether anything may show an open/closed label for a lane row at all — `postings.status` reads
    `open` forever and cannot distinguish "still open" from "unverifiable".
 
-1. **hiring.cafe's `v5_processed_job_data.workplace_*` fields** — read as provider-asserted location
+1. ~~**hiring.cafe's `v5_processed_job_data.workplace_*` fields**~~ **ALREADY SHIPPED — this row was STALE.** D-286 Ruling 4 took the decision and `lanes/hiringcafe.py::_locations` has implemented it since PR #141 (refined in #169). Verified against the live store 2026-08-27: lane postings carry real values (e.g. `"McClellan, California, United States"`). Original text kept below for the reasoning only. ~~**hiring.cafe's fields**~~ — read as provider-asserted location
    metadata, at the level greenhouse's `location.name` is already trusted (D-286 Ruling 4). D-278 called
    that payload untrusted, reasoning from the keystone invariant — which governs eligibility RULES, and the
    engine is body-only so it cannot reach these. The measurement that decided it: `classify_location([])`
@@ -252,16 +279,16 @@ records it and the run still does not fail. Clearance IS a blocker (D-257). Seni
 | P3 Unattended one command | **COMPLETE, INSTALLED, FIRING** at ~3h (D-288) | **MET** — 8 consecutive clean scheduled ticks (runs 71-78), verified from the `runs` table + funnels |
 | P4 Craft gate | **COMPLETE** (under-fill fixed D-303; objective anti-slop 0 violations, non-vacuous) | **MET** — objective half certified AND the owner's blind craft review passed cleanly 2026-08-26 (all 5 judged worse were job-apps decoys; all 3 judged better were boardwatch) |
 | P5 Eligibility decides | **COMPLETE** | **MET** — INELIGIBLE precision 16/16, 0 span violations |
-| P6 Liveness + dedup | **BUILD COMPLETE** (D-110/111/113); leakage report shipped (D-283) | **3 of 4** — liveness MET (D-281), leakage measurable and reading **0.00%** but needs a 7-day ledger span (~2026-08-26) |
-| 14-day acceptance | not started | starts after P6 **and after a fresh frozen window** — D-319 reset the clock (`engine_version` `1+5bf77461f044`) |
-| P7 Breadth | lane 1 (hiring.cafe) BUILT not armed (D-286); **Part 4a GitHub-lists discovery BUILT + LANDED (#149/D-296), not armed**; **Part 4b LinkedIn lane BUILT (D-297), off by default, not armed, selectors reconstructed**; remaining lanes not started | unlock MET (D-271/272) |
+| P6 Liveness + dedup | **BUILD COMPLETE** (D-110/111/113); leakage report shipped (D-283) | **MET — 4 of 4** (2026-08-27): liveness MET (D-281), leakage measurable over a true 7-day span and reading **0.00%**; see the clause table for the `exact_quad` caveat |
+| 14-day acceptance | not started | **HELD BY THE OWNER (2026-08-27)** — the provisional pass was MET by runs 119-123, and Mit ruled to keep fixing precision first rather than start the clock. Starting it freezes eligibility, profile and the résumé gate for 14 days |
+| P7 Breadth | **lane 1 (hiring.cafe) and Part 4b (LinkedIn) are BUILT AND ARMED and ran in run 122** (hiringcafe 70 attempted/56 resolved; linkedin 71/51) — the previous "not armed" text was stale. **Part 4a GitHub-lists discovery BUILT + LANDED (#149/D-296) and NOW PARTLY ARMED**: 97 boards imported 2026-08-27, ~765 candidates still capped. Remaining lanes not started | unlock MET (D-271/272) |
 | *Gate A / Gate B* | *complete, merged* | ***MET*** — *has moved no program gate* |
 
 ### Gate P6, clause by clause
 
 | Clause | Standing |
 |---|---|
-| Duplicate leakage over 7 days ≤ 5% | **STILL CANNOT FAIL FOR ONE CLASS — see D-294 before quoting it.** `identity_queries.py:296` hardcodes `kind == "exact_quad"`, so a job whose only identity is `company_title_location` lands in `unidentified` and can never be counted redundant. Ruling 3 stopped those duplicates reaching leads but did NOT extend this metric, so it reads 0.00% for a structural reason. Measured honestly over the 146 delivered résumés (grouping by company+title+location) the real figure is **3 redundant = 2.05%** — under the bar, not zero. Extending the query reverses D-132/D-283 mid-gate and is the owner's. Original standing: **measurable, awaiting span (D-283).** `boardwatch identities leakage [--days N] [--json]` ships. **Live: 100 surfaced jobs / 100 distinct `exact_quad` groups / 0 redundant = 0.00%.** Only `exact_quad` counts (Mit's ruling, ratified); counted over jobs that REACHED LEADS, not the corpus; body-less jobs sit in their own `unidentified` bucket, never folded. **Not yet "over 7 days"** — the ledger starts 2026-08-19 so ~3.2 days exist, and the 7-day `seen` TTL cannot be observed faster than itself. First true window **~2026-08-26**, inside Parts 2–4, so off the critical path |
+| Duplicate leakage over 7 days ≤ 5% | **MET 2026-08-27 — the span now exists (ledger 2026-08-19 → 08-27 = 8 days): 601 surfaced / 600 identified / 600 distinct / 0 redundant / 0.00%.** The blindness below is unchanged and is now MEASURED rather than argued: #185 adds a never-folded `candidate_redundant 7 / candidate_identified 610 = 1.15%` upper bound over a **0.50%** truth. Original standing: **CANNOT FAIL FOR ONE CLASS — see D-294 before quoting it.** `identity_queries.py:296` hardcodes `kind == "exact_quad"`, so a job whose only identity is `company_title_location` lands in `unidentified` and can never be counted redundant. Ruling 3 stopped those duplicates reaching leads but did NOT extend this metric, so it reads 0.00% for a structural reason. Measured honestly over the 146 delivered résumés (grouping by company+title+location) the real figure is **3 redundant = 2.05%** — under the bar, not zero. Extending the query reverses D-132/D-283 mid-gate and is the owner's. Original standing: **measurable, awaiting span (D-283).** `boardwatch identities leakage [--days N] [--json]` ships. **Live: 100 surfaced jobs / 100 distinct `exact_quad` groups / 0 redundant = 0.00%.** Only `exact_quad` counts (Mit's ruling, ratified); counted over jobs that REACHED LEADS, not the corpus; body-less jobs sit in their own `unidentified` bucket, never folded. **Not yet "over 7 days"** — the ledger starts 2026-08-19 so ~3.2 days exist, and the 7-day `seen` TTL cannot be observed faster than itself. First true window **~2026-08-26**, inside Parts 2–4, so off the critical path |
 | **0** dead postings reaching leads | **MET (D-281).** Two runs on a scratch store copy: `checked 40, dead 0, unknown 2, alive 38, gone_after_redirect 0`, identical in both, agreeing across three read paths (funnel JSON, funnel markdown, stdout). Detector demonstrably ARMED — `checked > 0`, so not the disarmed 0/0 signature. The `runs` table has no liveness columns, so no DB-row path exists; those three are all there are |
 | Injected hash-collision test | **MET** (D-100) |
 | Audit of 20 sampled suppressions | **MET** (D-101) |
