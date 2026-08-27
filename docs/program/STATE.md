@@ -111,9 +111,16 @@ source, **8,000+ tests**, 71 leaf CLI commands, 6 ATS providers, **346 watched b
 rule, reaffirmed 2026-08-27). boardwatch produces leads and deliberately does not apply: auto-apply is
 out of scope, and `applications` rows exist only where the user marks one.
 
-**THE STORE IS AT `p_lane_companies`, which is `main`'s head**, so `ensure_schema` on the next tick is a
-no-op. **The rule this bought: after any PR that adds a migration, apply it to the live store deliberately
-and verify, rather than letting the next unattended tick discover it** (D-279/D-286). **There is no
+**THE STORE IS AT `p_lane_companies` AND `main` IS NOW AHEAD OF IT — an UNAPPLIED migration is pending.**
+#187 shipped `p_death_probe` (`down_revision: p_lane_companies`), so the store is NO LONGER at main's
+head. Verified 2026-08-27: `alembic_version` = `p_lane_companies`, and neither `postings.death_strikes`
+nor `postings.last_death_probe_at` exists yet. It is **additive only** — one `INTEGER NOT NULL DEFAULT 0`
+and one nullable `DATETIME`, no table rebuild — so it is low risk, but **apply it DELIBERATELY and verify
+`alembic_version` plus `PRAGMA table_info(postings)` BEFORE the first fact write** (D-279/D-286).
+That ordering is load-bearing: any `boardwatch` command with a default context runs `alembic upgrade head`
+through `build_context`, so an unremarkable `eligibility facts set` would otherwise apply a schema change
+as a silent side effect. **The rule this bought: after any PR that adds a migration, apply it to the live
+store deliberately and verify, rather than letting the next unattended tick discover it.** **There is no
 rollback snapshot** — all three stale backups were verified redundant and deleted (2026-08-23b, ~2.9 GB
 reclaimed). Take one before any destructive operation rather than assuming one exists.
 
@@ -126,15 +133,24 @@ set and the population caveat are in `STANDING-FACTS.md` § Precision gates (D-2
 
 ## Next action
 
-1. **APPLY THE THREE OWNER FACTS, in ONE pass, from the primary tree after pulling.** This is the only
-   live action left; the code for all of it is merged.
+1. **APPLY `p_death_probe` FIRST, THEN THE THREE OWNER FACTS in ONE pass**, from the primary tree after
+   pulling. This is the only live action left; the code for all of it is merged.
+   **The migration comes first and is not optional ordering.** #187 added `p_death_probe` and the store
+   is still at `p_lane_companies`, so apply it deliberately and verify `alembic_version` and
+   `PRAGMA table_info(postings)` (expect `death_strikes`, `last_death_probe_at`) before writing any fact
+   — otherwise the first `eligibility facts set` applies a schema change as a silent side effect, because
+   `build_context` runs `alembic upgrade head` on every default-context command (D-279/D-286).
    ```sh
    boardwatch eligibility facts set security_clearance.obtainable false
    boardwatch eligibility facts set field_of_study software_engineering
    boardwatch eligibility policy set degree blocker
    ```
    `highest_degree` is ALREADY `master` — do not re-set it. `false` is accepted (`_coerce`'s falsy set is
-   `{false,no,n,0,off}`), and `software_engineering` is a catalogued id. **Verify by direct SQL on
+   `{false,no,n,0,off}`), and `software_engineering` is a catalogued id. **`field_of_study` is NOT a
+   family `fact:` in the catalog**, so `set_fact`'s family lookup would reject it — the command works only
+   because `cli/eligibility_cmd.py` special-cases it ahead of that lookup and routes to
+   `set_field_of_study` (pinned by `tests/unit/test_eligibility_cmd.py`). Recorded because reading the
+   catalog alone says the command should fail. **Verify by direct SQL on
    `profile.eligibility_policy_json`, never by the CLI that wrote it.** **Do NOT pull or apply while a
    tick is running** — the profile is snapshotted mid-run and a change would straddle two profiles.
    **NO ledger drain (D-331, owner-ruled).**
