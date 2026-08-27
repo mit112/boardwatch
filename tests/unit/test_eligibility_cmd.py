@@ -91,6 +91,17 @@ def test_setting_a_choice_set_field(env: Path) -> None:
     assert set(facts.security_clearance.accesses) == {"sci", "poly"}
 
 
+def test_setting_the_clearance_obtainability_bit(env: Path) -> None:
+    """A resolver input nobody can write is a rule that can never fire. The catalog declares
+    `obtainable` as an ordinary bool field, so the existing dotted setter reaches it."""
+    assert _run(env, ["init"], INIT_INPUT).exit_code == 0
+    assert _run(env, ["eligibility", "facts", "set",
+                      "security_clearance.obtainable", "no"]).exit_code == 0
+    facts, _ = _facts(env)
+    assert facts.security_clearance is not None
+    assert facts.security_clearance.obtainable is False
+
+
 def test_set_career_field_accepts_a_catalog_value(tmp_path: Path) -> None:
     from boardwatch.cli.eligibility_cmd import set_career_field
     from boardwatch.eligibility.catalog import load_rules

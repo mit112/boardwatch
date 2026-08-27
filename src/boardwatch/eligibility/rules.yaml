@@ -466,6 +466,12 @@ families:
       - name: accesses
         type: choice_set
         choices: [sci, poly, sap, nato]
+      # Obtain-after-hire eligibility, which no combination of the four fields above can
+      # answer: `clearable_required` postings ask whether the candidate could be cleared,
+      # not what they hold today. A bool rather than a choice because it has exactly two
+      # answers and the third state -- undeclared -- is the absent value, which abstains.
+      - name: obtainable
+        type: bool
     implies_vocabulary:
       - active_clearance_required
       - clearable_required

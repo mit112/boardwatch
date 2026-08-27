@@ -132,7 +132,7 @@ def test_help_smoke(env: Path) -> None:
 
 # Eligibility prompts, in catalog family order:
 # work_auth(status,jurisdiction,needs_sponsorship,policy),
-# experience_years(total,policy), clearance(scheme,level,state,accesses,policy),
+# experience_years(total,policy), clearance(scheme,level,state,accesses,obtainable,policy),
 # degree(highest_degree,policy), contract_not_fte(preference,policy),
 # internship(preference,policy). A blank field is skipped; a blank policy takes the default.
 # This script is POSITIONAL, so a new family (or field) shifts every later answer. That is
@@ -145,7 +145,7 @@ _ELIG_INIT = (
     "\n"                           # career field: skip
     "citizen\nus\n\nblocker\n"     # work_auth: skip needs_sponsorship
     "\n\n"                      # experience_years: skip field, default policy
-    "\n\n\n\n\n"                # clearance: skip four fields, default policy
+    "\n\n\n\n\n\n"              # clearance: skip five fields, default policy
     "none\nblocker\n"           # degree
     "fte_only\nblocker\n"       # contract_not_fte
     "exclude\n\n"               # internship: default policy
@@ -237,7 +237,7 @@ _ELIG_EDIT = (
     "\n"                               # career field: skip (keeps stored value)
     "permanent_resident\nus\n\n\n"     # work_auth: change status, skip bit, default policy
     "\n\n"                             # experience_years
-    "\n\n\n\n\n"                       # clearance
+    "\n\n\n\n\n\n"                     # clearance (five fields plus policy)
     "master\n\n"                       # degree: change to master, default policy
     "open_to_contract\n\n"             # contract_not_fte: change, default policy
     "\n\n"                             # internship: keep `exclude` from init

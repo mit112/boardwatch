@@ -52,6 +52,7 @@ def test_structured_facts_round_trip() -> None:
     }
     assert payload["security_clearance"] == {
         "scheme": "us_dod", "level": "top_secret", "state": "active", "accesses": ["sci"],
+        "obtainable": None,
     }
     assert parse_facts(payload) == facts
 

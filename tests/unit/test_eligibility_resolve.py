@@ -501,11 +501,51 @@ def test_an_access_only_requirement_is_decidable(catalog) -> None:
     assert _one(catalog, body, without, "polygraph_required") == "unknown"
 
 
-def test_obtain_after_hire_never_resolves_unmet(catalog) -> None:
+_OBTAIN = "Must be able to obtain a security clearance."
+
+
+def test_obtain_after_hire_abstains_while_obtainability_is_undeclared(catalog) -> None:
+    """The keystone: obtainability is its OWN declared field, so an absent value can only
+    abstain. Neither holding nothing nor holding an active clearance answers it."""
     for facts in (_clearance(scheme="unspecified", level="none", state="none"),
-                  _clearance(scheme="us_dod", level="secret", state="active")):
-        assert _one(catalog, "Must be able to obtain a security clearance.", facts,
-                    "clearable_required") == "unknown"
+                  _clearance(scheme="us_dod", level="secret", state="active"),
+                  Facts()):
+        assert _one(catalog, _OBTAIN, facts, "clearable_required") == "unknown"
+
+
+@pytest.mark.parametrize(("obtainable", "expected"), [(True, "met"), (False, "unmet")])
+def test_obtain_after_hire_resolves_on_the_declared_obtainability(
+    catalog, obtainable: bool, expected: str
+) -> None:
+    facts = _clearance(scheme="unspecified", level="none", state="none",
+                       obtainable=obtainable)
+    assert _one(catalog, _OBTAIN, facts, "clearable_required") == expected
+
+
+def test_obtainability_is_orthogonal_to_the_clearance_held(catalog) -> None:
+    """An F-1 OPT holder can hold nothing and never become clearable; a Secret holder who
+    declares themselves unclearable is still unmet. Reading the HELD level here would invert
+    both, which is the claim-typed hazard ClearanceFact exists to prevent."""
+    holds_secret = _clearance(scheme="us_dod", level="secret", state="active",
+                              obtainable=False)
+    assert _one(catalog, _OBTAIN, holds_secret, "clearable_required") == "unmet"
+
+
+def test_an_incoherent_clearance_fact_abstains_on_obtainability_too(catalog) -> None:
+    """A half-filled form is not trusted for the obtainability bit either: `met` there is a
+    wrong clear, the worst failure this design can produce."""
+    facts = _clearance(scheme="us_dod", level="secret", state="none", obtainable=True)
+    assert _one(catalog, _OBTAIN, facts, "clearable_required") == "unknown"
+
+
+def test_the_obtainability_resolution_cites_the_field_it_read(catalog) -> None:
+    facts = _clearance(scheme="unspecified", level="none", state="none", obtainable=False)
+    dets = [d for d in detect(_OBTAIN, catalog, enabled_families=ALL)
+            if d.pattern.id == "clearable_required"]
+    support = resolve(dets[0], facts, catalog.family("clearance")).support
+    assert [s.profile_locator["field"] for s in support] == [
+        "facts.security_clearance.obtainable"
+    ]
 
 
 # ---- degree

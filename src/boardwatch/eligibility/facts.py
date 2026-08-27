@@ -47,6 +47,12 @@ class ClearanceFact(BaseModel):
     level: str | None = None
     state: str | None = None
     accesses: tuple[str, ...] = ()
+    # Orthogonal to every field above, the same way `needs_sponsorship` is orthogonal to
+    # `status`: what a person HOLDS cannot answer what they can OBTAIN. An F-1 holder holds
+    # nothing and can obtain nothing (a US clearance needs citizenship); a Secret holder may
+    # still be barred from an upgrade. Inferring either direction from the held clearance
+    # inverts both, so obtain-after-hire is its own declared bit and an absent value abstains.
+    obtainable: bool | None = None
 
 
 class Facts(BaseModel):

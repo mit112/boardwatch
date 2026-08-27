@@ -287,13 +287,25 @@ def _incoherent_clearance(clearance: ClearanceFact) -> str | None:
 @resolver("clearance", inputs=("security_clearance",))
 def _resolve_clearance(detection: Detection, facts: Facts, family: FamilySpec) -> Resolution:
     pattern = detection.pattern
-    if pattern.implies == "clearable_required":
-        return Resolution(UNKNOWN, "obtain-after-hire eligibility is not stored")
     sc = facts.security_clearance
     if sc is not None:
         bad = _incoherent_clearance(sc)
         if bad is not None:
             return Resolution(UNKNOWN, bad)
+    if pattern.implies == "clearable_required":
+        # Decided by the declared obtainability bit ALONE. The held clearance answers a
+        # different question and reading it here inverts the verdict in both directions, so
+        # this branch sits above every level, state and access comparison below and reads
+        # nothing but the bit. The coherence check above still applies: a half-filled form
+        # is not trusted for `met`, which is the wrong clear this family exists to avoid.
+        if sc is None or sc.obtainable is None:
+            return Resolution(
+                UNKNOWN, "missing_profile_field:security_clearance.obtainable"
+            )
+        support = _fact_support("security_clearance.obtainable", sc.obtainable)
+        if sc.obtainable:
+            return Resolution(MET, "can obtain a clearance after hire", support)
+        return Resolution(UNMET, "cannot obtain a clearance after hire", support)
     if pattern.implies == "clearance_preferred":
         if sc is not None and sc.state in ("active", "current"):
             return Resolution(
