@@ -207,19 +207,24 @@ def _resolve_work_auth(detection: Detection, facts: Facts, family: FamilySpec) -
         if status in ("citizen", "permanent_resident", "ead_or_similar"):
             return Resolution(MET, "authorized", support)
         return Resolution(UNMET, "not authorized", support)
+    # Both citizenship branches decide on STATUS alone, and `ead_or_similar` is no exception
+    # (D-322). The catalog's five status choices are mutually exclusive (rules.yaml:86), so a
+    # declared `ead_or_similar` states the applicant is neither a citizen nor an LPR -- the
+    # same ground on which `permanent_resident` already resolves UNMET against a citizenship
+    # requirement. Parking it at UNKNOWN was an OVERSHOOT of the D-P2-11 fix: that fix removed
+    # a backwards `met` reached through the needs_sponsorship BOOLEAN, and stopping at UNKNOWN
+    # was safe but undecided. The two rules abstained on 100% of their rows -- 591 per run --
+    # so neither could ever fire, which is a monitoring failure and not conservatism.
+    # The bit stays out of both branches, so `met` remains unreachable here for an EAD holder
+    # (the CRITICAL SAFETY property in facts.py:3-6). Undeclared still abstains: `None` and
+    # `prefer_not_to_say` returned UNKNOWN at the top of this function.
     if pattern.implies == "citizen_or_lpr_required":
         if status in ("citizen", "permanent_resident"):
             return Resolution(MET, "citizen or permanent resident", support)
-        if status == "ead_or_similar":
-            return Resolution(
-                UNKNOWN, "work-authorized but neither citizen nor permanent resident"
-            )
         return Resolution(UNMET, "neither citizen nor permanent resident", support)
     if pattern.implies == "citizenship_required":
         if status == "citizen":
             return Resolution(MET, "citizen", support)
-        if status == "ead_or_similar":
-            return Resolution(UNKNOWN, "work-authorized but not a citizen")
         return Resolution(UNMET, "not a citizen", support)
     return Resolution(UNKNOWN, "unhandled work_auth requirement")
 
