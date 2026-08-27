@@ -303,3 +303,61 @@ def test_prose_with_no_requirement_yields_nothing(catalog) -> None:
         "Active Secret clearance required."
     )
     assert _ids(detect(body, catalog, enabled_families=ALL)) == ["active_secret_required"]
+
+
+# ------------------------------------------------- the in-field bridge bound ({2,160})
+
+def test_a_multi_field_degree_enumeration_produces_a_row_at_all(catalog) -> None:
+    """REGRESSION LOCK. At {2,60} the lazy bridge between "in" and the requirement marker
+    could not span a real field enumeration, so this sentence produced **zero rows** — not a
+    truncated capture, no row. A posting stating a hard degree requirement therefore read as
+    though it stated none, which is the "no flags is not cleared" failure the keystone names.
+    """
+    body = (
+        "A Bachelor's degree in Computer Science, Computer Engineering, Mathematics, "
+        "or a related discipline is required."
+    )
+    dets = detect(body, catalog, enabled_families=frozenset({"degree"}))
+    assert [d.pattern.id for d in dets] == ["bachelor_in_field_required"]
+
+
+def test_the_field_capture_reaches_the_related_field_escape(catalog) -> None:
+    """The capture length is the load-bearing half, not just whether a row exists.
+
+    The escape ("or a related discipline") sits at the END of the enumeration, so a capture
+    that stops early keeps the row but drops the escape — and a posting that plainly opened
+    its field list then reads as naming one specific field. That is the wrong direction: it
+    turns an abstain into a decidable-looking narrow requirement.
+    """
+    body = (
+        "A Bachelor's degree in Computer Science, Computer Engineering, Mathematics, "
+        "or a related discipline is required."
+    )
+    (det,) = detect(body, catalog, enabled_families=frozenset({"degree"}))
+    captured = det.values.get("study_field") or det.values.get("study_field_alt")
+    assert captured is not None
+    assert "Computer Science" in captured
+    assert "related discipline" in captured
+
+
+def test_the_field_bridge_is_still_closed(catalog) -> None:
+    """The bound is WIDER, not gone. `[^.;:]` plus `scope: sentence` already confine a match
+    to one sentence, but an unbounded lazy bridge over a long sentence lets a field named in
+    one clause reach a `required` that belongs to another. Padding past 160 characters must
+    still yield no row — this is what fails if the bound is ever replaced with `{2,}`.
+    """
+    padding = "and broad exposure to distributed systems at scale in production " * 4
+    body = f"A Bachelor's degree in Computer Science {padding} is required."
+    assert len(padding) > 160
+    dets = detect(body, catalog, enabled_families=frozenset({"degree"}))
+    assert "bachelor_in_field_required" not in [d.pattern.id for d in dets]
+
+
+def test_the_field_bridge_never_crosses_a_clause_terminator(catalog) -> None:
+    """`[^.;:]` is what stops the bridge, not the sentence splitter: a semicolon does not end
+    a sentence unit, so if the class were relaxed to `.` this row would appear and attribute a
+    requirement marker from a different clause to the degree's field.
+    """
+    body = "A Bachelor's degree in Computer Science; prior production experience is required."
+    dets = detect(body, catalog, enabled_families=frozenset({"degree"}))
+    assert "bachelor_in_field_required" not in [d.pattern.id for d in dets]

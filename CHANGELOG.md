@@ -6,6 +6,20 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Fixed
+
+- **A degree requirement naming several fields produced no row at all (D-328).** The three
+  `*_in_field_required` patterns bounded the span between "in" and the requirement marker at 60
+  characters. That was assumed to truncate the captured field; it does not — the pattern fails to
+  match, so *"A Bachelor's degree in Computer Science, Computer Engineering, Mathematics, or a related
+  discipline is required."* yielded **zero rows** and the posting read as though it named no degree
+  requirement. The bound is now 160, chosen by measuring the live corpus (25 in-field rows at 60, 29
+  at 160, 29 at 240, 30 at 400, none lost at any width), and it stays **closed** rather than becoming
+  unbounded, because `[^.;:]` and sentence scope are the outer fence and the count is the inner one.
+  About **248** open postings gain a degree row they never had; none loses one. This buys no
+  additional `ineligible` verdicts — it is an honesty fix, so that a stated requirement produces an
+  abstain instead of silence.
+
 ### Added
 
 - **The run funnel now says where each lead is, and how the hard US gate read it — artifact v7 (D-323).**
