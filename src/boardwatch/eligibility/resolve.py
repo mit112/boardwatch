@@ -229,10 +229,6 @@ def _resolve_experience_years(
     detection: Detection, facts: Facts, family: FamilySpec
 ) -> Resolution:
     pattern = detection.pattern
-    if pattern.implies == "scoped_years_minimum":
-        return Resolution(
-            UNKNOWN, "requirement is scoped to a skill; no per-skill durations stored"
-        )
     total = facts.total_years_experience
     if total is None:
         return Resolution(UNKNOWN, "total years of experience not declared")
@@ -240,6 +236,19 @@ def _resolve_experience_years(
     # cannot name the same group twice, and a hedge can sit either side of the number.
     need = int(detection.values.get("years") or detection.values["years_alt"])
     support = _fact_support("total_years_experience", total)
+    if pattern.implies == "scoped_years_minimum":
+        # ONE direction is forced without any per-skill data: a duration scoped to a single
+        # skill cannot exceed the career it sits inside, so `total < need` is unmet. The
+        # other direction is not forced -- `total >= need` says nothing about THIS skill,
+        # and a `met` there would be a wrong clear, the worst failure this design can
+        # produce -- so it keeps abstaining. Abstaining in BOTH directions is what let a
+        # 1-year profile read `eligible` against "Minimum of 12 years of experience in
+        # software development"; this is the highest-volume pattern in the family.
+        if total < need:
+            return Resolution(UNMET, f"{total} total < {need} scoped to a skill", support)
+        return Resolution(
+            UNKNOWN, "requirement is scoped to a skill; no per-skill durations stored"
+        )
     if total >= need:
         return Resolution(MET, f"{total} >= {need}", support)
     return Resolution(UNMET, f"{total} < {need}", support)

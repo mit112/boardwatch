@@ -276,12 +276,28 @@ def test_a_range_resolves_on_its_lower_bound(catalog) -> None:
                 "range_years_minimum") == "met"
 
 
-def test_a_scoped_requirement_always_abstains(catalog) -> None:
-    """The profile has a skill SET and no durations, so no value of the years fact can
-    decide this."""
-    for total in (0, 4, 40):
-        assert _one(catalog, "5+ years of experience with Kubernetes.",
-                    Facts(total_years_experience=total), "scoped_years_minimum") == "unknown"
+@pytest.mark.parametrize("total", [0, 1, 4])
+def test_a_scoped_requirement_is_unmet_when_it_exceeds_total_experience(
+    catalog, total: int
+) -> None:
+    """A duration scoped to one skill cannot exceed the whole career it sits inside, so
+    `total < need` FORCES unmet with no per-skill data. Abstaining here is what let a
+    1-year profile read `eligible` against "12 years of experience in software
+    development": this pattern is 342 of the 441 experience rows in a measured delivered
+    set, and every one of them abstained."""
+    assert _one(catalog, "5+ years of experience with Kubernetes.",
+                Facts(total_years_experience=total), "scoped_years_minimum") == "unmet"
+
+
+@pytest.mark.parametrize("total", [5, 40])
+def test_a_scoped_requirement_still_abstains_when_the_total_allows_it(
+    catalog, total: int
+) -> None:
+    """Only the unmet direction is forced. `total >= need` says nothing about the
+    candidate's duration in THAT skill, so a `met` here would be a wrong clear -- the
+    worst failure this design can produce. The profile holds a skill SET, no durations."""
+    assert _one(catalog, "5+ years of experience with Kubernetes.",
+                Facts(total_years_experience=total), "scoped_years_minimum") == "unknown"
 
 
 def test_an_unset_years_fact_abstains(catalog) -> None:
