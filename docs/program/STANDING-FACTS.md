@@ -159,6 +159,80 @@ review APPROVE. The scheduled driver now runs it; B5 can be certified in the fro
 guaranteed for ~92 runs by ledger drain alone; the real threat is a **ledger reopen**, which re-serves built
 jobs and scores them 0 net-new.
 
+**HOW TO REPORT YIELD — the owner's standing rule (D-312).** Every yield, coverage or job-apps comparison
+quotes **the end of the line: affirmatively `eligible` jobs** — currently **~60/day** (eligible + software +
+in-band + US + non-duplicate + unhandled). **Never** quote a broader upstream population as the headline:
+"new postings/day" and "software-titled/day" are different quantities, and doing so overstated yield ~8× in
+this session before Mit caught it (the hard US filter alone removes 57% of the corpus). **`uncertain` is
+never folded into `eligible`** — the keystone invariant, not a preference; the ~82/day abstains get their own
+line. Measure with `stats` / `top --no-record --json` / the run funnel, never ad-hoc SQL over `postings`.
+
+### Settled owner rulings (moved out of STATE 2026-08-27, verbatim)
+
+Each was an owner-gated question and each is now DECIDED. They live here because the reasoning bounds
+future work; STATE keeps only what is still awaiting a call.
+
+0. ~~**THE ARMED LANES LEAK non-SWE noise into delivery — pick one (D-308).**~~ **DECIDED by Mit
+   2026-08-26: option (b), build the facet — shipped as D-309.** Recorded because the reasoning bounds the
+   next lane: option (c) (extend the role deny-catalog) was measured and REJECTED, not merely passed over —
+   the `uncertain` tail is Busser / Water Spider / Dish Steward / Donation Processor / Nannies / Janitorial,
+   an unbounded list, and the same bucket holds Linux Engineer, Senior HPC Engineer and Principal Architect
+   that a broad deny would lose. **Do not propose a lane-noise fix in the role taxonomy again**; the fix is
+   always upstream in what the lane asks for. Item 1 below is also settled by the same probe: hiring.cafe
+   showed 100% location fill, so the location fail-open was never the issue — the ROLE fail-open was.
+
+0b. ~~**NO DRAIN EXISTS FOR LANE-ACQUIRED POSTINGS (D-314).**~~ **DECIDED AND SHIPPED 2026-08-27 — all four
+   sub-questions are closed.** The label question: a row nothing enumerates now renders **`unverifiable`**
+   rather than `open` (D-324), keyed on `companies.watched` rather than `source='lane'`, which was wrong in
+   both directions. The exit: a **measured** death — the posting's own URL answering 404/410 twice on
+   different runs, never a redirect and never a timeout — can close it (D-325); it detects only **6.7%** of
+   real closures, so *a run reporting zero closed is expected, not evidence of health*. The promotion: 15
+   registry-ATS lane companies were promoted to `watched=1`, so zero enumerable lane companies remain
+   unwatched. The cap: **the owner ruled the pool may GROW (D-329)** — age-based and missed-run closing are
+   REJECTED BY MEASUREMENT (0 of 290 re-seen, yet 40 of 45 probed ALIVE), and a deliverability cap was
+   declined because delivery is already bounded at 10/run. **Do not re-open any of the four.**
+
+1. ~~**hiring.cafe's `v5_processed_job_data.workplace_*` fields**~~ **ALREADY SHIPPED — this row was STALE.** D-286 Ruling 4 took the decision and `lanes/hiringcafe.py::_locations` has implemented it since PR #141 (refined in #169). Verified against the live store 2026-08-27: lane postings carry real values (e.g. `"McClellan, California, United States"`). Original text kept below for the reasoning only. ~~**hiring.cafe's fields**~~ — read as provider-asserted location
+   metadata, at the level greenhouse's `location.name` is already trusted (D-286 Ruling 4). D-278 called
+   that payload untrusted, reasoning from the keystone invariant — which governs eligibility RULES, and the
+   engine is body-only so it cannot reach these. The measurement that decided it: `classify_location([])`
+   returns `unknown` and the hard US gate PASSES `unknown`, so withholding locations does not filter a
+   3.89M-posting board, it admits all of it. On a broader reading the lane needs another location source
+   before arming. **One function either way.**
+2. ~~**Oracle Cloud HCM / iCIMS as PROVIDERS**~~ **CLOSED by measurement (D-311): do NOT build them.** The
+   "~45% of the non-six tail" figure was a share of a small tail. Over job-apps' 138,788-posting ledger,
+   Oracle Cloud is **0.84%** and iCIMS **0.44%** — ~1.3% combined, and every remaining platform is under
+   0.2%. LinkedIn is 49.7% and Indeed 23.4% of that corpus, so ~73% of the market sits on one lane boardwatch
+   already has and one source that is out of scope. **The lever is the LinkedIn lane's budget/paging, not new
+   adapters.** Reopen only if a measurement on a different corpus contradicts this.
+3. ~~**Run-scoped rank attribution** — the only honest fix for B5~~ **DELIVERED + MERGED (D-302, PR #164 =
+   `0fb50a7`).** Four run-scoped suppression twins + the reconciliation invariant; B5 is scoreable and armed
+   on the live driver. No code left for B5.
+4. ~~**`locations` on `Lead` + an `artifact_version` bump**~~ **AUTHORISED AND BUILT (D-323, PR open on
+   `feat/lead-locations-artifact-v7`).** Each lead now carries `locations` and `location_class`, the manifest
+   carries `location_filter_mode`, and `artifact_version` moves 6 → 7. No owner decision left.
+8. ~~**Extending the leakage query past `exact_quad`**~~ **CLOSED by D-327 (#185): the
+   instrument was fixed and the reversal REFUSED.** The hardcoded `exact_quad` is gone, and the wider
+   class is reported as a never-folded `candidate_*` UPPER BOUND beside the gate's own number. The
+   4.76% figure below was WRONG as a duplicate count — only ~33% of that class are true duplicates
+   (17.6% on the delivered population), so honest leakage is **0.50%**. Original text kept for the
+   reasoning only.~~
+   `company_title_location` class, because `store/identity_queries.py:296` hardcodes `kind == "exact_quad"`.
+   Dropping ruling 3 did not close this and made it sharper: those duplicates are now neither suppressed nor
+   counted, and the corpus holds **1,597 redundant open postings (4.76%)** on that key. **Never cite a
+   passing leakage number as evidence dedup works.** One join condition, but it reverses D-132/D-283's
+   ratified "only `exact_quad` counts" **while the gate is being measured** (D-294/D-295).
+9. ~~**A redesign of same-role-same-place dedup on real discriminators**~~ **BUILT as D-327's
+   `core/near_duplicate`: `requisition_slug`, `salary_band`, `experience_years`, proof by
+   DISJOINTNESS not inequality. It vetoes rows OUT of a report bound and suppresses NOTHING — the
+   suppression reversal is refused, permanently.~~
+   posting's own URL, the city named in the body, the salary band, the YOE line. Ruling 3 is dropped because
+   a fuzzy body score provably cannot do this (D-295), not because the duplicates are acceptable. Its own
+   change, its own ruling.
+
+---
+
+
 ## Gate A internals
 
 - **A closed review loop is evidence about the slices reviewed, not about the subsystem being
@@ -288,6 +362,26 @@ jobs and scores them 0 net-new.
 
 ---
 
+> **PHANTOM run 118 (benign, mine, and STUCK `running`).** The production-path verification for D-319
+> was a `boardwatch top --no-record` against the LIVE store, which calls `ensure_run`. It wrote **4,400
+> eligibility evaluations** under `1+5bf77461f044` — the rows the paired old-vs-new comparison in METRICS
+> is measured from, so they are real and correctly stamped — and was then stopped part-way, leaving
+> `runs.id=118` at **`status='running'` forever** with `boards_attempted=0`, 0 artifacts and 0
+> `job_dispositions`. Gate P3 is unaffected: its filter is `boards_attempted > 0`, which excludes this
+> row exactly as it excludes run 91. Left in place for the same reason run 91 was — the production store
+> has no rollback snapshot and deleting a row is riskier than an inert one. **Consequence: the first
+> scheduled tick on the new engine is run 119, not 118.** Two lessons, both already known and both
+> ignored here: `top` writes a run even with `--no-record` (that flag governs the `seen` cursor, not
+> `ensure_run`), and a full-corpus read against the live store is a WRITE.
+
+> **PHANTOM run 91 (benign, mine).** A `boardwatch tailor run 13549` verification without a scratch
+> `BOARDWATCH_DATA_DIR` called `ensure_run` and wrote to the LIVE store: run 91 (empty, `boards_attempted=0`,
+> 36ms) + one `artifacts` row (id 498, uri→`/tmp`). NO `job_dispositions`, posting 13549 NOT marked handled,
+> dedup/ledger UNAFFECTED, streak intact (the `boards_attempted>0` filter excludes it). Left in place (prod
+> store has no rollback snapshot; deleting is riskier than an empty row). Consequence: next scheduled tick is
+> **run 92**. Lesson: to verify projection against real postings with the LIVE edited config you must hit the
+> live store — use read-only `resume project`, never `tailor run` (it writes a run+artifact).
+
 ## Environment
 
 - Neither `python` nor `boardwatch` is on PATH — always `uv run …`.
@@ -310,6 +404,21 @@ jobs and scores them 0 net-new.
   this is a fact about another repo's cron behaviour and it decays.**
 
 ---
+
+> **A MANUAL RUN RACING A TICK EXITS 2 AND RESETS GATE P3**, and at 8 fires a day that is 8× likelier than
+> it was. Check `launchctl print gui/$(id -u)/com.boardwatch.run | grep state` before starting one by hand.
+> Two *scheduled* fires cannot collide — launchd never runs two instances of one label.
+
+**THE LAUNCHD JOB RUNS AN EDITABLE VENV RESOLVING TO `src/` IN THE PRIMARY WORKING TREE**, so a scheduled
+tick executes whatever branch is CHECKED OUT there. **Leave that tree on `main`.** Use a worktree for
+parallel work, and never `git stash` — it is shared across worktrees.
+
+**Every agent invocation needs BOTH `BOARDWATCH_DATA_DIR` and `BOARDWATCH_CONFIG_DIR` on a scratch dir**
+(D-281). `DATA_DIR` alone still READS the live `resume.yaml` / `career-profile/` / template and still
+WRITES into the live `~/boardwatch-applications/`. The live store is the DEFAULT, so a forgotten flag
+reaches production, and a migration breaks the NEXT scheduled run, not the one that erred. Two
+consequences: a scratch run's `funnel-N` collides with the next real run's, and the artifact directory is
+**UTC-dated** — match on the run NUMBER, never the date.
 
 ## Process lessons this program paid real time for
 
@@ -614,6 +723,16 @@ output rather than the corpus: 6 of the 146 résumés ever built were for roles 
 exactly **1 of run 71's 40 leads** would have been denied. D-292's "51.1% carries no software signal" is a
 property of the *uncapped* 3,771 — the ranker already sorts most of it below the cap.
 
+**Standing tripwire (D-268):** all six known precision leaks are blocked by the current gates — five
+non-SWE `Lead` titles in the role gate, GE HealthCare posting 31365 (`Buc` → `non_us`) in the hard filter.
+Any of the six appearing in a funnel's `leads` is a real regression to investigate before anything else.
+
+**THE UNCAPPED SET WAS MEASURED, NOT ESTIMATED (D-292), and the two figures differ by 4x.** Lifting
+`DEFAULT_TOP_N` was considered against real numbers: **3,771 postings arriving ~220-430/day, of which
+67.6% are `role=uncertain`**, so honest confirmed-software arrival is **~70/day**. **Quote neither figure
+without naming its population.** The cap sets **burn rate, not supply** — long-run output equals the
+arrival rate whatever the cap is. STATE carries only the live instruction not to move it (D-293/D-294).
+
 ## Lanes and JD acquisition
 
 **A discovery lane without a JD body produces ZERO leads (D-272).** The eligibility engine is
@@ -707,6 +826,24 @@ id from the URN not the URL tail; only `f_TPR=r86400` sent. No capture committed
 `lanes_enabled` defaults empty. Part 3's exit criterion 2 — a lead at a company none of the six providers
 reach, carrying a real JD body — is **unevidenced**; a scratch run is owed before arming, and arming waits
 on Gate P3 anyway. Detail: D-286.
+
+**LANE-ACQUIRED POSTINGS CAN NEVER CLOSE, AND ABSENCE IS NOW PROVEN MEANINGLESS (D-314, extended
+2026-08-27).** The mechanism is unchanged: `_process_missing` (`scan/apply.py`) is the only writer of
+`status="closed"`, runs on **`complete`** snapshots only; `lanes/base.py::lane_snapshot` is always
+`partial`; lane companies are upserted `watched=False`. **The new evidence is a natural experiment in
+the store:** when the D-309 role facet changed what the lanes search for, **0 of 290** pre-facet lane
+postings were ever re-seen — and probing 45 of them with the shipped prober found **40 alive (HTTP 200),
+0 dead**. They did not close; we stopped asking. At 3h cadence a **live** lane posting is absent from
+its own lane's results in **~19% of runs**, so a `CLOSE_AFTER_MISSES=2` analogue would have destroyed
+**25 live postings in 33 hours**. **Age-based and missed-run closing are therefore REJECTED by
+measurement, not merely unproven — do not propose either again.** The class was 282 at D-314 and is
+**471**, growing **~182/day**. The honest predicate is `companies.watched = 0` ("nothing enumerates this
+board") = **722 rows**, which includes ~274 unwatched `source='user'` companies with the identical
+defect — `source='lane'` is wrong in both directions. **Owner ruled 2026-08-27: build the `unverifiable`
+label (#186/D-324), promote registry-ATS lane companies (DONE — 15 of them), and add the 6.7%-power URL
+probe (#187/D-325). He did NOT choose to cap how long a lane row stays DELIVERABLE — the only option
+that shrinks the pool. Worth re-raising.**
+
 
 ## CI health
 
