@@ -17,6 +17,27 @@
 
 ## Current standing
 
+**THE YEARS-OF-EXPERIENCE GATE HAD NEVER FIRED — FIXED, ARMED AND LIVE (D-319 #175, D-320 #176).** The owner
+opened the delivery queue and the first lead demanded 5 years. Measured: **142 of 588 delivered leads (24.1%)
+state a minimum of five or more years.** Three stacked causes — (1) `experience_years` sat at the catalog
+default `preference` and only `blocker` can yield `ineligible`, so **53 required rows resolved UNMET and not
+one changed a verdict**; (2) `scoped_years_minimum` was a **100% abstain, 342 of the family's 441 rows**,
+already visible as 10,872/10,872 in `reports/abstain.py`; (3) the pattern missed `5+ years building …` and
+`12+ years in …` entirely (37 of the 142 produced no row). Fixed by one sound inference — **a duration scoped
+to a single skill cannot exceed the career it sits inside, so `total < need` is UNMET**, while `total >= need`
+keeps abstaining because a `met` there would claim a per-skill duration the profile lacks. Owner ruling: keep
+`total_years_experience = 1`, literal comparison, **accept 0–1 years and block 2+**. Live: `experience_years:
+blocker` written to the profile 21:00 CDT and verified by direct SQL; primary tree at `1dff564`;
+**`engine_version` `1+63c6f8fd5a3e` → `1+5bf77461f044`**. Measured effect: delivered **582 → 302**, **101 of
+the 142 blocked**, practical false-positive rate ~1–3%. **THE FREEZE IS BROKEN AND D-280's PROVISIONAL-PASS
+RUN COUNT RESETS — owner confirmed.** No ledger drain owed, by argument: the change is strictly narrowing (see
+D-319). **`eligible` collapses 339 → 24 while delivery only halves** — a scoped requirement within budget
+still abstains, so the D-312 end-of-line figure drops hard and that is honest, not a regression.
+
+**~60/day is NOW STALE.** The D-312 rule below still governs HOW to report, but its number predates D-319.
+Re-measure before quoting anything; expect roughly half the delivered volume and a far smaller affirmatively
+`eligible` count.
+
 **LANE-ACQUIRED POSTINGS CAN NEVER CLOSE — there is no drain, and disarming does not stop delivery (D-314).**
 Found by smoke-testing the facet verifier: run 114 ran AFTER the 12:10 lane disarm and still delivered three
 lane-sourced non-SWE leads. Chain, each link read in source: the only writer of `status="closed"` is
@@ -137,8 +158,8 @@ experiment. Do NOT build per-ATS adapters at 0.1–0.8% each.
 discovered companies recorded unwatched. 4 clean SCHEDULED ticks (92/95/101/108) + many clean manual runs; both
 fixes hold every run; lanes healthy (no silent outage). Manual-run cadence was eased to scheduled-ticks-only at
 session end to cut lane-leak accrual + conserve the rate-limit window. **The provisional pass (D-280) is
-effectively met on quality** — P4 gate met, B1–B7 pass every run, freeze stable — pending only whatever formal
-scheduled-tick count Mit wants to require.
+effectively met on quality** — P4 gate met, B1–B7 pass every run — but **the freeze is no longer stable:
+D-319 moved `engine_version`, so the frozen-run count restarts from the first tick on `1+5bf77461f044`.
 
 **P4 CRAFT UNDER-FILL FIXED — the daily run now fills résumés to the page (D-303, 2026-08-25).** The P4
 blind review FAILED on ~3 under-filled résumés: the daily run projected with base `projection.yaml`
@@ -338,25 +359,30 @@ call and is now informed on both sides (D-293, D-294).
 
 ## Next action
 
-**The provisional pass (D-280) is effectively met on quality** — P4 gate MET (objective 0-violations + owner
-blind review passed), B1–B7 pass on every run (verified via `.agent/2026-08-25-craft-findings/finish_line_cert.py
---runs <N>`), freeze tuple stable across runs 92/94 (`config_hash f56a0166…`, engine_version `1+63c6f8fd5a3e`),
-P6 leakage 0.00% over 7d, B4 370/0. 21 clean runs (92, 94–113). **No build left.** Immediate items:
+**The provisional pass is NO LONGER met — D-319 reset it deliberately.** Quality still holds (P4 gate MET,
+B1–B7 passing, P6 leakage 0.00% over 7d, B4 370/0), but `engine_version` moved, so the frozen-run count starts
+again from the first tick on `1+5bf77461f044`. **No build is outstanding for the years gate.** Immediate items:
 
-1. **FACET VERIFIED (run 116) — the remaining check is the VETO's effect, not the facet's.** Re-arming is
-   DONE and run 116 confirmed the facet live (7/10 software; see Current standing). Run 116 pre-dated the veto
-   in the running code; the primary checkout is now at `0361145` (veto live + delivery queue armed), so verify
-   the NEXT scheduled tick suppresses the zero-signal `uncertain` leaks (Humana/Raymond James/KION
-   Commissioning class) with `.agent/2026-08-26-lane-facet/verify_facet_run.py <N>`. Expect SOME lane-sourced
-   `uncertain` still delivered — the 282 pre-facet lane postings are immortal (D-314) and the veto only catches
-   zero-signal ones.
-2. **Consider raising the LinkedIn body budget (`lane_posting_budget`).** D-311 measured LinkedIn at 49.7%
-   of the reachable market and the setting is OUT of `config_hash`, so it is freeze-safe to change. The facet
-   makes those bodies software-relevant for the first time; the budget is now the binding constraint, not the
-   search. Measure a run before and after rather than assuming.
-3. **Confirm the formal cert bar.** Quality is proven; if a strict "N clean SCHEDULED ticks" count is still
-   wanted, scheduled ticks 92/95/101/108 are clean (manual runs 94/96–100/102–107/109–113 don't count as
-   scheduled but are all clean). Score any run with `finish_line_cert.py --runs <N>`.
+1. **VERIFY THE FIRST TICK ON THE NEW ENGINE (23:00 CDT / 04:00Z).** Run 117 (01:00Z, `ok`, 234 boards, 59
+   min) was the last on the old engine. The next tick is the first with `experience_years: blocker` AND the
+   D-319 resolver, and it re-evaluates all 267,434 stale evaluations. Check: delivered volume roughly halves,
+   `ineligible` becomes a large bucket, and no posting asking 0–1 years is blocked. A full-corpus
+   `top --no-record` was started this session as an independent production-path check.
+2. **PR #176 (D-320) may still be in flight** — `make check` green locally (7993 passed), auto-merge armed.
+   It adds the activity-gerund pattern (10 newly blocked, 0 spared) and a `we bring` company-side suppressor.
+   Confirm it merged and was pulled before reading the next tick's numbers, or the two changes blur together.
+3. **Decide the queue's `ineligible` presentation — OWNER-FACING.** `delivered_unapplied` attaches the current
+   verdict but never filters on it, and `api._counts` has **no `ineligible` key**, so after D-319 roughly 294
+   of 598 queue folders become an unexplained remainder between `in_queue` and `eligible + uncertain`. Needs a
+   product call plus a JS bundle rebuild; not taken unilaterally.
+4. **Consider raising the LinkedIn body budget (`lane_posting_budget`).** D-311 measured LinkedIn at 49.7%
+   of the reachable market and the setting is OUT of `config_hash`, so it is freeze-safe. Measure a run before
+   and after rather than assuming.
+5. **`internship` and `contract_not_fte` are the SAME defect as D-319 and are NOT armed.** Both sit at
+   `preference` while the profile declares `internship_preference: exclude` and `employment_type_preference:
+   fte_only`. Measured on 598 delivered leads: arming them blocks **2** (Disney intern reqs) and **1** (a UT
+   Austin contract role) respectively; `degree: blocker` would add **1** (Intel, doctorate). All correct, all
+   tiny. Owner's call, and each costs another freeze reset.
 
 **Arming Part 4a's ~898 boards remains a SEPARATE owner decision, NOT taken.** The capped `discover`→review→
 `import` loop is shipped; ramp in batches of ~10 (898 at ~7s each exceeds the 3h cadence). Do **not** add a
@@ -447,10 +473,10 @@ records it and the run still does not fail. Clearance IS a blocker (D-257). Seni
 | P1 Résumé artifact gate | **COMPLETE** | **MET** (D-032/033) |
 | P2 Profile + keystone | items 1–7 shipped; item 8 NOT STARTED | **MET AS RECONCILED** (D-075) |
 | P3 Unattended one command | **COMPLETE, INSTALLED, FIRING** at ~3h (D-288) | **MET** — 8 consecutive clean scheduled ticks (runs 71-78), verified from the `runs` table + funnels |
-| P4 Craft gate | **COMPLETE** (under-fill fixed D-303; objective anti-slop 0 violations, non-vacuous) | **NEARLY MET** — objective half certified; awaiting the owner's BLIND CRAFT REVIEW on post-fill résumés (run 92+) |
+| P4 Craft gate | **COMPLETE** (under-fill fixed D-303; objective anti-slop 0 violations, non-vacuous) | **MET** — objective half certified AND the owner's blind craft review passed cleanly 2026-08-26 (all 5 judged worse were job-apps decoys; all 3 judged better were boardwatch) |
 | P5 Eligibility decides | **COMPLETE** | **MET** — INELIGIBLE precision 16/16, 0 span violations |
 | P6 Liveness + dedup | **BUILD COMPLETE** (D-110/111/113); leakage report shipped (D-283) | **3 of 4** — liveness MET (D-281), leakage measurable and reading **0.00%** but needs a 7-day ledger span (~2026-08-26) |
-| 14-day acceptance | not started | starts after P6 |
+| 14-day acceptance | not started | starts after P6 **and after a fresh frozen window** — D-319 reset the clock (`engine_version` `1+5bf77461f044`) |
 | P7 Breadth | lane 1 (hiring.cafe) BUILT not armed (D-286); **Part 4a GitHub-lists discovery BUILT + LANDED (#149/D-296), not armed**; **Part 4b LinkedIn lane BUILT (D-297), off by default, not armed, selectors reconstructed**; remaining lanes not started | unlock MET (D-271/272) |
 | *Gate A / Gate B* | *complete, merged* | ***MET*** — *has moved no program gate* |
 
