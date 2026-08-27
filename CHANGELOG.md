@@ -6,6 +6,20 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Fixed
+
+- **A degree requirement naming several fields produced no row at all (D-328).** The three
+  `*_in_field_required` patterns bounded the span between "in" and the requirement marker at 60
+  characters. That was assumed to truncate the captured field; it does not — the pattern fails to
+  match, so *"A Bachelor's degree in Computer Science, Computer Engineering, Mathematics, or a related
+  discipline is required."* yielded **zero rows** and the posting read as though it named no degree
+  requirement. The bound is now 160, chosen by measuring the live corpus (25 in-field rows at 60, 29
+  at 160, 29 at 240, 30 at 400, none lost at any width), and it stays **closed** rather than becoming
+  unbounded, because `[^.;:]` and sentence scope are the outer fence and the count is the inner one.
+  About **248** open postings gain a degree row they never had; none loses one. This buys no
+  additional `ineligible` verdicts — it is an honesty fix, so that a stated requirement produces an
+  abstain instead of silence.
+
 ### Added
 
 - **The run funnel now says where each lead is, and how the hard US gate read it — artifact v7 (D-323).**
@@ -19,6 +33,28 @@ All notable changes to this project are documented here. The format follows
   `soft` by default, and in `soft` the hard gate never ran. The Markdown half names the classifier and the
   number of leads it was evaluated over, so the claim stays quotable later. **`artifact_version` moves 6 → 7**;
   no consumer validates the number, and `boardwatch verify` reads named keys out of the file as before.
+
+- **Two eligibility rules that could never fire now decide.** Both abstained unconditionally because the
+  fact they needed did not exist, which the keystone treats as a monitoring failure rather than
+  conservatism.
+  - **Obtain-after-hire clearance eligibility.** `clearable_required` ("must be able to obtain a Secret
+    clearance") fired on ~118 rows per run and returned `unknown` every time. `security_clearance` gains an
+    `obtainable` bool, declared in the catalog so `boardwatch eligibility facts set
+    security_clearance.obtainable no` and the `init` wizard both reach it with no new call site. The bit is
+    orthogonal to what you hold: an F-1 holder holds nothing and can obtain nothing, and a Secret holder may
+    still be barred from an upgrade, so inferring either direction from the held clearance inverts the
+    verdict both ways. Undeclared still abstains.
+  - **Field of study.** `degree_required_with_field` ("a Bachelor's degree in Computer Science") is the
+    commonest degree sentence there is and abstained on every satisfied rank — ~405 rows per run. `Facts`
+    gains `field_of_study`; set it with `boardwatch eligibility facts set field_of_study computer_science`.
+    The vocabulary, the reviewed relatedness partition and the phrasings by which a posting opens its list
+    are versioned catalog data in `rules.yaml`, overridable per user; a value outside the catalog, on either
+    side, abstains rather than becoming a new bucket. `met` needs an exact match, or **both** a reviewed
+    relation and the posting's own escape ("or a related field") — "must have a Computer Science degree"
+    means Computer Science. `unmet` is reached only when the posting names a closed set of catalogued fields
+    and offers no escape.
+
+  **Both change `engine_version`, so stored eligibility evaluations re-evaluate on the next run.**
 
 ### Fixed
 

@@ -91,6 +91,36 @@ def test_setting_a_choice_set_field(env: Path) -> None:
     assert set(facts.security_clearance.accesses) == {"sci", "poly"}
 
 
+def test_setting_the_clearance_obtainability_bit(env: Path) -> None:
+    """A resolver input nobody can write is a rule that can never fire. The catalog declares
+    `obtainable` as an ordinary bool field, so the existing dotted setter reaches it."""
+    assert _run(env, ["init"], INIT_INPUT).exit_code == 0
+    assert _run(env, ["eligibility", "facts", "set",
+                      "security_clearance.obtainable", "no"]).exit_code == 0
+    facts, _ = _facts(env)
+    assert facts.security_clearance is not None
+    assert facts.security_clearance.obtainable is False
+
+
+def test_setting_the_field_of_study(env: Path) -> None:
+    """`field_of_study` is a non-family scalar, so the dotted setter cannot reach it and it
+    needs its own branch. Without one the fact is unwritable and the rule never fires."""
+    assert _run(env, ["init"], INIT_INPUT).exit_code == 0
+    assert _run(env, ["eligibility", "facts", "set", "field_of_study",
+                      "software_engineering"]).exit_code == 0
+    facts, _ = _facts(env)
+    assert facts.field_of_study == "software_engineering"
+
+
+def test_setting_a_field_of_study_outside_the_catalog_is_refused(env: Path) -> None:
+    assert _run(env, ["init"], INIT_INPUT).exit_code == 0
+    result = _run(env, ["eligibility", "facts", "set", "field_of_study", "wizardry"])
+    assert result.exit_code == 1
+    assert "unknown field_of_study" in result.output
+    facts, _ = _facts(env)
+    assert facts.field_of_study is None
+
+
 def test_set_career_field_accepts_a_catalog_value(tmp_path: Path) -> None:
     from boardwatch.cli.eligibility_cmd import set_career_field
     from boardwatch.eligibility.catalog import load_rules

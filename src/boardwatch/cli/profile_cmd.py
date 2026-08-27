@@ -14,7 +14,12 @@ from rich.console import Console
 from sqlalchemy import Engine
 
 from boardwatch.cli.context import build_context
-from boardwatch.cli.eligibility_cmd import set_career_field, set_fact, set_policy
+from boardwatch.cli.eligibility_cmd import (
+    set_career_field,
+    set_fact,
+    set_field_of_study,
+    set_policy,
+)
 from boardwatch.core.settings import Settings
 from boardwatch.eligibility.catalog import load_rules
 from boardwatch.eligibility.facts import facts_payload, parse_facts, parse_policy
@@ -191,6 +196,17 @@ def edit(ctx: typer.Context) -> None:
                     break
                 try:
                     facts = set_career_field(facts, catalog, answer.strip())
+                    break
+                except typer.BadParameter as exc:
+                    console.print(exc.message)
+        if catalog.fields_of_study:
+            study_hint = ", ".join(sorted(s.id for s in catalog.fields_of_study))
+            while True:
+                answer = typer.prompt(f"Your field of study [{study_hint}]", default="")
+                if not answer.strip():
+                    break
+                try:
+                    facts = set_field_of_study(facts, catalog, answer.strip())
                     break
                 except typer.BadParameter as exc:
                     console.print(exc.message)

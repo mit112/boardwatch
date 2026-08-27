@@ -122,7 +122,7 @@ FIXTURE_PROVENANCE: dict[str, FixtureProvenance] = {
 # @pytest.mark.parametrize further down the file, so a digest over the literal alone stays green
 # while a `CASES[0] = (...)` line appended below rewrites the oracle. Byte-stable across
 # platforms because .gitattributes pins eol=lf repo-wide for exactly this reason.
-CORPUS_PIN = "sha256:c8fcbc3a755a83216d3c030dc29ac8584b84f85c8aec7d78b0e25b3432f5ffcc"
+CORPUS_PIN = "sha256:5a74f0f7ab5bde5b3116c95fd70dc4f493913109280f71d61e469ca25cd281d6"
 
 # A HUMAN-REVIEWED constant, and that is the whole of its value. It is counted by ast rather than
 # by bytes, but that alone would not make it a second path: an earlier version let
@@ -131,7 +131,7 @@ CORPUS_PIN = "sha256:c8fcbc3a755a83216d3c030dc29ac8584b84f85c8aec7d78b0e25b3432f
 # it prints the measured count and stops, and a human edits it. The independence is the human,
 # not the ast. The corpus asserts this number itself at its own tail; that assert lives INSIDE
 # the file being tampered with, which is why it is restated out here.
-CORPUS_ROWS = 988
+CORPUS_ROWS = 1012
 
 
 def readme_path(provider: str) -> str:

@@ -167,6 +167,7 @@ You describe your situation once, in the catalog's own vocabulary:
 ```bash
 boardwatch eligibility facts set work_authorization.status citizen
 boardwatch eligibility facts set highest_degree bachelor
+boardwatch eligibility facts set field_of_study computer_science
 boardwatch eligibility facts set employment_type_preference fte_only
 boardwatch eligibility policy set work_auth blocker   # treat this family as disqualifying
 ```

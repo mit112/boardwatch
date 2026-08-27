@@ -501,11 +501,51 @@ def test_an_access_only_requirement_is_decidable(catalog) -> None:
     assert _one(catalog, body, without, "polygraph_required") == "unknown"
 
 
-def test_obtain_after_hire_never_resolves_unmet(catalog) -> None:
+_OBTAIN = "Must be able to obtain a security clearance."
+
+
+def test_obtain_after_hire_abstains_while_obtainability_is_undeclared(catalog) -> None:
+    """The keystone: obtainability is its OWN declared field, so an absent value can only
+    abstain. Neither holding nothing nor holding an active clearance answers it."""
     for facts in (_clearance(scheme="unspecified", level="none", state="none"),
-                  _clearance(scheme="us_dod", level="secret", state="active")):
-        assert _one(catalog, "Must be able to obtain a security clearance.", facts,
-                    "clearable_required") == "unknown"
+                  _clearance(scheme="us_dod", level="secret", state="active"),
+                  Facts()):
+        assert _one(catalog, _OBTAIN, facts, "clearable_required") == "unknown"
+
+
+@pytest.mark.parametrize(("obtainable", "expected"), [(True, "met"), (False, "unmet")])
+def test_obtain_after_hire_resolves_on_the_declared_obtainability(
+    catalog, obtainable: bool, expected: str
+) -> None:
+    facts = _clearance(scheme="unspecified", level="none", state="none",
+                       obtainable=obtainable)
+    assert _one(catalog, _OBTAIN, facts, "clearable_required") == expected
+
+
+def test_obtainability_is_orthogonal_to_the_clearance_held(catalog) -> None:
+    """An F-1 OPT holder can hold nothing and never become clearable; a Secret holder who
+    declares themselves unclearable is still unmet. Reading the HELD level here would invert
+    both, which is the claim-typed hazard ClearanceFact exists to prevent."""
+    holds_secret = _clearance(scheme="us_dod", level="secret", state="active",
+                              obtainable=False)
+    assert _one(catalog, _OBTAIN, holds_secret, "clearable_required") == "unmet"
+
+
+def test_an_incoherent_clearance_fact_abstains_on_obtainability_too(catalog) -> None:
+    """A half-filled form is not trusted for the obtainability bit either: `met` there is a
+    wrong clear, the worst failure this design can produce."""
+    facts = _clearance(scheme="us_dod", level="secret", state="none", obtainable=True)
+    assert _one(catalog, _OBTAIN, facts, "clearable_required") == "unknown"
+
+
+def test_the_obtainability_resolution_cites_the_field_it_read(catalog) -> None:
+    facts = _clearance(scheme="unspecified", level="none", state="none", obtainable=False)
+    dets = [d for d in detect(_OBTAIN, catalog, enabled_families=ALL)
+            if d.pattern.id == "clearable_required"]
+    support = resolve(dets[0], facts, catalog.family("clearance")).support
+    assert [s.profile_locator["field"] for s in support] == [
+        "facts.security_clearance.obtainable"
+    ]
 
 
 # ---- degree
@@ -562,6 +602,107 @@ def test_an_unleveled_requirement_is_unmet_only_with_no_degree(catalog) -> None:
     # be `met`, not `unknown` -- the unleveled bar previously had no MET path at all.
     assert _one(catalog, "A degree is required.", Facts(highest_degree="bachelor"),
                 "any_degree_required") == "met"
+
+
+# ---- degree: field of study
+
+_CS_OR_RELATED = "Bachelor's degree in Computer Science or a related field is required."
+_CS_ONLY = "Bachelor's degree in Computer Science is required."
+
+
+def _degree(**kwargs) -> Facts:
+    return Facts(highest_degree="bachelor", **kwargs)
+
+
+def test_the_field_the_posting_names_resolves_met(catalog) -> None:
+    assert _one(catalog, _CS_ONLY, _degree(field_of_study="computer_science"),
+                "bachelor_in_field_required") == "met"
+
+
+def test_a_reviewed_related_field_is_met_only_when_the_posting_offers_the_escape(
+    catalog,
+) -> None:
+    """The catalog's relatedness partition says two fields are interchangeable; the POSTING
+    says whether it will accept an interchangeable one. Both are required for `met`, because
+    "must have a CS degree" means CS, and answering `met` to it with a neighbouring degree is
+    the wrong clear this family exists to avoid."""
+    related = _degree(field_of_study="software_engineering")
+    assert _one(catalog, _CS_OR_RELATED, related, "bachelor_in_field_required") == "met"
+    assert _one(catalog, _CS_ONLY, related, "bachelor_in_field_required") == "unknown"
+
+
+def test_an_unrelated_named_field_is_decidably_unmet(catalog) -> None:
+    """The one direction this fact makes decidable: the posting names a closed set of
+    catalogued fields, none of which the profile holds or is reviewed-related to."""
+    assert _one(catalog, "Bachelor's degree in Nursing is required.",
+                _degree(field_of_study="computer_science"),
+                "bachelor_in_field_required") == "unmet"
+
+
+def test_an_unrelated_named_field_with_an_escape_abstains(catalog) -> None:
+    """A posting that says it accepts related fields has stated that relatedness it did not
+    enumerate may qualify. The catalog cannot refute that, so `unmet` would be a guess."""
+    assert _one(catalog, "Bachelor's degree in Nursing or a related field is required.",
+                _degree(field_of_study="computer_science"),
+                "bachelor_in_field_required") == "unknown"
+
+
+def test_a_field_the_catalog_does_not_know_abstains(catalog) -> None:
+    """Out of catalog is a FAILURE, never a new bucket: an unrecognised phrase cannot be
+    compared, so it can neither clear nor block."""
+    assert _one(catalog, "Bachelor's degree in Basket Weaving is required.",
+                _degree(field_of_study="computer_science"),
+                "bachelor_in_field_required") == "unknown"
+
+
+@pytest.mark.parametrize("declared", [None, "underwater_basket_weaving"])
+def test_an_absent_or_uncatalogued_declared_field_abstains(catalog, declared) -> None:
+    """KEYSTONE. Both are unresolvable profile values, so both abstain in both directions."""
+    facts = Facts(highest_degree="bachelor", field_of_study=declared)
+    assert _one(catalog, _CS_ONLY, facts, "bachelor_in_field_required") == "unknown"
+    assert _one(catalog, "Bachelor's degree in Nursing is required.", facts,
+                "bachelor_in_field_required") == "unknown"
+
+
+def test_the_rank_bar_still_decides_before_the_field(catalog) -> None:
+    """No field can rescue a missing degree, so a rank below the bar stays decidable even
+    when the declared field is exactly the one named."""
+    assert _one(catalog, _CS_ONLY,
+                Facts(highest_degree="none", field_of_study="computer_science"),
+                "bachelor_in_field_required") == "unmet"
+
+
+def test_a_masters_in_a_related_field_clears_a_bachelors_in_field_bar(catalog) -> None:
+    """The realistic shape: a higher rank in a neighbouring field against the commonest
+    degree sentence in existence."""
+    facts = Facts(highest_degree="master", field_of_study="software_engineering")
+    assert _one(catalog, _CS_OR_RELATED, facts, "bachelor_in_field_required") == "met"
+
+
+def test_the_field_resolution_cites_the_field_of_study_fact(catalog) -> None:
+    dets = [d for d in detect(_CS_ONLY, catalog, enabled_families=ALL)
+            if d.pattern.id == "bachelor_in_field_required"]
+    resolution = resolve(dets[0], _degree(field_of_study="computer_science"),
+                         catalog.family("degree"))
+    assert [s.profile_locator["field"] for s in resolution.support] == ["facts.field_of_study"]
+
+
+@pytest.mark.parametrize("pattern_id", ["bachelor_in_field_required",
+                                        "master_in_field_required",
+                                        "doctorate_in_field_required"])
+def test_every_in_field_pattern_captures_the_field_it_names(catalog, pattern_id) -> None:
+    """A capture on one level and not its siblings is exactly the parity class findings
+    115-124 closed: the level that lacks it would abstain forever with nothing raised."""
+    body = {
+        "bachelor_in_field_required": "Must have a Bachelor's degree in Computer Science.",
+        "master_in_field_required": "Must have a Master's degree in Computer Science.",
+        "doctorate_in_field_required": "Must have a Ph.D. in Computer Science.",
+    }[pattern_id]
+    dets = [d for d in detect(body, catalog, enabled_families=ALL)
+            if d.pattern.id == pattern_id]
+    assert len(dets) == 1
+    captured = dets[0].values.get("study_field") or dets[0].values.get("study_field_alt")
+    assert captured is not None and "Computer Science" in captured
 
 
 # ---- support and rationale

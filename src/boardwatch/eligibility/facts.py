@@ -47,6 +47,12 @@ class ClearanceFact(BaseModel):
     level: str | None = None
     state: str | None = None
     accesses: tuple[str, ...] = ()
+    # Orthogonal to every field above, the same way `needs_sponsorship` is orthogonal to
+    # `status`: what a person HOLDS cannot answer what they can OBTAIN. An F-1 holder holds
+    # nothing and can obtain nothing (a US clearance needs citizenship); a Secret holder may
+    # still be barred from an upgrade. Inferring either direction from the held clearance
+    # inverts both, so obtain-after-hire is its own declared bit and an absent value abstains.
+    obtainable: bool | None = None
 
 
 class Facts(BaseModel):
@@ -59,6 +65,12 @@ class Facts(BaseModel):
     total_years_experience: StrictInt | None = None
     security_clearance: ClearanceFact | None = None
     highest_degree: str | None = None
+    # The field the HIGHEST degree is in, so it pairs with `highest_degree` above and needs no
+    # second rank. `str | None`, validated against the catalog's declared study fields at the
+    # resolver (authoritative) and the CLI (friendly), exactly as `highest_degree` is: the
+    # vocabulary belongs to the catalog, never to this module (D-P2-4). A value the catalog
+    # does not declare is unresolvable, not a new bucket, so the resolver abstains on it.
+    field_of_study: str | None = None
     # P9. Both are PREFERENCES over the posting's employment type, not credentials, so a
     # missing value means "not stated" and abstains rather than defaulting to a stance. Kept
     # as `str | None` and validated against the catalog's declared choices at the CLI

@@ -52,6 +52,7 @@ def test_structured_facts_round_trip() -> None:
     }
     assert payload["security_clearance"] == {
         "scheme": "us_dod", "level": "top_secret", "state": "active", "accesses": ["sci"],
+        "obtainable": None,
     }
     assert parse_facts(payload) == facts
 
@@ -61,7 +62,7 @@ def test_absent_facts_render_as_null_not_missing_keys() -> None:
     payload = facts_payload(Facts())
     assert set(payload) == {
         "work_authorization", "total_years_experience", "security_clearance", "highest_degree",
-        "employment_type_preference", "internship_preference",
+        "field_of_study", "employment_type_preference", "internship_preference",
         "career_field",  # engine-gated (not resolver-declared) — hashed unconditionally, per B1
     }
     assert all(value is None for value in payload.values())
