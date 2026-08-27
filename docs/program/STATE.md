@@ -45,13 +45,18 @@ FedCloud), Agile Defense (CBP), Accenture ×3, CACI, whose JD reads verbatim *"T
 U.S. citizenship"*. They drain themselves via D-321's `_ineligible` filter. `engine_version`
 `1+af3a746837b1` → moves on merge of the open stack.
 
-**THE WHOLE STACK IS MERGED, AND THE ENGINE MOVED ONCE.** #183 (D-323, lead locations + artifact v7) ·
+**THE WHOLE STACK IS MERGED; THE ENGINE MOVES ON THE NEXT PULL, ONCE.** #183 (D-323, lead locations + artifact v7) ·
 #184 (D-326, clearance-obtainability + field-of-study facts) · #185 (D-327, the near-duplicate
 measurement and the refused reversal) · #186 (D-324, `unverifiable` status) · #187 (D-325, measured-death
-close) · the degree-bridge fix (D-328). **`engine_version` moved `1+af3a746837b1` → see `doctor`; derive
-it, never quote a pinned constant (D-306).** The three owner facts were applied in ONE pass afterwards
-(`security_clearance.obtainable=false`, `field_of_study=software_engineering`, `policy set degree
-blocker`), and the **owed ledger drain ran** — so no second re-evaluation spike is outstanding.
+close) · the degree-bridge fix (D-328). **`engine_version` moves the moment the primary tree is pulled** —
+it is DERIVED from the digested modules, so quote `doctor`, never a pinned constant (D-306). The live
+store is still on `1+af3a746837b1` because the tree is deliberately unpulled.
+
+**THE THREE OWNER FACTS ARE NOT YET APPLIED — that is the next live action, and the ONLY one left.**
+`security_clearance.obtainable=false`, `field_of_study=software_engineering`, `policy set degree blocker`,
+in ONE pass so the engine moves once. **NO ledger drain — the owner ruled to skip it (D-331)**, because the
+ledger holds zero `skipped` rows so a drain can recover nothing. Applying the facts costs one
+re-evaluation spike, projected ~124 min; nothing else is outstanding.
 
 **BOARD COST IS PROVIDER-WEIGHTED, AND s/board IS A LYING UNIT (run 124).** Run 124 ran the OLD engine
 on the ramped fleet, which isolates fleet cost from engine cost: **346 boards, 3,424 s (57.1 min)**
