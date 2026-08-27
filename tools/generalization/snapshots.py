@@ -150,6 +150,7 @@ EXPECTED_INIT_PROMPTS: tuple[tuple[str, str, str | None], ...] = (
     # The policy default is the NAME family.default_policy, so no user value is pinned here.
     ("confirm", '"Set up eligibility checks now?"', "False"),
     ("prompt", 'f"Your career field [{field_hint}]"', '""'),
+    ("prompt", 'f"Your field of study [{study_hint}]"', '""'),
     ("prompt", 'f"{family.question} [{field_spec.name}: {choice_hint}]"', '""'),
     ("prompt", 'f"How should {family.label} affect your results?"', "family.default_policy"),
 )

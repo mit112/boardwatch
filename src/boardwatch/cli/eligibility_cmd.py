@@ -187,6 +187,20 @@ def set_career_field(facts: Facts, catalog: RulesCatalog, value: str) -> Facts:
     return facts.model_copy(update={"career_field": value})
 
 
+def set_field_of_study(facts: Facts, catalog: RulesCatalog, value: str) -> Facts:
+    """Set the profile's field_of_study, validated against the catalog's closed vocabulary.
+
+    A non-family scalar for the same reason career_field is one: set_fact resolves a
+    `family.fact`, and the degree family's fact is `highest_degree`. Pure and CLI-free apart
+    from the BadParameter it raises for a friendly message.
+    """
+    declared = sorted(spec.id for spec in catalog.fields_of_study)
+    if value not in declared:
+        valid = ", ".join(declared) or "(none declared)"
+        raise typer.BadParameter(f"unknown field_of_study {value!r}. Valid: {valid}")
+    return facts.model_copy(update={"field_of_study": value})
+
+
 def set_policy(policy: Policy, catalog: RulesCatalog, family_id: str, choice: str) -> Policy:
     """Apply one family severity to the policy, returning a new Policy. Pure and CLI-free.
 
@@ -234,6 +248,7 @@ def facts_root(ctx: typer.Context) -> None:
         else:
             console.print(f"{family.label}: {_render_value(getattr(facts, family.fact))}")
     console.print(f"Career field: {_render_value(facts.career_field)}")
+    console.print(f"Field of study: {_render_value(facts.field_of_study)}")
 
 
 @facts_app.command("set")
@@ -250,6 +265,8 @@ def facts_set(ctx: typer.Context, fact: str, value: str) -> None:
         try:
             if fact == "career_field":
                 new_facts = set_career_field(facts, catalog, value)
+            elif fact == "field_of_study":
+                new_facts = set_field_of_study(facts, catalog, value)
             else:
                 new_facts = set_fact(facts, catalog, fact, value)
         except typer.BadParameter as exc:

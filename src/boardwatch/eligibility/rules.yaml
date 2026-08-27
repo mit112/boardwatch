@@ -691,6 +691,117 @@ families:
       - degree_preferred_or_equivalent
     exclusive_groups:
       - [degree_required, degree_required_with_field, degree_required_or_equivalent]
+    # THE FIELD-OF-STUDY CATALOG. Versioned DATA, never a Python vocabulary: a field-of-study
+    # taxonomy is exactly the thing job-apps found did not port when a second user appeared, so
+    # the ids, the JD surface forms that NAME each id, and the reviewed relatedness partition
+    # all live here and are overridable per user via {config_dir}/rules.yaml.
+    # An id is what the PROFILE stores; the surfaces are the JD side only. A value outside this
+    # list -- typed by a user or written by a posting -- is a FAILURE, never a new bucket: the
+    # resolver abstains on it rather than inventing a field.
+    # SHORT FORMS ARE DELIBERATELY SCARCE. Surfaces are matched case-insensitively inside a
+    # captured phrase, so a two-letter form that is also an English word matches prose: `IT`
+    # would fire on "a field related to it" and `IS` on any copula. `CS` and `EE` are here
+    # because neither is an English word; no other abbreviation earns its risk.
+    fields_of_study:
+      - id: computer_science
+        surfaces:
+          - "computer\\s+sciences?"
+          - "(?<!\\w)C\\.?S\\.?(?!\\w)"
+      - id: computer_engineering
+        surfaces: ["computer\\s+engineering"]
+      - id: software_engineering
+        surfaces: ["software\\s+engineering", "software\\s+development"]
+      - id: information_technology
+        surfaces: ["information\\s+technology"]
+      - id: information_systems
+        surfaces: ["(?:management\\s+)?information\\s+systems"]
+      - id: data_science
+        surfaces: ["data\\s+science", "data\\s+analytics"]
+      - id: electrical_engineering
+        surfaces:
+          - "electrical\\s+(?:and\\s+electronics?\\s+)?engineering"
+          - "(?<!\\w)E\\.?E\\.?(?!\\w)"
+      - id: mechanical_engineering
+        surfaces: ["mechanical\\s+engineering"]
+      - id: civil_engineering
+        surfaces: ["civil\\s+engineering"]
+      - id: chemical_engineering
+        surfaces: ["chemical\\s+engineering"]
+      - id: industrial_engineering
+        surfaces: ["industrial\\s+engineering"]
+      - id: aerospace_engineering
+        surfaces: ["aero(?:space|nautical)\\s+engineering"]
+      - id: mathematics
+        surfaces: ["math(?:ematic)?s(?!\\w)", "mathematical\\s+sciences?"]
+      - id: statistics
+        surfaces: ["(?:bio)?statistics"]
+      - id: physics
+        surfaces: ["physics"]
+      - id: economics
+        surfaces: ["econom(?:ics|etrics)"]
+      - id: business_administration
+        surfaces: ["business(?:\\s+(?:administration|management))?"]
+      - id: finance
+        surfaces: ["finance", "financial\\s+engineering"]
+      - id: accounting
+        surfaces: ["accounting", "accountancy"]
+      - id: marketing
+        surfaces: ["marketing"]
+      - id: biology
+        surfaces: ["biology", "biological\\s+sciences?", "biochemistry"]
+      - id: chemistry
+        surfaces: ["chemistry"]
+      - id: nursing
+        surfaces: ["nursing"]
+      - id: psychology
+        surfaces: ["psychology"]
+      - id: sociology
+        surfaces: ["sociology"]
+      - id: political_science
+        surfaces: ["political\\s+science", "public\\s+(?:policy|administration)"]
+      - id: communications
+        surfaces: ["communications?(?!\\s+protocols?)", "journalism"]
+      - id: graphic_design
+        surfaces: ["graphic\\s+design", "visual\\s+(?:design|communications?)"]
+      - id: human_computer_interaction
+        surfaces: ["human[\\s-]computer\\s+interaction", "(?:interaction|product)\\s+design"]
+      - id: law
+        surfaces: ["(?<!\\w)law(?!\\w)", "juris\\s+doctor"]
+      - id: education
+        surfaces: ["education(?!al\\s+(?:background|requirement))"]
+    # A REVIEWED PARTITION, not a similarity score. Membership is a statement that a hiring
+    # process treats these fields as interchangeable, and it is only ever consulted when the
+    # POSTING itself says it will take a neighbour (see related_field_escapes). Disjoint by
+    # construction, so relatedness can never depend on which group is read first. A field in
+    # no group is related to nothing but itself, which is the safe default for a new entry.
+    related_fields_of_study:
+      - [computer_science, computer_engineering, software_engineering, information_technology,
+         information_systems, data_science, electrical_engineering,
+         human_computer_interaction]
+      - [mechanical_engineering, civil_engineering, chemical_engineering,
+         industrial_engineering, aerospace_engineering]
+      - [mathematics, statistics, physics]
+      - [business_administration, finance, accounting, marketing, economics]
+      - [biology, chemistry, nursing]
+      - [psychology, sociology, political_science, communications]
+    # How a posting says the fields it named are NOT the only acceptable ones. Without one of
+    # these the posting has named a SPECIFIC field, and answering `met` to it with a merely
+    # related degree is the wrong clear this whole family exists to avoid -- so an escape is
+    # required for the related-field MET, and its presence is also what turns an otherwise
+    # decidable `unmet` into an abstain (the posting has said relatedness it did not enumerate
+    # may qualify). `or equivalent` is deliberately absent: it is already in degree_equivalence,
+    # which abstains the whole row document-wide before a resolver ever sees it.
+    related_field_escapes:
+      # "or a related field", "or a similar discipline", and the qualified forms. The adjective
+      # slot is ONE GENERIC WORD rather than an enumeration: an enumerated list read "or a
+      # related healthcare field" as a closed requirement and decided `unmet` where the posting
+      # had plainly opened it, and the list would need a new token per industry forever.
+      - "or\\s+(?:an?\\s+)?(?:closely\\s+|highly\\s+)?(?:related|similar|relevant|comparable|allied|adjacent)\\s+(?:\\w+\\s+)?(?:field|discipline|area|major|subject|degree|program|stud(?:y|ies))s?"
+      # "or a STEM field" -- an open CATEGORY named instead of the word `related`.
+      - "or\\s+(?:an?\\s+)?(?:STEM|technical|quantitative|scientific|engineering|numerate|business|healthcare)\\s+(?:field|discipline|area|major|subject|degree)s?"
+      # "a quantitative field such as Statistics or Physics": the enumeration is EXEMPLARY, so
+      # reading it as closed decided `ineligible` against a list the posting called examples.
+      - "(?:such\\s+as|including|e\\.?g\\.?)(?!\\w)"
     # THE CANONICAL REQUIREMENT-MARKER VOCABULARY, declared once here and written out verbatim
     # on each of the SEVEN marker-carrying patterns below. Findings 115-124 closed this as a
     # class after finding 102 closed one token of it by hand; parity.py measured ELEVEN missing
@@ -807,9 +918,13 @@ families:
         abstain_by: [*degree_equivalence]
         suppressed_by_unit: [*degree_in_field]
       # "Bachelor's degree in X is required" is the single most common degree phrasing and
-      # was previously missed entirely. A field-of-study constraint is UNMEASURABLE (the
-      # profile stores no field), so this resolves `unmet` when the rank is below and
-      # ABSTAINS when the rank is met: the field could still disqualify.
+      # was previously missed entirely. The rank is decided first (no field can rescue a
+      # missing degree), and the named field is then compared against `field_of_study` using
+      # the vocabulary, partition and escapes declared above. An UNDECLARED field of study
+      # abstains, which is what this pattern did unconditionally before the fact existed.
+      # The capture is an OPTIONAL ZERO-WIDTH LOOKAHEAD in both arms, so it cannot move the
+      # persisted span and cannot fail an alternative: worst case nothing is captured and the
+      # resolver abstains. Anything that consumed characters would do both.
       - id: bachelor_in_field_required
         requiredness: required
         implies: degree_required_with_field
@@ -820,7 +935,7 @@ families:
         # its requirement marker before the level, so the marker-last form matched nothing
         # while the plain bachelor_required correctly stood down on "degree in X" -> the most
         # common degree sentence in existence produced ZERO rows.
-        pattern: "(?:Bachelor['’‘]?s?(?:\\s+of\\s+(?:Science|Arts|Engineering|Applied\\s+Science|Business\\s+Administration))?|(?<![\\w.])B\\.?S\\.?(?!\\w)|(?<![\\w.])B\\.?A\\.?(?!\\w)|(?<![\\w.])B\\.?Sc\\.?(?!\\w)|(?<![\\w.])B\\.?Eng\\.?(?!\\w)|Undergraduate)\\s*(?:degree)?\\s+in\\s+(?:(?!\\b(?:preferred|desirable|desired|advantageous|nice\\s+to\\s+have|bonus|ideally|a\\s+plus|plus)\\b)[^.;:]){2,60}?(?:is\\s+)?(?:required|mandatory|necessary|essential|compulsory|needed|a\\s+must|a\\s+requirement|non-negotiable)(?!\\w)|(?:require[sd]?(?:\\s+to\\s+(?:have|hold|possess))?|must\\s+(?:have|hold|possess|be)|(?:will\\s+)?needs?|(?<!\\w)mandator(?:y|ily)(?!\\w))\\s*:?\\s*(?:at\\s+least\\s+|a\\s+minimum\\s+of\\s+)?(?:an?\\s+)?(?:Bachelor['’‘]?s?(?:\\s+of\\s+(?:Science|Arts|Engineering|Applied\\s+Science|Business\\s+Administration))?|(?<![\\w.])B\\.?S\\.?(?!\\w)|(?<![\\w.])B\\.?A\\.?(?!\\w)|(?<![\\w.])B\\.?Sc\\.?(?!\\w)|(?<![\\w.])B\\.?Eng\\.?(?!\\w)|Undergraduate)\\s*(?:degree)?\\s+in\\s+\\S"
+        pattern: "(?:Bachelor['’‘]?s?(?:\\s+of\\s+(?:Science|Arts|Engineering|Applied\\s+Science|Business\\s+Administration))?|(?<![\\w.])B\\.?S\\.?(?!\\w)|(?<![\\w.])B\\.?A\\.?(?!\\w)|(?<![\\w.])B\\.?Sc\\.?(?!\\w)|(?<![\\w.])B\\.?Eng\\.?(?!\\w)|Undergraduate)\\s*(?:degree)?\\s+in\\s+(?:(?=(?P<study_field>(?:(?!\\b(?:and|with|required|require|requires|mandatory|necessary|essential|compulsory|needed|preferred|desirable|desired|advantageous|nice|bonus|ideally|plus|experience)\\b)[^.;:]){2,60})))?(?:(?!\\b(?:preferred|desirable|desired|advantageous|nice\\s+to\\s+have|bonus|ideally|a\\s+plus|plus)\\b)[^.;:]){2,60}?(?:is\\s+)?(?:required|mandatory|necessary|essential|compulsory|needed|a\\s+must|a\\s+requirement|non-negotiable)(?!\\w)|(?:require[sd]?(?:\\s+to\\s+(?:have|hold|possess))?|must\\s+(?:have|hold|possess|be)|(?:will\\s+)?needs?|(?<!\\w)mandator(?:y|ily)(?!\\w))\\s*:?\\s*(?:at\\s+least\\s+|a\\s+minimum\\s+of\\s+)?(?:an?\\s+)?(?:Bachelor['’‘]?s?(?:\\s+of\\s+(?:Science|Arts|Engineering|Applied\\s+Science|Business\\s+Administration))?|(?<![\\w.])B\\.?S\\.?(?!\\w)|(?<![\\w.])B\\.?A\\.?(?!\\w)|(?<![\\w.])B\\.?Sc\\.?(?!\\w)|(?<![\\w.])B\\.?Eng\\.?(?!\\w)|Undergraduate)\\s*(?:degree)?\\s+in\\s+(?:(?=(?P<study_field_alt>(?:(?!\\b(?:and|with|required|require|requires|mandatory|necessary|essential|compulsory|needed|preferred|desirable|desired|advantageous|nice|bonus|ideally|plus|experience)\\b)[^.;:]){2,60})))?\\S"
         # No "degree\s+in\s+\S" suppressor here: on THIS pattern it is self-defeating. It
         # matches outside its own span in any posting that names a field twice, so
         # "A Bachelor's degree in CS is required. A Master's degree in Physics is preferred."
@@ -832,7 +947,7 @@ families:
         scope: sentence
         required_rank: 4
         requirement_text: "A master's degree in a named field is required"
-        pattern: "(?:(?P<coord_rank3_a>Bachelor['’‘]?s?|(?<![\\w.])B\\.?S\\.?(?!\\w)|(?<![\\w.])B\\.?A\\.?(?!\\w)|(?<![\\w.])B\\.?Sc\\.?(?!\\w)|(?<![\\w.])B\\.?Eng\\.?(?!\\w)|Undergraduate)\\s*(?:degree)?\\s*(?:,\\s*)?(?:or|/)\\s*)?(?:(?:Master['’‘]?s?(?:\\s+of\\s+(?:Science|Arts|Engineering|Business\\s+Administration|Applied\\s+Science))?|(?<![\\w.])M\\.?S\\.?(?!\\w)(?!\\s*(?:Office|Excel|Word|PowerPoint|Outlook|Project|Teams|SQL|Access|Visio|Dynamics|Azure|365|Exchange|SharePoint|Windows|Server)\\b)|(?<![\\w.])M\\.?Sc\\.?(?!\\w)|(?<![\\w.])M\\.?Eng\\.?(?!\\w)|(?<![\\w.])M\\.?B\\.?A\\.?(?!\\w))\\s*(?:degree)?|(?<!\\w)(?:Graduate|Advanced)\\s+degree)(?:\\s*(?:,\\s*)?(?:or|/)\\s*(?P<coord_rank3_b>Bachelor['’‘]?s?|(?<![\\w.])B\\.?S\\.?(?!\\w)|(?<![\\w.])B\\.?A\\.?(?!\\w)|(?<![\\w.])B\\.?Sc\\.?(?!\\w)|(?<![\\w.])B\\.?Eng\\.?(?!\\w)|Undergraduate)\\s*(?:degree)?)?\\s+in\\s+(?:(?!\\b(?:preferred|desirable|desired|advantageous|nice\\s+to\\s+have|bonus|ideally|a\\s+plus|plus)\\b)[^.;:]){2,60}?(?:is\\s+)?(?:required|mandatory|necessary|essential|compulsory|needed|a\\s+must|a\\s+requirement|non-negotiable)(?!\\w)|(?:require[sd]?(?:\\s+to\\s+(?:have|hold|possess))?|must\\s+(?:have|hold|possess|be)|(?:will\\s+)?needs?|(?<!\\w)mandator(?:y|ily)(?!\\w))\\s*:?\\s*(?:at\\s+least\\s+|a\\s+minimum\\s+of\\s+)?(?:an?\\s+)?(?:(?P<coord_rank3_c>Bachelor['’‘]?s?|(?<![\\w.])B\\.?S\\.?(?!\\w)|(?<![\\w.])B\\.?A\\.?(?!\\w)|(?<![\\w.])B\\.?Sc\\.?(?!\\w)|(?<![\\w.])B\\.?Eng\\.?(?!\\w)|Undergraduate)\\s*(?:degree)?\\s*(?:,\\s*)?(?:or|/)\\s*)?(?:(?:Master['’‘]?s?(?:\\s+of\\s+(?:Science|Arts|Engineering|Business\\s+Administration|Applied\\s+Science))?|(?<![\\w.])M\\.?S\\.?(?!\\w)(?!\\s*(?:Office|Excel|Word|PowerPoint|Outlook|Project|Teams|SQL|Access|Visio|Dynamics|Azure|365|Exchange|SharePoint|Windows|Server)\\b)|(?<![\\w.])M\\.?Sc\\.?(?!\\w)|(?<![\\w.])M\\.?Eng\\.?(?!\\w)|(?<![\\w.])M\\.?B\\.?A\\.?(?!\\w))\\s*(?:degree)?|(?<!\\w)(?:Graduate|Advanced)\\s+degree)(?:\\s*(?:,\\s*)?(?:or|/)\\s*(?P<coord_rank3_d>Bachelor['’‘]?s?|(?<![\\w.])B\\.?S\\.?(?!\\w)|(?<![\\w.])B\\.?A\\.?(?!\\w)|(?<![\\w.])B\\.?Sc\\.?(?!\\w)|(?<![\\w.])B\\.?Eng\\.?(?!\\w)|Undergraduate)\\s*(?:degree)?)?\\s+in\\s+\\S"
+        pattern: "(?:(?P<coord_rank3_a>Bachelor['’‘]?s?|(?<![\\w.])B\\.?S\\.?(?!\\w)|(?<![\\w.])B\\.?A\\.?(?!\\w)|(?<![\\w.])B\\.?Sc\\.?(?!\\w)|(?<![\\w.])B\\.?Eng\\.?(?!\\w)|Undergraduate)\\s*(?:degree)?\\s*(?:,\\s*)?(?:or|/)\\s*)?(?:(?:Master['’‘]?s?(?:\\s+of\\s+(?:Science|Arts|Engineering|Business\\s+Administration|Applied\\s+Science))?|(?<![\\w.])M\\.?S\\.?(?!\\w)(?!\\s*(?:Office|Excel|Word|PowerPoint|Outlook|Project|Teams|SQL|Access|Visio|Dynamics|Azure|365|Exchange|SharePoint|Windows|Server)\\b)|(?<![\\w.])M\\.?Sc\\.?(?!\\w)|(?<![\\w.])M\\.?Eng\\.?(?!\\w)|(?<![\\w.])M\\.?B\\.?A\\.?(?!\\w))\\s*(?:degree)?|(?<!\\w)(?:Graduate|Advanced)\\s+degree)(?:\\s*(?:,\\s*)?(?:or|/)\\s*(?P<coord_rank3_b>Bachelor['’‘]?s?|(?<![\\w.])B\\.?S\\.?(?!\\w)|(?<![\\w.])B\\.?A\\.?(?!\\w)|(?<![\\w.])B\\.?Sc\\.?(?!\\w)|(?<![\\w.])B\\.?Eng\\.?(?!\\w)|Undergraduate)\\s*(?:degree)?)?\\s+in\\s+(?:(?=(?P<study_field>(?:(?!\\b(?:and|with|required|require|requires|mandatory|necessary|essential|compulsory|needed|preferred|desirable|desired|advantageous|nice|bonus|ideally|plus|experience)\\b)[^.;:]){2,60})))?(?:(?!\\b(?:preferred|desirable|desired|advantageous|nice\\s+to\\s+have|bonus|ideally|a\\s+plus|plus)\\b)[^.;:]){2,60}?(?:is\\s+)?(?:required|mandatory|necessary|essential|compulsory|needed|a\\s+must|a\\s+requirement|non-negotiable)(?!\\w)|(?:require[sd]?(?:\\s+to\\s+(?:have|hold|possess))?|must\\s+(?:have|hold|possess|be)|(?:will\\s+)?needs?|(?<!\\w)mandator(?:y|ily)(?!\\w))\\s*:?\\s*(?:at\\s+least\\s+|a\\s+minimum\\s+of\\s+)?(?:an?\\s+)?(?:(?P<coord_rank3_c>Bachelor['’‘]?s?|(?<![\\w.])B\\.?S\\.?(?!\\w)|(?<![\\w.])B\\.?A\\.?(?!\\w)|(?<![\\w.])B\\.?Sc\\.?(?!\\w)|(?<![\\w.])B\\.?Eng\\.?(?!\\w)|Undergraduate)\\s*(?:degree)?\\s*(?:,\\s*)?(?:or|/)\\s*)?(?:(?:Master['’‘]?s?(?:\\s+of\\s+(?:Science|Arts|Engineering|Business\\s+Administration|Applied\\s+Science))?|(?<![\\w.])M\\.?S\\.?(?!\\w)(?!\\s*(?:Office|Excel|Word|PowerPoint|Outlook|Project|Teams|SQL|Access|Visio|Dynamics|Azure|365|Exchange|SharePoint|Windows|Server)\\b)|(?<![\\w.])M\\.?Sc\\.?(?!\\w)|(?<![\\w.])M\\.?Eng\\.?(?!\\w)|(?<![\\w.])M\\.?B\\.?A\\.?(?!\\w))\\s*(?:degree)?|(?<!\\w)(?:Graduate|Advanced)\\s+degree)(?:\\s*(?:,\\s*)?(?:or|/)\\s*(?P<coord_rank3_d>Bachelor['’‘]?s?|(?<![\\w.])B\\.?S\\.?(?!\\w)|(?<![\\w.])B\\.?A\\.?(?!\\w)|(?<![\\w.])B\\.?Sc\\.?(?!\\w)|(?<![\\w.])B\\.?Eng\\.?(?!\\w)|Undergraduate)\\s*(?:degree)?)?\\s+in\\s+(?:(?=(?P<study_field_alt>(?:(?!\\b(?:and|with|required|require|requires|mandatory|necessary|essential|compulsory|needed|preferred|desirable|desired|advantageous|nice|bonus|ideally|plus|experience)\\b)[^.;:]){2,60})))?\\S"
         # See bachelor_in_field_required: the "degree in" suppressor is self-defeating here.
         abstain_by: [*degree_equivalence]
       # FINDING 56: the bachelor and master levels each had an in-field pattern and the
@@ -842,15 +957,16 @@ families:
       # could never cover this: "Ph.D. in Physics" contains no token `degree`, which is also
       # why "Must have a Ph.D. in Physics." resolved a wrong `met` for any doctorate holder
       # regardless of field. Now both doctorate patterns fire on that sentence and the
-      # exclusive group resolves it `uncertain`, which is the honest answer while the profile
-      # records no field of study.
+      # exclusive group resolves it `uncertain`, which is the honest answer: the two patterns
+      # disagree about whether the sentence names a field at all, and a conflicted group is
+      # never resolved by either arm.
       - id: doctorate_in_field_required
         requiredness: required
         implies: degree_required_with_field
         scope: sentence
         required_rank: 5
         requirement_text: "A doctorate in a named field is required"
-        pattern: "(?:(?P<coord_rank4_a>Master['’‘]?s?|(?<![\\w.])M\\.?S\\.?(?!\\w)|(?<![\\w.])M\\.?Sc\\.?(?!\\w)|(?<![\\w.])M\\.?Eng\\.?(?!\\w)|(?<![\\w.])M\\.?B\\.?A\\.?(?!\\w))\\s*(?:degree)?\\s*(?:,\\s*)?(?:or|/)\\s*)?(?:Ph\\.?D\\.?|Doctorate|Doctoral\\s+degree|Doctor\\s+of\\s+(?:Philosophy|Science|Engineering))(?:\\s*(?:,\\s*)?(?:or|/)\\s*(?P<coord_rank4_b>Master['’‘]?s?|(?<![\\w.])M\\.?S\\.?(?!\\w)|(?<![\\w.])M\\.?Sc\\.?(?!\\w)|(?<![\\w.])M\\.?Eng\\.?(?!\\w)|(?<![\\w.])M\\.?B\\.?A\\.?(?!\\w))\\s*(?:degree)?)?\\s*(?:degree)?\\s+in\\s+(?:(?!\\b(?:preferred|desirable|desired|advantageous|nice\\s+to\\s+have|bonus|ideally|a\\s+plus|plus)\\b)[^.;:]){2,60}?(?:is\\s+)?(?:required|mandatory|necessary|essential|compulsory|needed|a\\s+must|a\\s+requirement|non-negotiable)(?!\\w)|(?:require[sd]?(?:\\s+to\\s+(?:have|hold|possess))?|must\\s+(?:have|hold|possess|be)|(?:will\\s+)?needs?|(?<!\\w)mandator(?:y|ily)(?!\\w))\\s*:?\\s*(?:at\\s+least\\s+|a\\s+minimum\\s+of\\s+)?(?:an?\\s+)?(?:(?P<coord_rank4_c>Master['’‘]?s?|(?<![\\w.])M\\.?S\\.?(?!\\w)|(?<![\\w.])M\\.?Sc\\.?(?!\\w)|(?<![\\w.])M\\.?Eng\\.?(?!\\w)|(?<![\\w.])M\\.?B\\.?A\\.?(?!\\w))\\s*(?:degree)?\\s*(?:,\\s*)?(?:or|/)\\s*)?(?:Ph\\.?D\\.?|Doctorate|Doctoral\\s+degree|Doctor\\s+of\\s+(?:Philosophy|Science|Engineering))(?:\\s*(?:,\\s*)?(?:or|/)\\s*(?P<coord_rank4_d>Master['’‘]?s?|(?<![\\w.])M\\.?S\\.?(?!\\w)|(?<![\\w.])M\\.?Sc\\.?(?!\\w)|(?<![\\w.])M\\.?Eng\\.?(?!\\w)|(?<![\\w.])M\\.?B\\.?A\\.?(?!\\w))\\s*(?:degree)?)?\\s*(?:degree)?\\s+in\\s+\\S"
+        pattern: "(?:(?P<coord_rank4_a>Master['’‘]?s?|(?<![\\w.])M\\.?S\\.?(?!\\w)|(?<![\\w.])M\\.?Sc\\.?(?!\\w)|(?<![\\w.])M\\.?Eng\\.?(?!\\w)|(?<![\\w.])M\\.?B\\.?A\\.?(?!\\w))\\s*(?:degree)?\\s*(?:,\\s*)?(?:or|/)\\s*)?(?:Ph\\.?D\\.?|Doctorate|Doctoral\\s+degree|Doctor\\s+of\\s+(?:Philosophy|Science|Engineering))(?:\\s*(?:,\\s*)?(?:or|/)\\s*(?P<coord_rank4_b>Master['’‘]?s?|(?<![\\w.])M\\.?S\\.?(?!\\w)|(?<![\\w.])M\\.?Sc\\.?(?!\\w)|(?<![\\w.])M\\.?Eng\\.?(?!\\w)|(?<![\\w.])M\\.?B\\.?A\\.?(?!\\w))\\s*(?:degree)?)?\\s*(?:degree)?\\s+in\\s+(?:(?=(?P<study_field>(?:(?!\\b(?:and|with|required|require|requires|mandatory|necessary|essential|compulsory|needed|preferred|desirable|desired|advantageous|nice|bonus|ideally|plus|experience)\\b)[^.;:]){2,60})))?(?:(?!\\b(?:preferred|desirable|desired|advantageous|nice\\s+to\\s+have|bonus|ideally|a\\s+plus|plus)\\b)[^.;:]){2,60}?(?:is\\s+)?(?:required|mandatory|necessary|essential|compulsory|needed|a\\s+must|a\\s+requirement|non-negotiable)(?!\\w)|(?:require[sd]?(?:\\s+to\\s+(?:have|hold|possess))?|must\\s+(?:have|hold|possess|be)|(?:will\\s+)?needs?|(?<!\\w)mandator(?:y|ily)(?!\\w))\\s*:?\\s*(?:at\\s+least\\s+|a\\s+minimum\\s+of\\s+)?(?:an?\\s+)?(?:(?P<coord_rank4_c>Master['’‘]?s?|(?<![\\w.])M\\.?S\\.?(?!\\w)|(?<![\\w.])M\\.?Sc\\.?(?!\\w)|(?<![\\w.])M\\.?Eng\\.?(?!\\w)|(?<![\\w.])M\\.?B\\.?A\\.?(?!\\w))\\s*(?:degree)?\\s*(?:,\\s*)?(?:or|/)\\s*)?(?:Ph\\.?D\\.?|Doctorate|Doctoral\\s+degree|Doctor\\s+of\\s+(?:Philosophy|Science|Engineering))(?:\\s*(?:,\\s*)?(?:or|/)\\s*(?P<coord_rank4_d>Master['’‘]?s?|(?<![\\w.])M\\.?S\\.?(?!\\w)|(?<![\\w.])M\\.?Sc\\.?(?!\\w)|(?<![\\w.])M\\.?Eng\\.?(?!\\w)|(?<![\\w.])M\\.?B\\.?A\\.?(?!\\w))\\s*(?:degree)?)?\\s*(?:degree)?\\s+in\\s+(?:(?=(?P<study_field_alt>(?:(?!\\b(?:and|with|required|require|requires|mandatory|necessary|essential|compulsory|needed|preferred|desirable|desired|advantageous|nice|bonus|ideally|plus|experience)\\b)[^.;:]){2,60})))?\\S"
         # See bachelor_in_field_required: the "degree in" suppressor is self-defeating here.
         abstain_by: [*degree_equivalence]
       - id: any_degree_required

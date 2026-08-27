@@ -20,6 +20,28 @@ All notable changes to this project are documented here. The format follows
   number of leads it was evaluated over, so the claim stays quotable later. **`artifact_version` moves 6 → 7**;
   no consumer validates the number, and `boardwatch verify` reads named keys out of the file as before.
 
+- **Two eligibility rules that could never fire now decide.** Both abstained unconditionally because the
+  fact they needed did not exist, which the keystone treats as a monitoring failure rather than
+  conservatism.
+  - **Obtain-after-hire clearance eligibility.** `clearable_required` ("must be able to obtain a Secret
+    clearance") fired on ~118 rows per run and returned `unknown` every time. `security_clearance` gains an
+    `obtainable` bool, declared in the catalog so `boardwatch eligibility facts set
+    security_clearance.obtainable no` and the `init` wizard both reach it with no new call site. The bit is
+    orthogonal to what you hold: an F-1 holder holds nothing and can obtain nothing, and a Secret holder may
+    still be barred from an upgrade, so inferring either direction from the held clearance inverts the
+    verdict both ways. Undeclared still abstains.
+  - **Field of study.** `degree_required_with_field` ("a Bachelor's degree in Computer Science") is the
+    commonest degree sentence there is and abstained on every satisfied rank — ~405 rows per run. `Facts`
+    gains `field_of_study`; set it with `boardwatch eligibility facts set field_of_study computer_science`.
+    The vocabulary, the reviewed relatedness partition and the phrasings by which a posting opens its list
+    are versioned catalog data in `rules.yaml`, overridable per user; a value outside the catalog, on either
+    side, abstains rather than becoming a new bucket. `met` needs an exact match, or **both** a reviewed
+    relation and the posting's own escape ("or a related field") — "must have a Computer Science degree"
+    means Computer Science. `unmet` is reached only when the posting names a closed set of catalogued fields
+    and offers no escape.
+
+  **Both change `engine_version`, so stored eligibility evaluations re-evaluate on the next run.**
+
 ### Fixed
 
 - **A posting no board scan enumerates can now be closed — but only by a measured death (D-325).** A posting

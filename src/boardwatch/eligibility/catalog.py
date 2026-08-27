@@ -107,6 +107,19 @@ class PatternSpec:
 
 
 @dataclass(frozen=True)
+class StudyFieldSpec:
+    """One catalogued field of study and the JD phrasings that NAME it.
+
+    The surfaces are the JD side only; the profile stores the `id`. A field-of-study
+    taxonomy is precisely what job-apps found did not port to a second user, so it ships as
+    versioned catalog data rather than a Python vocabulary (D-P2-4).
+    """
+
+    id: str
+    surfaces: tuple[re.Pattern[str], ...]
+
+
+@dataclass(frozen=True)
 class FamilySpec:
     id: str
     label: str
@@ -121,6 +134,14 @@ class FamilySpec:
     superset_relations: tuple[dict[str, str], ...]
     tier: str
     applies_to: frozenset[str]
+    # The field-of-study vocabulary, its reviewed relatedness PARTITION, and the phrasings by
+    # which a posting says it will accept a neighbouring field. All three are empty for every
+    # family that declares none, so a family or an override without them behaves as before.
+    # Carried on the family rather than the document because a resolver is handed a
+    # FamilySpec and nothing else.
+    fields_of_study: tuple[StudyFieldSpec, ...] = ()
+    related_fields_of_study: tuple[frozenset[str], ...] = ()
+    related_field_escapes: tuple[re.Pattern[str], ...] = ()
 
     @property
     def ranks(self) -> dict[str, int]:
@@ -139,6 +160,17 @@ class RulesCatalog:
     version: str
     source: str  # "override" | "bundled"
     career_fields: frozenset[str]
+
+    @property
+    def fields_of_study(self) -> tuple[StudyFieldSpec, ...]:
+        """Every declared field of study, across families.
+
+        A PROPERTY, not stored state: the vocabulary is declared next to the family that
+        resolves against it, and this is the one view the CLI needs to validate what a user
+        types. Deriving it keeps a single source of truth rather than a second copy that can
+        drift out of step with the family's own.
+        """
+        return tuple(spec for family in self.families for spec in family.fields_of_study)
 
     def family(self, family_id: str) -> FamilySpec:
         for candidate in self.families:
@@ -373,13 +405,57 @@ def _family(
             raise CatalogError(f"{where}: superset_relations entries must be mappings")
         relations.append({str(k): str(v) for k, v in relation.items()})
 
+    study_fields = _study_fields(raw.get("fields_of_study"), where)
     return FamilySpec(
         id=family_id, label=label, fact=fact, answer_type=answer_type,
         default_policy=default_policy, question=question, fields=fields,
         implies_vocabulary=declared, exclusive_groups=groups, patterns=tuple(patterns),
         superset_relations=tuple(relations),
         tier=tier, applies_to=applies_to,
+        fields_of_study=study_fields,
+        related_fields_of_study=_groups(
+            raw.get("related_fields_of_study"), where,
+            frozenset(spec.id for spec in study_fields),
+            key="related_fields_of_study", label="related fields group",
+        ),
+        related_field_escapes=_regex_list(
+            raw.get("related_field_escapes"), where, "related_field_escapes"
+        ),
     )
+
+
+def _study_fields(raw: object, where: str) -> tuple[StudyFieldSpec, ...]:
+    """The field-of-study vocabulary, or an empty tuple for a family that declares none.
+
+    Each entry needs at least one surface: an id nothing can match is an answer a user could
+    store and the resolver could then never recognise in a posting, which is a permanent
+    abstain that raises nothing.
+    """
+    if raw is None:
+        return ()
+    if not isinstance(raw, list) or not raw:
+        raise CatalogError(f"{where}: 'fields_of_study' must be a non-empty list")
+    specs: list[StudyFieldSpec] = []
+    seen: set[str] = set()
+    for entry in raw:
+        if not isinstance(entry, dict):
+            raise CatalogError(f"{where}: fields_of_study entries must be mappings")
+        study_id = str(entry.get("id", "")).strip()
+        if not study_id:
+            raise CatalogError(f"{where}: a fields_of_study entry is missing 'id'")
+        if study_id in seen:
+            raise CatalogError(f"{where}: duplicate field of study {study_id!r}")
+        seen.add(study_id)
+        surfaces = _regex_list(
+            entry.get("surfaces"), f"{where}: field of study {study_id!r}", "surfaces"
+        )
+        if not surfaces:
+            raise CatalogError(
+                f"{where}: field of study {study_id!r} declares no 'surfaces', so no posting "
+                "could ever name it"
+            )
+        specs.append(StudyFieldSpec(id=study_id, surfaces=surfaces))
+    return tuple(specs)
 
 
 def _fields(raw: object, where: str, answer_type: str) -> tuple[FieldSpec, ...]:
@@ -422,26 +498,38 @@ def _fields(raw: object, where: str, answer_type: str) -> tuple[FieldSpec, ...]:
 
 
 def _groups(
-    raw: object, where: str, declared: frozenset[str]
+    raw: object,
+    where: str,
+    declared: frozenset[str],
+    *,
+    key: str = "exclusive_groups",
+    label: str = "exclusive group",
 ) -> tuple[frozenset[str], ...]:
+    """A PARTITION of `declared`: disjoint groups of at least two declared members.
+
+    `key` and `label` name the block in every message and change nothing else. The
+    relatedness partition reuses this because it wants the identical shape and the identical
+    at-most-one-group rule: a field of study in two related-groups would make relatedness
+    depend on which group was consulted first.
+    """
     if raw is None:
         raw = []
     if not isinstance(raw, list):
-        raise CatalogError(f"{where}: 'exclusive_groups' must be a list")
+        raise CatalogError(f"{where}: '{key}' must be a list")
     groups: list[frozenset[str]] = []
     membership: dict[str, int] = {}
     for index, group in enumerate(raw):
         if not isinstance(group, list):
-            raise CatalogError(f"{where}: exclusive_groups entries must be lists")
+            raise CatalogError(f"{where}: {key} entries must be lists")
         members = [str(member) for member in group]
         if len(members) < 2:
-            raise CatalogError(f"{where}: exclusive group {index} has fewer than 2 members")
+            raise CatalogError(f"{where}: {label} {index} has fewer than 2 members")
         if len(set(members)) != len(members):
-            raise CatalogError(f"{where}: exclusive group {index} repeats a member")
+            raise CatalogError(f"{where}: {label} {index} repeats a member")
         for member in members:
             if member not in declared:
                 raise CatalogError(
-                    f"{where}: exclusive group member {member!r} is outside the family's "
+                    f"{where}: {label} member {member!r} is outside the family's "
                     "declared vocabulary"
                 )
             if member in membership:

@@ -103,7 +103,7 @@ DECLARED = {
     "work_auth": ("work_authorization",),
     "experience_years": ("total_years_experience",),
     "clearance": ("security_clearance",),
-    "degree": ("highest_degree", "total_years_experience"),
+    "degree": ("highest_degree", "total_years_experience", "field_of_study"),
     "contract_not_fte": ("employment_type_preference",),
     "internship": ("internship_preference",),
 }
@@ -273,6 +273,10 @@ def test_ranking_only_profile_fields_are_never_hashed(tmp_path: Path) -> None:
     fields = _identity(tmp_path).profile_snapshot["fields"]
     assert set(fields) == {  # type: ignore[arg-type]
         "work_authorization", "total_years_experience", "security_clearance", "highest_degree",
+        # field_of_study is a resolver-DECLARED input of the degree family, so it arrives here
+        # through `enabled` like every other declared field — not through the career_field
+        # exception below. Editing it must re-key, or a corrected field returns the old verdict.
+        "field_of_study",
         "employment_type_preference", "internship_preference",
         "career_field",  # engine-gated (not resolver-declared) — hashed unconditionally, per B1
     }

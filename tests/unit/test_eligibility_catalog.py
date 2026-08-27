@@ -337,6 +337,95 @@ def test_an_exclusive_implies_value_may_not_appear_in_two_groups(tmp_path: Path)
         load_rules(tmp_path)
 
 
+_STUDY = """
+    fields_of_study:
+      - id: computer_science
+        surfaces: ["computer\\\\s+science"]
+      - id: software_engineering
+        surfaces: ["software\\\\s+engineering"]
+      - id: nursing
+        surfaces: ["nursing"]
+    related_fields_of_study: [[computer_science, software_engineering]]
+    related_field_escapes: ["or\\\\s+a\\\\s+related\\\\s+field"]
+"""
+
+
+def _with_study(body: str = _STUDY) -> str:
+    return MINIMAL.replace("    exclusive_groups: []\n", "    exclusive_groups: []" + body)
+
+
+def test_the_bundled_catalog_carries_the_field_of_study_vocabulary(tmp_path: Path) -> None:
+    """A POSITIVE CONTROL against silent drop, the same shape as the suppressor census: a
+    loader that stopped carrying the vocabulary, the partition or the escapes would report
+    green while every in-field row abstained forever, which raises nothing."""
+    catalog = load_rules(tmp_path / "no-override")
+    degree = catalog.family("degree")
+    ids = [spec.id for spec in degree.fields_of_study]
+    assert len(ids) == 31
+    assert len(set(ids)) == len(ids)
+    assert all(spec.surfaces for spec in degree.fields_of_study)
+    assert len(degree.related_fields_of_study) == 6
+    grouped = [member for group in degree.related_fields_of_study for member in group]
+    assert set(grouped) <= set(ids)
+    assert len(grouped) == len(set(grouped))  # the partition is disjoint
+    assert len(degree.related_field_escapes) == 3
+    # The CLI validates what a user types against this view, so it has to see the same set.
+    assert [spec.id for spec in catalog.fields_of_study] == ids
+
+
+def test_a_field_of_study_with_no_surfaces_is_rejected(tmp_path: Path) -> None:
+    """An id nothing can match is an answer a user could store that no posting could ever
+    name: a permanent abstain with nothing raised."""
+    _write(tmp_path, _with_study(_STUDY.replace('surfaces: ["nursing"]', "surfaces: []")))
+    with pytest.raises(CatalogError, match="declares no 'surfaces'"):
+        load_rules(tmp_path)
+
+
+def test_a_duplicate_field_of_study_is_rejected(tmp_path: Path) -> None:
+    _write(tmp_path, _with_study(_STUDY.replace("id: nursing", "id: computer_science")))
+    with pytest.raises(CatalogError, match="duplicate field of study"):
+        load_rules(tmp_path)
+
+
+def test_a_related_group_member_outside_the_vocabulary_is_rejected(tmp_path: Path) -> None:
+    """A typo in the partition is a relation that can never fire, which is indistinguishable
+    from having declared no relation at all."""
+    _write(tmp_path, _with_study(
+        _STUDY.replace("[[computer_science, software_engineering]]", "[[computer_science, sofware]]")
+    ))
+    with pytest.raises(CatalogError, match="related fields group member"):
+        load_rules(tmp_path)
+
+
+def test_a_field_of_study_in_two_related_groups_is_rejected(tmp_path: Path) -> None:
+    """Relatedness must not depend on which group is consulted first."""
+    _write(tmp_path, _with_study(_STUDY.replace(
+        "related_fields_of_study: [[computer_science, software_engineering]]",
+        "related_fields_of_study: [[computer_science, software_engineering], "
+        "[computer_science, nursing]]",
+    )))
+    with pytest.raises(CatalogError, match="more than one group"):
+        load_rules(tmp_path)
+
+
+def test_a_bare_string_surface_list_is_rejected(tmp_path: Path) -> None:
+    """Prototype finding 31's silent class: a bare string is iterable, so it would compile
+    one regex per character and a space would match every phrase."""
+    _write(tmp_path, _with_study(_STUDY.replace('surfaces: ["nursing"]', "surfaces: nursing")))
+    with pytest.raises(CatalogError, match="surfaces must be a list"):
+        load_rules(tmp_path)
+
+
+def test_a_family_declaring_no_fields_of_study_carries_empty_ones(tmp_path: Path) -> None:
+    """A partial override that omits the block must load, not fail: the family then resolves
+    every in-field row to `unknown`, which is the safe direction."""
+    _write(tmp_path, MINIMAL)
+    degree = load_rules(tmp_path).family("degree")
+    assert degree.fields_of_study == ()
+    assert degree.related_fields_of_study == ()
+    assert degree.related_field_escapes == ()
+
+
 def test_family_missing_tier_is_rejected(tmp_path: Path) -> None:
     body = MINIMAL.replace("    tier: profile\n", "")  # drop the tier line
     _write(tmp_path, body)

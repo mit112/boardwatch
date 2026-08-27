@@ -393,7 +393,70 @@ def _resolve_internship(detection: Detection, facts: Facts, family: FamilySpec) 
     return Resolution(MET, "internships are acceptable", support)
 
 
-@resolver("degree", inputs=("highest_degree", "total_years_experience"))
+def _named_study_fields(text: str, family: FamilySpec) -> frozenset[str]:
+    """The catalogued fields of study this JD phrase NAMES.
+
+    Empty means the phrase named nothing the catalog knows, which is an out-of-catalog
+    failure and never a new bucket: an unrecognised field cannot be compared, so it can
+    neither clear nor block.
+    """
+    return frozenset(
+        spec.id
+        for spec in family.fields_of_study
+        if any(rx.search(text) for rx in spec.surfaces)
+    )
+
+
+def _resolve_field_of_study(
+    detection: Detection, facts: Facts, family: FamilySpec
+) -> Resolution:
+    """The declared field of study against the field the posting names.
+
+    `unmet` is reached in exactly one situation: the posting names a CLOSED set of catalogued
+    fields, the declared field is neither in it nor reviewed-related to anything in it, and
+    the posting offers no relatedness escape. Every other shape abstains, because a wrong
+    `met` here tells a job seeker an unrelated degree qualifies and a wrong `unmet` deletes a
+    job they could have had -- and only the first is unrecoverable for them.
+
+    Relatedness needs BOTH halves: the catalog's reviewed partition says two fields are
+    interchangeable, and the posting's own escape says it will accept an interchangeable one.
+    "Must have a Computer Science degree" means Computer Science, and the catalog has no
+    standing to overrule it.
+    """
+    declared = facts.field_of_study
+    if declared is None or declared not in {spec.id for spec in family.fields_of_study}:
+        # Absent, or a value this catalog does not declare. Both are unresolvable profile
+        # values, so both abstain in both directions (the keystone).
+        return Resolution(UNKNOWN, "missing_profile_field:field_of_study")
+    text = detection.values.get("study_field") or detection.values.get("study_field_alt")
+    if not text:
+        return Resolution(UNKNOWN, "the posting's field of study was not captured")
+    named = _named_study_fields(text, family)
+    if not named:
+        return Resolution(UNKNOWN, "the posting names no catalogued field of study")
+    support = _fact_support("field_of_study", declared)
+    if declared in named:
+        return Resolution(MET, f"the posting names {declared}", support)
+    escapes = any(rx.search(text) for rx in family.related_field_escapes)
+    # The partition is disjoint, so at most one group holds the declared field and `next`
+    # needs no tie-break.
+    related = next(
+        (group for group in family.related_fields_of_study if declared in group), frozenset()
+    )
+    if related & named:
+        if escapes:
+            return Resolution(MET, "a reviewed-related field the posting accepts", support)
+        return Resolution(
+            UNKNOWN, "the posting names a specific field this one is only related to"
+        )
+    if escapes:
+        return Resolution(
+            UNKNOWN, "the posting accepts related fields, and no reviewed relation applies"
+        )
+    return Resolution(UNMET, f"the posting requires {'/'.join(sorted(named))}", support)
+
+
+@resolver("degree", inputs=("highest_degree", "total_years_experience", "field_of_study"))
 def _resolve_degree(detection: Detection, facts: Facts, family: FamilySpec) -> Resolution:
     pattern = detection.pattern
     attained = facts.highest_degree
@@ -413,11 +476,11 @@ def _resolve_degree(detection: Detection, facts: Facts, family: FamilySpec) -> R
             named = int(gname[len("coord_rank"):].split("_")[0])
             bar = named if bar is None else min(bar, named)
     if pattern.implies == "degree_required_with_field":
-        # The field of study is not stored, so a satisfied RANK cannot establish `met`. Rank
-        # below the bar is still decidable: no field can rescue a missing degree.
+        # Rank FIRST, and it stays decidable on its own: no field can rescue a missing degree,
+        # so the field comparison only ever runs on a rank that already clears the bar.
         if bar is not None and rank < bar:
             return Resolution(UNMET, f"rank {rank} < {bar}", support)
-        return Resolution(UNKNOWN, "field of study is not recorded in the profile")
+        return _resolve_field_of_study(detection, facts, family)
     if bar is None:
         if rank == 0:
             return Resolution(UNMET, "no degree completed", support)

@@ -143,6 +143,7 @@ _ELIG_INIT = (
     "3\nacme\nBackend engineer: Python, Go.\n\n\n\nn\n"  # companies, profile, filters, remote
     "y\n"                          # set up eligibility now?
     "\n"                           # career field: skip
+    "\n"                           # field of study: skip
     "citizen\nus\n\nblocker\n"     # work_auth: skip needs_sponsorship
     "\n\n"                      # experience_years: skip field, default policy
     "\n\n\n\n\n\n"              # clearance: skip five fields, default policy
@@ -235,6 +236,7 @@ _ELIG_EDIT = (
     "\n"                               # keep target seniority band
     "y\n"                              # update eligibility checks?
     "\n"                               # career field: skip (keeps stored value)
+    "\n"                               # field of study: skip (keeps stored value)
     "permanent_resident\nus\n\n\n"     # work_auth: change status, skip bit, default policy
     "\n\n"                             # experience_years
     "\n\n\n\n\n\n"                     # clearance (five fields plus policy)

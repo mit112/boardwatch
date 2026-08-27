@@ -507,7 +507,9 @@ def test_init_reprompts_on_a_bad_eligibility_answer_instead_of_aborting(env: Pat
             else:
                 elig.append("")  # skip
         elig.append("")  # policy: accept the neutral default
-    preamble = ["3", "acme", "Backend engineer.", "", "", "", "n", "y", ""]  # skip career field
+    # The two trailing blanks skip the career-field and field-of-study prompts, which are
+    # single catalog-scalars rather than family fields, so the loop above cannot reach them.
+    preamble = ["3", "acme", "Backend engineer.", "", "", "", "n", "y", "", ""]
     result = _run(env, ["init"], "\n".join(preamble + elig) + "\n")
     assert result.exit_code == 0, result.output
     facts, _ = _profile(env)
