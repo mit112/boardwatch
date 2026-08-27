@@ -85,6 +85,80 @@
 
 ---
 
+
+**GATE P4 IS MET — the owner blind craft review PASSED cleanly (2026-08-26).** Mit reviewed 13 anonymised
+résumés (8 boardwatch + 5 job-apps decoys) rendered-page-only. All five he judged WORSE were job-apps decoys;
+all three he judged BETTER were boardwatch (Perplexity/Anthropic/Figma); the other 5 boardwatch were on-par.
+Both orphan-page-2 defects were decoys — the failure mode D-303's fill fix eliminated. **P4 objective half
+(0 anti-slop violations) + subjective half both pass → P4 gate MET.** Assembler/key in
+`.agent/2026-08-25-craft-findings/` (build_p4_blind_sample.py, p4_blind_key.md).
+
+**SYSTEM PROVEN STABLE — 21 clean runs (92, 94–113), 1 failure (run 93, the pre-fix crash).** Corpus grew to
+57,175 postings / 48,084 open; watched 140 (CMU's recurring-422 dead board removed as hygiene); 85 lane-
+discovered companies recorded unwatched. 4 clean SCHEDULED ticks (92/95/101/108) + many clean manual runs; both
+fixes hold every run; lanes healthy (no silent outage). Manual-run cadence was eased to scheduled-ticks-only at
+session end to cut lane-leak accrual + conserve the rate-limit window. **The provisional pass (D-280) is
+effectively met on quality** — P4 gate met, B1–B7 pass every run — but **the freeze is no longer stable:
+D-319 moved `engine_version`, so the frozen-run count restarts from the first tick on `1+5bf77461f044`.
+
+**FINISH-LINE INSTRUMENTATION BUILT (`.agent/2026-08-25-craft-findings/`, gitignored).** `finish_line_cert.py`
+scores B1–B7 + freeze + P6 per run (validated on run 90: all PASS incl. independent pdfinfo 1-page; only
+post_fill fails, correctly). B4 PASS + NON-VACUOUS (350 résumés / 3,426 bullets / 0 fabrications; negative
+control catches drift+bogus-id). P4 objective checks (title-seniority / register / buzzword / requirement-echo
+/ overmatch) 0 violations over delivered, non-vacuous (33 senior JDs stripped). **P6 leakage 0.00% over a FULL
+7-day window** (ledger spans 08-19→08-26). B5 guard reviewed SOUND TO CERTIFY. **Remaining for provisional
+pass: role fix live + 3 clean post-(fill+role) scheduled runs + the owner P4 blind review** (assembler ready:
+`build_p4_blind_sample.py`, filters delivered by `e61a1956`).
+
+**THE DAILY DRIVER IS FIXED AND THE CADENCE IS RAISED.** Run 70 (2026-08-23 08:00) died on a corpus-sized
+`IN` list crossing SQLite's 32,766 bound-parameter cap at 32,771 open postings; six sites were over at
+once. Fixed and merged (D-287). The launchd job now fires **eight times a day** — 02, 05, 08, 11, 14, 17,
+20, 23 — instead of once (D-288).
+
+**`runs` RESET TO 0 when the job was reloaded.** The pre-reload reading was `runs = 5, last exit code = 1`;
+any absolute comparison against that number is void. The gate counts consecutive clean **ticks**, not
+launchd invocations.
+
+**GATE P3 IS MET — 20 CONSECUTIVE CLEAN SCHEDULED TICKS (runs 71-90), verified 2026-08-26.** All twenty carry
+`runs.status='ok'` with `boards_attempted>0` at the scheduled 3h slots; run 70 (13:00 UTC 08-23) was the last
+failure. **Verified from the live `runs` table + per-run funnels, not this file's count** — STATE lagged
+because the job fires 8×/day and is written once per session. **7 required, 20 clean → MET.** Only a SCHEDULED
+tick counts (`boards_attempted>0`) — a manual `run` and the phantom **run 91** (see below) move nothing; a
+failed unattended run resets the streak.
+
+**A BOUNDED PUBLIC-READINESS EFFORT SHIPPED AND `0.5.0` IS LIVE (D-299).** Scope was exactly three
+workstreams — onboarding, README/ease-of-use, release currency — no feature expansion. `boardwatch guide`
+and next-step CLI hints ship (PR #156); the README is compressed onto one canonical path with reference
+depth moved into five linked guides (PR #156); a Windows-only nightly failure in the coverage-help test
+was fixed test-only (PR #157); `0.5.0` is published to PyPI, GHCR, and a GitHub Release, verified with a
+clean isolated install (PR #158) — the first release since `0.3.0`.
+
+**PHASE 6 (COMMUNITY-HOME) GROUNDWORK IS OPEN AS DOCS-ONLY PR #160 — gate-neutral, `make check` green,
+UNMERGED (Mit's to merge).** A GitHub Discussions launch plan (`docs/community.md`; **prep-and-hold** — Mit
+enables Discussions manually at launch), a 6-provider capability matrix (`docs/provider-matrix.md`), and a
+"Contributing a board" walkthrough in `CONTRIBUTING.md` (narrow local check = `pytest tests/unit/test_registry.py`).
+Moves no program gate (the memo's continuation boundary). Stale nightly issue #142 closed — its commit
+predates #157's fix, verified green on the full-matrix `workflow_dispatch` on `794eae2`. **Good-first issues
+HELD** (Mit's call). Remaining owner launch decisions from the memo are still unsettled.
+
+**The ASAP execution plan (D-280) governs.** "Done" is a **provisional pass** — 3 clean FROZEN runs meeting
+all seven bar metrics (B1–B7) — after which the full 14-day acceptance runs PASSIVELY to confirm. Six
+sessionized parts; the plan file at `~/.claude/plans/lets-use-this-session-staged-wren.md` **still names
+Part 3 "Indeed" and Part 4 "hiring.cafe + GitHub lists" — that ordering was REVERSED by D-285 and the file
+was never rewritten. Trust D-285/D-286, not the plan file.**
+
+**B5 IS NOW SCOREABLE — the zero-output guard is ARMED on run-scoped rank attribution (D-302, PR #164 = `0fb50a7`, MERGED 2026-08-25 and armed on the live driver).**
+The guard counts the four SUPPRESSION drops restricted to the postings judged this run
+(`hidden_handled_this_run`/`hidden_applied_this_run`/`hidden_duplicate_this_run` + `dead_this_run`) and fires
+when `J − Σsuppressions_this_run > 0` with 0 leads; a negative raises a typed reconciliation error. Rejections
+(hard-filter/non-SWE/over-seniority/below-cutoff) are meant to FIRE the guard (D-246), by owner ruling. No
+`artifact_version`/`engine_version` change → no drain; freeze-safe. `make check` green (7584); whole-branch
+review APPROVE. The scheduled driver now runs it; B5 can be certified in the frozen runs.
+
+**B1 caveat, still live (D-281).** A 14-day B1 pass does NOT evidence discovery health — it is close to
+guaranteed for ~92 runs by ledger drain alone; the real threat is a **ledger reopen**, which re-serves built
+jobs and scores them 0 net-new.
+
 ## Gate A internals
 
 - **A closed review loop is evidence about the slices reviewed, not about the subsystem being
@@ -375,6 +449,47 @@ movement is real and visible:** Capital One 34.7% → 37.4% (650 → 700 held), 
 50/run exactly as D-270 predicts.
 
 
+
+**TWO SCAN-ROBUSTNESS FIXES SHIPPED + LIVE (D-306 #167, D-307 #168, 2026-08-26).** (1) `apply.py` now collapses
+a duplicate `provider_posting_id` within one board snapshot — a Workable board (`alexander-dennis`) that lists
+one shortcode twice was crashing the whole run on `UNIQUE(company_id, provider_posting_id)`. (2) `_scan_body`
+now isolates a board's `apply_board` failure per-board (count failed, continue) instead of aborting the run.
+Both TDD, both merged and pulled to the primary tree. Neither is an eligibility module →
+`engine_version` unchanged, no drain, freeze-safe. Found by firing runs, not by review.
+
+**COVERAGE vs job-apps — RE-MEASURED, and the earlier read was WRONG ABOUT WHERE THE GAP IS (D-310/D-311).**
+The prior note said native ATS imports "top out at ~40%" and that only the lanes could close the gap. The
+39.6% was the CEILING, not the position: boardwatch was watching boards for only **58 of job-apps' 465**
+(12.5%). Re-derived by keying each queue posting to the `(provider, slug)` boardwatch would use — for Workday
+the FULL composite `host/tenant/site`, which an earlier pass got wrong by comparing bare tenants and so
+counted already-watched boards as new. Result: **125 postings across 97 boards were addable with ZERO new
+code**. Imported with `--verify`: **95 watched, 2 skipped** (Comcast dead, CMU errored), so the fleet went
+**140 → 235** and projected scan time 20 → **33 min** against the 180-min cadence. These are employers
+job-apps never TARGETED — it found them through Indeed/JobRight — which is why last session's import of its
+222-company target list netted only +7 and this one netted +95.
+
+**NEW ATS PROVIDER ADAPTERS ARE NOT WORTH BUILDING — measured, and it inverts the standing assumption
+(D-311).** Owner-gated item 2 recorded Oracle Cloud HCM + iCIMS as "~45% of the non-six tail". That was a
+share of a small tail, not of the market. Over job-apps' full **138,788-posting** ledger: LinkedIn **49.7%**,
+Indeed **23.4%**, Workday 10.0%, Greenhouse 3.4%, company-custom 3.6%, Ashby 1.1%, **Oracle Cloud 0.84%,
+iCIMS 0.44%, Eightfold 0.28%**, and every other platform below 0.2%. So the two "big" candidates are ~1.3%
+combined. **~73% of the market is LinkedIn + Indeed**: Indeed is out of scope, and LinkedIn is already a lane
+— which is where leverage actually is, now that it has a keyword facet. `lane_posting_budget` is OUT of
+`config_hash` (manifest.py), so raising the LinkedIn body budget is freeze-safe and is the cheapest next
+experiment. Do NOT build per-ATS adapters at 0.1–0.8% each.
+
+**BOARD FLEET CLEANED + DOCTOR DETECTS MIGRATIONS (2026-08-24, D-300/D-301).** The 135 watched boards were
+diagnosed: exactly **17 contributed zero** — not the 59 STATE claimed, which was a `postings_listed`-on-304
+measurement artifact (the 118 `ok` boards hold 39,253 open postings). Root cause was ATS migration; **6
+boards recovered (~3,522 postings), 11 dead unwatched → 124 watched, 0 dead/error/empty**. `doctor` now
+suggests cross-provider board migrations (#161, D-301). Precision was confirmed **already armed** on `main`
+(no move owed). PR #160 (community-home prep) merged. Part-4a's capped ramp is already shipped — see below.
+
+> **D-291's "920 boards, 887 new" is real but its stated corpus is wrong**, and the difference is 4x. The
+> figure is the **two new-grad lists' `active=True` records** (3,778 → 927 boards / 898 new, reproduced), not
+> "all 6,088 active records" as the ruling reads. All four lists, unfiltered, give **3,881 / 3,813**. A board
+> count needs its list set AND its `active` filter stated beside it. Full table in METRICS 2026-08-24.
+
 ## Precision gates — eligibility, role, location, seniority
 
 **Eligibility now decides AND removes.** `work_authorization.needs_sponsorship=true` set (D-249); a
@@ -438,6 +553,67 @@ empty day?" is always yes by construction — a complete partition cannot eviden
 the stale-premise docstrings were corrected, at both sites. **Owner call: run-scoped rank attribution is the
 only honest fix, and until it exists B5 is unscoreable.**
 
+
+**D-305 IS SOUND — do not re-investigate the "analyst titles still delivered" report.** Verified against
+the live module (`Risk Strategy Execution Analyst` → `not_swe`) and the delivery path (`runner.py:895` passes
+no `include_non_swe`). All three offending artifacts are from **run 90, pre-fix**; post-fix runs 92–114 carry
+**220 artifacts, 0 `not_swe`**. The remaining delivery-side leak is the 69 `uncertain` (31.4%), and the split
+is **46 noise / 13 real SOFTWARE / 10 real NON-software engineering** — Mit ruled hardware and silicon are
+noise for him, so the honest noise rate is **56 of 69 and only 13 are roles he wants**. (An earlier draft of
+this file said "about half are real engineering"; that was wrong in the direction that mattered and is
+corrected here — D-313.) A taxonomy fix would still destroy the 13. Noise concentrates in BOARDS:
+**AlphaHire unwatched** on Mit's ruling (59 open, 0 `swe`), fleet 235 → **234**; Genentech and
+Walmart-external measured and ruled KEEP. Delivery-side work is owned by a separate session.
+
+**PRECISION LEAK (10.3% non-SWE leads) FIXED + MERGED + LIVE (D-305, PR #166 = `cbe6df9`, 2026-08-25).**
+Two distinct leaks, two gates: (1) non-SWE families (analyst/specialist/administrator/advisor) — `role_verdict`
+returned `"uncertain"` for no-signal titles absent from the deny catalog and `top_cmd.py:350` vetoes only
+`"not_swe"`; fixed by a `_NOENG`-guarded deny in `rank/role_gate.py`'s `_DENY_FAMILIES_SOFT`. (2) eng-managers
+were a SENIORITY-gate bug — the management-word guard was comma-scoped, so the INVERTED form ("Manager, Software
+Engineering") shipped `in_band` while "Engineering Manager" was already `above_band`; the comma is the
+discriminator, fixed in `rank/seniority_gate.py`. **Ranker-only — engine_version unchanged, NO drain**
+(D-294/D-295). Opus-reviewed; verdict-neutral over 37,979 live titles (role `uncertain→not_swe` 2,150; band
+`in_band→above_band` 386; **ZERO swe demotions, ZERO backward band moves, ZERO newly-shipped**). Pulled into
+the primary tree this session, so the next scheduled tick runs it. **Cert (3 clean B1–B7 runs) counts from the
+first post-(fill+role) tick = run 92.** THREE autonomous owner calls flagged for Mit's veto (see
+`rolegate-nonswe-and-eng-manager-precision-shipped` memory): option-(b) seniority home for eng-mgrs; broad
+families; the bare-`security specialist` carve-out reversal.
+
+**RULINGS 1, 2 AND 4 SHIP; RULING 3 IS DROPPED (D-294/D-295). PR #148 MERGED.** The role gate denies
+non-software title families and blocks `Team Leader`; the foreign-location gate gained a CJK-script signal.
+**Ranker-only — `engine_version` unchanged (`1+63c6f8fd5a3e`), no ledger drain.** Ruling 3
+(`company_title_location` suppression) was implemented, audited over three rounds, and dropped: no
+body-similarity floor separates a repost from a second opening (populations overlap).
+
+**Round 3 found a production defect in EACH half — three rounds, three defects, each invisible to the round
+before.** The standing lesson is now explicit: **a review round is not finished until a round finds
+nothing.**
+
+- **Role gate:** the front-end rescue's head nouns were `(engineer|...|lead)\w*`, so `lead` was
+  **`lead\w*` and matched "Leader"**, re-rescuing as `swe` the exact retail rows ruling 2 denies — the same
+  failure as the `manager` token D-294 had already rejected. The comment two lines below *and* D-294's own
+  record both asserted `\blead\b` does not match "Leader"; the code never had that property. Fixed by an
+  inner group, **verdict-neutral over 27,680 unique titles**, 0 live hits today — only breadth would have
+  surfaced it.
+- **Ruling 3:** its floor was calibrated at min-true-duplicate 0.9421 vs max-non-duplicate 0.8986. Reading
+  the body diff of all 40 suppressions below 0.945 found **9 are different openings** — GE HealthCare's
+  Lubbock / Salt Lake City / Chattanooga postings (all `locations=["Remote"]`), a Capital One pair whose
+  loser's own URL reads `Lead-Software-Engineer--Front-End`, Thomson Reuters Indirect vs Direct Tax. Non-
+  duplicates reach **0.9372**: the window is ~0.005 and **the populations overlap, so no floor separates
+  them**. The char→word metric change made it *worse*. And no test constrained the constant — any floor in
+  (0.1915, 0.9550] left the suite green.
+
+**Dropping ruling 3 dissolved both dedup findings at once**, because each followed from admitting a second
+suppressing kind; a forced single-kind control returns byte-identical suppressions (566/566). The cost was
+measured before the choice: delivered duplicate leakage is **3 of 146 = 2.05%**, inside Gate P6's 5% bar
+**without** ruling 3. A redesign on the real discriminators — requisition slug, the body's own city, salary
+band, YOE, all of which lie *outside* the similarity number — is **deferred, not dismissed**.
+
+**The precision work is a PREREQUISITE for raising the cap, not a yield gain.** Measured against delivered
+output rather than the corpus: 6 of the 146 résumés ever built were for roles the new gate rejects, and
+exactly **1 of run 71's 40 leads** would have been denied. D-292's "51.1% carries no software signal" is a
+property of the *uncapped* 3,771 — the ranker already sorts most of it below the cap.
+
 ## Lanes and JD acquisition
 
 **A discovery lane without a JD body produces ZERO leads (D-272).** The eligibility engine is
@@ -480,6 +656,57 @@ first step pins the GraphQL document and headers against the live endpoint — u
 transcribed from a summary. Owed with the client, not phase 1: §4.5's four quality controls, §4.7's
 browser-UA `Fetcher`, and a drain for any stub bucket the lane creates.
 
+
+
+**THE LANE ROLE FACET IS BUILT — the lanes now ask for the USER'S target roles (D-309).** Both aggregator
+lanes searched FACET-LESS, which returns the general labour market rather than the user's. Measured on the
+live store 2026-08-26 over 282 open lane-provider postings: **3 `swe` (1.1%), 82 `uncertain`, 197 `not_swe`**
+— and the three real ones (Siemens ×2 semiconductor digital-twin SWE, Zensar data engineering) are
+US-eligible but rank BELOW the N=10 cap. **The gates were not rejecting software work; there was almost none
+to reject** — lane discovery turned up zaxbys, dominos, twinkletoesnanny, best-choice-roofing. The delivered
+non-SWE résumés (Business Unit Leader, Front Office Agent, Instructional Aide — runs 106/112) came through
+the `uncertain` role fail-open, not a gate failing to fire. Fixed UPSTREAM: `lanes/facets.py` derives search
+facets from `profile.target_titles_json` (never a query written into a lane — that is the multi-tenancy
+requirement and why both contracts deferred it), and each lane issues one search per facet, interleaved so
+the body budget reaches every facet. hiring.cafe uses the robots-**PERMITTED** path route `/jobs/{role}` —
+its own `?searchState=` query search is `Disallow`ed, so the obvious build would have broken a compliant
+lane. LinkedIn uses `keywords=` (owner-probed: baseline 0/10 SWE → keyworded **10/10**; `start` pages but
+buys nothing against the body budget; `location=` is silently ignored so it is never sent). Live end-to-end
+through the real lane on the live profile: **16 `swe` + 2 technical `uncertain`, 0 `not_swe`**, 13 of 14
+facets contributing, 0 duplicate `provider_posting_id`. `engine_version` **verified identical**
+(`1+63c6f8fd5a3e`) in both trees and no new `Settings` field, so **no ledger drain and no freeze change**.
+GitHub-lists arming (+10 boards) and the one-off import of job-apps' targets stand from D-308: coverage of
+job-apps' 465-item eligible set is **13.1%** (native ceiling 39.6%, aggregator-only 60.4%).
+
+**LANES ARE RE-ARMED WITH THE FACET LIVE (2026-08-26 18:51Z).** `lanes_enabled = ["hiringcafe","linkedin"]`,
+fleet **234** boards. #169 merged (`2895dec`) and was pulled into the primary checkout; the editable venv was
+verified to resolve `lanes/facets.py` and to build both PROBED request forms
+(`hiringcafe.com/jobs/software-engineer` and `?keywords=software%20engineer&f_TPR=r86400`).
+**Run 115 (19:00Z) is the FIRST faceted tick and was still in flight at session close** — 1,088 body captures
+in 27 min against 234 boards, `boards_attempted` not yet written. **VERIFY IT FIRST NEXT SESSION** with
+`.agent/2026-08-26-lane-facet/verify_facet_run.py 115`, which reports lane yield by role verdict against the
+1.1%-SWE pre-facet baseline. Note today has FOUR regimes and no figure may be compared across them: fleet
+140→235 at ~11:40 CDT, AlphaHire unwatched ~12:10, lanes disarmed 12:10→18:51, facet armed 18:51.
+
+**FACET CONFIRMED LIVE ON RUN 116 (2026-08-27 ~00:20Z).** 10 delivered leads, both lanes contributing
+(hiringcafe 21 attempted/20 resolved, linkedin 36/18); **7 clearly software** (MAG Aerospace, GM Software
+System Architect, MeeBoss, Kimley-Horn, KION Software Support, Cellebrite iOS Reverse Eng, Copeland) vs the
+~1.1% pre-facet baseline. The 3 residual non-SWE (Humana, Raymond James, KION Commissioning) are the
+`uncertain` fail-open; run 116 ran on veto-LESS code (the primary checkout was pre-#171 until session close),
+so the NEXT tick runs the zero-signal veto (#171) against exactly those.
+
+**PARTS 1, 2, 3, 4a AND 4b ARE COMPLETE.** Part 4a (GitHub-lists) landed #149/D-296. **PART 4b (LinkedIn) IS
+BUILT (D-297)** — a lane sibling of hiring.cafe, OFF by default (`linkedin` not in `lanes_enabled`), **NOT
+armed, never run live**. Built from D-290's recorded contract, not a fresh probe (Mit's "build from recorded
+contract" ruling), so the card **selectors are RECONSTRUCTED, not freshly pinned** — arm-time live
+verification is owed before enabling. Identity keys on the company **slug** (`externalApply`=0, no apply URL);
+id from the URN not the URL tail; only `f_TPR=r86400` sent. No capture committed; authored fixtures. Next is
+**Part 6** (freeze + 3 frozen B1–B7 runs), with Part 5 anytime.
+
+**The lane (hiring.cafe) is BUILT but NOT ARMED and has never run against the live service.**
+`lanes_enabled` defaults empty. Part 3's exit criterion 2 — a lead at a company none of the six providers
+reach, carrying a real JD body — is **unevidenced**; a scratch run is owed before arming, and arming waits
+on Gate P3 anyway. Detail: D-286.
 
 ## CI health
 
@@ -545,3 +772,31 @@ an import source, never hand-fixed (D-155).
   `scratchpad/gen_corpus.py` is missing — its inputs all survive in `.agent/p2-catalog/` (`proto.py` the
   oracle, `matrix.py`, `adv.py`). They are **gitignored**, so a `.agent/` clean is what would make the 987-row
   oracle truly unrecoverable; committing a generator plus its inputs is an owner call, not done.
+
+
+**THE DELIVERY QUEUE + LOCAL REVIEW WEB APP SHIPPED, ARMED AND POPULATED (D-318, PR #173 = `0361145`).** A
+second root `~/boardwatch-queue` holds COPIES of every delivered-unapplied lead (résumé, apply link, frozen
+JD, `details.json`), deduped by canonical `job_id`; the dated tree is NEVER touched (freshness/verify/the B4
+fabrication audit all key on it). `boardwatch web` serves a triage queue + per-run diagnostics on loopback
+with a per-install 0600 token; `prime_queue` runs on startup. `engine_version` unchanged, no ledger drain,
+freeze-safe; the write surface is confined to the queue root (audited). Armed at session close: primary
+checkout fast-forwarded to `0361145` and the queue primed to **588 leads**; served on a FREE port because the
+owner's Bridge server holds the default 8787. The `finally`-block hook refreshes it every tick. A pre-existing
+latent flaky test was fixed in the same PR (`test_contention_is_not_a_failure`, `Console` width pin vs a deep
+xdist tmp path → raised to 10_000; the rebase was innocent).
+
+**P4 CRAFT UNDER-FILL FIXED — the daily run now fills résumés to the page (D-303, 2026-08-25).** The P4
+blind review FAILED on ~3 under-filled résumés: the daily run projected with base `projection.yaml`
+(`runner.py:848`), whose `fill_to_page` defaults False; the earlier fill fix went only to the DORMANT
+`projection.sde/ios/data.yaml` (persona routing is unwired — D-304). Fix = added `fill_to_page: true` +
+`sort_projects_by_date: true` to base `projection.yaml`, owner-reapproved (digest `87513b4d`→`e61a1956`,
+stamp on disk). Config-only; **no engine_version change, no ledger drain; freeze-safe.** Verified via a real
+render path (thin postings 3→7 entries; compiled PDF 1 page) and the whole delivered set audits clean.
+Fill overflow reviewed: it CANNOT ship 2 pages (two independent gates: select `_grow` + `run_tailor`
+re-gate). First delivered filled résumés = the first scheduled tick after the 01:25 UTC approval (run 90
+finished 01:21, pre-approval; a phantom run 91 took the id — see below), i.e. **run 92 onward**.
+
+**PERSONA ROUTING INTO THE RUN — DEFERRED by owner (D-304).** `select_persona`/`apply_persona` run only in
+the `tailor` REPORT path; the daily-run PROJECTION path is persona-blind and nothing maps
+role-family→`projection.<persona>.yaml` (those 3 files are dormant). D-303 fixed the under-fill uniformly, so
+per-persona projection is emphasis polish, not a fix — deferred; a real-discriminators redesign is future work.

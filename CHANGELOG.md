@@ -6,6 +6,31 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Fixed
+
+- **A years-of-experience requirement can now make a posting ineligible (D-319).** Two independent reasons it
+  could not before. `experience_years` ships with `default_policy: preference`, and only a `blocker` family
+  can yield `ineligible`, so a correctly-detected and correctly-resolved "Minimum of 12 years of experience"
+  was written into the evidence chain and then discarded — set it with
+  `boardwatch eligibility policy set experience_years blocker`. And `scoped_years_minimum`, the family's
+  highest-volume pattern, abstained unconditionally on the grounds that no per-skill durations are stored.
+  One direction of a scoped requirement needs no per-skill data: **a duration scoped to a single skill cannot
+  exceed the career it sits inside**, so `total < need` now resolves `unmet`. The other direction still
+  abstains — `total >= need` says nothing about that skill, and a wrong `met` is the worst verdict this design
+  can produce. Measured over a 588-posting delivered set, 142 of which state a minimum of five or more years:
+  101 of those 142 are now blocked. **Changes `engine_version`, so stored eligibility evaluations
+  re-evaluate on the next run.**
+
+- **An activity gerund is read as a years floor (D-320).** `5+ years building and deploying web applications`
+  names no "experience" and was invisible to every pattern in the family; 37 of the 142 postings above
+  produced no requirement row at all. Added as `scoped_years_activity`, with its own `activity_years_minimum`
+  vocabulary value so it cannot collide with the total/range/scoped exclusive group. Aggregator summaries
+  phrase floors this way, so this mostly affects lane-sourced postings.
+
+- **The company's own tenure is no longer read as a requirement (D-320).** `We bring 30 years of experience
+  to every engagement.` resolved `unmet` against a one-year profile: the company-side subject suppressor
+  required a noun (`our team has`), which a bare `we` subject escapes.
+
 ## [0.5.0] - 2026-08-24
 
 Catches the published package up to `main` (608 commits since 0.3.0). The headline change for users
