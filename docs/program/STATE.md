@@ -71,6 +71,18 @@ machine produces leads, it never applies (out of scope). Against that: **4 publi
 `0.5.0`**, ~53k lines of source, **7,584+ tests**, 71 leaf CLI commands, 6 ATS providers, a **~1.4 GB**
 store holding **51,004 postings / 43,286 open** (2026-08-26).
 
+> **PHANTOM run 118 (benign, mine, and STUCK `running`).** The production-path verification for D-319
+> was a `boardwatch top --no-record` against the LIVE store, which calls `ensure_run`. It wrote **4,400
+> eligibility evaluations** under `1+5bf77461f044` — the rows the paired old-vs-new comparison in METRICS
+> is measured from, so they are real and correctly stamped — and was then stopped part-way, leaving
+> `runs.id=118` at **`status='running'` forever** with `boards_attempted=0`, 0 artifacts and 0
+> `job_dispositions`. Gate P3 is unaffected: its filter is `boards_attempted > 0`, which excludes this
+> row exactly as it excludes run 91. Left in place for the same reason run 91 was — the production store
+> has no rollback snapshot and deleting a row is riskier than an inert one. **Consequence: the first
+> scheduled tick on the new engine is run 119, not 118.** Two lessons, both already known and both
+> ignored here: `top` writes a run even with `--no-record` (that flag governs the `seen` cursor, not
+> `ensure_run`), and a full-corpus read against the live store is a WRITE.
+
 > **PHANTOM run 91 (benign, mine).** A `boardwatch tailor run 13549` verification without a scratch
 > `BOARDWATCH_DATA_DIR` called `ensure_run` and wrote to the LIVE store: run 91 (empty, `boards_attempted=0`,
 > 36ms) + one `artifacts` row (id 498, uri→`/tmp`). NO `job_dispositions`, posting 13549 NOT marked handled,
