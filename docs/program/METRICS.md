@@ -169,7 +169,7 @@ reports drift without writing, and `make check` depends on it (D-109).
 | METRICS.md | 6963 | Session — 2026-08-26 (P4 gate MET, two scan-robustness fixes, lanes armed + leak found — D-306/D-307/D-308) |
 | METRICS.md | 6989 | Session — 2026-08-26 (the lane role facet: lanes now ask for the user's target roles — D-309) |
 | METRICS.md | 7132 | Session — 2026-08-26 (the years-of-experience gate had never fired — D-319/D-320) |
-| METRICS.md | 7328 | Session — 2026-08-27 (the provisional pass was already met; citizenship, dedup refuted, fleet ramp — D-322/D-324/D-325/D-326) |
+| METRICS.md | 7328 | Session — 2026-08-27 (the provisional pass was already met; citizenship, dedup refuted, fleet ramp, and s/board refuted — D-322/D-324…D-331) |
 
 ---
 
@@ -7325,7 +7325,7 @@ figure may be compared across them:** pre-fix (`1+63c6f8fd5a3e`, through run 117
 
 ---
 
-## Session — 2026-08-27 (the provisional pass was already met; citizenship, dedup refuted, fleet ramp — D-322/D-324/D-325/D-326)
+## Session — 2026-08-27 (the provisional pass was already met; citizenship, dedup refuted, fleet ramp, and s/board refuted — D-322/D-324…D-331)
 
 ### The provisional pass — MET by runs 119-123, then HELD by the owner
 
@@ -7340,6 +7340,7 @@ self-report.
 | 121 | 234 | 3319 | 14.2 | 10 | 10/10 | yes | none | 0 | checked 10 / dead 0 | 66,590 |
 | 122 | 234 | 3286 | 14.0 | 10 | 10/10 | yes | none | 0 | checked 10 / dead 0 | 68,780 |
 | 123 | 234 | 3370 | 14.4 | 10 | — | — | — | — | — | — |
+| **124** | **346** | **3424** | **9.9** | 10 | — | yes | none | 1 | checked 10 / dead 0 | 80,737 |
 
 Run 119 is 27.1 s/board because it re-evaluated the whole corpus on a new engine — **that is the cost of
 an engine move, and it is ~2x**. **B1 net-new is confirmed, not assumed:** the four `built` sets over
@@ -7374,7 +7375,7 @@ citizenship"*. Delivery is dominated by the abstain bucket — of the 40 leads f
 `uncertain` and 5 `eligible`**. Deliverable pool (open, never-handled, eligible+uncertain) is **38,904**,
 so losing 393 cannot threaten B1.
 
-### The near-duplicate reversal — REFUTED (owes D-327)
+### The near-duplicate reversal — REFUTED (D-327, #185)
 
 Match rule: `company_id` + `normalize_title` + `normalized_locations`, corpus **70,550 open postings**.
 
@@ -7430,3 +7431,170 @@ is not stored"* — **missing facts, addressed by #184/D-326**. Correct and left
 the fact model records ONE jurisdiction, so declaring `us` does not assert the absence of others), plus
 the "or equivalent" waivers and conflicting-statement abstains. CACI posting 76384 carried **two** rows
 and abstained on **both** — citizenship and clearable — so it had two independent chances to be blocked.
+
+### Run 124 — the board-cost measurement, and it refuted THREE cost models
+
+The primary tree was deliberately left unpulled at `91f90d8` so run 124 executed the OLD engine, which
+isolates the cost of the fleet ramp from the cost of an engine change.
+
+| Run | Boards | Secs | min | s/board | Leads | Reconciles | Fatal | Errors | Liveness |
+|---|---|---|---|---|---|---|---|---|---|
+| 123 | 234 | 3370 | 56.2 | 14.40 | 10 | — | — | — | — |
+| **124** | **346** | **3424** | **57.1** | **9.90** | 10 | yes | none | 1 | checked 10 / dead 0 |
+
+**+112 boards cost +54 s — 0.48 s per ADDED board.** Run 124: 346 attempted, 259 complete, 1 failed,
+25,195 postings seen; lanes hiringcafe 76/56 and linkedin 66/50, neither a silent outage.
+
+**Three cost models were refuted by this one run, and all three had been used to plan with.**
+
+1. **"14.0 s/board"** predicted 346 × 14.0 = 4,844 s (81 min). Actual **57 min — overpredicted by 24
+   minutes.** It averages a wildly skewed population, so it cannot extrapolate to a batch whose provider
+   mix differs from the current fleet's, which is every remaining batch.
+2. **"A cold first scan is expensive because it has no ETag."** The **106 cold scans were the CHEAPEST
+   rows in the run**: lever COLD 1.11 s, greenhouse COLD 0.46 s, ashby COLD 0.38 s, workable COLD 0.26 s.
+   A cold registry-ATS board is cheap because the whole board arrives in one JSON call.
+3. **"Cost is per newly-advanced posting."** Attribution advanced went **2,299 → 10,168 (4.4×)** and
+   postings seen **12,214 → 25,195 (2.1×)**, for **+54 s total**. Per-posting processing is not the
+   constraint at this scale either.
+
+**What is actually true: cost is provider-weighted BOARD ENUMERATION.** Wall-clock spacing between
+consecutive `board_scans.finished_at`, attributed to the board that finished (90-95% of wall clock
+attributed; reproduced on runs 122, 123 and 124 with near-identical results).
+
+**READ THE UNIT CAREFULLY — this is not per-board latency.** The scan fetches through
+`ThreadPoolExecutor(max_workers=settings.scan_workers)` with `scan_workers = 4`, so inter-completion
+gaps sum to wall clock **by construction** and cannot be read as how long one board took. What the column
+below IS: **marginal wall-clock seconds contributed per board at `scan_workers = 4`** — which is the
+correct unit for sizing a batch, because the concurrency does not change when boards are added. The true
+per-board LATENCY is roughly 4x these figures (a Workday board is therefore ~88 s, derived, not measured).
+**`board_scans.started_at → finished_at` cannot answer this**: `apply_board` receives an
+already-fetched snapshot and stamps `started_at` at the top of the APPLY, so those timestamps sum to
+**26.5 s** of run 122's 3,286 s and time only the DB write. That is the missing instrument.
+
+| provider | n | marginal wall-s / board (4 workers) | total | share of run 124 |
+|---|---:|---:|---:|---:|
+| **workday** (warm) | 114 | **22.03** | **2,512 s** | **73.4%** |
+| greenhouse (warm) | 86 | 1.18 | 102 s | 3.0% |
+| hiringcafe (lane) | 34 | 2.67 | 91 s | 2.7% |
+| linkedin (lane) | 25 | 3.27 | 82 s | 2.4% |
+| smartrecruiters (warm) | 3 | 22.49 | 67 s | 2.0% |
+| ashby (warm) | 49 | 0.86 | 42 s | 1.2% |
+| lever (COLD) | 25 | 1.11 | 28 s | 0.8% |
+| greenhouse (COLD) | 24 | 0.46 | 11 s | 0.3% |
+| ashby (COLD) | 22 | 0.38 | 8 s | 0.2% |
+| workable (COLD) | 26 | 0.26 | 7 s | 0.2% |
+
+**Sizing batch 2 on that.** All ~325 remaining non-Workday/non-SmartRecruiters candidates cost **~3-6
+min total** — import them in ONE batch; there is no reason left to trickle them. SmartRecruiters 107 ≈
+**+40 min** (run → ~97 min). Workday 333 ≈ **+122 min**, taking the run to ~180 min = AT the cadence, so
+**not feasible as one batch**; chunk at ~100 (+37 min each).
+
+**The one thing still unmeasured, and it is the one that matters.** Every cold board in run 124 was a
+registry ATS. **No cold Workday or SmartRecruiters board has ever been measured**, and those are exactly
+the providers that burn a per-posting detail budget on a first scan. **Probe before committing:** import
+~10 Workday boards, read the next run's delta, then size the chunk.
+
+### D-326's blast radius — measured AFTER the fact, and it corrected the reading
+
+D-322 measured its blast radius before merging; **D-326 shipped without one**, so it was taken here:
+3,000 random open postings re-evaluated from raw `body_text` through a standalone harness (a different
+path from the pipeline that produced the stored verdicts), old facts+policy vs new.
+
+**Headline: 23 of 3,000 change verdict (0.77%, 95% CI 0.51-1.15%), ~544 corpus-wide, and ZERO become
+`eligible`** — there is no wrong-clear risk in this change.
+
+| old → new | n |
+|---|---:|
+| eligible → uncertain | 18 |
+| eligible → ineligible | 4 |
+| uncertain → ineligible | 1 |
+
+**The decomposition is the finding.** N=1,500, one config per lever:
+
+| config | eligible | uncertain | ineligible | changed vs baseline |
+|---|---:|---:|---:|---:|
+| A baseline | 79 | 763 | 658 | 0 |
+| B `+security_clearance.obtainable=false` | 79 | 763 | 658 | **0** |
+| C `+field_of_study=software_engineering` | 79 | 763 | 658 | **0** |
+| F both facts, `degree` still `preference` | 79 | 763 | 658 | **0** |
+| D `+degree=blocker` only | 61 | 780 | 659 | 18 |
+| E all three | 61 | 777 | 662 | 18 |
+
+**Neither fact moves a single verdict on its own.** They resolve ~118 + ~405 abstaining ROWS per run —
+real keystone compliance, which is why they were built — but those postings were already decided by
+something else. **Only the policy flip moves verdicts**, and `field_of_study` earns its place only in
+combination: it converts 3 of D's `uncertain` into `ineligible` (659 → 662).
+
+**The 18 `eligible` → `uncertain` were read as damage and are not.** Every culprit row was inspected:
+
+| why the degree row did not clear | rows |
+|---|---:|
+| the posting says the degree may be waived (`may be substituted`, `or equivalent`, `in lieu of`) | 8 |
+| the posting makes conflicting statements about the requirement | 6 |
+| names a specific field this one is only related to | 2 |
+| names a field outside the catalog | 2 |
+| `unmet` → correctly `ineligible` (mechanical engineering) | 1 |
+
+**None is a defect.** Those 18 postings carry a degree requirement the profile genuinely cannot resolve,
+and at `preference` severity they were being **silently cleared to `eligible`** — the zero-evidence
+`eligible` failure mode. `degree=blocker` therefore **corrects 18 unevidenced `eligible` verdicts into
+honest abstains**; it does not trade eligibles for ineligibles. `uncertain` leads are still delivered, so
+lead flow is unaffected.
+
+### D-328 — the in-field degree bridge, and the honest size of the fix
+
+D-326 recorded a `{2,60}` bound as a truncated capture. **It is worse: the pattern does not match at
+all**, because the number appears twice per pattern and the second occurrence is the CONSUMING lazy
+bridge to the requirement marker. *"A Bachelor's degree in Computer Science, Computer Engineering,
+Mathematics, or a related discipline is required."* yielded **zero rows**.
+
+| bound | in-field rows / 2,000 postings |
+|---|---:|
+| `{2,60}` | 25 |
+| `{2,100}` | 27 |
+| **`{2,160}`** | **29** |
+| `{2,240}` | 29 |
+| `{2,400}` | 30 |
+
+**Zero rows lost at any width.** 160 takes 4 of the 5 recoverable rows; 240 buys nothing, 400 buys one
+more per 2,000 for double the backtracking surface.
+
+**Worth, stated honestly: +7 postings per 2,000 gain a degree row (~248 corpus-wide), none loses one,
+and verdicts move on only 3 per 2,000 (~106) — ALL of them `eligible` → `uncertain`.** It buys **no**
+additional `ineligible`. This is an **honesty fix**, not a precision win: a stated requirement now
+abstains instead of being invisible. Row dispositions `{unknown 17, unmet 2, met 1}` → `{unknown 22,
+met 3, unmet 2}`. Recovered sentences include *"Computer Science, Software Engineering, or Information
+Technology"* and *"a quantitative field (Computer Science, Data Science, Statistics, Engineering, or
+related)"* — invisible to the engine before.
+
+### D-329 — the lane deliverability cap, DECLINED on the measurement
+
+The pool is **722** open postings on unwatched companies (448 `lane`, 274 `user`); by age since
+`first_seen_at`: 507 under 2d, 14 at 2-7d, 32 at 7-14d, **169 at ≥14d**. A 14-day cap retires 169; a
+7-day cap retires 201.
+
+| what a 14-day cap would have cost | |
+|---|---|
+| over ALL 635 leads ever built (runs 61-123) | **252 (40%)** |
+| over runs 119-123 (51 leads) | **0** |
+| over all 34 lane-sourced leads ever built | **0** |
+
+Age-at-delivery is bimodal: 206 at age 0, then a second mass of 252 at 14-22 days. **The cause is
+supply, not staleness policy** — the 40% comes from the 234-board, no-lane era where the top-10 cap had
+to reach into old stock. At 346 boards with three lanes armed, fresh candidates exceed 10/run, so old
+stock is never picked whether or not a cap exists. **Owner declined the cap** (and the conditional
+variant), accepting pool growth: delivery is already bounded at 10/run, so pool size costs storage and
+report legibility, not precision.
+
+### The cost of the engine move that follows — projected before it runs
+
+The re-evaluation surcharge is measurable from the last engine move: run 119 (new engine, full
+re-evaluation) **6,351 s** against run 120 (steady, identical fleet) **3,287 s** = a **3,064 s (51 min)
+surcharge over 61,875 considered postings**. The corpus is now **80,737 open (×1.30)**, so the surcharge
+scales to **~3,998 s (67 min)**. On run 124's steady 3,424 s at 346 boards, the first run on the new
+engine projects to **~7,422 s ≈ 124 min against the 180-min cadence — 56 min of headroom.**
+
+That is the **tightest a run has ever been**, and it is a one-off: the surcharge applies to the first
+tick after the move only. Recorded before the fact so the next session can check the projection against
+the real number rather than re-deriving it. It is also the reason the whole eligibility stack was
+batched into ONE engine move — two moves would have cost two of these.

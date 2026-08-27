@@ -167,6 +167,72 @@ this session before Mit caught it (the hard US filter alone removes 57% of the c
 never folded into `eligible`** — the keystone invariant, not a preference; the ~82/day abstains get their own
 line. Measure with `stats` / `top --no-record --json` / the run funnel, never ad-hoc SQL over `postings`.
 
+### Settled owner rulings (moved out of STATE 2026-08-27, verbatim)
+
+Each was an owner-gated question and each is now DECIDED. They live here because the reasoning bounds
+future work; STATE keeps only what is still awaiting a call.
+
+0. ~~**THE ARMED LANES LEAK non-SWE noise into delivery — pick one (D-308).**~~ **DECIDED by Mit
+   2026-08-26: option (b), build the facet — shipped as D-309.** Recorded because the reasoning bounds the
+   next lane: option (c) (extend the role deny-catalog) was measured and REJECTED, not merely passed over —
+   the `uncertain` tail is Busser / Water Spider / Dish Steward / Donation Processor / Nannies / Janitorial,
+   an unbounded list, and the same bucket holds Linux Engineer, Senior HPC Engineer and Principal Architect
+   that a broad deny would lose. **Do not propose a lane-noise fix in the role taxonomy again**; the fix is
+   always upstream in what the lane asks for. Item 1 below is also settled by the same probe: hiring.cafe
+   showed 100% location fill, so the location fail-open was never the issue — the ROLE fail-open was.
+
+0b. ~~**NO DRAIN EXISTS FOR LANE-ACQUIRED POSTINGS (D-314).**~~ **DECIDED AND SHIPPED 2026-08-27 — all four
+   sub-questions are closed.** The label question: a row nothing enumerates now renders **`unverifiable`**
+   rather than `open` (D-324), keyed on `companies.watched` rather than `source='lane'`, which was wrong in
+   both directions. The exit: a **measured** death — the posting's own URL answering 404/410 twice on
+   different runs, never a redirect and never a timeout — can close it (D-325); it detects only **6.7%** of
+   real closures, so *a run reporting zero closed is expected, not evidence of health*. The promotion: 15
+   registry-ATS lane companies were promoted to `watched=1`, so zero enumerable lane companies remain
+   unwatched. The cap: **the owner ruled the pool may GROW (D-329)** — age-based and missed-run closing are
+   REJECTED BY MEASUREMENT (0 of 290 re-seen, yet 40 of 45 probed ALIVE), and a deliverability cap was
+   declined because delivery is already bounded at 10/run. **Do not re-open any of the four.**
+
+1. ~~**hiring.cafe's `v5_processed_job_data.workplace_*` fields**~~ **ALREADY SHIPPED — this row was STALE.** D-286 Ruling 4 took the decision and `lanes/hiringcafe.py::_locations` has implemented it since PR #141 (refined in #169). Verified against the live store 2026-08-27: lane postings carry real values (e.g. `"McClellan, California, United States"`). Original text kept below for the reasoning only. ~~**hiring.cafe's fields**~~ — read as provider-asserted location
+   metadata, at the level greenhouse's `location.name` is already trusted (D-286 Ruling 4). D-278 called
+   that payload untrusted, reasoning from the keystone invariant — which governs eligibility RULES, and the
+   engine is body-only so it cannot reach these. The measurement that decided it: `classify_location([])`
+   returns `unknown` and the hard US gate PASSES `unknown`, so withholding locations does not filter a
+   3.89M-posting board, it admits all of it. On a broader reading the lane needs another location source
+   before arming. **One function either way.**
+2. ~~**Oracle Cloud HCM / iCIMS as PROVIDERS**~~ **CLOSED by measurement (D-311): do NOT build them.** The
+   "~45% of the non-six tail" figure was a share of a small tail. Over job-apps' 138,788-posting ledger,
+   Oracle Cloud is **0.84%** and iCIMS **0.44%** — ~1.3% combined, and every remaining platform is under
+   0.2%. LinkedIn is 49.7% and Indeed 23.4% of that corpus, so ~73% of the market sits on one lane boardwatch
+   already has and one source that is out of scope. **The lever is the LinkedIn lane's budget/paging, not new
+   adapters.** Reopen only if a measurement on a different corpus contradicts this.
+3. ~~**Run-scoped rank attribution** — the only honest fix for B5~~ **DELIVERED + MERGED (D-302, PR #164 =
+   `0fb50a7`).** Four run-scoped suppression twins + the reconciliation invariant; B5 is scoreable and armed
+   on the live driver. No code left for B5.
+4. ~~**`locations` on `Lead` + an `artifact_version` bump**~~ **AUTHORISED AND BUILT (D-323, PR open on
+   `feat/lead-locations-artifact-v7`).** Each lead now carries `locations` and `location_class`, the manifest
+   carries `location_filter_mode`, and `artifact_version` moves 6 → 7. No owner decision left.
+8. ~~**Extending the leakage query past `exact_quad`**~~ **CLOSED by D-327 (#185): the
+   instrument was fixed and the reversal REFUSED.** The hardcoded `exact_quad` is gone, and the wider
+   class is reported as a never-folded `candidate_*` UPPER BOUND beside the gate's own number. The
+   4.76% figure below was WRONG as a duplicate count — only ~33% of that class are true duplicates
+   (17.6% on the delivered population), so honest leakage is **0.50%**. Original text kept for the
+   reasoning only.~~
+   `company_title_location` class, because `store/identity_queries.py:296` hardcodes `kind == "exact_quad"`.
+   Dropping ruling 3 did not close this and made it sharper: those duplicates are now neither suppressed nor
+   counted, and the corpus holds **1,597 redundant open postings (4.76%)** on that key. **Never cite a
+   passing leakage number as evidence dedup works.** One join condition, but it reverses D-132/D-283's
+   ratified "only `exact_quad` counts" **while the gate is being measured** (D-294/D-295).
+9. ~~**A redesign of same-role-same-place dedup on real discriminators**~~ **BUILT as D-327's
+   `core/near_duplicate`: `requisition_slug`, `salary_band`, `experience_years`, proof by
+   DISJOINTNESS not inequality. It vetoes rows OUT of a report bound and suppresses NOTHING — the
+   suppression reversal is refused, permanently.~~
+   posting's own URL, the city named in the body, the salary band, the YOE line. Ruling 3 is dropped because
+   a fuzzy body score provably cannot do this (D-295), not because the duplicates are acceptable. Its own
+   change, its own ruling.
+
+---
+
+
 ## Gate A internals
 
 - **A closed review loop is evidence about the slices reviewed, not about the subsystem being

@@ -45,17 +45,37 @@ FedCloud), Agile Defense (CBP), Accenture ×3, CACI, whose JD reads verbatim *"T
 U.S. citizenship"*. They drain themselves via D-321's `_ineligible` filter. `engine_version`
 `1+af3a746837b1` → moves on merge of the open stack.
 
-**FIVE PRs ARE OPEN, ALL PUSHED, ALL WITH DECISION RECORDS, INDEX GATE GREEN ON EACH.** #183 (D-323,
-lead locations + artifact v7) · #184 (D-326, clearance-obtainability + field-of-study facts) · #185
-(near-duplicate measurement, **OWES D-327**) · #186 (D-324, `unverifiable` status) · #187 (D-325, measured-death
-close). **#187's `make check` was NOT re-run after a rate-limit kill — CI is its verdict.** Nothing in
-this stack is armed; merging it moves `engine_version` once, and a **ledger drain is owed** after.
+**THE WHOLE STACK IS MERGED, AND THE ENGINE MOVED ONCE.** #183 (D-323, lead locations + artifact v7) ·
+#184 (D-326, clearance-obtainability + field-of-study facts) · #185 (D-327, the near-duplicate
+measurement and the refused reversal) · #186 (D-324, `unverifiable` status) · #187 (D-325, measured-death
+close) · the degree-bridge fix (D-328). **`engine_version` moved `1+af3a746837b1` → see `doctor`; derive
+it, never quote a pinned constant (D-306).** The three owner facts were applied in ONE pass afterwards
+(`security_clearance.obtainable=false`, `field_of_study=software_engineering`, `policy set degree
+blocker`), and the **owed ledger drain ran** — so no second re-evaluation spike is outstanding.
 
-**THE PRIMARY TREE IS DELIBERATELY UNPULLED AT `91f90d8`, ON THE OLD ENGINE.** That isolates run 124's
-cost: 97 boards were imported cold (no ETag on a first scan) and an engine change would confound the
-measurement. **Read run 124's duration before pulling anything.** Baselines: 234 boards = **14.0
-s/board, ~55 min**; the first run after an engine move = **27.1 s/board, 106 min** (run 119). Cadence is
-180 min.
+**BOARD COST IS PROVIDER-WEIGHTED, AND s/board IS A LYING UNIT (run 124).** Run 124 ran the OLD engine
+on the ramped fleet, which isolates fleet cost from engine cost: **346 boards, 3,424 s (57.1 min)**
+against run 123's **234 boards, 3,370 s (56.2 min)** — **+112 boards for +54 s, i.e. 0.48 s per ADDED
+board.** The old **14.0 s/board** figure predicted 81 min and was wrong by **24 minutes**. Two further
+models also died on this run: cold first scans are the CHEAPEST rows in it (lever 1.11 s, greenhouse
+0.46 s, ashby 0.38 s, workable 0.26 s — a registry ATS board arrives in one JSON call), and per-posting
+work is not the constraint either (attribution advanced **2,299 → 10,168**, 4.4×, for that same +54 s).
+**One provider is 73.4% of the run: `workday`, 114 boards contributing 22.03 s of wall clock each =
+2,512 s.** SmartRecruiters is the same order. Everything else is 0.26-3.3 s/board, cold or warm.
+**That unit is MARGINAL WALL CLOCK at `scan_workers = 4`, not per-board latency** — the scan fetches
+concurrently, so inter-completion gaps sum to wall clock by construction; true latency is ~4x (Workday
+~88 s, derived). It is still the right unit for sizing, because concurrency does not change when boards
+are added. `board_scans.started_at` cannot answer this at all: `apply_board` is handed an already-fetched
+snapshot, so those timestamps time only the DB write (26.5 s of a 3,286 s run) — **the missing
+instrument, and the next thing worth building.** **Size every future batch by
+provider mix, never by board count.** Cadence is 180 min. Full table in `METRICS.md`.
+
+**THE FIRST RUN ON THE NEW ENGINE PROJECTS TO ~124 MIN — 56 min of headroom, the tightest a run has
+ever been, and a ONE-OFF.** Derived, not guessed: run 119's full re-evaluation cost **3,064 s (51 min)**
+over 61,875 considered postings; the corpus is now 80,737 open (x1.30), so the surcharge scales to
+**~67 min** on top of run 124's steady 57 min. Check the real number against this before assuming the
+cadence is safe for the NEXT engine move — and note this is exactly why the whole eligibility stack was
+batched into one move.
 
 **THE WATCHED FLEET IS 346, UP FROM 234 (owner-authorised 2026-08-27).** 97 boards imported via
 `companies discover` → review → `import --verify`; the probe skipped `lever:cirrus` and
@@ -64,8 +84,13 @@ lists `jobs.eu.lever.co` in `board_hosts` but the API call is `api.lever.co/v0/p
 regardless. **Always `--verify`.** `ashby:KAYAK` was removed pre-import for a CASE collision with
 watched `ashby:kayak`. Separately, **15 lane companies on a registry ATS were promoted to `watched=1`**
 (11 ashby, 3 greenhouse, 1 lever), so zero enumerable lane companies remain unwatched and the
-cannot-close class went 745 → 722. **~765 discover candidates remain capped**; Workday 333 +
-SmartRecruiters 107 ramp last (per-posting detail budget on first scan).
+cannot-close class went 745 → 722. **~765 discover candidates remain capped, and run 124 sizes them.** The
+~325 non-Workday/non-SmartRecruiters candidates cost **~3-6 min total** — take them in ONE batch, the
+trickle is no longer justified. SmartRecruiters 107 ≈ **+40 min**. Workday 333 ≈ **+122 min**, which puts
+the run AT the 180-min cadence, so it must be chunked at ~100 (+37 min each). **Unmeasured and the one
+that matters: no COLD Workday or SmartRecruiters board has ever been timed**, and those are the two
+providers that burn a per-posting detail budget on a first scan — import ~10, read the next run's delta,
+then size the chunk.
 
 **LANE POSTINGS CANNOT CLOSE, AND ABSENCE IS PROVEN MEANINGLESS — SETTLED, DO NOT REOPEN
 (D-314/D-324/D-325/D-329).** The class is **722** rows on the honest predicate `companies.watched = 0`
@@ -96,105 +121,46 @@ set and the population caveat are in `STANDING-FACTS.md` § Precision gates (D-2
 
 ## Next action
 
-1. **READ RUN 124's DURATION BEFORE PULLING ANYTHING — the isolation expires.**
+1. **APPLY THE THREE OWNER FACTS, in ONE pass, from the primary tree after pulling.** This is the only
+   live action left; the code for all of it is merged.
    ```sh
-   .venv/bin/python -c "
-   import sqlite3, os
-   db = os.path.expanduser('~/Library/Application Support/boardwatch/boardwatch.db')
-   con = sqlite3.connect(f'file:{db}?mode=ro', uri=True)
-   for r in con.execute('''SELECT id, boards_attempted,
-     CAST((julianday(finished_at)-julianday(started_at))*86400 AS INT) secs
-     FROM runs WHERE id>=122 ORDER BY id'''): print(r)
-   "
+   boardwatch eligibility facts set security_clearance.obtainable false
+   boardwatch eligibility facts set field_of_study software_engineering
+   boardwatch eligibility policy set degree blocker
    ```
-   The primary tree sits at `91f90d8` on the OLD engine on purpose, so run 124 measures the cost of 97
-   cold-first-scan boards **without** an engine change confounding it. Use the real seconds-per-board to
-   size batch 2 of the ~765 remaining candidates. The old "~7s/board, ramp in 10s" figure is wrong —
-   steady state is **14.0 s/board**.
+   `highest_degree` is ALREADY `master` — do not re-set it. `false` is accepted (`_coerce`'s falsy set is
+   `{false,no,n,0,off}`), and `software_engineering` is a catalogued id. **Verify by direct SQL on
+   `profile.eligibility_policy_json`, never by the CLI that wrote it.** **Do NOT pull or apply while a
+   tick is running** — the profile is snapshotted mid-run and a change would straddle two profiles.
+   **NO ledger drain (D-331, owner-ruled).**
 
-2. **Merge the five-PR stack, then pull ONCE.** #185 owes **D-327** before it merges. After pulling,
-   apply all three owner facts in a single pass so `engine_version` moves once:
-   `eligibility facts set security_clearance.obtainable false`, the declared field of study
-   (MS Software Engineering Systems / BE Computer Engineering, `highest_degree` stays `master`), and
-   `eligibility policy set degree blocker`. Verify by direct SQL on `profile.eligibility_policy_json`,
-   never by the CLI that wrote it. **Then run the owed ledger drain** — trust the tool, not raw SQL.
+2. **Land what is still open:** #185 (D-327), #188 (this file), #190 (D-330, fetch timing). Each needs
+   only a `DECISIONS.md` rebase; all three are gate-green.
 
-3. **Re-raise the delivery cap with Mit.** He chose three of four lane-closure options; the one he did
-   not choose is the only one that shrinks a pool growing ~182/day.
+3. **Batch 2 of the ~765 discover candidates is now a SIZING question with an answer** — see the
+   provider-weighted table above and in `METRICS.md`. The ~325 cheap ones go in ONE batch. **Probe ~10
+   cold Workday boards first**: no cold Workday or SmartRecruiters board has ever been timed, and they are
+   the two providers that burn a per-posting detail budget on a first scan.
 
-4. **Two pre-existing defects found and deliberately NOT fixed, each its own change:**
-   the degree field expression is bounded `{2,60}`, so a 74-char *"Computer Science, Computer
-   Engineering, Mathematics, or a related discipline"* yields **zero** rows (fails safe to `uncertain`,
-   silently degraded); and `tests/unit/test_web_server.py:678` (`assert elapsed < 3.0`) is a genuine
-   load-dependent flake, still live — **do not weaken the threshold to green a gate.**
+4. **One pre-existing defect remains, and it is deliberate:** `tests/unit/test_web_server.py:678`
+   (`assert elapsed < 3.0`) is a genuine load-dependent flake — **do not weaken the threshold to green a
+   gate.** The other one from this session, the `{2,60}` degree bridge, is FIXED (D-328).
 
 5. **Deferred with numbers, do not re-derive:** the residual years-detection gap is **24 leads, ~8 real
    (1.3%)** and widening the pattern rejects `18 years of age`; job-apps' preferred-vs-required HEADING
    state machine is **2 of 286** and architectural (D-320).
 
-**Arming the remaining ~765 Part 4a boards is a SEPARATE owner decision.** Ramp only after run 124's
-number is known. Do **not** add a defaulted `watched=` to `upsert_watch`. `companies.source` is
-`CHECK (source IN ('registry','user','lane'))`.
-
-*(`.agent/2026-08-27-session-handoff.md` holds the full session detail, and
-`.agent/2026-08-25-craft-findings/` + `.agent/2026-08-26-lane-facet/` remain gitignored working
-material — re-derive if pruned.)*
+*(`.agent/2026-08-27-session-handoff.md` holds the earlier session detail; `.agent/` is gitignored
+working material — re-derive if pruned.)*
 
 ---
 
 ## Owner-gated — do NOT start or decide unilaterally
 
-0. ~~**THE ARMED LANES LEAK non-SWE noise into delivery — pick one (D-308).**~~ **DECIDED by Mit
-   2026-08-26: option (b), build the facet — shipped as D-309.** Recorded because the reasoning bounds the
-   next lane: option (c) (extend the role deny-catalog) was measured and REJECTED, not merely passed over —
-   the `uncertain` tail is Busser / Water Spider / Dish Steward / Donation Processor / Nannies / Janitorial,
-   an unbounded list, and the same bucket holds Linux Engineer, Senior HPC Engineer and Principal Architect
-   that a broad deny would lose. **Do not propose a lane-noise fix in the role taxonomy again**; the fix is
-   always upstream in what the lane asks for. Item 1 below is also settled by the same probe: hiring.cafe
-   showed 100% location fill, so the location fail-open was never the issue — the ROLE fail-open was.
-
-0b. **NO DRAIN EXISTS FOR LANE-ACQUIRED POSTINGS (D-314).** 282 postings, all `open`, none ever closed, and
-   the mechanism makes it structural rather than a bug: a lane re-acquires by SEARCH, so absence can never be
-   evidence, and `lane_snapshot` is always `partial` so `_process_missing` never runs. An age-based close needs
-   a trigger other than absence and a fail-safe direction chosen (closing a live job is the expensive error).
-   Also decide whether anything may show an open/closed label for a lane row at all — `postings.status` reads
-   `open` forever and cannot distinguish "still open" from "unverifiable".
-
-1. ~~**hiring.cafe's `v5_processed_job_data.workplace_*` fields**~~ **ALREADY SHIPPED — this row was STALE.** D-286 Ruling 4 took the decision and `lanes/hiringcafe.py::_locations` has implemented it since PR #141 (refined in #169). Verified against the live store 2026-08-27: lane postings carry real values (e.g. `"McClellan, California, United States"`). Original text kept below for the reasoning only. ~~**hiring.cafe's fields**~~ — read as provider-asserted location
-   metadata, at the level greenhouse's `location.name` is already trusted (D-286 Ruling 4). D-278 called
-   that payload untrusted, reasoning from the keystone invariant — which governs eligibility RULES, and the
-   engine is body-only so it cannot reach these. The measurement that decided it: `classify_location([])`
-   returns `unknown` and the hard US gate PASSES `unknown`, so withholding locations does not filter a
-   3.89M-posting board, it admits all of it. On a broader reading the lane needs another location source
-   before arming. **One function either way.**
-2. ~~**Oracle Cloud HCM / iCIMS as PROVIDERS**~~ **CLOSED by measurement (D-311): do NOT build them.** The
-   "~45% of the non-six tail" figure was a share of a small tail. Over job-apps' 138,788-posting ledger,
-   Oracle Cloud is **0.84%** and iCIMS **0.44%** — ~1.3% combined, and every remaining platform is under
-   0.2%. LinkedIn is 49.7% and Indeed 23.4% of that corpus, so ~73% of the market sits on one lane boardwatch
-   already has and one source that is out of scope. **The lever is the LinkedIn lane's budget/paging, not new
-   adapters.** Reopen only if a measurement on a different corpus contradicts this.
-3. ~~**Run-scoped rank attribution** — the only honest fix for B5~~ **DELIVERED + MERGED (D-302, PR #164 =
-   `0fb50a7`).** Four run-scoped suppression twins + the reconciliation invariant; B5 is scoreable and armed
-   on the live driver. No code left for B5.
-4. ~~**`locations` on `Lead` + an `artifact_version` bump**~~ **AUTHORISED AND BUILT (D-323, PR open on
-   `feat/lead-locations-artifact-v7`).** Each lead now carries `locations` and `location_class`, the manifest
-   carries `location_filter_mode`, and `artifact_version` moves 6 → 7. No owner decision left.
 5. **Mit's two résumé content calls** — whether to send a document at all; the D-220 prose rewrites.
 6. **P2 item 8 — the onboarding field-taxonomy gatherer.** Needs its own brainstorm; D-054 forbids us
    authoring non-tech field content.
 7. **`add-evidence` takes no bundle lock** (D-143) — raise before two authoring agents run against one bundle.
-8. **Extending the leakage query past `exact_quad`** — the Gate P6 clause **cannot fail** for the
-   `company_title_location` class, because `store/identity_queries.py:296` hardcodes `kind == "exact_quad"`.
-   Dropping ruling 3 did not close this and made it sharper: those duplicates are now neither suppressed nor
-   counted, and the corpus holds **1,597 redundant open postings (4.76%)** on that key. **Never cite a
-   passing leakage number as evidence dedup works.** One join condition, but it reverses D-132/D-283's
-   ratified "only `exact_quad` counts" **while the gate is being measured** (D-294/D-295).
-9. **A redesign of same-role-same-place dedup on real discriminators** — the requisition slug in the
-   posting's own URL, the city named in the body, the salary band, the YOE line. Ruling 3 is dropped because
-   a fuzzy body score provably cannot do this (D-295), not because the duplicates are acceptable. Its own
-   change, its own ruling.
-
----
 
 ## Open questions — Mit's, not to be resolved by fiat
 
