@@ -3,10 +3,33 @@
 **Liveness is never cached; verdicts always are.** A verdict is a judgement about a frozen JD
 and stays true as long as the JD does; liveness is a fact about the outside world at the moment
 you ask, and a stored answer is wrong the instant the requisition closes. So nothing here writes
-to the store, and in particular a `dead` result must never flip `postings.status` — that column
-is the scanner's, derived from board-listing absence over `CLOSE_AFTER_MISSES` complete scans,
-and a probe that overwrote it would let one 404 from a flaky CDN close a live posting for good.
-A dead lead is dropped from the run that found it, and the next run asks again.
+to the store, and a `dead` result does not flip `postings.status` for a posting the scanner can
+reach — that column is the scanner's, derived from board-listing absence over
+`CLOSE_AFTER_MISSES` complete scans, and a probe that overwrote it would let one 404 from a
+flaky CDN close a live posting for good. A dead lead is dropped from the run that found it, and
+the next run asks again.
+
+**That contract is NARROWED, not repealed, by D-325, and the narrowing is exactly one clause
+wide.** It rested on a premise that is false for part of the corpus: that `postings.status` has
+a working owner. For a posting whose company is `watched = 0` it does not. `_process_missing`
+(`scan/apply.py`) is the only writer of `status='closed'`, it runs on `complete` snapshots only,
+`lanes/base.py::lane_snapshot` is always `partial`, and an unwatched company is never revisited
+by the scan coordinator — so those rows are open for ever and "still open" is indistinguishable
+from "unverifiable" (D-314). A lane re-acquires by SEARCH, so absence can never be evidence for
+them either; age-based and missed-run closing were both measured and rejected.
+
+So for `watched = 0` postings, and ONLY those, a `refetch_gone` — never
+`refetch_gone_after_redirect`, never `refetch_error` — is allowed to increment a strike counter
+of its own (`postings.death_strikes`, never `consecutive_missing`), and two strikes in different
+runs close the posting. That mirrors `CLOSE_AFTER_MISSES = 2` exactly, and an `alive` probe or
+any positive listing clears the counter. `pipeline/death_probe.py` owns that mechanism and
+carries the full reasoning; this module still decides only what a status code MEANS and still
+writes nothing itself. The measured sensitivity is 6.7% (4 of 60 postings the scanner had proved
+closed), so the narrowing resolves a small fraction of D-314 and closes none of the rest.
+
+**`pipeline/liveness.py::check_leads` is untouched by that narrowing** — the shortlist probe
+still reads URLs and writes nothing, ever. One 404 against a lead withholds it from this run and
+from nothing else.
 
 **Fail-open is the whole design.** The cost of treating a dead posting as alive is one wasted
 résumé; the cost of treating a live posting as dead is a job Mit never sees and cannot know he

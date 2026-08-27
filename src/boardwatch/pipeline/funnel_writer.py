@@ -35,6 +35,7 @@ from boardwatch.reports.abstain import AbstainReport, build_abstain_report
 from boardwatch.reports.manifest import config_hash, profile_row_hash
 from boardwatch.reports.run_funnel import (
     BoardCoverageReport,
+    DeathProbeReport,
     LaneReport,
     Lead,
     LivenessCheck,
@@ -94,6 +95,8 @@ def collect_run_funnel(
     scan: ScanContext,
     shortlist: ShortlistCounts | None,
     liveness: LivenessCheck | None = None,
+    # D-325. `None` means the measured-death sweep did NOT run, never that it found nothing.
+    death_probe: DeathProbeReport | None = None,
     tailored: list[tuple[int, str, str, Path, bool]],
     tailor_failed: int,
     # P5a. `projection_ran` is the ONLY thing that decides whether the artifact carries a
@@ -262,6 +265,7 @@ def collect_run_funnel(
         corpus=corpus,
         shortlist=shortlist,
         liveness=liveness,
+        death_probe=death_probe,
         sources=sources,
         leads=leads,
         tailor_failed=tailor_failed,

@@ -38,6 +38,12 @@ EXPECTED_SETTINGS_DEFAULTS: dict[str, object] = {
     # nobody here operates and say nothing about which postings are wanted.
     "Settings.lane_new_companies_per_run": 10,
     "Settings.lane_posting_budget": 60,
+    # D-325. Caps on how much the measured-death sweep may ASK, not on what it may conclude:
+    # 50 probes is under a minute of a run, and 24 hours is one natural period between asking
+    # the same posting twice. Neutral by construction — neither says anything about roles,
+    # seniority, geography or field, and a run reports both sides of the budget either way.
+    "Settings.death_probe_budget": 50,
+    "Settings.death_probe_ttl_hours": 24,
     "Settings.weights": {
         "skill_coverage": 0.5,
         "title_match": 0.25,
@@ -91,6 +97,8 @@ SETTINGS_FIELD_CLASS: dict[str, str] = {
     "Settings.lanes_enabled": "capability",
     "Settings.lane_new_companies_per_run": "operational",
     "Settings.lane_posting_budget": "operational",
+    "Settings.death_probe_budget": "operational",
+    "Settings.death_probe_ttl_hours": "operational",
     "Settings.weights": "preference",
     "Settings.llm": "capability",
     "RankWeights.skill_coverage": "preference",

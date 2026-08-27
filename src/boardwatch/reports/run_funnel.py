@@ -426,6 +426,74 @@ class LivenessCheck:
         return self.checked - self.dead - self.unknown
 
 
+@dataclass(frozen=True)
+class DeathProbeReport:
+    """D-325: what the measured-death sweep did to the postings the scanner cannot reach.
+
+    A SEPARATE section from `liveness`, not more keys inside it, because it is a different
+    measurement over a different population with a different consequence. `liveness` probes the
+    SHORTLIST and writes nothing; this probes open postings under `companies.watched = 0` and
+    CLOSES the ones proven gone twice. Sharing a block would invite a reader to add `checked`
+    and `attempted` into one probe count, which would be two questions summed.
+
+    Every bucket here exists because its absence would let the sweep fail silently:
+
+    - `due` is the denominator — how many rows the TTL admitted this run. Without it `attempted`
+      alone cannot distinguish a healthy sweep from a budget of zero.
+    - `budget_refused` is `due - attempted`. A sweep that refuses work must read as refused
+      work, never as a clean corpus.
+    - `unprobeable` is due rows with no URL. This mechanism can never reach them by any future
+      refinement, so they are reported rather than filtered away.
+    - `unknown` counts every non-closing outcome, `refetch_gone_after_redirect` included. It is
+      the bucket that can disarm the check with no other number moving.
+    - `strikes_cleared` is the drain firing. Zero forever alongside a rising `gone` means the
+      only path out of the strike counter has stopped working.
+
+    Plain ints, never `None`: the whole object is `None` when the sweep did not run, so an
+    unmeasured run is stated once at the section rather than nine times inside it.
+    """
+
+    due: int
+    unprobeable: int
+    attempted: int
+    budget_refused: int
+    gone: int
+    unknown: int
+    alive: int
+    closed: int
+    strikes_cleared: int
+
+
+def death_probe_to_dict(report: DeathProbeReport | None) -> dict[str, object]:
+    """The `death_probe` block. `instrumented: false` and nulls when the sweep did not run —
+    never a block of zeros, which would claim a measurement nobody took (D-022/D-023)."""
+    if report is None:
+        return {
+            "instrumented": False,
+            "due": None,
+            "unprobeable": None,
+            "attempted": None,
+            "budget_refused": None,
+            "gone": None,
+            "unknown": None,
+            "alive": None,
+            "closed": None,
+            "strikes_cleared": None,
+        }
+    return {
+        "instrumented": True,
+        "due": report.due,
+        "unprobeable": report.unprobeable,
+        "attempted": report.attempted,
+        "budget_refused": report.budget_refused,
+        "gone": report.gone,
+        "unknown": report.unknown,
+        "alive": report.alive,
+        "closed": report.closed,
+        "strikes_cleared": report.strikes_cleared,
+    }
+
+
 # The closed catalog of Tier-B rewrite outcomes. `drop_reason` is an untyped string at the
 # raise site (`tailor/rewrite/lane.py`), so it is mapped here into named buckets; anything the
 # catalog does not name lands in `other`, which is a FAILURE signal (CLAUDE.md: out-of-catalog
@@ -749,6 +817,10 @@ class RunFunnel:
     # since `settings.lanes_enabled` ships `()`. A lane that raised is absent from here and
     # present in `errors`, which is the honest pair: it produced no counts to report.
     lanes: tuple[LaneReport, ...] = ()
+    # D-325. `None` means the measured-death sweep did NOT run this run — no prober was
+    # supplied — which is not the same as a sweep that found nothing. A block of zeros would
+    # claim a measurement nobody took, the same rule `LivenessCheck` applies above.
+    death_probe: DeathProbeReport | None = None
 
     @property
     def instrumented_stages(self) -> tuple[Stage, ...]:
@@ -830,6 +902,9 @@ def build_run_funnel(
     # change what any stage claims, so an omitted list and a genuinely empty one describe the
     # same artifact.
     lanes: Sequence[LaneReport] = (),
+    # D-325. Omitted means the sweep did not run and the section reports itself UNMEASURED,
+    # never zero — the same omission direction as `liveness` above.
+    death_probe: DeathProbeReport | None = None,
     errors: Sequence[str] = (),
     fatal: str | None = None,
 ) -> RunFunnel:
@@ -1263,6 +1338,7 @@ def build_run_funnel(
         fatal=fatal,
         board_coverage=board_coverage,
         lanes=tuple(lanes),
+        death_probe=death_probe,
     )
 
 
@@ -1313,6 +1389,9 @@ def funnel_to_dict(funnel: RunFunnel) -> dict[str, object]:
             # A subset of `unknown`; do not add it to the others when reconciling.
             "gone_after_redirect": funnel.liveness.gone_after_redirect,
         },
+        # D-325. Its own section, NOT more keys under `liveness`: different population, and this
+        # one WRITES. Summing the two probe counts would be summing two questions.
+        "death_probe": death_probe_to_dict(funnel.death_probe),
         "stub_rate": {
             "open_postings": funnel.stub_rate.open_postings,
             "stubs": funnel.stub_rate.stubs,
@@ -1827,6 +1906,7 @@ def funnel_to_markdown(funnel: RunFunnel) -> str:
         ]
 
     live = funnel.liveness
+    probe = funnel.death_probe
     stub = funnel.stub_rate
     stub_rate = "not instrumented (empty corpus)" if stub.rate is None else f"{stub.rate:.2%}"
     fab = funnel.fabrication
@@ -1851,6 +1931,27 @@ def funnel_to_markdown(funnel: RunFunnel) -> str:
         "real job costs more than one wasted résumé. A gone-after-redirect count that climbs "
         "while `withheld as gone` stays at 0 means the detector has been disarmed, not that the "
         "corpus is healthy.*",
+        "",
+        "## Death probe",
+        "",
+        (
+            "not instrumented — the unreachable-by-the-scanner class was not swept this run, "
+            "which is NOT the same as nothing having died"
+            if probe is None
+            else f"{probe.attempted} of {probe.due} due probed "
+            f"({probe.budget_refused} refused by the budget, {probe.unprobeable} have no URL) "
+            f"· {probe.gone} answered gone · {probe.unknown} unknown · {probe.alive} alive "
+            f"· {probe.closed} closed · {probe.strikes_cleared} strike counters cleared"
+        ),
+        "",
+        "*The only mechanism that can close a posting whose company is `watched = 0` — a lane "
+        "re-acquires by SEARCH, so absence is never evidence for these rows and the board "
+        "scanner never revisits them (D-314). Only a non-redirect 404/410 from the posting's "
+        "own URL counts, and only twice in different runs, mirroring `CLOSE_AFTER_MISSES`. "
+        "Sensitivity is LOW and measured: 4 of 60 postings the scanner had PROVED closed "
+        "(6.7%, Wilson 95% CI 2.6%–15.9%), because a closed Workday requisition still answers "
+        "200 (0 of 37). It returned 0 false deaths against 90 live postings. `closed` staying "
+        "at 0 is the expected reading, not evidence the class is healthy.*",
         "",
         "## Stub rate",
         "",
@@ -1973,6 +2074,7 @@ __all__ = [
     "BoardCoverageReport",
     "CoverageSummary",
     "CrossCheck",
+    "DeathProbeReport",
     "Drop",
     "FabricationCounters",
     "Lead",
@@ -1990,6 +2092,7 @@ __all__ = [
     "build_fabrication_counters",
     "build_projection_counters",
     "build_run_funnel",
+    "death_probe_to_dict",
     "funnel_to_dict",
     "funnel_to_markdown",
     "write_run_funnel",

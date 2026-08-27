@@ -164,6 +164,12 @@ def _apply_listed(
             continue
         values: dict[str, Any] = _mutable_fields(raw, now)  # D25: regardless of content_hash
         values["consecutive_missing"] = 0  # D23: reset on every positive observation
+        # D-325, the same rule applied to the death probe's counter. A listing is stronger
+        # evidence than any number of failed probes: the posting is on a board right now. This
+        # is half the drain the probe owes itself (the other half is an `alive` probe), and it
+        # is what stops a strike earned during a CDN outage surviving to meet a second one
+        # weeks later and close a posting nobody ever measured as dead twice in a row.
+        values["death_strikes"] = 0
         if row.status == "closed":
             values["status"] = "open"
             values["closed_at"] = None

@@ -130,6 +130,20 @@ class Settings(BaseModel):
     # while behaving as configured, which is the cry-wolf failure that predicate's own
     # docstring exists to avoid. Disarming a lane is what `lanes_enabled` is for.
     lane_posting_budget: int = Field(default=60, ge=1)
+    # D-325 — the measured-death sweep. `postings` under a company with `watched = 0` get no
+    # absence signal from any board scan (D-314), so the only evidence available is the stored
+    # URL answering 404/410 twice. Both knobs bound the COST of asking, never the verdict.
+    #
+    # A probe costs ~0.97 s, so the budget is the sweep's whole run-time contribution: 50 probes
+    # is under a minute, and at the daily driver's ~3 h cadence that is ~400 rows a day against
+    # a class growing ~182/day. Floor of 0, and 0 is a real setting — it disarms the sweep while
+    # still reporting the whole due population as `budget_refused`, so a disarmed check reads as
+    # refused work rather than as a clean corpus.
+    death_probe_budget: int = Field(default=50, ge=0)
+    # How long a probed row is left alone. 24 h means a posting is asked about once a day
+    # whatever the run cadence, which is what keeps the budget spread across the class instead
+    # of re-asking the same head every three hours.
+    death_probe_ttl_hours: int = Field(default=24, ge=1)
     weights: RankWeights = Field(default_factory=RankWeights)
     llm: LLMTier = Field(default_factory=LLMTier)
     notify: NotifyTier = Field(default_factory=NotifyTier)
