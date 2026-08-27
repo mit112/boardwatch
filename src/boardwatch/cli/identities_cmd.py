@@ -147,13 +147,22 @@ def leakage(
     have no `exact_quad` identity by design and are reported as their own `unidentified`
     bucket, excluded from the rate rather than folded into "unique".
 
+    A second line reports the `company_title_location` class as an UPPER BOUND. That class is
+    not a duplicate count — measured by hand on 2026-08-27, 3 of 17 such groups among the
+    delivered population were true duplicates and 14 were genuinely different jobs — so it is
+    printed beside the gate's number, never inside it, and nothing in it is suppressed.
+
     Prints "not measurable" rather than 0% or 100% when nothing in the window carries an
-    identity.
+    identity, on either line.
     """
     engine = build_context(ctx.obj).engine
     report = compute_leakage_report(engine, window_days=days)
     if as_json:
-        typer.echo(json.dumps({**asdict(report), "rate": report.rate}))
+        typer.echo(
+            json.dumps(
+                {**asdict(report), "rate": report.rate, "candidate_rate": report.candidate_rate}
+            )
+        )
         return
     if report.identified == 0:
         typer.echo(
@@ -161,12 +170,26 @@ def leakage(
             f"{report.surfaced_total} job(s) reached leads, {report.unidentified} of them "
             "unidentified, 0 carry an exact_quad identity"
         )
+    else:
+        assert report.rate is not None  # narrowed by the identified == 0 check above
+        typer.echo(
+            f"leakage (last {report.window_days}d): {report.rate:.1%} "
+            f"({report.redundant} redundant of {report.identified} identified across "
+            f"{report.distinct_groups} distinct exact_quad group(s); "
+            f"{report.unidentified} unidentified excluded; {report.surfaced_total} total "
+            "reached leads)"
+        )
+    if report.candidate_rate is None:
+        typer.echo(
+            f"  near-duplicate bound ({report.candidate_kind}): not measurable — "
+            f"0 job(s) in the window carry a {report.candidate_kind} identity"
+        )
         return
-    assert report.rate is not None  # narrowed by the identified == 0 check above
     typer.echo(
-        f"leakage (last {report.window_days}d): {report.rate:.1%} "
-        f"({report.redundant} redundant of {report.identified} identified across "
-        f"{report.distinct_groups} distinct exact_quad group(s); "
-        f"{report.unidentified} unidentified excluded; {report.surfaced_total} total "
-        "reached leads)"
+        f"  near-duplicate bound ({report.candidate_kind}): <= {report.candidate_rate:.1%} "
+        f"({report.candidate_redundant} redundant of {report.candidate_identified} "
+        f"identified across {report.candidate_groups} group(s); "
+        f"{report.candidate_distinguished} proven distinct and excluded). "
+        "An UPPER bound, not a duplicate count — this key spans genuinely different jobs "
+        "and nothing here is suppressed."
     )
