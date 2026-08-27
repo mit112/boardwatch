@@ -92,6 +92,18 @@ _CONFIG_IRRELEVANT: frozenset[str] = frozenset(
         "lanes_enabled",
         "lane_new_companies_per_run",
         "lane_posting_budget",
+        # D-325. OUT, on the same reasoning as `validator_max_age_hours`: these bound WHEN and
+        # HOW OFTEN a posting is re-asked, never how the corpus is judged. What they can change
+        # is corpus MEMBERSHIP — a proven-dead posting is closed — and membership has never been
+        # in this hash: watching a board changes it too, and that lives in the store.
+        #
+        # The deciding argument is downstream, as it was for the lane knobs: `policy_version` is
+        # derived from `config_hash`, so classifying these IN would mark every permanent
+        # `built`/`skipped` disposition stale the moment an operator changed a probe budget — a
+        # corpus-wide drain from a knob that judged nothing. And the artifact is not silent
+        # either way: the funnel's `death_probe` section reports both sides of the budget.
+        "death_probe_budget",
+        "death_probe_ttl_hours",
     }
 )
 

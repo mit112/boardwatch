@@ -76,6 +76,14 @@ _SCALAR_KEYS: dict[str, tuple[Callable[[str], Any], str, str]] = {
         int, "next run", "companies one lane may ADD per run, ≥0 (already-known ones are free)"
     ),
     "lane_posting_budget": (int, "next run", "JD-body requests one lane may make per run, ≥0"),
+    "death_probe_budget": (
+        int,
+        "next run",
+        "liveness probes per run against postings no board scan enumerates, ≥0 (0 disarms it)",
+    ),
+    "death_probe_ttl_hours": (
+        int, "next run", "hours before such a posting may be probed again, ≥1"
+    ),
 }
 _WEIGHT_KEYS = {"skill_coverage", "title_match", "recency", "location_fit"}
 

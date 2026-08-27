@@ -22,6 +22,25 @@ All notable changes to this project are documented here. The format follows
 
 ### Fixed
 
+- **A posting no board scan enumerates can now be closed — but only by a measured death (D-325).** A posting
+  under an unwatched company was open for ever: the only thing that closes a posting is absence from two
+  complete board fetches, and nothing ever fetches those boards. A search-based source re-finds a posting by
+  searching, so a posting that stops appearing has not been proved gone. Each run now re-fetches a bounded
+  slice of those postings and closes one only when its own URL answers 404 or 410 — twice, on different runs,
+  with no redirect in between. A timeout, a 403, a 5xx, or a 404 that arrived after a redirect all count for
+  nothing. Any sighting of the posting on a board, or any successful re-fetch, wipes the slate.
+
+  **Read the numbers before trusting it.** Against 60 postings already proved closed, this finds 4 — **6.7%**
+  (95% CI 2.6%–15.9%). None of the 37 closed Workday requisitions in that set were caught, because a closed
+  Workday requisition still answers normally. It produced no false deaths across 90 live postings. So it
+  rarely fires and it rarely lies, and **a run reporting zero closed is the expected result, not evidence the
+  backlog is healthy**. The run funnel gains a `death_probe` section that reports what was due, what was
+  probed, what the budget refused, and what had no URL to ask, so a check that quietly stops working shows up
+  as a number rather than as silence. Tune with `boardwatch config set death_probe_budget` (default 50 probes
+  per run; `0` turns it off) and `death_probe_ttl_hours` (default 24).
+
+### Fixed
+
 - **A lead the eligibility gate rejects no longer sits in the review queue (D-321).** `delivered_unapplied`
   attached each lead's current verdict but never filtered on it, and the status band reported `eligible` and
   `uncertain` with no cell for `ineligible` — so a rejected lead was an unexplained remainder between

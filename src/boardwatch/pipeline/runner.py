@@ -49,6 +49,7 @@ from boardwatch.lanes.facets import role_facets
 from boardwatch.lanes.hiringcafe import HiringCafeLane
 from boardwatch.lanes.linkedin import LinkedInLane
 from boardwatch.notify.heartbeat import send_heartbeat
+from boardwatch.pipeline.death_probe import sweep_unwatched_deaths
 from boardwatch.pipeline.freshness import folders_reconcile
 from boardwatch.pipeline.funnel_writer import collect_run_funnel
 from boardwatch.pipeline.liveness import LivenessProber, check_leads
@@ -71,6 +72,7 @@ from boardwatch.reports.board_coverage import build_report as build_board_covera
 from boardwatch.reports.morning import MorningLead, build_morning, write_morning
 from boardwatch.reports.resume_gate import LeadArtifactError, RenderToolMissingError
 from boardwatch.reports.run_funnel import (
+    DeathProbeReport,
     LaneReport,
     LivenessCheck,
     ScanContext,
@@ -302,6 +304,12 @@ class PipelineSummary:
     # absent here and named in `errors` instead, which is the honest pair: it produced no counts,
     # and an entry of zeros would claim it attempted work and recovered nothing.
     lanes: list[LaneReport] = field(default_factory=list)
+    # D-325. What the measured-death sweep did to the postings no board scan enumerates.
+    # `None` means the sweep did NOT run — no prober, or it raised — which is not the same as a
+    # sweep that closed nothing. `closed = 0` is in fact the EXPECTED reading: sensitivity is
+    # 6.7% against a control of proven-closed postings, so a zero here is weak evidence about
+    # the class and must not be read as one.
+    death_probe: DeathProbeReport | None = None
 
     @property
     def leads_with_pdf(self) -> int:
@@ -919,6 +927,44 @@ def run_pipeline(
         stage_errors.extend(lane_errors)
         summary.errors.extend(lane_errors)
 
+        # D-325 — the measured-death sweep, HERE: after the lanes have re-sighted whatever they
+        # could find (a positive sighting clears a strike in `_apply_listed`) and before the
+        # ranker, so a posting proved dead this run leaves the pool this run rather than next.
+        #
+        # The population is `companies.watched = 0` — the rows for which no board scan can ever
+        # produce an absence signal (D-314) — and the only evidence that closes one is the stored
+        # URL itself answering a non-redirect 404/410, twice, in different runs.
+        #
+        # Reuses the SHORTLIST prober: `liveness_prober is None` means the operator asked for no
+        # network liveness at all, and sweeping anyway would ignore that. It also means a run
+        # that skips the check reports the sweep as UNMEASURED rather than as zero closed.
+        #
+        # No `fatal` arm, and caught rather than propagated: this is additive in the same sense a
+        # lane is. The corpus without it is exactly the corpus this pipeline has always ranked,
+        # so a sweep that dies costs the run its extra reach and nothing else. The report stays
+        # `None` on failure — honest as "unmeasured", and deliberately understating any probes
+        # that did land before the fault, because each posting commits in its own transaction.
+        if liveness_prober is not None and settings.death_probe_budget > 0:
+            try:
+                summary.death_probe = sweep_unwatched_deaths(
+                    engine,
+                    prober=liveness_prober,
+                    run_id=run_id,
+                    budget=settings.death_probe_budget,
+                    ttl_hours=settings.death_probe_ttl_hours,
+                )
+            except Exception as exc:  # noqa: BLE001 - never mask the run's own outcome
+                message = f"death probe: sweep failed ({type(exc).__name__}: {exc})"
+                stage_errors.append(message)
+                summary.errors.append(message)
+            else:
+                probe = summary.death_probe
+                console.print(
+                    f"death probe: {probe.attempted} of {probe.due} due probed, "
+                    f"{probe.gone} gone, {probe.unknown} unknown, {probe.closed} closed "
+                    f"({probe.budget_refused} refused by budget)"
+                )
+
         console.print("[bold]eligibility[/bold]")
         try:
             ranked = rank_open_postings(
@@ -1443,6 +1489,8 @@ def _emit_funnel(
             unknown=summary.liveness_unknown,
             gone_after_redirect=summary.liveness_gone_after_redirect,
         ),
+        # D-325. `None` when the sweep did not run — never a block of zeros.
+        death_probe=summary.death_probe,
         tailored=[
             (lead.posting_id, lead.company, lead.title, lead.out_dir, lead.pdf_built)
             for lead in summary.tailored

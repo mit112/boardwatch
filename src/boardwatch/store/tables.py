@@ -80,6 +80,15 @@ postings = Table(
     Column("status", Text, nullable=False, default="open"),
     Column("closed_at", DateTime, nullable=True),
     Column("consecutive_missing", Integer, nullable=False, default=0),
+    # D-325. Consecutive `refetch_gone` liveness probes against this posting's OWN url, for the
+    # postings whose company is `watched = 0` and which the board scanner therefore cannot
+    # produce any absence signal for (D-314). Kept apart from `consecutive_missing` on purpose:
+    # that column counts complete-board absences, and one counter fed by two different signals
+    # could close a posting on one absence plus one 404 with no report able to say which.
+    Column("death_strikes", Integer, nullable=False, default=0),
+    # When the death probe last asked. NULL = never asked, which sorts first in the
+    # least-recently-probed order so the sweep works the corpus front to back.
+    Column("last_death_probe_at", DateTime, nullable=True),
     Column("content_hash", Text, nullable=False),
     Column("body_text", Text, nullable=False),
     Column("raw_json", JSON, nullable=True),

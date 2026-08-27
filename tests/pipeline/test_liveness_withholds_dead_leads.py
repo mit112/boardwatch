@@ -189,21 +189,31 @@ def test_an_unknown_outcome_still_reaches_the_lead_list(env: Path, tmp_path: Pat
     assert summary.liveness_checked == 2
 
 
-def test_a_dead_posting_is_not_closed_in_the_store(env: Path, tmp_path: Path) -> None:
-    """Liveness is NEVER cached. `postings.status` belongs to the scanner's board-absence rule;
-    a probe that wrote to it would let one 404 from a flaky CDN retire a live requisition
-    permanently, and no later scan would ever reopen it because it would stop being ranked."""
+def test_a_dead_posting_is_not_closed_by_ONE_probe(env: Path, tmp_path: Path) -> None:  # noqa: N802
+    """A single 404 from a flaky CDN must not retire a requisition.
+
+    Narrowed by D-325, and the narrowing is why this test now says ONE rather than never. These
+    postings sit under `watched = 0` companies, so the measured-death sweep DOES reach them —
+    but it mirrors `CLOSE_AFTER_MISSES = 2`, so one probe buys a strike and nothing else. The
+    strike is asserted below rather than left implicit: a sweep that silently stopped counting
+    would leave this test green with the mechanism dead.
+    """
     ids = _ready(env, 1)
     _pipeline(env, tmp_path / "apps", top_n=1, prober=_prober(dead={ids[0]}))
 
     engine = get_engine(env)
     with engine.connect() as conn:
         row = conn.execute(
-            select(tables.postings.c.status, tables.postings.c.closed_at)
+            select(
+                tables.postings.c.status,
+                tables.postings.c.closed_at,
+                tables.postings.c.death_strikes,
+            )
             .where(tables.postings.c.id == ids[0])
         ).one()
     assert row.status == "open"
     assert row.closed_at is None
+    assert row.death_strikes == 1  # counted, and one short of the close (D-325)
 
 
 def test_a_withheld_lead_is_not_recorded_seen(env: Path, tmp_path: Path) -> None:
