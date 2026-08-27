@@ -306,8 +306,19 @@ def test_two_runs_delivering_the_same_posting_yield_one_row_with_the_later_run(
 # ------------------------------------------------------------------------------------- the row
 
 
-def test_a_posting_with_no_posted_at_has_no_age_and_not_zero(engine: Engine) -> None:
-    """`—`, never `0d`. A dated control sits beside it so the None is not simply "never set"."""
+def test_a_posting_with_no_posted_at_has_no_age_and_not_zero(
+    engine: Engine, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """`—`, never `0d`. A dated control sits beside it so the None is not simply "never set".
+
+    The clock is FROZEN to `NOW`, because `posted_days` is the one field here derived from the
+    wall clock rather than read back from the row. Seeding `NOW - 4 days` and asserting `4`
+    against a live `utcnow()` was not a flake but a dated time bomb: it held only while real
+    UTC stayed under five days from 2026-08-22 12:00, went permanently red at 2026-08-27 12:00
+    UTC, and drifted a further day every day after. Patch the CONSUMER binding -- the module
+    under test imported `utcnow` by value, so patching `core.clock` would not be seen.
+    """
+    monkeypatch.setattr(delivery_queries, "utcnow", lambda: NOW)
     with engine.begin() as conn:
         undated, _ = _deliver(conn, "undated", posted_at=None)
         dated, _ = _deliver(conn, "dated", posted_at=NOW - timedelta(days=4))
