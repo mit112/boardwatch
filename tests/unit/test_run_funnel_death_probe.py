@@ -7,7 +7,7 @@ and is nearly worthless as evidence about the corpus. Every other bucket exists 
 which of the many zeros they are looking at — a budget that refused everything, a due set with
 no URLs, a redirect rule swallowing every gone-status, a drain that never fires.
 
-`artifact_version` stays at 6. Asserted here as well as at the four sites that already pin it,
+`artifact_version` is left ALONE (7 since D-323). Asserted here as well as at the four sites that pin it,
 so the additive-key ruling is visible from the change that relies on it.
 """
 
@@ -43,6 +43,10 @@ def _funnel(death_probe: DeathProbeReport | None = None) -> RunFunnel:
             profile_row_hash=None,
             rules_hash=None,
             status="ok",
+            # Required since D-323 bumped the artifact to v7. `soft` is the default, and this
+            # section has nothing to do with the location gate — it is supplied so the helper
+            # constructs, not because the value matters here.
+            location_filter_mode="soft",
         ),
         scan=ScanContext(ran=False),
         corpus=CorpusCounts(
@@ -141,15 +145,20 @@ def test_the_markdown_says_UNMEASURED_when_the_sweep_did_not_run() -> None:  # n
 
 
 def test_the_artifact_version_does_not_move_for_the_death_probe_section() -> None:
-    """An ADDITIVE top-level key on the D-113 -> D-285 precedent, not a v7.
+    """An ADDITIVE top-level key on the D-113 -> D-285 precedent: it does not move the version.
 
     v5 bumped because an existing value CHANGED MEANING (`tailor.entered` stopped being the
     ranker's `shortlisted`); v6 bumped because `board_coverage` supplied a denominator the
-    `scan` block had been read without. `death_probe` does neither — `liveness` still counts the
+    `scan` block had been read without; **v7 bumped for D-323's lead locations, which landed
+    while this branch was open.** `death_probe` does none of those — `liveness` still counts the
     shortlist probe, and every stage's `entered`/`advanced` is untouched. The `lanes` key settled
     the identical question the identical way. Asserted from both directions, because a bump made
     in the constant alone would still change every artifact a consumer reads.
+
+    The literal tracks whatever `main` currently declares; what this test defends is that adding
+    `death_probe` leaves it ALONE. It caught exactly that on rebase: the pin said 6, D-323 had
+    moved main to 7, and a textual merge could not see the disagreement.
     """
-    assert ARTIFACT_VERSION == 6
-    assert funnel_to_dict(_funnel())["artifact_version"] == 6
-    assert funnel_to_dict(_funnel(_sample()))["artifact_version"] == 6
+    assert ARTIFACT_VERSION == 7
+    assert funnel_to_dict(_funnel())["artifact_version"] == 7
+    assert funnel_to_dict(_funnel(_sample()))["artifact_version"] == 7
