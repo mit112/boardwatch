@@ -98,3 +98,69 @@ def db_revision(conn: Connection) -> str | None:
     except OperationalError:  # alembic_version table absent -> schema never applied
         return None
     return str(result) if result is not None else None
+
+
+def get_readonly_engine(data_dir: Path, busy_timeout_ms: int = 5000) -> Engine:
+    """Open an EXISTING store read-only, for a caller that must never write it.
+
+    A separate function rather than a flag on `get_engine`, because three of that function's
+    four steps are writes — the `mkdir`, the read-write open, and `journal_mode=WAL` — so a
+    shared body would be a branch on every line. Every difference from it is deliberate and
+    load-bearing, and each is annotated below with what goes wrong without it.
+    """
+    # KEPT from `get_engine`, not skipped. Reading a WAL database is not a bystander operation:
+    # SQLite serves the read through the -shm shared-memory segment and POSIX advisory locks,
+    # and creates the -shm itself when it is absent. Those are precisely the primitives that do
+    # not hold across the filesystems this guard refuses (D-241), so a read-only opener that
+    # cleared the check would silently permit the exact configuration the check exists to catch.
+    if (fstype := unsafe_wal_filesystem(data_dir)) is not None:
+        raise WalUnsafeFilesystemError(data_dir, fstype)
+
+    # NO `mkdir`. An opener that creates the store it is supposed to only read is a bug: the
+    # caller asked to read a store, and a fresh empty directory answers that request with a
+    # silence indistinguishable from an empty database. The absence is raised here rather than
+    # left to the first connection because SQLite reports a missing file as `unable to open
+    # database file`, which reads like a permissions fault and sends the operator the wrong way.
+    db_path = (data_dir / DB_FILENAME).resolve()
+    if not db_path.is_file():
+        raise FileNotFoundError(f"no {DB_FILENAME} at {db_path}: nothing has written a store yet")
+
+    # A read-only SQLite URI, through the DBAPI's `uri=True` — which SQLAlchemy's pysqlite
+    # dialect enables from `uri=true` in the query string, and only from there, never from
+    # `connect_args`. This is the one route that reads both a live store and a cleanly
+    # checkpointed one: the `sqlite3` CLI fails SQLITE_CANTOPEN(14) when the -shm is absent, and
+    # `immutable=1` skips the WAL altogether, answering from the last checkpoint — measured,
+    # that reports `no such table` for a table whose CREATE is still in the WAL.
+    #
+    # `mode=ro` belongs in the URL and not in a `creator=` callable, because read-only-ness has
+    # to survive a re-parse: `ensure_schema` renders `engine.url` and hands the string to
+    # alembic, which builds its OWN engine from it and would migrate the very store this opener
+    # promised only to read.
+    #
+    # `as_uri()` rather than an f-string of the path, because SQLite percent-decodes a URI
+    # filename: a raw `#` or `?` anywhere in the data dir truncates it there and opens a
+    # DIFFERENT, empty database without complaint. Measured on both characters.
+    engine = create_engine(f"sqlite:///{db_path.as_uri()}?mode=ro&uri=true")
+
+    @event.listens_for(engine, "connect")
+    def _set_readonly_pragmas(dbapi_connection: Any, _record: Any) -> None:
+        cursor = dbapi_connection.cursor()
+        # NO `journal_mode=WAL`: that pragma is a write, and against an existing store it can be
+        # a journal-mode CONVERSION, which is the one operation no other connection's lock
+        # permits to wait (see the note in `ensure_schema`).
+        #
+        # busy_timeout is treated exactly as `get_engine` treats it: same parameter, same
+        # default, set on every connection. A read is not exempt from SQLITE_BUSY — it queues
+        # behind a checkpointer or behind a writer holding an exclusive lock. Setting it here is
+        # also what makes the parameter mean anything at all: Python's sqlite3 driver applies a
+        # 5000 ms timeout of its own, so without this line the argument is silently ignored.
+        cursor.execute(f"PRAGMA busy_timeout={busy_timeout_ms}")
+        cursor.execute("PRAGMA foreign_keys=ON")
+        # Inherited unchanged above, so the pragma set differs from `get_engine`'s only by the
+        # writes. `query_only` is the addition: `mode=ro` refuses the write at the file, this
+        # refuses the statement at the connection, so a stray write fails in the process that
+        # issued it instead of depending on how the file happened to be opened.
+        cursor.execute("PRAGMA query_only=ON")
+        cursor.close()
+
+    return engine

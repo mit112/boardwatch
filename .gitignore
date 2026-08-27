@@ -11,3 +11,4 @@ reasonix.toml
 .reasonix-runs/
 .DS_Store
 scratchpad/
+web/node_modules/

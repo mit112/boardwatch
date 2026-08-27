@@ -38,6 +38,8 @@ from boardwatch.core.lineage import ResumeSourceLineage
 from boardwatch.core.politeness import Fetcher
 from boardwatch.core.regroup import plan_regrouping
 from boardwatch.core.settings import Settings
+from boardwatch.delivery.api import resolve_owner_name
+from boardwatch.delivery.queue import DEFAULT_QUEUE_ROOT, reconcile_queue, sync_queue
 from boardwatch.eligibility.audit import AuditView, load_audit
 from boardwatch.eligibility.catalog import load_rules
 from boardwatch.eligibility.preflight import current_identity
@@ -1365,6 +1367,18 @@ def run_pipeline(
             summary.morning = _emit_morning(engine, settings, summary, day_dir)
         except Exception as exc:  # noqa: BLE001 - never mask the run's own outcome
             console.print(f"  ! morning artifact not written: {exc}", markup=False)
+        # The delivery queue (design §4.3), LAST of the three projections and guarded exactly as
+        # they are. The queue holds COPIES of what the run already delivered — the résumé and the
+        # funnel above are the run's real output — so a queue failure must cost the queue and
+        # nothing else, and it must not sit upstream of an artifact a gate reads. Recorded on
+        # `summary.errors` as well as printed, because `run_cmd` prints that list after the call
+        # returns and a silently unwritten queue is a queue the owner will trust anyway.
+        try:
+            _sync_queue(engine, settings, console)
+        except Exception as exc:  # noqa: BLE001 - never mask the run's own outcome
+            note = f"delivery queue not synced: {exc}"
+            console.print(f"  ! {note}", markup=False)
+            summary.errors.append(note)
         # Dead-man's-switch: ping the monitor ONLY on a clean outcome, so a failed or
         # crashed run (fatal set above, or set-before-raise on the crash path) stays silent
         # and the external monitor still alerts. Gated on `fatal`, not on reaching a return —
@@ -1546,6 +1560,43 @@ def _emit_morning(
         board_coverage=summary.board_coverage,
     )
     return write_morning(artifact, day_dir)
+
+
+def _sync_queue(engine: Engine, settings: Settings, console: Console) -> None:
+    """Drain, then rebuild, the delivery queue on disk from what the store says (design §4.3).
+
+    **Reconcile first**, the same order and for the same reason as `delivery/server.py`'s
+    `prime_queue`: a lead the owner applied to through the review page is no longer in
+    `delivered_unapplied`, so only `reconcile_queue` can move its folder into `_applied/`.
+    Draining is also why this is not gated on `summary.tailored` and why the call site sits in
+    the run's `finally` — a day that arrived with nothing still has to retire what the owner
+    acted on since yesterday, and a run that aborted early is not a reason to leave an applied
+    lead sitting in the queue.
+
+    Neither entry point raises on contention: both report `contended=True`, so a scheduled run
+    colliding with a serving web app is a normal outcome that changed nothing, not an error. Both
+    also report per-lead failures inside their report rather than raising, so the counts below are
+    the only place those surface — nothing here re-raises them.
+
+    `DEFAULT_QUEUE_ROOT` is read from this module's namespace at call time rather than captured in
+    a default argument, so a test can redirect the root by name; a `Settings` field would add four
+    separately gated registration sites for a path no config file needs to carry.
+    """
+    root = DEFAULT_QUEUE_ROOT
+    with engine.connect() as conn:
+        # The owner's name for the résumé filename, resolved by the one function that already
+        # owns that question (`answers.yaml` first, the authored résumé's header second), on the
+        # connection already open here rather than by reading the résumé a second time.
+        owner_name = resolve_owner_name(conn, settings.config_dir)
+        drained = reconcile_queue(conn, root=root)
+        synced = sync_queue(conn, root=root, owner_name=owner_name)
+    contended = " (contended, nothing changed)" if synced.contended or drained.contended else ""
+    console.print(
+        f"  queue → {root}: {synced.created} new, {synced.updated} updated, "
+        f"{synced.unchanged} unchanged, {synced.moved + drained.moved} moved, "
+        f"{synced.failed + drained.failed} failed{contended}",
+        markup=False,
+    )
 
 
 def _ensure_dir(path: Path) -> Path:

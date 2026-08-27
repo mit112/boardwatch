@@ -1,0 +1,87 @@
+@import "tailwindcss";
+
+/*
+ * Design tokens. Every colour and every easing curve in the application resolves here; nothing
+ * downstream hard-codes a hex value or a cubic-bezier.
+ *
+ * The default Tailwind palette and the default easing namespace are BOTH cleared (`*: initial`).
+ * That is what keeps the promises structural rather than a matter of review discipline: with the
+ * palette gone there is no `bg-white` to reach for, and with `--ease-*` cleared there is no
+ * `ease-in` or `ease-linear` utility to accidentally emit a fourth curve.
+ */
+@theme {
+  --color-*: initial;
+  --color-transparent: transparent;
+  --color-current: currentColor;
+
+  /* Verified against WCAG 2.2 AA by computation (design §8.4), not by eye. */
+  --color-bg: #0b0c0e;
+  --color-surface: #14161a;
+  --color-surface-2: #1c1f24;
+  --color-fg: #e8eaed; /* 16.24 on bg */
+  --color-fg-2: #9aa1ab; /* 7.51 on bg */
+  --color-fg-3: #7c838d; /* 5.11 on bg */
+  --color-control: #606774; /* 3.44 — the MINIMUM that clears 3:1. Never lighten below this. */
+  --color-accent: #4db6e2; /* selection and focus rings ONLY */
+  --color-divider: #2a2e35; /* 1.44 — decorative ONLY, never carries meaning */
+
+  /* Motion personality: Surgical. Exactly three curves, no springs. */
+  --ease-*: initial;
+  --ease-out: cubic-bezier(0.16, 1, 0.3, 1); /* arriving */
+  --ease-in-out: cubic-bezier(0.65, 0, 0.35, 1); /* state */
+  --ease-snap: cubic-bezier(0.22, 1, 0.36, 1); /* hover */
+
+  /* Tailwind's bare `transition` utility would otherwise emit its own default curve. */
+  --default-transition-timing-function: var(--ease-in-out);
+  --default-transition-duration: 150ms;
+
+  --font-sans:
+    ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial,
+    sans-serif;
+  --font-mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+}
+
+@layer base {
+  html {
+    background-color: var(--color-bg);
+    color-scheme: dark;
+  }
+
+  body {
+    margin: 0;
+    background-color: var(--color-bg);
+    color: var(--color-fg);
+    font-family: var(--font-sans);
+    -webkit-font-smoothing: antialiased;
+  }
+
+  /* A visible focus ring on every interactive element, without exception. */
+  :focus-visible {
+    outline: 2px solid var(--color-accent);
+    outline-offset: 2px;
+  }
+
+  ::selection {
+    background-color: color-mix(in oklab, var(--color-accent) 35%, transparent);
+  }
+
+  [hidden] {
+    display: none !important;
+  }
+}
+
+/*
+ * `prefers-reduced-motion` fallback: opacity only, everywhere. Collapsing every transition to a
+ * single property here is why no component has to remember to guard its own animation.
+ */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    transition-property: opacity !important;
+    transition-duration: 100ms !important;
+    animation-duration: 1ms !important;
+    animation-iteration-count: 1 !important;
+    scroll-behavior: auto !important;
+  }
+}

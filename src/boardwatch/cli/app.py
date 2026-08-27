@@ -30,6 +30,7 @@ from boardwatch.cli.tailor_cmd import tailor_app
 from boardwatch.cli.top_cmd import top as _top
 from boardwatch.cli.track_cmd import track_app
 from boardwatch.cli.verify_cmd import verify as _verify
+from boardwatch.cli.web_cmd import web as _web
 
 app = typer.Typer(no_args_is_help=True, add_completion=False)
 console = Console()
@@ -78,3 +79,4 @@ app.command("run")(_run)
 app.command("verify")(_verify)
 app.add_typer(profile_bundle_app, name="profile-bundle")
 app.add_typer(resume_app, name="resume")
+app.command("web")(_web)
