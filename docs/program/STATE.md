@@ -67,59 +67,19 @@ watched `ashby:kayak`. Separately, **15 lane companies on a registry ATS were pr
 cannot-close class went 745 → 722. **~765 discover candidates remain capped**; Workday 333 +
 SmartRecruiters 107 ramp last (per-posting detail budget on first scan).
 
-**LANE-ACQUIRED POSTINGS CAN NEVER CLOSE, AND ABSENCE IS NOW PROVEN MEANINGLESS (D-314, extended
-2026-08-27).** The mechanism is unchanged: `_process_missing` (`scan/apply.py`) is the only writer of
-`status="closed"`, runs on **`complete`** snapshots only; `lanes/base.py::lane_snapshot` is always
-`partial`; lane companies are upserted `watched=False`. **The new evidence is a natural experiment in
-the store:** when the D-309 role facet changed what the lanes search for, **0 of 290** pre-facet lane
-postings were ever re-seen — and probing 45 of them with the shipped prober found **40 alive (HTTP 200),
-0 dead**. They did not close; we stopped asking. At 3h cadence a **live** lane posting is absent from
-its own lane's results in **~19% of runs**, so a `CLOSE_AFTER_MISSES=2` analogue would have destroyed
-**25 live postings in 33 hours**. **Age-based and missed-run closing are therefore REJECTED by
-measurement, not merely unproven — do not propose either again.** The class was 282 at D-314 and is
-**471**, growing **~182/day**. The honest predicate is `companies.watched = 0` ("nothing enumerates this
-board") = **722 rows**, which includes ~274 unwatched `source='user'` companies with the identical
-defect — `source='lane'` is wrong in both directions. **Owner ruled 2026-08-27: build the `unverifiable`
-label (#186/D-324), promote registry-ATS lane companies (DONE — 15 of them), and add the 6.7%-power URL
-probe (#187/D-325). He did NOT choose to cap how long a lane row stays DELIVERABLE — the only option
-that shrinks the pool. Worth re-raising.**
-
-**HOW TO REPORT YIELD — the owner's standing rule (D-312).** Every yield, coverage or job-apps comparison
-quotes **the end of the line: affirmatively `eligible` jobs** — currently **~60/day** (eligible + software +
-in-band + US + non-duplicate + unhandled). **Never** quote a broader upstream population as the headline:
-"new postings/day" and "software-titled/day" are different quantities, and doing so overstated yield ~8× in
-this session before Mit caught it (the hard US filter alone removes 57% of the corpus). **`uncertain` is
-never folded into `eligible`** — the keystone invariant, not a preference; the ~82/day abstains get their own
-line. Measure with `stats` / `top --no-record --json` / the run funnel, never ad-hoc SQL over `postings`.
-
-> **A MANUAL RUN RACING A TICK EXITS 2 AND RESETS GATE P3**, and at 8 fires a day that is 8× likelier than
-> it was. Check `launchctl print gui/$(id -u)/com.boardwatch.run | grep state` before starting one by hand.
-> Two *scheduled* fires cannot collide — launchd never runs two instances of one label.
-
-**The headline number: 0.** Zero job applications have ever been sent (`applications` has 0 rows) — the
-machine produces leads, it never applies (out of scope). Against that: **4 published releases, latest
-`0.5.0`**, ~53k lines of source, **7,584+ tests**, 71 leaf CLI commands, 6 ATS providers, a **~1.4 GB**
-store holding **51,004 postings / 43,286 open** (2026-08-26).
-
-> **PHANTOM run 118 (benign, mine, and STUCK `running`).** The production-path verification for D-319
-> was a `boardwatch top --no-record` against the LIVE store, which calls `ensure_run`. It wrote **4,400
-> eligibility evaluations** under `1+5bf77461f044` — the rows the paired old-vs-new comparison in METRICS
-> is measured from, so they are real and correctly stamped — and was then stopped part-way, leaving
-> `runs.id=118` at **`status='running'` forever** with `boards_attempted=0`, 0 artifacts and 0
-> `job_dispositions`. Gate P3 is unaffected: its filter is `boards_attempted > 0`, which excludes this
-> row exactly as it excludes run 91. Left in place for the same reason run 91 was — the production store
-> has no rollback snapshot and deleting a row is riskier than an inert one. **Consequence: the first
-> scheduled tick on the new engine is run 119, not 118.** Two lessons, both already known and both
-> ignored here: `top` writes a run even with `--no-record` (that flag governs the `seen` cursor, not
-> `ensure_run`), and a full-corpus read against the live store is a WRITE.
-
-> **PHANTOM run 91 (benign, mine).** A `boardwatch tailor run 13549` verification without a scratch
-> `BOARDWATCH_DATA_DIR` called `ensure_run` and wrote to the LIVE store: run 91 (empty, `boards_attempted=0`,
-> 36ms) + one `artifacts` row (id 498, uri→`/tmp`). NO `job_dispositions`, posting 13549 NOT marked handled,
-> dedup/ledger UNAFFECTED, streak intact (the `boards_attempted>0` filter excludes it). Left in place (prod
-> store has no rollback snapshot; deleting is riskier than an empty row). Consequence: next scheduled tick is
-> **run 92**. Lesson: to verify projection against real postings with the LIVE edited config you must hit the
-> live store — use read-only `resume project`, never `tailor run` (it writes a run+artifact).
+**LANE POSTINGS CANNOT CLOSE, AND ABSENCE IS PROVEN MEANINGLESS — SETTLED, DO NOT REOPEN
+(D-314/D-324/D-325/D-329).** The class is **722** rows on the honest predicate `companies.watched = 0`
+("nothing enumerates this board"), growing **~182/day**, and **the owner has ruled the pool may grow
+(D-329)**: the three honesty options shipped and the deliverability cap was declined against the
+measurement. **Age-based and missed-run closing are REJECTED BY MEASUREMENT — do not propose either
+again**; the mechanism, the natural experiment behind it and the probe's 6.7% power are in
+`STANDING-FACTS.md` § Lanes and JD acquisition.
+**SCALE (2026-08-27, measured after run 124).** **4 published releases, latest `0.5.0`**, ~53k lines of
+source, **8,000+ tests**, 71 leaf CLI commands, 6 ATS providers, **346 watched boards**, 124 runs, and a
+**2.9 GB** store holding **90,915 postings / 80,737 open**. Output is bounded by `DEFAULT_TOP_N = 10` leads per run, so
+**breadth is argued on precision and capacity — never on an application count** (D-312, owner's standing
+rule, reaffirmed 2026-08-27). boardwatch produces leads and deliberately does not apply: auto-apply is
+out of scope, and `applications` rows exist only where the user marks one.
 
 **THE STORE IS AT `p_lane_companies`, which is `main`'s head**, so `ensure_schema` on the next tick is a
 no-op. **The rule this bought: after any PR that adds a migration, apply it to the live store deliberately
@@ -127,28 +87,10 @@ and verify, rather than letting the next unattended tick discover it** (D-279/D-
 rollback snapshot** — all three stale backups were verified redundant and deleted (2026-08-23b, ~2.9 GB
 reclaimed). Take one before any destructive operation rather than assuming one exists.
 
-**THE LAUNCHD JOB RUNS AN EDITABLE VENV RESOLVING TO `src/` IN THE PRIMARY WORKING TREE**, so a scheduled
-tick executes whatever branch is CHECKED OUT there. **Leave that tree on `main`.** Use a worktree for
-parallel work, and never `git stash` — it is shared across worktrees.
-
-**Every agent invocation needs BOTH `BOARDWATCH_DATA_DIR` and `BOARDWATCH_CONFIG_DIR` on a scratch dir**
-(D-281). `DATA_DIR` alone still READS the live `resume.yaml` / `career-profile/` / template and still
-WRITES into the live `~/boardwatch-applications/`. The live store is the DEFAULT, so a forgotten flag
-reaches production, and a migration breaks the NEXT scheduled run, not the one that erred. Two
-consequences: a scratch run's `funnel-N` collides with the next real run's, and the artifact directory is
-**UTC-dated** — match on the run NUMBER, never the date.
-
-**Standing tripwire (D-268):** all six known precision leaks are blocked by the current gates — five
-non-SWE `Lead` titles in the role gate, GE HealthCare posting 31365 (`Buc` → `non_us`) in the hard filter.
-Any of the six appearing in a funnel's `leads` is a real regression to investigate before anything else.
-
-**`DEFAULT_TOP_N` is 10 — a HOLDING value until the precision work lands (D-293), and the uncapped set was
-MEASURED, not estimated (D-292): 3,771 postings arriving ~220-430/day, of which 67.6% are `role=uncertain`,
-so honest confirmed-software arrival is ~70/day. Quote neither figure without naming its population —
-they differ by 4x.** Do **not** raise the cap before the precision work is merged, and do **not** set it to
-0: that fails B1 (>= 10 net-new leads/day) outright while Gate P3's counter keeps running. The cap sets
-**burn rate, not supply** — long-run output equals the arrival rate whatever it is. Lifting it is Mit's
-call and is now informed on both sides (D-293, D-294).
+**`DEFAULT_TOP_N` is 10 — a HOLDING value until the precision work lands (D-293).** Do **not** raise it
+before the precision work is merged, and do **not** set it to 0 (that fails B1 outright while Gate P3's
+counter keeps running). Lifting it is Mit's call and is informed on both sides — the measured uncapped
+set and the population caveat are in `STANDING-FACTS.md` § Precision gates (D-292/D-293/D-294).
 
 ---
 
