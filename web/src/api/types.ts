@@ -22,7 +22,13 @@
 /** The three verdicts arrive from the API verbatim and are never computed or inferred client-side. */
 export type Verdict = "eligible" | "uncertain" | "ineligible";
 
-export type PostingStatus = "open" | "closed";
+/**
+ * Three values, where `postings.status` holds two. `unverifiable` is derived server-side for an
+ * open posting whose company nothing enumerates: no scan can ever mark it missing, so "still
+ * open" was never measured (D-314/D-324). The frontend NEVER derives it — it has no idea which
+ * boards are watched, and a second opinion about that would be a wrong one.
+ */
+export type PostingStatus = "open" | "closed" | "unverifiable";
 
 export interface QueueRow {
   posting_id: number;

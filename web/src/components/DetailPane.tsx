@@ -235,6 +235,15 @@ export function DetailPane({
                   reason="The posting is no longer open on the board."
                 />
               ) : null}
+              {/* The reason is VISIBLE here, not a tooltip: "unverifiable" is a claim about what
+                  boardwatch can know, and a bare word invites the reader to guess wrong. */}
+              {row.status === "unverifiable" ? (
+                <Badge
+                  label="unverifiable"
+                  reason="Nothing enumerates this company's board, so the posting cannot be confirmed still open or closed."
+                  showReason
+                />
+              ) : null}
               {row.thin_jd ? (
                 <Badge
                   label="thin JD"

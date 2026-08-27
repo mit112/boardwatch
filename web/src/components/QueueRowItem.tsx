@@ -42,6 +42,13 @@ function Flags({ row }: { row: QueueRow }) {
           reason="The posting is no longer open on the board."
         />
       ) : null}
+      {/* Normal emphasis, not strong: this is "not known", not a veto and not bad news. */}
+      {row.status === "unverifiable" ? (
+        <Badge
+          label="unverifiable"
+          reason="Nothing enumerates this company's board, so the posting cannot be confirmed still open."
+        />
+      ) : null}
     </>
   );
 }

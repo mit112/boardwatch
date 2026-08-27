@@ -80,13 +80,19 @@ def _run(conn: Connection, started_at: datetime = NOW) -> int:
 
 
 def _company(
-    conn: Connection, slug: str, *, name: str = "Acme", tags: list[str] | None = None
+    conn: Connection,
+    slug: str,
+    *,
+    name: str = "Acme",
+    tags: list[str] | None = None,
+    source: str = "user",
+    watched: bool = True,
 ) -> int:
     return int(
         conn.execute(
             insert(companies).values(
-                name=name, provider="greenhouse", slug=slug, source="user",
-                watched=True, tags_json=tags,
+                name=name, provider="greenhouse", slug=slug, source=source,
+                watched=watched, tags_json=tags,
             )
         ).inserted_primary_key[0]
     )
@@ -175,13 +181,15 @@ def _deliver(
     run_id: int | None = None,
     posting_body: str = JD,
     version_body: str = JD,
+    source: str = "user",
+    watched: bool = True,
 ) -> tuple[int, int]:
     """One delivered lead — company, job, posting, frozen version, tailored artifact.
 
     Returns `(posting_id, job_id)`. Pass an existing `job_id` to make two postings siblings of
     one canonical job, which is the population deduplication has to collapse.
     """
-    company_id = _company(conn, f"acme-{key}", tags=tags)
+    company_id = _company(conn, f"acme-{key}", tags=tags, source=source, watched=watched)
     job = _job(conn) if job_id is None else job_id
     posting_id = _posting(
         conn, company_id=company_id, job_id=job, key=key, status=status,
@@ -341,6 +349,65 @@ def test_a_closed_posting_with_a_tailored_resume_is_still_returned(engine: Engin
         by_posting = {row.posting_id: row for row in delivered_unapplied(conn, skipped=set())}
     assert by_posting[closed].status == "closed"
     assert by_posting[open_id].status == "open"
+
+
+def test_an_open_posting_nobody_enumerates_reads_as_unverifiable(engine: Engine) -> None:
+    """`open` on an unwatched company is an assertion the store cannot make (D-314).
+
+    Nothing enumerates that board, so the posting was never measured as still listed; it was
+    merely never contradicted. The watched control sits beside it so `unverifiable` cannot be
+    green for an implementation that relabels every row.
+    """
+    with engine.begin() as conn:
+        unwatched, _ = _deliver(conn, "lane", source="lane", watched=False)
+        watched, _ = _deliver(conn, "watched", source="registry", watched=True)
+    with engine.connect() as conn:
+        by_posting = {row.posting_id: row for row in delivered_unapplied(conn, skipped=set())}
+    assert by_posting[unwatched].status == "unverifiable"
+    assert by_posting[watched].status == "open"
+
+
+def test_an_unwatched_company_that_is_no_lane_is_unverifiable_too(engine: Engine) -> None:
+    """The discriminating case: 274 of the 722 affected rows live on `source='user'` companies,
+    and 23 `source='lane'` postings sit on companies that ARE watched (measured 2026-08-27).
+
+    A predicate keyed on `source='lane'` is therefore wrong in both directions, so both
+    directions are asserted here: an unwatched non-lane company is unverifiable, and a lane
+    posting on a watched company is a genuine `open`.
+    """
+    with engine.begin() as conn:
+        user_unwatched, _ = _deliver(conn, "user-off", source="user", watched=False)
+        lane_watched, _ = _deliver(conn, "lane-on", source="lane", watched=True)
+    with engine.connect() as conn:
+        by_posting = {row.posting_id: row for row in delivered_unapplied(conn, skipped=set())}
+    assert by_posting[user_unwatched].status == "unverifiable"
+    assert by_posting[lane_watched].status == "open"
+
+
+def test_a_closed_posting_is_never_relabelled_unverifiable(engine: Engine) -> None:
+    """`closed` is only ever written by `_process_missing` off a `complete` snapshot, so it is
+    always a real measurement — including on the 51 closed postings whose company has since
+    been unwatched. Only the `open` claim is unsupported.
+    """
+    with engine.begin() as conn:
+        closed_unwatched, _ = _deliver(
+            conn, "closed-off", status="closed", source="user", watched=False
+        )
+    with engine.connect() as conn:
+        by_posting = {row.posting_id: row for row in delivered_unapplied(conn, skipped=set())}
+    assert by_posting[closed_unwatched].status == "closed"
+
+
+def test_queue_detail_reports_the_same_unverifiable_status_as_the_row(engine: Engine) -> None:
+    """The pane and the list read one derivation. Two would eventually disagree."""
+    with engine.begin() as conn:
+        unwatched, _ = _deliver(conn, "lane", source="lane", watched=False)
+        watched, _ = _deliver(conn, "watched", source="registry", watched=True)
+    with engine.connect() as conn:
+        unverifiable = queue_detail(conn, unwatched)
+        verifiable = queue_detail(conn, watched)
+    assert unverifiable is not None and unverifiable.row.status == "unverifiable"
+    assert verifiable is not None and verifiable.row.status == "open"
 
 
 def test_meta_without_a_pdf_uri_yields_none_and_does_not_raise(engine: Engine) -> None:

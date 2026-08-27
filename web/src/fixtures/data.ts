@@ -7,9 +7,9 @@
  *   - `applied_ever` starts at 0, because `applications` has never held a row — so an empty
  *     "applied" figure is the honest starting state, not a fixture oversight;
  *   - twelve AUTHORED edge cases up front, each one a rendering that has to be got right: a null
- *     posted date, a closed posting, a thin JD, an off-target veto with its matched text, a
- *     missing PDF, a `javascript:` apply URL, a posting with no current version, and a posting
- *     whose JD yields no recognised requirements.
+ *     posted date, a closed posting, an unverifiable posting, a thin JD, an off-target veto with
+ *     its matched text, a missing PDF, a `javascript:` apply URL, a posting with no current
+ *     version, and a posting whose JD yields no recognised requirements.
  * The remainder is generated from a fixed seed so counts and ordering are stable across reloads.
  *
  * Artifact URIs are written `file://~/…` and must stay that way. `~` is not merely a shorter home
@@ -103,7 +103,9 @@ const AUTHORED: QueueRow[] = [
     remote_policy: null,
     posted_days: 6,
     first_seen: "2026-08-20T18:20:00Z",
-    status: "open",
+    // A lane-acquired lead: nothing enumerates the board it came from, so no scan can ever mark
+    // it missing. 722 open postings on the live store are in this state (D-324).
+    status: "unverifiable",
     verdict: "uncertain",
     apply_url: "https://boards.greenhouse.io/instacart/jobs/40551",
     delivered_run_id: 113,
