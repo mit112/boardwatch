@@ -8,6 +8,16 @@ All notable changes to this project are documented here. The format follows
 
 ### Fixed
 
+- **A lead the eligibility gate rejects no longer sits in the review queue (D-321).** `delivered_unapplied`
+  attached each lead's current verdict but never filtered on it, and the status band reported `eligible` and
+  `uncertain` with no cell for `ineligible` — so a rejected lead was an unexplained remainder between
+  `in queue` and the two counted buckets. Rejected leads now drain to a third directory, `_ineligible`,
+  alongside `_applied` and `_skipped`, and the count is reported. Nothing is deleted; a folder returns to the
+  queue if its verdict stops governing. An application or a skip still wins, because each is a statement you
+  made and a rule tightening later must not sweep that record away.
+
+### Fixed
+
 - **A years-of-experience requirement can now make a posting ineligible (D-319).** Two independent reasons it
   could not before. `experience_years` ships with `default_policy: preference`, and only a `blocker` family
   can yield `ineligible`, so a correctly-detected and correctly-resolved "Minimum of 12 years of experience"

@@ -19,6 +19,29 @@
 
 ## Current standing
 
+**FIVE ELIGIBILITY FAMILIES ARE NOW BLOCKERS, AND RUN 119 IS THE FIRST TICK CARRYING ALL OF IT (D-321).**
+Live policy: `work_auth`, `clearance`, `experience_years`, `internship`, `contract_not_fte`. `internship` and
+`contract_not_fte` were armed 21:45 CDT 2026-08-26 after measuring them (2 and 1 newly-blocked leads over 598
+delivered), verified by direct SQL on `profile.eligibility_policy_json`. **`degree` is deliberately left at
+`preference` — the owner's call, NOT taken:** it measured at 1 lead but carries seven `abstain_by` patterns
+for degree-OR-experience forms, so a 1-lead count mis-states its blast radius.
+
+**RUN 119 (04:00Z) IS IN FLIGHT AND CARRIES FOUR CHANGES AT ONCE** — D-319, D-320, and both newly-armed
+families — on `engine_version` `1+af3a746837b1`. **Its delivered count must NOT be attributed to the years
+gate alone.** Verify it, not run 118, with
+`.venv/bin/python .agent/2026-08-26-years-gate/verify_years_gate_run.py 119` (gitignored; read-only; derives
+the current engine rather than pinning it). The years-specific tripwire is a clean signal regardless because
+it reads each delivered lead's own frozen JD. **Baseline to beat: run 117, the last pre-fix tick, delivered 10
+leads of which 5 demand more years than the profile declares** (Markon 6y, TCS 5y, Cisco 5y, T-Mobile 3y,
+Haystack 2y). Expect 0.
+
+**TWO PRs OPEN, BOTH WITH AUTO-MERGE ARMED, NEITHER MERGED AT SESSION CLOSE.** **#178** is the
+`_ineligible` queue drain (D-321 part 2) — its `make check` was **8001 passed / 1 failed**, the failure a
+pre-existing wall-clock flake proven unrelated (see D-321); CI is the uncontended judge. **#179** is a
+stranded docs commit recording phantom run 118. **Check both before trusting anything below that cites
+them.** When #178 lands and is pulled, the next run's sync hook will move roughly **294 folders** into
+`~/boardwatch-queue/_ineligible` on its own — intended, reversible, and worth expecting.
+
 **THE YEARS-OF-EXPERIENCE GATE HAD NEVER FIRED — FIXED, ARMED AND LIVE (D-319 #175, D-320 #176).** The owner
 opened the delivery queue and the first lead demanded 5 years. Measured: **142 of 588 delivered leads (24.1%)
 state a minimum of five or more years.** Three stacked causes — (1) `experience_years` sat at the catalog
@@ -124,30 +147,19 @@ call and is now informed on both sides (D-293, D-294).
 
 ## Next action
 
-**The provisional pass is NO LONGER met — D-319 reset it deliberately.** Quality still holds (P4 gate MET,
-B1–B7 passing, P6 leakage 0.00% over 7d, B4 370/0), but `engine_version` moved, so the frozen-run count starts
-again from the first tick on `1+5bf77461f044`. **No build is outstanding for the years gate.** Immediate items:
-
-1. **VERIFY THE FIRST TICK ON THE NEW ENGINE (23:00 CDT / 04:00Z).** Run 117 (01:00Z, `ok`, 234 boards, 59
-   min) was the last on the old engine. The next tick is the first with `experience_years: blocker` AND the
-   D-319 resolver, and it re-evaluates all 267,434 stale evaluations. Check: delivered volume roughly halves,
-   `ineligible` becomes a large bucket, and no posting asking 0–1 years is blocked. A full-corpus
-   `top --no-record` was started this session as an independent production-path check.
-2. **PR #176 (D-320) may still be in flight** — `make check` green locally (7993 passed), auto-merge armed.
-   It adds the activity-gerund pattern (10 newly blocked, 0 spared) and a `we bring` company-side suppressor.
-   Confirm it merged and was pulled before reading the next tick's numbers, or the two changes blur together.
-3. **Decide the queue's `ineligible` presentation — OWNER-FACING.** `delivered_unapplied` attaches the current
-   verdict but never filters on it, and `api._counts` has **no `ineligible` key**, so after D-319 roughly 294
-   of 598 queue folders become an unexplained remainder between `in_queue` and `eligible + uncertain`. Needs a
-   product call plus a JS bundle rebuild; not taken unilaterally.
-4. **Consider raising the LinkedIn body budget (`lane_posting_budget`).** D-311 measured LinkedIn at 49.7%
-   of the reachable market and the setting is OUT of `config_hash`, so it is freeze-safe. Measure a run before
-   and after rather than assuming.
-5. **`internship` and `contract_not_fte` are the SAME defect as D-319 and are NOT armed.** Both sit at
-   `preference` while the profile declares `internship_preference: exclude` and `employment_type_preference:
-   fte_only`. Measured on 598 delivered leads: arming them blocks **2** (Disney intern reqs) and **1** (a UT
-   Austin contract role) respectively; `degree: blocker` would add **1** (Intel, doctorate). All correct, all
-   tiny. Owner's call, and each costs another freeze reset.
+1. **VERIFY RUN 119 — the first tick on `1+af3a746837b1`.**
+   `.venv/bin/python .agent/2026-08-26-years-gate/verify_years_gate_run.py 119`. Tripwire should read 0
+   against run 117's 5-of-10. It carries four changes, so read the tripwire, not the total.
+2. **CONFIRM #178 AND #179 MERGED, then pull the primary tree.** Both were armed but unmerged at close. #178
+   changes what the queue holds, so the first sync after pulling it drains ~294 folders.
+3. **`degree` at `preference` is an open owner call** (D-321). Arming it blocks 1 measured lead and costs
+   another freeze reset.
+4. **The provisional-pass clock restarts.** `engine_version` moved twice this session and the policy three
+   times, so the frozen-run count begins at the first clean scheduled tick on `1+af3a746837b1` with the
+   five-blocker policy. Quality is otherwise proven: P4 gate MET, B1–B7 passing, P6 leakage 0.00% over 7d.
+5. **Deferred with numbers, do not re-derive:** the residual years-detection gap is **24 leads, ~8 real
+   (1.3%)**, and widening the pattern rejects postings on `18 years of age` (3 occurrences) — see METRICS.
+   job-apps' preferred-vs-required HEADING state machine is **2 of 286** and architectural (D-320).
 
 **Arming Part 4a's ~898 boards remains a SEPARATE owner decision, NOT taken.** The capped `discover`→review→
 `import` loop is shipped; ramp in batches of ~10 (898 at ~7s each exceeds the 3h cadence). Do **not** add a
