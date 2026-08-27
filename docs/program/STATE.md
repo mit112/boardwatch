@@ -93,6 +93,24 @@ in 27 min against 234 boards, `boards_attempted` not yet written. **VERIFY IT FI
 1.1%-SWE pre-facet baseline. Note today has FOUR regimes and no figure may be compared across them: fleet
 140→235 at ~11:40 CDT, AlphaHire unwatched ~12:10, lanes disarmed 12:10→18:51, facet armed 18:51.
 
+**FACET CONFIRMED LIVE ON RUN 116 (2026-08-27 ~00:20Z).** 10 delivered leads, both lanes contributing
+(hiringcafe 21 attempted/20 resolved, linkedin 36/18); **7 clearly software** (MAG Aerospace, GM Software
+System Architect, MeeBoss, Kimley-Horn, KION Software Support, Cellebrite iOS Reverse Eng, Copeland) vs the
+~1.1% pre-facet baseline. The 3 residual non-SWE (Humana, Raymond James, KION Commissioning) are the
+`uncertain` fail-open; run 116 ran on veto-LESS code (the primary checkout was pre-#171 until session close),
+so the NEXT tick runs the zero-signal veto (#171) against exactly those.
+
+**THE DELIVERY QUEUE + LOCAL REVIEW WEB APP SHIPPED, ARMED AND POPULATED (D-318, PR #173 = `0361145`).** A
+second root `~/boardwatch-queue` holds COPIES of every delivered-unapplied lead (résumé, apply link, frozen
+JD, `details.json`), deduped by canonical `job_id`; the dated tree is NEVER touched (freshness/verify/the B4
+fabrication audit all key on it). `boardwatch web` serves a triage queue + per-run diagnostics on loopback
+with a per-install 0600 token; `prime_queue` runs on startup. `engine_version` unchanged, no ledger drain,
+freeze-safe; the write surface is confined to the queue root (audited). Armed at session close: primary
+checkout fast-forwarded to `0361145` and the queue primed to **588 leads**; served on a FREE port because the
+owner's Bridge server holds the default 8787. The `finally`-block hook refreshes it every tick. A pre-existing
+latent flaky test was fixed in the same PR (`test_contention_is_not_a_failure`, `Console` width pin vs a deep
+xdist tmp path → raised to 10_000; the rebase was innocent).
+
 **COVERAGE vs job-apps — RE-MEASURED, and the earlier read was WRONG ABOUT WHERE THE GAP IS (D-310/D-311).**
 The prior note said native ATS imports "top out at ~40%" and that only the lanes could close the gap. The
 39.6% was the CEILING, not the position: boardwatch was watching boards for only **58 of job-apps' 465**
@@ -325,11 +343,13 @@ blind review passed), B1–B7 pass on every run (verified via `.agent/2026-08-25
 --runs <N>`), freeze tuple stable across runs 92/94 (`config_hash f56a0166…`, engine_version `1+63c6f8fd5a3e`),
 P6 leakage 0.00% over 7d, B4 370/0. 21 clean runs (92, 94–113). **No build left.** Immediate items:
 
-1. **VERIFY RUN 115, the first faceted tick.** Re-arming is DONE (18:51Z). Run
-   `.agent/2026-08-26-lane-facet/verify_facet_run.py 115` — it prints lane yield by role verdict and the
-   delivered set with sources, and flags any `not_swe` delivery (which would mean the role veto did not fire).
-   Expect lane inflow to be software-relevant; expect SOME lane-sourced `uncertain` still delivered, because
-   the 282 pre-facet lane postings are immortal (D-314) and the facet only changes inflow.
+1. **FACET VERIFIED (run 116) — the remaining check is the VETO's effect, not the facet's.** Re-arming is
+   DONE and run 116 confirmed the facet live (7/10 software; see Current standing). Run 116 pre-dated the veto
+   in the running code; the primary checkout is now at `0361145` (veto live + delivery queue armed), so verify
+   the NEXT scheduled tick suppresses the zero-signal `uncertain` leaks (Humana/Raymond James/KION
+   Commissioning class) with `.agent/2026-08-26-lane-facet/verify_facet_run.py <N>`. Expect SOME lane-sourced
+   `uncertain` still delivered — the 282 pre-facet lane postings are immortal (D-314) and the veto only catches
+   zero-signal ones.
 2. **Consider raising the LinkedIn body budget (`lane_posting_budget`).** D-311 measured LinkedIn at 49.7%
    of the reachable market and the setting is OUT of `config_hash`, so it is freeze-safe to change. The facet
    makes those bodies software-relevant for the first time; the budget is now the binding constraint, not the
