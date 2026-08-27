@@ -20,6 +20,7 @@ import pytest
 from boardwatch.delivery.names import (
     COMPONENT_BYTE_CAP,
     DESTINATION_BYTE_CAP,
+    DRAIN_DIRS,
     RESERVED_DEVICE_NAMES,
     LeadNames,
     NameBudgetError,
@@ -40,8 +41,14 @@ def blen(text: str) -> int:
 
 
 def destination_bytes(root: Path, names: LeadNames) -> int:
-    """Bytes of the longest final destination, spelled out rather than delegated."""
-    return blen(f"{root}/_skipped/{names.folder}/{names.pdf}")
+    """Bytes of the longest final destination, spelled out rather than delegated.
+
+    The drain is taken as the LONGEST of `DRAIN_DIRS`, which is what `_prefix_bytes` prices the
+    budget against. This said `_skipped` — a hardcoded 8-byte drain — so once the 11-byte
+    `_ineligible` existed the helper measured a destination 3 bytes shorter than the one the cap
+    is about, and every assertion built on it was measuring the wrong path.
+    """
+    return blen(f"{root}/{max(DRAIN_DIRS, key=len)}/{names.folder}/{names.pdf}")
 
 
 def plan(
@@ -263,10 +270,26 @@ def test_a_longer_root_leaves_less_room_for_the_title() -> None:
 
 
 def test_a_name_legal_in_the_queue_is_still_legal_after_it_drains() -> None:
+    """Every drain, taken from `DRAIN_DIRS` rather than a literal pair.
+
+    The literal went stale the moment a third drain was added: `_ineligible` is 11 bytes against
+    the others' 8, so the budget was under-priced by 3 and this test could not see it. Iterating
+    the constant the budget itself is computed from is what makes the two impossible to diverge.
+    """
     root = Path("/q/" + "x" * 40)
     names = plan("S" * 300, root=root)
-    for drain in ("_applied", "_skipped"):
+    assert len(DRAIN_DIRS) >= 3, "premise: the loop must cover more than the original pair"
+    for drain in DRAIN_DIRS:
         assert blen(f"{root}/{drain}/{names.folder}/{names.pdf}") <= DESTINATION_BYTE_CAP
+
+
+def test_the_budget_is_priced_against_the_longest_drain() -> None:
+    """The specific defect: pricing against `_applied` (8 bytes) while `_ineligible` (11) exists
+    means `NameBudgetError` accepts names whose drained destination it promised to refuse."""
+    longest = max(DRAIN_DIRS, key=len)
+    root = Path("/" + "d" * 181)
+    names = plan("S" * 300, root=root)
+    assert blen(f"{root}/{longest}/{names.folder}/{names.pdf}") <= DESTINATION_BYTE_CAP
 
 
 def test_a_root_that_leaves_no_room_at_all_is_refused_before_anything_is_created() -> None:
@@ -279,11 +302,14 @@ def test_a_root_that_leaves_no_room_at_all_is_refused_before_anything_is_created
 
 
 def test_the_longest_root_that_still_fits_spends_the_budget_exactly() -> None:
-    # 182 bytes of root + "/_applied/" (10) = 192, and the shortest names the cascade can
-    # produce for a 4-byte company and a 12-byte owner are 15 + 1 + 32 = 48 bytes. 192 + 48
-    # is exactly the cap: one byte more of root and the previous test's refusal fires.
-    root = Path("/" + "d" * 181)
-    assert blen(str(root)) == 182
+    # 183 bytes of root + "/_ineligible/" (13) = 196, and the shortest names the cascade can
+    # produce for a 4-byte company and a 12-byte owner are 11 + 1 + 32 = 44 bytes. 196 + 44 is
+    # exactly the cap. The arithmetic moved when `_ineligible` joined `DRAIN_DIRS`: the budget is
+    # priced against the LONGEST drain, so a third drain 3 bytes longer than the original pair
+    # tightens every planned name by 3. That is the whole point of pricing against the longest --
+    # a name legal in the queue has to stay legal in whichever drain it ends up in.
+    root = Path("/" + "d" * 182)
+    assert blen(str(root)) == 183
     names = plan("S" * 300, root=root)
     assert destination_bytes(root, names) == DESTINATION_BYTE_CAP
     assert_within_budget(root, names)

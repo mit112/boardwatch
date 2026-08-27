@@ -5,7 +5,7 @@
  * Three behaviours here exist to make failure paths demonstrable rather than theoretical:
  *   - a posting id divisible by 13 makes `applied` and `skipped` return HTTP 500, so the error
  *     toast and the row-restore path can be exercised deliberately;
- *   - four extra leads arrive 30 seconds after load, so the quiet "N new — refresh" line
+ *   - up to four extra leads (ineligible ones are drained, not listed) arrive 30 seconds after load, so the quiet "N new — refresh" line
  *     appears without needing a real run to land;
  *   - `reveal` reports `ok: false` for one posting, which is what a platform with no file-manager
  *     handler looks like on the wire.
@@ -24,12 +24,34 @@ const bootedAt = Date.now();
 const appliedJobIds = new Set<number>();
 const skippedPostingIds = new Set<number>();
 
-function visibleRows(): QueueRow[] {
+function pool(): QueueRow[] {
   const released = Date.now() - bootedAt > HOLD_MS;
-  const pool = released ? ALL_ROWS : QUEUE_ROWS;
-  return pool.filter(
-    (row) => !appliedJobIds.has(row.job_id) && !skippedPostingIds.has(row.posting_id),
+  return released ? ALL_ROWS : QUEUE_ROWS;
+}
+
+/**
+ * Mirrors the server: an ineligible lead is drained, so it is never a row. Filtering it here is
+ * what keeps the fixture band honest — the corpus generates ~65 ineligible leads, so listing them
+ * while reporting a hardcoded count put the reconciliation `in_queue == eligible + uncertain` out
+ * by ~65 on the one surface a reviewer actually looks at.
+ */
+function visibleRows(): QueueRow[] {
+  return pool().filter(
+    (row) =>
+      row.verdict !== "ineligible" &&
+      !appliedJobIds.has(row.job_id) &&
+      !skippedPostingIds.has(row.posting_id),
   );
+}
+
+/** Counted from the pool, the way the server counts before filtering — never a constant. */
+function ineligibleCount(): number {
+  return pool().filter(
+    (row) =>
+      row.verdict === "ineligible" &&
+      !appliedJobIds.has(row.job_id) &&
+      !skippedPostingIds.has(row.posting_id),
+  ).length;
 }
 
 function counts(rows: QueueRow[]): QueueCounts {
@@ -39,6 +61,8 @@ function counts(rows: QueueRow[]): QueueCounts {
     // Affirmatively eligible only. `uncertain` is counted separately and never added in.
     eligible: rows.filter((row) => row.verdict === "eligible").length,
     uncertain: rows.filter((row) => row.verdict === "uncertain").length,
+    // Drained, not listed: `rows` never carries an ineligible lead, so this counts the pool.
+    ineligible: ineligibleCount(),
     applied_ever: appliedJobIds.size,
     skipped: skippedPostingIds.size,
     delivered_last_run: rows.filter((row) => row.delivered_run_id === (lastRun?.id ?? -1)).length,

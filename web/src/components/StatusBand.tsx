@@ -5,7 +5,9 @@ import { EM_DASH, formatTimestamp } from "../lib/format";
  * The status band. Tabular numerals throughout, so a figure that changes does not shift the ones
  * beside it.
  *
- * `eligible` is the headline yield and `uncertain` is its own cell. They are never added together,
+ * `eligible` is the headline yield, and `uncertain` and `ineligible` each get their own cell.
+ * `in_queue` counts the WORK list, which excludes ineligible leads, so the band reconciles
+ * instead of leaving a remainder nobody can name. They are never added together,
  * anywhere: the repository's rule is that an abstain is never folded into either neighbour in any
  * report, and a page is a report. `applied ever`, not applied today — with zero applications ever
  * recorded the two are indistinguishable, and only the first says whether the tool works.
@@ -59,6 +61,11 @@ export function StatusBand({
         label="uncertain"
         value={counts.uncertain.toLocaleString()}
         note="Its own bucket: not yet known, and never added into eligible."
+      />
+      <Metric
+        label="ineligible"
+        value={counts.ineligible.toLocaleString()}
+        note="Rejected by the eligibility gate, so not in the queue. Folders drain to _ineligible."
       />
       <Metric label="applied ever" value={counts.applied_ever.toLocaleString()} />
       <Metric label="skipped" value={counts.skipped.toLocaleString()} />

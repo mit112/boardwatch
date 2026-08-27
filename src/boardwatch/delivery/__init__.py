@@ -4,6 +4,12 @@ The dated output tree under the applications root is a machine record and is unt
 everything in this package.
 """
 
-from boardwatch.delivery.names import LeadNames, NameBudgetError, plan_lead_names, slug
+from boardwatch.delivery.names import (
+    DRAIN_DIRS,
+    LeadNames,
+    NameBudgetError,
+    plan_lead_names,
+    slug,
+)
 
-__all__ = ["LeadNames", "NameBudgetError", "plan_lead_names", "slug"]
+__all__ = ["DRAIN_DIRS", "LeadNames", "NameBudgetError", "plan_lead_names", "slug"]

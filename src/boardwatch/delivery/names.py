@@ -29,7 +29,14 @@ COMPONENT_BYTE_CAP = 200
 DESTINATION_BYTE_CAP = 240
 #: Where a lead ends up once it leaves the queue. The budget is computed against the longest
 #: of these, so a name that is legal in the queue is still legal after it drains.
-DRAIN_DIRS: tuple[str, ...] = ("_applied", "_skipped")
+#:
+#: THE single source of truth for the drain set: `delivery/queue.py` derives `_LOCATIONS` from
+#: this rather than keeping its own list. The dependency has to run this way round because this
+#: module is pure and `queue.py` is not. Adding a drain here and nowhere else is the whole point
+#: -- `_ineligible` is 11 bytes against the others' 8, and while it was listed only in
+#: `queue.py` every planned name was under-priced by 3 bytes, so `NameBudgetError` accepted
+#: names whose drained destination it had promised to refuse.
+DRAIN_DIRS: tuple[str, ...] = ("_applied", "_skipped", "_ineligible")
 
 PDF_SUFFIX = ".pdf"
 
