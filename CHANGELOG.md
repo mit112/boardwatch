@@ -6,6 +6,20 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- **The run funnel now says where each lead is, and how the hard US gate read it — artifact v7 (D-323).**
+  The US-only location gate is the one gate whose failure is a lead you cannot legally take, and until now a
+  `leads[]` row in `funnel-<id>.json` carried no location at all, so the gate left no trace in the record it
+  produces: every "all leads US-located" claim came from a by-hand database read and could not be reproduced
+  from the artifact afterwards. Each lead now carries `locations` (what the posting itself named — `null`,
+  never `[]`, when it named no place) and `location_class` (`us` / `non_us` / `unknown`, computed by the same
+  classifier the ranker vetoes with, never stored separately from the locations it describes). The manifest
+  carries `location_filter_mode` in plain text, because the verdicts are unreadable without it: the mode is
+  `soft` by default, and in `soft` the hard gate never ran. The Markdown half names the classifier and the
+  number of leads it was evaluated over, so the claim stays quotable later. **`artifact_version` moves 6 → 7**;
+  no consumer validates the number, and `boardwatch verify` reads named keys out of the file as before.
+
 ### Fixed
 
 - **A lead the eligibility gate rejects no longer sits in the review queue (D-321).** `delivered_unapplied`

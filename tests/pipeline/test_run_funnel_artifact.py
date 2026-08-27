@@ -17,6 +17,7 @@ from sqlalchemy import select
 from boardwatch.core.settings import load_settings
 from boardwatch.pipeline import runner
 from boardwatch.pipeline.runner import run_pipeline
+from boardwatch.rank.location_gate import classify_location
 from boardwatch.store import tables
 from boardwatch.store.db import get_engine
 from tests.pipeline.test_pipeline_run import INIT_INPUT, _cli, _seed_posting
@@ -166,6 +167,44 @@ def test_the_artifact_names_the_board_each_lead_came_from(env: Path, tmp_path: P
     assert leads[0]["provider"] == "greenhouse"
     assert leads[0]["board_slug"] == "acme2"
     assert leads[0]["company_source"] == "user"
+
+
+def test_the_artifact_names_where_each_lead_is_and_how_the_us_gate_read_it(
+    env: Path, tmp_path: Path
+) -> None:
+    """D-267, end to end. The hard US location gate is the one gate whose failure is a lead the
+    user cannot legally take, and until v7 it left no trace in the artifact it emits: every
+    "all leads US-located" claim came from a by-hand store read and could not be reproduced
+    afterwards.
+
+    The expected location is READ BACK OUT OF THE STORE rather than transcribed, so the
+    assertion cannot go on passing against a stale literal if the seed changes — and the gate's
+    verdict is compared against the production classifier, not against a hand-written answer.
+    """
+    posting_id = _ready(env)
+    seeded = ["Austin, TX", "Remote"]
+    with get_engine(env).begin() as conn:
+        conn.execute(
+            tables.postings.update()
+            .where(tables.postings.c.id == posting_id)
+            .values(locations_json=seeded)
+        )
+    out_root = tmp_path / "apps"
+
+    _pipeline(env, out_root)
+    payload = _payload(out_root)
+    (found,) = payload["leads"]
+
+    with get_engine(env).connect() as conn:
+        stored = conn.execute(
+            select(tables.postings.c.locations_json).where(tables.postings.c.id == posting_id)
+        ).scalar_one()
+    assert found["locations"] == list(stored)
+    assert found["location_class"] == classify_location(list(stored))
+    # And the run says whether the gate was armed at all, so the verdicts above are readable.
+    assert payload["manifest"]["location_filter_mode"] == load_settings(
+        data_dir=env
+    ).location_filter_mode
 
 
 def test_the_artifact_reports_every_catalog_rule_not_just_the_ones_that_fired(

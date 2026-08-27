@@ -91,7 +91,7 @@ def test_a_projected_run_that_lost_a_lead_reconciles(
 
     # The regression this task fixes, read off the frozen artifact.
     assert payload["reconciles"] is True
-    assert payload["artifact_version"] == 6
+    assert payload["artifact_version"] == 7
 
     stages = _stages(payload)
     projection = stages["projection"]

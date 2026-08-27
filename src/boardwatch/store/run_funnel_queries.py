@@ -409,15 +409,42 @@ def count_projected_tailored_artifacts(conn: Connection, run_id: int) -> int:
 
 @dataclass(frozen=True)
 class Provenance:
-    """The board a posting came from. Gate P0 requires this per lead, from the artifact alone."""
+    """The board a posting came from, and where the posting says the job is.
+
+    Gate P0 requires the board per lead, from the artifact alone; D-323 requires the location
+    for the same reason, since the hard US gate is the one gate whose failure is a lead the
+    user cannot legally take. `locations` is `None` — never `()` — when the posting names no
+    place: see `_lead_locations`.
+    """
 
     provider: str
     board_slug: str
     company_source: str
+    locations: tuple[str, ...] | None
+
+
+def _lead_locations(stored: object) -> tuple[str, ...] | None:
+    """`postings.locations_json` as the funnel reports it, or None when it names no place.
+
+    The column is nullable, a board may publish `[]`, and a board may publish blank strings.
+    All three mean the same thing and all three are `None` here, never `()`: `()` serialises to
+    `[]`, which claims the board published a list and it was empty. Same discipline as
+    `delivery_queries._location`, which this deliberately mirrors rather than reuses — that one
+    renders a display string and would flatten several locations into one, and the gate's input
+    is the SEGMENTS, not their rendering.
+    """
+    if not isinstance(stored, list):
+        return None
+    named = tuple(str(item) for item in stored if str(item).strip())
+    return named or None
 
 
 def lead_provenance(conn: Connection, posting_ids: list[int]) -> dict[int, Provenance]:
-    """posting_id -> the watched board that produced it, in ONE query."""
+    """posting_id -> the watched board that produced it and the places it named, in ONE query.
+
+    The location is read here rather than in a second pass so it cannot disagree with the board
+    beside it in the same artifact row.
+    """
     if not posting_ids:
         return {}
     rows = conn.execute(
@@ -426,13 +453,17 @@ def lead_provenance(conn: Connection, posting_ids: list[int]) -> dict[int, Prove
             companies.c.provider,
             companies.c.slug,
             companies.c.source,
+            postings.c.locations_json,
         )
         .join(companies, postings.c.company_id == companies.c.id)
         .where(postings.c.id.in_(posting_ids))
     ).all()
     return {
         int(row[0]): Provenance(
-            provider=str(row[1]), board_slug=str(row[2]), company_source=str(row[3])
+            provider=str(row[1]),
+            board_slug=str(row[2]),
+            company_source=str(row[3]),
+            locations=_lead_locations(row[4]),
         )
         for row in rows
     }

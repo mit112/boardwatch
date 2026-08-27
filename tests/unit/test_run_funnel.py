@@ -18,6 +18,7 @@ import json
 from pathlib import Path
 
 from boardwatch.eligibility.catalog import RulesCatalog, load_rules
+from boardwatch.rank.location_gate import classify_location
 from boardwatch.reports.abstain import AbstainReport, build_abstain_report
 from boardwatch.reports.board_coverage import BoardCoverage
 from boardwatch.reports.board_coverage import CoverageReport as BoardCoverageReport
@@ -77,7 +78,13 @@ def corpus(
     )
 
 
-def lead(posting_id: int = 7, *, pdf_built: bool = True, slug: str = "stripe") -> Lead:
+def lead(
+    posting_id: int = 7,
+    *,
+    pdf_built: bool = True,
+    slug: str = "stripe",
+    locations: tuple[str, ...] | None = ("New York, NY",),
+) -> Lead:
     return Lead(
         posting_id=posting_id,
         title="Backend Engineer",
@@ -87,6 +94,28 @@ def lead(posting_id: int = 7, *, pdf_built: bool = True, slug: str = "stripe") -
         company_source="registry",
         out_dir=f"/tmp/apps/2026-08-06/stripe-{posting_id}",
         pdf_built=pdf_built,
+        locations=locations,
+    )
+
+
+def run_manifest(
+    *,
+    code_fingerprint: str = "engine-1+abc123def456",
+    config_hash: str = "c0ffee",
+    profile_facts_hash: str | None = "pf00",
+    profile_row_hash: str | None = "pr00",
+    rules_hash: str | None = "ru1e5",
+    status: str = "ok",
+    location_filter_mode: str = "soft",
+) -> RunManifest:
+    return RunManifest(
+        code_fingerprint=code_fingerprint,
+        config_hash=config_hash,
+        profile_facts_hash=profile_facts_hash,
+        profile_row_hash=profile_row_hash,
+        rules_hash=rules_hash,
+        status=status,
+        location_filter_mode=location_filter_mode,
     )
 
 
@@ -169,14 +198,7 @@ def funnel(
         run_id=42,
         started_at=None,
         finished_at=None,
-        manifest=manifest or RunManifest(
-            code_fingerprint="engine-1+abc123def456",
-            config_hash="c0ffee",
-            profile_facts_hash="pf00",
-            profile_row_hash="pr00",
-            rules_hash="ru1e5",
-            status="ok",
-        ),
+        manifest=manifest or run_manifest(),
         scan=ScanContext(ran=True, boards_attempted=85, boards_complete=80, boards_failed=5,
                          postings_seen=13_590),
         corpus=counts,
@@ -664,6 +686,111 @@ def test_the_markdown_names_the_board_that_produced_each_lead() -> None:
     assert all("| registry |" in row for row in rows), rows
 
 
+# --------------------------------------------------------------------------------------
+# Artifact v7 — a lead's location, and the hard US gate's verdict on it (D-267)
+# --------------------------------------------------------------------------------------
+
+
+def test_a_lead_carries_the_locations_its_posting_named() -> None:
+    """D-267: the hard US gate is the one gate whose failure is a lead the user cannot take,
+    and until v7 a `Lead` row carried no location at all — so the gate left no trace in the
+    artifact it produces and no "all leads US-located" claim was reproducible afterwards."""
+    (row,) = funnel_to_dict(funnel(leads=[lead(locations=("Austin, TX", "Remote"))]))["leads"]
+
+    assert row["locations"] == ["Austin, TX", "Remote"]
+
+
+def test_a_lead_that_names_no_place_reports_null_rather_than_an_empty_list() -> None:
+    """`None` and `[]` are different claims about the same posting, exactly as
+    `delivery_queries._posted_days` returns None rather than 0: a posting that names no place
+    has not named an empty place, and a reader must be able to tell "the board published no
+    location" from "the board published a location this build read as nothing"."""
+    (row,) = funnel_to_dict(funnel(leads=[lead(locations=None)]))["leads"]
+
+    assert row["locations"] is None
+    # And the gate still records a verdict on it — an unresolvable location is `unknown`,
+    # which is what the gate FAIL-OPENS on. Absent would read as "the gate never ran".
+    assert row["location_class"] == "unknown"
+
+
+def test_the_verdict_beside_a_lead_is_the_production_classifier_s_own() -> None:
+    """Not a second implementation living in the report layer. The artifact's claim is only
+    worth reading if it is the same function the ranker vetoed with — `classify_location` —
+    so it is asserted against that function rather than against transcribed answers."""
+    cases: tuple[tuple[str, ...], ...] = (
+        ("Austin, TX",),
+        ("Berlin, Germany",),
+        ("Remote",),
+        ("Bengaluru, India", "New York, NY"),
+    )
+    for locations in cases:
+        (row,) = funnel_to_dict(funnel(leads=[lead(locations=locations)]))["leads"]
+        assert row["location_class"] == classify_location(locations), locations
+
+
+def test_the_verdict_field_can_carry_the_value_the_gate_is_supposed_to_drop() -> None:
+    """Without this the audit is vacuous. A field that can only ever say `us`/`unknown` makes
+    "no lead classifies non_us" true by construction, which is the D-267/D-268 failure mode:
+    a metric that reads healthy whether or not the thing it measures is present."""
+    (row,) = funnel_to_dict(funnel(leads=[lead(locations=("Buc, France",))]))["leads"]
+
+    assert row["location_class"] == "non_us"
+
+
+def test_the_markdown_leads_table_names_each_lead_s_location_and_verdict() -> None:
+    """Gate P0's "from the artifact alone, without reading code" applies to the human half
+    too: the Markdown is what an operator reads when a visa-ineligible lead is suspected."""
+    body = funnel_to_markdown(
+        funnel(leads=[lead(7, locations=("Austin, TX",)), lead(9, locations=None)])
+    )
+
+    rows = [line for line in body.splitlines() if line.startswith(("| 7 |", "| 9 |"))]
+    assert len(rows) == 2, body
+    assert "Austin, TX" in rows[0] and "| us |" in rows[0]
+    # The absent case renders as an em dash and `unknown`, never as an empty cell that reads
+    # like a rendering bug.
+    assert "| — |" in rows[1] and "| unknown |" in rows[1]
+
+
+def test_the_leads_section_records_its_match_rule_and_its_corpus_size() -> None:
+    """D-268's rule, applied where the claim is made: a ratio records its match rule AND its
+    corpus size beside it, or only the numerator is quotable later. "0 leads classify
+    non_us" is worthless without "over these 2 leads, by classify_location"."""
+    body = funnel_to_markdown(funnel(leads=[lead(7), lead(9)]))
+
+    (rule_line,) = [line for line in body.splitlines() if "classify_location" in line]
+    assert "location_gate" in rule_line, rule_line
+    assert "2 lead" in rule_line, rule_line
+
+
+def test_the_manifest_says_whether_the_location_gate_was_armed_at_all() -> None:
+    """The verdicts are unreadable without it. `location_filter_mode` is `soft` by default, and
+    in `soft` mode a `non_us` lead is not a leak — it is the documented behaviour. A reader who
+    cannot see the mode cannot tell a passing gate from a disarmed one."""
+    payload = funnel_to_dict(funnel(manifest=run_manifest(location_filter_mode="hard")))["manifest"]
+
+    assert payload["location_filter_mode"] == "hard"
+    body = funnel_to_markdown(funnel(manifest=run_manifest(location_filter_mode="hard")))
+    row = next(line for line in body.splitlines() if line.startswith("| location filter mode |"))
+    assert "hard" in row
+
+
+def test_the_hard_gate_s_claim_is_checkable_from_the_artifact_alone() -> None:
+    """The whole point of v7. Nothing here reads the store, the settings or the ranker — it is
+    the check an operator can run over a `funnel-N.json` months later, and it must be able to
+    FAIL, which the `non_us` lead below is there to prove."""
+    payload = funnel_to_dict(
+        funnel(
+            manifest=run_manifest(location_filter_mode="hard"),
+            leads=[lead(7, locations=("Austin, TX",)), lead(9, locations=("Buc, France",))],
+        )
+    )
+
+    armed = payload["manifest"]["location_filter_mode"] == "hard"
+    leaked = [row["posting_id"] for row in payload["leads"] if row["location_class"] == "non_us"]
+    assert armed and leaked == [9], payload["leads"]
+
+
 def test_the_markdown_names_every_drop_reason_with_its_count() -> None:
     """Gate P0: *why every non-lead was dropped* — every bucket named and counted in prose.
 
@@ -827,8 +954,10 @@ def test_both_halves_are_written_and_named_by_run(tmp_path: Path) -> None:
     # sections; to 4 by P6 item 6, which added the top-level `liveness` block; to 5 by P5a,
     # which added the `projection` stage and changed what `tailor.entered` means on a
     # projected run; to 6 by D-274, which added the `board_coverage` section so a scheduled
-    # run reports the discovery coverage it was already persisting.
-    assert payload["artifact_version"] == 6
+    # run reports the discovery coverage it was already persisting; to 7 by D-267, which put
+    # each lead's `locations` and the hard US gate's verdict on them into the record the gate
+    # itself produces.
+    assert payload["artifact_version"] == 7
     assert written.markdown_path.read_text().startswith("# boardwatch run 42")
 
 
@@ -1061,13 +1190,14 @@ def test_manifest_renders_in_both_halves() -> None:
     """The manifest is what makes two runs comparable for reproducibility; it must survive to
     the JSON a check reads and the Markdown a human reads."""
     report = funnel(
-        manifest=RunManifest(
+        manifest=run_manifest(
             code_fingerprint="engine-2+deadbeef1234",
             config_hash="CONFIGHASH",
             profile_facts_hash="PFHASH",
             profile_row_hash="PRHASH",
             rules_hash="RULESHASH",
             status="ok",
+            location_filter_mode="hard",
         )
     )
     payload = funnel_to_dict(report)["manifest"]
@@ -1078,6 +1208,7 @@ def test_manifest_renders_in_both_halves() -> None:
         "profile_row_hash": "PRHASH",
         "rules_hash": "RULESHASH",
         "status": "ok",
+        "location_filter_mode": "hard",
     }
     body = funnel_to_markdown(report)
     config_row = next(line for line in body.splitlines() if line.startswith("| config hash |"))
@@ -1090,7 +1221,7 @@ def test_manifest_shows_dash_for_absent_profile_hashes() -> None:
     """A run with no profile has no profile-dependent hash; the artifact must say so as `—`,
     not render a Python `None` a reader would misread."""
     report = funnel(
-        manifest=RunManifest(
+        manifest=run_manifest(
             code_fingerprint="engine-2+abc",
             config_hash="C",
             profile_facts_hash=None,
