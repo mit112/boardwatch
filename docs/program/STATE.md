@@ -153,6 +153,15 @@ set and the population caveat are in `STANDING-FACTS.md` § Precision gates (D-2
    catalog alone says the command should fail. **Verify by direct SQL on
    `profile.eligibility_policy_json`, never by the CLI that wrote it.** **Do NOT pull or apply while a
    tick is running** — the profile is snapshotted mid-run and a change would straddle two profiles.
+   **The safety check is PROCESS liveness, NOT the `runs` table.** `runs.finished_at` is written BEFORE
+   the process finishes: the funnel and morning artifacts are emitted from a `finally` AFTER the run row
+   is closed (D-024). Measured on run 125 — `finished_at` 22:50:08, but `funnel-125.json`,
+   `funnel-125.md`, `morning-125.json` and `morning-125.md` were all written at 22:51, and the process
+   still held `boardwatch.db-shm` open at 64.6% CPU / 2.3 GB RSS a minute after the table said `ok`.
+   A `SELECT id,status FROM runs` guard therefore passes while a run is still writing. Use:
+   ```sh
+   pgrep -f "boardwatch run"     # empty = genuinely idle; a PID = still working, wait for it to exit
+   ```
    **NO ledger drain (D-331, owner-ruled).**
 
 2. **Land what is still open:** #185 (D-327), #188 (this file), #190 (D-330, fetch timing). Each needs
