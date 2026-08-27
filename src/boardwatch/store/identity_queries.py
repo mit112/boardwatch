@@ -5,11 +5,13 @@ from __future__ import annotations
 from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import datetime
+from typing import Any
 
 from sqlalchemy import delete, distinct, func, insert, select, update
-from sqlalchemy.engine import Connection
+from sqlalchemy.engine import Connection, Row
 
-from boardwatch.core.identity_kinds import IDENTITY_ALGORITHM_VERSION
+from boardwatch.core.identity_kinds import IDENTITY_ALGORITHM_VERSION, kind_spec
+from boardwatch.core.near_duplicate import PostingEvidence
 from boardwatch.core.posting_identity import IdentityInputs, PostingIdentity
 from boardwatch.store.param_chunks import id_chunks
 from boardwatch.store.tables import companies, job_dispositions, posting_identities, postings
@@ -228,10 +230,10 @@ def identities_complete(conn: Connection) -> bool:
 class SurfacedJob:
     """One job that reached `job_dispositions` — `seen`, `skipped`, or `built` all mean the
     job was surfaced to the operator (`pipeline/runner.py`, `cli/top_cmd.py`) — paired with
-    the `exact_quad` identity its currently-anchored posting(s) carry.
+    the identity of the requested kind that its currently-anchored posting(s) carry.
 
     `identity_key` is `None` when none of the job's current postings carry a current-version
-    `exact_quad` identity: a body-less posting withholds that identity by design (D-132), and
+    identity of that kind: a body-less posting withholds `exact_quad` by design (D-132), and
     an un-backfilled one simply has no row yet. This report cannot and does not try to tell
     those two apart — both are "unjudgeable" for leakage and land in the same bucket
     (`reports/leakage.compute_leakage`'s `unidentified`), never folded into "unique".
@@ -243,8 +245,30 @@ class SurfacedJob:
 
 
 def load_surfaced_exact_quad(conn: Connection) -> tuple[SurfacedJob, ...]:
-    """Every job ever recorded in `job_dispositions`, paired with the `exact_quad` identity
-    key its currently-anchored posting(s) carry (design §2, Gate P6's leakage clause).
+    """Gate P6's leakage clause: the `exact_quad` half, one row per job.
+
+    Kept as a named function rather than inlined at the call site because the `func.max`
+    caveat below is specific to this kind — the wider `company_title_location` reader
+    deliberately does NOT collapse a job's keys, and the two must not be confused.
+    """
+    return load_surfaced_identities(conn, kind="exact_quad")
+
+
+def load_surfaced_identities(conn: Connection, *, kind: str) -> tuple[SurfacedJob, ...]:
+    """Every job ever recorded in `job_dispositions`, paired with the identity key of `kind`
+    that its currently-anchored posting(s) carry (design §2, Gate P6's leakage clause).
+
+    **`kind` is a parameter, not a literal, and that is the point.** This read hardcoded
+    `exact_quad`, so a job whose only identity was `company_title_location` landed in the
+    `unidentified` bucket and could never be counted redundant — Gate P6's duplicate-leakage
+    clause therefore reported 0.00% for a STRUCTURAL reason rather than because dedup works.
+    A rule that cannot fire is a monitoring failure (CLAUDE.md), so the metric now reads the
+    wider kind too, as a separate never-folded bound. Suppression is untouched:
+    `SUPPRESSING_KINDS` still holds `exact_quad` alone.
+
+    `kind` is validated against the closed catalog, so an out-of-catalog name raises
+    `UnknownIdentityKind` here instead of quietly returning zero rows — which would read as
+    "no leakage", the direction that makes the gate easier to pass.
 
     Joined through the CURRENT `postings.job_id` projection, not through
     `job_grouping_events` history. A job `identities regroup` has already merged away — zero
@@ -272,7 +296,9 @@ def load_surfaced_exact_quad(conn: Connection) -> tuple[SurfacedJob, ...]:
     still anchored to one job, and `func.max` silently keeps the lexicographically larger,
     discarding the other. If the discarded key matches another surfaced job's key, that
     redundancy becomes invisible here — leakage reads lower than it is, the direction that makes
-    the <=5% gate easier to pass. Nothing currently reports a job holding two keys.
+    the <=5% gate easier to pass. `load_surfaced_keys` is the reader that does NOT accept that
+    trade; the gate clause still does, and `tests/unit/test_leakage_kinds.py` pins the contrast so
+    the two readers cannot silently converge.
 
     No window filter here on purpose: `reports/leakage.compute_leakage` applies the 7-day cut
     over `first_decided_at`, mirroring the split `reports/stats.summarize` already draws
@@ -282,6 +308,7 @@ def load_surfaced_exact_quad(conn: Connection) -> tuple[SurfacedJob, ...]:
     closed still really reached leads, and excluding it would understate leakage on exactly
     the postings old enough to have closed since.
     """
+    kind_spec(kind)  # typed refusal at the call site; never a silent empty result
     stmt = (
         select(
             job_dispositions.c.job_id,
@@ -293,7 +320,7 @@ def load_surfaced_exact_quad(conn: Connection) -> tuple[SurfacedJob, ...]:
         .join(
             posting_identities,
             (posting_identities.c.posting_id == postings.c.id)
-            & (posting_identities.c.kind == "exact_quad")
+            & (posting_identities.c.kind == kind)
             & (posting_identities.c.algorithm_version == IDENTITY_ALGORITHM_VERSION),
             isouter=True,
         )
@@ -307,3 +334,101 @@ def load_surfaced_exact_quad(conn: Connection) -> tuple[SurfacedJob, ...]:
         )
         for row in conn.execute(stmt).all()
     )
+
+
+def load_surfaced_keys(conn: Connection, *, kind: str) -> tuple[SurfacedJob, ...]:
+    """The same read, but WITHOUT collapsing a job's keys — one row per (job, key).
+
+    `load_surfaced_identities` aggregates with `func.max`, which is sound only under the
+    one-key-per-job invariant `regroup` establishes at merge time under the algorithm version
+    then in force. An `IDENTITY_ALGORITHM_VERSION` bump can break it (p6.2 already split
+    `C++`/`C#`/`C` title components), and when it does, `func.max` keeps the lexicographically
+    larger key and DISCARDS the other — hiding a redundancy and making leakage read lower than
+    it is.
+
+    For the candidate bound that direction is unacceptable, because the bound's whole claim is
+    that the real figure is no higher. So this returns every key: a job holding two keys
+    appears under both and inflates the bound rather than shrinking it.
+
+    Jobs with no identity of this kind still come back exactly once, with `identity_key=None`,
+    so the `unidentified` bucket is unchanged.
+    """
+    kind_spec(kind)
+    stmt = (
+        select(
+            job_dispositions.c.job_id,
+            job_dispositions.c.first_decided_at,
+            posting_identities.c.identity_key,
+        )
+        .select_from(job_dispositions)
+        .join(postings, postings.c.job_id == job_dispositions.c.job_id)
+        .join(
+            posting_identities,
+            (posting_identities.c.posting_id == postings.c.id)
+            & (posting_identities.c.kind == kind)
+            & (posting_identities.c.algorithm_version == IDENTITY_ALGORITHM_VERSION),
+            isouter=True,
+        )
+        .distinct()
+        .order_by(job_dispositions.c.job_id, posting_identities.c.identity_key)
+    )
+    return tuple(
+        SurfacedJob(
+            job_id=int(row.job_id),
+            first_decided_at=row.first_decided_at,
+            identity_key=None if row.identity_key is None else str(row.identity_key),
+        )
+        for row in conn.execute(stmt).all()
+    )
+
+
+def load_near_duplicate_evidence(
+    conn: Connection, posting_ids: Sequence[int]
+) -> tuple[PostingEvidence, ...]:
+    """The columns `core/near_duplicate` reads, for the named postings.
+
+    A separate read from `load_identity_inputs` on purpose: that one feeds the SUPPRESSION
+    path, and the two must not converge into one type that a later refactor could hand to
+    `resolve_duplicates`. It also selects far less — no `content_hash`, no locations — because
+    the candidate bound only ever runs over the few hundred jobs that reached leads.
+    """
+    if not posting_ids:
+        return ()
+    stmt = select(
+        postings.c.id,
+        postings.c.url,
+        postings.c.body_text,
+        postings.c.salary_min,
+        postings.c.salary_max,
+        postings.c.salary_currency,
+        postings.c.salary_period,
+    )
+    rows: list[Row[Any]] = []
+    for chunk in id_chunks(list(dict.fromkeys(posting_ids))):
+        rows.extend(conn.execute(stmt.where(postings.c.id.in_(chunk))).all())
+    return tuple(
+        PostingEvidence(
+            posting_id=int(r[0]),
+            url=None if r[1] is None else str(r[1]),
+            body_text=str(r[2]),
+            salary_min=r[3],
+            salary_max=r[4],
+            salary_currency=None if r[5] is None else str(r[5]),
+            salary_period=None if r[6] is None else str(r[6]),
+        )
+        for r in rows
+    )
+
+
+def load_surfaced_posting_ids(conn: Connection) -> dict[int, tuple[int, ...]]:
+    """job_id -> the postings currently anchored to it, for every surfaced job."""
+    stmt = (
+        select(job_dispositions.c.job_id, postings.c.id)
+        .select_from(job_dispositions)
+        .join(postings, postings.c.job_id == job_dispositions.c.job_id)
+        .order_by(job_dispositions.c.job_id, postings.c.id)
+    )
+    out: dict[int, list[int]] = {}
+    for job_id, posting_id in conn.execute(stmt).all():
+        out.setdefault(int(job_id), []).append(int(posting_id))
+    return {job_id: tuple(ids) for job_id, ids in out.items()}
